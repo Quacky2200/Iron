@@ -1,0 +1,13 @@
+{
+  "name": "iron-fixtures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@iron/engine": "workspace:*"
+  },
+  "scripts": {
+    "build": "bun build src/hello.ts --outfile hello.js --format iife && bun build src/throws.ts --outfile throws.js --format iife",
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

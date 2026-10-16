@@ -39,3 +39,5 @@ jobs:
       - run: bun run build                      # M1-BLD-03
       - run: bun run typecheck                  # M1-BLD-04
       - run: bun test
+      - name: Committed test fixtures match their TypeScript sources
+        run: bun run build:fixtures && git diff --exit-code tests/fixtures

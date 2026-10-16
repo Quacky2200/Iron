@@ -1,0 +1,39 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "iron",
+      "devDependencies": {
+        "typescript": "^5.9.0",
+      },
+    },
+    "examples/hello": {
+      "name": "hello",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+      },
+    },
+    "js/engine": {
+      "name": "@iron/engine",
+      "version": "0.1.0",
+    },
+    "tests/fixtures": {
+      "name": "iron-fixtures",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+      },
+    },
+  },
+  "packages": {
+    "@iron/engine": ["@iron/engine@workspace:js/engine"],
+
+    "hello": ["hello@workspace:examples/hello"],
+
+    "iron-fixtures": ["iron-fixtures@workspace:tests/fixtures"],
+
+    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+  }
+}

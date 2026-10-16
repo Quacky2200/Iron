@@ -51,7 +51,7 @@ Iron/
 - [x] `git init`, `.gitignore` (target/, node_modules/, dist/), `.gitattributes` (LF line endings, PNGs as binary)
 - [x] Cargo workspace with crates from the layout above — `M1-BLD-01`
 - [x] `rustfmt.toml`; `cargo fmt --check` / `cargo clippy -D warnings` clean — `M1-BLD-02`
-- [~] Bun workspace: root `package.json`, `js/engine`, `examples/hello`, shared `tsconfig.base.json` (strict) — `M1-BLD-03`, `M1-BLD-04`. Files written; **not yet run: Bun isn't installed on the dev machine**
+- [x] Bun workspace: root `package.json`, `js/engine`, `examples/hello`, `tests/fixtures`, shared `tsconfig.base.json` (strict) — `M1-BLD-03`, `M1-BLD-04` (Bun 1.4.3)
 - [x] Logging via `tracing` + `tracing-subscriber` (`RUST_LOG` to override)
 
 ### 2. `iron_core`
@@ -90,14 +90,14 @@ Iron/
 - [x] `ComponentHost` calls methods by `(component id, method name)` via `__iron_dispatch` — `M1-CMP-02`, `M1-CMP-03`
 - [x] Exceptions disable only the failing component — `M1-CMP-04`
 - [x] Hand-written globals `.d.ts` (`js/engine/src/globals.ts`; generate from Rust later)
-- [~] `bun test` unit tests for the JS host (`js/engine/test/`) — written, not run yet (needs Bun)
+- [x] `bun test` unit tests for the JS host (`js/engine/test/`, 4 tests)
 
 ### 7. `iron_app` and the example
 - [x] `iron` binary: game folder (`dist/game.js`) or `.js` path; opens window; runs loop
 - [x] Fixed 60 Hz tick with catch-up limit; clear colour each frame
 - [x] `examples/hello`: `Hello` logs `hello` on start and `tick` on update
-- [x] `tests/fixtures/{hello,throws}.js` hand-built from `tests/fixtures/src/*.ts`
-- [ ] Regenerate fixtures with `bun run build:fixtures` once Bun is installed
+- [x] `tests/fixtures/{hello,throws}.js` built by Bun from `tests/fixtures/src/*.ts` (`bun run build:fixtures`; CI checks they're up to date)
+- [x] `iron examples/hello` runs the Bun-built game end to end
 
 ### 8. CI
 - [x] GitHub Actions workflow (`.github/workflows/ci.yml`): Windows + Linux Rust jobs, JS job with Bun
@@ -106,7 +106,7 @@ Iron/
 
 **M1 done when:** all `M1-*` tests pass in CI and `M1-PLT-03` passes manually.
 
-**Status:** all 24 Rust tests pass locally (Windows, RTX 5080). The app ran on Vulkan: `hello` once, ~60 ticks/s. Remaining: Bun-side checks, the manual close test, and a CI run.
+**Status:** all 24 Rust tests and 4 JS tests pass locally (Windows, RTX 5080); build and typecheck are clean. `iron examples/hello` runs on Vulkan: `hello` once, ~60 ticks/s. Remaining: the manual close test and a CI run.
 
 ---
 
