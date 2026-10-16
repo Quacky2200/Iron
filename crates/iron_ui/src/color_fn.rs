@@ -1,6 +1,7 @@
 //! CSS Color 4/5 functions beyond `rgb()` / `hsl()`: `hwb()`, `lab()`, `lch()`,
 //! `oklab()`, `oklch()`, `color(srgb | srgb-linear | display-p3 ...)` and
-//! `color-mix()` (the standard form of s&box's `mix()`, `darken()` and `lighten()`).
+//! `color-mix()`, plus s&box's `darken()`, `lighten()` and `mix()` (which work like
+//! their SCSS namesakes; `color-mix()` is the standard way to do the same).
 //! Conversions follow the CSS Color 4 sample code; out-of-gamut results are clipped.
 
 use crate::Rgba;
@@ -36,6 +37,10 @@ pub(crate) fn parse(s: &str) -> Option<Rgba> {
         }
         "color" => color_fn(args),
         "color-mix" => color_mix(args),
+        // s&box (SCSS-style) helpers.
+        "darken" => shade(args, -1.0),
+        "lighten" => shade(args, 1.0),
+        "mix" => scss_mix(args),
         _ => None,
     }
 }
@@ -326,6 +331,56 @@ fn color_mix(args: &str) -> Option<Rgba> {
     Some(Rgba::new(r, g, b, (alpha * alpha_scale).clamp(0.0, 1.0)))
 }
 
+/// `darken(color, amount)` / `lighten(color, amount)`: moves HSL lightness down or up
+/// by `amount` (`20%` or `0.2`), like SCSS.
+fn shade(args: &str, sign: f32) -> Option<Rgba> {
+    let parts = split_top_level(args, ',');
+    let [color, amount] = parts[..] else {
+        return None;
+    };
+    let c = Rgba::parse(color)?;
+    let amount = pct_or(amount, 1.0)?;
+    let (h, s, l) = to_hsl(c);
+    let l = (l + sign * amount).clamp(0.0, 1.0);
+    let rgb = Rgba::parse(&format!("hsl({h}deg {}% {}%)", s * 100.0, l * 100.0))?;
+    Some(Rgba { a: c.a, ..rgb })
+}
+
+/// `mix(color1, color2 [, weight])`: `weight` (default 50%) of `color1`, the rest
+/// `color2`, mixed in sRGB like SCSS (`color-mix(in srgb, color1 weight, color2)`).
+fn scss_mix(args: &str) -> Option<Rgba> {
+    let parts = split_top_level(args, ',');
+    let (a, b, weight) = match parts[..] {
+        [a, b] => (a, b, 0.5),
+        [a, b, w] => (a, b, pct_or(w, 1.0)?),
+        _ => return None,
+    };
+    if !(0.0..=1.0).contains(&weight) {
+        return None;
+    }
+    color_mix(&format!("in srgb, {a} {}%, {b}", weight * 100.0))
+}
+
+/// sRGB to HSL: hue in degrees, saturation and lightness in 0..1.
+fn to_hsl(c: Rgba) -> (f32, f32, f32) {
+    let max = c.r.max(c.g).max(c.b);
+    let min = c.r.min(c.g).min(c.b);
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d == 0.0 {
+        return (0.0, 0.0, l);
+    }
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == c.r {
+        60.0 * ((c.g - c.b) / d).rem_euclid(6.0)
+    } else if max == c.g {
+        60.0 * ((c.b - c.r) / d + 2.0)
+    } else {
+        60.0 * ((c.r - c.g) / d + 4.0)
+    };
+    (h, s, l)
+}
+
 /// One `color-mix()` argument: a colour and an optional percentage after it.
 fn mix_arg(arg: &str) -> Option<(Rgba, Option<f32>)> {
     let arg = arg.trim();
@@ -457,6 +512,37 @@ mod tests {
             "color-mix(in srgb, red)",
             "color-mix(in srgb, red -10%, blue)",
             "hwb(0 0%)",
+        ] {
+            assert_eq!(Rgba::parse(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn sbox_darken_lighten_and_mix() {
+        assert_eq!(rgb8("darken(#ff0000, 20%)"), [153, 0, 0, 255]);
+        assert_eq!(rgb8("lighten(#ff0000, 0.2)"), [255, 102, 102, 255]);
+        assert_eq!(rgb8("darken(white, 100%)"), [0, 0, 0, 255]);
+        assert_eq!(
+            rgb8("lighten(rgba(0, 0, 255, 0.5), 10%)")[3],
+            128,
+            "alpha is kept"
+        );
+        assert_eq!(rgb8("mix(red, blue)"), [128, 0, 128, 255]);
+        assert_eq!(
+            rgb8("mix(red, blue, 25%)"),
+            [64, 0, 191, 255],
+            "25% of the first colour"
+        );
+        assert_eq!(
+            rgb8("darken(mix(white, black), 10%)"),
+            [102, 102, 102, 255],
+            "nested"
+        );
+        for bad in [
+            "darken(red)",
+            "mix(red)",
+            "mix(red, blue, 150%)",
+            "lighten(nope, 10%)",
         ] {
             assert_eq!(Rgba::parse(bad), None, "{bad}");
         }

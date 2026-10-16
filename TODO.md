@@ -456,8 +456,9 @@ and `@font-face`.
      (`apply_wide_keyword`, `crates/iron_ui/tests/wide_keywords.rs`)
    - [x] Colours: `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color(srgb | srgb-linear |
      display-p3 ...)`, `none` channels, and `color-mix(in srgb | srgb-linear | lab | oklab | lch |
-     oklch, ...)` (premultiplied, shorter hue) as the standard form of s&box's `mix()` /
-     `darken()` / `lighten()` (`crates/iron_ui/src/color_fn.rs`); out-of-gamut colours clip
+     oklch, ...)` (premultiplied, shorter hue), the standard form of s&box's `mix()` /
+     `darken()` / `lighten()`, which are supported too (SCSS semantics: HSL lightness ± amount;
+     `mix(a, b, weight of a)` in sRGB) (`crates/iron_ui/src/color_fn.rs`); out-of-gamut colours clip
    - [x] Angles in `deg`, `rad`, `grad`, `turn` (hues and gradients); times (`s`/`ms`) come with
      transitions (group 7), the first properties that take them
 2. **Layout**

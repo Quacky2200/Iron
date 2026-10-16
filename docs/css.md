@@ -201,7 +201,11 @@ variants), named colours and `transparent`. Anything else ending in `)` goes to 
   `lch` and `oklch`. A missing percentage is the rest of 100% (50/50 if both are missing); weights
   are normalised, and a total under 100% scales the result's alpha. Mixing is premultiplied by
   alpha; hues in `lch`/`oklch` take the shorter way round and are not premultiplied.
-  This is the standard form of s&box's `mix()`, `darken()` and `lighten()`, which are not supported.
+  This is the standard form of s&box's `mix()`, `darken()` and `lighten()`, which are also
+  supported for s&box compatibility. They work like their SCSS namesakes:
+  - `darken(c, amount)` and `lighten(c, amount)` move HSL lightness by `amount` (`20%` or `0.2`)
+    and keep the colour's alpha.
+  - `mix(a, b, weight)` takes `weight` (default 50%) of `a`, mixed in sRGB.
 - Angles (gradient directions) accept `deg`, `rad`, `grad` and `turn`.
 - Gradients: the direction check splits the first argument at the top level, so a first stop such as
   `oklch(0.7 0.1 200)` or `rgb(1 2 3)` is a colour, not an angle.
