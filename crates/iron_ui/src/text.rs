@@ -13,8 +13,10 @@ use parley::{
 };
 
 use crate::Rgba;
-use crate::draw::{GlyphRun, PositionedGlyph, Rect, TextCmd};
-use crate::text_style::{ComputedText, Direction, LineHeight, TextAlign, WhiteSpace};
+use crate::draw::{GlyphRun, PositionedGlyph, Rect, TextCmd, TextDecoration};
+use crate::text_style::{
+    ComputedText, Decoration, DecorationStyle, Direction, LineHeight, TextAlign, WhiteSpace,
+};
 
 /// The family name the bundled font is registered under.
 pub const DEFAULT_FAMILY: &str = "Inter";
@@ -22,8 +24,30 @@ pub const DEFAULT_FAMILY: &str = "Inter";
 const INTER: &[u8] = include_bytes!("../fonts/InterVariable.ttf");
 const INTER_ITALIC: &[u8] = include_bytes!("../fonts/InterVariable-Italic.ttf");
 
-/// The brush carried by each glyph run: its text colour.
-pub type Brush = Rgba;
+/// What each glyph run carries through Parley: its colour and its decorations.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Brush {
+    pub color: Rgba,
+    pub lines: Decoration,
+    pub line_style: DecorationStyle,
+    /// `None`: the text colour.
+    pub line_color: Option<Rgba>,
+    pub thickness: Option<f32>,
+    pub underline_offset: Option<f32>,
+}
+
+impl Brush {
+    pub fn of(style: &ComputedText) -> Self {
+        Self {
+            color: style.color,
+            lines: style.decoration,
+            line_style: style.decoration_style,
+            line_color: style.decoration_color,
+            thickness: style.decoration_thickness,
+            underline_offset: style.underline_offset,
+        }
+    }
+}
 
 /// Width constraint for measuring text, mirroring Taffy's available space.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -290,13 +314,14 @@ fn draw_lines(
                         .collect(),
                     embolden: synthesis.embolden(),
                     skew: synthesis.skew(),
-                    color: style.brush,
+                    color: style.brush.color,
                     glyphs,
                 });
             }
             // Decorations span the run; font metrics give offsets from the baseline
             // (positive is up).
             let metrics = run.font_metrics();
+            let brush = style.brush;
             let baseline = oy + glyph_run.baseline();
             let mut x = ox + glyph_run.offset();
             let mut width = glyph_run.advance();
@@ -310,16 +335,29 @@ fn draw_lines(
                 Some(_) => width = width.min(hi - x).max(0.0),
                 None => {}
             }
-            let mut decorate = |deco: &parley::Decoration<Brush>, offset: f32, size: f32| {
-                let offset = deco.offset.unwrap_or(offset);
-                let size = deco.size.unwrap_or(size).max(1.0);
-                decorations.push((Rect::new(x, baseline - offset, width, size), deco.brush));
+            // Offsets are up from the baseline; the thickness and colour can be
+            // set, or come from the font and the text colour.
+            let color = brush.line_color.unwrap_or(brush.color);
+            let mut decorate = |offset: f32, size: f32| {
+                let size = brush.thickness.unwrap_or(size).max(1.0);
+                decorations.push(TextDecoration {
+                    rect: Rect::new(x, baseline - offset, width, size),
+                    color,
+                    style: brush.line_style,
+                });
             };
-            if let Some(u) = &style.underline {
-                decorate(u, metrics.underline_offset, metrics.underline_size);
+            // Parley's own underline is the editor's IME pre-edit marker.
+            if brush.lines.underline || style.underline.is_some() {
+                let offset = brush
+                    .underline_offset
+                    .map_or(metrics.underline_offset, |o| -o);
+                decorate(offset, metrics.underline_size);
             }
-            if let Some(st) = &style.strikethrough {
-                decorate(st, metrics.strikethrough_offset, metrics.strikethrough_size);
+            if brush.lines.overline {
+                decorate(metrics.ascent, metrics.underline_size);
+            }
+            if brush.lines.line_through {
+                decorate(metrics.strikethrough_offset, metrics.strikethrough_size);
             }
         }
         if let Some(e) = cut {
@@ -373,9 +411,7 @@ pub(crate) fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Bru
             FontStyle::Normal
         },
         font_weight: FontWeight::new(style.font_weight),
-        brush: style.color,
-        has_underline: style.decoration.underline,
-        has_strikethrough: style.decoration.line_through,
+        brush: Brush::of(style),
         line_height: match style.line_height {
             LineHeight::Normal => PLineHeight::MetricsRelative(1.0),
             LineHeight::Factor(f) => PLineHeight::FontSizeRelative(f),

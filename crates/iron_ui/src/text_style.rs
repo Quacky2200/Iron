@@ -292,6 +292,39 @@ pub enum TextOverflow {
 pub struct Decoration {
     pub underline: bool,
     pub line_through: bool,
+    pub overline: bool,
+}
+
+/// `text-decoration-style`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DecorationStyle {
+    #[default]
+    Solid,
+    Double,
+    Dotted,
+    Dashed,
+    Wavy,
+}
+
+impl DecorationStyle {
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "solid" => Self::Solid,
+            "double" => Self::Double,
+            "dotted" => Self::Dotted,
+            "dashed" => Self::Dashed,
+            "wavy" => Self::Wavy,
+            _ => return None,
+        })
+    }
+}
+
+/// `text-decoration-thickness` / `text-underline-offset`: `auto` (`None`) or a length.
+fn auto_len(s: &str) -> Option<Option<FontLen>> {
+    match s {
+        "auto" | "from-font" => Some(None),
+        other => FontLen::parse(&Value::String(other.to_owned())).map(Some),
+    }
 }
 
 /// Text properties as set on one node. `None` means "inherit".
@@ -308,6 +341,14 @@ pub struct TextProps {
     pub text_align: Option<TextAlign>,
     pub direction: Option<Direction>,
     pub decoration: Option<Decoration>,
+    pub decoration_style: Option<DecorationStyle>,
+    /// `Some(None)` is `currentColor`.
+    pub decoration_color: Option<Option<Rgba>>,
+    /// `Some(None)` is `auto` (from the font).
+    pub decoration_thickness: Option<Option<FontLen>>,
+    pub underline_offset: Option<Option<FontLen>>,
+    /// `text-decoration-skip-ink`: parsed, but underlines don't skip descenders yet.
+    pub skip_ink: Option<bool>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
@@ -335,6 +376,14 @@ pub struct ComputedText {
     pub text_align: TextAlign,
     pub direction: Direction,
     pub decoration: Decoration,
+    pub decoration_style: DecorationStyle,
+    /// `None`: the text colour.
+    pub decoration_color: Option<Rgba>,
+    /// Px; `None` uses the font's metrics.
+    pub decoration_thickness: Option<f32>,
+    /// Px below the baseline; `None` uses the font's metrics.
+    pub underline_offset: Option<f32>,
+    pub skip_ink: bool,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
@@ -361,6 +410,11 @@ impl Default for ComputedText {
             text_align: TextAlign::Start,
             direction: Direction::Ltr,
             decoration: Decoration::default(),
+            decoration_style: DecorationStyle::Solid,
+            decoration_color: None,
+            decoration_thickness: None,
+            underline_offset: None,
+            skip_ink: true,
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
@@ -408,6 +462,17 @@ impl ComputedText {
             text_align: props.text_align.unwrap_or(self.text_align),
             direction: props.direction.unwrap_or(self.direction),
             decoration: props.decoration.unwrap_or(self.decoration),
+            decoration_style: props.decoration_style.unwrap_or(self.decoration_style),
+            decoration_color: props.decoration_color.unwrap_or(self.decoration_color),
+            decoration_thickness: props
+                .decoration_thickness
+                .map_or(self.decoration_thickness, |t| {
+                    t.map(|l| l.resolve(font_size).max(0.0))
+                }),
+            underline_offset: props
+                .underline_offset
+                .map_or(self.underline_offset, |o| o.map(|l| l.resolve(font_size))),
+            skip_ink: props.skip_ink.unwrap_or(self.skip_ink),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
                 .text_shadow
@@ -468,6 +533,11 @@ pub const TEXT_PROPS: &[&str] = &[
     "direction",
     "textDecoration",
     "textDecorationLine",
+    "textDecorationStyle",
+    "textDecorationColor",
+    "textDecorationThickness",
+    "textUnderlineOffset",
+    "textDecorationSkipInk",
     "whiteSpace",
     "textShadow",
     "textTransform",
@@ -503,7 +573,18 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "wordSpacing" => props.word_spacing = None,
             "textAlign" => props.text_align = None,
             "direction" => props.direction = None,
-            "textDecoration" | "textDecorationLine" => props.decoration = None,
+            "textDecorationLine" => props.decoration = None,
+            "textDecoration" => {
+                props.decoration = None;
+                props.decoration_style = None;
+                props.decoration_color = None;
+                props.decoration_thickness = None;
+            }
+            "textDecorationStyle" => props.decoration_style = None,
+            "textDecorationColor" => props.decoration_color = None,
+            "textDecorationThickness" => props.decoration_thickness = None,
+            "textUnderlineOffset" => props.underline_offset = None,
+            "textDecorationSkipInk" => props.skip_ink = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
@@ -603,16 +684,63 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             }));
         }
         "textDecoration" | "textDecorationLine" => {
+            let shorthand = prop == "textDecoration";
             let mut d = Decoration::default();
-            for word in parse!(s).split_whitespace() {
+            let (mut style, mut color, mut thickness) = (None, None, None);
+            for word in crate::paint::split_top_level(parse!(s), ' ') {
                 match word {
                     "none" => {}
                     "underline" => d.underline = true,
                     "line-through" => d.line_through = true,
+                    "overline" => d.overline = true,
+                    w if shorthand && style.is_none() && DecorationStyle::parse(w).is_some() => {
+                        style = DecorationStyle::parse(w);
+                    }
+                    w if shorthand && thickness.is_none() && auto_len(w).is_some() => {
+                        thickness = auto_len(w);
+                    }
+                    w if shorthand && color.is_none() && w.eq_ignore_ascii_case("currentcolor") => {
+                        color = Some(None);
+                    }
+                    w if shorthand && color.is_none() => color = Some(Some(parse!(Rgba::parse(w)))),
                     _ => return Some(Err(())),
                 }
             }
             props.decoration = Some(d);
+            if shorthand {
+                // The shorthand resets what it leaves out.
+                props.decoration_style = Some(style.unwrap_or_default());
+                props.decoration_color = Some(color.flatten());
+                props.decoration_thickness = Some(thickness.flatten());
+            }
+        }
+        "textDecorationStyle" => {
+            props.decoration_style = Some(parse!(s.and_then(DecorationStyle::parse)));
+        }
+        "textDecorationColor" => {
+            props.decoration_color = Some(parse!(match s {
+                Some(c) if c.eq_ignore_ascii_case("currentcolor") => Some(None),
+                Some(c) => Rgba::parse(c).map(Some),
+                None => None,
+            }));
+        }
+        "textDecorationThickness" | "textUnderlineOffset" => {
+            let len = match value {
+                Value::Number(n) => Some(Some(FontLen::Px(*n as f32))),
+                _ => s.and_then(auto_len),
+            };
+            if prop == "textDecorationThickness" {
+                props.decoration_thickness = Some(parse!(len));
+            } else {
+                props.underline_offset = Some(parse!(len));
+            }
+        }
+        "textDecorationSkipInk" => {
+            props.skip_ink = Some(parse!(match s {
+                Some("auto" | "all") => Some(true),
+                Some("none") => Some(false),
+                _ => None,
+            }));
         }
         "whiteSpace" => {
             props.white_space = Some(parse!(match s {
@@ -732,6 +860,56 @@ fn parse_font_shorthand(s: &str) -> Option<FontShorthand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M3-TXT-13
+    #[test]
+    fn decoration_shorthand_and_longhands() {
+        let mut p = TextProps::default();
+        set(
+            &mut p,
+            "textDecoration",
+            "underline overline wavy red 2px".into(),
+        );
+        assert_eq!(
+            p.decoration,
+            Some(Decoration {
+                underline: true,
+                line_through: false,
+                overline: true
+            })
+        );
+        assert_eq!(p.decoration_style, Some(DecorationStyle::Wavy));
+        assert_eq!(
+            p.decoration_color,
+            Some(Some(Rgba::new(1.0, 0.0, 0.0, 1.0)))
+        );
+        assert_eq!(p.decoration_thickness, Some(Some(FontLen::Px(2.0))));
+        // The shorthand resets what it leaves out; the line longhand doesn't.
+        set(&mut p, "textDecorationLine", "line-through".into());
+        assert_eq!(p.decoration_style, Some(DecorationStyle::Wavy));
+        set(&mut p, "textDecoration", "underline".into());
+        assert_eq!(p.decoration_style, Some(DecorationStyle::Solid));
+        assert_eq!(p.decoration_color, Some(None), "currentColor");
+        set(&mut p, "textDecorationThickness", "0.1em".into());
+        set(&mut p, "textUnderlineOffset", 3.0.into());
+        set(&mut p, "textDecorationSkipInk", "none".into());
+        let c = ComputedText::default().child(&p);
+        assert_eq!(c.decoration_thickness, Some(1.6));
+        assert_eq!(c.underline_offset, Some(3.0));
+        assert!(!c.skip_ink);
+        for (prop, bad) in [
+            ("textDecoration", "underline wavy dotted"),
+            ("textDecorationStyle", "zigzag"),
+            ("textDecorationThickness", "thick"),
+            ("textDecorationSkipInk", "maybe"),
+        ] {
+            assert_eq!(
+                apply(&mut p, prop, &bad.into()),
+                Some(Err(())),
+                "{prop}: {bad}"
+            );
+        }
+    }
 
     // M3-TXT-12
     #[test]
@@ -881,7 +1059,8 @@ mod tests {
             p.decoration,
             Some(Decoration {
                 underline: true,
-                line_through: true
+                line_through: true,
+                overline: false
             })
         );
         assert_eq!(p.text_shadow.as_ref().map(Vec::len), Some(2));
@@ -904,7 +1083,7 @@ mod tests {
             ("fontWeight", 0.0.into()),
             ("fontStyle", "slanted".into()),
             ("textAlign", "middle".into()),
-            ("textDecoration", "wavy".into()),
+            ("textDecoration", "squiggly".into()),
             ("whiteSpace", "pre-lines".into()),
             ("direction", "sideways".into()),
             ("textShadow", "inset 0 0 2px red".into()),

@@ -537,7 +537,7 @@ fn style_set(s: &ComputedText) -> StyleSet<Brush> {
     set.insert(StyleProperty::FontFamily(base.font_family));
     set.insert(StyleProperty::FontStyle(base.font_style));
     set.insert(StyleProperty::FontWeight(base.font_weight));
-    set.insert(StyleProperty::Brush(s.color));
+    set.insert(StyleProperty::Brush(crate::text::Brush::of(s)));
     set.insert(StyleProperty::LineHeight(base.line_height));
     set.insert(StyleProperty::LetterSpacing(s.letter_spacing));
     set.insert(StyleProperty::WordSpacing(s.word_spacing));

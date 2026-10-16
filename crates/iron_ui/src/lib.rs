@@ -27,7 +27,7 @@ pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
 pub use draw::{
     ClipShape, DrawCmd, GlyphRun, ImageFill, Polygon, PositionedGlyph, Quad, Radii, Rect,
-    ShadowShape, TextCmd,
+    ShadowShape, TextCmd, TextDecoration,
 };
 pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
 pub use interaction::{Clipboard, Direction, Input, Interaction};

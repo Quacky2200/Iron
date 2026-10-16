@@ -35,6 +35,7 @@ const KIND_INSET_SHADOW: u32 = 2u;
 const KIND_GLYPH: u32 = 4u;
 const KIND_BORDER: u32 = 5u;
 const KIND_GRADIENT_PIECE: u32 = 6u;
+const KIND_WAVY: u32 = 7u;
 
 struct Instance {
     @location(0) rect: vec4<f32>,   // the shape: x, y, w, h
@@ -489,6 +490,18 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     }
     if kind == KIND_BORDER {
         return styled_border(in, p);
+    }
+    if kind == KIND_WAVY {
+        // A wavy text decoration: a sine wave `params.y` thick swinging across `rect`.
+        let t = max(in.params.y, 1.0 / globals.scale);
+        let amp = max(in.rect.w - t, 0.0) * 0.5;
+        let k = 6.2831853 / max(4.0 * t, 4.0);
+        let x = p.x - in.rect.x;
+        let y = in.rect.y + in.rect.w * 0.5 + amp * sin(x * k);
+        let slope = amp * k * cos(x * k);
+        let d = abs(p.y - y) / sqrt(1.0 + slope * slope) - t * 0.5;
+        let inside = select(0.0, 1.0, x >= 0.0 && x <= in.rect.z);
+        return in.color0 * coverage(d) * inside;
     }
     if kind == KIND_GRADIENT_PIECE {
         // A border-image piece cut from a gradient: `p0` is the source part (absolute

@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
+use iron_ui::text_style::DecorationStyle;
 use iron_ui::{ClipShape, DrawCmd, Rect, Rgba};
 use wgpu::util::DeviceExt;
 
@@ -38,6 +39,7 @@ const KIND_IMAGE: f32 = 3.0;
 const KIND_GLYPH: f32 = 4.0;
 const KIND_BORDER: f32 = 5.0;
 const KIND_GRADIENT_PIECE: f32 = 6.0;
+const KIND_WAVY: f32 = 7.0;
 
 /// Where a frame is drawn.
 pub struct RenderTarget<'a> {
@@ -720,17 +722,52 @@ impl UiRenderer {
                     }
                 }
                 DrawCmd::Text(text) => {
-                    for (rect, color) in &text.decorations {
-                        instances.push(Instance {
-                            rect: rect4(*rect),
+                    for d in &text.decorations {
+                        let line = |rect: Rect| Instance {
+                            rect: rect4(rect),
                             radii: [0.0; 4],
                             radii_y: [0.0; 4],
                             p0: [0.0; 4],
                             p1: [0.0; 4],
-                            color0: linear_premultiplied(*color),
+                            color0: linear_premultiplied(d.color),
                             color1: [0.0; 4],
                             params: [KIND_QUAD, 0.0, -1.0, 0.0],
-                        });
+                        };
+                        let t = d.rect.height;
+                        match d.style {
+                            DecorationStyle::Solid => instances.push(line(d.rect)),
+                            DecorationStyle::Double => {
+                                instances.push(line(d.rect));
+                                instances.push(line(d.rect.offset(0.0, 2.0 * t)));
+                            }
+                            DecorationStyle::Dotted | DecorationStyle::Dashed => {
+                                // A one-sided styled border: dots and dashes fitted to the line.
+                                let style = if d.style == DecorationStyle::Dotted {
+                                    iron_ui::BorderStyle::Dotted
+                                } else {
+                                    iron_ui::BorderStyle::Dashed
+                                };
+                                let mut entry = GpuGradient {
+                                    info: [style.index() as f32, 0.0, 0.0, 0.0],
+                                    ..Default::default()
+                                };
+                                entry.colors[0] = linear_premultiplied(d.color);
+                                gradients.push(entry);
+                                instances.push(Instance {
+                                    p0: [t, 0.0, 0.0, 0.0],
+                                    params: [KIND_BORDER, 0.0, (gradients.len() - 1) as f32, 0.0],
+                                    ..line(d.rect)
+                                });
+                            }
+                            DecorationStyle::Wavy => {
+                                // A band around the line that the wave swings within.
+                                let band = Rect::new(d.rect.x, d.rect.y - t, d.rect.width, 3.0 * t);
+                                instances.push(Instance {
+                                    params: [KIND_WAVY, t, -1.0, 0.0],
+                                    ..line(band)
+                                });
+                            }
+                        }
                     }
                     // `background-clip: text`: glyphs take their colour from the gradient,
                     // laid out over the element's box (in p1); the text colour goes on top.

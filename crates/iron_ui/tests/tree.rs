@@ -629,7 +629,9 @@ fn text_blocks_draw_glyphs_decorations_and_shadows() {
         "glyphs advance left to right"
     );
     // The underline spans the run, just below the baseline, in the text colour.
-    let (line, color) = text.decorations[0];
+    let iron_ui::TextDecoration {
+        rect: line, color, ..
+    } = text.decorations[0];
     assert_eq!(color, Rgba::new(1.0, 0.0, 0.0, 1.0));
     assert!(
         line.y > run.glyphs[0].y && line.y < run.glyphs[0].y + 5.0,

@@ -8,6 +8,7 @@ use crate::paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode, BorderImage,
     BorderStyle,
 };
+use crate::text_style::DecorationStyle;
 
 /// An axis-aligned rectangle in logical pixels (window space).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -370,13 +371,22 @@ pub struct PositionedGlyph {
     pub advance: f32,
 }
 
+/// An underline, overline or line-through: `rect` is one line's area (a `double`
+/// line draws a second one below it, a `wavy` one waves around it).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextDecoration {
+    pub rect: Rect,
+    pub color: Rgba,
+    pub style: DecorationStyle,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextCmd {
     /// Area covered by the glyphs (approximate: line boxes).
     pub bounds: Rect,
     pub runs: Vec<GlyphRun>,
     /// Underlines and line-throughs as filled rectangles.
-    pub decorations: Vec<(Rect, Rgba)>,
+    pub decorations: Vec<TextDecoration>,
     /// `background-clip: text`: a gradient painted inside the glyphs, laid out over
     /// the element's box (the rect), under the text colour.
     pub fill: Option<(Arc<BackgroundImage>, Rect)>,
@@ -408,7 +418,11 @@ impl TextCmd {
             decorations: self
                 .decorations
                 .iter()
-                .map(|(r, _)| (r.offset(dx, dy), color))
+                .map(|d| TextDecoration {
+                    rect: d.rect.offset(dx, dy),
+                    color,
+                    style: d.style,
+                })
                 .collect(),
             fill: None,
         }
@@ -454,8 +468,8 @@ impl DrawCmd {
                 for run in &mut t.runs {
                     run.color = run.color.with_alpha_scaled(factor);
                 }
-                for (_, color) in &mut t.decorations {
-                    *color = color.with_alpha_scaled(factor);
+                for d in &mut t.decorations {
+                    d.color = d.color.with_alpha_scaled(factor);
                 }
             }
             DrawCmd::BackdropBlur { .. }

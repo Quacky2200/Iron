@@ -534,8 +534,11 @@ and `@font-face`.
    - [x] `font` shorthand; `font-size` keywords (`xx-small` ... `xxx-large`, `smaller`, `larger`);
      `font-weight` keywords (`thin` ... `black`, `bolder`/`lighter` from the parent);
      `font-variant-numeric` and `font-feature-settings` as Parley font features — `M3-TXT-12`
-   - [ ] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),
-     `-color`, `-thickness`, `text-underline-offset`, `text-decoration-skip-ink`
+   - [x] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),
+     `-color`, `-thickness`, `text-underline-offset`, and the full `text-decoration` shorthand.
+     Runs carry their decoration in Parley's brush; Iron draws the lines from font metrics (dots
+     and dashes through the styled-border shader, waves through their own kind) — `M3-TXT-13`.
+     `text-decoration-skip-ink` is parsed but underlines don't skip descenders yet
    - [ ] Outlined text: `-webkit-text-stroke` / `text-stroke` (`width color`)
    - [x] Gradient text: `background-clip: text` (M3d step 3b). s&box's gradient `color` isn't
      added: the standard form covers it

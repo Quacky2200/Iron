@@ -966,6 +966,49 @@ fn text_transform_and_ellipsis() {
     assert_golden("M3-TXT-10", 160, 60, &f.pixels, TOLERANCE);
 }
 
+// M3-TXT-13
+#[test]
+fn decoration_styles() {
+    let mut s = Scene::new();
+    let rows = [
+        "underline",
+        "underline double",
+        "underline dotted",
+        "underline dashed",
+        "underline wavy rgb(255, 80, 80)",
+        "overline line-through 3px",
+    ];
+    for (i, deco) in rows.iter().enumerate() {
+        s.label(
+            0,
+            "Decorated",
+            &at(
+                4.0,
+                4.0 + i as f64 * 30.0,
+                150.0,
+                28.0,
+                &[
+                    ("color", "white".into()),
+                    ("fontSize", 18.0.into()),
+                    ("textDecoration", (*deco).into()),
+                    ("textUnderlineOffset", 4.0.into()),
+                ],
+            ),
+        );
+    }
+    let f = render(s, (120, 184), 1.0, BLACK);
+    // The wavy line is red-ish below its text.
+    let wavy_row: Vec<_> = (4..100)
+        .flat_map(|x| (134..150).map(move |y| (x, y)))
+        .map(|(x, y)| f.px(x, y))
+        .collect();
+    assert!(
+        wavy_row.iter().any(|p| p[0] > 200 && p[1] < 120),
+        "a red wave"
+    );
+    assert_golden("M3-TXT-13", 120, 184, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

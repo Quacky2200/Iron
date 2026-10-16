@@ -248,7 +248,16 @@ export interface IronStyle {
   wordSpacing?: number | string;
   textAlign?: "start" | "end" | "left" | "right" | "center" | "justify";
   direction?: "ltr" | "rtl";
+  /** Lines, style, colour and thickness, e.g. `"underline wavy red 2px"`. */
   textDecoration?: string;
+  textDecorationLine?: string;
+  textDecorationStyle?: "solid" | "double" | "dotted" | "dashed" | "wavy";
+  textDecorationColor?: string;
+  textDecorationThickness?: Length | "auto" | "from-font";
+  /** Distance of the underline below the baseline. */
+  textUnderlineOffset?: Length | "auto";
+  /** Parsed; underlines don't skip descenders yet. */
+  textDecorationSkipInk?: "auto" | "none" | "all";
   whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line" | "break-spaces";
   wordBreak?: "normal" | "break-all" | "keep-all" | "break-word";
   /** `anywhere` / `break-word` break long words that don't fit. `wordWrap` is an alias. */
