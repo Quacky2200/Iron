@@ -144,11 +144,14 @@ Iron/
 - [x] Draw list: one `Quad` per visible box (absolute rect, colours with inherited opacity, resolved border widths, radius) in paint order — `M2-UI-04`
 
 ### 3. `@iron/react` package (`js/react`)
-- [ ] Host config for react-reconciler 0.34 (mutation mode). React 19 has many required host functions (update priority, suspend-commit hooks, etc.); stub them with sensible defaults and keep the list in one file
-- [ ] Node IDs: numbers from a counter, never reused in a session — `M2-REC-05`
-- [ ] `commitUpdate` diffs `style` and emits only changed properties — `M2-REC-02`
-- [ ] `createRoot().render(<App/>)` API; JSX typing for `<box>` (`JSX.IntrinsicElements`) with a typed `style` prop
-- [ ] `bun test` suite with a fake `__iron_commit` that records ops — `M2-REC-01`..`M2-REC-05`
+- [x] Host config for react-reconciler 0.34 (mutation mode) in `js/react/src/host.ts`; React 19's required host functions (priorities, transitions, suspend-commit hooks, `bindToConsole`) stubbed in one place. Ops flushed with one `__iron_commit` in `resetAfterCommit`
+- [x] Node IDs: numbers from a counter, never reused in a session — `M2-REC-05`
+- [x] `commitUpdate` diffs `style` and emits only changed properties (`null` for removed ones); unchanged styles emit nothing — `M2-REC-02`
+- [x] Suspense support via `hideInstance`/`unhideInstance` (toggles `display`)
+- [x] `createRoot().render(<App/>)` (one root per game, sync commits via `updateContainerSync` + `flushSyncWork`); `<box>` typed through `JSX.IntrinsicElements` with a typed `IronStyle`
+- [x] Clear errors for text children (until M3) and unknown elements, reported through React's error callbacks
+- [x] `bun test` suite (9 tests) with a fake `__iron_commit` feeding a model of the Rust tree, so tests check the resulting tree rather than React's ID order — `M2-REC-01`..`M2-REC-05`
+- [ ] Note: renders abandoned by concurrent React could leave created-but-never-attached nodes in the Rust tree. Not an issue with sync rendering; revisit if we enable transitions
 
 ### 4. Integration in QuickJS
 - [ ] React fixture (`tests/fixtures/src/boxes.tsx` → `boxes.js`) runs in `QuickJsRuntime`; its commits applied to `UiTree` give the expected tree and layout — `M2-INT-01`
