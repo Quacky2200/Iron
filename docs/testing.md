@@ -1,0 +1,118 @@
+# Testing
+
+The plan (kinds, IDs, per-milestone checks) is [TESTS.md](../TESTS.md); the commands are in
+[CLAUDE.md](../CLAUDE.md). This page explains how the tests are physically organised so you can find
+or add one. Every test that implements a plan item carries its ID in a comment (for example
+`// M3-EVT-05`) and tests are named after the behaviour they check.
+
+## Running
+
+```bash
+cargo test --workspace          # Rust unit + integration + headless render + golden
+bun test                        # js/engine and js/react
+bun run build:fixtures          # rebuild tests/fixtures/*.js after changing js/
+cargo bench -p iron_ui --bench restyle
+```
+
+CI ([ci.yml](../.github/workflows/ci.yml)) runs fmt, clippy `-D warnings`, build and test on Windows
+and Ubuntu (software Vulkan via Mesa, WARP on Windows), and a JS job that builds examples,
+typechecks, runs `bun test` and checks that **committed fixtures match their TypeScript sources**
+(`build:fixtures` then `git diff --exit-code tests/fixtures`). Forgetting `build:fixtures` fails CI.
+
+## Where tests live
+
+| Kind | Location | Examples |
+|---|---|---|
+| Rust unit | `#[cfg(test)]` inside the source file | [css.rs](../crates/iron_ui/src/css.rs) (parser, `rebase_urls`, `var()`), [input.rs](../crates/iron_platform/src/input.rs), [assets.rs](../crates/iron_core/src/assets.rs), [attrs.rs](../crates/iron_ui/src/attrs.rs), [paint.rs](../crates/iron_ui/src/paint.rs) |
+| Rust integration | `crates/*/tests/*.rs` | see below |
+| JS unit | `js/*/test/*.test.ts(x)` (`bun:test`) | [reconciler.test.tsx](../js/react/test/reconciler.test.tsx), [events.test.tsx](../js/react/test/events.test.tsx), [engine.test.ts](../js/engine/test/engine.test.ts) |
+| Render (headless) | [iron_render/tests](../crates/iron_render/tests) | `headless.rs`, `ui.rs` |
+| Golden images | `tests/golden/<id>.png` | compared inside `ui.rs` |
+| Layout fixtures | `tests/layout/*.json` | run by `layout_fixtures.rs` |
+| JS bundles for Rust | `tests/fixtures/*.js` (built from `tests/fixtures/src`) | `boxes.js`, `events.js`, `hello.js`, `throws.js` |
+| Benchmarks | `crates/*/benches` (Criterion) | `restyle.rs`, `layout.rs`, `commits.rs` |
+
+### `iron_ui` integration tests ([crates/iron_ui/tests](../crates/iron_ui/tests))
+
+| File | Covers |
+|---|---|
+| `tree.rs` | Commit semantics: ops, moves, removal, errors, text nodes |
+| `layout_fixtures.rs` | JSON layout cases through the full commit pipeline, generic over `LayoutEngine` |
+| `text.rs` | Fonts, wrapping, inheritance, shaping counts |
+| `css.rs` | Selectors, cascade, variables, `::before/::after`, invalidation |
+| `hit.rs` | Hit testing rules |
+| `pointer.rs` | `Pointer`: hover/active/click/dblclick/wheel |
+| `focus.rs` | Tab order, focus events, `:focus-visible` |
+| `clip.rs` | `overflow` and `clip-path` in draw list and hit testing |
+| `scroll.rs` | Scrolling (M3c step 4b): offsets and hit testing, which axes scroll, wheel chaining, Shift+wheel, key scrolling, Tab into view, script `scrollTo/By/IntoView`, scrollbar geometry, thumb drag and track paging, inherited `scrollbarColor` |
+| `react_quickjs.rs`, `events_quickjs.rs` | Real React in QuickJS driving a real `UiTree` |
+| `common/mod.rs` | `Dom` builder helper: builds ops with a CSS string and lays out a 400x400 tree |
+
+Most tests build a tree by emitting ops directly (helpers such as `Dom` or the `Scene` struct in
+`iron_render/tests/ui.rs`), which keeps them independent of React. Tests that need the real
+reconciler use a fixture bundle instead.
+
+## Fixture bundles
+
+`tests/fixtures/src/*.ts(x)` are tiny games bundled by Bun into IIFEs (`bun build ... --format iife
+--define process.env.NODE_ENV='"production"'`; `boxes` and `events` are minified), checked into git,
+and embedded with `include_str!("../../../tests/fixtures/events.js")`. Typical test shape:
+
+1. `QuickJsRuntime::new()`, `capture_logs`, `load_bundle("events.js", EVENTS)`.
+2. `rt.drain_commits()` and `UiTree::apply_commit` for each (assert no `UiError`s).
+3. Drive input through `Interaction::handle` with a dispatch closure that calls `__iron_ui_event`.
+4. Run `rt.tick(..)` so React's scheduled work runs, drain commits again, assert on the tree.
+
+`ref.focus()`/`blur()` round-trip as ops: assert on `rt.drain_ops()`.
+
+The JS reconciler test file contains a tiny model of the Rust `UiTree` (it replays ops) to check
+that React's mutations are valid sequences without needing Rust.
+
+## Script runtime conformance
+
+[conformance.rs](../crates/iron_script/src/conformance.rs) is a public module of reusable checks and
+the `runtime_conformance_tests!` macro, which generates one `#[test]` per check for a backend
+constructor ([tests/quickjs.rs](../crates/iron_script/tests/quickjs.rs) is two lines). A future
+`deno_core` backend only needs the same two lines. `capture_logs(rt)` installs a log sink and
+returns the captured messages.
+
+## Golden images
+
+[testing.rs](../crates/iron_render/src/testing.rs):
+
+- `assert_golden(id, w, h, &pixels, tolerance)` compares RGBA8 pixels with `tests/golden/<id>.png`,
+  each channel within `tolerance` (render tests use 3, to allow driver differences). It panics with
+  the count of differing pixels and the first mismatch.
+- `IRON_UPDATE_GOLDEN=1 cargo test -p iron_render` rewrites references instead of comparing.
+  Updating goldens is always explicit; review the PNG by eye before committing.
+- `shared_gpu()` is **required** in GPU tests: one device per test binary behind a mutex
+  (creating devices from parallel threads can deadlock some Vulkan layers).
+- Render tests mostly assert pixels analytically ("this pixel is the border colour") and use a
+  golden only as a regression net. They render a scene built through the real `UiTree`, so draw-list
+  and renderer bugs both show up. `RenderStats` is asserted for batching and layer counts.
+
+## Benchmarks
+
+Criterion benches track, not gate: [restyle.rs](../crates/iron_ui/benches/restyle.rs) (incremental
+restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches/layout.rs) (M2-BEN-*),
+[commits.rs](../crates/iron_script/benches/commits.rs) (commit crossing cost).
+
+## Mapping to TESTS.md
+
+| ID prefix | Area | Main files |
+|---|---|---|
+| `M1-PLT` | Platform input conversion | `iron_platform/src/{input,platform}.rs` |
+| `M1-RND` | Headless GPU, clear, 0x0 resize | `iron_render/tests/headless.rs`, `tests/golden/M1-RND-02.png` |
+| `M1-SCR`, `M1-CMP` | Script runtime, components | `iron_script/src/conformance.rs`, `iron_script/tests`, `js/engine/test` |
+| `M2-REC` | React reconciler ops | `js/react/test/reconciler.test.tsx` |
+| `M2-UI`, `M2-STY`, `M2-VIS`, `M2-LAY` | Tree, styles, visuals, layout | `iron_ui/tests/{tree,layout_fixtures}.rs`, unit tests in `style.rs`/`paint.rs` |
+| `M2-DRW` | Renderer | `iron_render/tests/ui.rs` + `tests/golden/M2-DRW-*` |
+| `M2-INT`, `M2-SCR` | React in QuickJS driving the tree | `iron_ui/tests/react_quickjs.rs` |
+| `M3-TXT`, `M3-FNT` | Text and fonts | `iron_ui/tests/text.rs`, `ui.rs` goldens `M3-TXT-*` |
+| `M3-CSS` | Stylesheets and cascade | `iron_ui/src/css.rs` tests, `iron_ui/tests/css.rs` |
+| `M3-EVT` | Hit testing, events, focus, clipping, scrolling | `iron_ui/tests/{hit,pointer,focus,clip,scroll,events_quickjs}.rs`, `js/react/test/events.test.tsx`, goldens `M3-EVT-05-clip` and `M3-EVT-05-scroll` (scrolled content clipped to a rounded scroller with overlay scrollbars) |
+| `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
+| `*-MAN` | Manual checks (resize, IME) | no automated test; listed in TODO.md |
+
+When you add a test for a plan item, put the ID in a comment, tick the checkbox in TODO.md and add
+the ID to TESTS.md if it is new (working agreement in CLAUDE.md).

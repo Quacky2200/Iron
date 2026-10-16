@@ -30,6 +30,6 @@ pub const CREATE_TEXT: u32 = 5;
 pub const SET_TEXT: u32 = 6;
 
 /// `[SET_ATTRS, id, name, value, name, value, ...]`: element attributes used by
-/// CSS selectors: `className`, `id`, `disabled`, `checked` and `data-*`.
+/// CSS selectors: `className`, `id`, `disabled`, `checked`, `tabIndex` and `data-*`.
 /// A `null` value removes the attribute.
 pub const SET_ATTRS: u32 = 7;

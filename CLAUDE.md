@@ -22,6 +22,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet` |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
 | `examples/*` | `hello`, `boxes`, `text`, `css` games (each has `bun run build`) |
+| `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
 ### UI model
@@ -68,6 +69,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - Run every check above before each commit.
   - End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
   - Update `TODO.md` checkboxes, and `TESTS.md` when adding test IDs.
+  - After each finished step, update `docs/` to match the code. Delegate this to a subagent on the
+    Sonnet model, and commit the docs with the step or right after it.
 - **Charm font:** never commit it. It lives in `/Charm/` with local copies under `examples/*/assets/fonts/`. It's excluded via `.git/info/exclude` and `dist/` is ignored. Check `git status` before committing.
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
 - **CSS:** prefer standard CSS over s&box's custom extensions. The CSS parity backlog is TODO.md "M3d".
@@ -96,8 +99,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3c step 3: keyboard and focus. `iron_ui::Interaction` wraps `Pointer`, owns focus and runs
     default actions (Tab, focus on press) using the "prevented" flag `dispatch` returns;
     `ref.focus()`/`blur()` arrive as `focus`/`blur` ops
+  - M3c step 4: `overflow`/`clipPath` clipping (clip table in the renderer) and scrolling
+    (offsets, wheel/keys/scroll-into-view, draggable overlay scrollbars, `onScroll`)
 - **Next:** the rest of M3c. See TODO.md "M3c" for the steps:
-  3. `overflow` clipping and scrolling
   4. `<input>`/`<textarea>` on Parley `PlainEditor` with IME and clipboard (arboard)
   5. gilrs gamepads to scripts
   6. `examples/form`

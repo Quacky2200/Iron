@@ -1,0 +1,169 @@
+# Input and events
+
+Crates: [iron_platform](../crates/iron_platform/src) (OS input),
+[iron_ui](../crates/iron_ui/src) (`events.rs`, `interaction.rs`, hit testing in `tree.rs`), glue in
+[iron_app/main.rs](../crates/iron_app/src/main.rs), JS side in [react.md](react.md). Test plan:
+M3-EVT-* in [TESTS.md](../TESTS.md).
+
+## End to end
+
+```mermaid
+flowchart LR
+  W[winit WindowEvent] -->|convert_window_event| IE[InputEvent]
+  IE -->|App::input: scale to logical px| IN[iron_ui::Input]
+  IN --> H[Interaction::handle]
+  H --> P[Pointer: hover/active/click]
+  H --> F[focus, Tab, keys, scroll]
+  P & F -->|UiEvent| D[dispatch callback]
+  D -->|call_global __iron_ui_event| JS[dispatchUiEvent: capture then bubble]
+  JS -->|defaultPrevented| D
+  D -->|prevented?| H
+  H -->|default actions| T[UiTree state / focus / scroll]
+```
+
+## Platform layer
+
+[input.rs](../crates/iron_platform/src/input.rs) converts winit's `WindowEvent` to Iron's own
+`InputEvent` so nothing above this crate depends on winit:
+
+- Keys use DOM naming: `code` is the physical key (`"KeyW"`, from winit's `KeyCode` debug name),
+  `key` is the layout meaning (`dom_key`: characters as typed, `Space` -> `" "`, `Super` -> `"Meta"`,
+  other named keys by their name), `text` is the typed text without control characters, plus `repeat`.
+  `convert_key` is split out because winit's `KeyEvent` cannot be built in tests.
+- Mouse: `MouseMove{x,y}` in **physical** pixels, `MouseDown/Up{button}`, `MouseLeave`, and
+  `MouseWheel(WheelDelta)`. winit's wheel deltas are positive when scrolling up; the code negates
+  them to the DOM convention (positive y = scroll down). `Lines` (notched wheels) and `Pixels`
+  (touchpads) stay distinct.
+- `Modifiers`, `Resized`, `Focused`, `CloseRequested`.
+
+[platform.rs](../crates/iron_platform/src/platform.rs): `Platform::run` owns the winit event loop.
+`Runner` implements `ApplicationHandler`: creates the window in `resumed` (then
+`PlatformApp::window_ready`), calls `PlatformApp::frame` on `RedrawRequested`, forwards converted
+events to `PlatformApp::input`, and in `about_to_wait` checks `should_exit`, polls gamepads and
+requests the next redraw (continuous rendering). Gamepads (`gilrs`) are polled and only logged;
+turning them into events is TODO.md M3c step 5. `text` on `KeyDown` is not consumed yet (waiting
+for `<input>`/IME, M3c step 4).
+
+## App glue ([main.rs](../crates/iron_app/src/main.rs))
+
+`App::input` maps `InputEvent` to `iron_ui::Input` and calls `handle_ui`:
+
+- Positions are divided by the window scale factor (logical pixels). `Lines` wheel deltas are
+  multiplied by `WHEEL_LINE` (40 px), touchpad pixels are divided by scale.
+- Buttons become DOM numbers via `dom_button` (0 left, 1 middle, 2 right, 3/4 back/forward).
+  `PointerDown` carries `time_ms` (engine clock) for double-click detection.
+- `Focused(false)` becomes `Input::WindowBlur`, so buttons held while the window was unfocused
+  are forgotten (their release may never arrive).
+- `handle_ui` calls `Interaction::handle(tree, input, &mut |event| dispatch(...))`, then reads
+  `Interaction::cursor` and updates the OS cursor only when the CSS keyword changed
+  (`set_cursor_visible(false)` for `none`; otherwise it parses the keyword into winit's
+  `CursorIcon`).
+- `dispatch(scripts, enabled, event)` calls `__iron_ui_event(...)` with `UiEvent::script_args()` via
+  `call_global`; it returns `true` only if the JS result is `Bool(true)`, i.e. a handler called
+  `preventDefault()`. JS errors are logged and treated as "not prevented". If the game has no
+  `__iron_ui_event`, nothing is dispatched but built-in behaviour (hover, focus, Tab) still works.
+- Script ops `focus`, `blur` (and `scrollTo`, `scrollBy`, `scrollIntoView`, which map to `Input::ScrollTo/ScrollBy/ScrollIntoView`) are
+  turned into `Input` values in `App::tick`. At the end of each tick the app sends `Input::Refresh`.
+
+## Hit testing ([tree.rs](../crates/iron_ui/src/tree.rs) `hit_test`)
+
+`UiTree::hit_test(x, y)` first calls `layout_if_needed`, then `hit(ROOT, ...)` recursively:
+
+- Children are tested before their parent, **later siblings before earlier ones** (reverse paint
+  order). Children outside their parent's box can still hit (no automatic clipping unless the
+  parent clips).
+- `display: none` returns nothing. The element's own `clip-path`/`clip` and, for children, its
+  `overflow` clip must contain the point: **what is clipped away cannot be hit**, using the same
+  `self_clips`/`overflow_clip` functions as drawing, so hit testing and painting stay in sync.
+- `pointerEvents: none` is inherited and children can opt back in with `auto`.
+- The element's own rounded rectangle is respected (`Rect::contains_rounded`).
+- `text`/`span` children are not searched (`is_inline_container`): text hits the text element.
+  Generated `::before`/`::after` nodes resolve to their originating element.
+- `ROOT` never hits; the result `None` means "empty space".
+
+`event_path(target)` returns the target first, then each ancestor, excluding the root: the exact
+array sent to scripts.
+
+## `Pointer` ([events.rs](../crates/iron_ui/src/events.rs))
+
+Holds the position (`None` when outside the window), the hovered `path`, held button bitmask,
+per-button press targets, the `:active` path, the last press (for click counting) and modifiers.
+Each method updates `:hover`/`:active` on the tree (via `update_state` -> `UiTree::set_state`, which
+queues restyle keys, see [css.md](css.md)) and **returns the events to dispatch, in order**.
+
+- `rehover` hit-tests and diffs paths: `pointerleave` for elements left (innermost first), then
+  `pointerenter` for elements entered (outermost first), each with a one-element path since
+  they do not bubble. Every ancestor on the path gets `:hover`, like CSS.
+- `move_to` -> rehover + `pointermove`. `leave` clears the position.
+- `down`: updates the buttons, records the press target, computes the click count (same target and
+  button, within `DOUBLE_CLICK_MS` = 500 ms and `DOUBLE_CLICK_DISTANCE` = 4 px), sets `:active` on
+  the whole path for the primary button, emits `pointerdown`.
+- `up`: clears `:active`, emits `pointerup`, then `click` (primary), `dblclick` when the count is 2,
+  or `contextmenu` (secondary). The click target is the **nearest element containing both the press
+  and the release** (DOM semantics), so dragging off and back still clicks the common ancestor.
+- `wheel(dx, dy)` -> rehover + `wheel` at the hovered path.
+- `refresh` re-hit-tests without movement (the layout changed under a still cursor).
+- `cancel` forgets held buttons.
+
+`UiEvent` carries the DOM-like fields (position, `button`, `buttons` bitmask 1/2/4/8/16, `detail`
+click count, wheel deltas, modifiers, key/code/repeat, focus `related`, optional `ScrollInfo`).
+`script_args()` builds `[type, path, data, keys?]` where `data` is a fixed-order number array:
+`[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
+scrollWidth, scrollHeight, clientWidth, clientHeight]`, with `keys = [key, code]` for keyboard
+events only. [events.ts](../js/react/src/events.ts) decodes by index, so both must change together.
+
+## `Interaction` ([interaction.rs](../crates/iron_ui/src/interaction.rs))
+
+`Interaction::handle(tree, input, dispatch)` is the single entry point (also used by tests, which
+pass a closure that records events). It owns a `Pointer`, the focused node, modifiers, a
+`keyboard` flag and scrollbar drag state. `dispatch` returns whether the script prevented the
+default; **default actions run after the script sees the event**, like a browser.
+
+| Input | Events sent | Default action (unless prevented) |
+|---|---|---|
+| `PointerDown` primary | `pointerdown` | Focus the nearest focusable ancestor on the path, else blur (a press on empty space blurs). `:focus-visible` is not set for pointer focus |
+| `PointerUp` | `pointerup`, `click`, ... | none |
+| `Wheel` | `wheel` | Scroll the nearest scrolling ancestor (Shift turns vertical into horizontal) |
+| `KeyDown` | `keydown` to the focused element only | `Tab`/`Shift+Tab`: move focus (sets `:focus-visible`); other keys scroll (arrows, Page, Space, Home/End) |
+| `KeyUp` | `keyup` to the focused element | none |
+| `Focus(id)` / `Blur(id)` (from `ref.focus()`) | `focusout` then `focusin` | `Focus` ignored if not focusable; `:focus-visible` only if the last focus move was by keyboard (browser heuristic) |
+| `Refresh` | hover events | drops focus from removed, hidden or disabled elements |
+
+Focus details:
+
+- `focusable(tree, id)`: has a `tabIndex`, not `disabled`, and `is_displayed` (no `display: none`
+  ancestor). Plain `<box>`es without `tabIndex` are never focusable.
+- `tab_order(tree)`: depth-first in tree order skipping generated nodes and `display: none`
+  subtrees; positive `tabIndex` first (ascending, stable), then `tabIndex = 0` in tree order;
+  negative values are skipped (focusable by click or `ref.focus()` only). `tab_target` wraps around.
+- `set_focus` updates `ElementState.focus/focus_visible` and sends `focusout` (with `related` = the
+  new target) to the old element, then `focusin` (with `related` = the old one). Both bubble, so
+  `onFocus`/`onBlur` on a parent see descendants gaining/losing focus; `:focus-within` is handled
+  by the cascade scanning descendants (`Deps.focus_within`).
+- Key events with no focused element are not dispatched to scripts (there is no global key hook yet).
+
+## Cursor
+
+`CURSORS` in [style.rs](../crates/iron_ui/src/style.rs) lists accepted keywords. `cursor` is
+inherited by walking up from the hovered element (`UiTree::cursor`); `auto` means `text` over
+`text`/`span` and `default` elsewhere. `Pointer::cursor` -> `Interaction::cursor` -> the app (above).
+
+## Scrolling (M3c step 4b)
+
+State and geometry live in `UiTree` ([ui-tree.md](ui-tree.md#scrolling)); `Interaction` supplies the
+defaults. All scrolling goes through `Interaction::scroll(tree, id, x, y, by_user, dispatch)`: it
+calls `UiTree::scroll_to`, and if the offset changed, lays out, dispatches a `scroll` event and
+refreshes hover (content moved under the pointer).
+
+| Trigger | Behaviour |
+|---|---|
+| `wheel` not prevented | `scroll_chain`: the first element on the path (innermost first) that can still move by the delta scrolls; otherwise the next ancestor takes over. With Shift held and no `dx`, a vertical wheel scrolls horizontally |
+| Keys (`key_scroll`, after `keydown` is not prevented) | Arrows scroll `SCROLL_LINE` (40 px), Page Up/Down and Space (Shift+Space up) scroll `SCROLL_PAGE` (0.875) of the visible height, Home/End jump. Origin is the focused element, else the hovered one; the first container on its path that moves wins |
+| Tab / `ref.focus()` | `scroll_into_view`: each scrolling ancestor scrolls just enough to show the element, keeping its start edge visible if it is larger than the viewport |
+| Scrollbar press (primary button, checked **before** the page sees `pointerdown`) | `press_scrollbar` via `UiTree::scrollbar_at`: on the thumb it starts a drag (remembering the grab offset), on the track it pages toward the press |
+| Pointer move while dragging | `drag_scrollbar` maps the thumb position back to an offset; `PointerUp` ends the drag |
+| Scripts | `ScrollTo`, `ScrollBy`, `ScrollIntoView` inputs (`by_user = false`, so they also scroll `overflow: hidden`) |
+
+User scrolling needs `overflow: scroll` or `auto` on that axis; `hidden` scrolls only from scripts;
+`clip` and `visible` never scroll. The `scroll` event does not bubble and carries `ScrollInfo`
+(`data[10..16]` = scrollLeft, scrollTop, scrollWidth, scrollHeight, clientWidth, clientHeight).
