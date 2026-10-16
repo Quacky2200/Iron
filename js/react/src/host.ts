@@ -16,9 +16,11 @@ import {
   type Op,
   REMOVE_CHILD,
   ROOT_ID,
+  SET_ATTRS,
   SET_STYLE,
   SET_TEXT,
 } from "./opcodes.ts";
+import { attrDiff, attrEntries } from "./attrs.ts";
 import { type IronStyle, styleDiff, styleEntries } from "./style.ts";
 
 /** Host element types; `text` and `span` are rendered by the `Text` and `Span` components. */
@@ -96,6 +98,8 @@ export const reconciler = createReconciler({
     pending.push([CREATE, id, type]);
     const entries = styleEntries(props.style);
     if (entries.length > 0) pending.push([SET_STYLE, id, ...entries]);
+    const attrs = attrEntries(props as Record<string, unknown>);
+    if (attrs.length > 0) pending.push([SET_ATTRS, id, ...attrs]);
     return { id, type: type as ElementType, props };
   },
 
@@ -141,6 +145,8 @@ export const reconciler = createReconciler({
   commitUpdate(instance: Instance, _type: string, prevProps: Props, nextProps: Props) {
     const changes = styleDiff(prevProps.style, nextProps.style);
     if (changes.length > 0) pending.push([SET_STYLE, instance.id, ...changes]);
+    const attrs = attrDiff(prevProps as Record<string, unknown>, nextProps as Record<string, unknown>);
+    if (attrs.length > 0) pending.push([SET_ATTRS, instance.id, ...attrs]);
     instance.props = nextProps;
   },
 

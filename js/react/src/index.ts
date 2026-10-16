@@ -17,7 +17,16 @@ import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
 
-export interface BoxProps {
+/** Attributes that CSS selectors can match. */
+export interface ElementAttrs {
+  className?: string;
+  id?: string;
+  disabled?: boolean;
+  checked?: boolean;
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface BoxProps extends ElementAttrs {
   style?: IronStyle;
   children?: ReactNode;
   key?: string | number | null;
@@ -31,7 +40,7 @@ declare module "react" {
   }
 }
 
-export interface TextProps {
+export interface TextProps extends ElementAttrs {
   style?: IronStyle;
   children?: ReactNode;
 }
@@ -41,13 +50,13 @@ export interface TextProps {
 // and `span`.
 
 /** A block of text. Strings and `Span`s inside it flow and wrap together. */
-export function Text({ style, children }: TextProps): ReactElement {
-  return createElement("text" as never, { style }, children);
+export function Text({ children, ...props }: TextProps): ReactElement {
+  return createElement("text" as never, props, children);
 }
 
 /** An inline run inside `Text` with its own style (colour, weight, ...). */
-export function Span({ style, children }: TextProps): ReactElement {
-  return createElement("span" as never, { style }, children);
+export function Span({ children, ...props }: TextProps): ReactElement {
+  return createElement("span" as never, props, children);
 }
 
 export interface Root {

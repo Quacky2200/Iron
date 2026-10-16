@@ -3,6 +3,7 @@
 //!
 //! Pipeline (DESIGN.md §5.1): `Commit` ops → [`UiTree`] → layout → [`DrawCmd`]s → renderer.
 
+mod attrs;
 mod color;
 mod draw;
 mod layout;
@@ -13,6 +14,7 @@ pub mod text;
 pub mod text_style;
 mod tree;
 
+pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
 pub use draw::{DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};

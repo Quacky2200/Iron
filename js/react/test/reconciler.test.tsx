@@ -11,6 +11,7 @@ import {
   type Op,
   REMOVE_CHILD,
   ROOT_ID,
+  SET_ATTRS,
   SET_STYLE,
   SET_TEXT,
 } from "../src/opcodes.ts";
@@ -41,6 +42,8 @@ class ModelTree {
           this.children.set(a!, []);
           this.kinds.set(a!, "#text");
           this.texts.set(a!, args[1] as string);
+          break;
+        case SET_ATTRS:
           break;
         case SET_TEXT:
           expect(this.kinds.get(a!)).toBe("#text");
@@ -296,6 +299,22 @@ describe("@iron/react reconciler", () => {
     createRoot().render(<box>loose text</box>);
     expect(tree.markup()).toBe('box("loose text")');
     expect(commits[0]!.some((op) => op[0] === CREATE_TEXT)).toBe(true);
+  });
+
+  // M3-CSS-08 (attributes for selectors)
+  test("className, id, data-* and state props are sent as attributes and diffed", () => {
+    const root = createRoot();
+    root.render(<box className="card big" id="main" data-kind="enemy" disabled style={{ width: 1 }} />);
+    expect(commits[0]).toContainEqual([SET_ATTRS, 1, "className", "card big", "id", "main", "data-kind", "enemy", "disabled", true]);
+
+    root.render(<box className="card" id="main" checked style={{ width: 1 }} />);
+    expect(commits[1]).toEqual([[SET_ATTRS, 1, "className", "card", "checked", true, "data-kind", null, "disabled", null]]);
+
+    // Text components forward attributes too.
+    _resetRootForTests();
+    commits = [];
+    createRoot().render(<Text className="title">Hi</Text>);
+    expect(commits[0]!.some((op) => op[0] === SET_ATTRS && op.includes("title"))).toBe(true);
   });
 
   test("unknown elements are reported with a clear message", () => {

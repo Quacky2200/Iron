@@ -14,8 +14,10 @@ export const REMOVE_CHILD = 4;
 
 export const ROOT_ID = 0;
 
-export type Op = (string | number | null)[];
+export type Op = (string | number | boolean | null)[];
 /** `[CREATE_TEXT, id, text]` */
 export const CREATE_TEXT = 5;
 /** `[SET_TEXT, id, text]` */
 export const SET_TEXT = 6;
+/** `[SET_ATTRS, id, name, value, ...]`; `null` removes. */
+export const SET_ATTRS = 7;

@@ -5,6 +5,7 @@ use iron_core::{Commit, NodeId, Value};
 use taffy::{Dimension, Display, Size, Style};
 
 use crate::Rgba;
+use crate::attrs::{Attrs, ElementState};
 use crate::draw::{DrawCmd, ImageFill, Quad, Rect, ShadowShape};
 use crate::layout::{LayoutEngine, TaffyLayout};
 use crate::opcodes;
@@ -36,6 +37,8 @@ struct Node {
     visual: Visual,
     /// The characters of a `#text` node.
     text: Option<String>,
+    attrs: Attrs,
+    state: ElementState,
 }
 
 /// Element type of text nodes created with `CREATE_TEXT`.
@@ -62,6 +65,8 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Text blocks whose content or structure changed since they were last laid out.
     dirty_text: HashSet<NodeId>,
+    /// Nodes whose attributes or interaction state changed (restyled with stylesheets).
+    attrs_changed: HashSet<NodeId>,
     text: TextEngine,
     /// Parley layouts of text blocks, rebuilt when a block is dirty.
     text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
@@ -97,6 +102,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 style,
                 visual: Visual::default(),
                 text: None,
+                attrs: Attrs::default(),
+                state: ElementState::default(),
             }),
         );
         Self {
@@ -106,6 +113,7 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             dirty_text: HashSet::default(),
+            attrs_changed: HashSet::default(),
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
             text_builds: 0,
@@ -165,6 +173,27 @@ impl<L: LayoutEngine> UiTree<L> {
             .fold(ComputedText::default(), |inherited, props| {
                 inherited.child(props)
             })
+    }
+
+    /// The node's attributes (`className`, `id`, `data-*`, ...).
+    pub fn attrs(&self, id: NodeId) -> Option<&Attrs> {
+        self.nodes.get(&id).map(|n| &n.attrs)
+    }
+
+    /// The node's interaction state (`:hover`, `:active`, `:focus`).
+    pub fn state(&self, id: NodeId) -> ElementState {
+        self.nodes.get(&id).map(|n| n.state).unwrap_or_default()
+    }
+
+    /// Sets interaction state (driven by input handling; tests set it directly).
+    pub fn set_state(&mut self, id: NodeId, state: ElementState) {
+        if let Some(node) = self.nodes.get_mut(&id)
+            && node.state != state
+        {
+            node.state = state;
+            self.attrs_changed.insert(id);
+            self.needs_layout = true;
+        }
     }
 
     /// The characters of a `#text` node.
@@ -406,6 +435,8 @@ impl<L: LayoutEngine> UiTree<L> {
                         style,
                         visual: Visual::default(),
                         text: None,
+                        attrs: Attrs::default(),
+                        state: ElementState::default(),
                     }),
                 );
             }
@@ -428,8 +459,32 @@ impl<L: LayoutEngine> UiTree<L> {
                         style,
                         visual: Visual::default(),
                         text: Some(text.to_owned()),
+                        attrs: Attrs::default(),
+                        state: ElementState::default(),
                     }),
                 );
+            }
+            opcodes::SET_ATTRS => {
+                let id = id(1)?;
+                let node = self.node_mut(id)?;
+                let pairs = &args[2..];
+                if pairs.len() % 2 != 0 {
+                    return Err(UiError(format!("SET_ATTRS needs name/value pairs: {op:?}")));
+                }
+                let mut problems = Vec::new();
+                for pair in pairs.chunks(2) {
+                    let Some(name) = pair[0].as_str() else {
+                        problems.push(format!("attribute name must be a string: {:?}", pair[0]));
+                        continue;
+                    };
+                    if let Err(e) = node.attrs.set(name, &pair[1]) {
+                        problems.push(e);
+                    }
+                }
+                self.attrs_changed.insert(id);
+                if !problems.is_empty() {
+                    return Err(UiError(format!("node {id}: {}", problems.join("; "))));
+                }
             }
             opcodes::SET_TEXT => {
                 let id = id(1)?;
