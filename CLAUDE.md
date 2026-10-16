@@ -83,6 +83,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/iron_app.exe`.
   Run `cargo build -p iron_app` before any manual check in the window. A running window locks the
   exe, so close it before rebuilding.
+- **Graphics backend:** Vulkan by default on Windows; `WGPU_BACKEND=dx12` switches.
+  `IRON_FRAME_LATENCY` (1 to 3) sets the queued frames. The default is 1, or 2 on DX12, where 1 made
+  resizing jitter.
 - **GPU tests:** use `iron_render::testing::shared_gpu()`. Creating devices in parallel deadlocks.
 - **Bun CSS:** importing CSS needs `--outdir dist --entry-naming "game.[ext]"`.
   - It emits `game.js` + `game.css`.

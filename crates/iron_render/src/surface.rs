@@ -23,9 +23,7 @@ impl WindowSurface {
             width: width.max(1),
             height: height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
-            // One queued frame: while resizing, the frame at the new size reaches the
-            // screen sooner (fewer white edges); input latency is lower too.
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: frame_latency(gpu.adapter.get_info().backend),
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -103,4 +101,16 @@ impl WindowSurface {
             self.configured = true;
         }
     }
+}
+
+/// Frames the swapchain may queue. One shows resizes and input soonest, but on DX12
+/// it made live resizing jitter (checked by hand on an RTX 5080), so DX12 queues two.
+/// `IRON_FRAME_LATENCY` (1 to 3) overrides it for comparing on other machines.
+fn frame_latency(backend: wgpu::Backend) -> u32 {
+    let default = if backend == wgpu::Backend::Dx12 { 2 } else { 1 };
+    std::env::var("IRON_FRAME_LATENCY")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .filter(|n| (1..=3).contains(n))
+        .unwrap_or(default)
 }
