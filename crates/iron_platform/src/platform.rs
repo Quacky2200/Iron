@@ -138,6 +138,7 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             Ok(window) => {
                 let window = Arc::new(window);
                 self.app.window_ready(window.clone());
+                set_black_background(&window);
                 // Hidden windows get no redraw events, so draw the first frame now and
                 // only then show the window.
                 self.app.frame();
@@ -184,6 +185,32 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
         }
     }
 }
+
+/// Windows paints the area a resize exposes with the window class's background before
+/// the next frame arrives; winit's class has none, which shows as white flashes. A
+/// black brush makes those few frames black instead.
+#[cfg(windows)]
+fn set_black_background(window: &Window) {
+    use windows_sys::Win32::Graphics::Gdi::{BLACK_BRUSH, GetStockObject};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW};
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    if let RawWindowHandle::Win32(h) = handle.as_raw() {
+        // SAFETY: `hwnd` is our live window; the stock brush is never freed.
+        unsafe {
+            SetClassLongPtrW(
+                h.hwnd.get(),
+                GCLP_HBRBACKGROUND,
+                GetStockObject(BLACK_BRUSH),
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_black_background(_window: &Window) {}
 
 // M1-PLT-01
 #[cfg(test)]

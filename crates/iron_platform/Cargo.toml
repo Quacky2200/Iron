@@ -9,3 +9,7 @@ gilrs = "0.11.2"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 winit = "0.30.13"
+
+[target.'cfg(windows)'.dependencies]
+# The same version winit uses, for setting the window's background brush.
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
