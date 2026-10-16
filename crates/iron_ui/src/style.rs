@@ -65,6 +65,12 @@ pub struct Visual {
     pub scrollbar_width: ScrollbarWidth,
     /// `scrollbarColor` as (thumb, track); `None` inherits, `Some(None)` is `auto`.
     pub scrollbar_color: Option<Option<(Rgba, Rgba)>>,
+    /// `display: contents`: no box of its own; children join the parent's layout.
+    /// Taffy has no such display, so `Style::display` stays `Block`.
+    pub contents: bool,
+    /// `position: fixed`: laid out (as absolute) against the window and painted above
+    /// the normal tree. Taffy has no fixed, so `Style::position` is `Absolute`.
+    pub fixed: bool,
     /// `cursor` (a CSS keyword from [`CURSORS`]); `None` inherits from the parent.
     pub cursor: Option<&'static str>,
     /// Inherited text properties set on this node (see [`text_style`]).
@@ -96,6 +102,8 @@ impl Default for Visual {
             clip_rect: None,
             scrollbar_width: ScrollbarWidth::Auto,
             scrollbar_color: None,
+            contents: false,
+            fixed: false,
             cursor: None,
             text: TextProps::default(),
         }
@@ -264,8 +272,24 @@ pub fn apply_style(
     let kw = || value.as_str().ok_or_else(invalid);
 
     match prop {
-        "display" => style.display = parse_kw::<Display>(kw()?).ok_or_else(invalid)?,
-        "position" => style.position = parse_kw::<Position>(kw()?).ok_or_else(invalid)?,
+        "display" => {
+            let k = kw()?.trim();
+            visual.contents = k == "contents";
+            style.display = if visual.contents {
+                Display::Block
+            } else {
+                parse_kw::<Display>(k).ok_or_else(invalid)?
+            };
+        }
+        "position" => {
+            let k = kw()?.trim();
+            visual.fixed = k == "fixed";
+            style.position = if visual.fixed {
+                Position::Absolute
+            } else {
+                parse_kw::<Position>(k).ok_or_else(invalid)?
+            };
+        }
         // Iron (like Taffy and s&box) defaults to border-box; CSS's default is content-box.
         "boxSizing" => {
             style.box_sizing = match kw()?.trim() {
@@ -682,8 +706,14 @@ pub(crate) fn copy_prop(
     prop: &str,
 ) -> Result<(), StyleError> {
     match prop {
-        "display" => style.display = d.display,
-        "position" => style.position = d.position,
+        "display" => {
+            style.display = d.display;
+            visual.contents = v.contents;
+        }
+        "position" => {
+            style.position = d.position;
+            visual.fixed = v.fixed;
+        }
         "boxSizing" => style.box_sizing = d.box_sizing,
         "width" => style.size.width = d.size.width,
         "height" => style.size.height = d.size.height,

@@ -309,3 +309,121 @@ fn order_props_accept_and_reject_values() {
         assert!(!errors.is_empty(), "{prop}: {value:?} should be rejected");
     }
 }
+
+fn red(n: u8) -> (&'static str, Value) {
+    ("backgroundColor", format!("rgb({n} 0 0)").into())
+}
+
+#[test]
+fn display_contents_children_join_the_parent_layout() {
+    let mut d = Dom::new();
+    let r = d.add(0, "box", &[("width", px(300.0)), ("height", px(200.0))]);
+    let size = [("width", px(100.0)), ("height", px(100.0))];
+    let a = d.add(r, "box", &size);
+    let wrap = d.add(
+        r,
+        "box",
+        &[
+            ("display", "contents".into()),
+            ("flexDirection", "column".into()),
+            ("padding", px(30.0)),
+            red(9),
+        ],
+    );
+    let b = d.add(wrap, "box", &size);
+    let mut c_style = size.to_vec();
+    c_style.push(("order", "-1".into()));
+    let c = d.add(wrap, "box", &c_style);
+    let mut tree = d.build("");
+
+    assert_eq!(
+        rect(&mut tree, c).x,
+        0.0,
+        "order applies across the wrapper"
+    );
+    assert_eq!(rect(&mut tree, a).x, 100.0);
+    assert_eq!(rect(&mut tree, b), Rect::new(200.0, 0.0, 100.0, 100.0));
+    assert!(
+        !paint_reds(&mut tree).contains(&9),
+        "the wrapper paints no box"
+    );
+    assert_eq!(tree.hit_test(250.0, 50.0).map(|n| n.0), Some(b));
+    assert_eq!(
+        tree.event_path(NodeId(b))[1],
+        NodeId(wrap),
+        "still in the DOM"
+    );
+
+    set_style(&mut tree, wrap, "display", Value::Null);
+    assert_eq!(rect(&mut tree, wrap).x, 100.0, "a box again");
+    assert_eq!(
+        rect(&mut tree, b),
+        Rect::new(130.0, 100.0, 100.0, 70.0),
+        "second in the padded column; both shrink to fit"
+    );
+}
+
+#[test]
+fn position_fixed_uses_the_window_and_paints_on_top() {
+    let mut d = Dom::new();
+    let clip = d.add(
+        0,
+        "box",
+        &[
+            ("margin", px(50.0)),
+            ("width", px(100.0)),
+            ("height", px(100.0)),
+            ("overflow", "hidden".into()),
+            red(1),
+        ],
+    );
+    let fixed = d.add(
+        clip,
+        "box",
+        &[
+            ("position", "fixed".into()),
+            ("left", px(10.0)),
+            ("top", px(10.0)),
+            ("width", px(60.0)),
+            ("height", px(60.0)),
+            red(2),
+        ],
+    );
+    let cover = d.add(
+        0,
+        "box",
+        &[
+            ("position", "absolute".into()),
+            ("width", px(400.0)),
+            ("height", px(400.0)),
+            red(3),
+        ],
+    );
+    let mut tree = d.build("");
+
+    assert_eq!(rect(&mut tree, fixed), Rect::new(10.0, 10.0, 60.0, 60.0));
+    assert_eq!(paint_reds(&mut tree), vec![1, 3, 2], "fixed paints last");
+    assert_eq!(
+        tree.hit_test(15.0, 15.0).map(|n| n.0),
+        Some(fixed),
+        "outside its clipping parent, above a later sibling"
+    );
+    assert_eq!(tree.hit_test(300.0, 300.0).map(|n| n.0), Some(cover));
+    set_style(&mut tree, fixed, "position", Value::Null);
+    assert_eq!(rect(&mut tree, fixed).x, 50.0, "back in its parent's flow");
+    assert_eq!(paint_reds(&mut tree), vec![1, 2, 3]);
+}
+
+#[test]
+fn contents_and_fixed_from_stylesheets() {
+    let mut d = Dom::new();
+    let r = d.add(0, "box", &[("width", px(200.0)), ("height", px(50.0))]);
+    let wrap = d.add(r, "box", &[("padding", px(20.0))]);
+    let a = d.add(wrap, "box", &[("width", px(50.0)), ("height", px(50.0))]);
+    let f = d.add(wrap, "box", &[("width", px(5.0)), ("height", px(5.0))]);
+    d.set_class(wrap, "w");
+    d.set_class(f, "f");
+    let mut tree = d.build(".w { display: contents } .f { position: fixed; right: 0; bottom: 0 }");
+    assert_eq!(rect(&mut tree, a).x, 0.0, "no wrapper padding");
+    assert_eq!(rect(&mut tree, f), Rect::new(395.0, 395.0, 5.0, 5.0));
+}

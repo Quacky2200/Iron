@@ -67,6 +67,16 @@ fn is_inline_container(kind: &str) -> bool {
     matches!(kind, "text" | "span")
 }
 
+/// `display: contents` on a box (text elements and fields always keep their box).
+fn is_contents(node: &Node) -> bool {
+    node.visual.contents && !is_inline_container(&node.kind) && !is_editor_kind(&node.kind)
+}
+
+/// `position: fixed` on a node that has a box (the root can't be fixed).
+fn is_fixed(id: NodeId, node: &Node) -> bool {
+    node.visual.fixed && id != ROOT && !is_contents(node)
+}
+
 /// Element types that are inline content when inside a text container.
 fn is_inline(kind: &str) -> bool {
     matches!(kind, "span" | TEXT_NODE)
@@ -87,6 +97,8 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Nodes whose styles use relative units (`em`, `rem`, viewport units), restyled
     /// when what those resolve against changes.
     unit_uses: HashMap<NodeId, Uses>,
+    /// `position: fixed` nodes; Taffy lays them out as children of the root.
+    fixed: HashSet<NodeId>,
     /// Text fields (`input`, `textarea`) by node.
     editors: HashMap<NodeId, Editor>,
     /// Engine time in ms (caret blinking).
@@ -157,6 +169,7 @@ impl<L: LayoutEngine> UiTree<L> {
             rects: HashMap::default(),
             scroll: HashMap::default(),
             unit_uses: HashMap::default(),
+            fixed: HashSet::default(),
             editors: HashMap::default(),
             time_ms: 0.0,
             dirty_text: HashSet::default(),
@@ -517,14 +530,7 @@ impl<L: LayoutEngine> UiTree<L> {
 
     /// Re-sends `id`'s children to the layout engine (inline content excluded).
     fn sync_children(&mut self, id: NodeId) {
-        if let Some(node) = self.nodes.get(&id) {
-            if is_inline_container(&node.kind) {
-                self.layout.set_children(id, &[]);
-            } else {
-                let children = self.layout_order(node).into_owned();
-                self.layout.set_children(id, &children);
-            }
-        }
+        self.set_layout_children(id);
         if let Some(root) = self.text_root_of(id) {
             self.dirty_text.insert(root);
         }
@@ -759,6 +765,8 @@ impl<L: LayoutEngine> UiTree<L> {
 
         let vars_changed = node.vars != vars;
         let order_changed = node.visual.order != visual.order;
+        let boxes_changed =
+            node.visual.contents != visual.contents || node.visual.fixed != visual.fixed;
         let parent = node.parent;
         let node = self.nodes.get_mut(&id).expect("checked above");
         node.vars = vars;
@@ -770,7 +778,14 @@ impl<L: LayoutEngine> UiTree<L> {
             let style = node.style.clone();
             self.layout.set_style(id, &style);
         }
-        if order_changed && let Some(p) = parent {
+        if boxes_changed {
+            self.update_fixed(id);
+            self.set_layout_children(id);
+            self.set_layout_children(ROOT);
+        }
+        if (order_changed || boxes_changed)
+            && let Some(p) = parent
+        {
             self.sync_children(p);
         }
         if id != ROOT && !self.sheets.is_empty() {
@@ -999,15 +1014,14 @@ impl<L: LayoutEngine> UiTree<L> {
         self.structure_changed
             .extend(children_changed.iter().copied());
         for id in &children_changed {
-            if let Some(node) = self.nodes.get(id) {
-                if is_inline_container(&node.kind) {
-                    // Spans and text nodes inside are laid out by the text engine.
-                    self.layout.set_children(*id, &[]);
-                } else {
-                    let children = self.layout_order(node).into_owned();
-                    self.layout.set_children(*id, &children);
-                }
-            }
+            self.update_fixed(*id);
+        }
+        if !self.fixed.is_empty() {
+            // Newly attached subtrees may hold fixed nodes, which the root lays out.
+            children_changed.insert(ROOT);
+        }
+        for id in &children_changed {
+            self.set_layout_children(*id);
         }
         // Text blocks whose content changed. A changed parent may also have new
         // text children, which are text blocks of their own.
@@ -1276,7 +1290,13 @@ impl<L: LayoutEngine> UiTree<L> {
                 if pairs.chunks(2).any(|p| p[0].as_str() == Some("direction")) {
                     dir_fallback(node);
                 }
-                if pairs.chunks(2).any(|p| p[0].as_str() == Some("order"))
+                let changes = |name| pairs.chunks(2).any(|p| p[0].as_str() == Some(name));
+                if changes("display") || changes("position") {
+                    // `contents` and `fixed` move children between layout parents.
+                    children_changed.insert(id);
+                    children_changed.insert(ROOT);
+                }
+                if (changes("order") || changes("display") || changes("position"))
                     && let Some(parent) = node.parent
                 {
                     // Taffy sees children in `order` order.
@@ -1392,6 +1412,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.scroll.remove(&id);
             self.editors.remove(&id);
             self.unit_uses.remove(&id);
+            self.fixed.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
@@ -1438,6 +1459,15 @@ impl<L: LayoutEngine> UiTree<L> {
         self.rects.clear();
         let mut stack = vec![(ROOT, 0.0_f32, 0.0_f32)];
         while let Some((id, parent_x, parent_y)) = stack.pop() {
+            if let Some(node) = self.nodes.get(&id)
+                && is_contents(node)
+            {
+                // No box: its children are placed in the layout parent's space.
+                self.rects
+                    .insert(id, Rect::new(parent_x, parent_y, 0.0, 0.0));
+                stack.extend(node.children.iter().map(|c| (*c, parent_x, parent_y)));
+                continue;
+            }
             let Some(l) = self.layout.layout(id) else {
                 continue;
             };
@@ -1466,7 +1496,13 @@ impl<L: LayoutEngine> UiTree<L> {
                     None => (0.0, 0.0),
                 };
                 // Inline content inside text is positioned by the text engine.
-                stack.extend(node.children.iter().map(|c| (*c, x - sx, y - sy)));
+                stack.extend(node.children.iter().map(|c| {
+                    // Fixed nodes are laid out by the root and never scroll.
+                    match self.nodes.get(c).is_some_and(|n| is_fixed(*c, n)) {
+                        true => (*c, 0.0, 0.0),
+                        false => (*c, x - sx, y - sy),
+                    }
+                }));
             }
         }
         self.refresh_editors();
@@ -1805,13 +1841,41 @@ impl<L: LayoutEngine> UiTree<L> {
     /// element; `::before`/`::after` content hits the element that generated it.
     pub fn hit_test(&mut self, x: f32, y: f32) -> Option<NodeId> {
         self.layout_if_needed();
+        // Fixed nodes paint above the tree, so they're tested first.
+        for id in self.fixed_paint_order().iter().rev() {
+            let inherited = self.pointer_events_of(self.parent(*id));
+            if let Some(hit) = self.hit(*id, x, y, inherited) {
+                return Some(hit);
+            }
+        }
         self.hit(ROOT, x, y, true)
+    }
+
+    /// Whether pointer events are enabled for `id` (inherited `pointerEvents`).
+    fn pointer_events_of(&self, id: Option<NodeId>) -> bool {
+        let mut at = id;
+        while let Some(node) = at.and_then(|id| self.nodes.get(&id)) {
+            if let Some(enabled) = node.visual.pointer_events {
+                return enabled;
+            }
+            at = node.parent;
+        }
+        true
     }
 
     fn hit(&self, id: NodeId, x: f32, y: f32, inherited: bool) -> Option<NodeId> {
         let node = self.nodes.get(&id)?;
         if node.style.display == Display::None {
             return None;
+        }
+        if is_contents(node) {
+            let enabled = node.visual.pointer_events.unwrap_or(inherited);
+            return self
+                .paint_order(node)
+                .iter()
+                .rev()
+                .filter(|c| !self.nodes.get(c).is_some_and(|n| is_fixed(**c, n)))
+                .find_map(|c| self.hit(*c, x, y, enabled));
         }
         let rect = *self.rects.get(&id)?;
         let radii = resolve_radii(&node.visual.border_radius, rect.width, rect.height);
@@ -1829,6 +1893,9 @@ impl<L: LayoutEngine> UiTree<L> {
             overflow_clip(&node.visual, rect, &l, radii).is_none_or(|clip| clip.contains(x, y));
         if !is_inline_container(&node.kind) && children_visible {
             for child in self.paint_order(node).iter().rev() {
+                if self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
+                    continue;
+                }
                 if let Some(hit) = self.hit(*child, x, y, enabled) {
                     return Some(hit);
                 }
@@ -1905,6 +1972,14 @@ impl<L: LayoutEngine> UiTree<L> {
         self.layout_if_needed();
         let mut out = Vec::new();
         self.collect(ROOT, &ComputedText::default(), &mut out);
+        // Fixed nodes paint last, outside their ancestors' clips and layers.
+        for id in self.fixed_paint_order() {
+            let text = match self.parent(id) {
+                Some(p) => self.computed_text(p),
+                None => ComputedText::default(),
+            };
+            self.collect(id, &text, &mut out);
+        }
         out
     }
 
@@ -1914,6 +1989,15 @@ impl<L: LayoutEngine> UiTree<L> {
         };
         let v = &node.visual;
         if node.style.display == Display::None || v.opacity <= 0.0 {
+            return;
+        }
+        if is_contents(node) {
+            let text = inherited.child(&v.text);
+            for child in self.paint_order(node).iter() {
+                if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
+                    self.collect(*child, &text, out);
+                }
+            }
             return;
         }
         let (Some(&rect), Some(l)) = (self.rects.get(&id), self.layout.layout(id)) else {
@@ -2071,22 +2155,101 @@ impl<L: LayoutEngine> UiTree<L> {
             out.push(DrawCmd::PushClip(clip));
         }
         for child in self.paint_order(node).iter() {
-            self.collect(*child, text, out);
+            if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
+                self.collect(*child, text, out);
+            }
         }
         if clip.is_some() {
             out.push(DrawCmd::PopClip);
         }
     }
 
-    /// Children in layout order: document order, stably sorted by `order`.
-    fn layout_order<'a>(&self, node: &'a Node) -> std::borrow::Cow<'a, [NodeId]> {
-        let order = |id: &NodeId| self.nodes.get(id).map_or(0, |n| n.visual.order);
-        if node.children.iter().all(|c| order(c) == 0) {
-            return std::borrow::Cow::Borrowed(&node.children);
+    /// The children Taffy lays out in `node`, in document order, stably sorted by
+    /// `order`: `display: contents` children are replaced by their own children,
+    /// and fixed children are left to the root.
+    fn layout_order(&self, node: &Node) -> Vec<NodeId> {
+        let mut out = Vec::with_capacity(node.children.len());
+        self.flatten_contents(node, &mut out);
+        out.sort_by_key(|id| self.nodes.get(id).map_or(0, |n| n.visual.order));
+        out
+    }
+
+    fn flatten_contents(&self, node: &Node, out: &mut Vec<NodeId>) {
+        for c in &node.children {
+            match self.nodes.get(c) {
+                Some(child) if is_fixed(*c, child) => {}
+                Some(child) if is_contents(child) => self.flatten_contents(child, out),
+                _ => out.push(*c),
+            }
         }
-        let mut sorted = node.children.clone();
-        sorted.sort_by_key(order);
-        std::borrow::Cow::Owned(sorted)
+    }
+
+    /// Sends `id`'s layout children to Taffy. A `display: contents` node has none: its
+    /// layout parent takes them. The root also lays out every fixed node.
+    fn set_layout_children(&mut self, id: NodeId) {
+        let Some(node) = self.nodes.get(&id) else {
+            return;
+        };
+        if is_inline_container(&node.kind) {
+            // Spans and text nodes inside are laid out by the text engine.
+            self.layout.set_children(id, &[]);
+            return;
+        }
+        if is_contents(node) {
+            self.layout.set_children(id, &[]);
+            if let Some(parent) = node.parent {
+                self.set_layout_children(parent);
+            }
+            return;
+        }
+        let mut children = self.layout_order(node);
+        if id == ROOT {
+            children.extend(self.fixed_nodes(false));
+        }
+        self.layout.set_children(id, &children);
+    }
+
+    /// Keeps the set of fixed nodes in step with `id`'s style.
+    fn update_fixed(&mut self, id: NodeId) {
+        match self.nodes.get(&id) {
+            Some(node) if is_fixed(id, node) => self.fixed.insert(id),
+            _ => self.fixed.remove(&id),
+        };
+    }
+
+    /// Fixed nodes attached to the tree, in document order. With `rendered_only`,
+    /// those inside `display: none` or fully transparent subtrees are left out.
+    fn fixed_nodes(&self, rendered_only: bool) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        if self.fixed.is_empty() {
+            return out;
+        }
+        let mut stack = vec![ROOT];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.nodes.get(&id) else {
+                continue;
+            };
+            if rendered_only && (node.style.display == Display::None || node.visual.opacity <= 0.0)
+            {
+                continue;
+            }
+            if self.fixed.contains(&id) {
+                out.push(id);
+            }
+            stack.extend(node.children.iter().rev());
+        }
+        out
+    }
+
+    /// Rendered fixed nodes in paint order: by `zIndex`, then document order.
+    fn fixed_paint_order(&self) -> Vec<NodeId> {
+        let mut fixed = self.fixed_nodes(true);
+        fixed.sort_by_key(|id| {
+            self.nodes
+                .get(id)
+                .map_or(0, |n| n.visual.z_index.unwrap_or(0))
+        });
+        fixed
     }
 
     /// Children in paint order (hit testing goes in reverse): by `zIndex` (auto is 0),

@@ -471,7 +471,11 @@ and `@font-face`.
      `z-index` (paint order and hit testing among siblings, then `order`, then document order;
      each z-indexed element stacks on its own, so it never lifts above an ancestor's siblings),
      `isolation` (accepted, no effect in that model) (`crates/iron_ui/tests/layout_props.rs`)
-   - [ ] `display: contents`; `position: fixed`
+   - [x] `display: contents` (children join the layout parent, flattened before Taffy sees them;
+     the element paints nothing and isn't hit, but stays in event paths and passes on inherited
+     styles); `position: fixed` (Taffy lays it out as an absolute child of the root; it ignores
+     ancestor scrolling and clips and paints above the whole tree, ordered by `zIndex`; ancestor
+     opacity and filters don't apply to it)
    - [x] `flex-flow` (Bun's minifier emits it)
    - [x] Shorthands `place-items`, `place-self`, `place-content`
    - [x] Grid: `grid-auto-rows`/`grid-auto-columns`, `grid-template` (`rows / columns` and the area

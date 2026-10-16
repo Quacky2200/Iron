@@ -5,8 +5,10 @@ type Length = number | string;
 
 export interface IronStyle {
   // Layout
-  display?: "flex" | "grid" | "block" | "none";
-  position?: "relative" | "absolute";
+  /** `contents` drops the box: children join the parent's layout. */
+  display?: "flex" | "grid" | "block" | "none" | "contents";
+  /** `fixed` places the element against the window and paints it above the tree. */
+  position?: "relative" | "absolute" | "fixed";
   /** Iron defaults to `border-box` (sizes include padding and border), unlike CSS. */
   boxSizing?: "border-box" | "content-box";
   width?: Length;
