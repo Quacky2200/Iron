@@ -73,7 +73,7 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 - Layout properties land in `taffy::Style` (flex, grid, margin, padding, border widths, inset...).
 - Paint properties land in `Visual`: colours (with `currentColor` flags), border radius
   (`Corners<Len>`, px or percent), `shadows`, gradients and images, `filter_blur`,
-  `backdrop_blur`, `opacity`, `pointer_events`, `overflow`, `clip_path`, `clip_rect`,
+  `backdrop_blur`, `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `overflow`, `clip_path`, `clip_rect`,
   `scrollbar_width/color`, `cursor`, and `text: TextProps`.
 - [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, blur filters,
   backgrounds (`linear-gradient`, `radial-gradient`, `url()`), `clip-path` shapes (`ClipPath`
@@ -110,6 +110,17 @@ All in `apply_style`/`copy_prop` ([style.rs](../crates/iron_ui/src/style.rs)); t
   `inlineSize` with `min`/`max` forms (to height/width). The two-value forms (`marginBlock: "5px 7px"`)
   apply atomically: both halves are checked first, so an error changes nothing. More than two values
   is invalid.
+
+### Order and z-index (M3d step 2b)
+
+- **`order`** (i32): `layout_order` gives Taffy the children stably sorted by `order`
+  (`sync_children`, the `children_changed` loop). Changing `order` re-syncs the parent, in restyle
+  and in the inline `SET_STYLE` fast path.
+- **`zIndex`** (integer or `auto`, which is `None`): `paint_order` sorts siblings by
+  (`zIndex` or 0, `order`), stable. `collect` paints in that order and `hit` walks it in reverse.
+  Each z-indexed element is its own stacking context, so z-index only orders siblings.
+- **`isolation`** is accepted and has no effect, for the same reason.
+- Tab order stays in DOM order.
 
 Relative units (`em`, `rem`, viewport units) and `calc()`/`min()`/`max()`/`clamp()` in either path
 are resolved to pixels at restyle before `apply_style` sees them; see [css.md](css.md#relative-units-and-math-unitsrs).

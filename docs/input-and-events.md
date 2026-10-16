@@ -80,7 +80,7 @@ IME area arguments.
 `UiTree::hit_test(x, y)` first calls `layout_if_needed`, then `hit(ROOT, ...)` recursively:
 
 - Children are tested before their parent, **later siblings before earlier ones** (reverse paint
-  order). Children outside their parent's box can still hit (no automatic clipping unless the
+  order, i.e. `paint_order`: `zIndex`, then `order`, then DOM order). Children outside their parent's box can still hit (no automatic clipping unless the
   parent clips).
 - `display: none` returns nothing. The element's own `clip-path`/`clip` and, for children, its
   `overflow` clip must contain the point: **what is clipped away cannot be hit**, using the same
