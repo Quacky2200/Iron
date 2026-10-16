@@ -4,9 +4,10 @@ use std::fmt;
 use iron_core::{Commit, NodeId, Value};
 use taffy::{Dimension, Display, Size, Style};
 
-use crate::draw::{Quad, Rect};
+use crate::draw::{DrawCmd, ImageFill, Quad, Rect, ShadowShape};
 use crate::layout::{LayoutEngine, TaffyLayout};
 use crate::opcodes;
+use crate::paint::{Shadow, resolve_radii};
 use crate::style::{Visual, apply_style};
 
 /// The root container every React root renders into.
@@ -326,41 +327,119 @@ impl<L: LayoutEngine> UiTree<L> {
         self.rects.get(&id).copied()
     }
 
-    /// Lays out if needed, then lists one [`Quad`] per visible box in paint order
-    /// (parents before children, siblings in order). Subtrees with `display: none`
-    /// or zero opacity are skipped; opacity multiplies down the tree.
-    pub fn draw_list(&mut self) -> Vec<Quad> {
+    /// Lays out if needed, then lists the paint commands for the whole tree.
+    ///
+    /// Per node, in order (matching CSS painting): `BackdropBlur` (if any), then
+    /// `PushLayer` when the node needs one (a `filter` blur, or group opacity over
+    /// more than one command), then outer `BoxShadow`s, the `Quad`, `InsetShadow`s,
+    /// the children, and `PopLayer`. `display: none` and fully transparent subtrees
+    /// are skipped. A node with opacity but nothing to group just scales its alpha.
+    pub fn draw_list(&mut self) -> Vec<DrawCmd> {
         self.layout_if_needed();
-        let mut quads = Vec::new();
-        self.collect_quads(ROOT, 1.0, &mut quads);
-        quads
+        let mut out = Vec::new();
+        self.collect(ROOT, &mut out);
+        out
     }
 
-    fn collect_quads(&self, id: NodeId, inherited_opacity: f32, out: &mut Vec<Quad>) {
+    fn collect(&self, id: NodeId, out: &mut Vec<DrawCmd>) {
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
-        if node.style.display == Display::None {
+        let v = &node.visual;
+        if node.style.display == Display::None || v.opacity <= 0.0 {
             return;
         }
-        let opacity = inherited_opacity * node.visual.opacity;
-        if opacity <= 0.0 {
+        let (Some(&rect), Some(l)) = (self.rects.get(&id), self.layout.layout(id)) else {
             return;
+        };
+        let radii = resolve_radii(&v.border_radius, rect.width, rect.height);
+
+        let mut own = Vec::new();
+        let shadow = |s: &Shadow| ShadowShape {
+            rect,
+            radii,
+            offset_x: s.offset_x,
+            offset_y: s.offset_y,
+            blur: s.blur,
+            spread: s.spread,
+            color: s.color,
+        };
+        // CSS paints the first shadow on top, so draw the list back to front.
+        for s in v
+            .shadows
+            .iter()
+            .rev()
+            .filter(|s| !s.inset && s.color.a > 0.0)
+        {
+            own.push(DrawCmd::BoxShadow(shadow(s)));
         }
-        if let (Some(rect), Some(l)) = (self.rects.get(&id), self.layout.layout(id)) {
-            let quad = Quad {
-                rect: *rect,
-                background: node.visual.background.with_alpha_scaled(opacity),
-                border_color: node.visual.border_color.with_alpha_scaled(opacity),
+        let quad = Quad {
+            rect,
+            background: v.background,
+            image: v.background_image.as_ref().map(|image| ImageFill {
+                image: image.clone(),
+                size: v.background_size,
+                position: v.background_position,
+                repeat: v.background_repeat,
+            }),
+            border_color: v.border_color,
+            border: l.border,
+            radii,
+        };
+        if quad.is_visible() {
+            own.push(DrawCmd::Quad(quad));
+        }
+        for s in v
+            .shadows
+            .iter()
+            .rev()
+            .filter(|s| s.inset && s.color.a > 0.0)
+        {
+            own.push(DrawCmd::InsetShadow {
+                shadow: shadow(s),
                 border: l.border,
-                radius: node.visual.border_radius,
-            };
-            if quad.is_visible() {
-                out.push(quad);
-            }
+            });
         }
-        for child in &node.children {
-            self.collect_quads(*child, opacity, out);
+
+        if v.backdrop_blur > 0.0 {
+            out.push(DrawCmd::BackdropBlur {
+                rect,
+                radii,
+                blur: v.backdrop_blur,
+            });
+        }
+
+        let group_opacity = v.opacity < 1.0 && (!node.children.is_empty() || own.len() > 1);
+        if v.filter_blur > 0.0 || group_opacity {
+            let start = out.len();
+            out.push(DrawCmd::PushLayer {
+                bounds: rect,
+                blur: v.filter_blur,
+                opacity: v.opacity,
+            });
+            out.extend(own);
+            for child in &node.children {
+                self.collect(*child, out);
+            }
+            // The layer must cover everything drawn into it, plus the blur's spread.
+            let content = out[start + 1..]
+                .iter()
+                .filter_map(DrawCmd::bounds)
+                .fold(rect, Rect::union);
+            if let DrawCmd::PushLayer { bounds, .. } = &mut out[start] {
+                *bounds = content.expand(3.0 * v.filter_blur);
+            }
+            out.push(DrawCmd::PopLayer);
+        } else {
+            if v.opacity < 1.0 {
+                for cmd in &mut own {
+                    cmd.scale_alpha(v.opacity);
+                }
+            }
+            out.extend(own);
+            for child in &node.children {
+                self.collect(*child, out);
+            }
         }
     }
 }

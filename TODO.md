@@ -155,14 +155,15 @@ Iron/
 - [ ] A state change driven by `setTimeout` commits the right incremental ops — `M2-INT-02`
 
 ### 2b. Box visuals in `iron_ui` (styles + draw commands, no GPU) — see DESIGN §5.2
-- [ ] Colours: add `hsl()/hsla()` and the full CSS named colour list — `M2-VIS-01`
-- [ ] `border` shorthand (`"2px solid #fff"`; only `solid`/`none` styles for now) — `M2-VIS-02`
-- [ ] `borderRadius` with 1–4 values, per-corner props, percentages (resolved against the box size at draw time) — `M2-VIS-03`
-- [ ] `boxShadow` list parser: offsets, blur, spread, colour, `inset` — `M2-VIS-04`
-- [ ] `filter: blur()` and `backdropFilter: blur()` parsers (`none` resets) — `M2-VIS-05`
-- [ ] `backgroundImage`: `linear-gradient(...)`, `radial-gradient(...)`, `url(...)`; `backgroundSize`, `backgroundPosition`, `backgroundRepeat` — `M2-VIS-06`
-- [ ] Draw list becomes `Vec<DrawCmd>`: `BoxShadow`, `Quad`, `InsetShadow`, `BackdropBlur`, `PushLayer`/`PopLayer`, in the right order — `M2-VIS-07`
-- [ ] Group opacity through layers (instead of multiplying per quad) — `M2-VIS-08`
+- [x] Colours: `hsl()/hsla()` (deg/turn/rad/grad hues) and all 148 CSS named colours — `M2-VIS-01`
+- [x] `border` shorthand (`"2px solid #fff"`, any order, `thin/medium/thick`; only `solid`/`none`/`hidden` styles; like CSS, no style means no border) — `M2-VIS-02`
+- [x] `borderRadius` with 1–4 values, per-corner props, percentages; resolved at draw time and scaled down like CSS when corners would overlap. Circular corners only (no `a / b` elliptical radii yet) — `M2-VIS-03`
+- [x] `boxShadow` list parser: offsets, blur, spread, colour, `inset`, `none` — `M2-VIS-04`
+- [x] `filter: blur()` and `backdropFilter: blur()` (`none` resets; other filter functions rejected for now) — `M2-VIS-05`
+- [x] `backgroundImage` / `background`: `linear-gradient(...)` (angles, `to` sides and corners), `radial-gradient(...)` (circle/ellipse, centred), `url(...)`; `backgroundSize`, `backgroundPosition`, `backgroundRepeat` — `M2-VIS-06`
+- [x] Draw list is now `Vec<DrawCmd>`: `BackdropBlur`, `PushLayer`, `BoxShadow`, `Quad` (with optional image fill and per-corner radii), `InsetShadow`, `PopLayer`, in CSS paint order — `M2-VIS-07`
+- [x] Group opacity through layers; simple single-quad leaves just scale alpha — `M2-VIS-08`
+- [ ] Later: per-side border colours, elliptical radii, `radial-gradient` position/size keywords, more filter functions (`brightness`, `grayscale`, `drop-shadow`, ...), multiple backgrounds
 
 ### 5. Quad renderer (`iron_render`)
 - [ ] Instanced quads with an SDF fragment shader for rounded corners (per-corner radii) and borders, with premultiplied alpha

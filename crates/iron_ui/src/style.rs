@@ -13,14 +13,31 @@ use taffy::{
     LengthPercentageAuto, Line, Position, Rect, Size, Style,
 };
 
+use std::sync::Arc;
+
 use crate::Rgba;
+use crate::paint::{
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, Corners, Len, Shadow,
+    parse_background_image, parse_background_position, parse_background_repeat,
+    parse_background_size, parse_blur_filter, parse_radii, parse_shadows, split_top_level,
+};
 
 /// Paint-only properties (layout properties live in Taffy's `Style`).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Visual {
     pub background: Rgba,
+    /// Shared so building the draw list each frame doesn't copy gradient stops.
+    pub background_image: Option<Arc<BackgroundImage>>,
+    pub background_size: BackgroundSize,
+    pub background_position: BackgroundPosition,
+    pub background_repeat: BackgroundRepeat,
     pub border_color: Rgba,
-    pub border_radius: f32,
+    pub border_radius: Corners<Len>,
+    pub shadows: Vec<Shadow>,
+    /// `filter: blur(..)` radius; 0 means none.
+    pub filter_blur: f32,
+    /// `backdropFilter: blur(..)` radius; 0 means none.
+    pub backdrop_blur: f32,
     pub opacity: f32,
 }
 
@@ -28,8 +45,15 @@ impl Default for Visual {
     fn default() -> Self {
         Self {
             background: Rgba::TRANSPARENT,
+            background_image: None,
+            background_size: BackgroundSize::default(),
+            background_position: BackgroundPosition::default(),
+            background_repeat: BackgroundRepeat::default(),
             border_color: Rgba::TRANSPARENT,
-            border_radius: 0.0,
+            border_radius: Corners::all(Len::Px(0.0)),
+            shadows: Vec::new(),
+            filter_blur: 0.0,
+            backdrop_blur: 0.0,
             opacity: 1.0,
         }
     }
@@ -154,10 +178,65 @@ pub fn apply_style(
         "gridRow" => style.grid_row = grid_line(value).ok_or_else(invalid)?,
 
         "backgroundColor" => visual.background = color(value).ok_or_else(invalid)?,
-        "borderColor" => visual.border_color = color(value).ok_or_else(invalid)?,
-        "borderRadius" => {
-            visual.border_radius = px(value).filter(|r| *r >= 0.0).ok_or_else(invalid)?
+        "background" => {
+            // Shorthand subset: a colour or a single image/gradient.
+            let s = kw()?;
+            if let Some(c) = Rgba::parse(s) {
+                visual.background = c;
+                visual.background_image = None;
+            } else {
+                visual.background_image =
+                    parse_background_image(s).ok_or_else(invalid)?.map(Arc::new);
+                visual.background = Rgba::TRANSPARENT;
+            }
         }
+        "backgroundImage" => {
+            visual.background_image = parse_background_image(kw()?)
+                .ok_or_else(invalid)?
+                .map(Arc::new)
+        }
+        "backgroundSize" => {
+            visual.background_size = parse_background_size(kw()?).ok_or_else(invalid)?
+        }
+        "backgroundPosition" => {
+            visual.background_position = parse_background_position(kw()?).ok_or_else(invalid)?
+        }
+        "backgroundRepeat" => {
+            visual.background_repeat = parse_background_repeat(kw()?).ok_or_else(invalid)?
+        }
+        "borderColor" => visual.border_color = color(value).ok_or_else(invalid)?,
+        "border" => {
+            let (width, color) = border_shorthand(value).ok_or_else(invalid)?;
+            style.border = Rect {
+                top: width,
+                right: width,
+                bottom: width,
+                left: width,
+            };
+            visual.border_color = color;
+        }
+        "borderRadius" => {
+            visual.border_radius = match value {
+                Value::Number(n) if *n >= 0.0 => Corners::all(Len::Px(*n as f32)),
+                Value::String(s) => parse_radii(s).ok_or_else(invalid)?,
+                _ => return Err(invalid()),
+            }
+        }
+        "borderTopLeftRadius" => {
+            visual.border_radius.top_left = radius(value).ok_or_else(invalid)?
+        }
+        "borderTopRightRadius" => {
+            visual.border_radius.top_right = radius(value).ok_or_else(invalid)?
+        }
+        "borderBottomRightRadius" => {
+            visual.border_radius.bottom_right = radius(value).ok_or_else(invalid)?
+        }
+        "borderBottomLeftRadius" => {
+            visual.border_radius.bottom_left = radius(value).ok_or_else(invalid)?
+        }
+        "boxShadow" => visual.shadows = parse_shadows(kw()?).ok_or_else(invalid)?,
+        "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
+        "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "opacity" => visual.opacity = num(value)?.clamp(0.0, 1.0),
 
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
@@ -231,7 +310,28 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "gridRow" => style.grid_row = d.grid_row,
         "backgroundColor" => visual.background = v.background,
         "borderColor" => visual.border_color = v.border_color,
+        "background" => {
+            visual.background = v.background;
+            visual.background_image = v.background_image;
+        }
+        "backgroundImage" => visual.background_image = v.background_image,
+        "backgroundSize" => visual.background_size = v.background_size,
+        "backgroundPosition" => visual.background_position = v.background_position,
+        "backgroundRepeat" => visual.background_repeat = v.background_repeat,
+        "border" => {
+            style.border = d.border;
+            visual.border_color = v.border_color;
+        }
         "borderRadius" => visual.border_radius = v.border_radius,
+        "borderTopLeftRadius" => visual.border_radius.top_left = v.border_radius.top_left,
+        "borderTopRightRadius" => visual.border_radius.top_right = v.border_radius.top_right,
+        "borderBottomRightRadius" => {
+            visual.border_radius.bottom_right = v.border_radius.bottom_right
+        }
+        "borderBottomLeftRadius" => visual.border_radius.bottom_left = v.border_radius.bottom_left,
+        "boxShadow" => visual.shadows = v.shadows,
+        "filter" => visual.filter_blur = v.filter_blur,
+        "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
         "opacity" => visual.opacity = v.opacity,
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
     }
@@ -266,17 +366,61 @@ fn length_percentage(v: &Value) -> Option<LengthPercentage> {
     }
 }
 
-/// A plain pixel amount: a number or a `"<n>px"` string.
-fn px(v: &Value) -> Option<f32> {
-    match v {
-        Value::Number(n) => Some(*n as f32),
-        Value::String(s) => s.trim().strip_suffix("px")?.trim().parse().ok(),
-        _ => None,
+fn color(v: &Value) -> Option<Rgba> {
+    Rgba::parse(v.as_str()?)
+}
+
+/// One corner radius: a number (px), `"8px"` or `"50%"`.
+fn radius(v: &Value) -> Option<Len> {
+    let len = match v {
+        Value::Number(n) => Len::Px(*n as f32),
+        Value::String(s) => Len::parse(s)?,
+        _ => return None,
+    };
+    match len {
+        Len::Px(n) | Len::Percent(n) if n < 0.0 => None,
+        ok => Some(ok),
     }
 }
 
-fn color(v: &Value) -> Option<Rgba> {
-    Rgba::parse(v.as_str()?)
+/// CSS `border` shorthand: width, style and colour in any order, e.g. `"2px solid #fff"`.
+/// Like CSS, a missing style means `none` (no border) and a missing colour is black
+/// (CSS uses `currentColor`, which arrives with text colours in M3). Only `solid`,
+/// `none` and `hidden` styles are supported; other styles are rejected.
+fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Rgba)> {
+    let s = v.as_str()?;
+    let (mut width, mut solid, mut color) = (None, None, None);
+    for token in split_top_level(s, ' ') {
+        let w = match token {
+            "thin" => Some(1.0),
+            "medium" => Some(3.0),
+            "thick" => Some(5.0),
+            t => match Len::parse(t) {
+                Some(Len::Px(px)) if px >= 0.0 => Some(px),
+                _ => None,
+            },
+        };
+        if let Some(w) = w
+            && width.is_none()
+        {
+            width = Some(w);
+        } else if matches!(token, "solid" | "none" | "hidden") && solid.is_none() {
+            solid = Some(token == "solid");
+        } else if color.is_none() {
+            color = Some(Rgba::parse(token)?);
+        } else {
+            return None;
+        }
+    }
+    let width = if solid == Some(true) {
+        width.unwrap_or(3.0)
+    } else {
+        0.0
+    };
+    Some((
+        LengthPercentage::length(width),
+        color.unwrap_or(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+    ))
 }
 
 /// CSS box shorthand: one number, or 1–4 space-separated values (top right bottom left).
@@ -460,7 +604,23 @@ mod tests {
         let (_, v) = apply("backgroundColor", "#ff0000".into()).unwrap();
         assert_eq!(v.background, Rgba::new(1.0, 0.0, 0.0, 1.0));
         let (_, v) = apply("borderRadius", "8px".into()).unwrap();
-        assert_eq!(v.border_radius, 8.0);
+        assert_eq!(v.border_radius, Corners::all(Len::Px(8.0)));
+        let (_, v) = apply("borderRadius", 6.0.into()).unwrap();
+        assert_eq!(v.border_radius, Corners::all(Len::Px(6.0)));
+        let (_, v) = apply("borderTopRightRadius", "50%".into()).unwrap();
+        assert_eq!(v.border_radius.top_right, Len::Percent(0.5));
+        assert_eq!(v.border_radius.top_left, Len::Px(0.0));
+        let (_, v) = apply("boxShadow", "0 2px 4px black".into()).unwrap();
+        assert_eq!(v.shadows.len(), 1);
+        let (_, v) = apply("filter", "blur(3px)".into()).unwrap();
+        assert_eq!(v.filter_blur, 3.0);
+        let (_, v) = apply("backdropFilter", "blur(12px)".into()).unwrap();
+        assert_eq!(v.backdrop_blur, 12.0);
+        let (_, v) = apply("background", "linear-gradient(red, blue)".into()).unwrap();
+        assert!(v.background_image.is_some());
+        let (_, v) = apply("background", "teal".into()).unwrap();
+        assert!(v.background_image.is_none());
+        assert_eq!(v.background, Rgba::parse("teal").unwrap());
         let (_, v) = apply("opacity", 1.5.into()).unwrap();
         assert_eq!(v.opacity, 1.0, "opacity is clamped");
     }
@@ -494,5 +654,32 @@ mod tests {
         apply_style(&mut style, &mut visual, "opacity", &Value::Null).unwrap();
         assert_eq!(style.size.width, Style::<String>::default().size.width);
         assert_eq!(visual.opacity, 1.0);
+    }
+
+    // M2-VIS-02
+    #[test]
+    fn border_shorthand_sets_widths_and_colour() {
+        let (s, v) = apply("border", "2px solid red".into()).unwrap();
+        assert_eq!(s.border.left, LengthPercentage::length(2.0));
+        assert_eq!(s.border.top, LengthPercentage::length(2.0));
+        assert_eq!(v.border_color, Rgba::new(1.0, 0.0, 0.0, 1.0));
+
+        // Any order; keyword widths; style without width is `medium` (3px).
+        let (s, v) = apply("border", "#00f thick solid".into()).unwrap();
+        assert_eq!(s.border.right, LengthPercentage::length(5.0));
+        assert_eq!(v.border_color, Rgba::new(0.0, 0.0, 1.0, 1.0));
+        let (s, _) = apply("border", "solid".into()).unwrap();
+        assert_eq!(s.border.bottom, LengthPercentage::length(3.0));
+
+        // Like CSS: `none`, or no style at all, means no border.
+        let (s, _) = apply("border", "none".into()).unwrap();
+        assert_eq!(s.border.top, LengthPercentage::length(0.0));
+        let (s, _) = apply("border", "2px red".into()).unwrap();
+        assert_eq!(s.border.top, LengthPercentage::length(0.0));
+
+        // Unsupported styles and junk are rejected (and reported as warnings).
+        for bad in ["2px dashed red", "2px solid red blue", "wide solid"] {
+            assert!(apply("border", bad.into()).is_err(), "{bad:?}");
+        }
     }
 }
