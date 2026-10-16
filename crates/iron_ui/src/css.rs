@@ -692,3 +692,66 @@ mod var_tests {
         );
     }
 }
+
+/// Rewrites relative `url(...)` references in `value` to be relative to `base`
+/// (a folder inside the game folder). Used for stylesheets the bundler wrote into
+/// `dist/`, whose urls are relative to the stylesheet. `data:` URLs and anything
+/// with a scheme are left alone.
+pub fn rebase_urls(value: &str, base: &str) -> String {
+    let base = base.trim_end_matches(['/', '\\']);
+    if base.is_empty() || !value.contains("url(") {
+        return value.to_owned();
+    }
+    let mut out = String::with_capacity(value.len() + base.len());
+    let mut rest = value;
+    while let Some(start) = rest.find("url(") {
+        out.push_str(&rest[..start + 4]);
+        let after = &rest[start + 4..];
+        let Some(end) = after.find(')') else {
+            out.push_str(after);
+            return out;
+        };
+        let raw = after[..end].trim();
+        let url = raw.trim_matches(['"', '\'']);
+        if url.contains(':') || url.starts_with(['/', '\\']) || url.is_empty() {
+            out.push_str(raw);
+        } else {
+            let url = url.strip_prefix("./").unwrap_or(url);
+            out.push('"');
+            out.push_str(base);
+            out.push('/');
+            out.push_str(url);
+            out.push('"');
+        }
+        out.push(')');
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod rebase_tests {
+    use super::*;
+
+    #[test]
+    fn rebases_relative_urls_only() {
+        assert_eq!(
+            rebase_urls(
+                r#"url("./_.._/assets/font.ttf") format("truetype")"#,
+                "dist"
+            ),
+            r#"url("dist/_.._/assets/font.ttf") format("truetype")"#
+        );
+        assert_eq!(
+            rebase_urls("url(a.png), url(b.png)", "dist/"),
+            r#"url("dist/a.png"), url("dist/b.png")"#
+        );
+        assert_eq!(
+            rebase_urls("url(data:image/png;base64,AAA=)", "dist"),
+            "url(data:image/png;base64,AAA=)"
+        );
+        assert_eq!(rebase_urls("red", "dist"), "red");
+        assert_eq!(rebase_urls("url(x.png)", ""), "url(x.png)");
+    }
+}

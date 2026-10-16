@@ -1,0 +1,197 @@
+/* M3b showcase stylesheet: bundled by Bun into dist/game.css, which the engine
+   loads next to dist/game.js. */
+
+@font-face {
+  font-family: "Charm";
+  src: url("../assets/fonts/Charm-Regular.ttf");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Charm";
+  src: url("../assets/fonts/Charm-Bold.ttf");
+  font-weight: 700;
+}
+
+:root {
+  --bg: #10141c;
+  --card: #1c222c;
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #e8ecf2;
+  --muted: #7f8a9c;
+  --accent: #5ec8ff;
+  --warm: #ff8a5e;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  gap: 20px;
+  flex-direction: column;
+  background-image: linear-gradient(160deg, #141a24, #0b0e14);
+  color: var(--text);
+}
+
+.title {
+  font-size: 34px;
+  font-weight: 800;
+}
+
+.title .brand {
+  color: var(--warm);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  flex-grow: 1;
+}
+
+.card {
+  background-color: var(--card);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  padding: 16px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A card with a highlighted item gets an accent border (:has). */
+.card:has(.item.on) {
+  border: 1px solid var(--accent);
+}
+
+.card > .heading {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+/* Lists: structural pseudo-classes and sibling combinators. */
+.list {
+  flex-direction: column;
+  border-radius: 8px;
+}
+
+.item {
+  padding: 6px 10px;
+  font-size: 16px;
+  background-color: #232a36;
+}
+
+.item:nth-child(even) {
+  background-color: #1f2530;
+}
+
+.item:first-child {
+  font-weight: 700;
+}
+
+.item:last-child {
+  color: var(--muted);
+}
+
+.item + .item {
+  border-top: 1px solid var(--line);
+}
+
+.item.on {
+  background-color: var(--accent);
+  color: #0b0e14;
+}
+
+.item.on ~ .item {
+  color: var(--accent);
+}
+
+/* Generated content. */
+.tag::before {
+  content: "#";
+  color: var(--warm);
+  font-weight: 800;
+}
+
+.quote::before {
+  content: "\201C";
+  color: var(--accent);
+}
+
+.quote::after {
+  content: "\201D";
+  color: var(--accent);
+}
+
+.bullet {
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.bullet::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background-color: var(--warm);
+}
+
+/* Attributes and state. */
+.toggle {
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+
+.toggle .box {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--muted);
+}
+
+.toggle:checked .box {
+  background-color: var(--accent);
+  border: 2px solid var(--accent);
+}
+
+.toggle:disabled {
+  opacity: 0.4;
+}
+
+.toggle:enabled .label::after {
+  content: " (enabled)";
+  color: var(--muted);
+}
+
+.slot {
+  height: 28px;
+  border-radius: 6px;
+  border: 1px dashed var(--line);
+}
+
+/* An empty slot shows a placeholder; a filled one doesn't. */
+.slot:empty {
+  background-color: rgba(255, 138, 94, 0.15);
+  border: 1px dashed var(--warm);
+}
+
+.slot:not(:empty) {
+  padding: 4px 8px;
+}
+
+#status {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.fancy {
+  font-family: Charm, serif;
+  font-size: 28px;
+}
+
+.fancy.bold {
+  font-weight: 700;
+}

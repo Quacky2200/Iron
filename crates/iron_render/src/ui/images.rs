@@ -48,23 +48,30 @@ impl ImageCache {
         sampler: &wgpu::Sampler,
         url: &str,
     ) -> Option<LoadedImage> {
-        let Some(root) = &self.root else {
-            tracing::warn!("background image `{url}` ignored: no asset folder set");
-            return None;
+        let decoded = if url.trim_start().starts_with("data:") {
+            // Inlined by the bundler (small images referenced from CSS).
+            let Some(bytes) = iron_core::decode_data_url(url) else {
+                tracing::warn!("background image data URL couldn't be decoded");
+                return None;
+            };
+            image::load_from_memory(&bytes)
+        } else {
+            let Some(root) = &self.root else {
+                tracing::warn!("background image `{url}` ignored: no asset folder set");
+                return None;
+            };
+            let Some(path) = iron_core::resolve_asset(root, url) else {
+                tracing::warn!(
+                    "background image `{url}` rejected: it must be a relative path inside the game folder"
+                );
+                return None;
+            };
+            image::open(&path)
         };
-        let Some(path) = iron_core::resolve_asset(root, url) else {
-            tracing::warn!(
-                "background image `{url}` rejected: it must be a relative path inside the game folder"
-            );
-            return None;
-        };
-        let image = match image::open(&path) {
+        let image = match decoded {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
-                tracing::warn!(
-                    "background image `{}` could not be loaded: {e}",
-                    path.display()
-                );
+                tracing::warn!("background image `{}` could not be loaded: {e}", short(url));
                 return None;
             }
         };
@@ -160,6 +167,14 @@ pub fn tile_rect(
         tw.max(0.0),
         th.max(0.0),
     )
+}
+
+/// A URL shortened for log messages (data URLs can be huge).
+fn short(url: &str) -> &str {
+    match url.char_indices().nth(60) {
+        Some((i, _)) => &url[..i],
+        None => url,
+    }
 }
 
 #[cfg(test)]

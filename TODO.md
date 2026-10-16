@@ -281,30 +281,30 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
 
 ### M3b — CSS stylesheets and selectors
 1. **Stylesheets**
-   - [ ] Parse stylesheets with `cssparser`: style rules, `@font-face` (feeds `loadFont`), comments,
+   - [x] Parse stylesheets with `cssparser`: style rules, `@font-face` (feeds `loadFont`), comments,
      `!important`; unsupported at-rules warn — `M3-CSS-01`
-   - [ ] Sources: `dist/game.css` loaded with the bundle; `addStyleSheet(cssText)` / `removeStyleSheet`
-   - [ ] Declarations: kebab-case → our camelCase props; values as CSS strings into `apply_style`
-   - [ ] Custom properties (`--x`) and `var(--x, fallback)` — `M3-CSS-05`
+   - [x] Sources: `dist/game.css` loaded with the bundle; `addStyleSheet(cssText)` / `removeStyleSheet`
+   - [x] Declarations: kebab-case → our camelCase props; values as CSS strings into `apply_style`
+   - [x] Custom properties (`--x`) and `var(--x, fallback)` — `M3-CSS-05`
 2. **Selectors** (`selectors` crate, `Element` implemented for UI nodes)
-   - [ ] Simple selectors: type (`box`, `text`, `span`, `input`, `textarea`, `checkbox`), universal
+   - [x] Simple selectors: type (`box`, `text`, `span`, `input`, `textarea`, `checkbox`), universal
      `*`, `.class` (`className` prop), `#id` (`id` prop), attribute selectors on `data-*` props — `M3-CSS-08`
-   - [ ] Combinators: descendant (space), child `>`, next sibling `+`, subsequent siblings `~` — `M3-CSS-02`
-   - [ ] Structural: `:first-child`, `:last-child`, `:only-child`, `:nth-child(an+b [of S])`,
+   - [x] Combinators: descendant (space), child `>`, next sibling `+`, subsequent siblings `~` — `M3-CSS-02`
+   - [x] Structural: `:first-child`, `:last-child`, `:only-child`, `:nth-child(an+b [of S])`,
      `:nth-last-child()`, `:first-of-type`, `:last-of-type`, `:nth-of-type()`, `:root` — `M3-CSS-02`
-   - [ ] Emptiness: `:empty` (no children and no text) and `:blank` (no children, or only whitespace
+   - [x] Emptiness: `:empty` (no children and no text) and `:blank` (no children, or only whitespace
      text; Selectors Level 4, so implemented as our own pseudo-class) — `M3-CSS-09`
-   - [ ] Logical: `:not()`, `:is()`, `:where()`, `:has()` (relative selectors) — `M3-CSS-03`
-   - [ ] User action (driven by M3c, testable earlier by setting states directly): `:hover`, `:active`,
+   - [x] Logical: `:not()`, `:is()`, `:where()`, `:has()` (relative selectors) — `M3-CSS-03`
+   - [x] User action (driven by M3c, testable earlier by setting states directly): `:hover`, `:active`,
      `:focus`, `:focus-visible`, `:focus-within` — `M3-CSS-10`
-   - [ ] Form state: `:enabled` / `:disabled` (the `disabled` prop on inputs, buttons and boxes with
+   - [x] Form state: `:enabled` / `:disabled` (the `disabled` prop on inputs, buttons and boxes with
      `tabIndex`; disabled elements also ignore pointer and focus), `:checked` (the `checked` prop on
      a new `<checkbox>` element and on `<input type="checkbox" | "radio">`) — `M3-CSS-10`
 3. **Cascade**
-   - [ ] Specificity + source order; inline `style` prop beats stylesheet rules (unless `!important`);
+   - [x] Specificity + source order; inline `style` prop beats stylesheet rules (unless `!important`);
      inheritance from M3a — `M3-CSS-04`
 4. **Pseudo-elements**
-   - [ ] `::before` / `::after` generate anonymous first/last children (invisible to React), styled by
+   - [x] `::before` / `::after` generate anonymous first/last children (invisible to React), styled by
      their rules; `content: ""` boxes for decoration and `content: "text"` for text — `M3-CSS-06`
 5. **Restyle**
    - [x] Rule index: selectors bucketed by the id / class / type of their rightmost compound
@@ -314,8 +314,14 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      structural selectors exist — `M3-CSS-07`
    - [x] Benchmark: one class change on the 2,246-node tree 0.20 ms (target < 1 ms); whole tree 8.8 ms — `M3-BEN-01`
 6. **Example + checks**
-   - [ ] `examples/boxes` restyled with a `.css` file using classes, structural selectors, `:has`,
-     `::before`/`::after`
+   - [x] `examples/css`: a `.css` file imported through Bun (`dist/game.css`, `url()`s rebased, small
+     assets inlined as `data:` URLs), classes, combinators, structural selectors, `:has`/`:not`/`:empty`,
+     `:checked`/`:disabled`, `::before`/`::after`, `@font-face`, and a runtime `addStyleSheet` that
+     overrides `--accent` every second
+
+**M3b status:** done. The `<checkbox>` / `<input>` element types arrive with M3c; `:checked` and
+`:disabled` already work on any element through the `checked` / `disabled` props.
+
 
 ### M3c — Interaction
 1. **Hit testing and pointer events**

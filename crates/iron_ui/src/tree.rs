@@ -217,7 +217,27 @@ impl<L: LayoutEngine> UiTree<L> {
     /// skipped, and `@font-face` rules for the caller to load (fonts come from the
     /// game folder, which the tree doesn't know about).
     pub fn add_stylesheet(&mut self, css: &str) -> AddedStylesheet {
+        self.add_stylesheet_with_base(css, "")
+    }
+
+    /// Like [`UiTree::add_stylesheet`], for a stylesheet stored in folder `base` of
+    /// the game folder (e.g. `dist` for the bundler's `game.css`): its relative
+    /// `url(...)`s are rewritten to be relative to the game folder.
+    pub fn add_stylesheet_with_base(&mut self, css: &str, base: &str) -> AddedStylesheet {
         let mut sheet = parse_stylesheet(css);
+        if !base.is_empty() {
+            for rule in &mut sheet.rules {
+                for decl in &mut rule.declarations {
+                    decl.value = crate::css::rebase_urls(&decl.value, base);
+                }
+            }
+            for face in &mut sheet.font_faces {
+                if !face.src.contains(':') {
+                    let src = face.src.strip_prefix("./").unwrap_or(&face.src);
+                    face.src = format!("{}/{src}", base.trim_end_matches(['/', '\\']));
+                }
+            }
+        }
         // Drop declarations that won't apply, with a warning, so they aren't
         // re-reported on every restyle.
         let mut warnings = std::mem::take(&mut sheet.warnings);

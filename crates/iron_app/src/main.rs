@@ -5,6 +5,7 @@
 //! `bun run build`) or a `.js` bundle directly. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -83,10 +84,30 @@ fn main() -> Result<()> {
     }
     tracing::info!(?classes, "loaded {}", bundle_path.display());
 
+    // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
+    let mut ui = UiTree::with_system_fonts(1.0, 1.0);
+    let css_path = bundle_path.with_extension("css");
+    if let Ok(css) = std::fs::read_to_string(&css_path) {
+        let base = css_path
+            .parent()
+            .and_then(|dir| dir.strip_prefix(&asset_root).ok())
+            .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        add_stylesheet(
+            &mut ui,
+            &asset_root,
+            &css,
+            &base,
+            &css_path.display().to_string(),
+        );
+        tracing::info!("loaded stylesheet {}", css_path.display());
+    }
+
     let app = App {
         scripts,
         components,
-        ui: UiTree::with_system_fonts(1.0, 1.0),
+        ui,
+        sheets: HashMap::new(),
         asset_root,
         gfx: None,
         started: Instant::now(),
@@ -144,6 +165,8 @@ struct App {
     accumulator: f64,
     frames: u32,
     screenshot: Option<(PathBuf, u32)>,
+    /// Stylesheets added by scripts: script id -> tree id.
+    sheets: HashMap<u32, u32>,
     done: bool,
 }
 
@@ -181,14 +204,16 @@ impl App {
         }
         for op in self.scripts.drain_ops() {
             match op.name.as_str() {
-                "loadFont" => self.load_font(&op.args),
+                "loadFont" => self.load_font_op(&op.args),
+                "addStyleSheet" | "removeStyleSheet" => self.stylesheet_op(&op.name, &op.args),
                 other => tracing::warn!("unknown script op `{other}`"),
             }
         }
     }
 
     /// `loadFont(family, src, weight, style)` from `@iron/engine`.
-    fn load_font(&mut self, args: &[iron_core::Value]) {
+    /// `loadFont(family, src, weight, style)` from `@iron/engine`.
+    fn load_font_op(&mut self, args: &[iron_core::Value]) {
         use iron_core::Value;
         let (Some(family), Some(src)) = (
             args.first().and_then(Value::as_str),
@@ -204,21 +229,29 @@ impl App {
             _ => None,
         };
         let italic = args.get(3).and_then(Value::as_str).map(|s| s == "italic");
-        let Some(path) = iron_core::resolve_asset(&self.asset_root, src) else {
-            tracing::warn!(
-                "font `{src}` rejected: it must be a relative path inside the game folder"
-            );
+        load_font(&mut self.ui, &self.asset_root, family, src, weight, italic);
+    }
+
+    /// `addStyleSheet(id, css)` / `removeStyleSheet(id)` from `@iron/engine`.
+    fn stylesheet_op(&mut self, name: &str, args: &[iron_core::Value]) {
+        let Some(js_id) = args
+            .first()
+            .and_then(iron_core::Value::as_f64)
+            .map(|n| n as u32)
+        else {
+            tracing::warn!("{name} needs an id: {args:?}");
             return;
         };
-        let result = std::fs::read(&path)
-            .map_err(|e| e.to_string())
-            .and_then(|data| self.ui.register_font(data, Some(family), weight, italic));
-        match result {
-            Ok(_) => tracing::info!("loaded font `{family}` from {}", path.display()),
-            Err(e) => tracing::warn!(
-                "font `{family}` from {} failed to load: {e}",
-                path.display()
-            ),
+        if name == "removeStyleSheet" {
+            if let Some(id) = self.sheets.remove(&js_id) {
+                self.ui.remove_stylesheet(id);
+            }
+            return;
+        }
+        let css = args.get(1).and_then(iron_core::Value::as_str).unwrap_or("");
+        let id = add_stylesheet(&mut self.ui, &self.asset_root, css, "", "addStyleSheet");
+        if let Some(old) = self.sheets.insert(js_id, id) {
+            self.ui.remove_stylesheet(old);
         }
     }
 
@@ -320,4 +353,42 @@ impl PlatformApp for App {
     fn should_exit(&self) -> bool {
         self.done
     }
+}
+
+/// Loads a font file (or `data:` URL) from the game folder and registers it.
+fn load_font(
+    ui: &mut UiTree,
+    root: &Path,
+    family: &str,
+    src: &str,
+    weight: Option<f32>,
+    italic: Option<bool>,
+) {
+    let data = if src.trim_start().starts_with("data:") {
+        iron_core::decode_data_url(src).ok_or_else(|| "invalid data URL".to_owned())
+    } else {
+        match iron_core::resolve_asset(root, src) {
+            Some(path) => std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display())),
+            None => Err(format!(
+                "`{src}` must be a relative path inside the game folder"
+            )),
+        }
+    };
+    match data.and_then(|d| ui.register_font(d, Some(family), weight, italic)) {
+        Ok(_) => tracing::info!("loaded font `{family}`"),
+        Err(e) => tracing::warn!("font `{family}` failed to load: {e}"),
+    }
+}
+
+/// Adds a stylesheet, logging its warnings and loading its `@font-face` fonts.
+/// `base` is the stylesheet's folder inside the game folder (for its `url()`s).
+fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &str) -> u32 {
+    let added = ui.add_stylesheet_with_base(css, base);
+    for warning in &added.warnings {
+        tracing::warn!(target: "css", "{source}: {warning}");
+    }
+    for face in &added.font_faces {
+        load_font(ui, root, &face.family, &face.src, face.weight, face.italic);
+    }
+    added.id
 }
