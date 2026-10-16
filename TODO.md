@@ -139,7 +139,7 @@ Iron/
 - [x] Style parsing: Taffy `parse` for layout props; colours as `#rgb(a)`, `#rrggbb(aa)`, `rgb()`/`rgba()` (comma, space, `/ alpha`), `transparent`, a few names. `null` resets a prop — `M2-STY-01`, `M2-STY-02`
 - [x] M2 style subset: `display` (flex/grid/block/none), flex props + `flex` shorthand, `width/height/min/max`, `aspectRatio`, `padding`/`margin`/`borderWidth`/`inset` (1–4 value shorthands and per side), `gap`/`rowGap`/`columnGap`, `position` + insets, alignment, `gridTemplateColumns/Rows`, `gridAutoFlow`, `gridColumn/Row`, `backgroundColor`, `borderColor`, `borderRadius`, `opacity`
 - [x] `LayoutEngine` trait + `TaffyLayout` backend; `layout_if_needed` only runs when something changed — `M2-LAY-01`..`M2-LAY-04`
-- [x] 9 layout fixtures as data (`tests/layout/*.json`), run through the full op pipeline by a backend-generic runner — `M2-LAY-05`
+- [x] 24 layout fixtures as data (`tests/layout/*.json`: wrapping, shrink weighting, min/max, auto margins, justify distribution, reverse, alignSelf, aspect ratio, nested percentages, grid repeat/spans/alignment, absolute insets), run through the full op pipeline by a backend-generic runner — `M2-LAY-05`
 - [x] Root resize relayouts the tree — `M2-UI-03`
 - [x] Draw list: one `Quad` per visible box (absolute rect, colours with inherited opacity, resolved border widths, radius) in paint order — `M2-UI-04`
 
@@ -154,10 +154,23 @@ Iron/
 - [ ] React fixture (`tests/fixtures/src/boxes.tsx` → `boxes.js`) runs in `QuickJsRuntime`; its commits applied to `UiTree` give the expected tree and layout — `M2-INT-01`
 - [ ] A state change driven by `setTimeout` commits the right incremental ops — `M2-INT-02`
 
+### 2b. Box visuals in `iron_ui` (styles + draw commands, no GPU) — see DESIGN §5.2
+- [ ] Colours: add `hsl()/hsla()` and the full CSS named colour list — `M2-VIS-01`
+- [ ] `border` shorthand (`"2px solid #fff"`; only `solid`/`none` styles for now) — `M2-VIS-02`
+- [ ] `borderRadius` with 1–4 values, per-corner props, percentages (resolved against the box size at draw time) — `M2-VIS-03`
+- [ ] `boxShadow` list parser: offsets, blur, spread, colour, `inset` — `M2-VIS-04`
+- [ ] `filter: blur()` and `backdropFilter: blur()` parsers (`none` resets) — `M2-VIS-05`
+- [ ] `backgroundImage`: `linear-gradient(...)`, `radial-gradient(...)`, `url(...)`; `backgroundSize`, `backgroundPosition`, `backgroundRepeat` — `M2-VIS-06`
+- [ ] Draw list becomes `Vec<DrawCmd>`: `BoxShadow`, `Quad`, `InsetShadow`, `BackdropBlur`, `PushLayer`/`PopLayer`, in the right order — `M2-VIS-07`
+- [ ] Group opacity through layers (instead of multiplying per quad) — `M2-VIS-08`
+
 ### 5. Quad renderer (`iron_render`)
-- [ ] Instanced quads with an SDF fragment shader for rounded corners and borders, with premultiplied alpha
-- [ ] Golden tests offscreen — `M2-DRW-01`, `M2-DRW-02`
-- [ ] Whole draw list in a fixed number of draw calls — `M2-DRW-03`
+- [ ] Instanced quads with an SDF fragment shader for rounded corners (per-corner radii) and borders, with premultiplied alpha
+- [ ] Gradient fills; image fills from a texture cache (decode with the `image` crate)
+- [ ] Analytic box shadows (outer and inset), one quad each
+- [ ] Offscreen layers for `filter: blur` and group opacity; backdrop copy + blur for `backdropFilter`
+- [ ] Golden tests offscreen — `M2-DRW-01`, `M2-DRW-02`, `M2-DRW-05`..`M2-DRW-08`
+- [ ] Whole draw list in a small, bounded number of draw calls (layers add passes) — `M2-DRW-03`
 - [ ] Scale factor applied at draw time — `M2-DRW-04`
 
 ### 6. App wiring and example
@@ -178,6 +191,10 @@ Iron/
 ## M3 — Real UI
 
 - [ ] Choose text library (`cosmic-text` vs `parley`); text rendering + measurement cache — `M3-TXT-*`
+- [ ] Text styles: `color`, `fontFamily` with fallbacks, `fontSize`, `fontWeight` (incl. `bold`), `fontStyle` (`italic`), `lineHeight`, `letterSpacing`, `textAlign` — `M3-TXT-04`
+- [ ] `textShadow` (list), rendered with the same analytic shadow technique as box shadows — `M3-TXT-05`
+- [ ] Inheritance of `color` and font properties; `currentColor` — `M3-TXT-06`
+- [ ] Font imports: `@font-face` in CSS files and `loadFont({ family, src, weight, style })`; bundled default font — `M3-FNT-01`, `M3-FNT-02`
 - [ ] Choose styling approach (CSS files / style objects / both); CSS subset parser — `M3-CSS-*`
 - [ ] Hit testing, bubbling, focus, keyboard — `M3-EVT-*`
 - [ ] IME support through winit — `M3-IME-01`

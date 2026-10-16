@@ -136,6 +136,31 @@ React (TS) ──custom reconciler──▶ op buffer ──▶ Rust UI tree ─
 - Optionally default to React Native-style behaviour where it's friendlier.
 - *(open)* CSS/SCSS-like files (closer to s&box) vs inline style objects vs both.
 
+**Visual features we're targeting** (same names and syntax as CSS, camelCase in style objects):
+
+| Area | Properties | Milestone |
+|---|---|---|
+| Colours | hex, `rgb()/rgba()`, `hsl()/hsla()`, full CSS named colour list, `currentColor` | M2 (box), M3 (`currentColor`) |
+| Borders | `border` shorthand (`"2px solid #fff"`), per-side widths, `borderColor` (+ per side later), `borderRadius` with 1–4 values, per-corner and percentage radii | M2 |
+| Box shadows | `boxShadow`: comma-separated list, offset, blur, spread, colour, `inset` | M2 |
+| Backgrounds | `backgroundColor`, `backgroundImage: url(...)` and `linear-gradient(...)` / `radial-gradient(...)`, `backgroundSize` (`cover`/`contain`/lengths), `backgroundPosition`, `backgroundRepeat` | M2 (gradients), M2/M5 (images via asset loading) |
+| Filters | `filter: blur()` (blurs the node and its children), `backdropFilter: blur()` (blurs what's behind, frosted glass); more filter functions later | M2 |
+| Opacity | `opacity` as true group opacity (via layers) once layers exist; per-quad multiply until then | M2 |
+| Text | `color`, `fontFamily` (with fallbacks), `fontSize`, `fontWeight` (100–900, `bold`), `fontStyle` (`italic`), `lineHeight`, `letterSpacing`, `textAlign`, `textShadow` (list) | M3 |
+| Fonts | font imports: `@font-face` in CSS files and a `loadFont({ family, src, weight, style })` API; a bundled default font so games look the same everywhere | M3 |
+| Inheritance | `color` and font properties inherit down the tree like CSS | M3 |
+
+**Draw list shape.** Effects mean the draw list is a list of commands, not just quads:
+`BoxShadow` (outer, drawn before the box), `Quad` (fill: colour, gradient or image; border; per-corner radii),
+`InsetShadow`, `BackdropBlur { rect, radii, sigma }`, `PushLayer { bounds, blur, opacity }` / `PopLayer`, and
+later `Text` and `Clip` (for `overflow: hidden`).
+
+**Rendering approach.** Rounded boxes and borders use an SDF shader with per-corner radii. Box and text shadows
+use the analytic blurred-rounded-rect technique (one quad each, no offscreen pass). `filter: blur` renders the
+subtree into an offscreen layer, blurs it and composites. `backdropFilter` copies the framebuffer region behind
+the box, blurs it and draws it clipped to the box shape. Both blurs use a separable Gaussian or dual-Kawase
+blur at reduced resolution. Images and fonts load through the asset system and are cached by path.
+
 ### 5.3 Layout engine: Taffy first, Yoga as fallback
 Layout sits behind its own interface so the engine can be swapped:
 

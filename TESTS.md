@@ -112,6 +112,22 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-02 | Golden | Rounded corners and borders render as expected. |
 | M2-DRW-03 | Headless | 2,000 boxes are drawn in a small, fixed number of draw calls (batched). |
 | M2-DRW-04 | Golden | The same draw list at scale factor 2 renders at twice the pixel size. |
+| M2-DRW-05 | Golden | Per-corner radii and borders, gradient fills, an image fill with `cover` and `contain`. |
+| M2-DRW-06 | Golden | Outer and inset box shadows with blur and spread, including on rounded boxes. |
+| M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
+| M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
+
+### Box visuals (styles and draw commands, no GPU)
+| ID | Kind | Checks |
+|---|---|---|
+| M2-VIS-01 | Unit | `hsl()/hsla()` and named colours parse (`rebeccapurple`, `hsl(120 100% 25%)`). |
+| M2-VIS-02 | Unit | `border: "2px solid red"` sets all widths and the colour; `border: "none"` clears; unsupported styles (`dashed`) warn. |
+| M2-VIS-03 | Unit | `borderRadius` 1–4 values map to the right corners; per-corner props; `"50%"` gives a circle on a square box. |
+| M2-VIS-04 | Unit | `boxShadow` lists parse: `"0 4px 12px rgba(0,0,0,.4), inset 0 0 0 1px #fff"` → two shadows with the right fields; bad lists keep the old value. |
+| M2-VIS-05 | Unit | `filter`/`backdropFilter` accept `blur(Npx)` and `none`; other functions warn. |
+| M2-VIS-06 | Unit | Gradient and `url()` backgrounds parse; size/position/repeat keywords and lengths parse. |
+| M2-VIS-07 | Unit | Draw order per node: backdrop blur → outer shadows → push layer (if filter) → fill/border → inset shadows → children → pop layer. |
+| M2-VIS-08 | Unit | With group opacity, a half-opaque parent emits one layer with opacity 0.5 instead of multiplying children's alpha. |
 
 ### Integration (React in QuickJS)
 | ID | Kind | Checks |
@@ -139,6 +155,11 @@ If Taffy misses these targets by a wide margin, that's the trigger to try the Yo
 | M3-TXT-01 | Golden | A text label renders, including non-Latin text and an emoji. |
 | M3-TXT-02 | Unit | Text wraps to the container width; measured height feeds back into layout. |
 | M3-TXT-03 | Benchmark | Re-measuring unchanged text hits the cache (no shaping). |
+| M3-TXT-04 | Golden | `color`, `fontSize`, `fontWeight: bold`, `fontStyle: italic`, `lineHeight`, `letterSpacing`, `textAlign` render as expected. |
+| M3-TXT-05 | Golden | `textShadow` with offset, blur and colour; multiple shadows stack in CSS order. |
+| M3-TXT-06 | Unit | `color` and font properties inherit to descendants unless overridden; `currentColor` follows `color`. |
+| M3-FNT-01 | Integration | A font loaded with `loadFont` (and with `@font-face`) is used by `fontFamily`; missing fonts fall back down the list, then to the bundled default. |
+| M3-FNT-02 | Unit | Picking weight/style from a family with several faces chooses the closest match (CSS font matching). |
 | M3-CSS-01 | Unit | The supported CSS subset parses; unsupported properties produce a warning, not an error. |
 | M3-CSS-02 | Unit | Class selectors and `:hover` / `:active` apply the right styles. |
 | M3-EVT-01 | Integration | A click at a point hits the topmost node under it. |
