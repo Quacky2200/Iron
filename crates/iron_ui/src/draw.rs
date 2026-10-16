@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::Rgba;
 use crate::paint::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode,
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode, BorderStyle,
 };
 
 /// An axis-aligned rectangle in logical pixels (window space).
@@ -223,6 +223,15 @@ pub enum DrawCmd {
         blend: BlendMode,
     },
     PopLayer,
+    /// A border that isn't one solid colour: per-side colours and styles (top, right,
+    /// bottom, left) drawn in the ring between `rect` and its inner edge.
+    Border {
+        rect: Rect,
+        radii: [f32; 4],
+        widths: [f32; 4],
+        colors: [Rgba; 4],
+        styles: [BorderStyle; 4],
+    },
     /// Following commands are clipped to `shape` (intersected with any clip already
     /// active) until the matching `PopClip`.
     PushClip(ClipShape),
@@ -324,6 +333,7 @@ impl DrawCmd {
                     .expand(s.spread.max(0.0) + s.blur),
             ),
             DrawCmd::Quad(q) => Some(q.rect),
+            DrawCmd::Border { rect, .. } => Some(*rect),
             DrawCmd::InsetShadow { shadow, .. } => Some(shadow.rect),
             DrawCmd::PushLayer { bounds, .. } => Some(*bounds),
             DrawCmd::Text(t) => Some(t.bounds),
@@ -340,6 +350,11 @@ impl DrawCmd {
             DrawCmd::Quad(q) => {
                 q.background = q.background.with_alpha_scaled(factor);
                 q.border_color = q.border_color.with_alpha_scaled(factor);
+            }
+            DrawCmd::Border { colors, .. } => {
+                for c in colors {
+                    *c = c.with_alpha_scaled(factor);
+                }
             }
             DrawCmd::Text(t) => {
                 for run in &mut t.runs {

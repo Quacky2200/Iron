@@ -33,6 +33,7 @@ const KIND_QUAD: u32 = 0u;
 const KIND_OUTER_SHADOW: u32 = 1u;
 const KIND_INSET_SHADOW: u32 = 2u;
 const KIND_GLYPH: u32 = 4u;
+const KIND_BORDER: u32 = 5u;
 
 struct Instance {
     @location(0) rect: vec4<f32>,   // the shape: x, y, w, h
@@ -233,6 +234,84 @@ fn gradient_color(index: u32, p: vec2<f32>, rect: vec4<f32>) -> vec4<f32> {
     return vec4(srgb_to_linear(c.rgb) * c.a, c.a);
 }
 
+// --- Styled borders -----------------------------------------------------------
+// Borders that aren't one solid colour. `p0` holds the widths (top, right, bottom,
+// left); the gradient table entry `params.z` holds the side colours (linear,
+// premultiplied) in `colors[0..4]` and the side styles in `info`
+// (BorderStyle::index: 0 none, 1 hidden, 2 solid, 3 dashed, 4 dotted, 5 double,
+// 6 groove, 7 ridge, 8 inset, 9 outset).
+
+fn styled_border(in: VsOut, p: vec2<f32>) -> vec4<f32> {
+    let r = in.rect;
+    let b = in.p0;
+    let outer = shape_coverage(p, r, in.radii);
+    let inner_rect = vec4(r.x + b.w, r.y + b.x, r.z - b.w - b.y, r.w - b.x - b.z);
+    let inner_radii = max(
+        in.radii - vec4(max(b.x, b.w), max(b.x, b.y), max(b.z, b.y), max(b.z, b.w)),
+        vec4(0.0),
+    );
+    let ring = outer - min(shape_coverage(p, inner_rect, inner_radii), outer);
+    if ring <= 0.0 {
+        return vec4(0.0);
+    }
+    let entry = gradients[u32(in.params.z)];
+    // Which side: the nearest outer edge relative to its width, so corners split
+    // along the line from the outer to the inner corner, like CSS.
+    let d = vec4(p.y - r.y, r.x + r.z - p.x, r.y + r.w - p.y, p.x - r.x);
+    let n = select(vec4(1e9), d / max(b, vec4(1e-4)), b > vec4(0.0));
+    var side = 0u;
+    var best = n.x;
+    if n.y < best { side = 1u; best = n.y; }
+    if n.z < best { side = 2u; best = n.z; }
+    if n.w < best { side = 3u; }
+    let w = b[side];
+    let t = d[side]; // depth into the border from its outer edge
+    // Distance along the side, clockwise, and the side's length.
+    var s: f32;
+    var len: f32;
+    switch side {
+        case 0u: { s = p.x - r.x; len = r.z; }
+        case 1u: { s = p.y - r.y; len = r.w; }
+        case 2u: { s = r.x + r.z - p.x; len = r.z; }
+        default: { s = r.y + r.w - p.y; len = r.w; }
+    }
+    let style = u32(entry.info[side]);
+    var color = entry.colors[side];
+    let dark = vec4(color.rgb * 0.22, color.a); // about half as bright in sRGB
+    let top_left = side == 0u || side == 3u;
+    let outer_half = t < w * 0.5;
+    var m = 1.0;
+    switch style {
+        case 0u, 1u: { m = 0.0; }
+        case 3u: {
+            // Dashes twice as long as the gaps, a whole number per side, centred on
+            // the corners so they join there.
+            let unit = len / max(1.0, round(len / (3.0 * w)));
+            m = select(0.0, 1.0, fract(s / unit + 1.0 / 3.0) < 2.0 / 3.0);
+        }
+        case 4u: {
+            // Round dots one width across, a whole number per side, one per corner.
+            let unit = len / max(1.0, round(len / (2.0 * w)));
+            let along = (fract(s / unit + 0.5) - 0.5) * unit;
+            let dist = length(vec2(along, t - w * 0.5));
+            m = clamp((w * 0.5 - dist) * globals.scale + 0.5, 0.0, 1.0);
+        }
+        case 5u: {
+            m = select(0.0, 1.0, t < w / 3.0 || t > w * 2.0 / 3.0);
+        }
+        case 6u, 7u: {
+            // groove: the outer half dark on the top/left sides, the inner half on
+            // the bottom/right; ridge the other way round.
+            let dark_here = (outer_half == top_left) == (style == 6u);
+            color = select(color, dark, dark_here);
+        }
+        case 8u: { color = select(color, dark, top_left); }
+        case 9u: { color = select(dark, color, top_left); }
+        default: {}
+    }
+    return color * ring * m;
+}
+
 // --- Glyphs -------------------------------------------------------------------
 // `rect` is the destination (logical px, pixel-aligned in physical px), `p0` the
 // image in the atlas (px), `params.y` 1 for colour glyphs, `color0` the text colour.
@@ -339,6 +418,9 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     }
     if kind == KIND_GLYPH {
         return glyph(in);
+    }
+    if kind == KIND_BORDER {
+        return styled_border(in, p);
     }
     if kind == KIND_INSET_SHADOW {
         // Drawn inside the padding box, everywhere except the (blurred) hole.

@@ -107,7 +107,7 @@ fn simple_selectors_and_specificity() {
     assert_eq!(bg(&tree, a), BLUE, "#id beats .class.class");
     assert_eq!(bg(&tree, b), GREEN, ".class beats type");
     assert_eq!(
-        tree.visual(NodeId(b)).unwrap().border_color,
+        tree.visual(NodeId(b)).unwrap().border_colors[0],
         RED,
         "attribute selector"
     );
@@ -144,12 +144,12 @@ fn combinators() {
     assert_eq!(bg(&tree, fourth), GREEN);
     for id in [third, fourth] {
         assert_eq!(
-            tree.visual(NodeId(id)).unwrap().border_color,
+            tree.visual(NodeId(id)).unwrap().border_colors[0],
             BLUE,
             "~ picks all following"
         );
     }
-    assert_eq!(tree.visual(NodeId(second)).unwrap().border_color, NONE);
+    assert_eq!(tree.visual(NodeId(second)).unwrap().border_colors[0], NONE);
 }
 
 // M3-CSS-02
@@ -183,7 +183,7 @@ fn structural_pseudo_classes() {
     for (i, id) in items.iter().enumerate() {
         let expected = if i % 2 == 0 { GREEN } else { NONE };
         assert_eq!(
-            tree.visual(NodeId(*id)).unwrap().border_color,
+            tree.visual(NodeId(*id)).unwrap().border_colors[0],
             expected,
             "item {i}"
         );
@@ -223,7 +223,10 @@ fn logical_pseudo_classes() {
     assert_eq!(bg(&tree, other), RED, ":where has zero specificity");
     assert_eq!(bg(&tree, parent_with), BLUE);
     assert_eq!(bg(&tree, parent_without), NONE);
-    assert_eq!(tree.visual(NodeId(before_sib)).unwrap().border_color, RED);
+    assert_eq!(
+        tree.visual(NodeId(before_sib)).unwrap().border_colors[0],
+        RED
+    );
 }
 
 // M3-CSS-09
@@ -245,15 +248,15 @@ fn empty_and_blank() {
     );
     assert_eq!(bg(&tree, empty), RED);
     assert_eq!(bg(&tree, blank), NONE, "whitespace text isn't :empty");
-    assert_eq!(tree.visual(NodeId(empty)).unwrap().border_color, BLUE);
+    assert_eq!(tree.visual(NodeId(empty)).unwrap().border_colors[0], BLUE);
     assert_eq!(
-        tree.visual(NodeId(blank)).unwrap().border_color,
+        tree.visual(NodeId(blank)).unwrap().border_colors[0],
         BLUE,
         "whitespace text is :blank"
     );
     for id in [texty, parent] {
         assert_eq!(bg(&tree, id), NONE);
-        assert_eq!(tree.visual(NodeId(id)).unwrap().border_color, NONE);
+        assert_eq!(tree.visual(NodeId(id)).unwrap().border_colors[0], NONE);
     }
 }
 
@@ -323,7 +326,7 @@ fn state_and_form_pseudo_classes() {
         },
     );
     tree.layout_if_needed();
-    assert_eq!(tree.visual(NodeId(field)).unwrap().border_color, BLUE);
+    assert_eq!(tree.visual(NodeId(field)).unwrap().border_colors[0], BLUE);
     assert_eq!(tree.visual(NodeId(field)).unwrap().opacity, 0.8);
     assert_eq!(bg(&tree, form), BLUE, ":focus-within on the ancestor");
 
@@ -451,7 +454,7 @@ fn custom_properties_inherit_and_substitute() {
     assert_eq!(bg(&tree, card), BLUE, "inherits the nearest definition");
     assert_eq!(bg(&tree, plain), RED, "from :root");
     assert_eq!(
-        tree.visual(NodeId(inner)).unwrap().border_color,
+        tree.visual(NodeId(inner)).unwrap().border_colors[0],
         GREEN,
         "fallback"
     );

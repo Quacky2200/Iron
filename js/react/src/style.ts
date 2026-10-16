@@ -3,6 +3,18 @@
 
 type Length = number | string;
 
+export type BorderStyle =
+  | "none"
+  | "hidden"
+  | "solid"
+  | "dashed"
+  | "dotted"
+  | "double"
+  | "groove"
+  | "ridge"
+  | "inset"
+  | "outset";
+
 export type BlendMode =
   | "normal"
   | "multiply"
@@ -146,8 +158,24 @@ export interface IronStyle {
   backgroundBlendMode?: string;
   /** How the element blends with what's beneath it. */
   mixBlendMode?: BlendMode;
+  /** Width, style and colour, e.g. `"2px dashed red"`. No style means no border, like CSS. */
   border?: string;
+  borderTop?: string;
+  borderRight?: string;
+  borderBottom?: string;
+  borderLeft?: string;
+  /** 1-4 colours (top, right, bottom, left). */
   borderColor?: string;
+  borderTopColor?: string;
+  borderRightColor?: string;
+  borderBottomColor?: string;
+  borderLeftColor?: string;
+  /** 1-4 styles. Iron's default is `solid`, so a width alone draws a border. */
+  borderStyle?: string;
+  borderTopStyle?: BorderStyle;
+  borderRightStyle?: BorderStyle;
+  borderBottomStyle?: BorderStyle;
+  borderLeftStyle?: BorderStyle;
   borderRadius?: Length;
   borderTopLeftRadius?: Length;
   borderTopRightRadius?: Length;

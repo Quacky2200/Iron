@@ -18,9 +18,10 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BlendMode, ClipPath, Corners, Len, ObjectFit, Overflow, Shadow, parse_background_image,
-    parse_background_position, parse_background_repeat, parse_background_size, parse_blur_filter,
-    parse_clip_rect, parse_layers, parse_radii, parse_shadows, split_top_level,
+    BlendMode, BorderStyle, ClipPath, Corners, Len, ObjectFit, Overflow, Shadow,
+    parse_background_image, parse_background_position, parse_background_repeat,
+    parse_background_size, parse_blur_filter, parse_clip_rect, parse_layers, parse_radii,
+    parse_shadows, split_top_level,
 };
 use crate::text_style::{self, TextProps};
 
@@ -42,9 +43,11 @@ pub struct Visual {
     pub background_blends: Vec<BlendMode>,
     /// `mixBlendMode`: blends the element (as a group) with what's beneath it.
     pub mix_blend: BlendMode,
-    pub border_color: Rgba,
-    /// `borderColor: currentColor` (also the CSS default when `border` omits a colour).
-    pub border_current: bool,
+    /// Per side: top, right, bottom, left.
+    pub border_colors: [Rgba; 4],
+    /// `currentColor` per side (also the CSS default when `border` omits a colour).
+    pub border_currents: [bool; 4],
+    pub border_styles: [BorderStyle; 4],
     pub border_radius: Corners<Len>,
     pub shadows: Vec<Shadow>,
     /// `filter: blur(..)` radius; 0 means none.
@@ -99,8 +102,9 @@ impl Default for Visual {
             background_clips: vec![BackgroundClip::default()],
             background_blends: vec![BlendMode::Normal],
             mix_blend: BlendMode::Normal,
-            border_color: Rgba::TRANSPARENT,
-            border_current: false,
+            border_colors: [Rgba::TRANSPARENT; 4],
+            border_currents: [false; 4],
+            border_styles: [BorderStyle::Solid; 4],
             border_radius: Corners::all(Len::Px(0.0)),
             shadows: Vec::new(),
             filter_blur: 0.0,
@@ -628,21 +632,50 @@ pub fn apply_style(
             visual.background_repeats =
                 parse_layers(kw()?, parse_background_repeat).ok_or_else(invalid)?
         }
-        "borderColor" if is_current_color(value) => visual.border_current = true,
         "borderColor" => {
-            visual.border_color = color(value).ok_or_else(invalid)?;
-            visual.border_current = false;
+            let colors = four_sides(value, |t| {
+                if t.eq_ignore_ascii_case("currentcolor") {
+                    Some(None)
+                } else {
+                    Rgba::parse(t).map(Some)
+                }
+            })
+            .ok_or_else(invalid)?;
+            for (side, c) in colors.into_iter().enumerate() {
+                visual.border_currents[side] = c.is_none();
+                visual.border_colors[side] = c.unwrap_or(Rgba::TRANSPARENT);
+            }
+        }
+        "borderStyle" => {
+            let styles = four_sides(value, BorderStyle::parse).ok_or_else(invalid)?;
+            for (side, s) in styles.into_iter().enumerate() {
+                set_border_style(style, visual, side, s);
+            }
         }
         "border" => {
-            let (width, color) = border_shorthand(value).ok_or_else(invalid)?;
-            style.border = Rect {
-                top: width,
-                right: width,
-                bottom: width,
-                left: width,
-            };
-            visual.border_current = color.is_none();
-            visual.border_color = color.unwrap_or(Rgba::TRANSPARENT);
+            let (width, s, color) = border_shorthand(value).ok_or_else(invalid)?;
+            for side in 0..4 {
+                set_border_side(style, visual, side, width, s, color);
+            }
+        }
+        _ if border_side(prop).is_some() => {
+            let (side, part) = border_side(prop).expect("checked");
+            match part {
+                "" => {
+                    let (width, s, color) = border_shorthand(value).ok_or_else(invalid)?;
+                    set_border_side(style, visual, side, width, s, color);
+                }
+                "Color" if is_current_color(value) => visual.border_currents[side] = true,
+                "Color" => {
+                    visual.border_colors[side] = color(value).ok_or_else(invalid)?;
+                    visual.border_currents[side] = false;
+                }
+                "Style" => {
+                    let s = BorderStyle::parse(kw()?).ok_or_else(invalid)?;
+                    set_border_style(style, visual, side, s);
+                }
+                _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
+            }
         }
         "borderRadius" => {
             visual.border_radius = match value {
@@ -881,8 +914,23 @@ pub(crate) fn copy_prop(
             visual.background_current = false;
         }
         "borderColor" => {
-            visual.border_color = v.border_color;
-            visual.border_current = false;
+            visual.border_colors = v.border_colors;
+            visual.border_currents = v.border_currents;
+        }
+        "borderStyle" => visual.border_styles = v.border_styles,
+        _ if border_side(prop).is_some_and(|(_, part)| part != "Width") => {
+            let (side, part) = border_side(prop).expect("checked");
+            if matches!(part, "" | "Color") {
+                visual.border_colors[side] = v.border_colors[side];
+                visual.border_currents[side] = v.border_currents[side];
+            }
+            if matches!(part, "" | "Style") {
+                visual.border_styles[side] = v.border_styles[side];
+            }
+            if part.is_empty() {
+                let width = [d.border.top, d.border.right, d.border.bottom, d.border.left][side];
+                set_side(&mut style.border, side, width);
+            }
         }
         "background" => {
             visual.background = v.background;
@@ -901,8 +949,9 @@ pub(crate) fn copy_prop(
         "backgroundRepeat" => visual.background_repeats = v.background_repeats,
         "border" => {
             style.border = d.border;
-            visual.border_color = v.border_color;
-            visual.border_current = false;
+            visual.border_colors = v.border_colors;
+            visual.border_currents = v.border_currents;
+            visual.border_styles = v.border_styles;
         }
         "borderRadius" => visual.border_radius = v.border_radius,
         "borderTopLeftRadius" => visual.border_radius.top_left = v.border_radius.top_left,
@@ -1052,9 +1101,12 @@ fn radius(v: &Value) -> Option<Len> {
 /// Like CSS, a missing style means `none` (no border) and a missing colour comes back
 /// as `None` (`currentColor`, resolved from the text colour). Only `solid`,
 /// `none` and `hidden` styles are supported; other styles are rejected.
-fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Option<Rgba>)> {
+/// `border` / `borderTop`...: width, style and colour in any order. Like CSS, no
+/// style (or `none`/`hidden`) means no border; a style without a width is `medium`.
+/// The colour is `None` for `currentColor` (also when omitted).
+fn border_shorthand(v: &Value) -> Option<(LengthPercentage, BorderStyle, Option<Rgba>)> {
     let s = v.as_str()?;
-    let (mut width, mut solid, mut color) = (None, None, None);
+    let (mut width, mut style, mut color) = (None, None, None);
     for token in split_top_level(s, ' ') {
         let w = match token {
             "thin" => Some(1.0),
@@ -1069,8 +1121,8 @@ fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Option<Rgba>)> {
             && width.is_none()
         {
             width = Some(w);
-        } else if matches!(token, "solid" | "none" | "hidden") && solid.is_none() {
-            solid = Some(token == "solid");
+        } else if let Some(st) = BorderStyle::parse(token).filter(|_| style.is_none()) {
+            style = Some(st);
         } else if color.is_none() && token.eq_ignore_ascii_case("currentcolor") {
             color = Some(None);
         } else if color.is_none() {
@@ -1079,12 +1131,72 @@ fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Option<Rgba>)> {
             return None;
         }
     }
-    let width = if solid == Some(true) {
+    let style = style.unwrap_or(BorderStyle::None);
+    let width = if style.is_visible() {
         width.unwrap_or(3.0)
     } else {
         0.0
     };
-    Some((LengthPercentage::length(width), color.flatten()))
+    Some((LengthPercentage::length(width), style, color.flatten()))
+}
+
+/// `borderTop`, `borderRightColor`, `borderLeftStyle`, ...: the side (0 top, 1 right,
+/// 2 bottom, 3 left) and the rest of the name (`""`, `Color`, `Style`, `Width`).
+fn border_side(prop: &str) -> Option<(usize, &str)> {
+    let rest = prop.strip_prefix("border")?;
+    ["Top", "Right", "Bottom", "Left"]
+        .iter()
+        .enumerate()
+        .find_map(|(i, side)| {
+            let part = rest.strip_prefix(side)?;
+            matches!(part, "" | "Color" | "Style" | "Width").then_some((i, part))
+        })
+}
+
+fn set_side<T>(sides: &mut Rect<T>, side: usize, value: T) {
+    match side {
+        0 => sides.top = value,
+        1 => sides.right = value,
+        2 => sides.bottom = value,
+        _ => sides.left = value,
+    }
+}
+
+/// Sets one side's style; like CSS, `none` and `hidden` take no space.
+fn set_border_style(style: &mut Style, visual: &mut Visual, side: usize, s: BorderStyle) {
+    visual.border_styles[side] = s;
+    if !s.is_visible() {
+        set_side(&mut style.border, side, LengthPercentage::length(0.0));
+    }
+}
+
+fn set_border_side(
+    style: &mut Style,
+    visual: &mut Visual,
+    side: usize,
+    width: LengthPercentage,
+    s: BorderStyle,
+    color: Option<Rgba>,
+) {
+    set_side(&mut style.border, side, width);
+    visual.border_styles[side] = s;
+    visual.border_currents[side] = color.is_none();
+    visual.border_colors[side] = color.unwrap_or(Rgba::TRANSPARENT);
+}
+
+/// 1-4 space-separated values for top, right, bottom, left (CSS box order).
+fn four_sides<T: Copy>(v: &Value, parse: impl Fn(&str) -> Option<T>) -> Option<[T; 4]> {
+    let values: Vec<T> = split_top_level(v.as_str()?, ' ')
+        .into_iter()
+        .map(parse)
+        .collect::<Option<_>>()?;
+    Some(match values[..] {
+        [all] => [all; 4],
+        [vertical, horizontal] => [vertical, horizontal, vertical, horizontal],
+        [top, horizontal, bottom] => [top, horizontal, bottom, horizontal],
+        [top, right, bottom, left] => [top, right, bottom, left],
+        _ => return None,
+    })
 }
 
 /// CSS box shorthand: one number, or 1–4 space-separated values (top right bottom left).
@@ -1360,6 +1472,45 @@ mod tests {
         Ok((style, visual))
     }
 
+    // M3-BRD-01
+    #[test]
+    fn border_styles_and_side_colours_parse() {
+        let mut style = Style::default();
+        let mut v = Visual::default();
+        let set = |style: &mut Style, v: &mut Visual, prop: &str, value: &str| {
+            apply_style(style, v, prop, &value.into()).map(|_| ())
+        };
+        set(&mut style, &mut v, "border", "2px dashed red").unwrap();
+        set(&mut style, &mut v, "borderColor", "red currentColor").unwrap();
+        set(&mut style, &mut v, "borderLeftStyle", "double").unwrap();
+        set(&mut style, &mut v, "borderBottom", "1px dotted blue").unwrap();
+        set(&mut style, &mut v, "borderRightColor", "lime").unwrap();
+        assert!(set(&mut style, &mut v, "borderStyle", "wavy").is_err());
+        assert!(set(&mut style, &mut v, "borderTopFoo", "1px").is_err());
+        assert_eq!(
+            v.border_styles,
+            [
+                BorderStyle::Dashed,
+                BorderStyle::Dashed,
+                BorderStyle::Dotted,
+                BorderStyle::Double
+            ]
+        );
+        assert_eq!(v.border_currents, [false, false, false, true]);
+        assert_eq!(v.border_colors[1], Rgba::parse("lime").unwrap());
+        assert_eq!(v.border_colors[2], Rgba::parse("blue").unwrap());
+        assert_eq!(style.border.bottom, LengthPercentage::length(1.0));
+
+        // `none` and `hidden` sides take no space.
+        set(&mut style, &mut v, "borderStyle", "solid none").unwrap();
+        assert_eq!(style.border.top, LengthPercentage::length(2.0));
+        assert_eq!(style.border.right, LengthPercentage::length(0.0));
+        assert_eq!(style.border.left, LengthPercentage::length(0.0));
+        // Iron draws a width alone (default style solid).
+        let (_, v) = apply("borderWidth", 2.0.into()).unwrap();
+        assert_eq!(v.border_styles, [BorderStyle::Solid; 4]);
+    }
+
     // M3-BG-02
     #[test]
     fn background_layer_lists() {
@@ -1584,12 +1735,12 @@ mod tests {
         let (s, v) = apply("border", "2px solid red".into()).unwrap();
         assert_eq!(s.border.left, LengthPercentage::length(2.0));
         assert_eq!(s.border.top, LengthPercentage::length(2.0));
-        assert_eq!(v.border_color, Rgba::new(1.0, 0.0, 0.0, 1.0));
+        assert_eq!(v.border_colors[0], Rgba::new(1.0, 0.0, 0.0, 1.0));
 
         // Any order; keyword widths; style without width is `medium` (3px).
         let (s, v) = apply("border", "#00f thick solid".into()).unwrap();
         assert_eq!(s.border.right, LengthPercentage::length(5.0));
-        assert_eq!(v.border_color, Rgba::new(0.0, 0.0, 1.0, 1.0));
+        assert_eq!(v.border_colors[3], Rgba::new(0.0, 0.0, 1.0, 1.0));
         let (s, _) = apply("border", "solid".into()).unwrap();
         assert_eq!(s.border.bottom, LengthPercentage::length(3.0));
 
@@ -1600,7 +1751,7 @@ mod tests {
         assert_eq!(s.border.top, LengthPercentage::length(0.0));
 
         // Unsupported styles and junk are rejected (and reported as warnings).
-        for bad in ["2px dashed red", "2px solid red blue", "wide solid"] {
+        for bad in ["2px wavy red", "2px solid red blue", "wide solid"] {
             assert!(apply("border", bad.into()).is_err(), "{bad:?}");
         }
     }

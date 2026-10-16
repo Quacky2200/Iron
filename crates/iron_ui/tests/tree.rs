@@ -172,6 +172,7 @@ fn shape(cmds: &[DrawCmd]) -> Vec<String> {
             DrawCmd::BoxShadow(s) => format!("shadow {}", s.offset_y),
             DrawCmd::Quad(q) => format!("quad {}", q.rect.width),
             DrawCmd::InsetShadow { shadow, .. } => format!("inset {}", shadow.spread),
+            DrawCmd::Border { rect, .. } => format!("border {}", rect.width),
             DrawCmd::PushLayer { blur, opacity, .. } => {
                 format!("push blur={blur} opacity={opacity}")
             }

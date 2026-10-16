@@ -609,6 +609,96 @@ fn blend_modes() {
     assert_golden("M3-BG-03", 100, 100, &f.pixels, TOLERANCE);
 }
 
+// M3-BRD-01
+#[test]
+fn border_styles_and_side_colours() {
+    let mut s = Scene::new();
+    // 1. One colour per side.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            60.0,
+            40.0,
+            &[
+                ("border", "8px solid".into()),
+                ("borderColor", "red lime blue yellow".into()),
+            ],
+        ),
+    );
+    // 2. Dashed, 3. dotted, 4. double, 5. inset, along 120px.
+    for (i, style) in [
+        "6px dashed white",
+        "6px dotted white",
+        "9px double white",
+        "6px inset rgb(200, 200, 200)",
+    ]
+    .iter()
+    .enumerate()
+    {
+        s.add(
+            0,
+            &at(
+                0.0,
+                50.0 + i as f64 * 40.0,
+                120.0,
+                30.0,
+                &[("border", (*style).into())],
+            ),
+        );
+    }
+    // 6. Only the top side, from its own shorthand, over a rounded box.
+    s.add(
+        0,
+        &at(
+            70.0,
+            0.0,
+            50.0,
+            40.0,
+            &[
+                ("borderTop", "4px dashed red".into()),
+                ("borderRadius", 8.0.into()),
+                ("backgroundColor", "rgb(40, 40, 40)".into()),
+            ],
+        ),
+    );
+    let f = render(s, (130, 220), 1.0, BLACK);
+    assert_eq!(f.px(30, 3), [255, 0, 0, 255], "top");
+    assert_eq!(f.px(56, 20), [0, 255, 0, 255], "right");
+    assert_eq!(f.px(30, 36), [0, 0, 255, 255], "bottom");
+    assert_eq!(f.px(3, 20), [255, 255, 0, 255], "left");
+
+    let row = |y: u32| (10..110).map(|x| f.px(x, y)).collect::<Vec<_>>();
+    let white = |p: &[u8; 4]| p[0] > 200;
+    let dark = |p: &[u8; 4]| p[0] < 40;
+    let dashes = row(53);
+    assert!(
+        dashes.iter().any(white) && dashes.iter().any(dark),
+        "dashes and gaps"
+    );
+    let dots = row(53 + 40);
+    assert!(
+        dots.iter().any(white) && dots.iter().any(dark),
+        "dots and gaps"
+    );
+    assert!(white(&f.px(60, 131)), "double: outer line");
+    assert!(dark(&f.px(60, 134)), "double: the gap");
+    assert!(white(&f.px(60, 137)), "double: inner line");
+    let (top, bottom) = (f.luma(60, 172), f.luma(60, 197));
+    assert!(
+        top + 40.0 < bottom,
+        "inset: top {top} darker than bottom {bottom}"
+    );
+    let top_row: Vec<_> = (78..112).map(|x| f.px(x, 1)).collect();
+    assert!(
+        top_row.iter().any(|p| p[0] > 200 && p[1] < 40),
+        "red dashes on top"
+    );
+    assert_eq!(f.px(95, 20), [40, 40, 40, 255], "no other sides");
+    assert_golden("M3-BRD-01", 130, 220, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

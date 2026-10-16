@@ -36,6 +36,7 @@ const KIND_OUTER_SHADOW: f32 = 1.0;
 const KIND_INSET_SHADOW: f32 = 2.0;
 const KIND_IMAGE: f32 = 3.0;
 const KIND_GLYPH: f32 = 4.0;
+const KIND_BORDER: f32 = 5.0;
 
 /// Where a frame is drawn.
 pub struct RenderTarget<'a> {
@@ -790,6 +791,33 @@ impl UiRenderer {
                         color0: linear_premultiplied(s.color),
                         color1: [0.0; 4],
                         params: [KIND_INSET_SHADOW, s.blur / 2.0, -1.0, 0.0],
+                    });
+                }
+                DrawCmd::Border {
+                    rect,
+                    radii,
+                    widths,
+                    colors,
+                    styles,
+                } => {
+                    // Side colours and styles ride in the gradient table: `colors[0..4]`
+                    // (linear, premultiplied) and `info` (style numbers).
+                    let mut entry = GpuGradient {
+                        info: styles.map(|s| s.index() as f32),
+                        ..Default::default()
+                    };
+                    for (slot, c) in entry.colors.iter_mut().zip(colors) {
+                        *slot = linear_premultiplied(*c);
+                    }
+                    gradients.push(entry);
+                    instances.push(Instance {
+                        rect: rect4(*rect),
+                        radii: *radii,
+                        p0: *widths,
+                        p1: [0.0; 4],
+                        color0: [0.0; 4],
+                        color1: [0.0; 4],
+                        params: [KIND_BORDER, 0.0, (gradients.len() - 1) as f32, 0.0],
                     });
                 }
                 DrawCmd::PushLayer {

@@ -375,7 +375,7 @@ fn focus_styles_apply() {
     tree.layout_if_needed();
     assert_eq!(tree.visual(form).unwrap().background, blue);
     assert_eq!(tree.visual(field).unwrap().background, green);
-    assert_eq!(tree.visual(field).unwrap().border_color, red);
+    assert_eq!(tree.visual(field).unwrap().border_colors[0], red);
 
     handle(&mut ui, &mut tree, &mut rec, Input::Blur(field));
     tree.layout_if_needed();

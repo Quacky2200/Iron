@@ -574,6 +574,51 @@ impl BackgroundClip {
     }
 }
 
+/// `border-style` for one side. Iron's default is `solid` (a width alone draws a
+/// border, as in s&box); CSS's is `none`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BorderStyle {
+    None,
+    Hidden,
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+    Double,
+    Groove,
+    Ridge,
+    Inset,
+    Outset,
+}
+
+impl BorderStyle {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "none" => Self::None,
+            "hidden" => Self::Hidden,
+            "solid" => Self::Solid,
+            "dashed" => Self::Dashed,
+            "dotted" => Self::Dotted,
+            "double" => Self::Double,
+            "groove" => Self::Groove,
+            "ridge" => Self::Ridge,
+            "inset" => Self::Inset,
+            "outset" => Self::Outset,
+            _ => return None,
+        })
+    }
+
+    /// Whether the side is drawn at all (`none` and `hidden` aren't, and take no space).
+    pub fn is_visible(self) -> bool {
+        !matches!(self, Self::None | Self::Hidden)
+    }
+
+    /// The style's number in the quad shader.
+    pub fn index(self) -> u32 {
+        self as u32
+    }
+}
+
 /// `mix-blend-mode` / `background-blend-mode`: how colours combine with what's
 /// beneath them (the W3C compositing modes, blended in sRGB).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

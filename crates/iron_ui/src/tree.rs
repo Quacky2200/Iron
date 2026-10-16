@@ -16,8 +16,8 @@ use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{
-    BackgroundClip, BackgroundImage, BackgroundRepeat, BlendMode, Overflow, Shadow, inner_corners,
-    resolve_radii,
+    BackgroundClip, BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle, Overflow, Shadow,
+    inner_corners, resolve_radii,
 };
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
@@ -2207,11 +2207,19 @@ impl<L: LayoutEngine> UiTree<L> {
                 background = Rgba::TRANSPARENT;
             }
         }
+        let colors = [0, 1, 2, 3].map(|i| current(v.border_colors[i], v.border_currents[i]));
+        // One solid colour all round is drawn by the quad itself.
+        let simple_border = v.border_styles.iter().all(|s| *s == BorderStyle::Solid)
+            && colors.iter().all(|c| *c == colors[0]);
         let quad = Quad {
             rect,
             background,
             images,
-            border_color: current(v.border_color, v.border_current),
+            border_color: if simple_border {
+                colors[0]
+            } else {
+                Rgba::TRANSPARENT
+            },
             border: l.border,
             radii,
         };
@@ -2223,6 +2231,17 @@ impl<L: LayoutEngine> UiTree<L> {
             blended_background(quad, v, &mut own);
         } else if quad.is_visible() {
             own.push(DrawCmd::Quad(quad));
+        }
+        let drawn =
+            |i: usize| l.border[i] > 0.0 && colors[i].a > 0.0 && v.border_styles[i].is_visible();
+        if !simple_border && (0..4).any(drawn) {
+            own.push(DrawCmd::Border {
+                rect,
+                radii,
+                widths: l.border,
+                colors,
+                styles: v.border_styles,
+            });
         }
         for s in v
             .shadows

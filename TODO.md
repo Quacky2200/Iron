@@ -502,8 +502,11 @@ and `@font-face`.
    - [x] `background-blend-mode` and `mix-blend-mode`: all 16 W3C modes, blended in sRGB. A
      blended element draws into a layer that the composite pass blends with a copy of its
      backdrop; blended background layers do the same inside an isolated group — `M3-BG-03`
-   - [ ] `border-style`: `dashed`, `dotted`, `double` (then `groove`/`ridge`/`inset`/`outset`); per-side
-     colours (`border-top-color`, ...) and per-side styles
+   - [x] `border-style`: `dashed`, `dotted`, `double`, `groove`, `ridge`, `inset`, `outset`; per-side
+     colours and styles (`borderColor`/`borderStyle` with 1-4 values, `borderTopColor`,
+     `borderTopStyle`, ... and the `borderTop`/... shorthands). Uniform solid borders stay on the
+     quad; others are a `DrawCmd::Border` styled per side in the shader (dashes and dots fit a
+     whole number per side). Iron's default style stays `solid` — `M3-BRD-01`
    - [ ] Elliptical corner radii (`border-radius: 10px / 20px`)
    - [ ] `outline`, `outline-width`, `outline-color`, `outline-style`, `outline-offset`
    - [ ] `border-image` (slice, width, `stretch` / `round`, `fill`), from images and gradients
