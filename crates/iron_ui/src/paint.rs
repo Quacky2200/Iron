@@ -118,11 +118,14 @@ pub struct Shadow {
     pub blur: f32,
     pub spread: f32,
     pub color: Rgba,
+    /// The colour is `currentColor` (given explicitly, or omitted as in CSS) and
+    /// is resolved from the element's text colour when drawn.
+    pub current_color: bool,
     pub inset: bool,
 }
 
 /// A comma-separated shadow list, e.g. `"0 4px 12px rgba(0,0,0,.4), inset 0 0 0 1px #fff"`.
-/// `none` gives an empty list. The colour defaults to black (CSS uses `currentColor`).
+/// `none` gives an empty list. A missing colour means `currentColor`, as in CSS.
 pub fn parse_shadows(s: &str) -> Option<Vec<Shadow>> {
     if s.trim() == "none" {
         return Some(Vec::new());
@@ -142,8 +145,10 @@ fn parse_shadow(s: &str) -> Option<Shadow> {
             inset = true;
         } else if let Some(Len::Px(px)) = Len::parse(token) {
             lengths.push(px);
+        } else if color.is_none() && token.eq_ignore_ascii_case("currentcolor") {
+            color = Some(None);
         } else if color.is_none() {
-            color = Some(Rgba::parse(token)?);
+            color = Some(Some(Rgba::parse(token)?));
         } else {
             return None;
         }
@@ -162,7 +167,8 @@ fn parse_shadow(s: &str) -> Option<Shadow> {
         offset_y,
         blur,
         spread,
-        color: color.unwrap_or(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        color: color.flatten().unwrap_or(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        current_color: !matches!(color, Some(Some(_))),
         inset,
     })
 }

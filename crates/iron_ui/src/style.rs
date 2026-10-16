@@ -21,17 +21,22 @@ use crate::paint::{
     parse_background_image, parse_background_position, parse_background_repeat,
     parse_background_size, parse_blur_filter, parse_radii, parse_shadows, split_top_level,
 };
+use crate::text_style::{self, TextProps};
 
 /// Paint-only properties (layout properties live in Taffy's `Style`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Visual {
     pub background: Rgba,
+    /// `backgroundColor: currentColor`: use the text colour.
+    pub background_current: bool,
     /// Shared so building the draw list each frame doesn't copy gradient stops.
     pub background_image: Option<Arc<BackgroundImage>>,
     pub background_size: BackgroundSize,
     pub background_position: BackgroundPosition,
     pub background_repeat: BackgroundRepeat,
     pub border_color: Rgba,
+    /// `borderColor: currentColor` (also the CSS default when `border` omits a colour).
+    pub border_current: bool,
     pub border_radius: Corners<Len>,
     pub shadows: Vec<Shadow>,
     /// `filter: blur(..)` radius; 0 means none.
@@ -39,22 +44,27 @@ pub struct Visual {
     /// `backdropFilter: blur(..)` radius; 0 means none.
     pub backdrop_blur: f32,
     pub opacity: f32,
+    /// Inherited text properties set on this node (see [`text_style`]).
+    pub text: TextProps,
 }
 
 impl Default for Visual {
     fn default() -> Self {
         Self {
             background: Rgba::TRANSPARENT,
+            background_current: false,
             background_image: None,
             background_size: BackgroundSize::default(),
             background_position: BackgroundPosition::default(),
             background_repeat: BackgroundRepeat::default(),
             border_color: Rgba::TRANSPARENT,
+            border_current: false,
             border_radius: Corners::all(Len::Px(0.0)),
             shadows: Vec::new(),
             filter_blur: 0.0,
             backdrop_blur: 0.0,
             opacity: 1.0,
+            text: TextProps::default(),
         }
     }
 }
@@ -177,12 +187,17 @@ pub fn apply_style(
         "gridColumn" => style.grid_column = grid_line(value).ok_or_else(invalid)?,
         "gridRow" => style.grid_row = grid_line(value).ok_or_else(invalid)?,
 
-        "backgroundColor" => visual.background = color(value).ok_or_else(invalid)?,
+        "backgroundColor" if is_current_color(value) => visual.background_current = true,
+        "backgroundColor" => {
+            visual.background = color(value).ok_or_else(invalid)?;
+            visual.background_current = false;
+        }
         "background" => {
             // Shorthand subset: a colour or a single image/gradient.
             let s = kw()?;
             if let Some(c) = Rgba::parse(s) {
                 visual.background = c;
+                visual.background_current = false;
                 visual.background_image = None;
             } else {
                 visual.background_image =
@@ -204,7 +219,11 @@ pub fn apply_style(
         "backgroundRepeat" => {
             visual.background_repeat = parse_background_repeat(kw()?).ok_or_else(invalid)?
         }
-        "borderColor" => visual.border_color = color(value).ok_or_else(invalid)?,
+        "borderColor" if is_current_color(value) => visual.border_current = true,
+        "borderColor" => {
+            visual.border_color = color(value).ok_or_else(invalid)?;
+            visual.border_current = false;
+        }
         "border" => {
             let (width, color) = border_shorthand(value).ok_or_else(invalid)?;
             style.border = Rect {
@@ -213,7 +232,8 @@ pub fn apply_style(
                 bottom: width,
                 left: width,
             };
-            visual.border_color = color;
+            visual.border_current = color.is_none();
+            visual.border_color = color.unwrap_or(Rgba::TRANSPARENT);
         }
         "borderRadius" => {
             visual.border_radius = match value {
@@ -238,6 +258,10 @@ pub fn apply_style(
         "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "opacity" => visual.opacity = num(value)?.clamp(0.0, 1.0),
+
+        p if text_style::is_text_prop(p) => text_style::apply(&mut visual.text, prop, value)
+            .expect("is a text prop")
+            .map_err(|()| invalid())?,
 
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
     }
@@ -308,8 +332,14 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "gridAutoFlow" => style.grid_auto_flow = d.grid_auto_flow,
         "gridColumn" => style.grid_column = d.grid_column,
         "gridRow" => style.grid_row = d.grid_row,
-        "backgroundColor" => visual.background = v.background,
-        "borderColor" => visual.border_color = v.border_color,
+        "backgroundColor" => {
+            visual.background = v.background;
+            visual.background_current = false;
+        }
+        "borderColor" => {
+            visual.border_color = v.border_color;
+            visual.border_current = false;
+        }
         "background" => {
             visual.background = v.background;
             visual.background_image = v.background_image;
@@ -321,6 +351,7 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "border" => {
             style.border = d.border;
             visual.border_color = v.border_color;
+            visual.border_current = false;
         }
         "borderRadius" => visual.border_radius = v.border_radius,
         "borderTopLeftRadius" => visual.border_radius.top_left = v.border_radius.top_left,
@@ -333,6 +364,9 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "filter" => visual.filter_blur = v.filter_blur,
         "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
         "opacity" => visual.opacity = v.opacity,
+        p if text_style::is_text_prop(p) => {
+            let _ = text_style::apply(&mut visual.text, prop, &Value::Null);
+        }
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
     }
     Ok(())
@@ -386,6 +420,11 @@ fn color(v: &Value) -> Option<Rgba> {
     Rgba::parse(v.as_str()?)
 }
 
+fn is_current_color(v: &Value) -> bool {
+    v.as_str()
+        .is_some_and(|s| s.trim().eq_ignore_ascii_case("currentcolor"))
+}
+
 /// One corner radius: a number (px), `"8px"` or `"50%"`.
 fn radius(v: &Value) -> Option<Len> {
     let len = match v {
@@ -400,10 +439,10 @@ fn radius(v: &Value) -> Option<Len> {
 }
 
 /// CSS `border` shorthand: width, style and colour in any order, e.g. `"2px solid #fff"`.
-/// Like CSS, a missing style means `none` (no border) and a missing colour is black
-/// (CSS uses `currentColor`, which arrives with text colours in M3). Only `solid`,
+/// Like CSS, a missing style means `none` (no border) and a missing colour comes back
+/// as `None` (`currentColor`, resolved from the text colour). Only `solid`,
 /// `none` and `hidden` styles are supported; other styles are rejected.
-fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Rgba)> {
+fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Option<Rgba>)> {
     let s = v.as_str()?;
     let (mut width, mut solid, mut color) = (None, None, None);
     for token in split_top_level(s, ' ') {
@@ -422,8 +461,10 @@ fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Rgba)> {
             width = Some(w);
         } else if matches!(token, "solid" | "none" | "hidden") && solid.is_none() {
             solid = Some(token == "solid");
+        } else if color.is_none() && token.eq_ignore_ascii_case("currentcolor") {
+            color = Some(None);
         } else if color.is_none() {
-            color = Some(Rgba::parse(token)?);
+            color = Some(Some(Rgba::parse(token)?));
         } else {
             return None;
         }
@@ -433,10 +474,7 @@ fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Rgba)> {
     } else {
         0.0
     };
-    Some((
-        LengthPercentage::length(width),
-        color.unwrap_or(Rgba::new(0.0, 0.0, 0.0, 1.0)),
-    ))
+    Some((LengthPercentage::length(width), color.flatten()))
 }
 
 /// CSS box shorthand: one number, or 1–4 space-separated values (top right bottom left).

@@ -487,3 +487,90 @@ fn text_node_errors() {
     assert_eq!(errors.len(), 4, "{errors:#?}");
     assert!(errors[0].0.contains("can't have children"));
 }
+
+// M3-TXT-06
+#[test]
+fn text_styles_inherit_and_current_color_follows_color() {
+    let mut tree = UiTree::new(200.0, 100.0);
+    apply_ok(
+        &mut tree,
+        vec![
+            create(1),
+            style(
+                1,
+                &[
+                    ("color", "#00ff00".into()),
+                    ("fontSize", 20.0.into()),
+                    ("width", 100.0.into()),
+                    ("height", 50.0.into()),
+                ],
+            ),
+            create(2),
+            sized(
+                2,
+                40.0,
+                40.0,
+                &[
+                    ("border", "2px solid".into()),  // colour omitted: currentColor
+                    ("boxShadow", "0 0 4px".into()), // colour omitted: currentColor
+                    ("backgroundColor", "currentColor".into()),
+                    ("fontSize", "1.5em".into()),
+                ],
+            ),
+            append(1, 2),
+            append(0, 1),
+        ],
+    );
+    let computed = tree.computed_text(NodeId(2));
+    assert_eq!(computed.color, Rgba::new(0.0, 1.0, 0.0, 1.0));
+    assert_eq!(computed.font_size, 30.0);
+
+    let green = Rgba::new(0.0, 1.0, 0.0, 1.0);
+    let cmds = tree.draw_list();
+    let quad = quads(&cmds)[0].clone();
+    assert_eq!(quad.background, green);
+    assert_eq!(quad.border_color, green);
+    let shadow = cmds.iter().find_map(|c| match c {
+        DrawCmd::BoxShadow(s) => Some(s.color),
+        _ => None,
+    });
+    assert_eq!(shadow, Some(green));
+
+    // Changing the ancestor's colour changes what currentColor resolves to.
+    apply_ok(&mut tree, vec![style(1, &[("color", "#0000ff".into())])]);
+    let cmds = tree.draw_list();
+    assert_eq!(quads(&cmds)[0].background, Rgba::new(0.0, 0.0, 1.0, 1.0));
+}
+
+// M3-TXT-06: inherited text properties dirty the text blocks below them.
+#[test]
+fn text_style_changes_dirty_inheriting_text_blocks() {
+    let mut tree = UiTree::new(200.0, 100.0);
+    apply_ok(
+        &mut tree,
+        vec![
+            create(1),
+            create_kind(2, "text"),
+            text_node(3, "a"),
+            create(4),
+            text_node(5, "b"),
+            append(2, 3),
+            append(1, 2),
+            append(4, 5),
+            append(1, 4),
+            append(0, 1),
+        ],
+    );
+    tree.take_dirty_text();
+
+    // A non-text style change dirties nothing.
+    apply_ok(&mut tree, vec![style(1, &[("width", 120.0.into())])]);
+    assert!(tree.take_dirty_text().is_empty());
+
+    // A font size on the ancestor dirties both text blocks below it.
+    apply_ok(&mut tree, vec![style(1, &[("fontSize", 24.0.into())])]);
+    let mut dirty = tree.take_dirty_text();
+    dirty.sort();
+    assert_eq!(dirty, [NodeId(2), NodeId(5)]);
+    assert_eq!(tree.computed_text(NodeId(3)).font_size, 24.0);
+}

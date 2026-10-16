@@ -4,11 +4,13 @@ use std::fmt;
 use iron_core::{Commit, NodeId, Value};
 use taffy::{Dimension, Display, Size, Style};
 
+use crate::Rgba;
 use crate::draw::{DrawCmd, ImageFill, Quad, Rect, ShadowShape};
 use crate::layout::{LayoutEngine, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{Shadow, resolve_radii};
 use crate::style::{Visual, apply_style};
+use crate::text_style::{ComputedText, is_text_prop};
 
 /// The root container every React root renders into.
 pub const ROOT: NodeId = NodeId(0);
@@ -129,6 +131,25 @@ impl<L: LayoutEngine> UiTree<L> {
         self.nodes.get(&id)?.parent
     }
 
+    /// The node's text style after inheritance (CSS computed values).
+    pub fn computed_text(&self, id: NodeId) -> ComputedText {
+        let mut chain = Vec::new();
+        let mut cursor = Some(id);
+        while let Some(n) = cursor {
+            let Some(node) = self.nodes.get(&n) else {
+                break;
+            };
+            chain.push(&node.visual.text);
+            cursor = node.parent;
+        }
+        chain
+            .into_iter()
+            .rev()
+            .fold(ComputedText::default(), |inherited, props| {
+                inherited.child(props)
+            })
+    }
+
     /// The characters of a `#text` node.
     pub fn text(&self, id: NodeId) -> Option<&str> {
         self.nodes.get(&id)?.text.as_deref()
@@ -202,6 +223,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let mut children_changed = HashSet::default();
         let mut styles_changed = HashSet::default();
         let mut text_changed = HashSet::default();
+        let mut text_style_changed = HashSet::default();
 
         for op in &commit.ops {
             if let Err(e) = self.apply_op(
@@ -209,6 +231,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 &mut children_changed,
                 &mut styles_changed,
                 &mut text_changed,
+                &mut text_style_changed,
             ) {
                 errors.push(e);
             }
@@ -245,6 +268,19 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.dirty_text.insert(root);
             }
         }
+        // Text properties inherit, so every text block at or below the node changes.
+        for id in text_style_changed {
+            if let Some(root) = self.text_root_of(id) {
+                self.dirty_text.insert(root);
+            }
+            let mut stack = vec![id];
+            while let Some(n) = stack.pop() {
+                if self.is_text_root(n) {
+                    self.dirty_text.insert(n);
+                }
+                stack.extend_from_slice(self.children(n));
+            }
+        }
         if !commit.ops.is_empty() {
             self.needs_layout = true;
         }
@@ -257,6 +293,7 @@ impl<L: LayoutEngine> UiTree<L> {
         children_changed: &mut HashSet<NodeId>,
         styles_changed: &mut HashSet<NodeId>,
         text_changed: &mut HashSet<NodeId>,
+        text_style_changed: &mut HashSet<NodeId>,
     ) -> Result<(), UiError> {
         let Value::Array(args) = op else {
             return Err(UiError(format!("op must be an array, got {op:?}")));
@@ -351,6 +388,9 @@ impl<L: LayoutEngine> UiTree<L> {
                     };
                     if let Err(e) = apply_style(&mut node.style, &mut node.visual, prop, &pair[1]) {
                         problems.push(e.to_string());
+                    }
+                    if is_text_prop(prop) {
+                        text_style_changed.insert(id);
                     }
                 }
                 styles_changed.insert(id);
@@ -495,11 +535,11 @@ impl<L: LayoutEngine> UiTree<L> {
     pub fn draw_list(&mut self) -> Vec<DrawCmd> {
         self.layout_if_needed();
         let mut out = Vec::new();
-        self.collect(ROOT, &mut out);
+        self.collect(ROOT, &ComputedText::default(), &mut out);
         out
     }
 
-    fn collect(&self, id: NodeId, out: &mut Vec<DrawCmd>) {
+    fn collect(&self, id: NodeId, inherited: &ComputedText, out: &mut Vec<DrawCmd>) {
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
@@ -511,6 +551,9 @@ impl<L: LayoutEngine> UiTree<L> {
             return;
         };
         let radii = resolve_radii(&v.border_radius, rect.width, rect.height);
+        let text = inherited.child(&v.text);
+        // `currentColor` resolves to this node's computed text colour.
+        let current = |color: Rgba, is_current: bool| if is_current { text.color } else { color };
 
         let mut own = Vec::new();
         let shadow = |s: &Shadow| ShadowShape {
@@ -520,27 +563,27 @@ impl<L: LayoutEngine> UiTree<L> {
             offset_y: s.offset_y,
             blur: s.blur,
             spread: s.spread,
-            color: s.color,
+            color: current(s.color, s.current_color),
         };
         // CSS paints the first shadow on top, so draw the list back to front.
         for s in v
             .shadows
             .iter()
             .rev()
-            .filter(|s| !s.inset && s.color.a > 0.0)
+            .filter(|s| !s.inset && current(s.color, s.current_color).a > 0.0)
         {
             own.push(DrawCmd::BoxShadow(shadow(s)));
         }
         let quad = Quad {
             rect,
-            background: v.background,
+            background: current(v.background, v.background_current),
             image: v.background_image.as_ref().map(|image| ImageFill {
                 image: image.clone(),
                 size: v.background_size,
                 position: v.background_position,
                 repeat: v.background_repeat,
             }),
-            border_color: v.border_color,
+            border_color: current(v.border_color, v.border_current),
             border: l.border,
             radii,
         };
@@ -551,7 +594,7 @@ impl<L: LayoutEngine> UiTree<L> {
             .shadows
             .iter()
             .rev()
-            .filter(|s| s.inset && s.color.a > 0.0)
+            .filter(|s| s.inset && current(s.color, s.current_color).a > 0.0)
         {
             own.push(DrawCmd::InsetShadow {
                 shadow: shadow(s),
@@ -577,7 +620,7 @@ impl<L: LayoutEngine> UiTree<L> {
             });
             out.extend(own);
             for child in &node.children {
-                self.collect(*child, out);
+                self.collect(*child, &text, out);
             }
             // The layer must cover everything drawn into it, plus the blur's spread.
             let content = out[start + 1..]
@@ -596,7 +639,7 @@ impl<L: LayoutEngine> UiTree<L> {
             }
             out.extend(own);
             for child in &node.children {
-                self.collect(*child, out);
+                self.collect(*child, &text, out);
             }
         }
     }

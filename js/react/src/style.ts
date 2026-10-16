@@ -79,6 +79,20 @@ export interface IronStyle {
   filter?: string;
   backdropFilter?: string;
   opacity?: number;
+
+  // Text (inherited, as in CSS). `currentColor` in colours means `color`.
+  color?: string;
+  fontFamily?: string;
+  fontSize?: number | string;
+  fontWeight?: number | "normal" | "bold";
+  fontStyle?: "normal" | "italic" | "oblique";
+  lineHeight?: number | string;
+  letterSpacing?: number | string;
+  wordSpacing?: number | string;
+  textAlign?: "start" | "end" | "left" | "right" | "center" | "justify";
+  textDecoration?: string;
+  whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap";
+  textShadow?: string;
 }
 
 type StyleValue = string | number | null;
