@@ -2,7 +2,8 @@
 // loaded by the engine; classNames select into it. Shows combinators, structural
 // pseudo-classes, :has/:not/:empty, attributes (:checked/:disabled), ::before and
 // ::after, custom properties, @font-face, and a runtime stylesheet (CSS-in-JS)
-// whose accent colour changes every second.
+// whose accent colour changes every second. Interaction (M3c): click an item to pin
+// the highlight, click the toggles, double-click the title.
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
@@ -38,21 +39,38 @@ function Accent({ tick }: { tick: number }) {
   return null;
 }
 
+function Toggle({ label, initial = false, disabled = false }: { label: string; initial?: boolean; disabled?: boolean }) {
+  const [checked, setChecked] = useState(initial);
+  return (
+    <box className="toggle" checked={checked} disabled={disabled} onClick={() => !disabled && setChecked(!checked)}>
+      <box className="box" />
+      <Text className="label">{label}</Text>
+    </box>
+  );
+}
+
 function App() {
   const tick = useTicker();
-  const highlighted = tick % 5;
+  const [pinned, setPinned] = useState<number | null>(null);
+  const [titleClicks, setTitleClicks] = useState(0);
+  const highlighted = pinned ?? tick % 5;
   return (
     <box className="app">
       <Accent tick={tick} />
-      <Text className="title">
+      <Text className="title" onDoubleClick={() => setTitleClicks(titleClicks + 1)}>
         CSS in <Span className="brand">Iron</Span>
+        {titleClicks > 0 ? ` (double-clicked ${titleClicks}x)` : ""}
       </Text>
 
       <box className="grid">
         <Card title="Structural selectors">
           <box className="list">
             {["First (bold)", "Second", "Third", "Fourth", "Last (muted)"].map((label, i) => (
-              <Text key={label} className={i === highlighted ? "item on" : "item"}>
+              <Text
+                key={label}
+                className={i === highlighted ? "item on" : "item"}
+                onClick={() => setPinned(pinned === i ? null : i)}
+              >
                 {label}
               </Text>
             ))}
@@ -71,18 +89,9 @@ function App() {
         </Card>
 
         <Card title="Attributes and :empty">
-          <box className="toggle" checked>
-            <box className="box" />
-            <Text className="label">Checked</Text>
-          </box>
-          <box className="toggle">
-            <box className="box" />
-            <Text className="label">Unchecked</Text>
-          </box>
-          <box className="toggle" disabled>
-            <box className="box" />
-            <Text className="label">Disabled</Text>
-          </box>
+          <Toggle label="Checked" initial />
+          <Toggle label="Unchecked" />
+          <Toggle label="Disabled" disabled />
           <box className="slot" />
           <box className="slot">
             <Text>Filled slot</Text>

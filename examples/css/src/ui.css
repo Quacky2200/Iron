@@ -98,6 +98,19 @@
   border-top: 1px solid var(--line);
 }
 
+/* Interaction (M3c): hover, press and the cursor. */
+.item {
+  cursor: pointer;
+}
+
+.item:hover {
+  background-color: #2e3747;
+}
+
+.item:active {
+  background-color: #3a4558;
+}
+
 .item.on {
   background-color: var(--accent);
   color: #0b0e14;
@@ -150,6 +163,18 @@
   height: 18px;
   border-radius: 4px;
   border: 2px solid var(--muted);
+}
+
+.toggle:enabled {
+  cursor: pointer;
+}
+
+.toggle:disabled {
+  cursor: not-allowed;
+}
+
+.toggle:enabled:hover .box {
+  border: 2px solid var(--text);
 }
 
 .toggle:checked .box {
