@@ -111,13 +111,48 @@ impl Radii {
 }
 
 /// A clip region: a rectangle with elliptical corners (`radii_x` / `radii_y` per corner:
-/// top-left, top-right, bottom-right, bottom-left). Rectangles, rounded boxes, circles
-/// and ellipses are all this shape.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// top-left, top-right, bottom-right, bottom-left), or a polygon inside `rect` (its
+/// bounding box). Rectangles, rounded boxes, circles and ellipses are all the first kind.
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClipShape {
     pub rect: Rect,
     pub radii_x: [f32; 4],
     pub radii_y: [f32; 4],
+    pub polygon: Option<Arc<Polygon>>,
+}
+
+/// `clip-path: polygon()` / `path()`: closed contours in window px.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Polygon {
+    pub contours: Vec<Vec<(f32, f32)>>,
+    /// `evenodd` fill; otherwise `nonzero`.
+    pub even_odd: bool,
+}
+
+impl Polygon {
+    /// Whether (x, y) is inside, by the fill rule.
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        let (mut winding, mut crossings) = (0, 0);
+        for contour in &self.contours {
+            for (i, &(ax, ay)) in contour.iter().enumerate() {
+                let (bx, by) = contour[(i + 1) % contour.len()];
+                let left = (bx - ax) * (y - ay) - (x - ax) * (by - ay);
+                if ay <= y && by > y && left > 0.0 {
+                    winding += 1;
+                } else if ay > y && by <= y && left < 0.0 {
+                    winding -= 1;
+                }
+                if (ay > y) != (by > y) && x < ax + (y - ay) * (bx - ax) / (by - ay) {
+                    crossings += 1;
+                }
+            }
+        }
+        if self.even_odd {
+            crossings % 2 == 1
+        } else {
+            winding != 0
+        }
+    }
 }
 
 impl ClipShape {
@@ -126,6 +161,7 @@ impl ClipShape {
             rect,
             radii_x: [0.0; 4],
             radii_y: [0.0; 4],
+            polygon: None,
         }
     }
 
@@ -135,6 +171,28 @@ impl ClipShape {
             rect,
             radii_x: radii.x,
             radii_y: radii.y,
+            polygon: None,
+        }
+    }
+
+    /// A polygon; `rect` becomes its bounding box.
+    pub fn polygon(polygon: Polygon) -> Self {
+        let points = polygon.contours.iter().flatten();
+        let (mut lo, mut hi) = ((f32::MAX, f32::MAX), (f32::MIN, f32::MIN));
+        for &(x, y) in points {
+            lo = (lo.0.min(x), lo.1.min(y));
+            hi = (hi.0.max(x), hi.1.max(y));
+        }
+        let rect = if lo.0 <= hi.0 {
+            Rect::new(lo.0, lo.1, hi.0 - lo.0, hi.1 - lo.1)
+        } else {
+            Rect::default()
+        };
+        Self {
+            rect,
+            radii_x: [0.0; 4],
+            radii_y: [0.0; 4],
+            polygon: Some(Arc::new(polygon)),
         }
     }
 
@@ -144,6 +202,9 @@ impl ClipShape {
         let (right, bottom) = (r.x + r.width, r.y + r.height);
         if x < r.x || y < r.y || x >= right || y >= bottom {
             return false;
+        }
+        if let Some(polygon) = &self.polygon {
+            return polygon.contains(x, y);
         }
         let left = x < r.x + r.width / 2.0;
         let top = y < r.y + r.height / 2.0;

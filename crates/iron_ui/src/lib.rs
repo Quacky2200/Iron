@@ -17,6 +17,7 @@ mod layout;
 pub mod opcodes;
 mod paint;
 mod style;
+mod svg_path;
 pub mod text;
 pub mod text_style;
 mod tree;
@@ -25,8 +26,8 @@ pub mod units;
 pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
 pub use draw::{
-    ClipShape, DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Radii, Rect, ShadowShape,
-    TextCmd,
+    ClipShape, DrawCmd, GlyphRun, ImageFill, Polygon, PositionedGlyph, Quad, Radii, Rect,
+    ShadowShape, TextCmd,
 };
 pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
 pub use interaction::{Clipboard, Direction, Input, Interaction};

@@ -2331,7 +2331,7 @@ impl<L: LayoutEngine> UiTree<L> {
         // `overflow` clips only the children, to the padding box.
         let self_clips = self.self_clips(node, rect, &l, radii);
         for clip in &self_clips {
-            out.push(DrawCmd::PushClip(*clip));
+            out.push(DrawCmd::PushClip(clip.clone()));
         }
         let overflow_clip = overflow_clip(v, rect, &l, radii);
 
@@ -2398,6 +2398,7 @@ impl<L: LayoutEngine> UiTree<L> {
         if node.children.is_empty() {
             return;
         }
+        let clipped = clip.is_some();
         if let Some(clip) = clip {
             out.push(DrawCmd::PushClip(clip));
         }
@@ -2406,7 +2407,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.collect(*child, text, out);
             }
         }
-        if clip.is_some() {
+        if clipped {
             out.push(DrawCmd::PopClip);
         }
     }

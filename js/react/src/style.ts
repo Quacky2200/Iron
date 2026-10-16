@@ -225,6 +225,7 @@ export interface IronStyle {
   overflowX?: Overflow;
   overflowY?: Overflow;
   /** Clips the element and its children: `inset(...)`, `circle(...)`, `ellipse(...)`, and/or a box keyword. */
+  /** `inset()`, `circle()`, `ellipse()`, `polygon()` or `path()`, and/or a reference box. */
   clipPath?: string;
   /** Legacy `rect(top, right, bottom, left)`; absolutely positioned elements only. Prefer `clipPath`. */
   clip?: string;

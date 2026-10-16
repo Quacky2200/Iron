@@ -92,7 +92,9 @@ struct GpuClip {
     rx: [f32; 4],
     ry: [f32; 4],
     bounds: [f32; 4],
-    /// x: parent index (1-based, 0 = none).
+    /// x: parent index (1-based, 0 = none); y: 0 for a rounded box, 1 for a nonzero
+    /// polygon, 2 for an evenodd one; z: the polygon's first point (an index into the
+    /// table read as an array of vec4s); w: its point count.
     info: [f32; 4],
 }
 
@@ -111,6 +113,7 @@ impl Clips {
         if parent > 0 {
             bounds = bounds.intersect(self.bounds[parent as usize - 1]);
         }
+        let index = self.table.len();
         self.table.push(GpuClip {
             rect: rect4(shape.rect),
             rx: shape.radii_x,
@@ -119,7 +122,32 @@ impl Clips {
             info: [parent as f32, 0.0, 0.0, 0.0],
         });
         self.bounds.push(bounds);
-        self.table.len() as u32
+        if let Some(polygon) = &shape.polygon {
+            // The points follow the entry in the table, one vec4 each: x, y, and the
+            // point range of its contour (start, end), so the shader can close it.
+            let mut words = Vec::new();
+            for contour in &polygon.contours {
+                let (start, end) = (words.len(), words.len() + contour.len());
+                for &(x, y) in contour {
+                    words.push([x, y, start as f32, end as f32]);
+                }
+            }
+            let first = (index + 1) * 5;
+            self.table[index].info = [
+                parent as f32,
+                if polygon.even_odd { 2.0 } else { 1.0 },
+                first as f32,
+                words.len() as f32,
+            ];
+            for chunk in words.chunks(5) {
+                let mut slot = [[0.0; 4]; 5];
+                slot[..chunk.len()].copy_from_slice(chunk);
+                self.table.push(bytemuck::cast(slot));
+                // Not a clip: keeps `bounds` indexed like the table.
+                self.bounds.push(bounds);
+            }
+        }
+        index as u32 + 1
     }
 
     fn bounds(&self, index: u32) -> Option<Rect> {

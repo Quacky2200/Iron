@@ -58,15 +58,16 @@ struct CompositeParams {
 @group(0) @binding(4) var<storage, read> clips: array<Clip>;
 
 // --- Clips (overflow, clip-path) ---------------------------------------------
-// A table of rounded rectangles with elliptical corners. Entries chain to their
-// parent (1-based index, 0 = none); coverage is the product along the chain.
+// A table of rounded rectangles with elliptical corners, or polygons. Entries chain
+// to their parent (1-based index, 0 = none); coverage is the product along the chain.
 
 struct Clip {
     rect: vec4<f32>,   // logical px
     rx: vec4<f32>,     // corner radii x: top-left, top-right, bottom-right, bottom-left
     ry: vec4<f32>,     // corner radii y
     bounds: vec4<f32>, // the whole chain's bounding box (x, y, w, h)
-    info: vec4<f32>,   // x: parent index (1-based, 0 = none)
+    info: vec4<f32>,   // x: parent index (1-based, 0 = none); y: 0 box, 1 nonzero
+                       // polygon, 2 evenodd; z: first point (vec4 index); w: point count
 };
 
 fn clip_corner(q: vec2<f32>, radii: vec4<f32>) -> f32 {
@@ -90,12 +91,62 @@ fn sd_clip(p: vec2<f32>, c: Clip) -> f32 {
     return min(max(edge.x, edge.y), 0.0) + length(max(edge, vec2(0.0)));
 }
 
+// Polygon clips (`clip-path: polygon()` / `path()`): the points follow the entry
+// in the table, one vec4 each (x, y, and their contour's point range), read as a
+// flat array of vec4s.
+fn clip_word(i: u32) -> vec4<f32> {
+    let e = clips[i / 5u];
+    switch i % 5u {
+        case 0u: { return e.rect; }
+        case 1u: { return e.rx; }
+        case 2u: { return e.ry; }
+        case 3u: { return e.bounds; }
+        default: { return e.info; }
+    }
+}
+
+// Signed distance to the polygon's edges: negative inside, by its fill rule.
+fn sd_polygon(p: vec2<f32>, c: Clip) -> f32 {
+    let first = u32(c.info.z);
+    let count = u32(c.info.w);
+    var d = 1e9;
+    var winding = 0;
+    var crossings = 0u;
+    for (var k = 0u; k < count; k++) {
+        let a4 = clip_word(first + k);
+        let next = select(u32(a4.z), k + 1u, k + 1u < u32(a4.w));
+        let a = a4.xy;
+        let b = clip_word(first + next).xy;
+        let e = b - a;
+        let w = p - a;
+        let t = clamp(dot(w, e) / max(dot(e, e), 1e-8), 0.0, 1.0);
+        d = min(d, length(w - e * t));
+        let left = e.x * w.y - e.y * w.x;
+        if a.y <= p.y && b.y > p.y && left > 0.0 {
+            winding += 1;
+        } else if a.y > p.y && b.y <= p.y && left < 0.0 {
+            winding -= 1;
+        }
+        if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * e.x / e.y {
+            crossings += 1u;
+        }
+    }
+    let inside = select(winding != 0, (crossings & 1u) == 1u, c.info.y > 1.5);
+    return select(d, -d, inside);
+}
+
 fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
     var i = index;
     var cover = 1.0;
     for (var n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
         let c = clips[i - 1u];
-        cover *= clamp(0.5 - sd_clip(p, c) * scale, 0.0, 1.0);
+        var d: f32;
+        if c.info.y > 0.5 {
+            d = sd_polygon(p, c);
+        } else {
+            d = sd_clip(p, c);
+        }
+        cover *= clamp(0.5 - d * scale, 0.0, 1.0);
         i = u32(c.info.x);
     }
     return cover;

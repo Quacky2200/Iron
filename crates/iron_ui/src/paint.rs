@@ -1174,7 +1174,7 @@ pub enum ShapeRadius {
     FarthestSide,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClipShapeSpec {
     /// `inset(top right bottom left round radii)`.
     Inset {
@@ -1194,11 +1194,22 @@ pub enum ClipShapeSpec {
     },
     /// The reference box itself (`clipPath: padding-box`), with the element's corners.
     Box,
+    /// `polygon([nonzero | evenodd,] x y, ...)`, relative to the reference box.
+    Polygon {
+        even_odd: bool,
+        points: Vec<(Len, Len)>,
+    },
+    /// `path([nonzero | evenodd,] "M ...")`: SVG path data in px from the reference
+    /// box's corner, flattened to contours when parsed.
+    Path {
+        even_odd: bool,
+        contours: Arc<Vec<Vec<(f32, f32)>>>,
+    },
 }
 
-/// `clipPath`: a basic shape and/or a reference box. `polygon()`, `path()` and
-/// `url()` aren't supported yet.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// `clipPath`: a basic shape and/or a reference box. `url()` (SVG `<clipPath>`
+/// elements) isn't supported.
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClipPath {
     pub shape: ClipShapeSpec,
     pub reference: GeometryBox,
@@ -1268,7 +1279,7 @@ impl ClipPath {
         let (w, h) = (reference.width, reference.height);
         let center =
             |at: (Len, Len)| (reference.x + at.0.resolve(w), reference.y + at.1.resolve(h));
-        match self.shape {
+        match &self.shape {
             ClipShapeSpec::Box => {
                 let shrink = match self.reference {
                     GeometryBox::Border => [0.0; 4],
@@ -1290,10 +1301,10 @@ impl ClipPath {
                     (w - left.resolve(w) - right.resolve(w)).max(0.0),
                     (h - top.resolve(h) - bottom.resolve(h)).max(0.0),
                 );
-                crate::ClipShape::rounded(rect, resolve_radii(&radii, rect.width, rect.height))
+                crate::ClipShape::rounded(rect, resolve_radii(radii, rect.width, rect.height))
             }
             ClipShapeSpec::Circle { r, at } => {
-                let (cx, cy) = center(at);
+                let (cx, cy) = center(*at);
                 let sides = [
                     cx - reference.x,
                     reference.x + w - cx,
@@ -1311,25 +1322,49 @@ impl ClipPath {
                 ellipse(cx, cy, r, r)
             }
             ClipShapeSpec::Ellipse { rx, ry, at } => {
-                let (cx, cy) = center(at);
+                let (cx, cy) = center(*at);
                 let axis = |r: ShapeRadius, lo: f32, hi: f32, size: f32| match r {
                     ShapeRadius::Len(l) => l.resolve(size),
                     ShapeRadius::ClosestSide => lo.min(hi),
                     ShapeRadius::FarthestSide => lo.max(hi),
                 };
                 let rx = axis(
-                    rx,
+                    *rx,
                     (cx - reference.x).abs(),
                     (reference.x + w - cx).abs(),
                     w,
                 );
                 let ry = axis(
-                    ry,
+                    *ry,
                     (cy - reference.y).abs(),
                     (reference.y + h - cy).abs(),
                     h,
                 );
                 ellipse(cx, cy, rx, ry)
+            }
+            ClipShapeSpec::Polygon { even_odd, points } => {
+                let contour = points
+                    .iter()
+                    .map(|(x, y)| (reference.x + x.resolve(w), reference.y + y.resolve(h)))
+                    .collect();
+                crate::ClipShape::polygon(crate::Polygon {
+                    contours: vec![contour],
+                    even_odd: *even_odd,
+                })
+            }
+            ClipShapeSpec::Path { even_odd, contours } => {
+                let contours = contours
+                    .iter()
+                    .map(|c| {
+                        c.iter()
+                            .map(|(x, y)| (reference.x + x, reference.y + y))
+                            .collect()
+                    })
+                    .collect();
+                crate::ClipShape::polygon(crate::Polygon {
+                    contours,
+                    even_odd: *even_odd,
+                })
             }
         }
     }
@@ -1341,6 +1376,17 @@ fn ellipse(cx: f32, cy: f32, rx: f32, ry: f32) -> crate::ClipShape {
         rect: crate::Rect::new(cx - rx, cy - ry, 2.0 * rx, 2.0 * ry),
         radii_x: [rx; 4],
         radii_y: [ry; 4],
+        polygon: None,
+    }
+}
+
+/// Splits an optional leading `nonzero` / `evenodd` off shape arguments.
+fn fill_rule(args: &str) -> (bool, &str) {
+    let parts = split_top_level(args, ',');
+    match parts.first().map(|p| p.trim()) {
+        Some("evenodd") => (true, args.split_once(',').map_or("", |(_, rest)| rest)),
+        Some("nonzero") => (false, args.split_once(',').map_or("", |(_, rest)| rest)),
+        _ => (false, args),
     }
 }
 
@@ -1417,6 +1463,30 @@ fn parse_shape(token: &str) -> Option<ClipShapeSpec> {
                 };
                 Some(ClipShapeSpec::Ellipse { rx, ry, at })
             }
+        }
+        "polygon" => {
+            let (even_odd, rest) = fill_rule(args);
+            let points: Vec<(Len, Len)> = split_top_level(rest, ',')
+                .into_iter()
+                .map(|pair| match split_top_level(pair, ' ')[..] {
+                    [x, y] => Some((Len::parse(x)?, Len::parse(y)?)),
+                    _ => None,
+                })
+                .collect::<Option<_>>()?;
+            (points.len() >= 3).then_some(ClipShapeSpec::Polygon { even_odd, points })
+        }
+        "path" => {
+            let (even_odd, rest) = fill_rule(args);
+            let d = rest.trim();
+            let d = d
+                .strip_prefix('"')
+                .and_then(|d| d.strip_suffix('"'))
+                .or_else(|| d.strip_prefix('\'')?.strip_suffix('\''))?;
+            let contours = crate::svg_path::flatten(d)?;
+            (!contours.is_empty()).then(|| ClipShapeSpec::Path {
+                even_odd,
+                contours: Arc::new(contours),
+            })
         }
         _ => None,
     }

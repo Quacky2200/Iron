@@ -860,6 +860,78 @@ fn border_images_from_images_and_gradients() {
     assert_golden("M3-BRD-04", 60, 150, &f.pixels, TOLERANCE);
 }
 
+// M3-CLIP-01
+#[test]
+fn polygon_and_path_clips() {
+    let mut s = Scene::new();
+    // A triangle.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            60.0,
+            60.0,
+            &[
+                ("backgroundColor", "white".into()),
+                ("clipPath", "polygon(50% 0, 100% 100%, 0 100%)".into()),
+            ],
+        ),
+    );
+    // A frame with a hole (evenodd), from path data.
+    s.add(
+        0,
+        &at(
+            70.0,
+            0.0,
+            60.0,
+            60.0,
+            &[
+                ("backgroundColor", "white".into()),
+                (
+                    "clipPath",
+                    "path(evenodd, 'M0 0 H60 V60 H0 Z M15 15 H45 V45 H15 Z')".into(),
+                ),
+            ],
+        ),
+    );
+    // A half-transparent group (drawn in a layer) clipped to a diamond.
+    let group = s.add(
+        0,
+        &at(
+            0.0,
+            70.0,
+            60.0,
+            60.0,
+            &[
+                ("opacity", 0.5.into()),
+                (
+                    "clipPath",
+                    "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)".into(),
+                ),
+            ],
+        ),
+    );
+    s.add(
+        group,
+        &at(0.0, 0.0, 60.0, 60.0, &[("backgroundColor", "white".into())]),
+    );
+    let f = render(s, (130, 130), 1.0, BLACK);
+    let white = [255, 255, 255, 255];
+    let black = [0, 0, 0, 255];
+    assert_eq!(f.px(30, 50), white, "inside the triangle");
+    assert_eq!(f.px(5, 10), black, "outside it");
+    assert_eq!(f.px(75, 30), white, "the frame");
+    assert_eq!(f.px(100, 30), black, "the hole");
+    let half = f.px(30, 100);
+    assert!(
+        (100..=200).contains(&half[0]),
+        "the group at half opacity: {half:?}"
+    );
+    assert_eq!(f.px(3, 73), black, "outside the diamond");
+    assert_golden("M3-CLIP-01", 130, 130, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

@@ -69,7 +69,7 @@ fn overflow_hidden_clips_children_to_the_padding_box_with_inner_radii() {
         ["shadow", "quad 100", "clip 92x92", "quad 150", "unclip"],
         "the box and its shadow aren't clipped, its child is"
     );
-    let clip = clips(&mut tree)[0];
+    let clip = clips(&mut tree)[0].clone();
     assert_eq!(clip.rect, Rect::new(4.0, 4.0, 92.0, 92.0));
     assert_eq!(clip.radii_x, [16.0; 4], "outer radius minus the border");
 }
@@ -92,7 +92,7 @@ fn every_clipping_overflow_value_clips_and_visible_does_not() {
 fn overflow_clip_on_one_axis_leaves_the_other_unbounded() {
     let (mut tree, _, _) =
         parent_with_big_child(&[("overflowX", "clip".into()), ("borderRadius", px(10.0))]);
-    let clip = clips(&mut tree)[0];
+    let clip = clips(&mut tree)[0].clone();
     assert_eq!((clip.rect.x, clip.rect.width), (0.0, 100.0));
     assert!(clip.rect.height > 1.0e6, "y isn't clipped");
     assert_eq!(clip.radii_x, [0.0; 4], "no corners on a one-axis clip");
@@ -114,7 +114,7 @@ fn clip_path_clips_the_element_and_its_children() {
         ["clip 100x100", "shadow", "quad 100", "quad 150", "unclip"],
         "clip-path wraps the shadow too"
     );
-    let clip = clips(&mut tree)[0];
+    let clip = clips(&mut tree)[0].clone();
     // 50% of the normalized diagonal of a square is half its side.
     assert_eq!(clip.radii_x, [50.0; 4]);
     assert_eq!(clip.radii_y, [50.0; 4]);
@@ -167,7 +167,7 @@ fn clip_path_shapes_resolve_against_the_reference_box() {
             ("border", "5px solid black".into()),
             ("borderRadius", px(12.0)),
         ]);
-        let clip = clips(&mut tree)[0];
+        let clip = clips(&mut tree)[0].clone();
         assert_eq!(
             (clip.rect, clip.radii_x, clip.radii_y),
             (rect, rx, ry),
@@ -179,7 +179,11 @@ fn clip_path_shapes_resolve_against_the_reference_box() {
 #[test]
 fn invalid_clip_values_are_rejected() {
     for value in [
-        "polygon(0 0, 10px 0, 0 10px)",
+        "polygon(0 0, 10px 0)",
+        "polygon(0 0, 10px, 0 10px)",
+        "path('L 10 10')",
+        "path(M 0 0 L 10 0 L 0 10)",
+        "url(#clip)",
         "circle(",
         "inset()",
         "banana",
@@ -248,12 +252,64 @@ fn hit_testing_ignores_clipped_away_parts() {
     );
 }
 
+// M3-CLIP-01
+#[test]
+fn polygon_and_path_clips_resolve_against_the_reference_box() {
+    let mut d = Dom::new();
+    let a = d.add(
+        0,
+        "box",
+        &[
+            ("width", px(100.0)),
+            ("height", px(100.0)),
+            ("clipPath", "polygon(50% 0, 100% 100%, 0 100%)".into()),
+        ],
+    );
+    let mut tree = d.build("");
+    let clip = clips(&mut tree)[0].clone();
+    assert_eq!(
+        clip.rect,
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        "the bounding box"
+    );
+    let polygon = clip.polygon.as_ref().expect("a polygon");
+    assert_eq!(
+        polygon.contours[0],
+        vec![(50.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+    );
+    // Hit testing follows the triangle.
+    assert_eq!(tree.hit_test(50.0, 80.0).map(|n| n.0), Some(a));
+    assert_eq!(tree.hit_test(10.0, 10.0), None, "outside the triangle");
+
+    // path() is in px from the box's corner; evenodd leaves the inner square open.
+    let mut d = Dom::new();
+    let b = d.add(
+        0,
+        "box",
+        &[
+            ("marginLeft", px(20.0)),
+            ("width", px(100.0)),
+            ("height", px(100.0)),
+            (
+                "clipPath",
+                "path(evenodd, 'M0 0 H100 V100 H0 Z M25 25 H75 V75 H25 Z')".into(),
+            ),
+        ],
+    );
+    let mut tree = d.build("");
+    let clip = clips(&mut tree)[0].clone();
+    assert_eq!(clip.rect, Rect::new(20.0, 0.0, 100.0, 100.0));
+    assert_eq!(tree.hit_test(30.0, 10.0).map(|n| n.0), Some(b), "the frame");
+    assert_eq!(tree.hit_test(70.0, 50.0), None, "the hole");
+}
+
 #[test]
 fn clip_shapes_contain_points_like_they_draw() {
     let ellipse = ClipShape {
         rect: Rect::new(0.0, 0.0, 100.0, 50.0),
         radii_x: [50.0; 4],
         radii_y: [25.0; 4],
+        polygon: None,
     };
     assert!(ellipse.contains(50.0, 25.0));
     assert!(ellipse.contains(2.0, 25.0), "left tip");

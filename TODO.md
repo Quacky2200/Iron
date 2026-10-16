@@ -518,9 +518,12 @@ and `@font-face`.
      `stretch`/`repeat`/`round`/`space`), from images and gradients. `BorderImage::pieces`
      computes the nine pieces; image pieces draw a part of the texture, gradient pieces stretch
      (no tiling for gradients yet) — `M3-BRD-04`
-   - [ ] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows
-     the shape). Standard equivalent: `clip-path` — `inset()`, `circle()`, `ellipse()` done in M3c;
-     `polygon()`, `path()` and `url()` still to do
+   - [x] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows
+     the shape), done the standard way with `clip-path` — `inset()`, `circle()`, `ellipse()` (M3c),
+     now `polygon()` and `path()` (SVG path data, curves and arcs flattened; `nonzero`/`evenodd`).
+     Polygon points ride in the clip table; both shaders compute a signed distance, and hit
+     testing uses the same fill rule — `M3-CLIP-01`. `url()` needs SVG `<clipPath>` elements,
+     which Iron doesn't have
 4. **Text**
    - [ ] `text-transform`, `text-overflow: ellipsis` (with `white-space: nowrap` + `overflow`)
    - [ ] `word-break`, `overflow-wrap`; `white-space: pre-line | break-spaces`
