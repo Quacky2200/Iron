@@ -470,11 +470,13 @@ and `@font-face`.
    - [ ] `order`, `z-index` (paint order and hit testing), `isolation: isolate`
    - [ ] `display: contents`; `position: fixed`
    - [x] `flex-flow` (Bun's minifier emits it)
-   - [ ] Shorthands `place-items`, `place-self`, `place-content`
-   - [ ] Grid: `grid-auto-rows`/`grid-auto-columns`, `grid-template`, `grid-template-areas`,
-     `grid-area`, `grid-row-start`/`-end`, `grid-column-start`/`-end`
-   - [ ] Logical properties: `margin-block`/`-inline`, `padding-block`/`-inline`,
-     `inset-block`/`-inline` (with `-start`/`-end`), mapped left-to-right
+   - [x] Shorthands `place-items`, `place-self`, `place-content`
+   - [x] Grid: `grid-auto-rows`/`grid-auto-columns`, `grid-template` (`rows / columns` and the area
+     strings form with row sizes), `grid-template-areas` (rectangles checked), `grid-area` (a name
+     or four lines), `grid-row-start`/`-end`, `grid-column-start`/`-end`
+   - [x] Logical properties: `margin-block`/`-inline`, `padding-block`/`-inline`,
+     `inset-block`/`-inline` (with `-start`/`-end`), `block-size`/`inline-size` (+ `min-`/`max-`),
+     mapped left-to-right (`crates/iron_ui/tests/layout_props.rs`); RTL-aware mapping later
    - [ ] An `<image>` element with `src` and `object-fit` (`fill`, `contain`, `cover`, `none`,
      `scale-down`) and `object-position`
 3. **Backgrounds and borders**

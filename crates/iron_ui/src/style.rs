@@ -370,6 +370,134 @@ pub fn apply_style(
         }
         "gridColumn" => style.grid_column = grid_line(value).ok_or_else(invalid)?,
         "gridRow" => style.grid_row = grid_line(value).ok_or_else(invalid)?,
+        "gridRowStart" => style.grid_row.start = placement(value).ok_or_else(invalid)?,
+        "gridRowEnd" => style.grid_row.end = placement(value).ok_or_else(invalid)?,
+        "gridColumnStart" => style.grid_column.start = placement(value).ok_or_else(invalid)?,
+        "gridColumnEnd" => style.grid_column.end = placement(value).ok_or_else(invalid)?,
+        "gridAutoRows" => style.grid_auto_rows = auto_tracks(kw()?).ok_or_else(invalid)?,
+        "gridAutoColumns" => style.grid_auto_columns = auto_tracks(kw()?).ok_or_else(invalid)?,
+        "gridTemplateAreas" => {
+            style.grid_template_areas = match kw()?.trim() {
+                "none" => None,
+                s => Some(
+                    template_areas(&quoted_strings(s).ok_or_else(invalid)?).ok_or_else(invalid)?,
+                ),
+            }
+        }
+        // `grid-area: name` or `row-start / column-start / row-end / column-end`.
+        "gridArea" => {
+            let parts: Vec<&str> = kw()?.split('/').map(str::trim).collect();
+            let p = |i: usize| -> Result<GridPlacement<String>, StyleError> {
+                match parts.get(i) {
+                    Some(s) => s.parse().map_err(|_| invalid()),
+                    // Omitted ends copy a named start, else auto.
+                    None => Ok(
+                        match parts
+                            .first()
+                            .and_then(|s| s.parse::<GridPlacement<String>>().ok())
+                        {
+                            Some(named @ GridPlacement::NamedLine(..)) if i != 0 => named,
+                            _ => GridPlacement::Auto,
+                        },
+                    ),
+                }
+            };
+            if parts.is_empty() || parts.len() > 4 {
+                return Err(invalid());
+            }
+            let (rs, cs) = (p(0)?, p(1)?);
+            let re = match parts.get(2) {
+                Some(_) => p(2)?,
+                None => same_name_or_auto(&rs),
+            };
+            let ce = match parts.get(3) {
+                Some(_) => p(3)?,
+                None => same_name_or_auto(&cs),
+            };
+            style.grid_row = Line { start: rs, end: re };
+            style.grid_column = Line { start: cs, end: ce };
+        }
+        // `grid-template: rows / columns`, or area strings with optional row sizes:
+        // `"a a" 40px "b c" 1fr / 1fr 2fr`.
+        "gridTemplate" => {
+            let text = kw()?.trim();
+            if text == "none" {
+                style.grid_template_rows = Vec::new();
+                style.grid_template_columns = Vec::new();
+                style.grid_template_row_names = Vec::new();
+                style.grid_template_column_names = Vec::new();
+                style.grid_template_areas = None;
+                return Ok(());
+            }
+            let (rows, columns) = match split_top_level(text, '/')[..] {
+                [r, c] => (r, Some(c)),
+                [r] => (r, None),
+                _ => return Err(invalid()),
+            };
+            if rows.contains('"') {
+                let (areas, sizes) = areas_and_sizes(rows).ok_or_else(invalid)?;
+                let tracks = grid_template(&sizes.join(" ")).ok_or_else(invalid)?;
+                style.grid_template_areas = Some(template_areas(&areas).ok_or_else(invalid)?);
+                style.grid_template_rows = tracks.tracks;
+                style.grid_template_row_names = tracks.line_names;
+            } else {
+                let tracks = grid_template(rows).ok_or_else(invalid)?;
+                style.grid_template_rows = tracks.tracks;
+                style.grid_template_row_names = tracks.line_names;
+                style.grid_template_areas = None;
+            }
+            match columns {
+                Some(c) => {
+                    let tracks = grid_template(c).ok_or_else(invalid)?;
+                    style.grid_template_columns = tracks.tracks;
+                    style.grid_template_column_names = tracks.line_names;
+                }
+                None => style.grid_template_columns = Vec::new(),
+            }
+        }
+        // `place-*: <align> [<justify>]` (one value sets both).
+        "placeItems" => {
+            let [a, j] = two_keywords(kw()?).ok_or_else(invalid)?;
+            style.align_items = parse_kw::<AlignItems>(a).ok_or_else(invalid)?;
+            style.justify_items = parse_kw::<AlignItems>(j).ok_or_else(invalid)?;
+        }
+        "placeSelf" => {
+            let [a, j] = two_keywords(kw()?).ok_or_else(invalid)?;
+            style.align_self = align_self(a).ok_or_else(invalid)?;
+            style.justify_self = align_self(j).ok_or_else(invalid)?;
+        }
+        "placeContent" => {
+            let [a, j] = two_keywords(kw()?).ok_or_else(invalid)?;
+            style.align_content = parse_kw::<AlignContent>(a).ok_or_else(invalid)?;
+            style.justify_content = parse_kw::<AlignContent>(j).ok_or_else(invalid)?;
+        }
+        // Logical properties, mapped for horizontal left-to-right writing.
+        p if logical_sides(p).is_some() => {
+            let sides = logical_sides(p).expect("checked");
+            match sides {
+                Logical::One(physical) => apply_style(style, visual, physical, value)?,
+                Logical::Two(start, end) => {
+                    let parts: Vec<Value> = match value {
+                        Value::String(s) => split_top_level(s, ' ')
+                            .into_iter()
+                            .map(Value::from)
+                            .collect(),
+                        other => vec![other.clone()],
+                    };
+                    let (a, b) = match &parts[..] {
+                        [one] => (one.clone(), one.clone()),
+                        [a, b] => (a.clone(), b.clone()),
+                        _ => return Err(invalid()),
+                    };
+                    // Check both before changing either, so an error changes nothing.
+                    let (mut s2, mut v2) = (style.clone(), visual.clone());
+                    apply_style(&mut s2, &mut v2, start, &a)?;
+                    apply_style(&mut s2, &mut v2, end, &b)?;
+                    *style = s2;
+                    *visual = v2;
+                }
+            }
+        }
 
         "backgroundColor" if is_current_color(value) => visual.background_current = true,
         "backgroundColor" => {
@@ -594,6 +722,43 @@ pub(crate) fn copy_prop(
         "gridAutoFlow" => style.grid_auto_flow = d.grid_auto_flow,
         "gridColumn" => style.grid_column = d.grid_column,
         "gridRow" => style.grid_row = d.grid_row,
+        "gridRowStart" => style.grid_row.start = d.grid_row.start,
+        "gridRowEnd" => style.grid_row.end = d.grid_row.end,
+        "gridColumnStart" => style.grid_column.start = d.grid_column.start,
+        "gridColumnEnd" => style.grid_column.end = d.grid_column.end,
+        "gridAutoRows" => style.grid_auto_rows = d.grid_auto_rows,
+        "gridAutoColumns" => style.grid_auto_columns = d.grid_auto_columns,
+        "gridTemplateAreas" => style.grid_template_areas = d.grid_template_areas,
+        "gridArea" => {
+            style.grid_row = d.grid_row;
+            style.grid_column = d.grid_column;
+        }
+        "gridTemplate" => {
+            style.grid_template_rows = d.grid_template_rows;
+            style.grid_template_columns = d.grid_template_columns;
+            style.grid_template_row_names = d.grid_template_row_names;
+            style.grid_template_column_names = d.grid_template_column_names;
+            style.grid_template_areas = d.grid_template_areas;
+        }
+        "placeItems" => {
+            style.align_items = d.align_items;
+            style.justify_items = d.justify_items;
+        }
+        "placeSelf" => {
+            style.align_self = d.align_self;
+            style.justify_self = d.justify_self;
+        }
+        "placeContent" => {
+            style.align_content = d.align_content;
+            style.justify_content = d.justify_content;
+        }
+        p if logical_sides(p).is_some() => match logical_sides(p).expect("checked") {
+            Logical::One(physical) => return copy_prop(style, visual, d, v, physical),
+            Logical::Two(start, end) => {
+                copy_prop(style, visual, d.clone(), v.clone(), start)?;
+                return copy_prop(style, visual, d, v, end);
+            }
+        },
         "backgroundColor" => {
             visual.background = v.background;
             visual.background_current = false;
@@ -845,6 +1010,173 @@ fn align_self(s: &str) -> Option<Option<AlignItems>> {
 
 fn grid_template(s: &str) -> Option<GridTemplateTracks<String, GridTemplateComponent<String>>> {
     s.trim().parse().ok()
+}
+
+/// A single grid line: `2`, `"span 2"`, `"header"` (named), `"auto"`.
+fn placement(v: &Value) -> Option<GridPlacement<String>> {
+    match v {
+        Value::Number(n) => n.to_string().parse().ok(),
+        Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// `grid-area: a` gives `a / a / a / a`; an omitted end copies a named start.
+fn same_name_or_auto(start: &GridPlacement<String>) -> GridPlacement<String> {
+    match start {
+        GridPlacement::NamedLine(..) => start.clone(),
+        _ => GridPlacement::Auto,
+    }
+}
+
+/// `grid-auto-rows` / `grid-auto-columns`: one or more track sizes.
+fn auto_tracks(s: &str) -> Option<Vec<taffy::TrackSizingFunction>> {
+    let tracks = grid_template(s)?;
+    tracks
+        .tracks
+        .into_iter()
+        .map(|t| match t {
+            GridTemplateComponent::Single(f) => Some(f),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .filter(|v| !v.is_empty())
+}
+
+/// The quoted strings in `"a a" "b c"` (other tokens are an error).
+fn quoted_strings(s: &str) -> Option<Vec<String>> {
+    let (areas, sizes) = areas_and_sizes(s)?;
+    sizes.is_empty().then_some(areas)
+}
+
+/// `"a a" 40px "b c" 1fr`: the area strings, and the row sizes after them (`auto`
+/// for rows without one; empty when no row has a size).
+fn areas_and_sizes(s: &str) -> Option<(Vec<String>, Vec<String>)> {
+    let mut areas = Vec::new();
+    let mut sizes: Vec<Option<String>> = Vec::new();
+    let mut rest = s.trim();
+    while !rest.is_empty() {
+        if let Some(r) = rest.strip_prefix('"').or_else(|| rest.strip_prefix('\'')) {
+            let quote = rest.chars().next()?;
+            let end = r.find(quote)?;
+            areas.push(r[..end].to_owned());
+            sizes.push(None);
+            rest = r[end + 1..].trim_start();
+        } else {
+            let token = split_top_level(rest, ' ').first()?.to_string();
+            *sizes.last_mut()? = Some(token.clone());
+            rest = rest[rest.find(&token)? + token.len()..].trim_start();
+        }
+    }
+    let any_size = sizes.iter().any(Option::is_some);
+    let sizes = if any_size {
+        sizes
+            .into_iter()
+            .map(|s| s.unwrap_or_else(|| "auto".into()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    (!areas.is_empty()).then_some((areas, sizes))
+}
+
+/// Grid areas from `grid-template-areas` rows: each name must cover a rectangle,
+/// `.` cells are empty, and rows must have the same number of cells.
+fn template_areas(rows: &[String]) -> Option<taffy::GridTemplateAreas<String>> {
+    let cells: Vec<Vec<&str>> = rows
+        .iter()
+        .map(|r| r.split_whitespace().collect())
+        .collect();
+    let columns = cells.first()?.len();
+    if columns == 0 || cells.iter().any(|r| r.len() != columns) {
+        return None;
+    }
+    let mut names: Vec<&str> = Vec::new();
+    for row in &cells {
+        for c in row {
+            if !c.chars().all(|ch| ch == '.') && !names.contains(c) {
+                names.push(c);
+            }
+        }
+    }
+    let mut areas = Vec::new();
+    for name in names {
+        let at: Vec<(usize, usize)> = cells
+            .iter()
+            .enumerate()
+            .flat_map(|(r, row)| {
+                row.iter()
+                    .enumerate()
+                    .filter(|(_, c)| **c == name)
+                    .map(move |(c, _)| (r, c))
+            })
+            .collect();
+        let (r0, r1) = (at.iter().map(|p| p.0).min()?, at.iter().map(|p| p.0).max()?);
+        let (c0, c1) = (at.iter().map(|p| p.1).min()?, at.iter().map(|p| p.1).max()?);
+        // Must be a filled rectangle.
+        if at.len() != (r1 - r0 + 1) * (c1 - c0 + 1) {
+            return None;
+        }
+        areas.push(taffy::GridTemplateArea {
+            name: name.to_owned(),
+            row_start: r0 as u16 + 1,
+            row_end: r1 as u16 + 2,
+            column_start: c0 as u16 + 1,
+            column_end: c1 as u16 + 2,
+        });
+    }
+    Some(taffy::GridTemplateAreas {
+        areas,
+        row_count: cells.len() as u16,
+        column_count: columns as u16,
+    })
+}
+
+/// One or two keywords; one sets both.
+fn two_keywords(s: &str) -> Option<[&str; 2]> {
+    match s.split_whitespace().collect::<Vec<_>>()[..] {
+        [a] => Some([a, a]),
+        [a, b] => Some([a, b]),
+        _ => None,
+    }
+}
+
+/// A logical property's physical counterparts (horizontal, left-to-right writing).
+#[derive(Clone, Copy)]
+enum Logical {
+    One(&'static str),
+    Two(&'static str, &'static str),
+}
+
+fn logical_sides(prop: &str) -> Option<Logical> {
+    use Logical::*;
+    Some(match prop {
+        "marginBlock" => Two("marginTop", "marginBottom"),
+        "marginInline" => Two("marginLeft", "marginRight"),
+        "marginBlockStart" => One("marginTop"),
+        "marginBlockEnd" => One("marginBottom"),
+        "marginInlineStart" => One("marginLeft"),
+        "marginInlineEnd" => One("marginRight"),
+        "paddingBlock" => Two("paddingTop", "paddingBottom"),
+        "paddingInline" => Two("paddingLeft", "paddingRight"),
+        "paddingBlockStart" => One("paddingTop"),
+        "paddingBlockEnd" => One("paddingBottom"),
+        "paddingInlineStart" => One("paddingLeft"),
+        "paddingInlineEnd" => One("paddingRight"),
+        "insetBlock" => Two("top", "bottom"),
+        "insetInline" => Two("left", "right"),
+        "insetBlockStart" => One("top"),
+        "insetBlockEnd" => One("bottom"),
+        "insetInlineStart" => One("left"),
+        "insetInlineEnd" => One("right"),
+        "blockSize" => One("height"),
+        "inlineSize" => One("width"),
+        "minBlockSize" => One("minHeight"),
+        "minInlineSize" => One("minWidth"),
+        "maxBlockSize" => One("maxHeight"),
+        "maxInlineSize" => One("maxWidth"),
+        _ => return None,
+    })
 }
 
 /// `gridColumn: 2`, `"2"`, `"1 / 3"`, `"span 2"`, `"2 / span 2"`.

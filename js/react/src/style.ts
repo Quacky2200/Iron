@@ -31,6 +31,31 @@ export interface IronStyle {
   paddingRight?: Length;
   paddingBottom?: Length;
   paddingLeft?: Length;
+  // Logical properties (horizontal, left-to-right): block = top/bottom, inline = left/right.
+  marginBlock?: Length | string;
+  marginInline?: Length | string;
+  marginBlockStart?: Length;
+  marginBlockEnd?: Length;
+  marginInlineStart?: Length;
+  marginInlineEnd?: Length;
+  paddingBlock?: Length | string;
+  paddingInline?: Length | string;
+  paddingBlockStart?: Length;
+  paddingBlockEnd?: Length;
+  paddingInlineStart?: Length;
+  paddingInlineEnd?: Length;
+  insetBlock?: Length | string;
+  insetInline?: Length | string;
+  insetBlockStart?: Length;
+  insetBlockEnd?: Length;
+  insetInlineStart?: Length;
+  insetInlineEnd?: Length;
+  blockSize?: Length;
+  inlineSize?: Length;
+  minBlockSize?: Length;
+  minInlineSize?: Length;
+  maxBlockSize?: Length;
+  maxInlineSize?: Length;
   borderWidth?: Length;
   borderTopWidth?: Length;
   borderRightWidth?: Length;
@@ -59,6 +84,10 @@ export interface IronStyle {
   alignContent?: string;
   justifyItems?: string;
   justifySelf?: string;
+  /** `<align> [<justify>]`; one value sets both. */
+  placeItems?: string;
+  placeSelf?: string;
+  placeContent?: string;
   justifyContent?: string;
 
   // Grid
@@ -67,6 +96,18 @@ export interface IronStyle {
   gridAutoFlow?: string;
   gridColumn?: number | string;
   gridRow?: number | string;
+  gridRowStart?: number | string;
+  gridRowEnd?: number | string;
+  gridColumnStart?: number | string;
+  gridColumnEnd?: number | string;
+  /** An area name, or `row-start / column-start / row-end / column-end`. */
+  gridArea?: string;
+  /** Quoted rows of area names: `'"head head" "side main"'`. */
+  gridTemplateAreas?: string;
+  /** `rows / columns`, or area strings with row sizes: `'"a b" 40px "c c" 1fr / 1fr 2fr'`. */
+  gridTemplate?: string;
+  gridAutoRows?: string;
+  gridAutoColumns?: string;
 
   // Paint
   background?: string;
