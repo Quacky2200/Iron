@@ -256,7 +256,6 @@ impl<'a, L: LayoutEngine> Element for NodeRef<'a, L> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Target {
     Element,
-    #[allow(dead_code, reason = "used for ::before / ::after in M3b step 5")]
     Pseudo(PseudoElement),
 }
 

@@ -505,3 +505,108 @@ fn inline_custom_properties_update_descendants() {
         "changing the variable restyles the child"
     );
 }
+
+// M3-CSS-06
+#[test]
+fn before_and_after_generate_content() {
+    let mut d = Dom::new();
+    let label = d.el(
+        0,
+        "text",
+        &[("className", "tag".into()), ("data-count", 3.0.into())],
+    );
+    d.text(label, "Hello");
+    let list = d.class(0, "list");
+    let first = d.class(list, "item");
+    let last = d.class(list, "item");
+    let mut tree = d.build(
+        r#"
+        .tag::before { content: "* "; color: red }
+        .tag::after { content: " (" attr(data-count) ")" }
+        .list::after { content: ""; width: 10px; height: 10px; background-color: blue }
+        .list > .item:last-child { opacity: 0.5 }
+        "#,
+    );
+    // Generated text joins the text block, in order.
+    assert_eq!(tree.text_content(NodeId(label)), "* Hello (3)");
+    let before = tree.children(NodeId(label))[0];
+    assert!(tree.is_generated(before));
+    assert_eq!(
+        tree.computed_text(before).color,
+        RED,
+        "::before has its own style"
+    );
+
+    // A decorative ::after box in a flex container is laid out and drawn.
+    let after = *tree.children(NodeId(list)).last().unwrap();
+    assert!(tree.is_generated(after));
+    let r = tree.rect(after).unwrap();
+    assert_eq!((r.width, r.height), (10.0, 10.0));
+    assert_eq!(tree.visual(after).unwrap().background, BLUE);
+    assert!(
+        tree.draw_list()
+            .iter()
+            .any(|c| matches!(c, iron_ui::DrawCmd::Quad(q) if q.rect == r))
+    );
+
+    // Generated content is invisible to selectors: the real last item still matches.
+    assert_eq!(tree.visual(NodeId(last)).unwrap().opacity, 0.5);
+    assert_eq!(tree.visual(NodeId(first)).unwrap().opacity, 1.0);
+
+    // React appends land before ::after.
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![
+            op(CREATE, &[n(50), "box".into()]),
+            op(SET_ATTRS, &[n(50), "className".into(), "item".into()]),
+            op(APPEND_CHILD, &[n(list), n(50)]),
+        ],
+    });
+    assert!(errors.is_empty());
+    tree.layout_if_needed();
+    let kids = tree.children(NodeId(list)).to_vec();
+    assert_eq!(kids[kids.len() - 2], NodeId(50));
+    assert!(tree.is_generated(*kids.last().unwrap()));
+    assert_eq!(
+        tree.visual(NodeId(50)).unwrap().opacity,
+        0.5,
+        "new last child"
+    );
+    assert_eq!(
+        tree.visual(NodeId(last)).unwrap().opacity,
+        1.0,
+        "no longer last"
+    );
+
+    // Attribute changes update attr() content.
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(SET_ATTRS, &[n(label), "data-count".into(), 7.0.into()])],
+    });
+    assert!(errors.is_empty());
+    tree.layout_if_needed();
+    assert_eq!(tree.text_content(NodeId(label)), "* Hello (7)");
+}
+
+// M3-CSS-06: removing the rules removes the generated nodes.
+#[test]
+fn generated_content_follows_the_stylesheets() {
+    let mut d = Dom::new();
+    let label = d.el(0, "text", &[("className", "tag".into())]);
+    d.text(label, "Hi");
+    let mut tree = d.build("");
+    assert_eq!(tree.children(NodeId(label)).len(), 1);
+
+    let sheet =
+        tree.add_stylesheet(r#".tag::before { content: "> " } .tag::after { content: none }"#);
+    tree.layout_if_needed();
+    assert_eq!(tree.text_content(NodeId(label)), "> Hi");
+    assert_eq!(
+        tree.children(NodeId(label)).len(),
+        2,
+        "content: none generates nothing"
+    );
+
+    tree.remove_stylesheet(sheet.id);
+    tree.layout_if_needed();
+    assert_eq!(tree.text_content(NodeId(label)), "Hi");
+    assert_eq!(tree.children(NodeId(label)).len(), 1);
+}

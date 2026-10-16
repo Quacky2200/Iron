@@ -20,6 +20,9 @@ use crate::text_style::{ComputedText, is_text_prop};
 /// The root container every React root renders into.
 pub const ROOT: NodeId = NodeId(0);
 
+/// First id used for `::before`/`::after` nodes; React allocates ids from 1 upwards.
+const FIRST_GENERATED_ID: u32 = 0x8000_0000;
+
 /// A problem with one op. The op is skipped; the tree stays valid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiError(pub String);
@@ -88,6 +91,7 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Inline styles use custom properties or `var()`, so styles go through the
     /// cascade even without stylesheets.
     uses_vars: bool,
+    next_generated: u32,
     text: TextEngine,
     /// Parley layouts of text blocks, rebuilt when a block is dirty.
     text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
@@ -143,6 +147,7 @@ impl<L: LayoutEngine> UiTree<L> {
             sheets: Vec::new(),
             next_sheet: 1,
             uses_vars: false,
+            next_generated: FIRST_GENERATED_ID,
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
             text_builds: 0,
@@ -274,6 +279,154 @@ impl<L: LayoutEngine> UiTree<L> {
         self.nodes.get(&id).is_some_and(|n| n.generated.is_some())
     }
 
+    /// Creates, updates or removes the `pseudo` content of element `id`.
+    fn update_pseudo(
+        &mut self,
+        id: NodeId,
+        pseudo: PseudoElement,
+        caches: &mut selectors::context::SelectorCaches,
+    ) {
+        let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
+        let (normal, important) =
+            matched_declarations(self, &sheets, id, Target::Pseudo(pseudo), caches);
+        let existing = self.children(id).iter().copied().find(|c| {
+            self.nodes.get(c).and_then(|n| n.generated) == Some(pseudo)
+                && self.kind(*c) != Some(TEXT_NODE)
+        });
+        let vars = self
+            .nodes
+            .get(&id)
+            .map(|n| n.vars.clone())
+            .unwrap_or_default();
+        let lookup = |name: &str| vars.get(name).cloned();
+        let resolve = |value: &Value| -> Option<Value> {
+            match value {
+                Value::String(text) if text.contains("var(") => {
+                    substitute_vars(text, &lookup).map(|v| crate::cascade::css_value(&v))
+                }
+                other => Some(other.clone()),
+            }
+        };
+        let ordered: Vec<(&str, Value)> = normal
+            .iter()
+            .chain(important.iter())
+            .filter_map(|m| Some((m.prop.as_str(), resolve(&m.value)?)))
+            .collect();
+        let content = ordered
+            .iter()
+            .rev()
+            .find(|(p, _)| *p == "content")
+            .and_then(|(_, v)| match v {
+                Value::String(s) => parse_content(s, self.attrs(id)),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            });
+
+        let Some(content) = content else {
+            if let Some(old) = existing {
+                let mut changed = HashSet::default();
+                self.detach(old, &mut changed);
+                self.destroy_subtree(old);
+                self.sync_children(id);
+                self.needs_layout = true;
+            }
+            return;
+        };
+
+        let span = match existing {
+            Some(span) => span,
+            None => self.insert_generated(id, pseudo),
+        };
+        let mut style = Style::default();
+        let mut visual = Visual::default();
+        for (prop, value) in &ordered {
+            if prop.starts_with("--") || *prop == "content" {
+                continue;
+            }
+            let _ = apply_style(&mut style, &mut visual, prop, value);
+        }
+        let text_child = self.children(span).first().copied();
+        if let Some(node) = self.nodes.get_mut(&span) {
+            let restyled = node.style != style || node.visual != visual;
+            node.style = style.clone();
+            node.visual = visual;
+            if restyled {
+                self.layout.set_style(span, &style);
+                if let Some(root) = self.text_root_of(span) {
+                    self.dirty_text.insert(root);
+                }
+            }
+        }
+        if let Some(t) = text_child
+            && let Some(node) = self.nodes.get_mut(&t)
+            && node.text.as_deref() != Some(content.as_str())
+        {
+            node.text = Some(content);
+            if let Some(root) = self.text_root_of(t) {
+                self.dirty_text.insert(root);
+            }
+        }
+        self.needs_layout = true;
+    }
+
+    /// Adds an empty generated span (with a text child) as the first or last child.
+    fn insert_generated(&mut self, parent: NodeId, pseudo: PseudoElement) -> NodeId {
+        let span = NodeId(self.next_generated);
+        let text = NodeId(self.next_generated + 1);
+        self.next_generated += 2;
+        for (id, kind, text_value, children, parent_id) in [
+            (span, "span", None, vec![text], parent),
+            (text, TEXT_NODE, Some(String::new()), Vec::new(), span),
+        ] {
+            let style = Style::default();
+            self.layout.create_node(id, &style);
+            self.nodes.insert(
+                id,
+                Box::new(Node {
+                    kind: kind.to_owned(),
+                    parent: Some(parent_id),
+                    children,
+                    style,
+                    visual: Visual::default(),
+                    text: text_value,
+                    attrs: Attrs::default(),
+                    state: ElementState::default(),
+                    inline: Vec::new(),
+                    generated: Some(pseudo),
+                    vars: Rc::default(),
+                }),
+            );
+        }
+        let siblings = &mut self.nodes.get_mut(&parent).expect("parent exists").children;
+        match pseudo {
+            PseudoElement::Before => siblings.insert(0, span),
+            PseudoElement::After => siblings.push(span),
+        }
+        self.layout.set_children(span, &[]);
+        self.sync_children(parent);
+        let is_root = self.is_text_root(span);
+        self.layout.set_measured(span, is_root);
+        if let Some(root) = self.text_root_of(span) {
+            self.dirty_text.insert(root);
+        }
+        span
+    }
+
+    /// Re-sends `id`'s children to the layout engine (inline content excluded).
+    fn sync_children(&mut self, id: NodeId) {
+        if let Some(node) = self.nodes.get(&id) {
+            if is_inline_container(&node.kind) {
+                self.layout.set_children(id, &[]);
+            } else {
+                let children = node.children.clone();
+                self.layout.set_children(id, &children);
+            }
+        }
+        if let Some(root) = self.text_root_of(id) {
+            self.dirty_text.insert(root);
+        }
+    }
+
     /// Marks what a change at `id` can affect: the node and its subtree, the
     /// subtrees of its following siblings (`+`, `~`, `:nth-child`), and its
     /// ancestors (`:has()`, `:focus-within`).
@@ -334,7 +487,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
-        if node.kind == TEXT_NODE {
+        if node.kind == TEXT_NODE || node.generated.is_some() {
             return;
         }
         let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
@@ -408,6 +561,11 @@ impl<L: LayoutEngine> UiTree<L> {
         if style_changed {
             let style = node.style.clone();
             self.layout.set_style(id, &style);
+        }
+        if id != ROOT && !self.sheets.is_empty() {
+            for pseudo in [PseudoElement::Before, PseudoElement::After] {
+                self.update_pseudo(id, pseudo, caches);
+            }
         }
         if vars_changed {
             // Children inherit the variables: restyle them too (they come later in
@@ -884,9 +1042,15 @@ impl<L: LayoutEngine> UiTree<L> {
         // Moving an attached node: take it out of its old place first.
         self.detach(child, children_changed);
 
+        let after =
+            self.children(parent).last().copied().filter(|c| {
+                self.nodes.get(c).and_then(|n| n.generated) == Some(PseudoElement::After)
+            });
         let siblings = &mut self.nodes.get_mut(&parent).expect("checked").children;
         let index = match before {
             Some(b) => siblings.iter().position(|c| *c == b).expect("checked"),
+            // Generated ::after content stays the last child.
+            None if after.is_some() => siblings.len() - 1,
             None => siblings.len(),
         };
         siblings.insert(index, child);
@@ -1155,4 +1319,48 @@ pub struct AddedStylesheet {
     pub id: u32,
     pub warnings: Vec<String>,
     pub font_faces: Vec<FontFace>,
+}
+
+/// Evaluates a `content` value: quoted strings and `attr(name)`, concatenated.
+/// `none` and `normal` mean no generated content.
+fn parse_content(value: &str, attrs: Option<&Attrs>) -> Option<String> {
+    let value = value.trim();
+    if value == "none" || value == "normal" {
+        return None;
+    }
+    let mut out = String::new();
+    let mut chars = value.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' | '\'' => {
+                let quote = c;
+                while let Some((_, c)) = chars.next() {
+                    match c {
+                        '\\' => {
+                            if let Some((_, escaped)) = chars.next() {
+                                out.push(escaped);
+                            }
+                        }
+                        c if c == quote => break,
+                        c => out.push(c),
+                    }
+                }
+            }
+            _ if value[i..].starts_with("attr(") => {
+                let rest = &value[i + 5..];
+                let end = rest.find(')')?;
+                let name = rest[..end].trim();
+                if let Some(v) = attrs.and_then(|a| a.get(name)) {
+                    out.push_str(v);
+                }
+                // Skip past the closing paren.
+                let skip = 5 + end;
+                for _ in 0..skip {
+                    chars.next();
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(out)
 }
