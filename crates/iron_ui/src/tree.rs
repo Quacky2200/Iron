@@ -21,7 +21,7 @@ use crate::paint::{
 };
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
-use crate::text_style::{ComputedText, is_text_prop};
+use crate::text_style::{ComputedText, Direction, TextOverflow, is_text_prop};
 use crate::units::{UnitContext, Uses};
 
 /// The root container every React root renders into.
@@ -275,6 +275,8 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     text: TextEngine,
     /// Parley layouts of text blocks, rebuilt when a block is dirty.
     text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
+    /// `…` laid out in the style of text blocks with `text-overflow: ellipsis`.
+    ellipses: HashMap<NodeId, parley::Layout<Brush>>,
     /// How many text blocks have been shaped (for tests and profiling).
     text_builds: u64,
 }
@@ -339,6 +341,7 @@ impl<L: LayoutEngine> UiTree<L> {
             next_generated: FIRST_GENERATED_ID,
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
+            ellipses: HashMap::default(),
             text_builds: 0,
         }
     }
@@ -1099,7 +1102,17 @@ impl<L: LayoutEngine> UiTree<L> {
 
     fn build_text_layout(&mut self, root: NodeId) -> parley::Layout<Brush> {
         let block = self.computed_text(root);
+        if block.text_overflow == TextOverflow::Ellipsis {
+            let mut dots = self
+                .text
+                .build(&block, &[("\u{2026}".to_owned(), block.clone())]);
+            dots.break_all_lines(None);
+            self.ellipses.insert(root, dots);
+        } else {
+            self.ellipses.remove(&root);
+        }
         let mut runs = Vec::new();
+        let mut word_start = true;
         // Walk the inline content in order, carrying each node's computed style.
         let mut stack = vec![(root, block.clone())];
         while let Some((id, style)) = stack.pop() {
@@ -1112,7 +1125,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 style.child(&node.visual.text)
             };
             if let Some(t) = &node.text {
-                runs.push((t.clone(), style.clone()));
+                let text = style.text_transform.apply(t, &mut word_start);
+                runs.push((text, style.clone()));
             }
             for child in node.children.iter().rev() {
                 stack.push((*child, style.clone()));
@@ -1196,6 +1210,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.layout.set_measured(id, is_root);
             if !is_root {
                 self.text_layouts.remove(&id);
+                self.ellipses.remove(&id);
             }
             if let Some(root) = self.text_root_of(id) {
                 self.dirty_text.insert(root);
@@ -1585,6 +1600,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.layout.remove_node(id);
                 self.rects.remove(&id);
                 self.text_layouts.remove(&id);
+                self.ellipses.remove(&id);
                 self.dirty_text.remove(&id);
                 self.style_dirty.remove(&id);
                 self.structure_changed.remove(&id);
@@ -2294,7 +2310,22 @@ impl<L: LayoutEngine> UiTree<L> {
                 rect.x + l.border[3] + l.padding[3],
                 rect.y + l.border[0] + l.padding[0],
             );
-            let mut cmd = text::draw(layout, origin);
+            let content_width =
+                rect.width - l.border[1] - l.border[3] - l.padding[1] - l.padding[3];
+            // Cut lines short only where the overflow is clipped, as CSS does.
+            let clips_x = Overflow::computed(v.overflow)[0] != Overflow::Visible;
+            let mut cmd = match self.ellipses.get(&id).filter(|_| clips_x) {
+                Some(dots) => text::draw_ellipsized(
+                    layout,
+                    origin,
+                    text::Ellipsis {
+                        layout: dots,
+                        width: content_width,
+                        rtl: text.direction == Direction::Rtl,
+                    },
+                ),
+                None => text::draw(layout, origin),
+            };
             cmd.fill = text_fill.map(|image| (image, rect));
             if !cmd.runs.is_empty() || !cmd.decorations.is_empty() {
                 // Text shadows: tinted copies under the text, last shadow lowest.

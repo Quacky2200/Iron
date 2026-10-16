@@ -87,6 +87,54 @@ pub enum WhiteSpace {
     PreWrap,
 }
 
+/// `text-transform`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextTransform {
+    #[default]
+    None,
+    Uppercase,
+    Lowercase,
+    /// The first letter of each word in upper case.
+    Capitalize,
+}
+
+impl TextTransform {
+    /// `text` transformed; `word_start` says whether the text begins a word and is
+    /// updated for the next run (words continue across inline elements).
+    pub fn apply(self, text: &str, word_start: &mut bool) -> String {
+        let out = match self {
+            Self::None => text.to_owned(),
+            Self::Uppercase => text.to_uppercase(),
+            Self::Lowercase => text.to_lowercase(),
+            Self::Capitalize => {
+                let mut out = String::with_capacity(text.len());
+                let mut start = *word_start;
+                for c in text.chars() {
+                    if start && c.is_alphanumeric() {
+                        out.extend(c.to_uppercase());
+                    } else {
+                        out.push(c);
+                    }
+                    start = !c.is_alphanumeric() && c != '\'' && c != '\u{2019}';
+                }
+                out
+            }
+        };
+        if let Some(last) = text.chars().last() {
+            *word_start = !last.is_alphanumeric();
+        }
+        out
+    }
+}
+
+/// `text-overflow` (not inherited): what shows where clipped text is cut off.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextOverflow {
+    #[default]
+    Clip,
+    Ellipsis,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Decoration {
     pub underline: bool,
@@ -109,6 +157,9 @@ pub struct TextProps {
     pub decoration: Option<Decoration>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
+    pub text_transform: Option<TextTransform>,
+    /// Not inherited: `None` is `clip`.
+    pub text_overflow: Option<TextOverflow>,
 }
 
 /// Fully resolved text style for a node.
@@ -127,6 +178,8 @@ pub struct ComputedText {
     pub decoration: Decoration,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
+    pub text_transform: TextTransform,
+    pub text_overflow: TextOverflow,
 }
 
 impl Default for ComputedText {
@@ -147,6 +200,8 @@ impl Default for ComputedText {
             decoration: Decoration::default(),
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
+            text_transform: TextTransform::None,
+            text_overflow: TextOverflow::Clip,
         }
     }
 }
@@ -189,6 +244,8 @@ impl ComputedText {
                 .text_shadow
                 .clone()
                 .unwrap_or_else(|| self.text_shadow.clone()),
+            text_transform: props.text_transform.unwrap_or(self.text_transform),
+            text_overflow: props.text_overflow.unwrap_or_default(),
         }
     }
 
@@ -202,7 +259,7 @@ impl ComputedText {
     }
 }
 
-/// Property names handled here; all are inherited.
+/// Property names handled here; all are inherited except `textOverflow`.
 pub const TEXT_PROPS: &[&str] = &[
     "color",
     "fontFamily",
@@ -218,6 +275,8 @@ pub const TEXT_PROPS: &[&str] = &[
     "textDecorationLine",
     "whiteSpace",
     "textShadow",
+    "textTransform",
+    "textOverflow",
 ];
 
 pub fn is_text_prop(prop: &str) -> bool {
@@ -246,6 +305,8 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "textDecoration" | "textDecorationLine" => props.decoration = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
+            "textTransform" => props.text_transform = None,
+            "textOverflow" => props.text_overflow = None,
             _ => unreachable!("listed in TEXT_PROPS"),
         }
         return Some(Ok(()));
@@ -349,6 +410,22 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 _ => None,
             }));
         }
+        "textTransform" => {
+            props.text_transform = Some(parse!(match s {
+                Some("none") => Some(TextTransform::None),
+                Some("uppercase") => Some(TextTransform::Uppercase),
+                Some("lowercase") => Some(TextTransform::Lowercase),
+                Some("capitalize") => Some(TextTransform::Capitalize),
+                _ => None,
+            }));
+        }
+        "textOverflow" => {
+            props.text_overflow = Some(parse!(match s {
+                Some("clip") => Some(TextOverflow::Clip),
+                Some("ellipsis") => Some(TextOverflow::Ellipsis),
+                _ => None,
+            }));
+        }
         // CSS text shadows have no spread and can't be inset.
         "textShadow" => {
             props.text_shadow =
@@ -365,6 +442,42 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M3-TXT-10
+    #[test]
+    fn text_transform_applies_across_runs() {
+        let mut start = true;
+        let caps = TextTransform::Capitalize;
+        assert_eq!(
+            caps.apply("hello wORLD it's", &mut start),
+            "Hello WORLD It's"
+        );
+        // A run continuing a word isn't capitalized again.
+        let mut start = true;
+        assert_eq!(caps.apply("foo", &mut start), "Foo");
+        assert_eq!(caps.apply("bar baz", &mut start), "bar Baz");
+        let mut start = true;
+        assert_eq!(
+            TextTransform::Uppercase.apply("straße", &mut start),
+            "STRASSE"
+        );
+        let mut p = TextProps::default();
+        assert_eq!(
+            apply(&mut p, "textTransform", &"shout".into()),
+            Some(Err(()))
+        );
+        assert_eq!(
+            apply(&mut p, "textOverflow", &"ellipsis".into()),
+            Some(Ok(()))
+        );
+        let parent = ComputedText::default().child(&p);
+        assert_eq!(parent.text_overflow, TextOverflow::Ellipsis);
+        assert_eq!(
+            parent.child(&TextProps::default()).text_overflow,
+            TextOverflow::Clip,
+            "not inherited"
+        );
+    }
 
     fn set(props: &mut TextProps, prop: &str, value: Value) {
         apply(props, prop, &value)

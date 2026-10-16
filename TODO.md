@@ -525,14 +525,18 @@ and `@font-face`.
      testing uses the same fill rule — `M3-CLIP-01`. `url()` needs SVG `<clipPath>` elements,
      which Iron doesn't have
 4. **Text**
-   - [ ] `text-transform`, `text-overflow: ellipsis` (with `white-space: nowrap` + `overflow`)
+   - [x] `text-transform` (inherited; applied to run text before shaping, `capitalize` across
+     inline runs), `text-overflow: ellipsis` (not inherited; lines wider than the content box of
+     a block whose x overflow clips drop whole glyphs and end in a separately shaped `…`, on the
+     left for rtl) — `M3-TXT-10`
    - [ ] `word-break`, `overflow-wrap`; `white-space: pre-line | break-spaces`
    - [ ] `font` shorthand; `font-size` keywords (`small`, `large`, ...); `font-weight` keywords
      (`thin` ... `black`, `bolder`, `lighter`); `font-variant-numeric: tabular-nums`
    - [ ] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),
      `-color`, `-thickness`, `text-underline-offset`, `text-decoration-skip-ink`
    - [ ] Outlined text: `-webkit-text-stroke` / `text-stroke` (`width color`)
-   - [ ] Gradient text (`background-clip: text`, or s&box's gradient `color`)
+   - [x] Gradient text: `background-clip: text` (M3d step 3b). s&box's gradient `color` isn't
+     added: the standard form covers it
    - [ ] `caret-color` (with M3c inputs); `font-smooth` / text texture filtering
 5. **Effects**
    - [ ] `filter` / `backdrop-filter` functions beyond `blur()`: `brightness()`, `contrast()`,

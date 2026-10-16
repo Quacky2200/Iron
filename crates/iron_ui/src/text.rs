@@ -213,10 +213,51 @@ pub(crate) fn base_direction(direction: Direction) -> BaseDirection {
 
 /// Draw command for a laid-out block whose content box starts at `origin`.
 pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
+    draw_lines(layout, origin, None)
+}
+
+/// Where lines are cut short for `text-overflow: ellipsis`.
+pub struct Ellipsis<'a> {
+    /// The `…` laid out in the block's style.
+    pub layout: &'a Layout<Brush>,
+    /// The content box's width: lines wider than this are cut.
+    pub width: f32,
+    /// Cut at the left (right-to-left text) instead of the right.
+    pub rtl: bool,
+}
+
+/// Like [`draw`], but lines wider than the content box end in an ellipsis: glyphs
+/// that would overlap it are dropped (whole glyphs, as browsers do).
+pub fn draw_ellipsized(layout: &Layout<Brush>, origin: (f32, f32), e: Ellipsis<'_>) -> TextCmd {
+    draw_lines(layout, origin, Some(e))
+}
+
+fn draw_lines(
+    layout: &Layout<Brush>,
+    origin: (f32, f32),
+    ellipsis: Option<Ellipsis<'_>>,
+) -> TextCmd {
     let (ox, oy) = origin;
     let mut runs = Vec::new();
     let mut decorations = Vec::new();
     for line in layout.lines() {
+        // The kept span of a cut line: glyphs must end before `limit` (ltr) or start
+        // after it (rtl).
+        let cut = ellipsis.as_ref().filter(|e| {
+            let m = line.metrics();
+            m.offset + m.advance > e.width + 0.5 || m.offset < -0.5
+        });
+        let ellipsis_width = cut.map_or(0.0, |e| e.layout.full_width());
+        let (lo, hi) = (
+            ox + ellipsis_width,
+            ox + cut.map_or(f32::MAX, |e| e.width) - ellipsis_width,
+        );
+        let keep = |g: &PositionedGlyph| match cut {
+            None => true,
+            Some(e) if e.rtl => g.x >= lo - 0.01,
+            Some(_) => g.x + g.advance <= hi + 0.01,
+        };
+        let (mut kept_lo, mut kept_hi) = (f32::MAX, f32::MIN);
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
@@ -230,8 +271,14 @@ pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
                     id: g.id,
                     x: ox + g.x,
                     y: oy + g.y,
+                    advance: g.advance,
                 })
+                .filter(|g| keep(g))
                 .collect();
+            for g in &glyphs {
+                kept_lo = kept_lo.min(g.x);
+                kept_hi = kept_hi.max(g.x + g.advance);
+            }
             if !glyphs.is_empty() {
                 runs.push(GlyphRun {
                     font: run.font().clone(),
@@ -251,8 +298,18 @@ pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
             // (positive is up).
             let metrics = run.font_metrics();
             let baseline = oy + glyph_run.baseline();
-            let x = ox + glyph_run.offset();
-            let width = glyph_run.advance();
+            let mut x = ox + glyph_run.offset();
+            let mut width = glyph_run.advance();
+            // Decorations stop where the kept glyphs do.
+            match cut {
+                Some(e) if e.rtl => {
+                    let start = x.max(lo);
+                    width = (x + width - start).max(0.0);
+                    x = start;
+                }
+                Some(_) => width = width.min(hi - x).max(0.0),
+                None => {}
+            }
             let mut decorate = |deco: &parley::Decoration<Brush>, offset: f32, size: f32| {
                 let offset = deco.offset.unwrap_or(offset);
                 let size = deco.size.unwrap_or(size).max(1.0);
@@ -263,6 +320,24 @@ pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
             }
             if let Some(st) = &style.strikethrough {
                 decorate(st, metrics.strikethrough_offset, metrics.strikethrough_size);
+            }
+        }
+        if let Some(e) = cut {
+            // The ellipsis goes right after the kept glyphs (before them for rtl), on
+            // this line's baseline.
+            let baseline = oy + line.metrics().baseline;
+            let at = if kept_lo > kept_hi {
+                if e.rtl { ox + e.width } else { ox }
+            } else if e.rtl {
+                kept_lo
+            } else {
+                kept_hi
+            };
+            let start = if e.rtl { at - ellipsis_width } else { at };
+            if let Some(dots) = e.layout.lines().next() {
+                let dy = baseline - dots.metrics().baseline;
+                let cmd = draw_lines(e.layout, (start, dy), None);
+                runs.extend(cmd.runs);
             }
         }
     }

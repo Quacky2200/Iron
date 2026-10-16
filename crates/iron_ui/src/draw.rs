@@ -366,6 +366,8 @@ pub struct PositionedGlyph {
     pub id: u32,
     pub x: f32,
     pub y: f32,
+    /// Horizontal advance (px), for cutting lines short (`text-overflow`).
+    pub advance: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -395,9 +397,9 @@ impl TextCmd {
                         .glyphs
                         .iter()
                         .map(|g| PositionedGlyph {
-                            id: g.id,
                             x: g.x + dx,
                             y: g.y + dy,
+                            ..*g
                         })
                         .collect(),
                     ..r.clone()

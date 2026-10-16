@@ -248,6 +248,9 @@ export interface IronStyle {
   textDecoration?: string;
   whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap";
   textShadow?: string;
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  /** Not inherited. `ellipsis` cuts overflowing lines when `overflow` clips (use with `whiteSpace: "nowrap"`). */
+  textOverflow?: "clip" | "ellipsis";
 }
 
 type StyleValue = string | number | null;

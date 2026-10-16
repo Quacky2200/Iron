@@ -932,6 +932,40 @@ fn polygon_and_path_clips() {
     assert_golden("M3-CLIP-01", 130, 130, &f.pixels, TOLERANCE);
 }
 
+// M3-TXT-10
+#[test]
+fn text_transform_and_ellipsis() {
+    let mut s = Scene::new();
+    let style = |y: f64, extra: &[(&'static str, Value)]| {
+        let mut v = at(
+            4.0,
+            y,
+            150.0,
+            24.0,
+            &[
+                ("color", "white".into()),
+                ("fontSize", 16.0.into()),
+                ("whiteSpace", "nowrap".into()),
+                ("overflow", "hidden".into()),
+            ],
+        );
+        v.extend_from_slice(extra);
+        v
+    };
+    s.label(
+        0,
+        "A rather long title that will not fit",
+        &style(4.0, &[("textOverflow", "ellipsis".into())]),
+    );
+    s.label(
+        0,
+        "small caps-ish heading",
+        &style(32.0, &[("textTransform", "uppercase".into())]),
+    );
+    let f = render(s, (160, 60), 1.0, BLACK);
+    assert_golden("M3-TXT-10", 160, 60, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {
