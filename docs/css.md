@@ -186,6 +186,30 @@ typical units (16px, 1000x1000 viewport); invalid math is dropped with a warning
 through the same check: an invalid one is reported and the previous value stays. Tests:
 [units.rs](../crates/iron_ui/tests/units.rs).
 
+## Colours
+
+Code: [color.rs](../crates/iron_ui/src/color.rs), [color_fn.rs](../crates/iron_ui/src/color_fn.rs).
+
+`Rgba::parse` accepts hex (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`), `rgb()`/`hsl()` (and the `a`
+variants), named colours and `transparent`. Anything else ending in `)` goes to `color_fn::parse`:
+
+- `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()` and `color(srgb | srgb-linear | display-p3 ...)`.
+  Channels may be `none` (treated as 0), and alpha follows `/`.
+- Conversion follows the CSS Color 4 sample code: linear-light sRGB as the hub, the standard matrices,
+  Lab/LCH on D50 (Bradford-adapted) and OKLab/OKLCH. Out-of-gamut results are clipped to sRGB.
+- `color-mix(in <space>, <color> [p%], <color> [p%])` with `srgb`, `srgb-linear`, `lab`, `oklab`,
+  `lch` and `oklch`. A missing percentage is the rest of 100% (50/50 if both are missing); weights
+  are normalised, and a total under 100% scales the result's alpha. Mixing is premultiplied by
+  alpha; hues in `lch`/`oklch` take the shorter way round and are not premultiplied.
+  This is the standard form of s&box's `mix()`, `darken()` and `lighten()`, which are not supported.
+- Angles (gradient directions) accept `deg`, `rad`, `grad` and `turn`.
+- Gradients: the direction check splits the first argument at the top level, so a first stop such as
+  `oklch(0.7 0.1 200)` or `rgb(1 2 3)` is a colour, not an angle.
+
+Invalid functions (wrong channel count, unknown space) are rejected like any invalid value. Tests are
+unit tests in [color_fn.rs](../crates/iron_ui/src/color_fn.rs) and
+[paint.rs](../crates/iron_ui/src/paint.rs) (`M3d` step 1).
+
 ## `::before` / `::after`
 
 Handled in `UiTree::update_pseudo`, called at the end of `restyle` for every element when any

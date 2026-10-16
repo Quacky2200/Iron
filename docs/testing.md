@@ -26,7 +26,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 
 | Kind | Location | Examples |
 |---|---|---|
-| Rust unit | `#[cfg(test)]` inside the source file | [css.rs](../crates/iron_ui/src/css.rs) (parser, `rebase_urls`, `var()`), [input.rs](../crates/iron_platform/src/input.rs), [assets.rs](../crates/iron_core/src/assets.rs), [attrs.rs](../crates/iron_ui/src/attrs.rs), [paint.rs](../crates/iron_ui/src/paint.rs) |
+| Rust unit | `#[cfg(test)]` inside the source file | [css.rs](../crates/iron_ui/src/css.rs) (parser, `rebase_urls`, `var()`), [color_fn.rs](../crates/iron_ui/src/color_fn.rs) (colour functions, `color-mix()`), [input.rs](../crates/iron_platform/src/input.rs), [assets.rs](../crates/iron_core/src/assets.rs), [attrs.rs](../crates/iron_ui/src/attrs.rs), [paint.rs](../crates/iron_ui/src/paint.rs) |
 | Rust integration | `crates/*/tests/*.rs` | see below |
 | JS unit | `js/*/test/*.test.ts(x)` (`bun:test`) | [reconciler.test.tsx](../js/react/test/reconciler.test.tsx), [events.test.tsx](../js/react/test/events.test.tsx), [engine.test.ts](../js/engine/test/engine.test.ts), [input.test.ts](../js/engine/test/input.test.ts) |
 | Render (headless) | [iron_render/tests](../crates/iron_render/tests) | `headless.rs`, `ui.rs` |

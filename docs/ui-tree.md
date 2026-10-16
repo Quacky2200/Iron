@@ -78,7 +78,8 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 - [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, blur filters,
   backgrounds (`linear-gradient`, `radial-gradient`, `url()`), `clip-path` shapes (`ClipPath`
   resolved to a `ClipShape` against the box), `Overflow`.
-- [color.rs](../crates/iron_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours.
+- [color.rs](../crates/iron_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours; modern colour functions and
+  `color-mix()` live in [color_fn.rs](../crates/iron_ui/src/color_fn.rs) (see [css.md](css.md#colours)).
 - [text_style.rs](../crates/iron_ui/src/text_style.rs): `TextProps` are the *specified* text
   properties of one node; `ComputedText::child(&TextProps)` applies CSS inheritance.
   `UiTree::computed_text(id)` folds root-to-node. `is_text_prop` lets the tree know a style change
