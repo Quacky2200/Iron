@@ -378,10 +378,11 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] Right-to-left text: inherited CSS `direction` and the `dir` attribute (CSS wins;
      `[dir=rtl]` matches) set Parley's paragraph direction; `text-align: start/end` follow it;
      rtl inputs/textareas align right (placeholder too) with visual arrow keys — `M3-TXT-09`.
-     Shown in `examples/css` (Arabic line and input)
+     Shown in `examples/css` (Arabic line and input). Hand-checked 2026-10-16 with the Arabic (101)
+     and Hebrew keyboards: typing, shaping, bidi order, Home/End, visual arrows, Backspace and
+     Ctrl+A/C/X/V all work
    - [ ] RTL follow-ups: `dir="auto"`, flex/grid `row` order and `justify-content: start` in rtl
-     (Taffy has no direction), logical properties (`margin-inline-start`, `inset-inline-*`), and a
-     hand check with the Arabic (101) keyboard
+     (Taffy has no direction), logical properties (`margin-inline-start`, `inset-inline-*`)
 4. **Overflow and scrolling**
    - [x] `overflow` / `overflowX` / `overflowY` (`visible | hidden | clip | scroll | auto`, CSS
      computed-value rules) clip children to the padding box with inner radii; `clipPath`
