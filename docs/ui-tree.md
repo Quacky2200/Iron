@@ -196,7 +196,7 @@ overflow), used for clipping, scrollbars and event data.
 ## Text
 
 [text.rs](../crates/iron_ui/src/text.rs) wraps Parley (`TextEngine` = `FontContext` +
-`LayoutContext<Brush>`; the brush is the run's `Rgba`). Fonts: bundled Inter (variable, upright and
+`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour and `smooth`; `Brush::of(&ComputedText)`). Fonts: bundled Inter (variable, upright and
 italic) is always registered and put first for the generic sans-serif families; `with_system_fonts`
 adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no system fonts) to stay
 deterministic. `register_font` accepts overrides for family/weight/style (like `@font-face`), then
@@ -225,7 +225,40 @@ How inline content works:
 - `text::measure` breaks lines for the available width (`MinContent` uses width 0, `MaxContent`
   none) and returns a ceil'd size. `text::finish` does the final break + alignment.
 - `text::draw(layout, origin)` produces a `TextCmd`: `GlyphRun`s (font data, size, variation
-  coordinates, synthetic bold/italic, colour, positioned glyphs) plus underline/strike rectangles.
+  coordinates, synthetic bold/italic, colour, `stroke: Option<(width, colour)>`, `smooth`, positioned
+  glyphs with their `advance`) plus `decorations: Vec<TextDecoration { rect, color, style }>`.
+- `text::draw_ellipsized(layout, origin, Ellipsis { layout, width, rtl })` is `draw` for blocks with
+  `text-overflow: ellipsis`: on lines wider than the content box it drops whole glyphs that would
+  overlap the `…`, stops decorations where the kept glyphs end, and appends the `…` run on that
+  line's baseline (before the glyphs for rtl). `UiTree` keeps one `…` layout per such block in
+  `ellipses` and only uses it when `overflow-x` clips.
+
+### Text properties (M3d group 4)
+
+Parsed in [text_style.rs](../crates/iron_ui/src/text_style.rs) into `TextProps`; all inherited except
+`textOverflow` (`ComputedText::child` resets it). Tests: [text_props.rs](../crates/iron_ui/tests/text_props.rs),
+unit tests in `text_style.rs`, goldens `M3-TXT-10..15`.
+
+- **`textTransform`** (`TextTransform::apply`): applied to each run's text in `build_text_layout`;
+  `capitalize` tracks word starts across inline runs.
+- **`whiteSpace`** also has `pre-line` and `break-spaces`; **`wordBreak`** (`normal`, `break-all`,
+  `keep-all`, `break-word`) and **`overflowWrap`** (alias `wordWrap`; `anywhere`, `break-word`) map to
+  Parley's `WordBreak` / `OverflowWrap`.
+- **`fontWeight`** is a `FontWeightSpec`: number 1-1000, `normal`/`bold`, `bolder`/`lighter` (relative
+  to the parent's weight), or names (`thin` ... `black`). `fontSize` accepts keywords (`medium` 16px,
+  `smaller`/`larger` x1.2 of the parent). The **`font`** shorthand (`parse_font_shorthand`) sets
+  style, weight, size, line height and family; omitted parts go back to initial.
+- **Font features:** `fontVariantNumeric` and `fontFeatureSettings` are merged by
+  `ComputedText::font_features()` into a `font-feature-settings` string, passed to Parley as
+  `FontFeatures::Source`.
+- **Decorations:** `textDecoration` shorthand plus `textDecorationLine` (now with `overline`),
+  `...Style` (`DecorationStyle`: solid, double, dotted, dashed, wavy), `...Color`, `...Thickness`,
+  `textUnderlineOffset`; `textDecorationSkipInk` is parsed only. Colour/thickness default to the text
+  colour and the font's metrics. Parley's own underline is still used for the editor's IME pre-edit.
+- **Text stroke:** `WebkitTextStroke[Width|Color]` / `textStroke[...]` fill `GlyphRun.stroke`
+  (colour defaults to the text colour); the renderer draws the outline over the fill.
+- **`fontSmooth` / `WebkitFontSmoothing`:** `never`/`none` sets `GlyphRun.smooth = false` (crisp glyphs).
+- **`caretColor`:** used for the text field caret quad in `tree.rs` (`auto` is the text colour).
 - `dirty_text` is the set of roots to reshape; `text_build_count()` lets tests assert how often
   shaping ran (used in [text.rs tests](../crates/iron_ui/tests/text.rs) to check that unrelated
   changes do not reshape text).

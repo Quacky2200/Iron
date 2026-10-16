@@ -54,7 +54,7 @@ Walk `cmds` once, producing:
 
 - `instances: Vec<Instance>` (8 x `vec4`, matching `struct Instance` in quad.wgsl). `params.x` is
   the **kind**: `KIND_QUAD`, `OUTER_SHADOW`, `INSET_SHADOW`, `IMAGE`, `GLYPH`, `KIND_BORDER`,
-  `KIND_GRADIENT_PIECE`. `rect`/`radii` (horizontal) and `radii_y` (location 7, last so earlier
+  `KIND_GRADIENT_PIECE`, `KIND_WAVY`. `rect`/`radii` (horizontal) and `radii_y` (location 7, last so earlier
   locations stay put) are the shape, `p0/p1` kind-specific data (border widths, shadow source box, atlas rect),
   `color0/color1` fill and border, `params.y/z/w` blur sigma / gradient index / clip index.
 - `gradients: Vec<GpuGradient>` (up to 8 stops each, extras dropped with a warning).
@@ -110,7 +110,15 @@ shaders) evaluate it. Consequences:
 **Text.** For each `GlyphRun`, glyph positions are snapped to whole pixels vertically and to
 quarter pixels horizontally (`SUBPIXEL_BINS` = 4; the sub-pixel offset is baked into the cached
 raster). `GlyphAtlas::glyph` returns an atlas entry; each glyph becomes a `KIND_GLYPH` instance whose
-`p0` is the atlas rect. Underline/strike decorations are plain quads.
+`p0` is the atlas rect. `params.y` is 0 for a normal mask, 1 for a colour glyph, 2 for a crisp mask
+(`font-smooth: never`; the shader thresholds coverage at 0.5). A `GlyphRun.stroke` draws a second
+glyph per glyph from an outline-stroked raster (`atlas.glyph(..., stroke_px)`) in the stroke colour
+over the fill.
+
+**Text decorations** (`TextCmd.decorations`): `solid` is one quad, `double` two (the second
+`2 x thickness` below), `dotted`/`dashed` a `KIND_BORDER` instance with a one-sided styled-border
+gradient entry, and `wavy` a `KIND_WAVY` instance (a sine wave of the line's thickness, drawn by the
+shader inside a band 3 x thickness tall).
 
 ### 2. Upload
 
@@ -161,7 +169,7 @@ in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
 - [atlas.rs](../crates/iron_render/src/ui/atlas.rs): two pages (2048 R8 coverage, 1024 RGBA colour),
   `etagere` bucketed allocation, 1 px padding. Keys include font blob id, glyph id, size x 4,
-  subpixel bin, variable-font coordinates, synthetic bold/skew. Rasterized with `swash`. When a page
+  subpixel bin, variable-font coordinates, synthetic bold/skew, stroke width (x4; 0 for the fill). Strokes use swash's `Stroke`. Rasterized with `swash`. When a page
   fills, the whole atlas is cleared at the start of the next frame and visible glyphs re-rasterize.
 - [images.rs](../crates/iron_render/src/ui/images.rs): `ImageCache` keyed by URL; failures are
   cached too so they are reported once. `url()` values are `data:` URLs (decoded with

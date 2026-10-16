@@ -42,6 +42,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `tree.rs` | Commit semantics: ops, moves, removal, errors, text nodes |
 | `layout_fixtures.rs` | JSON layout cases through the full commit pipeline, generic over `LayoutEngine` |
 | `text.rs` | Fonts, wrapping, inheritance, shaping counts |
+| `text_props.rs` | M3d group 4 text properties through the tree: transform, ellipsis, white-space/word-break, font shorthand and features, decorations, stroke, smoothing |
 | `css.rs` | Selectors, cascade, variables, `::before/::after`, invalidation |
 | `hit.rs` | Hit testing rules |
 | `pointer.rs` | `Pointer`: hover/active/click/dblclick/wheel |
@@ -117,7 +118,7 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M2-UI`, `M2-STY`, `M2-VIS`, `M2-LAY` | Tree, styles, visuals, layout | `iron_ui/tests/{tree,layout_fixtures}.rs`, unit tests in `style.rs`/`paint.rs`/`calc.rs` |
 | `M2-DRW` | Renderer | `iron_render/tests/ui.rs` + `tests/golden/M2-DRW-*` |
 | `M2-INT`, `M2-SCR` | React in QuickJS driving the tree | `iron_ui/tests/react_quickjs.rs` |
-| `M3-TXT`, `M3-FNT` | Text and fonts; right-to-left `direction`/`dir` (`M3-TXT-09`) | `iron_ui/tests/text.rs`, `iron_ui/tests/direction.rs` (plus rtl cases in `editor.rs`), `ui.rs` goldens `M3-TXT-*` |
+| `M3-TXT`, `M3-FNT` | Text and fonts; right-to-left `direction`/`dir` (`M3-TXT-09`) | `iron_ui/tests/text.rs`, `iron_ui/tests/direction.rs` (plus rtl cases in `editor.rs`), `text_props.rs` (`M3-TXT-10..15`), `ui.rs` goldens `M3-TXT-*` |
 | `M3-CSS` | Stylesheets and cascade | `iron_ui/src/css.rs` tests, `iron_ui/tests/css.rs` |
 | `M3-EVT` | Hit testing, events, focus, clipping, scrolling | `iron_ui/tests/{hit,pointer,focus,clip,scroll,events_quickjs}.rs`, `js/react/test/events.test.tsx`, goldens `M3-EVT-05-clip` and `M3-EVT-05-scroll` (scrolled content clipped to a rounded scroller with overlay scrollbars) |
 | `M3-INP` | Text fields: editing, selection, controlled values, clipboard, shortcuts on non-Latin layouts (`M3-INP-02`) | `iron_ui/tests/editor.rs`, `iron_ui/tests/events_quickjs.rs` (real React field), `js/react/test/events.test.tsx` (`onChange`, controlled restore), golden `M3-INP-01-fields` in `iron_render/tests/ui.rs` (filled input, placeholder, focused input with selection) |
