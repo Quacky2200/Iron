@@ -80,6 +80,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 ## Gotchas
 - **Shell edits:** bash heredocs mangle apostrophes and backslashes on this machine. For multi-line edits use the Edit/Write tools, or a Python script written to the scratchpad.
 - **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `target/` before rebuilding.
+- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/iron_app.exe`.
+  Run `cargo build -p iron_app` before any manual check in the window. A running window locks the
+  exe, so close it before rebuilding.
 - **GPU tests:** use `iron_render::testing::shared_gpu()`. Creating devices in parallel deadlocks.
 - **Bun CSS:** importing CSS needs `--outdir dist --entry-naming "game.[ext]"`.
   - It emits `game.js` + `game.css`.
