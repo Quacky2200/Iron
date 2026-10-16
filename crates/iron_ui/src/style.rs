@@ -48,6 +48,14 @@ pub struct Visual {
     /// `currentColor` per side (also the CSS default when `border` omits a colour).
     pub border_currents: [bool; 4],
     pub border_styles: [BorderStyle; 4],
+    /// `outline`: drawn outside the border box (plus `outline_offset`), over the
+    /// element's content; it takes no space. Style `none` (the default) hides it.
+    pub outline_width: f32,
+    pub outline_style: BorderStyle,
+    pub outline_color: Rgba,
+    /// `outlineColor: currentColor` (the default).
+    pub outline_current: bool,
+    pub outline_offset: f32,
     pub border_radius: Corners<CornerRadius>,
     pub shadows: Vec<Shadow>,
     /// `filter: blur(..)` radius; 0 means none.
@@ -105,6 +113,11 @@ impl Default for Visual {
             border_colors: [Rgba::TRANSPARENT; 4],
             border_currents: [false; 4],
             border_styles: [BorderStyle::Solid; 4],
+            outline_width: 3.0,
+            outline_style: BorderStyle::None,
+            outline_color: Rgba::TRANSPARENT,
+            outline_current: true,
+            outline_offset: 0.0,
             border_radius: Corners::all(CornerRadius::ZERO),
             shadows: Vec::new(),
             filter_blur: 0.0,
@@ -646,6 +659,30 @@ pub fn apply_style(
                 visual.border_colors[side] = c.unwrap_or(Rgba::TRANSPARENT);
             }
         }
+        "outline" => {
+            let (width, s, color) = outline_shorthand(value).ok_or_else(invalid)?;
+            visual.outline_width = width;
+            visual.outline_style = s;
+            visual.outline_current = color.is_none();
+            visual.outline_color = color.unwrap_or(Rgba::TRANSPARENT);
+        }
+        "outlineWidth" => visual.outline_width = line_width(value).ok_or_else(invalid)?,
+        "outlineStyle" => visual.outline_style = outline_style(kw()?).ok_or_else(invalid)?,
+        "outlineColor" if is_current_color(value) => visual.outline_current = true,
+        "outlineColor" => {
+            visual.outline_color = color(value).ok_or_else(invalid)?;
+            visual.outline_current = false;
+        }
+        "outlineOffset" => {
+            visual.outline_offset = match value {
+                Value::Number(n) => *n as f32,
+                Value::String(s) => match Len::parse(s) {
+                    Some(Len::Px(px)) => px,
+                    _ => return Err(invalid()),
+                },
+                _ => return Err(invalid()),
+            }
+        }
         "borderStyle" => {
             let styles = four_sides(value, BorderStyle::parse).ok_or_else(invalid)?;
             for (side, s) in styles.into_iter().enumerate() {
@@ -920,6 +957,19 @@ pub(crate) fn copy_prop(
             visual.border_currents = v.border_currents;
         }
         "borderStyle" => visual.border_styles = v.border_styles,
+        "outline" => {
+            visual.outline_width = v.outline_width;
+            visual.outline_style = v.outline_style;
+            visual.outline_color = v.outline_color;
+            visual.outline_current = v.outline_current;
+        }
+        "outlineWidth" => visual.outline_width = v.outline_width,
+        "outlineStyle" => visual.outline_style = v.outline_style,
+        "outlineColor" => {
+            visual.outline_color = v.outline_color;
+            visual.outline_current = v.outline_current;
+        }
+        "outlineOffset" => visual.outline_offset = v.outline_offset,
         _ if border_side(prop).is_some_and(|(_, part)| part != "Width") => {
             let (side, part) = border_side(prop).expect("checked");
             if matches!(part, "" | "Color") {
@@ -1136,6 +1186,57 @@ fn border_shorthand(v: &Value) -> Option<(LengthPercentage, BorderStyle, Option<
         0.0
     };
     Some((LengthPercentage::length(width), style, color.flatten()))
+}
+
+/// `outline`: width, style and colour in any order; unlike `border`, a missing
+/// width or style keeps its default (`medium`, `none`). `auto` is drawn solid.
+fn outline_shorthand(v: &Value) -> Option<(f32, BorderStyle, Option<Rgba>)> {
+    let (mut width, mut style, mut color) = (None, None, None);
+    for token in split_top_level(v.as_str()?, ' ') {
+        if let Some(w) = line_width(&Value::String(token.to_owned())).filter(|_| width.is_none()) {
+            width = Some(w);
+        } else if let Some(s) = outline_style(token).filter(|_| style.is_none()) {
+            style = Some(s);
+        } else if color.is_none() && token.eq_ignore_ascii_case("currentcolor") {
+            color = Some(None);
+        } else if color.is_none() {
+            color = Some(Some(Rgba::parse(token)?));
+        } else {
+            return None;
+        }
+    }
+    Some((
+        width.unwrap_or(3.0),
+        style.unwrap_or(BorderStyle::None),
+        color.flatten(),
+    ))
+}
+
+/// A border or outline style; outlines also accept `auto` (drawn solid) but not
+/// `hidden`.
+fn outline_style(s: &str) -> Option<BorderStyle> {
+    match s.trim() {
+        "auto" => Some(BorderStyle::Solid),
+        "hidden" => None,
+        other => BorderStyle::parse(other),
+    }
+}
+
+/// `thin`, `medium`, `thick` or a non-negative length in px.
+fn line_width(v: &Value) -> Option<f32> {
+    match v {
+        Value::Number(n) if *n >= 0.0 => Some(*n as f32),
+        Value::String(s) => match s.trim() {
+            "thin" => Some(1.0),
+            "medium" => Some(3.0),
+            "thick" => Some(5.0),
+            t => match Len::parse(t)? {
+                Len::Px(px) if px >= 0.0 => Some(px),
+                _ => None,
+            },
+        },
+        _ => None,
+    }
 }
 
 /// `borderTop`, `borderRightColor`, `borderLeftStyle`, ...: the side (0 top, 1 right,
@@ -1507,6 +1608,39 @@ mod tests {
         // Iron draws a width alone (default style solid).
         let (_, v) = apply("borderWidth", 2.0.into()).unwrap();
         assert_eq!(v.border_styles, [BorderStyle::Solid; 4]);
+    }
+
+    // M3-BRD-03
+    #[test]
+    fn outline_properties() {
+        let (_, v) = apply("outline", "2px dashed red".into()).unwrap();
+        assert_eq!(
+            (v.outline_width, v.outline_style, v.outline_current),
+            (2.0, BorderStyle::Dashed, false)
+        );
+        let (_, v) = apply("outline", "auto".into()).unwrap();
+        assert_eq!(
+            (v.outline_width, v.outline_style, v.outline_current),
+            (3.0, BorderStyle::Solid, true),
+            "medium, currentColor"
+        );
+        let (_, v) = apply("outlineOffset", "-2px".into()).unwrap();
+        assert_eq!(v.outline_offset, -2.0);
+        let (_, v) = apply("outlineWidth", "thick".into()).unwrap();
+        assert_eq!(v.outline_width, 5.0);
+        assert_eq!(
+            Visual::default().outline_style,
+            BorderStyle::None,
+            "hidden by default"
+        );
+        for (prop, bad) in [
+            ("outlineStyle", "hidden"),
+            ("outline", "2px solid red blue"),
+            ("outlineWidth", "-1px"),
+            ("outlineOffset", "10%"),
+        ] {
+            assert!(apply(prop, bad.into()).is_err(), "{prop}: {bad}");
+        }
     }
 
     // M3-BG-02

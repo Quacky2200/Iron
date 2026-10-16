@@ -106,6 +106,32 @@ fn background_layers(
     (fills, text_fill)
 }
 
+/// The element's outline: a border around the border box grown by `outlineOffset`,
+/// following the corner radii, drawn over the element's content.
+fn outline(v: &Visual, rect: Rect, radii: Radii, text_color: Rgba) -> Option<DrawCmd> {
+    let color = if v.outline_current {
+        text_color
+    } else {
+        v.outline_color
+    };
+    let w = v.outline_width;
+    if !v.outline_style.is_visible() || w <= 0.0 || color.a <= 0.0 {
+        return None;
+    }
+    let grow = v.outline_offset + w;
+    let area = rect.expand(grow);
+    if area.is_empty() {
+        return None;
+    }
+    Some(DrawCmd::Border {
+        rect: area,
+        radii: radii.grow(grow),
+        widths: [w; 4],
+        colors: [color; 4],
+        styles: [v.outline_style; 4],
+    })
+}
+
 /// A box whose background layers blend with each other (`background-blend-mode`):
 /// an isolated group holding the colour, then each layer bottom first (blended ones
 /// in their own layer), then the border.
@@ -2305,7 +2331,9 @@ impl<L: LayoutEngine> UiTree<L> {
             });
         }
 
-        let group_opacity = v.opacity < 1.0 && (!node.children.is_empty() || own.len() > 1);
+        let outline = outline(v, rect, radii, text.color);
+        let own_count = own.len() + usize::from(outline.is_some());
+        let group_opacity = v.opacity < 1.0 && (!node.children.is_empty() || own_count > 1);
         if v.filter_blur > 0.0 || group_opacity || v.mix_blend != BlendMode::Normal {
             let start = out.len();
             out.push(DrawCmd::PushLayer {
@@ -2317,6 +2345,7 @@ impl<L: LayoutEngine> UiTree<L> {
             out.extend(own);
             self.collect_children(node, &text, overflow_clip, out);
             self.collect_scrollbars(id, out);
+            out.extend(outline);
             // The layer must cover everything drawn into it, plus the blur's spread.
             let content = out[start + 1..]
                 .iter()
@@ -2335,6 +2364,12 @@ impl<L: LayoutEngine> UiTree<L> {
             out.extend(own);
             self.collect_children(node, &text, overflow_clip, out);
             self.collect_scrollbars(id, out);
+            if let Some(mut outline) = outline {
+                if v.opacity < 1.0 {
+                    outline.scale_alpha(v.opacity);
+                }
+                out.push(outline);
+            }
         }
         for _ in &self_clips {
             out.push(DrawCmd::PopClip);

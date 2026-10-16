@@ -511,7 +511,9 @@ and `@font-face`.
      percentages now resolve like CSS (horizontal of the width, vertical of the height, so `50%`
      on a wide box is an ellipse). `Radii { x, y }` runs through the draw list, hit testing and
      clips; instances carry `radii_y`. Blurred shadows approximate them with circles — `M3-BRD-02`
-   - [ ] `outline`, `outline-width`, `outline-color`, `outline-style`, `outline-offset`
+   - [x] `outline`, `outline-width`, `outline-color`, `outline-style` (`auto` is solid),
+     `outline-offset`: a `DrawCmd::Border` around the border box, following the corner radii,
+     drawn after the element's children; no layout or hit-testing effect — `M3-BRD-03`
    - [ ] `border-image` (slice, width, `stretch` / `round`, `fill`), from images and gradients
    - [ ] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows
      the shape). Standard equivalent: `clip-path` — `inset()`, `circle()`, `ellipse()` done in M3c;

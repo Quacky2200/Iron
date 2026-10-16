@@ -176,6 +176,14 @@ export interface IronStyle {
   borderRightStyle?: BorderStyle;
   borderBottomStyle?: BorderStyle;
   borderLeftStyle?: BorderStyle;
+  /** Drawn outside the border box, over the content; takes no space. E.g. `"2px solid white"`. */
+  outline?: string;
+  outlineWidth?: Length;
+  /** Default `none`; `auto` draws solid. */
+  outlineStyle?: Exclude<BorderStyle, "hidden"> | "auto";
+  outlineColor?: string;
+  /** Gap between the border box and the outline; negative draws it inside. */
+  outlineOffset?: Length;
   /** 1-4 radii, optionally `/` and vertical radii for elliptical corners (`"40px / 12px"`). */
   borderRadius?: Length;
   borderTopLeftRadius?: Length;

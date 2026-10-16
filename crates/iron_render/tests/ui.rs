@@ -748,6 +748,52 @@ fn elliptical_corners() {
     assert_golden("M3-BRD-02", 100, 90, &f.pixels, TOLERANCE);
 }
 
+// M3-BRD-03
+#[test]
+fn outlines_sit_outside_the_border_box() {
+    let mut s = Scene::new();
+    s.add(
+        0,
+        &at(
+            20.0,
+            20.0,
+            40.0,
+            30.0,
+            &[
+                ("backgroundColor", "white".into()),
+                ("outline", "3px solid red".into()),
+                ("outlineOffset", 2.0.into()),
+            ],
+        ),
+    );
+    // A dashed outline hugging rounded corners, no offset.
+    s.add(
+        0,
+        &at(
+            90.0,
+            20.0,
+            40.0,
+            30.0,
+            &[
+                ("backgroundColor", "white".into()),
+                ("borderRadius", 8.0.into()),
+                ("outline", "2px dashed lime".into()),
+            ],
+        ),
+    );
+    let f = render(s, (150, 70), 1.0, BLACK);
+    assert_eq!(f.px(16, 35), [255, 0, 0, 255], "the outline, 2-5px out");
+    assert_eq!(f.px(18, 35), [0, 0, 0, 255], "the offset gap");
+    assert_eq!(f.px(21, 35), [255, 255, 255, 255], "the box");
+    assert_eq!(f.px(40, 15), [255, 0, 0, 255], "above the box too");
+    let ring: Vec<_> = (95..125).map(|x| f.px(x, 19)).collect();
+    assert!(
+        ring.iter().any(|p| p[1] > 200 && p[0] < 40) && ring.iter().any(|p| p[1] < 40),
+        "dashes along the top"
+    );
+    assert_golden("M3-BRD-03", 150, 70, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {
