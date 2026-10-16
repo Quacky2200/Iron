@@ -1,0 +1,12 @@
+[package]
+name = "iron_render"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+png = "0.18.1"
+pollster = "1.0.1"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+wgpu = "30.0.1"

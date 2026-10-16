@@ -1,0 +1,69 @@
+//! Golden-image helpers for render tests (see TESTS.md "Conventions").
+//!
+//! References live in `tests/golden/<id>.png` at the workspace root. Set
+//! `IRON_UPDATE_GOLDEN=1` to write new references instead of comparing.
+
+use std::path::PathBuf;
+
+pub fn golden_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/golden")
+}
+
+/// Compares RGBA8 `pixels` with the reference image `id`, allowing each channel to
+/// differ by up to `tolerance`. Panics with a readable message on mismatch.
+pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance: u8) {
+    let path = golden_dir().join(format!("{id}.png"));
+
+    if std::env::var_os("IRON_UPDATE_GOLDEN").is_some() {
+        std::fs::create_dir_all(golden_dir()).unwrap();
+        let file = std::fs::File::create(&path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header()
+            .unwrap()
+            .write_image_data(pixels)
+            .unwrap();
+        eprintln!("updated golden image {}", path.display());
+        return;
+    }
+
+    let file = std::fs::File::open(&path).unwrap_or_else(|_| {
+        panic!(
+            "missing golden image {}; run with IRON_UPDATE_GOLDEN=1 to create it",
+            path.display()
+        )
+    });
+    let mut reader = png::Decoder::new(std::io::BufReader::new(file))
+        .read_info()
+        .unwrap();
+    let mut expected = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut expected).unwrap();
+    expected.truncate(info.buffer_size());
+
+    assert_eq!(
+        (info.width, info.height),
+        (width, height),
+        "golden image {id} has a different size"
+    );
+    assert_eq!(
+        info.color_type,
+        png::ColorType::Rgba,
+        "golden image {id} must be RGBA"
+    );
+
+    let mismatches = pixels
+        .chunks(4)
+        .zip(expected.chunks(4))
+        .enumerate()
+        .filter(|(_, (a, b))| a.iter().zip(*b).any(|(x, y)| x.abs_diff(*y) > tolerance))
+        .collect::<Vec<_>>();
+    if let Some((i, (got, want))) = mismatches.first() {
+        panic!(
+            "golden image {id}: {} pixel(s) differ; first at ({}, {}): got {got:?}, expected {want:?}",
+            mismatches.len(),
+            *i as u32 % width,
+            *i as u32 / width,
+        );
+    }
+}

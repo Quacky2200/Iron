@@ -1,0 +1,47 @@
+// Built from tests/fixtures/src/throws.ts. Hand-written equivalent of
+// `bun build --format iife` until Bun is installed; regenerate with
+// `bun run build:fixtures`.
+(() => {
+  // js/engine/src/index.ts
+  class Component {
+    id;
+  }
+  var classes = new Map();
+  var instances = new Map();
+  function register(components) {
+    for (const [name, cls] of Object.entries(components)) {
+      classes.set(name, cls);
+    }
+  }
+  globalThis.__iron_registered = () => [...classes.keys()];
+  globalThis.__iron_create = (className, id) => {
+    const cls = classes.get(className);
+    if (!cls) throw new Error(`unknown component class '${className}'`);
+    const instance = new cls();
+    instance.id = id;
+    instances.set(id, instance);
+  };
+  globalThis.__iron_dispatch = (id, method, ...args) => {
+    const instance = instances.get(id);
+    if (!instance) throw new Error(`no component with id ${id}`);
+    const fn = instance[method];
+    if (typeof fn === "function") return fn.apply(instance, args);
+    return undefined;
+  };
+  globalThis.__iron_destroy = (id) => {
+    instances.delete(id);
+  };
+
+  // tests/fixtures/src/throws.ts
+  class Hello extends Component {
+    onUpdate(_dt) {
+      console.log(`tick ${this.id}`);
+    }
+  }
+  class Broken extends Component {
+    onUpdate(_dt) {
+      throw new Error("broken on purpose");
+    }
+  }
+  register({ Hello, Broken });
+})();

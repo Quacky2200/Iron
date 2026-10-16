@@ -1,0 +1,14 @@
+{
+  "name": "iron",
+  "private": true,
+  "workspaces": ["js/*", "examples/*"],
+  "scripts": {
+    "build": "bun run --filter hello build",
+    "build:fixtures": "bun build tests/fixtures/src/hello.ts --outfile tests/fixtures/hello.js --format iife && bun build tests/fixtures/src/throws.ts --outfile tests/fixtures/throws.js --format iife",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

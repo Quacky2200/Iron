@@ -1,0 +1,13 @@
+{
+  "name": "hello",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@iron/engine": "workspace:*"
+  },
+  "scripts": {
+    "build": "bun build src/main.ts --outfile dist/game.js --format iife --target browser",
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

@@ -1,0 +1,11 @@
+[package]
+name = "iron_script"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+iron_core = { version = "0.1.0", path = "../iron_core" }
+rquickjs = "0.14.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"

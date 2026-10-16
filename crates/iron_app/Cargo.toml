@@ -1,0 +1,14 @@
+[package]
+name = "iron_app"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+iron_core = { path = "../iron_core" }
+iron_platform = { path = "../iron_platform" }
+iron_render = { path = "../iron_render" }
+iron_script = { path = "../iron_script" }
