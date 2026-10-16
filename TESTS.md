@@ -74,6 +74,13 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 
 ## M2 — Boxes (React → Taffy → screen)
 
+### Script runtime additions
+| ID | Kind | Checks |
+|---|---|---|
+| M2-SCR-01 | Unit (conformance) | `setTimeout` callbacks fire on the first `tick(now)` at or after their due time, in due-time order; `clearTimeout` cancels. |
+| M2-SCR-02 | Unit (conformance) | Promise reactions and `queueMicrotask` callbacks run before control returns to Rust. |
+| M2-SCR-03 | Unit (conformance) | `__iron_commit(ops)` arrives as one commit per call, in order, via `drain_commits()`; `reset()` drops pending commits. |
+
 ### Reconciler (JS)
 | ID | Kind | Checks |
 |---|---|---|
@@ -88,6 +95,10 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M2-UI-01 | Unit | Applying an op buffer builds the expected tree (parents, children, order). |
 | M2-UI-02 | Unit | Invalid ops (unknown node ID) are reported and skipped; the tree stays valid. |
+| M2-UI-03 | Unit | Changing the root size relayouts; percentage widths follow the new size. |
+| M2-UI-04 | Unit | The draw list has one quad per visible box in paint order (parents before children, siblings in order); `display: none` and `opacity: 0` subtrees are skipped. |
+| M2-STY-01 | Unit | Layout values parse: `10` → 10px, `"50%"`, `"auto"`, `"space-between"`, `"1fr 2fr"`; unknown properties warn and are ignored. |
+| M2-STY-02 | Unit | Colours parse: `#f80`, `#ff8800`, `#ff880080`, `rgb(255 136 0)`, `rgba(255,136,0,0.5)`, `transparent`; bad colours warn and keep the previous value. |
 | M2-LAY-01 | Unit | Row flexbox: three 100px children in a 300px row land at x = 0, 100, 200. |
 | M2-LAY-02 | Unit | `flexGrow`, `padding`, `margin`, `gap`, `justifyContent`, `alignItems` match the CSS spec on fixed cases. |
 | M2-LAY-03 | Unit | Grid: a 3×3 grid places items in the right cells. |
@@ -100,6 +111,14 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-01 | Golden | Three coloured boxes in a row render as expected. |
 | M2-DRW-02 | Golden | Rounded corners and borders render as expected. |
 | M2-DRW-03 | Headless | 2,000 boxes are drawn in a small, fixed number of draw calls (batched). |
+| M2-DRW-04 | Golden | The same draw list at scale factor 2 renders at twice the pixel size. |
+
+### Integration (React in QuickJS)
+| ID | Kind | Checks |
+|---|---|---|
+| M2-INT-01 | Integration | The `boxes` fixture bundle runs in `QuickJsRuntime`; applying its commits to `UiTree` gives the expected tree and layout rects. |
+| M2-INT-02 | Integration | A `setTimeout`-driven state change produces only incremental ops (no recreation of unchanged nodes). |
+| M2-MAN-01 | Manual | `iron examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
 
 ### Performance
 | ID | Kind | Target (initial, revisit after measuring) |

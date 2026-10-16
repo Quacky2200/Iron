@@ -110,16 +110,68 @@ Iron/
 
 ---
 
-## M2 — Boxes
+## M2 — Boxes (React → Taffy → screen)
 
-- [ ] `@iron/react`: `react-reconciler` host config emitting ops — `M2-REC-01`..`M2-REC-05`
-- [ ] Op buffer flush once per commit; binary encoding if JSON-ish is too slow — `M2-REC-04`, `M2-BEN-04`
-- [ ] `iron_ui`: node tree from ops, error-tolerant — `M2-UI-01`, `M2-UI-02`
-- [ ] `LayoutEngine` trait + Taffy backend — `M2-LAY-01`..`M2-LAY-05`
-- [ ] Shared layout fixtures (usable by a future Yoga backend) — `M2-LAY-05`
-- [ ] Batched quad/SDF renderer: rects, rounded corners, borders — `M2-DRW-01`..`M2-DRW-03`
-- [ ] `criterion` benchmarks — `M2-BEN-01`..`M2-BEN-04`
-- [ ] **Decision point:** if Taffy misses targets badly, prototype Yoga backend
+**Goal:** `iron examples/boxes` shows a React-rendered layout of coloured, rounded, bordered boxes that relayouts when the window resizes and when React state changes (a timer-driven counter that adds/removes boxes).
+
+**Versions checked 2026-10-16:** React 19.3.1, react-reconciler 0.34.0, Taffy 0.15.0, criterion 0.8.2.
+
+### M2 decisions (proposed, confirm before starting)
+- **D1 — Op transport:** the reconciler collects ops in a JS array during a commit and calls a native `__iron_commit(ops)` **once** in `resetAfterCommit`. Ops are flat arrays: `[opcode, ...args]`. Start with the existing `Value` conversion; switch to a binary `ArrayBuffer` encoding only if `M2-BEN-04` says so.
+- **D2 — Style values:** numbers mean logical pixels; strings are CSS values parsed in Rust (Taffy's `parse` feature for layout properties, a small parser for colours). Styles travel as flat `[prop, value, prop, value, ...]` lists, so `Value` needs no object type. M3's CSS files reuse the same parsers.
+- **D3 — Elements in M2:** `<box>` only. Text arrives in M3; `createTextInstance` throws a clear "text isn't supported until M3" error.
+- **D4 — Scheduling:** React 19 + react-reconciler 0.34. The script runtime gains `setTimeout`/`clearTimeout`/`queueMicrotask` and runs the QuickJS job queue every frame. Root renders use `updateContainerSync` + `flushSyncWork` so a frame's state changes commit in the same frame.
+- **D5 — Crate split:** a new `iron_ui` crate owns the node tree, op decoding, style parsing, the `LayoutEngine` trait with the Taffy backend, and produces a GPU-free **draw list** of quads. `iron_render` gains a `QuadRenderer` that draws any draw list. UI stays testable without a GPU, and the quad renderer is reusable for world panels later.
+- **D6 — Units:** layout in logical pixels; the window's scale factor is applied only in the renderer.
+
+### 1. Script runtime additions (`iron_script`)
+- [ ] `setTimeout` / `clearTimeout` / `queueMicrotask` natives; timers fire from `ScriptRuntime::tick(now)` — `M2-SCR-01`
+- [ ] Run pending QuickJS jobs (promises, microtasks) after every call into JS — `M2-SCR-02`
+- [ ] `__iron_commit(ops)` native: one call per commit, collected with `drain_commits()` — `M2-SCR-03`
+- [ ] Bundle defines: `process.env.NODE_ENV` set by `bun build --define` (dev for local runs, production for release)
+- [ ] Add the new tests to the backend conformance suite so every future backend gets them
+
+### 2. `iron_ui` crate: tree, styles, layout (no GPU)
+- [ ] Opcodes shared with JS: `create`, `setStyle`, `appendChild`, `insertBefore`, `removeChild`, `appendToRoot`, `insertInRootBefore`, `removeFromRoot`, `destroy`
+- [ ] `UiTree`: applies a commit; unknown IDs or bad ops are reported and skipped — `M2-UI-01`, `M2-UI-02`
+- [ ] Style parsing: Taffy `parse` for layout props; colours as `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()` and a few names — `M2-STY-01`, `M2-STY-02`
+- [ ] M2 style subset: `display` (flex/grid/none), flex props, `width/height/min/max`, `padding`, `margin`, `borderWidth`, `gap`, `position` + insets, grid templates and placement, `backgroundColor`, `borderColor`, `borderRadius`, `opacity`
+- [ ] `LayoutEngine` trait + `TaffyLayout` backend; layout only reruns when dirty — `M2-LAY-01`..`M2-LAY-04`
+- [ ] Layout fixtures as data (`tests/layout/*.json`: tree + styles + expected rects) so a Yoga backend can run the same cases — `M2-LAY-05`
+- [ ] Root resize relayouts the tree — `M2-UI-03`
+- [ ] Draw list: one quad per visible box (rect, colour, border, radius, opacity), in paint order — `M2-UI-04`
+
+### 3. `@iron/react` package (`js/react`)
+- [ ] Host config for react-reconciler 0.34 (mutation mode). React 19 has many required host functions (update priority, suspend-commit hooks, etc.); stub them with sensible defaults and keep the list in one file
+- [ ] Node IDs: numbers from a counter, never reused in a session — `M2-REC-05`
+- [ ] `commitUpdate` diffs `style` and emits only changed properties — `M2-REC-02`
+- [ ] `createRoot().render(<App/>)` API; JSX typing for `<box>` (`JSX.IntrinsicElements`) with a typed `style` prop
+- [ ] `bun test` suite with a fake `__iron_commit` that records ops — `M2-REC-01`..`M2-REC-05`
+
+### 4. Integration in QuickJS
+- [ ] React fixture (`tests/fixtures/src/boxes.tsx` → `boxes.js`) runs in `QuickJsRuntime`; its commits applied to `UiTree` give the expected tree and layout — `M2-INT-01`
+- [ ] A state change driven by `setTimeout` commits the right incremental ops — `M2-INT-02`
+
+### 5. Quad renderer (`iron_render`)
+- [ ] Instanced quads with an SDF fragment shader for rounded corners and borders, with premultiplied alpha
+- [ ] Golden tests offscreen — `M2-DRW-01`, `M2-DRW-02`
+- [ ] Whole draw list in a fixed number of draw calls — `M2-DRW-03`
+- [ ] Scale factor applied at draw time — `M2-DRW-04`
+
+### 6. App wiring and example
+- [ ] `iron_app`: each frame call `tick(now)`, apply commits, relayout if dirty, draw quads over the clear colour
+- [ ] Window resize → root size in logical pixels → relayout
+- [ ] Load `@iron/react` apps alongside components (a bundle can register components and render UI)
+- [ ] `examples/boxes`: grid/flex showcase plus a timer-driven counter that adds and removes boxes
+- [ ] Manual check: resize the window and watch it relayout — `M2-MAN-01`
+
+### 7. Benchmarks and the Taffy/Yoga decision
+- [ ] `criterion` benches in `iron_ui` — `M2-BEN-01`..`M2-BEN-03`
+- [ ] JS→Rust commit transfer bench (QuickJS) — `M2-BEN-04`
+- [ ] Record results in TESTS.md
+- [ ] **Decision point:** if Taffy misses targets badly, prototype a Yoga backend against the `M2-LAY-05` fixtures
+
+**Suggested order:** 1 → 2 → 3 → 4 → 5 → 6 → 7. Steps 2 and 3 are independent once the opcode list (step 2's first item) is agreed, so they can run in parallel.
 
 ## M3 — Real UI
 
