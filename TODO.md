@@ -328,7 +328,11 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      manual check on Windows with a Japanese or Chinese IME — `M3-MAN-01`
 
 **Later (not M3):** CSS transitions and animations, `textOverflow: ellipsis`, WOFF2, accessibility
-(accesskit), pointer capture, drag and drop.
+(accesskit), pointer capture, drag and drop, and **`@media` queries**: `width`/`height` (with
+`min-`/`max-` and range syntax), `orientation`, `aspect-ratio`, `resolution` (the window's scale
+factor), `prefers-color-scheme`, and `pointer`/`hover` (useful to tell mouse, touch and gamepad apart),
+re-evaluated when the window resizes or moves between monitors. M3b's stylesheet parser keeps
+`@media` blocks (with a warning) so adding this later doesn't change the parser's structure.
 
 ## M4 — Hot reload
 

@@ -153,6 +153,7 @@ React (TS) ──custom reconciler──▶ op buffer ──▶ Rust UI tree ─
 | Selectors | type, `*`, `.class`, `#id`, attributes; combinators descendant, `>`, `+`, `~`; `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:nth-last-child()`, `*-of-type`, `:root`, `:empty`, `:blank`; `:not()`, `:is()`, `:where()`, `:has()`; `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within`; `:enabled`, `:disabled`, `:checked` | M3 |
 | Pseudo-elements | `::before` / `::after` as generated children (invisible to React), with `content` | M3 |
 | Variables | custom properties `--x` and `var(--x, fallback)` | M3 |
+| Media queries | `@media` with size, orientation, aspect ratio, resolution, `prefers-color-scheme`, `pointer`/`hover` | Later |
 | Interaction | hit testing, pointer/keyboard events with capture and bubbling, focus and Tab order, `cursor`, `pointerEvents`, text inputs with IME, `overflow` clipping and scrolling | M3 |
 
 **Draw list shape.** Effects mean the draw list is a list of commands, not just quads:
