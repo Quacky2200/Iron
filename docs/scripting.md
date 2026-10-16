@@ -105,10 +105,13 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
   (an object, so names survive minification).
 - `op(name, ...args)`, `loadFont(face)`, `addStyleSheet(css)` / `removeStyleSheet(id)`. JS allocates
   stylesheet ids; the app maps them to tree ids (`App.sheets`).
+- `input` ([input.ts](../js/engine/src/input.ts)): keyboard and gamepad state and events for
+  gameplay code, fed by `__iron_input(type, ...args)` from the app (see
+  [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6)).
 - The `__iron_*` host functions are assigned on `globalThis` at import time; instances live in a
   `Map<number, Component>`.
 - [globals.ts](../js/engine/src/globals.ts) declares the ambient types (`__iron_op`, timers,
-  `process.env.NODE_ENV`, `__iron_ui_event`). It is hand-written for now (a generated `.d.ts` is planned).
+  `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`). It is hand-written for now (a generated `.d.ts` is planned).
 
 Today `iron_app` has no scene system (M5): it spawns **one instance of every registered class**
 at startup and ticks them at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per frame).

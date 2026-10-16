@@ -20,7 +20,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [ui-tree.md](ui-tree.md) | `iron_ui` tree, opcodes, styles, Taffy layout, Parley text, text fields (`editor.rs`), draw list |
 | [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`, `@font-face`, URL rebasing |
 | [react.md](react.md) | `@iron/react`: reconciler host config, style/attr diffing, `createRoot`, `Text`/`Span`/`Input`/`TextArea`, events, refs |
-| [input-and-events.md](input-and-events.md) | Platform input, `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, scrolling, text fields (keys, clipboard, IME) |
+| [input-and-events.md](input-and-events.md) | Platform input, `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, scrolling, text fields (keys, clipboard, IME), gamepads, game `input` API, gamepad UI navigation |
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
 
@@ -28,12 +28,12 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 
 ```
 iron_core      Value, ids, Commit/Op, asset path safety          (no deps on other Iron crates)
-iron_platform  winit window + event loop, InputEvent (keys, pointer, IME), gilrs
+iron_platform  winit window + event loop, InputEvent (keys, pointer, IME, gamepads), gilrs
 iron_script    ScriptRuntime trait, QuickJS backend, prelude.js, ComponentHost
 iron_ui        UiTree, styles, CSS, layout, text, draw list, events/interaction
 iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd)
 iron_app       the `iron` binary that wires everything together
-js/engine      @iron/engine   (Component, register, op, loadFont, stylesheets)
+js/engine      @iron/engine   (Component, register, op, loadFont, stylesheets, input)
 js/react       @iron/react    (reconciler, events)
 ```
 
@@ -83,5 +83,6 @@ Key ideas to keep in mind:
 | Add a selector / pseudo-class | [css.rs](../crates/iron_ui/src/css.rs), [cascade.rs](../crates/iron_ui/src/cascade.rs), [css.md](css.md) |
 | Change text field editing | [editor.rs](../crates/iron_ui/src/editor.rs), [input-and-events.md](input-and-events.md#text-fields-m3c-step-5) |
 | Add a UI event | [events.rs](../crates/iron_ui/src/events.rs), [events.ts](../js/react/src/events.ts), [input-and-events.md](input-and-events.md) |
+| Change gamepad / game input | [gamepad.rs](../crates/iron_platform/src/gamepad.rs), [game_input.rs](../crates/iron_app/src/game_input.rs), [input.ts](../js/engine/src/input.ts), [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6) |
 | Add a script op | [main.rs](../crates/iron_app/src/main.rs) `tick()`, [scripting.md](scripting.md) |
 | Add a draw command | [draw.rs](../crates/iron_ui/src/draw.rs), [ui/mod.rs](../crates/iron_render/src/ui/mod.rs), [rendering.md](rendering.md) |

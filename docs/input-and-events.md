@@ -38,13 +38,15 @@ flowchart LR
   offsets, `None` hides the caret, empty text ends composing), `Commit(text)`, `Disabled`. winit only
   sends these after the app calls `set_ime_allowed(true)` (see below).
 - `Modifiers`, `Resized`, `Focused`, `CloseRequested`.
+- `Gamepad { id, event: GamepadEvent }` (see [Gamepads](#gamepads-and-game-input-m3c-step-6)).
 
 [platform.rs](../crates/iron_platform/src/platform.rs): `Platform::run` owns the winit event loop.
 `Runner` implements `ApplicationHandler`: creates the window in `resumed` (then
 `PlatformApp::window_ready`), calls `PlatformApp::frame` on `RedrawRequested`, forwards converted
 events to `PlatformApp::input`, and in `about_to_wait` checks `should_exit`, polls gamepads and
-requests the next redraw (continuous rendering). Gamepads (`gilrs`) are polled and only logged;
-turning them into events is still TODO. `iron_platform` re-exports `winit::dpi` so the app can build
+requests the next redraw (continuous rendering). `Platform::poll_gamepads` drains `gilrs` and
+returns `InputEvent::Gamepad`s, which the runner feeds to `PlatformApp::input` like any other
+event. `iron_platform` re-exports `winit::dpi` so the app can build
 IME area arguments.
 
 ## App glue ([main.rs](../crates/iron_app/src/main.rs))
@@ -135,6 +137,8 @@ default; **default actions run after the script sees the event**, like a browser
 | `KeyDown` | `keydown` to the focused element only | `Tab`/`Shift+Tab`: move focus (sets `:focus-visible`); other keys scroll (arrows, Page, Space, Home/End) |
 | `KeyUp` | `keyup` to the focused element | none |
 | `Focus(id)` / `Blur(id)` (from `ref.focus()`) | `focusout` then `focusin` | `Focus` ignored if not focusable; `:focus-visible` only if the last focus move was by keyboard (browser heuristic) |
+| `Navigate(dir)` | `focusout`/`focusin` (via `set_focus`) | Moves focus to `nearest_in_direction` and scrolls it into view; nothing if no element has focus. Sets `:focus-visible` |
+| `Activate` | `click` on the focused element | Skipped for text fields. No pointer position, `detail` 0 (like a keyboard-activated click) |
 | `Refresh` | hover events | drops focus from removed, hidden or disabled elements |
 
 Focus details:
@@ -149,7 +153,8 @@ Focus details:
   new target) to the old element, then `focusin` (with `related` = the old one). Both bubble, so
   `onFocus`/`onBlur` on a parent see descendants gaining/losing focus; `:focus-within` is handled
   by the cascade scanning descendants (`Deps.focus_within`).
-- Key events with no focused element are not dispatched to scripts (there is no global key hook yet).
+- Key events with no focused element are not dispatched to UI handlers; gameplay code gets keys
+  through the `input` API instead (see [Gamepads and game input](#gamepads-and-game-input-m3c-step-6)).
 
 ## Cursor
 
@@ -243,3 +248,63 @@ flowchart LR
   sent until the commit, and `set_value` is ignored while composing.
 - `ImeCommit` first drops any pre-edit (`end_compose`), then inserts the text like a paste.
 - Moving focus away mid-composition drops the pre-edit (`set_focus` calls `editor_end_compose`).
+
+## Gamepads and game input (M3c step 6)
+
+### Gamepads
+[gamepad.rs](../crates/iron_platform/src/gamepad.rs) turns `gilrs` events into
+`InputEvent::Gamepad { id, event }`; `id` is stable while the pad is connected. `GamepadEvent` is
+`Connected { name }`, `Disconnected`, `ButtonDown(name)`, `ButtonUp(name)`, `ButtonValue(name, 0..1)`
+(analog triggers) and `Axis(name, -1..1)`. Names are fixed strings so scripts do not depend on
+`gilrs`:
+
+- Buttons (`button_name`): `South` (A), `East` (B), `West` (X), `North` (Y), `LeftBumper`,
+  `RightBumper`, `LeftTrigger`, `RightTrigger`, `Select`, `Start`, `Mode`, `LeftStick`,
+  `RightStick` (clicks), `DPadUp/Down/Left/Right` (plus `C`, `Z`).
+- Axes (`axis_name`): `LeftStickX/Y`, `RightStickX/Y`, `LeftZ`, `RightZ`, `DPadX/Y`. Sticks are
+  **y-up**: up and right are positive.
+- Unknown buttons/axes, repeats, dropped events and force-feedback notices are ignored
+  (`convert_gamepad` returns `None`).
+
+### To scripts
+`App::input` handles `Gamepad` events first and returns early. It calls `__iron_input` (only if the
+bundle defines it; `App.game_input`) with `game_input::script_args(id, event)`
+([game_input.rs](../crates/iron_app/src/game_input.rs)):
+
+| Event | `__iron_input` args |
+|---|---|
+| connected | `"gamepadconnected", id, name` |
+| disconnected | `"gamepaddisconnected", id` |
+| button down / up / analog | `"gamepadbutton", id, button, value` (1, 0, or 0..1) |
+| axis | `"gamepadaxis", id, axis, value` |
+| key down | `"keydown", code, key, repeat` |
+| key up | `"keyup", code, key` |
+| window lost focus | `"blur"` |
+
+Key events are forwarded after the UI has handled them, **except while a text field has focus**
+(`UiTree::is_editor`): typed keys stay the field's. Focus loss always sends `blur`.
+
+### `input` in `@iron/engine`
+[input.ts](../js/engine/src/input.ts) installs `__iron_input` and keeps the state:
+
+- `input.isKeyDown(code)` by physical `code` (`"KeyW"`).
+- `input.gamepads()`, `input.gamepad(id)`: connected pads as `Gamepad { id, name, connected,
+  buttons, axes }` (button values 0..1, axis values -1..1).
+- `input.isButtonDown(name)`: any connected pad holds it (value above 0.5).
+- `input.on(type, fn)` returns an unsubscribe function. Types: `keydown`, `keyup`,
+  `gamepadconnected`, `gamepaddisconnected`, `gamepadbuttondown`, `gamepadbuttonup` (fired when a
+  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run.
+- `blur` clears held keys and zeroes pad buttons, since the releases may never arrive.
+
+### UI navigation
+`GamepadNav::ui_input(id, event)` in `game_input.rs` maps pad events to UI `Input`s: d-pad buttons
+-> `Input::Navigate(Direction)`, `South` -> `Input::Activate`, and the left stick to `Navigate`
+with hysteresis (pushed at |v| >= 0.6, released below 0.3, so one push moves once; the y axis is
+up-positive; state is per pad and axis and dropped on disconnect). The app only sends these to
+`handle_ui` while `Interaction::focused()` is set, so the d-pad stays the game's until UI takes
+focus (e.g. a menu calling `ref.focus()`). The event is still sent to `__iron_input` either way.
+
+`nearest_in_direction(tree, from, direction)` ([interaction.rs](../crates/iron_ui/src/interaction.rs))
+considers the elements in `tab_order`, keeps those whose centre lies that way (more than 0.5 px
+along the direction) and scores `along + 2 * |across|`, so elements in line beat closer ones off to
+the side. The lowest score wins; there is no wrap-around.
