@@ -89,6 +89,28 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
   rule `[dir=rtl] { direction: rtl }`): in `restyle` after the cascade, and via `dir_fallback` when
   there are no stylesheets. A `dir` change restyles and invalidates `[dir]` selectors.
 
+### Layout shorthands (M3d step 2a)
+
+All in `apply_style`/`copy_prop` ([style.rs](../crates/iron_ui/src/style.rs)); tests in
+[layout_props.rs](../crates/iron_ui/tests/layout_props.rs).
+
+- **`placeItems` / `placeSelf` / `placeContent`:** `<align> [<justify>]`; one value sets both axes.
+- **Grid:**
+  - `gridTemplateAreas`: quoted rows (`"head head" "side main"`, `none` clears). Rows must have equal
+    cell counts and each name must fill a rectangle; `.` cells are empty. Otherwise it is invalid.
+  - `gridArea`: an area name, or four lines `row-start / column-start / row-end / column-end`
+    (omitted ends copy a named start, else `auto`; more than four is invalid).
+  - `gridTemplate`: `rows / columns`, or area strings with optional row sizes
+    (`"a b" 40px "c c" 1fr / 1fr 2fr`; rows without a size are `auto`). `none` resets rows, columns,
+    line names and areas.
+  - `gridAutoRows` / `gridAutoColumns`: single track sizes only (no `repeat()`).
+  - `gridRowStart/End` and `gridColumnStart/End` longhands (number, `span n` or a line name).
+- **Logical properties** map for horizontal left-to-right writing: block = top/bottom, inline =
+  left/right. `margin|padding|inset` + `Block`/`Inline` (+ `Start`/`End`) and `blockSize`,
+  `inlineSize` with `min`/`max` forms (to height/width). The two-value forms (`marginBlock: "5px 7px"`)
+  apply atomically: both halves are checked first, so an error changes nothing. More than two values
+  is invalid.
+
 Relative units (`em`, `rem`, viewport units) and `calc()`/`min()`/`max()`/`clamp()` in either path
 are resolved to pixels at restyle before `apply_style` sees them; see [css.md](css.md#relative-units-and-math-unitsrs).
 
@@ -155,7 +177,8 @@ words (M3-TXT-08). It adds about 3.8 MB to the release binary.
 CSS), so rtl blocks start at the right and mixed Latin/Hebrew/Arabic runs order correctly. The
 shared helpers `alignment()` and `base_direction()` are used by text blocks and fields;
 `text-align: start/end` resolve by direction through Parley (M3-TXT-09). Not done: `dir="auto"`,
-flex/grid row order in rtl (Taffy has no direction), logical properties.
+flex/grid row order in rtl (Taffy has no direction). Logical properties are mapped left-to-right only
+(see "Layout shorthands").
 
 How inline content works:
 
