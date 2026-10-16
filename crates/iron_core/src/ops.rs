@@ -70,3 +70,12 @@ mod tests {
         assert_eq!(order, [0.0, 1.0, 2.0]);
     }
 }
+
+/// One UI commit sent by the React reconciler with `__iron_commit(ops)`.
+///
+/// Each op is a `Value::Array` of `[opcode, ...args]`; `iron_ui` decodes them.
+/// A commit is applied as a unit so the engine never sees a half-updated tree.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Commit {
+    pub ops: Vec<Value>,
+}

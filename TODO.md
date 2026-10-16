@@ -125,11 +125,13 @@ Iron/
 - **D6 — Units:** layout in logical pixels; the window's scale factor is applied only in the renderer.
 
 ### 1. Script runtime additions (`iron_script`)
-- [ ] `setTimeout` / `clearTimeout` / `queueMicrotask` natives; timers fire from `ScriptRuntime::tick(now)` — `M2-SCR-01`
-- [ ] Run pending QuickJS jobs (promises, microtasks) after every call into JS — `M2-SCR-02`
-- [ ] `__iron_commit(ops)` native: one call per commit, collected with `drain_commits()` — `M2-SCR-03`
-- [ ] Bundle defines: `process.env.NODE_ENV` set by `bun build --define` (dev for local runs, production for release)
-- [ ] Add the new tests to the backend conformance suite so every future backend gets them
+- [x] `setTimeout` / `clearTimeout` in a shared JS prelude (`iron_script/src/prelude.js`; Rust holds no JS function refs); `queueMicrotask` is built into QuickJS-ng. Timers fire from `ScriptRuntime::tick(now)`, zero-delay chains in the same tick, capped at `MAX_TIMERS_PER_TICK` — `M2-SCR-01`
+- [x] Pending QuickJS jobs (promises, microtasks) run after every call into JS, including between timers — `M2-SCR-02`
+- [x] `__iron_commit(ops)` native → `Commit` (in `iron_core`), collected with `drain_commits()` — `M2-SCR-03`
+- [x] Uncaught timer/job errors collected via `__iron_report_error` and returned by `tick()`
+- [x] Bundle defines: `process.env.NODE_ENV` via `bun build --define` (development for `examples/hello`, production for test fixtures)
+- [x] New tests are in the backend conformance suite (7 added; 15 total)
+- [x] `iron_app` calls `tick` every frame (timers work in games now); commits drained until step 6 consumes them
 
 ### 2. `iron_ui` crate: tree, styles, layout (no GPU)
 - [ ] Opcodes shared with JS: `create`, `setStyle`, `appendChild`, `insertBefore`, `removeChild`, `appendToRoot`, `insertInRootBefore`, `removeFromRoot`, `destroy`

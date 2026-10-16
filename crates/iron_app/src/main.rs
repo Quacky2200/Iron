@@ -59,6 +59,7 @@ fn main() -> Result<()> {
         scripts,
         components,
         gpu: None,
+        started: Instant::now(),
         last_frame: None,
         accumulator: 0.0,
     };
@@ -94,6 +95,7 @@ struct App {
     scripts: QuickJsRuntime,
     components: ComponentHost,
     gpu: Option<(Gpu, WindowSurface, Arc<Window>)>,
+    started: Instant,
     last_frame: Option<Instant>,
     accumulator: f64,
 }
@@ -118,10 +120,21 @@ impl App {
             self.accumulator = 0.0;
         }
 
-        // Ops have no consumers until M2 (UI); drain so they don't pile up.
+        // Script time: timers and their microtasks, once per frame.
+        let now_ms = now.duration_since(self.started).as_secs_f64() * 1000.0;
+        for e in self.scripts.tick(now_ms) {
+            tracing::error!(target: "script", "uncaught: {e}");
+        }
+
+        // Ops and UI commits have no consumers until later in M2; drain so they don't pile up.
         let ops = self.scripts.drain_ops();
-        if !ops.is_empty() {
-            tracing::trace!(count = ops.len(), "dropped script ops");
+        let commits = self.scripts.drain_commits();
+        if !ops.is_empty() || !commits.is_empty() {
+            tracing::trace!(
+                ops = ops.len(),
+                commits = commits.len(),
+                "dropped script output"
+            );
         }
     }
 }

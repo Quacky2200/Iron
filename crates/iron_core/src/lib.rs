@@ -8,5 +8,5 @@ mod ops;
 mod value;
 
 pub use ids::{ComponentId, EntityId, NodeId};
-pub use ops::{Op, OpBuffer};
+pub use ops::{Commit, Op, OpBuffer};
 pub use value::Value;

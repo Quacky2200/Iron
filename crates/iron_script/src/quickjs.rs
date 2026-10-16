@@ -6,27 +6,55 @@ use rquickjs::context::EvalOptions;
 use rquickjs::function::Rest;
 use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Type};
 
-use crate::{LogLevel, LogSink, OpBuffer, ScriptError, ScriptRuntime, Value, tracing_log_sink};
+use crate::{
+    Commit, LogLevel, LogSink, MAX_TIMERS_PER_TICK, OpBuffer, PRELUDE, ScriptError, ScriptRuntime,
+    Value, tracing_log_sink,
+};
 
 /// The QuickJS backend (via `rquickjs`). Interpreter only, so it also works on iOS.
 pub struct QuickJsRuntime {
     // Field order matters: the context must drop before its runtime.
     context: Context,
-    _runtime: Runtime,
-    ops: Rc<RefCell<OpBuffer>>,
-    log: Rc<RefCell<LogSink>>,
+    runtime: Runtime,
+    shared: Rc<RefCell<Shared>>,
+}
+
+/// State the native functions write into; survives `reset()` (but is cleared by it).
+struct Shared {
+    ops: OpBuffer,
+    commits: Vec<Commit>,
+    errors: Vec<ScriptError>,
+    log: LogSink,
 }
 
 impl QuickJsRuntime {
     pub fn new() -> Self {
-        let ops = Rc::new(RefCell::new(OpBuffer::default()));
-        let log = Rc::new(RefCell::new(tracing_log_sink()));
-        let (runtime, context) = new_context(&ops, &log);
+        let shared = Rc::new(RefCell::new(Shared {
+            ops: OpBuffer::default(),
+            commits: Vec::new(),
+            errors: Vec::new(),
+            log: tracing_log_sink(),
+        }));
+        let (runtime, context) = new_context(&shared);
         Self {
             context,
-            _runtime: runtime,
-            ops,
-            log,
+            runtime,
+            shared,
+        }
+    }
+
+    /// Runs pending promise jobs and microtasks until the queue is empty.
+    /// Exceptions thrown by jobs are kept and returned by the next `tick`.
+    fn run_jobs(&mut self) {
+        loop {
+            match self.runtime.execute_pending_job() {
+                Ok(true) => continue,
+                Ok(false) => break,
+                Err(job) => job.0.with(|ctx| {
+                    let error = thrown_to_error(&ctx.catch());
+                    self.shared.borrow_mut().errors.push(error);
+                }),
+            }
         }
     }
 }
@@ -39,27 +67,31 @@ impl Default for QuickJsRuntime {
 
 impl ScriptRuntime for QuickJsRuntime {
     fn load_bundle(&mut self, name: &str, code: &str) -> Result<(), ScriptError> {
-        self.context.with(|ctx| {
+        let result = self.context.with(|ctx| {
             let mut opts = EvalOptions::default();
             opts.filename = Some(name.to_owned());
             opts.strict = false;
             ctx.eval_with_options::<rquickjs::Value, _>(code, opts)
                 .map(|_| ())
                 .map_err(|e| to_script_error(&ctx, e))
-        })
+        });
+        self.run_jobs();
+        result
     }
 
     fn eval(&mut self, code: &str) -> Result<Value, ScriptError> {
-        self.context.with(|ctx| {
+        let result = self.context.with(|ctx| {
             let v = ctx
                 .eval::<rquickjs::Value, _>(code)
                 .map_err(|e| to_script_error(&ctx, e))?;
             Ok(from_js(&v))
-        })
+        });
+        self.run_jobs();
+        result
     }
 
     fn call_global(&mut self, name: &str, args: &[Value]) -> Result<Value, ScriptError> {
-        self.context.with(|ctx| {
+        let result = self.context.with(|ctx| {
             let f: Function = ctx
                 .globals()
                 .get(name)
@@ -73,40 +105,66 @@ impl ScriptRuntime for QuickJsRuntime {
                 .call((Rest(args),))
                 .map_err(|e| to_script_error(&ctx, e))?;
             Ok(from_js(&v))
-        })
+        });
+        self.run_jobs();
+        result
+    }
+
+    fn tick(&mut self, now_ms: f64) -> Vec<ScriptError> {
+        for _ in 0..MAX_TIMERS_PER_TICK {
+            match self.call_global("__iron_fire_next_timer", &[now_ms.into()]) {
+                Ok(Value::Bool(true)) => continue,
+                Ok(_) => break,
+                Err(e) => {
+                    self.shared.borrow_mut().errors.push(e);
+                    break;
+                }
+            }
+        }
+        std::mem::take(&mut self.shared.borrow_mut().errors)
     }
 
     fn drain_ops(&mut self) -> OpBuffer {
-        self.ops.borrow_mut().take()
+        self.shared.borrow_mut().ops.take()
+    }
+
+    fn drain_commits(&mut self) -> Vec<Commit> {
+        std::mem::take(&mut self.shared.borrow_mut().commits)
     }
 
     fn reset(&mut self) {
-        self.ops.borrow_mut().take();
-        let (runtime, context) = new_context(&self.ops, &self.log);
+        {
+            let mut shared = self.shared.borrow_mut();
+            shared.ops.take();
+            shared.commits.clear();
+            shared.errors.clear();
+        }
+        let (runtime, context) = new_context(&self.shared);
         // Assign the context first so the old context drops before the old runtime.
         self.context = context;
-        self._runtime = runtime;
+        self.runtime = runtime;
     }
 
     fn set_log_sink(&mut self, sink: LogSink) {
-        *self.log.borrow_mut() = sink;
+        self.shared.borrow_mut().log = sink;
     }
 }
 
-fn new_context(ops: &Rc<RefCell<OpBuffer>>, log: &Rc<RefCell<LogSink>>) -> (Runtime, Context) {
+fn new_context(shared: &Rc<RefCell<Shared>>) -> (Runtime, Context) {
     let runtime = Runtime::new().expect("QuickJS runtime");
     let context = Context::full(&runtime).expect("QuickJS context");
     context.with(|ctx| {
-        install_globals(&ctx, ops.clone(), log.clone()).expect("install Iron globals");
+        install_globals(&ctx, shared).expect("install Iron globals");
+        let mut opts = EvalOptions::default();
+        opts.filename = Some("iron:prelude.js".into());
+        ctx.eval_with_options::<(), _>(PRELUDE, opts)
+            .map_err(|e| to_script_error(&ctx, e))
+            .expect("Iron prelude");
     });
     (runtime, context)
 }
 
-fn install_globals<'js>(
-    ctx: &Ctx<'js>,
-    ops: Rc<RefCell<OpBuffer>>,
-    log: Rc<RefCell<LogSink>>,
-) -> rquickjs::Result<()> {
+fn install_globals<'js>(ctx: &Ctx<'js>, shared: &Rc<RefCell<Shared>>) -> rquickjs::Result<()> {
     let globals = ctx.globals();
 
     let console = Object::new(ctx.clone())?;
@@ -117,26 +175,44 @@ fn install_globals<'js>(
         ("warn", LogLevel::Warn),
         ("error", LogLevel::Error),
     ] {
-        let log = log.clone();
+        let shared = shared.clone();
         let f = Function::new(ctx.clone(), move |args: Rest<rquickjs::Value>| {
             let msg = args.0.iter().map(display).collect::<Vec<_>>().join(" ");
-            let sink = log.borrow().clone();
+            // Clone the sink so it can't observe the RefCell borrowed.
+            let sink = shared.borrow().log.clone();
             sink(level, &msg);
         })?;
         console.set(name, f)?;
     }
     globals.set("console", console)?;
 
+    let s = shared.clone();
     let op = Function::new(
         ctx.clone(),
         move |name: String, args: Rest<rquickjs::Value>| {
-            ops.borrow_mut().push(Op {
+            s.borrow_mut().ops.push(Op {
                 name,
                 args: args.0.iter().map(from_js).collect(),
             });
         },
     )?;
     globals.set("__iron_op", op)?;
+
+    let s = shared.clone();
+    let commit = Function::new(ctx.clone(), move |ops: rquickjs::Value| {
+        let ops = match from_js(&ops) {
+            Value::Array(ops) => ops,
+            other => vec![other],
+        };
+        s.borrow_mut().commits.push(Commit { ops });
+    })?;
+    globals.set("__iron_commit", commit)?;
+
+    let s = shared.clone();
+    let report = Function::new(ctx.clone(), move |thrown: rquickjs::Value| {
+        s.borrow_mut().errors.push(thrown_to_error(&thrown));
+    })?;
+    globals.set("__iron_report_error", report)?;
     Ok(())
 }
 
@@ -219,13 +295,17 @@ fn to_script_error(ctx: &Ctx<'_>, err: rquickjs::Error) -> ScriptError {
     if !err.is_exception() {
         return ScriptError::new(err.to_string());
     }
-    let thrown = ctx.catch();
+    thrown_to_error(&ctx.catch())
+}
+
+/// Converts a thrown JS value (an `Error` or anything else) into a `ScriptError`.
+fn thrown_to_error(thrown: &rquickjs::Value) -> ScriptError {
     let Some(exception) = thrown
         .as_object()
         .and_then(|o| Exception::from_object(o.clone()))
     else {
         // `throw "text"` or another non-Error value.
-        return ScriptError::new(display(&thrown));
+        return ScriptError::new(display(thrown));
     };
     let name: Option<String> = exception.get("name").ok();
     let message = exception.message().unwrap_or_default();

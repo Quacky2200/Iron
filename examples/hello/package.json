@@ -7,7 +7,7 @@
     "@iron/engine": "workspace:*"
   },
   "scripts": {
-    "build": "bun build src/main.ts --outfile dist/game.js --format iife --target browser",
+    "build": "bun build src/main.ts --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
     "typecheck": "tsc --noEmit -p ."
   }
 }

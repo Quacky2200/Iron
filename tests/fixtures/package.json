@@ -7,7 +7,7 @@
     "@iron/engine": "workspace:*"
   },
   "scripts": {
-    "build": "bun build src/hello.ts --outfile hello.js --format iife && bun build src/throws.ts --outfile throws.js --format iife",
+    "build": "bun build src/hello.ts --outfile hello.js --format iife --define process.env.NODE_ENV='\"production\"' && bun build src/throws.ts --outfile throws.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "typecheck": "tsc --noEmit -p ."
   }
 }
