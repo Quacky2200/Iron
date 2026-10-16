@@ -170,13 +170,16 @@ Iron/
 - [ ] Later: per-side border colours, elliptical radii, `radial-gradient` position/size keywords, more filter functions (`brightness`, `grayscale`, `drop-shadow`, ...), multiple backgrounds
 
 ### 5. Quad renderer (`iron_render`)
-- [ ] Instanced quads with an SDF fragment shader for rounded corners (per-corner radii) and borders, with premultiplied alpha
-- [ ] Gradient fills; image fills from a texture cache (decode with the `image` crate)
-- [ ] Analytic box shadows (outer and inset), one quad each
-- [ ] Offscreen layers for `filter: blur` and group opacity; backdrop copy + blur for `backdropFilter`
-- [ ] Golden tests offscreen — `M2-DRW-01`, `M2-DRW-02`, `M2-DRW-05`..`M2-DRW-08`
-- [ ] Whole draw list in a small, bounded number of draw calls (layers add passes) — `M2-DRW-03`
-- [ ] Scale factor applied at draw time — `M2-DRW-04`
+- [x] `UiRenderer` (`iron_render::ui`): instanced quads with an SDF shader for per-corner radii and borders (background extends under the border, like CSS), premultiplied alpha, one physical pixel of anti-aliasing
+- [x] Linear and radial gradient fills (up to 8 stops, CSS stop fix-up, magic-corner directions, premultiplied-sRGB interpolation)
+- [x] Image fills: `url(...)` loaded from the game folder (relative paths only; `..`, absolute paths and URL schemes rejected), cached textures, `backgroundSize`/`Position`/`Repeat`, clipped to the rounded box, border drawn on top
+- [x] Analytic box shadows (outer clipped outside the box, inset clipped to the padding box), one quad each
+- [x] Offscreen layers for `filter: blur` and group opacity; backdrop copy + separable Gaussian blur, clipped to the rounded box, for `backdropFilter`. Textures pooled across frames
+- [x] Frame drawn into an internal sRGB canvas, then blitted to any target format
+- [x] Golden + pixel-assertion tests, all checked by eye — `M2-DRW-01`, `M2-DRW-02`, `M2-DRW-05` (+ images), `M2-DRW-06`..`M2-DRW-08`
+- [x] 2,000 boxes in one draw call — `M2-DRW-03`
+- [x] Scale factor applied at draw time — `M2-DRW-04`
+- [ ] Later: blending happens in linear light (browsers blend in sRGB, so semi-transparent edges differ slightly); large blurs should downsample (dual Kawase) instead of up to 257 taps; per-op uniform buffers and bind groups could be pooled; gradients ignore `backgroundSize`/`Position` for now
 
 ### 6. App wiring and example
 - [ ] `iron_app`: each frame call `tick(now)`, apply commits, relayout if dirty, draw quads over the clear colour

@@ -5,14 +5,21 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 /// A render target with no window, used by headless and golden-image tests.
 pub struct OffscreenTarget {
     texture: Option<wgpu::Texture>,
+    format: wgpu::TextureFormat,
     width: u32,
     height: u32,
 }
 
 impl OffscreenTarget {
     pub fn new(gpu: &Gpu, width: u32, height: u32) -> Self {
+        Self::with_format(gpu, width, height, FORMAT)
+    }
+
+    /// A target with a specific format, e.g. `Rgba8UnormSrgb` for UI golden images.
+    pub fn with_format(gpu: &Gpu, width: u32, height: u32, format: wgpu::TextureFormat) -> Self {
         let mut t = Self {
             texture: None,
+            format,
             width: 0,
             height: 0,
         };
@@ -22,6 +29,17 @@ impl OffscreenTarget {
 
     pub fn size(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.format
+    }
+
+    /// A view for rendering into the target; `None` while it is 0×0.
+    pub fn view(&self) -> Option<wgpu::TextureView> {
+        self.texture
+            .as_ref()
+            .map(|t| t.create_view(&Default::default()))
     }
 
     /// Resizing to 0×0 is allowed (like a minimized window): the target simply has no pixels.
@@ -39,7 +57,7 @@ impl OffscreenTarget {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: FORMAT,
+                format: self.format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             })

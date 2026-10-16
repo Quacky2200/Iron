@@ -7,10 +7,12 @@ mod gpu;
 mod offscreen;
 mod surface;
 pub mod testing;
+pub mod ui;
 
 pub use gpu::{Gpu, RenderError};
 pub use offscreen::OffscreenTarget;
 pub use surface::WindowSurface;
+pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer};
 pub use wgpu;
 
 /// A linear RGBA colour.

@@ -1,0 +1,223 @@
+//! Turning `iron_ui` gradients into the GPU representation the quad shader reads.
+
+use iron_ui::{BackgroundImage, ColorStop, GradientDirection, Len, RadialShape, Rect};
+
+/// Most stops a gradient can have on the GPU; extra stops are dropped with a warning.
+pub const MAX_STOPS: usize = 8;
+
+/// Matches `struct Gradient` in `quad.wgsl` (192 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuGradient {
+    pub info: [f32; 4],
+    pub info2: [f32; 4],
+    pub colors: [[f32; 4]; MAX_STOPS],
+    pub stops: [[f32; 4]; 2],
+}
+
+/// Builds the GPU gradient for `image` painted over `rect`, or `None` if it isn't
+/// a gradient (images are drawn separately).
+pub fn build(image: &BackgroundImage, rect: Rect) -> Option<GpuGradient> {
+    let (w, h) = (rect.width.max(0.0), rect.height.max(0.0));
+    let (kind, a, b, line_length, stops) = match image {
+        BackgroundImage::Url(_) => return None,
+        BackgroundImage::Linear { direction, stops } => {
+            let dir = match *direction {
+                GradientDirection::Angle(deg) => {
+                    let t = deg.to_radians();
+                    // 0deg points up; y grows downwards.
+                    (t.sin(), -t.cos())
+                }
+                GradientDirection::Corner { right, bottom } => {
+                    // CSS "magic corners": perpendicular to the diagonal joining the
+                    // two neighbouring corners, pointing at the named corner.
+                    let sx = if right { 1.0 } else { -1.0 };
+                    let sy = if bottom { 1.0 } else { -1.0 };
+                    let (x, y) = (h * sx, w * sy);
+                    let len = (x * x + y * y).sqrt().max(f32::EPSILON);
+                    (x / len, y / len)
+                }
+            };
+            let length = (w * dir.0).abs() + (h * dir.1).abs();
+            (0.0, dir.0, dir.1, length.max(f32::EPSILON), stops)
+        }
+        BackgroundImage::Radial { shape, stops } => {
+            // Centred, sized to the farthest corner (the CSS default).
+            let (rx, ry) = match shape {
+                RadialShape::Circle => {
+                    let r = ((w / 2.0).powi(2) + (h / 2.0).powi(2)).sqrt();
+                    (r, r)
+                }
+                RadialShape::Ellipse => (
+                    w / 2.0 * std::f32::consts::SQRT_2,
+                    h / 2.0 * std::f32::consts::SQRT_2,
+                ),
+            };
+            (
+                1.0,
+                rx.max(f32::EPSILON),
+                ry.max(f32::EPSILON),
+                rx.max(f32::EPSILON),
+                stops,
+            )
+        }
+    };
+
+    let mut g = GpuGradient {
+        info: [kind, 0.0, a, b],
+        info2: [line_length, 0.0, 0.0, 0.0],
+        ..Default::default()
+    };
+    let resolved = resolve_stops(stops, line_length);
+    if resolved.len() > MAX_STOPS {
+        tracing::warn!(
+            "gradient has {} stops; only the first {MAX_STOPS} are drawn",
+            resolved.len()
+        );
+    }
+    let resolved = &resolved[..resolved.len().min(MAX_STOPS)];
+    g.info[1] = resolved.len() as f32;
+    for (i, (color, pos)) in resolved.iter().enumerate() {
+        g.colors[i] = *color;
+        g.stops[i / 4][i % 4] = *pos;
+    }
+    Some(g)
+}
+
+/// CSS colour-stop fix-up: missing first/last positions become 0%/100%, positions
+/// never go backwards, and runs of missing positions are spaced evenly.
+/// Returns (straight-alpha sRGB colour, position as a fraction of the gradient line).
+pub fn resolve_stops(stops: &[ColorStop], line_length: f32) -> Vec<([f32; 4], f32)> {
+    let n = stops.len();
+    let mut pos: Vec<Option<f32>> = stops
+        .iter()
+        .map(|s| {
+            s.position.map(|p| match p {
+                Len::Percent(f) => f,
+                Len::Px(px) => px / line_length,
+            })
+        })
+        .collect();
+    if n == 0 {
+        return Vec::new();
+    }
+    pos[0] = Some(pos[0].unwrap_or(0.0));
+    pos[n - 1] = Some(pos[n - 1].unwrap_or(1.0));
+
+    let mut max_so_far = f32::NEG_INFINITY;
+    for p in pos.iter_mut().flatten() {
+        *p = p.max(max_so_far);
+        max_so_far = *p;
+    }
+
+    let mut i = 0;
+    while i < n {
+        if pos[i].is_some() {
+            i += 1;
+            continue;
+        }
+        let start = i - 1; // pos[0] is always set
+        let end = (i..n).find(|&j| pos[j].is_some()).expect("last is set");
+        let (a, b) = (pos[start].unwrap(), pos[end].unwrap());
+        for (k, slot) in pos.iter_mut().enumerate().take(end).skip(start + 1) {
+            *slot = Some(a + (b - a) * (k - start) as f32 / (end - start) as f32);
+        }
+        i = end;
+    }
+
+    stops
+        .iter()
+        .zip(pos)
+        .map(|(s, p)| ([s.color.r, s.color.g, s.color.b, s.color.a], p.unwrap()))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iron_ui::Rgba;
+
+    fn stop(p: Option<Len>) -> ColorStop {
+        ColorStop {
+            color: Rgba::new(1.0, 0.0, 0.0, 1.0),
+            position: p,
+        }
+    }
+
+    fn positions(stops: &[ColorStop], len: f32) -> Vec<f32> {
+        resolve_stops(stops, len)
+            .into_iter()
+            .map(|(_, p)| p)
+            .collect()
+    }
+
+    #[test]
+    fn missing_positions_follow_css_fixup() {
+        assert_eq!(positions(&[stop(None), stop(None)], 100.0), [0.0, 1.0]);
+        assert_eq!(
+            positions(&[stop(None), stop(None), stop(None)], 100.0),
+            [0.0, 0.5, 1.0]
+        );
+        assert_eq!(
+            positions(
+                &[
+                    stop(None),
+                    stop(Some(Len::Percent(0.2))),
+                    stop(None),
+                    stop(None)
+                ],
+                100.0
+            ),
+            [0.0, 0.2, 0.6, 1.0]
+        );
+        // Positions never go backwards, and px resolve against the line length.
+        assert_eq!(
+            positions(
+                &[stop(Some(Len::Percent(0.5))), stop(Some(Len::Px(20.0)))],
+                100.0
+            ),
+            [0.5, 0.5]
+        );
+    }
+
+    #[test]
+    fn linear_directions_and_lengths() {
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let lin = |direction| BackgroundImage::Linear {
+            direction,
+            stops: vec![stop(None), stop(None)],
+        };
+        // "to right": along +x, the line is the box width.
+        let g = build(&lin(GradientDirection::Angle(90.0)), rect).unwrap();
+        assert!((g.info[2] - 1.0).abs() < 1e-6 && g.info[3].abs() < 1e-6);
+        assert!((g.info2[0] - 200.0).abs() < 1e-3);
+        // Default "to bottom": along +y (screen down), the line is the height.
+        let g = build(&lin(GradientDirection::Angle(180.0)), rect).unwrap();
+        assert!((g.info[3] - 1.0).abs() < 1e-6);
+        assert!((g.info2[0] - 100.0).abs() < 1e-3);
+        // "to bottom right" on a 200x100 box points along (100, 200) normalised.
+        let g = build(
+            &lin(GradientDirection::Corner {
+                right: true,
+                bottom: true,
+            }),
+            rect,
+        )
+        .unwrap();
+        let n = (100f32.powi(2) + 200f32.powi(2)).sqrt();
+        assert!((g.info[2] - 100.0 / n).abs() < 1e-5 && (g.info[3] - 200.0 / n).abs() < 1e-5);
+        assert_eq!(g.info[1], 2.0);
+        assert_eq!(build(&BackgroundImage::Url("x.png".into()), rect), None);
+    }
+
+    #[test]
+    fn radial_sizes_reach_the_farthest_corner() {
+        let rect = Rect::new(0.0, 0.0, 60.0, 80.0);
+        let circle = BackgroundImage::Radial {
+            shape: RadialShape::Circle,
+            stops: vec![stop(None), stop(None)],
+        };
+        let g = build(&circle, rect).unwrap();
+        assert!((g.info[2] - 50.0).abs() < 1e-4 && (g.info[3] - 50.0).abs() < 1e-4);
+    }
+}

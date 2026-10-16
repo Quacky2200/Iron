@@ -112,7 +112,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-02 | Golden | Rounded corners and borders render as expected. |
 | M2-DRW-03 | Headless | 2,000 boxes are drawn in a small, fixed number of draw calls (batched). |
 | M2-DRW-04 | Golden | The same draw list at scale factor 2 renders at twice the pixel size. |
-| M2-DRW-05 | Golden | Per-corner radii and borders, gradient fills, an image fill with `cover` and `contain`. |
+| M2-DRW-05 | Golden | Per-corner radii and borders, gradient fills, an image fill with `cover` and `contain`; repeated tiles; no-repeat edges don't bleed; missing or unsafe `url()`s fall back to the background colour. |
 | M2-DRW-06 | Golden | Outer and inset box shadows with blur and spread, including on rounded boxes. |
 | M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
 | M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
