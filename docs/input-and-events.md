@@ -187,11 +187,13 @@ User scrolling needs `overflow: scroll` or `auto` on that axis; `hidden` scrolls
 Model, sizing and drawing: [ui-tree.md](ui-tree.md#text-fields). `Interaction` routes input to the
 focused field first, then falls back to the normal defaults.
 
-**Keys.** After `keydown` is dispatched and not prevented, `UiTree::editor_key(focused, key, text,
+**Keys.** After `keydown` is dispatched and not prevented, `UiTree::editor_key(focused, key, code, text,
 modifiers)` runs `Editor::key` and returns a `KeyOutcome { handled, changed, copy, paste }`.
 `handled` stops Tab handling and key scrolling, so a field consumes arrows, Home/End, Backspace,
 Delete and printable keys. Unhandled keys (Tab, Escape, F-keys, Ctrl+other letters) fall through.
 "Ctrl" below is Command on macOS (`ctrl || meta`); AltGr (reported as Ctrl+Alt) still types.
+Shortcut letters match the DOM `key` when it is a Latin letter, otherwise the letter of the physical
+`code` (`KeyA` gives A), so Ctrl+A/C/X/V work on Russian and other non-Latin layouts (`shortcut_key`).
 
 | Keys | Action |
 |---|---|
