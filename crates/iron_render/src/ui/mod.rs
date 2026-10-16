@@ -37,6 +37,7 @@ const KIND_INSET_SHADOW: f32 = 2.0;
 const KIND_IMAGE: f32 = 3.0;
 const KIND_GLYPH: f32 = 4.0;
 const KIND_BORDER: f32 = 5.0;
+const KIND_GRADIENT_PIECE: f32 = 6.0;
 
 /// Where a frame is drawn.
 pub struct RenderTarget<'a> {
@@ -825,6 +826,104 @@ impl UiRenderer {
                         color1: [0.0; 4],
                         params: [KIND_BORDER, 0.0, (gradients.len() - 1) as f32, 0.0],
                     });
+                }
+                DrawCmd::BorderImage {
+                    area,
+                    border,
+                    image,
+                } => {
+                    // Piece edges on whole physical pixels, so neighbours don't leave
+                    // anti-aliased seams between them.
+                    let snap = |r: Rect| {
+                        let (x0, y0) = ((r.x * scale).round(), (r.y * scale).round());
+                        let x1 = ((r.x + r.width) * scale).round();
+                        let y1 = ((r.y + r.height) * scale).round();
+                        Rect::new(x0 / scale, y0 / scale, (x1 - x0) / scale, (y1 - y0) / scale)
+                    };
+                    match image.source.as_deref() {
+                        Some(iron_ui::BackgroundImage::Url(url)) => {
+                            let Some(loaded) =
+                                self.images
+                                    .get(gpu, &self.blit_layout, &self.image_sampler, url)
+                            else {
+                                continue;
+                            };
+                            let (iw, ih) = (loaded.size.0 as f32, loaded.size.1 as f32);
+                            flush(&mut steps, &instances, &mut batch_start, current);
+                            for piece in image.pieces(*area, *border, (iw, ih)) {
+                                let dst = snap(piece.dst);
+                                let x = images::border_image_axis(
+                                    dst.x,
+                                    dst.width,
+                                    piece.tile.0,
+                                    piece.repeat[0],
+                                );
+                                let y = images::border_image_axis(
+                                    dst.y,
+                                    dst.height,
+                                    piece.tile.1,
+                                    piece.repeat[1],
+                                );
+                                let (Some((tx, tw, gx, rx)), Some((ty, th, gy, ry))) = (x, y)
+                                else {
+                                    continue;
+                                };
+                                let src = piece.src;
+                                instances.push(Instance {
+                                    rect: rect4(dst),
+                                    radii: [0.0; 4],
+                                    radii_y: [0.0; 4],
+                                    p0: [tx, ty, tw, th],
+                                    p1: [gx, gy, 0.0, 0.0],
+                                    // The piece's part of the texture (uv).
+                                    color0: [
+                                        src.x / iw,
+                                        src.y / ih,
+                                        src.width / iw,
+                                        src.height / ih,
+                                    ],
+                                    color1: [0.0; 4],
+                                    params: [
+                                        KIND_IMAGE,
+                                        f32::from(u8::from(rx)),
+                                        f32::from(u8::from(ry)),
+                                        0.0,
+                                    ],
+                                });
+                            }
+                            let end = instances.len() as u32;
+                            if end > batch_start {
+                                steps.push(Step::Draw {
+                                    target: current,
+                                    range: batch_start..end,
+                                    image: Some(url.clone()),
+                                });
+                                batch_start = end;
+                            }
+                        }
+                        Some(source) => {
+                            // A gradient: its "image" is the whole area. Pieces stretch.
+                            let Some(g) = gradient::build(source, *area) else {
+                                continue;
+                            };
+                            gradients.push(g);
+                            let index = (gradients.len() - 1) as f32;
+                            for piece in image.pieces(*area, *border, (area.width, area.height)) {
+                                let src = piece.src;
+                                instances.push(Instance {
+                                    rect: rect4(snap(piece.dst)),
+                                    radii: [0.0; 4],
+                                    radii_y: [0.0; 4],
+                                    p0: [area.x + src.x, area.y + src.y, src.width, src.height],
+                                    p1: rect4(*area),
+                                    color0: [0.0; 4],
+                                    color1: [0.0; 4],
+                                    params: [KIND_GRADIENT_PIECE, 0.0, index, 0.0],
+                                });
+                            }
+                        }
+                        None => {}
+                    }
                 }
                 DrawCmd::PushLayer {
                     bounds,

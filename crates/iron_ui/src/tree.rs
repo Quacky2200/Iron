@@ -2226,8 +2226,14 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
         let colors = [0, 1, 2, 3].map(|i| current(v.border_colors[i], v.border_currents[i]));
-        // One solid colour all round is drawn by the quad itself.
-        let simple_border = v.border_styles.iter().all(|s| *s == BorderStyle::Solid)
+        let border_image = v
+            .border_image
+            .as_ref()
+            .filter(|image| image.source.is_some());
+        // One solid colour all round is drawn by the quad itself; a border image
+        // replaces the border.
+        let simple_border = border_image.is_none()
+            && v.border_styles.iter().all(|s| *s == BorderStyle::Solid)
             && colors.iter().all(|c| *c == colors[0]);
         let quad = Quad {
             rect,
@@ -2252,7 +2258,13 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         let drawn =
             |i: usize| l.border[i] > 0.0 && colors[i].a > 0.0 && v.border_styles[i].is_visible();
-        if !simple_border && (0..4).any(drawn) {
+        if let Some(image) = border_image {
+            own.push(DrawCmd::BorderImage {
+                area: image.area(rect, l.border),
+                border: l.border,
+                image: image.clone(),
+            });
+        } else if !simple_border && (0..4).any(drawn) {
             own.push(DrawCmd::Border {
                 rect,
                 radii,

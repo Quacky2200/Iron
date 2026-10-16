@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use iron_ui::{BackgroundPosition, BackgroundRepeat, BackgroundSize, Len, Rect, RepeatAxis};
+use iron_ui::{
+    BackgroundPosition, BackgroundRepeat, BackgroundSize, BorderImageRepeat, Len, Rect, RepeatAxis,
+};
 
 use crate::Gpu;
 
@@ -196,6 +198,38 @@ pub fn repeat_tiles(
     (Rect::new(x, y, w, h), [gx, gy], [rx, ry])
 }
 
+/// Lays tiles of size `tile` along one axis of a border image piece starting at
+/// `start` with length `len`: (tile start, tile size, gap, repeats), or `None`
+/// when `space` can't fit a single tile (CSS then draws nothing).
+pub fn border_image_axis(
+    start: f32,
+    len: f32,
+    tile: f32,
+    mode: BorderImageRepeat,
+) -> Option<(f32, f32, f32, bool)> {
+    if tile <= 0.0 {
+        return Some((start, len, 0.0, false));
+    }
+    Some(match mode {
+        BorderImageRepeat::Stretch => (start, len, 0.0, false),
+        // Centred, so the cut-off tiles at both ends match.
+        BorderImageRepeat::Repeat => (start + (len - tile) / 2.0, tile, 0.0, true),
+        BorderImageRepeat::Round => {
+            let n = (len / tile).round().max(1.0);
+            (start, len / n, 0.0, true)
+        }
+        BorderImageRepeat::Space => {
+            let n = (len / tile).floor();
+            if n < 1.0 {
+                return None;
+            }
+            // The leftover space goes around the tiles, ends included.
+            let gap = (len - n * tile) / (n + 1.0);
+            (start + gap, tile, gap, true)
+        }
+    })
+}
+
 /// A URL shortened for log messages (data URLs can be huge).
 fn short(url: &str) -> &str {
     match url.char_indices().nth(60) {
@@ -264,6 +298,32 @@ mod tests {
         assert_eq!(
             tile_rect(area, natural, BackgroundSize::default(), px),
             Rect::new(17.0, 23.0, 20.0, 10.0)
+        );
+    }
+
+    // M3-BRD-04
+    #[test]
+    fn border_image_tiles_along_an_axis() {
+        use BorderImageRepeat::*;
+        assert_eq!(
+            border_image_axis(10.0, 100.0, 30.0, Stretch),
+            Some((10.0, 100.0, 0.0, false))
+        );
+        assert_eq!(
+            border_image_axis(10.0, 100.0, 30.0, Repeat),
+            Some((45.0, 30.0, 0.0, true)),
+            "centred"
+        );
+        let (start, size, gap, rep) = border_image_axis(10.0, 100.0, 30.0, Round).unwrap();
+        assert!((size - 100.0 / 3.0).abs() < 1e-4 && start == 10.0 && gap == 0.0 && rep);
+        assert_eq!(
+            border_image_axis(0.0, 100.0, 30.0, Space),
+            Some((2.5, 30.0, 2.5, true))
+        );
+        assert_eq!(
+            border_image_axis(0.0, 20.0, 30.0, Space),
+            None,
+            "no room for one"
         );
     }
 

@@ -514,7 +514,10 @@ and `@font-face`.
    - [x] `outline`, `outline-width`, `outline-color`, `outline-style` (`auto` is solid),
      `outline-offset`: a `DrawCmd::Border` around the border box, following the corner radii,
      drawn after the element's children; no layout or hit-testing effect — `M3-BRD-03`
-   - [ ] `border-image` (slice, width, `stretch` / `round`, `fill`), from images and gradients
+   - [x] `border-image` and its longhands (source, slice with `fill`, width, outset, repeat:
+     `stretch`/`repeat`/`round`/`space`), from images and gradients. `BorderImage::pieces`
+     computes the nine pieces; image pieces draw a part of the texture, gradient pieces stretch
+     (no tiling for gradients yet) — `M3-BRD-04`
    - [ ] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows
      the shape). Standard equivalent: `clip-path` — `inset()`, `circle()`, `ellipse()` done in M3c;
      `polygon()`, `path()` and `url()` still to do

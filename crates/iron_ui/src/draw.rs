@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use crate::Rgba;
 use crate::paint::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode, BorderStyle,
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode, BorderImage,
+    BorderStyle,
 };
 
 /// An axis-aligned rectangle in logical pixels (window space).
@@ -254,6 +255,13 @@ pub enum DrawCmd {
         colors: [Rgba; 4],
         styles: [BorderStyle; 4],
     },
+    /// A `border-image` over `area` (the border box grown by the outset); `border`
+    /// is the element's border widths (top, right, bottom, left).
+    BorderImage {
+        area: Rect,
+        border: [f32; 4],
+        image: Arc<BorderImage>,
+    },
     /// Following commands are clipped to `shape` (intersected with any clip already
     /// active) until the matching `PopClip`.
     PushClip(ClipShape),
@@ -356,6 +364,7 @@ impl DrawCmd {
             ),
             DrawCmd::Quad(q) => Some(q.rect),
             DrawCmd::Border { rect, .. } => Some(*rect),
+            DrawCmd::BorderImage { area, .. } => Some(*area),
             DrawCmd::InsetShadow { shadow, .. } => Some(shadow.rect),
             DrawCmd::PushLayer { bounds, .. } => Some(*bounds),
             DrawCmd::Text(t) => Some(t.bounds),
@@ -387,6 +396,7 @@ impl DrawCmd {
                 }
             }
             DrawCmd::BackdropBlur { .. }
+            | DrawCmd::BorderImage { .. }
             | DrawCmd::PushLayer { .. }
             | DrawCmd::PopLayer
             | DrawCmd::PushClip(_)

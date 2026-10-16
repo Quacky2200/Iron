@@ -33,8 +33,9 @@ pub use interaction::{Clipboard, Direction, Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BlendMode, BorderStyle, ClipPath, ClipShapeSpec, ColorStop, CornerRadius, Corners, GeometryBox,
-    GradientDirection, Len, ObjectFit, Overflow, RadialShape, RepeatAxis, Shadow, ShapeRadius,
+    BlendMode, BorderImage, BorderImageLength, BorderImagePiece, BorderImageRepeat, BorderStyle,
+    ClipPath, ClipShapeSpec, ColorStop, CornerRadius, Corners, GeometryBox, GradientDirection, Len,
+    ObjectFit, Overflow, RadialShape, RepeatAxis, Shadow, ShapeRadius,
 };
 pub use parley::FontData;
 pub use style::{

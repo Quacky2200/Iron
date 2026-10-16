@@ -794,6 +794,72 @@ fn outlines_sit_outside_the_border_box() {
     assert_golden("M3-BRD-03", 150, 70, &f.pixels, TOLERANCE);
 }
 
+// M3-BRD-04
+#[test]
+fn border_images_from_images_and_gradients() {
+    let mut s = Scene::new();
+    // checker.png is 4x4: red top-left and bottom-right quarters, blue elsewhere.
+    // Slice 1px: the corners are single texels, the edges the 2px between them.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            60.0,
+            40.0,
+            &[
+                ("border", "10px solid white".into()),
+                ("borderImage", "url(checker.png) 1".into()),
+            ],
+        ),
+    );
+    // A gradient border, and one with `fill`.
+    for (i, fill) in ["", " fill"].iter().enumerate() {
+        s.add(
+            0,
+            &at(
+                0.0,
+                50.0 + i as f64 * 50.0,
+                60.0,
+                40.0,
+                &[
+                    ("border", "6px solid white".into()),
+                    (
+                        "borderImage",
+                        format!("linear-gradient(to right, red, blue) 1{fill}").into(),
+                    ),
+                ],
+            ),
+        );
+    }
+    let f = render_with_assets(s, (60, 150), 1.0, BLACK, Some(&images_dir()));
+    let red = [255, 0, 0, 255];
+    let blue = [0, 0, 255, 255];
+    let black = [0, 0, 0, 255];
+    assert_eq!(f.px(4, 4), red, "top-left corner");
+    assert_eq!(f.px(55, 4), blue, "top-right corner");
+    assert_eq!(f.px(4, 35), blue, "bottom-left corner");
+    assert_eq!(f.px(55, 35), red, "bottom-right corner");
+    assert_eq!(f.px(14, 4), red, "top edge: its left texel stretched");
+    assert_eq!(f.px(45, 4), blue, "top edge: its right texel stretched");
+    assert_eq!(
+        f.px(30, 20),
+        black,
+        "no middle without fill, and no white border"
+    );
+    let [r0, _, b0, _] = f.px(10, 52);
+    let [r1, _, b1, _] = f.px(50, 52);
+    assert!(r0 > b0 && b1 > r1, "the gradient runs along the top edge");
+    assert_eq!(f.px(30, 70), black, "no middle");
+    let [rm, _, bm, _] = f.px(30, 120);
+    assert!(
+        rm > 60 && bm > 60,
+        "fill paints the middle: {:?}",
+        f.px(30, 120)
+    );
+    assert_golden("M3-BRD-04", 60, 150, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

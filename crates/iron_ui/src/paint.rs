@@ -1,6 +1,8 @@
 //! Paint-only style values (no effect on layout) and their CSS parsers:
 //! corner radii, box shadows, blur filters and backgrounds.
 
+use std::sync::Arc;
+
 use crate::Rgba;
 use crate::color::parse_angle_degrees;
 use crate::draw::Radii;
@@ -615,6 +617,339 @@ impl BackgroundClip {
     }
 }
 
+/// `border-image-repeat` along one axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BorderImageRepeat {
+    #[default]
+    Stretch,
+    Repeat,
+    Round,
+    Space,
+}
+
+impl BorderImageRepeat {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "stretch" => Self::Stretch,
+            "repeat" => Self::Repeat,
+            "round" => Self::Round,
+            "space" => Self::Space,
+            _ => return None,
+        })
+    }
+}
+
+/// A `border-image-width` / `-outset` value: a multiple of the border width, a
+/// length, a percentage of the border image area (widths only) or `auto` (the
+/// slice's own size; widths only).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BorderImageLength {
+    Number(f32),
+    Px(f32),
+    Percent(f32),
+    Auto,
+}
+
+impl BorderImageLength {
+    fn parse(s: &str, allow_percent_and_auto: bool) -> Option<Self> {
+        let s = s.trim();
+        if s == "auto" {
+            return allow_percent_and_auto.then_some(Self::Auto);
+        }
+        if let Ok(n) = s.parse::<f32>() {
+            return (n >= 0.0).then_some(Self::Number(n));
+        }
+        match Len::parse(s)? {
+            Len::Px(px) if px >= 0.0 => Some(Self::Px(px)),
+            Len::Percent(f) if f >= 0.0 && allow_percent_and_auto => Some(Self::Percent(f)),
+            _ => None,
+        }
+    }
+
+    /// In px, for a side with `border` width, `basis` for percentages and `slice`
+    /// (the slice's size, already scaled to px) for `auto`.
+    fn resolve(self, border: f32, basis: f32, slice: f32) -> f32 {
+        match self {
+            Self::Number(n) => n * border,
+            Self::Px(px) => px,
+            Self::Percent(f) => f * basis,
+            Self::Auto => slice,
+        }
+    }
+}
+
+/// `border-image`: a 9-slice image (or gradient) drawn over the border area.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BorderImage {
+    /// `None` (the default) draws the ordinary border.
+    pub source: Option<Arc<BackgroundImage>>,
+    /// Inward offsets into the image (top, right, bottom, left): px of the image
+    /// (`Len::Px`) or fractions of its size.
+    pub slice: [Len; 4],
+    /// `fill`: also draw the middle piece.
+    pub fill: bool,
+    pub width: [BorderImageLength; 4],
+    pub outset: [BorderImageLength; 4],
+    /// Horizontal, vertical.
+    pub repeat: [BorderImageRepeat; 2],
+}
+
+impl Default for BorderImage {
+    fn default() -> Self {
+        Self {
+            source: None,
+            slice: [Len::Percent(1.0); 4],
+            fill: false,
+            width: [BorderImageLength::Number(1.0); 4],
+            outset: [BorderImageLength::Number(0.0); 4],
+            repeat: [BorderImageRepeat::Stretch; 2],
+        }
+    }
+}
+
+/// One of the nine pieces of a border image: where it comes from in the image
+/// (`src`, image px) and where it goes (`dst`, logical px), and how it fills `dst`
+/// along each axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BorderImagePiece {
+    pub src: crate::Rect,
+    pub dst: crate::Rect,
+    pub repeat: [BorderImageRepeat; 2],
+    /// The size of one tile (the piece scaled to the border it fills).
+    pub tile: (f32, f32),
+}
+
+/// Expands 1–4 values to top, right, bottom, left.
+fn four<T: Copy>(values: &[T]) -> Option<[T; 4]> {
+    Some(match *values {
+        [a] => [a; 4],
+        [a, b] => [a, b, a, b],
+        [a, b, c] => [a, b, c, b],
+        [a, b, c, d] => [a, b, c, d],
+        _ => return None,
+    })
+}
+
+impl BorderImage {
+    /// `border-image-slice`: 1–4 numbers (image px) or percentages, and `fill`.
+    pub fn parse_slice(s: &str) -> Option<([Len; 4], bool)> {
+        let mut fill = false;
+        let mut values = Vec::new();
+        for token in s.split_whitespace() {
+            if token == "fill" && !fill {
+                fill = true;
+            } else if let Ok(n) = token.parse::<f32>() {
+                (n >= 0.0).then_some(())?;
+                values.push(Len::Px(n));
+            } else {
+                match Len::parse(token)? {
+                    Len::Percent(f) if f >= 0.0 => values.push(Len::Percent(f)),
+                    _ => return None,
+                }
+            }
+        }
+        Some((four(&values)?, fill))
+    }
+
+    /// `border-image-width` (`outset: false`) or `border-image-outset`: 1–4 values.
+    pub fn parse_lengths(s: &str, outset: bool) -> Option<[BorderImageLength; 4]> {
+        let values: Vec<_> = s
+            .split_whitespace()
+            .map(|t| BorderImageLength::parse(t, !outset))
+            .collect::<Option<_>>()?;
+        four(&values)
+    }
+
+    /// `border-image-repeat`: one or two of `stretch`, `repeat`, `round`, `space`.
+    pub fn parse_repeat(s: &str) -> Option<[BorderImageRepeat; 2]> {
+        let values: Vec<_> = s
+            .split_whitespace()
+            .map(BorderImageRepeat::parse)
+            .collect::<Option<_>>()?;
+        match values[..] {
+            [a] => Some([a, a]),
+            [a, b] => Some([a, b]),
+            _ => None,
+        }
+    }
+
+    /// The `border-image` shorthand: `<source> <slice> [/ <width> [/ <outset>]] <repeat>`,
+    /// any part optional except that `/` parts follow the slice.
+    pub fn parse(s: &str) -> Option<Self> {
+        let mut out = Self::default();
+        if s.trim() == "none" {
+            return Some(out);
+        }
+        let tokens = split_top_level(s, ' ');
+        let mut i = 0;
+        let mut slice_tokens = Vec::new();
+        let mut repeat_tokens = Vec::new();
+        let mut slash_parts: Vec<Vec<&str>> = Vec::new();
+        while i < tokens.len() {
+            let t = tokens[i];
+            if t.contains('(') || t == "none" {
+                (out.source.is_none()).then_some(())?;
+                out.source = parse_background_image(t)?.map(Arc::new);
+            } else if BorderImageRepeat::parse(t).is_some() {
+                repeat_tokens.push(t);
+            } else if t == "/" || t.starts_with('/') {
+                // `/ width` or `/width`; a second slash starts the outset.
+                slash_parts.push(Vec::new());
+                let rest = t.trim_start_matches('/');
+                if !rest.is_empty() {
+                    slash_parts.last_mut()?.push(rest);
+                }
+            } else if let Some(part) = slash_parts.last_mut() {
+                part.push(t);
+            } else {
+                slice_tokens.push(t);
+            }
+            i += 1;
+        }
+        if !slice_tokens.is_empty() {
+            (out.slice, out.fill) = Self::parse_slice(&slice_tokens.join(" "))?;
+        }
+        match slash_parts.len() {
+            0 => {}
+            1 | 2 => {
+                (!slice_tokens.is_empty()).then_some(())?;
+                if !slash_parts[0].is_empty() {
+                    out.width = Self::parse_lengths(&slash_parts[0].join(" "), false)?;
+                }
+                if let Some(outset) = slash_parts.get(1) {
+                    out.outset = Self::parse_lengths(&outset.join(" "), true)?;
+                }
+            }
+            _ => return None,
+        }
+        if !repeat_tokens.is_empty() {
+            out.repeat = Self::parse_repeat(&repeat_tokens.join(" "))?;
+        }
+        Some(out)
+    }
+
+    /// The border image area: the border box grown by the outset.
+    pub fn area(&self, border_box: crate::Rect, border: [f32; 4]) -> crate::Rect {
+        let o = [0, 1, 2, 3].map(|i| self.outset[i].resolve(border[i], 0.0, 0.0));
+        crate::Rect::new(
+            border_box.x - o[3],
+            border_box.y - o[0],
+            border_box.width + o[1] + o[3],
+            border_box.height + o[0] + o[2],
+        )
+    }
+
+    /// The nine pieces for an image of `natural` size (a gradient's is the area's
+    /// size) drawn over `area`, with the element's `border` widths. Pieces that
+    /// would be empty are left out.
+    pub fn pieces(
+        &self,
+        area: crate::Rect,
+        border: [f32; 4],
+        natural: (f32, f32),
+    ) -> Vec<BorderImagePiece> {
+        use crate::Rect;
+        let (iw, ih) = natural;
+        // Slices in image px, clamped so opposite slices don't cross.
+        let s = [
+            self.slice[0].resolve(ih).min(ih),
+            self.slice[1].resolve(iw).min(iw),
+            self.slice[2].resolve(ih).min(ih),
+            self.slice[3].resolve(iw).min(iw),
+        ];
+        let basis = [area.height, area.width, area.height, area.width];
+        let mut w = [0, 1, 2, 3].map(|i| self.width[i].resolve(border[i], basis[i], s[i]));
+        // Like CSS, scale all widths down if opposite ones overlap.
+        let f = (area.width / (w[1] + w[3]).max(f32::EPSILON))
+            .min(area.height / (w[0] + w[2]).max(f32::EPSILON))
+            .min(1.0);
+        w = w.map(|v| v * f);
+        let [t, r, b, l] = w;
+        let xs = [
+            area.x,
+            area.x + l,
+            area.x + area.width - r,
+            area.x + area.width,
+        ];
+        let ys = [
+            area.y,
+            area.y + t,
+            area.y + area.height - b,
+            area.y + area.height,
+        ];
+        let sx = [0.0, s[3], iw - s[1], iw];
+        let sy = [0.0, s[0], ih - s[2], ih];
+        // Scale of the edge pieces: the image slice to the border width.
+        let scale = |dst: f32, src: f32| if src > 0.0 { dst / src } else { 1.0 };
+        let (top_scale, bottom_scale) = (scale(t, s[0]), scale(b, s[2]));
+        let (left_scale, right_scale) = (scale(l, s[3]), scale(r, s[1]));
+        let mut out = Vec::new();
+        for row in 0..3 {
+            for col in 0..3 {
+                if row == 1 && col == 1 && !self.fill {
+                    continue;
+                }
+                let src = Rect::new(
+                    sx[col],
+                    sy[row],
+                    sx[col + 1] - sx[col],
+                    sy[row + 1] - sy[row],
+                );
+                let dst = Rect::new(
+                    xs[col],
+                    ys[row],
+                    xs[col + 1] - xs[col],
+                    ys[row + 1] - ys[row],
+                );
+                if src.width <= 0.0 || src.height <= 0.0 || dst.width <= 0.0 || dst.height <= 0.0 {
+                    continue;
+                }
+                // Corners stretch; edges repeat along their length; the middle
+                // follows the top and left edges' scales.
+                let horizontal = if col == 1 {
+                    self.repeat[0]
+                } else {
+                    BorderImageRepeat::Stretch
+                };
+                let vertical = if row == 1 {
+                    self.repeat[1]
+                } else {
+                    BorderImageRepeat::Stretch
+                };
+                let x_scale = match row {
+                    0 => top_scale,
+                    2 => bottom_scale,
+                    _ => top_scale,
+                };
+                let y_scale = match col {
+                    0 => left_scale,
+                    2 => right_scale,
+                    _ => left_scale,
+                };
+                let tile = (
+                    if horizontal == BorderImageRepeat::Stretch {
+                        dst.width
+                    } else {
+                        src.width * x_scale
+                    },
+                    if vertical == BorderImageRepeat::Stretch {
+                        dst.height
+                    } else {
+                        src.height * y_scale
+                    },
+                );
+                out.push(BorderImagePiece {
+                    src,
+                    dst,
+                    repeat: [horizontal, vertical],
+                    tile,
+                });
+            }
+        }
+        out
+    }
+}
+
 /// `border-style` for one side. Iron's default is `solid` (a width alone draws a
 /// border, as in s&box); CSS's is `none`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1208,6 +1543,98 @@ mod tests {
         assert_eq!(parse_blur_filter("brightness(2)"), None);
         assert_eq!(parse_blur_filter("blur(-1px)"), None);
         assert_eq!(parse_blur_filter("blur(10%)"), None);
+    }
+
+    // M3-BRD-04
+    #[test]
+    fn border_image_shorthand_and_longhands_parse() {
+        let b = BorderImage::parse("url(frame.png) 10 20% fill / 2 4px / 1 round stretch").unwrap();
+        assert_eq!(*b.source.unwrap(), BackgroundImage::Url("frame.png".into()));
+        assert_eq!(
+            b.slice,
+            [
+                Len::Px(10.0),
+                Len::Percent(0.2),
+                Len::Px(10.0),
+                Len::Percent(0.2)
+            ]
+        );
+        assert!(b.fill);
+        assert_eq!(
+            b.width,
+            [
+                BorderImageLength::Number(2.0),
+                BorderImageLength::Px(4.0),
+                BorderImageLength::Number(2.0),
+                BorderImageLength::Px(4.0)
+            ]
+        );
+        assert_eq!(b.outset, [BorderImageLength::Number(1.0); 4]);
+        assert_eq!(
+            b.repeat,
+            [BorderImageRepeat::Round, BorderImageRepeat::Stretch]
+        );
+
+        let g = BorderImage::parse("linear-gradient(red, blue) 1").unwrap();
+        assert!(matches!(
+            g.source.as_deref(),
+            Some(BackgroundImage::Linear { .. })
+        ));
+        assert_eq!(g.slice, [Len::Px(1.0); 4]);
+        assert_eq!(g.repeat, [BorderImageRepeat::Stretch; 2]);
+        assert_eq!(BorderImage::parse("none"), Some(BorderImage::default()));
+        for bad in [
+            "url(a.png) / 2",
+            "url(a.png) 10 / 2 / 3 / 4",
+            "url(a.png) url(b.png) 1",
+            "url(a.png) 1 sideways",
+            "url(a.png) -1",
+        ] {
+            assert_eq!(BorderImage::parse(bad), None, "{bad}");
+        }
+        assert_eq!(
+            BorderImage::parse_lengths("auto", true),
+            None,
+            "no auto outset"
+        );
+    }
+
+    // M3-BRD-04
+    #[test]
+    fn border_image_pieces_map_slices_to_the_border() {
+        let b = BorderImage::parse("url(a.png) 10 fill").unwrap();
+        let area = crate::Rect::new(0.0, 0.0, 100.0, 60.0);
+        let pieces = b.pieces(area, [5.0, 5.0, 5.0, 5.0], (30.0, 30.0));
+        assert_eq!(pieces.len(), 9, "fill keeps the middle");
+        let top_left = pieces[0];
+        assert_eq!(top_left.src, crate::Rect::new(0.0, 0.0, 10.0, 10.0));
+        assert_eq!(top_left.dst, crate::Rect::new(0.0, 0.0, 5.0, 5.0));
+        let top = pieces[1];
+        assert_eq!(top.src, crate::Rect::new(10.0, 0.0, 10.0, 10.0));
+        assert_eq!(top.dst, crate::Rect::new(5.0, 0.0, 90.0, 5.0));
+        let middle = pieces[4];
+        assert_eq!(middle.dst, crate::Rect::new(5.0, 5.0, 90.0, 50.0));
+
+        // Repeating edges tile at the slice scaled to the border width (10px → 5px).
+        let r = BorderImage::parse("url(a.png) 10 round").unwrap();
+        let pieces = r.pieces(area, [5.0; 4], (30.0, 30.0));
+        assert_eq!(pieces.len(), 8);
+        assert_eq!(pieces[1].tile, (5.0, 5.0));
+        assert_eq!(
+            pieces[1].repeat,
+            [BorderImageRepeat::Round, BorderImageRepeat::Stretch]
+        );
+
+        // Widths that don't fit are scaled down together.
+        let wide = BorderImage::parse("url(a.png) 10 / 40px").unwrap();
+        let pieces = wide.pieces(area, [5.0; 4], (30.0, 30.0));
+        assert_eq!(pieces[0].dst.height, 30.0, "40+40 > 60: scaled by 60/80");
+        // The outset grows the area.
+        let out = BorderImage::parse("url(a.png) 10 / 1 / 2").unwrap();
+        assert_eq!(
+            out.area(area, [5.0; 4]),
+            crate::Rect::new(-10.0, -10.0, 120.0, 80.0)
+        );
     }
 
     // M3-BG-03

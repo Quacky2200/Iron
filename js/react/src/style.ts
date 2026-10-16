@@ -176,6 +176,16 @@ export interface IronStyle {
   borderRightStyle?: BorderStyle;
   borderBottomStyle?: BorderStyle;
   borderLeftStyle?: BorderStyle;
+  /** A 9-slice image or gradient over the border, e.g. `"url(frame.png) 12 fill / 8px round"`. */
+  borderImage?: string;
+  borderImageSource?: string;
+  /** 1-4 numbers (image px) or percentages, plus `fill` to draw the middle. */
+  borderImageSlice?: string;
+  /** 1-4 multiples of the border width, lengths, percentages or `auto`. */
+  borderImageWidth?: string;
+  borderImageOutset?: string;
+  /** `stretch`, `repeat`, `round` or `space`; one or two (horizontal, vertical). */
+  borderImageRepeat?: string;
   /** Drawn outside the border box, over the content; takes no space. E.g. `"2px solid white"`. */
   outline?: string;
   outlineWidth?: Length;

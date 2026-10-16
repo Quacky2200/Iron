@@ -18,8 +18,8 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BlendMode, BorderStyle, ClipPath, CornerRadius, Corners, Len, ObjectFit, Overflow, Shadow,
-    parse_background_image, parse_background_position, parse_background_repeat,
+    BlendMode, BorderImage, BorderStyle, ClipPath, CornerRadius, Corners, Len, ObjectFit, Overflow,
+    Shadow, parse_background_image, parse_background_position, parse_background_repeat,
     parse_background_size, parse_blur_filter, parse_clip_rect, parse_layers, parse_radii,
     parse_shadows, split_top_level,
 };
@@ -48,6 +48,8 @@ pub struct Visual {
     /// `currentColor` per side (also the CSS default when `border` omits a colour).
     pub border_currents: [bool; 4],
     pub border_styles: [BorderStyle; 4],
+    /// `borderImage` and its longhands; `None` is the default (no image).
+    pub border_image: Option<Arc<BorderImage>>,
     /// `outline`: drawn outside the border box (plus `outline_offset`), over the
     /// element's content; it takes no space. Style `none` (the default) hides it.
     pub outline_width: f32,
@@ -113,6 +115,7 @@ impl Default for Visual {
             border_colors: [Rgba::TRANSPARENT; 4],
             border_currents: [false; 4],
             border_styles: [BorderStyle::Solid; 4],
+            border_image: None,
             outline_width: 3.0,
             outline_style: BorderStyle::None,
             outline_color: Rgba::TRANSPARENT,
@@ -659,6 +662,29 @@ pub fn apply_style(
                 visual.border_colors[side] = c.unwrap_or(Rgba::TRANSPARENT);
             }
         }
+        "borderImage" => {
+            visual.border_image = Some(Arc::new(BorderImage::parse(kw()?).ok_or_else(invalid)?))
+        }
+        "borderImageSource" | "borderImageSlice" | "borderImageWidth" | "borderImageOutset"
+        | "borderImageRepeat" => {
+            let s = kw()?;
+            let image = Arc::make_mut(visual.border_image.get_or_insert_with(Default::default));
+            match prop {
+                "borderImageSource" => {
+                    image.source = parse_background_image(s).ok_or_else(invalid)?.map(Arc::new)
+                }
+                "borderImageSlice" => {
+                    (image.slice, image.fill) = BorderImage::parse_slice(s).ok_or_else(invalid)?
+                }
+                "borderImageWidth" => {
+                    image.width = BorderImage::parse_lengths(s, false).ok_or_else(invalid)?
+                }
+                "borderImageOutset" => {
+                    image.outset = BorderImage::parse_lengths(s, true).ok_or_else(invalid)?
+                }
+                _ => image.repeat = BorderImage::parse_repeat(s).ok_or_else(invalid)?,
+            }
+        }
         "outline" => {
             let (width, s, color) = outline_shorthand(value).ok_or_else(invalid)?;
             visual.outline_width = width;
@@ -957,6 +983,19 @@ pub(crate) fn copy_prop(
             visual.border_currents = v.border_currents;
         }
         "borderStyle" => visual.border_styles = v.border_styles,
+        "borderImage" => visual.border_image = v.border_image,
+        "borderImageSource" | "borderImageSlice" | "borderImageWidth" | "borderImageOutset"
+        | "borderImageRepeat" => {
+            let from = v.border_image.unwrap_or_default();
+            let image = Arc::make_mut(visual.border_image.get_or_insert_with(Default::default));
+            match prop {
+                "borderImageSource" => image.source = from.source.clone(),
+                "borderImageSlice" => (image.slice, image.fill) = (from.slice, from.fill),
+                "borderImageWidth" => image.width = from.width,
+                "borderImageOutset" => image.outset = from.outset,
+                _ => image.repeat = from.repeat,
+            }
+        }
         "outline" => {
             visual.outline_width = v.outline_width;
             visual.outline_style = v.outline_style;

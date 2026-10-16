@@ -34,6 +34,7 @@ const KIND_OUTER_SHADOW: u32 = 1u;
 const KIND_INSET_SHADOW: u32 = 2u;
 const KIND_GLYPH: u32 = 4u;
 const KIND_BORDER: u32 = 5u;
+const KIND_GRADIENT_PIECE: u32 = 6u;
 
 struct Instance {
     @location(0) rect: vec4<f32>,   // the shape: x, y, w, h
@@ -438,6 +439,13 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     if kind == KIND_BORDER {
         return styled_border(in, p);
     }
+    if kind == KIND_GRADIENT_PIECE {
+        // A border-image piece cut from a gradient: `p0` is the source part (absolute
+        // px), stretched over `rect`; `p1` the area the gradient spans.
+        let inside = shape_coverage(p, in.rect, vec4(0.0), vec4(0.0));
+        let src = in.p0.xy + (p - in.rect.xy) * in.p0.zw / max(in.rect.zw, vec2(1e-4));
+        return gradient_color(u32(in.params.z), src, in.p1) * inside;
+    }
     if kind == KIND_INSET_SHADOW {
         // Drawn inside the padding box, everywhere except the (blurred) hole.
         let inside = shape_coverage(p, in.rect, in.radii, in.radii_y);
@@ -504,9 +512,18 @@ fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
     if (!repeat_x && (uv.x < 0.0 || uv.x > 1.0)) || (!repeat_y && (uv.y < 0.0 || uv.y > 1.0)) {
         discard;
     }
+    let half_texel = 0.5 / vec2<f32>(textureDimensions(image_tex));
+    if in.color0.z > 0.0 {
+        // A border-image piece: `color0` is its part of the texture (uv). Wrap within
+        // the piece and keep filtering inside it.
+        let sub = in.color0;
+        let t = select(uv, fract(uv), vec2(repeat_x, repeat_y));
+        let at = clamp(sub.xy + t * sub.zw, sub.xy + half_texel, sub.xy + sub.zw - half_texel);
+        let c = textureSampleLevel(image_tex, image_samp, at, 0.0);
+        return vec4(c.rgb * c.a, c.a) * clip;
+    }
     // The sampler repeats. On axes that don't repeat, keep bilinear filtering
     // from wrapping around to the opposite edge. sRGB textures sample as linear.
-    let half_texel = 0.5 / vec2<f32>(textureDimensions(image_tex));
     let clamped = clamp(uv, half_texel, vec2(1.0) - half_texel);
     let sample_uv = vec2(select(clamped.x, uv.x, repeat_x), select(clamped.y, uv.y, repeat_y));
     let c = textureSampleLevel(image_tex, image_samp, sample_uv, 0.0);
