@@ -154,8 +154,9 @@ Iron/
 - [ ] Note: renders abandoned by concurrent React could leave created-but-never-attached nodes in the Rust tree. Not an issue with sync rendering; revisit if we enable transitions
 
 ### 4. Integration in QuickJS
-- [ ] React fixture (`tests/fixtures/src/boxes.tsx` → `boxes.js`) runs in `QuickJsRuntime`; its commits applied to `UiTree` give the expected tree and layout — `M2-INT-01`
-- [ ] A state change driven by `setTimeout` commits the right incremental ops — `M2-INT-02`
+- [x] React fixture (`tests/fixtures/src/boxes.tsx` → `boxes.js`, production + minified, ~148 KB) runs in `QuickJsRuntime` with no extra shims; its first render is one commit, and applied to `UiTree` it gives the expected tree, layout and draw commands — `M2-INT-01`
+- [x] A `setTimeout`-driven state change commits once within `tick`, creating only the two new nodes and keeping existing IDs; the grid relayouts to two rows — `M2-INT-02`
+- [x] Built fixtures marked as generated in `.gitattributes` (no noisy diffs; CI still checks they match their sources)
 
 ### 2b. Box visuals in `iron_ui` (styles + draw commands, no GPU) — see DESIGN §5.2
 - [x] Colours: `hsl()/hsla()` (deg/turn/rad/grad hues) and all 148 CSS named colours — `M2-VIS-01`

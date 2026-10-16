@@ -11,4 +11,5 @@ thiserror = "2.0.21"
 tracing = "0.1.44"
 
 [dev-dependencies]
+iron_script = { path = "../iron_script" }
 serde_json = "1.0.154"

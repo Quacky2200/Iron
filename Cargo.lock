@@ -778,6 +778,7 @@ name = "iron_ui"
 version = "0.1.0"
 dependencies = [
  "iron_core",
+ "iron_script",
  "serde_json",
  "taffy",
  "thiserror 2.0.21",
