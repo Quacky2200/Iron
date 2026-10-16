@@ -166,3 +166,30 @@ fn pre_line_keeps_newlines_but_collapses_spaces() {
         "pre-line collapses the run of spaces"
     );
 }
+
+/// The width a text element shrinks to.
+fn width(text: &str, style: &[(&str, Value)]) -> f32 {
+    let mut d = Dom::new();
+    let col = d.add(0, "box", &[("alignItems", "flex-start".into())]);
+    let t = d.add(col, "text", style);
+    d.text(t, text);
+    let mut tree = d.build("");
+    tree.layout_if_needed();
+    tree.rect(iron_core::NodeId(t)).unwrap().width
+}
+
+// M3-TXT-12
+#[test]
+fn tabular_nums_give_digits_one_width() {
+    let tabular = [("fontVariantNumeric", Value::from("tabular-nums"))];
+    assert!(
+        width("1111", &[]) < width("8888", &[]),
+        "Inter's digits are proportional"
+    );
+    assert_eq!(width("1111", &tabular), width("8888", &tabular));
+    let font = [("font", Value::from("bold 30px sans-serif"))];
+    assert!(
+        width("Hi", &font) > width("Hi", &[]) * 1.5,
+        "the shorthand applies"
+    );
+}

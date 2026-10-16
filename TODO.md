@@ -531,8 +531,9 @@ and `@font-face`.
      left for rtl) — `M3-TXT-10`
    - [x] `word-break` (`break-word` as `overflow-wrap: anywhere`), `overflow-wrap` / `word-wrap`;
      `white-space: pre-line | break-spaces` — all Parley options — `M3-TXT-11`
-   - [ ] `font` shorthand; `font-size` keywords (`small`, `large`, ...); `font-weight` keywords
-     (`thin` ... `black`, `bolder`, `lighter`); `font-variant-numeric: tabular-nums`
+   - [x] `font` shorthand; `font-size` keywords (`xx-small` ... `xxx-large`, `smaller`, `larger`);
+     `font-weight` keywords (`thin` ... `black`, `bolder`/`lighter` from the parent);
+     `font-variant-numeric` and `font-feature-settings` as Parley font features — `M3-TXT-12`
    - [ ] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),
      `-color`, `-thickness`, `text-underline-offset`, `text-decoration-skip-ink`
    - [ ] Outlined text: `-webkit-text-stroke` / `text-stroke` (`width color`)

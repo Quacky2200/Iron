@@ -236,9 +236,12 @@ export interface IronStyle {
 
   // Text (inherited, as in CSS). `currentColor` in colours means `color`.
   color?: string;
+  /** `[style] [weight] size[/line-height] family`, e.g. `"italic bold 16px/1.4 Inter"`. */
+  font?: string;
   fontFamily?: string;
   fontSize?: number | string;
-  fontWeight?: number | "normal" | "bold";
+  /** 1-1000, `normal`, `bold`, `bolder`, `lighter`, or a name (`thin` ... `black`). */
+  fontWeight?: number | string;
   fontStyle?: "normal" | "italic" | "oblique";
   lineHeight?: number | string;
   letterSpacing?: number | string;
@@ -252,6 +255,10 @@ export interface IronStyle {
   overflowWrap?: "normal" | "anywhere" | "break-word";
   wordWrap?: "normal" | "anywhere" | "break-word";
   textShadow?: string;
+  /** e.g. `"tabular-nums"`, `"slashed-zero"`. */
+  fontVariantNumeric?: string;
+  /** OpenType features, e.g. `"'ss01', 'liga' off"`. */
+  fontFeatureSettings?: string;
   textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
   /** Not inherited. `ellipsis` cuts overflowing lines when `overflow` clips (use with `whiteSpace: "nowrap"`). */
   textOverflow?: "clip" | "ellipsis";

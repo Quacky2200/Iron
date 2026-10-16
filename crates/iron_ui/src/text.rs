@@ -385,6 +385,10 @@ pub(crate) fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Bru
         word_spacing: style.word_spacing,
         white_space_collapse: collapse,
         text_wrap_mode: wrap,
+        font_features: match style.font_features() {
+            f if f.is_empty() => parley::FontFeatures::empty(),
+            f => parley::FontFeatures::Source(Cow::Owned(f)),
+        },
         word_break: match style.word_break {
             crate::text_style::WordBreak::Normal => parley::WordBreak::Normal,
             crate::text_style::WordBreak::BreakAll => parley::WordBreak::BreakAll,
