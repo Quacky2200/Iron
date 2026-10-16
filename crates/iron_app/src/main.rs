@@ -17,7 +17,7 @@ use iron_platform::{
 use iron_render::wgpu;
 use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Input, Interaction, UiEvent, UiTree, events};
+use iron_ui::{Clipboard, Input, Interaction, UiEvent, UiTree, events};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
@@ -119,6 +119,7 @@ fn main() -> Result<()> {
         interaction: Interaction::new(),
         ui_events,
         cursor: "default",
+        clipboard: None,
         asset_root,
         gfx: None,
         started: Instant::now(),
@@ -183,6 +184,7 @@ struct App {
     ui_events: bool,
     /// The CSS cursor currently shown.
     cursor: &'static str,
+    clipboard: Option<arboard::Clipboard>,
     done: bool,
 }
 
@@ -261,6 +263,19 @@ impl App {
         self.interaction.handle(&mut self.ui, input, &mut |event| {
             dispatch(scripts, ui_events, event)
         });
+        match self.interaction.take_clipboard() {
+            Some(Clipboard::Copy(text)) => {
+                if let Some(Err(e)) = self.clipboard().map(|c| c.set_text(text)) {
+                    tracing::warn!("copy failed: {e}");
+                }
+            }
+            Some(Clipboard::Paste) => {
+                if let Some(text) = self.clipboard().and_then(|c| c.get_text().ok()) {
+                    self.handle_ui(Input::Paste(text));
+                }
+            }
+            None => {}
+        }
         let cursor = self.interaction.cursor(&self.ui);
         if cursor != self.cursor
             && let Some(gfx) = &self.gfx
@@ -271,6 +286,17 @@ impl App {
                 gfx.window.set_cursor(icon);
             }
         }
+    }
+
+    /// The system clipboard, opened on first use (it can be unavailable, e.g. headless).
+    fn clipboard(&mut self) -> Option<&mut arboard::Clipboard> {
+        if self.clipboard.is_none() {
+            match arboard::Clipboard::new() {
+                Ok(c) => self.clipboard = Some(c),
+                Err(e) => tracing::warn!("clipboard unavailable: {e}"),
+            }
+        }
+        self.clipboard.as_mut()
     }
 
     /// Converts a window position (physical pixels) to the UI's logical pixels.

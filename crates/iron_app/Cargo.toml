@@ -13,3 +13,4 @@ iron_platform = { path = "../iron_platform" }
 iron_render = { path = "../iron_render" }
 iron_script = { path = "../iron_script" }
 iron_ui = { version = "0.1.0", path = "../iron_ui" }
+arboard = { version = "3.7.0", default-features = false }

@@ -355,7 +355,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      DOM), `defaultValue`, `readOnly`, `disabled`, `rows`; focusable by default; `onChange` /
      `onInput` with `e.target.value`; Ctrl+C/X/V produce clipboard requests — `M3-INP-01`
      (`crates/iron_ui/tests/editor.rs`, golden `M3-INP-01-fields`)
-   - [ ] System clipboard (arboard) for the requests above
+   - [x] System clipboard (arboard, opened on first use) for the requests above, in `iron_app`
    - [ ] Later: undo/redo, `type="password"`, `maxLength`, wheel scrolling inside a textarea,
      `::placeholder` / `::selection` / `caret-color` styling
    - [ ] Selecting static text (drag, double-click word, triple-click line, Ctrl+C) on text elements,
