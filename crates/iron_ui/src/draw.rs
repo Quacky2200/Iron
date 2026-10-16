@@ -118,6 +118,86 @@ pub enum DrawCmd {
         opacity: f32,
     },
     PopLayer,
+    /// Shaped, positioned text and its decorations.
+    Text(TextCmd),
+}
+
+/// One run of glyphs in a single font, size and colour.
+#[derive(Clone, Debug)]
+pub struct GlyphRun {
+    pub font: parley::FontData,
+    /// Font size in logical pixels.
+    pub font_size: f32,
+    /// Variable-font coordinates (e.g. weight), normalized as in the font.
+    pub normalized_coords: Vec<i16>,
+    /// Synthetic bold when the family has no bold face.
+    pub embolden: bool,
+    /// Synthetic italic angle in degrees when the family has no italic face.
+    pub skew: Option<f32>,
+    pub color: Rgba,
+    pub glyphs: Vec<PositionedGlyph>,
+}
+
+impl PartialEq for GlyphRun {
+    fn eq(&self, other: &Self) -> bool {
+        self.font.data.id() == other.font.data.id()
+            && self.font.index == other.font.index
+            && self.font_size == other.font_size
+            && self.normalized_coords == other.normalized_coords
+            && self.embolden == other.embolden
+            && self.skew == other.skew
+            && self.color == other.color
+            && self.glyphs == other.glyphs
+    }
+}
+
+/// A glyph at its baseline origin, in logical pixels (window space).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PositionedGlyph {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextCmd {
+    /// Area covered by the glyphs (approximate: line boxes).
+    pub bounds: Rect,
+    pub runs: Vec<GlyphRun>,
+    /// Underlines and line-throughs as filled rectangles.
+    pub decorations: Vec<(Rect, Rgba)>,
+}
+
+impl TextCmd {
+    /// A copy moved by (dx, dy) with every colour replaced by `color`
+    /// (used for text shadows).
+    pub fn shadow(&self, dx: f32, dy: f32, color: Rgba) -> TextCmd {
+        TextCmd {
+            bounds: self.bounds.offset(dx, dy),
+            runs: self
+                .runs
+                .iter()
+                .map(|r| GlyphRun {
+                    color,
+                    glyphs: r
+                        .glyphs
+                        .iter()
+                        .map(|g| PositionedGlyph {
+                            id: g.id,
+                            x: g.x + dx,
+                            y: g.y + dy,
+                        })
+                        .collect(),
+                    ..r.clone()
+                })
+                .collect(),
+            decorations: self
+                .decorations
+                .iter()
+                .map(|(r, _)| (r.offset(dx, dy), color))
+                .collect(),
+        }
+    }
 }
 
 impl DrawCmd {
@@ -133,6 +213,7 @@ impl DrawCmd {
             DrawCmd::Quad(q) => Some(q.rect),
             DrawCmd::InsetShadow { shadow, .. } => Some(shadow.rect),
             DrawCmd::PushLayer { bounds, .. } => Some(*bounds),
+            DrawCmd::Text(t) => Some(t.bounds),
             DrawCmd::PopLayer => None,
         }
     }
@@ -146,6 +227,14 @@ impl DrawCmd {
             DrawCmd::Quad(q) => {
                 q.background = q.background.with_alpha_scaled(factor);
                 q.border_color = q.border_color.with_alpha_scaled(factor);
+            }
+            DrawCmd::Text(t) => {
+                for run in &mut t.runs {
+                    run.color = run.color.with_alpha_scaled(factor);
+                }
+                for (_, color) in &mut t.decorations {
+                    *color = color.with_alpha_scaled(factor);
+                }
             }
             DrawCmd::BackdropBlur { .. } | DrawCmd::PushLayer { .. } | DrawCmd::PopLayer => {}
         }

@@ -23,10 +23,14 @@ struct Gradient {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<storage, read> gradients: array<Gradient>;
+// Glyph atlas pages, read texel-exact with textureLoad.
+@group(0) @binding(2) var glyph_mask: texture_2d<f32>;
+@group(0) @binding(3) var glyph_color: texture_2d<f32>;
 
 const KIND_QUAD: u32 = 0u;
 const KIND_OUTER_SHADOW: u32 = 1u;
 const KIND_INSET_SHADOW: u32 = 2u;
+const KIND_GLYPH: u32 = 4u;
 
 struct Instance {
     @location(0) rect: vec4<f32>,   // the shape: x, y, w, h
@@ -57,6 +61,10 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     var grow = 1.0 / globals.scale;
     if kind == KIND_OUTER_SHADOW {
         grow += 3.0 * inst.params.y;
+    }
+    if kind == KIND_GLYPH {
+        // Glyph quads are pixel-aligned atlas images: no anti-aliasing margin.
+        grow = 0.0;
     }
     let area = vec4<f32>(inst.rect.xy - vec2(grow), inst.rect.zw + vec2(2.0 * grow));
 
@@ -201,6 +209,36 @@ fn gradient_color(index: u32, p: vec2<f32>, rect: vec4<f32>) -> vec4<f32> {
     return vec4(srgb_to_linear(c.rgb) * c.a, c.a);
 }
 
+// --- Glyphs -------------------------------------------------------------------
+// `rect` is the destination (logical px, pixel-aligned in physical px), `p0` the
+// image in the atlas (px), `params.y` 1 for colour glyphs, `color0` the text colour.
+
+/// Coverage adjustment for text. Blending happens in linear light, which makes
+/// dark text on light backgrounds look thin; boost coverage for dark text
+/// (a simplified version of what browsers do).
+fn text_coverage(a: f32, color: vec4<f32>) -> f32 {
+    let luma = dot(color.rgb / max(color.a, 1e-4), vec3(0.2126, 0.7152, 0.0722));
+    let dark = 1.0 - smoothstep(0.1, 0.6, luma);
+    return mix(a, pow(a, 1.0 / 1.6), dark);
+}
+
+fn glyph(in: VsOut) -> vec4<f32> {
+    let origin = round(in.rect.xy * globals.scale);
+    let local = floor(in.pos.xy) - origin;
+    let size = in.p0.zw;
+    if local.x < 0.0 || local.y < 0.0 || local.x >= size.x || local.y >= size.y {
+        discard;
+    }
+    let texel = vec2<i32>(in.p0.xy + local);
+    if in.params.y > 0.5 {
+        // Colour glyph (emoji): sRGB texture, decoded to linear on load.
+        let c = textureLoad(glyph_color, texel, 0);
+        return vec4(c.rgb * c.a, c.a) * in.color0.a;
+    }
+    let a = textureLoad(glyph_mask, texel, 0).r;
+    return in.color0 * text_coverage(a, in.color0);
+}
+
 // --- Fragment ---------------------------------------------------------------
 
 @fragment
@@ -213,6 +251,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // CSS clips outer shadows to outside the box that casts them.
         let shadow = blurred_box(p, in.rect, in.radii, sigma);
         return in.color0 * shadow * (1.0 - shape_coverage(p, in.p0, in.p1));
+    }
+    if kind == KIND_GLYPH {
+        return glyph(in);
     }
     if kind == KIND_INSET_SHADOW {
         // Drawn inside the padding box, everywhere except the (blurred) hole.

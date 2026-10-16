@@ -4,3 +4,5 @@
 *.glb binary
 # Built by `bun run build:fixtures`; CI checks they match their sources.
 tests/fixtures/*.js linguist-generated=true -diff
+*.ttf binary
+*.otf binary

@@ -24,6 +24,43 @@ impl Scene {
         }
     }
 
+    /// Adds an element of `kind` (`box`, `text`, `span`) under `parent`.
+    fn element(&mut self, parent: u32, kind: &str, style: &[(&str, Value)]) -> u32 {
+        let id = self.next;
+        self.next += 1;
+        let n = |v: u32| Value::Number(v.into());
+        self.ops
+            .push(Value::Array(vec![n(CREATE), n(id), kind.into()]));
+        let mut set = vec![n(SET_STYLE), n(id)];
+        for (k, v) in style {
+            set.push((*k).into());
+            set.push(v.clone());
+        }
+        self.ops.push(Value::Array(set));
+        self.ops
+            .push(Value::Array(vec![n(APPEND_CHILD), n(parent), n(id)]));
+        id
+    }
+
+    /// Adds a text node with `text` under `parent`.
+    fn text(&mut self, parent: u32, text: &str) -> u32 {
+        let id = self.next;
+        self.next += 1;
+        let n = |v: u32| Value::Number(v.into());
+        self.ops
+            .push(Value::Array(vec![n(CREATE_TEXT), n(id), text.into()]));
+        self.ops
+            .push(Value::Array(vec![n(APPEND_CHILD), n(parent), n(id)]));
+        id
+    }
+
+    /// A `text` element containing `text`.
+    fn label(&mut self, parent: u32, text: &str, style: &[(&str, Value)]) -> u32 {
+        let id = self.element(parent, "text", style);
+        self.text(id, text);
+        id
+    }
+
     /// Adds a box under `parent` (0 = root) and returns its id.
     fn add(&mut self, parent: u32, style: &[(&str, Value)]) -> u32 {
         let id = self.next;
@@ -649,4 +686,88 @@ fn background_images() {
     assert_eq!(f.px(10, 50), [255, 255, 255, 255]);
     assert_eq!(f.px(30, 50), [255, 255, 255, 255]);
     assert_golden("M2-DRW-05-images", 120, 60, &f.pixels, TOLERANCE);
+}
+
+fn text_sampler() -> Scene {
+    let mut s = Scene::new();
+    let col = |bg: &str| -> Vec<(&'static str, Value)> {
+        vec![
+            ("flexDirection", "column".into()),
+            ("padding", 8.0.into()),
+            ("gap", 4.0.into()),
+            ("width", 200.0.into()),
+            ("backgroundColor", bg.to_string().into()),
+        ]
+    };
+    let row = s.add(0, &[("width", "100%".into())]);
+    for (bg, fg) in [("#101318", "#f2f2f2"), ("#f4f4f4", "#1b1b1b")] {
+        let c = s.add(row, &col(bg));
+        s.label(c, "Iron engine 16px", &[("color", fg.into())]);
+        s.label(
+            c,
+            "Bold 700 weight",
+            &[("color", fg.into()), ("fontWeight", "bold".into())],
+        );
+        s.label(
+            c,
+            "Italic text here",
+            &[("color", fg.into()), ("fontStyle", "italic".into())],
+        );
+        s.label(
+            c,
+            "Large 28",
+            &[("color", fg.into()), ("fontSize", 28.0.into())],
+        );
+        s.label(
+            c,
+            "Small 11px text",
+            &[("color", fg.into()), ("fontSize", 11.0.into())],
+        );
+        s.label(
+            c,
+            "underline + strike",
+            &[
+                ("color", fg.into()),
+                ("textDecoration", "underline line-through".into()),
+            ],
+        );
+        s.label(
+            c,
+            "Shadowed",
+            &[
+                ("color", fg.into()),
+                ("fontSize", 22.0.into()),
+                ("textShadow", "2px 2px 4px rgba(255,80,80,0.9)".into()),
+            ],
+        );
+        let mixed = s.element(c, "text", &[("color", fg.into())]);
+        s.text(mixed, "Mixed ");
+        let span = s.element(
+            mixed,
+            "span",
+            &[("color", "#3fa9f5".into()), ("fontWeight", 800.0.into())],
+        );
+        s.text(span, "spans");
+        s.text(mixed, " in one line");
+    }
+    s
+}
+
+// M3-TXT-01, M3-TXT-04, M3-TXT-05: rendered text (checked by eye, then golden).
+#[test]
+fn text_rendering() {
+    for (scale, id) in [(1.0, "M3-TXT-01"), (2.0, "M3-TXT-01-2x")] {
+        let f = render(text_sampler(), (400, 260), scale, BLACK);
+        // Some pixels in the first label are close to the text colour.
+        let s = scale as u32;
+        let bright = (8 * s..120 * s)
+            .flat_map(|x| (8 * s..26 * s).map(move |y| (x, y)))
+            .filter(|&(x, y)| f.luma(x, y) > 220.0)
+            .count();
+        assert!(
+            bright > (20 * s * s) as usize,
+            "glyph pixels drawn at {scale}x: {bright}"
+        );
+        assert_golden(id, 400 * s, 260 * s, &f.pixels, TOLERANCE);
+    }
 }

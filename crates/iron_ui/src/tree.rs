@@ -609,6 +609,15 @@ impl<L: LayoutEngine> UiTree<L> {
             };
             let (x, y) = (parent_x + l.x, parent_y + l.y);
             self.rects.insert(id, Rect::new(x, y, l.width, l.height));
+            if self.text_layouts.contains_key(&id) {
+                // Final line breaking and alignment at the block's real content width.
+                let content_width =
+                    l.width - l.border[1] - l.border[3] - l.padding[1] - l.padding[3];
+                let align = self.computed_text(id).text_align;
+                if let Some(layout) = self.text_layouts.get_mut(&id) {
+                    text::finish(layout, content_width.max(0.0), align);
+                }
+            }
             if let Some(node) = self.nodes.get(&id)
                 && !is_inline_container(&node.kind)
             {
@@ -700,6 +709,37 @@ impl<L: LayoutEngine> UiTree<L> {
                 shadow: shadow(s),
                 border: l.border,
             });
+        }
+        if let Some(layout) = self.text_layouts.get(&id) {
+            let origin = (
+                rect.x + l.border[3] + l.padding[3],
+                rect.y + l.border[0] + l.padding[0],
+            );
+            let cmd = text::draw(layout, origin);
+            if !cmd.runs.is_empty() || !cmd.decorations.is_empty() {
+                // Text shadows: tinted copies under the text, last shadow lowest.
+                for s in text.text_shadow.iter().rev() {
+                    let color = current(s.color, s.current_color);
+                    if color.a <= 0.0 {
+                        continue;
+                    }
+                    let copy = cmd.shadow(s.offset_x, s.offset_y, color);
+                    if s.blur > 0.0 {
+                        // Same blur radius meaning as box shadows: sigma is half of it.
+                        let sigma = s.blur / 2.0;
+                        own.push(DrawCmd::PushLayer {
+                            bounds: copy.bounds.expand(3.0 * sigma),
+                            blur: sigma,
+                            opacity: 1.0,
+                        });
+                        own.push(DrawCmd::Text(copy));
+                        own.push(DrawCmd::PopLayer);
+                    } else {
+                        own.push(DrawCmd::Text(copy));
+                    }
+                }
+                own.push(DrawCmd::Text(cmd));
+            }
         }
 
         if v.backdrop_blur > 0.0 {

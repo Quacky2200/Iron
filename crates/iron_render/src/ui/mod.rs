@@ -5,6 +5,7 @@
 //! Plain boxes and shadows are batched into one instanced draw; each layer or
 //! backdrop blur adds a few full-screen passes limited by scissor rects.
 
+mod atlas;
 mod gradient;
 mod images;
 
@@ -16,6 +17,7 @@ use iron_ui::{DrawCmd, Rect, Rgba};
 use wgpu::util::DeviceExt;
 
 use crate::{Color, Gpu};
+use atlas::{GlyphAtlas, SUBPIXEL_BINS};
 use gradient::GpuGradient;
 use images::ImageCache;
 
@@ -29,6 +31,7 @@ const KIND_QUAD: f32 = 0.0;
 const KIND_OUTER_SHADOW: f32 = 1.0;
 const KIND_INSET_SHADOW: f32 = 2.0;
 const KIND_IMAGE: f32 = 3.0;
+const KIND_GLYPH: f32 = 4.0;
 
 /// Where a frame is drawn.
 pub struct RenderTarget<'a> {
@@ -143,6 +146,7 @@ pub struct UiRenderer {
     image_pipeline: wgpu::RenderPipeline,
     image_sampler: wgpu::Sampler,
     images: ImageCache,
+    atlas: GlyphAtlas,
     blur_pipeline: wgpu::RenderPipeline,
     blur_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
@@ -204,6 +208,14 @@ impl UiRenderer {
                         min_binding_size: None,
                     },
                     count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    ..texture
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    ..texture
                 },
             ],
         });
@@ -385,6 +397,7 @@ impl UiRenderer {
             image_pipeline,
             image_sampler,
             images: ImageCache::default(),
+            atlas: GlyphAtlas::new(gpu),
             blur_pipeline,
             blur_layout,
             composite_pipeline,
@@ -429,6 +442,8 @@ impl UiRenderer {
         if size.0 == 0 || size.1 == 0 {
             return stats;
         }
+
+        self.atlas.begin_frame();
 
         // --- Plan: turn commands into instances, gradients and steps. ---
         let mut frame_textures = vec![self.take_texture(gpu, size)];
@@ -540,6 +555,54 @@ impl UiRenderer {
                                 linear_premultiplied(q.border_color),
                                 -1.0,
                             ));
+                        }
+                    }
+                }
+                DrawCmd::Text(text) => {
+                    for (rect, color) in &text.decorations {
+                        instances.push(Instance {
+                            rect: rect4(*rect),
+                            radii: [0.0; 4],
+                            p0: [0.0; 4],
+                            p1: [0.0; 4],
+                            color0: linear_premultiplied(*color),
+                            color1: [0.0; 4],
+                            params: [KIND_QUAD, 0.0, -1.0, 0.0],
+                        });
+                    }
+                    for run in &text.runs {
+                        let color = linear_premultiplied(run.color);
+                        let size_px = run.font_size * scale;
+                        for g in &run.glyphs {
+                            // Snap to whole pixels vertically and to quarter pixels
+                            // horizontally (the subpixel offset is baked into the glyph).
+                            let px = g.x * scale;
+                            let mut x = px.floor();
+                            let mut bin = ((px - x) * f32::from(SUBPIXEL_BINS)).round() as u8;
+                            if bin == SUBPIXEL_BINS {
+                                x += 1.0;
+                                bin = 0;
+                            }
+                            let y = (g.y * scale).round();
+                            let Some(e) = self.atlas.glyph(gpu, run, g.id, size_px, bin) else {
+                                continue;
+                            };
+                            let dest_x = x + e.left as f32;
+                            let dest_y = y - e.top as f32;
+                            instances.push(Instance {
+                                rect: [
+                                    dest_x / scale,
+                                    dest_y / scale,
+                                    e.width as f32 / scale,
+                                    e.height as f32 / scale,
+                                ],
+                                radii: [0.0; 4],
+                                p0: [e.x as f32, e.y as f32, e.width as f32, e.height as f32],
+                                p1: [0.0; 4],
+                                color0: color,
+                                color1: [0.0; 4],
+                                params: [KIND_GLYPH, if e.color { 1.0 } else { 0.0 }, -1.0, 0.0],
+                            });
                         }
                     }
                 }
@@ -730,6 +793,14 @@ impl UiRenderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: self.gradients.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(self.atlas.mask_view()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(self.atlas.color_view()),
                 },
             ],
         });

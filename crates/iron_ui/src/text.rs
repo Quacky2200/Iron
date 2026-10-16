@@ -7,12 +7,14 @@ use parley::fontique::{
     Blob, Collection, CollectionOptions, FontInfoOverride, GenericFamily, SourceCache,
 };
 use parley::{
-    FontContext, FontFamily, FontStyle, FontWeight, Layout, LayoutContext,
-    LineHeight as PLineHeight, TextStyle, TextWrapMode, WhiteSpaceCollapse,
+    Alignment, AlignmentOptions, FontContext, FontFamily, FontStyle, FontWeight, Layout,
+    LayoutContext, LineHeight as PLineHeight, PositionedLayoutItem, TextStyle, TextWrapMode,
+    WhiteSpaceCollapse,
 };
 
 use crate::Rgba;
-use crate::text_style::{ComputedText, LineHeight, WhiteSpace};
+use crate::draw::{GlyphRun, PositionedGlyph, Rect, TextCmd};
+use crate::text_style::{ComputedText, LineHeight, TextAlign, WhiteSpace};
 
 /// The family name the bundled font is registered under.
 pub const DEFAULT_FAMILY: &str = "Inter";
@@ -174,6 +176,88 @@ pub fn measure(
         None => layout.width().ceil(),
     };
     (width, layout.height().ceil())
+}
+
+/// Breaks lines at the block's final content width and aligns them.
+pub fn finish(layout: &mut Layout<Brush>, content_width: f32, align: TextAlign) {
+    layout.break_all_lines(Some(content_width));
+    let alignment = match align {
+        TextAlign::Start => Alignment::Start,
+        TextAlign::End => Alignment::End,
+        TextAlign::Left => Alignment::Left,
+        TextAlign::Right => Alignment::Right,
+        TextAlign::Center => Alignment::Center,
+        TextAlign::Justify => Alignment::Justify,
+    };
+    layout.align(alignment, AlignmentOptions::default());
+}
+
+/// Draw command for a laid-out block whose content box starts at `origin`.
+pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
+    let (ox, oy) = origin;
+    let mut runs = Vec::new();
+    let mut decorations = Vec::new();
+    for line in layout.lines() {
+        for item in line.items() {
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
+            let run = glyph_run.run();
+            let style = glyph_run.style();
+            let synthesis = run.synthesis();
+            let glyphs: Vec<PositionedGlyph> = glyph_run
+                .positioned_glyphs()
+                .map(|g| PositionedGlyph {
+                    id: g.id,
+                    x: ox + g.x,
+                    y: oy + g.y,
+                })
+                .collect();
+            if !glyphs.is_empty() {
+                runs.push(GlyphRun {
+                    font: run.font().clone(),
+                    font_size: run.font_size(),
+                    normalized_coords: run
+                        .normalized_coords()
+                        .iter()
+                        .map(|c| c.to_bits())
+                        .collect(),
+                    embolden: synthesis.embolden(),
+                    skew: synthesis.skew(),
+                    color: style.brush,
+                    glyphs,
+                });
+            }
+            // Decorations span the run; font metrics give offsets from the baseline
+            // (positive is up).
+            let metrics = run.font_metrics();
+            let baseline = oy + glyph_run.baseline();
+            let x = ox + glyph_run.offset();
+            let width = glyph_run.advance();
+            let mut decorate = |deco: &parley::Decoration<Brush>, offset: f32, size: f32| {
+                let offset = deco.offset.unwrap_or(offset);
+                let size = deco.size.unwrap_or(size).max(1.0);
+                decorations.push((Rect::new(x, baseline - offset, width, size), deco.brush));
+            };
+            if let Some(u) = &style.underline {
+                decorate(u, metrics.underline_offset, metrics.underline_size);
+            }
+            if let Some(st) = &style.strikethrough {
+                decorate(st, metrics.strikethrough_offset, metrics.strikethrough_size);
+            }
+        }
+    }
+    let bounds = Rect::new(
+        ox,
+        oy,
+        layout.full_width().max(layout.width()),
+        layout.height(),
+    );
+    TextCmd {
+        bounds,
+        runs,
+        decorations,
+    }
 }
 
 fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Brush> {

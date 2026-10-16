@@ -261,11 +261,16 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      breaking for min-content / max-content / definite widths) — `M3-TXT-02`
    - [x] Shaping happens only for dirty blocks; re-measuring just re-breaks lines — `M3-TXT-03`
 5. **Rendering**
-   - [ ] Glyph atlas (R8 + RGBA pages, LRU eviction, scale-aware keys), swash rasterization — `M3-TXT-01`
-   - [ ] `DrawCmd::Text` (glyph runs with colours) → glyph instances in the quad pipeline
-   - [ ] Text gamma/contrast tuning so linear-light blending doesn't make text look thin
-   - [ ] Underline / line-through decorations as quads
-   - [ ] `textShadow` lists via layers + blur — `M3-TXT-05`
+   - [x] Glyph atlas (2048² R8 coverage page + 1024² RGBA colour page, cleared when full), swash
+     rasterization at physical size with 4 horizontal subpixel bins, variable-font coordinates,
+     synthetic bold/italic — `M3-TXT-01`
+   - [x] `DrawCmd::Text` (glyph runs + decorations) → glyph instances in the quad pipeline (texel-exact
+     `textureLoad`), so text batches with boxes
+   - [x] Text contrast: coverage boost for dark text to offset linear-light blending
+   - [x] Underline / line-through from font metrics, drawn as quads
+   - [x] `textShadow` lists: tinted, offset copies under the text; blurred ones in layers — `M3-TXT-05`
+   - [x] Golden text sampler at 1× and 2× (weights, italic, sizes, decorations, shadows, spans), checked by eye
+   - [ ] Colour emoji and CJK need system fonts: verify in `examples/text` (goldens use the bundled font only)
 6. **Example + checks**
    - [ ] `examples/text`: font sizes, weights, italics, mixed spans, wrapping, alignment, emoji/CJK,
      text shadows, a loaded font; verified by `--screenshot` and goldens

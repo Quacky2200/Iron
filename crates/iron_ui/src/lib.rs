@@ -14,12 +14,13 @@ pub mod text_style;
 mod tree;
 
 pub use color::Rgba;
-pub use draw::{DrawCmd, ImageFill, Quad, Rect, ShadowShape};
+pub use draw::{DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ColorStop, Corners,
     GradientDirection, Len, RadialShape, Shadow,
 };
+pub use parley::FontData;
 pub use style::{StyleError, Visual, apply_style};
 pub use tree::{ROOT, TEXT_NODE, UiError, UiTree};
 

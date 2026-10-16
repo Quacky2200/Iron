@@ -176,6 +176,7 @@ fn shape(cmds: &[DrawCmd]) -> Vec<String> {
                 format!("push blur={blur} opacity={opacity}")
             }
             DrawCmd::PopLayer => "pop".into(),
+            DrawCmd::Text(t) => format!("text {}", t.runs.len()),
         })
         .collect()
 }
@@ -573,4 +574,109 @@ fn text_style_changes_dirty_inheriting_text_blocks() {
     dirty.sort();
     assert_eq!(dirty, [NodeId(2), NodeId(5)]);
     assert_eq!(tree.computed_text(NodeId(3)).font_size, 24.0);
+}
+
+// M3-TXT-04/05: text draw commands, decorations and shadows.
+#[test]
+fn text_blocks_draw_glyphs_decorations_and_shadows() {
+    let mut tree = UiTree::new(300.0, 100.0);
+    apply_ok(
+        &mut tree,
+        vec![
+            create_kind(1, "text"),
+            style(
+                1,
+                &[
+                    ("color", "#ff0000".into()),
+                    ("padding", 10.0.into()),
+                    ("textDecoration", "underline".into()),
+                    ("textShadow", "2px 3px 0 blue, 0 0 4px black".into()),
+                ],
+            ),
+            text_node(2, "Hi there"),
+            append(1, 2),
+            append(0, 1),
+        ],
+    );
+    let cmds = tree.draw_list();
+    // Shadows are painted under the text, last one lowest: blurred (in a layer), sharp, then the text.
+    assert_eq!(
+        shape(&cmds),
+        ["push blur=2 opacity=1", "text 1", "pop", "text 1", "text 1"]
+    );
+    let DrawCmd::Text(text) = &cmds[4] else {
+        panic!()
+    };
+    let DrawCmd::Text(sharp_shadow) = &cmds[3] else {
+        panic!()
+    };
+    let run = &text.runs[0];
+    assert_eq!(run.color, Rgba::new(1.0, 0.0, 0.0, 1.0));
+    assert_eq!(run.glyphs.len(), 8, "one glyph per character in Inter");
+    // Glyphs start at the content box (padding 10) and sit on a baseline below it.
+    assert!((run.glyphs[0].x - 10.0).abs() < 1.5, "{:?}", run.glyphs[0]);
+    assert!(
+        run.glyphs[0].y > 20.0 && run.glyphs[0].y < 40.0,
+        "{:?}",
+        run.glyphs[0]
+    );
+    assert!(
+        run.glyphs.windows(2).all(|w| w[1].x > w[0].x),
+        "glyphs advance left to right"
+    );
+    // The underline spans the run, just below the baseline, in the text colour.
+    let (line, color) = text.decorations[0];
+    assert_eq!(color, Rgba::new(1.0, 0.0, 0.0, 1.0));
+    assert!(
+        line.y > run.glyphs[0].y && line.y < run.glyphs[0].y + 5.0,
+        "{line:?}"
+    );
+    assert!(line.width > 40.0);
+    // The sharp shadow is the same text moved by (2, 3) and tinted blue.
+    assert_eq!(sharp_shadow.runs[0].color, Rgba::new(0.0, 0.0, 1.0, 1.0));
+    assert_eq!(sharp_shadow.runs[0].glyphs[0].x, run.glyphs[0].x + 2.0);
+    assert_eq!(sharp_shadow.runs[0].glyphs[0].y, run.glyphs[0].y + 3.0);
+}
+
+#[test]
+fn text_alignment_moves_lines() {
+    let mut tree = UiTree::new(300.0, 100.0);
+    apply_ok(
+        &mut tree,
+        vec![
+            create_kind(1, "text"),
+            style(1, &[("width", 300.0.into())]),
+            text_node(2, "short"),
+            create_kind(3, "text"),
+            style(
+                3,
+                &[("width", 300.0.into()), ("textAlign", "center".into())],
+            ),
+            text_node(4, "short"),
+            create_kind(5, "text"),
+            style(5, &[("width", 300.0.into()), ("textAlign", "right".into())]),
+            text_node(6, "short"),
+            create(7),
+            style(7, &[("flexDirection", "column".into())]),
+            append(1, 2),
+            append(3, 4),
+            append(5, 6),
+            append(7, 1),
+            append(7, 3),
+            append(7, 5),
+            append(0, 7),
+        ],
+    );
+    let cmds = tree.draw_list();
+    let xs: Vec<f32> = cmds
+        .iter()
+        .filter_map(|c| match c {
+            DrawCmd::Text(t) => Some(t.runs[0].glyphs[0].x),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(xs.len(), 3);
+    assert!(xs[0] < 2.0, "start: {xs:?}");
+    assert!(xs[1] > 100.0 && xs[1] < 150.0, "centred: {xs:?}");
+    assert!(xs[2] > 200.0, "right: {xs:?}");
 }

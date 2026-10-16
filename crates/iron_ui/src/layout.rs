@@ -18,6 +18,8 @@ pub struct NodeLayout {
     pub height: f32,
     /// Resolved border widths: top, right, bottom, left.
     pub border: [f32; 4],
+    /// Resolved padding: top, right, bottom, left.
+    pub padding: [f32; 4],
 }
 
 /// The layout backend (DESIGN.md §5.3). Taffy is the default; a Yoga backend can
@@ -156,6 +158,12 @@ impl LayoutEngine for TaffyLayout {
             width: l.size.width,
             height: l.size.height,
             border: [l.border.top, l.border.right, l.border.bottom, l.border.left],
+            padding: [
+                l.padding.top,
+                l.padding.right,
+                l.padding.bottom,
+                l.padding.left,
+            ],
         })
     }
 }
