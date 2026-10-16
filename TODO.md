@@ -450,7 +450,10 @@ and `@font-face`.
      invalid math is ignored (stylesheets warn, inline values are rejected and keep the old value)
    - [ ] `calc()` with percentages (`calc(100% - 20px)`): needs Taffy's calc callback, which
      `TaffyTree` doesn't implement (`resolve_calc_value` returns 0), so a custom Taffy tree
-   - [ ] CSS-wide keywords `inherit`, `initial`, `unset`, `revert` on every property
+   - [x] CSS-wide keywords `inherit`, `initial`, `unset`, `revert` (and `revert-layer`, both like
+     `unset`: no user-agent stylesheet) on every property, inline, in stylesheets and on
+     `::before`/`::after`; `inherit` copies the parent's value for non-inherited properties
+     (`apply_wide_keyword`, `crates/iron_ui/tests/wide_keywords.rs`)
    - [ ] Colours: check `hsl()`/`hwb()`/`lab()`/`oklch()` coverage; `color-mix()` as the standard
      form of s&box's `mix()`/`darken()`/`lighten()`
    - [ ] Angles in `rad`, `grad`, `turn`; times in `s`/`ms`

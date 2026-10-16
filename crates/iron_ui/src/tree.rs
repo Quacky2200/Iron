@@ -15,7 +15,7 @@ use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{Overflow, Shadow, inner_corners, resolve_radii};
-use crate::style::{Visual, apply_style};
+use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, is_text_prop};
 use crate::units::{UnitContext, Uses};
@@ -270,7 +270,11 @@ impl<L: LayoutEngine> UiTree<L> {
             rule.declarations.retain(|d| {
                 // Variables are only known per element, so var() values are
                 // checked when they're used.
-                if d.prop.starts_with("--") || d.prop == "content" || d.value.contains("var(") {
+                if d.prop.starts_with("--")
+                    || d.prop == "content"
+                    || d.value.contains("var(")
+                    || WideKeyword::parse(&Value::from(d.value.as_str())).is_some()
+                {
                     return true;
                 }
                 // Relative units resolve per element; check the value with typical
@@ -430,11 +434,19 @@ impl<L: LayoutEngine> UiTree<L> {
         };
         let mut style = Style::default();
         let mut visual = Visual::default();
+        let owner = self.nodes.get(&id).map(|n| (&n.style, &n.visual));
         for (prop, value) in &ordered {
             if prop.starts_with("--") || *prop == "content" {
                 continue;
             }
-            let _ = apply_style(&mut style, &mut visual, prop, value);
+            match WideKeyword::parse(value) {
+                Some(keyword) => {
+                    let _ = apply_wide_keyword(&mut style, &mut visual, prop, keyword, owner);
+                }
+                None => {
+                    let _ = apply_style(&mut style, &mut visual, prop, value);
+                }
+            }
         }
         let text_child = self.children(span).first().copied();
         if let Some(node) = self.nodes.get_mut(&span) {
@@ -720,6 +732,12 @@ impl<L: LayoutEngine> UiTree<L> {
             } else {
                 units
             };
+            if let Some(keyword) = WideKeyword::parse(value) {
+                let parent = node.parent.and_then(|p| self.nodes.get(&p));
+                let parent = parent.map(|p| (&p.style, &p.visual));
+                let _ = apply_wide_keyword(&mut style, &mut visual, prop, keyword, parent);
+                continue;
+            }
             let Some(value) = compute(prop, value, &ctx, &mut unit_uses) else {
                 continue;
             };
@@ -1201,14 +1219,19 @@ impl<L: LayoutEngine> UiTree<L> {
                         ));
                         continue;
                     };
+                    // CSS-wide keywords need the parent: resolved at restyle too.
+                    let is_wide = WideKeyword::parse(&pair[1]).is_some();
                     let is_var = prop.starts_with("--")
+                        || is_wide
                         || pair[1].as_str().is_some_and(|v| {
                             v.contains("var(") || crate::units::needs_resolution_for(prop, v)
                         });
                     if is_var {
                         // Resolved during restyle, once inherited variables are known.
                         // Without var(), the math can be checked now (with typical units).
-                        if let Some(text) = pair[1].as_str().filter(|v| !v.contains("var(")) {
+                        if let Some(text) =
+                            pair[1].as_str().filter(|v| !v.contains("var(") && !is_wide)
+                        {
                             let ctx = UnitContext {
                                 em: 16.0,
                                 rem: 16.0,

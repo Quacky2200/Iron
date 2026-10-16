@@ -34,7 +34,10 @@ pub use paint::{
     ShapeRadius,
 };
 pub use parley::FontData;
-pub use style::{CURSORS, ScrollbarWidth, StyleError, Visual, apply_style};
+pub use style::{
+    CURSORS, ScrollbarWidth, StyleError, Visual, WideKeyword, apply_style, apply_wide_keyword,
+    is_inherited,
+};
 pub use tree::{AddedStylesheet, ROOT, Scrollbar, TEXT_NODE, UiError, UiTree};
 
 /// Re-exported because [`LayoutEngine`] uses Taffy's `Style` as its

@@ -152,6 +152,79 @@ impl ScrollbarWidth {
     }
 }
 
+/// A CSS-wide keyword: `initial`, `inherit`, `unset`, or `revert` / `revert-layer`
+/// (which act like `unset`, as Iron has no user-agent stylesheet).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WideKeyword {
+    Initial,
+    Inherit,
+    Unset,
+}
+
+impl WideKeyword {
+    pub fn parse(value: &Value) -> Option<Self> {
+        let s = value.as_str()?.trim();
+        Some(match s.to_ascii_lowercase().as_str() {
+            "initial" => WideKeyword::Initial,
+            "inherit" => WideKeyword::Inherit,
+            "unset" | "revert" | "revert-layer" => WideKeyword::Unset,
+            _ => return None,
+        })
+    }
+}
+
+/// Properties that inherit by default: text properties, `cursor`, `pointerEvents`
+/// and `scrollbarColor`.
+pub fn is_inherited(prop: &str) -> bool {
+    text_style::is_text_prop(prop) || matches!(prop, "cursor" | "pointerEvents" | "scrollbarColor")
+}
+
+/// The initial value of an inherited property, as CSS text (setting it explicitly
+/// stops inheritance, unlike resetting, which inherits).
+fn inherited_initial(prop: &str) -> &'static str {
+    match prop {
+        "color" => "black",
+        "fontFamily" => "sans-serif",
+        "fontSize" => "16px",
+        "fontWeight" => "400",
+        "fontStyle" => "normal",
+        "lineHeight" => "normal",
+        "letterSpacing" | "wordSpacing" => "0px",
+        "textAlign" => "start",
+        "direction" => "ltr",
+        "textDecoration" | "textDecorationLine" => "none",
+        "whiteSpace" => "normal",
+        "textShadow" => "none",
+        "scrollbarColor" => "auto",
+        // cursor, pointerEvents
+        _ => "auto",
+    }
+}
+
+/// Applies a CSS-wide keyword to `prop`. `parent` is the parent's style, for
+/// `inherit` on a property that doesn't inherit by itself (none at the root).
+pub fn apply_wide_keyword(
+    style: &mut Style,
+    visual: &mut Visual,
+    prop: &str,
+    keyword: WideKeyword,
+    parent: Option<(&Style, &Visual)>,
+) -> Result<(), StyleError> {
+    let inherited = is_inherited(prop);
+    match (keyword, inherited) {
+        // Inherited properties inherit when they aren't set.
+        (WideKeyword::Inherit | WideKeyword::Unset, true) => reset(style, visual, prop),
+        (WideKeyword::Initial, true) => {
+            apply_style(style, visual, prop, &Value::from(inherited_initial(prop)))
+        }
+        (WideKeyword::Initial | WideKeyword::Unset, false) => reset(style, visual, prop),
+        (WideKeyword::Inherit, false) => match parent {
+            Some((ps, pv)) => copy_prop(style, visual, ps.clone(), pv.clone(), prop),
+            None => reset(style, visual, prop),
+        },
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum StyleError {
     #[error("unknown style property `{0}`")]
@@ -433,10 +506,21 @@ pub fn apply_style(
     Ok(())
 }
 
-/// Resets `prop` to its default by applying the default style's value.
+/// Resets `prop` to its initial value.
 fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), StyleError> {
-    let d = Style::default();
-    let v = Visual::default();
+    copy_prop(style, visual, Style::default(), Visual::default(), prop)
+}
+
+/// Sets `prop` from another style: the defaults (a reset) or the parent's (for
+/// `inherit` on a property that doesn't inherit by itself). Text properties are set
+/// back to inheriting.
+pub(crate) fn copy_prop(
+    style: &mut Style,
+    visual: &mut Visual,
+    d: Style,
+    v: Visual,
+    prop: &str,
+) -> Result<(), StyleError> {
     match prop {
         "display" => style.display = d.display,
         "position" => style.position = d.position,
