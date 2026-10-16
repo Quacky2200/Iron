@@ -192,3 +192,120 @@ fn logical_properties_map_left_to_right() {
     assert_eq!(rect(&mut tree, a), Rect::new(11.0, 5.0, 80.0, 20.0));
     assert_eq!(rect(&mut tree, b).y, 32.0, "5 + 20 + 7");
 }
+
+/// A 300x100 flex row of 100px boxes, one per entry of `children`.
+fn row(children: &[&[(&str, Value)]]) -> (UiTree, Vec<u32>) {
+    let mut d = Dom::new();
+    let r = d.add(0, "box", &[("width", px(300.0)), ("height", px(100.0))]);
+    let kids = children
+        .iter()
+        .map(|s| {
+            let mut style = vec![("width", px(100.0)), ("height", px(100.0))];
+            style.extend_from_slice(s);
+            d.add(r, "box", &style)
+        })
+        .collect();
+    (d.build(""), kids)
+}
+
+fn set_style(tree: &mut UiTree, id: u32, prop: &str, value: Value) {
+    let errors = tree.apply_commit(&iron_core::Commit {
+        ops: vec![common::op(
+            iron_ui::opcodes::SET_STYLE,
+            &[common::n(id), prop.into(), value],
+        )],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[test]
+fn order_reorders_flex_items_stably() {
+    let (mut tree, k) = row(&[&[("order", 1.0.into())], &[], &[("order", "-1".into())]]);
+    assert_eq!(rect(&mut tree, k[2]).x, 0.0);
+    assert_eq!(rect(&mut tree, k[1]).x, 100.0);
+    assert_eq!(rect(&mut tree, k[0]).x, 200.0);
+
+    set_style(&mut tree, k[0], "order", Value::Null);
+    assert_eq!(rect(&mut tree, k[2]).x, 0.0, "still first");
+    assert_eq!(rect(&mut tree, k[0]).x, 100.0, "then document order");
+    assert_eq!(rect(&mut tree, k[1]).x, 200.0);
+
+    // From a stylesheet too, through restyle.
+    let mut d = Dom::new();
+    let r = d.add(0, "box", &[("width", px(200.0))]);
+    let a = d.add(r, "box", &[("width", px(100.0)), ("height", px(10.0))]);
+    let b = d.add(r, "box", &[("width", px(100.0)), ("height", px(10.0))]);
+    d.set_class(a, "late");
+    let mut tree = d.build(".late { order: 2 }");
+    assert_eq!(rect(&mut tree, b).x, 0.0);
+    assert_eq!(rect(&mut tree, a).x, 100.0);
+}
+
+/// Background colours of the painted quads, in paint order.
+fn paint_reds(tree: &mut UiTree) -> Vec<u8> {
+    tree.draw_list()
+        .iter()
+        .filter_map(|c| match c {
+            iron_ui::DrawCmd::Quad(q) => Some((q.background.r * 255.0).round() as u8),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn z_index_sets_paint_and_hit_order_among_siblings() {
+    // Three stacked boxes at the same spot; reds 1, 2, 3 identify them.
+    let mut d = Dom::new();
+    let r = d.add(0, "box", &[("width", px(100.0)), ("height", px(100.0))]);
+    let boxes: Vec<u32> = [("2", 1.0), ("auto", 2.0), ("-1", 3.0)]
+        .iter()
+        .map(|(z, red)| {
+            d.add(
+                r,
+                "box",
+                &[
+                    ("position", "absolute".into()),
+                    ("width", px(50.0)),
+                    ("height", px(50.0)),
+                    ("zIndex", (*z).into()),
+                    ("backgroundColor", format!("rgb({red} 0 0)").into()),
+                ],
+            )
+        })
+        .collect();
+    let mut tree = d.build("");
+    tree.layout_if_needed();
+    assert_eq!(paint_reds(&mut tree), vec![3, 2, 1], "-1, auto, then 2");
+    assert_eq!(tree.hit_test(10.0, 10.0).map(|n| n.0), Some(boxes[0]));
+
+    set_style(&mut tree, boxes[0], "zIndex", "auto".into());
+    tree.layout_if_needed();
+    assert_eq!(
+        paint_reds(&mut tree),
+        vec![3, 1, 2],
+        "ties keep document order"
+    );
+    assert_eq!(tree.hit_test(10.0, 10.0).map(|n| n.0), Some(boxes[1]));
+}
+
+#[test]
+fn order_props_accept_and_reject_values() {
+    let (mut tree, k) = row(&[&[]]);
+    set_style(&mut tree, k[0], "isolation", "isolate".into());
+    set_style(&mut tree, k[0], "isolation", "auto".into());
+    set_style(&mut tree, k[0], "zIndex", 5.0.into());
+    for (prop, value) in [
+        ("order", Value::from("auto")),
+        ("order", Value::from(1.5)),
+        ("zIndex", Value::from("high")),
+        ("isolation", Value::from("separate")),
+    ] {
+        let errors = tree.apply_commit(&iron_core::Commit {
+            ops: vec![common::op(
+                iron_ui::opcodes::SET_STYLE,
+                &[common::n(k[0]), prop.into(), value.clone()],
+            )],
+        });
+        assert!(!errors.is_empty(), "{prop}: {value:?} should be rejected");
+    }
+}

@@ -467,7 +467,10 @@ and `@font-face`.
    - [x] Angles in `deg`, `rad`, `grad`, `turn` (hues and gradients); times (`s`/`ms`) come with
      transitions (group 7), the first properties that take them
 2. **Layout**
-   - [ ] `order`, `z-index` (paint order and hit testing), `isolation: isolate`
+   - [x] `order` (layout children are stably sorted by it; Tab order stays in document order),
+     `z-index` (paint order and hit testing among siblings, then `order`, then document order;
+     each z-indexed element stacks on its own, so it never lifts above an ancestor's siblings),
+     `isolation` (accepted, no effect in that model) (`crates/iron_ui/tests/layout_props.rs`)
    - [ ] `display: contents`; `position: fixed`
    - [x] `flex-flow` (Bun's minifier emits it)
    - [x] Shorthands `place-items`, `place-self`, `place-content`

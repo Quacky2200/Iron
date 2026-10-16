@@ -128,6 +128,14 @@ export interface IronStyle {
   backdropFilter?: string;
   opacity?: number;
 
+  // Ordering
+  /** Flex and grid item order (layout and painting; Tab order stays in document order). */
+  order?: number;
+  /** Paint and hit-test order among siblings. */
+  zIndex?: number | "auto";
+  /** Accepted; every z-indexed element already stacks on its own. */
+  isolation?: "auto" | "isolate";
+
   // Clipping
   /** `visible`, `hidden`, `clip`, `scroll` or `auto`; one value or `x y`. Clips children to the padding box. */
   overflow?: string;

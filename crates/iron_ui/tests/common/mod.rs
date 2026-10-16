@@ -53,6 +53,11 @@ impl Dom {
         id
     }
 
+    pub fn set_class(&mut self, id: u32, class: &str) {
+        self.ops
+            .push(op(SET_ATTRS, &[n(id), "className".into(), class.into()]));
+    }
+
     pub fn build(self, css: &str) -> UiTree {
         let mut tree = UiTree::new(400.0, 400.0);
         let errors = tree.apply_commit(&Commit { ops: self.ops });

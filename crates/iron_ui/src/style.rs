@@ -47,6 +47,13 @@ pub struct Visual {
     pub opacity: f32,
     /// `pointerEvents`: `Some(false)` for `none`; `None` inherits from the parent.
     pub pointer_events: Option<bool>,
+    /// `order`: reorders flex and grid items (layout and painting; not Tab order).
+    pub order: i32,
+    /// `zIndex`: paint order among siblings (`None` is `auto`).
+    pub z_index: Option<i32>,
+    /// `isolation: isolate` (accepted; every z-indexed element already stacks on its
+    /// own in Iron's simplified model).
+    pub isolate: bool,
     /// `overflowX`, `overflowY` as specified (see [`Overflow::computed`]).
     pub overflow: [Overflow; 2],
     /// `clipPath`: clips the element and its descendants.
@@ -81,6 +88,9 @@ impl Default for Visual {
             backdrop_blur: 0.0,
             opacity: 1.0,
             pointer_events: None,
+            order: 0,
+            z_index: None,
+            isolate: false,
             overflow: [Overflow::Visible; 2],
             clip_path: None,
             clip_rect: None,
@@ -570,6 +580,20 @@ pub fn apply_style(
         "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "opacity" => visual.opacity = num(value)?.clamp(0.0, 1.0),
+        "order" => visual.order = integer(value).ok_or_else(invalid)?,
+        "zIndex" => {
+            visual.z_index = match value {
+                Value::String(s) if s.trim() == "auto" => None,
+                v => Some(integer(v).ok_or_else(invalid)?),
+            }
+        }
+        "isolation" => {
+            visual.isolate = match kw()?.trim() {
+                "auto" => false,
+                "isolate" => true,
+                _ => return Err(invalid()),
+            }
+        }
         "overflow" => set_overflow(
             style,
             visual,
@@ -791,6 +815,9 @@ pub(crate) fn copy_prop(
         "filter" => visual.filter_blur = v.filter_blur,
         "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
         "opacity" => visual.opacity = v.opacity,
+        "order" => visual.order = v.order,
+        "zIndex" => visual.z_index = v.z_index,
+        "isolation" => visual.isolate = v.isolate,
         "overflow" => set_overflow(style, visual, v.overflow),
         "overflowX" => set_overflow(style, visual, [v.overflow[0], visual.overflow[1]]),
         "overflowY" => set_overflow(style, visual, [visual.overflow[0], v.overflow[1]]),
@@ -823,6 +850,16 @@ fn set_overflow(style: &mut Style, visual: &mut Visual, overflow: [Overflow; 2])
         x: taffy(x),
         y: taffy(y),
     };
+}
+
+/// A whole number, from a number or a string (`3`, `"-1"`).
+fn integer(v: &Value) -> Option<i32> {
+    let n = match v {
+        Value::Number(n) => *n,
+        Value::String(s) => s.trim().parse::<f64>().ok()?,
+        _ => return None,
+    };
+    (n.fract() == 0.0).then_some(n as i32)
 }
 
 fn parse_kw<T: FromStr>(s: &str) -> Option<T> {

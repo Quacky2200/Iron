@@ -521,7 +521,7 @@ impl<L: LayoutEngine> UiTree<L> {
             if is_inline_container(&node.kind) {
                 self.layout.set_children(id, &[]);
             } else {
-                let children = node.children.clone();
+                let children = self.layout_order(node).into_owned();
                 self.layout.set_children(id, &children);
             }
         }
@@ -758,6 +758,8 @@ impl<L: LayoutEngine> UiTree<L> {
         }
 
         let vars_changed = node.vars != vars;
+        let order_changed = node.visual.order != visual.order;
+        let parent = node.parent;
         let node = self.nodes.get_mut(&id).expect("checked above");
         node.vars = vars;
         let text_changed = node.visual.text != visual.text;
@@ -767,6 +769,9 @@ impl<L: LayoutEngine> UiTree<L> {
         if style_changed {
             let style = node.style.clone();
             self.layout.set_style(id, &style);
+        }
+        if order_changed && let Some(p) = parent {
+            self.sync_children(p);
         }
         if id != ROOT && !self.sheets.is_empty() {
             for pseudo in [PseudoElement::Before, PseudoElement::After] {
@@ -999,7 +1004,8 @@ impl<L: LayoutEngine> UiTree<L> {
                     // Spans and text nodes inside are laid out by the text engine.
                     self.layout.set_children(*id, &[]);
                 } else {
-                    self.layout.set_children(*id, &node.children);
+                    let children = self.layout_order(node).into_owned();
+                    self.layout.set_children(*id, &children);
                 }
             }
         }
@@ -1269,6 +1275,12 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
                 if pairs.chunks(2).any(|p| p[0].as_str() == Some("direction")) {
                     dir_fallback(node);
+                }
+                if pairs.chunks(2).any(|p| p[0].as_str() == Some("order"))
+                    && let Some(parent) = node.parent
+                {
+                    // Taffy sees children in `order` order.
+                    children_changed.insert(parent);
                 }
                 styles_changed.insert(id);
                 if saw_var {
@@ -1816,7 +1828,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let children_visible =
             overflow_clip(&node.visual, rect, &l, radii).is_none_or(|clip| clip.contains(x, y));
         if !is_inline_container(&node.kind) && children_visible {
-            for child in node.children.iter().rev() {
+            for child in self.paint_order(node).iter().rev() {
                 if let Some(hit) = self.hit(*child, x, y, enabled) {
                     return Some(hit);
                 }
@@ -2058,12 +2070,40 @@ impl<L: LayoutEngine> UiTree<L> {
         if let Some(clip) = clip {
             out.push(DrawCmd::PushClip(clip));
         }
-        for child in &node.children {
+        for child in self.paint_order(node).iter() {
             self.collect(*child, text, out);
         }
         if clip.is_some() {
             out.push(DrawCmd::PopClip);
         }
+    }
+
+    /// Children in layout order: document order, stably sorted by `order`.
+    fn layout_order<'a>(&self, node: &'a Node) -> std::borrow::Cow<'a, [NodeId]> {
+        let order = |id: &NodeId| self.nodes.get(id).map_or(0, |n| n.visual.order);
+        if node.children.iter().all(|c| order(c) == 0) {
+            return std::borrow::Cow::Borrowed(&node.children);
+        }
+        let mut sorted = node.children.clone();
+        sorted.sort_by_key(order);
+        std::borrow::Cow::Owned(sorted)
+    }
+
+    /// Children in paint order (hit testing goes in reverse): by `zIndex` (auto is 0),
+    /// then `order`, then document order. Iron treats each z-indexed element as its
+    /// own stacking context: z-index orders siblings, not across ancestors.
+    fn paint_order<'a>(&self, node: &'a Node) -> std::borrow::Cow<'a, [NodeId]> {
+        let key = |id: &NodeId| {
+            self.nodes
+                .get(id)
+                .map_or((0, 0), |n| (n.visual.z_index.unwrap_or(0), n.visual.order))
+        };
+        if node.children.iter().all(|c| key(c) == (0, 0)) {
+            return std::borrow::Cow::Borrowed(&node.children);
+        }
+        let mut sorted = node.children.clone();
+        sorted.sort_by_key(key);
+        std::borrow::Cow::Owned(sorted)
     }
 
     /// A text field's content: selection, text (or placeholder) and the blinking
