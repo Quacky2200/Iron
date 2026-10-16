@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { dispatchUiEvent, type IronPointerEvent, type IronWheelEvent } from "../src/events.ts";
-import { instances, resetForTests } from "../src/host.ts";
+import {
+  dispatchUiEvent,
+  type IronFocusEvent,
+  type IronKeyboardEvent,
+  type IronPointerEvent,
+  type IronWheelEvent,
+} from "../src/events.ts";
+import { type Instance, instances, resetForTests } from "../src/host.ts";
 import { _resetRootForTests, createRoot, Text } from "../src/index.ts";
-import { CREATE, type Op, SET_STYLE } from "../src/opcodes.ts";
+import { CREATE, type Op, SET_ATTRS, SET_STYLE } from "../src/opcodes.ts";
 
 let commits: Op[][] = [];
 /** Element ids by `data-name`, from the CREATE + SET_ATTRS ops. */
@@ -200,5 +206,70 @@ describe("@iron/react events", () => {
     expect(instances.has(id)).toBe(false);
     expect(dispatchUiEvent("click", [id], data())).toBe(false);
     expect(log).toEqual([]);
+  });
+  // M3-EVT-04
+  test("key events carry key, code, repeat and modifiers, and bubble", () => {
+    const log: string[] = [];
+    let event: IronKeyboardEvent | undefined;
+    createRoot().render(
+      <box data-name="form" onKeyDown={(e) => log.push(`form ${e.key}`)}>
+        <box
+          data-name="field"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            event = e;
+            log.push(`field ${e.key}`);
+          }}
+        />
+      </box>,
+    );
+    const repeatShift = [0, 0, 0, 0, 0, 0, 0, 1, 1, 0];
+    dispatchUiEvent("keydown", path("field", "form"), repeatShift, ["A", "KeyA"]);
+    expect(log).toEqual(["field A", "form A"]);
+    expect(event).toMatchObject({ type: "keydown", key: "A", code: "KeyA", repeat: true, shiftKey: true, ctrlKey: false });
+  });
+
+  // M3-EVT-04
+  test("focusin/focusout run onFocus/onBlur, bubbling, with relatedTarget", () => {
+    const log: string[] = [];
+    let focus: IronFocusEvent | undefined;
+    createRoot().render(
+      <box data-name="form" onFocus={(e) => log.push(`form focus ${e.target.id}`)} onBlur={() => log.push("form blur")}>
+        <box data-name="a" tabIndex={0} />
+        <box
+          data-name="b"
+          tabIndex={0}
+          onFocus={(e) => {
+            focus = e;
+          }}
+        />
+      </box>,
+    );
+    const related = (id: number) => [0, 0, 0, 0, 0, 0, 0, 0, 0, id];
+    dispatchUiEvent("focusout", path("a", "form"), related(ids.get("b")!));
+    dispatchUiEvent("focusin", path("b", "form"), related(ids.get("a")!));
+    expect(log).toEqual(["form blur", `form focus ${ids.get("b")}`]);
+    expect(focus!.relatedTarget!.id).toBe(ids.get("a")!);
+  });
+
+  // M3-EVT-04
+  test("tabIndex is an attribute and refs can focus and blur through ops", () => {
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    let ref: { current: Instance | null } = { current: null };
+    function Field() {
+      ref = useRef<Instance>(null);
+      return <box data-name="field" ref={ref} tabIndex={0} />;
+    }
+    createRoot().render(<Field />);
+    const id = ids.get("field")!;
+    expect(commits[0]).toContainEqual([SET_ATTRS, id, "data-name", "field", "tabIndex", 0]);
+    ref.current!.focus();
+    ref.current!.blur();
+    expect(ops).toEqual([
+      ["focus", id],
+      ["blur", id],
+    ]);
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
   });
 });

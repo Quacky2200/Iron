@@ -18,6 +18,11 @@ const HANDLERS: Record<string, readonly string[]> = {
   dblclick: ["onDoubleClick"],
   contextmenu: ["onContextMenu"],
   wheel: ["onWheel"],
+  keydown: ["onKeyDown"],
+  keyup: ["onKeyUp"],
+  // React's onFocus/onBlur bubble, like the DOM's focusin/focusout.
+  focusin: ["onFocus"],
+  focusout: ["onBlur"],
 };
 
 const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave"]);
@@ -80,10 +85,11 @@ export class IronPointerEvent extends IronEvent {
     this.button = button;
     this.buttons = buttons;
     this.detail = detail;
-    this.shiftKey = (mods & 1) !== 0;
-    this.ctrlKey = (mods & 2) !== 0;
-    this.altKey = (mods & 4) !== 0;
-    this.metaKey = (mods & 8) !== 0;
+    const m = modifiers(mods);
+    this.shiftKey = m.shiftKey;
+    this.ctrlKey = m.ctrlKey;
+    this.altKey = m.altKey;
+    this.metaKey = m.metaKey;
   }
 
   get x(): number {
@@ -109,6 +115,48 @@ export class IronWheelEvent extends IronPointerEvent {
   }
 }
 
+/** Modifier keys from the data array's bitmask. */
+function modifiers(bits: number) {
+  return { shiftKey: (bits & 1) !== 0, ctrlKey: (bits & 2) !== 0, altKey: (bits & 4) !== 0, metaKey: (bits & 8) !== 0 };
+}
+
+/** `onKeyDown` / `onKeyUp`, sent to the focused element. */
+export class IronKeyboardEvent extends IronEvent {
+  /** What the key means in the current layout: `"a"`, `"A"`, `"Enter"`, `" "`. */
+  readonly key: string;
+  /** The physical key, layout independent: `"KeyA"`, `"Enter"`, `"Space"`. */
+  readonly code: string;
+  /** Held down and auto-repeating. */
+  readonly repeat: boolean;
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+
+  constructor(type: string, target: Instance, data: readonly number[], keys: readonly string[]) {
+    super(type, target, true);
+    this.key = keys[0] ?? "";
+    this.code = keys[1] ?? "";
+    this.repeat = data[8] === 1;
+    const m = modifiers(data[7] ?? 0);
+    this.shiftKey = m.shiftKey;
+    this.ctrlKey = m.ctrlKey;
+    this.altKey = m.altKey;
+    this.metaKey = m.metaKey;
+  }
+}
+
+/** `onFocus` / `onBlur`. */
+export class IronFocusEvent extends IronEvent {
+  /** For `onFocus`, the element that lost focus; for `onBlur`, the one gaining it. */
+  readonly relatedTarget: Instance | null;
+
+  constructor(type: string, target: Instance, data: readonly number[]) {
+    super(type, target, true);
+    this.relatedTarget = instances.get(data[9] ?? 0) ?? null;
+  }
+}
+
 type Handler = (event: IronEvent) => void;
 
 function invoke(node: Instance, names: readonly string[], event: IronEvent, phase: number) {
@@ -128,21 +176,45 @@ function invoke(node: Instance, names: readonly string[], event: IronEvent, phas
   }
 }
 
+function createEvent(
+  type: string,
+  target: Instance,
+  bubbles: boolean,
+  data: readonly number[],
+  keys: readonly string[],
+): IronEvent {
+  switch (type) {
+    case "wheel":
+      return new IronWheelEvent(type, target, bubbles, data);
+    case "keydown":
+    case "keyup":
+      return new IronKeyboardEvent(type, target, data, keys);
+    case "focusin":
+    case "focusout":
+      return new IronFocusEvent(type, target, data);
+    default:
+      return new IronPointerEvent(type, target, bubbles, data);
+  }
+}
+
 /**
  * Dispatches an engine event. `path` is the target then its ancestors; `data` is
- * `[x, y, button, buttons, detail, deltaX, deltaY, modifiers]`. Returns whether a
- * handler called `preventDefault()`.
+ * `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related]` and
+ * `keys` is `[key, code]` for keyboard events. Returns whether a handler called
+ * `preventDefault()`.
  */
-export function dispatchUiEvent(type: string, path: readonly number[], data: readonly number[]): boolean {
+export function dispatchUiEvent(
+  type: string,
+  path: readonly number[],
+  data: readonly number[],
+  keys: readonly string[] = [],
+): boolean {
   const names = HANDLERS[type];
   const target = instances.get(path[0] ?? -1);
   if (!names || !target) return false;
   const nodes = path.map((id) => instances.get(id)).filter((n): n is Instance => n !== undefined);
   const bubbles = !NON_BUBBLING.has(type);
-  const event =
-    type === "wheel"
-      ? new IronWheelEvent(type, target, bubbles, data)
-      : new IronPointerEvent(type, target, bubbles, data);
+  const event = createEvent(type, target, bubbles, data, keys);
   const capture = names.map((n) => `${n}Capture`);
   const priority = CONTINUOUS.has(type) ? ContinuousEventPriority : DiscreteEventPriority;
 

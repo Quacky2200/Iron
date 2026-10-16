@@ -339,13 +339,19 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] `:hover` / `:active` states (hover re-tested each frame when the tree moves under the
      pointer); `cursor` CSS property (inherited) → OS cursor
 2. **Keyboard and focus**
-   - [ ] `tabIndex`, Tab / Shift-Tab order, `focus`/`blur` events, `:focus`, `:focus-visible`,
-     `:focus-within`; key events to the focused node — `M3-EVT-04`
-   - [ ] Imperative `ref.current.focus()` / `blur()` via ops
+   - [x] `tabIndex`, Tab / Shift-Tab order (wrapping), `onFocus`/`onBlur` (bubbling, with
+     `relatedTarget`), `:focus`, `:focus-visible` (keyboard only), `:focus-within`; `onKeyDown` /
+     `onKeyUp` to the focused element with DOM `key`/`code`/`repeat`; pressing focuses the nearest
+     focusable ancestor or blurs (unless `pointerdown` is prevented) — `M3-EVT-04`
+     (`iron_ui::Interaction` in `interaction.rs`, `crates/iron_ui/tests/focus.rs`, `events_quickjs.rs`)
+   - [x] Imperative `ref.current.focus()` / `blur()` via ops
 3. **Text input**
    - [ ] `<input>` and `<textarea>` as controlled elements (`value`, `onChange`, `placeholder`,
      `disabled`) backed by Parley `PlainEditor`: caret, selection (mouse and keyboard), word/line
      navigation, clipboard (arboard)
+   - [ ] Selecting static text (drag, double-click word, triple-click line, Ctrl+C) on text elements,
+     with `user-select: none | text` and a `::selection` colour; shares Parley's selection geometry
+     and the clipboard with the editors
    - [ ] IME: winit `Ime` events → preedit display and commit; candidate window placed with
      `set_ime_cursor_area` — `M3-IME-01`
 4. **Overflow and scrolling**

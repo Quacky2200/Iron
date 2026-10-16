@@ -1,7 +1,8 @@
-//! Pointer interaction: turns pointer input into DOM-style events and keeps `:hover`
-//! and `:active` up to date (DESIGN D6). Dispatching the events to scripts is the
-//! caller's job: [`UiEvent::script_args`] are the arguments for `__iron_ui_event`,
-//! which `@iron/react` runs through capture and bubble phases.
+//! UI events (DESIGN D6). [`Pointer`] turns pointer input into DOM-style events and
+//! keeps `:hover` / `:active` up to date; [`crate::Interaction`] adds focus and keys
+//! and runs default actions. Dispatching to scripts is the caller's job:
+//! [`UiEvent::script_args`] are the arguments for `__iron_ui_event`, which
+//! `@iron/react` runs through capture and bubble phases.
 
 use iron_core::{NodeId, Value};
 
@@ -23,6 +24,12 @@ pub enum EventKind {
     DblClick,
     ContextMenu,
     Wheel,
+    KeyDown,
+    KeyUp,
+    /// Focus arrived (bubbles; React's `onFocus`).
+    FocusIn,
+    /// Focus left (bubbles; React's `onBlur`).
+    FocusOut,
 }
 
 impl EventKind {
@@ -38,6 +45,10 @@ impl EventKind {
             EventKind::DblClick => "dblclick",
             EventKind::ContextMenu => "contextmenu",
             EventKind::Wheel => "wheel",
+            EventKind::KeyDown => "keydown",
+            EventKind::KeyUp => "keyup",
+            EventKind::FocusIn => "focusin",
+            EventKind::FocusOut => "focusout",
         }
     }
 }
@@ -61,7 +72,8 @@ impl Modifiers {
     }
 }
 
-/// An event for scripts. Fields follow the DOM's `PointerEvent` / `WheelEvent`.
+/// An event for scripts. Fields follow the DOM's `PointerEvent`, `WheelEvent`,
+/// `KeyboardEvent` and `FocusEvent`; fields an event type doesn't use are zero/empty.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiEvent {
     pub kind: EventKind,
@@ -81,16 +93,42 @@ pub struct UiEvent {
     pub delta_x: f32,
     pub delta_y: f32,
     pub modifiers: Modifiers,
+    /// Keyboard events: the DOM `key` (`"a"`, `"Enter"`) and `code` (`"KeyA"`).
+    pub key: String,
+    pub code: String,
+    pub repeat: bool,
+    /// Focus events: the element losing (for `focusin`) or gaining (for `focusout`) focus.
+    pub related: Option<NodeId>,
 }
 
 impl UiEvent {
+    pub fn new(kind: EventKind, path: Vec<NodeId>, modifiers: Modifiers) -> Self {
+        Self {
+            kind,
+            path,
+            x: 0.0,
+            y: 0.0,
+            button: 0,
+            buttons: 0,
+            detail: 0,
+            delta_x: 0.0,
+            delta_y: 0.0,
+            modifiers,
+            key: String::new(),
+            code: String::new(),
+            repeat: false,
+            related: None,
+        }
+    }
+
     pub fn target(&self) -> NodeId {
         self.path[0]
     }
 
-    /// Arguments for `__iron_ui_event(type, path, data)`, where `data` is
-    /// `[x, y, button, buttons, detail, deltaX, deltaY, modifiers]`.
-    pub fn script_args(&self) -> [Value; 3] {
+    /// Arguments for `__iron_ui_event(type, path, data, keys)`: `data` is `[x, y, button,
+    /// buttons, detail, deltaX, deltaY, modifiers, repeat, related]` (`related` 0 for
+    /// none) and `keys` is `[key, code]`, sent with keyboard events only.
+    pub fn script_args(&self) -> Vec<Value> {
         let path = self
             .path
             .iter()
@@ -105,12 +143,21 @@ impl UiEvent {
             self.delta_x as f64,
             self.delta_y as f64,
             self.modifiers.bits() as f64,
+            self.repeat as u8 as f64,
+            self.related.map_or(0.0, |id| id.0 as f64),
         ];
-        [
+        let mut args = vec![
             self.kind.name().into(),
             Value::Array(path),
             Value::Array(data.into_iter().map(Value::Number).collect()),
-        ]
+        ];
+        if matches!(self.kind, EventKind::KeyDown | EventKind::KeyUp) {
+            args.push(Value::Array(vec![
+                self.key.as_str().into(),
+                self.code.as_str().into(),
+            ]));
+        }
+        args
     }
 }
 
@@ -298,16 +345,12 @@ impl Pointer {
             _ => 0,
         };
         UiEvent {
-            kind,
-            path,
             x,
             y,
             button,
             buttons: self.buttons,
             detail,
-            delta_x: 0.0,
-            delta_y: 0.0,
-            modifiers: self.modifiers,
+            ..UiEvent::new(kind, path, self.modifiers)
         }
     }
 
@@ -345,7 +388,7 @@ impl Pointer {
     }
 }
 
-fn update_state(tree: &mut UiTree, id: NodeId, f: impl FnOnce(&mut ElementState)) {
+pub(crate) fn update_state(tree: &mut UiTree, id: NodeId, f: impl FnOnce(&mut ElementState)) {
     let mut state = tree.state(id);
     f(&mut state);
     tree.set_state(id, state);

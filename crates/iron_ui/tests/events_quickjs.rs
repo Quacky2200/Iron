@@ -1,22 +1,24 @@
-//! Pointer events end to end (M3-EVT-02, M3-EVT-03): the Rust pointer state machine
-//! hit-tests, `@iron/react` runs the handlers inside QuickJS, and the re-render
-//! comes back as a commit. Uses `tests/fixtures/events.js`, built by Bun from
-//! `tests/fixtures/src/events.tsx`.
+//! UI events end to end (M3-EVT-02, M3-EVT-03, M3-EVT-04): [`Interaction`] hit-tests
+//! and tracks focus, `@iron/react` runs the handlers inside QuickJS, and re-renders
+//! come back as commits; `ref.focus()` / `ref.blur()` come back as ops. Uses
+//! `tests/fixtures/events.js`, built by Bun from `tests/fixtures/src/events.tsx`.
 
 use iron_core::{NodeId, Value};
 use iron_script::conformance::capture_logs;
 use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Pointer, ROOT, Rgba, UiEvent, UiTree};
+use iron_ui::{Input, Interaction, ROOT, Rgba, UiTree};
 
 const EVENTS: &str = include_str!("../../../tests/fixtures/events.js");
 
 struct Game {
     rt: QuickJsRuntime,
     tree: UiTree,
-    pointer: Pointer,
+    ui: Interaction,
     button: NodeId,
     button_label: NodeId,
     panel_label: NodeId,
+    field: NodeId,
+    field_label: NodeId,
 }
 
 impl Game {
@@ -27,23 +29,28 @@ impl Game {
             .unwrap_or_else(|e| panic!("bundle failed: {e}\n{:?}", e.stack));
         assert!(logs.borrow().is_empty(), "{:?}", logs.borrow());
         let mut tree = UiTree::new(400.0, 300.0);
-        tree.add_stylesheet(".button:hover { background-color: #00ff00 }");
+        tree.add_stylesheet(
+            ".button:hover { background-color: #00ff00 }
+             .field:focus-visible { background-color: #0000ff }",
+        );
         let mut game = Self {
             rt,
             tree,
-            pointer: Pointer::new(),
+            ui: Interaction::new(),
             button: NodeId(0),
             button_label: NodeId(0),
             panel_label: NodeId(0),
+            field: NodeId(0),
+            field_label: NodeId(0),
         };
         game.apply_commits();
         let panel = game.tree.children(ROOT)[0];
-        let [button, panel_label] = game.tree.children(panel) else {
-            panic!("the panel has a button and a label");
+        let [button, panel_label, field] = game.tree.children(panel) else {
+            panic!("the panel has a button, a label and a field");
         };
-        game.button = *button;
-        game.panel_label = *panel_label;
+        (game.button, game.panel_label, game.field) = (*button, *panel_label, *field);
         game.button_label = game.tree.children(game.button)[0];
+        game.field_label = game.tree.children(game.field)[0];
         game
     }
 
@@ -54,27 +61,49 @@ impl Game {
         }
     }
 
-    /// Dispatches like the app does, returning whether each event was prevented.
-    fn dispatch(&mut self, events: Vec<UiEvent>) -> Vec<(&'static str, bool)> {
-        let out = events
-            .iter()
-            .map(|e| {
-                let prevented = self
-                    .rt
-                    .call_global("__iron_ui_event", &e.script_args())
-                    .unwrap_or_else(|err| panic!("{err}"));
-                (e.kind.name(), prevented == Value::Bool(true))
-            })
-            .collect();
+    /// Handles one input like the app: events go to `__iron_ui_event`, commits are
+    /// applied, then `focus` / `blur` ops are handled. Returns each event's type and
+    /// whether it was prevented.
+    fn handle(&mut self, input: Input) -> Vec<(&'static str, bool)> {
+        let mut out = Vec::new();
+        let rt = &mut self.rt;
+        self.ui.handle(&mut self.tree, input, &mut |e| {
+            let prevented = rt
+                .call_global("__iron_ui_event", &e.script_args())
+                .unwrap_or_else(|err| panic!("{err}"))
+                == Value::Bool(true);
+            out.push((e.kind.name(), prevented));
+            prevented
+        });
         self.apply_commits();
+        for op in self.rt.drain_ops() {
+            let id = NodeId(op.args[0].as_f64().unwrap() as u32);
+            let input = match op.name.as_str() {
+                "focus" => Input::Focus(id),
+                "blur" => Input::Blur(id),
+                other => panic!("unexpected op {other}"),
+            };
+            out.extend(self.handle(input));
+        }
         out
     }
 
     fn click(&mut self, x: f32, y: f32) -> Vec<(&'static str, bool)> {
-        let mut events = self.pointer.move_to(&mut self.tree, x, y);
-        events.extend(self.pointer.down(&mut self.tree, 0, 0.0));
-        events.extend(self.pointer.up(&mut self.tree, 0));
-        self.dispatch(events)
+        let mut events = self.handle(Input::PointerMove { x, y });
+        events.extend(self.handle(Input::PointerDown {
+            button: 0,
+            time_ms: 0.0,
+        }));
+        events.extend(self.handle(Input::PointerUp { button: 0 }));
+        events
+    }
+
+    fn key(&mut self, key: &str) -> Vec<(&'static str, bool)> {
+        self.handle(Input::KeyDown {
+            key: key.into(),
+            code: String::new(),
+            repeat: false,
+        })
     }
 
     fn labels(&self) -> (String, String) {
@@ -82,6 +111,10 @@ impl Game {
             self.tree.text_content(self.button_label),
             self.tree.text_content(self.panel_label),
         )
+    }
+
+    fn field_text(&self) -> String {
+        self.tree.text_content(self.field_label)
     }
 }
 
@@ -93,7 +126,7 @@ fn clicking_a_button_runs_its_on_click_and_re_renders() {
 
     let events = game.click(50.0, 30.0);
     assert_eq!(
-        events,
+        &events[..7],
         [
             ("pointerenter", false),
             ("pointerenter", false),
@@ -126,19 +159,71 @@ fn hover_styles_and_cursor_follow_the_pointer() {
     let green = Rgba::parse("#00ff00").unwrap();
     let button = game.button;
 
-    let events = game.pointer.move_to(&mut game.tree, 50.0, 30.0);
-    game.dispatch(events);
+    game.handle(Input::PointerMove { x: 50.0, y: 30.0 });
     game.tree.layout_if_needed();
     assert_eq!(game.tree.visual(button).unwrap().background, green);
     assert_eq!(
-        game.pointer.cursor(&game.tree),
+        game.ui.cursor(&game.tree),
         "pointer",
         "set on the button, inherited by its label"
     );
 
-    let events = game.pointer.move_to(&mut game.tree, 300.0, 200.0);
-    game.dispatch(events);
+    game.handle(Input::PointerMove { x: 300.0, y: 200.0 });
     game.tree.layout_if_needed();
     assert_ne!(game.tree.visual(button).unwrap().background, green);
-    assert_eq!(game.pointer.cursor(&game.tree), "default");
+    assert_eq!(game.ui.cursor(&game.tree), "default");
+}
+
+// M3-EVT-04
+#[test]
+fn tab_focuses_the_field_and_typed_keys_reach_it() {
+    let mut game = Game::start();
+    let blue = Rgba::parse("#0000ff").unwrap();
+    assert_eq!(game.field_text(), "idle: ");
+
+    assert_eq!(game.key("Tab"), [("focusin", false)]);
+    assert_eq!(game.ui.focused(), Some(game.field));
+    assert_eq!(game.field_text(), "focused: ", "onFocus ran");
+    game.tree.layout_if_needed();
+    assert_eq!(
+        game.tree.visual(game.field).unwrap().background,
+        blue,
+        ":focus-visible after Tab"
+    );
+
+    for key in ["h", "i", "!", "Backspace", "Shift"] {
+        game.key(key);
+    }
+    assert_eq!(game.field_text(), "focused: hi");
+
+    let events = game.key("Escape");
+    assert_eq!(
+        events,
+        [("keydown", false), ("focusout", false)],
+        "Escape calls ref.blur(), applied through an op"
+    );
+    assert_eq!(game.ui.focused(), None);
+    assert_eq!(game.field_text(), "idle: hi", "onBlur ran");
+}
+
+// M3-EVT-04
+#[test]
+fn a_button_can_focus_the_field_without_taking_focus_itself() {
+    let mut game = Game::start();
+    game.click(50.0, 30.0);
+    assert_eq!(
+        game.ui.focused(),
+        Some(game.field),
+        "the click handler called ref.focus()"
+    );
+    assert!(
+        !game.tree.state(game.field).focus_visible,
+        "no keyboard use, so no focus ring"
+    );
+    game.key("x");
+    assert_eq!(game.field_text(), "focused: x");
+
+    // Pressing elsewhere blurs.
+    game.click(300.0, 250.0);
+    assert_eq!(game.ui.focused(), None);
 }

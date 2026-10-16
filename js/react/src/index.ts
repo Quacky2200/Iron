@@ -8,18 +8,18 @@
  */
 
 import "@iron/engine";
-import { createElement, type ReactElement, type ReactNode } from "react";
+import { createElement, type ReactElement, type ReactNode, type Ref } from "react";
 import { ConcurrentRoot } from "react-reconciler/constants";
 
 import "./events.ts";
-import type { IronPointerEvent, IronWheelEvent } from "./events.ts";
-import { type Container, reconciler } from "./host.ts";
+import type { IronFocusEvent, IronKeyboardEvent, IronPointerEvent, IronWheelEvent } from "./events.ts";
+import { type Container, type Instance, reconciler } from "./host.ts";
 import { ROOT_ID } from "./opcodes.ts";
 import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
-export { IronEvent, IronPointerEvent, IronWheelEvent } from "./events.ts";
-export type { Instance as IronElement } from "./host.ts";
+export { IronEvent, IronFocusEvent, IronKeyboardEvent, IronPointerEvent, IronWheelEvent } from "./events.ts";
+export { Instance as IronElement } from "./host.ts";
 
 type PointerHandler = (event: IronPointerEvent) => void;
 
@@ -52,6 +52,17 @@ export interface EventProps {
   onMouseLeave?: PointerHandler;
   onWheel?: (event: IronWheelEvent) => void;
   onWheelCapture?: (event: IronWheelEvent) => void;
+  /** Keys go to the focused element (see `tabIndex`) and bubble. */
+  onKeyDown?: (event: IronKeyboardEvent) => void;
+  onKeyDownCapture?: (event: IronKeyboardEvent) => void;
+  onKeyUp?: (event: IronKeyboardEvent) => void;
+  onKeyUpCapture?: (event: IronKeyboardEvent) => void;
+  /** Focus arrived on this element or a descendant (bubbles, like React DOM). */
+  onFocus?: (event: IronFocusEvent) => void;
+  onFocusCapture?: (event: IronFocusEvent) => void;
+  /** Focus left this element or a descendant. */
+  onBlur?: (event: IronFocusEvent) => void;
+  onBlurCapture?: (event: IronFocusEvent) => void;
 }
 
 /** Attributes that CSS selectors can match. */
@@ -60,6 +71,11 @@ export interface ElementAttrs {
   id?: string;
   disabled?: boolean;
   checked?: boolean;
+  /**
+   * Makes the element focusable: 0 joins the Tab order in tree order, positive values
+   * come first (ascending), negative values focus by click or `ref.focus()` only.
+   */
+  tabIndex?: number;
   [data: `data-${string}`]: string | number | boolean | undefined;
 }
 
@@ -67,6 +83,7 @@ export interface BoxProps extends ElementAttrs, EventProps {
   style?: IronStyle;
   children?: ReactNode;
   key?: string | number | null;
+  ref?: Ref<Instance>;
 }
 
 declare module "react" {
@@ -80,6 +97,7 @@ declare module "react" {
 export interface TextProps extends ElementAttrs, EventProps {
   style?: IronStyle;
   children?: ReactNode;
+  ref?: Ref<Instance>;
 }
 
 // React's own JSX types already define <text> (SVG) and <span> (HTML), so Iron's

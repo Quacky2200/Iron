@@ -16,7 +16,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_core` | Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
 | `crates/iron_platform` | winit window + event loop (`Platform`, `PlatformApp`), `InputEvent` conversion, gilrs gamepads |
 | `crates/iron_script` | `ScriptRuntime` trait + QuickJS backend (rquickjs 0.14), timers prelude, `ComponentHost` (component lifecycle) |
-| `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`) |
+| `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`), focus/keys/default actions (`interaction.rs`) |
 | `crates/iron_render` | wgpu renderer for the draw list: quads, SDF rounded boxes, shadows, blur layers, gradients, images, glyph atlas (swash). `testing.rs` has golden helpers and a shared test GPU |
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet` |
@@ -93,10 +93,15 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3c step 2: pointer events. `iron_ui::Pointer` turns input into DOM-style events and sets
     `:hover`/`:active`; the app sends them to `__iron_ui_event(type, path, data)`, which
     `@iron/react` (`events.ts`) runs through capture/bubble over `on*` props. `cursor` → OS cursor
+  - M3c step 3: keyboard and focus. `iron_ui::Interaction` wraps `Pointer`, owns focus and runs
+    default actions (Tab, focus on press) using the "prevented" flag `dispatch` returns;
+    `ref.focus()`/`blur()` arrive as `focus`/`blur` ops
 - **Next:** the rest of M3c. See TODO.md "M3c" for the steps:
-  2. Keyboard and focus (`tabIndex`, Tab order, key events)
   3. `overflow` clipping and scrolling
   4. `<input>`/`<textarea>` on Parley `PlainEditor` with IME and clipboard (arboard)
   5. gilrs gamepads to scripts
   6. `examples/form`
+- **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA
+  instability, also seen before Iron). Warn before launching the interactive window; prefer
+  `--screenshot` runs for checks.
 - **Needs the user:** the manual checks M2-MAN-01 (resize) and M3-MAN-01 (IME), and the CI run.

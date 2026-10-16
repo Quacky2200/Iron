@@ -177,6 +177,11 @@
   border: 2px solid var(--text);
 }
 
+/* Keyboard focus shows a ring; pointer focus doesn't. */
+.toggle:focus-visible .box {
+  box-shadow: 0 0 0 3px var(--warm);
+}
+
 .toggle:checked .box {
   background-color: var(--accent);
   border: 2px solid var(--accent);

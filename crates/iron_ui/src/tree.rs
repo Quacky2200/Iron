@@ -1282,6 +1282,22 @@ impl<L: LayoutEngine> UiTree<L> {
         }
     }
 
+    /// Whether `id` is rendered: it exists and neither it nor an ancestor is
+    /// `display: none`.
+    pub fn is_displayed(&self, id: NodeId) -> bool {
+        let mut at = Some(id);
+        while let Some(id) = at {
+            let Some(node) = self.nodes.get(&id) else {
+                return false;
+            };
+            if node.style.display == Display::None {
+                return false;
+            }
+            at = node.parent;
+        }
+        true
+    }
+
     /// The CSS cursor to show over `id` (or over nothing for `None`): the nearest
     /// `cursor` set on it or an ancestor, with `auto` meaning `text` over text elements
     /// and `default` elsewhere.

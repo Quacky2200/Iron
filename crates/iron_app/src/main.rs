@@ -17,7 +17,7 @@ use iron_platform::{
 use iron_render::wgpu;
 use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Pointer, UiEvent, UiTree, events};
+use iron_ui::{Input, Interaction, UiEvent, UiTree, events};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
@@ -116,7 +116,7 @@ fn main() -> Result<()> {
         components,
         ui,
         sheets: HashMap::new(),
-        pointer: Pointer::new(),
+        interaction: Interaction::new(),
         ui_events,
         cursor: "default",
         asset_root,
@@ -178,7 +178,7 @@ struct App {
     screenshot: Option<(PathBuf, u32)>,
     /// Stylesheets added by scripts: script id -> tree id.
     sheets: HashMap<u32, u32>,
-    pointer: Pointer,
+    interaction: Interaction,
     /// Whether the game handles UI events (`__iron_ui_event` exists).
     ui_events: bool,
     /// The CSS cursor currently shown.
@@ -222,29 +222,33 @@ impl App {
             match op.name.as_str() {
                 "loadFont" => self.load_font_op(&op.args),
                 "addStyleSheet" | "removeStyleSheet" => self.stylesheet_op(&op.name, &op.args),
+                "focus" | "blur" => {
+                    let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) else {
+                        tracing::warn!("{} needs an element id", op.name);
+                        continue;
+                    };
+                    let id = iron_core::NodeId(id as u32);
+                    self.handle_ui(if op.name == "focus" {
+                        Input::Focus(id)
+                    } else {
+                        Input::Blur(id)
+                    });
+                }
                 other => tracing::warn!("unknown script op `{other}`"),
             }
         }
 
-        // The tree may have moved under a still pointer.
-        let events = self.pointer.refresh(&mut self.ui);
-        self.dispatch_ui(events);
+        // The tree may have moved under a still pointer, or the focused element gone.
+        self.handle_ui(Input::Refresh);
     }
 
-    /// Sends UI events to scripts, then updates the OS cursor.
-    fn dispatch_ui(&mut self, events: Vec<UiEvent>) {
-        if self.ui_events {
-            for event in &events {
-                // The returned "default prevented" flag is used by focus and scrolling (later in M3c).
-                if let Err(e) = self
-                    .scripts
-                    .call_global("__iron_ui_event", &event.script_args())
-                {
-                    tracing::error!(target: "script", "{} handler: {e}", event.kind.name());
-                }
-            }
-        }
-        let cursor = self.pointer.cursor(&self.ui);
+    /// Runs one UI input, sending its events to scripts, then updates the OS cursor.
+    fn handle_ui(&mut self, input: Input) {
+        let (scripts, ui_events) = (&mut self.scripts, self.ui_events);
+        self.interaction.handle(&mut self.ui, input, &mut |event| {
+            dispatch(scripts, ui_events, event)
+        });
+        let cursor = self.interaction.cursor(&self.ui);
         if cursor != self.cursor
             && let Some(gfx) = &self.gfx
         {
@@ -355,46 +359,47 @@ impl PlatformApp for App {
 
     fn input(&mut self, event: InputEvent) {
         let scale = self.scale() as f64;
-        let now = self.now_ms();
-        let ui = &mut self.ui;
-        let events = match event {
+        let input = match event {
             InputEvent::Resized { width, height } => {
                 if let Some(gfx) = &mut self.gfx {
                     gfx.surface.resize(&gfx.gpu, width, height);
                 }
                 return;
             }
-            InputEvent::MouseMove { x, y } => {
-                self.pointer
-                    .move_to(ui, (x / scale) as f32, (y / scale) as f32)
-            }
-            InputEvent::MouseLeave => self.pointer.leave(ui),
-            InputEvent::MouseDown { button } => self.pointer.down(ui, dom_button(button), now),
-            InputEvent::MouseUp { button } => self.pointer.up(ui, dom_button(button)),
+            InputEvent::MouseMove { x, y } => Input::PointerMove {
+                x: (x / scale) as f32,
+                y: (y / scale) as f32,
+            },
+            InputEvent::MouseLeave => Input::PointerLeave,
+            InputEvent::MouseDown { button } => Input::PointerDown {
+                button: dom_button(button),
+                time_ms: self.now_ms(),
+            },
+            InputEvent::MouseUp { button } => Input::PointerUp {
+                button: dom_button(button),
+            },
             InputEvent::MouseWheel(delta) => {
                 let (dx, dy) = match delta {
                     WheelDelta::Lines { x, y } => (x * WHEEL_LINE, y * WHEEL_LINE),
                     WheelDelta::Pixels { x, y } => ((x / scale) as f32, (y / scale) as f32),
                 };
-                self.pointer.wheel(ui, dx, dy)
+                Input::Wheel { dx, dy }
             }
-            InputEvent::Modifiers(m) => {
-                self.pointer.set_modifiers(events::Modifiers {
-                    shift: m.shift,
-                    ctrl: m.ctrl,
-                    alt: m.alt,
-                    meta: m.meta,
-                });
-                return;
-            }
+            InputEvent::KeyDown {
+                code, key, repeat, ..
+            } => Input::KeyDown { key, code, repeat },
+            InputEvent::KeyUp { code, key } => Input::KeyUp { key, code },
+            InputEvent::Modifiers(m) => Input::Modifiers(events::Modifiers {
+                shift: m.shift,
+                ctrl: m.ctrl,
+                alt: m.alt,
+                meta: m.meta,
+            }),
             // Releases outside an unfocused window may never arrive.
-            InputEvent::Focused(false) => {
-                self.pointer.cancel(ui);
-                return;
-            }
+            InputEvent::Focused(false) => Input::WindowBlur,
             _ => return,
         };
-        self.dispatch_ui(events);
+        self.handle_ui(input);
     }
 
     fn frame(&mut self) {
@@ -443,6 +448,20 @@ impl PlatformApp for App {
 
     fn should_exit(&self) -> bool {
         self.done
+    }
+}
+
+/// Sends one UI event to scripts; returns whether its default action was prevented.
+fn dispatch(scripts: &mut QuickJsRuntime, enabled: bool, event: &UiEvent) -> bool {
+    if !enabled {
+        return false;
+    }
+    match scripts.call_global("__iron_ui_event", &event.script_args()) {
+        Ok(prevented) => prevented == iron_core::Value::Bool(true),
+        Err(e) => {
+            tracing::error!(target: "script", "{} handler: {e}", event.kind.name());
+            false
+        }
     }
 }
 

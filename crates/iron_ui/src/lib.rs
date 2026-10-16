@@ -9,6 +9,7 @@ mod color;
 pub mod css;
 mod draw;
 pub mod events;
+pub mod interaction;
 mod layout;
 pub mod opcodes;
 mod paint;
@@ -21,6 +22,7 @@ pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
 pub use draw::{DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd};
 pub use events::{EventKind, Pointer, UiEvent};
+pub use interaction::{Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ColorStop, Corners,

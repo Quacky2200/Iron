@@ -2,9 +2,11 @@
 
 type AttrValue = string | number | boolean | null;
 
-/** Props that are attributes: `className`, `id`, `disabled`, `checked`, `data-*`. */
+const ATTRS: ReadonlySet<string> = new Set(["className", "id", "disabled", "checked", "tabIndex"]);
+
+/** Props that are attributes: `className`, `id`, `disabled`, `checked`, `tabIndex`, `data-*`. */
 export function isAttr(name: string): boolean {
-  return name === "className" || name === "id" || name === "disabled" || name === "checked" || name.startsWith("data-");
+  return ATTRS.has(name) || name.startsWith("data-");
 }
 
 /** Attribute props as `[name, value, ...]`, skipping `undefined`. */

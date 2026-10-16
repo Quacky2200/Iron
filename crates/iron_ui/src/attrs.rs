@@ -2,13 +2,15 @@
 
 use iron_core::Value;
 
-/// Attributes from React props: `className`, `id`, `disabled`, `checked`, `data-*`.
+/// Attributes from React props: `className`, `id`, `disabled`, `checked`, `tabIndex`, `data-*`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Attrs {
     pub id: Option<String>,
     pub classes: Vec<String>,
     pub disabled: bool,
     pub checked: bool,
+    /// `tabIndex`: focusable when set; negative values are skipped by Tab.
+    pub tab_index: Option<i32>,
     /// `data-*` attributes, by full name (`data-kind`), in insertion order.
     pub data: Vec<(String, String)>,
 }
@@ -39,6 +41,18 @@ impl Attrs {
             }
             "disabled" => self.disabled = truthy,
             "checked" => self.checked = truthy,
+            "tabIndex" => {
+                self.tab_index = match value {
+                    Value::Null => None,
+                    Value::Number(n) => Some(*n as i32),
+                    Value::String(s) => Some(
+                        s.trim()
+                            .parse()
+                            .map_err(|_| format!("invalid tabIndex {s:?}"))?,
+                    ),
+                    _ => return Err(format!("invalid tabIndex {value:?}")),
+                }
+            }
             n if n.starts_with("data-") => {
                 self.data.retain(|(k, _)| k != n);
                 if let Some(v) = text() {

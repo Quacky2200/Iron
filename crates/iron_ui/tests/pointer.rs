@@ -233,18 +233,18 @@ fn wheel_and_modifiers_are_reported() {
     assert_eq!(summary(&e), [("wheel", vec![b, a])]);
     assert_eq!((e[0].delta_x, e[0].delta_y), (0.0, 120.0));
 
-    let [ty, path, data] = e[0].script_args();
+    let [ty, path, data] = e[0].script_args().try_into().expect("no key data");
     assert_eq!(ty, Value::from("wheel"));
     assert_eq!(path, Value::Array(vec![n(b.0), n(a.0)]));
     assert_eq!(
         data,
         Value::Array(
-            [50.0, 50.0, 0.0, 0.0, 0.0, 0.0, 120.0, 5.0]
+            [50.0, 50.0, 0.0, 0.0, 0.0, 0.0, 120.0, 5.0, 0.0, 0.0]
                 .into_iter()
                 .map(Value::Number)
                 .collect()
         ),
-        "x, y, button, buttons, detail, deltaX, deltaY, modifiers (shift | alt)"
+        "x, y, button, buttons, detail, deltaX, deltaY, modifiers (shift | alt), repeat, related"
     );
 }
 

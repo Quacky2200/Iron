@@ -1,15 +1,20 @@
 use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
-use winit::keyboard::{ModifiersState, PhysicalKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey, PhysicalKey};
 
 /// Iron's platform-independent input events.
 #[derive(Clone, Debug, PartialEq)]
 pub enum InputEvent {
-    /// `key` is the physical key name, e.g. `"KeyW"` or `"Space"` (layout independent).
+    /// Named like the DOM's `KeyboardEvent`: `code` is the physical key (`"KeyW"`, layout
+    /// independent), `key` the layout's meaning (`"w"`, `"Enter"`, `" "`), and `text` the
+    /// characters the press types, if any.
     KeyDown {
+        code: String,
         key: String,
+        text: Option<String>,
         repeat: bool,
     },
     KeyUp {
+        code: String,
         key: String,
     },
     MouseMove {
@@ -114,24 +119,56 @@ pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
             MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels { x: -p.x, y: -p.y },
         })),
         WindowEvent::ModifiersChanged(m) => Some(InputEvent::Modifiers(m.state().into())),
-        WindowEvent::KeyboardInput { event, .. } => {
-            convert_key(event.physical_key, event.state, event.repeat)
-        }
+        WindowEvent::KeyboardInput { event, .. } => Some(convert_key(
+            event.physical_key,
+            &event.logical_key,
+            event.text.as_deref(),
+            event.state,
+            event.repeat,
+        )),
         _ => None,
     }
 }
 
-/// Converts a physical key press/release. Split out from [`convert_window_event`] because
+/// Converts a key press/release. Split out from [`convert_window_event`] because
 /// winit's `KeyEvent` can't be constructed outside winit, so this is the testable part.
-pub fn convert_key(key: PhysicalKey, state: ElementState, repeat: bool) -> Option<InputEvent> {
-    let PhysicalKey::Code(code) = key else {
-        return None;
+pub fn convert_key(
+    physical: PhysicalKey,
+    logical: &Key,
+    text: Option<&str>,
+    state: ElementState,
+    repeat: bool,
+) -> InputEvent {
+    let code = match physical {
+        PhysicalKey::Code(code) => format!("{code:?}"),
+        PhysicalKey::Unidentified(_) => "Unidentified".to_owned(),
     };
-    let key = format!("{code:?}");
-    Some(match state {
-        ElementState::Pressed => InputEvent::KeyDown { key, repeat },
-        ElementState::Released => InputEvent::KeyUp { key },
-    })
+    let key = dom_key(logical);
+    match state {
+        ElementState::Pressed => InputEvent::KeyDown {
+            code,
+            key,
+            // Control characters (Enter, Tab, Backspace, Ctrl+letter) aren't typed text.
+            text: text
+                .filter(|t| !t.chars().any(char::is_control))
+                .map(str::to_owned),
+            repeat,
+        },
+        ElementState::Released => InputEvent::KeyUp { code, key },
+    }
+}
+
+/// The DOM `KeyboardEvent.key` value. winit's named keys follow the DOM names except
+/// for these few.
+fn dom_key(key: &Key) -> String {
+    match key {
+        Key::Character(c) => c.to_string(),
+        Key::Named(NamedKey::Space) => " ".to_owned(),
+        Key::Named(NamedKey::Super) => "Meta".to_owned(),
+        Key::Named(named) => format!("{named:?}"),
+        Key::Dead(_) => "Dead".to_owned(),
+        Key::Unidentified(_) => "Unidentified".to_owned(),
+    }
 }
 
 // M1-PLT-02
@@ -212,35 +249,65 @@ mod tests {
     }
 
     #[test]
-    fn converts_keys_by_physical_name() {
+    fn converts_keys_with_code_key_and_text() {
         assert_eq!(
             convert_key(
                 PhysicalKey::Code(KeyCode::KeyW),
+                &Key::Character("w".into()),
+                Some("w"),
                 ElementState::Pressed,
                 false
             ),
-            Some(InputEvent::KeyDown {
-                key: "KeyW".into(),
+            InputEvent::KeyDown {
+                code: "KeyW".into(),
+                key: "w".into(),
+                text: Some("w".into()),
                 repeat: false
-            })
+            }
         );
         assert_eq!(
             convert_key(
                 PhysicalKey::Code(KeyCode::Space),
+                &Key::Named(NamedKey::Space),
+                Some(" "),
                 ElementState::Released,
                 false
             ),
-            Some(InputEvent::KeyUp {
-                key: "Space".into()
-            })
+            InputEvent::KeyUp {
+                code: "Space".into(),
+                key: " ".into()
+            }
+        );
+        assert_eq!(
+            convert_key(
+                PhysicalKey::Code(KeyCode::Enter),
+                &Key::Named(NamedKey::Enter),
+                Some("\r"),
+                ElementState::Pressed,
+                true
+            ),
+            InputEvent::KeyDown {
+                code: "Enter".into(),
+                key: "Enter".into(),
+                text: None,
+                repeat: true
+            },
+            "Enter types a control character, which isn't text"
         );
         assert_eq!(
             convert_key(
                 PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+                &Key::Named(NamedKey::Super),
+                None,
                 ElementState::Pressed,
                 false
             ),
-            None
+            InputEvent::KeyDown {
+                code: "Unidentified".into(),
+                key: "Meta".into(),
+                text: None,
+                repeat: false
+            }
         );
     }
 

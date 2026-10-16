@@ -4,6 +4,7 @@
 // `__iron_commit` call per React commit (D1 in TODO.md). Rust owns the real
 // tree; JS only keeps node IDs and the last props needed for diffing.
 
+import { op } from "@iron/engine";
 import { createContext } from "react";
 import createReconciler from "react-reconciler";
 import { DefaultEventPriority, NoEventPriority } from "react-reconciler/constants";
@@ -31,10 +32,23 @@ export interface Props {
   children?: unknown;
 }
 
-export interface Instance {
-  readonly id: number;
-  readonly type: ElementType;
-  props: Props;
+/** An element. Refs (`useRef<IronElement>(null)`) point at these. */
+export class Instance {
+  constructor(
+    readonly id: number,
+    readonly type: ElementType,
+    public props: Props,
+  ) {}
+
+  /** Gives the element keyboard focus, if it is focusable (has `tabIndex`). Applied next frame. */
+  focus(): void {
+    op("focus", this.id);
+  }
+
+  /** Removes keyboard focus from the element, if it has it. Applied next frame. */
+  blur(): void {
+    op("blur", this.id);
+  }
 }
 
 export interface Container {
@@ -103,7 +117,7 @@ export const reconciler = createReconciler({
     if (entries.length > 0) pending.push([SET_STYLE, id, ...entries]);
     const attrs = attrEntries(props as Record<string, unknown>);
     if (attrs.length > 0) pending.push([SET_ATTRS, id, ...attrs]);
-    const instance: Instance = { id, type: type as ElementType, props };
+    const instance = new Instance(id, type as ElementType, props);
     instances.set(id, instance);
     return instance;
   },

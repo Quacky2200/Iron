@@ -1,12 +1,16 @@
-// M3-EVT-02/03: pointer events from Rust reach React handlers. The button counts
-// its clicks and stops them from bubbling; clicks elsewhere count on the panel.
-// Pressing the button prevents the default action.
-import { createRoot, Text } from "@iron/react";
-import { useState } from "react";
+// M3-EVT-02/03/04: UI events from Rust reach React handlers. The button counts its
+// clicks, stops them from bubbling, prevents pointerdown (so it doesn't steal focus)
+// and focuses the field through a ref. Clicks elsewhere count on the panel. The
+// field (tabIndex 0) shows the keys typed into it; Escape blurs it.
+import { createRoot, type IronElement, Text } from "@iron/react";
+import { useRef, useState } from "react";
 
 function App() {
   const [clicks, setClicks] = useState(0);
   const [panelClicks, setPanelClicks] = useState(0);
+  const [typed, setTyped] = useState("");
+  const [focused, setFocused] = useState(false);
+  const field = useRef<IronElement>(null);
   return (
     <box
       className="panel"
@@ -20,11 +24,27 @@ function App() {
         onClick={(e) => {
           e.stopPropagation();
           setClicks((n) => n + 1);
+          field.current?.focus();
         }}
       >
         <Text>{`clicks ${clicks}`}</Text>
       </box>
       <Text>{`panel ${panelClicks}`}</Text>
+      <box
+        className="field"
+        ref={field}
+        tabIndex={0}
+        style={{ width: 200, height: 30 }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") field.current?.blur();
+          else if (e.key === "Backspace") setTyped((t) => t.slice(0, -1));
+          else if (e.key.length === 1) setTyped((t) => t + e.key);
+        }}
+      >
+        <Text>{`${focused ? "focused" : "idle"}: ${typed}`}</Text>
+      </box>
     </box>
   );
 }

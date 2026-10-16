@@ -3,7 +3,8 @@
 // pseudo-classes, :has/:not/:empty, attributes (:checked/:disabled), ::before and
 // ::after, custom properties, @font-face, and a runtime stylesheet (CSS-in-JS)
 // whose accent colour changes every second. Interaction (M3c): click an item to pin
-// the highlight, click the toggles, double-click the title.
+// the highlight, click the toggles (or Tab to them and press Space), double-click
+// the title.
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
@@ -41,8 +42,21 @@ function Accent({ tick }: { tick: number }) {
 
 function Toggle({ label, initial = false, disabled = false }: { label: string; initial?: boolean; disabled?: boolean }) {
   const [checked, setChecked] = useState(initial);
+  const toggle = () => !disabled && setChecked(!checked);
   return (
-    <box className="toggle" checked={checked} disabled={disabled} onClick={() => !disabled && setChecked(!checked)}>
+    <box
+      className="toggle"
+      checked={checked}
+      disabled={disabled}
+      tabIndex={0}
+      onClick={toggle}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          toggle();
+        }
+      }}
+    >
       <box className="box" />
       <Text className="label">{label}</Text>
     </box>
