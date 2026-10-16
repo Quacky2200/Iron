@@ -128,13 +128,20 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
         if self.window.is_some() {
             return;
         }
+        // Hidden until the first frame is drawn, so the window never flashes its blank
+        // (white) background.
         let attrs = Window::default_attributes()
+            .with_visible(false)
             .with_title(self.config.title.clone())
             .with_inner_size(LogicalSize::new(self.config.width, self.config.height));
         match event_loop.create_window(attrs) {
             Ok(window) => {
                 let window = Arc::new(window);
                 self.app.window_ready(window.clone());
+                // Hidden windows get no redraw events, so draw the first frame now and
+                // only then show the window.
+                self.app.frame();
+                window.set_visible(true);
                 self.window = Some(window);
             }
             Err(e) => {
