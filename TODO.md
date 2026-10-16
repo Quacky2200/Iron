@@ -134,14 +134,14 @@ Iron/
 - [x] `iron_app` calls `tick` every frame (timers work in games now); commits drained until step 6 consumes them
 
 ### 2. `iron_ui` crate: tree, styles, layout (no GPU)
-- [ ] Opcodes shared with JS: `create`, `setStyle`, `appendChild`, `insertBefore`, `removeChild`, `appendToRoot`, `insertInRootBefore`, `removeFromRoot`, `destroy`
-- [ ] `UiTree`: applies a commit; unknown IDs or bad ops are reported and skipped — `M2-UI-01`, `M2-UI-02`
-- [ ] Style parsing: Taffy `parse` for layout props; colours as `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()` and a few names — `M2-STY-01`, `M2-STY-02`
-- [ ] M2 style subset: `display` (flex/grid/none), flex props, `width/height/min/max`, `padding`, `margin`, `borderWidth`, `gap`, `position` + insets, grid templates and placement, `backgroundColor`, `borderColor`, `borderRadius`, `opacity`
-- [ ] `LayoutEngine` trait + `TaffyLayout` backend; layout only reruns when dirty — `M2-LAY-01`..`M2-LAY-04`
-- [ ] Layout fixtures as data (`tests/layout/*.json`: tree + styles + expected rects) so a Yoga backend can run the same cases — `M2-LAY-05`
-- [ ] Root resize relayouts the tree — `M2-UI-03`
-- [ ] Draw list: one quad per visible box (rect, colour, border, radius, opacity), in paint order — `M2-UI-04`
+- [x] Opcodes (`iron_ui::opcodes`): `CREATE`, `SET_STYLE`, `APPEND_CHILD`, `INSERT_BEFORE`, `REMOVE_CHILD`. Simplified from the plan: the root container is node `0` (no separate root ops), and `REMOVE_CHILD` destroys the subtree (no `DESTROY`), because React never reinserts removed instances
+- [x] `UiTree`: applies a commit, syncs with layout once per commit; bad ops (unknown IDs, duplicates, cycles, bad args) are reported and skipped — `M2-UI-01`, `M2-UI-02`
+- [x] Style parsing: Taffy `parse` for layout props; colours as `#rgb(a)`, `#rrggbb(aa)`, `rgb()`/`rgba()` (comma, space, `/ alpha`), `transparent`, a few names. `null` resets a prop — `M2-STY-01`, `M2-STY-02`
+- [x] M2 style subset: `display` (flex/grid/block/none), flex props + `flex` shorthand, `width/height/min/max`, `aspectRatio`, `padding`/`margin`/`borderWidth`/`inset` (1–4 value shorthands and per side), `gap`/`rowGap`/`columnGap`, `position` + insets, alignment, `gridTemplateColumns/Rows`, `gridAutoFlow`, `gridColumn/Row`, `backgroundColor`, `borderColor`, `borderRadius`, `opacity`
+- [x] `LayoutEngine` trait + `TaffyLayout` backend; `layout_if_needed` only runs when something changed — `M2-LAY-01`..`M2-LAY-04`
+- [x] 9 layout fixtures as data (`tests/layout/*.json`), run through the full op pipeline by a backend-generic runner — `M2-LAY-05`
+- [x] Root resize relayouts the tree — `M2-UI-03`
+- [x] Draw list: one `Quad` per visible box (absolute rect, colours with inherited opacity, resolved border widths, radius) in paint order — `M2-UI-04`
 
 ### 3. `@iron/react` package (`js/react`)
 - [ ] Host config for react-reconciler 0.34 (mutation mode). React 19 has many required host functions (update priority, suspend-commit hooks, etc.); stub them with sensible defaults and keep the list in one file
