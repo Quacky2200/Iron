@@ -193,6 +193,17 @@ ancestor relayout work, so a Yoga spike isn't justified now. Revisit at M7 with 
 | M3-CSS-10 | Unit + Integration | `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within`, `:enabled`, `:disabled`, `:checked` follow element state; toggling `disabled`/`checked` props restyles; disabled elements ignore pointer and focus. |
 | M3-BEN-01 | Benchmark | Incremental restyle on the 2,246-node tree after one class change: **< 1 ms**; full style of the tree tracked. |
 
+M3b restyle results (`cargo bench -p iron_ui --bench restyle`; 2,246 nodes, ~30-rule editor stylesheet
+with combinators, `:nth-child`, `:has`, `:focus-within` and variables; times include the following
+layout pass):
+
+| Measurement | Naive (match every rule, invalidate generously) | Rule index + dependency-aware invalidation |
+|---|---|---|
+| Style the whole tree | 50 ms | **8.8 ms** |
+| One class change mid-list (M3-BEN-01) | 2.2 ms | **0.20 ms** ✓ |
+| Hover a card | 0.61 ms | **0.21 ms** |
+| Focus an input (`:focus-within`) | 0.21 ms | **0.20 ms** |
+
 ### M3c — Interaction
 | ID | Kind | Checks |
 |---|---|---|

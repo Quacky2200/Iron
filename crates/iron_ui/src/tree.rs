@@ -7,7 +7,7 @@ use taffy::{Dimension, Display, Size, Style};
 
 use crate::Rgba;
 use crate::attrs::{Attrs, ElementState};
-use crate::cascade::{Target, matched_declarations};
+use crate::cascade::{Deps, Key, RuleIndex, Target, matched_declarations};
 use crate::css::{FontFace, PseudoElement, Stylesheet, parse_stylesheet, substitute_vars};
 use crate::draw::{DrawCmd, ImageFill, Quad, Rect, ShadowShape};
 use crate::layout::{LayoutEngine, TaffyLayout};
@@ -80,14 +80,16 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Text blocks whose content or structure changed since they were last laid out.
     dirty_text: HashSet<NodeId>,
-    /// Nodes whose attributes or interaction state changed (restyled with stylesheets).
-    attrs_changed: HashSet<NodeId>,
+    /// Attribute and state changes since the last restyle, with what changed.
+    key_changes: Vec<(NodeId, Vec<Key>)>,
     /// Parents whose children changed since the last restyle (structural selectors).
     structure_changed: HashSet<NodeId>,
     /// Nodes whose computed style must be recomputed from the cascade.
     style_dirty: HashSet<NodeId>,
     sheets: Vec<(u32, Stylesheet)>,
     next_sheet: u32,
+    rule_index: RuleIndex,
+    deps: Deps,
     /// Inline styles use custom properties or `var()`, so styles go through the
     /// cascade even without stylesheets.
     uses_vars: bool,
@@ -141,11 +143,13 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             dirty_text: HashSet::default(),
-            attrs_changed: HashSet::default(),
+            key_changes: Vec::new(),
             structure_changed: HashSet::default(),
             style_dirty: HashSet::default(),
             sheets: Vec::new(),
             next_sheet: 1,
+            rule_index: RuleIndex::default(),
+            deps: Deps::default(),
             uses_vars: false,
             next_generated: FIRST_GENERATED_ID,
             text: TextEngine::new(false),
@@ -264,6 +268,13 @@ impl<L: LayoutEngine> UiTree<L> {
     }
 
     fn restyle_everything(&mut self) {
+        let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
+        self.rule_index = RuleIndex::build(&sheets);
+        let mut deps = Deps::default();
+        for sheet in &sheets {
+            deps.add_sheet(sheet);
+        }
+        self.deps = deps;
         let all: Vec<NodeId> = self.nodes.keys().copied().collect();
         self.style_dirty.extend(all);
         self.needs_layout = true;
@@ -287,8 +298,14 @@ impl<L: LayoutEngine> UiTree<L> {
         caches: &mut selectors::context::SelectorCaches,
     ) {
         let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
-        let (normal, important) =
-            matched_declarations(self, &sheets, id, Target::Pseudo(pseudo), caches);
+        let (normal, important) = matched_declarations(
+            self,
+            &sheets,
+            &self.rule_index,
+            id,
+            Target::Pseudo(pseudo),
+            caches,
+        );
         let existing = self.children(id).iter().copied().find(|c| {
             self.nodes.get(c).and_then(|n| n.generated) == Some(pseudo)
                 && self.kind(*c) != Some(TEXT_NODE)
@@ -427,24 +444,60 @@ impl<L: LayoutEngine> UiTree<L> {
         }
     }
 
-    /// Marks what a change at `id` can affect: the node and its subtree, the
-    /// subtrees of its following siblings (`+`, `~`, `:nth-child`), and its
-    /// ancestors (`:has()`, `:focus-within`).
-    fn invalidate_around(&mut self, id: NodeId) {
-        let mut roots = vec![id];
+    /// Marks what changing `keys` on `id` can affect, using the stylesheets'
+    /// dependencies: the node itself; its subtree if the keys appear in ancestor
+    /// positions; its later siblings if they appear before `+`/`~`; its ancestors
+    /// for `:has()` and `:focus-within`.
+    fn invalidate_keys(&mut self, id: NodeId, keys: &[Key]) {
+        self.style_dirty.insert(id);
+        let hits = |set: &HashSet<Key>| keys.iter().any(|k| set.contains(k));
+        if hits(&self.deps.ancestor) {
+            self.mark_subtree(id);
+        }
+        if hits(&self.deps.sibling) {
+            self.mark_later_siblings(id);
+        }
+        let focus = keys.contains(&Key::Focus) && self.deps.focus_within;
+        if hits(&self.deps.has) || focus {
+            self.mark_ancestors(id);
+        }
+    }
+
+    /// A parent's children changed: positions (`:nth-child`, `+`) and `:empty`/`:has`
+    /// may change. New nodes are already marked when created.
+    fn invalidate_structure(&mut self, parent: NodeId) {
+        if !self.deps.structural {
+            return;
+        }
+        self.style_dirty.insert(parent);
+        for child in self.children(parent).to_vec() {
+            self.mark_subtree(child);
+        }
+        if self.deps.uses_has {
+            self.mark_ancestors(parent);
+        }
+    }
+
+    fn mark_subtree(&mut self, id: NodeId) {
+        let mut stack = vec![id];
+        while let Some(n) = stack.pop() {
+            self.style_dirty.insert(n);
+            stack.extend_from_slice(self.children(n));
+        }
+    }
+
+    fn mark_later_siblings(&mut self, id: NodeId) {
         if let Some(parent) = self.parent(id) {
-            let siblings = self.children(parent);
+            let siblings = self.children(parent).to_vec();
             if let Some(i) = siblings.iter().position(|c| *c == id) {
-                roots.extend_from_slice(&siblings[i + 1..]);
+                for s in &siblings[i + 1..] {
+                    self.mark_subtree(*s);
+                }
             }
         }
-        for root in roots {
-            let mut stack = vec![root];
-            while let Some(n) = stack.pop() {
-                self.style_dirty.insert(n);
-                stack.extend_from_slice(self.children(n));
-            }
-        }
+    }
+
+    fn mark_ancestors(&mut self, id: NodeId) {
         let mut cursor = self.parent(id);
         while let Some(a) = cursor {
             self.style_dirty.insert(a);
@@ -454,16 +507,21 @@ impl<L: LayoutEngine> UiTree<L> {
 
     /// Recomputes the style of every dirty node from the cascade, in tree order.
     fn restyle_dirty(&mut self) {
-        let attrs_changed: Vec<NodeId> = self.attrs_changed.drain().collect();
+        let key_changes = std::mem::take(&mut self.key_changes);
         let structure_changed: Vec<NodeId> = self.structure_changed.drain().collect();
         if self.sheets.is_empty() && !self.uses_vars {
             // Without stylesheets inline styles are applied directly as they arrive.
             self.style_dirty.clear();
             return;
         }
-        for id in attrs_changed.into_iter().chain(structure_changed) {
+        for (id, keys) in key_changes {
             if self.nodes.contains_key(&id) {
-                self.invalidate_around(id);
+                self.invalidate_keys(id, &keys);
+            }
+        }
+        for id in structure_changed {
+            if self.nodes.contains_key(&id) {
+                self.invalidate_structure(id);
             }
         }
         if self.style_dirty.is_empty() {
@@ -491,7 +549,8 @@ impl<L: LayoutEngine> UiTree<L> {
             return;
         }
         let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
-        let (normal, important) = matched_declarations(self, &sheets, id, Target::Element, caches);
+        let (normal, important) =
+            matched_declarations(self, &sheets, &self.rule_index, id, Target::Element, caches);
 
         let mut style = if id == ROOT {
             root_style(self.size.0, self.size.1)
@@ -609,8 +668,20 @@ impl<L: LayoutEngine> UiTree<L> {
         if let Some(node) = self.nodes.get_mut(&id)
             && node.state != state
         {
+            let old = node.state;
             node.state = state;
-            self.attrs_changed.insert(id);
+            let mut keys = Vec::new();
+            for (changed, key) in [
+                (old.hover != state.hover, Key::Hover),
+                (old.active != state.active, Key::Active),
+                (old.focus != state.focus, Key::Focus),
+                (old.focus_visible != state.focus_visible, Key::FocusVisible),
+            ] {
+                if changed {
+                    keys.push(key);
+                }
+            }
+            self.key_changes.push((id, keys));
             self.needs_layout = true;
         }
     }
@@ -847,6 +918,7 @@ impl<L: LayoutEngine> UiTree<L> {
                     .ok_or_else(|| UiError(format!("CREATE needs an element type: {op:?}")))?;
                 let style = Style::default();
                 self.layout.create_node(id, &style);
+                self.style_dirty.insert(id);
                 self.nodes.insert(
                     id,
                     Box::new(Node {
@@ -894,6 +966,7 @@ impl<L: LayoutEngine> UiTree<L> {
             opcodes::SET_ATTRS => {
                 let id = id(1)?;
                 let node = self.node_mut(id)?;
+                let before = node.attrs.clone();
                 let pairs = &args[2..];
                 if pairs.len() % 2 != 0 {
                     return Err(UiError(format!("SET_ATTRS needs name/value pairs: {op:?}")));
@@ -908,7 +981,10 @@ impl<L: LayoutEngine> UiTree<L> {
                         problems.push(e);
                     }
                 }
-                self.attrs_changed.insert(id);
+                let keys = attr_keys_changed(&before, &node.attrs);
+                if !keys.is_empty() {
+                    self.key_changes.push((id, keys));
+                }
                 if !problems.is_empty() {
                     return Err(UiError(format!("node {id}: {}", problems.join("; "))));
                 }
@@ -1079,7 +1155,6 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.text_layouts.remove(&id);
                 self.dirty_text.remove(&id);
                 self.style_dirty.remove(&id);
-                self.attrs_changed.remove(&id);
                 self.structure_changed.remove(&id);
             }
         }
@@ -1363,4 +1438,42 @@ fn parse_content(value: &str, attrs: Option<&Attrs>) -> Option<String> {
         }
     }
     Some(out)
+}
+
+/// The selector keys that differ between two attribute sets.
+fn attr_keys_changed(before: &Attrs, after: &Attrs) -> Vec<Key> {
+    let mut keys = Vec::new();
+    for c in before.classes.iter().filter(|c| !after.classes.contains(c)) {
+        keys.push(Key::Class(c.clone()));
+    }
+    for c in after.classes.iter().filter(|c| !before.classes.contains(c)) {
+        keys.push(Key::Class(c.clone()));
+    }
+    if before.classes != after.classes {
+        keys.push(Key::Attr("class".into()));
+    }
+    if before.id != after.id {
+        keys.extend(
+            before
+                .id
+                .iter()
+                .chain(after.id.iter())
+                .map(|i| Key::Id(i.clone())),
+        );
+        keys.push(Key::Attr("id".into()));
+    }
+    if before.disabled != after.disabled {
+        keys.push(Key::Disabled);
+    }
+    if before.checked != after.checked {
+        keys.push(Key::Checked);
+    }
+    for (name, value) in before.data.iter().chain(after.data.iter()) {
+        let _ = value;
+        if before.get(name) != after.get(name) {
+            keys.push(Key::Attr(name.clone()));
+        }
+    }
+    keys.dedup();
+    keys
 }

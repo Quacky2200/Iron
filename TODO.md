@@ -307,9 +307,12 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [ ] `::before` / `::after` generate anonymous first/last children (invisible to React), styled by
      their rules; `content: ""` boxes for decoration and `content: "text"` for text — `M3-CSS-06`
 5. **Restyle**
-   - [ ] Recompute styles when classes/ids/props change, the tree changes (structural selectors), or
-     states change. Start with restyling dirty subtrees plus siblings (and `:has` ancestors);
-     benchmark on the 2,246-node tree (target < 1 ms incremental) — `M3-CSS-07`, `M3-BEN-01`
+   - [x] Rule index: selectors bucketed by the id / class / type of their rightmost compound
+   - [x] Dependency-aware invalidation: at load, record which classes, ids, attributes and states appear
+     in ancestor positions, before `+`/`~`, inside `:has()`; a change restyles the node plus only the
+     subtree / later siblings / ancestors it can affect. Structural changes restyle siblings only when
+     structural selectors exist — `M3-CSS-07`
+   - [x] Benchmark: one class change on the 2,246-node tree 0.20 ms (target < 1 ms); whole tree 8.8 ms — `M3-BEN-01`
 6. **Example + checks**
    - [ ] `examples/boxes` restyled with a `.css` file using classes, structural selectors, `:has`,
      `::before`/`::after`

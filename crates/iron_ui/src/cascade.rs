@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+
 use iron_core::{NodeId, Value};
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
@@ -10,8 +12,10 @@ use selectors::context::{
     SelectorCaches,
 };
 use selectors::matching::{ElementSelectorFlags, matches_selector};
+use selectors::parser::{Combinator, Component, Selector};
 use selectors::{Element, OpaqueElement};
 
+use crate::attrs::Attrs;
 use crate::css::{CssString, IronSelectors, PseudoClass, PseudoElement, Stylesheet};
 use crate::layout::LayoutEngine;
 use crate::tree::{ROOT, TEXT_NODE, UiTree};
@@ -275,6 +279,7 @@ pub(crate) struct Matched {
 pub(crate) fn matched_declarations<L: LayoutEngine>(
     tree: &UiTree<L>,
     sheets: &[&Stylesheet],
+    index: &RuleIndex,
     id: NodeId,
     target: Target,
     caches: &mut SelectorCaches,
@@ -284,46 +289,59 @@ pub(crate) fn matched_declarations<L: LayoutEngine>(
         Target::Element => MatchingMode::Normal,
         Target::Pseudo(_) => MatchingMode::ForStatelessPseudoElement,
     };
+    let mut candidates = Vec::new();
+    match target {
+        Target::Element => {
+            index.candidates(tree.kind(id).unwrap_or(""), tree.attrs(id), &mut candidates)
+        }
+        Target::Pseudo(_) => candidates.extend_from_slice(&index.pseudo),
+    }
+    candidates.sort_by_key(|e| (e.sheet, e.rule, e.selector));
+    candidates.dedup_by_key(|e| (e.sheet, e.rule, e.selector));
+
+    // Best specificity per matching rule.
+    let mut matched_rules: Vec<((usize, usize), u32)> = Vec::new();
+    for entry in candidates {
+        let selector = &sheets[entry.sheet].rules[entry.rule].selectors.slice()[entry.selector];
+        if let Target::Pseudo(p) = target
+            && selector.pseudo_element() != Some(&p)
+        {
+            continue;
+        }
+        let mut context = MatchingContext::new(
+            mode,
+            None,
+            caches,
+            QuirksMode::NoQuirks,
+            NeedsSelectorFlags::No,
+            MatchingForInvalidation::No,
+        );
+        if !matches_selector(selector, 0, None, &element, &mut context) {
+            continue;
+        }
+        let key = (entry.sheet, entry.rule);
+        let specificity = selector.specificity();
+        match matched_rules.last_mut() {
+            Some((k, best)) if *k == key => *best = (*best).max(specificity),
+            _ => matched_rules.push((key, specificity)),
+        }
+    }
+
     let mut normal = Vec::new();
     let mut important = Vec::new();
-    for (sheet_index, sheet) in sheets.iter().enumerate() {
-        for (rule_index, rule) in sheet.rules.iter().enumerate() {
-            let mut best = None;
-            for selector in rule.selectors.slice() {
-                let wanted = match target {
-                    Target::Element => selector.pseudo_element().is_none(),
-                    Target::Pseudo(p) => selector.pseudo_element() == Some(&p),
-                };
-                if !wanted {
-                    continue;
-                }
-                let mut context = MatchingContext::new(
-                    mode,
-                    None,
-                    caches,
-                    QuirksMode::NoQuirks,
-                    NeedsSelectorFlags::No,
-                    MatchingForInvalidation::No,
-                );
-                if matches_selector(selector, 0, None, &element, &mut context) {
-                    best = best.max(Some(selector.specificity()));
-                }
-            }
-            let Some(specificity) = best else {
-                continue;
+    for ((sheet_index, rule_index), specificity) in matched_rules {
+        let rule = &sheets[sheet_index].rules[rule_index];
+        for (decl_index, decl) in rule.declarations.iter().enumerate() {
+            let m = Matched {
+                specificity,
+                order: (sheet_index, rule_index, decl_index),
+                prop: decl.prop.clone(),
+                value: css_value(&decl.value),
             };
-            for (decl_index, decl) in rule.declarations.iter().enumerate() {
-                let m = Matched {
-                    specificity,
-                    order: (sheet_index, rule_index, decl_index),
-                    prop: decl.prop.clone(),
-                    value: css_value(&decl.value),
-                };
-                if decl.important {
-                    important.push(m);
-                } else {
-                    normal.push(m);
-                }
+            if decl.important {
+                important.push(m);
+            } else {
+                normal.push(m);
             }
         }
     }
@@ -339,5 +357,228 @@ pub(crate) fn css_value(text: &str) -> Value {
     match text.trim().parse::<f64>() {
         Ok(n) => Value::Number(n),
         Err(_) => Value::String(text.trim().to_owned()),
+    }
+}
+
+// --- Rule index and invalidation dependencies --------------------------------------
+
+/// Something a selector can depend on that can change at runtime.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Key {
+    Class(String),
+    Id(String),
+    Attr(String),
+    Hover,
+    Active,
+    Focus,
+    FocusVisible,
+    Disabled,
+    Checked,
+}
+
+/// Which keys matter in which positions, so a change only restyles what it can
+/// affect (a simplified version of browsers' invalidation sets).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Deps {
+    /// Keys in compounds left of `>` or a space: changing them affects descendants.
+    pub ancestor: HashSet<Key>,
+    /// Keys left of `+` / `~`, or inside `:nth-child(.. of S)`: affect later siblings.
+    pub sibling: HashSet<Key>,
+    /// Keys inside `:has()`: affect ancestors.
+    pub has: HashSet<Key>,
+    pub focus_within: bool,
+    /// Some selector uses `:has()`, so child changes can affect ancestors.
+    pub uses_has: bool,
+    /// Some selector depends on position among siblings or on children
+    /// (`:nth-child`, `:first-child`, `+`, `~`, `:empty`, `:blank`, `:has`).
+    pub structural: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Position {
+    Subject,
+    Ancestor,
+    Sibling,
+    Has,
+}
+
+impl Deps {
+    pub fn add_sheet(&mut self, sheet: &Stylesheet) {
+        for rule in &sheet.rules {
+            for selector in rule.selectors.slice() {
+                self.add_selector(selector, Position::Subject);
+            }
+        }
+    }
+
+    fn add_selector(&mut self, selector: &Selector<IronSelectors>, start: Position) {
+        let mut position = start;
+        for component in selector.iter_raw_match_order() {
+            if let Component::Combinator(c) = component {
+                position = match (position, c) {
+                    (Position::Has, _) => Position::Has,
+                    (_, Combinator::Child | Combinator::Descendant) => Position::Ancestor,
+                    (_, Combinator::NextSibling | Combinator::LaterSibling) => {
+                        self.structural = true;
+                        Position::Sibling
+                    }
+                    // `.x::before`: the compound before the pseudo is the element itself.
+                    (p, _) => p,
+                };
+                continue;
+            }
+            self.add_component(component, position);
+        }
+    }
+
+    fn add_component(&mut self, component: &Component<IronSelectors>, position: Position) {
+        let key = match component {
+            Component::Class(c) => Some(Key::Class(c.0.clone())),
+            Component::ID(id) => Some(Key::Id(id.0.clone())),
+            Component::AttributeInNoNamespaceExists { local_name, .. }
+            | Component::AttributeInNoNamespace { local_name, .. } => Some(attr_key(&local_name.0)),
+            Component::AttributeOther(a) => Some(attr_key(&a.local_name.0)),
+            Component::NonTSPseudoClass(pc) => match pc {
+                PseudoClass::Hover => Some(Key::Hover),
+                PseudoClass::Active => Some(Key::Active),
+                PseudoClass::Focus => Some(Key::Focus),
+                PseudoClass::FocusVisible => Some(Key::FocusVisible),
+                PseudoClass::Enabled | PseudoClass::Disabled => Some(Key::Disabled),
+                PseudoClass::Checked => Some(Key::Checked),
+                PseudoClass::FocusWithin => {
+                    self.focus_within = true;
+                    None
+                }
+                PseudoClass::Blank => {
+                    self.structural = true;
+                    None
+                }
+            },
+            Component::Empty | Component::Nth(_) => {
+                self.structural = true;
+                None
+            }
+            Component::NthOf(data) => {
+                self.structural = true;
+                for s in data.selectors() {
+                    self.add_selector(s, Position::Sibling);
+                }
+                None
+            }
+            Component::Negation(list) | Component::Is(list) | Component::Where(list) => {
+                for s in list.slice() {
+                    self.add_selector(s, position);
+                }
+                None
+            }
+            Component::Has(relative) => {
+                self.structural = true;
+                self.uses_has = true;
+                for r in relative.iter() {
+                    self.add_selector(&r.selector, Position::Has);
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(key) = key {
+            match position {
+                Position::Subject => {}
+                Position::Ancestor => {
+                    self.ancestor.insert(key);
+                }
+                Position::Sibling => {
+                    self.sibling.insert(key);
+                }
+                Position::Has => {
+                    self.has.insert(key);
+                }
+            }
+        }
+    }
+}
+
+fn attr_key(name: &str) -> Key {
+    match name {
+        "class" => Key::Attr("class".into()),
+        "id" => Key::Attr("id".into()),
+        "disabled" => Key::Disabled,
+        "checked" => Key::Checked,
+        other => Key::Attr(other.to_owned()),
+    }
+}
+
+/// One selector of one rule, filed under the most specific key of its subject compound.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct IndexEntry {
+    pub sheet: usize,
+    pub rule: usize,
+    pub selector: usize,
+}
+
+/// Rules bucketed by the id, class or element type their rightmost compound
+/// requires, so each element only tests rules that could match it.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RuleIndex {
+    by_id: HashMap<String, Vec<IndexEntry>>,
+    by_class: HashMap<String, Vec<IndexEntry>>,
+    by_type: HashMap<String, Vec<IndexEntry>>,
+    universal: Vec<IndexEntry>,
+    /// Same for `::before` / `::after` rules (bucketed by the originating compound).
+    pseudo: Vec<IndexEntry>,
+}
+
+impl RuleIndex {
+    pub fn build(sheets: &[&Stylesheet]) -> Self {
+        let mut index = RuleIndex::default();
+        for (sheet_index, sheet) in sheets.iter().enumerate() {
+            for (rule_index, rule) in sheet.rules.iter().enumerate() {
+                for (selector_index, selector) in rule.selectors.slice().iter().enumerate() {
+                    let entry = IndexEntry {
+                        sheet: sheet_index,
+                        rule: rule_index,
+                        selector: selector_index,
+                    };
+                    if selector.pseudo_element().is_some() {
+                        index.pseudo.push(entry);
+                        continue;
+                    }
+                    let (mut id, mut class, mut ty) = (None, None, None);
+                    for component in selector.iter() {
+                        match component {
+                            Component::ID(i) => id = Some(i.0.clone()),
+                            Component::Class(c) => class = class.or(Some(c.0.clone())),
+                            Component::LocalName(n) => ty = Some(n.lower_name.0.clone()),
+                            _ => {}
+                        }
+                    }
+                    match (id, class, ty) {
+                        (Some(id), _, _) => index.by_id.entry(id).or_default().push(entry),
+                        (_, Some(class), _) => index.by_class.entry(class).or_default().push(entry),
+                        (_, _, Some(ty)) => index.by_type.entry(ty).or_default().push(entry),
+                        _ => index.universal.push(entry),
+                    }
+                }
+            }
+        }
+        index
+    }
+
+    /// Entries that could match an element with this kind and attributes.
+    fn candidates(&self, kind: &str, attrs: Option<&Attrs>, out: &mut Vec<IndexEntry>) {
+        out.extend_from_slice(&self.universal);
+        if let Some(v) = self.by_type.get(kind) {
+            out.extend_from_slice(v);
+        }
+        if let Some(attrs) = attrs {
+            if let Some(v) = attrs.id.as_ref().and_then(|id| self.by_id.get(id)) {
+                out.extend_from_slice(v);
+            }
+            for class in &attrs.classes {
+                if let Some(v) = self.by_class.get(class) {
+                    out.extend_from_slice(v);
+                }
+            }
+        }
     }
 }

@@ -610,3 +610,61 @@ fn generated_content_follows_the_stylesheets() {
     assert_eq!(tree.text_content(NodeId(label)), "Hi");
     assert_eq!(tree.children(NodeId(label)).len(), 1);
 }
+
+fn set_class(tree: &mut UiTree, id: u32, class: &str) {
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(SET_ATTRS, &[n(id), "className".into(), class.into()])],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+}
+
+// M3-CSS-07: targeted invalidation still updates everything that depends on a change.
+#[test]
+fn restyle_reaches_dependent_nodes() {
+    let mut d = Dom::new();
+    let list = d.class(0, "list");
+    let a = d.class(list, "item");
+    let b = d.class(list, "item");
+    let c = d.class(list, "item");
+    let label = d.class(a, "label");
+    let holder = d.class(0, "holder");
+    let slot = d.class(holder, "slot");
+    let mut tree = d.build(
+        r#"
+        .item.on + .item { background-color: red }        /* next sibling of .on */
+        .item.on .label { background-color: blue }          /* descendant of .on */
+        .holder:has(.slot.full) { background-color: green } /* ancestor via :has */
+        .item:nth-child(2) { opacity: 0.5 }
+        "#,
+    );
+    assert_eq!(bg(&tree, b), NONE);
+
+    set_class(&mut tree, a, "item on");
+    assert_eq!(bg(&tree, b), RED, "+ sibling restyled");
+    assert_eq!(bg(&tree, c), NONE);
+    assert_eq!(bg(&tree, label), BLUE, "descendant restyled");
+
+    set_class(&mut tree, a, "item");
+    assert_eq!(bg(&tree, b), NONE, "and back");
+    assert_eq!(bg(&tree, label), NONE);
+
+    set_class(&mut tree, slot, "slot full");
+    assert_eq!(bg(&tree, holder), GREEN, ":has ancestor restyled");
+    set_class(&mut tree, slot, "slot");
+    assert_eq!(bg(&tree, holder), NONE);
+
+    // Inserting a new first item shifts :nth-child(2) from b to a.
+    assert_eq!(tree.visual(NodeId(b)).unwrap().opacity, 0.5);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![
+            op(CREATE, &[n(90), "box".into()]),
+            op(SET_ATTRS, &[n(90), "className".into(), "item".into()]),
+            op(INSERT_BEFORE, &[n(list), n(90), n(a)]),
+        ],
+    });
+    assert!(errors.is_empty());
+    tree.layout_if_needed();
+    assert_eq!(tree.visual(NodeId(a)).unwrap().opacity, 0.5);
+    assert_eq!(tree.visual(NodeId(b)).unwrap().opacity, 1.0);
+}

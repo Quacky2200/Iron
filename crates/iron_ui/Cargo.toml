@@ -24,3 +24,7 @@ serde_json = "1.0.154"
 [[bench]]
 name = "layout"
 harness = false
+
+[[bench]]
+name = "restyle"
+harness = false
