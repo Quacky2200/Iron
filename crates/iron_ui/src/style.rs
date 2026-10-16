@@ -342,10 +342,20 @@ fn parse_kw<T: FromStr>(s: &str) -> Option<T> {
     s.trim().parse().ok()
 }
 
+/// A unitless number inside a CSS string (`"0"` in `"0 20px"`). CSS only allows
+/// unitless zero, but numbers mean pixels everywhere in Iron, so any number is
+/// accepted. Taffy's parser rejects these, so they're handled first.
+fn plain_number(s: &str) -> Option<f32> {
+    s.trim().parse().ok()
+}
+
 fn dimension(v: &Value) -> Option<Dimension> {
     match v {
         Value::Number(n) => Some(Dimension::length(*n as f32)),
-        Value::String(s) => s.trim().parse().ok(),
+        Value::String(s) => match plain_number(s) {
+            Some(n) => Some(Dimension::length(n)),
+            None => s.trim().parse().ok(),
+        },
         _ => None,
     }
 }
@@ -353,7 +363,10 @@ fn dimension(v: &Value) -> Option<Dimension> {
 fn length_percentage_auto(v: &Value) -> Option<LengthPercentageAuto> {
     match v {
         Value::Number(n) => Some(LengthPercentageAuto::length(*n as f32)),
-        Value::String(s) => s.trim().parse().ok(),
+        Value::String(s) => match plain_number(s) {
+            Some(n) => Some(LengthPercentageAuto::length(n)),
+            None => s.trim().parse().ok(),
+        },
         _ => None,
     }
 }
@@ -361,7 +374,10 @@ fn length_percentage_auto(v: &Value) -> Option<LengthPercentageAuto> {
 fn length_percentage(v: &Value) -> Option<LengthPercentage> {
     match v {
         Value::Number(n) => Some(LengthPercentage::length(*n as f32)),
-        Value::String(s) => s.trim().parse().ok(),
+        Value::String(s) => match plain_number(s) {
+            Some(n) => Some(LengthPercentage::length(n)),
+            None => s.trim().parse().ok(),
+        },
         _ => None,
     }
 }
@@ -587,6 +603,14 @@ mod tests {
                 LengthPercentage::length(4.0)
             )
         );
+        // Unitless numbers inside strings are pixels (CSS allows unitless 0).
+        let (s, _) = apply("padding", "0 20px".into()).unwrap();
+        assert_eq!(s.padding.top, LengthPercentage::length(0.0));
+        assert_eq!(s.padding.left, LengthPercentage::length(20.0));
+        let (s, _) = apply("margin", "0 auto".into()).unwrap();
+        assert_eq!(s.margin.left, LengthPercentageAuto::auto());
+        let (s, _) = apply("width", "0".into()).unwrap();
+        assert_eq!(s.size.width, Dimension::length(0.0));
         let (s, _) = apply("margin", 5.0.into()).unwrap();
         assert_eq!(s.margin.left, LengthPercentageAuto::length(5.0));
         let (s, _) = apply("gap", "10px 20px".into()).unwrap();

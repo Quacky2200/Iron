@@ -52,9 +52,28 @@ impl WindowSurface {
         self.configured = true;
     }
 
-    /// Clears the window to `color` and presents it. Skips the frame when the window
-    /// is minimized, occluded or the surface needs reconfiguring.
+    /// Size in physical pixels.
+    pub fn size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
+
+    /// Clears the window to `color` and presents it.
     pub fn present_clear(&mut self, gpu: &Gpu, color: Color) {
+        self.present_with(gpu, |view, _, _| {
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            encode_clear(&mut encoder, view, color);
+            gpu.queue.submit([encoder.finish()]);
+        });
+    }
+
+    /// Acquires the next frame, lets `draw` render into it (given the view, its
+    /// format and its physical size), then presents it. Skips the frame when the
+    /// window is minimized, occluded or the surface needs reconfiguring.
+    pub fn present_with(
+        &mut self,
+        gpu: &Gpu,
+        draw: impl FnOnce(&wgpu::TextureView, wgpu::TextureFormat, (u32, u32)),
+    ) {
         if !self.configured {
             return;
         }
@@ -75,9 +94,7 @@ impl WindowSurface {
             }
         };
         let view = frame.texture.create_view(&Default::default());
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        encode_clear(&mut encoder, &view, color);
-        gpu.queue.submit([encoder.finish()]);
+        draw(&view, self.config.format, self.size());
         gpu.queue.present(frame);
         if !self.configured {
             self.surface.configure(&gpu.device, &self.config);

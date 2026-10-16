@@ -40,6 +40,10 @@ pub trait PlatformApp {
     fn input(&mut self, event: InputEvent);
     /// Called once per displayed frame.
     fn frame(&mut self);
+    /// Checked after each frame; returning true closes the window and ends `run`.
+    fn should_exit(&self) -> bool {
+        false
+    }
 }
 
 /// Owns gamepad input and, when not headless, runs the window event loop.
@@ -146,7 +150,11 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.app.should_exit() {
+            event_loop.exit();
+            return;
+        }
         self.platform.poll_gamepads();
         if let Some(window) = &self.window {
             window.request_redraw();

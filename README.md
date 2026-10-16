@@ -4,7 +4,7 @@ Iron
 Iron is new game engine built (you guessed it) in rust. We hope you enjoy it.
 
 Our goal is focusing on utilising Open Source toolkits to bring you the latest
-game development from all the latest technology. We acknolege Rust can be a
+game development from all the latest technology. We acknoledge Rust can be a
 controversial yet it's also one of the most popular and growing languages today
 due to its memory safety and the amount of projects created within it.
 
@@ -23,7 +23,7 @@ awful reviews (as seen in [https://sbox.game/news/rethinking](S&Box blogpost
 platform tremendously.
 
 In the immediate future this is partly why Iron exists so that we can make
-games immediately without licensing issue, with Open Source software and
+games immediately without licensing issues, with Open Source software and
 with the same greatness as other game engines.
 
 We also wish to provide a game engine that utilises some of the technology

@@ -182,11 +182,14 @@ Iron/
 - [ ] Later: blending happens in linear light (browsers blend in sRGB, so semi-transparent edges differ slightly); large blurs should downsample (dual Kawase) instead of up to 257 taps; per-op uniform buffers and bind groups could be pooled; gradients ignore `backgroundSize`/`Position` for now
 
 ### 6. App wiring and example
-- [ ] `iron_app`: each frame call `tick(now)`, apply commits, relayout if dirty, draw quads over the clear colour
-- [ ] Window resize → root size in logical pixels → relayout
-- [ ] Load `@iron/react` apps alongside components (a bundle can register components and render UI)
-- [ ] `examples/boxes`: grid/flex showcase plus a timer-driven counter that adds and removes boxes
-- [ ] Manual check: resize the window and watch it relayout — `M2-MAN-01`
+- [x] `iron_app`: each frame calls `tick(now)`, applies commits to `UiTree` (bad ops logged), relayouts if dirty, and draws with `UiRenderer` via `WindowSurface::present_with`
+- [x] Window size and scale factor → root size in logical pixels → relayout
+- [x] Bundles can register components, render UI, or both; `url()` images load from the game folder
+- [x] `iron <game> --screenshot out.png [--frames N]` saves the UI after N frames and exits (used to verify the examples)
+- [x] `examples/boxes`: showcase of every M2 feature (glass header over blobs, gradients, images, shadows, radii, blur, group opacity) plus a timer-driven counter that adds and removes boxes; checked by screenshot
+- [x] Found and fixed while doing this: unitless numbers inside CSS strings (`padding: "0 20px"`) were rejected by Taffy's parser
+- [x] Test GPU shared and serialised (`testing::shared_gpu`): creating devices on parallel test threads deadlocked on this machine's Vulkan setup
+- [ ] Manual check: resize the window and watch it relayout — `M2-MAN-01` (**needs you**: `cargo run -p iron_app -- examples/boxes`)
 
 ### 7. Benchmarks and the Taffy/Yoga decision
 - [ ] `criterion` benches in `iron_ui` — `M2-BEN-01`..`M2-BEN-03`

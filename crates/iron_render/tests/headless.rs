@@ -1,8 +1,8 @@
-use iron_render::testing::assert_golden;
+use iron_render::testing::{assert_golden, shared_gpu};
 use iron_render::{Color, Gpu, OffscreenTarget};
 
-fn gpu() -> Gpu {
-    Gpu::headless().expect("a hardware or software GPU adapter")
+fn gpu() -> std::sync::MutexGuard<'static, Gpu> {
+    shared_gpu()
 }
 
 // M1-RND-01

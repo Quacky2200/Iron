@@ -1,7 +1,9 @@
-//! `iron <game>`: opens a window, loads the game's script bundle and runs it.
+//! `iron <game> [--screenshot out.png] [--frames N]`: opens a window, loads the
+//! game's script bundle and runs it.
 //!
 //! `<game>` is either a game folder (loads `<game>/dist/game.js`, built with
-//! `bun run build`) or a `.js` bundle directly.
+//! `bun run build`) or a `.js` bundle directly. `--screenshot` saves the UI after
+//! `N` frames (default 60) and exits, which is handy for checking output.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,13 +11,44 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use iron_platform::{InputEvent, Platform, PlatformApp, Window, WindowConfig};
-use iron_render::{Color, Gpu, WindowSurface};
+use iron_render::wgpu;
+use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
+use iron_ui::UiTree;
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
 const MAX_TICKS_PER_FRAME: u32 = 5;
 const CLEAR: Color = Color::rgb(0.05, 0.06, 0.09);
+
+struct Args {
+    game: PathBuf,
+    screenshot: Option<PathBuf>,
+    frames: u32,
+}
+
+fn parse_args() -> Result<Args> {
+    let usage = "usage: iron <game folder | bundle.js> [--screenshot out.png] [--frames N]";
+    let mut args = std::env::args_os().skip(1);
+    let mut parsed = Args {
+        game: args.next().context(usage)?.into(),
+        screenshot: None,
+        frames: 60,
+    };
+    while let Some(arg) = args.next() {
+        match arg.to_str() {
+            Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
+            Some("--frames") => {
+                parsed.frames = args
+                    .next()
+                    .and_then(|n| n.to_str()?.parse().ok())
+                    .context("--frames needs a number")?
+            }
+            _ => bail!("unexpected argument {arg:?}\n{usage}"),
+        }
+    }
+    Ok(parsed)
+}
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -25,10 +58,8 @@ fn main() -> Result<()> {
         )
         .init();
 
-    let arg = std::env::args_os()
-        .nth(1)
-        .context("usage: iron <game folder | bundle.js>")?;
-    let bundle_path = resolve_bundle(Path::new(&arg))?;
+    let args = parse_args()?;
+    let (bundle_path, asset_root) = resolve_bundle(&args.game)?;
     let code = std::fs::read_to_string(&bundle_path)
         .with_context(|| format!("reading {}", bundle_path.display()))?;
     let name = bundle_path
@@ -45,9 +76,6 @@ fn main() -> Result<()> {
     let mut components = ComponentHost::new();
     let classes =
         ComponentHost::registered_classes(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
-    if classes.is_empty() {
-        tracing::warn!("the bundle registered no components");
-    }
     for class in &classes {
         components
             .spawn(&mut scripts, class)
@@ -58,10 +86,15 @@ fn main() -> Result<()> {
     let app = App {
         scripts,
         components,
-        gpu: None,
+        ui: UiTree::new(1.0, 1.0),
+        asset_root,
+        gfx: None,
         started: Instant::now(),
         last_frame: None,
         accumulator: 0.0,
+        frames: 0,
+        screenshot: args.screenshot.map(|path| (path, args.frames)),
+        done: false,
     };
     Platform::new().run(
         WindowConfig {
@@ -73,7 +106,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn resolve_bundle(path: &Path) -> Result<PathBuf> {
+/// The bundle to load and the folder its assets (`url(...)` images) live in.
+fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
     if path.is_dir() {
         let bundle = path.join("dist").join("game.js");
         if !bundle.is_file() {
@@ -83,21 +117,34 @@ fn resolve_bundle(path: &Path) -> Result<PathBuf> {
                 path.display()
             );
         }
-        return Ok(bundle);
+        return Ok((bundle, path.to_path_buf()));
     }
     if path.is_file() {
-        return Ok(path.to_path_buf());
+        let root = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        return Ok((path.to_path_buf(), root));
     }
     bail!("{} is not a game folder or bundle", path.display())
+}
+
+struct Gfx {
+    gpu: Gpu,
+    surface: WindowSurface,
+    window: Arc<Window>,
+    renderer: UiRenderer,
 }
 
 struct App {
     scripts: QuickJsRuntime,
     components: ComponentHost,
-    gpu: Option<(Gpu, WindowSurface, Arc<Window>)>,
+    ui: UiTree,
+    asset_root: PathBuf,
+    gfx: Option<Gfx>,
     started: Instant,
     last_frame: Option<Instant>,
     accumulator: f64,
+    frames: u32,
+    screenshot: Option<(PathBuf, u32)>,
+    done: bool,
 }
 
 impl App {
@@ -126,16 +173,39 @@ impl App {
             tracing::error!(target: "script", "uncaught: {e}");
         }
 
-        // Ops and UI commits have no consumers until later in M2; drain so they don't pile up.
-        let ops = self.scripts.drain_ops();
-        let commits = self.scripts.drain_commits();
-        if !ops.is_empty() || !commits.is_empty() {
-            tracing::trace!(
-                ops = ops.len(),
-                commits = commits.len(),
-                "dropped script output"
-            );
+        // React commits update the UI tree; generic ops have no consumer yet.
+        for commit in self.scripts.drain_commits() {
+            for e in self.ui.apply_commit(&commit) {
+                tracing::warn!(target: "ui", "{e}");
+            }
         }
+        let ops = self.scripts.drain_ops();
+        if !ops.is_empty() {
+            tracing::trace!(ops = ops.len(), "dropped script ops");
+        }
+    }
+
+    fn save_screenshot(&mut self, path: &Path) -> Result<()> {
+        let gfx = self.gfx.as_mut().context("no renderer")?;
+        let (w, h) = gfx.surface.size();
+        let target =
+            OffscreenTarget::with_format(&gfx.gpu, w, h, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let view = target.view().context("window has no size")?;
+        let cmds = self.ui.draw_list();
+        gfx.renderer.render(
+            &gfx.gpu,
+            &RenderTarget {
+                view: &view,
+                format: target.format(),
+                size: (w, h),
+                scale: gfx.window.scale_factor() as f32,
+            },
+            CLEAR,
+            &cmds,
+        );
+        let pixels = target.read_pixels(&gfx.gpu)?;
+        iron_render::testing::write_png(path, w, h, &pixels)?;
+        Ok(())
     }
 }
 
@@ -145,7 +215,14 @@ impl PlatformApp for App {
         match Gpu::with_surface(window.clone(), size.width, size.height) {
             Ok((gpu, surface)) => {
                 tracing::info!(adapter = %gpu.adapter_name(), "renderer ready");
-                self.gpu = Some((gpu, surface, window));
+                let mut renderer = UiRenderer::new(&gpu);
+                renderer.set_asset_root(&self.asset_root);
+                self.gfx = Some(Gfx {
+                    gpu,
+                    surface,
+                    window,
+                    renderer,
+                });
             }
             Err(e) => tracing::error!("renderer unavailable: {e}"),
         }
@@ -153,16 +230,57 @@ impl PlatformApp for App {
 
     fn input(&mut self, event: InputEvent) {
         if let InputEvent::Resized { width, height } = event
-            && let Some((gpu, surface, _)) = &mut self.gpu
+            && let Some(gfx) = &mut self.gfx
         {
-            surface.resize(gpu, width, height);
+            gfx.surface.resize(&gfx.gpu, width, height);
         }
     }
 
     fn frame(&mut self) {
         self.tick();
-        if let Some((gpu, surface, _)) = &mut self.gpu {
-            surface.present_clear(gpu, CLEAR);
+        let Some(gfx) = &mut self.gfx else {
+            return;
+        };
+
+        // The UI lays out in logical pixels: the window size divided by its scale.
+        let scale = gfx.window.scale_factor() as f32;
+        let size = gfx.window.inner_size();
+        self.ui
+            .set_size(size.width as f32 / scale, size.height as f32 / scale);
+        let cmds = self.ui.draw_list();
+        let Gfx {
+            gpu,
+            surface,
+            renderer,
+            ..
+        } = gfx;
+        surface.present_with(gpu, |view, format, size| {
+            renderer.render(
+                gpu,
+                &RenderTarget {
+                    view,
+                    format,
+                    size,
+                    scale,
+                },
+                CLEAR,
+                &cmds,
+            );
+        });
+
+        self.frames += 1;
+        if let Some((path, frames)) = self.screenshot.clone()
+            && self.frames >= frames
+        {
+            match self.save_screenshot(&path) {
+                Ok(()) => tracing::info!("saved screenshot to {}", path.display()),
+                Err(e) => tracing::error!("screenshot failed: {e}"),
+            }
+            self.done = true;
         }
+    }
+
+    fn should_exit(&self) -> bool {
+        self.done
     }
 }

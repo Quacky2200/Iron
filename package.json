@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": ["js/*", "examples/*", "tests/fixtures"],
   "scripts": {
-    "build": "bun run --filter hello build",
+    "build": "bun run --filter hello --filter boxes build",
     "build:fixtures": "bun run --filter iron-fixtures build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test"

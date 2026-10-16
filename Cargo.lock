@@ -751,6 +751,7 @@ dependencies = [
  "iron_platform",
  "iron_render",
  "iron_script",
+ "iron_ui",
  "tracing",
  "tracing-subscriber",
 ]

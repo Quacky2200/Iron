@@ -3,7 +3,7 @@
 //! References live in `tests/golden/<id>.png` at the workspace root. Set
 //! `IRON_UPDATE_GOLDEN=1` to write new references instead of comparing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/golden")
@@ -16,14 +16,7 @@ pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance
 
     if std::env::var_os("IRON_UPDATE_GOLDEN").is_some() {
         std::fs::create_dir_all(golden_dir()).unwrap();
-        let file = std::fs::File::create(&path).unwrap();
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.write_header()
-            .unwrap()
-            .write_image_data(pixels)
-            .unwrap();
+        write_png(&path, width, height, pixels).unwrap();
         eprintln!("updated golden image {}", path.display());
         return;
     }
@@ -66,4 +59,30 @@ pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance
             *i as u32 / width,
         );
     }
+}
+
+/// Writes RGBA8 `pixels` as a PNG (used for goldens and `iron --screenshot`).
+pub fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> std::io::Result<()> {
+    let file = std::fs::File::create(path)?;
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()
+        .and_then(|mut w| w.write_image_data(pixels))
+        .map_err(std::io::Error::other)
+}
+
+/// One GPU shared by every test in a test binary, locked for the duration of a test.
+///
+/// Creating several devices at once from parallel test threads can deadlock in some
+/// Vulkan drivers and layers (seen on Windows with an OBS capture layer installed),
+/// and a single device is faster anyway.
+pub fn shared_gpu() -> std::sync::MutexGuard<'static, crate::Gpu> {
+    static GPU: std::sync::OnceLock<std::sync::Mutex<crate::Gpu>> = std::sync::OnceLock::new();
+    GPU.get_or_init(|| {
+        std::sync::Mutex::new(crate::Gpu::headless().expect("a hardware or software GPU adapter"))
+    })
+    .lock()
+    // A failed test can poison the lock; the GPU itself is still usable.
+    .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

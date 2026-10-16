@@ -3,8 +3,8 @@
 //! encode the CSS behaviour, plus golden images for regressions.
 
 use iron_core::{Commit, Value};
-use iron_render::testing::assert_golden;
-use iron_render::{Color, Gpu, OffscreenTarget, RenderStats, RenderTarget, UiRenderer};
+use iron_render::testing::{assert_golden, shared_gpu};
+use iron_render::{Color, OffscreenTarget, RenderStats, RenderTarget, UiRenderer};
 use iron_ui::UiTree;
 use iron_ui::opcodes::*;
 
@@ -89,7 +89,7 @@ fn render_with_assets(
     clear: Color,
     assets: Option<&std::path::Path>,
 ) -> Frame {
-    let gpu = Gpu::headless().expect("GPU adapter");
+    let gpu = shared_gpu();
     let mut tree = UiTree::new(logical.0 as f32, logical.1 as f32);
     let errors = tree.apply_commit(&Commit { ops: scene.ops });
     assert!(errors.is_empty(), "{errors:?}");
