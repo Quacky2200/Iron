@@ -6,7 +6,8 @@
 // the highlight, click the toggles (or Tab to them and press Space), double-click
 // the title. The Clipping card shows overflow and clip-path on images, and a list
 // that scrolls with the wheel, keys and its scrollbar. The Variables card has text
-// fields (a controlled input and a textarea).
+// fields (a controlled input and a textarea). The Charm card ends with right-to-left
+// text: an Arabic line and an input with `dir="rtl"`.
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
@@ -145,6 +146,8 @@ function App() {
           <Text className="fancy">Hello from Charm</Text>
           <Text className="fancy bold">Bold face</Text>
           <Text className="fancy">สวัสดีครับ</Text>
+          <Text dir="rtl">مرحبا بالعالم! Hello</Text>
+          <Input dir="rtl" placeholder="اكتب اسمك" />
         </Card>
 
         <Card title="Variables">

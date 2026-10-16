@@ -310,6 +310,10 @@ describe("@iron/react reconciler", () => {
     root.render(<box className="card" id="main" checked style={{ width: 1 }} />);
     expect(commits[1]).toEqual([[SET_ATTRS, 1, "className", "card", "checked", true, "data-kind", null, "disabled", null]]);
 
+    // M3-TXT-09: `dir` is an attribute too.
+    root.render(<box className="card" id="main" checked dir="rtl" style={{ width: 1 }} />);
+    expect(commits[2]).toEqual([[SET_ATTRS, 1, "dir", "rtl"]]);
+
     // Text components forward attributes too.
     _resetRootForTests();
     commits = [];

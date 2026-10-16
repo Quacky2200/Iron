@@ -2,7 +2,10 @@
 
 use iron_core::Value;
 
-/// Attributes from React props: `className`, `id`, `disabled`, `checked`, `tabIndex`, `data-*`.
+use crate::text_style::Direction;
+
+/// Attributes from React props: `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`,
+/// `data-*`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Attrs {
     pub id: Option<String>,
@@ -11,6 +14,8 @@ pub struct Attrs {
     pub checked: bool,
     /// `tabIndex`: focusable when set; negative values are skipped by Tab.
     pub tab_index: Option<i32>,
+    /// `dir`: the element's `direction` unless CSS sets one (the HTML UA-style rule).
+    pub dir: Option<Direction>,
     /// Text fields: `value` (controlled), `defaultValue`, `placeholder`, `readOnly`, `rows`.
     pub value: Option<String>,
     pub default_value: Option<String>,
@@ -59,6 +64,14 @@ impl Attrs {
                     _ => return Err(format!("invalid tabIndex {value:?}")),
                 }
             }
+            "dir" => {
+                self.dir = match text().as_deref().map(str::trim) {
+                    None | Some("") => None,
+                    Some(d) if d.eq_ignore_ascii_case("ltr") => Some(Direction::Ltr),
+                    Some(d) if d.eq_ignore_ascii_case("rtl") => Some(Direction::Rtl),
+                    Some(d) => return Err(format!("invalid dir {d:?} (ltr or rtl)")),
+                }
+            }
             "value" => self.value = text(),
             "defaultValue" => self.default_value = text(),
             "placeholder" => self.placeholder = text(),
@@ -90,6 +103,10 @@ impl Attrs {
         match name {
             "id" => self.id.as_deref(),
             "class" => None,
+            "dir" => self.dir.map(|d| match d {
+                Direction::Ltr => "ltr",
+                Direction::Rtl => "rtl",
+            }),
             n => self
                 .data
                 .iter()
@@ -133,5 +150,14 @@ mod tests {
         assert_eq!(a.get("data-kind"), None);
         assert!(a.classes.is_empty() && !a.disabled);
         assert!(a.set("onClick", &"x".into()).is_err());
+
+        a.set("dir", &"RTL".into()).unwrap();
+        assert_eq!((a.dir, a.get("dir")), (Some(Direction::Rtl), Some("rtl")));
+        a.set("dir", &Value::Null).unwrap();
+        assert_eq!(a.dir, None);
+        assert!(
+            a.set("dir", &"auto".into()).is_err(),
+            "dir=auto isn't supported"
+        );
     }
 }

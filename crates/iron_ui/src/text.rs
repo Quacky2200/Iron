@@ -7,14 +7,14 @@ use parley::fontique::{
     Blob, Collection, CollectionOptions, FontInfoOverride, GenericFamily, SourceCache,
 };
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontFamily, FontStyle, FontWeight, Layout,
-    LayoutContext, LineHeight as PLineHeight, PositionedLayoutItem, TextStyle, TextWrapMode,
-    WhiteSpaceCollapse,
+    Alignment, AlignmentOptions, BaseDirection, FontContext, FontFamily, FontStyle, FontWeight,
+    Layout, LayoutContext, LineHeight as PLineHeight, PositionedLayoutItem, TextStyle,
+    TextWrapMode, WhiteSpaceCollapse,
 };
 
 use crate::Rgba;
 use crate::draw::{GlyphRun, PositionedGlyph, Rect, TextCmd};
-use crate::text_style::{ComputedText, LineHeight, TextAlign, WhiteSpace};
+use crate::text_style::{ComputedText, Direction, LineHeight, TextAlign, WhiteSpace};
 
 /// The family name the bundled font is registered under.
 pub const DEFAULT_FAMILY: &str = "Inter";
@@ -150,6 +150,7 @@ impl TextEngine {
         let mut builder = self
             .layout_cx
             .tree_builder(&mut self.font_cx, 1.0, true, &root);
+        builder.set_base_direction(base_direction(block.direction));
         for (text, style) in runs {
             builder.push_style_span(to_parley(style));
             builder.push_text(text);
@@ -186,15 +187,28 @@ pub fn measure(
 /// Breaks lines at the block's final content width and aligns them.
 pub fn finish(layout: &mut Layout<Brush>, content_width: f32, align: TextAlign) {
     layout.break_all_lines(Some(content_width));
-    let alignment = match align {
+    layout.align(alignment(align), AlignmentOptions::default());
+}
+
+/// Parley's alignment for `text-align`; `start` / `end` follow the layout's base direction.
+pub(crate) fn alignment(align: TextAlign) -> Alignment {
+    match align {
         TextAlign::Start => Alignment::Start,
         TextAlign::End => Alignment::End,
         TextAlign::Left => Alignment::Left,
         TextAlign::Right => Alignment::Right,
         TextAlign::Center => Alignment::Center,
         TextAlign::Justify => Alignment::Justify,
-    };
-    layout.align(alignment, AlignmentOptions::default());
+    }
+}
+
+/// The paragraph direction for CSS `direction`. Never `Auto`: as in CSS, Arabic text in
+/// an `ltr` element keeps its right-to-left order but the paragraph runs left to right.
+pub(crate) fn base_direction(direction: Direction) -> BaseDirection {
+    match direction {
+        Direction::Ltr => BaseDirection::Ltr,
+        Direction::Rtl => BaseDirection::Rtl,
+    }
 }
 
 /// Draw command for a laid-out block whose content box starts at `origin`.

@@ -375,6 +375,13 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      dictionaries, so CJK word moves/selection and Thai, Lao, Khmer and Burmese line breaks
      follow word boundaries (no more "No segmentation model" log) — `M3-TXT-08`. Costs about
      3.8 MB in the release binary
+   - [x] Right-to-left text: inherited CSS `direction` and the `dir` attribute (CSS wins;
+     `[dir=rtl]` matches) set Parley's paragraph direction; `text-align: start/end` follow it;
+     rtl inputs/textareas align right (placeholder too) with visual arrow keys — `M3-TXT-09`.
+     Shown in `examples/css` (Arabic line and input)
+   - [ ] RTL follow-ups: `dir="auto"`, flex/grid `row` order and `justify-content: start` in rtl
+     (Taffy has no direction), logical properties (`margin-inline-start`, `inset-inline-*`), and a
+     hand check with the Arabic (101) keyboard
 4. **Overflow and scrolling**
    - [x] `overflow` / `overflowX` / `overflowY` (`visible | hidden | clip | scroll | auto`, CSS
      computed-value rules) clip children to the padding box with inner radii; `clipPath`

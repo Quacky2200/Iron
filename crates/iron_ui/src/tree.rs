@@ -637,6 +637,10 @@ impl<L: LayoutEngine> UiTree<L> {
             };
             let _ = apply_style(&mut style, &mut visual, prop, &value);
         }
+        // `dir` acts like the UA rule `[dir=rtl] { direction: rtl }`: any author CSS wins.
+        if visual.text.direction.is_none() {
+            visual.text.direction = node.attrs.dir;
+        }
         if id == ROOT {
             // The root is always the size of the window.
             style.size = root_style(self.size.0, self.size.1).size;
@@ -1021,6 +1025,14 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
                 let keys = attr_keys_changed(&before, &node.attrs);
                 let attrs = node.attrs.clone();
+                if before.dir != attrs.dir {
+                    if self.sheets.is_empty() && !self.uses_vars {
+                        dir_fallback(self.node_mut(id)?);
+                    } else {
+                        self.style_dirty.insert(id);
+                    }
+                    text_style_changed.insert(id);
+                }
                 if !keys.is_empty() {
                     self.key_changes.push((id, keys));
                 }
@@ -1096,6 +1108,9 @@ impl<L: LayoutEngine> UiTree<L> {
                     if is_text_prop(prop) {
                         text_style_changed.insert(id);
                     }
+                }
+                if pairs.chunks(2).any(|p| p[0].as_str() == Some("direction")) {
+                    dir_fallback(node);
                 }
                 styles_changed.insert(id);
                 if saw_var {
@@ -1941,8 +1956,11 @@ impl<L: LayoutEngine> UiTree<L> {
                     .map(|r| quad(r, crate::editor::SELECTION)),
             );
         }
-        if let Some(layout) = editor.placeholder_layout().or(editor.layout()) {
-            let cmd = text::draw(layout, origin);
+        let placeholder = editor
+            .placeholder_layout()
+            .map(|l| (l, editor.placeholder_x()));
+        if let Some((layout, dx)) = placeholder.or(editor.layout().map(|l| (l, 0.0))) {
+            let cmd = text::draw(layout, (origin.0 + dx, origin.1));
             if !cmd.runs.is_empty() || !cmd.decorations.is_empty() {
                 out.push(DrawCmd::Text(cmd));
             }
@@ -2133,6 +2151,13 @@ fn parse_content(value: &str, attrs: Option<&Attrs>) -> Option<String> {
 }
 
 /// The selector keys that differ between two attribute sets.
+/// Without a restyle pass, `dir` fills in `direction` when no inline style sets it.
+fn dir_fallback(node: &mut Node) {
+    if !node.inline.iter().any(|(p, _)| p == "direction") {
+        node.visual.text.direction = node.attrs.dir;
+    }
+}
+
 fn attr_keys_changed(before: &Attrs, after: &Attrs) -> Vec<Key> {
     let mut keys = Vec::new();
     for c in before.classes.iter().filter(|c| !after.classes.contains(c)) {
@@ -2159,6 +2184,9 @@ fn attr_keys_changed(before: &Attrs, after: &Attrs) -> Vec<Key> {
     }
     if before.checked != after.checked {
         keys.push(Key::Checked);
+    }
+    if before.dir != after.dir {
+        keys.push(Key::Attr("dir".into()));
     }
     for (name, value) in before.data.iter().chain(after.data.iter()) {
         let _ = value;

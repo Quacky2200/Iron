@@ -4,13 +4,13 @@
 //! keys and pointer presses; scripts see `input` events and control it through the
 //! `value` attribute.
 
-use parley::{Layout, PlainEditor, StyleProperty, StyleSet};
+use parley::{AlignmentOptions, Layout, PlainEditor, StyleProperty, StyleSet};
 
 use crate::Rgba;
 use crate::draw::Rect;
 use crate::events::Modifiers;
-use crate::text::{Brush, TextEngine};
-use crate::text_style::ComputedText;
+use crate::text::{self, Brush, TextEngine};
+use crate::text_style::{ComputedText, Direction, TextAlign};
 
 /// Default width of an `<input>` without one, about 20 characters (like browsers).
 pub const INPUT_WIDTH: f32 = 160.0;
@@ -135,6 +135,9 @@ impl Editor {
         }
         let set = self.editor.edit_styles();
         *set = style_set(style);
+        self.editor
+            .set_base_direction(text::base_direction(style.direction));
+        self.editor.set_alignment(text::alignment(style.text_align));
         if let Some((_, layout)) = &mut self.placeholder {
             *layout = None;
         }
@@ -145,6 +148,12 @@ impl Editor {
     /// Lays out the text for a content box of `width` × `height` and keeps the caret
     /// in view.
     pub(crate) fn refresh(&mut self, text: &mut TextEngine, width: f32, height: f32) {
+        if self.size != (width, height)
+            && let Some((_, layout)) = &mut self.placeholder
+        {
+            // Wrapped and aligned for the old size.
+            *layout = None;
+        }
         self.size = (width, height);
         self.editor
             .set_width(self.multiline.then_some(width.max(1.0)));
@@ -160,6 +169,10 @@ impl Editor {
             dim.color = dim.color.with_alpha_scaled(0.5);
             let mut built = text.build(&dim, &[(placeholder.clone(), dim.clone())]);
             built.break_all_lines(self.multiline.then_some(width.max(1.0)));
+            built.align(
+                text::alignment(style.text_align),
+                AlignmentOptions::default(),
+            );
             *layout = Some(built);
         }
         self.keep_caret_visible();
@@ -167,6 +180,31 @@ impl Editor {
 
     pub(crate) fn layout(&self) -> Option<&Layout<Brush>> {
         self.editor.try_layout()
+    }
+
+    /// How far the placeholder is shifted right of the text's origin (which already
+    /// includes the scroll): an input lays out unbounded, so it is aligned here.
+    pub(crate) fn placeholder_x(&self) -> f32 {
+        match self.placeholder_layout() {
+            Some(l) if !self.multiline => {
+                (self.size.0 - l.full_width()).max(0.0) * self.align_factor() + self.scroll.0
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// Where a line narrower than an input goes: 0 at the left, 1 at the right.
+    fn align_factor(&self) -> f32 {
+        let Some(style) = &self.style else {
+            return 0.0;
+        };
+        let rtl = style.direction == Direction::Rtl;
+        match (style.text_align, rtl) {
+            (TextAlign::Left, _) | (TextAlign::Start | TextAlign::Justify, false) => 0.0,
+            (TextAlign::End, true) => 0.0,
+            (TextAlign::Center, _) => 0.5,
+            _ => 1.0,
+        }
     }
 
     /// The placeholder's layout, shown while the field is empty.
@@ -226,6 +264,12 @@ impl Editor {
                 w,
                 content.0,
             );
+            // Text that fits is aligned by scrolling it back (negative scroll), so
+            // drawing, hit testing and the IME area all follow.
+            let free = w - content.0 - CARET_WIDTH;
+            if free > 0.0 {
+                self.scroll.0 = -free * self.align_factor();
+            }
             self.scroll.1 = 0.0;
         }
     }

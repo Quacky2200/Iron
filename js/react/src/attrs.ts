@@ -8,6 +8,7 @@ const ATTRS: ReadonlySet<string> = new Set([
   "disabled",
   "checked",
   "tabIndex",
+  "dir",
   // Text fields.
   "value",
   "defaultValue",
@@ -16,7 +17,7 @@ const ATTRS: ReadonlySet<string> = new Set([
   "rows",
 ]);
 
-/** Props that are attributes: `className`, `id`, `disabled`, `checked`, `tabIndex`, text field props, `data-*`. */
+/** Props that are attributes: `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props, `data-*`. */
 export function isAttr(name: string): boolean {
   return ATTRS.has(name) || name.startsWith("data-");
 }

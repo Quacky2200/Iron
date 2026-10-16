@@ -66,6 +66,14 @@ pub enum TextAlign {
     Justify,
 }
 
+/// CSS `direction`: the base direction of text, and what `start` / `end` mean.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Direction {
+    #[default]
+    Ltr,
+    Rtl,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WhiteSpace {
     /// Collapse spaces and wrap.
@@ -97,6 +105,7 @@ pub struct TextProps {
     pub letter_spacing: Option<FontLen>,
     pub word_spacing: Option<FontLen>,
     pub text_align: Option<TextAlign>,
+    pub direction: Option<Direction>,
     pub decoration: Option<Decoration>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
@@ -114,6 +123,7 @@ pub struct ComputedText {
     pub letter_spacing: f32,
     pub word_spacing: f32,
     pub text_align: TextAlign,
+    pub direction: Direction,
     pub decoration: Decoration,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
@@ -133,6 +143,7 @@ impl Default for ComputedText {
             letter_spacing: 0.0,
             word_spacing: 0.0,
             text_align: TextAlign::Start,
+            direction: Direction::Ltr,
             decoration: Decoration::default(),
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
@@ -171,6 +182,7 @@ impl ComputedText {
                 .word_spacing
                 .map_or(self.word_spacing, |l| l.resolve(font_size)),
             text_align: props.text_align.unwrap_or(self.text_align),
+            direction: props.direction.unwrap_or(self.direction),
             decoration: props.decoration.unwrap_or(self.decoration),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
@@ -201,6 +213,7 @@ pub const TEXT_PROPS: &[&str] = &[
     "letterSpacing",
     "wordSpacing",
     "textAlign",
+    "direction",
     "textDecoration",
     "textDecorationLine",
     "whiteSpace",
@@ -229,6 +242,7 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "letterSpacing" => props.letter_spacing = None,
             "wordSpacing" => props.word_spacing = None,
             "textAlign" => props.text_align = None,
+            "direction" => props.direction = None,
             "textDecoration" | "textDecorationLine" => props.decoration = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
@@ -304,6 +318,13 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 Some("right") => Some(TextAlign::Right),
                 Some("center") => Some(TextAlign::Center),
                 Some("justify") => Some(TextAlign::Justify),
+                _ => None,
+            }));
+        }
+        "direction" => {
+            props.direction = Some(parse!(match s {
+                Some("ltr") => Some(Direction::Ltr),
+                Some("rtl") => Some(Direction::Rtl),
                 _ => None,
             }));
         }
@@ -403,6 +424,7 @@ mod tests {
             ("textAlign", "middle".into()),
             ("textDecoration", "wavy".into()),
             ("whiteSpace", "pre-line".into()),
+            ("direction", "sideways".into()),
             ("textShadow", "inset 0 0 2px red".into()),
             ("textShadow", "0 0 2px 3px red".into()),
             ("color", "nope".into()),
@@ -419,6 +441,26 @@ mod tests {
             None,
             "not a text prop"
         );
+    }
+
+    // M3-TXT-09
+    #[test]
+    fn direction_parses_and_inherits() {
+        let mut parent_props = TextProps::default();
+        set(&mut parent_props, "direction", "rtl".into());
+        let parent = ComputedText::default().child(&parent_props);
+        assert_eq!(parent.direction, Direction::Rtl);
+        assert_eq!(
+            parent.child(&TextProps::default()).direction,
+            Direction::Rtl,
+            "direction inherits"
+        );
+        let mut child_props = TextProps::default();
+        set(&mut child_props, "direction", "ltr".into());
+        assert_eq!(parent.child(&child_props).direction, Direction::Ltr);
+        set(&mut child_props, "direction", Value::Null);
+        assert_eq!(child_props.direction, None);
+        assert_eq!(ComputedText::default().direction, Direction::Ltr);
     }
 
     #[test]

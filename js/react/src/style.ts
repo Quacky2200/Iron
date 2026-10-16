@@ -109,6 +109,7 @@ export interface IronStyle {
   letterSpacing?: number | string;
   wordSpacing?: number | string;
   textAlign?: "start" | "end" | "left" | "right" | "center" | "justify";
+  direction?: "ltr" | "rtl";
   textDecoration?: string;
   whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap";
   textShadow?: string;

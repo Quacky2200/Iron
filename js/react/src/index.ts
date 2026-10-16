@@ -93,6 +93,8 @@ export interface ElementAttrs {
    * come first (ascending), negative values focus by click or `ref.focus()` only.
    */
   tabIndex?: number;
+  /** Text direction, as `direction` in CSS (which wins when both are set). */
+  dir?: "ltr" | "rtl";
   [data: `data-${string}`]: string | number | boolean | undefined;
 }
 

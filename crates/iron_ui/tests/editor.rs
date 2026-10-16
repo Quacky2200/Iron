@@ -365,6 +365,79 @@ fn word_moves_use_dictionary_boundaries_in_japanese() {
     );
 }
 
+// M3-TXT-09
+#[test]
+fn rtl_fields_start_at_the_right_and_arrows_move_visually() {
+    let rtl = || ("direction", Value::from("rtl"));
+    let mut f = Field::new("input", &[rtl()], &[("value", "אבג".into())]);
+    let field = f.tree.rect(f.id).unwrap();
+    let mid = field.x + field.width / 2.0;
+    let caret_x = |f: &Field| f.tree.editor_ime_area(f.id).unwrap().x;
+    assert!(caret_x(&f) > mid, "short rtl text sits at the right");
+
+    f.key("Home");
+    let start = caret_x(&f);
+    assert!(start > mid, "the logical start is the right edge");
+    // ArrowLeft moves visually: in right-to-left text that is forward.
+    f.mods(false, true);
+    f.key("ArrowLeft");
+    f.mods(false, false);
+    assert!(caret_x(&f) < start);
+    f.chord("c");
+    assert_eq!(f.ui.take_clipboard(), Some(Clipboard::Copy("א".into())));
+
+    // An empty rtl field draws its placeholder at the right too.
+    let mut f = Field::new("input", &[rtl()], &[("placeholder", "שם".into())]);
+    let field = f.tree.rect(f.id).unwrap();
+    let text_x = draw(&mut f)
+        .iter()
+        .find_map(|c| match c {
+            DrawCmd::Text(t) => Some(t.bounds.x),
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        text_x > field.x + field.width / 2.0,
+        "placeholder at {text_x}"
+    );
+
+    let f = Field::new("textarea", &[rtl()], &[("value", "abc".into())]);
+    let field = f.tree.rect(f.id).unwrap();
+    assert!(
+        caret_x(&f) > field.x + field.width / 2.0,
+        "textarea lines align right"
+    );
+}
+
+// M3-INP-01
+#[test]
+fn placeholders_rewrap_when_the_field_resizes() {
+    let mut f = Field::new(
+        "textarea",
+        &[("width", px(80.0))],
+        &[("placeholder", "a placeholder that wraps when narrow".into())],
+    );
+    let height = |f: &mut Field| {
+        draw(f)
+            .iter()
+            .find_map(|c| match c {
+                DrawCmd::Text(t) => Some(t.bounds.height),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let narrow = height(&mut f);
+    let errors = f.tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_STYLE,
+            &[n(f.id.0), "width".into(), px(600.0)],
+        )],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    f.tree.layout_if_needed();
+    assert!(height(&mut f) < narrow, "one line once the field is wide");
+}
+
 fn draw(f: &mut Field) -> Vec<DrawCmd> {
     f.tree.draw_list()
 }
