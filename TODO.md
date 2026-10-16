@@ -589,3 +589,11 @@ re-evaluated when the window resizes or moves between monitors. M3b's stylesheet
 - [ ] iOS (QuickJS backend, Xcode wrapper)
 - [ ] Packaging and distribution (pack files, Steam Workshop?)
 - [ ] `deno_core` and Bun script backends
+- [ ] Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
+  is built, instead of interpreting it in QuickJS. Native code compiled into the executable is
+  the preferred output; bytecode is the fallback. Candidates to evaluate:
+  - QuickJS bytecode (the cheapest step: skips parsing at startup)
+  - TypeScript → Rust native via Perry or Vercel's scriptc
+  - AssemblyScript → wasm → wasm IR → Rust via `wasm2rs`
+  - Questions: keeping the `__iron_op` / `__iron_commit` boundary unchanged, React's dynamic
+    code under each option, and keeping dev builds on QuickJS for hot reload (M4)
