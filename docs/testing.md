@@ -117,7 +117,7 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-IME` | IME composition | `iron_platform/src/input.rs` (`converts_ime_events`), `iron_ui/tests/editor.rs` |
 | `M3-PAD` | Gamepads and game input | `iron_platform/src/gamepad.rs` (names, connect/disconnect conversion), `iron_app/src/game_input.rs` (nav mapping, stick hysteresis, `script_args`, and a QuickJS test running fixture `tests/fixtures/src/input.ts`), `iron_ui/tests/navigation.rs`, `js/engine/test/input.test.ts` (keys, blur, pad state and events, throwing listeners) |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
-| `*-MAN` | Manual checks (resize, IME) | no automated test; listed in TODO.md |
+| `*-MAN` | Manual checks (resize, IME, gamepad) | no automated test; listed in TODO.md. Text input and gamepad checks (`M3-MAN-01`) use `examples/form` |
 
 When you add a test for a plan item, put the ID in a comment, tick the checkbox in TODO.md and add
 the ID to TESTS.md if it is new (working agreement in CLAUDE.md).

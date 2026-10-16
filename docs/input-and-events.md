@@ -228,7 +228,7 @@ typed and scripts read it from `input` events.
 `take_clipboard()` right after `handle`. `Copy` is written with `arboard` (`App::clipboard()` opens
 it lazily and logs a warning if unavailable). `Paste` reads the text and feeds it back as
 `Input::Paste(text)`, which calls `editor_insert` on the focused field and sends `input` if the text
-changed (read-only and disabled fields refuse; an input turns line breaks into spaces).
+changed (read-only and disabled fields refuse; an input joins lines with spaces and drops a trailing line break, since copied lines often end in one).
 
 **IME.** winit `Ime` -> `InputEvent::Ime` -> `Input::ImePreedit { text, cursor }` /
 `Input::ImeCommit(text)`:
