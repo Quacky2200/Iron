@@ -441,9 +441,15 @@ We're already **ahead** of s&box on: custom properties and `var()` (s&box has no
 and `@font-face`.
 
 1. **Units and values**
-   - [ ] Layout lengths in `em`, `rem`, `vw`, `vh`, `vmin`, `vmax` (and `dvh`/`svh`/`lvh`,
-     `dvw`/`svw`/`lvw` as aliases); today layout takes `px`, `%` and `auto`
-   - [ ] `calc()`, `min()`, `max()`, `clamp()` anywhere a length is accepted (evaluated at layout)
+   - [x] `em`, `rem`, `vw`, `vh`, `vmin`, `vmax` (and the `d`/`s`/`l` viewport variants) in every
+     property, inline or from stylesheets: resolved to px at restyle like `var()`
+     (`crates/iron_ui/src/units.rs`); `em` is the element's own font size (the parent's for
+     `fontSize`); nodes using them restyle when the window, their font size or the root font
+     size changes (`crates/iron_ui/tests/units.rs`)
+   - [x] `calc()`, `min()`, `max()`, `clamp()` with pixels, relative units and numbers, nested;
+     invalid math is ignored (stylesheets warn, inline values are rejected and keep the old value)
+   - [ ] `calc()` with percentages (`calc(100% - 20px)`): needs Taffy's calc callback, which
+     `TaffyTree` doesn't implement (`resolve_calc_value` returns 0), so a custom Taffy tree
    - [ ] CSS-wide keywords `inherit`, `initial`, `unset`, `revert` on every property
    - [ ] Colours: check `hsl()`/`hwb()`/`lab()`/`oklch()` coverage; `color-mix()` as the standard
      form of s&box's `mix()`/`darken()`/`lighten()`

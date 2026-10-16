@@ -18,6 +18,7 @@ mod style;
 pub mod text;
 pub mod text_style;
 mod tree;
+pub mod units;
 
 pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;

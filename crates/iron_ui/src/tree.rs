@@ -18,6 +18,7 @@ use crate::paint::{Overflow, Shadow, inner_corners, resolve_radii};
 use crate::style::{Visual, apply_style};
 use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, is_text_prop};
+use crate::units::{UnitContext, Uses};
 
 /// The root container every React root renders into.
 pub const ROOT: NodeId = NodeId(0);
@@ -83,6 +84,9 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Scroll offsets of scrolled elements (x, y), clamped to their range at layout.
     scroll: HashMap<NodeId, (f32, f32)>,
+    /// Nodes whose styles use relative units (`em`, `rem`, viewport units), restyled
+    /// when what those resolve against changes.
+    unit_uses: HashMap<NodeId, Uses>,
     /// Text fields (`input`, `textarea`) by node.
     editors: HashMap<NodeId, Editor>,
     /// Engine time in ms (caret blinking).
@@ -152,6 +156,7 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             scroll: HashMap::default(),
+            unit_uses: HashMap::default(),
             editors: HashMap::default(),
             time_ms: 0.0,
             dirty_text: HashSet::default(),
@@ -179,6 +184,14 @@ impl<L: LayoutEngine> UiTree<L> {
         let style = root_style(width, height);
         self.layout.set_style(ROOT, &style);
         self.nodes.get_mut(&ROOT).expect("root exists").style = style;
+        // Viewport units resolve against the new size.
+        let viewport: Vec<NodeId> = self
+            .unit_uses
+            .iter()
+            .filter(|(_, u)| u.viewport)
+            .map(|(id, _)| *id)
+            .collect();
+        self.style_dirty.extend(viewport);
         self.needs_layout = true;
     }
 
@@ -260,13 +273,31 @@ impl<L: LayoutEngine> UiTree<L> {
                 if d.prop.starts_with("--") || d.prop == "content" || d.value.contains("var(") {
                     return true;
                 }
+                // Relative units resolve per element; check the value with typical
+                // ones (invalid math is rejected either way).
+                let value = if crate::units::needs_resolution(&d.value) {
+                    let ctx = UnitContext {
+                        em: 16.0,
+                        rem: 16.0,
+                        viewport: (1000.0, 1000.0),
+                    };
+                    match crate::units::resolve(&d.value, &ctx) {
+                        Some((resolved, _)) => resolved,
+                        None => {
+                            warnings.push(format!("invalid math in `{}: {}`", d.prop, d.value));
+                            return false;
+                        }
+                    }
+                } else {
+                    d.value.clone()
+                };
                 let mut style = Style::default();
                 let mut visual = Visual::default();
                 match apply_style(
                     &mut style,
                     &mut visual,
                     &d.prop,
-                    &crate::cascade::css_value(&d.value),
+                    &crate::cascade::css_value(&value),
                 ) {
                     Ok(()) => true,
                     Err(e) => {
@@ -348,13 +379,24 @@ impl<L: LayoutEngine> UiTree<L> {
             .map(|n| n.vars.clone())
             .unwrap_or_default();
         let lookup = |name: &str| vars.get(name).cloned();
+        // Generated content's relative units use its element's font size.
+        let units = UnitContext {
+            em: self.computed_text(id).font_size,
+            rem: self.computed_text(ROOT).font_size,
+            viewport: self.size,
+        };
         let resolve = |value: &Value| -> Option<Value> {
-            match value {
-                Value::String(text) if text.contains("var(") => {
-                    substitute_vars(text, &lookup).map(|v| crate::cascade::css_value(&v))
-                }
-                other => Some(other.clone()),
+            let Value::String(text) = value else {
+                return Some(value.clone());
+            };
+            let mut text = text.clone();
+            if text.contains("var(") {
+                text = substitute_vars(&text, &lookup)?;
             }
+            if crate::units::needs_resolution(&text) {
+                text = crate::units::resolve(&text, &units)?.0;
+            }
+            Some(crate::cascade::css_value(&text))
         };
         let ordered: Vec<(&str, Value)> = normal
             .iter()
@@ -590,6 +632,21 @@ impl<L: LayoutEngine> UiTree<L> {
             Style::default()
         };
         let mut visual = Visual::default();
+        let parent_text = match node.parent {
+            Some(p) => self.computed_text(p),
+            None => ComputedText::default(),
+        };
+        let rem = if id == ROOT {
+            ComputedText::default().font_size
+        } else {
+            self.computed_text(ROOT).font_size
+        };
+        let mut units = UnitContext {
+            em: parent_text.font_size,
+            rem,
+            viewport: self.size,
+        };
+        let mut unit_uses = Uses::default();
 
         // Every declaration in cascade order: rules, inline styles, !important rules.
         let ordered: Vec<(&str, Value)> = normal
@@ -620,22 +677,58 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
 
+        // Resolves `var()`, then relative units and math. `None`: invalid at computed
+        // time, so the declaration is ignored.
+        let compute =
+            |prop: &str, value: &Value, units: &UnitContext, uses: &mut Uses| -> Option<Value> {
+                let Value::String(text) = value else {
+                    return Some(value.clone());
+                };
+                let mut text = std::borrow::Cow::Borrowed(text.as_str());
+                if text.contains("var(") {
+                    let lookup = |name: &str| vars.get(name).cloned();
+                    text = std::borrow::Cow::Owned(substitute_vars(&text, &lookup)?);
+                }
+                if crate::units::needs_resolution_for(prop, &text) {
+                    let (resolved, u) = crate::units::resolve(&text, units)?;
+                    *uses = uses.union(u);
+                    text = std::borrow::Cow::Owned(resolved);
+                }
+                Some(match text {
+                    std::borrow::Cow::Borrowed(_) => value.clone(),
+                    std::borrow::Cow::Owned(t) => crate::cascade::css_value(&t),
+                })
+            };
+        // `em` means the element's own font size, so resolve `fontSize` first (its own
+        // `em` is the parent's size).
+        let mut sized = Visual::default();
+        for (prop, value) in ordered.iter().filter(|(p, _)| *p == "fontSize") {
+            if let Some(v) = compute(prop, value, &units, &mut unit_uses) {
+                let _ = apply_style(&mut Style::default(), &mut sized, prop, &v);
+            }
+        }
+        units.em = parent_text.child(&sized.text).font_size;
         for (prop, value) in &ordered {
             if prop.starts_with("--") || *prop == "content" {
                 continue;
             }
-            let value = match value {
-                Value::String(text) if text.contains("var(") => {
-                    let lookup = |name: &str| vars.get(name).cloned();
-                    match substitute_vars(text, &lookup) {
-                        Some(resolved) => crate::cascade::css_value(&resolved),
-                        // Invalid at computed time: the declaration is ignored.
-                        None => continue,
-                    }
+            let ctx = if *prop == "fontSize" {
+                UnitContext {
+                    em: parent_text.font_size,
+                    ..units
                 }
-                other => other.clone(),
+            } else {
+                units
+            };
+            let Some(value) = compute(prop, value, &ctx, &mut unit_uses) else {
+                continue;
             };
             let _ = apply_style(&mut style, &mut visual, prop, &value);
+        }
+        if unit_uses.any() {
+            self.unit_uses.insert(id, unit_uses);
+        } else {
+            self.unit_uses.remove(&id);
         }
         // `dir` acts like the UA rule `[dir=rtl] { direction: rtl }`: any author CSS wins.
         if visual.text.direction.is_none() {
@@ -679,6 +772,15 @@ impl<L: LayoutEngine> UiTree<L> {
             while let Some(n) = stack.pop() {
                 if self.is_text_root(n) {
                     self.dirty_text.insert(n);
+                }
+                // A font size change moves `em` (and, from the root, `rem`) values below.
+                if n != id
+                    && self
+                        .unit_uses
+                        .get(&n)
+                        .is_some_and(|u| u.em || (id == ROOT && u.rem))
+                {
+                    self.style_dirty.insert(n);
                 }
                 stack.extend_from_slice(self.children(n));
             }
@@ -904,7 +1006,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.dirty_text.insert(root);
             }
         }
-        // Text properties inherit, so every text block at or below the node changes.
+        // Text properties inherit, so every text block at or below the node changes,
+        // and so do `em` values below it (`rem` too, from the root).
         for id in text_style_changed {
             if let Some(root) = self.text_root_of(id) {
                 self.dirty_text.insert(root);
@@ -913,6 +1016,13 @@ impl<L: LayoutEngine> UiTree<L> {
             while let Some(n) = stack.pop() {
                 if self.is_text_root(n) {
                     self.dirty_text.insert(n);
+                }
+                if self
+                    .unit_uses
+                    .get(&n)
+                    .is_some_and(|u| u.em || (id == ROOT && u.rem))
+                {
+                    self.style_dirty.insert(n);
                 }
                 stack.extend_from_slice(self.children(n));
             }
@@ -1092,14 +1202,39 @@ impl<L: LayoutEngine> UiTree<L> {
                         continue;
                     };
                     let is_var = prop.starts_with("--")
-                        || pair[1].as_str().is_some_and(|v| v.contains("var("));
+                        || pair[1].as_str().is_some_and(|v| {
+                            v.contains("var(") || crate::units::needs_resolution_for(prop, v)
+                        });
                     if is_var {
                         // Resolved during restyle, once inherited variables are known.
+                        // Without var(), the math can be checked now (with typical units).
+                        if let Some(text) = pair[1].as_str().filter(|v| !v.contains("var(")) {
+                            let ctx = UnitContext {
+                                em: 16.0,
+                                rem: 16.0,
+                                viewport: (1000.0, 1000.0),
+                            };
+                            let valid = crate::units::resolve(text, &ctx).is_some_and(|(r, _)| {
+                                apply_style(
+                                    &mut Style::default(),
+                                    &mut Visual::default(),
+                                    prop,
+                                    &crate::cascade::css_value(&r),
+                                )
+                                .is_ok()
+                            });
+                            if !valid && !prop.starts_with("--") {
+                                // Like an invalid assignment in the DOM: the old value stays.
+                                problems.push(format!("invalid value {text:?} for `{prop}`"));
+                                continue;
+                            }
+                        }
                         saw_var = true;
                     } else if let Err(e) =
                         apply_style(&mut node.style, &mut node.visual, prop, &pair[1])
                     {
                         problems.push(e.to_string());
+                        continue;
                     }
                     node.inline.retain(|(p, _)| p != prop);
                     if pair[1] != Value::Null {
@@ -1221,6 +1356,7 @@ impl<L: LayoutEngine> UiTree<L> {
         while let Some(id) = stack.pop() {
             self.scroll.remove(&id);
             self.editors.remove(&id);
+            self.unit_uses.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
