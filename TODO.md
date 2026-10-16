@@ -192,10 +192,13 @@ Iron/
 - [ ] Manual check: resize the window and watch it relayout — `M2-MAN-01` (**needs you**: `cargo run -p iron_app -- examples/boxes`)
 
 ### 7. Benchmarks and the Taffy/Yoga decision
-- [ ] `criterion` benches in `iron_ui` — `M2-BEN-01`..`M2-BEN-03`
-- [ ] JS→Rust commit transfer bench (QuickJS) — `M2-BEN-04`
-- [ ] Record results in TESTS.md
-- [ ] **Decision point:** if Taffy misses targets badly, prototype a Yoga backend against the `M2-LAY-05` fixtures
+- [x] `criterion` benches in `iron_ui` on a 2,246-node editor-like tree — `M2-BEN-01`..`M2-BEN-03`
+- [x] JS→Rust commit transfer bench (QuickJS) — `M2-BEN-04` (0.40 ms per 1,000 ops; binary encoding not needed yet)
+- [x] Profiled and fixed our overhead: boxed UI nodes and FxHash maps (commit apply 5.1 → 3.1 ms)
+- [x] Results, analysis and revised targets recorded in TESTS.md
+- [x] **Decision: keep Taffy.** Costs fit the frame budget (~0.8 ms worst-case incremental update for 2,246 nodes); Yoga would do the same ancestor relayout. Revisit at M7 with the real editor UI
+
+**M2 status:** steps 1–7 done. Remaining: the manual resize check (`M2-MAN-01`) and a CI run (needs a push).
 
 **Suggested order:** 1 → 2 → 3 → 4 → 5 → 6 → 7. Steps 2 and 3 are independent once the opcode list (step 2's first item) is agreed, so they can run in parallel.
 

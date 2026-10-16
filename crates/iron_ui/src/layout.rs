@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use iron_core::NodeId;
 use taffy::{AvailableSpace, Size, Style, TaffyTree};

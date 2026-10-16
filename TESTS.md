@@ -137,14 +137,29 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-MAN-01 | Manual | `iron examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
 
 ### Performance
-| ID | Kind | Target (initial, revisit after measuring) |
-|---|---|---|
-| M2-BEN-01 | Benchmark | Full layout of a 2,000-node editor-like tree: **< 2 ms**. |
-| M2-BEN-02 | Benchmark | Relayout after changing one leaf's width: **< 0.2 ms**. |
-| M2-BEN-03 | Benchmark | Applying an op buffer of 2,000 creates: **< 1 ms**. |
-| M2-BEN-04 | Benchmark | JS→Rust op buffer transfer for 1,000 ops: **< 0.5 ms**. |
+Benches: `cargo bench -p iron_ui` (layout) and `cargo bench -p iron_script` (commits). The tree is an
+editor-like UI of **2,246 nodes** (toolbar, a 600-row file tree, a grid of 150 cards with shadows, an
+inspector of 40 fields), applied as one commit of 6,738 ops.
 
-If Taffy misses these targets by a wide margin, that's the trigger to try the Yoga backend.
+| ID | Kind | Initial target | Measured (2026-10-16, release, RTX 5080 desktop CPU) | Revised target |
+|---|---|---|---|---|
+| M2-BEN-01 | Benchmark | Full layout: < 2 ms | **3.46 ms** | < 5 ms (one-off at load) |
+| M2-BEN-02 | Benchmark | Relayout after one leaf change: < 0.2 ms | **0.58 ms** | < 1 ms |
+| M2-BEN-03 | Benchmark | Apply the whole tree's commit: < 1 ms | **3.10 ms** (was 5.1 ms; boxing nodes halved our share) | < 5 ms (one-off at load) |
+| M2-BEN-04 | Benchmark | JS→Rust transfer of 1,000 ops: < 0.5 ms | **0.40 ms** (0.59 ms including building them in JS) | < 0.5 ms ✓ |
+| — | Reference | Relayout after a window resize | 0.43 ms | — |
+| — | Reference | Draw list for the whole tree | 0.19 ms | — |
+
+**Where the time goes** (profiled with a timing layout-engine wrapper): about 85% of a relayout is Taffy
+recomputing flex/grid for the changed node's ancestors (its pixel rounding is only ~0.1 ms); our own
+bookkeeping is ~0.1 ms. Applying a commit is ~1.8 ms of Taffy node creation plus ~1.7 ms of ours (about
+0.3 ms of that is style parsing).
+
+**Decision: keep Taffy.** The initial targets were guesses made before measuring. The measured costs
+fit comfortably in a frame: a worst-case incremental update of this 2,246-node UI (relayout + draw list)
+is ~0.8 ms, about 5% of a 60 Hz frame, and full builds happen once at load. Yoga would do the same
+ancestor relayout work, so a Yoga spike isn't justified now. Revisit at M7 with the real editor UI
+(virtualized lists will keep node counts down); the `M2-LAY-05` fixtures are ready if we do.
 
 ---
 

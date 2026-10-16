@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::fmt;
 
 use iron_core::{Commit, NodeId, Value};
@@ -35,7 +35,8 @@ struct Node {
 
 /// The UI node tree, owned by Rust and built from React commits (DESIGN.md §3, §5).
 pub struct UiTree<L: LayoutEngine = TaffyLayout> {
-    nodes: HashMap<NodeId, Node>,
+    /// Boxed: nodes are large (~700 bytes), so the map stays cheap to grow.
+    nodes: HashMap<NodeId, Box<Node>>,
     layout: L,
     size: (f32, f32),
     needs_layout: bool,
@@ -53,23 +54,23 @@ impl<L: LayoutEngine> UiTree<L> {
     pub fn with_layout(mut layout: L, width: f32, height: f32) -> Self {
         let style = root_style(width, height);
         layout.create_node(ROOT, &style);
-        let mut nodes = HashMap::new();
+        let mut nodes = HashMap::default();
         nodes.insert(
             ROOT,
-            Node {
+            Box::new(Node {
                 kind: "root".into(),
                 parent: None,
                 children: Vec::new(),
                 style,
                 visual: Visual::default(),
-            },
+            }),
         );
         Self {
             nodes,
             layout,
             size: (width, height),
             needs_layout: true,
-            rects: HashMap::new(),
+            rects: HashMap::default(),
         }
     }
 
@@ -116,8 +117,8 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Applies one commit. Bad ops are skipped and returned; the rest still apply.
     pub fn apply_commit(&mut self, commit: &Commit) -> Vec<UiError> {
         let mut errors = Vec::new();
-        let mut children_changed = HashSet::new();
-        let mut styles_changed = HashSet::new();
+        let mut children_changed = HashSet::default();
+        let mut styles_changed = HashSet::default();
 
         for op in &commit.ops {
             if let Err(e) = self.apply_op(op, &mut children_changed, &mut styles_changed) {
@@ -174,13 +175,13 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.layout.create_node(id, &style);
                 self.nodes.insert(
                     id,
-                    Node {
+                    Box::new(Node {
                         kind: kind.to_owned(),
                         parent: None,
                         children: Vec::new(),
                         style,
                         visual: Visual::default(),
-                    },
+                    }),
                 );
             }
             opcodes::SET_STYLE => {
@@ -232,6 +233,7 @@ impl<L: LayoutEngine> UiTree<L> {
     fn node_mut(&mut self, id: NodeId) -> Result<&mut Node, UiError> {
         self.nodes
             .get_mut(&id)
+            .map(|n| &mut **n)
             .ok_or_else(|| UiError(format!("unknown node {id}")))
     }
 

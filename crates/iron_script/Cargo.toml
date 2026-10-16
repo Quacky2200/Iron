@@ -9,3 +9,10 @@ iron_core = { version = "0.1.0", path = "../iron_core" }
 rquickjs = "0.14.0"
 thiserror = "2.0.21"
 tracing = "0.1.44"
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "commits"
+harness = false
