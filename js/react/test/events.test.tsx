@@ -1,0 +1,204 @@
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { useState } from "react";
+
+import { dispatchUiEvent, type IronPointerEvent, type IronWheelEvent } from "../src/events.ts";
+import { instances, resetForTests } from "../src/host.ts";
+import { _resetRootForTests, createRoot, Text } from "../src/index.ts";
+import { CREATE, type Op, SET_STYLE } from "../src/opcodes.ts";
+
+let commits: Op[][] = [];
+/** Element ids by `data-name`, from the CREATE + SET_ATTRS ops. */
+const ids = new Map<string, number>();
+
+beforeEach(() => {
+  commits = [];
+  ids.clear();
+  (globalThis as { __iron_commit?: (ops: Op[]) => void }).__iron_commit = (ops) => {
+    commits.push(ops);
+    for (const op of ops) {
+      if (op[0] !== CREATE) continue;
+      const name = (instances.get(op[1] as number)?.props as Record<string, unknown>)["data-name"];
+      if (typeof name === "string") ids.set(name, op[1] as number);
+    }
+  };
+  resetForTests();
+  _resetRootForTests();
+});
+afterEach(() => {
+  delete (globalThis as { __iron_commit?: unknown }).__iron_commit;
+});
+
+/** The path for `names` (target first), as Rust sends it. */
+const path = (...names: string[]) => names.map((n) => ids.get(n)!);
+const data = (x = 0, y = 0, button = 0, buttons = 0, detail = 1, dx = 0, dy = 0, mods = 0) => [
+  x,
+  y,
+  button,
+  buttons,
+  detail,
+  dx,
+  dy,
+  mods,
+];
+
+describe("@iron/react events", () => {
+  test("installs the global the engine calls", () => {
+    expect(globalThis.__iron_ui_event).toBe(dispatchUiEvent);
+  });
+
+  // M3-EVT-02
+  test("capture runs root-down, then bubbling runs target-up", () => {
+    const log: string[] = [];
+    const on = (name: string) => (e: IronPointerEvent) =>
+      log.push(`${name}:${e.eventPhase}:${(e.currentTarget?.props as { "data-name": string })["data-name"]}`);
+    createRoot().render(
+      <box data-name="outer" onClick={on("bubble")} onClickCapture={on("capture")}>
+        <box data-name="middle" onClick={on("bubble")} onClickCapture={on("capture")}>
+          <box data-name="inner" onClick={on("bubble")} onClickCapture={on("capture")} />
+        </box>
+      </box>,
+    );
+    const prevented = dispatchUiEvent("click", path("inner", "middle", "outer"), data());
+    expect(prevented).toBe(false);
+    expect(log).toEqual([
+      "capture:1:outer",
+      "capture:1:middle",
+      "capture:2:inner",
+      "bubble:2:inner",
+      "bubble:3:middle",
+      "bubble:3:outer",
+    ]);
+  });
+
+  // M3-EVT-02
+  test("stopPropagation stops later elements; preventDefault is reported back", () => {
+    const log: string[] = [];
+    createRoot().render(
+      <box data-name="outer" onPointerDown={() => log.push("outer")}>
+        <box
+          data-name="inner"
+          onPointerDown={(e) => {
+            log.push("inner pointer");
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onMouseDown={() => log.push("inner mouse")}
+        />
+      </box>,
+    );
+    expect(dispatchUiEvent("pointerdown", path("inner", "outer"), data())).toBe(true);
+    // The rest of the stopping element's handlers still run.
+    expect(log).toEqual(["inner pointer", "inner mouse"]);
+  });
+
+  test("stopping during capture skips the target and bubbling", () => {
+    const log: string[] = [];
+    createRoot().render(
+      <box
+        data-name="outer"
+        onClickCapture={(e) => {
+          log.push("outer capture");
+          e.stopPropagation();
+        }}
+      >
+        <box data-name="inner" onClick={() => log.push("inner")} />
+      </box>,
+    );
+    dispatchUiEvent("click", path("inner", "outer"), data());
+    expect(log).toEqual(["outer capture"]);
+  });
+
+  test("enter and leave don't bubble", () => {
+    const log: string[] = [];
+    createRoot().render(
+      <box data-name="outer" onPointerEnter={() => log.push("outer")}>
+        <box data-name="inner" onPointerEnter={() => log.push("inner")} onMouseEnter={() => log.push("mouse")} />
+      </box>,
+    );
+    dispatchUiEvent("pointerenter", path("inner"), data());
+    expect(log).toEqual(["inner", "mouse"]);
+  });
+
+  test("event fields come from the data array", () => {
+    let pointer: IronPointerEvent | undefined;
+    let wheel: IronWheelEvent | undefined;
+    createRoot().render(
+      <box
+        data-name="b"
+        onDoubleClick={(e) => {
+          pointer = e;
+        }}
+        onWheel={(e) => {
+          wheel = e;
+        }}
+      />,
+    );
+    dispatchUiEvent("dblclick", path("b"), data(12, 34, 0, 1, 2, 0, 0, 1 | 8));
+    expect(pointer).toMatchObject({
+      type: "dblclick",
+      clientX: 12,
+      clientY: 34,
+      x: 12,
+      button: 0,
+      buttons: 1,
+      detail: 2,
+      shiftKey: true,
+      ctrlKey: false,
+      metaKey: true,
+    });
+    expect(pointer!.target.id).toBe(ids.get("b")!);
+    expect(pointer!.currentTarget).toBeNull();
+    dispatchUiEvent("wheel", path("b"), data(0, 0, 0, 0, 0, 3, -40));
+    expect(wheel).toMatchObject({ type: "wheel", deltaX: 3, deltaY: -40, deltaMode: 0 });
+  });
+
+  // M3-EVT-03
+  test("state set in a click handler commits before dispatch returns", () => {
+    function Counter() {
+      const [n, setN] = useState(0);
+      return <box data-name="button" style={{ width: n }} onClick={() => setN(n + 1)} />;
+    }
+    createRoot().render(<Counter />);
+    expect(commits).toHaveLength(1);
+    dispatchUiEvent("click", path("button"), data());
+    expect(commits).toHaveLength(2);
+    expect(commits[1]).toEqual([[SET_STYLE, ids.get("button")!, "width", 1]]);
+    // The handler from the new render sees the new state.
+    dispatchUiEvent("click", path("button"), data());
+    expect(commits[2]).toEqual([[SET_STYLE, ids.get("button")!, "width", 2]]);
+  });
+
+  test("handler errors are logged and dispatch continues", () => {
+    const error = spyOn(console, "error").mockImplementation(() => {});
+    const log: string[] = [];
+    createRoot().render(
+      <box data-name="outer" onClick={() => log.push("outer")}>
+        <Text
+          data-name="inner"
+          onClick={() => {
+            throw new Error("boom");
+          }}
+        >
+          hi
+        </Text>
+      </box>,
+    );
+    dispatchUiEvent("click", path("inner", "outer"), data());
+    expect(log).toEqual(["outer"]);
+    expect(error.mock.calls[0]![0]).toContain("boom");
+    error.mockRestore();
+  });
+
+  test("unknown targets, removed elements and unknown types are ignored", () => {
+    const log: string[] = [];
+    const root = createRoot();
+    root.render(<box data-name="b" onClick={() => log.push("b")} />);
+    const id = ids.get("b")!;
+    expect(dispatchUiEvent("click", [999], data())).toBe(false);
+    expect(dispatchUiEvent("keydown", [id], data())).toBe(false);
+    root.render(null);
+    expect(instances.has(id)).toBe(false);
+    expect(dispatchUiEvent("click", [id], data())).toBe(false);
+    expect(log).toEqual([]);
+  });
+});

@@ -46,6 +46,8 @@ pub struct Visual {
     pub opacity: f32,
     /// `pointerEvents`: `Some(false)` for `none`; `None` inherits from the parent.
     pub pointer_events: Option<bool>,
+    /// `cursor` (a CSS keyword from [`CURSORS`]); `None` inherits from the parent.
+    pub cursor: Option<&'static str>,
     /// Inherited text properties set on this node (see [`text_style`]).
     pub text: TextProps,
 }
@@ -67,10 +69,51 @@ impl Default for Visual {
             backdrop_blur: 0.0,
             opacity: 1.0,
             pointer_events: None,
+            cursor: None,
             text: TextProps::default(),
         }
     }
 }
+
+/// CSS `cursor` keywords. `auto` is the text cursor over text and the arrow elsewhere.
+pub const CURSORS: &[&str] = &[
+    "auto",
+    "default",
+    "none",
+    "context-menu",
+    "help",
+    "pointer",
+    "progress",
+    "wait",
+    "cell",
+    "crosshair",
+    "text",
+    "vertical-text",
+    "alias",
+    "copy",
+    "move",
+    "no-drop",
+    "not-allowed",
+    "grab",
+    "grabbing",
+    "all-scroll",
+    "col-resize",
+    "row-resize",
+    "n-resize",
+    "e-resize",
+    "s-resize",
+    "w-resize",
+    "ne-resize",
+    "nw-resize",
+    "se-resize",
+    "sw-resize",
+    "ew-resize",
+    "ns-resize",
+    "nesw-resize",
+    "nwse-resize",
+    "zoom-in",
+    "zoom-out",
+];
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum StyleError {
@@ -269,6 +312,13 @@ pub fn apply_style(
                 _ => return Err(invalid()),
             }
         }
+        "cursor" => {
+            let kw = kw()?.trim();
+            visual.cursor = match kw {
+                "inherit" => None,
+                _ => Some(*CURSORS.iter().find(|c| **c == kw).ok_or_else(invalid)?),
+            }
+        }
 
         p if text_style::is_text_prop(p) => text_style::apply(&mut visual.text, prop, value)
             .expect("is a text prop")
@@ -376,6 +426,7 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
         "opacity" => visual.opacity = v.opacity,
         "pointerEvents" => visual.pointer_events = v.pointer_events,
+        "cursor" => visual.cursor = v.cursor,
         p if text_style::is_text_prop(p) => {
             let _ = text_style::apply(&mut visual.text, prop, &Value::Null);
         }

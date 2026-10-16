@@ -6,6 +6,8 @@
 mod input;
 mod platform;
 
-pub use input::{InputEvent, MouseButton, convert_key, convert_window_event};
+pub use input::{
+    InputEvent, Modifiers, MouseButton, WheelDelta, convert_key, convert_window_event,
+};
 pub use platform::{Platform, PlatformApp, PlatformError, WindowConfig};
-pub use winit::window::Window;
+pub use winit::window::{CursorIcon, Window};

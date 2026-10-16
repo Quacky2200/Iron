@@ -8,6 +8,7 @@ mod cascade;
 mod color;
 pub mod css;
 mod draw;
+pub mod events;
 mod layout;
 pub mod opcodes;
 mod paint;
@@ -19,13 +20,14 @@ mod tree;
 pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
 pub use draw::{DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd};
+pub use events::{EventKind, Pointer, UiEvent};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ColorStop, Corners,
     GradientDirection, Len, RadialShape, Shadow,
 };
 pub use parley::FontData;
-pub use style::{StyleError, Visual, apply_style};
+pub use style::{CURSORS, StyleError, Visual, apply_style};
 pub use tree::{AddedStylesheet, ROOT, TEXT_NODE, UiError, UiTree};
 
 /// Re-exported because [`LayoutEngine`] uses Taffy's `Style` as its

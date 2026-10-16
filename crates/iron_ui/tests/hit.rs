@@ -1,74 +1,11 @@
 //! Hit testing (M3-EVT-01): the topmost element under a point, respecting paint
 //! order, rounded corners, `pointerEvents` and `display: none`.
 
-use iron_core::{Commit, NodeId, Value};
+mod common;
+
+use common::{Dom, px};
+use iron_core::NodeId;
 use iron_ui::UiTree;
-use iron_ui::opcodes::*;
-
-fn n(id: u32) -> Value {
-    Value::Number(id.into())
-}
-
-fn op(code: u32, args: &[Value]) -> Value {
-    let mut v = vec![Value::Number(code.into())];
-    v.extend_from_slice(args);
-    Value::Array(v)
-}
-
-struct Dom {
-    ops: Vec<Value>,
-    next: u32,
-}
-
-impl Dom {
-    fn new() -> Self {
-        Self {
-            ops: Vec::new(),
-            next: 1,
-        }
-    }
-
-    /// A box with inline styles, appended to `parent`.
-    fn add(&mut self, parent: u32, kind: &str, style: &[(&str, Value)]) -> u32 {
-        let id = self.next;
-        self.next += 1;
-        self.ops.push(op(CREATE, &[n(id), kind.into()]));
-        if !style.is_empty() {
-            let mut a = vec![n(id)];
-            for (k, v) in style {
-                a.push((*k).into());
-                a.push(v.clone());
-            }
-            self.ops.push(op(SET_STYLE, &a));
-        }
-        self.ops.push(op(APPEND_CHILD, &[n(parent), n(id)]));
-        id
-    }
-
-    fn text(&mut self, parent: u32, text: &str) -> u32 {
-        let id = self.next;
-        self.next += 1;
-        self.ops.push(op(CREATE_TEXT, &[n(id), text.into()]));
-        self.ops.push(op(APPEND_CHILD, &[n(parent), n(id)]));
-        id
-    }
-
-    fn build(self, css: &str) -> UiTree {
-        let mut tree = UiTree::new(400.0, 400.0);
-        let errors = tree.apply_commit(&Commit { ops: self.ops });
-        assert!(errors.is_empty(), "{errors:?}");
-        if !css.is_empty() {
-            let added = tree.add_stylesheet(css);
-            assert!(added.warnings.is_empty(), "{:?}", added.warnings);
-        }
-        tree.layout_if_needed();
-        tree
-    }
-}
-
-fn px(v: f64) -> Value {
-    Value::Number(v)
-}
 
 fn hit(tree: &mut UiTree, x: f32, y: f32) -> Option<u32> {
     tree.hit_test(x, y).map(|id| id.0)

@@ -331,10 +331,13 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      owner — `M3-EVT-01` (`crates/iron_ui/tests/hit.rs`)
    - [ ] Overflow clipping in hit tests (with step 4); spans inside text as targets (needs node ids
      in the text brush); `visibility`
-   - [ ] Pointer events to JS with the target's ancestor path; capture + bubble phases,
+   - [x] Pointer events to JS with the target's ancestor path; capture + bubble phases,
      `stopPropagation`, `preventDefault`; `onClick`, `onPointerDown/Up/Move/Enter/Leave`, `onWheel`,
-     double click — `M3-EVT-02`, `M3-EVT-03`
-   - [ ] `:hover` / `:active` states; `cursor` CSS property → OS cursor
+     double click, `onContextMenu`, `onMouse*` aliases — `M3-EVT-02`, `M3-EVT-03`
+     (`iron_ui::Pointer` in `events.rs`, `js/react/src/events.ts`, `crates/iron_ui/tests/pointer.rs`,
+     `events_quickjs.rs`)
+   - [x] `:hover` / `:active` states (hover re-tested each frame when the tree moves under the
+     pointer); `cursor` CSS property (inherited) → OS cursor
 2. **Keyboard and focus**
    - [ ] `tabIndex`, Tab / Shift-Tab order, `focus`/`blur` events, `:focus`, `:focus-visible`,
      `:focus-within`; key events to the focused node — `M3-EVT-04`

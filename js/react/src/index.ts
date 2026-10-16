@@ -11,11 +11,48 @@ import "@iron/engine";
 import { createElement, type ReactElement, type ReactNode } from "react";
 import { ConcurrentRoot } from "react-reconciler/constants";
 
+import "./events.ts";
+import type { IronPointerEvent, IronWheelEvent } from "./events.ts";
 import { type Container, reconciler } from "./host.ts";
 import { ROOT_ID } from "./opcodes.ts";
 import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
+export { IronEvent, IronPointerEvent, IronWheelEvent } from "./events.ts";
+export type { Instance as IronElement } from "./host.ts";
+
+type PointerHandler = (event: IronPointerEvent) => void;
+
+/**
+ * Event handlers, run React-style: `*Capture` handlers from the root down to the
+ * target, then the others from the target up. Enter/leave don't bubble.
+ */
+export interface EventProps {
+  onClick?: PointerHandler;
+  onClickCapture?: PointerHandler;
+  onDoubleClick?: PointerHandler;
+  onDoubleClickCapture?: PointerHandler;
+  onContextMenu?: PointerHandler;
+  onContextMenuCapture?: PointerHandler;
+  onPointerDown?: PointerHandler;
+  onPointerDownCapture?: PointerHandler;
+  onPointerUp?: PointerHandler;
+  onPointerUpCapture?: PointerHandler;
+  onPointerMove?: PointerHandler;
+  onPointerMoveCapture?: PointerHandler;
+  onPointerEnter?: PointerHandler;
+  onPointerLeave?: PointerHandler;
+  onMouseDown?: PointerHandler;
+  onMouseDownCapture?: PointerHandler;
+  onMouseUp?: PointerHandler;
+  onMouseUpCapture?: PointerHandler;
+  onMouseMove?: PointerHandler;
+  onMouseMoveCapture?: PointerHandler;
+  onMouseEnter?: PointerHandler;
+  onMouseLeave?: PointerHandler;
+  onWheel?: (event: IronWheelEvent) => void;
+  onWheelCapture?: (event: IronWheelEvent) => void;
+}
 
 /** Attributes that CSS selectors can match. */
 export interface ElementAttrs {
@@ -26,7 +63,7 @@ export interface ElementAttrs {
   [data: `data-${string}`]: string | number | boolean | undefined;
 }
 
-export interface BoxProps extends ElementAttrs {
+export interface BoxProps extends ElementAttrs, EventProps {
   style?: IronStyle;
   children?: ReactNode;
   key?: string | number | null;
@@ -40,7 +77,7 @@ declare module "react" {
   }
 }
 
-export interface TextProps extends ElementAttrs {
+export interface TextProps extends ElementAttrs, EventProps {
   style?: IronStyle;
   children?: ReactNode;
 }

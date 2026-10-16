@@ -1282,6 +1282,25 @@ impl<L: LayoutEngine> UiTree<L> {
         }
     }
 
+    /// The CSS cursor to show over `id` (or over nothing for `None`): the nearest
+    /// `cursor` set on it or an ancestor, with `auto` meaning `text` over text elements
+    /// and `default` elsewhere.
+    pub fn cursor(&self, id: Option<NodeId>) -> &'static str {
+        let auto = match id.and_then(|id| self.nodes.get(&id)) {
+            Some(node) if is_inline_container(&node.kind) => "text",
+            _ => "default",
+        };
+        let mut at = id;
+        while let Some(node) = at.and_then(|id| self.nodes.get(&id)) {
+            match node.visual.cursor {
+                None => at = node.parent,
+                Some("auto") => return auto,
+                Some(cursor) => return cursor,
+            }
+        }
+        auto
+    }
+
     /// The event path of `target`: the target first, then each ancestor up to (not
     /// including) the root.
     pub fn event_path(&self, target: NodeId) -> Vec<NodeId> {

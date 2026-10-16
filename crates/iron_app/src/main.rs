@@ -11,15 +11,19 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use iron_platform::{InputEvent, Platform, PlatformApp, Window, WindowConfig};
+use iron_platform::{
+    CursorIcon, InputEvent, MouseButton, Platform, PlatformApp, WheelDelta, Window, WindowConfig,
+};
 use iron_render::wgpu;
 use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::UiTree;
+use iron_ui::{Pointer, UiEvent, UiTree, events};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
 const MAX_TICKS_PER_FRAME: u32 = 5;
+/// Pixels per wheel notch ("line"), like browsers.
+const WHEEL_LINE: f32 = 40.0;
 const CLEAR: Color = Color::rgb(0.05, 0.06, 0.09);
 
 struct Args {
@@ -83,6 +87,10 @@ fn main() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     tracing::info!(?classes, "loaded {}", bundle_path.display());
+    // Set by @iron/react; games without React UI get no UI events.
+    let ui_events = scripts
+        .eval("typeof __iron_ui_event === 'function'")
+        .is_ok_and(|v| v == iron_core::Value::Bool(true));
 
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
@@ -108,6 +116,9 @@ fn main() -> Result<()> {
         components,
         ui,
         sheets: HashMap::new(),
+        pointer: Pointer::new(),
+        ui_events,
+        cursor: "default",
         asset_root,
         gfx: None,
         started: Instant::now(),
@@ -167,6 +178,11 @@ struct App {
     screenshot: Option<(PathBuf, u32)>,
     /// Stylesheets added by scripts: script id -> tree id.
     sheets: HashMap<u32, u32>,
+    pointer: Pointer,
+    /// Whether the game handles UI events (`__iron_ui_event` exists).
+    ui_events: bool,
+    /// The CSS cursor currently shown.
+    cursor: &'static str,
     done: bool,
 }
 
@@ -209,9 +225,48 @@ impl App {
                 other => tracing::warn!("unknown script op `{other}`"),
             }
         }
+
+        // The tree may have moved under a still pointer.
+        let events = self.pointer.refresh(&mut self.ui);
+        self.dispatch_ui(events);
     }
 
-    /// `loadFont(family, src, weight, style)` from `@iron/engine`.
+    /// Sends UI events to scripts, then updates the OS cursor.
+    fn dispatch_ui(&mut self, events: Vec<UiEvent>) {
+        if self.ui_events {
+            for event in &events {
+                // The returned "default prevented" flag is used by focus and scrolling (later in M3c).
+                if let Err(e) = self
+                    .scripts
+                    .call_global("__iron_ui_event", &event.script_args())
+                {
+                    tracing::error!(target: "script", "{} handler: {e}", event.kind.name());
+                }
+            }
+        }
+        let cursor = self.pointer.cursor(&self.ui);
+        if cursor != self.cursor
+            && let Some(gfx) = &self.gfx
+        {
+            self.cursor = cursor;
+            gfx.window.set_cursor_visible(cursor != "none");
+            if let Ok(icon) = cursor.parse::<CursorIcon>() {
+                gfx.window.set_cursor(icon);
+            }
+        }
+    }
+
+    /// Converts a window position (physical pixels) to the UI's logical pixels.
+    fn scale(&self) -> f32 {
+        self.gfx
+            .as_ref()
+            .map_or(1.0, |gfx| gfx.window.scale_factor() as f32)
+    }
+
+    fn now_ms(&self) -> f64 {
+        self.started.elapsed().as_secs_f64() * 1000.0
+    }
+
     /// `loadFont(family, src, weight, style)` from `@iron/engine`.
     fn load_font_op(&mut self, args: &[iron_core::Value]) {
         use iron_core::Value;
@@ -299,11 +354,47 @@ impl PlatformApp for App {
     }
 
     fn input(&mut self, event: InputEvent) {
-        if let InputEvent::Resized { width, height } = event
-            && let Some(gfx) = &mut self.gfx
-        {
-            gfx.surface.resize(&gfx.gpu, width, height);
-        }
+        let scale = self.scale() as f64;
+        let now = self.now_ms();
+        let ui = &mut self.ui;
+        let events = match event {
+            InputEvent::Resized { width, height } => {
+                if let Some(gfx) = &mut self.gfx {
+                    gfx.surface.resize(&gfx.gpu, width, height);
+                }
+                return;
+            }
+            InputEvent::MouseMove { x, y } => {
+                self.pointer
+                    .move_to(ui, (x / scale) as f32, (y / scale) as f32)
+            }
+            InputEvent::MouseLeave => self.pointer.leave(ui),
+            InputEvent::MouseDown { button } => self.pointer.down(ui, dom_button(button), now),
+            InputEvent::MouseUp { button } => self.pointer.up(ui, dom_button(button)),
+            InputEvent::MouseWheel(delta) => {
+                let (dx, dy) = match delta {
+                    WheelDelta::Lines { x, y } => (x * WHEEL_LINE, y * WHEEL_LINE),
+                    WheelDelta::Pixels { x, y } => ((x / scale) as f32, (y / scale) as f32),
+                };
+                self.pointer.wheel(ui, dx, dy)
+            }
+            InputEvent::Modifiers(m) => {
+                self.pointer.set_modifiers(events::Modifiers {
+                    shift: m.shift,
+                    ctrl: m.ctrl,
+                    alt: m.alt,
+                    meta: m.meta,
+                });
+                return;
+            }
+            // Releases outside an unfocused window may never arrive.
+            InputEvent::Focused(false) => {
+                self.pointer.cancel(ui);
+                return;
+            }
+            _ => return,
+        };
+        self.dispatch_ui(events);
     }
 
     fn frame(&mut self) {
@@ -352,6 +443,16 @@ impl PlatformApp for App {
 
     fn should_exit(&self) -> bool {
         self.done
+    }
+}
+
+/// The DOM's button number: 0 primary, 1 middle, 2 secondary, 3 back, 4 forward.
+fn dom_button(button: MouseButton) -> u8 {
+    match button {
+        MouseButton::Left => 0,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+        MouseButton::Other(n) => n.min(u8::MAX as u16) as u8,
     }
 }
 

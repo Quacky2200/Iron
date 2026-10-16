@@ -1,5 +1,5 @@
-use winit::event::{ElementState, WindowEvent};
-use winit::keyboard::PhysicalKey;
+use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+use winit::keyboard::{ModifiersState, PhysicalKey};
 
 /// Iron's platform-independent input events.
 #[derive(Clone, Debug, PartialEq)]
@@ -22,12 +22,46 @@ pub enum InputEvent {
     MouseUp {
         button: MouseButton,
     },
+    /// The cursor left the window.
+    MouseLeave,
+    MouseWheel(WheelDelta),
+    /// The held modifier keys changed.
+    Modifiers(Modifiers),
     Resized {
         width: u32,
         height: u32,
     },
     Focused(bool),
     CloseRequested,
+}
+
+/// A scroll amount, in the DOM's direction: positive `y` scrolls down (content moves up).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WheelDelta {
+    /// Notched wheels: lines (the app picks the line height).
+    Lines { x: f32, y: f32 },
+    /// Touchpads: physical pixels.
+    Pixels { x: f64, y: f64 },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    /// The Windows / Command key.
+    pub meta: bool,
+}
+
+impl From<ModifiersState> for Modifiers {
+    fn from(m: ModifiersState) -> Self {
+        Self {
+            shift: m.shift_key(),
+            ctrl: m.control_key(),
+            alt: m.alt_key(),
+            meta: m.super_key(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +107,13 @@ pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
                 button: (*button).into(),
             },
         }),
+        WindowEvent::CursorLeft { .. } => Some(InputEvent::MouseLeave),
+        // winit's deltas are positive when scrolling up/left; the DOM's are the opposite.
+        WindowEvent::MouseWheel { delta, .. } => Some(InputEvent::MouseWheel(match delta {
+            MouseScrollDelta::LineDelta(x, y) => WheelDelta::Lines { x: -x, y: -y },
+            MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels { x: -p.x, y: -p.y },
+        })),
+        WindowEvent::ModifiersChanged(m) => Some(InputEvent::Modifiers(m.state().into())),
         WindowEvent::KeyboardInput { event, .. } => {
             convert_key(event.physical_key, event.state, event.repeat)
         }
@@ -146,6 +187,28 @@ mod tests {
                 button: MouseButton::Right
             })
         );
+    }
+
+    #[test]
+    fn converts_wheel_to_dom_direction_and_cursor_leave() {
+        let device_id = DeviceId::dummy();
+        assert_eq!(
+            convert_window_event(&WindowEvent::MouseWheel {
+                device_id,
+                delta: MouseScrollDelta::LineDelta(0.0, 1.0),
+                phase: winit::event::TouchPhase::Moved,
+            }),
+            Some(InputEvent::MouseWheel(WheelDelta::Lines {
+                x: -0.0,
+                y: -1.0
+            }))
+        );
+        assert_eq!(
+            convert_window_event(&WindowEvent::CursorLeft { device_id }),
+            Some(InputEvent::MouseLeave)
+        );
+        let m = Modifiers::from(ModifiersState::SHIFT | ModifiersState::CONTROL);
+        assert!(m.shift && m.ctrl && !m.alt && !m.meta);
     }
 
     #[test]

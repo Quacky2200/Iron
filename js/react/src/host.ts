@@ -52,6 +52,9 @@ export interface TextInstance {
 
 type Node = Instance | TextInstance;
 
+/** Live elements by ID, so engine events can find their props. */
+export const instances = new Map<number, Instance>();
+
 /** Ops waiting for the next commit. Exposed for tests. */
 export const pending: Op[] = [];
 
@@ -100,7 +103,9 @@ export const reconciler = createReconciler({
     if (entries.length > 0) pending.push([SET_STYLE, id, ...entries]);
     const attrs = attrEntries(props as Record<string, unknown>);
     if (attrs.length > 0) pending.push([SET_ATTRS, id, ...attrs]);
-    return { id, type: type as ElementType, props };
+    const instance: Instance = { id, type: type as ElementType, props };
+    instances.set(id, instance);
+    return instance;
   },
 
   createTextInstance(text: string): TextInstance {
@@ -173,7 +178,9 @@ export const reconciler = createReconciler({
   prepareForCommit: () => null,
   resetAfterCommit: () => flush(),
   preparePortalMount: () => {},
-  detachDeletedInstance: () => {},
+  detachDeletedInstance(node: Node) {
+    instances.delete(node.id);
+  },
   getInstanceFromNode: () => null,
   beforeActiveInstanceBlur: () => {},
   afterActiveInstanceBlur: () => {},
@@ -210,8 +217,20 @@ export const reconciler = createReconciler({
   getSuspendedCommitReason: () => null,
 });
 
+/** Runs `fn` with React updates at `priority` (an event priority). */
+export function withUpdatePriority(priority: number, fn: () => void) {
+  const previous = currentUpdatePriority;
+  currentUpdatePriority = priority;
+  try {
+    fn();
+  } finally {
+    currentUpdatePriority = previous;
+  }
+}
+
 /** Resets ID allocation and pending ops. Only for tests. */
 export function resetForTests() {
   pending.length = 0;
+  instances.clear();
   nextId = 1;
 }

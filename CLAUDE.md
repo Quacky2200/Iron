@@ -16,11 +16,11 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_core` | Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
 | `crates/iron_platform` | winit window + event loop (`Platform`, `PlatformApp`), `InputEvent` conversion, gilrs gamepads |
 | `crates/iron_script` | `ScriptRuntime` trait + QuickJS backend (rquickjs 0.14), timers prelude, `ComponentHost` (component lifecycle) |
-| `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`) |
+| `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`) |
 | `crates/iron_render` | wgpu renderer for the draw list: quads, SDF rounded boxes, shadows, blur layers, gradients, images, glyph atlas (swash). `testing.rs` has golden helpers and a shared test GPU |
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet` |
-| `js/react` | `@iron/react`: reconciler (`host.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
+| `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
 | `examples/*` | `hello`, `boxes`, `text`, `css` games (each has `bun run build`) |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
@@ -90,8 +90,10 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3a text and fonts
   - M3b CSS stylesheets
   - M3c step 1: hit testing (`UiTree::hit_test`, `event_path`)
+  - M3c step 2: pointer events. `iron_ui::Pointer` turns input into DOM-style events and sets
+    `:hover`/`:active`; the app sends them to `__iron_ui_event(type, path, data)`, which
+    `@iron/react` (`events.ts`) runs through capture/bubble over `on*` props. `cursor` → OS cursor
 - **Next:** the rest of M3c. See TODO.md "M3c" for the steps:
-  1. Pointer events to JS with capture/bubble in `@iron/react`, plus `:hover`/`:active` and `cursor`
   2. Keyboard and focus (`tabIndex`, Tab order, key events)
   3. `overflow` clipping and scrolling
   4. `<input>`/`<textarea>` on Parley `PlainEditor` with IME and clipboard (arboard)
