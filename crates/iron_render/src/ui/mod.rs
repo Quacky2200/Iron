@@ -790,7 +790,8 @@ impl UiRenderer {
                                 bin = 0;
                             }
                             let y = (g.y * scale).round();
-                            let Some(e) = self.atlas.glyph(gpu, run, g.id, size_px, bin) else {
+                            let Some(e) = self.atlas.glyph(gpu, run, g.id, size_px, bin, 0.0)
+                            else {
                                 continue;
                             };
                             let dest_x = x + e.left as f32;
@@ -821,6 +822,26 @@ impl UiRenderer {
                             }
                             if run.color.a > 0.0 || fill.is_none() {
                                 instances.push(glyph);
+                            }
+                            // The stroke goes over the fill, centred on the outline.
+                            if let Some((width, stroke_color)) = run.stroke
+                                && let Some(s) =
+                                    self.atlas
+                                        .glyph(gpu, run, g.id, size_px, bin, width * scale)
+                            {
+                                let (sx, sy) = (x + s.left as f32, y - s.top as f32);
+                                instances.push(Instance {
+                                    rect: [
+                                        sx / scale,
+                                        sy / scale,
+                                        s.width as f32 / scale,
+                                        s.height as f32 / scale,
+                                    ],
+                                    p0: [s.x as f32, s.y as f32, s.width as f32, s.height as f32],
+                                    color0: linear_premultiplied(stroke_color),
+                                    params: [KIND_GLYPH, 0.0, -1.0, 0.0],
+                                    ..glyph
+                                });
                             }
                         }
                     }

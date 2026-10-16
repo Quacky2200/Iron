@@ -349,6 +349,10 @@ pub struct TextProps {
     pub underline_offset: Option<Option<FontLen>>,
     /// `text-decoration-skip-ink`: parsed, but underlines don't skip descenders yet.
     pub skip_ink: Option<bool>,
+    /// `-webkit-text-stroke` / `text-stroke` width and colour (`Some(None)` is
+    /// `currentColor`).
+    pub stroke_width: Option<FontLen>,
+    pub stroke_color: Option<Option<Rgba>>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
@@ -384,6 +388,10 @@ pub struct ComputedText {
     /// Px below the baseline; `None` uses the font's metrics.
     pub underline_offset: Option<f32>,
     pub skip_ink: bool,
+    /// Outline width in px (0 for none), centred on the glyph outlines.
+    pub stroke_width: f32,
+    /// `None`: the text colour.
+    pub stroke_color: Option<Rgba>,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
@@ -415,6 +423,8 @@ impl Default for ComputedText {
             decoration_thickness: None,
             underline_offset: None,
             skip_ink: true,
+            stroke_width: 0.0,
+            stroke_color: None,
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
@@ -473,6 +483,10 @@ impl ComputedText {
                 .underline_offset
                 .map_or(self.underline_offset, |o| o.map(|l| l.resolve(font_size))),
             skip_ink: props.skip_ink.unwrap_or(self.skip_ink),
+            stroke_width: props
+                .stroke_width
+                .map_or(self.stroke_width, |l| l.resolve(font_size).max(0.0)),
+            stroke_color: props.stroke_color.unwrap_or(self.stroke_color),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
                 .text_shadow
@@ -538,6 +552,12 @@ pub const TEXT_PROPS: &[&str] = &[
     "textDecorationThickness",
     "textUnderlineOffset",
     "textDecorationSkipInk",
+    "WebkitTextStroke",
+    "WebkitTextStrokeWidth",
+    "WebkitTextStrokeColor",
+    "textStroke",
+    "textStrokeWidth",
+    "textStrokeColor",
     "whiteSpace",
     "textShadow",
     "textTransform",
@@ -585,6 +605,12 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "textDecorationThickness" => props.decoration_thickness = None,
             "textUnderlineOffset" => props.underline_offset = None,
             "textDecorationSkipInk" => props.skip_ink = None,
+            "WebkitTextStroke" | "textStroke" => {
+                props.stroke_width = None;
+                props.stroke_color = None;
+            }
+            "WebkitTextStrokeWidth" | "textStrokeWidth" => props.stroke_width = None,
+            "WebkitTextStrokeColor" | "textStrokeColor" => props.stroke_color = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
@@ -735,6 +761,56 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 props.underline_offset = Some(parse!(len));
             }
         }
+        "WebkitTextStroke" | "textStroke" => {
+            // Width and colour in any order; left out, they're 0 and currentColor.
+            let (mut width, mut color) = (None, None);
+            let words: Vec<&str> = match value {
+                Value::Number(_) => Vec::new(),
+                _ => crate::paint::split_top_level(parse!(s), ' '),
+            };
+            if let Value::Number(n) = value {
+                width = Some(FontLen::Px(*n as f32));
+            }
+            for w in words {
+                let len = match w {
+                    "thin" => Some(FontLen::Px(1.0)),
+                    "medium" => Some(FontLen::Px(3.0)),
+                    "thick" => Some(FontLen::Px(5.0)),
+                    w => FontLen::parse(&Value::String(w.to_owned())),
+                };
+                if let Some(l) = len.filter(|_| width.is_none()) {
+                    width = Some(l);
+                } else if color.is_none() && w.eq_ignore_ascii_case("currentcolor") {
+                    color = Some(None);
+                } else if color.is_none() {
+                    color = Some(Some(parse!(Rgba::parse(w))));
+                } else {
+                    return Some(Err(()));
+                }
+            }
+            props.stroke_width = Some(width.unwrap_or(FontLen::Px(0.0)));
+            props.stroke_color = Some(color.flatten());
+        }
+        "WebkitTextStrokeWidth" | "textStrokeWidth" => {
+            props.stroke_width = Some(parse!(
+                match s {
+                    Some("thin") => Some(FontLen::Px(1.0)),
+                    Some("medium") => Some(FontLen::Px(3.0)),
+                    Some("thick") => Some(FontLen::Px(5.0)),
+                    _ => FontLen::parse(value),
+                }
+                .filter(|l| match l {
+                    FontLen::Px(n) | FontLen::Em(n) => *n >= 0.0,
+                })
+            ));
+        }
+        "WebkitTextStrokeColor" | "textStrokeColor" => {
+            props.stroke_color = Some(parse!(match s {
+                Some(c) if c.eq_ignore_ascii_case("currentcolor") => Some(None),
+                Some(c) => Rgba::parse(c).map(Some),
+                None => None,
+            }));
+        }
         "textDecorationSkipInk" => {
             props.skip_ink = Some(parse!(match s {
                 Some("auto" | "all") => Some(true),
@@ -860,6 +936,34 @@ fn parse_font_shorthand(s: &str) -> Option<FontShorthand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M3-TXT-14
+    #[test]
+    fn text_stroke_parses_and_inherits() {
+        let mut p = TextProps::default();
+        set(&mut p, "WebkitTextStroke", "red 0.1em".into());
+        let c = ComputedText::default().child(&p);
+        assert_eq!(c.stroke_width, 1.6);
+        assert_eq!(c.stroke_color, Some(Rgba::new(1.0, 0.0, 0.0, 1.0)));
+        let child = c.child(&TextProps::default());
+        assert_eq!(child.stroke_width, 1.6, "inherited");
+        set(&mut p, "textStroke", "thin".into());
+        assert_eq!(p.stroke_color, Some(None), "currentColor");
+        set(&mut p, "textStrokeWidth", 2.0.into());
+        set(&mut p, "WebkitTextStrokeColor", "blue".into());
+        assert_eq!(p.stroke_width, Some(FontLen::Px(2.0)));
+        for (prop, bad) in [
+            ("textStroke", "1px red blue"),
+            ("textStrokeWidth", "-1px"),
+            ("textStrokeColor", "nope"),
+        ] {
+            assert_eq!(
+                apply(&mut p, prop, &bad.into()),
+                Some(Err(())),
+                "{prop}: {bad}"
+            );
+        }
+    }
 
     // M3-TXT-13
     #[test]

@@ -8,7 +8,7 @@ use etagere::{BucketedAtlasAllocator, size2};
 use iron_ui::GlyphRun;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
-use swash::zeno::{Angle, Format, Transform, Vector};
+use swash::zeno::{Angle, Format, Stroke, Transform, Vector};
 
 use crate::Gpu;
 
@@ -31,6 +31,8 @@ struct GlyphKey {
     coords: u64,
     embolden: bool,
     skew: u32,
+    /// Outline stroke width in physical pixels × 4; 0 for the filled glyph.
+    stroke: u32,
 }
 
 /// Where a rasterized glyph lives in the atlas and how to place it.
@@ -176,6 +178,7 @@ impl GlyphAtlas {
         glyph: u32,
         size_px: f32,
         subpixel: u8,
+        stroke_px: f32,
     ) -> Option<GlyphEntry> {
         let key = GlyphKey {
             font: run.font.data.id(),
@@ -186,11 +189,12 @@ impl GlyphAtlas {
             coords: hash_coords(&run.normalized_coords),
             embolden: run.embolden,
             skew: run.skew.unwrap_or(0.0).to_bits(),
+            stroke: (stroke_px * 4.0).round() as u32,
         };
         if let Some(entry) = self.cache.get(&key) {
             return *entry;
         }
-        let entry = self.rasterize(gpu, run, glyph, size_px, subpixel);
+        let entry = self.rasterize(gpu, run, glyph, size_px, subpixel, stroke_px);
         if entry.is_some() || !self.full {
             // Don't remember failures caused by a full atlas.
             self.cache.insert(key, entry);
@@ -205,6 +209,7 @@ impl GlyphAtlas {
         glyph: u32,
         size_px: f32,
         subpixel: u8,
+        stroke_px: f32,
     ) -> Option<GlyphEntry> {
         let font = swash::FontRef::from_index(run.font.data.data(), run.font.index as usize)?;
         let mut scaler = self
@@ -214,11 +219,20 @@ impl GlyphAtlas {
             .hint(false)
             .normalized_coords(run.normalized_coords.iter().copied())
             .build();
-        let mut render = Render::new(&[
-            Source::ColorOutline(0),
-            Source::ColorBitmap(StrikeWith::BestFit),
-            Source::Outline,
-        ]);
+        // Strokes outline the glyph's shape; colour glyphs (emoji) aren't stroked.
+        let sources: &[Source] = if stroke_px > 0.0 {
+            &[Source::Outline]
+        } else {
+            &[
+                Source::ColorOutline(0),
+                Source::ColorBitmap(StrikeWith::BestFit),
+                Source::Outline,
+            ]
+        };
+        let mut render = Render::new(sources);
+        if stroke_px > 0.0 {
+            render.style(Stroke::new(stroke_px));
+        }
         render.format(Format::Alpha).offset(Vector::new(
             f32::from(subpixel) / f32::from(SUBPIXEL_BINS),
             0.0,

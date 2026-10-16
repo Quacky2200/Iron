@@ -1009,6 +1009,63 @@ fn decoration_styles() {
     assert_golden("M3-TXT-13", 120, 184, &f.pixels, TOLERANCE);
 }
 
+// M3-TXT-14
+#[test]
+fn outlined_text() {
+    let mut s = Scene::new();
+    s.label(
+        0,
+        "Hollow",
+        &at(
+            4.0,
+            0.0,
+            150.0,
+            40.0,
+            &[
+                ("color", "transparent".into()),
+                ("fontSize", 32.0.into()),
+                ("fontWeight", 800.0.into()),
+                ("WebkitTextStroke", "1px white".into()),
+            ],
+        ),
+    );
+    s.label(
+        0,
+        "Filled",
+        &at(
+            4.0,
+            44.0,
+            150.0,
+            40.0,
+            &[
+                ("color", "rgb(255, 60, 60)".into()),
+                ("fontSize", 32.0.into()),
+                ("fontWeight", 800.0.into()),
+                ("textStroke", "2px white".into()),
+            ],
+        ),
+    );
+    let f = render(s, (130, 88), 1.0, BLACK);
+    let pixels: Vec<[u8; 4]> = (0..130)
+        .flat_map(|x| (0..40).map(move |y| (x, y)))
+        .map(|(x, y)| f.px(x, y))
+        .collect();
+    assert!(
+        pixels.iter().any(|p| p[0] > 200 && p[1] > 200),
+        "white outlines"
+    );
+    let filled: Vec<[u8; 4]> = (0..130)
+        .flat_map(|x| (44..84).map(move |y| (x, y)))
+        .map(|(x, y)| f.px(x, y))
+        .collect();
+    assert!(
+        filled.iter().any(|p| p[0] > 200 && p[1] < 100),
+        "red fill inside"
+    );
+    assert!(filled.iter().any(|p| p[1] > 200), "white stroke around it");
+    assert_golden("M3-TXT-14", 130, 88, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

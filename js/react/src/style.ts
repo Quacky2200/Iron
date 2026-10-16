@@ -256,6 +256,14 @@ export interface IronStyle {
   textDecorationThickness?: Length | "auto" | "from-font";
   /** Distance of the underline below the baseline. */
   textUnderlineOffset?: Length | "auto";
+  /** Outlined text: width and colour, drawn over the fill (`color: "transparent"` for hollow text). */
+  WebkitTextStroke?: string;
+  WebkitTextStrokeWidth?: Length;
+  WebkitTextStrokeColor?: string;
+  /** s&box's name for `WebkitTextStroke`. */
+  textStroke?: string;
+  textStrokeWidth?: Length;
+  textStrokeColor?: string;
   /** Parsed; underlines don't skip descenders yet. */
   textDecorationSkipInk?: "auto" | "none" | "all";
   whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line" | "break-spaces";

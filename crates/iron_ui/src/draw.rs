@@ -345,6 +345,8 @@ pub struct GlyphRun {
     /// Synthetic italic angle in degrees when the family has no italic face.
     pub skew: Option<f32>,
     pub color: Rgba,
+    /// `text-stroke`: outline width (px) and colour, drawn over the fill.
+    pub stroke: Option<(f32, Rgba)>,
     pub glyphs: Vec<PositionedGlyph>,
 }
 
@@ -357,6 +359,7 @@ impl PartialEq for GlyphRun {
             && self.embolden == other.embolden
             && self.skew == other.skew
             && self.color == other.color
+            && self.stroke == other.stroke
             && self.glyphs == other.glyphs
     }
 }
@@ -403,6 +406,7 @@ impl TextCmd {
                 .iter()
                 .map(|r| GlyphRun {
                     color,
+                    stroke: r.stroke.map(|(w, _)| (w, color)),
                     glyphs: r
                         .glyphs
                         .iter()
@@ -467,6 +471,9 @@ impl DrawCmd {
             DrawCmd::Text(t) => {
                 for run in &mut t.runs {
                     run.color = run.color.with_alpha_scaled(factor);
+                    if let Some((_, c)) = &mut run.stroke {
+                        *c = c.with_alpha_scaled(factor);
+                    }
                 }
                 for d in &mut t.decorations {
                     d.color = d.color.with_alpha_scaled(factor);

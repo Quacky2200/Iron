@@ -539,7 +539,9 @@ and `@font-face`.
      Runs carry their decoration in Parley's brush; Iron draws the lines from font metrics (dots
      and dashes through the styled-border shader, waves through their own kind) — `M3-TXT-13`.
      `text-decoration-skip-ink` is parsed but underlines don't skip descenders yet
-   - [ ] Outlined text: `-webkit-text-stroke` / `text-stroke` (`width color`)
+   - [x] Outlined text: `-webkit-text-stroke` / `text-stroke` and their width/colour longhands
+     (inherited). Glyph runs carry the stroke; the atlas rasterizes stroked outlines with swash
+     (keyed by stroke width) and draws them over the fill. Colour glyphs aren't stroked — `M3-TXT-14`
    - [x] Gradient text: `background-clip: text` (M3d step 3b). s&box's gradient `color` isn't
      added: the standard form covers it
    - [ ] `caret-color` (with M3c inputs); `font-smooth` / text texture filtering

@@ -34,6 +34,9 @@ pub struct Brush {
     pub line_color: Option<Rgba>,
     pub thickness: Option<f32>,
     pub underline_offset: Option<f32>,
+    pub stroke_width: f32,
+    /// `None`: the text colour.
+    pub stroke_color: Option<Rgba>,
 }
 
 impl Brush {
@@ -45,6 +48,8 @@ impl Brush {
             line_color: style.decoration_color,
             thickness: style.decoration_thickness,
             underline_offset: style.underline_offset,
+            stroke_width: style.stroke_width,
+            stroke_color: style.stroke_color,
         }
     }
 }
@@ -315,6 +320,10 @@ fn draw_lines(
                     embolden: synthesis.embolden(),
                     skew: synthesis.skew(),
                     color: style.brush.color,
+                    stroke: (style.brush.stroke_width > 0.0).then(|| {
+                        let b = style.brush;
+                        (b.stroke_width, b.stroke_color.unwrap_or(b.color))
+                    }),
                     glyphs,
                 });
             }
