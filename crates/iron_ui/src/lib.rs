@@ -5,6 +5,7 @@
 
 mod attrs;
 mod color;
+pub mod css;
 mod draw;
 mod layout;
 pub mod opcodes;
