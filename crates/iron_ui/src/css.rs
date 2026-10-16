@@ -568,3 +568,127 @@ mod tests {
         assert_eq!(camel_case("width"), "width");
     }
 }
+
+/// Replaces `var(--name, fallback)` references in a declaration value using the
+/// element's custom properties. Returns `None` when a variable without a fallback
+/// is undefined (CSS then treats the declaration as invalid at computed time).
+/// Variables may reference other variables; cycles and runaway nesting give `None`.
+pub fn substitute_vars(value: &str, vars: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    substitute_depth(value, vars, 0)
+}
+
+fn substitute_depth(
+    value: &str,
+    vars: &dyn Fn(&str) -> Option<String>,
+    depth: u32,
+) -> Option<String> {
+    if depth > 16 {
+        return None;
+    }
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(start) = rest.find("var(") {
+        out.push_str(&rest[..start]);
+        let args_start = start + 4;
+        // Find the matching close paren (fallbacks may contain parens).
+        let mut depth_parens = 1;
+        let mut end = None;
+        for (i, c) in rest[args_start..].char_indices() {
+            match c {
+                '(' => depth_parens += 1,
+                ')' => {
+                    depth_parens -= 1;
+                    if depth_parens == 0 {
+                        end = Some(args_start + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let end = end?;
+        let args = &rest[args_start..end];
+        let (name, fallback) = match args.split_once(',') {
+            Some((n, f)) => (n.trim(), Some(f.trim())),
+            None => (args.trim(), None),
+        };
+        if !name.starts_with("--") {
+            return None;
+        }
+        let resolved = match vars(name) {
+            Some(v) => substitute_depth(&v, vars, depth + 1),
+            None => None,
+        };
+        let replacement = match (resolved, fallback) {
+            (Some(v), _) => v,
+            (None, Some(f)) => substitute_depth(f, vars, depth + 1)?,
+            (None, None) => return None,
+        };
+        out.push_str(&replacement);
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    Some(out)
+}
+
+#[cfg(test)]
+mod var_tests {
+    use super::*;
+
+    fn vars(name: &str) -> Option<String> {
+        match name {
+            "--accent" => Some("red".into()),
+            "--gap" => Some("8px".into()),
+            "--border" => Some("1px solid var(--accent)".into()),
+            "--loop-a" => Some("var(--loop-b)".into()),
+            "--loop-b" => Some("var(--loop-a)".into()),
+            _ => None,
+        }
+    }
+
+    // M3-CSS-05
+    #[test]
+    fn substitutes_variables() {
+        assert_eq!(
+            substitute_vars("var(--accent)", &vars).as_deref(),
+            Some("red")
+        );
+        assert_eq!(
+            substitute_vars("var(--gap) var(--gap)", &vars).as_deref(),
+            Some("8px 8px")
+        );
+        assert_eq!(
+            substitute_vars("var(--border)", &vars).as_deref(),
+            Some("1px solid red"),
+            "nested"
+        );
+        assert_eq!(
+            substitute_vars("var(--missing, blue)", &vars).as_deref(),
+            Some("blue"),
+            "fallback"
+        );
+        assert_eq!(
+            substitute_vars("var(--missing, rgba(0, 0, 0, 0.5))", &vars).as_deref(),
+            Some("rgba(0, 0, 0, 0.5)"),
+            "fallback with commas and parens"
+        );
+        assert_eq!(
+            substitute_vars("var(--missing, var(--accent))", &vars).as_deref(),
+            Some("red")
+        );
+        assert_eq!(
+            substitute_vars("var(--missing)", &vars),
+            None,
+            "undefined without fallback"
+        );
+        assert_eq!(
+            substitute_vars("var(--loop-a)", &vars),
+            None,
+            "cycles are invalid"
+        );
+        assert_eq!(
+            substitute_vars("no vars here", &vars).as_deref(),
+            Some("no vars here")
+        );
+    }
+}

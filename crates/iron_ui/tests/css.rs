@@ -431,3 +431,77 @@ fn adding_and_removing_sheets_restyles() {
     let warned = tree.add_stylesheet(".a { colour: red; width: 10px; background-color: nope }");
     assert_eq!(warned.warnings.len(), 2, "{:?}", warned.warnings);
 }
+
+// M3-CSS-05
+#[test]
+fn custom_properties_inherit_and_substitute() {
+    let mut d = Dom::new();
+    let panel = d.class(0, "panel");
+    let card = d.class(panel, "card");
+    let inner = d.class(card, "inner");
+    let plain = d.class(0, "card");
+    let tree = d.build(
+        r#"
+        :root { --accent: red; --pad: 6px }
+        .panel { --accent: blue }                       /* overrides for its subtree */
+        .card { background-color: var(--accent); padding: var(--pad) }
+        .inner { border: 2px solid var(--missing, green); width: var(--nope) }
+        "#,
+    );
+    assert_eq!(bg(&tree, card), BLUE, "inherits the nearest definition");
+    assert_eq!(bg(&tree, plain), RED, "from :root");
+    assert_eq!(
+        tree.visual(NodeId(inner)).unwrap().border_color,
+        GREEN,
+        "fallback"
+    );
+    // width: var(--nope) is invalid at computed time, so width stays auto.
+    assert!(tree.rect(NodeId(inner)).unwrap().width < 400.0);
+    let card_rect = tree.rect(NodeId(card)).unwrap();
+    let inner_rect = tree.rect(NodeId(inner)).unwrap();
+    assert_eq!(
+        inner_rect.x - card_rect.x,
+        6.0,
+        "padding from a :root variable"
+    );
+}
+
+// M3-CSS-05: inline custom properties, without any stylesheet, update live.
+#[test]
+fn inline_custom_properties_update_descendants() {
+    let mut tree = UiTree::new(200.0, 200.0);
+    let ops = vec![
+        op(CREATE, &[n(1), "box".into()]),
+        op(SET_STYLE, &[n(1), "--accent".into(), "red".into()]),
+        op(CREATE, &[n(2), "box".into()]),
+        op(
+            SET_STYLE,
+            &[
+                n(2),
+                "backgroundColor".into(),
+                "var(--accent)".into(),
+                "width".into(),
+                10.0.into(),
+            ],
+        ),
+        op(APPEND_CHILD, &[n(1), n(2)]),
+        op(APPEND_CHILD, &[n(0), n(1)]),
+    ];
+    assert!(tree.apply_commit(&Commit { ops }).is_empty());
+    tree.layout_if_needed();
+    assert_eq!(bg(&tree, 2), RED);
+    assert_eq!(
+        tree.rect(NodeId(2)).unwrap().width,
+        10.0,
+        "non-var inline styles still apply"
+    );
+
+    let ops = vec![op(SET_STYLE, &[n(1), "--accent".into(), "#0000ff".into()])];
+    assert!(tree.apply_commit(&Commit { ops }).is_empty());
+    tree.layout_if_needed();
+    assert_eq!(
+        bg(&tree, 2),
+        BLUE,
+        "changing the variable restyles the child"
+    );
+}
