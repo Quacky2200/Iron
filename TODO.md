@@ -207,7 +207,8 @@ Iron/
 **Goal:** game UIs with real text and fonts, CSS stylesheets with selectors and pseudo-elements, and
 interaction (pointer, keyboard, focus, text input with IME, scrolling). Planned in three parts that land
 in order: **M3a** text and fonts → **M3b** CSS stylesheets → **M3c** interaction. Each part ends with
-its tests passing and a commit per step.
+its tests passing and a commit per step. **M3d** (CSS parity with s&box) is a backlog of CSS breadth
+to pick from after M3c; its items can also be pulled forward when an example needs them.
 
 **Versions checked 2026-10-16:** parley 0.12 (+ fontique 0.12, harfrust shaping), swash 0.2.10,
 selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the clipboard.
@@ -350,7 +351,94 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [ ] `examples/form`: buttons with hover/active styles, a text field with IME, a scrolling list;
      manual check on Windows with a Japanese or Chinese IME — `M3-MAN-01`
 
-**Later (not M3):** CSS transitions and animations, `textOverflow: ellipsis`, WOFF2, accessibility
+### M3d — CSS parity with s&box
+
+Gaps found by comparing our CSS with s&box's (survey of 2026-10-16, from the official
+`Facepunch/sbox-docs` style-properties page and the `Facepunch/sbox-public` engine source). Items
+already planned for M3c (`overflow`, `cursor`, `pointer-events`, scrolling) aren't repeated here.
+Where s&box has a custom extension, we prefer the standard CSS form if there is one.
+
+We're already **ahead** of s&box on: custom properties and `var()` (s&box has none), `!important`
+(accepted but ignored there), attribute selectors, `:checked`/`:disabled`/`:enabled`/`:focus-within`/
+`:focus-visible`/`:blank`, `:nth-child(An+B of S)` and the `*-of-type` family, `:is()`/`:where()`,
+and `@font-face`.
+
+1. **Units and values**
+   - [ ] Layout lengths in `em`, `rem`, `vw`, `vh`, `vmin`, `vmax` (and `dvh`/`svh`/`lvh`,
+     `dvw`/`svw`/`lvw` as aliases); today layout takes `px`, `%` and `auto`
+   - [ ] `calc()`, `min()`, `max()`, `clamp()` anywhere a length is accepted (evaluated at layout)
+   - [ ] CSS-wide keywords `inherit`, `initial`, `unset`, `revert` on every property
+   - [ ] Colours: check `hsl()`/`hwb()`/`lab()`/`oklch()` coverage; `color-mix()` as the standard
+     form of s&box's `mix()`/`darken()`/`lighten()`
+   - [ ] Angles in `rad`, `grad`, `turn`; times in `s`/`ms`
+2. **Layout**
+   - [ ] `order`, `z-index` (paint order and hit testing), `isolation: isolate`
+   - [ ] `display: contents`; `position: fixed`
+   - [ ] Shorthands `flex-flow`, `place-items`, `place-self`, `place-content`
+   - [ ] Grid: `grid-auto-rows`/`grid-auto-columns`, `grid-template`, `grid-template-areas`,
+     `grid-area`, `grid-row-start`/`-end`, `grid-column-start`/`-end`
+   - [ ] Logical properties: `margin-block`/`-inline`, `padding-block`/`-inline`,
+     `inset-block`/`-inline` (with `-start`/`-end`), mapped left-to-right
+   - [ ] An `<image>` element with `src` and `object-fit` (`fill`, `contain`, `cover`, `none`,
+     `scale-down`) and `object-position`
+3. **Backgrounds and borders**
+   - [ ] `conic-gradient()`; `repeating-linear-gradient()` / `repeating-radial-gradient()`
+   - [ ] `background-clip` (`border-box`, `padding-box`, `content-box`, `text` for gradient text);
+     `background-position-x`/`-y`; `background-repeat: round | space`; multiple background layers
+   - [ ] `background-blend-mode` and `mix-blend-mode` (`normal`, `multiply`, `lighten`, `screen`, ...)
+   - [ ] `border-style`: `dashed`, `dotted`, `double` (then `groove`/`ridge`/`inset`/`outset`); per-side
+     colours (`border-top-color`, ...) and per-side styles
+   - [ ] Elliptical corner radii (`border-radius: 10px / 20px`)
+   - [ ] `outline`, `outline-width`, `outline-color`, `outline-style`, `outline-offset`
+   - [ ] `border-image` (slice, width, `stretch` / `round`, `fill`), from images and gradients
+   - [ ] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows
+     the shape). Standard equivalent: `clip-path: polygon() | circle() | ellipse() | inset()`
+4. **Text**
+   - [ ] `text-transform`, `text-overflow: ellipsis` (with `white-space: nowrap` + `overflow`)
+   - [ ] `word-break`, `overflow-wrap`; `white-space: pre-line | break-spaces`
+   - [ ] `font` shorthand; `font-size` keywords (`small`, `large`, ...); `font-weight` keywords
+     (`thin` ... `black`, `bolder`, `lighter`); `font-variant-numeric: tabular-nums`
+   - [ ] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),
+     `-color`, `-thickness`, `text-underline-offset`, `text-decoration-skip-ink`
+   - [ ] Outlined text: `-webkit-text-stroke` / `text-stroke` (`width color`)
+   - [ ] Gradient text (`background-clip: text`, or s&box's gradient `color`)
+   - [ ] `caret-color` (with M3c inputs); `font-smooth` / text texture filtering
+5. **Effects**
+   - [ ] `filter` / `backdrop-filter` functions beyond `blur()`: `brightness()`, `contrast()`,
+     `saturate()`, `grayscale()`, `sepia()`, `hue-rotate()`, `invert()`, `opacity()`, and
+     `drop-shadow()` (follows the shape, unlike `box-shadow`); chains of several functions
+   - [ ] `image-rendering` (`pixelated`, `crisp-edges`, smooth) for background images
+   - [ ] Masks: `mask-image` (images and gradients), `mask-mode`, `mask-size`, `mask-position`,
+     `mask-repeat`
+   - [ ] `opacity` as a percentage
+6. **Transforms**
+   - [ ] `transform`: `translate*`, `scale*`, `rotate*`, `skew*`, `matrix()`, `none`; `transform-origin`;
+     drawing and hit testing through transforms
+   - [ ] 3D: `perspective()`, `perspective-origin`, `rotateX`/`rotateY`, `translateZ` (UI on world panels)
+7. **Transitions and animations**
+   - [ ] `transition` (+ `-property`, `-duration`, `-delay`, `-timing-function`) for numbers, lengths,
+     colours, shadows and transforms; discrete properties snap
+   - [ ] `@keyframes` and `animation` (+ name, duration, delay, iteration count, direction, fill mode,
+     play state, timing function)
+   - [ ] Timing functions: `linear`, `ease*`, `cubic-bezier()`, `steps()`, `step-start`/`-end`
+   - [ ] Enter/exit styling, s&box's `:intro` / `:outro`: `@starting-style` (standard) for entry, and an
+     `:outro`-style state plus deferred removal in the React reconciler so exit transitions finish
+     before the node is deleted
+8. **Scrolling** (extends M3c overflow)
+   - [ ] `scrollbar-width`, `scrollbar-color`, `scrollbar-gutter`, `overscroll-behavior`;
+     `overflow: clip`
+9. **Game-specific extensions** (s&box custom properties worth copying)
+   - [ ] `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
+     `:active`); only the winning rule plays (needs M6 audio)
+   - [ ] Tint for images: `background-image-tint` / `border-image-tint` (or a `tint()` filter)
+   - [ ] UI scale: scale screen UI to a target resolution (s&box's ScreenPanel targets 1080p height)
+10. **Stylesheet authoring**
+    - [ ] Native CSS nesting (`&`, nested rules, implicit descendant) — covers s&box's SCSS nesting
+    - [ ] `@import` (Bun inlines imports when bundling; runtime `addStyleSheet` would need it too)
+    - [ ] SCSS (`$variables`, `@mixin`/`@include`) is **not planned** in the engine: custom properties
+      and nesting cover most uses, and a Bun plugin can compile `.scss` for those who want it
+
+**Later (not M3):** WOFF2, accessibility
 (accesskit), pointer capture, drag and drop, and **`@media` queries**: `width`/`height` (with
 `min-`/`max-` and range syntax), `orientation`, `aspect-ratio`, `resolution` (the window's scale
 factor), `prefers-color-scheme`, and `pointer`/`hover` (useful to tell mouse, touch and gamepad apart),
