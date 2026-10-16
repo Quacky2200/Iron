@@ -100,8 +100,29 @@ are resolved to pixels at restyle before `apply_style` sees them; see [css.md](c
 (`create_node`, `set_style`, `set_children`, `set_measured`, `mark_dirty`, `compute`, `layout`).
 `taffy::Style` doubles as the backend-neutral style type. Why the trait: DESIGN.md section 5.3 keeps
 Yoga as a fallback, and the JSON fixtures in `tests/layout` are generic over the engine (see
-[testing.md](testing.md)). `TaffyLayout` maps `NodeId` to Taffy ids; Taffy caches results, so only
-dirty subtrees recompute.
+[testing.md](testing.md)). `TaffyLayout` keeps its own node storage and runs Taffy's algorithms over it; layout results are
+cached per node, so only dirty subtrees recompute.
+
+Why not wrap `TaffyTree`: its `resolve_calc_value` always returns 0, so `calc()` with `%` could not
+work. `TaffyLayout` instead holds a map of `NodeData` (style, children, parent, measured flag,
+unrounded/final layout, hoisted out-of-flow children, cache) and a per-pass `View` that implements
+Taffy's tree traits, mirroring `TaffyTree`'s own view: dirty propagation up the parents
+(`mark_dirty_up`, stopping at an already-clear cache), `compute_cached_layout` caching, `round_layout`
+rounding, and hoisting of out-of-flow (absolute) children. `View` resolves calc handles through
+`crate::calc::resolve`, for containers (`resolve_calc_value`) and for measured leaves
+(`compute_leaf_layout`; the measure callback sizes text content).
+
+### calc ([calc.rs](../crates/iron_ui/src/calc.rs))
+
+Math that still has `%` after relative units are resolved is parsed into an `Expr` tree (`Px`,
+`Percent`, `Number`, add/sub/mul/div, `min`, `max`, `clamp`) and type-checked: lengths and
+percentages combine, numbers only scale (`calc(10% + 2)` or `calc(2 / 10%)` is rejected). Parsed
+expressions are interned in a global table keyed by lowercased text, so equal text gives equal styles.
+A style stores the table index as Taffy's opaque calc pointer: `handle = (index + 1) << 3` (Taffy
+uses the 3 low bits as a tag). `calc::resolve(handle, basis)` evaluates it against the percentage
+basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc::handle` for
+`width`-like (`Dimension`), margin-like (`LengthPercentageAuto`) and padding-like
+(`LengthPercentage`) values.
 
 `layout_if_needed()` (tree.rs) is the heart of the frame:
 

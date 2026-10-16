@@ -50,7 +50,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `scroll.rs` | Scrolling (M3c step 4b): offsets and hit testing, which axes scroll, wheel chaining, Shift+wheel, key scrolling, Tab into view, script `scrollTo/By/IntoView`, scrollbar geometry, thumb drag and track paging, inherited `scrollbarColor` |
 | `editor.rs` | Text fields (M3c step 5): sizing from the font, typing and editing keys with `input` events, textarea Enter and line moves, prevented `keydown`, controlled `value` / `defaultValue`, read-only and disabled, tab order, pointer caret / word / drag selection, cut / copy / paste requests, draw list (selection, blinking caret, dimmed placeholder, caret kept in view), text cursor, IME pre-edit and commit, focus loss dropping pre-edit |
 | `navigation.rs` | Gamepad UI navigation (M3-PAD-01): `Input::Navigate` picks the nearest focusable element in a direction (in-line beats closer), nothing without focus, `Input::Activate` clicks with detail 0 |
-| `units.rs` | Relative units and math (M3d step 1): `em` from own font size, `rem`, viewport units, `calc`/`min`/`max`/`clamp`, restyle when font size or window size changes, invalid values rejected |
+| `units.rs` | Relative units and math (M3d step 1): `em` from own font size, `rem`, viewport units, `calc`/`min`/`max`/`clamp` (including `%` math in sizes, margins, padding, gaps and shorthands), `boxSizing`, restyle when font size or window size changes, invalid values rejected |
 | `wide_keywords.rs` | CSS-wide keywords (M3d step 1c): `inherit` on non-inherited properties, `initial` stopping inheritance, `unset`/`revert`, stylesheets without warnings, `inherit` at the root, `::before` inheriting |
 | `typing_profile.rs` | `#[ignore]`d profile of typing into `examples/form` (needs `bun run build`): `cargo test --release -p iron_ui --test typing_profile -- --ignored --nocapture` |
 | `react_quickjs.rs`, `events_quickjs.rs` | Real React in QuickJS driving a real `UiTree` |
@@ -113,7 +113,7 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M1-RND` | Headless GPU, clear, 0x0 resize | `iron_render/tests/headless.rs`, `tests/golden/M1-RND-02.png` |
 | `M1-SCR`, `M1-CMP` | Script runtime, components | `iron_script/src/conformance.rs`, `iron_script/tests`, `js/engine/test` |
 | `M2-REC` | React reconciler ops | `js/react/test/reconciler.test.tsx` |
-| `M2-UI`, `M2-STY`, `M2-VIS`, `M2-LAY` | Tree, styles, visuals, layout | `iron_ui/tests/{tree,layout_fixtures}.rs`, unit tests in `style.rs`/`paint.rs` |
+| `M2-UI`, `M2-STY`, `M2-VIS`, `M2-LAY` | Tree, styles, visuals, layout | `iron_ui/tests/{tree,layout_fixtures}.rs`, unit tests in `style.rs`/`paint.rs`/`calc.rs` |
 | `M2-DRW` | Renderer | `iron_render/tests/ui.rs` + `tests/golden/M2-DRW-*` |
 | `M2-INT`, `M2-SCR` | React in QuickJS driving the tree | `iron_ui/tests/react_quickjs.rs` |
 | `M3-TXT`, `M3-FNT` | Text and fonts; right-to-left `direction`/`dir` (`M3-TXT-09`) | `iron_ui/tests/text.rs`, `iron_ui/tests/direction.rs` (plus rtl cases in `editor.rs`), `ui.rs` goldens `M3-TXT-*` |

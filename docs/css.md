@@ -170,7 +170,18 @@ parser stays unchanged (`2em` becomes `32px`).
   plain `fontSize: 2em`, which the font-size parser handles itself (relative to the parent).
 - `Uses { em, rem, viewport }` records which kinds a declaration used.
 - Math that mixes in `%` (`calc(100% - 20px)`) needs layout, so it is kept as written with its units
-  resolved; only properties that accept it take it. Resolving it is left for a later step.
+  resolved and parsed by [calc.rs](../crates/iron_ui/src/calc.rs), then evaluated by layout once the
+  percentage basis is known (see [ui-tree.md](ui-tree.md#layout)). Properties that accept it: sizes
+  (and min/max), insets, margins, padding, borders, gaps and `flexBasis`. Paint lengths (radii,
+  shadows, etc.) do not take percentage math yet. Shorthands (`margin`, `padding`, ...) split at the
+  top level, so `calc(10% - 2px)` stays one value. Mixing a length with a bare number
+  (`calc(10% + 2)`) is invalid.
+
+## Box sizing
+
+`boxSizing: border-box | content-box`. The default is `border-box` (Taffy's and s&box's default),
+unlike CSS, whose default is `content-box`. `width`/`height` therefore include padding and border
+unless a rule sets `content-box`.
 
 In `restyle`, after `var()` substitution, `fontSize` is resolved first (its `em` is the parent's
 size), then `em` is set to the node's own computed size for all other properties. The node's `Uses`
