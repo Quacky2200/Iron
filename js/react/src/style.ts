@@ -7,6 +7,8 @@ export interface IronStyle {
   // Layout
   display?: "flex" | "grid" | "block" | "none";
   position?: "relative" | "absolute";
+  /** Iron defaults to `border-box` (sizes include padding and border), unlike CSS. */
+  boxSizing?: "border-box" | "content-box";
   width?: Length;
   height?: Length;
   minWidth?: Length;

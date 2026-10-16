@@ -256,6 +256,14 @@ pub fn apply_style(
     match prop {
         "display" => style.display = parse_kw::<Display>(kw()?).ok_or_else(invalid)?,
         "position" => style.position = parse_kw::<Position>(kw()?).ok_or_else(invalid)?,
+        // Iron (like Taffy and s&box) defaults to border-box; CSS's default is content-box.
+        "boxSizing" => {
+            style.box_sizing = match kw()?.trim() {
+                "border-box" => taffy::BoxSizing::BorderBox,
+                "content-box" => taffy::BoxSizing::ContentBox,
+                _ => return Err(invalid()),
+            }
+        }
 
         "width" => style.size.width = d(value)?,
         "height" => style.size.height = d(value)?,
@@ -524,6 +532,7 @@ pub(crate) fn copy_prop(
     match prop {
         "display" => style.display = d.display,
         "position" => style.position = d.position,
+        "boxSizing" => style.box_sizing = d.box_sizing,
         "width" => style.size.width = d.size.width,
         "height" => style.size.height = d.size.height,
         "minWidth" => style.min_size.width = d.min_size.width,
@@ -665,6 +674,10 @@ fn plain_number(s: &str) -> Option<f32> {
 fn dimension(v: &Value) -> Option<Dimension> {
     match v {
         Value::Number(n) => Some(Dimension::length(*n as f32)),
+        // Math with percentages, evaluated by layout (see `crate::calc`).
+        Value::String(s) if crate::calc::is_math(s) => {
+            Some(Dimension::calc(crate::calc::handle(s)?))
+        }
         Value::String(s) => match plain_number(s) {
             Some(n) => Some(Dimension::length(n)),
             None => s.trim().parse().ok(),
@@ -676,6 +689,9 @@ fn dimension(v: &Value) -> Option<Dimension> {
 fn length_percentage_auto(v: &Value) -> Option<LengthPercentageAuto> {
     match v {
         Value::Number(n) => Some(LengthPercentageAuto::length(*n as f32)),
+        Value::String(s) if crate::calc::is_math(s) => {
+            Some(LengthPercentageAuto::calc(crate::calc::handle(s)?))
+        }
         Value::String(s) => match plain_number(s) {
             Some(n) => Some(LengthPercentageAuto::length(n)),
             None => s.trim().parse().ok(),
@@ -687,6 +703,9 @@ fn length_percentage_auto(v: &Value) -> Option<LengthPercentageAuto> {
 fn length_percentage(v: &Value) -> Option<LengthPercentage> {
     match v {
         Value::Number(n) => Some(LengthPercentage::length(*n as f32)),
+        Value::String(s) if crate::calc::is_math(s) => {
+            Some(LengthPercentage::calc(crate::calc::handle(s)?))
+        }
         Value::String(s) => match plain_number(s) {
             Some(n) => Some(LengthPercentage::length(n)),
             None => s.trim().parse().ok(),
@@ -760,8 +779,9 @@ fn border_shorthand(v: &Value) -> Option<(LengthPercentage, Option<Rgba>)> {
 fn sides<T: Copy>(v: &Value, parse: fn(&Value) -> Option<T>) -> Option<Rect<T>> {
     let values: Vec<T> = match v {
         Value::Number(_) => vec![parse(v)?],
-        Value::String(s) => s
-            .split_whitespace()
+        // Top-level split, so `calc(10% - 2px)` stays one value.
+        Value::String(s) => split_top_level(s, ' ')
+            .into_iter()
             .map(|part| parse(&Value::String(part.to_owned())))
             .collect::<Option<_>>()?,
         _ => return None,
@@ -785,8 +805,9 @@ fn sides<T: Copy>(v: &Value, parse: fn(&Value) -> Option<T>) -> Option<Rect<T>> 
 fn pair<T: Copy>(v: &Value, parse: fn(&Value) -> Option<T>) -> Option<[T; 2]> {
     let values: Vec<T> = match v {
         Value::Number(_) => vec![parse(v)?],
-        Value::String(s) => s
-            .split_whitespace()
+        // Top-level split, so `calc(10% - 2px)` stays one value.
+        Value::String(s) => split_top_level(s, ' ')
+            .into_iter()
             .map(|part| parse(&Value::String(part.to_owned())))
             .collect::<Option<_>>()?,
         _ => return None,

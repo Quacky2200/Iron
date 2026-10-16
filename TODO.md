@@ -448,8 +448,13 @@ and `@font-face`.
      size changes (`crates/iron_ui/tests/units.rs`)
    - [x] `calc()`, `min()`, `max()`, `clamp()` with pixels, relative units and numbers, nested;
      invalid math is ignored (stylesheets warn, inline values are rejected and keep the old value)
-   - [ ] `calc()` with percentages (`calc(100% - 20px)`): needs Taffy's calc callback, which
-     `TaffyTree` doesn't implement (`resolve_calc_value` returns 0), so a custom Taffy tree
+   - [x] `calc()` / `min()` / `max()` / `clamp()` with percentages (`calc(100% - 20px)`) in layout
+     lengths (sizes, insets, margins, padding, borders, gaps, `flex-basis`): parsed once and
+     interned (`crates/iron_ui/src/calc.rs`), evaluated by Taffy through our own Taffy tree
+     (`TaffyLayout` now implements Taffy's tree traits instead of using `TaffyTree`, whose
+     `resolve_calc_value` returns 0). Paint lengths (`border-radius`, shadows) don't take them yet
+   - [x] `boxSizing: border-box | content-box`; Iron keeps Taffy's (and s&box's) `border-box`
+     default, where CSS defaults to `content-box`
    - [x] CSS-wide keywords `inherit`, `initial`, `unset`, `revert` (and `revert-layer`, both like
      `unset`: no user-agent stylesheet) on every property, inline, in stylesheets and on
      `::before`/`::after`; `inherit` copies the parent's value for non-inherited properties

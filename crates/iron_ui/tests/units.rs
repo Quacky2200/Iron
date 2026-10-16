@@ -163,3 +163,113 @@ fn invalid_math_is_ignored_like_invalid_css() {
     assert_eq!(errors.len(), 1);
     assert_eq!(width(&mut tree, a), 50.0);
 }
+
+// M3d step 1b: math with percentages is evaluated by layout.
+#[test]
+fn math_with_percentages_resolves_against_the_containing_block() {
+    let mut d = Dom::new();
+    let wrap = d.add(
+        0,
+        "box",
+        &[("flexDirection", "column".into()), ("width", px(300.0))],
+    );
+    let a = d.add(
+        wrap,
+        "box",
+        &[("width", "calc(100% - 20px)".into()), ("height", px(5.0))],
+    );
+    let b = d.add(
+        wrap,
+        "box",
+        &[("width", "min(100%, 120px)".into()), ("height", px(5.0))],
+    );
+    let c = d.add(
+        wrap,
+        "box",
+        &[
+            ("width", "clamp(50px, 50% - 2em, 200px)".into()),
+            ("fontSize", px(10.0)),
+            ("height", px(5.0)),
+        ],
+    );
+    let e = d.add(
+        wrap,
+        "box",
+        &[
+            ("width", px(100.0)),
+            ("height", px(5.0)),
+            ("marginLeft", "calc(10% + 5px)".into()),
+        ],
+    );
+    let mut tree = d.build("");
+    assert_eq!(width(&mut tree, a), 280.0);
+    assert_eq!(width(&mut tree, b), 120.0);
+    assert_eq!(width(&mut tree, c), 130.0, "50% of 300 minus 2em (20px)");
+    assert_eq!(tree.rect(NodeId(e)).unwrap().x, 35.0, "10% of 300 plus 5");
+}
+
+#[test]
+fn percentage_math_follows_the_window_and_works_in_stylesheets() {
+    let mut d = Dom::new();
+    let a = d.add(0, "box", &[("height", px(5.0))]);
+    let mut tree = d.build("box { width: calc(50% + 10px); padding: calc(5% - 10px) 0 }");
+    assert_eq!(width(&mut tree, a), 210.0, "half of 400, plus 10");
+    tree.set_size(800.0, 400.0);
+    assert_eq!(width(&mut tree, a), 410.0);
+    let r = tree.rect(NodeId(a)).unwrap();
+    assert_eq!(
+        r.height, 60.0,
+        "padding: 5% of 800 minus 10 = 30, top and bottom (border-box: it outgrows the 5px)"
+    );
+}
+
+#[test]
+fn flex_basis_takes_percentage_math() {
+    let mut d = Dom::new();
+    let row = d.add(0, "box", &[("width", px(200.0)), ("height", px(10.0))]);
+    let a = d.add(
+        row,
+        "box",
+        &[
+            ("flexBasis", "calc(25% + 10px)".into()),
+            ("flexShrink", px(0.0)),
+        ],
+    );
+    let mut tree = d.build("");
+    assert_eq!(width(&mut tree, a), 60.0);
+}
+
+#[test]
+fn box_sizing_defaults_to_border_box_and_content_box_adds_padding() {
+    let mut d = Dom::new();
+    let wrap = d.add(
+        0,
+        "box",
+        &[
+            ("flexDirection", "column".into()),
+            ("alignItems", "flex-start".into()),
+        ],
+    );
+    let style = |sizing: Option<&str>| {
+        let mut s = vec![
+            ("width", px(100.0)),
+            ("height", px(10.0)),
+            ("padding", px(10.0)),
+        ];
+        if let Some(b) = sizing {
+            s.push(("boxSizing", b.into()));
+        }
+        s
+    };
+    let default = d.add(wrap, "box", &style(None));
+    let border = d.add(wrap, "box", &style(Some("border-box")));
+    let content = d.add(wrap, "box", &style(Some("content-box")));
+    let mut tree = d.build("");
+    assert_eq!(width(&mut tree, default), 100.0, "border-box by default");
+    assert_eq!(width(&mut tree, border), 100.0);
+    assert_eq!(
+        width(&mut tree, content),
+        120.0,
+        "content-box adds the padding"
+    );
+}

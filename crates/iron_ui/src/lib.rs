@@ -4,6 +4,7 @@
 //! Pipeline (DESIGN.md §5.1): `Commit` ops → [`UiTree`] → layout → [`DrawCmd`]s → renderer.
 
 mod attrs;
+pub mod calc;
 mod cascade;
 mod color;
 mod color_fn;
