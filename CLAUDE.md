@@ -21,7 +21,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads) |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css` games (each has `bun run build`) |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
@@ -110,8 +110,10 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     (arboard in the app), IME (pre-edit/commit, `set_ime_cursor_area`)
   - M3c step 6: gamepads (`iron_platform::gamepad`) and keys to scripts through `@iron/engine`'s
     `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
-- **Next:** the rest of M3c: `examples/form` and the manual checks (TODO.md "M3c" step 6).
+  - M3c step 7: `examples/form`. **M3c is done.**
+- **Next:** M3d (CSS parity with s&box, TODO.md), or the next milestone in TODO.md.
 - **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA
   instability, also seen before Iron). Warn before launching the interactive window; prefer
   `--screenshot` runs for checks.
-- **Needs the user:** the manual checks M2-MAN-01 (resize) and M3-MAN-01 (IME), and the CI run.
+- **Needs the user:** hand checks of resizing (M2-MAN-01) and `examples/form` with a real gamepad,
+  and the CI run.

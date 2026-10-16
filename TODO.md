@@ -418,8 +418,14 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
 6. **Example + checks**
    - [x] Manual IME check on Windows (`M3-MAN-01`, IME part): done in `examples/css` with the
      Microsoft Japanese IME (see Text input above)
-   - [ ] `examples/form`: buttons with hover/active styles, a text field with IME, a scrolling list
-   - [ ] Chinese Pinyin composition, once Windows has its dictionaries
+   - [x] `examples/form`: a profile form with controlled fields (validation, a character
+     counter), keyboard- and gamepad-operable toggles and buttons (`:hover`, `:active`,
+     `:focus-visible`, `:disabled`), Enter to submit, and a scrolling list of saved profiles;
+     focus starts in the first field so the d-pad works at once (checked by screenshot)
+   - [ ] Hand checks still open: `examples/form` with a real gamepad, resizing (`M2-MAN-01`) and
+     Chinese Pinyin composition once Windows has its dictionaries
+
+**M3c status:** done (2026-10-16). Left for hand checks: the gamepad and resize checks above.
 
 ### M3d — CSS parity with s&box
 

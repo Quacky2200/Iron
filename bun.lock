@@ -32,6 +32,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/form": {
+      "name": "form",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/hello": {
       "name": "hello",
       "version": "0.1.0",
@@ -95,6 +107,8 @@
     "css": ["css@workspace:examples/css"],
 
     "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
+
+    "form": ["form@workspace:examples/form"],
 
     "hello": ["hello@workspace:examples/hello"],
 
