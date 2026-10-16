@@ -176,6 +176,7 @@ export interface IronStyle {
   borderRightStyle?: BorderStyle;
   borderBottomStyle?: BorderStyle;
   borderLeftStyle?: BorderStyle;
+  /** 1-4 radii, optionally `/` and vertical radii for elliptical corners (`"40px / 12px"`). */
   borderRadius?: Length;
   borderTopLeftRadius?: Length;
   borderTopRightRadius?: Length;

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BlendMode, BorderStyle, ClipPath, Corners, Len, ObjectFit, Overflow, Shadow,
+    BlendMode, BorderStyle, ClipPath, CornerRadius, Corners, Len, ObjectFit, Overflow, Shadow,
     parse_background_image, parse_background_position, parse_background_repeat,
     parse_background_size, parse_blur_filter, parse_clip_rect, parse_layers, parse_radii,
     parse_shadows, split_top_level,
@@ -48,7 +48,7 @@ pub struct Visual {
     /// `currentColor` per side (also the CSS default when `border` omits a colour).
     pub border_currents: [bool; 4],
     pub border_styles: [BorderStyle; 4],
-    pub border_radius: Corners<Len>,
+    pub border_radius: Corners<CornerRadius>,
     pub shadows: Vec<Shadow>,
     /// `filter: blur(..)` radius; 0 means none.
     pub filter_blur: f32,
@@ -105,7 +105,7 @@ impl Default for Visual {
             border_colors: [Rgba::TRANSPARENT; 4],
             border_currents: [false; 4],
             border_styles: [BorderStyle::Solid; 4],
-            border_radius: Corners::all(Len::Px(0.0)),
+            border_radius: Corners::all(CornerRadius::ZERO),
             shadows: Vec::new(),
             filter_blur: 0.0,
             backdrop_blur: 0.0,
@@ -679,7 +679,9 @@ pub fn apply_style(
         }
         "borderRadius" => {
             visual.border_radius = match value {
-                Value::Number(n) if *n >= 0.0 => Corners::all(Len::Px(*n as f32)),
+                Value::Number(n) if *n >= 0.0 => {
+                    Corners::all(CornerRadius::circular(Len::Px(*n as f32)))
+                }
                 Value::String(s) => parse_radii(s).ok_or_else(invalid)?,
                 _ => return Err(invalid()),
             }
@@ -1084,16 +1086,12 @@ fn is_current_color(v: &Value) -> bool {
         .is_some_and(|s| s.trim().eq_ignore_ascii_case("currentcolor"))
 }
 
-/// One corner radius: a number (px), `"8px"` or `"50%"`.
-fn radius(v: &Value) -> Option<Len> {
-    let len = match v {
-        Value::Number(n) => Len::Px(*n as f32),
-        Value::String(s) => Len::parse(s)?,
-        _ => return None,
-    };
-    match len {
-        Len::Px(n) | Len::Percent(n) if n < 0.0 => None,
-        ok => Some(ok),
+/// One corner radius: a number (px), `"8px"`, `"50%"`, or `"10px 20px"` (elliptical).
+fn radius(v: &Value) -> Option<CornerRadius> {
+    match v {
+        Value::Number(n) if *n >= 0.0 => Some(CornerRadius::circular(Len::Px(*n as f32))),
+        Value::String(s) => CornerRadius::parse(s),
+        _ => None,
     }
 }
 
@@ -1677,12 +1675,18 @@ mod tests {
         let (_, v) = apply("backgroundColor", "#ff0000".into()).unwrap();
         assert_eq!(v.background, Rgba::new(1.0, 0.0, 0.0, 1.0));
         let (_, v) = apply("borderRadius", "8px".into()).unwrap();
-        assert_eq!(v.border_radius, Corners::all(Len::Px(8.0)));
+        let circle = |l| Corners::all(CornerRadius::circular(l));
+        assert_eq!(v.border_radius, circle(Len::Px(8.0)));
         let (_, v) = apply("borderRadius", 6.0.into()).unwrap();
-        assert_eq!(v.border_radius, Corners::all(Len::Px(6.0)));
+        assert_eq!(v.border_radius, circle(Len::Px(6.0)));
         let (_, v) = apply("borderTopRightRadius", "50%".into()).unwrap();
-        assert_eq!(v.border_radius.top_right, Len::Percent(0.5));
-        assert_eq!(v.border_radius.top_left, Len::Px(0.0));
+        assert_eq!(
+            v.border_radius.top_right,
+            CornerRadius::circular(Len::Percent(0.5))
+        );
+        assert_eq!(v.border_radius.top_left, CornerRadius::ZERO);
+        let (_, v) = apply("borderBottomLeftRadius", "10px 20px".into()).unwrap();
+        assert_eq!(v.border_radius.bottom_left.y, Len::Px(20.0));
         let (_, v) = apply("boxShadow", "0 2px 4px black".into()).unwrap();
         assert_eq!(v.shadows.len(), 1);
         let (_, v) = apply("filter", "blur(3px)".into()).unwrap();

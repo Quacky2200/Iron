@@ -40,29 +40,10 @@ impl Rect {
         Rect::new(self.x + dx, self.y + dy, self.width, self.height)
     }
 
-    /// Whether (x, y) is inside the rectangle with rounded corners `radii`
-    /// (top-left, top-right, bottom-right, bottom-left), as used for hit testing.
-    pub fn contains_rounded(self, radii: [f32; 4], x: f32, y: f32) -> bool {
-        let (right, bottom) = (self.x + self.width, self.y + self.height);
-        if x < self.x || y < self.y || x >= right || y >= bottom {
-            return false;
-        }
-        // Corner centres, each inset by its radius.
-        let corners = [
-            (self.x + radii[0], self.y + radii[0], radii[0]),
-            (right - radii[1], self.y + radii[1], radii[1]),
-            (right - radii[2], bottom - radii[2], radii[2]),
-            (self.x + radii[3], bottom - radii[3], radii[3]),
-        ];
-        corners.iter().enumerate().all(|(i, &(cx, cy, r))| {
-            let outside_x = if i == 0 || i == 3 { x < cx } else { x > cx };
-            let outside_y = if i < 2 { y < cy } else { y > cy };
-            if r <= 0.0 || !outside_x || !outside_y {
-                return true;
-            }
-            let (dx, dy) = (x - cx, y - cy);
-            dx * dx + dy * dy <= r * r
-        })
+    /// Whether (x, y) is inside the rectangle with rounded (possibly elliptical)
+    /// corners `radii`, as used for hit testing.
+    pub fn contains_rounded(self, radii: Radii, x: f32, y: f32) -> bool {
+        ClipShape::rounded(self, radii).contains(x, y)
     }
 
     /// The overlap of two rectangles (zero-sized when they don't overlap).
@@ -87,6 +68,47 @@ impl Rect {
     }
 }
 
+/// Corner radii, horizontal (`x`) and vertical (`y`), each top-left, top-right,
+/// bottom-right, bottom-left. Equal for circular corners.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Radii {
+    pub x: [f32; 4],
+    pub y: [f32; 4],
+}
+
+impl Radii {
+    pub const ZERO: Self = Self {
+        x: [0.0; 4],
+        y: [0.0; 4],
+    };
+
+    pub fn circular(r: [f32; 4]) -> Self {
+        Self { x: r, y: r }
+    }
+
+    /// The radii of an inner edge `inset` (top, right, bottom, left) inside this
+    /// shape, as CSS does: horizontal radii lose the left/right inset, vertical
+    /// ones the top/bottom.
+    pub fn inner(self, inset: [f32; 4]) -> Self {
+        let [t, r, b, l] = inset;
+        let x = [l, r, r, l];
+        let y = [t, t, b, b];
+        Self {
+            x: [0, 1, 2, 3].map(|i| (self.x[i] - x[i]).max(0.0)),
+            y: [0, 1, 2, 3].map(|i| (self.y[i] - y[i]).max(0.0)),
+        }
+    }
+
+    /// Rounded corners grown by `by` (shadow spread); square corners stay square.
+    pub fn grow(self, by: f32) -> Self {
+        let g = |r: f32| if r > 0.0 { (r + by).max(0.0) } else { 0.0 };
+        Self {
+            x: self.x.map(g),
+            y: self.y.map(g),
+        }
+    }
+}
+
 /// A clip region: a rectangle with elliptical corners (`radii_x` / `radii_y` per corner:
 /// top-left, top-right, bottom-right, bottom-left). Rectangles, rounded boxes, circles
 /// and ellipses are all this shape.
@@ -106,12 +128,12 @@ impl ClipShape {
         }
     }
 
-    /// A box with circular corners.
-    pub fn rounded(rect: Rect, radii: [f32; 4]) -> Self {
+    /// A box with rounded corners.
+    pub fn rounded(rect: Rect, radii: Radii) -> Self {
         Self {
             rect,
-            radii_x: radii,
-            radii_y: radii,
+            radii_x: radii.x,
+            radii_y: radii.y,
         }
     }
 
@@ -156,7 +178,7 @@ pub struct ImageFill {
     pub position: BackgroundPosition,
     pub repeat: BackgroundRepeat,
     pub area: Rect,
-    pub radii: [f32; 4],
+    pub radii: Radii,
 }
 
 /// One box: background colour, image/gradient layers, border and rounded corners.
@@ -170,7 +192,7 @@ pub struct Quad {
     /// Border widths: top, right, bottom, left.
     pub border: [f32; 4],
     /// Resolved corner radii: top-left, top-right, bottom-right, bottom-left.
-    pub radii: [f32; 4],
+    pub radii: Radii,
 }
 
 impl Quad {
@@ -188,7 +210,7 @@ impl Quad {
 pub struct ShadowShape {
     /// The box casting the shadow (before offset and spread).
     pub rect: Rect,
-    pub radii: [f32; 4],
+    pub radii: Radii,
     pub offset_x: f32,
     pub offset_y: f32,
     /// CSS blur radius (the Gaussian's standard deviation is half of this).
@@ -202,7 +224,7 @@ pub enum DrawCmd {
     /// Blur what has already been drawn behind `rect`, clipped to its rounded shape.
     BackdropBlur {
         rect: Rect,
-        radii: [f32; 4],
+        radii: Radii,
         blur: f32,
     },
     /// An outer `boxShadow`, drawn before its box.
@@ -227,7 +249,7 @@ pub enum DrawCmd {
     /// bottom, left) drawn in the ring between `rect` and its inner edge.
     Border {
         rect: Rect,
-        radii: [f32; 4],
+        radii: Radii,
         widths: [f32; 4],
         colors: [Rgba; 4],
         styles: [BorderStyle; 4],

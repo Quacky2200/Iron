@@ -699,6 +699,55 @@ fn border_styles_and_side_colours() {
     assert_golden("M3-BRD-01", 130, 220, &f.pixels, TOLERANCE);
 }
 
+// M3-BRD-02
+#[test]
+fn elliptical_corners() {
+    let mut s = Scene::new();
+    // 50% on a 100x40 box is an ellipse, not a stadium.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            100.0,
+            40.0,
+            &[
+                ("backgroundColor", "white".into()),
+                ("borderRadius", "50%".into()),
+            ],
+        ),
+    );
+    // Wide, shallow corners with a border following them.
+    s.add(
+        0,
+        &at(
+            0.0,
+            50.0,
+            100.0,
+            40.0,
+            &[
+                ("backgroundColor", "rgb(0, 0, 255)".into()),
+                ("border", "4px solid white".into()),
+                ("borderRadius", "40px / 12px".into()),
+            ],
+        ),
+    );
+    let f = render(s, (100, 90), 1.0, BLACK);
+    let black = [0, 0, 0, 255];
+    let white = [255, 255, 255, 255];
+    assert_eq!(f.px(50, 1), white, "top of the ellipse");
+    assert_eq!(f.px(1, 20), white, "left of the ellipse");
+    assert_eq!(f.px(12, 5), black, "outside: a stadium would cover this");
+    assert_eq!(f.px(3, 55), black, "outside the shallow corner");
+    assert_eq!(
+        f.px(30, 51),
+        white,
+        "the border runs along the long, flat corner"
+    );
+    assert_eq!(f.px(50, 70), [0, 0, 255, 255], "inside");
+    assert_golden("M3-BRD-02", 100, 90, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

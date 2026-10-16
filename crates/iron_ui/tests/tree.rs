@@ -287,7 +287,7 @@ fn effects_are_emitted_in_css_paint_order() {
         ]
     );
     let DrawCmd::Quad(q) = &cmds[4] else { panic!() };
-    assert_eq!(q.radii, [8.0, 0.0, 8.0, 0.0]);
+    assert_eq!(q.radii, iron_ui::Radii::circular([8.0, 0.0, 8.0, 0.0]));
     // The layer covers the larger shadow (box offset 2 down, grown by its blur of 4:
     // x -4..104, y -2..106) plus 3x the filter blur (12) on every side.
     let DrawCmd::PushLayer { bounds, .. } = cmds[1] else {

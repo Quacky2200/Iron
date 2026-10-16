@@ -141,7 +141,7 @@ fn paint_and_text_properties_take_relative_units() {
     let mut tree = d.build("");
     tree.layout_if_needed();
     let v = tree.visual(NodeId(a)).unwrap();
-    assert_eq!(v.border_radius.top_left, iron_ui::Len::Px(20.0));
+    assert_eq!(v.border_radius.top_left.x, iron_ui::Len::Px(20.0));
     assert!((tree.computed_text(NodeId(a)).letter_spacing - 1.0).abs() < 1e-4);
 }
 

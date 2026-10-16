@@ -44,6 +44,7 @@ struct Instance {
     @location(5) color1: vec4<f32>, // border colour
     @location(6) params: vec4<f32>, // x: kind, y: sigma (logical px), z: gradient index or -1,
                                     // w: clip index (1-based, 0 = none)
+    @location(7) radii_y: vec4<f32>, // vertical corner radii (elliptical corners)
 };
 
 struct VsOut {
@@ -55,6 +56,7 @@ struct VsOut {
     @location(4) @interpolate(flat) color0: vec4<f32>,
     @location(5) @interpolate(flat) color1: vec4<f32>,
     @location(6) @interpolate(flat) params: vec4<f32>,
+    @location(7) @interpolate(flat) radii_y: vec4<f32>,
 };
 
 @vertex
@@ -97,6 +99,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     out.color0 = inst.color0;
     out.color1 = inst.color1;
     out.params = inst.params;
+    out.radii_y = inst.radii_y;
     return out;
 }
 
@@ -108,12 +111,19 @@ fn corner_radius(q: vec2<f32>, radii: vec4<f32>) -> f32 {
 }
 
 // Signed distance (logical px) to a rounded rectangle with per-corner radii.
-fn sd_rounded_box(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
+// Elliptical corners (`rx`, `ry`); for circular ones this is the exact distance.
+fn sd_rounded_box(p: vec2<f32>, rect: vec4<f32>, rx: vec4<f32>, ry: vec4<f32>) -> f32 {
     let half = rect.zw * 0.5;
     let q0 = p - (rect.xy + half);
-    let r = min(corner_radius(q0, radii), min(half.x, half.y));
-    let q = abs(q0) - half + vec2(r);
-    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+    let edge = abs(q0) - half;
+    let r = vec2(min(corner_radius(q0, rx), half.x), min(corner_radius(q0, ry), half.y));
+    if r.x > 0.0 && r.y > 0.0 {
+        let q = edge + r; // relative to the corner's centre
+        if q.x > 0.0 && q.y > 0.0 {
+            return (length(q / r) - 1.0) * min(r.x, r.y);
+        }
+    }
+    return min(max(edge.x, edge.y), 0.0) + length(max(edge, vec2(0.0)));
 }
 
 // Anti-aliased coverage from a signed distance: one physical pixel of feathering.
@@ -121,11 +131,20 @@ fn coverage(d: f32) -> f32 {
     return clamp(0.5 - d * globals.scale, 0.0, 1.0);
 }
 
-fn shape_coverage(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
+fn shape_coverage(p: vec2<f32>, rect: vec4<f32>, rx: vec4<f32>, ry: vec4<f32>) -> f32 {
     if rect.z <= 0.0 || rect.w <= 0.0 {
         return 0.0;
     }
-    return coverage(sd_rounded_box(p, rect, radii));
+    return coverage(sd_rounded_box(p, rect, rx, ry));
+}
+
+// Inner edge radii, as CSS: horizontal radii lose the left/right width, vertical
+// ones the top/bottom (`b` is top, right, bottom, left).
+fn inner_rx(rx: vec4<f32>, b: vec4<f32>) -> vec4<f32> {
+    return max(rx - vec4(b.w, b.y, b.y, b.w), vec4(0.0));
+}
+fn inner_ry(ry: vec4<f32>, b: vec4<f32>) -> vec4<f32> {
+    return max(ry - vec4(b.x, b.x, b.z, b.z), vec4(0.0));
 }
 
 // --- Blurred rounded rectangles (Evan Wallace's analytic box shadow) -------
@@ -156,7 +175,7 @@ fn blurred_box(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>, sigma: f32) -> f
         return 0.0;
     }
     if sigma < 0.01 {
-        return shape_coverage(p, rect, radii);
+        return shape_coverage(p, rect, radii, radii);
     }
     let half = rect.zw * 0.5;
     let point = p - (rect.xy + half);
@@ -244,13 +263,10 @@ fn gradient_color(index: u32, p: vec2<f32>, rect: vec4<f32>) -> vec4<f32> {
 fn styled_border(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     let r = in.rect;
     let b = in.p0;
-    let outer = shape_coverage(p, r, in.radii);
+    let outer = shape_coverage(p, r, in.radii, in.radii_y);
     let inner_rect = vec4(r.x + b.w, r.y + b.x, r.z - b.w - b.y, r.w - b.x - b.z);
-    let inner_radii = max(
-        in.radii - vec4(max(b.x, b.w), max(b.x, b.y), max(b.z, b.y), max(b.z, b.w)),
-        vec4(0.0),
-    );
-    let ring = outer - min(shape_coverage(p, inner_rect, inner_radii), outer);
+    let inner = shape_coverage(p, inner_rect, inner_rx(in.radii, b), inner_ry(in.radii_y, b));
+    let ring = outer - min(inner, outer);
     if ring <= 0.0 {
         return vec4(0.0);
     }
@@ -414,7 +430,7 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     if kind == KIND_OUTER_SHADOW {
         // CSS clips outer shadows to outside the box that casts them.
         let shadow = blurred_box(p, in.rect, in.radii, sigma);
-        return in.color0 * shadow * (1.0 - shape_coverage(p, in.p0, in.p1));
+        return in.color0 * shadow * (1.0 - shape_coverage(p, in.p0, in.p1, in.p1));
     }
     if kind == KIND_GLYPH {
         return glyph(in);
@@ -424,12 +440,12 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     }
     if kind == KIND_INSET_SHADOW {
         // Drawn inside the padding box, everywhere except the (blurred) hole.
-        let inside = shape_coverage(p, in.rect, in.radii);
+        let inside = shape_coverage(p, in.rect, in.radii, in.radii_y);
         return in.color0 * inside * (1.0 - blurred_box(p, in.p0, in.p1, sigma));
     }
 
     // A box: fill (solid colour with an optional gradient over it), then border.
-    let outer = shape_coverage(p, in.rect, in.radii);
+    let outer = shape_coverage(p, in.rect, in.radii, in.radii_y);
     if outer <= 0.0 {
         return vec4(0.0);
     }
@@ -440,11 +456,10 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
         in.rect.z - b.w - b.y,
         in.rect.w - b.x - b.z,
     );
-    let inner_radii = max(
-        in.radii - vec4(max(b.x, b.w), max(b.x, b.y), max(b.z, b.y), max(b.z, b.w)),
-        vec4(0.0),
+    let inner = min(
+        shape_coverage(p, inner_rect, inner_rx(in.radii, b), inner_ry(in.radii_y, b)),
+        outer,
     );
-    let inner = min(shape_coverage(p, inner_rect, inner_radii), outer);
 
     var fill = in.color0;
     let gradient = in.params.z;
@@ -469,7 +484,7 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
 @fragment
 fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
     let p = in.pos.xy / globals.scale;
-    let clip = shape_coverage(p, in.rect, in.radii) * clip_coverage(p, in.params);
+    let clip = shape_coverage(p, in.rect, in.radii, in.radii_y) * clip_coverage(p, in.params);
     if clip <= 0.0 {
         discard;
     }

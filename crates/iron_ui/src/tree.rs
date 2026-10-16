@@ -10,7 +10,7 @@ use crate::Rgba;
 use crate::attrs::{Attrs, ElementState};
 use crate::cascade::{Deps, Key, RuleIndex, Target, matched_declarations};
 use crate::css::{FontFace, PseudoElement, Stylesheet, parse_stylesheet, substitute_vars};
-use crate::draw::{ClipShape, DrawCmd, ImageFill, Quad, Rect, ShadowShape};
+use crate::draw::{ClipShape, DrawCmd, ImageFill, Quad, Radii, Rect, ShadowShape};
 use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_kind};
 use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
@@ -76,7 +76,7 @@ fn is_inline_container(kind: &str) -> bool {
 fn background_layers(
     v: &Visual,
     rect: Rect,
-    radii: [f32; 4],
+    radii: Radii,
     l: &NodeLayout,
 ) -> (Vec<ImageFill>, Option<Arc<BackgroundImage>>) {
     let mut fills = Vec::new();
@@ -157,14 +157,8 @@ fn blended_background(quad: Quad, v: &Visual, out: &mut Vec<DrawCmd>) {
     out.push(DrawCmd::PopLayer);
 }
 
-/// The `background-clip` box and its corner radii (outer radii shrunk by the inset,
-/// approximated as circles).
-fn clip_area(
-    clip: BackgroundClip,
-    rect: Rect,
-    radii: [f32; 4],
-    l: &NodeLayout,
-) -> (Rect, [f32; 4]) {
+/// The `background-clip` box and its corner radii (the outer radii shrunk by the inset).
+fn clip_area(clip: BackgroundClip, rect: Rect, radii: Radii, l: &NodeLayout) -> (Rect, Radii) {
     let inset = match clip {
         BackgroundClip::BorderBox | BackgroundClip::Text => [0.0; 4],
         BackgroundClip::PaddingBox => l.border,
@@ -177,9 +171,7 @@ fn clip_area(
         (rect.width - left - r).max(0.0),
         (rect.height - t - b).max(0.0),
     );
-    // Corners: top-left, top-right, bottom-right, bottom-left.
-    let shrink = [t.max(left), t.max(r), b.max(r), b.max(left)];
-    (area, [0, 1, 2, 3].map(|i| (radii[i] - shrink[i]).max(0.0)))
+    (area, radii.inner(inset))
 }
 
 /// The element type of images.
@@ -2424,7 +2416,7 @@ impl<L: LayoutEngine> UiTree<L> {
         src: &str,
         v: &Visual,
         rect: Rect,
-        radii: [f32; 4],
+        radii: Radii,
         l: &NodeLayout,
         out: &mut Vec<DrawCmd>,
     ) {
@@ -2448,7 +2440,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let size = v
             .object_fit
             .background_size(natural, (content.width, content.height));
-        out.push(DrawCmd::PushClip(inner_corners(rect, radii, inset)));
+        out.push(DrawCmd::PushClip(inner_corners(content, radii, inset)));
         out.push(DrawCmd::Quad(Quad {
             rect: content,
             background: Rgba::TRANSPARENT,
@@ -2458,11 +2450,11 @@ impl<L: LayoutEngine> UiTree<L> {
                 position: v.object_position,
                 repeat: BackgroundRepeat::NO_REPEAT,
                 area: content,
-                radii: [0.0; 4],
+                radii: Radii::ZERO,
             }],
             border_color: Rgba::TRANSPARENT,
             border: [0.0; 4],
-            radii: [0.0; 4],
+            radii: Radii::ZERO,
         }));
         out.push(DrawCmd::PopClip);
     }
@@ -2567,7 +2559,7 @@ impl<L: LayoutEngine> UiTree<L> {
         node: &Node,
         rect: Rect,
         l: &NodeLayout,
-        radii: [f32; 4],
+        radii: Radii,
         text: &ComputedText,
         out: &mut Vec<DrawCmd>,
     ) {
@@ -2590,7 +2582,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 images: Vec::new(),
                 border_color: Rgba::TRANSPARENT,
                 border: [0.0; 4],
-                radii: [0.0; 4],
+                radii: Radii::ZERO,
             })
         };
         out.push(DrawCmd::PushClip(inner_corners(
@@ -2637,7 +2629,7 @@ impl<L: LayoutEngine> UiTree<L> {
                         images: Vec::new(),
                         border_color: Rgba::TRANSPARENT,
                         border: [0.0; 4],
-                        radii: [radius; 4],
+                        radii: Radii::circular([radius; 4]),
                     }));
                 }
             }
@@ -2646,13 +2638,7 @@ impl<L: LayoutEngine> UiTree<L> {
 
     /// The clips on an element itself: `clipPath`, and `clip: rect()` for absolutely
     /// positioned elements.
-    fn self_clips(
-        &self,
-        node: &Node,
-        rect: Rect,
-        l: &NodeLayout,
-        radii: [f32; 4],
-    ) -> Vec<ClipShape> {
+    fn self_clips(&self, node: &Node, rect: Rect, l: &NodeLayout, radii: Radii) -> Vec<ClipShape> {
         let v = &node.visual;
         let mut clips = Vec::new();
         if let Some(edges) = v.clip_rect
@@ -2704,7 +2690,7 @@ const UNCLIPPED: f32 = 1.0e7;
 
 /// The clip `overflow` puts on an element's children: its padding box with inner
 /// corner radii. An axis that doesn't clip (`overflow: clip visible`) is unbounded.
-fn overflow_clip(v: &Visual, rect: Rect, l: &NodeLayout, radii: [f32; 4]) -> Option<ClipShape> {
+fn overflow_clip(v: &Visual, rect: Rect, l: &NodeLayout, radii: Radii) -> Option<ClipShape> {
     let [x, y] = Overflow::computed(v.overflow);
     if !x.clips() && !y.clips() {
         return None;

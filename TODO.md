@@ -507,7 +507,10 @@ and `@font-face`.
      `borderTopStyle`, ... and the `borderTop`/... shorthands). Uniform solid borders stay on the
      quad; others are a `DrawCmd::Border` styled per side in the shader (dashes and dots fit a
      whole number per side). Iron's default style stays `solid` — `M3-BRD-01`
-   - [ ] Elliptical corner radii (`border-radius: 10px / 20px`)
+   - [x] Elliptical corner radii (`border-radius: 10px / 20px`, `borderTopLeftRadius: "10px 20px"`);
+     percentages now resolve like CSS (horizontal of the width, vertical of the height, so `50%`
+     on a wide box is an ellipse). `Radii { x, y }` runs through the draw list, hit testing and
+     clips; instances carry `radii_y`. Blurred shadows approximate them with circles — `M3-BRD-02`
    - [ ] `outline`, `outline-width`, `outline-color`, `outline-style`, `outline-offset`
    - [ ] `border-image` (slice, width, `stretch` / `round`, `fill`), from images and gradients
    - [ ] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows

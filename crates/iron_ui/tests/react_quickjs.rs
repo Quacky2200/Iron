@@ -89,7 +89,10 @@ fn react_bundle_renders_into_the_ui_tree() {
         DrawCmd::Quad(q) if q.rect.height == 50.0 => Some(q),
         _ => None,
     });
-    assert_eq!(header_quad.unwrap().radii, [8.0; 4]);
+    assert_eq!(
+        header_quad.unwrap().radii,
+        iron_ui::Radii::circular([8.0; 4])
+    );
 }
 
 // M2-INT-02

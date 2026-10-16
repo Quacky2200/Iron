@@ -66,12 +66,21 @@ pub struct RenderStats {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Instance {
     rect: [f32; 4],
+    /// Horizontal corner radii; `radii_y` (last, so earlier locations stay put) the
+    /// vertical ones.
     radii: [f32; 4],
     p0: [f32; 4],
     p1: [f32; 4],
     color0: [f32; 4],
     color1: [f32; 4],
     params: [f32; 4],
+    radii_y: [f32; 4],
+}
+
+/// Circular corners approximating elliptical ones (the mean radius per corner),
+/// for shapes the shader only draws circular (blurred shadows).
+fn circular(r: iron_ui::Radii) -> [f32; 4] {
+    [0, 1, 2, 3].map(|i| (r.x[i] + r.y[i]) / 2.0)
 }
 
 /// Matches `struct Clip` in the shaders.
@@ -321,7 +330,7 @@ impl UiRenderer {
 
         let instance_attributes = wgpu::vertex_attr_array![
             0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
-            4 => Float32x4, 5 => Float32x4, 6 => Float32x4,
+            4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
         ];
         let premultiplied = wgpu::ColorTargetState {
             format: CANVAS_FORMAT,
@@ -612,17 +621,18 @@ impl UiRenderer {
                 }
                 DrawCmd::Quad(q) => {
                     let quad = |rect: Rect,
-                                radii: [f32; 4],
+                                radii: iron_ui::Radii,
                                 background: [f32; 4],
                                 border_color: [f32; 4],
                                 gradient: f32| Instance {
                         rect: rect4(rect),
-                        radii,
+                        radii: radii.x,
                         p0: q.border,
                         p1: [0.0; 4],
                         color0: background,
                         color1: border_color,
                         params: [KIND_QUAD, 0.0, gradient, 0.0],
+                        radii_y: radii.y,
                     };
                     let background = linear_premultiplied(q.background);
                     let border_color = linear_premultiplied(q.border_color);
@@ -654,7 +664,8 @@ impl UiRenderer {
                             flush(&mut steps, &instances, &mut batch_start, current);
                             instances.push(Instance {
                                 rect: rect4(fill.area),
-                                radii: fill.radii,
+                                radii: fill.radii.x,
+                                radii_y: fill.radii.y,
                                 p0: rect4(tile),
                                 p1: [gap[0], gap[1], 0.0, 0.0],
                                 color0: [0.0; 4],
@@ -684,6 +695,7 @@ impl UiRenderer {
                         instances.push(Instance {
                             rect: rect4(*rect),
                             radii: [0.0; 4],
+                            radii_y: [0.0; 4],
                             p0: [0.0; 4],
                             p1: [0.0; 4],
                             color0: linear_premultiplied(*color),
@@ -725,6 +737,7 @@ impl UiRenderer {
                                     e.height as f32 / scale,
                                 ],
                                 radii: [0.0; 4],
+                                radii_y: [0.0; 4],
                                 p0: [e.x as f32, e.y as f32, e.width as f32, e.height as f32],
                                 p1: [0.0; 4],
                                 color0: color,
@@ -748,17 +761,14 @@ impl UiRenderer {
                 }
                 DrawCmd::BoxShadow(s) => {
                     let shape = s.rect.offset(s.offset_x, s.offset_y).expand(s.spread);
+                    // Blurred shapes use circular corners (the mean of the two radii).
+                    let grown = circular(s.radii.grow(s.spread));
                     instances.push(Instance {
                         rect: rect4(clamp_size(shape)),
-                        radii: s.radii.map(|r| {
-                            if r > 0.0 {
-                                (r + s.spread).max(0.0)
-                            } else {
-                                0.0
-                            }
-                        }),
+                        radii: grown,
+                        radii_y: grown,
                         p0: rect4(s.rect),
-                        p1: s.radii,
+                        p1: circular(s.radii),
                         color0: linear_premultiplied(s.color),
                         color1: [0.0; 4],
                         params: [KIND_OUTER_SHADOW, s.blur / 2.0, -1.0, 0.0],
@@ -775,19 +785,14 @@ impl UiRenderer {
                         s.rect.width - left - right,
                         s.rect.height - top - bottom,
                     ));
-                    let [tl, tr, br, bl] = s.radii;
-                    let inner = [
-                        (tl - top.max(left)).max(0.0),
-                        (tr - top.max(right)).max(0.0),
-                        (br - bottom.max(right)).max(0.0),
-                        (bl - bottom.max(left)).max(0.0),
-                    ];
+                    let inner = s.radii.inner([top, right, bottom, left]);
                     let hole = clamp_size(padding.offset(s.offset_x, s.offset_y).expand(-s.spread));
                     instances.push(Instance {
                         rect: rect4(padding),
-                        radii: inner,
+                        radii: inner.x,
+                        radii_y: inner.y,
                         p0: rect4(hole),
-                        p1: inner.map(|r| (r - s.spread).max(0.0)),
+                        p1: circular(inner).map(|r| (r - s.spread).max(0.0)),
                         color0: linear_premultiplied(s.color),
                         color1: [0.0; 4],
                         params: [KIND_INSET_SHADOW, s.blur / 2.0, -1.0, 0.0],
@@ -812,7 +817,8 @@ impl UiRenderer {
                     gradients.push(entry);
                     instances.push(Instance {
                         rect: rect4(*rect),
-                        radii: *radii,
+                        radii: radii.x,
+                        radii_y: radii.y,
                         p0: *widths,
                         p1: [0.0; 4],
                         color0: [0.0; 4],

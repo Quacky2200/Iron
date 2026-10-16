@@ -3,6 +3,7 @@
 
 use crate::Rgba;
 use crate::color::parse_angle_degrees;
+use crate::draw::Radii;
 
 /// A pixel length or a percentage (stored as a fraction, `50%` → `0.5`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -69,45 +70,85 @@ impl<T: Copy> Corners<T> {
     }
 }
 
-/// `borderRadius` with 1–4 values, CSS order. Only circular corners are supported
-/// (no `a / b` elliptical radii); percentages resolve against the shorter side.
-pub fn parse_radii(s: &str) -> Option<Corners<Len>> {
+/// One corner's radius: horizontal and vertical (equal for a circular corner).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CornerRadius {
+    pub x: Len,
+    pub y: Len,
+}
+
+impl CornerRadius {
+    pub const ZERO: Self = Self::circular(Len::Px(0.0));
+
+    pub const fn circular(r: Len) -> Self {
+        Self { x: r, y: r }
+    }
+
+    /// One corner's longhand: `10px` or `10px 20px` (horizontal, vertical).
+    pub fn parse(s: &str) -> Option<Self> {
+        match parse_radius_list(s)?[..] {
+            [r] => Some(Self::circular(r)),
+            [x, y] => Some(Self { x, y }),
+            _ => None,
+        }
+    }
+}
+
+fn parse_radius_list(s: &str) -> Option<Vec<Len>> {
     let values: Vec<Len> = s
         .split_whitespace()
         .map(Len::parse)
         .collect::<Option<_>>()?;
-    if values.iter().any(|v| match v {
+    let negative = values.iter().any(|v| match v {
         Len::Px(n) | Len::Percent(n) => *n < 0.0,
-    }) {
-        return None;
-    }
-    let (tl, tr, br, bl) = match values[..] {
-        [a] => (a, a, a, a),
-        [a, b] => (a, b, a, b),
-        [a, b, c] => (a, b, c, b),
-        [a, b, c, d] => (a, b, c, d),
-        _ => return None,
+    });
+    (!negative && !values.is_empty()).then_some(values)
+}
+
+/// `borderRadius`: 1–4 values in CSS order, optionally `/` and 1–4 vertical radii
+/// for elliptical corners (`10px / 20px`).
+pub fn parse_radii(s: &str) -> Option<Corners<CornerRadius>> {
+    let four = |part: &str| -> Option<[Len; 4]> {
+        Some(match parse_radius_list(part)?[..] {
+            [a] => [a, a, a, a],
+            [a, b] => [a, b, a, b],
+            [a, b, c] => [a, b, c, b],
+            [a, b, c, d] => [a, b, c, d],
+            _ => return None,
+        })
     };
+    let (x, y) = match s.split_once('/') {
+        Some((x, y)) => (four(x)?, four(y)?),
+        None => {
+            let x = four(s)?;
+            (x, x)
+        }
+    };
+    let corner = |i: usize| CornerRadius { x: x[i], y: y[i] };
     Some(Corners {
-        top_left: tl,
-        top_right: tr,
-        bottom_right: br,
-        bottom_left: bl,
+        top_left: corner(0),
+        top_right: corner(1),
+        bottom_right: corner(2),
+        bottom_left: corner(3),
     })
 }
 
-/// Resolves radii for a `width` × `height` box and scales them down, like CSS,
-/// so adjacent corners never overlap.
-pub fn resolve_radii(radii: &Corners<Len>, width: f32, height: f32) -> [f32; 4] {
-    let basis = width.min(height);
-    let r = radii.map(|l| l.resolve(basis).max(0.0)).to_array();
-    let [tl, tr, br, bl] = r;
+/// Resolves radii for a `width` × `height` box (horizontal percentages of the
+/// width, vertical of the height) and scales them all down, like CSS, so adjacent
+/// corners never overlap.
+pub fn resolve_radii(radii: &Corners<CornerRadius>, width: f32, height: f32) -> Radii {
+    let corners = radii.to_array();
+    let x = corners.map(|c| c.x.resolve(width).max(0.0));
+    let y = corners.map(|c| c.y.resolve(height).max(0.0));
     let fit = |side: f32, a: f32, b: f32| if a + b > side { side / (a + b) } else { 1.0 };
-    let f = fit(width, tl, tr)
-        .min(fit(width, bl, br))
-        .min(fit(height, tl, bl))
-        .min(fit(height, tr, br));
-    r.map(|v| v * f)
+    let f = fit(width, x[0], x[1])
+        .min(fit(width, x[3], x[2]))
+        .min(fit(height, y[0], y[3]))
+        .min(fit(height, y[1], y[2]));
+    Radii {
+        x: x.map(|v| v * f),
+        y: y.map(|v| v * f),
+    }
 }
 
 /// One `boxShadow` (or, in M3, `textShadow`) entry.
@@ -806,7 +847,7 @@ pub enum ClipShapeSpec {
         right: Len,
         bottom: Len,
         left: Len,
-        radii: Corners<Len>,
+        radii: Corners<CornerRadius>,
     },
     /// `circle(r at x y)`.
     Circle { r: ShapeRadius, at: (Len, Len) },
@@ -874,7 +915,7 @@ impl ClipPath {
         border: crate::Rect,
         borders: [f32; 4],
         padding: [f32; 4],
-        radii: [f32; 4],
+        radii: Radii,
     ) -> crate::ClipShape {
         let inset = |r: crate::Rect, w: [f32; 4]| {
             crate::Rect::new(
@@ -971,15 +1012,8 @@ fn ellipse(cx: f32, cy: f32, rx: f32, ry: f32) -> crate::ClipShape {
 /// `rect` (already shrunk by `shrink`: top, right, bottom, left) with the outer
 /// `radii` reduced by the shrink on each side, as CSS does for inner edges: the
 /// horizontal radius loses the left/right width, the vertical one the top/bottom.
-pub fn inner_corners(rect: crate::Rect, radii: [f32; 4], shrink: [f32; 4]) -> crate::ClipShape {
-    let [t, r, b, l] = shrink;
-    let x = [l, r, r, l];
-    let y = [t, t, b, b];
-    crate::ClipShape {
-        rect,
-        radii_x: [0, 1, 2, 3].map(|i| (radii[i] - x[i]).max(0.0)),
-        radii_y: [0, 1, 2, 3].map(|i| (radii[i] - y[i]).max(0.0)),
-    }
+pub fn inner_corners(rect: crate::Rect, radii: Radii, shrink: [f32; 4]) -> crate::ClipShape {
+    crate::ClipShape::rounded(rect, radii.inner(shrink))
 }
 
 fn parse_shape(token: &str) -> Option<ClipShapeSpec> {
@@ -1004,7 +1038,7 @@ fn parse_shape(token: &str) -> Option<ClipShapeSpec> {
             };
             let radii = match round {
                 Some(r) => parse_radii(r)?,
-                None => Corners::all(Len::Px(0.0)),
+                None => Corners::all(CornerRadius::ZERO),
             };
             Some(ClipShapeSpec::Inset {
                 top,
@@ -1083,34 +1117,52 @@ mod tests {
     // M2-VIS-03
     #[test]
     fn radii_follow_css_corner_order() {
-        let r = parse_radii("1px 2px 3px 4px").unwrap();
-        assert_eq!(
-            r.to_array(),
-            [Len::Px(1.0), Len::Px(2.0), Len::Px(3.0), Len::Px(4.0)]
-        );
-        let r = parse_radii("1px 2px").unwrap();
-        assert_eq!(
-            r.to_array(),
-            [Len::Px(1.0), Len::Px(2.0), Len::Px(1.0), Len::Px(2.0)]
-        );
-        let r = parse_radii("1px 2px 3px").unwrap();
-        assert_eq!(
-            r.to_array(),
-            [Len::Px(1.0), Len::Px(2.0), Len::Px(3.0), Len::Px(2.0)]
-        );
+        let x = |s: &str| parse_radii(s).unwrap().to_array().map(|c| c.x);
+        let px = |v: [f32; 4]| v.map(Len::Px);
+        assert_eq!(x("1px 2px 3px 4px"), px([1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(x("1px 2px"), px([1.0, 2.0, 1.0, 2.0]));
+        assert_eq!(x("1px 2px 3px"), px([1.0, 2.0, 3.0, 2.0]));
         assert_eq!(parse_radii("-1px"), None);
         assert_eq!(parse_radii("1px 2px 3px 4px 5px"), None);
     }
 
-    // M2-VIS-03
+    // M3-BRD-02
+    #[test]
+    fn elliptical_radii_parse_after_a_slash() {
+        let r = parse_radii("10px 20px / 5px").unwrap().to_array();
+        assert_eq!(r.map(|c| c.x), [10.0, 20.0, 10.0, 20.0].map(Len::Px));
+        assert_eq!(r.map(|c| c.y), [Len::Px(5.0); 4]);
+        assert_eq!(
+            CornerRadius::parse("10px 50%"),
+            Some(CornerRadius {
+                x: Len::Px(10.0),
+                y: Len::Percent(0.5)
+            })
+        );
+        for bad in ["10px /", "/ 5px", "1px / 2px / 3px", "1px 2px 3px"] {
+            assert!(parse_radii(bad).is_none() || bad == "1px 2px 3px", "{bad}");
+        }
+        assert_eq!(CornerRadius::parse("1px 2px 3px"), None);
+    }
+
+    // M2-VIS-03, M3-BRD-02
     #[test]
     fn radii_resolve_and_scale_like_css() {
         let circle = parse_radii("50%").unwrap();
-        assert_eq!(resolve_radii(&circle, 40.0, 40.0), [20.0; 4]);
+        assert_eq!(
+            resolve_radii(&circle, 40.0, 40.0),
+            Radii::circular([20.0; 4])
+        );
+        // On a wide box, 50% is an ellipse: half the width across, half the height down.
+        let ellipse = resolve_radii(&circle, 100.0, 40.0);
+        assert_eq!((ellipse.x, ellipse.y), ([50.0; 4], [20.0; 4]));
         // 30px corners on a 40px-tall box overlap vertically: scaled by 40/60.
         let big = parse_radii("30px").unwrap();
         let r = resolve_radii(&big, 100.0, 40.0);
-        assert!(r.iter().all(|v| (v - 20.0).abs() < 1e-4), "{r:?}");
+        assert!(
+            r.x.iter().chain(&r.y).all(|v| (v - 20.0).abs() < 1e-4),
+            "{r:?}"
+        );
     }
 
     // M2-VIS-04

@@ -25,14 +25,15 @@ pub mod units;
 pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
 pub use draw::{
-    ClipShape, DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd,
+    ClipShape, DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Radii, Rect, ShadowShape,
+    TextCmd,
 };
 pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
 pub use interaction::{Clipboard, Direction, Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BlendMode, BorderStyle, ClipPath, ClipShapeSpec, ColorStop, Corners, GeometryBox,
+    BlendMode, BorderStyle, ClipPath, ClipShapeSpec, ColorStop, CornerRadius, Corners, GeometryBox,
     GradientDirection, Len, ObjectFit, Overflow, RadialShape, RepeatAxis, Shadow, ShapeRadius,
 };
 pub use parley::FontData;

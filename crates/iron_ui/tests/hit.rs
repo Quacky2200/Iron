@@ -92,6 +92,33 @@ fn rounded_corners_are_respected() {
     );
 }
 
+// M3-BRD-02
+#[test]
+fn elliptical_corners_are_respected() {
+    let mut d = Dom::new();
+    let pill = d.add(
+        0,
+        "box",
+        &[
+            ("width", px(100.0)),
+            ("height", px(40.0)),
+            ("borderRadius", "50%".into()),
+        ],
+    );
+    let mut tree = d.build("");
+    assert_eq!(hit(&mut tree, 50.0, 20.0), Some(pill));
+    assert_eq!(
+        hit(&mut tree, 50.0, 1.0),
+        Some(pill),
+        "the top of the ellipse"
+    );
+    assert_eq!(
+        hit(&mut tree, 12.0, 5.0),
+        None,
+        "inside a circle's corner, outside the ellipse"
+    );
+}
+
 #[test]
 fn pointer_events_none_is_inherited_and_can_be_reenabled() {
     let mut d = Dom::new();
