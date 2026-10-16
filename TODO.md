@@ -422,10 +422,11 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      counter), keyboard- and gamepad-operable toggles and buttons (`:hover`, `:active`,
      `:focus-visible`, `:disabled`), Enter to submit, and a scrolling list of saved profiles;
      focus starts in the first field so the d-pad works at once (checked by screenshot)
-   - [ ] Hand checks still open: `examples/form` with a real gamepad, resizing (`M2-MAN-01`) and
-     Chinese Pinyin composition once Windows has its dictionaries
+   - [x] Hand check: `examples/form` with a real gamepad (d-pad / A navigation), 2026-10-16
+   - [ ] Hand checks still open: resizing (`M2-MAN-01`) and Chinese Pinyin composition once
+     Windows has its dictionaries
 
-**M3c status:** done (2026-10-16). Left for hand checks: the gamepad and resize checks above.
+**M3c status:** done (2026-10-16). Left for hand checks: resizing and Chinese Pinyin.
 
 ### M3d — CSS parity with s&box
 

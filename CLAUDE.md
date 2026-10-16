@@ -115,5 +115,4 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA
   instability, also seen before Iron). Warn before launching the interactive window; prefer
   `--screenshot` runs for checks.
-- **Needs the user:** hand checks of resizing (M2-MAN-01) and `examples/form` with a real gamepad,
-  and the CI run.
+- **Needs the user:** the resize hand check (M2-MAN-01) and the CI run.
