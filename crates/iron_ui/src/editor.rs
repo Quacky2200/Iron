@@ -390,12 +390,15 @@ impl Editor {
     }
 
     /// Inserts text at the caret, replacing the selection (paste, IME commit).
-    /// Single-line fields drop line breaks. Returns whether the text changed.
+    /// Single-line fields join lines with spaces and drop a trailing line break (copied
+    /// lines often end in one). Returns whether the text changed.
     pub(crate) fn insert(&mut self, text: &mut TextEngine, s: &str) -> bool {
         let s = if self.multiline {
             s.to_owned()
         } else {
-            s.replace(['\n', '\r'], " ")
+            s.trim_end_matches(['\n', '\r'])
+                .replace("\r\n", " ")
+                .replace(['\n', '\r'], " ")
         };
         let (font_cx, layout_cx) = text.contexts();
         let old = self.editor.raw_text().to_owned();

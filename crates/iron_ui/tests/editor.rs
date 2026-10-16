@@ -307,11 +307,11 @@ fn cut_copy_and_paste_go_through_the_app() {
     f.chord("v");
     assert_eq!(f.ui.take_clipboard(), Some(Clipboard::Paste));
     f.input_values();
-    f.input(Input::Paste("line one\nline two".into()));
+    f.input(Input::Paste("line one\r\nline two\r\n".into()));
     assert_eq!(
         f.value(),
         "line one line two",
-        "inputs flatten pasted lines"
+        "inputs flatten pasted lines and drop a trailing break"
     );
     assert_eq!(f.input_values(), ["line one line two"]);
 }
