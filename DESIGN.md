@@ -150,7 +150,7 @@ React (TS) ──custom reconciler──▶ op buffer ──▶ Rust UI tree ─
 | Text | `color`, `fontFamily` (with fallbacks), `fontSize`, `fontWeight` (100–900, `bold`), `fontStyle` (`italic`), `lineHeight`, `letterSpacing`, `textAlign`, `textShadow` (list) | M3 |
 | Fonts | font imports: `@font-face` in CSS files and a `loadFont({ family, src, weight, style })` API; a bundled default font so games look the same everywhere | M3 |
 | Inheritance | `color` and font properties inherit down the tree like CSS | M3 |
-| Selectors | type, `.class`, `#id`, attributes, combinators; `:first-child`, `:last-child`, `:nth-child()`, `:nth-last-child()`, `:only-child`, `:empty`, `:root`; `:not()`, `:is()`, `:where()`, `:has()`; `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within`, `:disabled` | M3 |
+| Selectors | type, `*`, `.class`, `#id`, attributes; combinators descendant, `>`, `+`, `~`; `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:nth-last-child()`, `*-of-type`, `:root`, `:empty`, `:blank`; `:not()`, `:is()`, `:where()`, `:has()`; `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within`; `:enabled`, `:disabled`, `:checked` | M3 |
 | Pseudo-elements | `::before` / `::after` as generated children (invisible to React), with `content` | M3 |
 | Variables | custom properties `--x` and `var(--x, fallback)` | M3 |
 | Interaction | hit testing, pointer/keyboard events with capture and bubbling, focus and Tab order, `cursor`, `pointerEvents`, text inputs with IME, `overflow` clipping and scrolling | M3 |
