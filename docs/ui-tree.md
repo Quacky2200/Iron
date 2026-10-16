@@ -72,12 +72,14 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 
 - Layout properties land in `taffy::Style` (flex, grid, margin, padding, border widths, inset...).
 - Paint properties land in `Visual`: colours (with `currentColor` flags), border radius
-  (`Corners<Len>`, px or percent), `shadows`, gradients and images, `filter_blur`,
+  (`Corners<CornerRadius>`, each a horizontal and vertical `Len`), `shadows`, background layer lists, border colours, styles and image, `outline_*`, `mix_blend`, `filter_blur`,
   `backdrop_blur`, `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `contents`, `fixed`, `overflow`, `clip_path`, `clip_rect`,
   `scrollbar_width/color`, `cursor`, and `text: TextProps`.
 - [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, blur filters,
-  backgrounds (`linear-gradient`, `radial-gradient`, `url()`), `clip-path` shapes (`ClipPath`
-  resolved to a `ClipShape` against the box), `Overflow`.
+  backgrounds (`linear-gradient`, `radial-gradient`, `conic-gradient`, `repeating-*`, `url()`),
+  `parse_layers` for comma lists, `BlendMode`, `BorderStyle`, `BorderImage`, `clip-path` shapes
+  (`ClipPath` resolved to a `ClipShape` against the box), `Overflow`.
+  [svg_path.rs](../crates/iron_ui/src/svg_path.rs) turns a `path()` string into polygon contours.
 - [color.rs](../crates/iron_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours; modern colour functions and
   `color-mix()` live in [color_fn.rs](../crates/iron_ui/src/color_fn.rs) (see [css.md](css.md#colours)).
 - [text_style.rs](../crates/iron_ui/src/text_style.rs): `TextProps` are the *specified* text
@@ -231,24 +233,55 @@ How inline content works:
 ## Draw list
 
 [draw.rs](../crates/iron_ui/src/draw.rs): `Rect` (logical px, with `intersect/union/expand`,
-rounded hit testing), `ClipShape` (rect with elliptical corners), and `enum DrawCmd`:
+rounded hit testing), `Radii { x, y }` (per-corner horizontal and vertical radii, used by every
+shape), `ClipShape` (rect with elliptical corners, or an `Arc<Polygon>`; no longer `Copy`), and
+`enum DrawCmd`:
 
 | Command | Meaning |
 |---|---|
 | `BackdropBlur{rect,radii,blur}` | Blur what is already drawn behind the box |
 | `BoxShadow(ShadowShape)` | Outer shadow, before its box |
-| `Quad(Quad)` | Background colour, optional `ImageFill`, border, radii |
+| `Quad(Quad)` | Background colour, `images: Vec<ImageFill>` layers (bottom first), uniform border, radii |
+| `Border{rect,radii,widths,colors,styles}` | Border with per-side colours or styles; also the `outline` |
+| `BorderImage{area,border,image}` | A `border-image` over the border box grown by the outset |
 | `InsetShadow{shadow,border}` | Inside the padding box, over the background |
-| `PushLayer{bounds,blur,opacity}` / `PopLayer` | Offscreen group (filter blur, group opacity) |
+| `PushLayer{bounds,blur,opacity,blend}` / `PopLayer` | Offscreen group (filter blur, group opacity, blend mode) |
 | `PushClip(ClipShape)` / `PopClip` | Clip following commands |
 | `Text(TextCmd)` | Glyph runs and decorations |
 
 `UiTree::draw_list()` runs `layout_if_needed` then `collect(ROOT)` recursively. Per node, in
 CSS painting order: `PushClip` for the element's own `clip-path`/`clip: rect()`, `BackdropBlur`,
 `PushLayer` if needed, outer shadows (last listed first, so the first shadow ends on top), the
-`Quad`, inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`.
+`Quad` (or `Border`/`BorderImage` when the border needs them), inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`.
 `collect` skips `position: fixed` children and paints only the children of a `display: contents`
 node. `draw_list` paints the fixed nodes after the root (see below).
+
+### Backgrounds, borders and blending
+
+- **Layers.** `Visual` keeps `background_images`, `background_sizes/positions/repeats/clips/blends`
+  as lists; a shorter list cycles (`i % len`). `background_layers` in tree.rs builds one
+  `ImageFill` per layer, each with its `area`/`radii` from `clip_area` (`border-box`, `padding-box`,
+  `content-box`). The colour is clipped like the bottom layer (an extra colour quad if needed).
+  `BackgroundImage` is `Linear`, `Radial` or `Conic { from, at, stops, repeating }`; stops may have
+  two positions. `BackgroundRepeat { x, y }` uses `RepeatAxis` (`Repeat`, `NoRepeat`, `Round`,
+  `Space`).
+- **`background-clip: text`.** Gradients go into `TextCmd.fill` (image plus the element rect);
+  the glyphs sample it.
+- **Borders.** `BorderStyle` is none, hidden, solid, dashed, dotted, double, groove, ridge, inset or
+  outset; Iron default is solid (not CSS none). Colours, styles and `currentColor` flags are per
+  side (`border_colors`, `border_styles`, `border_currents`). `border_side` / `four_sides` /
+  `set_border_style` handle the longhands; none and hidden zero the width. A uniform border stays
+  in the `Quad`; anything else becomes `DrawCmd::Border`.
+- **Radii.** `parse_radii` accepts `a b c d / e f g h`; `resolve_radii` resolves percentages per
+  axis (width for x, height for y).
+- **Outline.** `outline*` live in `Visual.outline_*`; `outline()` emits a `Border` after the
+  element children.
+- **`border-image`.** `BorderImage` holds source, slice (with `fill`), width, outset and repeat
+  (`BorderImageLength`, `BorderImageRepeat`). `pieces()` yields the `BorderImagePiece`s and
+  `area()` the outset box.
+- **Blend modes.** `BlendMode` has the 16 W3C modes (`index()` is the shader id). `mix-blend-mode`
+  sets `PushLayer.blend`. `blended_background` wraps blended background layers in their own
+  `PushLayer`s inside an isolated group.
 
 Decisions worth knowing:
 
@@ -258,7 +291,9 @@ Decisions worth knowing:
   are patched afterwards to the union of what was actually drawn, expanded by `3 * blur`.
 - **Clipping** (committed): `clip-path` and legacy `clip` clip the element *and* its children;
   `overflow` clips only the children, to the padding box with inner corner radii (`overflow_clip`,
-  `inner_corners`). An axis that does not clip gets an effectively unbounded clip edge
+  `inner_corners`). `clip-path: polygon()` and `path()` (fill rule `nonzero` or `evenodd`) become
+  `ClipShapeSpec::Polygon`/`Path`, flattened to a `Polygon` (`Polygon::contains` for hit tests;
+  curves and arcs are split into segments); `url()` is unsupported. An axis that does not clip gets an effectively unbounded clip edge
   (`UNCLIPPED`). Hit testing uses the same clip functions, so clipped-away parts cannot be hit.
 - `currentColor` is resolved here (`current()`), using the node's computed text colour.
 

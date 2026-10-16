@@ -46,7 +46,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `hit.rs` | Hit testing rules |
 | `pointer.rs` | `Pointer`: hover/active/click/dblclick/wheel |
 | `focus.rs` | Tab order, focus events, `:focus-visible` |
-| `clip.rs` | `overflow` and `clip-path` in draw list and hit testing |
+| `clip.rs` | `overflow` and `clip-path` (including `polygon()`/`path()`, M3-CLIP-01) in draw list and hit testing |
 | `scroll.rs` | Scrolling (M3c step 4b): offsets and hit testing, which axes scroll, wheel chaining, Shift+wheel, key scrolling, Tab into view, script `scrollTo/By/IntoView`, scrollbar geometry, thumb drag and track paging, inherited `scrollbarColor` |
 | `editor.rs` | Text fields (M3c step 5): sizing from the font, typing and editing keys with `input` events, textarea Enter and line moves, prevented `keydown`, controlled `value` / `defaultValue`, read-only and disabled, tab order, pointer caret / word / drag selection, cut / copy / paste requests, draw list (selection, blinking caret, dimmed placeholder, caret kept in view), text cursor, IME pre-edit and commit, focus loss dropping pre-edit |
 | `navigation.rs` | Gamepad UI navigation (M3-PAD-01): `Input::Navigate` picks the nearest focusable element in a direction (in-line beats closer), nothing without focus, `Input::Activate` clicks with detail 0 |
@@ -124,6 +124,7 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-IME` | IME composition | `iron_platform/src/input.rs` (`converts_ime_events`), `iron_ui/tests/editor.rs` |
 | `M3-PAD` | Gamepads and game input | `iron_platform/src/gamepad.rs` (names, connect/disconnect conversion), `iron_app/src/game_input.rs` (nav mapping, stick hysteresis, `script_args`, and a QuickJS test running fixture `tests/fixtures/src/input.ts`), `iron_ui/tests/navigation.rs`, `js/engine/test/input.test.ts` (keys, blur, pad state and events, throwing listeners) |
 | `M3-IMG` | `image` element: natural-size measuring, object-fit/position, rounded clip | `iron_ui/tests/image.rs`, reconciler test in `js/react/test` |
+| `M3-BG`, `M3-BRD`, `M3-CLIP` | Backgrounds (conic and repeating gradients, layers, `background-clip`, round/space, blend modes: `M3-BG-01..03`), borders (styles, per-side colours, elliptical radii, outline, `border-image`: `M3-BRD-01..04`), polygon and path clips (`M3-CLIP-01`) | `iron_render/tests/ui.rs` (pixel asserts and goldens), `iron_ui/tests/{clip,hit}.rs`, unit tests in `paint.rs`, `style.rs`, `svg_path.rs` and `iron_render/src/ui/images.rs` |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
 | `*-MAN` | Manual checks (resize, IME, gamepad) | no automated test; listed in TODO.md. Text input and gamepad checks (`M3-MAN-01`) use `examples/form` |
 

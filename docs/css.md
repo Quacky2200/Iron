@@ -218,7 +218,8 @@ variants), named colours and `transparent`. Anything else ending in `)` goes to 
     and keep the colour's alpha.
   - `mix(a, b, weight)` takes `weight` (default 50%) of `a`, mixed in sRGB.
 - Angles (gradient directions) accept `deg`, `rad`, `grad` and `turn`.
-- Gradients: the direction check splits the first argument at the top level, so a first stop such as
+- Gradients: `linear-`, `radial-` and `conic-gradient()` and their `repeating-` forms. A stop may
+  have two positions (`red 10% 30%`); `parse_stops` takes the position parser. The direction check splits the first argument at the top level, so a first stop such as
   `oklch(0.7 0.1 200)` or `rgb(1 2 3)` is a colour, not an angle.
 
 Invalid functions (wrong channel count, unknown space) are rejected like any invalid value. Tests are

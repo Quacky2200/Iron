@@ -52,9 +52,10 @@ stages. Planning never touches the GPU encoder, which keeps the logic easy to re
 
 Walk `cmds` once, producing:
 
-- `instances: Vec<Instance>` (7 x `vec4`, matching `struct Instance` in quad.wgsl). `params.x` is
-  the **kind**: `KIND_QUAD`, `OUTER_SHADOW`, `INSET_SHADOW`, `IMAGE`, `GLYPH`. `rect`/`radii` is the
-  shape, `p0/p1` kind-specific data (border widths, shadow source box, atlas rect),
+- `instances: Vec<Instance>` (8 x `vec4`, matching `struct Instance` in quad.wgsl). `params.x` is
+  the **kind**: `KIND_QUAD`, `OUTER_SHADOW`, `INSET_SHADOW`, `IMAGE`, `GLYPH`, `KIND_BORDER`,
+  `KIND_GRADIENT_PIECE`. `rect`/`radii` (horizontal) and `radii_y` (location 7, last so earlier
+  locations stay put) are the shape, `p0/p1` kind-specific data (border widths, shadow source box, atlas rect),
   `color0/color1` fill and border, `params.y/z/w` blur sigma / gradient index / clip index.
 - `gradients: Vec<GpuGradient>` (up to 8 stops each, extras dropped with a warning).
 - `steps: Vec<Step>`: the ordered render program, over a pool of full-size textures:
@@ -65,13 +66,20 @@ Walk `cmds` once, producing:
 | `Draw{target, range, image}` | One instanced draw of `instances[range]`; with `image`, the image pipeline for one background image |
 | `Copy{src,dst}` | Snapshot a texture (for backdrop blur) |
 | `Blur{tex,temp,area,sigma}` | Separable Gaussian: horizontal into `temp`, vertical back |
-| `Composite{src,dst,area,opacity,clip}` | Alpha-composite a layer, scissored, with clip |
+| `Composite{src,dst,area,opacity,clip,blend}` | Alpha-composite a layer, scissored, with clip; `blend: Option<(mode, backdrop)>` for a blend mode |
 
 **Batching.** Consecutive boxes, shadows and glyphs stay in one `Step::Draw` regardless of draw
 order, because the instance order is the paint order and a single pipeline draws all kinds
 (the shader switches on `kind`). A batch only ends when something needs a different pass: a layer
 push/pop, a backdrop blur, or a background **image** (needs its own texture bind group): colour is
-drawn, the batch is flushed, the image is drawn alone, then the border is drawn on top.
+drawn, the batch is flushed, each image layer is drawn alone (bottom first), then the border is
+drawn on top. Image layers are clipped to `ImageFill.area`/`radii`. `images::repeat_tiles` expands
+`round` and `space` into whole tiles (the gap goes to the image shader in `p1.xy`).
+
+**Blend modes.** A `PushLayer` with a blend mode other than normal composites with
+`Step::Composite.blend`: the parent is copied first as the backdrop, then `composite_blend_pipeline`
+(`fs_composite_blend` in effects.wgsl, binding 5 is the backdrop) mixes source and backdrop itself
+in sRGB with a replace blend state.
 
 **Layers.** `PushLayer` flushes, takes a pooled texture, clears it to transparent and makes it
 `current`. `PopLayer` flushes, optionally adds `Blur` (`filter: blur`, sigma = blur x scale), then
@@ -88,7 +96,10 @@ table and pushes its index on `clip_stack`; `bounds` is the intersection of the 
 Instances do **not** break batches for clips: each carries its clip index in `params.w`
 (`tag()` stamps the pending instances when the clip stack changes). In the shader,
 `clip_coverage` multiplies coverage along the parent chain (up to 32 deep) using an approximate
-elliptical rounded-box signed distance. Consequences:
+elliptical rounded-box signed distance. A polygon clip (`clip-path: polygon()`/`path()`) stores its
+points after the entry, one `vec4` each (x, y, contour start, contour end); `info.y` is the kind,
+`info.z` the first point vec4 and `info.w` the count. `clip_word` and `sd_polygon` (in both
+shaders) evaluate it. Consequences:
 
 - Anything whose bounds do not intersect the active clip's bounds is **culled** in the plan.
 - The vertex shader shrinks each quad to the clip bounds, so overdraw outside the clip costs nothing.
@@ -123,21 +134,27 @@ no layer is created).
 - `vs_main`: six vertices per instance (two triangles), no vertex buffer data besides the instance;
   growth for AA and for outer shadows (`3 * sigma`); clipped to the clip bounds.
 - `fs_main` -> `shade(kind)`:
-  - **Box**: signed-distance rounded rectangle with per-corner radii for the outer edge and for the
-    inner (padding) edge (radii reduced by border widths); gradient composited over the fill; border
+  - **Box**: signed-distance rounded rectangle with per-corner elliptical radii (`sd_rounded_box`)
+    for the outer edge and for the inner (padding) edge (`inner_rx`/`inner_ry`, reduced by border
+    widths); gradient composited over the fill; border
     is `outer - inner` coverage. Backgrounds extend under the border (`background-clip: border-box`).
+  - **Styled border** (`KIND_BORDER`, `styled_border`): picks the side by nearest edge and width,
+    then draws solid, dashed, dotted, double, groove, ridge, inset or outset with dashes and dots
+    fitted per side. Side data lives in the gradient table entry.
   - **Shadows**: closed-form Gaussian blurred rounded box (`erf`-based, `blurred_box`), no offscreen
-    pass. Outer shadows are masked out of the casting box; inset shadows are drawn inside the padding
+    pass. Shadows use circular mean radii (`circular()`). Outer shadows are masked out of the casting box; inset shadows are drawn inside the padding
     box minus the blurred hole.
   - **Glyph**: coverage from the R8 atlas page, or the RGBA page for colour emoji.
-  - **Gradients**: `gradient_color` for linear (angle/corner) and radial, evaluated per pixel from
-    `GpuGradient`.
+  - **Gradients**: `gradient_color` for linear (angle/corner), radial and conic (kind 2: angle from up,
+    clockwise, centre in `info2.yz`), evaluated per pixel from `GpuGradient`; `info2.w` wraps stops
+    for `repeating-*`. `KIND_GRADIENT_PIECE` draws a stretched gradient border-image piece.
 - `fs_image`: separate entry point/pipeline; samples one texture tile with repeat flags, clipped to
-  the box shape.
+  the box shape. For `border-image` it draws pieces as `KIND_IMAGE` with a texture sub-rect in
+  `color0` (`images::border_image_axis` tiles an edge); piece edges are snapped to pixels.
 
 [effects.wgsl](../crates/iron_render/src/ui/effects.wgsl): `vs_fullscreen` (one oversized triangle),
 `fs_blur` (1D Gaussian with `radius = ceil(3 sigma)`, max `MAX_BLUR_RADIUS` = 128), `fs_composite`
-(opacity and clip coverage), `fs_blit`. The same `Clip` struct and coverage function are duplicated
+(opacity and clip coverage), `fs_composite_blend` (blend mode against a backdrop copy), `fs_blit`. The same `Clip` struct and coverage function are duplicated
 in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
 ## Glyph atlas and images
