@@ -2,3 +2,5 @@
 node_modules/
 dist/
 *.log
+# Test renders (crates/iron_render/src/testing.rs); goldens live in tests/golden.
+tests/output/

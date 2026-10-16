@@ -94,6 +94,8 @@ returns the captured messages.
   each channel within `tolerance` (render tests use 3, to allow driver differences). It panics with
   the count of differing pixels and the first mismatch.
 - `IRON_UPDATE_GOLDEN=1 cargo test -p iron_render` rewrites references instead of comparing.
+- Every `assert_golden` call also writes its render to `tests/output/<id>.png`, passing or
+  not, for inspection. The folder is git-ignored.
   Updating goldens is always explicit; review the PNG by eye before committing.
 - `shared_gpu()` is **required** in GPU tests: one device per test binary behind a mutex
   (creating devices from parallel threads can deadlock some Vulkan layers).

@@ -21,7 +21,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 ### Conventions
 - Headless tests must not open a window. Rendering tests draw to an offscreen texture and read it back.
 - If no GPU adapter is available, headless tests fall back to a software adapter (WARP on Windows, llvmpipe on Linux). Tests that truly need a GPU are marked `#[ignore]` and run locally.
-- Golden images live in `tests/golden/<test-id>.png`. Updating them is an explicit step (`IRON_UPDATE_GOLDEN=1 cargo test`), never automatic.
+- Golden images live in `tests/golden/<test-id>.png`. Updating them is an explicit step (`IRON_UPDATE_GOLDEN=1 cargo test`), never automatic. Each run also writes its renders to `tests/output/` (git-ignored).
 - Test fixtures (tiny TS bundles, glTF files) live in `tests/fixtures/`.
 
 ---

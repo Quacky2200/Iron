@@ -1,7 +1,8 @@
 //! Golden-image helpers for render tests (see TESTS.md "Conventions").
 //!
 //! References live in `tests/golden/<id>.png` at the workspace root. Set
-//! `IRON_UPDATE_GOLDEN=1` to write new references instead of comparing.
+//! `IRON_UPDATE_GOLDEN=1` to write new references instead of comparing. Every
+//! render is also saved to `tests/output/<id>.png` (git-ignored) for inspection.
 
 use std::path::{Path, PathBuf};
 
@@ -9,10 +10,24 @@ pub fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/golden")
 }
 
+/// Where test renders are written, passing or not (`tests/output`, git-ignored).
+pub fn output_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/output")
+}
+
 /// Compares RGBA8 `pixels` with the reference image `id`, allowing each channel to
 /// differ by up to `tolerance`. Panics with a readable message on mismatch.
 pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance: u8) {
     let path = golden_dir().join(format!("{id}.png"));
+    // Best effort: a failed write shouldn't fail the comparison.
+    let _ = std::fs::create_dir_all(output_dir()).and_then(|_| {
+        write_png(
+            &output_dir().join(format!("{id}.png")),
+            width,
+            height,
+            pixels,
+        )
+    });
 
     if std::env::var_os("IRON_UPDATE_GOLDEN").is_some() {
         std::fs::create_dir_all(golden_dir()).unwrap();
