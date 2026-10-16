@@ -117,6 +117,11 @@ adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no syste
 deterministic. `register_font` accepts overrides for family/weight/style (like `@font-face`), then
 replaces the `LayoutContext` because Parley caches family lookups, including misses.
 
+`iron_ui` enables Parley's `complex-scripts` feature, so word and line segmentation use ICU4X's
+dictionary segmenters. Japanese/Chinese word moves (Ctrl+Arrow) and double-click selection follow
+dictionary word boundaries, and Thai, Lao, Khmer and Burmese text without spaces wraps between
+words (M3-TXT-08). It adds about 3.8 MB to the release binary.
+
 How inline content works:
 
 - A **text root** is a `text` element, or a `span`/`#text` that is *not* inside a text container
