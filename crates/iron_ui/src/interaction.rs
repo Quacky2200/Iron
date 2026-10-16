@@ -3,12 +3,19 @@
 //! [`Interaction::handle`] takes one input, dispatches the resulting events through
 //! a callback (which returns whether the script prevented the default), and then runs
 //! the default actions like a browser: pressing the primary button focuses the
-//! nearest focusable element (or blurs), Tab / Shift-Tab move focus.
+//! nearest focusable element (or blurs), Tab / Shift-Tab move focus (scrolling it
+//! into view), the wheel and scrolling keys scroll the nearest scroll container that
+//! can move, and scrollbars can be dragged.
 
 use iron_core::NodeId;
 
-use crate::events::{EventKind, Modifiers, Pointer, UiEvent, update_state};
-use crate::tree::{ROOT, UiTree};
+use crate::events::{EventKind, Modifiers, Pointer, ScrollInfo, UiEvent, update_state};
+use crate::tree::{ROOT, Scrollbar, UiTree};
+
+/// Pixels per arrow-key press.
+pub const SCROLL_LINE: f32 = 40.0;
+/// Page Up / Page Down scroll this fraction of the visible height.
+pub const SCROLL_PAGE: f32 = 0.875;
 
 /// One input for [`Interaction::handle`]. Positions and deltas are logical pixels.
 #[derive(Clone, Debug, PartialEq)]
@@ -46,6 +53,20 @@ pub enum Input {
     Focus(NodeId),
     /// `ref.blur()` from a script: blurs the element if it has focus.
     Blur(NodeId),
+    /// `ref.scrollTo(x, y)` from a script (also scrolls `overflow: hidden`).
+    ScrollTo {
+        id: NodeId,
+        x: f32,
+        y: f32,
+    },
+    /// `ref.scrollBy(dx, dy)` from a script.
+    ScrollBy {
+        id: NodeId,
+        dx: f32,
+        dy: f32,
+    },
+    /// `ref.scrollIntoView()` from a script.
+    ScrollIntoView(NodeId),
     /// The tree changed: re-hit-test the pointer and drop focus from removed or hidden
     /// elements. Call once per frame after commits.
     Refresh,
@@ -60,6 +81,8 @@ pub struct Interaction {
     /// Whether the last focus-moving input was the keyboard, which decides
     /// `:focus-visible` for focus set by scripts (the browsers' heuristic).
     keyboard: bool,
+    /// A scrollbar thumb being dragged, and where on the thumb it was grabbed.
+    drag: Option<(Scrollbar, f32)>,
 }
 
 impl Interaction {
@@ -90,9 +113,18 @@ impl Interaction {
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) {
         match input {
-            Input::PointerMove { x, y } => send(self.pointer.move_to(tree, x, y), dispatch),
+            Input::PointerMove { x, y } => {
+                send(self.pointer.move_to(tree, x, y), dispatch);
+                if let Some((bar, grab)) = self.drag {
+                    self.drag_scrollbar(tree, bar, grab, x, y, dispatch);
+                }
+            }
             Input::PointerLeave => send(self.pointer.leave(tree), dispatch),
             Input::PointerDown { button, time_ms } => {
+                // Scrollbars take presses before the page sees them, like browsers.
+                if button == 0 && self.press_scrollbar(tree, dispatch) {
+                    return;
+                }
                 let mut pressed_nothing = button == 0;
                 for event in self.pointer.down(tree, button, time_ms) {
                     let prevented = dispatch(&event);
@@ -109,8 +141,26 @@ impl Interaction {
                     self.pointer_focus(tree, None, dispatch);
                 }
             }
-            Input::PointerUp { button } => send(self.pointer.up(tree, button), dispatch),
-            Input::Wheel { dx, dy } => send(self.pointer.wheel(tree, dx, dy), dispatch),
+            Input::PointerUp { button } => {
+                if button == 0 && self.drag.take().is_some() {
+                    return;
+                }
+                send(self.pointer.up(tree, button), dispatch);
+            }
+            Input::Wheel { dx, dy } => {
+                // Shift turns a vertical wheel horizontal (the Windows and Linux convention).
+                let (dx, dy) = if self.modifiers.shift && dx == 0.0 {
+                    (dy, 0.0)
+                } else {
+                    (dx, dy)
+                };
+                for event in self.pointer.wheel(tree, dx, dy) {
+                    let prevented = dispatch(&event);
+                    if event.kind == EventKind::Wheel && !prevented {
+                        self.scroll_chain(tree, &event.path, dx, dy, dispatch);
+                    }
+                }
+            }
             Input::KeyDown { key, code, repeat } => {
                 let prevented = self.key_event(
                     tree,
@@ -120,12 +170,18 @@ impl Interaction {
                     repeat,
                     dispatch,
                 );
-                if key == "Tab" && !prevented {
+                if prevented {
+                    return;
+                }
+                if key == "Tab" {
                     self.keyboard = true;
                     let next = tab_target(tree, self.focused, self.modifiers.shift);
-                    if next.is_some() {
+                    if let Some(id) = next {
                         self.set_focus(tree, next, true, dispatch);
+                        self.scroll_into_view(tree, id, dispatch);
                     }
+                } else {
+                    self.key_scroll(tree, &key, dispatch);
                 }
             }
             Input::KeyUp { key, code } => {
@@ -141,8 +197,17 @@ impl Interaction {
                 if focusable(tree, id) {
                     let visible = self.keyboard;
                     self.set_focus(tree, Some(id), visible, dispatch);
+                    self.scroll_into_view(tree, id, dispatch);
                 }
             }
+            Input::ScrollTo { id, x, y } => {
+                self.scroll(tree, id, x, y, false, dispatch);
+            }
+            Input::ScrollBy { id, dx, dy } => {
+                let (x, y) = tree.scroll_offset(id);
+                self.scroll(tree, id, x + dx, y + dy, false, dispatch);
+            }
+            Input::ScrollIntoView(id) => self.scroll_into_view(tree, id, dispatch),
             Input::Blur(id) => {
                 if self.focused == Some(id) {
                     self.set_focus(tree, None, false, dispatch);
@@ -167,6 +232,194 @@ impl Interaction {
     ) {
         self.keyboard = false;
         self.set_focus(tree, target, false, dispatch);
+    }
+
+    /// Scrolls `id` to (x, y); if it moved, sends `scroll` and updates hover (content
+    /// moved under the pointer). Returns whether it moved.
+    fn scroll(
+        &mut self,
+        tree: &mut UiTree,
+        id: NodeId,
+        x: f32,
+        y: f32,
+        by_user: bool,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) -> bool {
+        if !tree.scroll_to(id, x, y, by_user) {
+            return false;
+        }
+        tree.layout_if_needed();
+        dispatch(&UiEvent {
+            scroll: Some(ScrollInfo::of(tree, id)),
+            ..UiEvent::new(EventKind::Scroll, vec![id], self.modifiers)
+        });
+        send(self.pointer.refresh(tree), dispatch);
+        true
+    }
+
+    /// Scrolls the first element on `path` (innermost first) that can move by
+    /// (dx, dy). Returns whether anything scrolled.
+    fn scroll_chain(
+        &mut self,
+        tree: &mut UiTree,
+        path: &[NodeId],
+        dx: f32,
+        dy: f32,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) -> bool {
+        path.iter().any(|id| {
+            let (x, y) = tree.scroll_offset(*id);
+            self.scroll(tree, *id, x + dx, y + dy, true, dispatch)
+        })
+    }
+
+    /// Arrow keys, Page Up / Down, Space, Home and End scroll the focused element's
+    /// scroll container (or the hovered one's when nothing has focus).
+    fn key_scroll(
+        &mut self,
+        tree: &mut UiTree,
+        key: &str,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        let origin = self.focused.or(self.pointer.hovered());
+        let Some(origin) = origin else {
+            return;
+        };
+        let path = tree.event_path(origin);
+        let page = |id: &NodeId, tree: &UiTree| {
+            tree.padding_box(*id)
+                .map_or(0.0, |b| b.height * SCROLL_PAGE)
+        };
+        let shift = self.modifiers.shift;
+        for id in &path {
+            let (dx, dy) = match key {
+                "ArrowDown" => (0.0, SCROLL_LINE),
+                "ArrowUp" => (0.0, -SCROLL_LINE),
+                "ArrowRight" => (SCROLL_LINE, 0.0),
+                "ArrowLeft" => (-SCROLL_LINE, 0.0),
+                "PageDown" => (0.0, page(id, tree)),
+                "PageUp" => (0.0, -page(id, tree)),
+                " " if shift => (0.0, -page(id, tree)),
+                " " => (0.0, page(id, tree)),
+                "Home" => (0.0, f32::NEG_INFINITY),
+                "End" => (0.0, f32::INFINITY),
+                _ => return,
+            };
+            let (x, y) = tree.scroll_offset(*id);
+            if self.scroll(tree, *id, x + dx, y + dy, true, dispatch) {
+                return;
+            }
+        }
+    }
+
+    /// Scrolls `id`'s scroll containers (innermost first) just enough to show it,
+    /// keeping its start edge visible when it's bigger than the container.
+    fn scroll_into_view(
+        &mut self,
+        tree: &mut UiTree,
+        id: NodeId,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        tree.layout_if_needed();
+        let ancestors: Vec<NodeId> = tree.event_path(id).into_iter().skip(1).collect();
+        for container in ancestors {
+            if tree.scroll_axes(container, false) == [false; 2] {
+                continue;
+            }
+            let (Some(target), Some(view)) = (tree.rect(id), tree.padding_box(container)) else {
+                continue;
+            };
+            let delta = |start: f32, len: f32, view_start: f32, view_len: f32| {
+                let (end, view_end) = (start + len, view_start + view_len);
+                if start < view_start {
+                    start - view_start
+                } else if end > view_end {
+                    (end - view_end).min(start - view_start)
+                } else {
+                    0.0
+                }
+            };
+            let dx = delta(target.x, target.width, view.x, view.width);
+            let dy = delta(target.y, target.height, view.y, view.height);
+            if dx != 0.0 || dy != 0.0 {
+                let (x, y) = tree.scroll_offset(container);
+                self.scroll(tree, container, x + dx, y + dy, false, dispatch);
+            }
+        }
+    }
+
+    /// A primary press on a scrollbar: grabs the thumb, or pages toward the press on
+    /// the track. Returns whether the press hit a scrollbar.
+    fn press_scrollbar(
+        &mut self,
+        tree: &mut UiTree,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) -> bool {
+        let Some((x, y)) = self.pointer.position() else {
+            return false;
+        };
+        let path = tree
+            .hit_test(x, y)
+            .map(|t| tree.event_path(t))
+            .unwrap_or_default();
+        let Some(bar) = tree.scrollbar_at(&path, x, y) else {
+            return false;
+        };
+        let (along, thumb_start, thumb_len) = if bar.vertical {
+            (y, bar.thumb.y, bar.thumb.height)
+        } else {
+            (x, bar.thumb.x, bar.thumb.width)
+        };
+        if along >= thumb_start && along < thumb_start + thumb_len {
+            self.drag = Some((bar, along - thumb_start));
+        } else {
+            let view = tree.padding_box(bar.node).unwrap_or_default();
+            let page = if bar.vertical {
+                view.height
+            } else {
+                view.width
+            } * SCROLL_PAGE;
+            let step = if along < thumb_start { -page } else { page };
+            let (sx, sy) = tree.scroll_offset(bar.node);
+            let (nx, ny) = if bar.vertical {
+                (sx, sy + step)
+            } else {
+                (sx + step, sy)
+            };
+            self.scroll(tree, bar.node, nx, ny, true, dispatch);
+        }
+        true
+    }
+
+    /// Moves a dragged thumb so the grabbed point follows the pointer.
+    fn drag_scrollbar(
+        &mut self,
+        tree: &mut UiTree,
+        bar: Scrollbar,
+        grab: f32,
+        x: f32,
+        y: f32,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        let (along, track_start, track_len, thumb_len) = if bar.vertical {
+            (y, bar.track.y, bar.track.height, bar.thumb.height)
+        } else {
+            (x, bar.track.x, bar.track.width, bar.thumb.width)
+        };
+        let travel = track_len - thumb_len;
+        if travel <= 0.0 {
+            return;
+        }
+        let (max_x, max_y) = tree.scroll_max(bar.node);
+        let max = if bar.vertical { max_y } else { max_x };
+        let offset = (along - grab - track_start) / travel * max;
+        let (sx, sy) = tree.scroll_offset(bar.node);
+        let (nx, ny) = if bar.vertical {
+            (sx, offset)
+        } else {
+            (offset, sy)
+        };
+        self.scroll(tree, bar.node, nx, ny, true, dispatch);
     }
 
     /// Sends a key event to the focused element. Returns whether it was prevented.

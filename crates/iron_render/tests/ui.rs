@@ -932,3 +932,100 @@ fn overflow_and_clip_path_clip_what_they_contain() {
     assert_eq!(f.stats.clips, 5, "card, circle, ellipse, inset, inner");
     assert_golden("M3-EVT-05-clip", 240, 60, &f.pixels, TOLERANCE);
 }
+
+// M3-EVT-05: scrolled content stays clipped to a rounded scroller, with overlay
+// scrollbars on both axes (one thin and coloured). Checked by eye, then golden.
+#[test]
+fn scrolled_content_and_scrollbars() {
+    let mut s = Scene::new();
+    let scroller = s.add(
+        0,
+        &at(
+            5.0,
+            5.0,
+            90.0,
+            70.0,
+            &[
+                ("backgroundColor", "#202430".into()),
+                ("borderRadius", 10.0.into()),
+                ("overflow", "auto".into()),
+                ("flexDirection", "column".into()),
+            ],
+        ),
+    );
+    let colors = ["#e05050", "#50b060", "#5070e0", "#e0b040", "#a050c0"];
+    for c in colors {
+        s.add(
+            scroller,
+            &[
+                ("height", 30.0.into()),
+                ("width", 140.0.into()),
+                ("flexShrink", 0.0.into()),
+                ("backgroundColor", c.into()),
+            ],
+        );
+    }
+    let thin = s.add(
+        0,
+        &at(
+            105.0,
+            5.0,
+            50.0,
+            70.0,
+            &[
+                ("backgroundColor", "#202430".into()),
+                ("overflow", "scroll".into()),
+                ("scrollbarWidth", "thin".into()),
+                ("scrollbarColor", "#ff8a5e #ffffff22".into()),
+            ],
+        ),
+    );
+    s.add(
+        thin,
+        &[
+            ("height", 200.0.into()),
+            ("width", 40.0.into()),
+            ("flexShrink", 0.0.into()),
+        ],
+    );
+
+    let gpu = shared_gpu();
+    let mut tree = UiTree::new(160.0, 80.0);
+    let errors = tree.apply_commit(&Commit { ops: s.ops });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+    let scroller = iron_core::NodeId(scroller);
+    assert!(tree.scroll_to(scroller, 20.0, 45.0, true));
+    assert!(tree.scroll_to(iron_core::NodeId(thin), 0.0, 65.0, true));
+    let cmds = tree.draw_list();
+    let target = OffscreenTarget::with_format(&gpu, 160, 80, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let mut ui = UiRenderer::new(&gpu);
+    ui.render(
+        &gpu,
+        &RenderTarget {
+            view: &view,
+            format: target.format(),
+            size: (160, 80),
+            scale: 1.0,
+        },
+        BLACK,
+        &cmds,
+    );
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let f = Frame {
+        pixels,
+        width: 160,
+        stats: RenderStats::default(),
+    };
+    // Scrolled by 45: row 1 (green, 30..60) is at the top, from y = 5 - 15 = -10 to 20.
+    assert_eq!(f.px(40, 12), [0x50, 0xb0, 0x60, 255]);
+    // Row 2 (blue) is next.
+    assert_eq!(f.px(40, 30), [0x50, 0x70, 0xe0, 255]);
+    // Nothing spills out of the rounded scroller.
+    assert_eq!(f.px(6, 6), [0, 0, 0, 255], "the rounded corner clips");
+    assert_eq!(f.px(40, 78), [0, 0, 0, 255]);
+    // The vertical thumb is drawn at the right edge, over the content.
+    assert!(f.luma(88, 40) > 100.0, "vertical thumb");
+    assert_golden("M3-EVT-05-scroll", 160, 80, &f.pixels, TOLERANCE);
+}

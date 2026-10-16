@@ -263,3 +263,32 @@
 .circle { clip-path: circle(45%); }
 .ticket { clip-path: inset(6px round 14px 0); }
 .lens { clip-path: ellipse(48% 30%); }
+
+/* Scrolling: wheel, keys (focus a row with Tab), dragging the thumb. */
+.scroller {
+  height: 120px;
+  overflow: auto;
+  flex-direction: column;
+  border-radius: 8px;
+  background-color: #161b24;
+  scrollbar-color: var(--accent) transparent;
+}
+
+.row {
+  padding: 6px 10px;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.row:nth-child(even) {
+  background-color: #1f2530;
+}
+
+.row:hover {
+  background-color: #2e3747;
+}
+
+.row:focus-visible {
+  background-color: var(--accent);
+  color: #0b0e14;
+}

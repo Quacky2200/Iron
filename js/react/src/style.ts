@@ -94,6 +94,10 @@ export interface IronStyle {
   clipPath?: string;
   /** Legacy `rect(top, right, bottom, left)`; absolutely positioned elements only. Prefer `clipPath`. */
   clip?: string;
+  /** `auto`, `thin` or `none` (hidden but still scrollable). */
+  scrollbarWidth?: "auto" | "thin" | "none";
+  /** `auto` or `<thumb colour> <track colour>`; inherited. */
+  scrollbarColor?: string;
 
   // Text (inherited, as in CSS). `currentColor` in colours means `color`.
   color?: string;

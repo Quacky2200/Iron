@@ -12,13 +12,26 @@ import { createElement, type ReactElement, type ReactNode, type Ref } from "reac
 import { ConcurrentRoot } from "react-reconciler/constants";
 
 import "./events.ts";
-import type { IronFocusEvent, IronKeyboardEvent, IronPointerEvent, IronWheelEvent } from "./events.ts";
+import type {
+  IronFocusEvent,
+  IronKeyboardEvent,
+  IronPointerEvent,
+  IronScrollEvent,
+  IronWheelEvent,
+} from "./events.ts";
 import { type Container, type Instance, reconciler } from "./host.ts";
 import { ROOT_ID } from "./opcodes.ts";
 import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
-export { IronEvent, IronFocusEvent, IronKeyboardEvent, IronPointerEvent, IronWheelEvent } from "./events.ts";
+export {
+  IronEvent,
+  IronFocusEvent,
+  IronKeyboardEvent,
+  IronPointerEvent,
+  IronScrollEvent,
+  IronWheelEvent,
+} from "./events.ts";
 export { Instance as IronElement } from "./host.ts";
 
 type PointerHandler = (event: IronPointerEvent) => void;
@@ -63,6 +76,8 @@ export interface EventProps {
   /** Focus left this element or a descendant. */
   onBlur?: (event: IronFocusEvent) => void;
   onBlurCapture?: (event: IronFocusEvent) => void;
+  /** The element scrolled (by the wheel, keys, its scrollbar or `scrollTo`). Doesn't bubble. */
+  onScroll?: (event: IronScrollEvent) => void;
 }
 
 /** Attributes that CSS selectors can match. */

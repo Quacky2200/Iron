@@ -49,6 +49,24 @@ export class Instance {
   blur(): void {
     op("blur", this.id);
   }
+
+  /**
+   * Scrolls the element's content to (`left`, `top`), clamped to its range. Works on
+   * `overflow: hidden` too. Applied next frame; `onScroll` reports the result.
+   */
+  scrollTo(left: number, top: number): void {
+    op("scrollTo", this.id, left, top);
+  }
+
+  /** Scrolls the element's content by (`dx`, `dy`). */
+  scrollBy(dx: number, dy: number): void {
+    op("scrollBy", this.id, dx, dy);
+  }
+
+  /** Scrolls the element's scroll containers just enough to show it. */
+  scrollIntoView(): void {
+    op("scrollIntoView", this.id);
+  }
 }
 
 export interface Container {

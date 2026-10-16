@@ -23,7 +23,7 @@ pub use color::Rgba;
 pub use draw::{
     ClipShape, DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd,
 };
-pub use events::{EventKind, Pointer, UiEvent};
+pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
 pub use interaction::{Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
@@ -32,8 +32,8 @@ pub use paint::{
     ShapeRadius,
 };
 pub use parley::FontData;
-pub use style::{CURSORS, StyleError, Visual, apply_style};
-pub use tree::{AddedStylesheet, ROOT, TEXT_NODE, UiError, UiTree};
+pub use style::{CURSORS, ScrollbarWidth, StyleError, Visual, apply_style};
+pub use tree::{AddedStylesheet, ROOT, Scrollbar, TEXT_NODE, UiError, UiTree};
 
 /// Re-exported because [`LayoutEngine`] uses Taffy's `Style` as its
 /// backend-neutral description of CSS layout properties.

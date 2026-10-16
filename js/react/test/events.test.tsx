@@ -6,6 +6,7 @@ import {
   type IronFocusEvent,
   type IronKeyboardEvent,
   type IronPointerEvent,
+  type IronScrollEvent,
   type IronWheelEvent,
 } from "../src/events.ts";
 import { type Instance, instances, resetForTests } from "../src/host.ts";
@@ -269,6 +270,51 @@ describe("@iron/react events", () => {
     expect(ops).toEqual([
       ["focus", id],
       ["blur", id],
+    ]);
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  });
+  // M3-EVT-05
+  test("onScroll gets the scroll position and doesn't bubble; refs scroll through ops", () => {
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    const log: string[] = [];
+    let event: IronScrollEvent | undefined;
+    let ref: { current: Instance | null } = { current: null };
+    function List() {
+      ref = useRef<Instance>(null);
+      return (
+        <box data-name="page" onScroll={() => log.push("page")}>
+          <box
+            data-name="list"
+            ref={ref}
+            onScroll={(e) => {
+              event = e;
+              log.push("list");
+            }}
+          />
+        </box>
+      );
+    }
+    createRoot().render(<List />);
+    const data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 30, 100, 400, 100, 200];
+    dispatchUiEvent("scroll", path("list"), data);
+    expect(log).toEqual(["list"]);
+    expect(event).toMatchObject({
+      scrollLeft: 5,
+      scrollTop: 30,
+      scrollWidth: 100,
+      scrollHeight: 400,
+      clientWidth: 100,
+      clientHeight: 200,
+    });
+    const id = ids.get("list")!;
+    ref.current!.scrollTo(0, 50);
+    ref.current!.scrollBy(0, -10);
+    ref.current!.scrollIntoView();
+    expect(ops).toEqual([
+      ["scrollTo", id, 0, 50],
+      ["scrollBy", id, 0, -10],
+      ["scrollIntoView", id],
     ]);
     delete (globalThis as { __iron_op?: unknown }).__iron_op;
   });

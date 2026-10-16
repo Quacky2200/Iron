@@ -20,6 +20,8 @@ pub struct NodeLayout {
     pub border: [f32; 4],
     /// Resolved padding: top, right, bottom, left.
     pub padding: [f32; 4],
+    /// How far the content can scroll (x, y): its reachable extent beyond the padding box.
+    pub scroll_max: [f32; 2],
 }
 
 /// The layout backend (DESIGN.md §5.3). Taffy is the default; a Yoga backend can
@@ -164,6 +166,7 @@ impl LayoutEngine for TaffyLayout {
                 l.padding.bottom,
                 l.padding.left,
             ],
+            scroll_max: [l.scroll_width(), l.scroll_height()],
         })
     }
 }

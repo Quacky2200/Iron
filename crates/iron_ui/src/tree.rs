@@ -76,8 +76,11 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     layout: L,
     size: (f32, f32),
     needs_layout: bool,
-    /// Absolute rects from the last layout, for drawing and hit testing.
+    /// Absolute rects from the last layout, for drawing and hit testing. Content of a
+    /// scroll container is shifted by its scroll offset.
     rects: HashMap<NodeId, Rect>,
+    /// Scroll offsets of scrolled elements (x, y), clamped to their range at layout.
+    scroll: HashMap<NodeId, (f32, f32)>,
     /// Text blocks whose content or structure changed since they were last laid out.
     dirty_text: HashSet<NodeId>,
     /// Attribute and state changes since the last restyle, with what changed.
@@ -142,6 +145,7 @@ impl<L: LayoutEngine> UiTree<L> {
             size: (width, height),
             needs_layout: true,
             rects: HashMap::default(),
+            scroll: HashMap::default(),
             dirty_text: HashSet::default(),
             key_changes: Vec::new(),
             structure_changed: HashSet::default(),
@@ -1168,6 +1172,7 @@ impl<L: LayoutEngine> UiTree<L> {
     fn destroy_subtree(&mut self, id: NodeId) {
         let mut stack = vec![id];
         while let Some(id) = stack.pop() {
+            self.scroll.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
@@ -1227,12 +1232,178 @@ impl<L: LayoutEngine> UiTree<L> {
             if let Some(node) = self.nodes.get(&id)
                 && !is_inline_container(&node.kind)
             {
+                // Content moves up/left as its container scrolls; the content may have
+                // shrunk since the offset was set, so clamp it first.
+                let (sx, sy) = match self.scroll.get_mut(&id) {
+                    Some(offset) => {
+                        offset.0 = offset.0.clamp(0.0, l.scroll_max[0]);
+                        offset.1 = offset.1.clamp(0.0, l.scroll_max[1]);
+                        *offset
+                    }
+                    None => (0.0, 0.0),
+                };
                 // Inline content inside text is positioned by the text engine.
-                stack.extend(node.children.iter().map(|c| (*c, x, y)));
+                stack.extend(node.children.iter().map(|c| (*c, x - sx, y - sy)));
             }
         }
         self.needs_layout = false;
         true
+    }
+
+    /// The scroll offset (x, y) of `id`; (0, 0) for elements that never scrolled.
+    pub fn scroll_offset(&self, id: NodeId) -> (f32, f32) {
+        self.scroll.get(&id).copied().unwrap_or_default()
+    }
+
+    /// How far `id`'s content can scroll (x, y), from the last layout.
+    pub fn scroll_max(&self, id: NodeId) -> (f32, f32) {
+        let m = self
+            .layout
+            .layout(id)
+            .map(|l| l.scroll_max)
+            .unwrap_or_default();
+        (m[0], m[1])
+    }
+
+    /// Which axes of `id` scroll: user scrolling needs `scroll` or `auto`, scripts can
+    /// also scroll `hidden`. `clip` and `visible` never scroll.
+    pub fn scroll_axes(&self, id: NodeId, by_user: bool) -> [bool; 2] {
+        let Some(node) = self.nodes.get(&id) else {
+            return [false; 2];
+        };
+        Overflow::computed(node.visual.overflow).map(|o| match o {
+            Overflow::Scroll | Overflow::Auto => true,
+            Overflow::Hidden => !by_user,
+            Overflow::Visible | Overflow::Clip => false,
+        })
+    }
+
+    /// Scrolls `id` to (x, y), clamped to its range on the axes it can scroll (see
+    /// [`Self::scroll_axes`]; `by_user` limits it to user-scrollable axes). Lays out
+    /// first if needed. Returns whether the offset changed.
+    pub fn scroll_to(&mut self, id: NodeId, x: f32, y: f32, by_user: bool) -> bool {
+        self.layout_if_needed();
+        let axes = self.scroll_axes(id, by_user);
+        let (max_x, max_y) = self.scroll_max(id);
+        let old = self.scroll_offset(id);
+        let new = (
+            if axes[0] { x.clamp(0.0, max_x) } else { old.0 },
+            if axes[1] { y.clamp(0.0, max_y) } else { old.1 },
+        );
+        if new == old {
+            return false;
+        }
+        self.scroll.insert(id, new);
+        // Taffy's layout is cached; only the rects are recomputed.
+        self.needs_layout = true;
+        true
+    }
+
+    /// `id`'s scrollbars (vertical first), for drawing and dragging. A scrollbar shows
+    /// on an axis that scrolls by user input when it's `scroll`, or `auto` with content
+    /// to scroll, unless `scrollbarWidth: none`. They overlay the content.
+    pub fn scrollbars(&self, id: NodeId) -> Vec<Scrollbar> {
+        let Some(node) = self.nodes.get(&id) else {
+            return Vec::new();
+        };
+        let thickness = node.visual.scrollbar_width.thickness();
+        let (Some(pb), true) = (self.padding_box(id), thickness > 0.0) else {
+            return Vec::new();
+        };
+        let overflow = Overflow::computed(node.visual.overflow);
+        let (max_x, max_y) = self.scroll_max(id);
+        let (sx, sy) = self.scroll_offset(id);
+        let shown =
+            |o: Overflow, max: f32| o == Overflow::Scroll || (o == Overflow::Auto && max > 0.0);
+        let (show_x, show_y) = (shown(overflow[0], max_x), shown(overflow[1], max_y));
+        let (thumb_color, track_color) = self.scrollbar_colors(id);
+        let mut bars = Vec::new();
+        let thumb_of = |track: Rect, vertical: bool, client: f32, max: f32, offset: f32| {
+            let len = if vertical { track.height } else { track.width };
+            let size = (len * client / (client + max)).max(len.min(SCROLLBAR_MIN_THUMB));
+            let at = if max > 0.0 {
+                (len - size) * offset / max
+            } else {
+                0.0
+            };
+            if vertical {
+                Rect::new(track.x, track.y + at, track.width, size)
+            } else {
+                Rect::new(track.x + at, track.y, size, track.height)
+            }
+        };
+        let gap = SCROLLBAR_MARGIN;
+        if show_y {
+            let corner = if show_x { thickness + gap } else { 0.0 };
+            let track = Rect::new(
+                pb.x + pb.width - thickness - gap,
+                pb.y + gap,
+                thickness,
+                (pb.height - 2.0 * gap - corner).max(0.0),
+            );
+            bars.push(Scrollbar {
+                node: id,
+                vertical: true,
+                thumb: thumb_of(track, true, pb.height, max_y, sy),
+                track,
+                thumb_color,
+                track_color,
+            });
+        }
+        if show_x {
+            let corner = if show_y { thickness + gap } else { 0.0 };
+            let track = Rect::new(
+                pb.x + gap,
+                pb.y + pb.height - thickness - gap,
+                (pb.width - 2.0 * gap - corner).max(0.0),
+                thickness,
+            );
+            bars.push(Scrollbar {
+                node: id,
+                vertical: false,
+                thumb: thumb_of(track, false, pb.width, max_x, sx),
+                track,
+                thumb_color,
+                track_color,
+            });
+        }
+        bars
+    }
+
+    /// The scrollbar under (x, y) among `path`'s elements (innermost first), if any.
+    /// The hit area is the track plus its margin, so thin bars are easy to grab.
+    pub fn scrollbar_at(&self, path: &[NodeId], x: f32, y: f32) -> Option<Scrollbar> {
+        path.iter().find_map(|id| {
+            self.scrollbars(*id).into_iter().find(|bar| {
+                let area = bar.track.expand(SCROLLBAR_MARGIN);
+                x >= area.x && y >= area.y && x < area.x + area.width && y < area.y + area.height
+            })
+        })
+    }
+
+    /// `scrollbarColor` (inherited): thumb and track colours.
+    fn scrollbar_colors(&self, id: NodeId) -> (Rgba, Rgba) {
+        let mut at = Some(id);
+        while let Some(node) = at.and_then(|id| self.nodes.get(&id)) {
+            match node.visual.scrollbar_color {
+                Some(Some(colors)) => return colors,
+                Some(None) => break,
+                None => at = node.parent,
+            }
+        }
+        (SCROLLBAR_THUMB, Rgba::TRANSPARENT)
+    }
+
+    /// `id`'s padding box (its border box minus borders), where content scrolls.
+    pub fn padding_box(&self, id: NodeId) -> Option<Rect> {
+        let r = self.rect(id)?;
+        let [t, right, b, l] = self.layout.layout(id)?.border;
+        Some(Rect::new(
+            r.x + l,
+            r.y + t,
+            (r.width - l - right).max(0.0),
+            (r.height - t - b).max(0.0),
+        ))
     }
 
     /// The node's absolute rect from the most recent layout.
@@ -1474,6 +1645,7 @@ impl<L: LayoutEngine> UiTree<L> {
             });
             out.extend(own);
             self.collect_children(node, &text, overflow_clip, out);
+            self.collect_scrollbars(id, out);
             // The layer must cover everything drawn into it, plus the blur's spread.
             let content = out[start + 1..]
                 .iter()
@@ -1491,6 +1663,7 @@ impl<L: LayoutEngine> UiTree<L> {
             }
             out.extend(own);
             self.collect_children(node, &text, overflow_clip, out);
+            self.collect_scrollbars(id, out);
         }
         for _ in &self_clips {
             out.push(DrawCmd::PopClip);
@@ -1515,6 +1688,25 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         if clip.is_some() {
             out.push(DrawCmd::PopClip);
+        }
+    }
+
+    /// Scrollbars draw over the content, as rounded thumbs on optional tracks.
+    fn collect_scrollbars(&self, id: NodeId, out: &mut Vec<DrawCmd>) {
+        for bar in self.scrollbars(id) {
+            let radius = bar.track.width.min(bar.track.height) / 2.0;
+            for (rect, color) in [(bar.track, bar.track_color), (bar.thumb, bar.thumb_color)] {
+                if color.a > 0.0 {
+                    out.push(DrawCmd::Quad(Quad {
+                        rect,
+                        background: color,
+                        image: None,
+                        border_color: Rgba::TRANSPARENT,
+                        border: [0.0; 4],
+                        radii: [radius; 4],
+                    }));
+                }
+            }
         }
     }
 
@@ -1549,6 +1741,29 @@ impl<L: LayoutEngine> UiTree<L> {
         clips
     }
 }
+
+/// A scrollbar of a scroll container, in absolute logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Scrollbar {
+    pub node: NodeId,
+    pub vertical: bool,
+    pub track: Rect,
+    pub thumb: Rect,
+    pub thumb_color: Rgba,
+    pub track_color: Rgba,
+}
+
+/// Space between a scrollbar and the padding box edge.
+const SCROLLBAR_MARGIN: f32 = 2.0;
+/// The thumb never gets shorter than this (unless the track is).
+const SCROLLBAR_MIN_THUMB: f32 = 24.0;
+/// Default thumb colour: visible on light and dark backgrounds.
+const SCROLLBAR_THUMB: Rgba = Rgba {
+    r: 0.55,
+    g: 0.57,
+    b: 0.62,
+    a: 0.6,
+};
 
 /// Far enough to never matter: the clip edge on an axis that doesn't clip.
 const UNCLIPPED: f32 = 1.0e7;

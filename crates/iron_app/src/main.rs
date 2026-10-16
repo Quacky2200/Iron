@@ -234,6 +234,19 @@ impl App {
                         Input::Blur(id)
                     });
                 }
+                "scrollTo" | "scrollBy" | "scrollIntoView" => {
+                    let num = |i: usize| op.args.get(i).and_then(iron_core::Value::as_f64);
+                    let Some(id) = num(0).map(|n| iron_core::NodeId(n as u32)) else {
+                        tracing::warn!("{} needs an element id", op.name);
+                        continue;
+                    };
+                    let (a, b) = (num(1).unwrap_or(0.0) as f32, num(2).unwrap_or(0.0) as f32);
+                    self.handle_ui(match op.name.as_str() {
+                        "scrollTo" => Input::ScrollTo { id, x: a, y: b },
+                        "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
+                        _ => Input::ScrollIntoView(id),
+                    });
+                }
                 other => tracing::warn!("unknown script op `{other}`"),
             }
         }

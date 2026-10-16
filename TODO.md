@@ -362,8 +362,15 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      element itself. `DrawCmd::PushClip`/`PopClip`; the renderer keeps a clip table (elliptical
      corners, chained) and tags each instance, so clips don't split batches; layers are clipped
      when composited; fully clipped commands are culled — `M3-EVT-05` (golden `M3-EVT-05-clip`)
-   - [ ] Scrolling: scroll offsets, wheel scrolling (default action of `wheel`), simple scrollbars,
-     `scrollTop`/`scrollLeft` from scripts, culling of off-screen children
+   - [x] Scrolling: scroll offsets shift content (rects, hit testing and drawing agree; offsets
+     clamp when content shrinks); the wheel scrolls the innermost container that can move and
+     chains outward (Shift for horizontal); arrow keys, Page Up/Down, Space, Home/End; Tab and
+     `focus()` scroll the element into view; overlay scrollbars (`scroll` always, `auto` when
+     needed) with thumb dragging and track paging; `scrollbarWidth`, `scrollbarColor`; `onScroll`
+     and `ref.scrollTo/scrollBy/scrollIntoView()` — `M3-EVT-05` (`crates/iron_ui/tests/scroll.rs`,
+     golden `M3-EVT-05-scroll`)
+   - [ ] Later: smooth scrolling, scroll snapping, culling off-screen children in the draw list
+     (the renderer already culls their GPU work), touchpad momentum
 5. **Gamepads**
    - [ ] `gilrs` events to scripts; optional spatial focus navigation with a d-pad — `M3-PAD-01`
 6. **Example + checks**

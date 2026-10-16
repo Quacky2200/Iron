@@ -4,7 +4,8 @@
 // ::after, custom properties, @font-face, and a runtime stylesheet (CSS-in-JS)
 // whose accent colour changes every second. Interaction (M3c): click an item to pin
 // the highlight, click the toggles (or Tab to them and press Space), double-click
-// the title. The Clipping card shows overflow and clip-path on images.
+// the title. The Clipping card shows overflow and clip-path on images, and a list
+// that scrolls with the wheel, keys and its scrollbar.
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
@@ -60,6 +61,22 @@ function Toggle({ label, initial = false, disabled = false }: { label: string; i
       <box className="box" />
       <Text className="label">{label}</Text>
     </box>
+  );
+}
+
+function ScrollList() {
+  const [top, setTop] = useState(0);
+  return (
+    <>
+      <Text className="heading">{`SCROLL ${Math.round(top)}PX`}</Text>
+      <box className="scroller" onScroll={(e) => setTop(e.scrollTop)}>
+        {Array.from({ length: 20 }, (_, i) => (
+          <Text key={i} className="row" tabIndex={0}>
+            {`Row ${i + 1}`}
+          </Text>
+        ))}
+      </box>
+    </>
   );
 }
 
@@ -135,6 +152,7 @@ function App() {
             <box className="shape ticket" />
             <box className="shape lens" />
           </box>
+          <ScrollList />
         </Card>
       </box>
     </box>

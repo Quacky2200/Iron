@@ -30,6 +30,8 @@ pub enum EventKind {
     FocusIn,
     /// Focus left (bubbles; React's `onBlur`).
     FocusOut,
+    /// An element scrolled (doesn't bubble).
+    Scroll,
 }
 
 impl EventKind {
@@ -49,6 +51,7 @@ impl EventKind {
             EventKind::KeyUp => "keyup",
             EventKind::FocusIn => "focusin",
             EventKind::FocusOut => "focusout",
+            EventKind::Scroll => "scroll",
         }
     }
 }
@@ -99,6 +102,37 @@ pub struct UiEvent {
     pub repeat: bool,
     /// Focus events: the element losing (for `focusin`) or gaining (for `focusout`) focus.
     pub related: Option<NodeId>,
+    /// Scroll events: the target's scroll position and sizes.
+    pub scroll: Option<ScrollInfo>,
+}
+
+/// A scroll container's position and sizes, like the DOM's `scrollTop` and friends.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScrollInfo {
+    pub left: f32,
+    pub top: f32,
+    /// Content size (`scrollWidth` / `scrollHeight`).
+    pub width: f32,
+    pub height: f32,
+    /// Padding box size (`clientWidth` / `clientHeight`).
+    pub client_width: f32,
+    pub client_height: f32,
+}
+
+impl ScrollInfo {
+    pub fn of(tree: &UiTree, id: NodeId) -> Self {
+        let (left, top) = tree.scroll_offset(id);
+        let (max_x, max_y) = tree.scroll_max(id);
+        let client = tree.padding_box(id).unwrap_or_default();
+        Self {
+            left,
+            top,
+            width: client.width + max_x,
+            height: client.height + max_y,
+            client_width: client.width,
+            client_height: client.height,
+        }
+    }
 }
 
 impl UiEvent {
@@ -118,6 +152,7 @@ impl UiEvent {
             code: String::new(),
             repeat: false,
             related: None,
+            scroll: None,
         }
     }
 
@@ -126,8 +161,9 @@ impl UiEvent {
     }
 
     /// Arguments for `__iron_ui_event(type, path, data, keys)`: `data` is `[x, y, button,
-    /// buttons, detail, deltaX, deltaY, modifiers, repeat, related]` (`related` 0 for
-    /// none) and `keys` is `[key, code]`, sent with keyboard events only.
+    /// buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
+    /// scrollWidth, scrollHeight, clientWidth, clientHeight]` (`related` 0 for none) and
+    /// `keys` is `[key, code]`, sent with keyboard events only.
     pub fn script_args(&self) -> Vec<Value> {
         let path = self
             .path
@@ -146,10 +182,20 @@ impl UiEvent {
             self.repeat as u8 as f64,
             self.related.map_or(0.0, |id| id.0 as f64),
         ];
+        let s = self.scroll.unwrap_or_default();
+        let scroll = [
+            s.left,
+            s.top,
+            s.width,
+            s.height,
+            s.client_width,
+            s.client_height,
+        ];
+        let data = data.into_iter().chain(scroll.map(f64::from));
         let mut args = vec![
             self.kind.name().into(),
             Value::Array(path),
-            Value::Array(data.into_iter().map(Value::Number).collect()),
+            Value::Array(data.map(Value::Number).collect()),
         ];
         if matches!(self.kind, EventKind::KeyDown | EventKind::KeyUp) {
             args.push(Value::Array(vec![

@@ -23,13 +23,15 @@ const HANDLERS: Record<string, readonly string[]> = {
   // React's onFocus/onBlur bubble, like the DOM's focusin/focusout.
   focusin: ["onFocus"],
   focusout: ["onBlur"],
+  scroll: ["onScroll"],
 };
 
-const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave"]);
+// `scroll` doesn't bubble in React 17+ either.
+const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave", "scroll"]);
 
 // Like React DOM: frequent events render with continuous priority (batched into the
 // next tick), the rest synchronously before the call returns.
-const CONTINUOUS: ReadonlySet<string> = new Set(["pointermove", "pointerenter", "pointerleave", "wheel"]);
+const CONTINUOUS: ReadonlySet<string> = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll"]);
 
 /** Base event, shaped like React's synthetic events. */
 export class IronEvent {
@@ -157,6 +159,28 @@ export class IronFocusEvent extends IronEvent {
   }
 }
 
+/** `onScroll`: the element's new scroll position and sizes (logical pixels). */
+export class IronScrollEvent extends IronEvent {
+  readonly scrollLeft: number;
+  readonly scrollTop: number;
+  /** Content size. */
+  readonly scrollWidth: number;
+  readonly scrollHeight: number;
+  /** Visible (padding box) size. */
+  readonly clientWidth: number;
+  readonly clientHeight: number;
+
+  constructor(type: string, target: Instance, data: readonly number[]) {
+    super(type, target, false);
+    this.scrollLeft = data[10] ?? 0;
+    this.scrollTop = data[11] ?? 0;
+    this.scrollWidth = data[12] ?? 0;
+    this.scrollHeight = data[13] ?? 0;
+    this.clientWidth = data[14] ?? 0;
+    this.clientHeight = data[15] ?? 0;
+  }
+}
+
 type Handler = (event: IronEvent) => void;
 
 function invoke(node: Instance, names: readonly string[], event: IronEvent, phase: number) {
@@ -192,6 +216,8 @@ function createEvent(
     case "focusin":
     case "focusout":
       return new IronFocusEvent(type, target, data);
+    case "scroll":
+      return new IronScrollEvent(type, target, data);
     default:
       return new IronPointerEvent(type, target, bubbles, data);
   }
@@ -199,7 +225,8 @@ function createEvent(
 
 /**
  * Dispatches an engine event. `path` is the target then its ancestors; `data` is
- * `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related]` and
+ * `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related,
+ * scrollLeft, scrollTop, scrollWidth, scrollHeight, clientWidth, clientHeight]` and
  * `keys` is `[key, code]` for keyboard events. Returns whether a handler called
  * `preventDefault()`.
  */

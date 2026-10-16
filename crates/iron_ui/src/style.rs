@@ -54,6 +54,10 @@ pub struct Visual {
     /// Legacy `clip: rect(...)` (offsets of top, right, bottom, left; `None` = `auto`).
     /// Only applies to absolutely positioned elements.
     pub clip_rect: Option<[Option<f32>; 4]>,
+    /// `scrollbarWidth`: `auto`, `thin` or `none` (hidden, still scrollable).
+    pub scrollbar_width: ScrollbarWidth,
+    /// `scrollbarColor` as (thumb, track); `None` inherits, `Some(None)` is `auto`.
+    pub scrollbar_color: Option<Option<(Rgba, Rgba)>>,
     /// `cursor` (a CSS keyword from [`CURSORS`]); `None` inherits from the parent.
     pub cursor: Option<&'static str>,
     /// Inherited text properties set on this node (see [`text_style`]).
@@ -80,6 +84,8 @@ impl Default for Visual {
             overflow: [Overflow::Visible; 2],
             clip_path: None,
             clip_rect: None,
+            scrollbar_width: ScrollbarWidth::Auto,
+            scrollbar_color: None,
             cursor: None,
             text: TextProps::default(),
         }
@@ -125,6 +131,26 @@ pub const CURSORS: &[&str] = &[
     "zoom-in",
     "zoom-out",
 ];
+
+/// `scrollbarWidth`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollbarWidth {
+    #[default]
+    Auto,
+    Thin,
+    None,
+}
+
+impl ScrollbarWidth {
+    /// Thickness in logical pixels.
+    pub fn thickness(self) -> f32 {
+        match self {
+            ScrollbarWidth::Auto => 8.0,
+            ScrollbarWidth::Thin => 5.0,
+            ScrollbarWidth::None => 0.0,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum StyleError {
@@ -354,6 +380,28 @@ pub fn apply_style(
                 s => Some(ClipPath::parse(s).ok_or_else(invalid)?),
             }
         }
+        "scrollbarWidth" => {
+            visual.scrollbar_width = match kw()?.trim() {
+                "auto" => ScrollbarWidth::Auto,
+                "thin" => ScrollbarWidth::Thin,
+                "none" => ScrollbarWidth::None,
+                _ => return Err(invalid()),
+            }
+        }
+        "scrollbarColor" => {
+            visual.scrollbar_color = match kw()?.trim() {
+                "auto" => Some(None),
+                "inherit" => None,
+                s => {
+                    let colors = split_top_level(s, ' ');
+                    let [thumb, track] = colors[..] else {
+                        return Err(invalid());
+                    };
+                    let parse = |c: &str| Rgba::parse(c).ok_or_else(invalid);
+                    Some(Some((parse(thumb)?, parse(track)?)))
+                }
+            }
+        }
         "clip" => {
             visual.clip_rect = match kw()?.trim() {
                 "auto" => None,
@@ -490,6 +538,8 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "overflowY" => set_overflow(style, visual, [visual.overflow[0], v.overflow[1]]),
         "clipPath" => visual.clip_path = v.clip_path,
         "clip" => visual.clip_rect = v.clip_rect,
+        "scrollbarWidth" => visual.scrollbar_width = v.scrollbar_width,
+        "scrollbarColor" => visual.scrollbar_color = v.scrollbar_color,
         "pointerEvents" => visual.pointer_events = v.pointer_events,
         "cursor" => visual.cursor = v.cursor,
         p if text_style::is_text_prop(p) => {
