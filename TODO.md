@@ -454,9 +454,12 @@ and `@font-face`.
      `unset`: no user-agent stylesheet) on every property, inline, in stylesheets and on
      `::before`/`::after`; `inherit` copies the parent's value for non-inherited properties
      (`apply_wide_keyword`, `crates/iron_ui/tests/wide_keywords.rs`)
-   - [ ] Colours: check `hsl()`/`hwb()`/`lab()`/`oklch()` coverage; `color-mix()` as the standard
-     form of s&box's `mix()`/`darken()`/`lighten()`
-   - [ ] Angles in `rad`, `grad`, `turn`; times in `s`/`ms`
+   - [x] Colours: `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color(srgb | srgb-linear |
+     display-p3 ...)`, `none` channels, and `color-mix(in srgb | srgb-linear | lab | oklab | lch |
+     oklch, ...)` (premultiplied, shorter hue) as the standard form of s&box's `mix()` /
+     `darken()` / `lighten()` (`crates/iron_ui/src/color_fn.rs`); out-of-gamut colours clip
+   - [x] Angles in `deg`, `rad`, `grad`, `turn` (hues and gradients); times (`s`/`ms`) come with
+     transitions (group 7), the first properties that take them
 2. **Layout**
    - [ ] `order`, `z-index` (paint order and hit testing), `isolation: isolate`
    - [ ] `display: contents`; `position: fixed`

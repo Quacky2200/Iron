@@ -261,7 +261,7 @@ pub fn parse_background_image(s: &str) -> Option<Option<BackgroundImage>> {
                 },
                 _ => return None,
             }
-        } else if Rgba::parse(first.split_whitespace().next()?).is_none() {
+        } else if Rgba::parse(split_top_level(first, ' ').first()?).is_none() {
             let angle = parse_angle_degrees(first)?;
             parts.remove(0);
             GradientDirection::Angle(angle)
@@ -1006,5 +1006,33 @@ mod tests {
             Some(BackgroundRepeat::NoRepeat)
         );
         assert_eq!(parse_background_repeat("space"), None);
+    }
+
+    // M3d step 1: angle units and modern colour functions in gradients.
+    #[test]
+    fn gradients_take_any_angle_unit_and_colour_function() {
+        for (angle, deg) in [
+            ("0.25turn", 90.0),
+            ("100grad", 90.0),
+            ("3.14159265rad", 180.0),
+        ] {
+            let Some(BackgroundImage::Linear { direction, .. }) =
+                parse_background_image(&format!("linear-gradient({angle}, red, blue)")).unwrap()
+            else {
+                panic!("{angle}");
+            };
+            let GradientDirection::Angle(a) = direction else {
+                panic!("{angle}");
+            };
+            assert!((a - deg).abs() < 1e-3, "{angle}: {a}");
+        }
+        let Some(BackgroundImage::Linear { stops, .. }) = parse_background_image(
+            "linear-gradient(oklch(0.7 0.1 200) 10%, color-mix(in srgb, red 25%, blue))",
+        )
+        .unwrap() else {
+            panic!("expected a linear gradient");
+        };
+        assert_eq!(stops.len(), 2);
+        assert_eq!(stops[0].position, Some(Len::Percent(0.1)));
     }
 }

@@ -31,8 +31,9 @@ impl Rgba {
     }
 
     /// Parses `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`/`rgba()` and
-    /// `hsl()`/`hsla()` (comma or space separated, optional `/ alpha`),
-    /// `transparent` and the CSS named colours.
+    /// `hsl()`/`hsla()` (comma or space separated, optional `/ alpha`), `hwb()`,
+    /// `lab()`, `lch()`, `oklab()`, `oklch()`, `color()`, `color-mix()` (see
+    /// [`crate::color_fn`]), `transparent` and the CSS named colours.
     pub fn parse(input: &str) -> Option<Self> {
         let s = input.trim().to_ascii_lowercase();
         if let Some(hex) = s.strip_prefix('#') {
@@ -50,13 +51,16 @@ impl Rgba {
         if let Some(args) = function_args(["hsla(", "hsl("]) {
             return parse_hsl_args(args);
         }
+        if s.ends_with(')') {
+            return crate::color_fn::parse(&s);
+        }
         named(&s)
     }
 }
 
 /// Splits colour function arguments into 3 channels plus an optional alpha.
 /// Accepts `a, b, c`, `a b c`, `a b c / alpha` and `a, b, c, alpha`.
-fn split_color_args(args: &str) -> Option<([&str; 3], Option<&str>)> {
+pub(crate) fn split_color_args(args: &str) -> Option<([&str; 3], Option<&str>)> {
     let (channels, slash_alpha) = match args.split_once('/') {
         Some((c, a)) => (c, Some(a.trim())),
         None => (args, None),

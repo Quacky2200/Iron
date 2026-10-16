@@ -6,6 +6,7 @@
 mod attrs;
 mod cascade;
 mod color;
+mod color_fn;
 pub mod css;
 mod draw;
 pub mod editor;
