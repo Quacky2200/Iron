@@ -26,7 +26,7 @@ is large). A `Node` holds:
 | `style: taffy::Style` | Layout properties |
 | `visual: Visual` | Paint-only properties ([style.rs](../crates/iron_ui/src/style.rs)) |
 | `text` | Characters of a `#text` node |
-| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
+| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
 | `inline` | Inline `style` declarations, in the order set (later wins) |
 | `generated` | `Some(Before/After)` for stylesheet-generated content |
 | `vars` | Computed custom properties (`Rc`, shared with the parent when unchanged) |
@@ -82,7 +82,11 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 - [text_style.rs](../crates/iron_ui/src/text_style.rs): `TextProps` are the *specified* text
   properties of one node; `ComputedText::child(&TextProps)` applies CSS inheritance.
   `UiTree::computed_text(id)` folds root-to-node. `is_text_prop` lets the tree know a style change
-  affects text shaping.
+  affects text shaping. `direction` (`ltr`/`rtl`, enum `Direction`) is an inherited text property.
+  The `dir` attribute (`ltr`/`rtl`, case-insensitive; `auto` is rejected) is visible to selectors as
+  `[dir=...]` and fills in `direction` only when no CSS or inline style sets it (like the HTML UA
+  rule `[dir=rtl] { direction: rtl }`): in `restyle` after the cascade, and via `dir_fallback` when
+  there are no stylesheets. A `dir` change restyles and invalidates `[dir]` selectors.
 
 `Visual` has a field-wise `PartialEq` so restyle can detect "no visible change".
 
@@ -121,6 +125,12 @@ replaces the `LayoutContext` because Parley caches family lookups, including mis
 dictionary segmenters. Japanese/Chinese word moves (Ctrl+Arrow) and double-click selection follow
 dictionary word boundaries, and Thai, Lao, Khmer and Burmese text without spaces wraps between
 words (M3-TXT-08). It adds about 3.8 MB to the release binary.
+
+`TextEngine::build` sets Parley's base direction from the block's `direction` (never Auto, as in
+CSS), so rtl blocks start at the right and mixed Latin/Hebrew/Arabic runs order correctly. The
+shared helpers `alignment()` and `base_direction()` are used by text blocks and fields;
+`text-align: start/end` resolve by direction through Parley (M3-TXT-09). Not done: `dir="auto"`,
+flex/grid row order in rtl (Taffy has no direction), logical properties.
 
 How inline content works:
 
@@ -222,6 +232,11 @@ content-box `size`.
   sets the wrap width (textarea only; an input never wraps), moves the caret to the end if a script
   just set the text, refreshes the Parley layout, builds the placeholder layout in the text colour at
   half alpha, and runs `keep_caret_visible`.
+- **Direction**: the editor's base direction and alignment come from the field's `direction` and
+  `text-align`. A single-line input aligns short text with a negative horizontal `scroll`, so
+  drawing, hit tests and the IME area follow. The placeholder is aligned the same way
+  (`placeholder_x`) and re-laid out when the field's size changes. Arrow keys move visually
+  (Parley behaviour).
 - **Caret in view**: `Editor::scroll` is the field's own offset, one axis only (x for input, y for
   textarea), adjusted to show the caret rectangle and clamped to `content + caret width - view`.
   It is not a CSS scroll offset and creates no scrollbars.

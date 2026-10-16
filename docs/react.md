@@ -63,7 +63,7 @@ Details that are easy to miss:
   props; Rust treats `null` as "reset to default". Style objects are not frozen or hashed, so
   creating a new object with identical values costs a loop but sends nothing.
 - `attrEntries` / `attrDiff` do the same for attribute props. A prop is an attribute if it is
-  `className`, `id`, `disabled`, `checked`, `tabIndex`, a text field prop (`value`, `defaultValue`,
+  `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, a text field prop (`value`, `defaultValue`,
   `placeholder`, `readOnly`, `rows`) or starts with `data-` (`isAttr`). Everything
   else (including `on*` handlers) stays in `props` and never crosses to Rust.
 
@@ -143,7 +143,7 @@ Ops are drained once per frame, so focus changes apply on the next frame, not sy
 
 `BoxProps = ElementAttrs & EventProps & { style, children, key, ref }`:
 
-- `ElementAttrs`: `className`, `id`, `disabled`, `checked`, `tabIndex`, `data-*`. Text fields add
+- `ElementAttrs`: `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir` (`'ltr' | 'rtl'`), `data-*`. Text fields add
   `FieldProps` (above).
 - `EventProps`: pointer/mouse (`onClick`, `onDoubleClick`, `onContextMenu`, `onPointerDown/Up/Move/Enter/Leave`,
   `onMouse*`, `onWheel`), keyboard (`onKeyDown/Up`), focus (`onFocus`, `onBlur`), `onChange`/`onInput` on fields, each with a
