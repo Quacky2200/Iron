@@ -276,6 +276,7 @@ pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
         bounds,
         runs,
         decorations,
+        fill: None,
     }
 }
 

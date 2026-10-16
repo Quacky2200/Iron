@@ -31,9 +31,9 @@ pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
 pub use interaction::{Clipboard, Direction, Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ClipPath, ClipShapeSpec,
-    ColorStop, Corners, GeometryBox, GradientDirection, Len, ObjectFit, Overflow, RadialShape,
-    Shadow, ShapeRadius,
+    BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
+    ClipPath, ClipShapeSpec, ColorStop, Corners, GeometryBox, GradientDirection, Len, ObjectFit,
+    Overflow, RadialShape, RepeatAxis, Shadow, ShapeRadius,
 };
 pub use parley::FontData;
 pub use style::{

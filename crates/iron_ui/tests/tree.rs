@@ -403,7 +403,7 @@ fn backgrounds_and_shadows_without_a_fill_still_draw() {
     let cmds = tree.draw_list();
     assert_eq!(shape(&cmds), ["quad 50", "shadow 0"]);
     let DrawCmd::Quad(q) = &cmds[0] else { panic!() };
-    let fill = q.image.as_ref().expect("gradient fill");
+    let fill = q.images.first().expect("gradient fill");
     assert_eq!(fill.size, iron_ui::BackgroundSize::Cover);
     assert!(matches!(
         *fill.image,

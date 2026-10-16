@@ -70,14 +70,14 @@ fn image_fill(tree: &mut UiTree) -> (Rect, BackgroundSize, iron_ui::BackgroundPo
     let cmds = tree.draw_list();
     let i = cmds
         .iter()
-        .position(|c| matches!(c, DrawCmd::Quad(q) if q.image.is_some()))
+        .position(|c| matches!(c, DrawCmd::Quad(q) if !q.images.is_empty()))
         .expect("an image quad");
     assert!(matches!(cmds[i - 1], DrawCmd::PushClip(_)));
     assert!(matches!(cmds[i + 1], DrawCmd::PopClip));
     let DrawCmd::Quad(q) = &cmds[i] else {
         unreachable!()
     };
-    let fill = q.image.as_ref().unwrap();
+    let fill = &q.images[0];
     (q.rect, fill.size, fill.position)
 }
 

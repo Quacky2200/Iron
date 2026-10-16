@@ -498,23 +498,85 @@ pub fn parse_background_position(s: &str) -> Option<BackgroundPosition> {
     Some(BackgroundPosition { x, y })
 }
 
+/// How a background image repeats along one axis.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum BackgroundRepeat {
+pub enum RepeatAxis {
     #[default]
     Repeat,
     NoRepeat,
-    RepeatX,
-    RepeatY,
+    /// Repeat, scaled so a whole number of tiles fits.
+    Round,
+    /// Repeat whole tiles only, spreading the leftover space between them.
+    Space,
 }
 
+/// `background-repeat`, per axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BackgroundRepeat {
+    pub x: RepeatAxis,
+    pub y: RepeatAxis,
+}
+
+impl BackgroundRepeat {
+    pub const REPEAT: Self = Self {
+        x: RepeatAxis::Repeat,
+        y: RepeatAxis::Repeat,
+    };
+    pub const NO_REPEAT: Self = Self {
+        x: RepeatAxis::NoRepeat,
+        y: RepeatAxis::NoRepeat,
+    };
+}
+
+/// One layer's `background-repeat`: `repeat-x`, `repeat-y`, or one or two of
+/// `repeat`, `no-repeat`, `round`, `space`.
 pub fn parse_background_repeat(s: &str) -> Option<BackgroundRepeat> {
-    Some(match s.trim() {
-        "repeat" => BackgroundRepeat::Repeat,
-        "no-repeat" => BackgroundRepeat::NoRepeat,
-        "repeat-x" => BackgroundRepeat::RepeatX,
-        "repeat-y" => BackgroundRepeat::RepeatY,
+    let axis = |t: &str| {
+        Some(match t {
+            "repeat" => RepeatAxis::Repeat,
+            "no-repeat" => RepeatAxis::NoRepeat,
+            "round" => RepeatAxis::Round,
+            "space" => RepeatAxis::Space,
+            _ => return None,
+        })
+    };
+    let words: Vec<&str> = s.split_whitespace().collect();
+    let (x, y) = match words[..] {
+        ["repeat-x"] => (RepeatAxis::Repeat, RepeatAxis::NoRepeat),
+        ["repeat-y"] => (RepeatAxis::NoRepeat, RepeatAxis::Repeat),
+        [both] => (axis(both)?, axis(both)?),
+        [x, y] => (axis(x)?, axis(y)?),
         _ => return None,
-    })
+    };
+    Some(BackgroundRepeat { x, y })
+}
+
+/// `background-clip`: the area a background layer paints.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BackgroundClip {
+    #[default]
+    BorderBox,
+    PaddingBox,
+    ContentBox,
+    /// Only inside the glyphs of the element's text (gradient text).
+    Text,
+}
+
+impl BackgroundClip {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "border-box" => Self::BorderBox,
+            "padding-box" => Self::PaddingBox,
+            "content-box" => Self::ContentBox,
+            "text" => Self::Text,
+            _ => return None,
+        })
+    }
+}
+
+/// A comma-separated list of background layer values (`a, b, c`), top layer first.
+pub fn parse_layers<T>(s: &str, item: impl Fn(&str) -> Option<T>) -> Option<Vec<T>> {
+    split_top_level(s, ',').into_iter().map(item).collect()
 }
 
 /// Splits on `sep` outside parentheses, trimming parts and dropping empty ones
@@ -1174,9 +1236,24 @@ mod tests {
 
         assert_eq!(
             parse_background_repeat("no-repeat"),
-            Some(BackgroundRepeat::NoRepeat)
+            Some(BackgroundRepeat::NO_REPEAT)
         );
-        assert_eq!(parse_background_repeat("space"), None);
+        assert_eq!(
+            parse_background_repeat("repeat-x"),
+            Some(BackgroundRepeat {
+                x: RepeatAxis::Repeat,
+                y: RepeatAxis::NoRepeat
+            })
+        );
+        assert_eq!(
+            parse_background_repeat("round space"),
+            Some(BackgroundRepeat {
+                x: RepeatAxis::Round,
+                y: RepeatAxis::Space
+            })
+        );
+        assert_eq!(parse_background_repeat("sideways"), None);
+        assert_eq!(parse_background_repeat("repeat-x repeat"), None);
     }
 
     // M3d step 1: angle units and modern colour functions in gradients.

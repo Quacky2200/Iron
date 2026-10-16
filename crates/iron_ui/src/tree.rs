@@ -16,7 +16,8 @@ use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{
-    BackgroundImage, BackgroundRepeat, Overflow, Shadow, inner_corners, resolve_radii,
+    BackgroundClip, BackgroundImage, BackgroundRepeat, Overflow, Shadow, inner_corners,
+    resolve_radii,
 };
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
@@ -68,6 +69,66 @@ pub const TEXT_NODE: &str = "#text";
 /// Element types whose children are inline content laid out by the text engine.
 fn is_inline_container(kind: &str) -> bool {
     matches!(kind, "text" | "span")
+}
+
+/// The background layers to paint over the box, bottom first, and the topmost
+/// `background-clip: text` gradient (painted inside the text instead).
+fn background_layers(
+    v: &Visual,
+    rect: Rect,
+    radii: [f32; 4],
+    l: &NodeLayout,
+) -> (Vec<ImageFill>, Option<Arc<BackgroundImage>>) {
+    let mut fills = Vec::new();
+    let mut text_fill = None;
+    for (i, image) in v.background_images.iter().enumerate().rev() {
+        let Some(image) = image else {
+            continue;
+        };
+        let pick = |n: usize| i % n;
+        let clip = v.background_clips[pick(v.background_clips.len())];
+        if clip == BackgroundClip::Text {
+            if !matches!(**image, BackgroundImage::Url(_)) {
+                text_fill = Some(image.clone());
+            }
+            continue;
+        }
+        let (area, area_radii) = clip_area(clip, rect, radii, l);
+        fills.push(ImageFill {
+            image: image.clone(),
+            size: v.background_sizes[pick(v.background_sizes.len())],
+            position: v.background_positions[pick(v.background_positions.len())],
+            repeat: v.background_repeats[pick(v.background_repeats.len())],
+            area,
+            radii: area_radii,
+        });
+    }
+    (fills, text_fill)
+}
+
+/// The `background-clip` box and its corner radii (outer radii shrunk by the inset,
+/// approximated as circles).
+fn clip_area(
+    clip: BackgroundClip,
+    rect: Rect,
+    radii: [f32; 4],
+    l: &NodeLayout,
+) -> (Rect, [f32; 4]) {
+    let inset = match clip {
+        BackgroundClip::BorderBox | BackgroundClip::Text => [0.0; 4],
+        BackgroundClip::PaddingBox => l.border,
+        BackgroundClip::ContentBox => [0, 1, 2, 3].map(|i| l.border[i] + l.padding[i]),
+    };
+    let [t, r, b, left] = inset;
+    let area = Rect::new(
+        rect.x + left,
+        rect.y + t,
+        (rect.width - left - r).max(0.0),
+        (rect.height - t - b).max(0.0),
+    );
+    // Corners: top-left, top-right, bottom-right, bottom-left.
+    let shrink = [t.max(left), t.max(r), b.max(r), b.max(left)];
+    (area, [0, 1, 2, 3].map(|i| (radii[i] - shrink[i]).max(0.0)))
 }
 
 /// The element type of images.
@@ -2072,15 +2133,33 @@ impl<L: LayoutEngine> UiTree<L> {
         {
             own.push(DrawCmd::BoxShadow(shadow(s)));
         }
+        let (images, text_fill) = background_layers(v, rect, radii, &l);
+        let mut background = current(v.background, v.background_current);
+        // The colour is clipped like the bottom layer.
+        let bottom = v.background_images.len().max(1) - 1;
+        let colour_clip = v.background_clips[bottom % v.background_clips.len()];
+        match colour_clip {
+            BackgroundClip::BorderBox => {}
+            BackgroundClip::Text => background = Rgba::TRANSPARENT,
+            clip => {
+                let (area, area_radii) = clip_area(clip, rect, radii, &l);
+                if background.a > 0.0 && !area.is_empty() {
+                    own.push(DrawCmd::Quad(Quad {
+                        rect: area,
+                        background,
+                        images: Vec::new(),
+                        border_color: Rgba::TRANSPARENT,
+                        border: [0.0; 4],
+                        radii: area_radii,
+                    }));
+                }
+                background = Rgba::TRANSPARENT;
+            }
+        }
         let quad = Quad {
             rect,
-            background: current(v.background, v.background_current),
-            image: v.background_image.as_ref().map(|image| ImageFill {
-                image: image.clone(),
-                size: v.background_size,
-                position: v.background_position,
-                repeat: v.background_repeat,
-            }),
+            background,
+            images,
             border_color: current(v.border_color, v.border_current),
             border: l.border,
             radii,
@@ -2109,7 +2188,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 rect.x + l.border[3] + l.padding[3],
                 rect.y + l.border[0] + l.padding[0],
             );
-            let cmd = text::draw(layout, origin);
+            let mut cmd = text::draw(layout, origin);
+            cmd.fill = text_fill.map(|image| (image, rect));
             if !cmd.runs.is_empty() || !cmd.decorations.is_empty() {
                 // Text shadows: tinted copies under the text, last shadow lowest.
                 for s in text.text_shadow.iter().rev() {
@@ -2294,12 +2374,14 @@ impl<L: LayoutEngine> UiTree<L> {
         out.push(DrawCmd::Quad(Quad {
             rect: content,
             background: Rgba::TRANSPARENT,
-            image: Some(ImageFill {
+            images: vec![ImageFill {
                 image: Arc::new(BackgroundImage::Url(src.to_owned())),
                 size,
                 position: v.object_position,
-                repeat: BackgroundRepeat::NoRepeat,
-            }),
+                repeat: BackgroundRepeat::NO_REPEAT,
+                area: content,
+                radii: [0.0; 4],
+            }],
             border_color: Rgba::TRANSPARENT,
             border: [0.0; 4],
             radii: [0.0; 4],
@@ -2427,7 +2509,7 @@ impl<L: LayoutEngine> UiTree<L> {
             DrawCmd::Quad(Quad {
                 rect: r.offset(origin.0, origin.1),
                 background: color,
-                image: None,
+                images: Vec::new(),
                 border_color: Rgba::TRANSPARENT,
                 border: [0.0; 4],
                 radii: [0.0; 4],
@@ -2474,7 +2556,7 @@ impl<L: LayoutEngine> UiTree<L> {
                     out.push(DrawCmd::Quad(Quad {
                         rect,
                         background: color,
-                        image: None,
+                        images: Vec::new(),
                         border_color: Rgba::TRANSPARENT,
                         border: [0.0; 4],
                         radii: [radius; 4],

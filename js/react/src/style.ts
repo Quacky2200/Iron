@@ -114,10 +114,16 @@ export interface IronStyle {
   // Paint
   background?: string;
   backgroundColor?: string;
+  /** Comma-separated layers, top first; the other background properties take matching lists. */
   backgroundImage?: string;
   backgroundSize?: string;
   backgroundPosition?: string;
-  backgroundRepeat?: "repeat" | "no-repeat" | "repeat-x" | "repeat-y";
+  backgroundPositionX?: string;
+  backgroundPositionY?: string;
+  /** `repeat`, `no-repeat`, `repeat-x`, `repeat-y`, `round`, `space`, or one per axis. */
+  backgroundRepeat?: string;
+  /** `border-box` (default), `padding-box`, `content-box` or `text` (gradient text). */
+  backgroundClip?: string;
   border?: string;
   borderColor?: string;
   borderRadius?: Length;

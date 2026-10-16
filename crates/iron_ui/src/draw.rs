@@ -144,22 +144,26 @@ impl ClipShape {
     }
 }
 
-/// A background image or gradient with its sizing rules; the renderer resolves
-/// it against the quad's rect.
+/// A background image or gradient layer. Images are sized and positioned against
+/// the quad's rect and painted only inside `area` (the `background-clip` box,
+/// rounded by `radii`). Gradients fill `area`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImageFill {
     pub image: Arc<BackgroundImage>,
     pub size: BackgroundSize,
     pub position: BackgroundPosition,
     pub repeat: BackgroundRepeat,
+    pub area: Rect,
+    pub radii: [f32; 4],
 }
 
-/// One box: background colour, optional image/gradient, border and rounded corners.
+/// One box: background colour, image/gradient layers, border and rounded corners.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Quad {
     pub rect: Rect,
     pub background: Rgba,
-    pub image: Option<ImageFill>,
+    /// Background layers in paint order (bottom first), over the colour, under the border.
+    pub images: Vec<ImageFill>,
     pub border_color: Rgba,
     /// Border widths: top, right, bottom, left.
     pub border: [f32; 4],
@@ -173,7 +177,7 @@ impl Quad {
         let has_border = self.border_color.a > 0.0 && self.border.iter().any(|w| *w > 0.0);
         self.rect.width > 0.0
             && self.rect.height > 0.0
-            && (self.background.a > 0.0 || self.image.is_some() || has_border)
+            && (self.background.a > 0.0 || !self.images.is_empty() || has_border)
     }
 }
 
@@ -267,6 +271,9 @@ pub struct TextCmd {
     pub runs: Vec<GlyphRun>,
     /// Underlines and line-throughs as filled rectangles.
     pub decorations: Vec<(Rect, Rgba)>,
+    /// `background-clip: text`: a gradient painted inside the glyphs, laid out over
+    /// the element's box (the rect), under the text colour.
+    pub fill: Option<(Arc<BackgroundImage>, Rect)>,
 }
 
 impl TextCmd {
@@ -297,6 +304,7 @@ impl TextCmd {
                 .iter()
                 .map(|(r, _)| (r.offset(dx, dy), color))
                 .collect(),
+            fill: None,
         }
     }
 }

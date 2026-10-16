@@ -17,10 +17,10 @@ use std::sync::Arc;
 
 use crate::Rgba;
 use crate::paint::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ClipPath, Corners, Len,
-    ObjectFit, Overflow, Shadow, parse_background_image, parse_background_position,
-    parse_background_repeat, parse_background_size, parse_blur_filter, parse_clip_rect,
-    parse_radii, parse_shadows, split_top_level,
+    BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
+    ClipPath, Corners, Len, ObjectFit, Overflow, Shadow, parse_background_image,
+    parse_background_position, parse_background_repeat, parse_background_size, parse_blur_filter,
+    parse_clip_rect, parse_layers, parse_radii, parse_shadows, split_top_level,
 };
 use crate::text_style::{self, TextProps};
 
@@ -30,11 +30,14 @@ pub struct Visual {
     pub background: Rgba,
     /// `backgroundColor: currentColor`: use the text colour.
     pub background_current: bool,
-    /// Shared so building the draw list each frame doesn't copy gradient stops.
-    pub background_image: Option<Arc<BackgroundImage>>,
-    pub background_size: BackgroundSize,
-    pub background_position: BackgroundPosition,
-    pub background_repeat: BackgroundRepeat,
+    /// Background layers, top first (`None` for a `none` layer). Shared so building
+    /// the draw list each frame doesn't copy gradient stops.
+    pub background_images: Vec<Option<Arc<BackgroundImage>>>,
+    /// Per-layer lists; layer `i` uses entry `i % len`, like CSS.
+    pub background_sizes: Vec<BackgroundSize>,
+    pub background_positions: Vec<BackgroundPosition>,
+    pub background_repeats: Vec<BackgroundRepeat>,
+    pub background_clips: Vec<BackgroundClip>,
     pub border_color: Rgba,
     /// `borderColor: currentColor` (also the CSS default when `border` omits a colour).
     pub border_current: bool,
@@ -85,10 +88,11 @@ impl Default for Visual {
         Self {
             background: Rgba::TRANSPARENT,
             background_current: false,
-            background_image: None,
-            background_size: BackgroundSize::default(),
-            background_position: BackgroundPosition::default(),
-            background_repeat: BackgroundRepeat::default(),
+            background_images: Vec::new(),
+            background_sizes: vec![BackgroundSize::default()],
+            background_positions: vec![BackgroundPosition::default()],
+            background_repeats: vec![BackgroundRepeat::default()],
+            background_clips: vec![BackgroundClip::default()],
             border_color: Rgba::TRANSPARENT,
             border_current: false,
             border_radius: Corners::all(Len::Px(0.0)),
@@ -547,35 +551,72 @@ pub fn apply_style(
             visual.background_current = false;
         }
         "background" => {
-            // Shorthand subset: a colour or a single image/gradient.
+            // Shorthand subset: a colour, or a list of images/gradients.
             let s = kw()?;
             if let Some(c) = Rgba::parse(s) {
                 visual.background = c;
                 visual.background_current = false;
-                visual.background_image = None;
+                visual.background_images.clear();
             } else {
-                visual.background_image =
-                    parse_background_image(s).ok_or_else(invalid)?.map(Arc::new);
+                visual.background_images = image_layers(s).ok_or_else(invalid)?;
                 visual.background = Rgba::TRANSPARENT;
             }
         }
-        "backgroundImage" => {
-            visual.background_image = parse_background_image(kw()?)
-                .ok_or_else(invalid)?
-                .map(Arc::new)
-        }
+        "backgroundImage" => visual.background_images = image_layers(kw()?).ok_or_else(invalid)?,
         "backgroundSize" => {
-            visual.background_size = parse_background_size(kw()?).ok_or_else(invalid)?
+            visual.background_sizes =
+                parse_layers(kw()?, parse_background_size).ok_or_else(invalid)?
         }
         "backgroundPosition" => {
-            visual.background_position = parse_background_position(kw()?).ok_or_else(invalid)?
+            visual.background_positions =
+                parse_layers(kw()?, parse_background_position).ok_or_else(invalid)?
+        }
+        "backgroundPositionX" | "backgroundPositionY" => {
+            let horizontal = prop == "backgroundPositionX";
+            let axis = |t: &str| {
+                // `top center` is a valid position, but `top` isn't an x value.
+                let other_axis: &[&str] = if horizontal {
+                    &["top", "bottom"]
+                } else {
+                    &["left", "right"]
+                };
+                if t.split_whitespace().any(|w| other_axis.contains(&w)) {
+                    return None;
+                }
+                let p = if horizontal {
+                    parse_background_position(&format!("{t} center"))
+                } else {
+                    parse_background_position(&format!("center {t}"))
+                }?;
+                Some(if horizontal { p.x } else { p.y })
+            };
+            let values = parse_layers(kw()?, axis).ok_or_else(invalid)?;
+            let old = &visual.background_positions;
+            let n = values.len().max(old.len());
+            visual.background_positions = (0..n)
+                .map(|i| {
+                    let mut p = old[i % old.len()];
+                    let v = values[i % values.len()];
+                    if horizontal {
+                        p.x = v
+                    } else {
+                        p.y = v
+                    }
+                    p
+                })
+                .collect();
+        }
+        "backgroundClip" | "WebkitBackgroundClip" => {
+            visual.background_clips =
+                parse_layers(kw()?, BackgroundClip::parse).ok_or_else(invalid)?
         }
         "objectFit" => visual.object_fit = ObjectFit::parse(kw()?).ok_or_else(invalid)?,
         "objectPosition" => {
             visual.object_position = parse_background_position(kw()?).ok_or_else(invalid)?
         }
         "backgroundRepeat" => {
-            visual.background_repeat = parse_background_repeat(kw()?).ok_or_else(invalid)?
+            visual.background_repeats =
+                parse_layers(kw()?, parse_background_repeat).ok_or_else(invalid)?
         }
         "borderColor" if is_current_color(value) => visual.border_current = true,
         "borderColor" => {
@@ -835,14 +876,17 @@ pub(crate) fn copy_prop(
         }
         "background" => {
             visual.background = v.background;
-            visual.background_image = v.background_image;
+            visual.background_images = v.background_images;
         }
-        "backgroundImage" => visual.background_image = v.background_image,
-        "backgroundSize" => visual.background_size = v.background_size,
-        "backgroundPosition" => visual.background_position = v.background_position,
+        "backgroundImage" => visual.background_images = v.background_images,
+        "backgroundSize" => visual.background_sizes = v.background_sizes,
+        "backgroundPosition" | "backgroundPositionX" | "backgroundPositionY" => {
+            visual.background_positions = v.background_positions
+        }
+        "backgroundClip" | "WebkitBackgroundClip" => visual.background_clips = v.background_clips,
         "objectFit" => visual.object_fit = v.object_fit,
         "objectPosition" => visual.object_position = v.object_position,
-        "backgroundRepeat" => visual.background_repeat = v.background_repeat,
+        "backgroundRepeat" => visual.background_repeats = v.background_repeats,
         "border" => {
             style.border = d.border;
             visual.border_color = v.border_color;
@@ -904,6 +948,16 @@ fn integer(v: &Value) -> Option<i32> {
         _ => return None,
     };
     (n.fract() == 0.0).then_some(n as i32)
+}
+
+/// `background-image` layers: images, gradients or `none`; a lone `none` is no layers.
+fn image_layers(s: &str) -> Option<Vec<Option<Arc<BackgroundImage>>>> {
+    let layers = parse_layers(s, |l| parse_background_image(l).map(|i| i.map(Arc::new)))?;
+    Some(if layers.iter().all(Option::is_none) {
+        Vec::new()
+    } else {
+        layers
+    })
 }
 
 fn parse_kw<T: FromStr>(s: &str) -> Option<T> {
@@ -1294,6 +1348,50 @@ mod tests {
         Ok((style, visual))
     }
 
+    // M3-BG-02
+    #[test]
+    fn background_layer_lists() {
+        let mut style = Style::default();
+        let mut v = Visual::default();
+        let mut set = |prop: &str, value: &str| {
+            apply_style(&mut style, &mut v, prop, &value.into()).map(|_| ())
+        };
+        set(
+            "backgroundImage",
+            "url(a.png), none, linear-gradient(red, blue)",
+        )
+        .unwrap();
+        set("backgroundClip", "padding-box, text").unwrap();
+        set("backgroundRepeat", "repeat-x, round space").unwrap();
+        set("backgroundPosition", "left top, right bottom").unwrap();
+        set("backgroundPositionY", "25%").unwrap();
+        assert!(set("backgroundClip", "margin-box").is_err());
+        assert!(
+            set("backgroundImage", "url(a.png),").is_ok(),
+            "empty parts are dropped"
+        );
+        assert!(set("backgroundPositionX", "top").is_err());
+        assert_eq!(v.background_images.len(), 1);
+        assert_eq!(
+            v.background_clips,
+            vec![BackgroundClip::PaddingBox, BackgroundClip::Text]
+        );
+        assert_eq!(v.background_repeats.len(), 2);
+        assert_eq!(
+            v.background_positions
+                .iter()
+                .map(|p| (p.x, p.y))
+                .collect::<Vec<_>>(),
+            vec![
+                (Len::Percent(0.0), Len::Percent(0.25)),
+                (Len::Percent(1.0), Len::Percent(0.25))
+            ],
+            "position-y replaces y in every layer"
+        );
+        let (_, v) = apply("backgroundImage", "none".into()).unwrap();
+        assert!(v.background_images.is_empty());
+    }
+
     #[test]
     fn numbers_are_pixels_and_strings_are_css() {
         assert_eq!(
@@ -1429,9 +1527,9 @@ mod tests {
         let (_, v) = apply("backdropFilter", "blur(12px)".into()).unwrap();
         assert_eq!(v.backdrop_blur, 12.0);
         let (_, v) = apply("background", "linear-gradient(red, blue)".into()).unwrap();
-        assert!(v.background_image.is_some());
+        assert_eq!(v.background_images.len(), 1);
         let (_, v) = apply("background", "teal".into()).unwrap();
-        assert!(v.background_image.is_none());
+        assert!(v.background_images.is_empty());
         assert_eq!(v.background, Rgba::parse("teal").unwrap());
         let (_, v) = apply("opacity", 1.5.into()).unwrap();
         assert_eq!(v.opacity, 1.0, "opacity is clamped");

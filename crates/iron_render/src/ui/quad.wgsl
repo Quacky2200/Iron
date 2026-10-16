@@ -260,6 +260,11 @@ fn glyph(in: VsOut) -> vec4<f32> {
         return vec4(c.rgb * c.a, c.a) * in.color0.a;
     }
     let a = textureLoad(glyph_mask, texel, 0).r;
+    if in.params.z >= 0.0 {
+        // `background-clip: text`: the gradient over the element's box (p1).
+        let c = gradient_color(u32(in.params.z), in.pos.xy / globals.scale, in.p1);
+        return c * text_coverage(a, c);
+    }
     return in.color0 * text_coverage(a, in.color0);
 }
 
@@ -387,9 +392,18 @@ fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
         discard;
     }
     let tile = in.p0;
-    let uv = (p - tile.xy) / tile.zw;
+    var uv = (p - tile.xy) / tile.zw;
     let repeat_x = in.params.y > 0.5;
     let repeat_y = in.params.z > 0.5;
+    // `background-repeat: space`: tiles are `p1.xy` apart; nothing shows in the gaps.
+    let gap = in.p1.xy;
+    let period = tile.zw + gap;
+    let local = p - tile.xy;
+    let wrapped = local - floor(local / period) * period;
+    if (repeat_x && gap.x > 0.0 && wrapped.x > tile.z) || (repeat_y && gap.y > 0.0 && wrapped.y > tile.w) {
+        discard;
+    }
+    uv = select(uv, wrapped / tile.zw, vec2(repeat_x && gap.x > 0.0, repeat_y && gap.y > 0.0));
     if (!repeat_x && (uv.x < 0.0 || uv.x > 1.0)) || (!repeat_y && (uv.y < 0.0 || uv.y > 1.0)) {
         discard;
     }

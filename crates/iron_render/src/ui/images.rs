@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use iron_ui::{BackgroundPosition, BackgroundSize, Len, Rect};
+use iron_ui::{BackgroundPosition, BackgroundRepeat, BackgroundSize, Len, Rect, RepeatAxis};
 
 use crate::Gpu;
 
@@ -169,6 +169,33 @@ pub fn tile_rect(
     )
 }
 
+/// Applies `background-repeat` to one placed tile in `area`: `round` rescales the
+/// tile so whole tiles fit, `space` keeps its size and spreads the leftover space
+/// as gaps. Returns the tile, the gap per axis and whether each axis repeats.
+pub fn repeat_tiles(
+    tile: Rect,
+    area: Rect,
+    repeat: BackgroundRepeat,
+) -> (Rect, [f32; 2], [bool; 2]) {
+    let axis = |pos: f32, len: f32, start: f32, space: f32, mode: RepeatAxis| match mode {
+        RepeatAxis::Repeat => (pos, len, 0.0, true),
+        RepeatAxis::NoRepeat => (pos, len, 0.0, false),
+        RepeatAxis::Round if len > 0.0 => {
+            let n = (space / len).round().max(1.0);
+            (start, space / n, 0.0, true)
+        }
+        RepeatAxis::Space if len > 0.0 && (space / len).floor() >= 2.0 => {
+            let n = (space / len).floor();
+            (start, len, (space - n * len) / (n - 1.0), true)
+        }
+        // Too small to round, or room for one tile only: placed once.
+        RepeatAxis::Round | RepeatAxis::Space => (pos, len, 0.0, false),
+    };
+    let (x, w, gx, rx) = axis(tile.x, tile.width, area.x, area.width, repeat.x);
+    let (y, h, gy, ry) = axis(tile.y, tile.height, area.y, area.height, repeat.y);
+    (Rect::new(x, y, w, h), [gx, gy], [rx, ry])
+}
+
 /// A URL shortened for log messages (data URLs can be huge).
 fn short(url: &str) -> &str {
     match url.char_indices().nth(60) {
@@ -238,5 +265,25 @@ mod tests {
             tile_rect(area, natural, BackgroundSize::default(), px),
             Rect::new(17.0, 23.0, 20.0, 10.0)
         );
+    }
+
+    // M3-BG-02
+    #[test]
+    fn round_and_space_fit_whole_tiles() {
+        let area = Rect::new(0.0, 0.0, 100.0, 50.0);
+        let tile = Rect::new(7.0, 3.0, 30.0, 22.0);
+        let repeat = |x, y| BackgroundRepeat { x, y };
+        // 100 / 30 rounds to 3 tiles of 33.3; 50 / 22 rounds to 2 tiles of 25.
+        let (t, gap, rep) = repeat_tiles(tile, area, repeat(RepeatAxis::Round, RepeatAxis::Round));
+        assert!((t.width - 100.0 / 3.0).abs() < 1e-4 && t.height == 25.0);
+        assert_eq!((t.x, t.y, gap, rep), (0.0, 0.0, [0.0, 0.0], [true, true]));
+        // Space: 3 tiles of 30 with 5px gaps; only 2 of 22 fit in 50, one 6px gap.
+        let (t, gap, rep) = repeat_tiles(tile, area, repeat(RepeatAxis::Space, RepeatAxis::Space));
+        assert_eq!((t.x, t.width, t.y, t.height), (0.0, 30.0, 0.0, 22.0));
+        assert_eq!((gap, rep), ([5.0, 6.0], [true, true]));
+        // A tile too big to space twice is placed once, where `position` put it.
+        let big = Rect::new(7.0, 3.0, 60.0, 30.0);
+        let (t, _, rep) = repeat_tiles(big, area, repeat(RepeatAxis::Space, RepeatAxis::NoRepeat));
+        assert_eq!((t.x, rep), (7.0, [false, false]));
     }
 }

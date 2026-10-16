@@ -494,8 +494,11 @@ and `@font-face`.
    - [x] `conic-gradient()` (`from <angle>`, `at <position>`, stops in angles or percentages) and
      `repeating-linear-gradient()` / `repeating-radial-gradient()` / `repeating-conic-gradient()`;
      two-position colour stops (`red 0 25%`) in every gradient — `M3-BG-01`
-   - [ ] `background-clip` (`border-box`, `padding-box`, `content-box`, `text` for gradient text);
-     `background-position-x`/`-y`; `background-repeat: round | space`; multiple background layers
+   - [x] `background-clip` (`border-box`, `padding-box`, `content-box`, `text` for gradient text:
+     the topmost gradient layer fills the element's own glyphs, under the text colour);
+     `background-position-x`/`-y`; `background-repeat: round | space` (and per-axis pairs);
+     multiple background layers (comma lists, cycled like CSS) — `M3-BG-02`. Images still
+     position against the border box (no `background-origin` yet)
    - [ ] `background-blend-mode` and `mix-blend-mode` (`normal`, `multiply`, `lighten`, `screen`, ...)
    - [ ] `border-style`: `dashed`, `dotted`, `double` (then `groove`/`ridge`/`inset`/`outset`); per-side
      colours (`border-top-color`, ...) and per-side styles

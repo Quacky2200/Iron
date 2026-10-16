@@ -594,12 +594,37 @@ impl UiRenderer {
                     }
                 }
                 DrawCmd::Quad(q) => {
-                    let mut gradient = -1.0;
-                    let mut image = None;
-                    if let Some(fill) = &q.image {
-                        if let Some(g) = gradient::build(&fill.image, q.rect) {
+                    let quad = |rect: Rect,
+                                radii: [f32; 4],
+                                background: [f32; 4],
+                                border_color: [f32; 4],
+                                gradient: f32| Instance {
+                        rect: rect4(rect),
+                        radii,
+                        p0: q.border,
+                        p1: [0.0; 4],
+                        color0: background,
+                        color1: border_color,
+                        params: [KIND_QUAD, 0.0, gradient, 0.0],
+                    };
+                    let background = linear_premultiplied(q.background);
+                    let border_color = linear_premultiplied(q.border_color);
+                    if q.images.is_empty() {
+                        instances.push(quad(q.rect, q.radii, background, border_color, -1.0));
+                        continue;
+                    }
+                    // Colour, then each layer bottom first (images are their own draws,
+                    // since each needs its texture), then the border on top.
+                    if q.background.a > 0.0 {
+                        instances.push(quad(q.rect, q.radii, background, [0.0; 4], -1.0));
+                    }
+                    for fill in &q.images {
+                        if let Some(g) = gradient::build(&fill.image, fill.area) {
                             gradients.push(g);
-                            gradient = (gradients.len() - 1) as f32;
+                            let index = (gradients.len() - 1) as f32;
+                            let mut layer = quad(fill.area, fill.radii, [0.0; 4], [0.0; 4], index);
+                            layer.p0 = [0.0; 4];
+                            instances.push(layer);
                         } else if let iron_ui::BackgroundImage::Url(url) = &*fill.image
                             && let Some(loaded) =
                                 self.images
@@ -607,62 +632,34 @@ impl UiRenderer {
                         {
                             let natural = (loaded.size.0 as f32, loaded.size.1 as f32);
                             let tile = images::tile_rect(q.rect, natural, fill.size, fill.position);
-                            let (rx, ry) = match fill.repeat {
-                                iron_ui::BackgroundRepeat::Repeat => (1.0, 1.0),
-                                iron_ui::BackgroundRepeat::RepeatX => (1.0, 0.0),
-                                iron_ui::BackgroundRepeat::RepeatY => (0.0, 1.0),
-                                iron_ui::BackgroundRepeat::NoRepeat => (0.0, 0.0),
-                            };
-                            image = Some((url.clone(), tile, rx, ry));
-                        }
-                    }
-                    let quad =
-                        |background: [f32; 4], border_color: [f32; 4], gradient: f32| Instance {
-                            rect: rect4(q.rect),
-                            radii: q.radii,
-                            p0: q.border,
-                            p1: [0.0; 4],
-                            color0: background,
-                            color1: border_color,
-                            params: [KIND_QUAD, 0.0, gradient, 0.0],
-                        };
-                    match image {
-                        None => instances.push(quad(
-                            linear_premultiplied(q.background),
-                            linear_premultiplied(q.border_color),
-                            gradient,
-                        )),
-                        // Background colour, then the image (its own draw, since it
-                        // needs its texture), then the border on top.
-                        Some((url, tile, rx, ry)) => {
-                            instances.push(quad(
-                                linear_premultiplied(q.background),
-                                [0.0; 4],
-                                -1.0,
-                            ));
+                            let (tile, gap, repeat) =
+                                images::repeat_tiles(tile, q.rect, fill.repeat);
                             flush(&mut steps, &instances, &mut batch_start, current);
                             instances.push(Instance {
-                                rect: rect4(q.rect),
-                                radii: q.radii,
+                                rect: rect4(fill.area),
+                                radii: fill.radii,
                                 p0: rect4(tile),
-                                p1: [0.0; 4],
+                                p1: [gap[0], gap[1], 0.0, 0.0],
                                 color0: [0.0; 4],
                                 color1: [0.0; 4],
-                                params: [KIND_IMAGE, rx, ry, 0.0],
+                                params: [
+                                    KIND_IMAGE,
+                                    f32::from(u8::from(repeat[0])),
+                                    f32::from(u8::from(repeat[1])),
+                                    0.0,
+                                ],
                             });
                             let end = instances.len() as u32;
                             steps.push(Step::Draw {
                                 target: current,
                                 range: batch_start..end,
-                                image: Some(url),
+                                image: Some(url.clone()),
                             });
                             batch_start = end;
-                            instances.push(quad(
-                                [0.0; 4],
-                                linear_premultiplied(q.border_color),
-                                -1.0,
-                            ));
                         }
+                    }
+                    if q.border_color.a > 0.0 && q.border.iter().any(|w| *w > 0.0) {
+                        instances.push(quad(q.rect, q.radii, [0.0; 4], border_color, -1.0));
                     }
                 }
                 DrawCmd::Text(text) => {
@@ -677,6 +674,13 @@ impl UiRenderer {
                             params: [KIND_QUAD, 0.0, -1.0, 0.0],
                         });
                     }
+                    // `background-clip: text`: glyphs take their colour from the gradient,
+                    // laid out over the element's box (in p1); the text colour goes on top.
+                    let fill = text.fill.as_ref().and_then(|(image, rect)| {
+                        let g = gradient::build(image, *rect)?;
+                        gradients.push(g);
+                        Some(((gradients.len() - 1) as f32, rect4(*rect)))
+                    });
                     for run in &text.runs {
                         let color = linear_premultiplied(run.color);
                         let size_px = run.font_size * scale;
@@ -696,7 +700,7 @@ impl UiRenderer {
                             };
                             let dest_x = x + e.left as f32;
                             let dest_y = y - e.top as f32;
-                            instances.push(Instance {
+                            let glyph = Instance {
                                 rect: [
                                     dest_x / scale,
                                     dest_y / scale,
@@ -709,7 +713,19 @@ impl UiRenderer {
                                 color0: color,
                                 color1: [0.0; 4],
                                 params: [KIND_GLYPH, if e.color { 1.0 } else { 0.0 }, -1.0, 0.0],
-                            });
+                            };
+                            if let Some((index, rect)) = fill
+                                && !e.color
+                            {
+                                instances.push(Instance {
+                                    p1: rect,
+                                    params: [KIND_GLYPH, 0.0, index, 0.0],
+                                    ..glyph
+                                });
+                            }
+                            if run.color.a > 0.0 || fill.is_none() {
+                                instances.push(glyph);
+                            }
                         }
                     }
                 }

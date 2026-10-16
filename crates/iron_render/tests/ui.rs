@@ -412,6 +412,110 @@ fn conic_and_repeating_gradients() {
     assert_golden("M3-BG-01", 100, 180, &f.pixels, TOLERANCE);
 }
 
+// M3-BG-02
+#[test]
+fn background_clip_layers_space_and_gradient_text() {
+    let mut s = Scene::new();
+    // 1. The colour clipped to the content box: border and padding stay clear.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            100.0,
+            60.0,
+            &[
+                ("border", "5px solid white".into()),
+                ("padding", 10.0.into()),
+                ("backgroundColor", "red".into()),
+                ("backgroundClip", "content-box".into()),
+            ],
+        ),
+    );
+    // 2. Two layers: lime in the content box over blue in the whole box.
+    s.add(
+        0,
+        &at(
+            0.0,
+            65.0,
+            100.0,
+            50.0,
+            &[
+                ("padding", 10.0.into()),
+                (
+                    "backgroundImage",
+                    "linear-gradient(lime, lime), linear-gradient(blue, blue)".into(),
+                ),
+                ("backgroundClip", "content-box, border-box".into()),
+            ],
+        ),
+    );
+    // 3. Two 20px checker tiles spaced across 50px: a 10px gap between them.
+    s.add(
+        0,
+        &at(
+            0.0,
+            120.0,
+            50.0,
+            20.0,
+            &[
+                ("backgroundImage", "url(checker.png)".into()),
+                ("backgroundSize", "20px".into()),
+                ("backgroundRepeat", "space no-repeat".into()),
+            ],
+        ),
+    );
+    // 4. Gradient text: red to blue inside the glyphs only.
+    let text = s.element(
+        0,
+        "text",
+        &at(
+            0.0,
+            145.0,
+            100.0,
+            60.0,
+            &[
+                ("fontSize", 48.0.into()),
+                ("color", "transparent".into()),
+                (
+                    "backgroundImage",
+                    "linear-gradient(to right, red, blue)".into(),
+                ),
+                ("backgroundClip", "text".into()),
+            ],
+        ),
+    );
+    s.text(text, "MM");
+    let f = render_with_assets(s, (100, 210), 1.0, BLACK, Some(&images_dir()));
+
+    assert_eq!(f.px(2, 30), [255, 255, 255, 255], "border");
+    assert_eq!(f.px(10, 30), [0, 0, 0, 255], "padding stays clear");
+    assert_eq!(f.px(50, 30), [255, 0, 0, 255], "content");
+    assert_eq!(f.px(50, 90), [0, 255, 0, 255], "top layer, content box");
+    assert_eq!(f.px(5, 90), [0, 0, 255, 255], "bottom layer, border box");
+    assert_eq!(f.px(5, 125), [255, 0, 0, 255], "first tile");
+    assert_eq!(f.px(25, 125), [0, 0, 0, 255], "the gap");
+    assert_eq!(f.px(35, 125), [255, 0, 0, 255], "second tile at 30px");
+    assert_eq!(
+        f.px(1, 146),
+        [0, 0, 0, 255],
+        "no box background behind the text"
+    );
+    let any = |xs: std::ops::Range<u32>, test: &dyn Fn([u8; 4]) -> bool| {
+        xs.flat_map(|x| (145..205).map(move |y| (x, y)))
+            .any(|(x, y)| test(f.px(x, y)))
+    };
+    assert!(
+        any(0..30, &|p| p[0] > 150 && p[2] < 100),
+        "red glyph pixels on the left"
+    );
+    assert!(
+        any(70..100, &|p| p[2] > 150 && p[0] < 100),
+        "blue glyph pixels on the right"
+    );
+    assert_golden("M3-BG-02", 100, 210, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {
