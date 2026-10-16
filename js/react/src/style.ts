@@ -246,7 +246,11 @@ export interface IronStyle {
   textAlign?: "start" | "end" | "left" | "right" | "center" | "justify";
   direction?: "ltr" | "rtl";
   textDecoration?: string;
-  whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap";
+  whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line" | "break-spaces";
+  wordBreak?: "normal" | "break-all" | "keep-all" | "break-word";
+  /** `anywhere` / `break-word` break long words that don't fit. `wordWrap` is an alias. */
+  overflowWrap?: "normal" | "anywhere" | "break-word";
+  wordWrap?: "normal" | "anywhere" | "break-word";
   textShadow?: string;
   textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
   /** Not inherited. `ellipsis` cuts overflowing lines when `overflow` clips (use with `whiteSpace: "nowrap"`). */

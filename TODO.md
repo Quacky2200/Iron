@@ -529,7 +529,8 @@ and `@font-face`.
      inline runs), `text-overflow: ellipsis` (not inherited; lines wider than the content box of
      a block whose x overflow clips drop whole glyphs and end in a separately shaped `…`, on the
      left for rtl) — `M3-TXT-10`
-   - [ ] `word-break`, `overflow-wrap`; `white-space: pre-line | break-spaces`
+   - [x] `word-break` (`break-word` as `overflow-wrap: anywhere`), `overflow-wrap` / `word-wrap`;
+     `white-space: pre-line | break-spaces` — all Parley options — `M3-TXT-11`
    - [ ] `font` shorthand; `font-size` keywords (`small`, `large`, ...); `font-weight` keywords
      (`thin` ... `black`, `bolder`, `lighter`); `font-variant-numeric: tabular-nums`
    - [ ] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),

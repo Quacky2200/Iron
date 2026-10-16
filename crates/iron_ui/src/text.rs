@@ -361,6 +361,8 @@ pub(crate) fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Bru
         WhiteSpace::NoWrap => (WhiteSpaceCollapse::Collapse, TextWrapMode::NoWrap),
         WhiteSpace::Pre => (WhiteSpaceCollapse::Preserve, TextWrapMode::NoWrap),
         WhiteSpace::PreWrap => (WhiteSpaceCollapse::Preserve, TextWrapMode::Wrap),
+        WhiteSpace::PreLine => (WhiteSpaceCollapse::PreserveBreaks, TextWrapMode::Wrap),
+        WhiteSpace::BreakSpaces => (WhiteSpaceCollapse::BreakSpaces, TextWrapMode::Wrap),
     };
     TextStyle {
         font_family: FontFamily::Source(Cow::Owned(style.font_family.clone())),
@@ -383,6 +385,16 @@ pub(crate) fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Bru
         word_spacing: style.word_spacing,
         white_space_collapse: collapse,
         text_wrap_mode: wrap,
+        word_break: match style.word_break {
+            crate::text_style::WordBreak::Normal => parley::WordBreak::Normal,
+            crate::text_style::WordBreak::BreakAll => parley::WordBreak::BreakAll,
+            crate::text_style::WordBreak::KeepAll => parley::WordBreak::KeepAll,
+        },
+        overflow_wrap: match style.overflow_wrap {
+            crate::text_style::OverflowWrap::Normal => parley::OverflowWrap::Normal,
+            crate::text_style::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
+            crate::text_style::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
+        },
         ..TextStyle::default()
     }
 }

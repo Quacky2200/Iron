@@ -85,6 +85,32 @@ pub enum WhiteSpace {
     Pre,
     /// Keep spaces and newlines, wrap.
     PreWrap,
+    /// Collapse spaces but keep newlines, wrap.
+    PreLine,
+    /// Like `pre-wrap`, but spaces at line ends take room and can wrap.
+    BreakSpaces,
+}
+
+/// `word-break`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WordBreak {
+    #[default]
+    Normal,
+    /// Lines may break between any two letters.
+    BreakAll,
+    /// No breaks inside CJK words either.
+    KeepAll,
+}
+
+/// `overflow-wrap` (alias `word-wrap`): breaking words that don't fit a line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OverflowWrap {
+    #[default]
+    Normal,
+    /// Break anywhere if needed; also shrinks the min-content width.
+    Anywhere,
+    /// Break anywhere if needed.
+    BreakWord,
 }
 
 /// `text-transform`.
@@ -158,6 +184,8 @@ pub struct TextProps {
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
+    pub word_break: Option<WordBreak>,
+    pub overflow_wrap: Option<OverflowWrap>,
     /// Not inherited: `None` is `clip`.
     pub text_overflow: Option<TextOverflow>,
 }
@@ -179,6 +207,8 @@ pub struct ComputedText {
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
+    pub word_break: WordBreak,
+    pub overflow_wrap: OverflowWrap,
     pub text_overflow: TextOverflow,
 }
 
@@ -201,6 +231,8 @@ impl Default for ComputedText {
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
+            word_break: WordBreak::Normal,
+            overflow_wrap: OverflowWrap::Normal,
             text_overflow: TextOverflow::Clip,
         }
     }
@@ -245,6 +277,8 @@ impl ComputedText {
                 .clone()
                 .unwrap_or_else(|| self.text_shadow.clone()),
             text_transform: props.text_transform.unwrap_or(self.text_transform),
+            word_break: props.word_break.unwrap_or(self.word_break),
+            overflow_wrap: props.overflow_wrap.unwrap_or(self.overflow_wrap),
             text_overflow: props.text_overflow.unwrap_or_default(),
         }
     }
@@ -277,6 +311,9 @@ pub const TEXT_PROPS: &[&str] = &[
     "textShadow",
     "textTransform",
     "textOverflow",
+    "wordBreak",
+    "overflowWrap",
+    "wordWrap",
 ];
 
 pub fn is_text_prop(prop: &str) -> bool {
@@ -307,6 +344,8 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
             "textOverflow" => props.text_overflow = None,
+            "wordBreak" => props.word_break = None,
+            "overflowWrap" | "wordWrap" => props.overflow_wrap = None,
             _ => unreachable!("listed in TEXT_PROPS"),
         }
         return Some(Ok(()));
@@ -407,6 +446,8 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 Some("nowrap") => Some(WhiteSpace::NoWrap),
                 Some("pre") => Some(WhiteSpace::Pre),
                 Some("pre-wrap") => Some(WhiteSpace::PreWrap),
+                Some("pre-line") => Some(WhiteSpace::PreLine),
+                Some("break-spaces") => Some(WhiteSpace::BreakSpaces),
                 _ => None,
             }));
         }
@@ -416,6 +457,28 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 Some("uppercase") => Some(TextTransform::Uppercase),
                 Some("lowercase") => Some(TextTransform::Lowercase),
                 Some("capitalize") => Some(TextTransform::Capitalize),
+                _ => None,
+            }));
+        }
+        "wordBreak" => {
+            let (word_break, wrap) = parse!(match s {
+                Some("normal") => Some((WordBreak::Normal, None)),
+                Some("break-all") => Some((WordBreak::BreakAll, None)),
+                Some("keep-all") => Some((WordBreak::KeepAll, None)),
+                // Deprecated, but common: `normal` plus `overflow-wrap: anywhere`.
+                Some("break-word") => Some((WordBreak::Normal, Some(OverflowWrap::Anywhere))),
+                _ => None,
+            });
+            props.word_break = Some(word_break);
+            if wrap.is_some() {
+                props.overflow_wrap = wrap;
+            }
+        }
+        "overflowWrap" | "wordWrap" => {
+            props.overflow_wrap = Some(parse!(match s {
+                Some("normal") => Some(OverflowWrap::Normal),
+                Some("anywhere") => Some(OverflowWrap::Anywhere),
+                Some("break-word") => Some(OverflowWrap::BreakWord),
                 _ => None,
             }));
         }
@@ -536,7 +599,7 @@ mod tests {
             ("fontStyle", "slanted".into()),
             ("textAlign", "middle".into()),
             ("textDecoration", "wavy".into()),
-            ("whiteSpace", "pre-line".into()),
+            ("whiteSpace", "pre-lines".into()),
             ("direction", "sideways".into()),
             ("textShadow", "inset 0 0 2px red".into()),
             ("textShadow", "0 0 2px 3px red".into()),
