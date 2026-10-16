@@ -9,6 +9,7 @@ mod layout;
 pub mod opcodes;
 mod paint;
 mod style;
+pub mod text;
 pub mod text_style;
 mod tree;
 

@@ -10,6 +10,7 @@ use crate::layout::{LayoutEngine, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{Shadow, resolve_radii};
 use crate::style::{Visual, apply_style};
+use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, is_text_prop};
 
 /// The root container every React root renders into.
@@ -61,11 +62,24 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Text blocks whose content or structure changed since they were last laid out.
     dirty_text: HashSet<NodeId>,
+    text: TextEngine,
+    /// Parley layouts of text blocks, rebuilt when a block is dirty.
+    text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
+    /// How many text blocks have been shaped (for tests and profiling).
+    text_builds: u64,
 }
 
 impl UiTree<TaffyLayout> {
+    /// A tree whose text uses only the bundled font (deterministic; used by tests).
     pub fn new(width: f32, height: f32) -> Self {
         Self::with_layout(TaffyLayout::new(), width, height)
+    }
+
+    /// A tree whose text can also fall back to the system's fonts (CJK, emoji, ...).
+    pub fn with_system_fonts(width: f32, height: f32) -> Self {
+        let mut tree = Self::new(width, height);
+        tree.text = TextEngine::new(true);
+        tree
     }
 }
 
@@ -92,6 +106,9 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             dirty_text: HashSet::default(),
+            text: TextEngine::new(false),
+            text_layouts: HashMap::default(),
+            text_builds: 0,
         }
     }
 
@@ -204,6 +221,62 @@ impl<L: LayoutEngine> UiTree<L> {
         out
     }
 
+    /// Registers font data for this tree's text (see [`TextEngine::register_font`])
+    /// and re-lays out all text, since fallback choices may change.
+    pub fn register_font(
+        &mut self,
+        data: Vec<u8>,
+        family: Option<&str>,
+        weight: Option<f32>,
+        italic: Option<bool>,
+    ) -> Result<Vec<String>, String> {
+        let names = self.text.register_font(data, family, weight, italic)?;
+        let roots: Vec<NodeId> = self
+            .nodes
+            .keys()
+            .copied()
+            .filter(|id| self.is_text_root(*id))
+            .collect();
+        self.dirty_text.extend(roots);
+        self.needs_layout = true;
+        Ok(names)
+    }
+
+    /// The Parley layout of a text block, as of the last layout pass.
+    pub fn text_layout(&self, id: NodeId) -> Option<&parley::Layout<Brush>> {
+        self.text_layouts.get(&id)
+    }
+
+    fn build_text_layout(&mut self, root: NodeId) -> parley::Layout<Brush> {
+        let block = self.computed_text(root);
+        let mut runs = Vec::new();
+        // Walk the inline content in order, carrying each node's computed style.
+        let mut stack = vec![(root, block.clone())];
+        while let Some((id, style)) = stack.pop() {
+            let Some(node) = self.nodes.get(&id) else {
+                continue;
+            };
+            let style = if id == root {
+                style
+            } else {
+                style.child(&node.visual.text)
+            };
+            if let Some(t) = &node.text {
+                runs.push((t.clone(), style.clone()));
+            }
+            for child in node.children.iter().rev() {
+                stack.push((*child, style.clone()));
+            }
+        }
+        self.text_builds += 1;
+        self.text.build(&block, &runs)
+    }
+
+    /// How many text blocks have been shaped since the tree was created.
+    pub fn text_build_count(&self) -> u64 {
+        self.text_builds
+    }
+
     /// Text blocks changed since the last call (clears the set).
     pub fn take_dirty_text(&mut self) -> Vec<NodeId> {
         let dirty: Vec<NodeId> = self.dirty_text.drain().collect();
@@ -264,6 +337,11 @@ impl<L: LayoutEngine> UiTree<L> {
             .chain(text_changed.iter().copied())
             .collect::<Vec<_>>();
         for id in touched {
+            let is_root = self.is_text_root(id);
+            self.layout.set_measured(id, is_root);
+            if !is_root {
+                self.text_layouts.remove(&id);
+            }
             if let Some(root) = self.text_root_of(id) {
                 self.dirty_text.insert(root);
             }
@@ -491,6 +569,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
                 self.rects.remove(&id);
+                self.text_layouts.remove(&id);
+                self.dirty_text.remove(&id);
             }
         }
     }
@@ -500,7 +580,27 @@ impl<L: LayoutEngine> UiTree<L> {
         if !self.needs_layout {
             return false;
         }
-        self.layout.compute(ROOT, self.size.0, self.size.1);
+        // Re-shape text blocks whose content or style changed.
+        for root in self.take_dirty_text() {
+            let layout = self.build_text_layout(root);
+            self.text_layouts.insert(root, layout);
+            self.layout.mark_dirty(root);
+        }
+        let Self {
+            layout,
+            text_layouts,
+            size,
+            ..
+        } = self;
+        layout.compute(
+            ROOT,
+            size.0,
+            size.1,
+            &mut |id, known_width, available| match text_layouts.get_mut(&id) {
+                Some(l) => text::measure(l, known_width, available),
+                None => (0.0, 0.0),
+            },
+        );
         self.rects.clear();
         let mut stack = vec![(ROOT, 0.0_f32, 0.0_f32)];
         while let Some((id, parent_x, parent_y)) = stack.pop() {

@@ -39,6 +39,25 @@ export function op(name: string, ...args: unknown[]): void {
   __iron_op(name, ...args);
 }
 
+export interface FontFace {
+  /** The name to use in `fontFamily`. */
+  family: string;
+  /** A TTF/OTF file, relative to the game folder (like `url()` in CSS). */
+  src: string;
+  /** `@font-face` weight; defaults to what the file says. */
+  weight?: number | "normal" | "bold";
+  /** `@font-face` style; defaults to what the file says. */
+  style?: "normal" | "italic";
+}
+
+/**
+ * Loads a font for `fontFamily` to use (like CSS `@font-face`). Text that names the
+ * family re-lays out once it has loaded; until then it uses fallback fonts.
+ */
+export function loadFont(face: FontFace): void {
+  op("loadFont", face.family, face.src, face.weight ?? null, face.style ?? null);
+}
+
 // ---- Host functions called by Rust (crates/iron_script/src/components.rs) ----
 
 globalThis.__iron_registered = () => [...classes.keys()];

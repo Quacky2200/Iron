@@ -2,7 +2,7 @@
 //! textures (cached by URL), and CSS `background-size` / `background-position`.
 
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 
 use iron_ui::{BackgroundPosition, BackgroundSize, Len, Rect};
 
@@ -52,7 +52,7 @@ impl ImageCache {
             tracing::warn!("background image `{url}` ignored: no asset folder set");
             return None;
         };
-        let Some(path) = resolve(root, url) else {
+        let Some(path) = iron_core::resolve_asset(root, url) else {
             tracing::warn!(
                 "background image `{url}` rejected: it must be a relative path inside the game folder"
             );
@@ -117,23 +117,6 @@ impl ImageCache {
     }
 }
 
-/// Resolves `url` against `root`, refusing anything that could leave the game
-/// folder: absolute paths, drive letters, URL schemes and `..` components.
-pub fn resolve(root: &Path, url: &str) -> Option<PathBuf> {
-    let url = url.trim();
-    if url.is_empty() || url.contains(':') || url.starts_with(['/', '\\']) {
-        return None;
-    }
-    let relative = Path::new(url);
-    if relative
-        .components()
-        .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
-    {
-        return None;
-    }
-    Some(root.join(relative))
-}
-
 /// Where one tile of an image of `natural` size goes in `area`, following CSS
 /// `background-size` and `background-position`.
 pub fn tile_rect(
@@ -182,27 +165,6 @@ pub fn tile_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn urls_cannot_escape_the_game_folder() {
-        let root = Path::new("game");
-        assert_eq!(
-            resolve(root, "ui/panel.png"),
-            Some(root.join("ui/panel.png"))
-        );
-        assert_eq!(resolve(root, "./a.png"), Some(root.join("./a.png")));
-        for bad in [
-            "",
-            "../secret.png",
-            "ui/../../x.png",
-            "/etc/passwd",
-            "\\\\server\\x.png",
-            "C:/x.png",
-            "https://example.com/x.png",
-        ] {
-            assert_eq!(resolve(root, bad), None, "{bad:?}");
-        }
-    }
 
     #[test]
     fn background_size_and_position_follow_css() {

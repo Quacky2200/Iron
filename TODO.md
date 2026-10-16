@@ -238,23 +238,28 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
 
 ### M3a — Text and fonts
 1. **Text in the tree**
-   - [ ] Elements: `<text>` (a block of inline content) and `<span>` (nested inline style runs); React
-     string children become text instances (`createTextInstance` now supported, `commitTextUpdate` →
-     a new `SET_TEXT` op); bare strings inside `<box>` get an anonymous `<text>` wrapper — `M3-TXT-07`
-   - [ ] Opcode additions (`CREATE_TEXT`, `SET_TEXT`) mirrored in `js/react/src/opcodes.ts`
+   - [x] Elements `text` and `span` (exposed as `Text`/`Span` components, since React's JSX types already
+     claim `<text>` and `<span>`); React strings become text nodes (`CREATE_TEXT`, `SET_TEXT`); strings
+     outside text containers are anonymous text blocks — `M3-TXT-07`
+   - [x] Opcode additions (`CREATE_TEXT`, `SET_TEXT`) mirrored in `js/react/src/opcodes.ts`
 2. **Text styles and inheritance**
-   - [ ] `color`, `fontFamily` (fallback lists), `fontSize`, `fontWeight` (100–900, `bold`, `normal`),
-     `fontStyle`, `lineHeight` (number or length), `letterSpacing`, `wordSpacing`, `textAlign`,
-     `textDecoration` (underline / line-through), `whiteSpace` (normal / nowrap / pre / pre-wrap) — `M3-TXT-04`
-   - [ ] Computed-style inheritance for inherited properties (`color`, font props, line height, spacing,
-     text alignment, white-space); `currentColor` for borders, shadows and gradients — `M3-TXT-06`
+   - [x] `color`, `fontFamily` (fallback lists), `fontSize` (px/em/%), `fontWeight` (1–1000, `bold`,
+     `normal`), `fontStyle`, `lineHeight` (factor or length), `letterSpacing`, `wordSpacing`, `textAlign`,
+     `textDecoration`, `whiteSpace` (normal / nowrap / pre / pre-wrap), `textShadow` (parsed) — `M3-TXT-04`
+   - [x] Computed-style inheritance (`UiTree::computed_text`); `currentColor` for backgrounds, borders and
+     shadows, and as the CSS default when `border`/`boxShadow` omit a colour — `M3-TXT-06`
+   - [ ] `currentColor` inside gradient stops (later)
 3. **Fonts**
-   - [ ] Bundled default font (Inter) embedded in the engine; fontique system fallback — `M3-FNT-02`
-   - [ ] `loadFont({ family, src, weight, style })` → op → load from the game folder → register;
-     text using that family relayouts when it arrives — `M3-FNT-01`
+   - [x] Bundled Inter (variable, upright + italic, SIL OFL) for `sans-serif`/`system-ui`; fontique
+     system fallback in the app (`UiTree::with_system_fonts`), bundled-only in tests — `M3-FNT-02`
+   - [x] `loadFont({ family, src, weight, style })` → op → loaded from the game folder (shared
+     `iron_core::resolve_asset` path rules) → registered; text relayouts — `M3-FNT-01`
+   - [ ] Known gap: a family with only an italic face falls back to another family for normal text
+     (CSS would use the italic face); revisit with fontique
 4. **Layout integration**
-   - [ ] Taffy measure function for text nodes (Parley layout at the given width constraint) — `M3-TXT-02`
-   - [ ] Measurement cache keyed by (node, content/style generation, width) — `M3-TXT-03`
+   - [x] Text blocks are Taffy measured leaves (Taffy 0.15's `compute_leaf_layout` + Parley line
+     breaking for min-content / max-content / definite widths) — `M3-TXT-02`
+   - [x] Shaping happens only for dirty blocks; re-measuring just re-breaks lines — `M3-TXT-03`
 5. **Rendering**
    - [ ] Glyph atlas (R8 + RGBA pages, LRU eviction, scale-aware keys), swash rasterization — `M3-TXT-01`
    - [ ] `DrawCmd::Text` (glyph runs with colours) → glyph instances in the quad pipeline

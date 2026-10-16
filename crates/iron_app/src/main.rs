@@ -86,7 +86,7 @@ fn main() -> Result<()> {
     let app = App {
         scripts,
         components,
-        ui: UiTree::new(1.0, 1.0),
+        ui: UiTree::with_system_fonts(1.0, 1.0),
         asset_root,
         gfx: None,
         started: Instant::now(),
@@ -179,9 +179,46 @@ impl App {
                 tracing::warn!(target: "ui", "{e}");
             }
         }
-        let ops = self.scripts.drain_ops();
-        if !ops.is_empty() {
-            tracing::trace!(ops = ops.len(), "dropped script ops");
+        for op in self.scripts.drain_ops() {
+            match op.name.as_str() {
+                "loadFont" => self.load_font(&op.args),
+                other => tracing::warn!("unknown script op `{other}`"),
+            }
+        }
+    }
+
+    /// `loadFont(family, src, weight, style)` from `@iron/engine`.
+    fn load_font(&mut self, args: &[iron_core::Value]) {
+        use iron_core::Value;
+        let (Some(family), Some(src)) = (
+            args.first().and_then(Value::as_str),
+            args.get(1).and_then(Value::as_str),
+        ) else {
+            tracing::warn!("loadFont needs a family and a src: {args:?}");
+            return;
+        };
+        let weight = match args.get(2) {
+            Some(Value::Number(n)) => Some(*n as f32),
+            Some(Value::String(s)) if s == "bold" => Some(700.0),
+            Some(Value::String(s)) if s == "normal" => Some(400.0),
+            _ => None,
+        };
+        let italic = args.get(3).and_then(Value::as_str).map(|s| s == "italic");
+        let Some(path) = iron_core::resolve_asset(&self.asset_root, src) else {
+            tracing::warn!(
+                "font `{src}` rejected: it must be a relative path inside the game folder"
+            );
+            return;
+        };
+        let result = std::fs::read(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|data| self.ui.register_font(data, Some(family), weight, italic));
+        match result {
+            Ok(_) => tracing::info!("loaded font `{family}` from {}", path.display()),
+            Err(e) => tracing::warn!(
+                "font `{family}` from {} failed to load: {e}",
+                path.display()
+            ),
         }
     }
 

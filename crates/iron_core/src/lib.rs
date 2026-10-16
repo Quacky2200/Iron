@@ -3,10 +3,12 @@
 
 pub use glam;
 
+mod assets;
 mod ids;
 mod ops;
 mod value;
 
+pub use assets::resolve_asset;
 pub use ids::{ComponentId, EntityId, NodeId};
 pub use ops::{Commit, Op, OpBuffer};
 pub use value::Value;

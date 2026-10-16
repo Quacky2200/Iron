@@ -1,7 +1,13 @@
 use rustc_hash::FxHashMap as HashMap;
 
 use iron_core::NodeId;
-use taffy::{AvailableSpace, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, Size, Style, TaffyTree, compute_leaf_layout};
+
+use crate::text::AvailableWidth;
+
+/// Sizes a measured leaf (text): given a known content width, if any, and the
+/// available width, returns its content size (width, height).
+pub type Measure<'a> = dyn FnMut(NodeId, Option<f32>, AvailableWidth) -> (f32, f32) + 'a;
 
 /// A node's computed layout, relative to its parent's border box.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -24,26 +30,40 @@ pub trait LayoutEngine {
     fn remove_node(&mut self, id: NodeId);
     fn set_style(&mut self, id: NodeId, style: &Style);
     fn set_children(&mut self, parent: NodeId, children: &[NodeId]);
-    /// Lays out the tree under `root` within `width` × `height` logical pixels.
-    fn compute(&mut self, root: NodeId, width: f32, height: f32);
+    /// Marks a leaf whose size comes from `compute`'s `measure` callback (text).
+    fn set_measured(&mut self, id: NodeId, measured: bool);
+    /// Marks a node for relayout without a style change (e.g. its text changed).
+    fn mark_dirty(&mut self, id: NodeId);
+    /// Lays out the tree under `root` within `width` × `height` logical pixels,
+    /// calling `measure` for measured leaves.
+    fn compute(&mut self, root: NodeId, width: f32, height: f32, measure: &mut Measure<'_>);
     fn layout(&self, id: NodeId) -> Option<NodeLayout>;
 }
 
 /// [`LayoutEngine`] backed by Taffy. Taffy caches results internally, so only
 /// subtrees whose styles or children changed are recomputed.
-#[derive(Default)]
 pub struct TaffyLayout {
-    tree: TaffyTree<()>,
+    /// Node context: the Iron id of measured leaves.
+    tree: TaffyTree<NodeId>,
     ids: HashMap<NodeId, taffy::NodeId>,
 }
 
 impl TaffyLayout {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            tree: TaffyTree::new(),
+            ids: HashMap::default(),
+        }
     }
 
     fn taffy_id(&self, id: NodeId) -> Option<taffy::NodeId> {
         self.ids.get(&id).copied()
+    }
+}
+
+impl Default for TaffyLayout {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -78,15 +98,53 @@ impl LayoutEngine for TaffyLayout {
         let _ = self.tree.set_children(parent, &children);
     }
 
-    fn compute(&mut self, root: NodeId, width: f32, height: f32) {
-        if let Some(root) = self.taffy_id(root) {
-            let available = Size {
-                width: AvailableSpace::Definite(width),
-                height: AvailableSpace::Definite(height),
-            };
-            if let Err(e) = self.tree.compute_layout(root, available) {
-                tracing::error!("layout failed: {e}");
-            }
+    fn set_measured(&mut self, id: NodeId, measured: bool) {
+        if let Some(node) = self.taffy_id(id) {
+            let _ = self.tree.set_node_context(node, measured.then_some(id));
+        }
+    }
+
+    fn mark_dirty(&mut self, id: NodeId) {
+        if let Some(node) = self.taffy_id(id) {
+            let _ = self.tree.mark_dirty(node);
+        }
+    }
+
+    fn compute(&mut self, root: NodeId, width: f32, height: f32, measure: &mut Measure<'_>) {
+        let Some(root) = self.taffy_id(root) else {
+            return;
+        };
+        let available = Size {
+            width: AvailableSpace::Definite(width),
+            height: AvailableSpace::Definite(height),
+        };
+        let result =
+            self.tree
+                .compute_layout_with_measure(root, available, |inputs, _, context, style| {
+                    // Taffy handles padding and borders; the inner closure sizes content.
+                    compute_leaf_layout(
+                        inputs,
+                        style,
+                        |_, _| 0.0,
+                        |known, available| {
+                            let Some(id) = context.as_deref().copied() else {
+                                return Size::ZERO;
+                            };
+                            let width = match available.width {
+                                AvailableSpace::Definite(w) => AvailableWidth::Definite(w),
+                                AvailableSpace::MinContent => AvailableWidth::MinContent,
+                                AvailableSpace::MaxContent => AvailableWidth::MaxContent,
+                            };
+                            let (w, h) = measure(id, known.width, width);
+                            Size {
+                                width: known.width.unwrap_or(w),
+                                height: known.height.unwrap_or(h),
+                            }
+                        },
+                    )
+                });
+        if let Err(e) = result {
+            tracing::error!("layout failed: {e}");
         }
     }
 
