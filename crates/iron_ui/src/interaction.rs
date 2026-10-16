@@ -243,7 +243,7 @@ impl Interaction {
                     tree,
                     EventKind::KeyDown,
                     key.clone(),
-                    code,
+                    code.clone(),
                     repeat,
                     dispatch,
                 );
@@ -252,7 +252,8 @@ impl Interaction {
                 }
                 // The focused text field edits first.
                 if let Some(field) = self.focused
-                    && let Some(out) = tree.editor_key(field, &key, text.as_deref(), self.modifiers)
+                    && let Some(out) =
+                        tree.editor_key(field, &key, &code, text.as_deref(), self.modifiers)
                 {
                     if let Some(copy) = out.copy {
                         self.clipboard = Some(Clipboard::Copy(copy));

@@ -257,11 +257,13 @@ impl Editor {
         bbox(self.editor.ime_cursor_area())
     }
 
-    /// Runs a key's editing action. `read_only` fields still move and select.
+    /// Runs a key's editing action (`key` and `code` as in the DOM). `read_only` fields
+    /// still move and select.
     pub(crate) fn key(
         &mut self,
         text: &mut TextEngine,
         key: &str,
+        code: &str,
         typed: Option<&str>,
         m: Modifiers,
         read_only: bool,
@@ -272,6 +274,12 @@ impl Editor {
         let mut d = self.editor.driver(font_cx, layout_cx);
         // Ctrl on Windows and Linux, Command on macOS.
         let command = m.ctrl || m.meta;
+        // AltGr arrives as Ctrl+Alt and types, so it isn't a shortcut.
+        let key = if command && !(m.ctrl && m.alt) {
+            shortcut_key(key, code)
+        } else {
+            key
+        };
         let mut out = KeyOutcome {
             handled: true,
             ..KeyOutcome::default()
@@ -450,6 +458,19 @@ impl Editor {
             let (font_cx, layout_cx) = text.contexts();
             self.editor.driver(font_cx, layout_cx).clear_compose();
         }
+    }
+}
+
+/// The key a Ctrl/Cmd shortcut matches on: `key` when it's a Latin letter, else the
+/// letter of the physical `code`, so Ctrl+A still selects all on a Russian layout
+/// (`key` "ф", `code` "KeyA").
+fn shortcut_key<'a>(key: &'a str, code: &'a str) -> &'a str {
+    if key.len() == 1 && key.as_bytes()[0].is_ascii_alphabetic() {
+        return key;
+    }
+    match code.strip_prefix("Key") {
+        Some(letter) if letter.len() == 1 => letter,
+        _ => key,
     }
 }
 

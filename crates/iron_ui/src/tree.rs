@@ -1337,12 +1337,13 @@ impl<L: LayoutEngine> UiTree<L> {
         self.editors.get(&id).and_then(Editor::selected_text)
     }
 
-    /// Runs a key's editing action on field `id` (`typed` is the text the key types).
-    /// `None` if `id` isn't an enabled field.
+    /// Runs a key's editing action on field `id` (`key` and `code` as in the DOM;
+    /// `typed` is the text the key types). `None` if `id` isn't an enabled field.
     pub fn editor_key(
         &mut self,
         id: NodeId,
         key: &str,
+        code: &str,
         typed: Option<&str>,
         modifiers: Modifiers,
     ) -> Option<KeyOutcome> {
@@ -1359,7 +1360,7 @@ impl<L: LayoutEngine> UiTree<L> {
             ..
         } = self;
         let editor = editors.get_mut(&id)?;
-        let out = editor.key(text, key, typed, modifiers, read_only);
+        let out = editor.key(text, key, code, typed, modifiers, read_only);
         if out.handled {
             editor.touch(now);
             *needs_layout = true;

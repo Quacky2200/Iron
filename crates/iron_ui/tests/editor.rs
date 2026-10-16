@@ -316,6 +316,39 @@ fn cut_copy_and_paste_go_through_the_app() {
     assert_eq!(f.input_values(), ["line one line two"]);
 }
 
+// M3-INP-02
+#[test]
+fn shortcuts_follow_the_physical_key_on_non_latin_layouts() {
+    let mut f = Field::new("input", &[], &[("value", "abc".into())]);
+    let key_down = |key: &str, code: &str| Input::KeyDown {
+        key: key.into(),
+        code: code.into(),
+        repeat: false,
+        text: Some(key.into()),
+    };
+    f.mods(true, false);
+    f.input(key_down("ф", "KeyA"));
+    f.input(key_down("с", "KeyC"));
+    f.mods(false, false);
+    assert_eq!(
+        f.ui.take_clipboard(),
+        Some(Clipboard::Copy("abc".into())),
+        "Ctrl+ф selects all and Ctrl+с copies"
+    );
+    f.type_text("x");
+    assert_eq!(f.value(), "x", "the selection covered everything");
+
+    // AltGr (Ctrl+Alt) types instead (Polish ą is AltGr+A).
+    f.input(Input::Modifiers(Modifiers {
+        ctrl: true,
+        alt: true,
+        ..Modifiers::default()
+    }));
+    f.input(key_down("ą", "KeyA"));
+    f.mods(false, false);
+    assert_eq!(f.value(), "xą");
+}
+
 fn draw(f: &mut Field) -> Vec<DrawCmd> {
     f.tree.draw_list()
 }
