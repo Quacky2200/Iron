@@ -356,7 +356,13 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      `onInput` with `e.target.value`; Ctrl+C/X/V produce clipboard requests — `M3-INP-01`
      (`crates/iron_ui/tests/editor.rs`, golden `M3-INP-01-fields`)
    - [x] Ctrl/Cmd shortcuts fall back to the physical key `code` on non-Latin layouts (Ctrl+ф is
-     Ctrl+A on a Russian layout); AltGr still types — `M3-INP-02`
+     Ctrl+A on a Russian layout); AltGr still types — `M3-INP-02`. Hand-checked 2026-10-16:
+     Ctrl+A/C/X/V work on English, French, Russian, Arabic, Hebrew, the Chinese Pinyin layout and
+     with the Japanese IME on
+   - [x] Pasting into an `<input>` flattens line breaks to spaces and drops a trailing one
+     (`M3-INP-01`)
+   - [x] Placeholders re-wrap when the field resizes (they kept the wrap width of their first
+     layout) — `M3-INP-01`
    - [x] System clipboard (arboard, opened on first use) for the requests above, in `iron_app`
    - [ ] Later: undo/redo, `type="password"`, `maxLength`, wheel scrolling inside a textarea,
      `::placeholder` / `::selection` / `caret-color` styling
@@ -369,8 +375,9 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      follows `set_ime_cursor_area` — `M3-IME-01`. Manual check (`M3-MAN-01`, 2026-10-16, Windows
      Microsoft IME, driven by computer use): Japanese pre-edit, conversion, commit, Backspace /
      Escape in the pre-edit, textarea lines, the candidate window under the field, IME only while
-     a field has focus, Russian and French typing, and the clipboard all work. Chinese Pinyin not
-     checked (its dictionaries weren't installed)
+     a field has focus, Russian and French typing, and the clipboard all work. Re-checked after the
+     shortcut, segmentation and RTL changes with no regressions. Chinese Pinyin composition not
+     checked: Windows reports its dictionaries aren't ready, so it stays in English (英) mode
    - [x] Complex-script segmentation: Parley's `complex-scripts` feature compiles in ICU4X
      dictionaries, so CJK word moves/selection and Thai, Lao, Khmer and Burmese line breaks
      follow word boundaries (no more "No segmentation model" log) — `M3-TXT-08`. Costs about
@@ -409,8 +416,10 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      `js/engine/test/input.test.ts`)
    - [ ] Later: rumble, button repeat while held, mouse state in `input`
 6. **Example + checks**
-   - [ ] `examples/form`: buttons with hover/active styles, a text field with IME, a scrolling list;
-     manual check on Windows with a Japanese or Chinese IME — `M3-MAN-01`
+   - [x] Manual IME check on Windows (`M3-MAN-01`, IME part): done in `examples/css` with the
+     Microsoft Japanese IME (see Text input above)
+   - [ ] `examples/form`: buttons with hover/active styles, a text field with IME, a scrolling list
+   - [ ] Chinese Pinyin composition, once Windows has its dictionaries
 
 ### M3d — CSS parity with s&box
 
