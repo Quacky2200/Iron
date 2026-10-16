@@ -202,17 +202,128 @@ Iron/
 
 **Suggested order:** 1 → 2 → 3 → 4 → 5 → 6 → 7. Steps 2 and 3 are independent once the opcode list (step 2's first item) is agreed, so they can run in parallel.
 
-## M3 — Real UI
+## M3 — Real UI: text, CSS, interaction
 
-- [ ] Choose text library (`cosmic-text` vs `parley`); text rendering + measurement cache — `M3-TXT-*`
-- [ ] Text styles: `color`, `fontFamily` with fallbacks, `fontSize`, `fontWeight` (incl. `bold`), `fontStyle` (`italic`), `lineHeight`, `letterSpacing`, `textAlign` — `M3-TXT-04`
-- [ ] `textShadow` (list), rendered with the same analytic shadow technique as box shadows — `M3-TXT-05`
-- [ ] Inheritance of `color` and font properties; `currentColor` — `M3-TXT-06`
-- [ ] Font imports: `@font-face` in CSS files and `loadFont({ family, src, weight, style })`; bundled default font — `M3-FNT-01`, `M3-FNT-02`
-- [ ] Choose styling approach (CSS files / style objects / both); CSS subset parser — `M3-CSS-*`
-- [ ] Hit testing, bubbling, focus, keyboard — `M3-EVT-*`
-- [ ] IME support through winit — `M3-IME-01`
-- [ ] `gilrs` gamepad events to scripts — `M3-PAD-01`
+**Goal:** game UIs with real text and fonts, CSS stylesheets with selectors and pseudo-elements, and
+interaction (pointer, keyboard, focus, text input with IME, scrolling). Planned in three parts that land
+in order: **M3a** text and fonts → **M3b** CSS stylesheets → **M3c** interaction. Each part ends with
+its tests passing and a commit per step.
+
+**Versions checked 2026-10-16:** parley 0.12 (+ fontique 0.12, harfrust shaping), swash 0.2.10,
+selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the clipboard.
+
+### M3 decisions (proposed, confirm before starting)
+- **D1 — Text engine: Parley.** Same Linebender family as Taffy (Blitz renders CSS with taffy + parley +
+  selectors). `TreeBuilder` maps nested styled spans directly, `InlineBox` supports inline elements
+  (icons, `::before` boxes), `PlainEditor` handles editing with IME composition, and `fontique` gives
+  font registration plus system fallback. cosmic-text is the fallback if Parley's still-young API hurts.
+- **D2 — Glyph rasterization: swash**, at physical pixel size with 4 horizontal subpixel bins, into a
+  glyph atlas (R8 coverage pages + an RGBA page for colour emoji).
+- **D3 — Glyphs batch with boxes.** The atlas is bound in the quad pipeline and glyphs are a new
+  instance kind, so text interleaves with boxes in paint order without breaking batches.
+- **D4 — Text shadows via layers:** each shadow draws the text's glyphs tinted and offset into a layer
+  that is blurred with the existing blur pass (exact CSS Gaussian). Multiple shadows stack in CSS order.
+- **D5 — CSS engine:** `cssparser` for stylesheets, the `selectors` crate (Servo's) for matching against
+  our tree, and the existing `apply_style` for declarations (kebab-case → camelCase). Stylesheets come
+  from Bun-bundled CSS imports (Bun writes `dist/game.css` next to `game.js`) and from an
+  `addStyleSheet(cssText)` API for CSS-in-JS.
+- **D6 — Events:** Rust hit-tests and sends the target's ancestor path to JS; `@iron/react` runs capture
+  and bubble phases over React props (`onClick`, `onPointerDown`, ...) with `stopPropagation` and
+  `preventDefault`, like React DOM.
+- **D7 — Text inputs are Rust-owned editors** (Parley `PlainEditor`: caret, selection, IME, clipboard),
+  exposed as controlled React elements (`value` + `onChange`).
+- **D8 — Fonts:** a bundled default family (Inter, SIL OFL) so games look the same everywhere; system
+  fonts through fontique for fallback (CJK, emoji); game fonts via `@font-face` and `loadFont()` from
+  the game folder (same path rules as images). TTF/OTF first; WOFF2 later.
+
+### M3a — Text and fonts
+1. **Text in the tree**
+   - [ ] Elements: `<text>` (a block of inline content) and `<span>` (nested inline style runs); React
+     string children become text instances (`createTextInstance` now supported, `commitTextUpdate` →
+     a new `SET_TEXT` op); bare strings inside `<box>` get an anonymous `<text>` wrapper — `M3-TXT-07`
+   - [ ] Opcode additions (`CREATE_TEXT`, `SET_TEXT`) mirrored in `js/react/src/opcodes.ts`
+2. **Text styles and inheritance**
+   - [ ] `color`, `fontFamily` (fallback lists), `fontSize`, `fontWeight` (100–900, `bold`, `normal`),
+     `fontStyle`, `lineHeight` (number or length), `letterSpacing`, `wordSpacing`, `textAlign`,
+     `textDecoration` (underline / line-through), `whiteSpace` (normal / nowrap / pre / pre-wrap) — `M3-TXT-04`
+   - [ ] Computed-style inheritance for inherited properties (`color`, font props, line height, spacing,
+     text alignment, white-space); `currentColor` for borders, shadows and gradients — `M3-TXT-06`
+3. **Fonts**
+   - [ ] Bundled default font (Inter) embedded in the engine; fontique system fallback — `M3-FNT-02`
+   - [ ] `loadFont({ family, src, weight, style })` → op → load from the game folder → register;
+     text using that family relayouts when it arrives — `M3-FNT-01`
+4. **Layout integration**
+   - [ ] Taffy measure function for text nodes (Parley layout at the given width constraint) — `M3-TXT-02`
+   - [ ] Measurement cache keyed by (node, content/style generation, width) — `M3-TXT-03`
+5. **Rendering**
+   - [ ] Glyph atlas (R8 + RGBA pages, LRU eviction, scale-aware keys), swash rasterization — `M3-TXT-01`
+   - [ ] `DrawCmd::Text` (glyph runs with colours) → glyph instances in the quad pipeline
+   - [ ] Text gamma/contrast tuning so linear-light blending doesn't make text look thin
+   - [ ] Underline / line-through decorations as quads
+   - [ ] `textShadow` lists via layers + blur — `M3-TXT-05`
+6. **Example + checks**
+   - [ ] `examples/text`: font sizes, weights, italics, mixed spans, wrapping, alignment, emoji/CJK,
+     text shadows, a loaded font; verified by `--screenshot` and goldens
+
+### M3b — CSS stylesheets and selectors
+1. **Stylesheets**
+   - [ ] Parse stylesheets with `cssparser`: style rules, `@font-face` (feeds `loadFont`), comments,
+     `!important`; unsupported at-rules warn — `M3-CSS-01`
+   - [ ] Sources: `dist/game.css` loaded with the bundle; `addStyleSheet(cssText)` / `removeStyleSheet`
+   - [ ] Declarations: kebab-case → our camelCase props; values as CSS strings into `apply_style`
+   - [ ] Custom properties (`--x`) and `var(--x, fallback)` — `M3-CSS-05`
+2. **Selectors** (`selectors` crate, `Element` implemented for UI nodes)
+   - [ ] Type (`box`, `text`, `input`), `.class` (`className` prop), `#id` (`id` prop), `*`, attribute
+     selectors on `data-*` props
+   - [ ] Combinators: descendant, child `>`, sibling `+` and `~`
+   - [ ] Structural: `:first-child`, `:last-child`, `:only-child`, `:nth-child(an+b [of S])`,
+     `:nth-last-child()`, `:first-of-type`, `:nth-of-type()`, `:empty`, `:root` — `M3-CSS-02`
+   - [ ] Logical: `:not()`, `:is()`, `:where()`, `:has()` (relative selectors) — `M3-CSS-03`
+   - [ ] State (driven by M3c, testable earlier by setting states directly): `:hover`, `:active`,
+     `:focus`, `:focus-visible`, `:focus-within`, `:disabled`, `:checked`
+3. **Cascade**
+   - [ ] Specificity + source order; inline `style` prop beats stylesheet rules (unless `!important`);
+     inheritance from M3a — `M3-CSS-04`
+4. **Pseudo-elements**
+   - [ ] `::before` / `::after` generate anonymous first/last children (invisible to React), styled by
+     their rules; `content: ""` boxes for decoration and `content: "text"` for text — `M3-CSS-06`
+5. **Restyle**
+   - [ ] Recompute styles when classes/ids/props change, the tree changes (structural selectors), or
+     states change. Start with restyling dirty subtrees plus siblings (and `:has` ancestors);
+     benchmark on the 2,246-node tree (target < 1 ms incremental) — `M3-CSS-07`, `M3-BEN-01`
+6. **Example + checks**
+   - [ ] `examples/boxes` restyled with a `.css` file using classes, structural selectors, `:has`,
+     `::before`/`::after`
+
+### M3c — Interaction
+1. **Hit testing and pointer events**
+   - [ ] Hit test in reverse paint order: rounded corners, `display`/`visibility`, `pointerEvents:
+     none`, overflow clipping — `M3-EVT-01`
+   - [ ] Pointer events to JS with the target's ancestor path; capture + bubble phases,
+     `stopPropagation`, `preventDefault`; `onClick`, `onPointerDown/Up/Move/Enter/Leave`, `onWheel`,
+     double click — `M3-EVT-02`, `M3-EVT-03`
+   - [ ] `:hover` / `:active` states; `cursor` CSS property → OS cursor
+2. **Keyboard and focus**
+   - [ ] `tabIndex`, Tab / Shift-Tab order, `focus`/`blur` events, `:focus`, `:focus-visible`,
+     `:focus-within`; key events to the focused node — `M3-EVT-04`
+   - [ ] Imperative `ref.current.focus()` / `blur()` via ops
+3. **Text input**
+   - [ ] `<input>` and `<textarea>` as controlled elements (`value`, `onChange`, `placeholder`,
+     `disabled`) backed by Parley `PlainEditor`: caret, selection (mouse and keyboard), word/line
+     navigation, clipboard (arboard)
+   - [ ] IME: winit `Ime` events → preedit display and commit; candidate window placed with
+     `set_ime_cursor_area` — `M3-IME-01`
+4. **Overflow and scrolling**
+   - [ ] `overflow: visible | hidden | scroll | auto`: `DrawCmd::PushClip`/`PopClip` (scissor for
+     rectangles, layer mask for rounded clips), wheel scrolling, simple scrollbars — `M3-EVT-05`
+5. **Gamepads**
+   - [ ] `gilrs` events to scripts; optional spatial focus navigation with a d-pad — `M3-PAD-01`
+6. **Example + checks**
+   - [ ] `examples/form`: buttons with hover/active styles, a text field with IME, a scrolling list;
+     manual check on Windows with a Japanese or Chinese IME — `M3-MAN-01`
+
+**Later (not M3):** CSS transitions and animations, `textOverflow: ellipsis`, WOFF2, accessibility
+(accesskit), pointer capture, drag and drop.
 
 ## M4 — Hot reload
 

@@ -33,8 +33,9 @@ Iron is an s&box-inspired game engine and editor: a **Rust** engine core, **Type
 | Audio playback and mixing | `kira` (on `cpal`) | Steam Audio added later for spatial sound. |
 | Graphics | `wgpu` | Vulkan / DX12 / Metal. Shaders in WGSL. |
 | UI layout | `taffy` | Flexbox + grid + block. **Yoga kept as a fallback** (§5.3). |
-| Text shaping / rendering | `cosmic-text` or `parley` *(open)* | |
-| CSS parsing | `lightningcss` (subset) *(open: CSS files vs style objects)* | |
+| Text layout / shaping | `parley` + `fontique` (proposed for M3; cosmic-text as fallback) | Rich spans, inline boxes, editing with IME. |
+| Glyph rasterization | `swash` into a glyph atlas | Glyphs batch with UI boxes. |
+| CSS | `cssparser` + `selectors` (Servo) for stylesheets and matching; Taffy's parser + our own for values | Both CSS files and inline style objects. |
 | Physics | `rapier` | Jolt bindings as a possible later option. |
 | Scripting language | TypeScript | Gameplay, UI and editor tools. |
 | Script engine | Behind `ScriptRuntime` trait | QuickJS (`rquickjs`) or `deno_core` first; Bun (now Rust) as an experiment. |
@@ -134,7 +135,7 @@ React (TS) ──custom reconciler──▶ op buffer ──▶ Rust UI tree ─
 ### 5.2 Styling
 - A CSS subset (flexbox, grid, box model, colours, borders, radius, shadows, transitions).
 - Optionally default to React Native-style behaviour where it's friendlier.
-- *(open)* CSS/SCSS-like files (closer to s&box) vs inline style objects vs both.
+- **Both** CSS files and inline style objects. Bun bundles `import "./ui.css"` into `dist/game.css`, which the engine loads with the bundle; `addStyleSheet(cssText)` covers CSS-in-JS. Inline `style` props win over stylesheet rules, as in browsers.
 
 **Visual features we're targeting** (same names and syntax as CSS, camelCase in style objects):
 
@@ -149,6 +150,10 @@ React (TS) ──custom reconciler──▶ op buffer ──▶ Rust UI tree ─
 | Text | `color`, `fontFamily` (with fallbacks), `fontSize`, `fontWeight` (100–900, `bold`), `fontStyle` (`italic`), `lineHeight`, `letterSpacing`, `textAlign`, `textShadow` (list) | M3 |
 | Fonts | font imports: `@font-face` in CSS files and a `loadFont({ family, src, weight, style })` API; a bundled default font so games look the same everywhere | M3 |
 | Inheritance | `color` and font properties inherit down the tree like CSS | M3 |
+| Selectors | type, `.class`, `#id`, attributes, combinators; `:first-child`, `:last-child`, `:nth-child()`, `:nth-last-child()`, `:only-child`, `:empty`, `:root`; `:not()`, `:is()`, `:where()`, `:has()`; `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within`, `:disabled` | M3 |
+| Pseudo-elements | `::before` / `::after` as generated children (invisible to React), with `content` | M3 |
+| Variables | custom properties `--x` and `var(--x, fallback)` | M3 |
+| Interaction | hit testing, pointer/keyboard events with capture and bubbling, focus and Tab order, `cursor`, `pointerEvents`, text inputs with IME, `overflow` clipping and scrolling | M3 |
 
 **Draw list shape.** Effects mean the draw list is a list of commands, not just quads:
 `BoxShadow` (outer, drawn before the box), `Quad` (fill: colour, gradient or image; border; per-corner radii),
