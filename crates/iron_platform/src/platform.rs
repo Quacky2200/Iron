@@ -6,6 +6,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
+use crate::gamepad::convert_gamepad;
 use crate::input::{InputEvent, convert_window_event};
 
 #[derive(Debug, thiserror::Error)]
@@ -74,13 +75,20 @@ impl Platform {
         self.gamepads.is_some()
     }
 
-    /// Drains pending gamepad events. M1 only logs them; M3 turns them into `InputEvent`s.
-    pub fn poll_gamepads(&mut self) {
-        if let Some(g) = &mut self.gamepads {
-            while let Some(ev) = g.next_event() {
-                tracing::trace!(?ev, "gamepad event");
+    /// Drains pending gamepad events as [`InputEvent::Gamepad`]s.
+    pub fn poll_gamepads(&mut self) -> Vec<InputEvent> {
+        let Some(g) = &mut self.gamepads else {
+            return Vec::new();
+        };
+        let mut events = Vec::new();
+        while let Some(ev) = g.next_event() {
+            let id: usize = ev.id.into();
+            let name = || g.gamepad(ev.id).name().to_owned();
+            if let Some(event) = convert_gamepad(id, &ev.event, name) {
+                events.push(event);
             }
         }
+        events
     }
 
     /// Opens a window and runs until it's closed. Must be called from the main thread.
@@ -155,7 +163,9 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             event_loop.exit();
             return;
         }
-        self.platform.poll_gamepads();
+        for event in self.platform.poll_gamepads() {
+            self.app.input(event);
+        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }

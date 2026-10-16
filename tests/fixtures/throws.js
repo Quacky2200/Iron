@@ -1,4 +1,82 @@
 (() => {
+  // ../../js/engine/src/input.ts
+  var keys = new Set;
+  var pads = new Map;
+  var listeners = {};
+  function emit(type, event) {
+    for (const fn of listeners[type] ?? []) {
+      try {
+        fn(event);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[input] error in ${type} listener: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+      }
+    }
+  }
+  function pad(id, name = "") {
+    let p = pads.get(id);
+    if (!p) {
+      p = { id, name, connected: true, buttons: {}, axes: {} };
+      pads.set(id, p);
+    }
+    return p;
+  }
+  globalThis.__iron_input = (type, ...args) => {
+    switch (type) {
+      case "keydown": {
+        const [code, key, repeat] = args;
+        keys.add(code);
+        emit("keydown", { code, key, repeat: !!repeat });
+        break;
+      }
+      case "keyup": {
+        const [code, key] = args;
+        keys.delete(code);
+        emit("keyup", { code, key, repeat: false });
+        break;
+      }
+      case "blur":
+        keys.clear();
+        for (const p of pads.values())
+          for (const b of Object.keys(p.buttons))
+            p.buttons[b] = 0;
+        break;
+      case "gamepadconnected": {
+        const [id, name] = args;
+        const p = pad(id, name);
+        p.connected = true;
+        emit("gamepadconnected", { gamepad: p });
+        break;
+      }
+      case "gamepaddisconnected": {
+        const p = pad(args[0]);
+        p.connected = false;
+        emit("gamepaddisconnected", { gamepad: p });
+        break;
+      }
+      case "gamepadbutton": {
+        const [id, button, value] = args;
+        const p = pad(id);
+        const was = (p.buttons[button] ?? 0) > 0.5;
+        p.buttons[button] = value;
+        const now = value > 0.5;
+        if (now && !was)
+          emit("gamepadbuttondown", { gamepad: p, button });
+        if (!now && was)
+          emit("gamepadbuttonup", { gamepad: p, button });
+        break;
+      }
+      case "gamepadaxis": {
+        const [id, axis, value] = args;
+        const p = pad(id);
+        p.axes[axis] = value;
+        emit("gamepadaxis", { gamepad: p, axis, value });
+        break;
+      }
+    }
+  };
+
   // ../../js/engine/src/index.ts
   class Component {
     id;

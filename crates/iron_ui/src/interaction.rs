@@ -52,6 +52,12 @@ pub enum Input {
     },
     /// Finished IME text to insert into the focused field.
     ImeCommit(String),
+    /// Moves focus to the nearest focusable element in a direction (gamepad d-pad).
+    /// Does nothing until something has focus, so the d-pad stays the game's until UI
+    /// takes focus (e.g. a menu calling `ref.focus()`).
+    Navigate(Direction),
+    /// Clicks the focused element (gamepad South / A).
+    Activate,
     /// Clipboard text to paste into the focused field (the answer to
     /// [`Interaction::take_clipboard`] returning [`Clipboard::Paste`]).
     Paste(String),
@@ -100,6 +106,15 @@ pub struct Interaction {
     selecting: Option<NodeId>,
     /// A clipboard request for the app.
     clipboard: Option<Clipboard>,
+}
+
+/// A direction for [`Input::Navigate`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 /// What a text field wants from the system clipboard.
@@ -298,6 +313,26 @@ impl Interaction {
                     if tree.editor_insert(field, &text) {
                         self.input_event(tree, field, dispatch);
                     }
+                }
+            }
+            Input::Navigate(direction) => {
+                let Some(from) = self.focused else {
+                    return;
+                };
+                if let Some(next) = nearest_in_direction(tree, from, direction) {
+                    self.keyboard = true;
+                    self.set_focus(tree, Some(next), true, dispatch);
+                    self.scroll_into_view(tree, next, dispatch);
+                }
+            }
+            Input::Activate => {
+                if let Some(id) = self.focused.filter(|id| !tree.is_editor(*id)) {
+                    // Like a keyboard-activated click: no pointer position, detail 0.
+                    dispatch(&UiEvent::new(
+                        EventKind::Click,
+                        tree.event_path(id),
+                        self.modifiers,
+                    ));
                 }
             }
             Input::Paste(text) => {
@@ -649,6 +684,33 @@ pub fn tab_order(tree: &UiTree) -> Vec<NodeId> {
     // Stable, so equal indexes keep tree order; 0 sorts after every positive index.
     order.sort_by_key(|(index, _)| if *index == 0 { i32::MAX } else { *index });
     order.into_iter().map(|(_, id)| id).collect()
+}
+
+/// The focusable element (in the Tab order) nearest to `from` in `direction`: its
+/// centre must lie that way, and distance across the direction counts double, so
+/// elements in line win over closer ones off to the side.
+pub fn nearest_in_direction(tree: &UiTree, from: NodeId, direction: Direction) -> Option<NodeId> {
+    let center = |id: NodeId| {
+        tree.rect(id)
+            .map(|r| (r.x + r.width / 2.0, r.y + r.height / 2.0))
+    };
+    let (fx, fy) = center(from)?;
+    tab_order(tree)
+        .into_iter()
+        .filter(|id| *id != from)
+        .filter_map(|id| {
+            let (cx, cy) = center(id)?;
+            let (dx, dy) = (cx - fx, cy - fy);
+            let (along, across) = match direction {
+                Direction::Right => (dx, dy),
+                Direction::Left => (-dx, dy),
+                Direction::Down => (dy, dx),
+                Direction::Up => (-dy, dx),
+            };
+            (along > 0.5).then_some((along + 2.0 * across.abs(), id))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, id)| id)
 }
 
 /// The element Tab (or Shift-Tab with `backwards`) moves to from `from`, wrapping

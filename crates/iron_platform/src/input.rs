@@ -34,6 +34,11 @@ pub enum InputEvent {
     Modifiers(Modifiers),
     /// Input method (IME) composition, while the app allows it.
     Ime(ImeEvent),
+    /// A gamepad event; `id` stays the same while the pad is connected.
+    Gamepad {
+        id: u32,
+        event: crate::gamepad::GamepadEvent,
+    },
     Resized {
         width: u32,
         height: u32,

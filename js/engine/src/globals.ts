@@ -34,6 +34,7 @@ declare global {
   var __iron_create: (className: string, id: number) => void;
   var __iron_dispatch: (id: number, method: string, ...args: unknown[]) => unknown;
   var __iron_destroy: (id: number) => void;
+  var __iron_input: (type: string, ...args: unknown[]) => void;
 
   // Installed by @iron/react, called by Rust: a UI event for the element path
   // (target first). Returns whether the default action was prevented.

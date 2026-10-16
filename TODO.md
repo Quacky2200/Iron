@@ -382,7 +382,14 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [ ] Later: smooth scrolling, scroll snapping, culling off-screen children in the draw list
      (the renderer already culls their GPU work), touchpad momentum
 5. **Gamepads**
-   - [ ] `gilrs` events to scripts; optional spatial focus navigation with a d-pad — `M3-PAD-01`
+   - [x] `gilrs` events with stable button/axis names (`South`, `DPadUp`, `LeftStickX`, ...) to
+     scripts through `@iron/engine`'s `input` (`isKeyDown`, `gamepads()`, `isButtonDown`,
+     `on("gamepadbuttondown" | "keydown" | ...)`; keys typed into a text field stay the
+     field's); spatial focus navigation with the d-pad / left stick and South to click, only
+     while UI has focus — `M3-PAD-01` (`crates/iron_platform/src/gamepad.rs`,
+     `crates/iron_app/src/game_input.rs`, `crates/iron_ui/tests/navigation.rs`,
+     `js/engine/test/input.test.ts`)
+   - [ ] Later: rumble, button repeat while held, mouse state in `input`
 6. **Example + checks**
    - [ ] `examples/form`: buttons with hover/active styles, a text field with IME, a scrolling list;
      manual check on Windows with a Japanese or Chinese IME — `M3-MAN-01`

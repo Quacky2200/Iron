@@ -5,6 +5,8 @@
 //! `bun run build`) or a `.js` bundle directly. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
+mod game_input;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -92,6 +94,10 @@ fn main() -> Result<()> {
     let ui_events = scripts
         .eval("typeof __iron_ui_event === 'function'")
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
+    // Set by @iron/engine's `input` module.
+    let game_input = scripts
+        .eval("typeof __iron_input === 'function'")
+        .is_ok_and(|v| v == iron_core::Value::Bool(true));
 
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
@@ -119,6 +125,8 @@ fn main() -> Result<()> {
         sheets: HashMap::new(),
         interaction: Interaction::new(),
         ui_events,
+        game_input,
+        nav: game_input::GamepadNav::default(),
         cursor: "default",
         clipboard: None,
         ime_allowed: false,
@@ -185,6 +193,9 @@ struct App {
     interaction: Interaction,
     /// Whether the game handles UI events (`__iron_ui_event` exists).
     ui_events: bool,
+    /// Whether the game reads input (`__iron_input` exists).
+    game_input: bool,
+    nav: game_input::GamepadNav,
     /// The CSS cursor currently shown.
     cursor: &'static str,
     clipboard: Option<arboard::Clipboard>,
@@ -318,6 +329,16 @@ impl App {
         }
     }
 
+    /// Sends an input event to the game's `input` API (@iron/engine).
+    fn send_game_input(&mut self, args: &[iron_core::Value]) {
+        if !self.game_input {
+            return;
+        }
+        if let Err(e) = self.scripts.call_global("__iron_input", args) {
+            tracing::error!(target: "script", "input: {e}");
+        }
+    }
+
     /// The system clipboard, opened on first use (it can be unavailable, e.g. headless).
     fn clipboard(&mut self) -> Option<&mut arboard::Clipboard> {
         if self.clipboard.is_none() {
@@ -427,6 +448,32 @@ impl PlatformApp for App {
     }
 
     fn input(&mut self, event: InputEvent) {
+        if let InputEvent::Gamepad { id, event } = &event {
+            self.send_game_input(&game_input::script_args(*id, event));
+            // The d-pad moves UI focus only once something has it.
+            let nav = self.nav.ui_input(*id, event);
+            if let Some(nav) = nav.filter(|_| self.interaction.focused().is_some()) {
+                self.handle_ui(nav);
+            }
+            return;
+        }
+        let game_key: Option<Vec<iron_core::Value>> = match &event {
+            InputEvent::KeyDown {
+                code, key, repeat, ..
+            } => Some(vec![
+                "keydown".into(),
+                code.as_str().into(),
+                key.as_str().into(),
+                (*repeat).into(),
+            ]),
+            InputEvent::KeyUp { code, key } => Some(vec![
+                "keyup".into(),
+                code.as_str().into(),
+                key.as_str().into(),
+            ]),
+            InputEvent::Focused(false) => Some(vec!["blur".into()]),
+            _ => None,
+        };
         let scale = self.scale() as f64;
         let input = match event {
             InputEvent::Resized { width, height } => {
@@ -483,6 +530,14 @@ impl PlatformApp for App {
             _ => return,
         };
         self.handle_ui(input);
+        // Keys typed into a text field are the field's, not the game's.
+        let typing = self
+            .interaction
+            .focused()
+            .is_some_and(|id| self.ui.is_editor(id));
+        if let Some(args) = game_key.filter(|_| !typing) {
+            self.send_game_input(&args);
+        }
     }
 
     fn frame(&mut self) {

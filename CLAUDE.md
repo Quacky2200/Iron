@@ -19,7 +19,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`), focus/keys/default actions (`interaction.rs`) |
 | `crates/iron_render` | wgpu renderer for the draw list: quads, SDF rounded boxes, shadows, blur layers, gradients, images, glyph atlas (swash). `testing.rs` has golden helpers and a shared test GPU |
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
-| `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet` |
+| `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads) |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
 | `examples/*` | `hello`, `boxes`, `text`, `css` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
@@ -103,10 +103,11 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     `ref.focus()`/`blur()` arrive as `focus`/`blur` ops
   - M3c step 4: `overflow`/`clipPath` clipping (clip table in the renderer) and scrolling
     (offsets, wheel/keys/scroll-into-view, draggable overlay scrollbars, `onScroll`)
-- **Next:** the rest of M3c. See TODO.md "M3c" for the steps:
-  4. `<input>`/`<textarea>` on Parley `PlainEditor` with IME and clipboard (arboard)
-  5. gilrs gamepads to scripts
-  6. `examples/form`
+  - M3c step 5: text fields (`editor.rs`: Parley `PlainEditor` per `input`/`textarea`), clipboard
+    (arboard in the app), IME (pre-edit/commit, `set_ime_cursor_area`)
+  - M3c step 6: gamepads (`iron_platform::gamepad`) and keys to scripts through `@iron/engine`'s
+    `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
+- **Next:** the rest of M3c: `examples/form` and the manual checks (TODO.md "M3c" step 6).
 - **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA
   instability, also seen before Iron). Warn before launching the interactive window; prefer
   `--screenshot` runs for checks.
