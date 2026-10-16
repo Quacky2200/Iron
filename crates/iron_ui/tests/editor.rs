@@ -349,6 +349,22 @@ fn shortcuts_follow_the_physical_key_on_non_latin_layouts() {
     assert_eq!(f.value(), "xą");
 }
 
+// M3-TXT-08
+#[test]
+fn word_moves_use_dictionary_boundaries_in_japanese() {
+    let mut f = Field::new("input", &[], &[("value", "日本語の文章".into())]);
+    f.key("Home");
+    f.mods(true, true);
+    f.key("ArrowRight");
+    f.mods(false, false);
+    f.chord("c");
+    assert_eq!(
+        f.ui.take_clipboard(),
+        Some(Clipboard::Copy("日本語".into())),
+        "Ctrl+Shift+Right selects one dictionary word, not one ideograph or the whole run"
+    );
+}
+
 fn draw(f: &mut Field) -> Vec<DrawCmd> {
     f.tree.draw_list()
 }

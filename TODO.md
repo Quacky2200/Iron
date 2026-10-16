@@ -371,9 +371,10 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      Escape in the pre-edit, textarea lines, the candidate window under the field, IME only while
      a field has focus, Russian and French typing, and the clipboard all work. Chinese Pinyin not
      checked (its dictionaries weren't installed)
-   - [ ] CJK line breaking: Parley logs "ICU4X ... No segmentation model for complex script:
-     Chinese/Japanese"; ship (or load) ICU4X segmentation data so CJK text wraps at word-like
-     boundaries
+   - [x] Complex-script segmentation: Parley's `complex-scripts` feature compiles in ICU4X
+     dictionaries, so CJK word moves/selection and Thai, Lao, Khmer and Burmese line breaks
+     follow word boundaries (no more "No segmentation model" log) — `M3-TXT-08`. Costs about
+     3.8 MB in the release binary
 4. **Overflow and scrolling**
    - [x] `overflow` / `overflowX` / `overflowY` (`visible | hidden | clip | scroll | auto`, CSS
      computed-value rules) clip children to the padding box with inner radii; `clipPath`

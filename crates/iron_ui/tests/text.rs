@@ -116,6 +116,28 @@ fn text_wraps_and_pushes_siblings_down() {
     assert!(tree2.rect(NodeId(label)).unwrap().height < text.height);
 }
 
+// M3-TXT-08
+#[test]
+fn thai_wraps_between_words() {
+    // Thai has no spaces; break opportunities come from a dictionary.
+    let mut tree = UiTree::new(400.0, 400.0);
+    let mut b = Builder::new();
+    let column = b.element(
+        0,
+        "box",
+        &[("width", 120.0.into()), ("flexDirection", "column".into())],
+    );
+    let label = b.element(column, "text", &[("fontSize", 16.0.into())]);
+    b.text(label, "ภาษาไทยเป็นภาษาที่ไม่มีช่องว่างระหว่างคำ");
+    b.apply(&mut tree);
+    tree.layout_if_needed();
+    let lines = tree.text_layout(NodeId(label)).unwrap().lines().count();
+    assert!(
+        lines > 1,
+        "a long Thai run wraps at word boundaries: {lines} line(s)"
+    );
+}
+
 // M3-TXT-02: shrink-to-fit in a row; padding is added around the text.
 #[test]
 fn text_sizes_to_its_content() {

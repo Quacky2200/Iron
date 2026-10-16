@@ -7,7 +7,8 @@ publish.workspace = true
 [dependencies]
 cssparser = "0.38"
 iron_core = { version = "0.1.0", path = "../iron_core" }
-parley = "0.12.0"
+# complex-scripts: dictionary word and line breaks for CJK, Thai, Lao, Khmer and Burmese.
+parley ={ version = "0.12.0", features = ["complex-scripts"] }
 precomputed-hash = "0.1.1"
 rustc-hash = "2.1.3"
 selectors = "0.41"
@@ -18,7 +19,7 @@ tracing = "0.1.44"
 [dev-dependencies]
 criterion = "0.8.2"
 iron_script = { path = "../iron_script" }
-parley = "0.12.0"
+parley = { version = "0.12.0", features = ["complex-scripts"] }
 serde_json = "1.0.154"
 
 [[bench]]
