@@ -4,6 +4,7 @@
 //! Pipeline (DESIGN.md §5.1): `Commit` ops → [`UiTree`] → layout → [`DrawCmd`]s → renderer.
 
 mod attrs;
+mod cascade;
 mod color;
 pub mod css;
 mod draw;
@@ -25,7 +26,7 @@ pub use paint::{
 };
 pub use parley::FontData;
 pub use style::{StyleError, Visual, apply_style};
-pub use tree::{ROOT, TEXT_NODE, UiError, UiTree};
+pub use tree::{AddedStylesheet, ROOT, TEXT_NODE, UiError, UiTree};
 
 /// Re-exported because [`LayoutEngine`] uses Taffy's `Style` as its
 /// backend-neutral description of CSS layout properties.
