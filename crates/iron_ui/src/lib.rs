@@ -8,6 +8,7 @@ mod cascade;
 mod color;
 pub mod css;
 mod draw;
+pub mod editor;
 pub mod events;
 pub mod interaction;
 mod layout;
@@ -24,7 +25,7 @@ pub use draw::{
     ClipShape, DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd,
 };
 pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
-pub use interaction::{Input, Interaction};
+pub use interaction::{Clipboard, Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ClipPath, ClipShapeSpec,

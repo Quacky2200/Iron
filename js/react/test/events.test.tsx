@@ -4,13 +4,14 @@ import { useRef, useState } from "react";
 import {
   dispatchUiEvent,
   type IronFocusEvent,
+  type IronInputEvent,
   type IronKeyboardEvent,
   type IronPointerEvent,
   type IronScrollEvent,
   type IronWheelEvent,
 } from "../src/events.ts";
 import { type Instance, instances, resetForTests } from "../src/host.ts";
-import { _resetRootForTests, createRoot, Text } from "../src/index.ts";
+import { _resetRootForTests, createRoot, Input, Text } from "../src/index.ts";
 import { CREATE, type Op, SET_ATTRS, SET_STYLE } from "../src/opcodes.ts";
 
 let commits: Op[][] = [];
@@ -317,5 +318,61 @@ describe("@iron/react events", () => {
       ["scrollIntoView", id],
     ]);
     delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  });
+  // M3-INP-01
+  test("onChange sees the new text in e.target.value and controlled fields commit it", () => {
+    let event: IronInputEvent | undefined;
+    let seenTarget = "";
+    function Form() {
+      const [name, setName] = useState("");
+      return (
+        <Input
+          data-name="name"
+          value={name}
+          placeholder="Name"
+          onChange={(e) => {
+            event = e;
+            seenTarget = e.target.value!;
+            setName(e.target.value!.toUpperCase());
+          }}
+        />
+      );
+    }
+    createRoot().render(<Form />);
+    const id = ids.get("name")!;
+    expect(commits[0]).toContainEqual([CREATE, id, "input"]);
+    expect(commits[0]).toContainEqual([SET_ATTRS, id, "data-name", "name", "value", "", "placeholder", "Name"]);
+
+    dispatchUiEvent("input", path("name"), data(), ["ab"]);
+    expect(event!.value).toBe("ab");
+    expect(seenTarget).toBe("ab");
+    // The handler upper-cased it: the new value goes back to the engine.
+    expect(commits.at(-1)).toEqual([[SET_ATTRS, id, "value", "AB"]]);
+    expect(instances.get(id)!.value).toBe("AB");
+  });
+
+  test("a controlled field whose handler rejects the edit goes back to its value", () => {
+    function Digits() {
+      const [v, setV] = useState("12");
+      return <Input data-name="digits" value={v} onChange={(e) => /^\d*$/.test(e.target.value!) && setV(e.target.value!)} />;
+    }
+    createRoot().render(<Digits />);
+    const id = ids.get("digits")!;
+    dispatchUiEvent("input", path("digits"), data(), ["12x"]);
+    expect(commits.at(-1)).toEqual([[SET_ATTRS, id, "value", "12"]]);
+    expect(instances.get(id)!.value).toBe("12");
+    dispatchUiEvent("input", path("digits"), data(), ["123"]);
+    expect(commits.at(-1)).toEqual([[SET_ATTRS, id, "value", "123"]]);
+  });
+
+  test("uncontrolled fields keep what was typed", () => {
+    const seen: string[] = [];
+    createRoot().render(<Input data-name="free" defaultValue="hi" onChange={(e) => seen.push(e.target.value!)} />);
+    const id = ids.get("free")!;
+    expect(instances.get(id)!.value).toBe("hi");
+    const before = commits.length;
+    dispatchUiEvent("input", path("free"), data(), ["hi!"]);
+    expect(seen).toEqual(["hi!"]);
+    expect(commits.length).toBe(before);
   });
 });

@@ -19,6 +19,7 @@ struct Game {
     panel_label: NodeId,
     field: NodeId,
     field_label: NodeId,
+    name: NodeId,
 }
 
 impl Game {
@@ -42,12 +43,14 @@ impl Game {
             panel_label: NodeId(0),
             field: NodeId(0),
             field_label: NodeId(0),
+            name: NodeId(0),
         };
         game.apply_commits();
         let panel = game.tree.children(ROOT)[0];
-        let [button, panel_label, field] = game.tree.children(panel) else {
-            panic!("the panel has a button, a label and a field");
+        let [button, panel_label, field, name] = game.tree.children(panel) else {
+            panic!("the panel has a button, a label, a field and a name input");
         };
+        game.name = *name;
         (game.button, game.panel_label, game.field) = (*button, *panel_label, *field);
         game.button_label = game.tree.children(game.button)[0];
         game.field_label = game.tree.children(game.field)[0];
@@ -103,6 +106,7 @@ impl Game {
             key: key.into(),
             code: String::new(),
             repeat: false,
+            text: None,
         })
     }
 
@@ -226,4 +230,37 @@ fn a_button_can_focus_the_field_without_taking_focus_itself() {
     // Pressing elsewhere blurs.
     game.click(300.0, 250.0);
     assert_eq!(game.ui.focused(), None);
+}
+
+// M3-INP-01
+#[test]
+fn typing_into_a_controlled_input_goes_through_react() {
+    let mut game = Game::start();
+    let name = game.name;
+    game.handle(Input::Focus(name));
+    for c in ["a", "1", "b"] {
+        let events = game.handle(Input::KeyDown {
+            key: c.into(),
+            code: String::new(),
+            repeat: false,
+            text: Some(c.into()),
+        });
+        assert!(events.contains(&("input", false)), "{events:?}");
+    }
+    assert_eq!(
+        game.tree.editor_value(name).unwrap(),
+        "AB",
+        "upper-cased by onChange, and the digit was refused"
+    );
+    game.handle(Input::KeyDown {
+        key: "c".into(),
+        code: String::new(),
+        repeat: false,
+        text: Some("c".into()),
+    });
+    assert_eq!(
+        game.tree.editor_value(name).unwrap(),
+        "ABC",
+        "the caret stayed at the end"
+    );
 }

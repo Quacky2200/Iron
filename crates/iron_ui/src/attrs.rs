@@ -11,6 +11,12 @@ pub struct Attrs {
     pub checked: bool,
     /// `tabIndex`: focusable when set; negative values are skipped by Tab.
     pub tab_index: Option<i32>,
+    /// Text fields: `value` (controlled), `defaultValue`, `placeholder`, `readOnly`, `rows`.
+    pub value: Option<String>,
+    pub default_value: Option<String>,
+    pub placeholder: Option<String>,
+    pub read_only: bool,
+    pub rows: Option<u32>,
     /// `data-*` attributes, by full name (`data-kind`), in insertion order.
     pub data: Vec<(String, String)>,
 }
@@ -51,6 +57,17 @@ impl Attrs {
                             .map_err(|_| format!("invalid tabIndex {s:?}"))?,
                     ),
                     _ => return Err(format!("invalid tabIndex {value:?}")),
+                }
+            }
+            "value" => self.value = text(),
+            "defaultValue" => self.default_value = text(),
+            "placeholder" => self.placeholder = text(),
+            "readOnly" => self.read_only = truthy,
+            "rows" => {
+                self.rows = match value {
+                    Value::Null => None,
+                    Value::Number(n) if *n >= 1.0 => Some(*n as u32),
+                    _ => return Err(format!("invalid rows {value:?}")),
                 }
             }
             n if n.starts_with("data-") => {

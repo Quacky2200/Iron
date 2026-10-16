@@ -25,7 +25,7 @@ import { attrDiff, attrEntries } from "./attrs.ts";
 import { type IronStyle, styleDiff, styleEntries } from "./style.ts";
 
 /** Host element types; `text` and `span` are rendered by the `Text` and `Span` components. */
-export type ElementType = "box" | "text" | "span";
+export type ElementType = "box" | "text" | "span" | "input" | "textarea";
 
 export interface Props {
   style?: IronStyle;
@@ -38,7 +38,13 @@ export class Instance {
     readonly id: number,
     readonly type: ElementType,
     public props: Props,
-  ) {}
+  ) {
+    const p = props as { value?: unknown; defaultValue?: unknown };
+    if (type === "input" || type === "textarea") this.value = String(p.value ?? p.defaultValue ?? "");
+  }
+
+  /** A text field's current text, like the DOM's `input.value` (`e.target.value` in `onChange`). */
+  value?: string;
 
   /** Gives the element keyboard focus, if it is focusable (has `tabIndex`). Applied next frame. */
   focus(): void {
@@ -93,13 +99,14 @@ export const pending: Op[] = [];
 // IDs are never reused within a session (M2-REC-05). 0 is the root container.
 let nextId = 1;
 
-function flush() {
+/** Sends pending ops now (outside a React commit). */
+export function flush() {
   if (pending.length === 0) return;
   const ops = pending.splice(0, pending.length);
   __iron_commit(ops);
 }
 
-const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box", "text", "span"]);
+const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box", "text", "span", "input", "textarea"]);
 
 let currentUpdatePriority: number = NoEventPriority;
 
@@ -180,6 +187,8 @@ export const reconciler = createReconciler({
   },
 
   commitUpdate(instance: Instance, _type: string, prevProps: Props, nextProps: Props) {
+    const value = (nextProps as { value?: unknown }).value;
+    if (value !== undefined && value !== null) instance.value = String(value);
     const changes = styleDiff(prevProps.style, nextProps.style);
     if (changes.length > 0) pending.push([SET_STYLE, instance.id, ...changes]);
     const attrs = attrDiff(prevProps as Record<string, unknown>, nextProps as Record<string, unknown>);

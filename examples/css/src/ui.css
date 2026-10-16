@@ -292,3 +292,25 @@
   background-color: var(--accent);
   color: #0b0e14;
 }
+
+/* Text fields (M3c): input and textarea are focusable by default. */
+input,
+textarea {
+  padding: 5px 8px;
+  font-size: 14px;
+  color: var(--text);
+  background-color: #161b24;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  width: 100%;
+}
+
+input:hover,
+textarea:hover {
+  border: 1px solid var(--muted);
+}
+
+input:focus,
+textarea:focus {
+  border: 1px solid var(--accent);
+}

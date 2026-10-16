@@ -61,6 +61,7 @@ fn key(name: &str) -> Input {
         key: name.into(),
         code: name.into(),
         repeat: false,
+        text: None,
     }
 }
 
@@ -189,6 +190,7 @@ fn keys_go_to_the_focused_element_and_bubble() {
             key: "a".into(),
             code: "KeyA".into(),
             repeat: true,
+            text: None,
         },
     );
     handle(

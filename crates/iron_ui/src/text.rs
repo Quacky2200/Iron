@@ -134,6 +134,11 @@ impl TextEngine {
         Ok(names)
     }
 
+    /// The font and layout contexts, for Parley editors.
+    pub(crate) fn contexts(&mut self) -> (&mut FontContext, &mut LayoutContext<Brush>) {
+        (&mut self.font_cx, &mut self.layout_cx)
+    }
+
     /// Lays out one text block: `runs` are its characters with the computed style
     /// of the node each run came from, in order; `block` is the block's own style.
     pub fn build(
@@ -260,7 +265,7 @@ pub fn draw(layout: &Layout<Brush>, origin: (f32, f32)) -> TextCmd {
     }
 }
 
-fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Brush> {
+pub(crate) fn to_parley(style: &ComputedText) -> TextStyle<'static, 'static, Brush> {
     let (collapse, wrap) = match style.white_space {
         WhiteSpace::Normal => (WhiteSpaceCollapse::Collapse, TextWrapMode::Wrap),
         WhiteSpace::NoWrap => (WhiteSpaceCollapse::Collapse, TextWrapMode::NoWrap),

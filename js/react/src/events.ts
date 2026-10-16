@@ -5,7 +5,8 @@
 
 import { ContinuousEventPriority, DiscreteEventPriority } from "react-reconciler/constants";
 
-import { type Instance, instances, reconciler, withUpdatePriority } from "./host.ts";
+import { flush, type Instance, instances, pending, reconciler, withUpdatePriority } from "./host.ts";
+import { SET_ATTRS } from "./opcodes.ts";
 
 /** Event props for each engine event type. Mouse aliases run alongside the pointer ones. */
 const HANDLERS: Record<string, readonly string[]> = {
@@ -24,6 +25,8 @@ const HANDLERS: Record<string, readonly string[]> = {
   focusin: ["onFocus"],
   focusout: ["onBlur"],
   scroll: ["onScroll"],
+  // React's onChange fires on every edit, like the DOM's `input` event.
+  input: ["onChange", "onInput"],
 };
 
 // `scroll` doesn't bubble in React 17+ either.
@@ -135,10 +138,10 @@ export class IronKeyboardEvent extends IronEvent {
   readonly altKey: boolean;
   readonly metaKey: boolean;
 
-  constructor(type: string, target: Instance, data: readonly number[], keys: readonly string[]) {
+  constructor(type: string, target: Instance, data: readonly number[], strings: readonly string[]) {
     super(type, target, true);
-    this.key = keys[0] ?? "";
-    this.code = keys[1] ?? "";
+    this.key = strings[0] ?? "";
+    this.code = strings[1] ?? "";
     this.repeat = data[8] === 1;
     const m = modifiers(data[7] ?? 0);
     this.shiftKey = m.shiftKey;
@@ -156,6 +159,16 @@ export class IronFocusEvent extends IronEvent {
   constructor(type: string, target: Instance, data: readonly number[]) {
     super(type, target, true);
     this.relatedTarget = instances.get(data[9] ?? 0) ?? null;
+  }
+}
+
+/** `onChange` / `onInput` on a text field. `target.value` (or `value`) is the new text. */
+export class IronInputEvent extends IronEvent {
+  readonly value: string;
+
+  constructor(type: string, target: Instance, strings: readonly string[]) {
+    super(type, target, true);
+    this.value = strings[0] ?? "";
   }
 }
 
@@ -205,19 +218,21 @@ function createEvent(
   target: Instance,
   bubbles: boolean,
   data: readonly number[],
-  keys: readonly string[],
+  strings: readonly string[],
 ): IronEvent {
   switch (type) {
     case "wheel":
       return new IronWheelEvent(type, target, bubbles, data);
     case "keydown":
     case "keyup":
-      return new IronKeyboardEvent(type, target, data, keys);
+      return new IronKeyboardEvent(type, target, data, strings);
     case "focusin":
     case "focusout":
       return new IronFocusEvent(type, target, data);
     case "scroll":
       return new IronScrollEvent(type, target, data);
+    case "input":
+      return new IronInputEvent(type, target, strings);
     default:
       return new IronPointerEvent(type, target, bubbles, data);
   }
@@ -227,21 +242,24 @@ function createEvent(
  * Dispatches an engine event. `path` is the target then its ancestors; `data` is
  * `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related,
  * scrollLeft, scrollTop, scrollWidth, scrollHeight, clientWidth, clientHeight]` and
- * `keys` is `[key, code]` for keyboard events. Returns whether a handler called
+ * `strings` is `[key, code]` for keyboard events and `[value]` for input events.
+ * Returns whether a handler called
  * `preventDefault()`.
  */
 export function dispatchUiEvent(
   type: string,
   path: readonly number[],
   data: readonly number[],
-  keys: readonly string[] = [],
+  strings: readonly string[] = [],
 ): boolean {
   const names = HANDLERS[type];
   const target = instances.get(path[0] ?? -1);
   if (!names || !target) return false;
   const nodes = path.map((id) => instances.get(id)).filter((n): n is Instance => n !== undefined);
   const bubbles = !NON_BUBBLING.has(type);
-  const event = createEvent(type, target, bubbles, data, keys);
+  const event = createEvent(type, target, bubbles, data, strings);
+  // Like the DOM, the field already holds the new text when handlers run.
+  if (event instanceof IronInputEvent) target.value = event.value;
   const capture = names.map((n) => `${n}Capture`);
   const priority = CONTINUOUS.has(type) ? ContinuousEventPriority : DiscreteEventPriority;
 
@@ -260,7 +278,22 @@ export function dispatchUiEvent(
   event.eventPhase = 0;
   // Discrete updates commit now, so the next frame shows them.
   reconciler.flushSyncWork();
+  if (event instanceof IronInputEvent) restoreControlledValue(target);
   return event.defaultPrevented;
+}
+
+/**
+ * A controlled field (`value` prop) whose handler didn't accept the edit goes back to
+ * its `value`, like React DOM; otherwise the engine's text would drift from the prop.
+ */
+function restoreControlledValue(target: Instance) {
+  const controlled = (target.props as { value?: unknown }).value;
+  if (controlled === undefined || controlled === null) return;
+  const value = String(controlled);
+  if (target.value === value) return;
+  target.value = value;
+  pending.push([SET_ATTRS, target.id, "value", value]);
+  flush();
 }
 
 globalThis.__iron_ui_event = dispatchUiEvent;

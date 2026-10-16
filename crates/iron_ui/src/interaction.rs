@@ -9,6 +9,7 @@
 
 use iron_core::NodeId;
 
+use crate::editor::PointerSelect;
 use crate::events::{EventKind, Modifiers, Pointer, ScrollInfo, UiEvent, update_state};
 use crate::tree::{ROOT, Scrollbar, UiTree};
 
@@ -36,12 +37,16 @@ pub enum Input {
         dx: f32,
         dy: f32,
     },
-    /// `key` and `code` as in the DOM (`"a"` / `"KeyA"`).
+    /// `key` and `code` as in the DOM (`"a"` / `"KeyA"`); `text` is what the key types.
     KeyDown {
         key: String,
         code: String,
         repeat: bool,
+        text: Option<String>,
     },
+    /// Clipboard text to paste into the focused field (the answer to
+    /// [`Interaction::take_clipboard`] returning [`Clipboard::Paste`]).
+    Paste(String),
     KeyUp {
         key: String,
         code: String,
@@ -83,6 +88,19 @@ pub struct Interaction {
     keyboard: bool,
     /// A scrollbar thumb being dragged, and where on the thumb it was grabbed.
     drag: Option<(Scrollbar, f32)>,
+    /// A text field being selected by dragging.
+    selecting: Option<NodeId>,
+    /// A clipboard request for the app.
+    clipboard: Option<Clipboard>,
+}
+
+/// What a text field wants from the system clipboard.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Clipboard {
+    /// Put this text on the clipboard.
+    Copy(String),
+    /// Read the clipboard and send it back as [`Input::Paste`].
+    Paste,
 }
 
 impl Interaction {
@@ -104,6 +122,11 @@ impl Interaction {
         self.pointer.cursor(tree)
     }
 
+    /// Takes the pending clipboard request from the last key press, if any.
+    pub fn take_clipboard(&mut self) -> Option<Clipboard> {
+        self.clipboard.take()
+    }
+
     /// Handles one input. `dispatch` sends an event to scripts and returns whether its
     /// default action was prevented.
     pub fn handle(
@@ -115,6 +138,9 @@ impl Interaction {
         match input {
             Input::PointerMove { x, y } => {
                 send(self.pointer.move_to(tree, x, y), dispatch);
+                if let Some(field) = self.selecting {
+                    tree.editor_pointer(field, x, y, PointerSelect::Drag);
+                }
                 if let Some((bar, grab)) = self.drag {
                     self.drag_scrollbar(tree, bar, grab, x, y, dispatch);
                 }
@@ -133,6 +159,15 @@ impl Interaction {
                         if !prevented {
                             let target = event.path.iter().copied().find(|id| focusable(tree, *id));
                             self.pointer_focus(tree, target, dispatch);
+                            // In a field, the press places the caret or selects.
+                            if let Some(field) = target.filter(|id| tree.is_editor(*id)) {
+                                let select = PointerSelect::Press {
+                                    clicks: event.detail,
+                                    shift: event.modifiers.shift,
+                                };
+                                tree.editor_pointer(field, event.x, event.y, select);
+                                self.selecting = Some(field);
+                            }
                         }
                     }
                 }
@@ -142,8 +177,11 @@ impl Interaction {
                 }
             }
             Input::PointerUp { button } => {
-                if button == 0 && self.drag.take().is_some() {
-                    return;
+                if button == 0 {
+                    self.selecting = None;
+                    if self.drag.take().is_some() {
+                        return;
+                    }
                 }
                 send(self.pointer.up(tree, button), dispatch);
             }
@@ -161,7 +199,12 @@ impl Interaction {
                     }
                 }
             }
-            Input::KeyDown { key, code, repeat } => {
+            Input::KeyDown {
+                key,
+                code,
+                repeat,
+                text,
+            } => {
                 let prevented = self.key_event(
                     tree,
                     EventKind::KeyDown,
@@ -172,6 +215,23 @@ impl Interaction {
                 );
                 if prevented {
                     return;
+                }
+                // The focused text field edits first.
+                if let Some(field) = self.focused
+                    && let Some(out) = tree.editor_key(field, &key, text.as_deref(), self.modifiers)
+                {
+                    if let Some(copy) = out.copy {
+                        self.clipboard = Some(Clipboard::Copy(copy));
+                    }
+                    if out.paste {
+                        self.clipboard = Some(Clipboard::Paste);
+                    }
+                    if out.changed {
+                        self.input_event(tree, field, dispatch);
+                    }
+                    if out.handled {
+                        return;
+                    }
                 }
                 if key == "Tab" {
                     self.keyboard = true;
@@ -208,6 +268,13 @@ impl Interaction {
                 self.scroll(tree, id, x + dx, y + dy, false, dispatch);
             }
             Input::ScrollIntoView(id) => self.scroll_into_view(tree, id, dispatch),
+            Input::Paste(text) => {
+                if let Some(field) = self.focused
+                    && tree.editor_insert(field, &text)
+                {
+                    self.input_event(tree, field, dispatch);
+                }
+            }
             Input::Blur(id) => {
                 if self.focused == Some(id) {
                     self.set_focus(tree, None, false, dispatch);
@@ -232,6 +299,19 @@ impl Interaction {
     ) {
         self.keyboard = false;
         self.set_focus(tree, target, false, dispatch);
+    }
+
+    /// Tells scripts that field `id`'s text changed.
+    fn input_event(
+        &mut self,
+        tree: &UiTree,
+        id: NodeId,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        dispatch(&UiEvent {
+            value: tree.editor_value(id),
+            ..UiEvent::new(EventKind::Input, tree.event_path(id), self.modifiers)
+        });
     }
 
     /// Scrolls `id` to (x, y); if it moved, sends `scroll` and updates hover (content
@@ -454,6 +534,10 @@ impl Interaction {
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) {
         let old = self.focused;
+        if let Some(field) = old.filter(|id| Some(*id) != target) {
+            // Leaving a field mid-composition drops the IME's pre-edit text.
+            tree.editor_end_compose(field);
+        }
         if old == target {
             // Re-focusing by keyboard still shows the ring.
             if let Some(id) = target {
@@ -491,10 +575,17 @@ fn send(events: Vec<UiEvent>, dispatch: &mut dyn FnMut(&UiEvent) -> bool) {
     }
 }
 
-/// Whether `id` can take focus: it has a `tabIndex`, isn't disabled and is displayed.
+/// `id`'s tab index: its `tabIndex`, or 0 for text fields, which are focusable by
+/// default like in HTML.
+fn tab_index(tree: &UiTree, id: NodeId) -> Option<i32> {
+    let attrs = tree.attrs(id)?;
+    attrs.tab_index.or(tree.is_editor(id).then_some(0))
+}
+
+/// Whether `id` can take focus: it has a tab index, isn't disabled and is displayed.
 pub fn focusable(tree: &UiTree, id: NodeId) -> bool {
-    tree.attrs(id)
-        .is_some_and(|a| a.tab_index.is_some() && !a.disabled)
+    tab_index(tree, id).is_some()
+        && tree.attrs(id).is_some_and(|a| !a.disabled)
         && tree.is_displayed(id)
 }
 
@@ -509,7 +600,7 @@ pub fn tab_order(tree: &UiTree) -> Vec<NodeId> {
                 continue;
             }
             if let Some(attrs) = tree.attrs(id)
-                && let Some(index) = attrs.tab_index
+                && let Some(index) = tab_index(tree, id)
                 && index >= 0
                 && !attrs.disabled
             {

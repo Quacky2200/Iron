@@ -32,6 +32,8 @@ pub enum EventKind {
     FocusOut,
     /// An element scrolled (doesn't bubble).
     Scroll,
+    /// A text field's text changed (bubbles; React's `onChange` / `onInput`).
+    Input,
 }
 
 impl EventKind {
@@ -52,6 +54,7 @@ impl EventKind {
             EventKind::FocusIn => "focusin",
             EventKind::FocusOut => "focusout",
             EventKind::Scroll => "scroll",
+            EventKind::Input => "input",
         }
     }
 }
@@ -104,6 +107,8 @@ pub struct UiEvent {
     pub related: Option<NodeId>,
     /// Scroll events: the target's scroll position and sizes.
     pub scroll: Option<ScrollInfo>,
+    /// Input events: the field's new text.
+    pub value: Option<String>,
 }
 
 /// A scroll container's position and sizes, like the DOM's `scrollTop` and friends.
@@ -153,6 +158,7 @@ impl UiEvent {
             repeat: false,
             related: None,
             scroll: None,
+            value: None,
         }
     }
 
@@ -163,7 +169,7 @@ impl UiEvent {
     /// Arguments for `__iron_ui_event(type, path, data, keys)`: `data` is `[x, y, button,
     /// buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
     /// scrollWidth, scrollHeight, clientWidth, clientHeight]` (`related` 0 for none) and
-    /// `keys` is `[key, code]`, sent with keyboard events only.
+    /// `strings` is `[key, code]` for keyboard events and `[value]` for input events.
     pub fn script_args(&self) -> Vec<Value> {
         let path = self
             .path
@@ -202,6 +208,9 @@ impl UiEvent {
                 self.key.as_str().into(),
                 self.code.as_str().into(),
             ]));
+        }
+        if let Some(value) = &self.value {
+            args.push(Value::Array(vec![value.as_str().into()]));
         }
         args
     }

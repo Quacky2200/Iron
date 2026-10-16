@@ -43,6 +43,7 @@ fn key(name: &str) -> Input {
         key: name.into(),
         code: String::new(),
         repeat: false,
+        text: None,
     }
 }
 

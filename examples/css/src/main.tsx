@@ -5,11 +5,12 @@
 // whose accent colour changes every second. Interaction (M3c): click an item to pin
 // the highlight, click the toggles (or Tab to them and press Space), double-click
 // the title. The Clipping card shows overflow and clip-path on images, and a list
-// that scrolls with the wheel, keys and its scrollbar.
+// that scrolls with the wheel, keys and its scrollbar. The Variables card has text
+// fields (a controlled input and a textarea).
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
-import { createRoot, Span, Text } from "@iron/react";
+import { createRoot, Input, Span, Text, TextArea } from "@iron/react";
 import { type ReactNode, useEffect, useState } from "react";
 
 const accents = ["#5ec8ff", "#9fe6a0", "#ffd25e", "#ff5e7e"];
@@ -61,6 +62,17 @@ function Toggle({ label, initial = false, disabled = false }: { label: string; i
       <box className="box" />
       <Text className="label">{label}</Text>
     </box>
+  );
+}
+
+function Fields() {
+  const [name, setName] = useState("");
+  return (
+    <>
+      <Input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value ?? "")} />
+      <Text>{name ? `Hello, ${name}!` : "Type your name above."}</Text>
+      <TextArea rows={3} placeholder="A textarea: Enter adds lines, Ctrl+A selects all." />
+    </>
   );
 }
 
@@ -141,6 +153,7 @@ function App() {
             runtime. It changes every second.
           </Text>
           <Text id="status">tick {tick}</Text>
+          <Fields />
         </Card>
 
         <Card title="Clipping">

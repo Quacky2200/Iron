@@ -347,9 +347,17 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      (`iron_ui::Interaction` in `interaction.rs`, `crates/iron_ui/tests/focus.rs`, `events_quickjs.rs`)
    - [x] Imperative `ref.current.focus()` / `blur()` via ops
 3. **Text input**
-   - [ ] `<input>` and `<textarea>` as controlled elements (`value`, `onChange`, `placeholder`,
-     `disabled`) backed by Parley `PlainEditor`: caret, selection (mouse and keyboard), word/line
-     navigation, clipboard (arboard)
+   - [x] `<input>` and `<textarea>` (`Input` / `TextArea` components) backed by Parley
+     `PlainEditor`: typing, Backspace/Delete (Ctrl for words), arrows/Home/End with Shift and Ctrl,
+     Ctrl+A, Enter in textareas; caret placement, word (double-click) and line (triple-click)
+     selection and drag selection; blinking caret, selection highlight, dimmed `placeholder`, the
+     caret kept in view; `value` (controlled, restored when `onChange` rejects an edit like React
+     DOM), `defaultValue`, `readOnly`, `disabled`, `rows`; focusable by default; `onChange` /
+     `onInput` with `e.target.value`; Ctrl+C/X/V produce clipboard requests — `M3-INP-01`
+     (`crates/iron_ui/tests/editor.rs`, golden `M3-INP-01-fields`)
+   - [ ] System clipboard (arboard) for the requests above
+   - [ ] Later: undo/redo, `type="password"`, `maxLength`, wheel scrolling inside a textarea,
+     `::placeholder` / `::selection` / `caret-color` styling
    - [ ] Selecting static text (drag, double-click word, triple-click line, Ctrl+C) on text elements,
      with `user-select: none | text` and a `::selection` colour; shares Parley's selection geometry
      and the clipboard with the editors

@@ -1029,3 +1029,123 @@ fn scrolled_content_and_scrollbars() {
     assert!(f.luma(88, 40) > 100.0, "vertical thumb");
     assert_golden("M3-EVT-05-scroll", 160, 80, &f.pixels, TOLERANCE);
 }
+
+// M3-INP-01: text fields: a filled input, a placeholder, a focused input with a
+// selection and caret, and a wrapping textarea. Checked by eye, then golden.
+#[test]
+fn text_fields() {
+    use iron_ui::{Input, Interaction};
+    let mut s = Scene::new();
+    let field = |s: &mut Scene, kind: &str, x: f64, y: f64, w: f64, attrs: &[(&str, Value)]| {
+        let mut style = at(
+            x,
+            y,
+            w,
+            0.0,
+            &[
+                ("color", "#e8ecf2".into()),
+                ("backgroundColor", "#1c222c".into()),
+                ("border", "1px solid #3a4558".into()),
+                ("borderRadius", 6.0.into()),
+                ("padding", "4px 8px".into()),
+                ("fontSize", 14.0.into()),
+            ],
+        );
+        // Fields size their height from the font.
+        style.retain(|(k, _)| *k != "height");
+        let id = s.element(0, kind, &style);
+        let n = |v: u32| Value::Number(v.into());
+        let mut set = vec![n(SET_ATTRS), n(id)];
+        for (k, v) in attrs {
+            set.push((*k).into());
+            set.push(v.clone());
+        }
+        s.ops.push(Value::Array(set));
+        id
+    };
+    field(
+        &mut s,
+        "input",
+        8.0,
+        8.0,
+        140.0,
+        &[("value", "Iron".into())],
+    );
+    field(
+        &mut s,
+        "input",
+        8.0,
+        44.0,
+        140.0,
+        &[("placeholder", "Your name".into())],
+    );
+    let focused = field(
+        &mut s,
+        "input",
+        8.0,
+        80.0,
+        140.0,
+        &[("value", "selected text".into())],
+    );
+    field(
+        &mut s,
+        "textarea",
+        160.0,
+        8.0,
+        150.0,
+        &[
+            (
+                "value",
+                "A textarea wraps its lines and keeps them in view.".into(),
+            ),
+            ("rows", 4.0.into()),
+        ],
+    );
+
+    let gpu = shared_gpu();
+    let mut tree = UiTree::new(320.0, 116.0);
+    let errors = tree.apply_commit(&Commit { ops: s.ops });
+    assert!(errors.is_empty(), "{errors:?}");
+    let mut ui = Interaction::new();
+    ui.handle(
+        &mut tree,
+        Input::Focus(iron_core::NodeId(focused)),
+        &mut |_| false,
+    );
+    ui.handle(
+        &mut tree,
+        Input::Modifiers(iron_ui::events::Modifiers {
+            shift: true,
+            ctrl: true,
+            ..Default::default()
+        }),
+        &mut |_| false,
+    );
+    // Ctrl+Shift+Left from the end selects the last word.
+    ui.handle(
+        &mut tree,
+        Input::KeyDown {
+            key: "ArrowLeft".into(),
+            code: "ArrowLeft".into(),
+            repeat: false,
+            text: None,
+        },
+        &mut |_| false,
+    );
+    let cmds = tree.draw_list();
+    let target = OffscreenTarget::with_format(&gpu, 320, 116, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    UiRenderer::new(&gpu).render(
+        &gpu,
+        &RenderTarget {
+            view: &view,
+            format: target.format(),
+            size: (320, 116),
+            scale: 1.0,
+        },
+        BLACK,
+        &cmds,
+    );
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M3-INP-01-fields", 320, 116, &pixels, TOLERANCE);
+}

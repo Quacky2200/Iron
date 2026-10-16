@@ -37,7 +37,7 @@ declare global {
 
   // Installed by @iron/react, called by Rust: a UI event for the element path
   // (target first). Returns whether the default action was prevented.
-  var __iron_ui_event: ((type: string, path: number[], data: number[], keys?: string[]) => boolean) | undefined;
+  var __iron_ui_event: ((type: string, path: number[], data: number[], strings?: string[]) => boolean) | undefined;
 }
 
 export {};

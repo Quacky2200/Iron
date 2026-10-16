@@ -399,8 +399,16 @@ impl PlatformApp for App {
                 Input::Wheel { dx, dy }
             }
             InputEvent::KeyDown {
-                code, key, repeat, ..
-            } => Input::KeyDown { key, code, repeat },
+                code,
+                key,
+                repeat,
+                text,
+            } => Input::KeyDown {
+                key,
+                code,
+                repeat,
+                text,
+            },
             InputEvent::KeyUp { code, key } => Input::KeyUp { key, code },
             InputEvent::Modifiers(m) => Input::Modifiers(events::Modifiers {
                 shift: m.shift,
@@ -417,6 +425,8 @@ impl PlatformApp for App {
 
     fn frame(&mut self) {
         self.tick();
+        // Caret blinking.
+        self.ui.set_time(self.now_ms());
         let Some(gfx) = &mut self.gfx else {
             return;
         };

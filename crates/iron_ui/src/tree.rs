@@ -10,6 +10,8 @@ use crate::attrs::{Attrs, ElementState};
 use crate::cascade::{Deps, Key, RuleIndex, Target, matched_declarations};
 use crate::css::{FontFace, PseudoElement, Stylesheet, parse_stylesheet, substitute_vars};
 use crate::draw::{ClipShape, DrawCmd, ImageFill, Quad, Rect, ShadowShape};
+use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_kind};
+use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{Overflow, Shadow, inner_corners, resolve_radii};
@@ -81,6 +83,10 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Scroll offsets of scrolled elements (x, y), clamped to their range at layout.
     scroll: HashMap<NodeId, (f32, f32)>,
+    /// Text fields (`input`, `textarea`) by node.
+    editors: HashMap<NodeId, Editor>,
+    /// Engine time in ms (caret blinking).
+    time_ms: f64,
     /// Text blocks whose content or structure changed since they were last laid out.
     dirty_text: HashSet<NodeId>,
     /// Attribute and state changes since the last restyle, with what changed.
@@ -146,6 +152,8 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             scroll: HashMap::default(),
+            editors: HashMap::default(),
+            time_ms: 0.0,
             dirty_text: HashSet::default(),
             key_changes: Vec::new(),
             structure_changed: HashSet::default(),
@@ -882,7 +890,8 @@ impl<L: LayoutEngine> UiTree<L> {
             .chain(text_changed.iter().copied())
             .collect::<Vec<_>>();
         for id in touched {
-            let is_root = self.is_text_root(id);
+            // Text blocks and text fields are measured leaves.
+            let is_root = self.is_text_root(id) || self.editors.contains_key(&id);
             self.layout.set_measured(id, is_root);
             if !is_root {
                 self.text_layouts.remove(&id);
@@ -943,6 +952,11 @@ impl<L: LayoutEngine> UiTree<L> {
                 let style = Style::default();
                 self.layout.create_node(id, &style);
                 self.style_dirty.insert(id);
+                if is_editor_kind(kind) {
+                    self.editors.insert(id, Editor::new(kind == "textarea"));
+                    // Sized by `measure` from the font, like a replaced element.
+                    self.layout.set_measured(id, true);
+                }
                 self.nodes.insert(
                     id,
                     Box::new(Node {
@@ -1006,8 +1020,26 @@ impl<L: LayoutEngine> UiTree<L> {
                     }
                 }
                 let keys = attr_keys_changed(&before, &node.attrs);
+                let attrs = node.attrs.clone();
                 if !keys.is_empty() {
                     self.key_changes.push((id, keys));
+                }
+                if let Some(editor) = self.editors.get_mut(&id) {
+                    // A controlled `value` wins; `defaultValue` only fills a new field.
+                    let value = match (&attrs.value, &before.value) {
+                        (Some(v), _) => Some(v.as_str()),
+                        (None, None) if before.default_value.is_none() => {
+                            attrs.default_value.as_deref()
+                        }
+                        _ => None,
+                    };
+                    if let Some(v) = value {
+                        editor.set_value(v);
+                    }
+                    editor.set_placeholder(attrs.placeholder.as_deref());
+                    editor.rows = attrs.rows.unwrap_or(TEXTAREA_ROWS);
+                    self.layout.mark_dirty(id);
+                    self.needs_layout = true;
                 }
                 if !problems.is_empty() {
                     return Err(UiError(format!("node {id}: {}", problems.join("; "))));
@@ -1173,6 +1205,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let mut stack = vec![id];
         while let Some(id) = stack.pop() {
             self.scroll.remove(&id);
+            self.editors.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
@@ -1200,6 +1233,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let Self {
             layout,
             text_layouts,
+            editors,
             size,
             ..
         } = self;
@@ -1209,7 +1243,10 @@ impl<L: LayoutEngine> UiTree<L> {
             size.1,
             &mut |id, known_width, available| match text_layouts.get_mut(&id) {
                 Some(l) => text::measure(l, known_width, available),
-                None => (0.0, 0.0),
+                None => match editors.get(&id) {
+                    Some(e) => e.intrinsic_size(known_width),
+                    None => (0.0, 0.0),
+                },
             },
         );
         self.rects.clear();
@@ -1246,8 +1283,167 @@ impl<L: LayoutEngine> UiTree<L> {
                 stack.extend(node.children.iter().map(|c| (*c, x - sx, y - sy)));
             }
         }
+        self.refresh_editors();
         self.needs_layout = false;
         true
+    }
+
+    /// Restyles, resizes and re-lays out text fields after layout.
+    fn refresh_editors(&mut self) {
+        let ids: Vec<NodeId> = self.editors.keys().copied().collect();
+        for id in ids {
+            let style = self.computed_text(id);
+            let content = self.content_box(id).unwrap_or_default();
+            let Self { editors, text, .. } = self;
+            let Some(editor) = editors.get_mut(&id) else {
+                continue;
+            };
+            editor.set_style(&style);
+            editor.refresh(text, content.width, content.height);
+        }
+    }
+
+    /// `id`'s content box (inside borders and padding), where a field's text goes.
+    pub fn content_box(&self, id: NodeId) -> Option<Rect> {
+        let r = self.rect(id)?;
+        let l = self.layout.layout(id)?;
+        let [bt, br, bb, bl] = l.border;
+        let [pt, pr, pb, pl] = l.padding;
+        Some(Rect::new(
+            r.x + bl + pl,
+            r.y + bt + pt,
+            (r.width - bl - br - pl - pr).max(0.0),
+            (r.height - bt - bb - pt - pb).max(0.0),
+        ))
+    }
+
+    /// Sets engine time (ms) for caret blinking.
+    pub fn set_time(&mut self, now_ms: f64) {
+        self.time_ms = now_ms;
+    }
+
+    /// Whether `id` is a text field (`input` or `textarea`).
+    pub fn is_editor(&self, id: NodeId) -> bool {
+        self.editors.contains_key(&id)
+    }
+
+    /// A text field's current text.
+    pub fn editor_value(&self, id: NodeId) -> Option<String> {
+        self.editors.get(&id).map(Editor::text)
+    }
+
+    /// The selected text of a field, if any (for copying).
+    pub fn editor_selection(&self, id: NodeId) -> Option<String> {
+        self.editors.get(&id).and_then(Editor::selected_text)
+    }
+
+    /// Runs a key's editing action on field `id` (`typed` is the text the key types).
+    /// `None` if `id` isn't an enabled field.
+    pub fn editor_key(
+        &mut self,
+        id: NodeId,
+        key: &str,
+        typed: Option<&str>,
+        modifiers: Modifiers,
+    ) -> Option<KeyOutcome> {
+        let attrs = self.attrs(id)?;
+        if attrs.disabled {
+            return None;
+        }
+        let read_only = attrs.read_only;
+        let now = self.time_ms;
+        let Self {
+            editors,
+            text,
+            needs_layout,
+            ..
+        } = self;
+        let editor = editors.get_mut(&id)?;
+        let out = editor.key(text, key, typed, modifiers, read_only);
+        if out.handled {
+            editor.touch(now);
+            *needs_layout = true;
+        }
+        Some(out)
+    }
+
+    /// Inserts text at field `id`'s caret (paste, IME commit). Returns whether the text
+    /// changed; read-only and disabled fields refuse.
+    pub fn editor_insert(&mut self, id: NodeId, s: &str) -> bool {
+        if self.attrs(id).is_none_or(|a| a.disabled || a.read_only) {
+            return false;
+        }
+        let now = self.time_ms;
+        let Self {
+            editors,
+            text,
+            needs_layout,
+            ..
+        } = self;
+        let Some(editor) = editors.get_mut(&id) else {
+            return false;
+        };
+        editor.touch(now);
+        *needs_layout = true;
+        editor.insert(text, s)
+    }
+
+    /// Places the caret or selects in field `id` at absolute (x, y).
+    pub fn editor_pointer(&mut self, id: NodeId, x: f32, y: f32, select: PointerSelect) {
+        let Some(content) = self.content_box(id) else {
+            return;
+        };
+        let now = self.time_ms;
+        let Self {
+            editors,
+            text,
+            needs_layout,
+            ..
+        } = self;
+        if let Some(editor) = editors.get_mut(&id) {
+            editor.pointer(text, x - content.x, y - content.y, select);
+            editor.touch(now);
+            *needs_layout = true;
+        }
+    }
+
+    /// Updates field `id`'s IME pre-edit text (empty ends composing).
+    pub fn editor_compose(&mut self, id: NodeId, preedit: &str, cursor: Option<(usize, usize)>) {
+        let now = self.time_ms;
+        let Self {
+            editors,
+            text,
+            needs_layout,
+            ..
+        } = self;
+        if let Some(editor) = editors.get_mut(&id) {
+            editor.compose(text, preedit, cursor);
+            editor.touch(now);
+            *needs_layout = true;
+        }
+    }
+
+    /// Drops field `id`'s IME pre-edit text, if any (focus moved away mid-composition).
+    pub fn editor_end_compose(&mut self, id: NodeId) {
+        let Self {
+            editors,
+            text,
+            needs_layout,
+            ..
+        } = self;
+        if let Some(editor) = editors.get_mut(&id) {
+            editor.end_compose(text);
+            *needs_layout = true;
+        }
+    }
+
+    /// Where field `id`'s IME candidate window should go (absolute logical pixels):
+    /// the pre-edit text or the caret.
+    pub fn editor_ime_area(&self, id: NodeId) -> Option<Rect> {
+        let editor = self.editors.get(&id)?;
+        let content = self.content_box(id)?;
+        let area = editor.ime_area();
+        Some(area.offset(content.x - editor.scroll.0, content.y - editor.scroll.1))
     }
 
     /// The scroll offset (x, y) of `id`; (0, 0) for elements that never scrolled.
@@ -1485,7 +1681,7 @@ impl<L: LayoutEngine> UiTree<L> {
     /// and `default` elsewhere.
     pub fn cursor(&self, id: Option<NodeId>) -> &'static str {
         let auto = match id.and_then(|id| self.nodes.get(&id)) {
-            Some(node) if is_inline_container(&node.kind) => "text",
+            Some(node) if is_inline_container(&node.kind) || is_editor_kind(&node.kind) => "text",
             _ => "default",
         };
         let mut at = id;
@@ -1619,6 +1815,10 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
 
+        if let Some(editor) = self.editors.get(&id) {
+            self.editor_cmds(editor, node, rect, &l, radii, &text, &mut own);
+        }
+
         // clip-path (and legacy `clip`) clip the element and everything inside it;
         // `overflow` clips only the children, to the padding box.
         let self_clips = self.self_clips(node, rect, &l, radii);
@@ -1689,6 +1889,70 @@ impl<L: LayoutEngine> UiTree<L> {
         if clip.is_some() {
             out.push(DrawCmd::PopClip);
         }
+    }
+
+    /// A text field's content: selection, text (or placeholder) and the blinking
+    /// caret, clipped to the padding box and shifted by the field's own scroll.
+    #[allow(clippy::too_many_arguments)]
+    fn editor_cmds(
+        &self,
+        editor: &Editor,
+        node: &Node,
+        rect: Rect,
+        l: &NodeLayout,
+        radii: [f32; 4],
+        text: &ComputedText,
+        out: &mut Vec<DrawCmd>,
+    ) {
+        let [bt, br, bb, bl] = l.border;
+        let [pt, _, _, pl] = l.padding;
+        let padding_box = Rect::new(
+            rect.x + bl,
+            rect.y + bt,
+            (rect.width - bl - br).max(0.0),
+            (rect.height - bt - bb).max(0.0),
+        );
+        let origin = (
+            padding_box.x + pl - editor.scroll.0,
+            padding_box.y + pt - editor.scroll.1,
+        );
+        let quad = |r: Rect, color: Rgba| {
+            DrawCmd::Quad(Quad {
+                rect: r.offset(origin.0, origin.1),
+                background: color,
+                image: None,
+                border_color: Rgba::TRANSPARENT,
+                border: [0.0; 4],
+                radii: [0.0; 4],
+            })
+        };
+        out.push(DrawCmd::PushClip(inner_corners(
+            padding_box,
+            radii,
+            l.border,
+        )));
+        let focused = node.state.focus && !node.attrs.disabled;
+        if focused {
+            out.extend(
+                editor
+                    .selection_rects()
+                    .into_iter()
+                    .map(|r| quad(r, crate::editor::SELECTION)),
+            );
+        }
+        if let Some(layout) = editor.placeholder_layout().or(editor.layout()) {
+            let cmd = text::draw(layout, origin);
+            if !cmd.runs.is_empty() || !cmd.decorations.is_empty() {
+                out.push(DrawCmd::Text(cmd));
+            }
+        }
+        if focused
+            && editor.caret_on(self.time_ms)
+            && let Some(caret) = editor.caret_rect()
+        {
+            out.push(quad(caret, text.color));
+        }
+        out.push(DrawCmd::PopClip);
     }
 
     /// Scrollbars draw over the content, as rounded thumbs on optional tracks.

@@ -1,8 +1,9 @@
 // M3-EVT-02/03/04: UI events from Rust reach React handlers. The button counts its
 // clicks, stops them from bubbling, prevents pointerdown (so it doesn't steal focus)
 // and focuses the field through a ref. Clicks elsewhere count on the panel. The
-// field (tabIndex 0) shows the keys typed into it; Escape blurs it.
-import { createRoot, type IronElement, Text } from "@iron/react";
+// field (tabIndex 0) shows the keys typed into it; Escape blurs it. The name input
+// is controlled: it upper-cases what's typed and refuses digits.
+import { createRoot, Input, type IronElement, Text } from "@iron/react";
 import { useRef, useState } from "react";
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
   const [panelClicks, setPanelClicks] = useState(0);
   const [typed, setTyped] = useState("");
   const [focused, setFocused] = useState(false);
+  const [name, setName] = useState("");
   const field = useRef<IronElement>(null);
   return (
     <box
@@ -45,6 +47,14 @@ function App() {
       >
         <Text>{`${focused ? "focused" : "idle"}: ${typed}`}</Text>
       </box>
+      <Input
+        className="name"
+        value={name}
+        onChange={(e) => {
+          const v = e.target.value ?? "";
+          if (!/[0-9]/.test(v)) setName(v.toUpperCase());
+        }}
+      />
     </box>
   );
 }

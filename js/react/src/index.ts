@@ -14,6 +14,7 @@ import { ConcurrentRoot } from "react-reconciler/constants";
 import "./events.ts";
 import type {
   IronFocusEvent,
+  IronInputEvent,
   IronKeyboardEvent,
   IronPointerEvent,
   IronScrollEvent,
@@ -27,6 +28,7 @@ export type { IronStyle } from "./style.ts";
 export {
   IronEvent,
   IronFocusEvent,
+  IronInputEvent,
   IronKeyboardEvent,
   IronPointerEvent,
   IronScrollEvent,
@@ -122,6 +124,32 @@ export interface TextProps extends ElementAttrs, EventProps {
 /** A block of text. Strings and `Span`s inside it flow and wrap together. */
 export function Text({ children, ...props }: TextProps): ReactElement {
   return createElement("text" as never, props, children);
+}
+
+/** Props shared by `Input` and `TextArea`. */
+export interface FieldProps extends Omit<ElementAttrs, "checked">, EventProps {
+  style?: IronStyle;
+  /** Controlled text: the field shows this and `onChange` reports edits. */
+  value?: string;
+  /** Initial text of an uncontrolled field. */
+  defaultValue?: string;
+  /** Shown dimmed while the field is empty. */
+  placeholder?: string;
+  readOnly?: boolean;
+  /** Every edit (typing, deleting, pasting); `e.target.value` is the new text. */
+  onChange?: (event: IronInputEvent) => void;
+  onInput?: (event: IronInputEvent) => void;
+  ref?: Ref<Instance>;
+}
+
+/** A one-line text field (CSS type selector `input`). Focusable by default. */
+export function Input(props: FieldProps): ReactElement {
+  return createElement("input" as never, props);
+}
+
+/** A multi-line text field (CSS type selector `textarea`); `rows` sets its default height. */
+export function TextArea(props: FieldProps & { rows?: number }): ReactElement {
+  return createElement("textarea" as never, props);
 }
 
 /** An inline run inside `Text` with its own style (colour, weight, ...). */
