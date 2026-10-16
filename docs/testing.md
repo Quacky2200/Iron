@@ -29,7 +29,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | Render (headless) | [iron_render/tests](../crates/iron_render/tests) | `headless.rs`, `ui.rs` |
 | Golden images | `tests/golden/<id>.png` | compared inside `ui.rs` |
 | Layout fixtures | `tests/layout/*.json` | run by `layout_fixtures.rs` |
-| JS bundles for Rust | `tests/fixtures/*.js` (built from `tests/fixtures/src`) | `boxes.js`, `events.js`, `hello.js`, `throws.js` |
+| JS bundles for Rust | `tests/fixtures/*.js` (built from `tests/fixtures/src`) | `boxes.js`, `events.js` (also has an `Input`), `hello.js`, `throws.js` |
 | Benchmarks | `crates/*/benches` (Criterion) | `restyle.rs`, `layout.rs`, `commits.rs` |
 
 ### `iron_ui` integration tests ([crates/iron_ui/tests](../crates/iron_ui/tests))
@@ -45,6 +45,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `focus.rs` | Tab order, focus events, `:focus-visible` |
 | `clip.rs` | `overflow` and `clip-path` in draw list and hit testing |
 | `scroll.rs` | Scrolling (M3c step 4b): offsets and hit testing, which axes scroll, wheel chaining, Shift+wheel, key scrolling, Tab into view, script `scrollTo/By/IntoView`, scrollbar geometry, thumb drag and track paging, inherited `scrollbarColor` |
+| `editor.rs` | Text fields (M3c step 5): sizing from the font, typing and editing keys with `input` events, textarea Enter and line moves, prevented `keydown`, controlled `value` / `defaultValue`, read-only and disabled, tab order, pointer caret / word / drag selection, cut / copy / paste requests, draw list (selection, blinking caret, dimmed placeholder, caret kept in view), text cursor, IME pre-edit and commit, focus loss dropping pre-edit |
 | `react_quickjs.rs`, `events_quickjs.rs` | Real React in QuickJS driving a real `UiTree` |
 | `common/mod.rs` | `Dom` builder helper: builds ops with a CSS string and lays out a 400x400 tree |
 
@@ -111,6 +112,8 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-TXT`, `M3-FNT` | Text and fonts | `iron_ui/tests/text.rs`, `ui.rs` goldens `M3-TXT-*` |
 | `M3-CSS` | Stylesheets and cascade | `iron_ui/src/css.rs` tests, `iron_ui/tests/css.rs` |
 | `M3-EVT` | Hit testing, events, focus, clipping, scrolling | `iron_ui/tests/{hit,pointer,focus,clip,scroll,events_quickjs}.rs`, `js/react/test/events.test.tsx`, goldens `M3-EVT-05-clip` and `M3-EVT-05-scroll` (scrolled content clipped to a rounded scroller with overlay scrollbars) |
+| `M3-INP` | Text fields: editing, selection, controlled values, clipboard | `iron_ui/tests/editor.rs`, `iron_ui/tests/events_quickjs.rs` (real React field), `js/react/test/events.test.tsx` (`onChange`, controlled restore), golden `M3-INP-01-fields` in `iron_render/tests/ui.rs` (filled input, placeholder, focused input with selection) |
+| `M3-IME` | IME composition | `iron_platform/src/input.rs` (`converts_ime_events`), `iron_ui/tests/editor.rs` |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
 | `*-MAN` | Manual checks (resize, IME) | no automated test; listed in TODO.md |
 

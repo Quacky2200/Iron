@@ -34,6 +34,9 @@ flowchart LR
   `MouseWheel(WheelDelta)`. winit's wheel deltas are positive when scrolling up; the code negates
   them to the DOM convention (positive y = scroll down). `Lines` (notched wheels) and `Pixels`
   (touchpads) stay distinct.
+- `Ime(ImeEvent)` for input methods: `Enabled`, `Preedit(text, cursor)` (cursor/selection as byte
+  offsets, `None` hides the caret, empty text ends composing), `Commit(text)`, `Disabled`. winit only
+  sends these after the app calls `set_ime_allowed(true)` (see below).
 - `Modifiers`, `Resized`, `Focused`, `CloseRequested`.
 
 [platform.rs](../crates/iron_platform/src/platform.rs): `Platform::run` owns the winit event loop.
@@ -41,8 +44,8 @@ flowchart LR
 `PlatformApp::window_ready`), calls `PlatformApp::frame` on `RedrawRequested`, forwards converted
 events to `PlatformApp::input`, and in `about_to_wait` checks `should_exit`, polls gamepads and
 requests the next redraw (continuous rendering). Gamepads (`gilrs`) are polled and only logged;
-turning them into events is TODO.md M3c step 5. `text` on `KeyDown` is not consumed yet (waiting
-for `<input>`/IME, M3c step 4).
+turning them into events is still TODO. `iron_platform` re-exports `winit::dpi` so the app can build
+IME area arguments.
 
 ## App glue ([main.rs](../crates/iron_app/src/main.rs))
 
@@ -62,6 +65,11 @@ for `<input>`/IME, M3c step 4).
   `call_global`; it returns `true` only if the JS result is `Bool(true)`, i.e. a handler called
   `preventDefault()`. JS errors are logged and treated as "not prevented". If the game has no
   `__iron_ui_event`, nothing is dispatched but built-in behaviour (hover, focus, Tab) still works.
+- `KeyDown` forwards `text` (what the key types). `InputEvent::Ime` becomes `Input::ImePreedit` or
+  `Input::ImeCommit`; `Ime::Disabled` becomes an empty `ImePreedit` (ends composing).
+- After each `handle_ui`, `Interaction::take_clipboard()` is serviced and `update_ime` runs (see
+  [Text fields](#text-fields-m3c-step-5)); `frame()` also calls `UiTree::set_time(now_ms)` (caret
+  blink) and `update_ime` (the caret may have moved with layout).
 - Script ops `focus`, `blur` (and `scrollTo`, `scrollBy`, `scrollIntoView`, which map to `Input::ScrollTo/ScrollBy/ScrollIntoView`) are
   turned into `Input` values in `App::tick`. At the end of each tick the app sends `Input::Refresh`.
 
@@ -107,10 +115,10 @@ queues restyle keys, see [css.md](css.md)) and **returns the events to dispatch,
 
 `UiEvent` carries the DOM-like fields (position, `button`, `buttons` bitmask 1/2/4/8/16, `detail`
 click count, wheel deltas, modifiers, key/code/repeat, focus `related`, optional `ScrollInfo`).
-`script_args()` builds `[type, path, data, keys?]` where `data` is a fixed-order number array:
+`script_args()` builds `[type, path, data, strings?]` where `data` is a fixed-order number array:
 `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
-scrollWidth, scrollHeight, clientWidth, clientHeight]`, with `keys = [key, code]` for keyboard
-events only. [events.ts](../js/react/src/events.ts) decodes by index, so both must change together.
+scrollWidth, scrollHeight, clientWidth, clientHeight]`, with `strings = [key, code]` for keyboard
+events and `[value]` for `input` events (`UiEvent.value`). [events.ts](../js/react/src/events.ts) decodes by index, so both must change together.
 
 ## `Interaction` ([interaction.rs](../crates/iron_ui/src/interaction.rs))
 
@@ -131,7 +139,8 @@ default; **default actions run after the script sees the event**, like a browser
 
 Focus details:
 
-- `focusable(tree, id)`: has a `tabIndex`, not `disabled`, and `is_displayed` (no `display: none`
+- `focusable(tree, id)`: has a tab index (`tab_index`: the `tabIndex` attribute, or 0 for text fields,
+  which are focusable by default like in HTML), not `disabled`, and `is_displayed` (no `display: none`
   ancestor). Plain `<box>`es without `tabIndex` are never focusable.
 - `tab_order(tree)`: depth-first in tree order skipping generated nodes and `display: none`
   subtrees; positive `tabIndex` first (ascending, stable), then `tabIndex = 0` in tree order;
@@ -167,3 +176,70 @@ refreshes hover (content moved under the pointer).
 User scrolling needs `overflow: scroll` or `auto` on that axis; `hidden` scrolls only from scripts;
 `clip` and `visible` never scroll. The `scroll` event does not bubble and carries `ScrollInfo`
 (`data[10..16]` = scrollLeft, scrollTop, scrollWidth, scrollHeight, clientWidth, clientHeight).
+
+## Text fields (M3c step 5)
+
+Model, sizing and drawing: [ui-tree.md](ui-tree.md#text-fields). `Interaction` routes input to the
+focused field first, then falls back to the normal defaults.
+
+**Keys.** After `keydown` is dispatched and not prevented, `UiTree::editor_key(focused, key, text,
+modifiers)` runs `Editor::key` and returns a `KeyOutcome { handled, changed, copy, paste }`.
+`handled` stops Tab handling and key scrolling, so a field consumes arrows, Home/End, Backspace,
+Delete and printable keys. Unhandled keys (Tab, Escape, F-keys, Ctrl+other letters) fall through.
+"Ctrl" below is Command on macOS (`ctrl || meta`); AltGr (reported as Ctrl+Alt) still types.
+
+| Keys | Action |
+|---|---|
+| Left / Right | Move; Shift selects; Ctrl moves by word |
+| Up / Down | Textarea: move a line (Shift selects). Input: go to start / end |
+| Home / End | Start / end of the line; Ctrl+Home/End (and any Home/End in an input) go to the text start / end; Shift selects |
+| Backspace / Delete | Delete back / forward; Ctrl deletes a word |
+| Enter | Textarea inserts a newline; an input does not handle it |
+| Typed text | Replaces the selection; an input strips `\n` and `\r` |
+| Ctrl+A | Select all |
+| Ctrl+C / Ctrl+X | `copy` = the selected text; cut also deletes it (editable fields only) |
+| Ctrl+V | `paste = true` (editable fields only) |
+
+`readOnly` fields still move, select and copy but never change; `disabled` fields are inert (and not
+focusable). When the text changed (compared before and after), `Interaction::input_event` dispatches
+an `input` event (`EventKind::Input`, bubbles) with `UiEvent.value` = the new text.
+
+**Pointer.** A primary press that is not prevented focuses the nearest focusable ancestor; if that is
+a field, `editor_pointer` applies `PointerSelect::Press { clicks, shift }` using the DOM click count
+(1 places the caret, Shift+1 extends, 2 selects a word, 3+ a line; in an input, all) and remembers
+`selecting`. `PointerMove` while `selecting` sends `PointerSelect::Drag`; the primary `PointerUp`
+clears it. Coordinates are absolute logical px, converted to the content box plus the field scroll.
+
+**Values.** *Controlled* (React `value` prop): the attribute is the truth. Each edit sends `input`,
+the handler sets state, and the new `value` comes back as `SET_ATTRS` (a no-op if equal, so the caret
+is undisturbed). If the handler rejects the edit, React puts the old value back, see
+[react.md](react.md#text-fields). *Uncontrolled* (`defaultValue` or neither): Rust keeps what was
+typed and scripts read it from `input` events.
+
+**Clipboard.** `iron_ui` has no clipboard dependency. A copy, cut or paste key stores a
+`Clipboard::Copy(text)` or `Clipboard::Paste` request on `Interaction`; the app calls
+`take_clipboard()` right after `handle`. `Copy` is written with `arboard` (`App::clipboard()` opens
+it lazily and logs a warning if unavailable). `Paste` reads the text and feeds it back as
+`Input::Paste(text)`, which calls `editor_insert` on the focused field and sends `input` if the text
+changed (read-only and disabled fields refuse; an input turns line breaks into spaces).
+
+**IME.** winit `Ime` -> `InputEvent::Ime` -> `Input::ImePreedit { text, cursor }` /
+`Input::ImeCommit(text)`:
+
+```mermaid
+flowchart LR
+  A[App::update_ime] -->|ime_area Some / None| B[set_ime_allowed]
+  A -->|area changed| C[set_ime_cursor_area]
+  W[winit Ime] --> P[ImePreedit] --> E[editor_compose: pre-edit shown at the caret]
+  W --> M[ImeCommit] --> X[editor_end_compose + editor_insert + input event]
+```
+
+- `Interaction::ime_area(tree)` is `Some` only while an editable (not disabled, not read-only) field is
+  focused: the candidate-window rectangle in absolute logical px (pre-edit text or caret, shifted by
+  the field scroll). `update_ime` calls `set_ime_allowed` when that flips and `set_ime_cursor_area`
+  when the rectangle changes.
+- `ImePreedit` reaches the focused field only if it allows IME; empty text clears the composition.
+  Pre-edit text lives in the Parley editor (`set_compose`), not in the value, so no `input` event is
+  sent until the commit, and `set_value` is ignored while composing.
+- `ImeCommit` first drops any pre-edit (`end_compose`), then inserts the text like a paste.
+- Moving focus away mid-composition drops the pre-edit (`set_focus` calls `editor_end_compose`).

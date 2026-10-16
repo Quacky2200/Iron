@@ -21,12 +21,12 @@ is large). A `Node` holds:
 
 | Field | Meaning |
 |---|---|
-| `kind` | `"box"`, `"text"`, `"span"`, `"#text"` (`TEXT_NODE`), or `"root"` |
+| `kind` | `"box"`, `"text"`, `"span"`, `"input"`, `"textarea"`, `"#text"` (`TEXT_NODE`), or `"root"` |
 | `parent`, `children` | Tree links (ordered) |
 | `style: taffy::Style` | Layout properties |
 | `visual: Visual` | Paint-only properties ([style.rs](../crates/iron_ui/src/style.rs)) |
 | `text` | Characters of a `#text` node |
-| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
+| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
 | `inline` | Inline `style` declarations, in the order set (later wins) |
 | `generated` | `Some(Before/After)` for stylesheet-generated content |
 | `vars` | Computed custom properties (`Rc`, shared with the parent when unchanged) |
@@ -151,7 +151,7 @@ rounded hit testing), `ClipShape` (rect with elliptical corners), and `enum Draw
 `UiTree::draw_list()` runs `layout_if_needed` then `collect(ROOT)` recursively. Per node, in
 CSS painting order: `PushClip` for the element's own `clip-path`/`clip: rect()`, `BackdropBlur`,
 `PushLayer` if needed, outer shadows (last listed first, so the first shadow ends on top), the
-`Quad`, inset shadows, text shadows then text, then the children, scrollbars and `PopLayer`/`PopClip`.
+`Quad`, inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`.
 
 Decisions worth knowing:
 
@@ -191,6 +191,49 @@ Decisions worth knowing:
   the track expanded by the margin so thin bars are easy to grab.
 - Input handling, wheel chaining and the `scroll` event are in
   [input-and-events.md](input-and-events.md#scrolling-m3c-step-4b).
+
+## Text fields
+
+`<input>` and `<textarea>` are `box`-like elements (styled, bordered, clipped by CSS like any
+other) whose text is owned by an `Editor` in [editor.rs](../crates/iron_ui/src/editor.rs):
+`UiTree.editors: HashMap<NodeId, Editor>`, created in `CREATE` for `is_editor_kind` and removed with
+the node. Each `Editor` wraps a Parley `PlainEditor<Brush>` (text, selection, IME composition; DESIGN
+D7) plus `multiline`, `rows`, an optional placeholder layout, the field's own `scroll` and the last
+content-box `size`.
+
+- **Sizing**: a field is a *measured leaf* like a text block (`set_measured`); the measure callback
+  falls back to `Editor::intrinsic_size`: `known_width` or a default (`INPUT_WIDTH` 160 px,
+  `TEXTAREA_WIDTH` 240 px) by one line (textarea: `rows`, default `TEXTAREA_ROWS` 2) of the editor's
+  line height. Explicit `width`/`height` win. Attribute changes mark the node dirty.
+- **Attributes** (`SET_ATTRS` in `apply_commit`): a `value` attribute (controlled) replaces the text
+  if it differs (`Editor::set_value`; skipped while composing; the caret goes to the end at the next
+  layout, like browsers). `defaultValue` only fills a field that never had a value or default.
+  `placeholder` and `rows` are passed on. `readOnly` and `disabled` are read from `Attrs` when keys
+  arrive.
+- **Style sync**: `refresh_editors` runs at the end of `layout_if_needed`. For every field it takes
+  `computed_text(id)` (so `color`, `font*`, `line-height`, spacing come from the cascade), calls
+  `Editor::set_style` (restyles only if the `ComputedText` changed, which also drops the placeholder
+  layout), computes `content_box(id)` (rect minus border and padding) and calls `Editor::refresh`:
+  sets the wrap width (textarea only; an input never wraps), moves the caret to the end if a script
+  just set the text, refreshes the Parley layout, builds the placeholder layout in the text colour at
+  half alpha, and runs `keep_caret_visible`.
+- **Caret in view**: `Editor::scroll` is the field's own offset, one axis only (x for input, y for
+  textarea), adjusted to show the caret rectangle and clamped to `content + caret width - view`.
+  It is not a CSS scroll offset and creates no scrollbars.
+- **Blink**: `UiTree::set_time(now_ms)` (the app calls it every frame) feeds `caret_on`: on for the
+  first `CARET_BLINK_MS` (530 ms) after the last `touch` (any key, press, paste, compose), then
+  alternating. Editing calls set `needs_layout`.
+- **Drawing** (`editor_cmds`, after the field's own quad and shadows, before children): `PushClip`
+  to the padding box with inner corner radii; if focused and not disabled, selection quads
+  (`SELECTION`, blue at 0.4 alpha); the text (or the placeholder while empty) as one `Text` command
+  at the content origin minus `scroll`; the caret quad (1.5 px wide, text colour) when in the "on"
+  half of the blink; `PopClip`. Unfocused fields show no selection and no caret.
+- **Cursor**: `auto` is `text` over fields too.
+- **API used by [Interaction](input-and-events.md#text-fields-m3c-step-5)**: `is_editor`,
+  `editor_value`, `editor_selection`, `editor_key` (refuses disabled), `editor_insert` (refuses
+  disabled and read-only), `editor_pointer` (absolute px to content-box px), `editor_compose`,
+  `editor_end_compose`, `editor_ime_area` (caret or pre-edit box in absolute px, shifted by the
+  field scroll).
 
 ## Gotchas
 
