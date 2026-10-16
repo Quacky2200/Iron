@@ -3,6 +3,24 @@
 
 type Length = number | string;
 
+export type BlendMode =
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion"
+  | "hue"
+  | "saturation"
+  | "color"
+  | "luminosity";
+
 export interface IronStyle {
   // Layout
   /** `contents` drops the box: children join the parent's layout. */
@@ -124,6 +142,10 @@ export interface IronStyle {
   backgroundRepeat?: string;
   /** `border-box` (default), `padding-box`, `content-box` or `text` (gradient text). */
   backgroundClip?: string;
+  /** How each background layer blends with the layers and colour beneath it. */
+  backgroundBlendMode?: string;
+  /** How the element blends with what's beneath it. */
+  mixBlendMode?: BlendMode;
   border?: string;
   borderColor?: string;
   borderRadius?: Length;

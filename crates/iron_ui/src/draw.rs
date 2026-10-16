@@ -4,7 +4,9 @@
 use std::sync::Arc;
 
 use crate::Rgba;
-use crate::paint::{BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize};
+use crate::paint::{
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode,
+};
 
 /// An axis-aligned rectangle in logical pixels (window space).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -212,11 +214,13 @@ pub enum DrawCmd {
         border: [f32; 4],
     },
     /// Following commands draw into an offscreen layer covering `bounds`, which is
-    /// blurred by `blur` and composited with `opacity` at the matching `PopLayer`.
+    /// blurred by `blur` and composited with `opacity` and `blend` at the matching
+    /// `PopLayer`.
     PushLayer {
         bounds: Rect,
         blur: f32,
         opacity: f32,
+        blend: BlendMode,
     },
     PopLayer,
     /// Following commands are clipped to `shape` (intersected with any clip already

@@ -499,7 +499,9 @@ and `@font-face`.
      `background-position-x`/`-y`; `background-repeat: round | space` (and per-axis pairs);
      multiple background layers (comma lists, cycled like CSS) — `M3-BG-02`. Images still
      position against the border box (no `background-origin` yet)
-   - [ ] `background-blend-mode` and `mix-blend-mode` (`normal`, `multiply`, `lighten`, `screen`, ...)
+   - [x] `background-blend-mode` and `mix-blend-mode`: all 16 W3C modes, blended in sRGB. A
+     blended element draws into a layer that the composite pass blends with a copy of its
+     backdrop; blended background layers do the same inside an isolated group — `M3-BG-03`
    - [ ] `border-style`: `dashed`, `dotted`, `double` (then `groove`/`ridge`/`inset`/`outset`); per-side
      colours (`border-top-color`, ...) and per-side styles
    - [ ] Elliptical corner radii (`border-radius: 10px / 20px`)

@@ -139,7 +139,8 @@ struct CompositeParams {
     scale: f32,
     /// Clip table index (1-based, 0 = none).
     clip: f32,
-    _pad: f32,
+    /// Blend mode (`BlendMode::index`); 0 composites normally.
+    blend: f32,
 }
 
 /// A scissor rectangle in physical pixels.
@@ -179,6 +180,8 @@ enum Step {
         area: PxRect,
         opacity: f32,
         clip: u32,
+        /// A blend mode other than normal, with a copy of `dst` to read as the backdrop.
+        blend: Option<(u32, usize)>,
     },
 }
 
@@ -198,6 +201,8 @@ pub struct UiRenderer {
     blur_pipeline: wgpu::RenderPipeline,
     blur_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
+    /// Composites with a blend mode: the shader mixes source and backdrop itself.
+    composite_blend_pipeline: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
     blit_layout: wgpu::BindGroupLayout,
     blit_pipeline_layout: wgpu::PipelineLayout,
@@ -294,6 +299,10 @@ impl UiRenderer {
                 sampler_entry,
                 uniform(3, wgpu::ShaderStages::FRAGMENT),
                 storage(4, wgpu::ShaderStages::FRAGMENT),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    ..texture
+                },
             ],
         });
         let blit_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -417,13 +426,19 @@ impl UiRenderer {
             "ui blur",
             &pipeline_layout(&blur_layout),
             "fs_blur",
-            replace,
+            replace.clone(),
         );
         let composite_pipeline = fullscreen(
             "ui composite",
             &pipeline_layout(&composite_layout),
             "fs_composite",
             premultiplied,
+        );
+        let composite_blend_pipeline = fullscreen(
+            "ui composite blend",
+            &pipeline_layout(&composite_layout),
+            "fs_composite_blend",
+            replace,
         );
         let blit_pipeline_layout = pipeline_layout(&blit_layout);
 
@@ -468,6 +483,7 @@ impl UiRenderer {
             blur_pipeline,
             blur_layout,
             composite_pipeline,
+            composite_blend_pipeline,
             composite_layout,
             blit_layout,
             blit_pipeline_layout,
@@ -532,7 +548,7 @@ impl UiRenderer {
         let mut current = 0usize;
         let mut batch_start = 0u32;
         // (parent target, bounds, blur, opacity, the clip stack outside the layer)
-        let mut layer_stack: Vec<(usize, Rect, f32, f32, Vec<u32>)> = Vec::new();
+        let mut layer_stack: Vec<(usize, Rect, f32, f32, u32, Vec<u32>)> = Vec::new();
         // Clips: a layer's content starts unclipped and the layer is clipped when it
         // is composited, so each layer level has its own stack.
         let mut clips = Clips::default();
@@ -780,6 +796,7 @@ impl UiRenderer {
                     bounds,
                     blur,
                     opacity,
+                    blend,
                 } => {
                     tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
@@ -794,13 +811,15 @@ impl UiRenderer {
                         *bounds,
                         *blur,
                         *opacity,
+                        blend.index(),
                         std::mem::take(&mut clip_stack),
                     ));
                     current = layer;
                     stats.layers += 1;
                 }
                 DrawCmd::PopLayer => {
-                    let Some((parent, bounds, blur, opacity, outer_clips)) = layer_stack.pop()
+                    let Some((parent, bounds, blur, opacity, blend, outer_clips)) =
+                        layer_stack.pop()
                     else {
                         tracing::warn!("PopLayer without PushLayer; ignored");
                         continue;
@@ -826,12 +845,23 @@ impl UiRenderer {
                                 sigma: blur * scale,
                             });
                         }
+                        let blend = (blend != 0).then(|| {
+                            // The shader reads what's beneath from a copy of the parent.
+                            let backdrop = frame_textures.len();
+                            frame_textures.push(self.take_texture(gpu, size));
+                            steps.push(Step::Copy {
+                                src: parent,
+                                dst: backdrop,
+                            });
+                            (blend, backdrop)
+                        });
                         steps.push(Step::Composite {
                             src: current,
                             dst: parent,
                             area: visible_area,
                             opacity,
                             clip: layer_clip,
+                            blend,
                         });
                     }
                     current = parent;
@@ -866,6 +896,7 @@ impl UiRenderer {
                         area,
                         opacity: 1.0,
                         clip: own_clip,
+                        blend: None,
                     });
                 }
             }
@@ -874,7 +905,7 @@ impl UiRenderer {
         tag(&mut instances, &mut clip_from, clip);
         flush(&mut steps, &instances, &mut batch_start, current);
         // Close layers left open by an unbalanced list.
-        while let Some((parent, bounds, _, opacity, outer_clips)) = layer_stack.pop() {
+        while let Some((parent, bounds, _, opacity, _, outer_clips)) = layer_stack.pop() {
             tracing::warn!("PushLayer without PopLayer; closing it");
             if let Some(area) = to_px(bounds) {
                 steps.push(Step::Composite {
@@ -883,6 +914,7 @@ impl UiRenderer {
                     area,
                     opacity,
                     clip: outer_clips.last().copied().unwrap_or(0),
+                    blend: None,
                 });
             }
             current = parent;
@@ -1116,15 +1148,20 @@ impl UiRenderer {
                     area,
                     opacity,
                     clip,
+                    blend,
                 } => {
                     settle(&mut encoder, &mut pending_clear, &mut stats, *src);
+                    if let Some((_, backdrop)) = blend {
+                        settle(&mut encoder, &mut pending_clear, &mut stats, *backdrop);
+                    }
+                    let backdrop = blend.map_or(*src, |(_, b)| b);
                     let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("ui composite params"),
                         contents: bytemuck::bytes_of(&CompositeParams {
                             opacity: *opacity,
                             scale,
                             clip: *clip as f32,
-                            _pad: 0.0,
+                            blend: blend.map_or(0.0, |(mode, _)| mode as f32),
                         }),
                         usage: wgpu::BufferUsages::UNIFORM,
                     });
@@ -1150,6 +1187,12 @@ impl UiRenderer {
                                 binding: 4,
                                 resource: self.clips.as_entire_binding(),
                             },
+                            wgpu::BindGroupEntry {
+                                binding: 5,
+                                resource: wgpu::BindingResource::TextureView(
+                                    &frame_textures[backdrop].view,
+                                ),
+                            },
                         ],
                     });
                     let load = load_for(&mut pending_clear, *dst);
@@ -1158,7 +1201,11 @@ impl UiRenderer {
                         color_attachments: &[Some(attachment(&frame_textures[*dst].view, load))],
                         ..Default::default()
                     });
-                    pass.set_pipeline(&self.composite_pipeline);
+                    pass.set_pipeline(if blend.is_some() {
+                        &self.composite_blend_pipeline
+                    } else {
+                        &self.composite_pipeline
+                    });
                     pass.set_bind_group(0, &bind_group, &[]);
                     pass.set_scissor_rect(area.x, area.y, area.w, area.h);
                     pass.draw(0..3, 0..1);

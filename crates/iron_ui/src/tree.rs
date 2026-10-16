@@ -16,7 +16,7 @@ use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
 use crate::paint::{
-    BackgroundClip, BackgroundImage, BackgroundRepeat, Overflow, Shadow, inner_corners,
+    BackgroundClip, BackgroundImage, BackgroundRepeat, BlendMode, Overflow, Shadow, inner_corners,
     resolve_radii,
 };
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
@@ -104,6 +104,57 @@ fn background_layers(
         });
     }
     (fills, text_fill)
+}
+
+/// A box whose background layers blend with each other (`background-blend-mode`):
+/// an isolated group holding the colour, then each layer bottom first (blended ones
+/// in their own layer), then the border.
+fn blended_background(quad: Quad, v: &Visual, out: &mut Vec<DrawCmd>) {
+    let layer = |blend| DrawCmd::PushLayer {
+        bounds: quad.rect,
+        blur: 0.0,
+        opacity: 1.0,
+        blend,
+    };
+    out.push(layer(BlendMode::Normal));
+    out.push(DrawCmd::Quad(Quad {
+        images: Vec::new(),
+        border_color: Rgba::TRANSPARENT,
+        ..quad.clone()
+    }));
+    // `quad.images` is bottom first; blend modes are listed top first.
+    let count = v.background_images.len();
+    let mut images = quad.images.iter();
+    for (i, image) in v.background_images.iter().enumerate().rev() {
+        let clip = v.background_clips[i % v.background_clips.len()];
+        if image.is_none() || clip == BackgroundClip::Text {
+            continue;
+        }
+        let Some(fill) = images.next() else {
+            break;
+        };
+        let blend = v.background_blends[i % v.background_blends.len()];
+        let single = DrawCmd::Quad(Quad {
+            background: Rgba::TRANSPARENT,
+            images: vec![fill.clone()],
+            border_color: Rgba::TRANSPARENT,
+            ..quad.clone()
+        });
+        // The bottom layer blends with the colour too, like CSS.
+        if blend == BlendMode::Normal || (i + 1 == count && quad.background.a <= 0.0) {
+            out.push(single);
+        } else {
+            out.push(layer(blend));
+            out.push(single);
+            out.push(DrawCmd::PopLayer);
+        }
+    }
+    out.push(DrawCmd::Quad(Quad {
+        background: Rgba::TRANSPARENT,
+        images: Vec::new(),
+        ..quad
+    }));
+    out.push(DrawCmd::PopLayer);
 }
 
 /// The `background-clip` box and its corner radii (outer radii shrunk by the inset,
@@ -2164,7 +2215,13 @@ impl<L: LayoutEngine> UiTree<L> {
             border: l.border,
             radii,
         };
-        if quad.is_visible() {
+        let blends = &v.background_blends;
+        if quad.is_visible()
+            && !quad.images.is_empty()
+            && blends.iter().any(|b| *b != BlendMode::Normal)
+        {
+            blended_background(quad, v, &mut own);
+        } else if quad.is_visible() {
             own.push(DrawCmd::Quad(quad));
         }
         for s in v
@@ -2205,6 +2262,7 @@ impl<L: LayoutEngine> UiTree<L> {
                             bounds: copy.bounds.expand(3.0 * sigma),
                             blur: sigma,
                             opacity: 1.0,
+                            blend: BlendMode::Normal,
                         });
                         own.push(DrawCmd::Text(copy));
                         own.push(DrawCmd::PopLayer);
@@ -2237,12 +2295,13 @@ impl<L: LayoutEngine> UiTree<L> {
         }
 
         let group_opacity = v.opacity < 1.0 && (!node.children.is_empty() || own.len() > 1);
-        if v.filter_blur > 0.0 || group_opacity {
+        if v.filter_blur > 0.0 || group_opacity || v.mix_blend != BlendMode::Normal {
             let start = out.len();
             out.push(DrawCmd::PushLayer {
                 bounds: rect,
                 blur: v.filter_blur,
                 opacity: v.opacity,
+                blend: v.mix_blend,
             });
             out.extend(own);
             self.collect_children(node, &text, overflow_clip, out);

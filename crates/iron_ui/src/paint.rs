@@ -574,6 +574,78 @@ impl BackgroundClip {
     }
 }
 
+/// `mix-blend-mode` / `background-blend-mode`: how colours combine with what's
+/// beneath them (the W3C compositing modes, blended in sRGB).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlendMode {
+    #[default]
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
+}
+
+impl BlendMode {
+    const NAMES: [&str; 16] = [
+        "normal",
+        "multiply",
+        "screen",
+        "overlay",
+        "darken",
+        "lighten",
+        "color-dodge",
+        "color-burn",
+        "hard-light",
+        "soft-light",
+        "difference",
+        "exclusion",
+        "hue",
+        "saturation",
+        "color",
+        "luminosity",
+    ];
+    const ALL: [BlendMode; 16] = [
+        Self::Normal,
+        Self::Multiply,
+        Self::Screen,
+        Self::Overlay,
+        Self::Darken,
+        Self::Lighten,
+        Self::ColorDodge,
+        Self::ColorBurn,
+        Self::HardLight,
+        Self::SoftLight,
+        Self::Difference,
+        Self::Exclusion,
+        Self::Hue,
+        Self::Saturation,
+        Self::Color,
+        Self::Luminosity,
+    ];
+
+    pub fn parse(s: &str) -> Option<Self> {
+        let i = Self::NAMES.iter().position(|n| *n == s.trim())?;
+        Some(Self::ALL[i])
+    }
+
+    /// The mode's number in the composite shader (`normal` is 0).
+    pub fn index(self) -> u32 {
+        Self::ALL.iter().position(|m| *m == self).unwrap_or(0) as u32
+    }
+}
+
 /// A comma-separated list of background layer values (`a, b, c`), top layer first.
 pub fn parse_layers<T>(s: &str, item: impl Fn(&str) -> Option<T>) -> Option<Vec<T>> {
     split_top_level(s, ',').into_iter().map(item).collect()
@@ -1039,6 +1111,22 @@ mod tests {
         assert_eq!(parse_blur_filter("brightness(2)"), None);
         assert_eq!(parse_blur_filter("blur(-1px)"), None);
         assert_eq!(parse_blur_filter("blur(10%)"), None);
+    }
+
+    // M3-BG-03
+    #[test]
+    fn blend_modes_parse_to_shader_indices() {
+        assert_eq!(BlendMode::parse("normal").map(BlendMode::index), Some(0));
+        assert_eq!(BlendMode::parse("multiply"), Some(BlendMode::Multiply));
+        assert_eq!(
+            BlendMode::parse(" color-dodge ").map(BlendMode::index),
+            Some(6)
+        );
+        assert_eq!(
+            BlendMode::parse("luminosity").map(BlendMode::index),
+            Some(15)
+        );
+        assert_eq!(BlendMode::parse("plus-darker"), None);
     }
 
     // M3-BG-01

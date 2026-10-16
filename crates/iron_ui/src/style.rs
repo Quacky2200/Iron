@@ -18,7 +18,7 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    ClipPath, Corners, Len, ObjectFit, Overflow, Shadow, parse_background_image,
+    BlendMode, ClipPath, Corners, Len, ObjectFit, Overflow, Shadow, parse_background_image,
     parse_background_position, parse_background_repeat, parse_background_size, parse_blur_filter,
     parse_clip_rect, parse_layers, parse_radii, parse_shadows, split_top_level,
 };
@@ -38,6 +38,10 @@ pub struct Visual {
     pub background_positions: Vec<BackgroundPosition>,
     pub background_repeats: Vec<BackgroundRepeat>,
     pub background_clips: Vec<BackgroundClip>,
+    /// `backgroundBlendMode`, per layer like the other background lists.
+    pub background_blends: Vec<BlendMode>,
+    /// `mixBlendMode`: blends the element (as a group) with what's beneath it.
+    pub mix_blend: BlendMode,
     pub border_color: Rgba,
     /// `borderColor: currentColor` (also the CSS default when `border` omits a colour).
     pub border_current: bool,
@@ -93,6 +97,8 @@ impl Default for Visual {
             background_positions: vec![BackgroundPosition::default()],
             background_repeats: vec![BackgroundRepeat::default()],
             background_clips: vec![BackgroundClip::default()],
+            background_blends: vec![BlendMode::Normal],
+            mix_blend: BlendMode::Normal,
             border_color: Rgba::TRANSPARENT,
             border_current: false,
             border_radius: Corners::all(Len::Px(0.0)),
@@ -610,6 +616,10 @@ pub fn apply_style(
             visual.background_clips =
                 parse_layers(kw()?, BackgroundClip::parse).ok_or_else(invalid)?
         }
+        "backgroundBlendMode" => {
+            visual.background_blends = parse_layers(kw()?, BlendMode::parse).ok_or_else(invalid)?
+        }
+        "mixBlendMode" => visual.mix_blend = BlendMode::parse(kw()?).ok_or_else(invalid)?,
         "objectFit" => visual.object_fit = ObjectFit::parse(kw()?).ok_or_else(invalid)?,
         "objectPosition" => {
             visual.object_position = parse_background_position(kw()?).ok_or_else(invalid)?
@@ -884,6 +894,8 @@ pub(crate) fn copy_prop(
             visual.background_positions = v.background_positions
         }
         "backgroundClip" | "WebkitBackgroundClip" => visual.background_clips = v.background_clips,
+        "backgroundBlendMode" => visual.background_blends = v.background_blends,
+        "mixBlendMode" => visual.mix_blend = v.mix_blend,
         "objectFit" => visual.object_fit = v.object_fit,
         "objectPosition" => visual.object_position = v.object_position,
         "backgroundRepeat" => visual.background_repeats = v.background_repeats,

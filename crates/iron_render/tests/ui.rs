@@ -516,6 +516,99 @@ fn background_clip_layers_space_and_gradient_text() {
     assert_golden("M3-BG-02", 100, 210, &f.pixels, TOLERANCE);
 }
 
+// M3-BG-03
+#[test]
+fn blend_modes() {
+    let mut s = Scene::new();
+    // Each row: a backdrop, then a box over it with `mixBlendMode`.
+    let rows = [
+        ("rgb(200, 100, 50)", "rgb(128, 128, 128)", "multiply"),
+        ("rgb(200, 100, 50)", "rgb(0, 0, 255)", "screen"),
+        ("white", "rgb(255, 0, 0)", "difference"),
+        ("rgb(255, 0, 0)", "rgb(128, 128, 128)", "color"),
+    ];
+    for (i, (below, above, mode)) in rows.iter().enumerate() {
+        let y = i as f64 * 20.0;
+        s.add(
+            0,
+            &at(0.0, y, 100.0, 20.0, &[("backgroundColor", (*below).into())]),
+        );
+        s.add(
+            0,
+            &at(
+                50.0,
+                y,
+                50.0,
+                20.0,
+                &[
+                    ("backgroundColor", (*above).into()),
+                    ("mixBlendMode", (*mode).into()),
+                ],
+            ),
+        );
+    }
+    // background-blend-mode: a grey gradient layer multiplied into the colour,
+    // isolated from the blue box beneath the element.
+    s.add(
+        0,
+        &at(
+            0.0,
+            80.0,
+            100.0,
+            20.0,
+            &[("backgroundColor", "blue".into())],
+        ),
+    );
+    s.add(
+        0,
+        &at(
+            50.0,
+            80.0,
+            50.0,
+            20.0,
+            &[
+                ("backgroundColor", "rgb(200, 100, 50)".into()),
+                (
+                    "backgroundImage",
+                    "linear-gradient(rgb(128, 128, 128), rgb(128, 128, 128))".into(),
+                ),
+                ("backgroundBlendMode", "multiply".into()),
+            ],
+        ),
+    );
+    let f = render(s, (100, 100), 1.0, BLACK);
+    let near = |p: [u8; 4], want: [u8; 3]| {
+        p[..3]
+            .iter()
+            .zip(want)
+            .all(|(a, b)| (i32::from(*a) - i32::from(b)).abs() <= 3)
+    };
+    let check = |x: u32, y: u32, want: [u8; 3], what: &str| {
+        assert!(
+            near(f.px(x, y), want),
+            "{what}: {:?}, want {want:?}",
+            f.px(x, y)
+        );
+    };
+    check(25, 10, [200, 100, 50], "backdrop untouched");
+    check(75, 10, [100, 50, 25], "multiply");
+    check(75, 30, [200, 100, 255], "screen");
+    check(75, 50, [0, 255, 255], "difference");
+    check(
+        75,
+        70,
+        [77, 77, 77],
+        "color: grey's hue at red's luminosity",
+    );
+    check(
+        75,
+        90,
+        [100, 50, 25],
+        "background-blend-mode multiply, isolated",
+    );
+    assert_golden("M3-BG-03", 100, 100, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {
