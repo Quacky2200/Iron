@@ -351,12 +351,17 @@ fn glyph(in: VsOut) -> vec4<f32> {
         discard;
     }
     let texel = vec2<i32>(in.p0.xy + local);
-    if in.params.y > 0.5 {
+    if in.params.y > 0.5 && in.params.y < 1.5 {
         // Colour glyph (emoji): sRGB texture, decoded to linear on load.
         let c = textureLoad(glyph_color, texel, 0);
         return vec4(c.rgb * c.a, c.a) * in.color0.a;
     }
-    let a = textureLoad(glyph_mask, texel, 0).r;
+    var a = textureLoad(glyph_mask, texel, 0).r;
+    if in.params.y > 1.5 {
+        // `font-smooth: never`: hard edges, no coverage boost.
+        let crisp = select(0.0, 1.0, a >= 0.5);
+        return in.color0 * crisp;
+    }
     if in.params.z >= 0.0 {
         // `background-clip: text`: the gradient over the element's box (p1).
         let c = gradient_color(u32(in.params.z), in.pos.xy / globals.scale, in.p1);

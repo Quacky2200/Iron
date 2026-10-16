@@ -25,7 +25,7 @@ const INTER: &[u8] = include_bytes!("../fonts/InterVariable.ttf");
 const INTER_ITALIC: &[u8] = include_bytes!("../fonts/InterVariable-Italic.ttf");
 
 /// What each glyph run carries through Parley: its colour and its decorations.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Brush {
     pub color: Rgba,
     pub lines: Decoration,
@@ -37,6 +37,14 @@ pub struct Brush {
     pub stroke_width: f32,
     /// `None`: the text colour.
     pub stroke_color: Option<Rgba>,
+    pub smooth: bool,
+}
+
+/// The initial text style's brush (anti-aliased, black).
+impl Default for Brush {
+    fn default() -> Self {
+        Self::of(&ComputedText::default())
+    }
 }
 
 impl Brush {
@@ -50,6 +58,7 @@ impl Brush {
             underline_offset: style.underline_offset,
             stroke_width: style.stroke_width,
             stroke_color: style.stroke_color,
+            smooth: style.smooth,
         }
     }
 }
@@ -320,6 +329,7 @@ fn draw_lines(
                     embolden: synthesis.embolden(),
                     skew: synthesis.skew(),
                     color: style.brush.color,
+                    smooth: style.brush.smooth,
                     stroke: (style.brush.stroke_width > 0.0).then(|| {
                         let b = style.brush;
                         (b.stroke_width, b.stroke_color.unwrap_or(b.color))

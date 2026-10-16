@@ -544,7 +544,9 @@ and `@font-face`.
      (keyed by stroke width) and draws them over the fill. Colour glyphs aren't stroked — `M3-TXT-14`
    - [x] Gradient text: `background-clip: text` (M3d step 3b). s&box's gradient `color` isn't
      added: the standard form covers it
-   - [ ] `caret-color` (with M3c inputs); `font-smooth` / text texture filtering
+   - [x] `caret-color` (inherited; `auto` is the text colour); `font-smooth` (s&box's `auto` /
+     `never` / `always`) and `-webkit-font-smoothing`: `never` / `none` thresholds glyph coverage
+     in the shader for crisp pixel fonts — `M3-TXT-15`
 5. **Effects**
    - [ ] `filter` / `backdrop-filter` functions beyond `blur()`: `brightness()`, `contrast()`,
      `saturate()`, `grayscale()`, `sepia()`, `hue-rotate()`, `invert()`, `opacity()`, and

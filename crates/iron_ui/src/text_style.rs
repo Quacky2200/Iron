@@ -353,6 +353,11 @@ pub struct TextProps {
     /// `currentColor`).
     pub stroke_width: Option<FontLen>,
     pub stroke_color: Option<Option<Rgba>>,
+    /// `caretColor`: `Some(None)` is `auto` (the text colour).
+    pub caret_color: Option<Option<Rgba>>,
+    /// `font-smooth` / `-webkit-font-smoothing`: `Some(false)` draws glyphs without
+    /// anti-aliasing (crisp pixel fonts).
+    pub smooth: Option<bool>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
@@ -392,6 +397,9 @@ pub struct ComputedText {
     pub stroke_width: f32,
     /// `None`: the text colour.
     pub stroke_color: Option<Rgba>,
+    /// `None`: the text colour.
+    pub caret_color: Option<Rgba>,
+    pub smooth: bool,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
@@ -425,6 +433,8 @@ impl Default for ComputedText {
             skip_ink: true,
             stroke_width: 0.0,
             stroke_color: None,
+            caret_color: None,
+            smooth: true,
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
@@ -487,6 +497,8 @@ impl ComputedText {
                 .stroke_width
                 .map_or(self.stroke_width, |l| l.resolve(font_size).max(0.0)),
             stroke_color: props.stroke_color.unwrap_or(self.stroke_color),
+            caret_color: props.caret_color.unwrap_or(self.caret_color),
+            smooth: props.smooth.unwrap_or(self.smooth),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
                 .text_shadow
@@ -558,6 +570,9 @@ pub const TEXT_PROPS: &[&str] = &[
     "textStroke",
     "textStrokeWidth",
     "textStrokeColor",
+    "caretColor",
+    "fontSmooth",
+    "WebkitFontSmoothing",
     "whiteSpace",
     "textShadow",
     "textTransform",
@@ -611,6 +626,8 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             }
             "WebkitTextStrokeWidth" | "textStrokeWidth" => props.stroke_width = None,
             "WebkitTextStrokeColor" | "textStrokeColor" => props.stroke_color = None,
+            "caretColor" => props.caret_color = None,
+            "fontSmooth" | "WebkitFontSmoothing" => props.smooth = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
@@ -811,6 +828,22 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 None => None,
             }));
         }
+        "caretColor" => {
+            props.caret_color = Some(parse!(match s {
+                Some("auto") => Some(None),
+                Some(c) if c.eq_ignore_ascii_case("currentcolor") => Some(None),
+                Some(c) => Rgba::parse(c).map(Some),
+                None => None,
+            }));
+        }
+        "fontSmooth" | "WebkitFontSmoothing" => {
+            props.smooth = Some(parse!(match s {
+                // `font-smooth`, s&box's keywords included.
+                Some("auto" | "always" | "antialiased" | "subpixel-antialiased") => Some(true),
+                Some("never" | "none") => Some(false),
+                _ => None,
+            }));
+        }
         "textDecorationSkipInk" => {
             props.skip_ink = Some(parse!(match s {
                 Some("auto" | "all") => Some(true),
@@ -936,6 +969,31 @@ fn parse_font_shorthand(s: &str) -> Option<FontShorthand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M3-TXT-15
+    #[test]
+    fn caret_color_and_font_smoothing_parse() {
+        let mut p = TextProps::default();
+        set(&mut p, "caretColor", "lime".into());
+        set(&mut p, "fontSmooth", "never".into());
+        let c = ComputedText::default().child(&p);
+        assert_eq!(c.caret_color, Some(Rgba::new(0.0, 1.0, 0.0, 1.0)));
+        assert!(!c.smooth);
+        assert!(!c.child(&TextProps::default()).smooth, "inherited");
+        set(&mut p, "WebkitFontSmoothing", "antialiased".into());
+        set(&mut p, "caretColor", "auto".into());
+        let c = ComputedText::default().child(&p);
+        assert!(c.smooth);
+        assert_eq!(c.caret_color, None);
+        assert!(ComputedText::default().smooth, "smooth by default");
+        for (prop, bad) in [("fontSmooth", "blurry"), ("caretColor", "nope")] {
+            assert_eq!(
+                apply(&mut p, prop, &bad.into()),
+                Some(Err(())),
+                "{prop}: {bad}"
+            );
+        }
+    }
 
     // M3-TXT-14
     #[test]

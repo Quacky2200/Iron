@@ -501,6 +501,30 @@ fn empty_fields_show_the_placeholder_dimmed() {
     assert_eq!(typed.runs[0].color.a, 1.0);
 }
 
+// M3-TXT-15
+#[test]
+fn caret_color_paints_the_caret() {
+    let caret_color = |style: &[(&str, Value)]| {
+        let mut f = Field::new("input", style, &[("value", "hi".into())]);
+        draw(&mut f)
+            .into_iter()
+            .rev()
+            .find_map(|c| match c {
+                DrawCmd::Quad(q) => Some(q.background),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let red = iron_ui::Rgba::new(1.0, 0.0, 0.0, 1.0);
+    let blue = iron_ui::Rgba::new(0.0, 0.0, 1.0, 1.0);
+    assert_eq!(caret_color(&[("caretColor", "red".into())]), red);
+    assert_eq!(
+        caret_color(&[("color", "blue".into()), ("caretColor", "auto".into())]),
+        blue,
+        "auto is the text colour"
+    );
+}
+
 /// The last quad drawn: the caret.
 fn last_quad(f: &mut Field) -> Rect {
     draw(f)

@@ -2691,7 +2691,7 @@ impl<L: LayoutEngine> UiTree<L> {
             && editor.caret_on(self.time_ms)
             && let Some(caret) = editor.caret_rect()
         {
-            out.push(quad(caret, text.color));
+            out.push(quad(caret, text.caret_color.unwrap_or(text.color)));
         }
         out.push(DrawCmd::PopClip);
     }

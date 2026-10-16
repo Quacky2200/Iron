@@ -809,7 +809,17 @@ impl UiRenderer {
                                 p1: [0.0; 4],
                                 color0: color,
                                 color1: [0.0; 4],
-                                params: [KIND_GLYPH, if e.color { 1.0 } else { 0.0 }, -1.0, 0.0],
+                                // y: 1 for colour glyphs, 2 for crisp (unsmoothed) masks.
+                                params: [
+                                    KIND_GLYPH,
+                                    match (e.color, run.smooth) {
+                                        (true, _) => 1.0,
+                                        (false, true) => 0.0,
+                                        (false, false) => 2.0,
+                                    },
+                                    -1.0,
+                                    0.0,
+                                ],
                             };
                             if let Some((index, rect)) = fill
                                 && !e.color
@@ -839,7 +849,12 @@ impl UiRenderer {
                                     ],
                                     p0: [s.x as f32, s.y as f32, s.width as f32, s.height as f32],
                                     color0: linear_premultiplied(stroke_color),
-                                    params: [KIND_GLYPH, 0.0, -1.0, 0.0],
+                                    params: [
+                                        KIND_GLYPH,
+                                        if run.smooth { 0.0 } else { 2.0 },
+                                        -1.0,
+                                        0.0,
+                                    ],
                                     ..glyph
                                 });
                             }

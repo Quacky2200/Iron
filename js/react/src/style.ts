@@ -260,6 +260,11 @@ export interface IronStyle {
   WebkitTextStroke?: string;
   WebkitTextStrokeWidth?: Length;
   WebkitTextStrokeColor?: string;
+  /** Text field caret; `auto` is the text colour. */
+  caretColor?: string;
+  /** `never` draws glyphs without anti-aliasing (pixel fonts). s&box keywords: `auto`, `never`, `always`. */
+  fontSmooth?: "auto" | "never" | "always";
+  WebkitFontSmoothing?: "auto" | "none" | "antialiased" | "subpixel-antialiased";
   /** s&box's name for `WebkitTextStroke`. */
   textStroke?: string;
   textStrokeWidth?: Length;

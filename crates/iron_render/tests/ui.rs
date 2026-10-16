@@ -1066,6 +1066,39 @@ fn outlined_text() {
     assert_golden("M3-TXT-14", 130, 88, &f.pixels, TOLERANCE);
 }
 
+// M3-TXT-15
+#[test]
+fn unsmoothed_text_has_hard_edges() {
+    let mut s = Scene::new();
+    for (i, smooth) in ["auto", "never"].iter().enumerate() {
+        s.label(
+            0,
+            "Pixel",
+            &at(
+                4.0,
+                i as f64 * 30.0,
+                100.0,
+                28.0,
+                &[
+                    ("color", "white".into()),
+                    ("fontSize", 20.0.into()),
+                    ("fontSmooth", (*smooth).into()),
+                ],
+            ),
+        );
+    }
+    let f = render(s, (80, 60), 1.0, BLACK);
+    let grey = |y0: u32| {
+        (0..80)
+            .flat_map(|x| (y0..y0 + 28).map(move |y| (x, y)))
+            .filter(|&(x, y)| (20..235).contains(&f.px(x, y)[0]))
+            .count()
+    };
+    assert!(grey(0) > 10, "smoothed edges are grey");
+    assert_eq!(grey(30), 0, "unsmoothed glyphs are all or nothing");
+    assert_golden("M3-TXT-15", 80, 60, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

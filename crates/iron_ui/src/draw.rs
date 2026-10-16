@@ -347,6 +347,8 @@ pub struct GlyphRun {
     pub color: Rgba,
     /// `text-stroke`: outline width (px) and colour, drawn over the fill.
     pub stroke: Option<(f32, Rgba)>,
+    /// Anti-aliased edges; `false` for crisp, thresholded glyphs (`font-smooth: never`).
+    pub smooth: bool,
     pub glyphs: Vec<PositionedGlyph>,
 }
 
@@ -360,6 +362,7 @@ impl PartialEq for GlyphRun {
             && self.skew == other.skew
             && self.color == other.color
             && self.stroke == other.stroke
+            && self.smooth == other.smooth
             && self.glyphs == other.glyphs
     }
 }
