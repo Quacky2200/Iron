@@ -73,7 +73,7 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 - Layout properties land in `taffy::Style` (flex, grid, margin, padding, border widths, inset...).
 - Paint properties land in `Visual`: colours (with `currentColor` flags), border radius
   (`Corners<Len>`, px or percent), `shadows`, gradients and images, `filter_blur`,
-  `backdrop_blur`, `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `overflow`, `clip_path`, `clip_rect`,
+  `backdrop_blur`, `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `contents`, `fixed`, `overflow`, `clip_path`, `clip_rect`,
   `scrollbar_width/color`, `cursor`, and `text: TextProps`.
 - [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, blur filters,
   backgrounds (`linear-gradient`, `radial-gradient`, `url()`), `clip-path` shapes (`ClipPath`
@@ -122,6 +122,25 @@ All in `apply_style`/`copy_prop` ([style.rs](../crates/iron_ui/src/style.rs)); t
 - **`isolation`** is accepted and has no effect, for the same reason.
 - Tab order stays in DOM order.
 
+### Contents and fixed (M3d step 2c)
+
+Taffy has neither, so `Visual` carries `contents` and `fixed` flags.
+
+- **`display: contents`** keeps `Style::display = Block`. `layout_order` flattens through contents
+  children (`flatten_contents`), skips fixed children, then stably sorts by `order`.
+  `set_layout_children` (used by `sync_children` and the `children_changed` loop) gives a contents
+  node no Taffy children of its own: they go to its parent. The node paints nothing and is never a
+  hit target, but stays in event paths.
+- **`position: fixed`** sets `Position::Absolute`. `set_layout_children` appends every fixed node to
+  the root's Taffy children, so insets resolve against the window. `UiTree.fixed` (kept by
+  `update_fixed`) tracks them; `fixed_nodes(rendered_only)` walks the tree, and `fixed_paint_order`
+  sorts by z-index.
+- **Paint:** fixed nodes draw after the root, using their parent's computed text. **Hit:**
+  `hit_test` tests fixed nodes first in reverse paint order, inheriting the parent's
+  `pointer_events_of`.
+- **Limits:** fixed ignores ancestor clips, opacity and filters. A `display: none` or `opacity: 0`
+  ancestor still hides it.
+
 Relative units (`em`, `rem`, viewport units) and `calc()`/`min()`/`max()`/`clamp()` in either path
 are resolved to pixels at restyle before `apply_style` sees them; see [css.md](css.md#relative-units-and-math-unitsrs).
 
@@ -164,7 +183,9 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
 3. `layout.compute(ROOT, w, h, measure)`. Measured leaves (text blocks) call back into
    `text::measure`.
 4. Walk the tree top-down turning Taffy's parent-relative `NodeLayout` into absolute `Rect`s in
-   `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset. For
+   `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset.
+   `display: contents` nodes get a zero rect at the parent origin; `position: fixed` nodes are placed
+   from (0,0), ignoring ancestor scroll. For
    text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`.
 
 `NodeLayout` also carries resolved `border`, `padding` and `scroll_max` (Taffy's scrollable
@@ -226,6 +247,8 @@ rounded hit testing), `ClipShape` (rect with elliptical corners), and `enum Draw
 CSS painting order: `PushClip` for the element's own `clip-path`/`clip: rect()`, `BackdropBlur`,
 `PushLayer` if needed, outer shadows (last listed first, so the first shadow ends on top), the
 `Quad`, inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`.
+`collect` skips `position: fixed` children and paints only the children of a `display: contents`
+node. `draw_list` paints the fixed nodes after the root (see below).
 
 Decisions worth knowing:
 

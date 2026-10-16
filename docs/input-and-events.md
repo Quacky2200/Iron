@@ -79,6 +79,8 @@ IME area arguments.
 
 `UiTree::hit_test(x, y)` first calls `layout_if_needed`, then `hit(ROOT, ...)` recursively:
 
+- `position: fixed` nodes are tested first, in reverse paint order, ahead of the normal tree.
+  `display: contents` nodes are never the target (their children are tested) but stay in event paths.
 - Children are tested before their parent, **later siblings before earlier ones** (reverse paint
   order, i.e. `paint_order`: `zIndex`, then `order`, then DOM order). Children outside their parent's box can still hit (no automatic clipping unless the
   parent clips).
