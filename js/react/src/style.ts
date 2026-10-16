@@ -38,6 +38,9 @@ export interface IronStyle {
   rowGap?: Length;
   columnGap?: Length;
 
+  // Interaction
+  pointerEvents?: "auto" | "none";
+
   // Flexbox
   flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";
   flexWrap?: "nowrap" | "wrap" | "wrap-reverse";

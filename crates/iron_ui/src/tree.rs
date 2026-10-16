@@ -1240,6 +1240,60 @@ impl<L: LayoutEngine> UiTree<L> {
         self.rects.get(&id).copied()
     }
 
+    /// The topmost element under the point (x, y) in logical pixels, or `None` if
+    /// the point only hits the root. Lays out first if needed.
+    ///
+    /// Elements are tested in reverse paint order: later siblings before earlier ones,
+    /// children before their parent (children outside their parent's box still hit).
+    /// Rounded corners are respected; `display: none` subtrees and elements with
+    /// `pointerEvents: none` (inherited) are skipped, though their children can opt
+    /// back in with `pointerEvents: auto`. Text inside a text element hits the text
+    /// element; `::before`/`::after` content hits the element that generated it.
+    pub fn hit_test(&mut self, x: f32, y: f32) -> Option<NodeId> {
+        self.layout_if_needed();
+        self.hit(ROOT, x, y, true)
+    }
+
+    fn hit(&self, id: NodeId, x: f32, y: f32, inherited: bool) -> Option<NodeId> {
+        let node = self.nodes.get(&id)?;
+        if node.style.display == Display::None {
+            return None;
+        }
+        let rect = *self.rects.get(&id)?;
+        let enabled = node.visual.pointer_events.unwrap_or(inherited);
+        if !is_inline_container(&node.kind) {
+            for child in node.children.iter().rev() {
+                if let Some(hit) = self.hit(*child, x, y, enabled) {
+                    return Some(hit);
+                }
+            }
+        }
+        if !enabled || id == ROOT {
+            return None;
+        }
+        let radii = resolve_radii(&node.visual.border_radius, rect.width, rect.height);
+        if !rect.contains_rounded(radii, x, y) {
+            return None;
+        }
+        // Generated content belongs to its originating element.
+        match node.generated {
+            Some(_) => node.parent.filter(|p| *p != ROOT),
+            None => Some(id),
+        }
+    }
+
+    /// The event path of `target`: the target first, then each ancestor up to (not
+    /// including) the root.
+    pub fn event_path(&self, target: NodeId) -> Vec<NodeId> {
+        let mut path = Vec::new();
+        let mut at = Some(target);
+        while let Some(id) = at.filter(|id| *id != ROOT && self.nodes.contains_key(id)) {
+            path.push(id);
+            at = self.nodes[&id].parent;
+        }
+        path
+    }
+
     /// Lays out if needed, then lists the paint commands for the whole tree.
     ///
     /// Per node, in order (matching CSS painting): `BackdropBlur` (if any), then

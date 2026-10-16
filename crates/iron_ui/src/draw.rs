@@ -38,6 +38,31 @@ impl Rect {
         Rect::new(self.x + dx, self.y + dy, self.width, self.height)
     }
 
+    /// Whether (x, y) is inside the rectangle with rounded corners `radii`
+    /// (top-left, top-right, bottom-right, bottom-left), as used for hit testing.
+    pub fn contains_rounded(self, radii: [f32; 4], x: f32, y: f32) -> bool {
+        let (right, bottom) = (self.x + self.width, self.y + self.height);
+        if x < self.x || y < self.y || x >= right || y >= bottom {
+            return false;
+        }
+        // Corner centres, each inset by its radius.
+        let corners = [
+            (self.x + radii[0], self.y + radii[0], radii[0]),
+            (right - radii[1], self.y + radii[1], radii[1]),
+            (right - radii[2], bottom - radii[2], radii[2]),
+            (self.x + radii[3], bottom - radii[3], radii[3]),
+        ];
+        corners.iter().enumerate().all(|(i, &(cx, cy, r))| {
+            let outside_x = if i == 0 || i == 3 { x < cx } else { x > cx };
+            let outside_y = if i < 2 { y < cy } else { y > cy };
+            if r <= 0.0 || !outside_x || !outside_y {
+                return true;
+            }
+            let (dx, dy) = (x - cx, y - cy);
+            dx * dx + dy * dy <= r * r
+        })
+    }
+
     pub fn union(self, other: Rect) -> Rect {
         let x = self.x.min(other.x);
         let y = self.y.min(other.y);

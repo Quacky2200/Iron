@@ -44,6 +44,8 @@ pub struct Visual {
     /// `backdropFilter: blur(..)` radius; 0 means none.
     pub backdrop_blur: f32,
     pub opacity: f32,
+    /// `pointerEvents`: `Some(false)` for `none`; `None` inherits from the parent.
+    pub pointer_events: Option<bool>,
     /// Inherited text properties set on this node (see [`text_style`]).
     pub text: TextProps,
 }
@@ -64,6 +66,7 @@ impl Default for Visual {
             filter_blur: 0.0,
             backdrop_blur: 0.0,
             opacity: 1.0,
+            pointer_events: None,
             text: TextProps::default(),
         }
     }
@@ -258,6 +261,14 @@ pub fn apply_style(
         "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "opacity" => visual.opacity = num(value)?.clamp(0.0, 1.0),
+        "pointerEvents" => {
+            visual.pointer_events = match kw()?.trim() {
+                "auto" | "all" => Some(true),
+                "none" => Some(false),
+                "inherit" => None,
+                _ => return Err(invalid()),
+            }
+        }
 
         p if text_style::is_text_prop(p) => text_style::apply(&mut visual.text, prop, value)
             .expect("is a text prop")
@@ -364,6 +375,7 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "filter" => visual.filter_blur = v.filter_blur,
         "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
         "opacity" => visual.opacity = v.opacity,
+        "pointerEvents" => visual.pointer_events = v.pointer_events,
         p if text_style::is_text_prop(p) => {
             let _ = text_style::apply(&mut visual.text, prop, &Value::Null);
         }

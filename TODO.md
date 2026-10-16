@@ -326,8 +326,11 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
 
 ### M3c — Interaction
 1. **Hit testing and pointer events**
-   - [ ] Hit test in reverse paint order: rounded corners, `display`/`visibility`, `pointerEvents:
-     none`, overflow clipping — `M3-EVT-01`
+   - [x] Hit test in reverse paint order: rounded corners, `display: none`, `pointerEvents: none`
+     (inherited, children can opt back in); text hits its text element, `::before`/`::after` their
+     owner — `M3-EVT-01` (`crates/iron_ui/tests/hit.rs`)
+   - [ ] Overflow clipping in hit tests (with step 4); spans inside text as targets (needs node ids
+     in the text brush); `visibility`
    - [ ] Pointer events to JS with the target's ancestor path; capture + bubble phases,
      `stopPropagation`, `preventDefault`; `onClick`, `onPointerDown/Up/Move/Enter/Leave`, `onWheel`,
      double click — `M3-EVT-02`, `M3-EVT-03`
