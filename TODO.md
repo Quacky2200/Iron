@@ -64,7 +64,7 @@ Iron/
 - [x] `Platform` wrapping the winit event loop (`ApplicationHandler`)
 - [x] Headless mode for tests — `M1-PLT-01`
 - [x] Convert winit events to Iron `InputEvent`s — `M1-PLT-02`
-- [ ] Clean exit on window close — `M1-PLT-03` (**manual check needed**)
+- [x] Clean exit on window close — `M1-PLT-03` (manual, passed 2026-10-16 on Windows)
 - [x] `gilrs` polling stub (wired up properly in M3)
 
 ### 4. `iron_render`
@@ -106,7 +106,7 @@ Iron/
 
 **M1 done when:** all `M1-*` tests pass in CI and `M1-PLT-03` passes manually.
 
-**Status:** all 24 Rust tests and 4 JS tests pass locally (Windows, RTX 5080); build and typecheck are clean. `iron examples/hello` runs on Vulkan: `hello` once, ~60 ticks/s. Remaining: the manual close test and a CI run.
+**Status:** all 24 Rust tests and 4 JS tests pass locally (Windows, RTX 5080); build and typecheck are clean. `iron examples/hello` runs on Vulkan: `hello` once, ~60 ticks/s. The manual close test passed. Remaining: a CI run.
 
 ---
 
