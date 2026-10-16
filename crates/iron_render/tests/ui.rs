@@ -336,6 +336,82 @@ fn per_corner_radii_and_gradients() {
     assert_golden("M2-DRW-05", 100, 100, &f.pixels, TOLERANCE);
 }
 
+// M3-BG-01
+#[test]
+fn conic_and_repeating_gradients() {
+    let mut s = Scene::new();
+    // A pie: red for the first quarter turn, blue for the second, lime for the rest.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            100.0,
+            100.0,
+            &[(
+                "backgroundImage",
+                "conic-gradient(red 0 25%, blue 0 50%, lime 0)".into(),
+            )],
+        ),
+    );
+    // 10px red and blue stripes, repeated.
+    s.add(
+        0,
+        &at(
+            0.0,
+            110.0,
+            100.0,
+            20.0,
+            &[(
+                "backgroundImage",
+                "repeating-linear-gradient(to right, red 0 10px, blue 10px 20px)".into(),
+            )],
+        ),
+    );
+    // Rotated a quarter turn and centred at the left edge: the right half is red.
+    s.add(
+        0,
+        &at(
+            0.0,
+            140.0,
+            100.0,
+            40.0,
+            &[(
+                "backgroundImage",
+                "conic-gradient(from 90deg at 0 50%, red 0 50%, blue 0)".into(),
+            )],
+        ),
+    );
+    let f = render(s, (100, 180), 1.0, BLACK);
+    let red = |p: [u8; 4]| p[0] > 240 && p[1] < 15 && p[2] < 15;
+    let blue = |p: [u8; 4]| p[2] > 240 && p[0] < 15 && p[1] < 15;
+    let lime = |p: [u8; 4]| p[1] > 240 && p[0] < 15 && p[2] < 15;
+    assert!(red(f.px(75, 25)), "top right: {:?}", f.px(75, 25));
+    assert!(blue(f.px(75, 75)), "bottom right: {:?}", f.px(75, 75));
+    assert!(lime(f.px(25, 50)), "left half: {:?}", f.px(25, 50));
+    for (x, is_red) in [
+        (5, true),
+        (15, false),
+        (45, true),
+        (55, false),
+        (85, true),
+        (95, false),
+    ] {
+        let p = f.px(x, 120);
+        assert!(
+            if is_red { red(p) } else { blue(p) },
+            "stripe at {x}: {p:?}"
+        );
+    }
+    assert!(
+        red(f.px(50, 170)),
+        "below the centre line: {:?}",
+        f.px(50, 170)
+    );
+    assert!(blue(f.px(50, 150)), "above it: {:?}", f.px(50, 150));
+    assert_golden("M3-BG-01", 100, 180, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

@@ -218,22 +218,38 @@ pub enum BackgroundImage {
     Linear {
         direction: GradientDirection,
         stops: Vec<ColorStop>,
+        /// `repeating-linear-gradient`: the stops repeat beyond the first and last.
+        repeating: bool,
     },
     /// Centred, sized to the farthest corner (the CSS default).
     Radial {
         shape: RadialShape,
         stops: Vec<ColorStop>,
+        repeating: bool,
+    },
+    /// `conic-gradient`: colours sweep clockwise around `at`, starting `from` degrees
+    /// (0 is up). Stop positions are fractions of a turn.
+    Conic {
+        from: f32,
+        at: BackgroundPosition,
+        stops: Vec<ColorStop>,
+        repeating: bool,
     },
 }
 
-/// `url(...)`, `linear-gradient(...)` or `radial-gradient(...)`.
+/// `url(...)` or a gradient: `linear-gradient(...)`, `radial-gradient(...)`,
+/// `conic-gradient(...)` and their `repeating-` forms.
 pub fn parse_background_image(s: &str) -> Option<Option<BackgroundImage>> {
     let s = s.trim();
     if s == "none" {
         return Some(None);
     }
+    let (repeating, s) = match s.strip_prefix("repeating-") {
+        Some(rest) if rest.contains("-gradient(") => (true, rest),
+        _ => (false, s),
+    };
     let call = |name: &str| s.strip_prefix(name)?.strip_suffix(')');
-    if let Some(arg) = call("url(") {
+    if let Some(arg) = call("url(").filter(|_| !repeating) {
         let path = arg.trim().trim_matches(['"', '\'']);
         return (!path.is_empty()).then(|| Some(BackgroundImage::Url(path.to_owned())));
     }
@@ -270,7 +286,8 @@ pub fn parse_background_image(s: &str) -> Option<Option<BackgroundImage>> {
         };
         return Some(Some(BackgroundImage::Linear {
             direction,
-            stops: parse_stops(&parts)?,
+            stops: parse_stops(&parts, Len::parse)?,
+            repeating,
         }));
     }
     if let Some(args) = call("radial-gradient(") {
@@ -285,31 +302,75 @@ pub fn parse_background_image(s: &str) -> Option<Option<BackgroundImage>> {
         }
         return Some(Some(BackgroundImage::Radial {
             shape: shape.unwrap_or(RadialShape::Ellipse),
-            stops: parse_stops(&parts)?,
+            stops: parse_stops(&parts, Len::parse)?,
+            repeating,
+        }));
+    }
+    if let Some(args) = call("conic-gradient(") {
+        let mut parts = split_top_level(args, ',');
+        let mut from = 0.0;
+        let mut at = BackgroundPosition {
+            x: Len::Percent(0.5),
+            y: Len::Percent(0.5),
+        };
+        let first = parts.first()?.trim();
+        if first.starts_with("from ") || first.starts_with("at ") {
+            let (from_part, at_part) = match first.find("at ") {
+                Some(i) => (&first[..i], Some(&first[i + 3..])),
+                None => (first, None),
+            };
+            if let Some(angle) = from_part.trim().strip_prefix("from ") {
+                from = parse_angle_degrees(angle)?;
+            } else if !from_part.trim().is_empty() {
+                return None;
+            }
+            if let Some(position) = at_part {
+                at = parse_background_position(position)?;
+            }
+            parts.remove(0);
+        }
+        // Stop positions are angles or percentages of a turn.
+        let turn = |t: &str| match Len::parse(t) {
+            Some(Len::Percent(f)) => Some(Len::Percent(f)),
+            Some(Len::Px(0.0)) => Some(Len::Percent(0.0)),
+            _ => parse_angle_degrees(t)
+                .filter(|_| t.ends_with(|c: char| c.is_ascii_alphabetic()))
+                .map(|deg| Len::Percent(deg / 360.0)),
+        };
+        return Some(Some(BackgroundImage::Conic {
+            from,
+            at,
+            stops: parse_stops(&parts, turn)?,
+            repeating,
         }));
     }
     None
 }
 
-fn parse_stops(parts: &[&str]) -> Option<Vec<ColorStop>> {
-    if parts.len() < 2 {
-        return None;
+/// Colour stops: `color`, `color pos` or `color pos1 pos2` (two stops of one colour).
+fn parse_stops(parts: &[&str], position: impl Fn(&str) -> Option<Len>) -> Option<Vec<ColorStop>> {
+    let mut stops = Vec::new();
+    for p in parts {
+        let tokens = split_top_level(p, ' ');
+        let (color, positions) = tokens.split_first()?;
+        let color = Rgba::parse(color)?;
+        match positions {
+            [] => stops.push(ColorStop {
+                color,
+                position: None,
+            }),
+            [_] | [_, _] => {
+                for pos in positions {
+                    stops.push(ColorStop {
+                        color,
+                        position: Some(position(pos)?),
+                    });
+                }
+            }
+            _ => return None,
+        }
     }
-    parts
-        .iter()
-        .map(|p| {
-            let tokens = split_top_level(p, ' ');
-            let (color, position) = match tokens[..] {
-                [c] => (c, None),
-                [c, pos] => (c, Some(Len::parse(pos)?)),
-                _ => return None,
-            };
-            Some(ColorStop {
-                color: Rgba::parse(color)?,
-                position,
-            })
-        })
-        .collect()
+    (stops.len() >= 2).then_some(stops)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -918,6 +979,75 @@ mod tests {
         assert_eq!(parse_blur_filter("blur(10%)"), None);
     }
 
+    // M3-BG-01
+    #[test]
+    fn parses_conic_and_repeating_gradients() {
+        let Some(BackgroundImage::Conic {
+            from,
+            at,
+            stops,
+            repeating,
+        }) = parse_background_image(
+            "conic-gradient(from 0.25turn at 10px 20%, red, blue 90deg, lime 50% 75%)",
+        )
+        .unwrap()
+        else {
+            panic!("expected a conic gradient");
+        };
+        assert_eq!(from, 90.0);
+        assert_eq!((at.x, at.y), (Len::Px(10.0), Len::Percent(0.2)));
+        assert!(!repeating);
+        let positions: Vec<_> = stops.iter().map(|s| s.position).collect();
+        assert_eq!(
+            positions,
+            vec![
+                None,
+                Some(Len::Percent(0.25)),
+                Some(Len::Percent(0.5)),
+                Some(Len::Percent(0.75))
+            ],
+            "angles are fractions of a turn; two positions make two stops"
+        );
+
+        let Some(BackgroundImage::Conic { at, .. }) =
+            parse_background_image("conic-gradient(red, blue)").unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            (at.x, at.y),
+            (Len::Percent(0.5), Len::Percent(0.5)),
+            "centred"
+        );
+        assert!(matches!(
+            parse_background_image("repeating-linear-gradient(red 0 10px, blue 10px 20px)"),
+            Some(Some(BackgroundImage::Linear { repeating: true, ref stops, .. })) if stops.len() == 4
+        ));
+        assert!(matches!(
+            parse_background_image("repeating-radial-gradient(circle, red, blue 10%)"),
+            Some(Some(BackgroundImage::Radial {
+                repeating: true,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            parse_background_image("repeating-conic-gradient(red 0 10deg, blue 10deg 20deg)"),
+            Some(Some(BackgroundImage::Conic {
+                repeating: true,
+                ..
+            }))
+        ));
+        for bad in [
+            "conic-gradient(from 10px, red, blue)",
+            "conic-gradient(red 10px, blue)",
+            "conic-gradient(red)",
+            "repeating-url(a.png)",
+            "linear-gradient(red 1px 2px 3px, blue)",
+        ] {
+            assert_eq!(parse_background_image(bad), None, "{bad}");
+        }
+    }
+
     // M2-VIS-06
     #[test]
     fn parses_gradients_and_urls() {
@@ -925,9 +1055,10 @@ mod tests {
             parse_background_image("url('ui/panel.png')").unwrap(),
             Some(BackgroundImage::Url("ui/panel.png".into()))
         );
-        let Some(BackgroundImage::Linear { direction, stops }) =
-            parse_background_image("linear-gradient(to right, red, rgba(0, 0, 255, 0.5) 75%)")
-                .unwrap()
+        let Some(BackgroundImage::Linear {
+            direction, stops, ..
+        }) = parse_background_image("linear-gradient(to right, red, rgba(0, 0, 255, 0.5) 75%)")
+            .unwrap()
         else {
             panic!("expected a linear gradient");
         };
@@ -964,7 +1095,7 @@ mod tests {
             }
         );
 
-        let Some(BackgroundImage::Radial { shape, stops }) =
+        let Some(BackgroundImage::Radial { shape, stops, .. }) =
             parse_background_image("radial-gradient(circle, white 0%, black 100%)").unwrap()
         else {
             panic!()
@@ -976,7 +1107,7 @@ mod tests {
         for bad in [
             "linear-gradient(red)",
             "url()",
-            "conic-gradient(red, blue)",
+            "conic-gradient(red)",
             "linear-gradient(to middle, red, blue)",
         ] {
             assert_eq!(parse_background_image(bad), None, "{bad:?}");

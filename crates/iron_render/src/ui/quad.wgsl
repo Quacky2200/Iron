@@ -12,10 +12,11 @@ struct Globals {
 };
 
 struct Gradient {
-    // x: kind (0 linear, 1 radial), y: stop count,
-    // zw: linear direction (unit vector) or radial radii.
+    // x: kind (0 linear, 1 radial, 2 conic), y: stop count,
+    // zw: linear direction (unit vector), radial radii, or conic start angle (z, radians).
     info: vec4<f32>,
-    // x: linear gradient line length.
+    // x: linear gradient line length, yz: conic centre from the box's top-left,
+    // w: 1 for repeating gradients.
     info2: vec4<f32>,
     colors: array<vec4<f32>, 8>,
     stops: array<vec4<f32>, 2>,
@@ -196,10 +197,23 @@ fn gradient_color(index: u32, p: vec2<f32>, rect: vec4<f32>) -> vec4<f32> {
     var t: f32;
     if g.info.x < 0.5 {
         t = dot(p - center, g.info.zw) / g.info2.x + 0.5;
-    } else {
+    } else if g.info.x < 1.5 {
         t = length((p - center) / g.info.zw);
+    } else {
+        // Clockwise from up, starting at the `from` angle, as a fraction of a turn.
+        let d = p - (rect.xy + g.info2.yz);
+        let turn = 6.283185307;
+        t = fract((atan2(d.x, -d.y) - g.info.z) / turn);
     }
     let count = u32(g.info.y);
+    if g.info2.w > 0.5 {
+        // Repeating: wrap t into the span between the first and last stops.
+        let first = stop_position(g, 0u);
+        let span = stop_position(g, count - 1u) - first;
+        if span > 1e-6 {
+            t = first + fract((t - first) / span) * span;
+        }
+    }
     var c = g.colors[0];
     if t >= stop_position(g, count - 1u) {
         c = g.colors[count - 1u];

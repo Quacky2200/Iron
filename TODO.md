@@ -491,7 +491,9 @@ and `@font-face`.
      elements (one known axis keeps the ratio); drawn in the content box, clipped to the inner
      rounded corners — `M3-IMG-01`
 3. **Backgrounds and borders**
-   - [ ] `conic-gradient()`; `repeating-linear-gradient()` / `repeating-radial-gradient()`
+   - [x] `conic-gradient()` (`from <angle>`, `at <position>`, stops in angles or percentages) and
+     `repeating-linear-gradient()` / `repeating-radial-gradient()` / `repeating-conic-gradient()`;
+     two-position colour stops (`red 0 25%`) in every gradient — `M3-BG-01`
    - [ ] `background-clip` (`border-box`, `padding-box`, `content-box`, `text` for gradient text);
      `background-position-x`/`-y`; `background-repeat: round | space`; multiple background layers
    - [ ] `background-blend-mode` and `mix-blend-mode` (`normal`, `multiply`, `lighten`, `screen`, ...)

@@ -2,6 +2,10 @@
 
 use iron_ui::{BackgroundImage, ColorStop, GradientDirection, Len, RadialShape, Rect};
 
+const KIND_LINEAR: f32 = 0.0;
+const KIND_RADIAL: f32 = 1.0;
+const KIND_CONIC: f32 = 2.0;
+
 /// Most stops a gradient can have on the GPU; extra stops are dropped with a warning.
 pub const MAX_STOPS: usize = 8;
 
@@ -19,9 +23,15 @@ pub struct GpuGradient {
 /// a gradient (images are drawn separately).
 pub fn build(image: &BackgroundImage, rect: Rect) -> Option<GpuGradient> {
     let (w, h) = (rect.width.max(0.0), rect.height.max(0.0));
-    let (kind, a, b, line_length, stops) = match image {
+    // The conic centre, relative to the box's top-left.
+    let mut center = (w / 2.0, h / 2.0);
+    let (kind, a, b, line_length, stops, repeating) = match image {
         BackgroundImage::Url(_) => return None,
-        BackgroundImage::Linear { direction, stops } => {
+        BackgroundImage::Linear {
+            direction,
+            stops,
+            repeating,
+        } => {
             let dir = match *direction {
                 GradientDirection::Angle(deg) => {
                     let t = deg.to_radians();
@@ -39,9 +49,20 @@ pub fn build(image: &BackgroundImage, rect: Rect) -> Option<GpuGradient> {
                 }
             };
             let length = (w * dir.0).abs() + (h * dir.1).abs();
-            (0.0, dir.0, dir.1, length.max(f32::EPSILON), stops)
+            (
+                KIND_LINEAR,
+                dir.0,
+                dir.1,
+                length.max(f32::EPSILON),
+                stops,
+                *repeating,
+            )
         }
-        BackgroundImage::Radial { shape, stops } => {
+        BackgroundImage::Radial {
+            shape,
+            stops,
+            repeating,
+        } => {
             // Centred, sized to the farthest corner (the CSS default).
             let (rx, ry) = match shape {
                 RadialShape::Circle => {
@@ -54,18 +75,34 @@ pub fn build(image: &BackgroundImage, rect: Rect) -> Option<GpuGradient> {
                 ),
             };
             (
-                1.0,
+                KIND_RADIAL,
                 rx.max(f32::EPSILON),
                 ry.max(f32::EPSILON),
                 rx.max(f32::EPSILON),
                 stops,
+                *repeating,
             )
+        }
+        BackgroundImage::Conic {
+            from,
+            at,
+            stops,
+            repeating,
+        } => {
+            center = (at.x.resolve(w), at.y.resolve(h));
+            // Positions are fractions of a turn; a length can't place a conic stop.
+            (KIND_CONIC, from.to_radians(), 0.0, 1.0, stops, *repeating)
         }
     };
 
     let mut g = GpuGradient {
         info: [kind, 0.0, a, b],
-        info2: [line_length, 0.0, 0.0, 0.0],
+        info2: [
+            line_length,
+            center.0,
+            center.1,
+            f32::from(u8::from(repeating)),
+        ],
         ..Default::default()
     };
     let resolved = resolve_stops(stops, line_length);
@@ -186,6 +223,7 @@ mod tests {
         let lin = |direction| BackgroundImage::Linear {
             direction,
             stops: vec![stop(None), stop(None)],
+            repeating: false,
         };
         // "to right": along +x, the line is the box width.
         let g = build(&lin(GradientDirection::Angle(90.0)), rect).unwrap();
@@ -216,8 +254,29 @@ mod tests {
         let circle = BackgroundImage::Radial {
             shape: RadialShape::Circle,
             stops: vec![stop(None), stop(None)],
+            repeating: true,
         };
         let g = build(&circle, rect).unwrap();
         assert!((g.info[2] - 50.0).abs() < 1e-4 && (g.info[3] - 50.0).abs() < 1e-4);
+        assert_eq!(g.info2[3], 1.0, "repeating flag");
+    }
+
+    #[test]
+    fn conic_centre_and_start_angle() {
+        let rect = Rect::new(10.0, 10.0, 60.0, 80.0);
+        let conic = BackgroundImage::Conic {
+            from: 90.0,
+            at: iron_ui::BackgroundPosition {
+                x: Len::Percent(0.25),
+                y: Len::Px(5.0),
+            },
+            stops: vec![stop(None), stop(None)],
+            repeating: false,
+        };
+        let g = build(&conic, rect).unwrap();
+        assert_eq!(g.info[0], KIND_CONIC);
+        assert!((g.info[2] - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert_eq!((g.info2[1], g.info2[2]), (15.0, 5.0), "relative to the box");
+        assert_eq!(g.info2[3], 0.0);
     }
 }
