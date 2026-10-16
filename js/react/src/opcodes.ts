@@ -15,3 +15,7 @@ export const REMOVE_CHILD = 4;
 export const ROOT_ID = 0;
 
 export type Op = (string | number | null)[];
+/** `[CREATE_TEXT, id, text]` */
+export const CREATE_TEXT = 5;
+/** `[SET_TEXT, id, text]` */
+export const SET_TEXT = 6;

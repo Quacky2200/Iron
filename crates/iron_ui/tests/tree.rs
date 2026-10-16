@@ -407,3 +407,83 @@ fn backgrounds_and_shadows_without_a_fill_still_draw() {
         iron_ui::BackgroundImage::Linear { .. }
     ));
 }
+
+fn text_node(id: u32, text: &str) -> Value {
+    op(CREATE_TEXT, &[n(id), text.into()])
+}
+
+fn create_kind(id: u32, kind: &str) -> Value {
+    op(CREATE, &[n(id), kind.into()])
+}
+
+// M3-TXT-07
+#[test]
+fn text_nodes_and_text_blocks() {
+    let mut tree = UiTree::new(200.0, 100.0);
+    // <box><text>Hello <span>big</span> world</text>loose</box>
+    apply_ok(
+        &mut tree,
+        vec![
+            create(1),
+            create_kind(2, "text"),
+            text_node(3, "Hello "),
+            create_kind(4, "span"),
+            text_node(5, "big"),
+            text_node(6, " world"),
+            text_node(7, "loose"),
+            append(4, 5),
+            append(2, 3),
+            append(2, 4),
+            append(2, 6),
+            append(1, 2),
+            append(1, 7),
+            append(0, 1),
+        ],
+    );
+    assert_eq!(tree.kind(NodeId(3)), Some(iron_ui::TEXT_NODE));
+    assert_eq!(tree.text(NodeId(5)), Some("big"));
+    assert_eq!(tree.text_content(NodeId(2)), "Hello big world");
+
+    // The <text> element is a text block; its inline content belongs to it.
+    assert!(tree.is_text_root(NodeId(2)));
+    for inline in [3, 4, 5, 6] {
+        assert!(
+            !tree.is_text_root(NodeId(inline)),
+            "{inline} is inline content"
+        );
+        assert_eq!(tree.text_root_of(NodeId(inline)), Some(NodeId(2)));
+    }
+    // A bare string in a box is its own anonymous text block; boxes aren't text.
+    assert!(tree.is_text_root(NodeId(7)));
+    assert_eq!(tree.text_root_of(NodeId(1)), None);
+
+    let mut dirty = tree.take_dirty_text();
+    dirty.sort();
+    assert_eq!(dirty, [NodeId(2), NodeId(7)], "new text blocks need layout");
+    assert!(tree.take_dirty_text().is_empty());
+
+    // Changing a span's text dirties only its block.
+    apply_ok(&mut tree, vec![op(SET_TEXT, &[n(5), "huge".into()])]);
+    assert_eq!(tree.text_content(NodeId(2)), "Hello huge world");
+    assert_eq!(tree.take_dirty_text(), [NodeId(2)]);
+
+    // Inline content isn't part of block layout: no rects for spans and text runs.
+    tree.layout_if_needed();
+    assert!(tree.rect(NodeId(2)).is_some());
+    assert!(tree.rect(NodeId(4)).is_none() && tree.rect(NodeId(3)).is_none());
+}
+
+#[test]
+fn text_node_errors() {
+    let mut tree = UiTree::new(100.0, 100.0);
+    let errors = tree.apply_commit(&commit(vec![
+        text_node(1, "a"),
+        create(2),
+        append(1, 2),                      // text nodes can't have children
+        op(SET_TEXT, &[n(2), "x".into()]), // not a text node
+        op(SET_TEXT, &[n(9), "x".into()]), // unknown node
+        op(CREATE_TEXT, &[n(3)]),          // missing text
+    ]));
+    assert_eq!(errors.len(), 4, "{errors:#?}");
+    assert!(errors[0].0.contains("can't have children"));
+}

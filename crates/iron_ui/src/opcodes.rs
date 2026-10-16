@@ -20,3 +20,11 @@ pub const INSERT_BEFORE: u32 = 3;
 
 /// `[REMOVE_CHILD, parent, child]`: detaches `child` and destroys its subtree.
 pub const REMOVE_CHILD: u32 = 4;
+
+/// `[CREATE_TEXT, id, text]`: creates a text node (a run of characters, element
+/// type `#text`). Inside `text`/`span` elements it is inline content; elsewhere it
+/// is laid out as its own anonymous text block.
+pub const CREATE_TEXT: u32 = 5;
+
+/// `[SET_TEXT, id, text]`: replaces a text node's characters.
+pub const SET_TEXT: u32 = 6;

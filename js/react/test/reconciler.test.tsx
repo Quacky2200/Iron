@@ -2,15 +2,17 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { useEffect, useState } from "react";
 
 import { resetForTests } from "../src/host.ts";
-import { _resetRootForTests, createRoot } from "../src/index.ts";
+import { _resetRootForTests, createRoot, Span, Text } from "../src/index.ts";
 import {
   APPEND_CHILD,
   CREATE,
+  CREATE_TEXT,
   INSERT_BEFORE,
   type Op,
   REMOVE_CHILD,
   ROOT_ID,
   SET_STYLE,
+  SET_TEXT,
 } from "../src/opcodes.ts";
 
 /**
@@ -21,6 +23,8 @@ class ModelTree {
   children = new Map<number, number[]>([[ROOT_ID, []]]);
   styles = new Map<number, Record<string, unknown>>();
   parent = new Map<number, number>();
+  kinds = new Map<number, string>();
+  texts = new Map<number, string>();
 
   apply(ops: Op[]) {
     for (const [code, ...args] of ops) {
@@ -30,6 +34,17 @@ class ModelTree {
           expect(this.children.has(a!)).toBe(false);
           this.children.set(a!, []);
           this.styles.set(a!, {});
+          this.kinds.set(a!, args[1] as string);
+          break;
+        case CREATE_TEXT:
+          expect(this.children.has(a!)).toBe(false);
+          this.children.set(a!, []);
+          this.kinds.set(a!, "#text");
+          this.texts.set(a!, args[1] as string);
+          break;
+        case SET_TEXT:
+          expect(this.kinds.get(a!)).toBe("#text");
+          this.texts.set(a!, args[1] as string);
           break;
         case SET_STYLE: {
           const style = this.styles.get(a!)!;
@@ -74,6 +89,13 @@ class ModelTree {
     const siblings = this.children.get(p)!;
     siblings.splice(siblings.indexOf(id), 1);
     this.parent.delete(id);
+  }
+
+  /** Text nodes and elements as a compact string, e.g. `text(Hello span(big))`. */
+  markup(id = ROOT_ID): string {
+    if (this.kinds.get(id) === "#text") return JSON.stringify(this.texts.get(id));
+    const kids = (this.children.get(id) ?? []).map((c) => this.markup(c)).join(" ");
+    return id === ROOT_ID ? kids : `${this.kinds.get(id)}(${kids})`;
   }
 
   /** The tree as nested `{ style, children }`, for readable assertions. */
@@ -239,13 +261,46 @@ describe("@iron/react reconciler", () => {
     expect(tree.describe()).toEqual([]);
   });
 
-  test("text and unknown elements are reported with a clear message", () => {
+  // M3-TXT-07
+  test("Text and Span render text elements with text nodes", () => {
+    createRoot().render(
+      <Text style={{ fontSize: 20 }}>
+        Hello <Span style={{ color: "red" }}>big</Span> world
+      </Text>,
+    );
+    expect(commits).toHaveLength(1);
+    expect(tree.markup()).toBe('text("Hello " span("big") " world")');
+    const textId = tree.children.get(ROOT_ID)![0]!;
+    expect(tree.styles.get(textId)).toEqual({ fontSize: 20 });
+  });
+
+  // M3-TXT-07
+  test("changing text sends SET_TEXT instead of recreating nodes", () => {
+    const root = createRoot();
+    const label = (n: number) => (
+      <Text>
+        Score: <Span>{String(n)}</Span>
+      </Text>
+    );
+    root.render(label(1));
+    root.render(label(42));
+    expect(commits).toHaveLength(2);
+    expect(commits[1]).toHaveLength(1);
+    expect(commits[1]![0]![0]).toBe(SET_TEXT);
+    expect(commits[1]![0]![2]).toBe("42");
+    expect(tree.markup()).toBe('text("Score: " span("42"))');
+  });
+
+  // M3-TXT-07
+  test("bare strings in a box become text nodes", () => {
+    createRoot().render(<box>loose text</box>);
+    expect(tree.markup()).toBe('box("loose text")');
+    expect(commits[0]!.some((op) => op[0] === CREATE_TEXT)).toBe(true);
+  });
+
+  test("unknown elements are reported with a clear message", () => {
     const errors = spyOn(console, "error").mockImplementation(() => {});
     try {
-      createRoot().render(<box>hello</box>);
-      expect(String(errors.mock.calls[0]?.[0])).toContain("Text isn't supported yet");
-
-      _resetRootForTests();
       const Unknown = "panel" as unknown as "box";
       createRoot().render(<Unknown />);
       expect(String(errors.mock.calls.at(-1)?.[0])).toContain("<panel> is not an Iron element");

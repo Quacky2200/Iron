@@ -11,15 +11,18 @@ import { DefaultEventPriority, NoEventPriority } from "react-reconciler/constant
 import {
   APPEND_CHILD,
   CREATE,
+  CREATE_TEXT,
   INSERT_BEFORE,
   type Op,
   REMOVE_CHILD,
   ROOT_ID,
   SET_STYLE,
+  SET_TEXT,
 } from "./opcodes.ts";
 import { type IronStyle, styleDiff, styleEntries } from "./style.ts";
 
-export type ElementType = "box";
+/** Host element types; `text` and `span` are rendered by the `Text` and `Span` components. */
+export type ElementType = "box" | "text" | "span";
 
 export interface Props {
   style?: IronStyle;
@@ -38,7 +41,14 @@ export interface Container {
   readonly children: Set<number>;
 }
 
-type TextInstance = never;
+/** A run of characters (React string children). */
+export interface TextInstance {
+  readonly id: number;
+  readonly type: "#text";
+  text: string;
+}
+
+type Node = Instance | TextInstance;
 
 /** Ops waiting for the next commit. Exposed for tests. */
 export const pending: Op[] = [];
@@ -52,7 +62,7 @@ function flush() {
   __iron_commit(ops);
 }
 
-const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box"]);
+const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box", "text", "span"]);
 
 let currentUpdatePriority: number = NoEventPriority;
 
@@ -90,32 +100,36 @@ export const reconciler = createReconciler({
   },
 
   createTextInstance(text: string): TextInstance {
-    throw new Error(
-      `Text isn't supported yet (arrives in M3); got ${JSON.stringify(text)}. Only <box> elements can be rendered.`,
-    );
+    const id = nextId++;
+    pending.push([CREATE_TEXT, id, text]);
+    return { id, type: "#text", text };
+  },
+  commitTextUpdate(instance: TextInstance, _oldText: string, newText: string) {
+    instance.text = newText;
+    pending.push([SET_TEXT, instance.id, newText]);
   },
 
-  appendInitialChild(parent: Instance, child: Instance) {
+  appendInitialChild(parent: Instance, child: Node) {
     pending.push([APPEND_CHILD, parent.id, child.id]);
   },
-  appendChild(parent: Instance, child: Instance) {
+  appendChild(parent: Instance, child: Node) {
     pending.push([APPEND_CHILD, parent.id, child.id]);
   },
-  appendChildToContainer(container: Container, child: Instance) {
+  appendChildToContainer(container: Container, child: Node) {
     container.children.add(child.id);
     pending.push([APPEND_CHILD, ROOT_ID, child.id]);
   },
-  insertBefore(parent: Instance, child: Instance, before: Instance) {
+  insertBefore(parent: Instance, child: Node, before: Node) {
     pending.push([INSERT_BEFORE, parent.id, child.id, before.id]);
   },
-  insertInContainerBefore(container: Container, child: Instance, before: Instance) {
+  insertInContainerBefore(container: Container, child: Node, before: Node) {
     container.children.add(child.id);
     pending.push([INSERT_BEFORE, ROOT_ID, child.id, before.id]);
   },
-  removeChild(parent: Instance, child: Instance) {
+  removeChild(parent: Instance, child: Node) {
     pending.push([REMOVE_CHILD, parent.id, child.id]);
   },
-  removeChildFromContainer(container: Container, child: Instance) {
+  removeChildFromContainer(container: Container, child: Node) {
     container.children.delete(child.id);
     pending.push([REMOVE_CHILD, ROOT_ID, child.id]);
   },
@@ -137,8 +151,13 @@ export const reconciler = createReconciler({
   unhideInstance(instance: Instance, props: Props) {
     pending.push([SET_STYLE, instance.id, "display", props.style?.display ?? null]);
   },
-  hideTextInstance() {},
-  unhideTextInstance() {},
+  hideTextInstance(instance: TextInstance) {
+    pending.push([SET_TEXT, instance.id, ""]);
+  },
+  unhideTextInstance(instance: TextInstance, text: string) {
+    instance.text = text;
+    pending.push([SET_TEXT, instance.id, text]);
+  },
 
   finalizeInitialChildren: () => false,
   shouldSetTextContent: () => false,

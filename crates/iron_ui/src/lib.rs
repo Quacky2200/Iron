@@ -19,7 +19,7 @@ pub use paint::{
     GradientDirection, Len, RadialShape, Shadow,
 };
 pub use style::{StyleError, Visual, apply_style};
-pub use tree::{ROOT, UiError, UiTree};
+pub use tree::{ROOT, TEXT_NODE, UiError, UiTree};
 
 /// Re-exported because [`LayoutEngine`] uses Taffy's `Style` as its
 /// backend-neutral description of CSS layout properties.

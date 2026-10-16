@@ -8,7 +8,7 @@
  */
 
 import "@iron/engine";
-import type { ReactNode } from "react";
+import { createElement, type ReactElement, type ReactNode } from "react";
 import { ConcurrentRoot } from "react-reconciler/constants";
 
 import { type Container, reconciler } from "./host.ts";
@@ -29,6 +29,25 @@ declare module "react" {
       box: BoxProps;
     }
   }
+}
+
+export interface TextProps {
+  style?: IronStyle;
+  children?: ReactNode;
+}
+
+// React's own JSX types already define <text> (SVG) and <span> (HTML), so Iron's
+// text elements are exposed as components. CSS type selectors still use `text`
+// and `span`.
+
+/** A block of text. Strings and `Span`s inside it flow and wrap together. */
+export function Text({ style, children }: TextProps): ReactElement {
+  return createElement("text" as never, { style }, children);
+}
+
+/** An inline run inside `Text` with its own style (colour, weight, ...). */
+export function Span({ style, children }: TextProps): ReactElement {
+  return createElement("span" as never, { style }, children);
 }
 
 export interface Root {
