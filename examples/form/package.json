@@ -12,7 +12,8 @@
     "@types/react": "19.3.0"
   },
   "scripts": {
-    "build": "bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
+    "build": "bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser --define process.env.NODE_ENV='\"production\"'",
+    "build:dev": "bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
     "typecheck": "tsc --noEmit -p ."
   }
 }

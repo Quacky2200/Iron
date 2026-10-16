@@ -151,9 +151,15 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
         }
         if let Some(input) = convert_window_event(&event) {
             let close = input == InputEvent::CloseRequested;
+            let resized = matches!(input, InputEvent::Resized { .. });
             self.app.input(input);
             if close {
                 event_loop.exit();
+            } else if resized {
+                // Draw at the new size right away: while the user drags the border,
+                // Windows runs its own loop and would show the window's blank (white)
+                // background in the new area until our next frame.
+                self.app.frame();
             }
         }
     }
