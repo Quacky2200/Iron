@@ -3,16 +3,16 @@ use std::fmt;
 use std::rc::Rc;
 
 use iron_core::{Commit, NodeId, Value};
-use taffy::{Dimension, Display, Size, Style};
+use taffy::{Dimension, Display, Position, Size, Style};
 
 use crate::Rgba;
 use crate::attrs::{Attrs, ElementState};
 use crate::cascade::{Deps, Key, RuleIndex, Target, matched_declarations};
 use crate::css::{FontFace, PseudoElement, Stylesheet, parse_stylesheet, substitute_vars};
-use crate::draw::{DrawCmd, ImageFill, Quad, Rect, ShadowShape};
-use crate::layout::{LayoutEngine, TaffyLayout};
+use crate::draw::{ClipShape, DrawCmd, ImageFill, Quad, Rect, ShadowShape};
+use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
-use crate::paint::{Shadow, resolve_radii};
+use crate::paint::{Overflow, Shadow, inner_corners, resolve_radii};
 use crate::style::{Visual, apply_style};
 use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, is_text_prop};
@@ -1260,8 +1260,20 @@ impl<L: LayoutEngine> UiTree<L> {
             return None;
         }
         let rect = *self.rects.get(&id)?;
+        let radii = resolve_radii(&node.visual.border_radius, rect.width, rect.height);
+        // Hit testing matches what's drawn: clipped-away parts can't be hit.
+        let l = self.layout.layout(id).unwrap_or_default();
+        if self
+            .self_clips(node, rect, &l, radii)
+            .iter()
+            .any(|clip| !clip.contains(x, y))
+        {
+            return None;
+        }
         let enabled = node.visual.pointer_events.unwrap_or(inherited);
-        if !is_inline_container(&node.kind) {
+        let children_visible =
+            overflow_clip(&node.visual, rect, &l, radii).is_none_or(|clip| clip.contains(x, y));
+        if !is_inline_container(&node.kind) && children_visible {
             for child in node.children.iter().rev() {
                 if let Some(hit) = self.hit(*child, x, y, enabled) {
                     return Some(hit);
@@ -1271,7 +1283,6 @@ impl<L: LayoutEngine> UiTree<L> {
         if !enabled || id == ROOT {
             return None;
         }
-        let radii = resolve_radii(&node.visual.border_radius, rect.width, rect.height);
         if !rect.contains_rounded(radii, x, y) {
             return None;
         }
@@ -1437,6 +1448,14 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
 
+        // clip-path (and legacy `clip`) clip the element and everything inside it;
+        // `overflow` clips only the children, to the padding box.
+        let self_clips = self.self_clips(node, rect, &l, radii);
+        for clip in &self_clips {
+            out.push(DrawCmd::PushClip(*clip));
+        }
+        let overflow_clip = overflow_clip(v, rect, &l, radii);
+
         if v.backdrop_blur > 0.0 {
             out.push(DrawCmd::BackdropBlur {
                 rect,
@@ -1454,9 +1473,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 opacity: v.opacity,
             });
             out.extend(own);
-            for child in &node.children {
-                self.collect(*child, &text, out);
-            }
+            self.collect_children(node, &text, overflow_clip, out);
             // The layer must cover everything drawn into it, plus the blur's spread.
             let content = out[start + 1..]
                 .iter()
@@ -1473,11 +1490,97 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
             }
             out.extend(own);
-            for child in &node.children {
-                self.collect(*child, &text, out);
-            }
+            self.collect_children(node, &text, overflow_clip, out);
+        }
+        for _ in &self_clips {
+            out.push(DrawCmd::PopClip);
         }
     }
+
+    fn collect_children(
+        &self,
+        node: &Node,
+        text: &ComputedText,
+        clip: Option<ClipShape>,
+        out: &mut Vec<DrawCmd>,
+    ) {
+        if node.children.is_empty() {
+            return;
+        }
+        if let Some(clip) = clip {
+            out.push(DrawCmd::PushClip(clip));
+        }
+        for child in &node.children {
+            self.collect(*child, text, out);
+        }
+        if clip.is_some() {
+            out.push(DrawCmd::PopClip);
+        }
+    }
+
+    /// The clips on an element itself: `clipPath`, and `clip: rect()` for absolutely
+    /// positioned elements.
+    fn self_clips(
+        &self,
+        node: &Node,
+        rect: Rect,
+        l: &NodeLayout,
+        radii: [f32; 4],
+    ) -> Vec<ClipShape> {
+        let v = &node.visual;
+        let mut clips = Vec::new();
+        if let Some(edges) = v.clip_rect
+            && node.style.position == Position::Absolute
+        {
+            let [top, right, bottom, left] = edges;
+            let (x0, y0) = (left.unwrap_or(0.0), top.unwrap_or(0.0));
+            let x1 = right.unwrap_or(rect.width);
+            let y1 = bottom.unwrap_or(rect.height);
+            clips.push(ClipShape::rect(Rect::new(
+                rect.x + x0,
+                rect.y + y0,
+                (x1 - x0).max(0.0),
+                (y1 - y0).max(0.0),
+            )));
+        }
+        if let Some(path) = &v.clip_path {
+            clips.push(path.resolve(rect, l.border, l.padding, radii));
+        }
+        clips
+    }
+}
+
+/// Far enough to never matter: the clip edge on an axis that doesn't clip.
+const UNCLIPPED: f32 = 1.0e7;
+
+/// The clip `overflow` puts on an element's children: its padding box with inner
+/// corner radii. An axis that doesn't clip (`overflow: clip visible`) is unbounded.
+fn overflow_clip(v: &Visual, rect: Rect, l: &NodeLayout, radii: [f32; 4]) -> Option<ClipShape> {
+    let [x, y] = Overflow::computed(v.overflow);
+    if !x.clips() && !y.clips() {
+        return None;
+    }
+    let [bt, br, bb, bl] = l.border;
+    let padding_box = Rect::new(
+        rect.x + bl,
+        rect.y + bt,
+        (rect.width - bl - br).max(0.0),
+        (rect.height - bt - bb).max(0.0),
+    );
+    let mut clip = inner_corners(padding_box, radii, l.border);
+    if !x.clips() {
+        clip.rect.x = -UNCLIPPED;
+        clip.rect.width = 2.0 * UNCLIPPED;
+    }
+    if !y.clips() {
+        clip.rect.y = -UNCLIPPED;
+        clip.rect.height = 2.0 * UNCLIPPED;
+    }
+    if !(x.clips() && y.clips()) {
+        clip.radii_x = [0.0; 4];
+        clip.radii_y = [0.0; 4];
+    }
+    Some(clip)
 }
 
 fn root_style(width: f32, height: f32) -> Style {

@@ -17,9 +17,10 @@ use std::sync::Arc;
 
 use crate::Rgba;
 use crate::paint::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, Corners, Len, Shadow,
-    parse_background_image, parse_background_position, parse_background_repeat,
-    parse_background_size, parse_blur_filter, parse_radii, parse_shadows, split_top_level,
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ClipPath, Corners, Len,
+    Overflow, Shadow, parse_background_image, parse_background_position, parse_background_repeat,
+    parse_background_size, parse_blur_filter, parse_clip_rect, parse_radii, parse_shadows,
+    split_top_level,
 };
 use crate::text_style::{self, TextProps};
 
@@ -46,6 +47,13 @@ pub struct Visual {
     pub opacity: f32,
     /// `pointerEvents`: `Some(false)` for `none`; `None` inherits from the parent.
     pub pointer_events: Option<bool>,
+    /// `overflowX`, `overflowY` as specified (see [`Overflow::computed`]).
+    pub overflow: [Overflow; 2],
+    /// `clipPath`: clips the element and its descendants.
+    pub clip_path: Option<ClipPath>,
+    /// Legacy `clip: rect(...)` (offsets of top, right, bottom, left; `None` = `auto`).
+    /// Only applies to absolutely positioned elements.
+    pub clip_rect: Option<[Option<f32>; 4]>,
     /// `cursor` (a CSS keyword from [`CURSORS`]); `None` inherits from the parent.
     pub cursor: Option<&'static str>,
     /// Inherited text properties set on this node (see [`text_style`]).
@@ -69,6 +77,9 @@ impl Default for Visual {
             backdrop_blur: 0.0,
             opacity: 1.0,
             pointer_events: None,
+            overflow: [Overflow::Visible; 2],
+            clip_path: None,
+            clip_rect: None,
             cursor: None,
             text: TextProps::default(),
         }
@@ -194,6 +205,26 @@ pub fn apply_style(
             style.flex_direction = parse_kw::<FlexDirection>(kw()?).ok_or_else(invalid)?
         }
         "flexWrap" => style.flex_wrap = parse_kw::<FlexWrap>(kw()?).ok_or_else(invalid)?,
+        // `flex-flow: <direction> || <wrap>`, either order, each optional.
+        "flexFlow" => {
+            let (mut direction, mut wrap) = (FlexDirection::Row, FlexWrap::NoWrap);
+            let tokens: Vec<&str> = kw()?.split_whitespace().collect();
+            if tokens.is_empty() || tokens.len() > 2 {
+                return Err(invalid());
+            }
+            let (mut seen_direction, mut seen_wrap) = (false, false);
+            for t in tokens {
+                if let (Some(d), false) = (parse_kw::<FlexDirection>(t), seen_direction) {
+                    (direction, seen_direction) = (d, true);
+                } else if let (Some(w), false) = (parse_kw::<FlexWrap>(t), seen_wrap) {
+                    (wrap, seen_wrap) = (w, true);
+                } else {
+                    return Err(invalid());
+                }
+            }
+            style.flex_direction = direction;
+            style.flex_wrap = wrap;
+        }
         "flexGrow" => style.flex_grow = num(value)?,
         "flexShrink" => style.flex_shrink = num(value)?,
         "flexBasis" => style.flex_basis = d(value)?,
@@ -304,6 +335,31 @@ pub fn apply_style(
         "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "opacity" => visual.opacity = num(value)?.clamp(0.0, 1.0),
+        "overflow" => set_overflow(
+            style,
+            visual,
+            Overflow::parse_pair(kw()?).ok_or_else(invalid)?,
+        ),
+        "overflowX" => {
+            let o = Overflow::parse(kw()?).ok_or_else(invalid)?;
+            set_overflow(style, visual, [o, visual.overflow[1]]);
+        }
+        "overflowY" => {
+            let o = Overflow::parse(kw()?).ok_or_else(invalid)?;
+            set_overflow(style, visual, [visual.overflow[0], o]);
+        }
+        "clipPath" => {
+            visual.clip_path = match kw()?.trim() {
+                "none" => None,
+                s => Some(ClipPath::parse(s).ok_or_else(invalid)?),
+            }
+        }
+        "clip" => {
+            visual.clip_rect = match kw()?.trim() {
+                "auto" => None,
+                s => Some(parse_clip_rect(s).ok_or_else(invalid)?),
+            }
+        }
         "pointerEvents" => {
             visual.pointer_events = match kw()?.trim() {
                 "auto" | "all" => Some(true),
@@ -368,6 +424,10 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "columnGap" => style.gap.width = d.gap.width,
         "flexDirection" => style.flex_direction = d.flex_direction,
         "flexWrap" => style.flex_wrap = d.flex_wrap,
+        "flexFlow" => {
+            style.flex_direction = d.flex_direction;
+            style.flex_wrap = d.flex_wrap;
+        }
         "flexGrow" => style.flex_grow = d.flex_grow,
         "flexShrink" => style.flex_shrink = d.flex_shrink,
         "flexBasis" => style.flex_basis = d.flex_basis,
@@ -425,6 +485,11 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         "filter" => visual.filter_blur = v.filter_blur,
         "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
         "opacity" => visual.opacity = v.opacity,
+        "overflow" => set_overflow(style, visual, v.overflow),
+        "overflowX" => set_overflow(style, visual, [v.overflow[0], visual.overflow[1]]),
+        "overflowY" => set_overflow(style, visual, [visual.overflow[0], v.overflow[1]]),
+        "clipPath" => visual.clip_path = v.clip_path,
+        "clip" => visual.clip_rect = v.clip_rect,
         "pointerEvents" => visual.pointer_events = v.pointer_events,
         "cursor" => visual.cursor = v.cursor,
         p if text_style::is_text_prop(p) => {
@@ -433,6 +498,23 @@ fn reset(style: &mut Style, visual: &mut Visual, prop: &str) -> Result<(), Style
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
     }
     Ok(())
+}
+
+/// Sets `overflow` on both the visual (clipping, scrolling) and Taffy's style, where it
+/// changes automatic minimum sizes and makes the content size available.
+fn set_overflow(style: &mut Style, visual: &mut Visual, overflow: [Overflow; 2]) {
+    visual.overflow = overflow;
+    let taffy = |o: Overflow| match o {
+        Overflow::Visible => taffy::Overflow::Visible,
+        Overflow::Clip => taffy::Overflow::Clip,
+        Overflow::Hidden => taffy::Overflow::Hidden,
+        Overflow::Scroll | Overflow::Auto => taffy::Overflow::Scroll,
+    };
+    let [x, y] = Overflow::computed(overflow);
+    style.overflow = taffy::Point {
+        x: taffy(x),
+        y: taffy(y),
+    };
 }
 
 fn parse_kw<T: FromStr>(s: &str) -> Option<T> {
@@ -674,6 +756,43 @@ mod tests {
         assert_eq!(s.align_self, None);
         let (s, _) = apply("flexDirection", "column".into()).unwrap();
         assert_eq!(s.flex_direction, FlexDirection::Column);
+    }
+
+    #[test]
+    fn flex_flow_sets_direction_and_wrap_in_either_order() {
+        let (s, _) = apply("flexFlow", "row wrap".into()).unwrap();
+        assert_eq!(
+            (s.flex_direction, s.flex_wrap),
+            (FlexDirection::Row, FlexWrap::Wrap)
+        );
+        let (s, _) = apply("flexFlow", "wrap-reverse column".into()).unwrap();
+        assert_eq!(
+            (s.flex_direction, s.flex_wrap),
+            (FlexDirection::Column, FlexWrap::WrapReverse)
+        );
+        let (s, _) = apply("flexFlow", "column".into()).unwrap();
+        assert_eq!(
+            (s.flex_direction, s.flex_wrap),
+            (FlexDirection::Column, FlexWrap::NoWrap)
+        );
+        assert!(apply("flexFlow", "row column".into()).is_err());
+        assert!(apply("flexFlow", "wrap nowrap".into()).is_err());
+    }
+
+    #[test]
+    fn overflow_sets_both_axes_and_taffy() {
+        let (s, v) = apply("overflow", "hidden auto".into()).unwrap();
+        assert_eq!(v.overflow, [Overflow::Hidden, Overflow::Auto]);
+        assert_eq!(s.overflow.x, taffy::Overflow::Hidden);
+        assert_eq!(s.overflow.y, taffy::Overflow::Scroll);
+        let (s, v) = apply("overflowX", "hidden".into()).unwrap();
+        assert_eq!(v.overflow, [Overflow::Hidden, Overflow::Visible]);
+        assert_eq!(
+            s.overflow.y,
+            taffy::Overflow::Scroll,
+            "visible next to hidden computes to auto"
+        );
+        assert!(apply("overflow", "sideways".into()).is_err());
     }
 
     #[test]

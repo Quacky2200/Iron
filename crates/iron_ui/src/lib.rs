@@ -20,13 +20,16 @@ mod tree;
 
 pub use attrs::{Attrs, ElementState};
 pub use color::Rgba;
-pub use draw::{DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd};
+pub use draw::{
+    ClipShape, DrawCmd, GlyphRun, ImageFill, PositionedGlyph, Quad, Rect, ShadowShape, TextCmd,
+};
 pub use events::{EventKind, Pointer, UiEvent};
 pub use interaction::{Input, Interaction};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ColorStop, Corners,
-    GradientDirection, Len, RadialShape, Shadow,
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ClipPath, ClipShapeSpec,
+    ColorStop, Corners, GeometryBox, GradientDirection, Len, Overflow, RadialShape, Shadow,
+    ShapeRadius,
 };
 pub use parley::FontData;
 pub use style::{CURSORS, StyleError, Visual, apply_style};

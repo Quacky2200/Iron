@@ -85,6 +85,16 @@ export interface IronStyle {
   backdropFilter?: string;
   opacity?: number;
 
+  // Clipping
+  /** `visible`, `hidden`, `clip`, `scroll` or `auto`; one value or `x y`. Clips children to the padding box. */
+  overflow?: string;
+  overflowX?: Overflow;
+  overflowY?: Overflow;
+  /** Clips the element and its children: `inset(...)`, `circle(...)`, `ellipse(...)`, and/or a box keyword. */
+  clipPath?: string;
+  /** Legacy `rect(top, right, bottom, left)`; absolutely positioned elements only. Prefer `clipPath`. */
+  clip?: string;
+
   // Text (inherited, as in CSS). `currentColor` in colours means `color`.
   color?: string;
   fontFamily?: string;
@@ -128,6 +138,8 @@ export function styleDiff(prev: IronStyle | undefined, next: IronStyle | undefin
   }
   return out;
 }
+
+export type Overflow = "visible" | "hidden" | "clip" | "scroll" | "auto";
 
 /** CSS `cursor` keywords (crates/iron_ui/src/style.rs `CURSORS`). */
 export type Cursor =

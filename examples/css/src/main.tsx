@@ -4,7 +4,7 @@
 // ::after, custom properties, @font-face, and a runtime stylesheet (CSS-in-JS)
 // whose accent colour changes every second. Interaction (M3c): click an item to pin
 // the highlight, click the toggles (or Tab to them and press Space), double-click
-// the title.
+// the title. The Clipping card shows overflow and clip-path on images.
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
@@ -124,6 +124,17 @@ function App() {
             runtime. It changes every second.
           </Text>
           <Text id="status">tick {tick}</Text>
+        </Card>
+
+        <Card title="Clipping">
+          <box className="shapes">
+            <box className="avatar">
+              <box className="photo" />
+            </box>
+            <box className="shape circle" />
+            <box className="shape ticket" />
+            <box className="shape lens" />
+          </box>
         </Card>
       </box>
     </box>

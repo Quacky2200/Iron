@@ -63,12 +63,84 @@ impl Rect {
         })
     }
 
+    /// The overlap of two rectangles (zero-sized when they don't overlap).
+    pub fn intersect(self, other: Rect) -> Rect {
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        let right = (self.x + self.width).min(other.x + other.width);
+        let bottom = (self.y + self.height).min(other.y + other.height);
+        Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.width <= 0.0 || self.height <= 0.0
+    }
+
     pub fn union(self, other: Rect) -> Rect {
         let x = self.x.min(other.x);
         let y = self.y.min(other.y);
         let right = (self.x + self.width).max(other.x + other.width);
         let bottom = (self.y + self.height).max(other.y + other.height);
         Rect::new(x, y, right - x, bottom - y)
+    }
+}
+
+/// A clip region: a rectangle with elliptical corners (`radii_x` / `radii_y` per corner:
+/// top-left, top-right, bottom-right, bottom-left). Rectangles, rounded boxes, circles
+/// and ellipses are all this shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClipShape {
+    pub rect: Rect,
+    pub radii_x: [f32; 4],
+    pub radii_y: [f32; 4],
+}
+
+impl ClipShape {
+    pub fn rect(rect: Rect) -> Self {
+        Self {
+            rect,
+            radii_x: [0.0; 4],
+            radii_y: [0.0; 4],
+        }
+    }
+
+    /// A box with circular corners.
+    pub fn rounded(rect: Rect, radii: [f32; 4]) -> Self {
+        Self {
+            rect,
+            radii_x: radii,
+            radii_y: radii,
+        }
+    }
+
+    /// Whether (x, y) is inside the shape (right and bottom edges excluded).
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        let r = self.rect;
+        let (right, bottom) = (r.x + r.width, r.y + r.height);
+        if x < r.x || y < r.y || x >= right || y >= bottom {
+            return false;
+        }
+        let left = x < r.x + r.width / 2.0;
+        let top = y < r.y + r.height / 2.0;
+        let corner = match (top, left) {
+            (true, true) => 0,
+            (true, false) => 1,
+            (false, false) => 2,
+            (false, true) => 3,
+        };
+        let (rx, ry) = (self.radii_x[corner], self.radii_y[corner]);
+        if rx <= 0.0 || ry <= 0.0 {
+            return true;
+        }
+        let cx = if left { r.x + rx } else { right - rx };
+        let cy = if top { r.y + ry } else { bottom - ry };
+        let outside_x = if left { x < cx } else { x > cx };
+        let outside_y = if top { y < cy } else { y > cy };
+        if !outside_x || !outside_y {
+            return true;
+        }
+        let (dx, dy) = ((x - cx) / rx, (y - cy) / ry);
+        dx * dx + dy * dy <= 1.0
     }
 }
 
@@ -143,6 +215,10 @@ pub enum DrawCmd {
         opacity: f32,
     },
     PopLayer,
+    /// Following commands are clipped to `shape` (intersected with any clip already
+    /// active) until the matching `PopClip`.
+    PushClip(ClipShape),
+    PopClip,
     /// Shaped, positioned text and its decorations.
     Text(TextCmd),
 }
@@ -239,7 +315,7 @@ impl DrawCmd {
             DrawCmd::InsetShadow { shadow, .. } => Some(shadow.rect),
             DrawCmd::PushLayer { bounds, .. } => Some(*bounds),
             DrawCmd::Text(t) => Some(t.bounds),
-            DrawCmd::PopLayer => None,
+            DrawCmd::PopLayer | DrawCmd::PushClip(_) | DrawCmd::PopClip => None,
         }
     }
 
@@ -261,7 +337,11 @@ impl DrawCmd {
                     *color = color.with_alpha_scaled(factor);
                 }
             }
-            DrawCmd::BackdropBlur { .. } | DrawCmd::PushLayer { .. } | DrawCmd::PopLayer => {}
+            DrawCmd::BackdropBlur { .. }
+            | DrawCmd::PushLayer { .. }
+            | DrawCmd::PopLayer
+            | DrawCmd::PushClip(_)
+            | DrawCmd::PopClip => {}
         }
     }
 }

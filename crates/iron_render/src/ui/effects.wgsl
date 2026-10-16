@@ -1,5 +1,5 @@
 // Full-screen passes for UI effects: separable Gaussian blur, compositing a
-// layer (with opacity and an optional rounded clip), and the final blit.
+// layer (with opacity and an optional clip from the clip table), and the final blit.
 // All passes draw one full-screen triangle; scissor rects limit the work.
 
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -49,37 +49,62 @@ fn fs_blur(in: VsOut) -> @location(0) vec4<f32> {
 // --- Composite ----------------------------------------------------------------
 
 struct CompositeParams {
-    clip_rect: vec4<f32>,  // logical px
-    clip_radii: vec4<f32>,
     opacity: f32,
     scale: f32,
-    use_clip: f32,
+    clip: f32, // clip table index (1-based, 0 = none)
     _pad: f32,
 };
 @group(0) @binding(3) var<uniform> composite: CompositeParams;
+@group(0) @binding(4) var<storage, read> clips: array<Clip>;
 
-fn corner_radius(q: vec2<f32>, radii: vec4<f32>) -> f32 {
+// --- Clips (overflow, clip-path) ---------------------------------------------
+// A table of rounded rectangles with elliptical corners. Entries chain to their
+// parent (1-based index, 0 = none); coverage is the product along the chain.
+
+struct Clip {
+    rect: vec4<f32>,   // logical px
+    rx: vec4<f32>,     // corner radii x: top-left, top-right, bottom-right, bottom-left
+    ry: vec4<f32>,     // corner radii y
+    bounds: vec4<f32>, // the whole chain's bounding box (x, y, w, h)
+    info: vec4<f32>,   // x: parent index (1-based, 0 = none)
+};
+
+fn clip_corner(q: vec2<f32>, radii: vec4<f32>) -> f32 {
     let top = select(radii.x, radii.y, q.x > 0.0);
     let bottom = select(radii.w, radii.z, q.x > 0.0);
     return select(top, bottom, q.y > 0.0);
 }
 
-fn sd_rounded_box(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
-    let half = rect.zw * 0.5;
-    let q0 = p - (rect.xy + half);
-    let r = min(corner_radius(q0, radii), min(half.x, half.y));
-    let q = abs(q0) - half + vec2(r);
-    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
+// Approximate signed distance (logical px) to a box with elliptical corners.
+fn sd_clip(p: vec2<f32>, c: Clip) -> f32 {
+    let half = c.rect.zw * 0.5;
+    let q0 = p - (c.rect.xy + half);
+    let edge = abs(q0) - half;
+    let r = vec2(min(clip_corner(q0, c.rx), half.x), min(clip_corner(q0, c.ry), half.y));
+    if r.x > 0.0 && r.y > 0.0 {
+        let q = edge + r; // relative to the corner's centre
+        if q.x > 0.0 && q.y > 0.0 {
+            return (length(q / r) - 1.0) * min(r.x, r.y);
+        }
+    }
+    return min(max(edge.x, edge.y), 0.0) + length(max(edge, vec2(0.0)));
+}
+
+fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
+    var i = index;
+    var cover = 1.0;
+    for (var n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
+        let c = clips[i - 1u];
+        cover *= clamp(0.5 - sd_clip(p, c) * scale, 0.0, 1.0);
+        i = u32(c.info.x);
+    }
+    return cover;
 }
 
 @fragment
 fn fs_composite(in: VsOut) -> @location(0) vec4<f32> {
-    var color = textureSampleLevel(src, samp, uv_at(in.pos), 0.0) * composite.opacity;
-    if composite.use_clip > 0.5 {
-        let d = sd_rounded_box(in.pos.xy / composite.scale, composite.clip_rect, composite.clip_radii);
-        color *= clamp(0.5 - d * composite.scale, 0.0, 1.0);
-    }
-    return color;
+    let color = textureSampleLevel(src, samp, uv_at(in.pos), 0.0) * composite.opacity;
+    return color * clip_coverage_with(in.pos.xy / composite.scale, u32(composite.clip), composite.scale);
 }
 
 // --- Blit ---------------------------------------------------------------------

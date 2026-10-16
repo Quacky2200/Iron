@@ -225,3 +225,41 @@
 .fancy.bold {
   font-weight: 700;
 }
+
+/* Clipping (M3c): overflow clips children to the padding box (with inner rounded
+   corners); clip-path clips the element itself. */
+.shapes {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.shape {
+  width: 64px;
+  height: 64px;
+  background-image: url("../assets/images/landscape.png");
+  background-size: cover;
+}
+
+.avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  overflow: hidden;
+}
+
+/* A larger image inside, offset: only the part inside the circle shows. */
+.avatar .photo {
+  position: absolute;
+  left: -20px;
+  top: -12px;
+  width: 100px;
+  height: 100px;
+  background-image: url("../assets/images/landscape.png");
+  background-size: cover;
+}
+
+.circle { clip-path: circle(45%); }
+.ticket { clip-path: inset(6px round 14px 0); }
+.lens { clip-path: ellipse(48% 30%); }

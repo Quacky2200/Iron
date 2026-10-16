@@ -4,6 +4,10 @@
 //! A frame is drawn into an internal canvas texture, then blitted to the target.
 //! Plain boxes and shadows are batched into one instanced draw; each layer or
 //! backdrop blur adds a few full-screen passes limited by scissor rects.
+//!
+//! Clips (`overflow`, `clipPath`) don't break batches: they go into a clip table
+//! and every instance carries the index of the clip active when it was drawn. A
+//! layer is clipped when it is composited, so a blur inside a clip is cut off by it.
 
 mod atlas;
 mod gradient;
@@ -13,7 +17,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use iron_ui::{DrawCmd, Rect, Rgba};
+use iron_ui::{ClipShape, DrawCmd, Rect, Rgba};
 use wgpu::util::DeviceExt;
 
 use crate::{Color, Gpu};
@@ -52,6 +56,8 @@ pub struct RenderStats {
     pub passes: u32,
     pub layers: u32,
     pub instances: u32,
+    /// Clip table entries (`overflow`, `clipPath`, backdrop blurs).
+    pub clips: u32,
 }
 
 /// Matches `struct Instance` in `quad.wgsl`.
@@ -65,6 +71,49 @@ struct Instance {
     color0: [f32; 4],
     color1: [f32; 4],
     params: [f32; 4],
+}
+
+/// Matches `struct Clip` in the shaders.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+struct GpuClip {
+    rect: [f32; 4],
+    rx: [f32; 4],
+    ry: [f32; 4],
+    bounds: [f32; 4],
+    /// x: parent index (1-based, 0 = none).
+    info: [f32; 4],
+}
+
+/// The clip table for one frame. Index 0 means "no clip"; entry `i` is `table[i - 1]`.
+#[derive(Default)]
+struct Clips {
+    table: Vec<GpuClip>,
+    /// Bounds of each entry's whole chain, for culling and scissors.
+    bounds: Vec<Rect>,
+}
+
+impl Clips {
+    /// Adds `shape` inside `parent`; returns the new index.
+    fn push(&mut self, shape: &ClipShape, parent: u32) -> u32 {
+        let mut bounds = shape.rect;
+        if parent > 0 {
+            bounds = bounds.intersect(self.bounds[parent as usize - 1]);
+        }
+        self.table.push(GpuClip {
+            rect: rect4(shape.rect),
+            rx: shape.radii_x,
+            ry: shape.radii_y,
+            bounds: rect4(bounds),
+            info: [parent as f32, 0.0, 0.0, 0.0],
+        });
+        self.bounds.push(bounds);
+        self.table.len() as u32
+    }
+
+    fn bounds(&self, index: u32) -> Option<Rect> {
+        (index > 0).then(|| self.bounds[index as usize - 1])
+    }
 }
 
 #[repr(C)]
@@ -86,11 +135,10 @@ struct BlurParams {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct CompositeParams {
-    clip_rect: [f32; 4],
-    clip_radii: [f32; 4],
     opacity: f32,
     scale: f32,
-    use_clip: f32,
+    /// Clip table index (1-based, 0 = none).
+    clip: f32,
     _pad: f32,
 }
 
@@ -130,7 +178,7 @@ enum Step {
         dst: usize,
         area: PxRect,
         opacity: f32,
-        clip: Option<(Rect, [f32; 4])>,
+        clip: u32,
     },
 }
 
@@ -159,6 +207,7 @@ pub struct UiRenderer {
     globals: wgpu::Buffer,
     instances: wgpu::Buffer,
     gradients: wgpu::Buffer,
+    clips: wgpu::Buffer,
     pool: Vec<PooledTexture>,
 }
 
@@ -173,6 +222,16 @@ impl UiRenderer {
             visibility,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let storage = |binding, visibility| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -217,6 +276,7 @@ impl UiRenderer {
                     binding: 3,
                     ..texture
                 },
+                storage(4, wgpu::ShaderStages::VERTEX_FRAGMENT),
             ],
         });
         let blur_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -233,6 +293,7 @@ impl UiRenderer {
                 texture,
                 sampler_entry,
                 uniform(3, wgpu::ShaderStages::FRAGMENT),
+                storage(4, wgpu::ShaderStages::FRAGMENT),
             ],
         });
         let blit_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -390,6 +451,12 @@ impl UiRenderer {
             16 * std::mem::size_of::<GpuGradient>(),
             wgpu::BufferUsages::STORAGE,
         );
+        let clips = Self::buffer(
+            gpu,
+            "ui clips",
+            16 * std::mem::size_of::<GpuClip>(),
+            wgpu::BufferUsages::STORAGE,
+        );
 
         Self {
             quad_pipeline,
@@ -410,6 +477,7 @@ impl UiRenderer {
             globals,
             instances,
             gradients,
+            clips,
             pool: Vec::new(),
         }
     }
@@ -455,7 +523,20 @@ impl UiRenderer {
         }];
         let mut current = 0usize;
         let mut batch_start = 0u32;
-        let mut layer_stack: Vec<(usize, Rect, f32, f32)> = Vec::new();
+        // (parent target, bounds, blur, opacity, the clip stack outside the layer)
+        let mut layer_stack: Vec<(usize, Rect, f32, f32, Vec<u32>)> = Vec::new();
+        // Clips: a layer's content starts unclipped and the layer is clipped when it
+        // is composited, so each layer level has its own stack.
+        let mut clips = Clips::default();
+        let mut clip_stack: Vec<u32> = Vec::new();
+        // Instances from `clip_from` on haven't been given their clip index yet.
+        let mut clip_from = 0usize;
+        let tag = |instances: &mut Vec<Instance>, clip_from: &mut usize, clip: u32| {
+            for instance in &mut instances[*clip_from..] {
+                instance.params[3] = clip as f32;
+            }
+            *clip_from = instances.len();
+        };
 
         let flush = |steps: &mut Vec<Step>,
                      instances: &Vec<Instance>,
@@ -485,7 +566,25 @@ impl UiRenderer {
         };
 
         for cmd in cmds {
+            let clip = clip_stack.last().copied().unwrap_or(0);
+            // Skip anything the active clip removes entirely.
+            if let (Some(bounds), Some(clip_bounds)) = (cmd.bounds(), clips.bounds(clip))
+                && !matches!(cmd, DrawCmd::PushLayer { .. })
+                && bounds.intersect(clip_bounds).is_empty()
+            {
+                continue;
+            }
             match cmd {
+                DrawCmd::PushClip(shape) => {
+                    tag(&mut instances, &mut clip_from, clip);
+                    clip_stack.push(clips.push(shape, clip));
+                }
+                DrawCmd::PopClip => {
+                    tag(&mut instances, &mut clip_from, clip);
+                    if clip_stack.pop().is_none() {
+                        tracing::warn!("PopClip without PushClip; ignored");
+                    }
+                }
                 DrawCmd::Quad(q) => {
                     let mut gradient = -1.0;
                     let mut image = None;
@@ -658,6 +757,7 @@ impl UiRenderer {
                     blur,
                     opacity,
                 } => {
+                    tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
                     let layer = frame_textures.len();
                     frame_textures.push(self.take_texture(gpu, size));
@@ -665,17 +765,33 @@ impl UiRenderer {
                         target: layer,
                         color: wgpu::Color::TRANSPARENT,
                     });
-                    layer_stack.push((current, *bounds, *blur, *opacity));
+                    layer_stack.push((
+                        current,
+                        *bounds,
+                        *blur,
+                        *opacity,
+                        std::mem::take(&mut clip_stack),
+                    ));
                     current = layer;
                     stats.layers += 1;
                 }
                 DrawCmd::PopLayer => {
-                    let Some((parent, bounds, blur, opacity)) = layer_stack.pop() else {
+                    let Some((parent, bounds, blur, opacity, outer_clips)) = layer_stack.pop()
+                    else {
                         tracing::warn!("PopLayer without PushLayer; ignored");
                         continue;
                     };
+                    tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
-                    if let Some(area) = to_px(bounds) {
+                    clip_stack = outer_clips;
+                    let layer_clip = clip_stack.last().copied().unwrap_or(0);
+                    let visible = match clips.bounds(layer_clip) {
+                        Some(b) => bounds.intersect(b),
+                        None => bounds,
+                    };
+                    // The blur reads the whole layer, so it covers `bounds`; only the
+                    // composite is limited to what the clip shows.
+                    if let (Some(area), Some(visible_area)) = (to_px(bounds), to_px(visible)) {
                         if blur > 0.0 {
                             let temp = frame_textures.len();
                             frame_textures.push(self.take_texture(gpu, size));
@@ -689,17 +805,20 @@ impl UiRenderer {
                         steps.push(Step::Composite {
                             src: current,
                             dst: parent,
-                            area,
+                            area: visible_area,
                             opacity,
-                            clip: None,
+                            clip: layer_clip,
                         });
                     }
                     current = parent;
                 }
                 DrawCmd::BackdropBlur { rect, radii, blur } => {
+                    tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
+                    let own_clip = clips.push(&ClipShape::rounded(*rect, *radii), clip);
+                    let visible = clips.bounds(own_clip).unwrap_or(*rect);
                     let (Some(area), Some(blur_area)) =
-                        (to_px(*rect), to_px(rect.expand(3.0 * blur)))
+                        (to_px(visible), to_px(rect.expand(3.0 * blur)))
                     else {
                         continue;
                     };
@@ -722,14 +841,16 @@ impl UiRenderer {
                         dst: current,
                         area,
                         opacity: 1.0,
-                        clip: Some((*rect, *radii)),
+                        clip: own_clip,
                     });
                 }
             }
         }
+        let clip = clip_stack.last().copied().unwrap_or(0);
+        tag(&mut instances, &mut clip_from, clip);
         flush(&mut steps, &instances, &mut batch_start, current);
         // Close layers left open by an unbalanced list.
-        while let Some((parent, bounds, _, opacity)) = layer_stack.pop() {
+        while let Some((parent, bounds, _, opacity, outer_clips)) = layer_stack.pop() {
             tracing::warn!("PushLayer without PopLayer; closing it");
             if let Some(area) = to_px(bounds) {
                 steps.push(Step::Composite {
@@ -737,7 +858,7 @@ impl UiRenderer {
                     dst: parent,
                     area,
                     opacity,
-                    clip: None,
+                    clip: outer_clips.last().copied().unwrap_or(0),
                 });
             }
             current = parent;
@@ -778,6 +899,21 @@ impl UiRenderer {
             );
         }
         gpu.queue.write_buffer(&self.gradients, 0, gradient_bytes);
+        stats.clips = clips.table.len() as u32;
+        let mut clip_table = clips.table;
+        if clip_table.is_empty() {
+            clip_table.push(GpuClip::default()); // storage bindings can't be empty
+        }
+        let clip_bytes: &[u8] = bytemuck::cast_slice(&clip_table);
+        if self.clips.size() < clip_bytes.len() as u64 {
+            self.clips = Self::buffer(
+                gpu,
+                "ui clips",
+                clip_bytes.len().next_power_of_two(),
+                wgpu::BufferUsages::STORAGE,
+            );
+        }
+        gpu.queue.write_buffer(&self.clips, 0, clip_bytes);
         stats.instances = instances.len() as u32;
 
         // --- Record. ---
@@ -801,6 +937,10 @@ impl UiRenderer {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(self.atlas.color_view()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.clips.as_entire_binding(),
                 },
             ],
         });
@@ -954,28 +1094,40 @@ impl UiRenderer {
                     clip,
                 } => {
                     settle(&mut encoder, &mut pending_clear, &mut stats, *src);
-                    let (clip_rect, clip_radii, use_clip) = match clip {
-                        Some((r, radii)) => (rect4(*r), *radii, 1.0),
-                        None => ([0.0; 4], [0.0; 4], 0.0),
-                    };
                     let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("ui composite params"),
                         contents: bytemuck::bytes_of(&CompositeParams {
-                            clip_rect,
-                            clip_radii,
                             opacity: *opacity,
                             scale,
-                            use_clip,
+                            clip: *clip as f32,
                             _pad: 0.0,
                         }),
                         usage: wgpu::BufferUsages::UNIFORM,
                     });
-                    let bind_group = self.texture_bind_group(
-                        gpu,
-                        &self.composite_layout,
-                        &frame_textures[*src].view,
-                        Some((3, &params)),
-                    );
+                    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("ui composite"),
+                        layout: &self.composite_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(
+                                    &frame_textures[*src].view,
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(&self.sampler),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: params.as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 4,
+                                resource: self.clips.as_entire_binding(),
+                            },
+                        ],
+                    });
                     let load = load_for(&mut pending_clear, *dst);
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("ui composite"),

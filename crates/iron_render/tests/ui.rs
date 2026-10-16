@@ -771,3 +771,164 @@ fn text_rendering() {
         assert_golden(id, 400 * s, 260 * s, &f.pixels, TOLERANCE);
     }
 }
+
+// M3-EVT-05: overflow clipping (with inner rounded corners) and clip-path, on images,
+// gradients, text, blurred layers and group opacity. Checked by eye, then golden.
+#[test]
+fn overflow_and_clip_path_clip_what_they_contain() {
+    let mut s = Scene::new();
+    // 1. A rounded, bordered card with overflow: hidden around a larger image.
+    let card = s.add(
+        0,
+        &at(
+            5.0,
+            5.0,
+            50.0,
+            50.0,
+            &[
+                ("backgroundColor", "#202020".into()),
+                ("borderRadius", 16.0.into()),
+                ("border", "3px solid white".into()),
+                ("overflow", "hidden".into()),
+            ],
+        ),
+    );
+    s.add(
+        card,
+        &at(
+            -10.0,
+            -10.0,
+            80.0,
+            80.0,
+            &[
+                ("backgroundImage", "url(checker.png)".into()),
+                ("backgroundSize", "20px".into()),
+            ],
+        ),
+    );
+    // 2. clip-path: circle() on a gradient box with text inside.
+    let circle = s.add(
+        0,
+        &at(
+            65.0,
+            5.0,
+            50.0,
+            50.0,
+            &[
+                (
+                    "backgroundImage",
+                    "linear-gradient(90deg, #ff8800, #0088ff)".into(),
+                ),
+                ("clipPath", "circle(50%)".into()),
+            ],
+        ),
+    );
+    s.label(
+        circle,
+        "Clip",
+        &[("color", "white".into()), ("fontSize", 18.0.into())],
+    );
+    // 3. clip-path: ellipse() around a blurred child (a layer, clipped when composited).
+    let ellipse = s.add(
+        0,
+        &at(
+            125.0,
+            5.0,
+            50.0,
+            50.0,
+            &[("clipPath", "ellipse(25px 12px)".into())],
+        ),
+    );
+    s.add(
+        ellipse,
+        &at(
+            0.0,
+            0.0,
+            50.0,
+            50.0,
+            &[
+                ("backgroundColor", "#40ff40".into()),
+                ("filter", "blur(4px)".into()),
+            ],
+        ),
+    );
+    // 4. Nested: inset() with round corners, then overflow: hidden with a translucent
+    //    group sticking out of it.
+    let outer = s.add(
+        0,
+        &at(
+            185.0,
+            5.0,
+            50.0,
+            50.0,
+            &[
+                ("backgroundColor", "#303060".into()),
+                ("clipPath", "inset(0 0 10px 0 round 12px)".into()),
+            ],
+        ),
+    );
+    let inner = s.add(
+        outer,
+        &at(
+            10.0,
+            10.0,
+            30.0,
+            30.0,
+            &[("overflow", "hidden".into()), ("borderRadius", 15.0.into())],
+        ),
+    );
+    let group = s.add(
+        inner,
+        &at(
+            -20.0,
+            -20.0,
+            70.0,
+            70.0,
+            &[("opacity", 0.5.into()), ("backgroundColor", "white".into())],
+        ),
+    );
+    s.add(
+        group,
+        &at(30.0, 30.0, 30.0, 30.0, &[("backgroundColor", "red".into())]),
+    );
+    let f = render_with_assets(s, (240, 60), 1.0, BLACK, Some(&images_dir()));
+
+    let black = [0, 0, 0, 255];
+    // 1. The image fills the card's padding box but not its outer or inner corners.
+    assert_eq!(f.px(6, 6), black, "outside the card's rounded corner");
+    assert_eq!(
+        f.px(3, 30),
+        black,
+        "the image doesn't spill out of the card"
+    );
+    assert_eq!(f.px(30, 57), black, "nor below it");
+    assert_eq!(f.px(10, 30), [255, 0, 0, 255], "the image shows inside");
+    assert_eq!(
+        f.px(30, 6),
+        [255, 255, 255, 255],
+        "the border isn't clipped"
+    );
+    // 2. The gradient is cut to a circle.
+    assert_eq!(f.px(67, 7), black, "outside the circle");
+    assert_ne!(f.px(90, 30), black);
+    // 3. The blurred child only shows inside the ellipse.
+    assert_eq!(f.px(150, 12), black, "above the ellipse");
+    assert!(
+        f.px(130, 20)[1] < 40,
+        "outside the ellipse, near its corner"
+    );
+    assert!(f.px(150, 30)[1] > 200, "inside");
+    // 4. Nested clips intersect.
+    assert_eq!(f.px(210, 52), black, "below the inset");
+    assert_eq!(
+        f.px(197, 17),
+        [0x30, 0x30, 0x60, 255],
+        "outside the round child clip"
+    );
+    assert!(
+        f.px(210, 25)[0] > 0x80,
+        "the translucent group shows inside"
+    );
+    assert_eq!(f.stats.clips, 5, "card, circle, ellipse, inset, inner");
+    assert_golden("M3-EVT-05-clip", 240, 60, &f.pixels, TOLERANCE);
+}

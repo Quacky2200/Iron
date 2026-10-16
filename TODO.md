@@ -329,8 +329,9 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] Hit test in reverse paint order: rounded corners, `display: none`, `pointerEvents: none`
      (inherited, children can opt back in); text hits its text element, `::before`/`::after` their
      owner — `M3-EVT-01` (`crates/iron_ui/tests/hit.rs`)
-   - [ ] Overflow clipping in hit tests (with step 4); spans inside text as targets (needs node ids
-     in the text brush); `visibility`
+   - [x] Clipping in hit tests: `overflow` and `clipPath` cut away what isn't drawn — `M3-EVT-05`
+     (`crates/iron_ui/tests/clip.rs`)
+   - [ ] Spans inside text as targets (needs node ids in the text brush); `visibility`
    - [x] Pointer events to JS with the target's ancestor path; capture + bubble phases,
      `stopPropagation`, `preventDefault`; `onClick`, `onPointerDown/Up/Move/Enter/Leave`, `onWheel`,
      double click, `onContextMenu`, `onMouse*` aliases — `M3-EVT-02`, `M3-EVT-03`
@@ -355,8 +356,14 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [ ] IME: winit `Ime` events → preedit display and commit; candidate window placed with
      `set_ime_cursor_area` — `M3-IME-01`
 4. **Overflow and scrolling**
-   - [ ] `overflow: visible | hidden | scroll | auto`: `DrawCmd::PushClip`/`PopClip` (scissor for
-     rectangles, layer mask for rounded clips), wheel scrolling, simple scrollbars — `M3-EVT-05`
+   - [x] `overflow` / `overflowX` / `overflowY` (`visible | hidden | clip | scroll | auto`, CSS
+     computed-value rules) clip children to the padding box with inner radii; `clipPath`
+     (`inset() round`, `circle()`, `ellipse()`, box keywords) and legacy `clip: rect()` clip the
+     element itself. `DrawCmd::PushClip`/`PopClip`; the renderer keeps a clip table (elliptical
+     corners, chained) and tags each instance, so clips don't split batches; layers are clipped
+     when composited; fully clipped commands are culled — `M3-EVT-05` (golden `M3-EVT-05-clip`)
+   - [ ] Scrolling: scroll offsets, wheel scrolling (default action of `wheel`), simple scrollbars,
+     `scrollTop`/`scrollLeft` from scripts, culling of off-screen children
 5. **Gamepads**
    - [ ] `gilrs` events to scripts; optional spatial focus navigation with a d-pad — `M3-PAD-01`
 6. **Example + checks**
@@ -386,7 +393,8 @@ and `@font-face`.
 2. **Layout**
    - [ ] `order`, `z-index` (paint order and hit testing), `isolation: isolate`
    - [ ] `display: contents`; `position: fixed`
-   - [ ] Shorthands `flex-flow`, `place-items`, `place-self`, `place-content`
+   - [x] `flex-flow` (Bun's minifier emits it)
+   - [ ] Shorthands `place-items`, `place-self`, `place-content`
    - [ ] Grid: `grid-auto-rows`/`grid-auto-columns`, `grid-template`, `grid-template-areas`,
      `grid-area`, `grid-row-start`/`-end`, `grid-column-start`/`-end`
    - [ ] Logical properties: `margin-block`/`-inline`, `padding-block`/`-inline`,
@@ -404,7 +412,8 @@ and `@font-face`.
    - [ ] `outline`, `outline-width`, `outline-color`, `outline-style`, `outline-offset`
    - [ ] `border-image` (slice, width, `stretch` / `round`, `fill`), from images and gradients
    - [ ] Shaped boxes: s&box's custom `border-shape: polygon() | circle()` (SDF, hit testing follows
-     the shape). Standard equivalent: `clip-path: polygon() | circle() | ellipse() | inset()`
+     the shape). Standard equivalent: `clip-path` — `inset()`, `circle()`, `ellipse()` done in M3c;
+     `polygon()`, `path()` and `url()` still to do
 4. **Text**
    - [ ] `text-transform`, `text-overflow: ellipsis` (with `white-space: nowrap` + `overflow`)
    - [ ] `word-break`, `overflow-wrap`; `white-space: pre-line | break-spaces`

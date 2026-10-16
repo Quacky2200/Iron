@@ -26,6 +26,7 @@ struct Gradient {
 // Glyph atlas pages, read texel-exact with textureLoad.
 @group(0) @binding(2) var glyph_mask: texture_2d<f32>;
 @group(0) @binding(3) var glyph_color: texture_2d<f32>;
+@group(0) @binding(4) var<storage, read> clips: array<Clip>;
 
 const KIND_QUAD: u32 = 0u;
 const KIND_OUTER_SHADOW: u32 = 1u;
@@ -39,7 +40,8 @@ struct Instance {
     @location(3) p1: vec4<f32>,     // shadows: second shape radii
     @location(4) color0: vec4<f32>, // fill, or shadow colour
     @location(5) color1: vec4<f32>, // border colour
-    @location(6) params: vec4<f32>, // x: kind, y: sigma (logical px), z: gradient index or -1
+    @location(6) params: vec4<f32>, // x: kind, y: sigma (logical px), z: gradient index or -1,
+                                    // w: clip index (1-based, 0 = none)
 };
 
 struct VsOut {
@@ -66,7 +68,15 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
         // Glyph quads are pixel-aligned atlas images: no anti-aliasing margin.
         grow = 0.0;
     }
-    let area = vec4<f32>(inst.rect.xy - vec2(grow), inst.rect.zw + vec2(2.0 * grow));
+    var area = vec4<f32>(inst.rect.xy - vec2(grow), inst.rect.zw + vec2(2.0 * grow));
+    // Don't rasterize what the clip removes anyway (fragments only use `rect`).
+    let clip = u32(inst.params.w);
+    if clip > 0u {
+        let b = clips[clip - 1u].bounds;
+        let lo = max(area.xy, b.xy - vec2(grow));
+        let hi = max(lo, min(area.xy + area.zw, b.xy + b.zw + vec2(grow)));
+        area = vec4(lo, hi - lo);
+    }
 
     var corners = array<vec2<f32>, 6>(
         vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0),
@@ -239,11 +249,67 @@ fn glyph(in: VsOut) -> vec4<f32> {
     return in.color0 * text_coverage(a, in.color0);
 }
 
+// --- Clips (overflow, clip-path) ---------------------------------------------
+// A table of rounded rectangles with elliptical corners. Entries chain to their
+// parent (1-based index, 0 = none); coverage is the product along the chain.
+
+struct Clip {
+    rect: vec4<f32>,   // logical px
+    rx: vec4<f32>,     // corner radii x: top-left, top-right, bottom-right, bottom-left
+    ry: vec4<f32>,     // corner radii y
+    bounds: vec4<f32>, // the whole chain's bounding box (x, y, w, h)
+    info: vec4<f32>,   // x: parent index (1-based, 0 = none)
+};
+
+fn clip_corner(q: vec2<f32>, radii: vec4<f32>) -> f32 {
+    let top = select(radii.x, radii.y, q.x > 0.0);
+    let bottom = select(radii.w, radii.z, q.x > 0.0);
+    return select(top, bottom, q.y > 0.0);
+}
+
+// Approximate signed distance (logical px) to a box with elliptical corners.
+fn sd_clip(p: vec2<f32>, c: Clip) -> f32 {
+    let half = c.rect.zw * 0.5;
+    let q0 = p - (c.rect.xy + half);
+    let edge = abs(q0) - half;
+    let r = vec2(min(clip_corner(q0, c.rx), half.x), min(clip_corner(q0, c.ry), half.y));
+    if r.x > 0.0 && r.y > 0.0 {
+        let q = edge + r; // relative to the corner's centre
+        if q.x > 0.0 && q.y > 0.0 {
+            return (length(q / r) - 1.0) * min(r.x, r.y);
+        }
+    }
+    return min(max(edge.x, edge.y), 0.0) + length(max(edge, vec2(0.0)));
+}
+
+fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
+    var i = index;
+    var cover = 1.0;
+    for (var n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
+        let c = clips[i - 1u];
+        cover *= clamp(0.5 - sd_clip(p, c) * scale, 0.0, 1.0);
+        i = u32(c.info.x);
+    }
+    return cover;
+}
+
+fn clip_coverage(p: vec2<f32>, params: vec4<f32>) -> f32 {
+    return clip_coverage_with(p, u32(params.w), globals.scale);
+}
+
 // --- Fragment ---------------------------------------------------------------
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let p = in.pos.xy / globals.scale;
+    let clip = clip_coverage(p, in.params);
+    if clip <= 0.0 {
+        discard;
+    }
+    return shade(in, p) * clip;
+}
+
+fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     let kind = u32(in.params.x);
     let sigma = in.params.y;
 
@@ -264,7 +330,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // A box: fill (solid colour with an optional gradient over it), then border.
     let outer = shape_coverage(p, in.rect, in.radii);
     if outer <= 0.0 {
-        discard;
+        return vec4(0.0);
     }
     let b = in.p0; // border widths: top, right, bottom, left
     let inner_rect = vec4(
@@ -302,7 +368,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
     let p = in.pos.xy / globals.scale;
-    let clip = shape_coverage(p, in.rect, in.radii);
+    let clip = shape_coverage(p, in.rect, in.radii) * clip_coverage(p, in.params);
     if clip <= 0.0 {
         discard;
     }
