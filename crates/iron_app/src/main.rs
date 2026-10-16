@@ -410,6 +410,7 @@ impl App {
         let target =
             OffscreenTarget::with_format(&gfx.gpu, w, h, wgpu::TextureFormat::Rgba8UnormSrgb);
         let view = target.view().context("window has no size")?;
+        load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         gfx.renderer.render(
             &gfx.gpu,
@@ -555,6 +556,7 @@ impl PlatformApp for App {
         let size = gfx.window.inner_size();
         self.ui
             .set_size(size.width as f32 / scale, size.height as f32 / scale);
+        load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         let Gfx {
             gpu,
@@ -618,6 +620,15 @@ fn dom_button(button: MouseButton) -> u8 {
 }
 
 /// Loads a font file (or `data:` URL) from the game folder and registers it.
+/// Loads images that `image` elements started using and tells the UI their natural
+/// sizes, so they lay out before they're drawn.
+fn load_images(ui: &mut UiTree, renderer: &mut UiRenderer, gpu: &Gpu) {
+    for src in ui.take_image_requests() {
+        let size = renderer.image_size(gpu, &src);
+        ui.set_image_size(&src, size);
+    }
+}
+
 fn load_font(
     ui: &mut UiTree,
     root: &Path,

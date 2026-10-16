@@ -4,17 +4,21 @@
 // ::after, custom properties, @font-face, and a runtime stylesheet (CSS-in-JS)
 // whose accent colour changes every second. Interaction (M3c): click an item to pin
 // the highlight, click the toggles (or Tab to them and press Space), double-click
-// the title. The Clipping card shows overflow and clip-path on images, and a list
+// the title. The Clipping card shows overflow and clip-path on images, `Image` with
+// object-fit (fill, contain, cover), and a list
 // that scrolls with the wheel, keys and its scrollbar. The Variables card has text
 // fields (a controlled input and a textarea). The Charm card ends with right-to-left
 // text: an Arabic line and an input with `dir="rtl"`.
 import "./ui.css";
 
 import { addStyleSheet, removeStyleSheet } from "@iron/engine";
-import { createRoot, Input, Span, Text, TextArea } from "@iron/react";
+import { createRoot, Image, Input, Span, Text, TextArea } from "@iron/react";
 import { type ReactNode, useEffect, useState } from "react";
 
 const accents = ["#5ec8ff", "#9fe6a0", "#ffd25e", "#ff5e7e"];
+
+// Image paths are relative to the game folder.
+const PHOTO = "assets/images/landscape.png";
 
 function Card({ title, children }: { title: string; children?: ReactNode }) {
   return (
@@ -167,6 +171,11 @@ function App() {
             <box className="shape circle" />
             <box className="shape ticket" />
             <box className="shape lens" />
+          </box>
+          <box className="fits">
+            <Image className="fit" src={PHOTO} />
+            <Image className="fit" src={PHOTO} style={{ objectFit: "contain" }} />
+            <Image className="fit" src={PHOTO} style={{ objectFit: "cover", objectPosition: "center top" }} />
           </box>
           <ScrollList />
         </Card>

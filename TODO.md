@@ -484,8 +484,12 @@ and `@font-face`.
    - [x] Logical properties: `margin-block`/`-inline`, `padding-block`/`-inline`,
      `inset-block`/`-inline` (with `-start`/`-end`), `block-size`/`inline-size` (+ `min-`/`max-`),
      mapped left-to-right (`crates/iron_ui/tests/layout_props.rs`); RTL-aware mapping later
-   - [ ] An `<image>` element with `src` and `object-fit` (`fill`, `contain`, `cover`, `none`,
-     `scale-down`) and `object-position`
+   - [x] An `image` element (`Image` in `@iron/react`) with `src` (a path inside the game folder
+     or a `data:` URL) and `object-fit` (`fill`, `contain`, `cover`, `none`, `scale-down`) and
+     `object-position`: the tree asks the app for natural sizes (`take_image_requests` /
+     `set_image_size`, loaded by the renderer's image cache) and measures images like replaced
+     elements (one known axis keeps the ratio); drawn in the content box, clipped to the inner
+     rounded corners — `M3-IMG-01`
 3. **Backgrounds and borders**
    - [ ] `conic-gradient()`; `repeating-linear-gradient()` / `repeating-radial-gradient()`
    - [ ] `background-clip` (`border-box`, `padding-box`, `content-box`, `text` for gradient text);

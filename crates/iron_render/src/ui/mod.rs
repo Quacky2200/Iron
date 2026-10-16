@@ -497,6 +497,14 @@ impl UiRenderer {
         self.images.set_root(root.into());
     }
 
+    /// Loads the image at `url` (as `image` elements and `url(...)` use it) and returns
+    /// its natural size in pixels, or `None` if it can't be loaded.
+    pub fn image_size(&mut self, gpu: &Gpu, url: &str) -> Option<(u32, u32)> {
+        self.images
+            .get(gpu, &self.blit_layout, &self.image_sampler, url)
+            .map(|i| i.size)
+    }
+
     /// Draws `cmds` over `clear` into `target`.
     pub fn render(
         &mut self,

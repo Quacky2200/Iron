@@ -13,9 +13,10 @@ use taffy::{
 
 use crate::text::AvailableWidth;
 
-/// Sizes a measured leaf (text): given a known content width, if any, and the
-/// available width, returns its content size (width, height).
-pub type Measure<'a> = dyn FnMut(NodeId, Option<f32>, AvailableWidth) -> (f32, f32) + 'a;
+/// Sizes a measured leaf (text, fields, images): given the known content width and
+/// height, if any, and the available width, returns its content size (width, height).
+pub type Measure<'a> =
+    dyn FnMut(NodeId, (Option<f32>, Option<f32>), AvailableWidth) -> (f32, f32) + 'a;
 
 /// A node's computed layout, relative to its parent's border box.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -309,7 +310,7 @@ impl View<'_, '_> {
                     AvailableSpace::MinContent => AvailableWidth::MinContent,
                     AvailableSpace::MaxContent => AvailableWidth::MaxContent,
                 };
-                let (w, h) = measure(id, known.width, width);
+                let (w, h) = measure(id, (known.width, known.height), width);
                 Size {
                     width: known.width.unwrap_or(w),
                     height: known.height.unwrap_or(h),

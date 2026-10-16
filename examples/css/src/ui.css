@@ -234,6 +234,19 @@
   gap: 10px;
 }
 
+/* object-fit: fill, contain, cover on a square image. */
+.fits {
+  flex-direction: row;
+  gap: 10px;
+}
+
+.fit {
+  width: 72px;
+  height: 40px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
 .shape {
   width: 64px;
   height: 64px;

@@ -1,6 +1,7 @@
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::fmt;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use iron_core::{Commit, NodeId, Value};
 use taffy::{Dimension, Display, Position, Size, Style};
@@ -14,7 +15,9 @@ use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_
 use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
 use crate::opcodes;
-use crate::paint::{Overflow, Shadow, inner_corners, resolve_radii};
+use crate::paint::{
+    BackgroundImage, BackgroundRepeat, Overflow, Shadow, inner_corners, resolve_radii,
+};
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, is_text_prop};
@@ -67,6 +70,22 @@ fn is_inline_container(kind: &str) -> bool {
     matches!(kind, "text" | "span")
 }
 
+/// The element type of images.
+const IMAGE: &str = "image";
+
+/// An image's content size from its natural size: a known width or height keeps the
+/// aspect ratio, like a replaced element with `auto` on the other axis.
+fn image_size(natural: (f32, f32), known: (Option<f32>, Option<f32>)) -> (f32, f32) {
+    let (iw, ih) = natural;
+    let ratio = |a: f32, b: f32| if b > 0.0 { a / b } else { 0.0 };
+    match known {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => (w, w * ratio(ih, iw)),
+        (None, Some(h)) => (h * ratio(iw, ih), h),
+        (None, None) => (iw, ih),
+    }
+}
+
 /// `display: contents` on a box (text elements and fields always keep their box).
 fn is_contents(node: &Node) -> bool {
     node.visual.contents && !is_inline_container(&node.kind) && !is_editor_kind(&node.kind)
@@ -97,6 +116,10 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Nodes whose styles use relative units (`em`, `rem`, viewport units), restyled
     /// when what those resolve against changes.
     unit_uses: HashMap<NodeId, Uses>,
+    /// Natural sizes of image `src`s, as reported by the app (`None`: failed to load).
+    image_sizes: HashMap<String, Option<(f32, f32)>>,
+    /// Image `src`s whose size the app hasn't reported yet.
+    image_requests: Vec<String>,
     /// `position: fixed` nodes; Taffy lays them out as children of the root.
     fixed: HashSet<NodeId>,
     /// Text fields (`input`, `textarea`) by node.
@@ -170,6 +193,8 @@ impl<L: LayoutEngine> UiTree<L> {
             scroll: HashMap::default(),
             unit_uses: HashMap::default(),
             fixed: HashSet::default(),
+            image_sizes: HashMap::default(),
+            image_requests: Vec::new(),
             editors: HashMap::default(),
             time_ms: 0.0,
             dirty_text: HashSet::default(),
@@ -1034,8 +1059,10 @@ impl<L: LayoutEngine> UiTree<L> {
             .chain(text_changed.iter().copied())
             .collect::<Vec<_>>();
         for id in touched {
-            // Text blocks and text fields are measured leaves.
-            let is_root = self.is_text_root(id) || self.editors.contains_key(&id);
+            // Text blocks, text fields and images are measured leaves.
+            let is_root = self.is_text_root(id)
+                || self.editors.contains_key(&id)
+                || self.nodes.get(&id).is_some_and(|n| n.kind == IMAGE);
             self.layout.set_measured(id, is_root);
             if !is_root {
                 self.text_layouts.remove(&id);
@@ -1109,6 +1136,10 @@ impl<L: LayoutEngine> UiTree<L> {
                     // Sized by `measure` from the font, like a replaced element.
                     self.layout.set_measured(id, true);
                 }
+                if kind == IMAGE {
+                    // Sized by `measure` from the image's natural size.
+                    self.layout.set_measured(id, true);
+                }
                 self.nodes.insert(
                     id,
                     Box::new(Node {
@@ -1173,6 +1204,12 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
                 let keys = attr_keys_changed(&before, &node.attrs);
                 let attrs = node.attrs.clone();
+                if node.kind == IMAGE && before.src != attrs.src {
+                    if let Some(src) = &attrs.src {
+                        self.request_image(src);
+                    }
+                    self.layout.mark_dirty(id);
+                }
                 if before.dir != attrs.dir {
                     if self.sheets.is_empty() && !self.uses_vars {
                         dir_fallback(self.node_mut(id)?);
@@ -1441,6 +1478,8 @@ impl<L: LayoutEngine> UiTree<L> {
             layout,
             text_layouts,
             editors,
+            nodes,
+            image_sizes,
             size,
             ..
         } = self;
@@ -1448,11 +1487,17 @@ impl<L: LayoutEngine> UiTree<L> {
             ROOT,
             size.0,
             size.1,
-            &mut |id, known_width, available| match text_layouts.get_mut(&id) {
-                Some(l) => text::measure(l, known_width, available),
+            &mut |id, known, available| match text_layouts.get_mut(&id) {
+                Some(l) => text::measure(l, known.0, available),
                 None => match editors.get(&id) {
-                    Some(e) => e.intrinsic_size(known_width),
-                    None => (0.0, 0.0),
+                    Some(e) => e.intrinsic_size(known.0),
+                    None => {
+                        let natural = nodes
+                            .get(&id)
+                            .and_then(|n| n.attrs.src.as_ref())
+                            .and_then(|src| image_sizes.get(src).copied().flatten());
+                        image_size(natural.unwrap_or_default(), known)
+                    }
                 },
             },
         );
@@ -2054,6 +2099,11 @@ impl<L: LayoutEngine> UiTree<L> {
                 border: l.border,
             });
         }
+        if node.kind == IMAGE
+            && let Some(src) = &node.attrs.src
+        {
+            self.draw_image(src, v, rect, radii, &l, &mut own);
+        }
         if let Some(layout) = self.text_layouts.get(&id) {
             let origin = (
                 rect.x + l.border[3] + l.padding[3],
@@ -2207,6 +2257,85 @@ impl<L: LayoutEngine> UiTree<L> {
             children.extend(self.fixed_nodes(false));
         }
         self.layout.set_children(id, &children);
+    }
+
+    /// The image of an `image` element, fitted into its content box by `objectFit` and
+    /// `objectPosition`, clipped to the box's inner rounded corners.
+    fn draw_image(
+        &self,
+        src: &str,
+        v: &Visual,
+        rect: Rect,
+        radii: [f32; 4],
+        l: &NodeLayout,
+        out: &mut Vec<DrawCmd>,
+    ) {
+        let inset = [0, 1, 2, 3].map(|i| l.border[i] + l.padding[i]);
+        let content = Rect::new(
+            rect.x + inset[3],
+            rect.y + inset[0],
+            (rect.width - inset[1] - inset[3]).max(0.0),
+            (rect.height - inset[0] - inset[2]).max(0.0),
+        );
+        if content.is_empty() {
+            return;
+        }
+        // Until the app reports the natural size, fit as if it matched the box.
+        let natural = self
+            .image_sizes
+            .get(src)
+            .copied()
+            .flatten()
+            .unwrap_or((content.width, content.height));
+        let size = v
+            .object_fit
+            .background_size(natural, (content.width, content.height));
+        out.push(DrawCmd::PushClip(inner_corners(rect, radii, inset)));
+        out.push(DrawCmd::Quad(Quad {
+            rect: content,
+            background: Rgba::TRANSPARENT,
+            image: Some(ImageFill {
+                image: Arc::new(BackgroundImage::Url(src.to_owned())),
+                size,
+                position: v.object_position,
+                repeat: BackgroundRepeat::NoRepeat,
+            }),
+            border_color: Rgba::TRANSPARENT,
+            border: [0.0; 4],
+            radii: [0.0; 4],
+        }));
+        out.push(DrawCmd::PopClip);
+    }
+
+    /// Asks the app for an image's natural size, once per `src`.
+    fn request_image(&mut self, src: &str) {
+        if !self.image_sizes.contains_key(src) && !self.image_requests.iter().any(|r| r == src) {
+            self.image_requests.push(src.to_owned());
+        }
+    }
+
+    /// Image `src`s the app should load and report with [`Self::set_image_size`].
+    pub fn take_image_requests(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.image_requests)
+    }
+
+    /// Records an image's natural size in pixels (`None` if it couldn't be loaded)
+    /// and re-lays out the `image` elements showing it.
+    pub fn set_image_size(&mut self, src: &str, size: Option<(u32, u32)>) {
+        let size = size.map(|(w, h)| (w as f32, h as f32));
+        if self.image_sizes.insert(src.to_owned(), size) == Some(size) {
+            return;
+        }
+        let users: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter(|(_, n)| n.kind == IMAGE && n.attrs.src.as_deref() == Some(src))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in users {
+            self.layout.mark_dirty(id);
+            self.needs_layout = true;
+        }
     }
 
     /// Keeps the set of fixed nodes in step with `id`'s style.

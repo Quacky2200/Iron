@@ -154,6 +154,21 @@ export function TextArea(props: FieldProps & { rows?: number }): ReactElement {
   return createElement("textarea" as never, props);
 }
 
+export interface ImageProps extends ElementAttrs, EventProps {
+  style?: IronStyle;
+  /** A path inside the game folder (like `loadFont`) or a `data:` URL. */
+  src?: string;
+  ref?: Ref<Instance>;
+}
+
+/**
+ * An image (CSS type selector `image`). Without a set size it takes the image's
+ * natural size; `objectFit` and `objectPosition` fit it into its content box.
+ */
+export function Image(props: ImageProps): ReactElement {
+  return createElement("image" as never, props);
+}
+
 /** An inline run inside `Text` with its own style (colour, weight, ...). */
 export function Span({ children, ...props }: TextProps): ReactElement {
   return createElement("span" as never, props, children);

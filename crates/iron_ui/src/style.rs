@@ -18,9 +18,9 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, ClipPath, Corners, Len,
-    Overflow, Shadow, parse_background_image, parse_background_position, parse_background_repeat,
-    parse_background_size, parse_blur_filter, parse_clip_rect, parse_radii, parse_shadows,
-    split_top_level,
+    ObjectFit, Overflow, Shadow, parse_background_image, parse_background_position,
+    parse_background_repeat, parse_background_size, parse_blur_filter, parse_clip_rect,
+    parse_radii, parse_shadows, split_top_level,
 };
 use crate::text_style::{self, TextProps};
 
@@ -71,6 +71,9 @@ pub struct Visual {
     /// `position: fixed`: laid out (as absolute) against the window and painted above
     /// the normal tree. Taffy has no fixed, so `Style::position` is `Absolute`.
     pub fixed: bool,
+    /// `objectFit` and `objectPosition` (default `50% 50%`) for `image` elements.
+    pub object_fit: ObjectFit,
+    pub object_position: BackgroundPosition,
     /// `cursor` (a CSS keyword from [`CURSORS`]); `None` inherits from the parent.
     pub cursor: Option<&'static str>,
     /// Inherited text properties set on this node (see [`text_style`]).
@@ -104,6 +107,11 @@ impl Default for Visual {
             scrollbar_color: None,
             contents: false,
             fixed: false,
+            object_fit: ObjectFit::Fill,
+            object_position: BackgroundPosition {
+                x: Len::Percent(0.5),
+                y: Len::Percent(0.5),
+            },
             cursor: None,
             text: TextProps::default(),
         }
@@ -562,6 +570,10 @@ pub fn apply_style(
         "backgroundPosition" => {
             visual.background_position = parse_background_position(kw()?).ok_or_else(invalid)?
         }
+        "objectFit" => visual.object_fit = ObjectFit::parse(kw()?).ok_or_else(invalid)?,
+        "objectPosition" => {
+            visual.object_position = parse_background_position(kw()?).ok_or_else(invalid)?
+        }
         "backgroundRepeat" => {
             visual.background_repeat = parse_background_repeat(kw()?).ok_or_else(invalid)?
         }
@@ -828,6 +840,8 @@ pub(crate) fn copy_prop(
         "backgroundImage" => visual.background_image = v.background_image,
         "backgroundSize" => visual.background_size = v.background_size,
         "backgroundPosition" => visual.background_position = v.background_position,
+        "objectFit" => visual.object_fit = v.object_fit,
+        "objectPosition" => visual.object_position = v.object_position,
         "backgroundRepeat" => visual.background_repeat = v.background_repeat,
         "border" => {
             style.border = d.border;

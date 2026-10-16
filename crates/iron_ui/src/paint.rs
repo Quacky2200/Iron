@@ -358,6 +358,46 @@ impl Default for BackgroundPosition {
 }
 
 /// `center`, `top`, `left top`, `right 20%`, `10px 50%`, ...
+/// `object-fit`: how an image fills its element's content box.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ObjectFit {
+    #[default]
+    Fill,
+    Contain,
+    Cover,
+    None,
+    ScaleDown,
+}
+
+impl ObjectFit {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "fill" => Self::Fill,
+            "contain" => Self::Contain,
+            "cover" => Self::Cover,
+            "none" => Self::None,
+            "scale-down" => Self::ScaleDown,
+            _ => return None,
+        })
+    }
+
+    /// The equivalent `background-size` for an image of `natural` size in `area`
+    /// (`scale-down` is `none` or `contain`, whichever is smaller).
+    pub fn background_size(self, natural: (f32, f32), area: (f32, f32)) -> BackgroundSize {
+        let full = Some(Len::Percent(1.0));
+        match self {
+            Self::Fill => BackgroundSize::Explicit(full, full),
+            Self::Contain => BackgroundSize::Contain,
+            Self::Cover => BackgroundSize::Cover,
+            Self::None => BackgroundSize::Explicit(None, None),
+            Self::ScaleDown if natural.0 <= area.0 && natural.1 <= area.1 => {
+                BackgroundSize::Explicit(None, None)
+            }
+            Self::ScaleDown => BackgroundSize::Contain,
+        }
+    }
+}
+
 pub fn parse_background_position(s: &str) -> Option<BackgroundPosition> {
     let horizontal = |t: &str| match t {
         "left" => Some(Len::Percent(0.0)),

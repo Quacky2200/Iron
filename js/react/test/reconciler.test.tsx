@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { useEffect, useState } from "react";
 
 import { resetForTests } from "../src/host.ts";
-import { _resetRootForTests, createRoot, Span, Text } from "../src/index.ts";
+import { _resetRootForTests, createRoot, Image, Span, Text } from "../src/index.ts";
 import {
   APPEND_CHILD,
   CREATE,
@@ -319,6 +319,14 @@ describe("@iron/react reconciler", () => {
     commits = [];
     createRoot().render(<Text className="title">Hi</Text>);
     expect(commits[0]!.some((op) => op[0] === SET_ATTRS && op.includes("title"))).toBe(true);
+  });
+
+  // M3-IMG-01
+  test("Image creates an image element with src as an attribute", () => {
+    createRoot().render(<Image src="assets/logo.png" style={{ objectFit: "cover" }} />);
+    expect(tree.markup()).toBe("image()");
+    expect(commits[0]).toContainEqual([CREATE, 1, "image"]);
+    expect(commits[0]).toContainEqual([SET_ATTRS, 1, "src", "assets/logo.png"]);
   });
 
   test("unknown elements are reported with a clear message", () => {

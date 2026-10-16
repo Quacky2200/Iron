@@ -22,6 +22,8 @@ pub struct Attrs {
     pub placeholder: Option<String>,
     pub read_only: bool,
     pub rows: Option<u32>,
+    /// Images: `src`, a path inside the game folder or a `data:` URL.
+    pub src: Option<String>,
     /// `data-*` attributes, by full name (`data-kind`), in insertion order.
     pub data: Vec<(String, String)>,
 }
@@ -76,6 +78,7 @@ impl Attrs {
             "defaultValue" => self.default_value = text(),
             "placeholder" => self.placeholder = text(),
             "readOnly" => self.read_only = truthy,
+            "src" => self.src = text().filter(|s| !s.trim().is_empty()),
             "rows" => {
                 self.rows = match value {
                     Value::Null => None,

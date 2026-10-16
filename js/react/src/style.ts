@@ -130,6 +130,12 @@ export interface IronStyle {
   backdropFilter?: string;
   opacity?: number;
 
+  // Images
+  /** How an `Image` fills its content box. Default `fill`. */
+  objectFit?: "fill" | "contain" | "cover" | "none" | "scale-down";
+  /** Where the image sits in its content box, like `backgroundPosition`. Default `50% 50%`. */
+  objectPosition?: string;
+
   // Ordering
   /** Flex and grid item order (layout and painting; Tab order stays in document order). */
   order?: number;
