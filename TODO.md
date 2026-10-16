@@ -270,10 +270,14 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] Underline / line-through from font metrics, drawn as quads
    - [x] `textShadow` lists: tinted, offset copies under the text; blurred ones in layers — `M3-TXT-05`
    - [x] Golden text sampler at 1× and 2× (weights, italic, sizes, decorations, shadows, spans), checked by eye
-   - [ ] Colour emoji and CJK need system fonts: verify in `examples/text` (goldens use the bundled font only)
+   - [x] Colour emoji and CJK through system fonts, verified in `examples/text` (goldens use the bundled font only)
 6. **Example + checks**
-   - [ ] `examples/text`: font sizes, weights, italics, mixed spans, wrapping, alignment, emoji/CJK,
-     text shadows, a loaded font; verified by `--screenshot` and goldens
+   - [x] `examples/text`: weights 300–800, italic face, decorations, wrapping and alignment, a font loaded
+     at runtime (Charm, regular + bold, Latin and Thai), hard/soft/glow text shadows, CJK, Greek,
+     Cyrillic and colour emoji via system fallback, and a live clock; verified by `--screenshot`.
+     The Charm files are only present locally (git-excluded); without them the card uses fallback fonts
+
+**M3a status:** done.
 
 ### M3b — CSS stylesheets and selectors
 1. **Stylesheets**
