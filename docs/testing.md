@@ -123,6 +123,7 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-INP` | Text fields: editing, selection, controlled values, clipboard, shortcuts on non-Latin layouts (`M3-INP-02`) | `iron_ui/tests/editor.rs`, `iron_ui/tests/events_quickjs.rs` (real React field), `js/react/test/events.test.tsx` (`onChange`, controlled restore), golden `M3-INP-01-fields` in `iron_render/tests/ui.rs` (filled input, placeholder, focused input with selection) |
 | `M3-IME` | IME composition | `iron_platform/src/input.rs` (`converts_ime_events`), `iron_ui/tests/editor.rs` |
 | `M3-PAD` | Gamepads and game input | `iron_platform/src/gamepad.rs` (names, connect/disconnect conversion), `iron_app/src/game_input.rs` (nav mapping, stick hysteresis, `script_args`, and a QuickJS test running fixture `tests/fixtures/src/input.ts`), `iron_ui/tests/navigation.rs`, `js/engine/test/input.test.ts` (keys, blur, pad state and events, throwing listeners) |
+| `M3-IMG` | `image` element: natural-size measuring, object-fit/position, rounded clip | `iron_ui/tests/image.rs`, reconciler test in `js/react/test` |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
 | `*-MAN` | Manual checks (resize, IME, gamepad) | no automated test; listed in TODO.md. Text input and gamepad checks (`M3-MAN-01`) use `examples/form` |
 

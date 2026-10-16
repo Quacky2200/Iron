@@ -21,12 +21,12 @@ is large). A `Node` holds:
 
 | Field | Meaning |
 |---|---|
-| `kind` | `"box"`, `"text"`, `"span"`, `"input"`, `"textarea"`, `"#text"` (`TEXT_NODE`), or `"root"` |
+| `kind` | `"box"`, `"text"`, `"span"`, `"input"`, `"textarea"`, `"image"` (`IMAGE`), `"#text"` (`TEXT_NODE`), or `"root"` |
 | `parent`, `children` | Tree links (ordered) |
 | `style: taffy::Style` | Layout properties |
 | `visual: Visual` | Paint-only properties ([style.rs](../crates/iron_ui/src/style.rs)) |
 | `text` | Characters of a `#text` node |
-| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
+| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `src` (images), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
 | `inline` | Inline `style` declarations, in the order set (later wins) |
 | `generated` | `Some(Before/After)` for stylesheet-generated content |
 | `vars` | Computed custom properties (`Rc`, shared with the parent when unchanged) |
@@ -180,8 +180,8 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
 
 1. `restyle_dirty()`: recompute cascaded styles for dirty nodes (no-op without stylesheets/vars).
 2. For each dirty text root, `build_text_layout` shapes a new Parley layout.
-3. `layout.compute(ROOT, w, h, measure)`. Measured leaves (text blocks) call back into
-   `text::measure`.
+3. `layout.compute(ROOT, w, h, measure)`. Measured leaves (text blocks, images) call back into
+   `text::measure` / `image_size`.
 4. Walk the tree top-down turning Taffy's parent-relative `NodeLayout` into absolute `Rect`s in
    `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset.
    `display: contents` nodes get a zero rect at the parent origin; `position: fixed` nodes are placed
@@ -344,3 +344,20 @@ content-box `size`.
   the restyle only touches nodes the stylesheets depend on.
 - `hit_test` also calls `layout_if_needed`, so it is safe right after a commit.
 - The `uses_vars` flag is set once an inline style uses variables and never cleared.
+
+## Images
+
+`image` is a measured leaf (kept measured in the touched-node pass too). Its `src` attribute is a
+path inside the game folder or a `data:` URL. The tree does not load pixels. `UiTree` keeps
+`image_sizes: HashMap<String, Option<(f32, f32)>>` (natural sizes; `None` = failed) and
+`image_requests`. `request_image` queues a `src` once when an image's `src` changes. The app calls
+`take_image_requests()`, loads each through the renderer, and reports back with
+`set_image_size(src, Option<(u32, u32)>)`, which marks every image using that `src` dirty.
+
+`Measure` now carries the known `(width, height)`. `image_size(natural, known)` keeps the aspect
+ratio when only one axis is known. `draw_image` emits `PushClip(inner_corners(rect, radii,
+border + padding))`, a transparent `Quad` over the content box with an `ImageFill` (`Url`,
+size from `ObjectFit::background_size`, position from `objectPosition`, no repeat), then `PopClip`.
+Until the size is known it fits as if the natural size matched the box. `paint::ObjectFit` is
+`fill`, `contain`, `cover`, `none` or `scale-down`; `Visual.object_fit` / `object_position`
+(default `50% 50%`) come from the `objectFit` / `objectPosition` style props.

@@ -59,6 +59,7 @@ The window is created hidden and shown after its first frame; a resize also draw
    4. drain_ops (loadFont, addStyleSheet, focus, scroll...) handled by the app
    5. Interaction::handle(Input::Refresh)         -> re-hit-test under a still pointer
    6. UiTree::set_size(window / scale)
+      load_images: take_image_requests -> image_size -> set_image_size (before each draw_list)
    7. UiTree::draw_list()                         -> layout_if_needed: restyle -> text shaping
                                                      -> Taffy -> absolute rects -> Vec<DrawCmd>
    8. UiRenderer::render(...)                     -> instances, layers, clips -> wgpu passes

@@ -15,9 +15,9 @@ React handlers. React 19 and `react-reconciler` run unmodified inside QuickJS.
 
 ## Elements
 
-Host element types are `box`, `text`, `span`, `input` and `textarea` (`ELEMENT_TYPES` in host.ts;
+Host element types are `box`, `text`, `span`, `input`, `textarea` and `image` (`ELEMENT_TYPES` in host.ts;
 anything else throws at `createInstance`). `Input` and `TextArea` are the components for the last two
-([Text fields](#text-fields)). `<box>` is a JSX intrinsic (declared in `index.ts` through module
+([Text fields](#text-fields)). `Image` (props: `src`, plus the usual `style`/`className`) creates an `image` element ([ui-tree.md](ui-tree.md#images)). `<box>` is a JSX intrinsic (declared in `index.ts` through module
 augmentation). React's own JSX types already define `<text>` (SVG) and `<span>` (HTML), so Iron
 exposes **`Text`** and **`Span`** as components that call `createElement("text" | "span", ...)`. CSS
 type selectors still use `text` and `span` ([css.md](css.md)). Strings become `#text` nodes

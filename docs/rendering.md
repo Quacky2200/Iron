@@ -149,7 +149,7 @@ in both shader files; keep them in sync with `GpuClip` in mod.rs.
 - [images.rs](../crates/iron_render/src/ui/images.rs): `ImageCache` keyed by URL; failures are
   cached too so they are reported once. `url()` values are `data:` URLs (decoded with
   `decode_data_url`) or paths resolved by `iron_core::resolve_asset` against `set_asset_root` (the
-  app sets it to the game folder). `tile_rect` implements `background-size`
+  app sets it to the game folder). `UiRenderer::image_size(gpu, url)` loads through this cache so the app can report natural sizes for `image` elements. `tile_rect` implements `background-size`
   (`auto`/`cover`/`contain`/lengths) and `background-position`.
 
 ## Offscreen and screenshot path
