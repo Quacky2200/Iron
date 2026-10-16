@@ -12,7 +12,8 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use iron_platform::{
-    CursorIcon, InputEvent, MouseButton, Platform, PlatformApp, WheelDelta, Window, WindowConfig,
+    CursorIcon, ImeEvent, InputEvent, MouseButton, Platform, PlatformApp, WheelDelta, Window,
+    WindowConfig,
 };
 use iron_render::wgpu;
 use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
@@ -120,6 +121,8 @@ fn main() -> Result<()> {
         ui_events,
         cursor: "default",
         clipboard: None,
+        ime_allowed: false,
+        ime_area: None,
         asset_root,
         gfx: None,
         started: Instant::now(),
@@ -185,6 +188,9 @@ struct App {
     /// The CSS cursor currently shown.
     cursor: &'static str,
     clipboard: Option<arboard::Clipboard>,
+    /// Whether the window currently accepts IME input, and the last candidate area.
+    ime_allowed: bool,
+    ime_area: Option<iron_ui::Rect>,
     done: bool,
 }
 
@@ -276,6 +282,7 @@ impl App {
             }
             None => {}
         }
+        self.update_ime();
         let cursor = self.interaction.cursor(&self.ui);
         if cursor != self.cursor
             && let Some(gfx) = &self.gfx
@@ -285,6 +292,29 @@ impl App {
             if let Ok(icon) = cursor.parse::<CursorIcon>() {
                 gfx.window.set_cursor(icon);
             }
+        }
+    }
+
+    /// Allows IME input while an editable field has focus, and keeps the candidate
+    /// window next to its caret.
+    fn update_ime(&mut self) {
+        let Some(gfx) = &self.gfx else {
+            return;
+        };
+        let area = self.interaction.ime_area(&self.ui);
+        if area.is_some() != self.ime_allowed {
+            self.ime_allowed = area.is_some();
+            gfx.window.set_ime_allowed(self.ime_allowed);
+            self.ime_area = None;
+        }
+        if let Some(a) = area
+            && Some(a) != self.ime_area
+        {
+            self.ime_area = Some(a);
+            gfx.window.set_ime_cursor_area(
+                iron_platform::dpi::LogicalPosition::new(a.x, a.y),
+                iron_platform::dpi::LogicalSize::new(a.width.max(1.0), a.height.max(1.0)),
+            );
         }
     }
 
@@ -444,6 +474,12 @@ impl PlatformApp for App {
             }),
             // Releases outside an unfocused window may never arrive.
             InputEvent::Focused(false) => Input::WindowBlur,
+            InputEvent::Ime(ImeEvent::Preedit(text, cursor)) => Input::ImePreedit { text, cursor },
+            InputEvent::Ime(ImeEvent::Commit(text)) => Input::ImeCommit(text),
+            InputEvent::Ime(ImeEvent::Disabled) => Input::ImePreedit {
+                text: String::new(),
+                cursor: None,
+            },
             _ => return,
         };
         self.handle_ui(input);
@@ -453,6 +489,8 @@ impl PlatformApp for App {
         self.tick();
         // Caret blinking.
         self.ui.set_time(self.now_ms());
+        // The caret may have moved with layout.
+        self.update_ime();
         let Some(gfx) = &mut self.gfx else {
             return;
         };

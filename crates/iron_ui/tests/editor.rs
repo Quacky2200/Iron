@@ -411,3 +411,58 @@ fn fields_show_a_text_cursor() {
     let f = Field::new("input", &[], &[]);
     assert_eq!(f.tree.cursor(Some(f.id)), "text");
 }
+
+// M3-IME-01
+#[test]
+fn ime_preedit_shows_underlined_and_commit_inserts() {
+    let mut f = Field::new("input", &[("width", px(200.0))], &[("value", "ab".into())]);
+    let area = f.ui.ime_area(&f.tree).expect("an editable field wants IME");
+    let r = f.tree.rect(f.id).unwrap();
+    assert!(
+        area.x >= r.x && area.x + area.width <= r.x + r.width && area.height > 10.0,
+        "on the caret's line, inside the field: {area:?}"
+    );
+
+    f.input_values();
+    f.input(Input::ImePreedit {
+        text: "ka".into(),
+        cursor: Some((2, 2)),
+    });
+    assert_eq!(f.value(), "ab", "pre-edit text isn't part of the value yet");
+    assert!(f.input_values().is_empty(), "and sends no input events");
+    let underlined = draw(&mut f).into_iter().any(|c| match c {
+        DrawCmd::Text(t) => !t.decorations.is_empty(),
+        _ => false,
+    });
+    assert!(underlined, "the pre-edit text is underlined");
+    let moved = f.ui.ime_area(&f.tree).unwrap();
+    assert!(moved.x >= area.x, "the candidate area follows the pre-edit");
+
+    f.input(Input::ImePreedit {
+        text: String::new(),
+        cursor: None,
+    });
+    f.input(Input::ImeCommit("か".into()));
+    assert_eq!(f.value(), "abか");
+    assert_eq!(f.input_values(), ["abか"]);
+}
+
+// M3-IME-01
+#[test]
+fn leaving_a_field_drops_its_preedit_and_read_only_fields_get_no_ime() {
+    let mut f = Field::new("input", &[], &[("value", "x".into())]);
+    f.input(Input::ImePreedit {
+        text: "abc".into(),
+        cursor: Some((3, 3)),
+    });
+    f.input(Input::Blur(f.id));
+    f.input(Input::Focus(f.id));
+    f.type_text("y");
+    assert_eq!(f.value(), "xy", "the dropped pre-edit left nothing behind");
+    assert!(f.ui.ime_area(&f.tree).is_some());
+    f.input(Input::Blur(f.id));
+    assert_eq!(f.ui.ime_area(&f.tree), None, "nothing focused: no IME");
+
+    let f = Field::new("input", &[], &[("readOnly", true.into())]);
+    assert_eq!(f.ui.ime_area(&f.tree), None);
+}

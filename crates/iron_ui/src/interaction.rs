@@ -44,6 +44,14 @@ pub enum Input {
         repeat: bool,
         text: Option<String>,
     },
+    /// IME pre-edit text for the focused field (empty ends composing); `cursor` is the
+    /// IME's caret or selection as byte offsets into `text`.
+    ImePreedit {
+        text: String,
+        cursor: Option<(usize, usize)>,
+    },
+    /// Finished IME text to insert into the focused field.
+    ImeCommit(String),
     /// Clipboard text to paste into the focused field (the answer to
     /// [`Interaction::take_clipboard`] returning [`Clipboard::Paste`]).
     Paste(String),
@@ -120,6 +128,17 @@ impl Interaction {
     /// The CSS cursor for the hovered element.
     pub fn cursor(&self, tree: &UiTree) -> &'static str {
         self.pointer.cursor(tree)
+    }
+
+    /// While an editable field has focus, where the IME candidate window should go
+    /// (absolute logical pixels); `None` when IME input shouldn't be allowed.
+    pub fn ime_area(&self, tree: &UiTree) -> Option<crate::Rect> {
+        let field = self.focused?;
+        let attrs = tree.attrs(field)?;
+        if attrs.disabled || attrs.read_only {
+            return None;
+        }
+        tree.editor_ime_area(field)
     }
 
     /// Takes the pending clipboard request from the last key press, if any.
@@ -268,6 +287,19 @@ impl Interaction {
                 self.scroll(tree, id, x + dx, y + dy, false, dispatch);
             }
             Input::ScrollIntoView(id) => self.scroll_into_view(tree, id, dispatch),
+            Input::ImePreedit { text, cursor } => {
+                if let Some(field) = self.focused.filter(|_| self.ime_area(tree).is_some()) {
+                    tree.editor_compose(field, &text, cursor);
+                }
+            }
+            Input::ImeCommit(text) => {
+                if let Some(field) = self.focused {
+                    tree.editor_end_compose(field);
+                    if tree.editor_insert(field, &text) {
+                        self.input_event(tree, field, dispatch);
+                    }
+                }
+            }
             Input::Paste(text) => {
                 if let Some(field) = self.focused
                     && tree.editor_insert(field, &text)

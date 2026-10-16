@@ -70,7 +70,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
   - Update `TODO.md` checkboxes, and `TESTS.md` when adding test IDs.
   - After each finished step, update `docs/` to match the code. Delegate this to a subagent on the
-    Sonnet model, and commit the docs with the step or right after it.
+    Sonnet model, and commit the docs with the step or right after it. Give the subagent only
+    what changed since the last docs commit (the commits and files from `git diff`), and have it
+    read just that code and the affected doc pages, not the whole codebase.
 - **Charm font:** never commit it. It lives in `/Charm/` with local copies under `examples/*/assets/fonts/`. It's excluded via `.git/info/exclude` and `dist/` is ignored. Check `git status` before committing.
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
 - **CSS:** prefer standard CSS over s&box's custom extensions. The CSS parity backlog is TODO.md "M3d".

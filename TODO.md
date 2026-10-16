@@ -361,8 +361,10 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [ ] Selecting static text (drag, double-click word, triple-click line, Ctrl+C) on text elements,
      with `user-select: none | text` and a `::selection` colour; shares Parley's selection geometry
      and the clipboard with the editors
-   - [ ] IME: winit `Ime` events → preedit display and commit; candidate window placed with
-     `set_ime_cursor_area` — `M3-IME-01`
+   - [x] IME: winit `Ime` events → pre-edit shown underlined at the caret (not part of the value,
+     no `input` events), commit inserted with an `input` event, pre-edit dropped when focus
+     leaves; IME is allowed only while an editable field has focus and the candidate window
+     follows `set_ime_cursor_area` — `M3-IME-01` (manual check with a real IME: `M3-MAN-01`)
 4. **Overflow and scrolling**
    - [x] `overflow` / `overflowX` / `overflowY` (`visible | hidden | clip | scroll | auto`, CSS
      computed-value rules) clip children to the padding box with inner radii; `clipPath`

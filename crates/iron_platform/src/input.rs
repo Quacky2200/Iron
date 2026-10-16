@@ -1,4 +1,4 @@
-use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, ModifiersState, NamedKey, PhysicalKey};
 
 /// Iron's platform-independent input events.
@@ -32,12 +32,26 @@ pub enum InputEvent {
     MouseWheel(WheelDelta),
     /// The held modifier keys changed.
     Modifiers(Modifiers),
+    /// Input method (IME) composition, while the app allows it.
+    Ime(ImeEvent),
     Resized {
         width: u32,
         height: u32,
     },
     Focused(bool),
     CloseRequested,
+}
+
+/// Input method events (Japanese, Chinese, Korean, ... input).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImeEvent {
+    Enabled,
+    /// The text being composed and the IME's caret / selection in it (byte offsets;
+    /// `None` hides the caret). Empty text ends the pre-edit.
+    Preedit(String, Option<(usize, usize)>),
+    /// Finished text to insert.
+    Commit(String),
+    Disabled,
 }
 
 /// A scroll amount, in the DOM's direction: positive `y` scrolls down (content moves up).
@@ -119,6 +133,12 @@ pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
             MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels { x: -p.x, y: -p.y },
         })),
         WindowEvent::ModifiersChanged(m) => Some(InputEvent::Modifiers(m.state().into())),
+        WindowEvent::Ime(ime) => Some(InputEvent::Ime(match ime {
+            Ime::Enabled => ImeEvent::Enabled,
+            Ime::Preedit(text, cursor) => ImeEvent::Preedit(text.clone(), *cursor),
+            Ime::Commit(text) => ImeEvent::Commit(text.clone()),
+            Ime::Disabled => ImeEvent::Disabled,
+        })),
         WindowEvent::KeyboardInput { event, .. } => Some(convert_key(
             event.physical_key,
             &event.logical_key,
@@ -308,6 +328,22 @@ mod tests {
                 text: None,
                 repeat: false
             }
+        );
+    }
+
+    // M3-IME-01
+    #[test]
+    fn converts_ime_events() {
+        assert_eq!(
+            convert_window_event(&WindowEvent::Ime(Ime::Preedit("にほ".into(), Some((6, 6))))),
+            Some(InputEvent::Ime(ImeEvent::Preedit(
+                "にほ".into(),
+                Some((6, 6))
+            )))
+        );
+        assert_eq!(
+            convert_window_event(&WindowEvent::Ime(Ime::Commit("日本".into()))),
+            Some(InputEvent::Ime(ImeEvent::Commit("日本".into())))
         );
     }
 
