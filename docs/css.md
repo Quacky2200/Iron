@@ -132,6 +132,36 @@ every node. New nodes are inserted into `style_dirty` at `CREATE`.
   throwaway `apply_style` and drops bad declarations with a warning, so they are not re-reported on
   every restyle.
 
+## Relative units and math ([units.rs](../crates/iron_ui/src/units.rs))
+
+`em`, `rem`, `vw`/`vh`/`vmin`/`vmax` (and the `d`/`s`/`l` variants) and `calc()`, `min()`,
+`max()`, `clamp()` are resolved to plain pixel text during restyle, like `var()`, so every property
+parser stays unchanged (`2em` becomes `32px`).
+
+- `resolve(text, &UnitContext) -> Option<(String, Uses)>` rewrites a value. `UnitContext` holds
+  `em` (the element's own font size; the parent's for `fontSize` itself), `rem` (the root's) and the
+  viewport size. `None` means invalid math: the declaration is ignored, like invalid CSS.
+  Quoted strings and `url(...)` pass through untouched.
+- `needs_resolution(text)` is the cheap pre-check; `needs_resolution_for(prop, text)` also skips a
+  plain `fontSize: 2em`, which the font-size parser handles itself (relative to the parent).
+- `Uses { em, rem, viewport }` records which kinds a declaration used.
+- Math that mixes in `%` (`calc(100% - 20px)`) needs layout, so it is kept as written with its units
+  resolved; only properties that accept it take it. Resolving it is left for a later step.
+
+In `restyle`, after `var()` substitution, `fontSize` is resolved first (its `em` is the parent's
+size), then `em` is set to the node's own computed size for all other properties. The node's `Uses`
+go into `UiTree::unit_uses` (cleared on removal). Dependencies:
+
+- `set_size` restyles every node whose uses include `viewport`.
+- A font-size change on a node restyles descendants using `em`; on `ROOT` also those using `rem`.
+  The inline fast path (no stylesheets) does the same.
+- Generated `::before`/`::after` content resolves with its element's font size.
+
+Validation: stylesheet declarations with relative units are checked at `add_stylesheet` time with
+typical units (16px, 1000x1000 viewport); invalid math is dropped with a warning. Inline values go
+through the same check: an invalid one is reported and the previous value stays. Tests:
+[units.rs](../crates/iron_ui/tests/units.rs).
+
 ## `::before` / `::after`
 
 Handled in `UiTree::update_pseudo`, called at the end of `restyle` for every element when any

@@ -29,6 +29,11 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 resolution limits. `WindowSurface` prefers an sRGB format, uses `AutoVsync`, tolerates 0x0 sizes
 (minimized: frames are skipped) and reconfigures on `Outdated`/`Lost`/`Suboptimal`.
 
+Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
+resizing jitter. `IRON_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On
+Windows the window class background is set to black (in `iron_platform`), so any area exposed by a
+resize before the next frame is black, not white.
+
 ## Colour and units
 
 - Draw commands are in **logical pixels**; `RenderTarget { view, format, size (physical), scale }`

@@ -88,6 +88,9 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
   rule `[dir=rtl] { direction: rtl }`): in `restyle` after the cascade, and via `dir_fallback` when
   there are no stylesheets. A `dir` change restyles and invalidates `[dir]` selectors.
 
+Relative units (`em`, `rem`, viewport units) and `calc()`/`min()`/`max()`/`clamp()` in either path
+are resolved to pixels at restyle before `apply_style` sees them; see [css.md](css.md#relative-units-and-math-unitsrs).
+
 `Visual` has a field-wise `PartialEq` so restyle can detect "no visible change".
 
 ## Layout

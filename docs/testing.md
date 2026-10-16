@@ -14,6 +14,9 @@ bun run build:fixtures          # rebuild tests/fixtures/*.js after changing js/
 cargo bench -p iron_ui --bench restyle
 ```
 
+The workspace `Cargo.toml` sets `[profile.dev.package."*"] opt-level = 3`: dependencies (QuickJS,
+Parley, swash, wgpu) are optimized even in debug builds, Iron's own crates are not.
+
 CI ([ci.yml](../.github/workflows/ci.yml)) runs fmt, clippy `-D warnings`, build and test on Windows
 and Ubuntu (software Vulkan via Mesa, WARP on Windows), and a JS job that builds examples,
 typechecks, runs `bun test` and checks that **committed fixtures match their TypeScript sources**
@@ -47,6 +50,8 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `scroll.rs` | Scrolling (M3c step 4b): offsets and hit testing, which axes scroll, wheel chaining, Shift+wheel, key scrolling, Tab into view, script `scrollTo/By/IntoView`, scrollbar geometry, thumb drag and track paging, inherited `scrollbarColor` |
 | `editor.rs` | Text fields (M3c step 5): sizing from the font, typing and editing keys with `input` events, textarea Enter and line moves, prevented `keydown`, controlled `value` / `defaultValue`, read-only and disabled, tab order, pointer caret / word / drag selection, cut / copy / paste requests, draw list (selection, blinking caret, dimmed placeholder, caret kept in view), text cursor, IME pre-edit and commit, focus loss dropping pre-edit |
 | `navigation.rs` | Gamepad UI navigation (M3-PAD-01): `Input::Navigate` picks the nearest focusable element in a direction (in-line beats closer), nothing without focus, `Input::Activate` clicks with detail 0 |
+| `units.rs` | Relative units and math (M3d step 1): `em` from own font size, `rem`, viewport units, `calc`/`min`/`max`/`clamp`, restyle when font size or window size changes, invalid values rejected |
+| `typing_profile.rs` | `#[ignore]`d profile of typing into `examples/form` (needs `bun run build`): `cargo test --release -p iron_ui --test typing_profile -- --ignored --nocapture` |
 | `react_quickjs.rs`, `events_quickjs.rs` | Real React in QuickJS driving a real `UiTree` |
 | `common/mod.rs` | `Dom` builder helper: builds ops with a CSS string and lays out a 400x400 tree |
 

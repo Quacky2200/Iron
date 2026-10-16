@@ -41,6 +41,7 @@ js/react       @iron/react    (reconciler, events)
 
 The binary [main.rs](../crates/iron_app/src/main.rs) is driven by winit's redraw callback
 (`PlatformApp::frame`). Input arrives separately, between frames, through `PlatformApp::input`.
+The window is created hidden and shown after its first frame; a resize also draws a frame right away.
 
 ```
  winit WindowEvent

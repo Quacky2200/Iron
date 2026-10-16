@@ -122,6 +122,8 @@ at startup and ticks them at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per fra
    `bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser
    --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@iron/*`
    workspace packages into one IIFE, and (when CSS is imported) writes `dist/game.css` next to it.
+   Examples build with `NODE_ENV="production"` (smaller, faster React); `bun run build:dev` in an
+   example keeps the development build.
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
 2. `iron <folder>` ([main.rs](../crates/iron_app/src/main.rs)) calls `resolve_bundle`: a directory
    means `<dir>/dist/game.js` with the directory as the asset root; a `.js` path uses its parent.
