@@ -51,6 +51,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `editor.rs` | Text fields (M3c step 5): sizing from the font, typing and editing keys with `input` events, textarea Enter and line moves, prevented `keydown`, controlled `value` / `defaultValue`, read-only and disabled, tab order, pointer caret / word / drag selection, cut / copy / paste requests, draw list (selection, blinking caret, dimmed placeholder, caret kept in view), text cursor, IME pre-edit and commit, focus loss dropping pre-edit |
 | `navigation.rs` | Gamepad UI navigation (M3-PAD-01): `Input::Navigate` picks the nearest focusable element in a direction (in-line beats closer), nothing without focus, `Input::Activate` clicks with detail 0 |
 | `units.rs` | Relative units and math (M3d step 1): `em` from own font size, `rem`, viewport units, `calc`/`min`/`max`/`clamp`, restyle when font size or window size changes, invalid values rejected |
+| `wide_keywords.rs` | CSS-wide keywords (M3d step 1c): `inherit` on non-inherited properties, `initial` stopping inheritance, `unset`/`revert`, stylesheets without warnings, `inherit` at the root, `::before` inheriting |
 | `typing_profile.rs` | `#[ignore]`d profile of typing into `examples/form` (needs `bun run build`): `cargo test --release -p iron_ui --test typing_profile -- --ignored --nocapture` |
 | `react_quickjs.rs`, `events_quickjs.rs` | Real React in QuickJS driving a real `UiTree` |
 | `common/mod.rs` | `Dom` builder helper: builds ops with a CSS string and lays out a 400x400 tree |

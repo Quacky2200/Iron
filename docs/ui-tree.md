@@ -59,8 +59,8 @@ per commit**: styles are pushed to the layout engine, child lists are re-sent (i
 get none, see below), text blocks are marked dirty. Finally `needs_layout` is set.
 
 `SET_STYLE` applies the value immediately through `apply_style` *and* records it in `node.inline`
-so the cascade can re-apply it later (see [css.md](css.md)). Values containing `var(` or
-`--custom` props are deferred to restyle because they depend on inherited variables.
+so the cascade can re-apply it later (see [css.md](css.md)). Values containing `var(`, CSS-wide keywords
+(`inherit` etc.) or `--custom` props are deferred to restyle because they depend on inherited variables.
 
 ## Styles
 

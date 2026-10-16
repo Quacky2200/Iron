@@ -63,8 +63,7 @@ normal rule declarations  ->  inline style declarations  ->  !important rule dec
 ```
 
 and applies them in that order (later wins). This gives "inline beats rules, `!important` beats
-inline", matching browsers. Notes: there is no origin/layer system, no general CSS-wide keywords
-(`inherit`/`initial`), and a value like `0.5` is turned into a number by `css_value` so `opacity: .5` equals
+inline", matching browsers. Notes: there is no origin/layer system, and a value like `0.5` is turned into a number by `css_value` so `opacity: .5` equals
 the inline form `opacity: 0.5`.
 
 ### Rule index
@@ -117,6 +116,31 @@ changed it dirties all descendants.
 
 Adding or removing a stylesheet calls `restyle_everything`: rebuilds the index and deps and dirties
 every node. New nodes are inserted into `style_dirty` at `CREATE`.
+
+## CSS-wide keywords
+
+`WideKeyword` ([style.rs](../crates/iron_ui/src/style.rs)) is `Initial`, `Inherit` or `Unset`;
+`WideKeyword::parse(&Value)` also maps `revert` and `revert-layer` to `Unset`, since there is no
+user-agent stylesheet to revert to. They work on every property: inline, in stylesheets and in
+`::before`/`::after` rules.
+
+`apply_wide_keyword(style, visual, prop, keyword, parent)` applies one, using `is_inherited(prop)`
+(text properties, `cursor`, `pointerEvents`, `scrollbarColor`):
+
+| | inherited property | other property |
+|---|---|---|
+| `initial` | set to its explicit initial value (stops inheriting) | reset |
+| `inherit` | reset (unset properties inherit) | copy the parent's value (reset at the root) |
+| `unset` | reset | reset |
+
+`reset` now delegates to `copy_prop(style, visual, from_style, from_visual, prop)`, which copies one
+property from another style: the defaults for a reset, the parent's for `inherit`. Text properties
+are set back to inheriting.
+
+Keywords need the parent's computed style, so they resolve in `restyle`, in cascade order like any
+declaration. The `::before`/`::after` path does the same, with the owning element as the parent.
+An inline `SET_STYLE` keyword is deferred to restyle (like `var(`), and `add_stylesheet` keeps
+keyword declarations without warnings. Tests: [wide_keywords.rs](../crates/iron_ui/tests/wide_keywords.rs).
 
 ## Custom properties and `var()`
 
@@ -203,6 +227,6 @@ The tree does not know the game folder, so font loading is the app's job:
 
 ## Known limits
 
-- No `@media`, `@keyframes`, transitions, or general `inherit`/`initial` (see TODO.md M3d).
+- No `@media`, `@keyframes` or transitions (see TODO.md M3d).
 - Only `::before`/`::after`; `content` is limited to text.
 - Descendant-combinator invalidation is conservative: a changed ancestor key restyles the whole subtree.
