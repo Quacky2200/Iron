@@ -554,7 +554,9 @@ and `@font-face`.
      applied in sRGB when the layer (or backdrop copy) is composited; drop shadows are blurred,
      tinted, shifted copies of the layer drawn beneath it. Iron applies blur, then colour, then
      shadows, whatever the written order — `M3-FX-02`
-   - [ ] `image-rendering` (`pixelated`, `crisp-edges`, smooth) for background images
+   - [x] `image-rendering` (`pixelated`, `crisp-edges`, `auto`/`smooth`/`high-quality`), inherited,
+     for background images, `Image` elements and border images: each image has a second bind
+     group with a nearest-neighbour sampler — `M3-FX-03`
    - [ ] Masks: `mask-image` (images and gradients), `mask-mode`, `mask-size`, `mask-position`,
      `mask-repeat`
    - [x] `opacity` as a percentage (and as a numeric string) — `M3-FX-01`

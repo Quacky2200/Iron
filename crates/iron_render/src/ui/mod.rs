@@ -218,11 +218,12 @@ enum Step {
         target: usize,
         color: wgpu::Color,
     },
-    /// Instanced quads; with `image`, one background image draw using that texture.
+    /// Instanced quads; with `image`, one background image draw using that texture
+    /// (and nearest-neighbour sampling when the flag is set).
     Draw {
         target: usize,
         range: Range<u32>,
-        image: Option<String>,
+        image: Option<(String, bool)>,
     },
     Copy {
         src: usize,
@@ -261,7 +262,7 @@ pub struct UiRenderer {
     quad_pipeline: wgpu::RenderPipeline,
     quad_layout: wgpu::BindGroupLayout,
     image_pipeline: wgpu::RenderPipeline,
-    image_sampler: wgpu::Sampler,
+    image_samplers: images::ImageSamplers,
     images: ImageCache,
     atlas: GlyphAtlas,
     blur_pipeline: wgpu::RenderPipeline,
@@ -450,14 +451,20 @@ impl UiRenderer {
             multiview_mask: None,
             cache: None,
         });
-        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("ui images"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
+        let image_sampler = |label, filter| {
+            device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some(label),
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                mag_filter: filter,
+                min_filter: filter,
+                ..Default::default()
+            })
+        };
+        let image_samplers = images::ImageSamplers {
+            smooth: image_sampler("ui images", wgpu::FilterMode::Linear),
+            nearest: image_sampler("ui images (pixelated)", wgpu::FilterMode::Nearest),
+        };
 
         let fullscreen =
             |label, layout: &wgpu::PipelineLayout, entry, target: wgpu::ColorTargetState| {
@@ -543,7 +550,7 @@ impl UiRenderer {
             quad_pipeline,
             quad_layout,
             image_pipeline,
-            image_sampler,
+            image_samplers,
             images: ImageCache::default(),
             atlas: GlyphAtlas::new(gpu),
             blur_pipeline,
@@ -583,7 +590,7 @@ impl UiRenderer {
     /// its natural size in pixels, or `None` if it can't be loaded.
     pub fn image_size(&mut self, gpu: &Gpu, url: &str) -> Option<(u32, u32)> {
         self.images
-            .get(gpu, &self.blit_layout, &self.image_sampler, url)
+            .get(gpu, &self.blit_layout, &self.image_samplers, url)
             .map(|i| i.size)
     }
 
@@ -711,7 +718,7 @@ impl UiRenderer {
                         } else if let iron_ui::BackgroundImage::Url(url) = &*fill.image
                             && let Some(loaded) =
                                 self.images
-                                    .get(gpu, &self.blit_layout, &self.image_sampler, url)
+                                    .get(gpu, &self.blit_layout, &self.image_samplers, url)
                         {
                             let natural = (loaded.size.0 as f32, loaded.size.1 as f32);
                             let tile = images::tile_rect(q.rect, natural, fill.size, fill.position);
@@ -737,7 +744,7 @@ impl UiRenderer {
                             steps.push(Step::Draw {
                                 target: current,
                                 range: batch_start..end,
-                                image: Some(url.clone()),
+                                image: Some((url.clone(), fill.pixelated)),
                             });
                             batch_start = end;
                         }
@@ -957,6 +964,7 @@ impl UiRenderer {
                     area,
                     border,
                     image,
+                    pixelated,
                 } => {
                     // Piece edges on whole physical pixels, so neighbours don't leave
                     // anti-aliased seams between them.
@@ -970,7 +978,7 @@ impl UiRenderer {
                         Some(iron_ui::BackgroundImage::Url(url)) => {
                             let Some(loaded) =
                                 self.images
-                                    .get(gpu, &self.blit_layout, &self.image_sampler, url)
+                                    .get(gpu, &self.blit_layout, &self.image_samplers, url)
                             else {
                                 continue;
                             };
@@ -1022,7 +1030,7 @@ impl UiRenderer {
                                 steps.push(Step::Draw {
                                     target: current,
                                     range: batch_start..end,
-                                    image: Some(url.clone()),
+                                    image: Some((url.clone(), *pixelated)),
                                 });
                                 batch_start = end;
                             }
@@ -1376,11 +1384,12 @@ impl UiRenderer {
                     image,
                 } => {
                     let image_bind_group = match image {
-                        Some(url) => {
+                        Some((url, pixelated)) => {
                             match self
                                 .images
-                                .get(gpu, &self.blit_layout, &self.image_sampler, url)
+                                .get(gpu, &self.blit_layout, &self.image_samplers, url)
                             {
+                                Some(loaded) if *pixelated => Some(&loaded.bind_group_nearest),
                                 Some(loaded) => Some(&loaded.bind_group),
                                 None => continue,
                             }

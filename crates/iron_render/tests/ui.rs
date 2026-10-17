@@ -1204,6 +1204,42 @@ fn filter_functions_and_drop_shadows() {
     assert_golden("M3-FX-02", 150, 90, &f.pixels, TOLERANCE);
 }
 
+// M3-FX-03
+#[test]
+fn pixelated_images_scale_without_smoothing() {
+    let mut s = Scene::new();
+    for (i, rendering) in ["auto", "pixelated"].iter().enumerate() {
+        s.add(
+            0,
+            &at(
+                i as f64 * 50.0,
+                0.0,
+                40.0,
+                40.0,
+                &[
+                    ("backgroundImage", "url(checker.png)".into()),
+                    ("backgroundSize", "40px".into()),
+                    ("imageRendering", (*rendering).into()),
+                ],
+            ),
+        );
+    }
+    let f = render_with_assets(s, (90, 40), 1.0, BLACK, Some(&images_dir()));
+    let pure = |p: [u8; 4]| p == [255, 0, 0, 255] || p == [0, 0, 255, 255];
+    // Around the middle of the top row, where the red and blue squares meet.
+    let smooth: Vec<_> = (14..26).map(|x| f.px(x, 5)).collect();
+    let crisp: Vec<_> = (64..76).map(|x| f.px(x, 5)).collect();
+    assert!(
+        smooth.iter().any(|p| !pure(*p)),
+        "filtered: blends {smooth:?}"
+    );
+    assert!(
+        crisp.iter().all(|p| pure(*p)),
+        "nearest: no blends {crisp:?}"
+    );
+    assert_golden("M3-FX-03", 90, 40, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

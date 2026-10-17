@@ -358,6 +358,9 @@ pub struct TextProps {
     /// `font-smooth` / `-webkit-font-smoothing`: `Some(false)` draws glyphs without
     /// anti-aliasing (crisp pixel fonts).
     pub smooth: Option<bool>,
+    /// `image-rendering: pixelated | crisp-edges` (`Some(true)`). Not a text property,
+    /// but inherited like one, so it rides along here.
+    pub pixelated: Option<bool>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
@@ -400,6 +403,8 @@ pub struct ComputedText {
     /// `None`: the text colour.
     pub caret_color: Option<Rgba>,
     pub smooth: bool,
+    /// Images scale with nearest-neighbour sampling.
+    pub pixelated: bool,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
@@ -435,6 +440,7 @@ impl Default for ComputedText {
             stroke_color: None,
             caret_color: None,
             smooth: true,
+            pixelated: false,
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
@@ -499,6 +505,7 @@ impl ComputedText {
             stroke_color: props.stroke_color.unwrap_or(self.stroke_color),
             caret_color: props.caret_color.unwrap_or(self.caret_color),
             smooth: props.smooth.unwrap_or(self.smooth),
+            pixelated: props.pixelated.unwrap_or(self.pixelated),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
                 .text_shadow
@@ -573,6 +580,7 @@ pub const TEXT_PROPS: &[&str] = &[
     "caretColor",
     "fontSmooth",
     "WebkitFontSmoothing",
+    "imageRendering",
     "whiteSpace",
     "textShadow",
     "textTransform",
@@ -628,6 +636,7 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "WebkitTextStrokeColor" | "textStrokeColor" => props.stroke_color = None,
             "caretColor" => props.caret_color = None,
             "fontSmooth" | "WebkitFontSmoothing" => props.smooth = None,
+            "imageRendering" => props.pixelated = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
@@ -836,6 +845,13 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 None => None,
             }));
         }
+        "imageRendering" => {
+            props.pixelated = Some(parse!(match s {
+                Some("auto" | "smooth" | "high-quality") => Some(false),
+                Some("pixelated" | "crisp-edges") => Some(true),
+                _ => None,
+            }));
+        }
         "fontSmooth" | "WebkitFontSmoothing" => {
             props.smooth = Some(parse!(match s {
                 // `font-smooth`, s&box's keywords included.
@@ -969,6 +985,21 @@ fn parse_font_shorthand(s: &str) -> Option<FontShorthand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M3-FX-03
+    #[test]
+    fn image_rendering_parses_and_inherits() {
+        let mut p = TextProps::default();
+        set(&mut p, "imageRendering", "pixelated".into());
+        let c = ComputedText::default().child(&p);
+        assert!(c.pixelated && c.child(&TextProps::default()).pixelated);
+        set(&mut p, "imageRendering", "smooth".into());
+        assert!(!ComputedText::default().child(&p).pixelated);
+        assert_eq!(
+            apply(&mut p, "imageRendering", &"blocky".into()),
+            Some(Err(()))
+        );
+    }
 
     // M3-TXT-15
     #[test]

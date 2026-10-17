@@ -78,6 +78,7 @@ fn background_layers(
     rect: Rect,
     radii: Radii,
     l: &NodeLayout,
+    pixelated: bool,
 ) -> (Vec<ImageFill>, Option<Arc<BackgroundImage>>) {
     let mut fills = Vec::new();
     let mut text_fill = None;
@@ -101,6 +102,7 @@ fn background_layers(
             repeat: v.background_repeats[pick(v.background_repeats.len())],
             area,
             radii: area_radii,
+            pixelated,
         });
     }
     (fills, text_fill)
@@ -2220,7 +2222,7 @@ impl<L: LayoutEngine> UiTree<L> {
         {
             own.push(DrawCmd::BoxShadow(shadow(s)));
         }
-        let (images, text_fill) = background_layers(v, rect, radii, &l);
+        let (images, text_fill) = background_layers(v, rect, radii, &l, text.pixelated);
         let mut background = current(v.background, v.background_current);
         // The colour is clipped like the bottom layer.
         let bottom = v.background_images.len().max(1) - 1;
@@ -2281,6 +2283,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 area: image.area(rect, l.border),
                 border: l.border,
                 image: image.clone(),
+                pixelated: text.pixelated,
             });
         } else if !simple_border && (0..4).any(drawn) {
             own.push(DrawCmd::Border {
@@ -2305,7 +2308,7 @@ impl<L: LayoutEngine> UiTree<L> {
         if node.kind == IMAGE
             && let Some(src) = &node.attrs.src
         {
-            self.draw_image(src, v, rect, radii, &l, &mut own);
+            self.draw_image(src, v, (rect, radii), &l, text.pixelated, &mut own);
         }
         if let Some(layout) = self.text_layouts.get(&id) {
             let origin = (
@@ -2523,9 +2526,9 @@ impl<L: LayoutEngine> UiTree<L> {
         &self,
         src: &str,
         v: &Visual,
-        rect: Rect,
-        radii: Radii,
+        (rect, radii): (Rect, Radii),
         l: &NodeLayout,
+        pixelated: bool,
         out: &mut Vec<DrawCmd>,
     ) {
         let inset = [0, 1, 2, 3].map(|i| l.border[i] + l.padding[i]);
@@ -2559,6 +2562,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 repeat: BackgroundRepeat::NO_REPEAT,
                 area: content,
                 radii: Radii::ZERO,
+                pixelated,
             }],
             border_color: Rgba::TRANSPARENT,
             border: [0.0; 4],

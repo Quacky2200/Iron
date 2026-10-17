@@ -10,8 +10,17 @@ use iron_ui::{
 
 use crate::Gpu;
 
+/// The two ways images are sampled: filtered, and nearest-neighbour
+/// (`image-rendering: pixelated`). Both repeat.
+pub struct ImageSamplers {
+    pub smooth: wgpu::Sampler,
+    pub nearest: wgpu::Sampler,
+}
+
 pub struct LoadedImage {
     pub bind_group: wgpu::BindGroup,
+    /// The same texture with the nearest-neighbour sampler.
+    pub bind_group_nearest: wgpu::BindGroup,
     /// Natural size in pixels (treated as CSS pixels).
     pub size: (u32, u32),
 }
@@ -33,11 +42,11 @@ impl ImageCache {
         &mut self,
         gpu: &Gpu,
         layout: &wgpu::BindGroupLayout,
-        sampler: &wgpu::Sampler,
+        samplers: &ImageSamplers,
         url: &str,
     ) -> Option<&LoadedImage> {
         if !self.entries.contains_key(url) {
-            let loaded = self.load(gpu, layout, sampler, url);
+            let loaded = self.load(gpu, layout, samplers, url);
             self.entries.insert(url.to_owned(), loaded);
         }
         self.entries.get(url)?.as_ref()
@@ -47,7 +56,7 @@ impl ImageCache {
         &self,
         gpu: &Gpu,
         layout: &wgpu::BindGroupLayout,
-        sampler: &wgpu::Sampler,
+        samplers: &ImageSamplers,
         url: &str,
     ) -> Option<LoadedImage> {
         let decoded = if url.trim_start().starts_with("data:") {
@@ -104,23 +113,28 @@ impl ImageCache {
             size,
         );
         let view = texture.create_view(&Default::default());
-        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(url),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-            ],
-        });
+        let bind = |sampler: &wgpu::Sampler| {
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(url),
+                layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                ],
+            })
+        };
+        let bind_group = bind(&samplers.smooth);
+        let bind_group_nearest = bind(&samplers.nearest);
         tracing::debug!("loaded background image `{url}` ({w}x{h})");
         Some(LoadedImage {
             bind_group,
+            bind_group_nearest,
             size: (w, h),
         })
     }

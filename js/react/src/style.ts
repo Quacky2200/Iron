@@ -263,6 +263,8 @@ export interface IronStyle {
   WebkitTextStroke?: string;
   WebkitTextStrokeWidth?: Length;
   WebkitTextStrokeColor?: string;
+  /** `pixelated` / `crisp-edges` scale images (backgrounds, `Image`, border images) without smoothing. Inherited. */
+  imageRendering?: "auto" | "smooth" | "high-quality" | "pixelated" | "crisp-edges";
   /** Text field caret; `auto` is the text colour. */
   caretColor?: string;
   /** `never` draws glyphs without anti-aliasing (pixel fonts). s&box keywords: `auto`, `never`, `always`. */
