@@ -60,6 +60,7 @@ Scripts change the scene with ops. `App::tick` matches the `scene.` prefix and c
 | `scene.local` | `id [p] [q] [s]` | Sets the local transform. Missing parts are identity. A zero quaternion is an error. |
 | `scene.enabled` | `id bool` | |
 | `scene.name` | `id name` | |
+| `scene.layer` | `id 0..31` | Sets the render layer (an error outside 0 to 31). Stored on the object, default 0; `ScriptScene::layer(id)` reads it. Cameras, lights, mirrors and probes filter on it (see [world-rendering.md](world-rendering.md#layers-and-culling)). |
 | `scene.addComponent` | `object component class` | Returns `SceneEvent::ComponentAdded`. |
 | `scene.removeComponent` | `component` | Returns `SceneEvent::ComponentRemoved`. |
 
@@ -138,7 +139,8 @@ s&box.
 
 **Scene** ([scene.ts](../js/engine/src/scene.ts)).
 
-- `GameObject`: `new GameObject(name, { parent, position, rotation, scale })`, `name`, `parent`,
+- `GameObject`: `new GameObject(name, { parent, position, rotation, scale })`, `name`, `layer` (0 to 31,
+  range-checked, sends `scene.layer`; see `LayerMask` in [layers.ts](../js/engine/src/layers.ts)), `parent`,
   `children`, `components`, `setParent(parent, keepWorld = true)`, `addComponent(Class, props)`,
   `getComponent`, `removeComponent`, `destroy`, `findChild`. Statics: `find(name)`, `roots`, `byId`,
   `findObjectOfType`, `createPrimitive(type, options)` (an object with the mesh and collider of a built-in

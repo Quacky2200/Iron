@@ -25,12 +25,12 @@ the app builds a flat `WorldView` per camera.
   projection, near, far, size, clear)` builds it from the camera's world matrix and a viewport `size`
   in pixels (for the aspect). `Projection` is `Perspective { fov_y_degrees }` or `Orthographic {
   half_height }`.
-- `WorldQuad { model, color, texture, uv, additive, order }`. The unit quad (-0.5..0.5 in x and y,
+- `WorldQuad { model, color, texture, uv, additive, order, layer }`. The unit quad (-0.5..0.5 in x and y,
   facing +z) is placed by `model`. `color` is linear straight-alpha RGBA that multiplies the texture.
   `uv` is the part of the texture shown. `additive` adds light instead of covering (glows). `order` is
-  the sorting order (see below).
+  the sorting order (see below). `layer` (0 to 31) is the object's layer, used by culling masks.
 - `MeshInstance { mesh, model, color, emission, smoothness, metallic, unlit, texture, tiling, glow,
-  cast_shadows, mirror }`. `mesh` is a
+  cast_shadows, mirror, layer }`. `mesh` is a
   built-in primitive id or a mesh set with `set_mesh`. `color` is linear straight-alpha RGBA;
   `emission` is light the mesh gives off (it lights nothing else); `smoothness` 0..1 is
   1 - roughness and `metallic` 0..1 is Unity's metallic workflow (see Shading); `unlit` ignores lights; `tiling` is scale (xy) and offset (zw), Unity's
@@ -251,26 +251,28 @@ Screenshot runs and window frames both go through `draw_frame`.
 ## Components from scripts
 
 `Camera`, `PlaneRenderer`, `MeshRenderer`, `Light`, `SpriteRenderer`, `ParticleSystem`, `Mirror`,
-`ReflectionProbe` and `WorldPanel` are components in `@iron/engine` ([rendering.ts](../js/engine/src/rendering.ts),
+`ReflectionProbe`, `LODGroup` and `WorldPanel` are components in `@iron/engine` ([rendering.ts](../js/engine/src/rendering.ts),
 [textures.ts](../js/engine/src/textures.ts), [particles.ts](../js/engine/src/particles.ts)). They send
 `render.*` ops keyed by the component id, and `WorldViews`
 ([world_view.rs](../crates/iron_app/src/world_view.rs)) stores them in one map per kind.
 
 | Op | Arguments |
 |---|---|
-| `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color)` |
+| `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical` |
 | `render.plane` | `component object [w h] [r g b a]` |
 | `render.mesh` | `id [positions] [normals] [uvs] [indices]` (a script mesh; `id null` removes it) |
 | `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic` |
-| `render.light` | `component object type [r g b] intensity range spotAngle innerSpotAngle haloSize beamIntensity shadows shadowStrength` |
+| `render.light` | `component object type [r g b] intensity range spotAngle innerSpotAngle haloSize beamIntensity shadows shadowStrength cullingMask` |
 | `render.sprite` | `component object texture [x y w h]\|null [pivot x y] pixelsPerUnit [r g b a] flipX flipY sortingOrder` |
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
-| `render.mirror` | `component object [nx ny nz]` (local plane normal) |
-| `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame`; `component` (render again next frame) |
+| `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
+| `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
 | `render.bloom` | `0 threshold intensity scatter`, or `0 null` for off |
+| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias` (see Quality settings) |
+| `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
 | `render.panel` | `component object [w h] pixelsPerMeter resolution [r g b a] interactive` (handled by `Panels`) |
 | `render.remove` | `component` (removes a camera, plane, mesh renderer, light, sprite, particle system, mirror, probe or panel) |
@@ -379,12 +381,63 @@ tree and interaction.
   ray with the quad plane in the quad's own space and returns `(u, v, distance)` with (0, 0) at the
   top-left. `None` means parallel or behind.
 
+## Layers and culling
+
+Every GameObject has a `layer` from 0 to 31 (`GameObject.layer`, op `scene.layer id n`, default 0;
+`ScriptScene::layer` reads it, 0 for unknown ids). `LayerMask`
+([layers.ts](../js/engine/src/layers.ts)) names layers: Unity's built-ins (0 Default, 1 TransparentFX,
+2 Ignore Raycast, 4 Water, 5 UI) plus the game's `package.json` `iron.layers` (`{ "8": "Player" }`,
+passed on by `info.rs`). A mask is a `u32`, a bit per layer; scripts may use signed masks (`~mask`),
+which are made unsigned before they cross the op boundary. Missing or null masks mean every layer
+(`ALL_LAYERS`).
+
+**What a mask filters.**
+- **Camera** `cullingMask`: the camera draws only meshes, planes, sprites, panels, particles and halos
+  on those layers. `layerCullDistances` (32 numbers, 0: out to the far plane) hides a layer's things
+  beyond a distance, measured along the view, or straight from the camera with `layerCullSpherical`.
+  The app does this in `WorldViews::views` with `Camera::shows(layer, at, position, forward)`, using
+  each object's origin. Every list is held as `Tagged { layer, at, item }` and filtered per camera,
+  so the `WorldView`s already hold only what that camera draws. Panels return `(object, quad)` pairs
+  so their quads carry the panel object's layer.
+- **Light** `cullingMask`: `fs_mesh` checks the mask against each instance's `layer` (`in_mask`), so a
+  light lights only those layers. The shadow-casting light's mask also picks which meshes cast its
+  shadows.
+- **Mirror** and **ReflectionProbe** `cullingMask`: the layers drawn into the reflection or cubemap.
+  Set them before the component starts.
+
+**Frustum culling** ([cull.rs](../crates/iron_render/src/world/cull.rs)) runs in `render_views_with`,
+per view. `Frustum::from_view_proj` takes the six planes from the matrix (wgpu depth 0 to 1; works for
+perspective and orthographic) and tests spheres and boxes. Meshes use the box of their mesh data
+(`bounds`) moved by the instance matrix (`transform_aabb`); quads use `QUAD_BOUNDS`.
+- Opaque runs get a `visible` flag. Opaque meshes out of view are skipped in the colour pass but
+  **still drawn into the shadow map**, so a plank above the camera still shadows the floor in view.
+  Runs are split by `visible` as well as by mesh and texture.
+- See-through meshes and quads out of view are dropped before sorting.
+- Point and spot lights whose range sphere misses the frustum are dropped; directional lights never
+  are. The shadow light's index is looked up again in the kept list for each view.
+- `WorldRenderer::stats()` returns `WorldStats` (meshes, quads and lights drawn and culled, summed
+  over the views of the last `render_views` call), which the tests use.
+
+**LOD groups.** `LODGroup` (`rendering.ts`: `size`, `setLODs([{ screenRelativeTransitionHeight,
+renderers }])`, `forceLOD(i)`) sends `render.lodGroup`. Levels go from most to least detailed, and the
+heights must go down. For each camera `views()` computes how tall the group looks: `Camera::screen_height(size, distance)`
+is `size / (2 · distance · tan(fov / 2))` (perspective) or `size / (2 · half_height)` (orthographic),
+where `size` is the group's size times the largest world scale of its object. That is multiplied by
+`QualitySettings.lodBias` (`Quality.lod_bias`; Low 0.4, Medium 0.7, High 1, Ultra 2). The first
+level whose height is at most that value is shown; below the last, nothing. The renderers of the other
+levels are left out of that camera's `meshes` (`Tagged.renderer` holds the MeshRenderer id). A forced
+level wins at any distance. Groups are removed with `render.remove` or when their object is destroyed.
+
+`examples/layers` shows camera masks and cull distances (with a minimap camera that sees only map
+markers), field of view and render distance, and LOD groups with `lodBias`. Light, probe and mirror
+masks are covered by the `M5-RND-15` golden.
+
 ## Quality settings
 
 `WorldRenderer` has the knobs; scripts set them through `QualitySettings`
 (`js/engine/src/quality.ts`), whose levels (Low / Medium / High / Ultra, overridable in the game's
 `package.json` under `iron.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
-soft filter) and `render.shadowSettings` (distance, map size). The default level is applied when the
+soft filter, `lodBias`) and `render.shadowSettings` (distance, map size). The default level is applied when the
 engine loads; the app copies the values onto the renderer before each frame.
 
 - **MSAA** (`msaa`): the main world pass draws into a multisampled colour target (cached by size,
@@ -411,7 +464,8 @@ engine loads; the app copies the values onto the renderer before each frame.
   (by its centre), with no blending between probes; the cube mips are a box blur, not a GGX
   prefilter. The sky is one fixed 128-texel map, and only specular reflections use probes.
 - There is no screen-space reflection.
-- Meshes are not frustum culled.
+- Frustum culling is conservative: meshes are tested by the bounding box of their mesh, quads by the unit
+  quad, and nothing is occlusion culled. Cull distances are per layer, not per object.
 - Panels re-render every frame while visible, with no dirty tracking.
 - Panels are not occluded by other world quads for hit testing: the nearest interactive panel wins.
 - Plane quads are not hit tested.
