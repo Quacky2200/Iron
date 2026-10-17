@@ -2604,10 +2604,10 @@ ${err.stack}` : ""}`);
   };
   // ../../js/engine/src/quality.ts
   var DEFAULT_LEVELS = [
-    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20 },
-    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25 },
-    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30 },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40 }
+    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4 },
+    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7 },
+    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1 },
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2 }
   ];
   var manifest = () => {
     const q = globalThis.__iron_info?.app?.quality;
@@ -2622,7 +2622,7 @@ ${err.stack}` : ""}`);
   var current = { ...levels[levelIndex] };
   function sendQuality() {
     const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1);
+    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias);
   }
   function sendShadows() {
     __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution);

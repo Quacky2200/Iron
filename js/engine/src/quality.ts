@@ -22,13 +22,15 @@ export interface QualityLevel {
   shadowResolution: number;
   /** How far shadows reach from the camera (metres). */
   shadowDistance: number;
+  /** LOD groups switch as if things were this many times taller on screen (more detail above 1). */
+  lodBias: number;
 }
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4 },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7 },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1 },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2 },
 ];
 
 interface ManifestQuality {
@@ -53,7 +55,7 @@ let current: QualityLevel = { ...levels[levelIndex]! };
 
 function sendQuality(): void {
   const c = current;
-  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1);
+  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias);
 }
 
 function sendShadows(): void {
@@ -136,6 +138,15 @@ export const QualitySettings = {
   set shadowDistance(d: number) {
     current.shadowDistance = d;
     sendShadows();
+  },
+
+  /** LOD groups switch as if things were this many times taller on screen: above 1 keeps detail farther away. */
+  get lodBias(): number {
+    return current.lodBias;
+  },
+  set lodBias(b: number) {
+    current.lodBias = Math.max(0.01, b);
+    sendQuality();
   },
 
   /** The shadow map's size in texels (256 to 8192). */

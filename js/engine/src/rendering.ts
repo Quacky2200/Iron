@@ -1031,3 +1031,81 @@ export class ReflectionProbe extends Component {
     __iron_op("render.remove", this.id);
   }
 }
+
+/** One level of a `LODGroup`: its renderers, shown down to this screen height. */
+export interface LOD {
+  /** The fraction of the view's height (0 to 1) below which the next level takes over. */
+  screenRelativeTransitionHeight: number;
+  renderers: MeshRenderer[];
+}
+
+/**
+ * Levels of detail (Unity's `LODGroup`): each camera shows one level's renderers, the
+ * most detailed first, by how tall the group looks on its screen (`size` metres,
+ * times the object's scale, `QualitySettings.lodBias` scaling it); below the last
+ * level's height nothing is drawn.
+ */
+export class LODGroup extends Component {
+  private _lods: LOD[] = [];
+  private _size = 1;
+  private _forced = -1;
+  private started = false;
+
+  /** The group's size in metres before its object's scale (its height, say). */
+  get size(): number {
+    return this._size;
+  }
+  set size(s: number) {
+    this._size = s;
+    this.send();
+  }
+
+  get lodCount(): number {
+    return this._lods.length;
+  }
+
+  /** The levels (copies). */
+  getLODs(): LOD[] {
+    return this._lods.map((l) => ({ ...l, renderers: [...l.renderers] }));
+  }
+
+  /** Sets the levels, most detailed first; transition heights must go down. */
+  setLODs(lods: LOD[]): void {
+    for (let i = 1; i < lods.length; i++) {
+      if (lods[i]!.screenRelativeTransitionHeight > lods[i - 1]!.screenRelativeTransitionHeight) {
+        throw new Error("LOD transition heights must go down from the first level");
+      }
+    }
+    this._lods = lods.map((l) => ({ ...l, renderers: [...l.renderers] }));
+    this.send();
+  }
+
+  /** Always shows this level (-1: back to choosing by distance). */
+  forceLOD(index: number): void {
+    this._forced = index;
+    this.send();
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    __iron_op(
+      "render.lodGroup",
+      this.id,
+      this.gameObject.id,
+      this._size,
+      this._lods.map((l) => l.screenRelativeTransitionHeight),
+      this._lods.map((l) => l.renderers.map((r) => r.id)),
+      this._forced,
+    );
+  }
+
+  override onAwake(): void {
+    this.started = true;
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}
+

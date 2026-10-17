@@ -1066,8 +1066,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       counts drawn and culled meshes, quads and lights (`M5-CUL-01`, `M5-CUL-02`)
     - [ ] Later: skip casters outside the shadow map's box too; cull whole particle
       systems by their bounds before building quads; expose the stats to scripts
-    - [ ] LOD groups (Unity's `LODGroup`): meshes swapped by screen size with optional
-      cross-fade, and a cull level below the smallest
+    - [x] LOD groups (Unity's `LODGroup`): `setLODs` / `getLODs` / `forceLOD` / `size`;
+      each camera shows one level's MeshRenderers by the group's screen-relative height
+      (perspective or orthographic), nothing below the last level;
+      `QualitySettings.lodBias` per level (Low 0.4, Medium 0.7, High 1, Ultra 2); trees in
+      `examples/layers` (`M5-LOD-01`, `M5-LOD-02`)
+    - [ ] LOD cross-fade (dithered) and `QualitySettings.maximumLODLevel`; bounds-based
+      group size and reference point (now the object's origin and a given size)
     - [ ] Occlusion culling later (GPU depth pyramid / Hi-Z), for big scenes
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`

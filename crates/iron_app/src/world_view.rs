@@ -41,6 +41,18 @@ struct Camera {
 }
 
 impl Camera {
+    /// The fraction (0 to 1, past 1 when bigger) of the view's height something `size`
+    /// metres across takes up `distance` away, as LOD groups measure it.
+    fn screen_height(&self, size: f32, distance: f32) -> f32 {
+        match self.projection {
+            Projection::Perspective { fov_y_degrees } => {
+                let half = (fov_y_degrees.clamp(1.0, 179.0).to_radians() / 2.0).tan();
+                size / (2.0 * distance.max(1e-4) * half)
+            }
+            Projection::Orthographic { half_height } => size / (2.0 * half_height.max(1e-4)),
+        }
+    }
+
     /// Whether this camera at `position` facing `forward` draws something on `layer` at `at`.
     fn shows(&self, layer: u8, at: Vec3, position: Vec3, forward: Vec3) -> bool {
         if self.culling_mask & (1 << layer) == 0 {
@@ -64,6 +76,8 @@ struct Tagged<T> {
     layer: u8,
     at: Vec3,
     item: T,
+    /// The MeshRenderer it came from, for LOD groups.
+    renderer: Option<u32>,
 }
 
 impl<T> Tagged<T> {
@@ -74,7 +88,34 @@ impl<T> Tagged<T> {
             layer: scene.layer(object),
             at: scene.scene.world_matrix(o).translation.into(),
             item,
+            renderer: None,
         })
+    }
+}
+
+/// A `LODGroup`: renderers per level of detail, the most detailed first, picked by how
+/// tall the group looks on screen.
+#[derive(Clone, Debug)]
+struct LodGroup {
+    object: ScriptObject,
+    /// Its size in metres before the object's scale (Unity's `size`).
+    size: f32,
+    /// Per level: the screen height fraction (0 to 1) below which the next one takes
+    /// over; below the last, nothing is drawn.
+    heights: Vec<f32>,
+    /// Per level: its MeshRenderers' component ids.
+    renderers: Vec<Vec<u32>>,
+    /// A level shown whatever the distance (`ForceLOD`).
+    forced: Option<usize>,
+}
+
+impl LodGroup {
+    /// The level to show at a relative screen height (`None`: culled).
+    fn level(&self, height: f32) -> Option<usize> {
+        if let Some(f) = self.forced {
+            return Some(f.min(self.renderers.len().saturating_sub(1)));
+        }
+        self.heights.iter().position(|&h| height >= h)
     }
 }
 
@@ -107,6 +148,8 @@ pub struct Quality {
     pub render_scale: f32,
     pub shadows: ShadowQuality,
     pub soft_radius: u32,
+    /// LOD groups pick levels as if things were this many times taller on screen.
+    pub lod_bias: f32,
 }
 
 impl Default for Quality {
@@ -116,6 +159,7 @@ impl Default for Quality {
             render_scale: 1.0,
             shadows: ShadowQuality::All,
             soft_radius: 1,
+            lod_bias: 1.0,
         }
     }
 }
@@ -172,6 +216,7 @@ pub struct WorldViews {
     mirrors: BTreeMap<u32, (ScriptObject, Vec3, u32)>,
     /// Reflection probes by component.
     probes: BTreeMap<u32, Probe>,
+    lod_groups: BTreeMap<u32, LodGroup>,
     /// Probes asked to render on the next frame (`render.probeRender`, or just added).
     probe_requests: std::collections::HashSet<u32>,
     particles: BTreeMap<u32, ParticleSystem>,
@@ -210,6 +255,7 @@ impl Default for WorldViews {
             sprites: BTreeMap::new(),
             mirrors: BTreeMap::new(),
             probes: BTreeMap::new(),
+            lod_groups: BTreeMap::new(),
             probe_requests: std::collections::HashSet::new(),
             particles: BTreeMap::new(),
             bloom: None,
@@ -677,7 +723,39 @@ impl WorldViews {
                 self.mirrors
                     .insert(id, (id_at(1)?, normal, mask(args.get(3))));
             }
-            // `quality 0 antiAliasing renderScale shadows(disable|hardOnly|all) softRadius`
+            // `lodGroup component object size [heights] [[renderer ids] per level] forced|-1`
+            "lodGroup" => {
+                let Some(Value::Array(levels)) = args.get(4) else {
+                    return Err("lodGroup needs [[renderers], ...]".into());
+                };
+                let renderers = levels
+                    .iter()
+                    .map(|level| match level {
+                        Value::Array(ids) => ids
+                            .iter()
+                            .map(|v| v.as_f64().map(|v| v as u32).ok_or("renderer ids"))
+                            .collect::<Result<Vec<u32>, _>>(),
+                        _ => Err("renderer ids"),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let heights = flat(args.get(3)).unwrap_or_default();
+                if heights.len() != renderers.len() {
+                    return Err("lodGroup needs a height per level".into());
+                }
+                let forced = num(5).ok().filter(|f| *f >= 0.0).map(|f| f as usize);
+                self.lod_groups.insert(
+                    id,
+                    LodGroup {
+                        object: id_at(1)?,
+                        size: num(2).unwrap_or(1.0).max(1e-4),
+                        heights,
+                        renderers,
+                        forced,
+                    },
+                );
+            }
+            // `quality 0 antiAliasing renderScale shadows(disable|hardOnly|all) softRadius
+            // lodBias`
             "quality" => {
                 self.quality = Quality {
                     msaa: num(1).unwrap_or(1.0).clamp(1.0, 8.0) as u32,
@@ -688,6 +766,7 @@ impl WorldViews {
                         _ => ShadowQuality::All,
                     },
                     soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
+                    lod_bias: num(5).unwrap_or(1.0).max(0.01),
                 };
             }
             // `shadowSettings 0 distance resolution` (Unity's quality settings).
@@ -719,6 +798,7 @@ impl WorldViews {
                 self.mirrors.remove(&id);
                 self.probes.remove(&id);
                 self.particles.remove(&id);
+                self.lod_groups.remove(&id);
             }
             other => return Err(format!("unknown render op `{other}`")),
         }
@@ -734,6 +814,7 @@ impl WorldViews {
         self.sprites.retain(|_, s| !objects.contains(&s.object));
         self.mirrors.retain(|_, m| !objects.contains(&m.0));
         self.probes.retain(|_, p| !objects.contains(&p.object));
+        self.lod_groups.retain(|_, g| !objects.contains(&g.object));
         self.particles.retain(|_, p| !objects.contains(&p.object));
     }
 
@@ -851,9 +932,9 @@ impl WorldViews {
             .collect();
         let meshes: Vec<Tagged<MeshInstance>> = self
             .renderers
-            .values()
-            .filter(|r| scene.active(r.object))
-            .filter_map(|r| {
+            .iter()
+            .filter(|(_, r)| scene.active(r.object))
+            .filter_map(|(&id, r)| {
                 let mesh = MeshInstance {
                     mesh: r.mesh,
                     model: Mat4::from(world(r.object)?),
@@ -869,7 +950,21 @@ impl WorldViews {
                     mirror: mirror_planes.get(&r.object).copied(),
                     layer: 0,
                 };
-                Tagged::new(scene, r.object, mesh)
+                Some(Tagged {
+                    renderer: Some(id),
+                    ..Tagged::new(scene, r.object, mesh)?
+                })
+            })
+            .collect();
+        // LOD groups on active objects: where they are, how big, and every renderer of
+        // theirs (each camera shows one level's).
+        let lods: Vec<(Vec3, f32, &LodGroup)> = self
+            .lod_groups
+            .values()
+            .filter(|g| scene.active(g.object))
+            .filter_map(|g| {
+                let (scale, _, at) = world(g.object)?.to_scale_rotation_translation();
+                Some((at, g.size * scale.abs().max_element(), g))
             })
             .collect();
         // Visible spot light beams: cones as long as the light's range.
@@ -958,6 +1053,24 @@ impl WorldViews {
                 let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
                 let forward = rotation * Vec3::NEG_Z;
                 let shows = |layer: u8, at: Vec3| camera.shows(layer, at, position, forward);
+                // Renderers in a LOD group's other levels (or all of them when it's culled).
+                let mut lod_hidden = std::collections::HashSet::new();
+                for &(at, size, group) in &lods {
+                    let height =
+                        camera.screen_height(size, at.distance(position)) * self.quality.lod_bias;
+                    let level = group.level(height);
+                    for (i, level_renderers) in group.renderers.iter().enumerate() {
+                        if Some(i) != level {
+                            lod_hidden.extend(level_renderers.iter().copied());
+                        }
+                    }
+                    // Ones also in the shown level stay.
+                    if let Some(l) = level {
+                        for r in &group.renderers[l] {
+                            lod_hidden.remove(r);
+                        }
+                    }
+                }
                 let mut quads: Vec<WorldQuad> = quads
                     .iter()
                     .filter(|q| shows(q.layer, q.at))
@@ -1010,6 +1123,7 @@ impl WorldViews {
                     meshes: meshes
                         .iter()
                         .filter(|m| shows(m.layer, m.at))
+                        .filter(|m| m.renderer.is_none_or(|r| !lod_hidden.contains(&r)))
                         .map(|m| MeshInstance {
                             layer: m.layer,
                             ..m.item
@@ -1238,5 +1352,98 @@ mod tests {
             .apply("camera", &camera(None, Some([0.0, 6.0]), true))
             .unwrap();
         assert_eq!(seen(&views), vec![vec![-20.0, -5.0]]);
+    }
+
+    // M5-LOD-01
+    #[test]
+    fn lod_groups_show_one_level_by_screen_height() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene
+            .apply("create", &[n(2.0), "tree".into(), Value::Null])
+            .unwrap();
+        // A 60 degree camera at the origin looking down -z.
+        views
+            .apply("camera", &[n(10.0), n(1.0), n(60.0), n(0.1), n(1000.0)])
+            .unwrap();
+        let group = |views: &mut WorldViews, forced: f64| {
+            let levels = Value::Array(vec![
+                Value::Array(vec![n(20.0)]),
+                Value::Array(vec![n(21.0)]),
+            ]);
+            let heights = Value::Array(vec![n(0.5), n(0.1)]);
+            views
+                .apply(
+                    "lodGroup",
+                    &[n(30.0), n(2.0), n(2.0), heights, levels, n(forced)],
+                )
+                .unwrap();
+        };
+        group(&mut views, -1.0);
+        // Two renderers on the tree, told apart by colour: detailed (20, red) and
+        // simple (21, blue).
+        views
+            .apply(
+                "meshRenderer",
+                &[
+                    n(20.0),
+                    n(2.0),
+                    "cube".into(),
+                    Value::Array(vec![n(1.0), n(0.0), n(0.0), n(1.0)]),
+                ],
+            )
+            .unwrap();
+        views
+            .apply(
+                "meshRenderer",
+                &[
+                    n(21.0),
+                    n(2.0),
+                    "cube".into(),
+                    Value::Array(vec![n(0.0), n(0.0), n(1.0), n(1.0)]),
+                ],
+            )
+            .unwrap();
+        let level = |scene: &mut ScriptScene, views: &WorldViews, z: f64| -> Vec<&str> {
+            let at = Value::Array(vec![n(0.0), n(0.0), n(z)]);
+            scene.apply("local", &[n(2.0), at]).unwrap();
+            scene.scene.update_world();
+            views
+                .views(scene, (100, 100), &[])
+                .remove(0)
+                .meshes
+                .iter()
+                .map(|m| {
+                    if m.color[0] > 0.5 {
+                        "detailed"
+                    } else {
+                        "simple"
+                    }
+                })
+                .collect()
+        };
+        // 2 m tall: 1.15 of the view at 1.5 m, 0.35 at 5 m, 0.06 at 30 m.
+        assert_eq!(level(&mut scene, &views, -1.5), ["detailed"]);
+        assert_eq!(level(&mut scene, &views, -5.0), ["simple"]);
+        assert!(
+            level(&mut scene, &views, -30.0).is_empty(),
+            "culled when tiny"
+        );
+        // A bias of 2 counts it twice as tall: detailed at 5 m.
+        views
+            .apply(
+                "quality",
+                &[n(0.0), n(1.0), n(1.0), "all".into(), n(1.0), n(2.0)],
+            )
+            .unwrap();
+        assert_eq!(level(&mut scene, &views, -5.0), ["detailed"]);
+        // Forced levels win at any distance.
+        group(&mut views, 1.0);
+        assert_eq!(level(&mut scene, &views, -1.5), ["simple"]);
+        assert_eq!(level(&mut scene, &views, -300.0), ["simple"]);
     }
 }

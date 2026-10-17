@@ -25,7 +25,7 @@ describe("QualitySettings", () => {
     QualitySettings.onLevelChanged((l) => (heard = l));
     QualitySettings.setQualityLevel("Low");
     expect(ops).toEqual([
-      ["render.quality", 0, 1, 0.75, "hardOnly", 1],
+      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4],
       ["render.shadowSettings", 0, 20, 1024],
     ]);
     expect(heard).toBe(0);
@@ -33,9 +33,11 @@ describe("QualitySettings", () => {
     QualitySettings.antiAliasing = 3;
     QualitySettings.renderScale = 5;
     expect(ops).toEqual([
-      ["render.quality", 0, 4, 0.75, "hardOnly", 1],
-      ["render.quality", 0, 4, 2, "hardOnly", 1],
+      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4],
+      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4],
     ]);
+    QualitySettings.lodBias = 3;
+    expect(ops.at(-1)!.at(-1)).toBe(3);
     expect(() => QualitySettings.setQualityLevel("Potato")).toThrow("Potato");
   });
 

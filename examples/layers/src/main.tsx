@@ -1,17 +1,20 @@
 // Layers and culling: a forest with a walker. The main camera skips the "Minimap" layer
 // (bright map markers over everything) and draws the "Detail" layer (rocks and
 // flowers) only out to 14 m; a top-down minimap camera draws just the ground, the
-// walker and the markers. The menu turns layers on and off for the main camera and
-// changes its field of view and render distance.
+// walker and the markers. Trees have levels of detail: round crowns up close, blocky
+// ones farther out, nothing when tiny. The menu turns layers on and off for the main
+// camera and changes its field of view, render distance and the LOD bias.
 import {
   Camera,
   Color,
   Component,
   GameObject,
   LayerMask,
+  LODGroup,
   Light,
   Material,
   MeshRenderer,
+  QualitySettings,
   Quaternion,
   RenderSettings,
   Random,
@@ -70,8 +73,14 @@ class Scene extends Component {
       // Clear of the main camera.
       if (at.distance(new Vector3(0, 0, 17)) < 9) continue;
       const tree = new GameObject(`Tree ${i}`, { position: at });
-      shape("Trunk", "cylinder", new Vector3(0, 1, 0), new Vector3(0.35, 1, 0.35), bark, "Default", tree);
-      shape("Crown", "sphere", new Vector3(0, 2.6, 0), Vector3.one.scale(2.2), leaves, "Default", tree);
+      const trunk = shape("Trunk", "cylinder", new Vector3(0, 1, 0), new Vector3(0.35, 1, 0.35), bark, "Default", tree);
+      const crown = shape("Crown", "sphere", new Vector3(0, 2.6, 0), Vector3.one.scale(2.2), leaves, "Default", tree);
+      const block = shape("Crown (LOD1)", "cube", new Vector3(0, 2.6, 0), Vector3.one.scale(1.8), leaves, "Default", tree);
+      const renderer = (go: GameObject) => go.getComponent(MeshRenderer)!;
+      tree.addComponent(LODGroup, { size: 3.7 }).setLODs([
+        { screenRelativeTransitionHeight: 0.25, renderers: [renderer(trunk), renderer(crown)] },
+        { screenRelativeTransitionHeight: 0.06, renderers: [renderer(trunk), renderer(block)] },
+      ]);
       marker(tree, new Color(0.2, 0.9, 0.3, 1), 2.6);
     }
     for (let i = 0; i < 160; i++) {
@@ -176,6 +185,13 @@ function Menu() {
           get={() => main?.fieldOfView ?? 55}
           set={(v) => main && (main.fieldOfView = v)}
           show={(v) => `${v}° (${Math.round(main?.horizontalFieldOfView ?? 0)}° across)`}
+        />
+        <Cycle
+          label="LOD bias"
+          values={[1, 0.4, 2]}
+          get={() => QualitySettings.lodBias}
+          set={(v) => (QualitySettings.lodBias = v)}
+          show={(v) => `${v}x`}
         />
         <Cycle
           label="Render distance"

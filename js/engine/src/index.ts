@@ -116,6 +116,8 @@ export {
   CameraFollow,
   CameraOrbit,
   Light,
+  type LOD,
+  LODGroup,
   type LightType,
   Material,
   type MaterialOptions,
