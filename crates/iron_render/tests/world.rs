@@ -304,6 +304,7 @@ fn lit_primitives_with_lights() {
         unlit: false,
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
+        glow: iron_render::MeshGlow::None,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -378,7 +379,7 @@ fn checker_data(
 // M5-RND-08
 #[test]
 fn textured_meshes_and_sprites() {
-    use iron_render::{Light, LightKind, MeshInstance, primitive_id};
+    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -439,6 +440,7 @@ fn textured_meshes_and_sprites() {
         unlit: false,
         texture: Some(WorldTexture::Asset(1)),
         tiling,
+        glow: MeshGlow::None,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -508,4 +510,133 @@ fn textured_meshes_and_sprites() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-08", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-09
+#[test]
+fn glows_bloom_and_spot_beams() {
+    use iron_render::{
+        BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Light, LightKind, MeshGlow, MeshInstance,
+        primitive_id,
+    };
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let eye = Vec3::new(0.0, 2.0, 6.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y)
+            .inverse(),
+        50.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.01, 0.01, 0.02),
+    );
+    let mesh = |name: &str, model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id(name).unwrap(),
+        model,
+        color,
+        emission: [0.0; 3],
+        smoothness: 0.3,
+        unlit: false,
+        texture: None,
+        tiling: [1.0, 1.0, 0.0, 0.0],
+        glow: MeshGlow::None,
+    };
+    // A spot light shining down at an angle from the upper left, with its beam.
+    let spot_at = Vec3::new(-1.6, 3.0, 0.0);
+    let spot_dir = Vec3::new(0.45, -1.0, 0.0).normalize();
+    let spot_rot = Quat::from_rotation_arc(Vec3::NEG_Z, spot_dir);
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.05, 0.05, 0.06];
+    v.meshes = vec![
+        mesh(
+            "plane",
+            Mat4::from_scale(Vec3::splat(0.8)),
+            [0.5, 0.5, 0.5, 1.0],
+        ),
+        // A hot emissive bar (brighter than white: it blooms) and a dull cube.
+        MeshInstance {
+            emission: [4.0, 1.2, 0.3],
+            unlit: true,
+            ..mesh(
+                "cube",
+                Mat4::from_scale_rotation_translation(
+                    Vec3::new(1.2, 0.15, 0.15),
+                    Quat::IDENTITY,
+                    Vec3::new(1.3, 1.6, 0.0),
+                ),
+                [0.1, 0.1, 0.1, 1.0],
+            )
+        },
+        mesh(
+            "cube",
+            Mat4::from_translation(Vec3::new(1.4, 0.5, -0.5)),
+            [0.3, 0.5, 0.8, 1.0],
+        ),
+        // An additive sphere: it lights what's behind it.
+        MeshInstance {
+            glow: MeshGlow::Additive,
+            unlit: true,
+            ..mesh(
+                "sphere",
+                Mat4::from_scale_rotation_translation(
+                    Vec3::splat(0.5),
+                    Quat::IDENTITY,
+                    Vec3::new(0.2, 1.8, 1.0),
+                ),
+                [0.2, 0.9, 0.4, 0.6],
+            )
+        },
+        MeshInstance {
+            mesh: BEAM_MESH,
+            glow: MeshGlow::Beam,
+            unlit: true,
+            ..mesh(
+                "cube",
+                Mat4::from_scale_rotation_translation(Vec3::new(1.2, 1.2, 3.5), spot_rot, spot_at),
+                [1.0, 0.9, 0.7, 0.5],
+            )
+        },
+    ];
+    // Glowing additive spots of different sizes, one partly behind the dull cube.
+    let glow = |at: Vec3, size: f32, color: [f32; 4]| WorldQuad {
+        model: place(at, Quat::IDENTITY, (size, size)),
+        color,
+        texture: Some(WorldTexture::Asset(DEFAULT_PARTICLE_TEXTURE)),
+        uv: [0.0, 0.0, 1.0, 1.0],
+        additive: true,
+    };
+    v.quads = vec![
+        glow(Vec3::new(-0.6, 0.6, 0.8), 0.8, [1.0, 0.5, 0.2, 1.0]),
+        glow(Vec3::new(-0.3, 0.9, 0.9), 0.4, [0.4, 0.6, 1.0, 1.0]),
+        glow(Vec3::new(1.4, 0.9, -1.2), 1.4, [1.0, 0.2, 0.8, 1.0]),
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Spot {
+            inner_degrees: 25.0,
+            outer_degrees: 38.0,
+        },
+        color: [8.0, 7.0, 5.5],
+        position: spot_at,
+        direction: spot_dir,
+        range: 6.0,
+    }];
+    let mut world = WorldRenderer::new(&gpu);
+    world.bloom = Some(Bloom {
+        threshold: 0.9,
+        intensity: 1.2,
+        scatter: 0.7,
+    });
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-09", size.0, size.1, &pixels, 3);
 }

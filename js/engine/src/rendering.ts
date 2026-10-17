@@ -600,6 +600,7 @@ export class Light extends Component {
   private _spotAngle = 30;
   private _innerSpotAngle = 21.8;
   private _haloSize = 0;
+  private _beamIntensity = 0;
   private started = false;
 
   get type(): LightType {
@@ -657,6 +658,18 @@ export class Light extends Component {
     this.send();
   }
 
+  /**
+   * A spot light's visible beam: a soft cone of light in the air, as long as `range`
+   * (0: none; 0.3–1 looks like light through dust or haze).
+   */
+  get beamIntensity(): number {
+    return this._beamIntensity;
+  }
+  set beamIntensity(b: number) {
+    this._beamIntensity = b;
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -671,6 +684,7 @@ export class Light extends Component {
       this._spotAngle,
       this._innerSpotAngle,
       this._haloSize,
+      this._beamIntensity,
     );
   }
 
@@ -686,6 +700,18 @@ export class Light extends Component {
 
 let ambient = new Color(0.2, 0.2, 0.22);
 
+/** Unity's Bloom: bright things (emission, hot lights) glow onto their surroundings. */
+export interface BloomSettings {
+  /** Linear brightness where glowing starts (1: only what's brighter than white). */
+  threshold: number;
+  /** How strong the glow is. */
+  intensity: number;
+  /** 0..1: how far it spreads. */
+  scatter: number;
+}
+
+let bloom: BloomSettings | null = null;
+
 /** Scene-wide lighting (Unity's `RenderSettings`). */
 export const RenderSettings = {
   /** Light everything gets regardless of lights (linear). */
@@ -695,5 +721,14 @@ export const RenderSettings = {
   set ambientLight(c: Color) {
     ambient = c;
     __iron_op("render.ambient", 0, [c.r, c.g, c.b]);
+  },
+  /** Bloom over every camera (`null`: off, the default). */
+  get bloom(): BloomSettings | null {
+    return bloom;
+  },
+  set bloom(b: BloomSettings | null) {
+    bloom = b ? { ...b } : null;
+    if (b) __iron_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
+    else __iron_op("render.bloom", 0, null);
   },
 };

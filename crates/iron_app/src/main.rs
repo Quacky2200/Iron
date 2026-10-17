@@ -1009,6 +1009,7 @@ impl App {
                 None => gfx.world.remove_mesh(id),
             }
         }
+        gfx.world.bloom = self.world_view.bloom;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
                 Some(data) => {
@@ -1261,6 +1262,7 @@ impl PlatformApp for App {
                 None => gfx.world.remove_mesh(id),
             }
         }
+        gfx.world.bloom = self.world_view.bloom;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
                 Some(data) => {

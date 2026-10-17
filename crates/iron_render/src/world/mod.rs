@@ -9,6 +9,7 @@
 //! they blend over what's behind them. Textures are either the frame's (UI panels,
 //! passed to each render) or kept by the renderer ([`WorldRenderer::set_texture`]).
 
+pub mod bloom;
 pub mod mesh;
 pub mod texture;
 
@@ -19,6 +20,7 @@ use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
+pub use bloom::Bloom;
 pub use mesh::{MeshData, primitive};
 pub use texture::{TextureData, TextureFilter, TextureWrap};
 
@@ -32,6 +34,21 @@ pub enum WorldTexture {
 }
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// The open cone light beams are drawn with ([`mesh::beam`]).
+pub const BEAM_MESH: u32 = PRIMITIVE_BASE + 0xFFFE;
+
+/// How a mesh adds light instead of covering what's behind it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MeshGlow {
+    /// Lit (or unlit) and opaque or see-through by its colour's alpha.
+    #[default]
+    None,
+    /// Unlit, adds its colour × alpha (glowing shapes).
+    Additive,
+    /// Additive with soft edges and a fade towards the open end: a light beam.
+    Beam,
+}
 
 /// A soft round spot every renderer keeps as a texture (particles, halos).
 pub const DEFAULT_PARTICLE_TEXTURE: u32 = u32::MAX;
@@ -167,6 +184,7 @@ pub struct MeshInstance {
     /// Texture tiling: scale (xy) and offset (zw), Unity's `mainTextureScale` /
     /// `mainTextureOffset` (in its bottom-up UV space).
     pub tiling: [f32; 4],
+    pub glow: MeshGlow,
 }
 
 /// One camera's view: where on the target it draws and what it sees.
@@ -284,6 +302,8 @@ struct Pipelines {
     quad: wgpu::RenderPipeline,
     /// Additive quads: they light what's behind and hide nothing, so no depth writes.
     quad_glow: wgpu::RenderPipeline,
+    /// Additive meshes, seen from inside too (a beam around the camera).
+    mesh_glow: wgpu::RenderPipeline,
     fill: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
@@ -318,6 +338,10 @@ pub struct WorldRenderer {
     sampler: wgpu::Sampler,
     white: wgpu::TextureView,
     depth: Option<(wgpu::TextureView, (u32, u32))>,
+    /// Bloom over every view (`None`: off).
+    pub bloom: Option<Bloom>,
+    /// Made the first time bloom is on.
+    bloom_pass: Option<bloom::BloomPass>,
 }
 
 /// A texture the renderer keeps, bound with its own sampler.
@@ -442,12 +466,15 @@ impl WorldRenderer {
             sampler,
             white: white.create_view(&Default::default()),
             depth: None,
+            bloom: None,
+            bloom_pass: None,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
             let data = primitive(name).expect("built in");
             renderer.set_mesh(gpu, PRIMITIVE_BASE + i as u32, &data);
         }
         renderer.set_texture(gpu, DEFAULT_PARTICLE_TEXTURE, &texture::soft_spot(64));
+        renderer.set_mesh(gpu, BEAM_MESH, &mesh::beam());
         renderer
     }
 
@@ -715,6 +742,14 @@ impl WorldRenderer {
                     (less, true),
                     blend,
                 ),
+                mesh_glow: make(
+                    "world glowing meshes",
+                    ("vs_mesh", "fs_mesh"),
+                    &[Some(vertex_layout.clone())],
+                    None,
+                    (less, false),
+                    blend,
+                ),
                 // See-through meshes don't hide what's drawn after them.
                 mesh_blend: make(
                     "world see-through meshes",
@@ -781,7 +816,18 @@ impl WorldRenderer {
         if size.0 == 0 || size.1 == 0 {
             return;
         }
-        let pipelines = self.pipelines(gpu, target.format);
+        // With bloom, the world goes into an HDR texture first.
+        let bloom = self.bloom.filter(|b| b.intensity > 0.0);
+        let hdr = bloom.map(|_| {
+            self.bloom_pass
+                .get_or_insert_with(|| bloom::BloomPass::new(gpu))
+                .hdr_view(gpu, size)
+        });
+        let (color_view, color_format) = match &hdr {
+            Some(view) => (view, bloom::HDR_FORMAT),
+            None => (target.view, target.format),
+        };
+        let pipelines = self.pipelines(gpu, color_format);
         let depth = self.depth_view(gpu, size);
 
         // Everything for every view in shared buffers, with runs per view: opaque meshes
@@ -799,7 +845,16 @@ impl WorldRenderer {
                     normal: Mat4::from_mat3(normal).to_cols_array_2d(),
                     color: m.color,
                     emission: [m.emission[0], m.emission[1], m.emission[2], m.smoothness],
-                    params: [if m.unlit { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+                    params: [
+                        if m.unlit { 1.0 } else { 0.0 },
+                        match m.glow {
+                            MeshGlow::None => 0.0,
+                            MeshGlow::Additive => 1.0,
+                            MeshGlow::Beam => 2.0,
+                        },
+                        0.0,
+                        0.0,
+                    ],
                     tiling: m.tiling,
                 }
             };
@@ -809,7 +864,7 @@ impl WorldRenderer {
                 .meshes
                 .iter()
                 .filter(known)
-                .filter(|m| m.color[3] >= 1.0)
+                .filter(|m| m.color[3] >= 1.0 && m.glow == MeshGlow::None)
                 .collect();
             opaque.sort_by_key(|m| (m.mesh, m.texture));
             let mut opaque_runs: Vec<Run> = Vec::new();
@@ -839,7 +894,7 @@ impl WorldRenderer {
                 .meshes
                 .iter()
                 .filter(known)
-                .filter(|m| m.color[3] < 1.0)
+                .filter(|m| m.color[3] < 1.0 || m.glow != MeshGlow::None)
                 .map(|m| (m.model.w_axis.xyz().distance_squared(eye), Item::Mesh(m)))
                 .chain(
                     view.quads
@@ -859,7 +914,7 @@ impl WorldRenderer {
                             Run {
                                 mesh: Some(m.mesh),
                                 texture: m.texture,
-                                glow: false,
+                                glow: m.glow != MeshGlow::None,
                                 range: i..i + 1,
                             },
                         ));
@@ -1038,7 +1093,7 @@ impl WorldRenderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("world"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target.view,
+                    view: color_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1078,7 +1133,9 @@ impl WorldRenderer {
                     pass.set_bind_group(1, group_for(run.texture), &[]);
                     match run.mesh.and_then(|m| self.meshes.get(&m)) {
                         Some(mesh) => {
-                            pass.set_pipeline(if blend {
+                            pass.set_pipeline(if run.glow {
+                                &pipelines.mesh_glow
+                            } else if blend {
                                 &pipelines.mesh_blend
                             } else {
                                 &pipelines.mesh
@@ -1108,6 +1165,9 @@ impl WorldRenderer {
                     draw(&mut pass, run, true);
                 }
             }
+        }
+        if let (Some(settings), Some(pass)) = (bloom, self.bloom_pass.as_mut()) {
+            pass.encode(gpu, &mut encoder, target.view, target.format, &settings);
         }
         gpu.queue.submit([encoder.finish()]);
     }

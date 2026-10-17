@@ -86,6 +86,26 @@ pub fn primitive(name: &str) -> Option<MeshData> {
     })
 }
 
+/// An open cone for light beams: the apex at the origin, opening along -z to radius 1
+/// at length 1, `v` running from the apex (0) to the open end (1), with normals pointing
+/// straight out from the axis.
+pub fn beam() -> MeshData {
+    let mut m = MeshData::default();
+    let (segments, rings) = (32u32, 6u32);
+    for r in 0..=rings {
+        let t = r as f32 / rings as f32;
+        for s in 0..=segments {
+            let u = s as f32 / segments as f32;
+            let theta = u * TAU;
+            let (c, sn) = (theta.cos(), theta.sin());
+            // Radial normals (beams aren't lit): the edge seen side-on fades to nothing.
+            m.push([c * t, sn * t, -t], [c, sn, 0.0], [u, t]);
+        }
+    }
+    grid_indices(&mut m, 0, segments, rings);
+    m
+}
+
 fn cube() -> MeshData {
     let mut m = MeshData::default();
     // Each face: its normal and two in-plane axes (u right, v up as seen from outside).

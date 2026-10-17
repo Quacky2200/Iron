@@ -10,8 +10,9 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    Color, Light, LightKind, MeshData, MeshInstance, Projection, TextureData, TextureFilter,
-    TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Projection,
+    TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView,
+    primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -73,6 +74,8 @@ struct LightComponent {
     range: f32,
     /// A glow drawn around the light this many metres across (0: none), Unity's halo.
     halo: f32,
+    /// How bright a spot light's visible beam is (0: none).
+    beam: f32,
 }
 
 pub struct WorldViews {
@@ -82,6 +85,8 @@ pub struct WorldViews {
     lights: BTreeMap<u32, LightComponent>,
     sprites: BTreeMap<u32, Sprite>,
     particles: BTreeMap<u32, ParticleSystem>,
+    /// Bloom over the world (`render.bloom`), applied by the app before drawing.
+    pub bloom: Option<Bloom>,
     /// `emit` requests waiting for the next particle update (which knows where objects are).
     pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
@@ -102,6 +107,7 @@ impl Default for WorldViews {
             lights: BTreeMap::new(),
             sprites: BTreeMap::new(),
             particles: BTreeMap::new(),
+            bloom: None,
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
@@ -361,7 +367,7 @@ impl WorldViews {
                 self.sprites.insert(id, sprite);
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
-            // haloSize`
+            // haloSize beamIntensity`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
@@ -380,6 +386,7 @@ impl WorldViews {
                     color: [r * intensity, g * intensity, b * intensity],
                     range: num(5).unwrap_or(10.0),
                     halo: num(8).unwrap_or(0.0).max(0.0),
+                    beam: num(9).unwrap_or(0.0).max(0.0),
                 };
                 self.lights.insert(id, light);
             }
@@ -422,6 +429,17 @@ impl WorldViews {
                     }
                     other => return Err(format!("unknown particle action {other:?}")),
                 }
+            }
+            // `bloom 0 threshold intensity scatter`; `bloom 0 null` turns it off.
+            "bloom" => {
+                self.bloom = match args.get(1) {
+                    Some(Value::Null) | None => None,
+                    _ => Some(Bloom {
+                        threshold: num(1)?.max(0.0),
+                        intensity: num(2)?.max(0.0),
+                        scatter: num(3)?.clamp(0.0, 1.0),
+                    }),
+                };
             }
             // `ambient 0 [r g b]`
             "ambient" => {
@@ -532,8 +550,43 @@ impl WorldViews {
                     unlit: r.unlit,
                     texture: r.texture.map(WorldTexture::Asset),
                     tiling: r.tiling,
+                    glow: MeshGlow::None,
                 })
             })
+            .collect();
+        // Visible spot light beams: cones as long as the light's range.
+        let meshes: Vec<MeshInstance> = meshes
+            .into_iter()
+            .chain(
+                self.lights
+                    .values()
+                    .filter(|l| l.beam > 0.0 && scene.active(l.object))
+                    .filter_map(|l| {
+                        let LightKind::Spot { outer_degrees, .. } = l.kind else {
+                            return None;
+                        };
+                        let (_, rotation, position) =
+                            world(l.object)?.to_scale_rotation_translation();
+                        let radius = l.range * (outer_degrees.min(170.0).to_radians() / 2.0).tan();
+                        let [r, g, b] = l.color;
+                        let peak = r.max(g).max(b).max(1e-6) / l.beam;
+                        Some(MeshInstance {
+                            mesh: BEAM_MESH,
+                            model: Mat4::from_scale_rotation_translation(
+                                Vec3::new(radius, radius, l.range),
+                                rotation,
+                                position,
+                            ),
+                            color: [r / peak, g / peak, b / peak, 1.0],
+                            emission: [0.0; 3],
+                            smoothness: 0.0,
+                            unlit: true,
+                            texture: None,
+                            tiling: [1.0, 1.0, 0.0, 0.0],
+                            glow: MeshGlow::Beam,
+                        })
+                    }),
+            )
             .collect();
         // Light halos: a glow at each light, facing each camera.
         let halos: Vec<(Vec3, f32, [f32; 4])> = self

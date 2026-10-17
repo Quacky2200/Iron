@@ -28,7 +28,7 @@ struct MeshInstance {
     color: vec4<f32>,
     // rgb: emission; w: smoothness 0..1.
     emission: vec4<f32>,
-    // x: 1 when unlit.
+    // x: 1 when unlit; y: 1 additive, 2 a light beam.
     params: vec4<f32>,
     // Texture tiling: scale (xy), offset (zw), in bottom-up UV space like Unity's.
     tiling: vec4<f32>,
@@ -140,6 +140,23 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     let base = texel.rgb;
     // Opaque meshes (colour alpha 1) ignore the texture's alpha; see-through ones use it.
     let alpha = select(1.0, texel.a, m.color.a < 1.0);
+    if (m.params.y > 0.5) {
+        // Glowing meshes add light (no coverage, so premultiplied blending adds).
+        var light = (base + m.emission.rgb) * m.color.a;
+        if (m.params.y > 1.5) {
+            // A beam: soft where its surface turns away from the eye, bright near the
+            // light and fading out towards the open end.
+            let n = normalize(in.normal);
+            let v = normalize(g.camera.xyz - in.world);
+            // Denser towards the axis, like dust lit by the beam: a steep falloff reads
+            // as a soft edge once on screen.
+            let edge = abs(dot(n, v));
+            let e2 = edge * edge;
+            let along = clamp(in.uv.y, 0.0, 1.0);
+            light *= e2 * e2 * (1.0 - along) * (1.0 - along) * smoothstep(0.0, 0.08, along);
+        }
+        return vec4<f32>(light, 0.0);
+    }
     if (m.params.x > 0.5) {
         let unlit = base + m.emission.rgb;
         return vec4<f32>(unlit * alpha, alpha);

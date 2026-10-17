@@ -863,8 +863,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Glows and spotlights (2026-10-17, asked for with particles):
     - [x] Light halos: `Light.haloSize` draws an additive glow in the light's hue, pulled
       towards the camera so nearby surfaces don't slice it
-    - [ ] Bloom (HDR world pass, threshold, intensity), so emission and bright lights glow
-    - [ ] Visible spotlight beams (soft additive cones)
+    - [x] Bloom: with `RenderSettings.bloom` on, the world draws into an `Rgba16Float`
+      texture, a soft-knee threshold and dual-filter down / tent up chain (scatter mixes the
+      levels) blurs the bright parts, and a composite adds them back — `M5-RND-09`
+    - [x] Visible spotlight beams: `Light.beamIntensity` draws an open cone (`BEAM_MESH`)
+      as an additive `MeshGlow::Beam` mesh, soft at its edges and fading along the range;
+      additive meshes (`MeshGlow::Additive`) render without depth writes from both sides
+    - [ ] Glow follow-ups: tonemapping (ACES / neutral) and exposure, per-camera
+      post-processing settings, `Material` blend modes for additive meshes in scripts,
+      lens flares
   - [x] Textures and sprites: `iron_render` keeps textures (`set_texture`: sRGB, point /
     bilinear / trilinear, repeat / clamp / mirror, CPU mipmaps averaged in linear light);
     `WorldTexture::Frame` (panels) or `Asset`; `render.texture` / `textureRemove` ops

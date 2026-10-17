@@ -102,6 +102,7 @@ export {
   MeshRenderer,
   PlaneRenderer,
   type PrimitiveMesh,
+  type BloomSettings,
   RenderSettings,
   WorldPanel,
 } from "./rendering.ts";

@@ -59,9 +59,16 @@ describe("meshes and lights", () => {
   test("lights and ambient", () => {
     const sun = new GameObject("sun");
     const l = sun.addComponent(Light, { type: "spot", intensity: 2, range: 15, spotAngle: 40 });
-    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0]);
+    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0, 0]);
     RenderSettings.ambientLight = new Color(0.1, 0.1, 0.1);
     expect(renderOps().at(-1)).toEqual(["render.ambient", 0, [0.1, 0.1, 0.1]]);
+    l.haloSize = 1;
+    l.beamIntensity = 0.5;
+    expect(renderOps().at(-1)!.slice(9)).toEqual([1, 0.5]);
+    RenderSettings.bloom = { threshold: 1, intensity: 0.8, scatter: 0.6 };
+    expect(renderOps().at(-1)).toEqual(["render.bloom", 0, 1, 0.8, 0.6]);
+    RenderSettings.bloom = null;
+    expect(renderOps().at(-1)).toEqual(["render.bloom", 0, null]);
   });
 
   test("createPrimitive adds a mesh and the matching collider", () => {

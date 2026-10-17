@@ -5,7 +5,8 @@
 // React UI on a plane, with hover and clicks through the camera. Falling primitives thud
 // in 3D (an AudioSource each, heard from the camera's AudioListener). Cubes wear a
 // texture made in script; pixel-art coins spin as animated, camera-facing sprites. Sparks
-// fountain from the middle (a ParticleSystem) and the lamp glows (a light halo).
+// fountain from the middle (a ParticleSystem), the lamp glows (a light halo), a spotlight
+// shows its beam, and bloom makes the bright bits glow.
 import {
   AudioListener,
   AudioSource,
@@ -30,6 +31,7 @@ import {
   MeshRenderer,
   ParticleSystem,
   Random,
+  RenderSettings,
   Rigidbody,
   Rope,
   Sprite,
@@ -112,6 +114,12 @@ class World extends Component {
     sun.addComponent(Light, { type: "directional", intensity: 1.1 });
     const lamp = new GameObject("Lamp", { position: new Vector3(0, 1.5, 0) });
     lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5, haloSize: 1.2 });
+
+    // A spotlight from high on one side, its beam visible, aimed at the middle.
+    const spot = new GameObject("Spotlight", { position: new Vector3(-3.4, 4.6, 2.4) });
+    spot.transform.lookAt(new Vector3(0, 0, 0));
+    spot.addComponent(Light, { type: "spot", color: Color.hex("#bcd4ff"), intensity: 14, range: 9, spotAngle: 28, beamIntensity: 0.35 });
+    RenderSettings.bloom = { threshold: 1, intensity: 0.8, scatter: 0.65 };
 
     // A fountain of glowing sparks that fall and fade, with a puff every two seconds.
     const fountain = new GameObject("Fountain", { position: new Vector3(0, 0.05, 0) });
