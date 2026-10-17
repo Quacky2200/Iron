@@ -45,6 +45,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `text_props.rs` | M3d group 4 text properties through the tree: transform, ellipsis, white-space/word-break, font shorthand and features, decorations, stroke, smoothing |
 | `selection.rs` | Static text selection (M3-SEL-01/02): drag, click, double and triple click, Ctrl+C, `user-select`, transforms, highlight and `::selection` draw commands, `::placeholder` |
 | `dialog.rs` | Dialogs (M3-DLG-01): hidden, open and modal layout, top-layer paint and hit order, `::backdrop`, focus trap and restore, Escape and backdrop `cancel`/`close`, `closedBy`, `[open]`/`[modal]` selectors |
+| `motion.rs` | Transitions, `@keyframes` animations, `@starting-style` and `:outro` removal (M3-ANI-02..05); timing/interpolation/parsing units (M3-ANI-01) are in `motion.rs` and `css.rs` source |
 | `css.rs` | Selectors, cascade, variables, `::before/::after`, invalidation |
 | `hit.rs` | Hit testing rules |
 | `pointer.rs` | `Pointer`: hover/active/click/dblclick/wheel |

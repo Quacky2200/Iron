@@ -86,10 +86,10 @@ global to decide whether to dispatch events at all. Flow and data layout are in
 
 - `HANDLERS` maps an engine event type to prop names. Pointer events also trigger the mouse alias
   (`pointermove` runs `onPointerMove` then `onMouseMove`); `focusin`/`focusout` map to
-  `onFocus`/`onBlur` (which bubble, like React DOM); `input` -> `onChange` then `onInput` (`IronInputEvent`, bubbles); `scroll` -> `onScroll` (`IronScrollEvent`: `scrollLeft/Top/Width/Height`, `clientWidth/Height`, read from `data[10..16]`; does not bubble, continuous priority); `cancel` -> `onCancel`, `close` -> `onClose` (dialogs; `cancel` can be prevented, which stops `close`).
+  `onFocus`/`onBlur` (which bubble, like React DOM); `input` -> `onChange` then `onInput` (`IronInputEvent`, bubbles); `scroll` -> `onScroll` (`IronScrollEvent`: `scrollLeft/Top/Width/Height`, `clientWidth/Height`, read from `data[10..16]`; does not bubble, continuous priority); `cancel` -> `onCancel`, `close` -> `onClose` (dialogs; `cancel` can be prevented, which stops `close`); `transitionrun/start/end/cancel` -> `onTransitionRun/Start/End/Cancel` (`IronTransitionEvent`: `propertyName`, `elapsedTime` in seconds) and `animationstart/iteration/end/cancel` -> `onAnimationStart/Iteration/End/Cancel` (`IronAnimationEvent`: `animationName`, `elapsedTime`); all bubble. See [animation.md](animation.md).
 - `dispatchUiEvent(type, path, data, strings)`: `path[0]` is the target and the rest are its ancestors.
   It builds the event object (`IronPointerEvent`, `IronWheelEvent`, `IronKeyboardEvent`,
-  `IronFocusEvent`, `IronInputEvent` or `IronScrollEvent`), then runs the **capture phase** from the
+  `IronFocusEvent`, `IronInputEvent`, `IronScrollEvent`, `IronTransitionEvent` or `IronAnimationEvent`), then runs the **capture phase** from the
   outermost ancestor to the target (`on*Capture`), then the **bubble phase** from the target up.
   `pointerenter`/`pointerleave`, `scroll`, `cancel` and `close` do not bubble (`NON_BUBBLING`). `stopPropagation()` lets the current
   element's remaining handlers run, as in React.

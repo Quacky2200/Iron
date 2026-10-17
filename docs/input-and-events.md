@@ -161,7 +161,7 @@ default; **default actions run after the script sees the event**, like a browser
 | `Focus(id)` / `Blur(id)` (from `ref.focus()`) | `focusout` then `focusin` | `Focus` ignored if not focusable; `:focus-visible` only if the last focus move was by keyboard (browser heuristic) |
 | `Navigate(dir)` | `focusout`/`focusin` (via `set_focus`) | Moves focus to `nearest_in_direction` and scrolls it into view; nothing if no element has focus. Sets `:focus-visible` |
 | `Activate` | `click` on the focused element | Skipped for text fields. No pointer position, `detail` 0 (like a keyboard-activated click) |
-| `Refresh` | hover events | drops focus from removed, hidden or disabled elements |
+| `Refresh` | hover events, then queued `transition*`/`animation*` events (name in `value`, elapsed seconds in `delta_x`; see [animation.md](animation.md#events)) | drops focus from removed, hidden or disabled elements |
 
 Focus details:
 

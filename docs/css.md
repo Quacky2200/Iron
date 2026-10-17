@@ -284,6 +284,6 @@ The tree does not know the game folder, so font loading is the app's job:
 
 ## Known limits
 
-- No `@media`, `@keyframes` or transitions (see TODO.md M3d).
+- No `@media` (see TODO.md M3d). `@keyframes`, `@starting-style` and `:outro` are parsed here and run as described in [animation.md](animation.md).
 - Only `::before`/`::after`; `content` is limited to text.
 - Descendant-combinator invalidation is conservative: a changed ancestor key restyles the whole subtree.
