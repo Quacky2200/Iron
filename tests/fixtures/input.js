@@ -1258,6 +1258,14 @@ ${err.stack}` : ""}`);
   function _classByName(name) {
     return classes.get(name) ?? builtIns.get(name);
   }
+  function _isBuiltIn(cls) {
+    const name = names.get(cls);
+    return name !== undefined && builtIns.get(name) === cls;
+  }
+  var restored = new Set;
+  function _markRestored(component) {
+    restored.add(component.id);
+  }
   function _nameOf(cls) {
     return nameOf(cls);
   }
@@ -1618,7 +1626,9 @@ ${err.stack}` : ""}`);
   var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
   globalThis.__iron_hooks = (id) => {
     const instance = instances.get(id);
-    return instance ? HOOKS.filter((h) => typeof instance[h] === "function") : [...HOOKS];
+    if (!instance)
+      return [...HOOKS];
+    return HOOKS.filter((h) => typeof instance[h] === "function" && !(h === "onStart" && restored.has(id)));
   };
   globalThis.__iron_dispatch = (id, method, ...args) => {
     const instance = instances.get(id);
@@ -1913,6 +1923,18 @@ ${err.stack}` : ""}`);
   };
   function onTick(fn) {
     tickListeners.push(fn);
+  }
+  function _timeState() {
+    return { time, unscaledTime, frameCount, timeScale };
+  }
+  function _restoreTime(state) {
+    const s = state;
+    if (!s)
+      return;
+    time = s.time ?? time;
+    unscaledTime = s.unscaledTime ?? unscaledTime;
+    frameCount = s.frameCount ?? frameCount;
+    timeScale = s.timeScale ?? timeScale;
   }
   globalThis.__iron_tick = (dt) => {
     unscaledDeltaTime = dt;
@@ -5250,6 +5272,18 @@ ${err.stack}` : ""}`);
     __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution);
   }
   var listeners2 = new Set;
+  function _qualityState() {
+    return { level: levelIndex, current };
+  }
+  function _restoreQuality(state) {
+    const s = state;
+    if (!s?.current)
+      return;
+    levelIndex = Math.min(levels.length - 1, Math.max(0, s.level ?? levelIndex));
+    current = { ...levels[levelIndex], ...s.current };
+    sendQuality();
+    sendShadows();
+  }
   function _applyDefaultQuality() {
     sendQuality();
     sendShadows();
@@ -5406,15 +5440,26 @@ ${err.stack}` : ""}`);
     WorldPanel
   });
   var warn = (message) => console.warn(`scene: ${message}`);
+  var UNSAVED = Symbol("unsaved");
 
   class Saver {
     keepExternal;
+    reload;
     ids = new Map;
     assets = {};
     assetIds = new Map;
-    constructor(keepExternal) {
+    constructor(keepExternal, reload = false) {
       this.keepExternal = keepExternal;
+      this.reload = reload;
     }
+    field(v, where) {
+      if (typeof v === "function" || typeof v === "symbol" || typeof v === "bigint")
+        return UNSAVED;
+      this.unsaved = false;
+      const out = this.value(v, where);
+      return this.unsaved ? UNSAVED : out;
+    }
+    unsaved = false;
     id(thing) {
       let id = this.ids.get(thing);
       if (id === undefined) {
@@ -5479,10 +5524,8 @@ ${err.stack}` : ""}`);
         };
       }
       if (v instanceof Texture) {
-        if (!v.src) {
-          warn(`${where}: only textures loaded from files are saved`);
-          return null;
-        }
+        if (!v.src)
+          return this.cannot(`${where}: only textures loaded from files are saved`);
         const t = v;
         return this.asset(v, "texture", () => ({ type: "Texture", src: v.src, filterMode: v.filterMode, wrapMode: v.wrapMode, mipmaps: t._mipmaps }));
       }
@@ -5491,10 +5534,8 @@ ${err.stack}` : ""}`);
       }
       if (v instanceof Mesh) {
         const data = v._data;
-        if (!data) {
-          warn(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
-          return null;
-        }
+        if (!data)
+          return this.cannot(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
         return this.asset(v, "mesh", () => ({ type: "Mesh", ...data }));
       }
       if (v instanceof Sound)
@@ -5508,7 +5549,13 @@ ${err.stack}` : ""}`);
         }
         return out;
       }
-      warn(`${where}: can't save a ${proto?.constructor?.name ?? "value"}`);
+      return this.cannot(`${where}: can't save a ${proto?.constructor?.name ?? "value"}`);
+    }
+    cannot(message) {
+      if (this.reload)
+        this.unsaved = true;
+      else
+        warn(message);
       return null;
     }
   }
@@ -5658,10 +5705,21 @@ ${err.stack}` : ""}`);
     const components = go.components.map((c) => {
       const cls = c.constructor;
       const properties = {};
-      for (const name of propertiesOf(cls)) {
-        const value = c[name];
+      const own = c;
+      const props = propertiesOf(cls);
+      for (const name of props) {
+        const value = own[name];
         if (value !== undefined)
           properties[name] = saver.value(value, `${go.name}.${_nameOf(cls)}.${name}`);
+      }
+      if (saver.reload && !_isBuiltIn(cls)) {
+        for (const name of Object.keys(own)) {
+          if (name === "id" || name === "gameObject" || props.includes(name) || own[name] === undefined)
+            continue;
+          const value = saver.field(own[name], `${go.name}.${_nameOf(cls)}.${name}`);
+          if (value !== UNSAVED)
+            properties[name] = value;
+        }
       }
       return { id: saver.id(c), type: _nameOf(cls), properties };
     });
@@ -5672,7 +5730,7 @@ ${err.stack}` : ""}`);
       data.children = children;
     return data;
   }
-  function loadObjects(list, assets, parent) {
+  function loadObjects(list, assets, parent, reload = false) {
     const loader = new Loader(assets);
     const pending = [];
     const disabled = [];
@@ -5706,16 +5764,34 @@ ${err.stack}` : ""}`);
     };
     const made = list.map((d) => build(d, parent));
     for (const { component, properties } of pending) {
+      const own = component;
+      const cls = component.constructor;
+      const props = propertiesOf(cls);
       for (const [name, value] of Object.entries(properties)) {
+        if (!props.includes(name) && !Object.hasOwn(own, name)) {
+          warn(`${component.gameObject.name}: ${_nameOf(cls)} has no ${name} any more; dropped`);
+          continue;
+        }
         try {
-          component[name] = loader.value(value);
+          own[name] = loader.value(value);
         } catch (e) {
           warn(`${component.gameObject.name}: couldn't set ${name}: ${e}`);
         }
       }
     }
+    const restored = reload ? pending.filter(({ component }) => !_isBuiltIn(component.constructor)) : [];
+    for (const { component } of restored)
+      _markRestored(component);
     for (const { component } of pending)
-      component.onAwake?.();
+      if (!restored.some((r) => r.component === component))
+        component.onAwake?.();
+    for (const { component } of restored) {
+      try {
+        component.onReload?.();
+      } catch (e) {
+        console.error(`${component.gameObject.name}: onReload: ${e}`);
+      }
+    }
     for (const go of disabled)
       go.enabled = false;
     return made;
@@ -5739,7 +5815,10 @@ ${err.stack}` : ""}`);
       return this.getRootGameObjects().length;
     }
     serialize() {
-      const saver = new Saver(false);
+      return this._serialize(false);
+    }
+    _serialize(reload) {
+      const saver = new Saver(false, reload);
       const roots = this.getRootGameObjects();
       number(saver, roots);
       const objects = roots.map((go) => saveObject(saver, go)).filter((d) => d !== null);
@@ -5950,6 +6029,68 @@ ${err.stack}` : ""}`);
       active = previous;
     }
   }
+  function sceneNames(data) {
+    const out = [];
+    const walk = (o) => {
+      for (const c of o.components ?? [])
+        out.push(c.type);
+      for (const child of o.children ?? [])
+        walk(child);
+    };
+    for (const o of data.objects)
+      walk(o);
+    return out;
+  }
+  function saveState() {
+    const state = {
+      version: 1,
+      scenes: scenes.map((s) => s._serialize(true)),
+      active: scenes.indexOf(active),
+      keep: keep && keep.rootCount > 0 ? keep._serialize(true) : null,
+      quality: _qualityState(),
+      time: _timeState()
+    };
+    return JSON.stringify(state);
+  }
+  function restoreState(json) {
+    const state = JSON.parse(json);
+    const all = [...state.scenes, ...state.keep ? [state.keep] : []];
+    const missing = [...new Set(all.flatMap(sceneNames))].filter((name) => !_classByName(name));
+    if (missing.length) {
+      warn(`can't keep state across the reload: ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} registered ` + `(register({ ${missing.join(", ")} }, { spawn: false })); starting over`);
+      if (startScene)
+        loadStartScene(startScene);
+      return false;
+    }
+    _restoreQuality(state.quality);
+    _restoreTime(state.time);
+    for (const s of scenes)
+      s.isLoaded = false;
+    scenes = [];
+    const build = (data) => {
+      const scene = new Scene(data.name);
+      scene._renderSettings = data.renderSettings ?? null;
+      const previous = active;
+      active = scene;
+      try {
+        loadObjects(data.objects ?? [], data.assets, null, true);
+      } finally {
+        active = previous;
+      }
+      return scene;
+    };
+    scenes = state.scenes.map(build);
+    if (state.keep)
+      keep = build(state.keep);
+    if (!scenes.length)
+      scenes = [new Scene("Main")];
+    active = scenes[state.active] ?? scenes[0];
+    if (active._renderSettings)
+      applyRenderSettings(active._renderSettings);
+    return true;
+  }
+  globalThis.__iron_save_state = saveState;
+  globalThis.__iron_restore_state = restoreState;
   async function loadStartScene(path) {
     const main = active;
     try {
@@ -5962,7 +6103,7 @@ ${err.stack}` : ""}`);
     }
   }
   var startScene = globalThis.__iron_info?.app.startScene;
-  if (startScene && typeof __iron_op === "function")
+  if (startScene && typeof __iron_op === "function" && !globalThis.__iron_reloading)
     loadStartScene(startScene);
   _setSceneHooks({
     active: () => active,

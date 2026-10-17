@@ -189,3 +189,86 @@ fn scenes_save_and_load_in_quickjs() {
     // Door and Light on the loaded objects, and the trip itself.
     assert_eq!(host.len(), 3);
 }
+
+/// A reload the way the app does it: the old runtime saves its scenes, a fresh one
+/// with the bundle restores them into a new scene and host.
+fn reload_keeping_state(
+    old: &mut QuickJsRuntime,
+    edit: impl FnOnce(String) -> String,
+) -> (QuickJsRuntime, ComponentHost, ScriptScene, Value) {
+    let Value::String(json) = old.call_global("__iron_save_state", &[]).unwrap() else {
+        panic!("no saved state");
+    };
+    let mut rt = QuickJsRuntime::new();
+    rt.eval("globalThis.__iron_reloading = true").unwrap();
+    rt.load_bundle("scene.js", SCENE).unwrap();
+    rt.eval("globalThis.__iron_reloading = false").unwrap();
+    let ok = rt
+        .call_global("__iron_restore_state", &[Value::String(edit(json))])
+        .unwrap();
+    (rt, ComponentHost::new(), ScriptScene::new(), ok)
+}
+
+// M4-HOT-02, M4-HOT-03
+#[test]
+fn reloads_keep_objects_components_and_their_fields() {
+    let mut rt = QuickJsRuntime::new();
+    rt.load_bundle("scene.js", SCENE).unwrap();
+    let mut host = ComponentHost::new();
+    let mut scene = ScriptScene::new();
+    let object = scene.create_engine_object("HotCounter");
+    host.spawn_on(&mut rt, "HotCounter", Some(object), "HotCounter")
+        .unwrap();
+    for _ in 0..10 {
+        tick(&mut rt, &mut host, &mut scene);
+    }
+    assert_eq!(
+        rt.eval("__hot_log()").unwrap(),
+        Value::String("42 started 10 true 1 0 10".into())
+    );
+
+    let (mut rt, mut host, mut scene, ok) = reload_keeping_state(&mut rt, |j| j);
+    assert_eq!(ok, Value::Bool(true));
+    // The restore's ops build the objects; the next tick runs the restored component.
+    tick(&mut rt, &mut host, &mut scene);
+    tick(&mut rt, &mut host, &mut scene);
+    // speed and the plain count kept, the child reference remapped, no second
+    // onStart in the new code (its module counter is 0), onReload once, the clock
+    // carried on.
+    assert_eq!(
+        rt.eval("__hot_log()").unwrap(),
+        Value::String("42 started 11 true 0 1 12".into())
+    );
+    let child = scene.scene.find("HotChild").unwrap();
+    assert_eq!(
+        scene.scene.world(child).position,
+        glam::Vec3::new(1.0, 2.0, 3.0)
+    );
+    assert_eq!(host.len(), 1);
+}
+
+// M4-HOT-05
+#[test]
+fn reloads_drop_properties_that_are_gone_and_start_over_without_classes() {
+    let mut rt = QuickJsRuntime::new();
+    rt.load_bundle("scene.js", SCENE).unwrap();
+    let mut host = ComponentHost::new();
+    let mut scene = ScriptScene::new();
+    let object = scene.create_engine_object("HotCounter");
+    host.spawn_on(&mut rt, "HotCounter", Some(object), "HotCounter")
+        .unwrap();
+    tick(&mut rt, &mut host, &mut scene);
+    // As if `label` had been renamed in the code: the saved value has nowhere to go
+    // and the new name gets its default.
+    let (mut new_rt, _, _, ok) =
+        reload_keeping_state(&mut rt, |j| j.replace("\"label\"", "\"oldLabel\""));
+    assert_eq!(ok, Value::Bool(true));
+    let log = new_rt.eval("__hot_log()").unwrap();
+    assert!(
+        matches!(&log, Value::String(s) if s.starts_with("42 fresh ")),
+        "{log:?}"
+    );
+    // A class that isn't registered any more: nothing restored, the engine starts over.
+    let (_, _, _, ok) = reload_keeping_state(&mut rt, |j| j.replace("\"HotCounter\"", "\"Gone\""));
+    assert_eq!(ok, Value::Bool(false));
+}

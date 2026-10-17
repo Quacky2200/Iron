@@ -159,6 +159,21 @@ export const QualitySettings = {
   },
 };
 
+/** @internal The level and settings, for hot reload. */
+export function _qualityState(): unknown {
+  return { level: levelIndex, current };
+}
+
+/** @internal Puts back what `_qualityState` saved and sends it. */
+export function _restoreQuality(state: unknown): void {
+  const s = state as { level?: number; current?: Partial<QualityLevel> } | null;
+  if (!s?.current) return;
+  levelIndex = Math.min(levels.length - 1, Math.max(0, s.level ?? levelIndex));
+  current = { ...levels[levelIndex]!, ...s.current };
+  sendQuality();
+  sendShadows();
+}
+
 /** @internal Applies the default level (done when the engine loads). */
 export function _applyDefaultQuality(): void {
   sendQuality();

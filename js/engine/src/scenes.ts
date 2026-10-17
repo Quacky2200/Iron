@@ -30,7 +30,9 @@ import {
   SpringJoint,
 } from "./physics-components.ts";
 import { BoxCollider2D, CapsuleCollider2D, CircleCollider2D, EdgeCollider2D, PolygonCollider2D, Rigidbody2D } from "./physics2d.ts";
+import { _restoreQuality, _qualityState } from "./quality.ts";
 import { propertiesOf } from "./property.ts";
+import { _restoreTime, _timeState } from "./clock.ts";
 import {
   Camera,
   CameraFollow,
@@ -50,6 +52,8 @@ import {
   Component,
   GameObject,
   _classByName,
+  _isBuiltIn,
+  _markRestored,
   _nameOf,
   _registerBuiltIns,
   _setSceneHooks,
@@ -138,13 +142,32 @@ export interface ComponentData {
 
 const warn = (message: string) => console.warn(`scene: ${message}`);
 
+/** What `Saver.value` gives for values it can't save, in reload mode (the field is left out). */
+const UNSAVED = Symbol("unsaved");
+
 /** Saving: file ids for objects and components, and shared assets. */
 class Saver {
   readonly ids = new Map<GameObject | Component, number>();
   readonly assets: Record<string, Record<string, unknown>> = {};
   private assetIds = new Map<object, string>();
-  /** Objects outside what's saved: kept as live references (`instantiate`), else null. */
-  constructor(private readonly keepExternal: boolean) {}
+  /**
+   * `keepExternal`: objects outside what's saved stay live references (`instantiate`),
+   * else null. `reload`: also saves script components' plain fields, skipping quietly
+   * what can't be saved.
+   */
+  constructor(
+    private readonly keepExternal: boolean,
+    readonly reload = false,
+  ) {}
+
+  /** A plain field's value for a reload, or `UNSAVED` (functions, engine handles, ...). */
+  field(v: unknown, where: string): unknown {
+    if (typeof v === "function" || typeof v === "symbol" || typeof v === "bigint") return UNSAVED;
+    this.unsaved = false;
+    const out = this.value(v, where);
+    return this.unsaved ? UNSAVED : out;
+  }
+  private unsaved = false;
 
   id(thing: GameObject | Component): number {
     let id = this.ids.get(thing);
@@ -200,10 +223,7 @@ class Saver {
       };
     }
     if (v instanceof Texture) {
-      if (!v.src) {
-        warn(`${where}: only textures loaded from files are saved`);
-        return null;
-      }
+      if (!v.src) return this.cannot(`${where}: only textures loaded from files are saved`);
       const t = v as unknown as { _mipmaps: boolean };
       return this.asset(v, "texture", () => ({ type: "Texture", src: v.src, filterMode: v.filterMode, wrapMode: v.wrapMode, mipmaps: t._mipmaps }));
     }
@@ -212,10 +232,7 @@ class Saver {
     }
     if (v instanceof Mesh) {
       const data = v._data;
-      if (!data) {
-        warn(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
-        return null;
-      }
+      if (!data) return this.cannot(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
       return this.asset(v, "mesh", () => ({ type: "Mesh", ...data }));
     }
     if (v instanceof Sound) return { $type: "Sound", src: v.src };
@@ -227,7 +244,13 @@ class Saver {
       }
       return out;
     }
-    warn(`${where}: can't save a ${proto?.constructor?.name ?? "value"}`);
+    return this.cannot(`${where}: can't save a ${proto?.constructor?.name ?? "value"}`);
+  }
+
+  /** A value it can't save: null with a warning (or, for reload fields, quietly left out). */
+  private cannot(message: string): null {
+    if (this.reload) this.unsaved = true;
+    else warn(message);
     return null;
   }
 }
@@ -370,9 +393,19 @@ function saveObject(saver: Saver, go: GameObject): GameObjectData | null {
   const components = go.components.map((c): ComponentData => {
     const cls = c.constructor as ComponentClass;
     const properties: Record<string, unknown> = {};
-    for (const name of propertiesOf(cls)) {
-      const value = (c as unknown as Record<string, unknown>)[name];
+    const own = c as unknown as Record<string, unknown>;
+    const props = propertiesOf(cls);
+    for (const name of props) {
+      const value = own[name];
       if (value !== undefined) properties[name] = saver.value(value, `${go.name}.${_nameOf(cls)}.${name}`);
+    }
+    if (saver.reload && !_isBuiltIn(cls)) {
+      // A script component's other fields too, like Unity's reload: counters, timers, state.
+      for (const name of Object.keys(own)) {
+        if (name === "id" || name === "gameObject" || props.includes(name) || own[name] === undefined) continue;
+        const value = saver.field(own[name], `${go.name}.${_nameOf(cls)}.${name}`);
+        if (value !== UNSAVED) properties[name] = value;
+      }
     }
     return { id: saver.id(c), type: _nameOf(cls), properties };
   });
@@ -386,7 +419,12 @@ function saveObject(saver: Saver, go: GameObject): GameObjectData | null {
  * Builds objects (under `parent`, or as roots of the active scene), then sets their
  * components' properties, then wakes the components: Unity's order.
  */
-function loadObjects(list: readonly GameObjectData[], assets: SceneData["assets"], parent: GameObject | null): GameObject[] {
+function loadObjects(
+  list: readonly GameObjectData[],
+  assets: SceneData["assets"],
+  parent: GameObject | null,
+  reload = false,
+): GameObject[] {
   const loader = new Loader(assets);
   const pending: { component: Component; properties: Record<string, unknown> }[] = [];
   const disabled: GameObject[] = [];
@@ -416,15 +454,34 @@ function loadObjects(list: readonly GameObjectData[], assets: SceneData["assets"
   };
   const made = list.map((d) => build(d, parent));
   for (const { component, properties } of pending) {
+    const own = component as unknown as Record<string, unknown>;
+    const cls = component.constructor as ComponentClass;
+    const props = propertiesOf(cls);
     for (const [name, value] of Object.entries(properties)) {
+      // After a code change a property may be gone (renamed or removed): drop it.
+      if (!props.includes(name) && !Object.hasOwn(own, name)) {
+        warn(`${component.gameObject.name}: ${_nameOf(cls)} has no ${name} any more; dropped`);
+        continue;
+      }
       try {
-        (component as unknown as Record<string, unknown>)[name] = loader.value(value);
+        own[name] = loader.value(value);
       } catch (e) {
         warn(`${component.gameObject.name}: couldn't set ${name}: ${e}`);
       }
     }
   }
-  for (const { component } of pending) component.onAwake?.();
+  // Script components carried over a reload have already woken and started: they get
+  // `onReload` instead. The engine's are rebuilt like any load.
+  const restored = reload ? pending.filter(({ component }) => !_isBuiltIn(component.constructor as ComponentClass)) : [];
+  for (const { component } of restored) _markRestored(component);
+  for (const { component } of pending) if (!restored.some((r) => r.component === component)) component.onAwake?.();
+  for (const { component } of restored) {
+    try {
+      component.onReload?.();
+    } catch (e) {
+      console.error(`${component.gameObject.name}: onReload: ${e}`);
+    }
+  }
   for (const go of disabled) go.enabled = false;
   return made;
 }
@@ -458,7 +515,12 @@ export class Scene {
 
   /** Everything in it as `SceneData` (JSON-ready), with the render settings if it's active. */
   serialize(): SceneData {
-    const saver = new Saver(false);
+    return this._serialize(false);
+  }
+
+  /** @internal `reload`: script components' plain fields too. */
+  _serialize(reload: boolean): SceneData {
+    const saver = new Saver(false, reload);
     const roots = this.getRootGameObjects();
     number(saver, roots);
     const objects = roots.map((go) => saveObject(saver, go)).filter((d): d is GameObjectData => d !== null);
@@ -692,6 +754,93 @@ function instantiate(original: GameObject, options: InstantiateObjectOptions = {
   }
 }
 
+// ---- Hot reload: the whole game's state, saved by the old code and restored by the new ----
+
+interface ReloadState {
+  version: 1;
+  scenes: SceneData[];
+  /** Index of the active scene in `scenes`. */
+  active: number;
+  keep: SceneData | null;
+  quality: unknown;
+  time: unknown;
+}
+
+function sceneNames(data: SceneData): string[] {
+  const out: string[] = [];
+  const walk = (o: GameObjectData) => {
+    for (const c of o.components ?? []) out.push(c.type);
+    for (const child of o.children ?? []) walk(child);
+  };
+  for (const o of data.objects) walk(o);
+  return out;
+}
+
+/** Called by the engine on the old code before a reload: everything to carry over, as JSON. */
+function saveState(): string {
+  const state: ReloadState = {
+    version: 1,
+    scenes: scenes.map((s) => s._serialize(true)),
+    active: scenes.indexOf(active),
+    keep: keep && keep.rootCount > 0 ? keep._serialize(true) : null,
+    quality: _qualityState(),
+    time: _timeState(),
+  };
+  return JSON.stringify(state);
+}
+
+/**
+ * Called by the engine on the new code instead of starting components: rebuilds the
+ * saved scenes. False (nothing changed) when a saved component class isn't registered
+ * any more, so the engine starts the game over instead.
+ */
+function restoreState(json: string): boolean {
+  const state = JSON.parse(json) as ReloadState;
+  const all = [...state.scenes, ...(state.keep ? [state.keep] : [])];
+  const missing = [...new Set(all.flatMap(sceneNames))].filter((name) => !_classByName(name));
+  if (missing.length) {
+    warn(
+      `can't keep state across the reload: ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} registered ` +
+        `(register({ ${missing.join(", ")} }, { spawn: false })); starting over`,
+    );
+    // Starting over includes the start scene, held back while the reload was pending.
+    if (startScene) void loadStartScene(startScene);
+    return false;
+  }
+  _restoreQuality(state.quality);
+  _restoreTime(state.time);
+  // The fresh `Main` scene is replaced by the saved ones.
+  for (const s of scenes) s.isLoaded = false;
+  scenes = [];
+  const build = (data: SceneData): Scene => {
+    const scene = new Scene(data.name);
+    scene._renderSettings = data.renderSettings ?? null;
+    const previous = active;
+    active = scene;
+    try {
+      loadObjects(data.objects ?? [], data.assets, null, true);
+    } finally {
+      active = previous;
+    }
+    return scene;
+  };
+  scenes = state.scenes.map(build);
+  if (state.keep) keep = build(state.keep);
+  if (!scenes.length) scenes = [new Scene("Main")];
+  active = scenes[state.active] ?? scenes[0]!;
+  if (active._renderSettings) applyRenderSettings(active._renderSettings);
+  return true;
+}
+
+declare global {
+  var __iron_save_state: (() => string) | undefined;
+  var __iron_restore_state: ((json: string) => boolean) | undefined;
+  /** Set by the engine while a reload with saved state loads the new bundle. */
+  var __iron_reloading: boolean | undefined;
+}
+globalThis.__iron_save_state = saveState;
+globalThis.__iron_restore_state = restoreState;
+
 /**
  * The game's start scene (`iron.startScene` in its `package.json`), loaded once the
  * file has been read. It loads next to the objects of the starting components and
@@ -709,7 +858,8 @@ async function loadStartScene(path: string): Promise<void> {
 }
 
 const startScene = globalThis.__iron_info?.app.startScene;
-if (startScene && typeof __iron_op === "function") void loadStartScene(startScene);
+// Not after a reload that keeps state: the saved scenes come back instead.
+if (startScene && typeof __iron_op === "function" && !globalThis.__iron_reloading) void loadStartScene(startScene);
 
 _setSceneHooks({
   active: () => active,

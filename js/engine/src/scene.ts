@@ -50,6 +50,12 @@ export abstract class Component {
   /** Called when the component or its object is removed. */
   onDestroy?(): void;
 
+  /**
+   * Called instead of `onAwake` / `onStart` when hot reload brings the component back
+   * with its saved fields: re-attach event listeners and callbacks here.
+   */
+  onReload?(): void;
+
   /** Another component on the same object. */
   getComponent<T extends Component>(cls: ComponentClass<T>): T | undefined {
     return this.gameObject.getComponent(cls);
@@ -104,6 +110,20 @@ export function _registerBuiltIns(components: Record<string, ComponentClass>): v
 /** @internal A component class by its saved name (`undefined`: unknown). */
 export function _classByName(name: string): ComponentClass | undefined {
   return classes.get(name) ?? builtIns.get(name);
+}
+
+/** @internal Whether a class is one of the engine's own components. */
+export function _isBuiltIn(cls: ComponentClass): boolean {
+  const name = names.get(cls);
+  return name !== undefined && builtIns.get(name) === cls;
+}
+
+/** Components brought back by a reload: they've started already. */
+const restored = new Set<number>();
+
+/** @internal Marks a component as restored by a reload (no `onStart`). */
+export function _markRestored(component: Component): void {
+  restored.add(component.id);
 }
 
 /** @internal A component's saved name. */
@@ -605,6 +625,7 @@ export function _resetSceneForTests() {
   names.clear();
   for (const [name, cls] of builtIns) names.set(cls, name);
   instances.clear();
+  restored.clear();
   objects.clear();
   roots.length = 0;
   sceneHooks?.reset();
@@ -631,7 +652,8 @@ const HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRen
 /** Which lifecycle methods a component has, so the engine only calls those. */
 globalThis.__iron_hooks = (id: number) => {
   const instance = instances.get(id) as unknown as Record<string, unknown> | undefined;
-  return instance ? HOOKS.filter((h) => typeof instance[h] === "function") : [...HOOKS];
+  if (!instance) return [...HOOKS];
+  return HOOKS.filter((h) => typeof instance[h] === "function" && !(h === "onStart" && restored.has(id)));
 };
 
 globalThis.__iron_dispatch = (id: number, method: string, ...args: unknown[]) => {

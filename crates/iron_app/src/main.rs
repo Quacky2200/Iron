@@ -345,18 +345,51 @@ impl App {
                 return;
             }
         };
+        // The old code saves its scenes (objects, components, their fields) as JSON;
+        // the new code rebuilds them instead of starting over.
+        // (Bundles without @iron/engine's scenes have nothing to save.)
+        let can_save = self
+            .scripts
+            .eval("typeof __iron_save_state === 'function'")
+            .is_ok_and(|v| v == iron_core::Value::Bool(true));
+        let saved = match can_save.then(|| self.scripts.call_global("__iron_save_state", &[])) {
+            Some(Ok(iron_core::Value::String(json))) => Some(json),
+            Some(Err(e)) => {
+                tracing::warn!("reload: saving state failed, starting over: {e}");
+                None
+            }
+            _ => None,
+        };
         let mut fresh = QuickJsRuntime::new();
         if let Err(e) = fresh.eval(&self.info.script()) {
             tracing::error!("reload: {e}");
         }
+        if saved.is_some() {
+            // Keeps the start scene from loading on top of the restored ones.
+            let _ = fresh.eval("globalThis.__iron_reloading = true");
+        }
         let mut scene = iron_scene::ScriptScene::new();
+        let mut restored = false;
         let classes = match iron_script::reload(
             &mut self.scripts,
             fresh,
             &mut self.components,
             &self.bundle_name,
             &code,
-            |rt, host, classes| spawn_starting_components(rt, host, &mut scene, classes),
+            |rt, host, classes| {
+                if let Some(json) = saved {
+                    let _ = rt.eval("globalThis.__iron_reloading = false");
+                    restored = rt
+                        .call_global("__iron_restore_state", &[iron_core::Value::String(json)])?
+                        == iron_core::Value::Bool(true);
+                }
+                if restored {
+                    // The restored objects and components arrive as ops.
+                    Ok(())
+                } else {
+                    spawn_starting_components(rt, host, &mut scene, classes)
+                }
+            },
         ) {
             Ok(classes) => classes,
             Err(e) => {
@@ -405,6 +438,7 @@ impl App {
         self.scene_events = has(&mut self.scripts, "__iron_scene");
         tracing::info!(
             ?classes,
+            restored,
             "reloaded {} in {:.1} ms",
             self.bundle_name,
             started.elapsed().as_secs_f64() * 1000.0
@@ -1572,6 +1606,16 @@ impl PlatformApp for App {
         self.world_view.probes_rendered();
 
         self.frames += 1;
+        // `IRON_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
+        // to check hot reload without a window.
+        if self.screenshot.is_some()
+            && std::env::var("IRON_RELOAD_AT_FRAME")
+                .ok()
+                .and_then(|n| n.parse::<u32>().ok())
+                == Some(self.frames)
+        {
+            self.reload_scripts();
+        }
         if let Some((path, frames)) = self.screenshot.clone()
             && self.frames >= frames
         {

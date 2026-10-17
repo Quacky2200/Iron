@@ -274,11 +274,11 @@ layout pass):
 
 | ID | Kind | Checks |
 |---|---|---|
-| M4-HOT-01 | Integration | Changing a component's `onUpdate` and reloading runs the new code on the next tick (components start over until part 2 keeps their state). |
-| M4-HOT-02 | Integration | `@property` values survive a reload (e.g. `speed` set to 42 is still 42). |
-| M4-HOT-03 | Integration | Entities, transforms and physics bodies are untouched by a script reload (Rust owns the world). |
+| M4-HOT-01 | Integration | Changing a component's `onUpdate` and reloading runs the new code on the next tick. |
+| M4-HOT-02 | Integration | `@property` values and script components' plain fields survive a reload (`speed` set to 42 is still 42, a counter keeps counting), references between objects are remapped, `onStart` doesn't run again and `onReload` does, and the clock carries on. |
+| M4-HOT-03 | Integration | Objects, hierarchy and transforms come back where they were after a script reload (rebuilt from the saved scenes). |
 | M4-HOT-04 | Integration | A reload with a syntax error (or a throwing top level) keeps the old code running and reports the error. |
-| M4-HOT-05 | Integration | A renamed or removed property is dropped with a warning; new properties get their defaults. |
+| M4-HOT-05 | Integration | A renamed or removed property is dropped with a warning; new properties get their defaults; a saved class that isn't registered any more makes the reload start over. |
 | M4-HOT-06 | Integration | React panel state (e.g. a counter) survives a Fast Refresh edit. |
 | M4-HOT-07 | Benchmark | Reload of a ~1 MB bundle with 1,000 components: **< 100 ms**. |
 | M4-HOT-08 | Manual | Edit a TS file while the game runs; the change appears without restarting. |

@@ -81,7 +81,33 @@ class SceneTrip extends Component {
   }
 }
 
-register({ Game, Lifecycle, Door, SceneTrip });
+/** M4-HOT-02/03/05: state that should survive a reload. */
+let starts = 0;
+let reloads = 0;
+class HotCounter extends Component {
+  @property speed = 1;
+  @property label = "fresh";
+  count = 0;
+  child: GameObject | null = null;
+  override onStart() {
+    starts++;
+    this.speed = 42;
+    this.label = "started";
+    this.child = new GameObject("HotChild", { parent: this.gameObject, position: new Vector3(1, 2, 3) });
+  }
+  override onUpdate() {
+    this.count++;
+  }
+  override onReload() {
+    reloads++;
+  }
+}
+
+register({ Game, Lifecycle, Door, SceneTrip, HotCounter });
+(globalThis as { __hot_log?: () => string }).__hot_log = () => {
+  const c = GameObject.findObjectOfType(HotCounter)!;
+  return [c.speed, c.label, c.count, c.child === GameObject.find("HotChild"), starts, reloads, Time.frameCount].join(" ");
+};
 (globalThis as { __scene_trip?: () => string }).__scene_trip = () => trip;
 (globalThis as { __hooks_log?: () => string }).__hooks_log = () => hooks.join(" ");
 

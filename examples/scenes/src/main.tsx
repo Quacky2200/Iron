@@ -2,7 +2,8 @@
 // package.json). The menu loads the other level from its file (single: everything else
 // goes), adds or removes a bonus room (additive), copies a spinner (`instantiate`) and
 // saves the active scene to the log. The `Keeper` survives every load
-// (`dontDestroyOnLoad`) and counts them.
+// (`dontDestroyOnLoad`) and counts them. Hot reload keeps all of it (try editing a
+// spinner's code while it runs).
 import {
   Component,
   GameObject,
@@ -39,15 +40,27 @@ class Bobber extends Component {
   }
 }
 
-let loads = 0;
 let refresh = () => {};
 
-/** Lives through every scene load and counts them. */
+/**
+ * Lives through every scene load and counts them. A hot reload keeps it and its
+ * `loads` (fields come back with it) but not its listeners: `onReload` re-attaches them.
+ */
 class Keeper extends Component {
+  static instance: Keeper | null = null;
+  loads = 0;
   override onAwake() {
     GameObject.dontDestroyOnLoad(this.gameObject);
+    this.listen();
+  }
+  override onReload() {
+    this.listen();
+    refresh();
+  }
+  private listen() {
+    Keeper.instance = this;
     SceneManager.onSceneLoaded(() => {
-      loads++;
+      this.loads++;
       refresh();
     });
     SceneManager.onSceneUnloaded(() => refresh());
@@ -126,7 +139,7 @@ function Menu() {
       >
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Scenes</text>
         <text style={{ color: "#a9b3c3", fontSize: 12 }}>
-          {`${scenes.map((s) => (s === active ? `${s.name} (active, ${s.rootCount})` : `${s.name} (${s.rootCount})`)).join(", ")} · ${loads} loads`}
+          {`${scenes.map((s) => (s === active ? `${s.name} (active, ${s.rootCount})` : `${s.name} (${s.rootCount})`)).join(", ")} · ${Keeper.instance?.loads ?? 0} loads`}
         </text>
         <box style={{ flexDirection: "row", gap: 6 }}>
           <Button label="Courtyard" onClick={() => void loadLevel("scenes/level1.scene.json")} />

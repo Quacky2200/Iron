@@ -57,6 +57,21 @@ export function onTick(fn: () => void): void {
   tickListeners.push(fn);
 }
 
+/** @internal The clock, for hot reload. */
+export function _timeState(): unknown {
+  return { time, unscaledTime, frameCount, timeScale };
+}
+
+/** @internal Puts back what `_timeState` saved. */
+export function _restoreTime(state: unknown): void {
+  const s = state as { time?: number; unscaledTime?: number; frameCount?: number; timeScale?: number } | null;
+  if (!s) return;
+  time = s.time ?? time;
+  unscaledTime = s.unscaledTime ?? unscaledTime;
+  frameCount = s.frameCount ?? frameCount;
+  timeScale = s.timeScale ?? timeScale;
+}
+
 /** Resets the clock. Only for tests. */
 export function _resetTimeForTests() {
   time = unscaledTime = deltaTime = unscaledDeltaTime = frameCount = 0;

@@ -978,11 +978,19 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     overrides; saving user children under model copies
 - [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing
   scene serialization
-  - [ ] `@property` (standard decorators, which Bun supports) feeds serialization; wipe and
-    rebuild restores properties, including handles to engine objects; `onReload` lets components
-    re-attach callbacks — `M4-HOT-02`, `M4-HOT-05`
-  - [ ] Rust-owned state survives (GameObjects, transforms, physics bodies, sounds); script-side
-    registries and ID counters are rebuilt from it — `M4-HOT-03`, `M4-PHY-04`
+  - [x] Wipe and rebuild through scene serialization (2026-10-17): the old code saves every
+    scene (`__iron_save_state`: objects, transforms, components, `@property` values and
+    script components' plain fields, references remapped, plus quality level and clock);
+    the new code rebuilds them (`__iron_restore_state`) instead of starting components.
+    Restored script components get `onReload` instead of `onAwake` / `onStart`; engine
+    components are rebuilt like a scene load. Gone properties are dropped with a warning,
+    new ones get their defaults; if a saved class isn't registered any more, the game
+    starts over (with the start scene) and says what to register.
+    `IRON_RELOAD_AT_FRAME` reloads during a screenshot run — `M4-HOT-02`, `M4-HOT-03`,
+    `M4-HOT-05`
+  - [ ] Still lost on reload: physics velocities and joints' live state, playing sounds
+    (sources with `playOnAwake` start again), particles in flight, module-level variables,
+    React state (Fast Refresh below); `M4-PHY-04`
   - [ ] React Fast Refresh for panels (React and the reconciler in a vendor bundle kept across
     reloads) — `M4-HOT-06`
   - [ ] Reload benchmark — `M4-HOT-07`
