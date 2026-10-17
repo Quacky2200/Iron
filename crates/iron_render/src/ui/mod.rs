@@ -808,7 +808,8 @@ impl UiRenderer {
                                 p0: rect4(tile),
                                 p1: [gap[0], gap[1], 0.0, 0.0],
                                 color0: [0.0; 4],
-                                color1: [0.0; 4],
+                                // All zeros: untinted.
+                                color1: fill.tint.map_or([0.0; 4], linear_premultiplied),
                                 params: [
                                     KIND_IMAGE,
                                     f32::from(u8::from(repeat[0])),
@@ -1046,6 +1047,7 @@ impl UiRenderer {
                     border,
                     image,
                     pixelated,
+                    tint,
                 } => {
                     // Piece edges on whole physical pixels, so neighbours don't leave
                     // anti-aliased seams between them.
@@ -1098,7 +1100,7 @@ impl UiRenderer {
                                         src.width / iw,
                                         src.height / ih,
                                     ],
-                                    color1: [0.0; 4],
+                                    color1: tint.map_or([0.0; 4], linear_premultiplied),
                                     params: [
                                         KIND_IMAGE,
                                         f32::from(u8::from(rx)),

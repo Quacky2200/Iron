@@ -1662,6 +1662,58 @@ fn animation_filmstrip_and_mid_transition() {
     assert!(f.luma(165, 82) > 100.0 && f.luma(175, 82) < 20.0);
 }
 
+// M3-GAME-01
+#[test]
+fn image_tints() {
+    let mut s = Scene::new();
+    let tiled = |x: f64, tint: &str| {
+        at(
+            x,
+            10.0,
+            60.0,
+            60.0,
+            &[
+                ("backgroundImage", "url(gray.png)".into()),
+                ("backgroundImageTint", tint.into()),
+            ],
+        )
+    };
+    s.add(0, &tiled(10.0, "none"));
+    s.add(0, &tiled(80.0, "#ff4040"));
+    s.add(0, &tiled(150.0, "rgba(64, 128, 255, 0.5)"));
+    s.add(
+        0,
+        &at(
+            220.0,
+            10.0,
+            60.0,
+            60.0,
+            &[
+                ("borderWidth", 12.0.into()),
+                ("borderImage", "url(gray.png) 4 round".into()),
+                ("borderImageTint", "#40ff80".into()),
+            ],
+        ),
+    );
+    let img = s.element(
+        0,
+        "image",
+        &at(
+            290.0,
+            10.0,
+            60.0,
+            60.0,
+            &[("backgroundImageTint", "#ffd040".into())],
+        ),
+    );
+    s.attrs(img, &[("src", "gray.png".into())]);
+    let f = render_with_assets(s, (360, 80), 1.0, BLACK, Some(&images_dir()));
+    assert_golden("M3-GAME-01", 360, 80, &f.pixels, TOLERANCE);
+    // The red-tinted tiles have no green or blue left.
+    let [r, g, b, _] = f.px(85, 15);
+    assert!(r > 200 && g < 90 && b < 90, "{:?}", f.px(85, 15));
+}
+
 // M3-DLG-02
 #[test]
 fn modal_dialog_over_a_blurred_backdrop() {

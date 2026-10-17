@@ -116,6 +116,7 @@ fn background_layers(
             area,
             radii: area_radii,
             pixelated,
+            tint: v.background_image_tint,
         });
     }
     (fills, text_fill)
@@ -217,6 +218,7 @@ fn mask_layers(v: &Visual, rect: Rect, pixelated: bool) -> Vec<ImageFill> {
                 area: rect,
                 radii: Radii::ZERO,
                 pixelated,
+                tint: None,
             })
         })
         .collect()
@@ -3651,6 +3653,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 border: l.border,
                 image: image.clone(),
                 pixelated: text.pixelated,
+                tint: v.border_image_tint,
             });
         } else if !simple_border && (0..4).any(drawn) {
             own.push(DrawCmd::Border {
@@ -3980,6 +3983,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 area: content,
                 radii: Radii::ZERO,
                 pixelated,
+                tint: v.background_image_tint,
             }],
             border_color: Rgba::TRANSPARENT,
             border: [0.0; 4],

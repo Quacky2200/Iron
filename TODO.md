@@ -660,7 +660,9 @@ and `@font-face`.
 9. **Game-specific extensions** (s&box custom properties worth copying)
    - [ ] `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
      `:active`); only the winning rule plays (needs M6 audio)
-   - [ ] Tint for images: `background-image-tint` / `border-image-tint` (or a `tint()` filter)
+   - [x] **9a** Tint for images: s&box's `background-image-tint` (background images and an `image`
+     element's picture) and `border-image-tint`, a colour (alpha too) multiplied into the image's
+     pixels in the image shader; gradients aren't tinted — `M3-GAME-01`
    - [ ] UI scale: scale screen UI to a target resolution (s&box's ScreenPanel targets 1080p height)
 10. **Stylesheet authoring**
     - [ ] Native CSS nesting (`&`, nested rules, implicit descendant) — covers s&box's SCSS nesting

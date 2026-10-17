@@ -654,12 +654,18 @@ fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
         let t = select(uv, fract(uv), vec2(repeat_x, repeat_y));
         let at = clamp(sub.xy + t * sub.zw, sub.xy + half_texel, sub.xy + sub.zw - half_texel);
         let c = textureSampleLevel(image_tex, image_samp, at, 0.0);
-        return vec4(c.rgb * c.a, c.a) * clip;
+        return vec4(c.rgb * c.a, c.a) * image_tint(in.color1) * clip;
     }
     // The sampler repeats. On axes that don't repeat, keep bilinear filtering
     // from wrapping around to the opposite edge. sRGB textures sample as linear.
     let clamped = clamp(uv, half_texel, vec2(1.0) - half_texel);
     let sample_uv = vec2(select(clamped.x, uv.x, repeat_x), select(clamped.y, uv.y, repeat_y));
     let c = textureSampleLevel(image_tex, image_samp, sample_uv, 0.0);
-    return vec4(c.rgb * c.a, c.a) * clip;
+    return vec4(c.rgb * c.a, c.a) * image_tint(in.color1) * clip;
+}
+
+// `background-image-tint` / `border-image-tint` (linear, premultiplied); all zeros
+// means no tint.
+fn image_tint(t: vec4<f32>) -> vec4<f32> {
+    return select(t, vec4(1.0), all(t == vec4(0.0)));
 }

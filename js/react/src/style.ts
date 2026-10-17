@@ -271,6 +271,10 @@ export interface IronStyle {
   clip?: string;
   /** `auto`, `thin` or `none` (hidden but still scrollable). */
   scrollbarWidth?: "auto" | "thin" | "none";
+  /** s&box's image tint: a colour multiplied into background images and an `Image`'s picture. */
+  backgroundImageTint?: string;
+  /** A colour multiplied into the `borderImage` source image. */
+  borderImageTint?: string;
   /** `stable` keeps room for the (otherwise overlaid) scrollbar even before content overflows. */
   scrollbarGutter?: "auto" | "stable" | "stable both-edges";
   /** `contain` / `none`: scrolling past this container's end doesn't scroll the ones outside. */

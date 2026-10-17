@@ -4,6 +4,12 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Game extensions (M3d group 9)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| `background-image-tint`, `border-image-tint` | s&box properties, no CSS equivalent; multiply image pixels by a colour; gradients and masks aren't tinted | — | Common in game UI (one white icon, many colours) |
+
 ## Scrolling extras (M3d group 8)
 
 | Area | Iron | Browsers / spec | Why |

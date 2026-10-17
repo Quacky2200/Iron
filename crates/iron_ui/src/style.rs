@@ -60,6 +60,11 @@ pub struct Visual {
     pub transform: Option<Arc<Transforms>>,
     /// `borderImage` and its longhands; `None` is the default (no image).
     pub border_image: Option<Arc<BorderImage>>,
+    /// s&box's `background-image-tint` / `border-image-tint`: a colour multiplied into
+    /// the image pixels (background images and an `image` element's picture; the
+    /// border image). Gradients aren't tinted.
+    pub background_image_tint: Option<Rgba>,
+    pub border_image_tint: Option<Rgba>,
     /// `outline`: drawn outside the border box (plus `outline_offset`), over the
     /// element's content; it takes no space. Style `none` (the default) hides it.
     pub outline_width: f32,
@@ -151,6 +156,8 @@ impl Default for Visual {
             border_currents: [false; 4],
             border_styles: [BorderStyle::Solid; 4],
             border_image: None,
+            background_image_tint: None,
+            border_image_tint: None,
             transform: None,
             outline_width: 3.0,
             outline_style: BorderStyle::None,
@@ -723,6 +730,17 @@ pub fn apply_style(
         "backgroundClip" | "WebkitBackgroundClip" => {
             visual.background_clips =
                 parse_layers(kw()?, BackgroundClip::parse).ok_or_else(invalid)?
+        }
+        "backgroundImageTint" | "borderImageTint" => {
+            let tint = match kw()?.trim() {
+                "none" => None,
+                c => Some(Rgba::parse(c).ok_or_else(invalid)?),
+            };
+            if prop == "backgroundImageTint" {
+                visual.background_image_tint = tint;
+            } else {
+                visual.border_image_tint = tint;
+            }
         }
         "backgroundBlendMode" => {
             visual.background_blends = parse_layers(kw()?, BlendMode::parse).ok_or_else(invalid)?
@@ -1357,6 +1375,8 @@ pub(crate) fn copy_prop(
         }
         "backgroundClip" | "WebkitBackgroundClip" => visual.background_clips = v.background_clips,
         "backgroundBlendMode" => visual.background_blends = v.background_blends,
+        "backgroundImageTint" => visual.background_image_tint = v.background_image_tint,
+        "borderImageTint" => visual.border_image_tint = v.border_image_tint,
         "maskImage" | "WebkitMaskImage" | "mask" => visual.mask_images = v.mask_images,
         "maskSize" | "WebkitMaskSize" => visual.mask_sizes = v.mask_sizes,
         "maskPosition" | "WebkitMaskPosition" => visual.mask_positions = v.mask_positions,

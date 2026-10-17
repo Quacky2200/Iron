@@ -245,6 +245,8 @@ pub struct ImageFill {
     pub radii: Radii,
     /// `image-rendering: pixelated`: nearest-neighbour sampling.
     pub pixelated: bool,
+    /// Multiplied into image pixels (`background-image-tint`).
+    pub tint: Option<Rgba>,
 }
 
 /// One box: background colour, image/gradient layers, border and rounded corners.
@@ -342,6 +344,8 @@ pub enum DrawCmd {
         border: [f32; 4],
         image: Arc<BorderImage>,
         pixelated: bool,
+        /// Multiplied into image pixels (`border-image-tint`).
+        tint: Option<Rgba>,
     },
     /// Following commands are clipped to `shape` (intersected with any clip already
     /// active) until the matching `PopClip`.
