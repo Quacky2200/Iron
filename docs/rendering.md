@@ -235,6 +235,13 @@ pixel into the tile on repeating axes, skips the gradient outside the tile on ot
 a PNG with `iron_render::testing::write_png`. It still opens a window (frames run until the target
 count), unlike tests, which are fully headless.
 
+## Image tint
+
+`ImageFill.tint` and `DrawCmd::BorderImage.tint` (`Option<Rgba>`) are passed in the image
+instance's `color1` as linear premultiplied RGBA; all zeros means no tint. `image_tint` in
+quad.wgsl returns white for zeros, and `fs_image` multiplies the sampled premultiplied pixel by it
+on both the tiled and the repeating path. Golden M3-GAME-01.
+
 ## Golden testing
 
 See [testing.md](testing.md). In short: `assert_golden(id, w, h, &pixels, tolerance)` in

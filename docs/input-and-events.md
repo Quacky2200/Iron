@@ -60,7 +60,7 @@ need no `image`. A rejected image is logged and skipped.
 
 `App::input` maps `InputEvent` to `iron_ui::Input` and calls `handle_ui`:
 
-- Positions are divided by the window scale factor (logical pixels). `Lines` wheel deltas are
+- Positions are divided by `App::scale()`, the window DPI factor times the [UI scale](#ui-scale-m3d-step-9b) (UI pixels). `Lines` wheel deltas are
   multiplied by `WHEEL_LINE` (40 px), touchpad pixels are divided by scale.
 - Buttons become DOM numbers via `dom_button` (0 left, 1 middle, 2 right, 3/4 back/forward).
   `PointerDown` carries `time_ms` (engine clock) for double-click detection.
@@ -217,8 +217,8 @@ refreshes hover (content moved under the pointer).
 
 | Trigger | Behaviour |
 |---|---|
-| `wheel` not prevented | `scroll_chain`: the first element on the path (innermost first) that can still move by the delta scrolls; otherwise the next ancestor takes over. With Shift held and no `dx`, a vertical wheel scrolls horizontally |
-| Keys (`key_scroll`, after `keydown` is not prevented) | Arrows scroll `SCROLL_LINE` (40 px), Page Up/Down and Space (Shift+Space up) scroll `SCROLL_PAGE` (0.875) of the visible height, Home/End jump. Origin is the focused element, else the hovered one; the first container on its path that moves wins |
+| `wheel` not prevented | `scroll_chain`: the first element on the path (innermost first) that can still move by the delta scrolls; otherwise the next ancestor takes over, unless the element that could not move has `overscroll-behavior: contain` (or `none`) on that axis (`UiTree::contains_overscroll`), which ends the chain. With Shift held and no `dx`, a vertical wheel scrolls horizontally |
+| Keys (`key_scroll`, after `keydown` is not prevented) | Arrows scroll `SCROLL_LINE` (40 px), Page Up/Down and Space (Shift+Space up) scroll `SCROLL_PAGE` (0.875) of the visible height, Home/End jump. Origin is the focused element, else the hovered one; the first container on its path that moves wins, and `overscroll-behavior` stops the walk the same way |
 | Tab / `ref.focus()` | `scroll_into_view`: each scrolling ancestor scrolls just enough to show the element, keeping its start edge visible if it is larger than the viewport |
 | Scrollbar press (primary button, checked **before** the page sees `pointerdown`) | `press_scrollbar` via `UiTree::scrollbar_at`: on the thumb it starts a drag (remembering the grab offset), on the track it pages toward the press |
 | Pointer move while dragging | `drag_scrollbar` maps the thumb position back to an offset; `PointerUp` ends the drag |
@@ -356,3 +356,20 @@ focus (e.g. a menu calling `ref.focus()`). The event is still sent to `__iron_in
 considers the elements in `tab_order`, keeps those whose centre lies that way (more than 0.5 px
 along the direction) and scores `along + 2 * |across|`, so elements in line beat closer ones off to
 the side. The lowest score wins; there is no wrap-around.
+
+## UI scale (M3d step 9b)
+
+Screen UI can be laid out in "UI pixels" that the engine draws bigger or smaller, so a menu designed
+for 1080p fills a 4K window the same (s&box `ScreenPanel` scaling). Scripts set it with
+`setUiScale` in `@iron/engine`, which sends the `uiScale` op.
+
+- [ui_scale.rs](../crates/iron_app/src/ui_scale.rs): `UiScale` is `None`, `Fixed(f)`, `Height(h)`
+  (the window is `h` UI pixels high) or `Fit(w, h)` (the design fits inside the window).
+  `factor(width, height)` gives logical pixels per UI pixel, clamped to 0.25..8 so a tiny window
+  stays readable and a huge factor does not blow up the glyph atlas; a non-finite or non-positive
+  result falls back to 1. `from_op` parses the op arguments; bad ones are warned about in `tick()`.
+- `ui_factor(window, ui_scale)` in main.rs returns physical pixels per UI pixel (DPI times the
+  UI factor). It sets the layout size (`set_size`), the render target's `scale`, pointer and wheel
+  positions (`App::scale()`), and the IME cursor area (converted back to the window's logical
+  pixels).
+- Tests: M3-GAME-02 (`ui_scale.rs` units, `js/engine/test/engine.test.ts`).

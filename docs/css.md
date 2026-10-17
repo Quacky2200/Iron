@@ -11,8 +11,8 @@ standard CSS over s&box extensions (CLAUDE.md).
 game.css / addStyleSheet(css)
    |  parse_stylesheet (cssparser)         css.rs
    v
-Stylesheet { rules: [selectors + declarations], font_faces, warnings }
-   |  UiTree::add_stylesheet_with_base: rebase url()s, drop invalid declarations
+Stylesheet { rules: [selectors + declarations], font_faces, imports, warnings }
+   |  UiTree::add_stylesheet_with_imports: inline @imports, rebase url()s, drop invalid declarations
    v
 UiTree.sheets  --restyle_everything-->  RuleIndex + Deps  (cascade.rs)
    |
@@ -36,6 +36,18 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
 - Failures never abort the sheet: an invalid selector, unsupported at-rule (`@media`, `@keyframes`
   currently), or unknown pseudo-class yields a message in `Stylesheet.warnings` and the next rule
   still applies. `@font-face` becomes a `FontFace`; its `src` is the first `url(...)`.
+- **Nesting** (M3d step 10a, `&` as in CSS Nesting). A rule body is read by `parse_rule_body` with a
+  `BodyParser` (declarations, nested style rules, and at-rules, which are skipped with a warning).
+  Each nested rule's selector is resolved against the parent's text by `resolve_nested`: a part
+  containing `&` has it replaced by the parent, any other part (including ones starting with a
+  combinator, `> .icon`) becomes `parent part`; a parent selector list is wrapped in `:is(...)` so
+  `&` keeps its meaning. Nested rules are **flattened** into ordinary `StyleRule`s that follow
+  their parent (the parent only if it has declarations of its own), so the cascade and the rule
+  index see no nesting. Depth is capped at `MAX_NESTING` (16); a bad nested selector warns and
+  drops only that rule. Tests: M3-CSS-11 (`css.rs` unit, `tests/css.rs`).
+- **`@import`** (M3d step 10b). `@import "x.css"` / `@import url(x.css)` is collected in
+  `Stylesheet.imports`; with a media/`supports()`/`layer` condition, or no URL, it warns and is
+  skipped. See `@import` under "URL rebasing" below.
 - Supported selector features (all parsed by `selectors`): type, class, id, attribute selectors,
   combinators (descendant, `>`, `+`, `~`), `:first-child`/`:last-child`/`:only-child`,
   `:nth-child(.. of S)`, `:nth-last-child`, `*-of-type`, `:root`, `:empty`, `:not`, `:is`, `:where`,
@@ -272,10 +284,21 @@ The tree does not know the game folder, so font loading is the app's job:
 - **`game.css`**: Bun writes it next to `game.js`. The app loads `bundle.with_extension("css")` and
   passes `base` = its folder relative to the game folder (`"dist"`).
 - **Rebasing**: Bun emits `url()`s relative to the CSS file. With a non-empty `base`,
-  `add_stylesheet_with_base` rewrites every declaration through `css::rebase_urls` (relative URLs
+  `rebase_sheet` rewrites every declaration (rules, `@starting-style`, keyframes) through `css::rebase_urls` (relative URLs
   become `"dist/..."`; `data:` URLs and anything with a scheme or leading slash are untouched) and
   prefixes `@font-face` sources. The renderer later resolves the rewritten path against the game
   folder.
+- **`@import`**. `UiTree::add_stylesheet_with_imports(css, base, load)` is the real entry point
+  (`add_stylesheet_with_base` calls it with a loader that finds nothing). `expand_imports` parses
+  the sheet and rebases its URLs (`rebase_sheet`); then for each import it joins the path onto the
+  importing sheet's folder (`join_path` resolves `.`/`..` and rejects absolute paths, paths that
+  leave the game folder, and anything with a scheme), calls `load(path)` for the text and recurses
+  with the imported file's own folder as `base`. Imported rules, `@font-face`s, keyframes and
+  `@starting-style` rules come **before** the importing sheet's own, as in CSS. Cycles, nesting
+  over 16 deep and failed loads are skipped with a warning. The app's `add_stylesheet` passes a
+  loader that reads the file through `resolve_asset` from the game folder. Bun already inlines
+  `@import` when it bundles `game.css`, so this matters for runtime sheets (`addStyleSheet`).
+  Tests: M3-CSS-12 (`tests/css.rs`).
 - **`addStyleSheet(css)`** (CSS-in-JS) goes through the `addStyleSheet` op with `base = ""`, so its
   `url()`s are already game-folder-relative. JS ids map to tree ids in `App.sheets`; re-adding an
   id replaces the old sheet.
@@ -285,5 +308,5 @@ The tree does not know the game folder, so font loading is the app's job:
 ## Known limits
 
 - No `@media` (see TODO.md M3d). `@keyframes`, `@starting-style` and `:outro` are parsed here and run as described in [animation.md](animation.md).
-- Only `::before`/`::after`; `content` is limited to text.
+- Pseudo-elements: `::before`, `::after`, `::marker`, `::selection`, `::placeholder` and `::backdrop`; `content` is limited to text.
 - Descendant-combinator invalidation is conservative: a changed ancestor key restyles the whole subtree.

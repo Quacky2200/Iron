@@ -338,7 +338,7 @@ shape), `ClipShape` (rect with elliptical corners, or an `Arc<Polygon>`; no long
 | `BoxShadow(ShadowShape)` | Outer shadow, before its box |
 | `Quad(Quad)` | Background colour, `images: Vec<ImageFill>` layers (bottom first), uniform border, radii |
 | `Border{rect,radii,widths,colors,styles}` | Border with per-side colours or styles; also the `outline` |
-| `BorderImage{area,border,image,pixelated}` | A `border-image` over the border box grown by the outset |
+| `BorderImage{area,border,image,pixelated,tint}` | A `border-image` over the border box grown by the outset |
 | `InsetShadow{shadow,border}` | Inside the padding box, over the background |
 | `PushLayer{bounds,blur,opacity,blend,matrix,shadows}` / `PopLayer` | Offscreen group (filter blur and colour matrix, `LayerShadow` drop shadows, group opacity, blend mode) |
 | `BeginMask(MaskMode)` | Inside a layer, after its content: the commands up to `PopLayer` draw the layer's mask |
@@ -373,6 +373,11 @@ node. `draw_list` paints the fixed nodes after the root (see below).
   axis (width for x, height for y).
 - **Outline.** `outline*` live in `Visual.outline_*`; `outline()` emits a `Border` after the
   element children.
+- **Image tint** (s&box `background-image-tint` / `border-image-tint`, M3d step 9a). `Visual`
+  holds `background_image_tint` and `border_image_tint` (`none` or a colour). The tint is copied
+  into `ImageFill.tint` for background layers and `image` elements (not masks or gradients) and
+  into `BorderImage.tint`; the renderer multiplies it into the sampled pixels
+  ([rendering.md](rendering.md#image-tint)). Golden M3-GAME-01.
 - **`border-image`.** `BorderImage` holds source, slice (with `fill`), width, outset and repeat
   (`BorderImageLength`, `BorderImageRepeat`). `pieces()` yields the `BorderImagePiece`s and
   `area()` the outset box.
@@ -474,12 +479,23 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
 - **Scrollbars**: `scrollbars(id)` returns up to two `Scrollbar { node, vertical, track, thumb,
   thumb_color, track_color }` in absolute px. Shown for `scroll`, or `auto` with content to scroll,
   unless `scrollbarWidth: none` (thickness: `auto` 8 px, `thin` 5 px). They overlay the content
-  (no layout space), inset by `SCROLLBAR_MARGIN` 2 px; when both show, the corner is left free. Thumb
+  (no layout space, unless `scrollbarGutter: stable`, below), inset by `SCROLLBAR_MARGIN` 2 px
+  (defined in style.rs); when both show, the corner is left free. Thumb
   length is proportional to `client / (client + max)` with a 24 px minimum. `scrollbarColor`
   (thumb, track) is inherited, default a translucent grey thumb and transparent track.
   `collect_scrollbars` draws them as rounded `Quad`s after the children, inside the element's layer
   so they are subject to its opacity but not its overflow clip. `scrollbar_at(path, x, y)` hit-tests
   the track expanded by the margin so thin bars are easy to grab.
+- **`scrollbarGutter: stable`** (`Visual.scrollbar_gutter`; `auto` turns it off, `both-edges` is
+  accepted and treated as `stable`). `set_overflow` in style.rs reserves the room in layout: for a
+  box that clips or scrolls vertically it sets Taffy's `scrollbar_width` to the thickness plus both
+  margins and switches Taffy's y overflow to `Scroll` (the only mode where Taffy reserves it).
+  Changing `scrollbarWidth` re-runs `set_overflow` so the reserved size follows. The bar is still
+  drawn as an overlay, now over the reserved strip, so content width does not jump when it appears.
+- **`overscrollBehavior`** (and `-x/-y/-inline/-block`): `Visual.overscroll_contain: [bool; 2]`,
+  true for `contain` and `none` (Iron has no overscroll glow or history gesture, so they are the
+  same). `UiTree::contains_overscroll(id, axis)` is true only when the node is user-scrollable on
+  that axis; `Interaction` uses it to stop chaining. Test: M3-SCR-01 (`tests/scroll.rs`).
 - Input handling, wheel chaining and the `scroll` event are in
   [input-and-events.md](input-and-events.md#scrolling-m3c-step-4b).
 

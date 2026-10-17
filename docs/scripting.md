@@ -70,7 +70,7 @@ between timers because `call_global` drains jobs. The loop is capped at `MAX_TIM
 
 | Channel | JS side | Rust side | Used for |
 |---|---|---|---|
-| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `scrollTo`... |
+| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `scrollTo`... |
 | Commits | `__iron_commit(ops)` | `drain_commits()` -> `Vec<Commit>` | React UI mutations |
 
 Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops.rs)); the doc
@@ -105,6 +105,9 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
   (an object, so names survive minification).
 - `op(name, ...args)`, `loadFont(face)`, `addStyleSheet(css)` / `removeStyleSheet(id)`. JS allocates
   stylesheet ids; the app maps them to tree ids (`App.sheets`).
+- `setUiScale(scale)`: sends the `uiScale` op (`"none"`, `"fixed" f`, `"height" h`, `"fit" w h`).
+  Takes `{ height: 1080 }`, `{ width, height }`, a number (fixed zoom) or `null` (the default). The
+  app handles it in `ui_scale.rs` (see [input-and-events.md](input-and-events.md#ui-scale-m3d-step-9b)).
 - `input` ([input.ts](../js/engine/src/input.ts)): keyboard and gamepad state and events for
   gameplay code, fed by `__iron_input(type, ...args)` from the app (see
   [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6)).

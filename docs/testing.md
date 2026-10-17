@@ -97,6 +97,10 @@ returns the captured messages.
 - `assert_golden(id, w, h, &pixels, tolerance)` compares RGBA8 pixels with `tests/golden/<id>.png`,
   each channel within `tolerance` (render tests use 3, to allow driver differences). It panics with
   the count of differing pixels and the first mismatch.
+- The `Scene` harness in `iron_render/tests/ui.rs` builds a tree from ops and CSS. Its optional
+  `prepare` hook (`Scene::prepare`) runs on the laid-out tree just before drawing, for state the
+  ops can't set up (hover, focus, text selection, an animation clock), as in the `M3-ANI-06` and
+  `M3-SEL-03` goldens.
 - `IRON_UPDATE_GOLDEN=1 cargo test -p iron_render` rewrites references instead of comparing.
 - Every `assert_golden` call also writes its render to `tests/output/<id>.png`, passing or
   not, for inspection. The folder is git-ignored.
@@ -128,8 +132,9 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M2-DRW` | Renderer | `iron_render/tests/ui.rs` + `tests/golden/M2-DRW-*` |
 | `M2-INT`, `M2-SCR` | React in QuickJS driving the tree | `iron_ui/tests/react_quickjs.rs` |
 | `M3-TXT`, `M3-FNT` | Text and fonts; right-to-left `direction`/`dir` (`M3-TXT-09`) | `iron_ui/tests/text.rs`, `iron_ui/tests/direction.rs` (plus rtl cases in `editor.rs`), `text_props.rs` (`M3-TXT-10..15`), `ui.rs` goldens `M3-TXT-*` |
-| `M3-CSS` | Stylesheets and cascade | `iron_ui/src/css.rs` tests, `iron_ui/tests/css.rs` |
-| `M3-EVT` | Hit testing, events, focus, clipping, scrolling | `iron_ui/tests/{hit,pointer,focus,clip,scroll,events_quickjs}.rs`, `js/react/test/events.test.tsx`, goldens `M3-EVT-05-clip` and `M3-EVT-05-scroll` (scrolled content clipped to a rounded scroller with overlay scrollbars) |
+| `M3-CSS` | Stylesheets and cascade; native nesting (`M3-CSS-11`); `@import` expansion, relative paths, cycles (`M3-CSS-12`) | `iron_ui/src/css.rs` tests, `iron_ui/tests/css.rs` |
+| `M3-GAME` | Game extensions: `background-image-tint` / `border-image-tint` (`M3-GAME-01`, golden in `iron_render/tests/ui.rs` using `tests/fixtures/images/gray.png`), UI scale (`M3-GAME-02`) | `iron_render/tests/ui.rs`, `iron_app/src/ui_scale.rs` units, `js/engine/test/engine.test.ts` |
+| `M3-EVT` | Hit testing, events, focus, clipping, scrolling | `iron_ui/tests/{hit,pointer,focus,clip,scroll,events_quickjs}.rs`, `js/react/test/events.test.tsx`, goldens `M3-EVT-05-clip` and `M3-EVT-05-scroll` (scrolled content clipped to a rounded scroller with overlay scrollbars); `scrollbar-gutter` and `overscroll-behavior` (`M3-SCR-01`, `scroll.rs`) |
 | `M3-INP` | Text fields: editing, selection, controlled values, clipboard, shortcuts on non-Latin layouts (`M3-INP-02`) | `iron_ui/tests/editor.rs`, `iron_ui/tests/events_quickjs.rs` (real React field), `js/react/test/events.test.tsx` (`onChange`, controlled restore), golden `M3-INP-01-fields` in `iron_render/tests/ui.rs` (filled input, placeholder, focused input with selection) |
 | `M3-IME` | IME composition | `iron_platform/src/input.rs` (`converts_ime_events`), `iron_ui/tests/editor.rs` |
 | `M3-PAD` | Gamepads and game input | `iron_platform/src/gamepad.rs` (names, connect/disconnect conversion), `iron_app/src/game_input.rs` (nav mapping, stick hysteresis, `script_args`, and a QuickJS test running fixture `tests/fixtures/src/input.ts`), `iron_ui/tests/navigation.rs`, `js/engine/test/input.test.ts` (keys, blur, pad state and events, throwing listeners) |
