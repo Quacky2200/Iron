@@ -241,9 +241,18 @@ case, so the world pipelines are cached per colour format.
 **blends** (premultiplied alpha) onto what the target holds, with `LoadOp::Load`. The blit pipeline is
 cached by `(format, overlay)`.
 
+That canvas holds only UI, so backdrop filters and blend modes there would see no world. When the
+draw list has either (`needs_backdrop`: a `BackdropBlur`, or a `PushLayer` with a blend mode),
+`UiRenderer::render_over(gpu, target, backdrop, cmds)` is used instead: the world is drawn into
+`backdrop_target` (a cached texture of the target's size and format that can be sampled, unlike a
+swapchain image), the canvas is **seeded** with a copy of it (a blit into canvas 0 in place of its
+clear), the UI is drawn as usual, and the final blit **replaces** the target's pixels. Frames
+without those effects keep the cheaper overlay path.
+
 `draw_frame` in `main.rs` picks the path:
 
 - No active camera: `UiRenderer::render` over the plain `CLEAR` colour, as before M5.a.
+- UI that reads the world: `render_views` into `backdrop_target`, then `render_over`.
 - Otherwise: `WorldRenderer::render_views`, then `render_overlay`.
 
 Screenshot runs and window frames both go through `draw_frame`.

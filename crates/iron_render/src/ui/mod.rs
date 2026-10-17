@@ -249,6 +249,16 @@ struct PxRect {
     h: u32,
 }
 
+/// Whether UI drawn over the world needs to read it: backdrop filters, and layers with
+/// a blend mode (both read what's behind them).
+pub fn needs_backdrop(cmds: &[DrawCmd]) -> bool {
+    cmds.iter().any(|c| match c {
+        DrawCmd::BackdropBlur { .. } => true,
+        DrawCmd::PushLayer { blend, .. } => *blend != iron_ui::BlendMode::Normal,
+        _ => false,
+    })
+}
+
 /// One step of a frame, recorded after all instances are known.
 enum Step {
     Clear {
@@ -321,6 +331,8 @@ pub struct UiRenderer {
     gradients: wgpu::Buffer,
     clips: wgpu::Buffer,
     pool: Vec<PooledTexture>,
+    /// The texture the world is drawn into when the UI needs to read it.
+    backdrop: Option<(wgpu::TextureView, (u32, u32), wgpu::TextureFormat)>,
 }
 
 impl UiRenderer {
@@ -613,6 +625,7 @@ impl UiRenderer {
             gradients,
             clips,
             pool: Vec::new(),
+            backdrop: None,
         }
     }
 
@@ -647,11 +660,13 @@ impl UiRenderer {
         clear: Color,
         cmds: &[DrawCmd],
     ) -> RenderStats {
-        self.render_with(gpu, target, clear, cmds, false)
+        self.render_with(gpu, target, clear, cmds, false, None)
     }
 
     /// Draws `cmds` over what `target` already holds (screen UI over the 3D world):
-    /// the canvas starts transparent and is blended onto the target.
+    /// the canvas starts transparent and is blended onto the target. Backdrop filters
+    /// and blend modes only see other UI this way; [`UiRenderer::render_over`] gives
+    /// them the world.
     pub fn render_overlay(
         &mut self,
         gpu: &Gpu,
@@ -664,7 +679,62 @@ impl UiRenderer {
             b: 0.0,
             a: 0.0,
         };
-        self.render_with(gpu, target, clear, cmds, true)
+        self.render_with(gpu, target, clear, cmds, true, None)
+    }
+
+    /// Draws `cmds` over `backdrop` (the 3D world, drawn into a texture from
+    /// [`UiRenderer::backdrop_target`]) and puts the result in `target`. The canvas
+    /// starts as a copy of the world, so `backdrop-filter` and blend modes work on it.
+    pub fn render_over(
+        &mut self,
+        gpu: &Gpu,
+        target: &RenderTarget<'_>,
+        backdrop: &wgpu::TextureView,
+        cmds: &[DrawCmd],
+    ) -> RenderStats {
+        let clear = Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        self.render_with(gpu, target, clear, cmds, false, Some(backdrop))
+    }
+
+    /// A texture to draw the world into (of the target's size and format) when the UI
+    /// over it needs to read it (see [`needs_backdrop`]); kept between frames.
+    pub fn backdrop_target(
+        &mut self,
+        gpu: &Gpu,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+    ) -> wgpu::TextureView {
+        if let Some((view, s, f)) = &self.backdrop
+            && *s == size
+            && *f == format
+        {
+            return view.clone();
+        }
+        let view = gpu
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("ui backdrop"),
+                size: wgpu::Extent3d {
+                    width: size.0.max(1),
+                    height: size.1.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        self.backdrop = Some((view.clone(), size, format));
+        view
     }
 
     fn render_with(
@@ -674,6 +744,7 @@ impl UiRenderer {
         clear: Color,
         cmds: &[DrawCmd],
         overlay: bool,
+        backdrop: Option<&wgpu::TextureView>,
     ) -> RenderStats {
         let (size, scale) = (target.size, target.scale);
         let mut stats = RenderStats::default();
@@ -688,10 +759,15 @@ impl UiRenderer {
         let mut frame_textures = vec![self.take_texture(gpu, size)];
         let mut instances: Vec<Instance> = Vec::new();
         let mut gradients: Vec<GpuGradient> = Vec::new();
-        let mut steps = vec![Step::Clear {
-            target: 0,
-            color: clear.into(),
-        }];
+        // Over the world the canvas is seeded with it (below) rather than cleared.
+        let mut steps = if backdrop.is_some() {
+            Vec::new()
+        } else {
+            vec![Step::Clear {
+                target: 0,
+                color: clear.into(),
+            }]
+        };
         let mut current = 0usize;
         let mut batch_start = 0u32;
         // (parent target, bounds, blur, opacity, the clip stack outside the layer)
@@ -1498,6 +1574,28 @@ impl UiRenderer {
             label: Some("ui frame"),
         });
         let mut pending_clear: HashMap<usize, wgpu::Color> = HashMap::new();
+        // Over the world: the canvas starts as a copy of it (instead of its clear).
+        if let Some(world) = backdrop {
+            let seed = self.blit_pipeline(gpu, CANVAS_FORMAT, false);
+            let bind_group = self.texture_bind_group(gpu, &self.blit_layout, world, None);
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ui backdrop seed"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_textures[0].view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&seed);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+            stats.passes += 1;
+        }
         let load_for =
             |pending_clear: &mut HashMap<usize, wgpu::Color>, target: usize| match pending_clear
                 .remove(&target)

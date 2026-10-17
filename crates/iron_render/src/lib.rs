@@ -13,7 +13,7 @@ pub mod world;
 pub use gpu::{Gpu, RenderError};
 pub use offscreen::OffscreenTarget;
 pub use surface::WindowSurface;
-pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer};
+pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, needs_backdrop};
 pub use wgpu;
 pub use world::{
     ALL_LAYERS, BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Light, LightKind, MISSING_TEXTURE,

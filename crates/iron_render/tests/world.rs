@@ -1417,3 +1417,112 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     let (shade, lit) = (at(64 - 27, 64), at(64 + 27, 64));
     assert!(shade + 60 < lit, "shadow {shade} vs lit {lit}");
 }
+
+// M5-RND-16
+#[test]
+fn backdrop_blur_over_the_world_blurs_the_world() {
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // Straight at a wall of hard-edged vertical stripes, black and white.
+    let camera = WorldCamera::perspective(
+        Mat4::from_translation(Vec3::new(0.0, 0.0, 4.0)),
+        60.0,
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let quads: Vec<WorldQuad> = (0..16)
+        .map(|i| {
+            WorldQuad::colored(
+                place(
+                    Vec3::new(-3.75 + i as f32 * 0.5, 0.0, 0.0),
+                    Quat::IDENTITY,
+                    (0.5, 6.0),
+                ),
+                if i % 2 == 0 {
+                    [1.0; 4]
+                } else {
+                    [0.0, 0.0, 0.0, 1.0]
+                },
+            )
+        })
+        .collect();
+
+    // A frosted panel in the middle of the screen.
+    let mut tree = UiTree::new(320.0, 200.0);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![
+            op(CREATE, &[Value::Number(1.0), "box".into()]),
+            op(
+                SET_STYLE,
+                &[
+                    Value::Number(1.0),
+                    "position".into(),
+                    "absolute".into(),
+                    "left".into(),
+                    Value::Number(80.0),
+                    "top".into(),
+                    Value::Number(50.0),
+                    "width".into(),
+                    Value::Number(160.0),
+                    "height".into(),
+                    Value::Number(100.0),
+                    "borderRadius".into(),
+                    Value::Number(16.0),
+                    "backgroundColor".into(),
+                    "rgba(40, 60, 120, 0.25)".into(),
+                    "backdropFilter".into(),
+                    "blur(10px)".into(),
+                ],
+            ),
+            op(APPEND_CHILD, &[Value::Number(0.0), Value::Number(1.0)]),
+        ],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+    let cmds = tree.draw_list();
+    assert!(iron_render::needs_backdrop(&cmds));
+
+    // The app's path: the world into the backdrop texture, the UI over a copy of it.
+    let mut ui = UiRenderer::new(&gpu);
+    let backdrop = ui.backdrop_target(&gpu, size, rt.format);
+    let world_rt = RenderTarget {
+        view: &backdrop,
+        format: rt.format,
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    world.render(&gpu, &world_rt, &camera, &quads, &[]);
+    ui.render_over(&gpu, &rt, &backdrop, &cmds);
+
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-16", size.0, size.1, &pixels, 2);
+    // The biggest jump in brightness between neighbouring pixels along a row: sharp
+    // stripes outside the panel, smooth ones inside.
+    let jump = |y: u32, xs: std::ops::Range<u32>| {
+        xs.map(|x| {
+            let at = |x: u32| pixels[((y * size.0 + x) * 4) as usize] as i32;
+            (at(x + 1) - at(x)).abs()
+        })
+        .max()
+        .unwrap()
+    };
+    let outside = jump(20, 20..300);
+    let inside = jump(100, 100..220);
+    assert!(outside > 200, "stripes outside are sharp: {outside}");
+    assert!(
+        inside < 60,
+        "stripes behind the panel are blurred: {inside}"
+    );
+}

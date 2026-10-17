@@ -343,6 +343,7 @@ layout pass):
 | M5-RND-13 | Golden | A box-projected reflection probe in a room: a chrome ball reflects the red, green and blue walls, the ceiling, the open side and the gold ball (whose rougher reflection is blurrier), from the probe's six-face cubemap. |
 | M5-RND-14 | Golden | Quality low and high side by side: half render scale, no MSAA and a small hard shadow map against 4x MSAA, full scale and a big soft (5 x 5) shadow map, on thin leaning bars and their shadows. |
 | M5-RND-15 | Golden | Culling masks: a sun that lights layers 0 and 1 (casting their shadows), a red lamp that lights only layer 2, and a mirror that leaves layer 1 out of its reflection. |
+| M5-RND-16 | Golden | Screen UI with `backdrop-filter: blur()` over the 3D world blurs the world behind it (sharp stripes outside the frosted panel, smooth ones inside), drawn the app's way: the world into the backdrop texture, the UI over a copy of it. |
 | M5-CUL-01 | Unit | Frustums from perspective and orthographic view-projections keep boxes in view (and big ones reaching in) and drop ones behind, beside or past the far plane; lights' spheres count while their range reaches in; rotated boxes grow to hold their corners. |
 | M5-CUL-02 | Integration | A camera looking down skips a mesh far to the side, a quad behind it and a point light out of reach (`stats()` counts them), and doesn't draw a plank above it whose shadow still lands on the floor. |
 | M5-LAY-01 | Integration | `scene.layer`: objects start on layer 0, keep the layer set, refuse ones outside 0 to 31; unknown objects read as 0. |

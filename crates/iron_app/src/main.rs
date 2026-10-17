@@ -276,6 +276,18 @@ fn draw_frame(
 ) {
     if views.is_empty() {
         renderer.render(gpu, target, CLEAR, cmds);
+    } else if iron_render::needs_backdrop(cmds) {
+        // Backdrop blurs and blend modes read the world: draw it where the UI can
+        // sample it, then the UI over a copy of it into the target.
+        let backdrop = renderer.backdrop_target(gpu, target.size, target.format);
+        let world_target = RenderTarget {
+            view: &backdrop,
+            format: target.format,
+            size: target.size,
+            scale: target.scale,
+        };
+        world.render_views(gpu, &world_target, views, textures);
+        renderer.render_over(gpu, target, &backdrop, cmds);
     } else {
         world.render_views(gpu, target, views, textures);
         renderer.render_overlay(gpu, target, cmds);
