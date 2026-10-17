@@ -20,6 +20,7 @@ export {
   Sound,
 } from "./audio.ts";
 export { AudioListener, AudioSource } from "./audio-components.ts";
+export { type MinMax, type ParticleBurst, type ParticleShape, ParticleSystem } from "./particles.ts";
 export {
   type FilterMode,
   Sprite,

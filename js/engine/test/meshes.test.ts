@@ -59,7 +59,7 @@ describe("meshes and lights", () => {
   test("lights and ambient", () => {
     const sun = new GameObject("sun");
     const l = sun.addComponent(Light, { type: "spot", intensity: 2, range: 15, spotAngle: 40 });
-    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8]);
+    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0]);
     RenderSettings.ambientLight = new Color(0.1, 0.1, 0.1);
     expect(renderOps().at(-1)).toEqual(["render.ambient", 0, [0.1, 0.1, 0.1]]);
   });

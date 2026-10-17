@@ -1301,6 +1301,13 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/audio-components.ts
   var clips = new Map;
+  // ../../js/engine/src/particles.ts
+  var systems = new Map;
+  globalThis.__iron_particles = (changed) => {
+    for (let i = 0;i + 2 < changed.length; i += 3) {
+      systems.get(changed[i])?._report(changed[i + 1], changed[i + 2] === 1);
+    }
+  };
   // ../../js/engine/src/textures.ts
   var textures = new Map;
   globalThis.__iron_textures = (loaded) => {

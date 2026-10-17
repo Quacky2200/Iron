@@ -848,8 +848,23 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     primitives thud in 3D — `M5-AUD-01`, `M5-AUD-02`
   - [ ] Audio follow-ups: partial `spatialBlend` (kira's spatialization strength), Doppler,
     a source's playback `time`, `onDisable` pausing sources
-  - [ ] Particles: a `ParticleSystem` component (emission rate and bursts, lifetime, velocity,
-    gravity, size and colour over life, GPU instanced quads)
+  - [x] Particles: a `ParticleSystem` component simulated in Rust (`iron_app/src/particles.rs`):
+    duration / loop / delay, ranges for lifetime, speed, size, rotation and spin, two-colour
+    start, gravity, drag, local or world space, max particles, rate and bursts, point /
+    sphere / hemisphere / cone / box shapes (along the object's up), size and colour over
+    lifetime, texture sheets, alpha or additive blending, `play` / `stop` / `pause` /
+    `clear` / `emit`, `particleCount` / `isPlaying` / `onStopped` / `stopAction` through
+    `__iron_particles`; drawn as camera-facing quads (a built-in soft spot texture,
+    additive quads without depth writes, straight-alpha textures premultiplied) —
+    `M5-PRT-01`, `M5-PRT-02`
+  - [ ] Particle follow-ups: GPU simulation for big systems, collisions, velocity / force
+    over lifetime, stretched billboards, sub-emitters, trails, soft particles (fade near
+    surfaces), `AnimationCurve` / `Gradient` types for the over-lifetime keys
+  - [ ] Glows and spotlights (2026-10-17, asked for with particles):
+    - [x] Light halos: `Light.haloSize` draws an additive glow in the light's hue, pulled
+      towards the camera so nearby surfaces don't slice it
+    - [ ] Bloom (HDR world pass, threshold, intensity), so emission and bright lights glow
+    - [ ] Visible spotlight beams (soft additive cones)
   - [x] Textures and sprites: `iron_render` keeps textures (`set_texture`: sRGB, point /
     bilinear / trilinear, repeat / clamp / mirror, CPU mipmaps averaged in linear light);
     `WorldTexture::Frame` (panels) or `Asset`; `render.texture` / `textureRemove` ops

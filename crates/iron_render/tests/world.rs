@@ -118,6 +118,7 @@ fn planes_in_perspective_with_ui_over_them() {
             color: [1.0; 4],
             texture: Some(WorldTexture::Frame(0)),
             uv: [0.0, 0.0, 1.0, 1.0],
+            additive: false,
         },
     ];
     let checker = checker(&gpu);
@@ -491,6 +492,7 @@ fn textured_meshes_and_sprites() {
         color: [1.0; 4],
         texture: Some(WorldTexture::Asset(2)),
         uv,
+        additive: false,
     };
     v.quads = vec![
         sprite(-0.6, [0.0, 0.0, 1.0, 1.0]),

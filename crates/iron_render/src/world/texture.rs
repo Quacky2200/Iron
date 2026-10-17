@@ -138,6 +138,29 @@ pub(crate) fn half(src: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
     (out, nw, nh)
 }
 
+/// A white spot fading smoothly to clear at its edge, `n` × `n`.
+pub fn soft_spot(n: u32) -> TextureData {
+    let mut rgba = Vec::with_capacity((n * n * 4) as usize);
+    for y in 0..n {
+        for x in 0..n {
+            let at = |i: u32| (i as f32 + 0.5) / n as f32 * 2.0 - 1.0;
+            let d = at(x).hypot(at(y));
+            let a = (1.0 - d).clamp(0.0, 1.0);
+            // Smoothstep-squared: a bright middle and a long, gentle tail.
+            let a = a * a * (3.0 - 2.0 * a);
+            rgba.extend([255, 255, 255, (a * 255.0 + 0.5) as u8]);
+        }
+    }
+    TextureData {
+        width: n,
+        height: n,
+        rgba,
+        filter: TextureFilter::Trilinear,
+        wrap: TextureWrap::Clamp,
+        mipmaps: true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

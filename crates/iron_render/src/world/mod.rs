@@ -33,6 +33,9 @@ pub enum WorldTexture {
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// A soft round spot every renderer keeps as a texture (particles, halos).
+pub const DEFAULT_PARTICLE_TEXTURE: u32 = u32::MAX;
+
 /// The built-in meshes, registered by every renderer at [`primitive_id`].
 pub const PRIMITIVES: [&str; 6] = ["cube", "sphere", "capsule", "cylinder", "plane", "quad"];
 /// Mesh ids from here on are the built-in primitives; scripts use ids below it.
@@ -204,6 +207,8 @@ pub struct WorldQuad {
     pub texture: Option<WorldTexture>,
     /// The part of the texture shown: origin and size in UV space.
     pub uv: [f32; 4],
+    /// Adds light instead of covering what's behind (glows, fire, sparks).
+    pub additive: bool,
 }
 
 impl WorldQuad {
@@ -213,6 +218,7 @@ impl WorldQuad {
             color,
             texture: None,
             uv: [0.0, 0.0, 1.0, 1.0],
+            additive: false,
         }
     }
 }
@@ -223,6 +229,9 @@ struct GpuQuad {
     model: [[f32; 4]; 4],
     color: [f32; 4],
     uv: [f32; 4],
+    /// x: 1 when the texture holds straight alpha (kept textures) rather than
+    /// premultiplied (the frame's, such as rendered UI).
+    params: [f32; 4],
 }
 
 #[repr(C)]
@@ -273,6 +282,8 @@ struct MeshBuffers {
 #[derive(Clone)]
 struct Pipelines {
     quad: wgpu::RenderPipeline,
+    /// Additive quads: they light what's behind and hide nothing, so no depth writes.
+    quad_glow: wgpu::RenderPipeline,
     fill: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
@@ -285,6 +296,8 @@ type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>);
 struct Run {
     mesh: Option<u32>,
     texture: Option<WorldTexture>,
+    /// Additive quads (drawn without depth writes).
+    glow: bool,
     range: Range<u32>,
 }
 
@@ -434,6 +447,7 @@ impl WorldRenderer {
             let data = primitive(name).expect("built in");
             renderer.set_mesh(gpu, PRIMITIVE_BASE + i as u32, &data);
         }
+        renderer.set_texture(gpu, DEFAULT_PARTICLE_TEXTURE, &texture::soft_spot(64));
         renderer
     }
 
@@ -676,6 +690,14 @@ impl WorldRenderer {
                     (less, true),
                     blend,
                 ),
+                quad_glow: make(
+                    "world glowing quads",
+                    ("vs_quad", "fs_quad"),
+                    &[],
+                    None,
+                    (less, false),
+                    blend,
+                ),
                 // The background replaces colour and resets depth in the viewport.
                 fill: make(
                     "world background",
@@ -803,6 +825,7 @@ impl WorldRenderer {
                     _ => opaque_runs.push(Run {
                         mesh: Some(m.mesh),
                         texture: m.texture,
+                        glow: false,
                         range: i..i + 1,
                     }),
                 }
@@ -836,6 +859,7 @@ impl WorldRenderer {
                             Run {
                                 mesh: Some(m.mesh),
                                 texture: m.texture,
+                                glow: false,
                                 range: i..i + 1,
                             },
                         ));
@@ -843,14 +867,27 @@ impl WorldRenderer {
                     Item::Quad(q) => {
                         let i = quads.len() as u32;
                         let [r, g, b, a] = q.color;
+                        // Premultiplied with no coverage: blending then just adds it.
+                        let cover = if q.additive { 0.0 } else { a };
                         quads.push(GpuQuad {
                             model: q.model.to_cols_array_2d(),
-                            color: [r * a, g * a, b * a, a],
+                            color: [r * a, g * a, b * a, cover],
                             uv: q.uv,
+                            params: [
+                                f32::from(u8::from(matches!(
+                                    q.texture,
+                                    Some(WorldTexture::Asset(_))
+                                ))),
+                                0.0,
+                                0.0,
+                                0.0,
+                            ],
                         });
                         match blended.last_mut() {
                             Some((false, run))
-                                if run.texture == q.texture && run.range.end == i =>
+                                if run.texture == q.texture
+                                    && run.glow == q.additive
+                                    && run.range.end == i =>
                             {
                                 run.range.end += 1
                             }
@@ -859,6 +896,7 @@ impl WorldRenderer {
                                 Run {
                                     mesh: None,
                                     texture: q.texture,
+                                    glow: q.additive,
                                     range: i..i + 1,
                                 },
                             )),
@@ -1053,7 +1091,11 @@ impl WorldRenderer {
                             pass.draw_indexed(0..mesh.count, 0, run.range.clone());
                         }
                         None if run.mesh.is_none() => {
-                            pass.set_pipeline(&pipelines.quad);
+                            pass.set_pipeline(if run.glow {
+                                &pipelines.quad_glow
+                            } else {
+                                &pipelines.quad
+                            });
                             pass.draw(0..6, run.range.clone());
                         }
                         None => {}

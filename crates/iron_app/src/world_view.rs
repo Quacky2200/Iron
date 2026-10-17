@@ -1,6 +1,6 @@
 //! What scripts put in the 3D world for the renderer: `Camera`, `PlaneRenderer`,
-//! `MeshRenderer`, `SpriteRenderer` and `Light` components (`render.*` ops, keyed by
-//! component id), read with their GameObjects' world transforms each frame, plus script
+//! `MeshRenderer`, `SpriteRenderer`, `ParticleSystem` and `Light` components (`render.*`
+//! ops, keyed by component id), read with their GameObjects' world transforms each frame, plus script
 //! meshes (`render.mesh`) and textures (`render.texture`) waiting to be uploaded and
 //! the ambient light.
 
@@ -14,6 +14,8 @@ use iron_render::{
     TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
+
+use crate::particles::{self, ParticleSystem};
 
 #[derive(Clone, Copy, Debug)]
 struct Camera {
@@ -69,6 +71,8 @@ struct LightComponent {
     /// Colour × intensity.
     color: [f32; 3],
     range: f32,
+    /// A glow drawn around the light this many metres across (0: none), Unity's halo.
+    halo: f32,
 }
 
 pub struct WorldViews {
@@ -77,6 +81,9 @@ pub struct WorldViews {
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
     sprites: BTreeMap<u32, Sprite>,
+    particles: BTreeMap<u32, ParticleSystem>,
+    /// `emit` requests waiting for the next particle update (which knows where objects are).
+    pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
     /// Script meshes to upload (`None`: remove), applied by the app before drawing.
     pub mesh_uploads: Vec<(u32, Option<MeshData>)>,
@@ -94,6 +101,8 @@ impl Default for WorldViews {
             renderers: BTreeMap::new(),
             lights: BTreeMap::new(),
             sprites: BTreeMap::new(),
+            particles: BTreeMap::new(),
+            pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
             texture_uploads: Vec::new(),
@@ -351,7 +360,8 @@ impl WorldViews {
                 };
                 self.sprites.insert(id, sprite);
             }
-            // `light component object type [r g b] intensity range spotAngle innerSpotAngle`
+            // `light component object type [r g b] intensity range spotAngle innerSpotAngle
+            // haloSize`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
@@ -369,8 +379,49 @@ impl WorldViews {
                     kind,
                     color: [r * intensity, g * intensity, b * intensity],
                     range: num(5).unwrap_or(10.0),
+                    halo: num(8).unwrap_or(0.0).max(0.0),
                 };
                 self.lights.insert(id, light);
+            }
+            // `particles component object [key, value, ...] playOnAwake`: new settings keep
+            // a system's particles.
+            "particles" => {
+                let Some(Value::Array(pairs)) = args.get(2) else {
+                    return Err("particles needs [key, value, ...]".into());
+                };
+                let settings = particles::Settings::parse(pairs)?;
+                match self.particles.get_mut(&id) {
+                    Some(p) => p.set_settings(settings),
+                    None => {
+                        let mut p = ParticleSystem::new(id_at(1)?, settings);
+                        if matches!(args.get(3), Some(Value::Bool(true))) {
+                            p.play();
+                        }
+                        self.particles.insert(id, p);
+                    }
+                }
+            }
+            // `particleControl component play|stop|stopClear|pause|clear|emit [count]`
+            "particleControl" => {
+                let Some(p) = self.particles.get_mut(&id) else {
+                    return Err(format!("no particle system {id}"));
+                };
+                match args.get(1).and_then(Value::as_str) {
+                    Some("play") => p.play(),
+                    Some("stop") => p.stop(),
+                    Some("stopClear") => {
+                        p.stop();
+                        p.clear();
+                    }
+                    Some("pause") => p.pause(),
+                    Some("clear") => p.clear(),
+                    Some("emit") => {
+                        // Emitted where the object is when the frame's particles update.
+                        self.pending_emits
+                            .push((id, num(2).unwrap_or(1.0).max(0.0) as u32));
+                    }
+                    other => return Err(format!("unknown particle action {other:?}")),
+                }
             }
             // `ambient 0 [r g b]`
             "ambient" => {
@@ -382,6 +433,7 @@ impl WorldViews {
                 self.renderers.remove(&id);
                 self.lights.remove(&id);
                 self.sprites.remove(&id);
+                self.particles.remove(&id);
             }
             other => return Err(format!("unknown render op `{other}`")),
         }
@@ -395,6 +447,36 @@ impl WorldViews {
         self.renderers.retain(|_, r| !objects.contains(&r.object));
         self.lights.retain(|_, l| !objects.contains(&l.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
+        self.particles.retain(|_, p| !objects.contains(&p.object));
+    }
+
+    /// Advances particle systems on active objects by `dt` (scaled) seconds, emitting
+    /// from where their objects are now. Returns `[id, count, alive (0/1), ...]` for
+    /// systems whose count or state changed, for `__iron_particles`.
+    pub fn update_particles(&mut self, dt: f32, scene: &ScriptScene) -> Vec<f64> {
+        let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
+        for (id, count) in self.pending_emits.drain(..) {
+            if let Some(p) = self.particles.get_mut(&id)
+                && let Some(w) = world(p.object)
+            {
+                p.emit(count, &w);
+            }
+        }
+        for p in self.particles.values_mut() {
+            if !scene.active(p.object) {
+                continue;
+            }
+            if let Some(w) = world(p.object) {
+                p.update(dt, &w);
+            }
+        }
+        let mut changed = Vec::new();
+        for (id, p) in &mut self.particles {
+            if let Some((count, alive)) = p.take_change() {
+                changed.extend([f64::from(*id), count as f64, f64::from(u8::from(alive))]);
+            }
+        }
+        changed
     }
 
     /// Every active camera's view (lowest depth first, then the order they were added),
@@ -430,6 +512,7 @@ impl WorldViews {
                             color: s.color,
                             texture: Some(WorldTexture::Asset(s.texture)),
                             uv,
+                            additive: false,
                         })
                     }),
             )
@@ -450,6 +533,19 @@ impl WorldViews {
                     texture: r.texture.map(WorldTexture::Asset),
                     tiling: r.tiling,
                 })
+            })
+            .collect();
+        // Light halos: a glow at each light, facing each camera.
+        let halos: Vec<(Vec3, f32, [f32; 4])> = self
+            .lights
+            .values()
+            .filter(|l| l.halo > 0.0 && scene.active(l.object))
+            .filter_map(|l| {
+                let [r, g, b] = l.color;
+                // The light's hue at a steady brightness, whatever its intensity.
+                let peak = r.max(g).max(b).max(1e-6);
+                let position = world(l.object)?.translation.into();
+                Some((position, l.halo, [r / peak, g / peak, b / peak, 0.8]))
             })
             .collect();
         let lights: Vec<Light> = self
@@ -479,6 +575,30 @@ impl WorldViews {
             .filter_map(|camera| {
                 // Cameras ignore scale: only where they are and which way they face.
                 let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
+                // Particles and halos face this camera.
+                let mut quads = quads.clone();
+                for p in self.particles.values().filter(|p| scene.active(p.object)) {
+                    if let Some(w) = world(p.object) {
+                        p.quads(&w, rotation, &mut quads);
+                    }
+                }
+                for &(at, size, color) in &halos {
+                    // Pulled half its size towards the camera, so walls and panes near
+                    // the light don't slice the glow in two.
+                    let towards = (position - at).normalize_or_zero();
+                    let at = at + towards * (size * 0.5).min(at.distance(position) * 0.5);
+                    quads.push(WorldQuad {
+                        model: Mat4::from_scale_rotation_translation(
+                            Vec3::new(size, size, 1.0),
+                            rotation,
+                            at,
+                        ),
+                        color,
+                        texture: Some(WorldTexture::Asset(particles::DEFAULT_TEXTURE)),
+                        uv: [0.0, 0.0, 1.0, 1.0],
+                        additive: true,
+                    });
+                }
                 let [r, g, b, a] = camera.clear;
                 let clear = Color {
                     r: r as f64,
@@ -499,7 +619,7 @@ impl WorldViews {
                         clear,
                     ),
                     viewport: camera.rect,
-                    quads: quads.clone(),
+                    quads,
                 })
             })
             .collect()

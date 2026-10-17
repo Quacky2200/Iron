@@ -217,6 +217,7 @@ impl Panels {
                 color: panel.tint,
                 texture: Some(iron_render::WorldTexture::Frame(views.len())),
                 uv: [0.0, 0.0, 1.0, 1.0],
+                additive: false,
             });
             views.push(view.clone());
         }

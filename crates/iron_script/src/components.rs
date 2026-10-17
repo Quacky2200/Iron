@@ -23,6 +23,8 @@ pub struct ComponentHost {
     components: Vec<Entry>,
     /// Whether the bundle has `__iron_tick` (checked on the first update).
     tick_hook: Option<bool>,
+    /// The last frame's scaled length (`frame_dt`).
+    frame_dt: f64,
 }
 
 struct Entry {
@@ -209,9 +211,15 @@ impl ComponentHost {
                 Err(e) => tracing::error!(target: "script", "__iron_tick: {e}"),
             }
         }
+        self.frame_dt = dt;
         let mut errors = self.run(rt, "onUpdate", &[dt.into()], active);
         errors.extend(self.run(rt, "onLateUpdate", &[dt.into()], active));
         errors
+    }
+
+    /// The last frame's length as scripts saw it (scaled by `Time.timeScale`).
+    pub fn frame_dt(&self) -> f64 {
+        self.frame_dt
     }
 
     /// Runs one fixed tick: `onFixedUpdate(dt)` (after `onStart` for new components).

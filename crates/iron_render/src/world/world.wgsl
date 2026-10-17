@@ -16,6 +16,8 @@ struct Quad {
     color: vec4<f32>,
     // Texture rectangle: origin (xy) and size (zw) in UV space.
     uv: vec4<f32>,
+    // x: 1 when the texture holds straight alpha (premultiplied here).
+    params: vec4<f32>,
 };
 
 struct MeshInstance {
@@ -54,6 +56,7 @@ struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) @interpolate(flat) straight: f32,
 };
 
 @vertex
@@ -70,14 +73,20 @@ fn vs_quad(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let t = vec2<f32>(c.x + 0.5, 0.5 - c.y);
     out.uv = q.uv.xy + t * q.uv.zw;
     out.color = q.color;
+    out.straight = q.params.x;
     return out;
 }
 
 @fragment
 fn fs_quad(in: VsOut) -> @location(0) vec4<f32> {
-    let c = textureSample(tex, samp, in.uv) * in.color;
+    var t = textureSample(tex, samp, in.uv);
+    if (in.straight > 0.5) {
+        t = vec4<f32>(t.rgb * t.a, t.a);
+    }
+    let c = t * in.color;
     // Fully transparent texels don't write depth (UI panels have see-through parts).
-    if (c.a <= 0.002) {
+    // Additive quads have no alpha, only light.
+    if (c.a <= 0.002 && max(c.r, max(c.g, c.b)) <= 0.002) {
         discard;
     }
     return c;

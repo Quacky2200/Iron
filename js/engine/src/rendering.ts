@@ -599,6 +599,7 @@ export class Light extends Component {
   private _range = 10;
   private _spotAngle = 30;
   private _innerSpotAngle = 21.8;
+  private _haloSize = 0;
   private started = false;
 
   get type(): LightType {
@@ -647,6 +648,15 @@ export class Light extends Component {
     this.send();
   }
 
+  /** A glow around the light this many metres across, in its colour (0: none; Unity's halo). */
+  get haloSize(): number {
+    return this._haloSize;
+  }
+  set haloSize(s: number) {
+    this._haloSize = s;
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -660,6 +670,7 @@ export class Light extends Component {
       this._range,
       this._spotAngle,
       this._innerSpotAngle,
+      this._haloSize,
     );
   }
 

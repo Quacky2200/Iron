@@ -4,7 +4,8 @@
 // and screen UI is drawn over the world. A menu stands in the world on a WorldPanel:
 // React UI on a plane, with hover and clicks through the camera. Falling primitives thud
 // in 3D (an AudioSource each, heard from the camera's AudioListener). Cubes wear a
-// texture made in script; pixel-art coins spin as animated, camera-facing sprites.
+// texture made in script; pixel-art coins spin as animated, camera-facing sprites. Sparks
+// fountain from the middle (a ParticleSystem) and the lamp glows (a light halo).
 import {
   AudioListener,
   AudioSource,
@@ -27,6 +28,7 @@ import {
   Light,
   Material,
   MeshRenderer,
+  ParticleSystem,
   Random,
   Rigidbody,
   Rope,
@@ -109,7 +111,28 @@ class World extends Component {
     const sun = new GameObject("Sun", { rotation: Quaternion.euler(-50, 30, 0) });
     sun.addComponent(Light, { type: "directional", intensity: 1.1 });
     const lamp = new GameObject("Lamp", { position: new Vector3(0, 1.5, 0) });
-    lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5 });
+    lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5, haloSize: 1.2 });
+
+    // A fountain of glowing sparks that fall and fade, with a puff every two seconds.
+    const fountain = new GameObject("Fountain", { position: new Vector3(0, 0.05, 0) });
+    fountain.addComponent(ParticleSystem, {
+      startLifetime: [1.2, 1.8],
+      startSpeed: [3, 4.2],
+      startSize: [0.06, 0.14],
+      startColor: [Color.hex("#ffd27a"), Color.hex("#ff7a2e")],
+      gravityModifier: 0.6,
+      rateOverTime: 60,
+      bursts: [{ time: 0, count: 40, cycles: 0, interval: 2 }],
+      duration: 2,
+      shape: { type: "cone", angle: 14, radius: 0.08 },
+      simulationSpace: "world",
+      blendMode: "additive",
+      colorOverLifetime: [
+        { time: 0, color: Color.white },
+        { time: 0.7, color: new Color(1, 0.8, 0.6, 0.8) },
+        { time: 1, color: new Color(1, 0.4, 0.2, 0) },
+      ],
+    });
 
     // Lit primitives with Rigidbodies, dropped into the ring.
     Random.initState(3);

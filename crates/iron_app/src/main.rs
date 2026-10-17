@@ -8,6 +8,7 @@
 mod cursor;
 mod game_input;
 mod panels;
+mod particles;
 mod physics_sync;
 mod reload;
 mod ui_scale;
@@ -425,6 +426,19 @@ impl App {
                 scene.active(o)
             });
         self.apply_script_output();
+        let dt = self.components.frame_dt() as f32;
+        let changed = self.world_view.update_particles(dt, &self.scene);
+        // `__iron_particles([id, count, alive, ...])` for systems that changed.
+        if !changed.is_empty()
+            && let Err(e) = self.scripts.call_global(
+                "__iron_particles",
+                &[iron_core::Value::Array(
+                    changed.into_iter().map(iron_core::Value::Number).collect(),
+                )],
+            )
+        {
+            tracing::debug!("__iron_particles: {e}");
+        }
         self.update_audio(elapsed);
 
         // The trees may have moved under a still pointer, or the focused element gone.
