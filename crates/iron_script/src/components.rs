@@ -97,6 +97,33 @@ impl ComponentHost {
     }
 }
 
+/// Hot reload, wipe and rebuild (DESIGN.md §6.1): loads `code` into the `fresh`
+/// runtime and spawns one component per registered class there; only if all of that
+/// works do `rt` and `host` become the new ones (the old context is dropped). On an
+/// error (a syntax error, a throwing top level or constructor) both are left as they
+/// were, so the old code keeps running.
+///
+/// Component state isn't carried over yet: new components start fresh and run
+/// `onStart` again (property serialization comes with GameObjects, TODO.md M5).
+/// Returns the classes spawned.
+pub fn reload<R: ScriptRuntime>(
+    rt: &mut R,
+    mut fresh: R,
+    host: &mut ComponentHost,
+    name: &str,
+    code: &str,
+) -> Result<Vec<String>, ScriptError> {
+    fresh.load_bundle(name, code)?;
+    let classes = ComponentHost::registered_classes(&mut fresh)?;
+    let mut new_host = ComponentHost::new();
+    for class in &classes {
+        new_host.spawn(&mut fresh, class)?;
+    }
+    *rt = fresh;
+    *host = new_host;
+    Ok(classes)
+}
+
 fn dispatch(
     rt: &mut dyn ScriptRuntime,
     id: ComponentId,

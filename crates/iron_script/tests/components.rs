@@ -80,3 +80,46 @@ fn a_throwing_component_is_disabled_and_others_keep_running() {
         ]
     );
 }
+
+// M4-HOT-01
+#[test]
+fn a_reload_runs_the_new_code_on_the_next_tick() {
+    let mut rt = QuickJsRuntime::new();
+    let logs = capture_logs(&mut rt);
+    rt.load_bundle("hello.js", HELLO).unwrap();
+    let mut host = ComponentHost::new();
+    host.spawn(&mut rt, "Hello").unwrap();
+    host.update(&mut rt, 1.0 / 60.0);
+
+    let edited = HELLO.replace("\"tick\"", "\"tock\"");
+    assert_ne!(edited, HELLO);
+    let mut fresh = QuickJsRuntime::new();
+    let new_logs = capture_logs(&mut fresh);
+    let classes = iron_script::reload(&mut rt, fresh, &mut host, "hello.js", &edited).unwrap();
+    assert_eq!(classes, ["Hello"]);
+    host.update(&mut rt, 1.0 / 60.0);
+    assert_eq!(messages(&logs), ["hello", "tick"]);
+    // Fresh components start over: onStart runs again (no state carried yet).
+    assert_eq!(messages(&new_logs), ["hello", "tock"]);
+}
+
+// M4-HOT-04
+#[test]
+fn a_broken_reload_keeps_the_old_code_running() {
+    let mut rt = QuickJsRuntime::new();
+    let logs = capture_logs(&mut rt);
+    rt.load_bundle("hello.js", HELLO).unwrap();
+    let mut host = ComponentHost::new();
+    host.spawn(&mut rt, "Hello").unwrap();
+
+    for (broken, expected) in [
+        ("this is not javascript (", "SyntaxError"),
+        ("throw new Error('top level')", "top level"),
+    ] {
+        let err = iron_script::reload(&mut rt, QuickJsRuntime::new(), &mut host, "game.js", broken)
+            .unwrap_err();
+        assert!(err.message.contains(expected), "{err}");
+    }
+    host.update(&mut rt, 1.0 / 60.0);
+    assert_eq!(messages(&logs), ["hello", "tick"]);
+}

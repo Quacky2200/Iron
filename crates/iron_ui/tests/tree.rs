@@ -689,3 +689,40 @@ fn text_alignment_moves_lines() {
     assert!(xs[1] > 100.0 && xs[1] < 150.0, "centred: {xs:?}");
     assert!(xs[2] > 200.0, "right: {xs:?}");
 }
+
+// M4-HOT-09
+#[test]
+fn clearing_script_nodes_lets_a_reloaded_bundle_reuse_ids() {
+    let mut tree = UiTree::new(200.0, 200.0);
+    // An attached box with a child, a detached box, and an `:outro` rule that would
+    // otherwise keep removed elements around.
+    apply_ok(
+        &mut tree,
+        vec![
+            create(1),
+            style(
+                1,
+                &[
+                    ("width", Value::Number(50.0)),
+                    ("height", Value::Number(50.0)),
+                ],
+            ),
+            append(0, 1),
+            create(2),
+            append(1, 2),
+            create(3),
+        ],
+    );
+    tree.add_stylesheet("box:outro { opacity: 0; transition: opacity 1s; }");
+    tree.layout_if_needed();
+    assert_eq!(tree.len(), 3);
+
+    tree.clear_script_nodes();
+    assert!(tree.is_empty(), "only the root is left");
+    assert!(tree.children(NodeId(0)).is_empty());
+
+    // The new bundle's reconciler starts at 1 again.
+    apply_ok(&mut tree, vec![create(1), append(0, 1)]);
+    tree.layout_if_needed();
+    assert_eq!(ids(tree.children(NodeId(0))), [1]);
+}

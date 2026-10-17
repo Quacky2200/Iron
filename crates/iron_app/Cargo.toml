@@ -16,4 +16,5 @@ iron_render = { path = "../iron_render" }
 iron_script = { path = "../iron_script" }
 iron_ui = { version = "0.1.0", path = "../iron_ui" }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "ico"] }
+notify = "8.2.0"
 arboard = { version = "3.7.0", default-features = false }

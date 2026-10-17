@@ -413,6 +413,8 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// restyles everything).
     media: crate::media::MediaEnv,
     media_results: Vec<bool>,
+    /// Set while [`Self::clear_script_nodes`] runs: removals skip `:outro`.
+    clearing: bool,
     /// Elements removed by scripts but kept (`:outro`) until their exit transitions
     /// and animations finish.
     /// (When the exit began: only motion started since then holds it.)
@@ -491,6 +493,7 @@ impl<L: LayoutEngine> UiTree<L> {
             starting_index: RuleIndex::default(),
             fresh: HashSet::default(),
             leaving: HashMap::default(),
+            clearing: false,
             media: crate::media::MediaEnv {
                 width,
                 height,
@@ -2306,6 +2309,36 @@ impl<L: LayoutEngine> UiTree<L> {
     }
 
     /// Applies one commit. Bad ops are skipped and returned; the rest still apply.
+    /// Removes every node scripts created, attached or not, leaving an empty root (a
+    /// script reload: the new bundle's reconciler starts its IDs again). Exit
+    /// animations (`:outro`) don't play.
+    pub fn clear_script_nodes(&mut self) {
+        let ops = self
+            .children(ROOT)
+            .iter()
+            .map(|c| {
+                Value::Array(vec![
+                    opcodes::REMOVE_CHILD.into(),
+                    ROOT.raw().into(),
+                    c.raw().into(),
+                ])
+            })
+            .collect();
+        self.clearing = true;
+        self.apply_commit(&Commit { ops });
+        self.clearing = false;
+        // Created but never attached (or removed from a detached parent).
+        let detached: Vec<NodeId> = self
+            .nodes
+            .keys()
+            .copied()
+            .filter(|id| *id != ROOT && id.raw() < FIRST_GENERATED_ID)
+            .collect();
+        for id in detached {
+            self.destroy_subtree(id);
+        }
+    }
+
     pub fn apply_commit(&mut self, commit: &Commit) -> Vec<UiError> {
         let mut errors = Vec::new();
         let mut children_changed = HashSet::default();
@@ -2715,6 +2748,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
                 // With `:outro` rules, an element stays to play its exit first.
                 if self.deps.uses_outro
+                    && !self.clearing
                     && self.kind(child).is_some_and(|k| k != TEXT_NODE)
                     && !self.leaving.contains_key(&child)
                 {

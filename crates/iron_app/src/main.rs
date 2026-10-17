@@ -7,6 +7,7 @@
 
 mod cursor;
 mod game_input;
+mod reload;
 mod ui_scale;
 
 use std::collections::{HashMap, HashSet};
@@ -110,23 +111,21 @@ fn main() -> Result<()> {
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
     let css_path = bundle_path.with_extension("css");
-    if let Ok(css) = std::fs::read_to_string(&css_path) {
-        let base = css_path
-            .parent()
-            .and_then(|dir| dir.strip_prefix(&asset_root).ok())
-            .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
-        add_stylesheet(
-            &mut ui,
-            &asset_root,
-            &css,
-            &base,
-            &css_path.display().to_string(),
-        );
-        tracing::info!("loaded stylesheet {}", css_path.display());
-    }
+    let game_css = load_game_css(&mut ui, &asset_root, &css_path);
+
+    // Rebuilds by `bun build --watch` reload the scripts (not for screenshot runs).
+    let watcher = match args.screenshot {
+        Some(_) => None,
+        None => reload::BundleWatcher::new(vec![bundle_path.clone(), css_path.clone()])
+            .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
+            .ok(),
+    };
 
     let app = App {
+        bundle_path,
+        bundle_name: name.clone(),
+        game_css,
+        watcher,
         scripts,
         components,
         ui,
@@ -194,6 +193,11 @@ struct Gfx {
 }
 
 struct App {
+    bundle_path: PathBuf,
+    bundle_name: String,
+    /// The tree's id for the game's bundled stylesheet (`game.css`), if it has one.
+    game_css: Option<u32>,
+    watcher: Option<reload::BundleWatcher>,
     scripts: QuickJsRuntime,
     components: ComponentHost,
     ui: UiTree,
@@ -237,8 +241,73 @@ struct App {
 }
 
 impl App {
+    /// Hot reload (DESIGN.md §6.1): loads the rebuilt bundle into a new runtime and
+    /// swaps it in, or keeps the old one running if it fails. For now the world is
+    /// wiped too: UI, script stylesheets, physics and audio start over, and components
+    /// run `onStart` again (state survives once GameObjects exist, TODO.md M5).
+    fn reload_scripts(&mut self) {
+        let started = Instant::now();
+        let code = match std::fs::read_to_string(&self.bundle_path) {
+            Ok(code) => code,
+            Err(e) => {
+                tracing::error!("reload: reading {}: {e}", self.bundle_path.display());
+                return;
+            }
+        };
+        let fresh = QuickJsRuntime::new();
+        let classes = match iron_script::reload(
+            &mut self.scripts,
+            fresh,
+            &mut self.components,
+            &self.bundle_name,
+            &code,
+        ) {
+            Ok(classes) => classes,
+            Err(e) => {
+                tracing::error!("reload failed, keeping the old code: {e}");
+                return;
+            }
+        };
+
+        // Everything the old scripts built. The new bundle's top level has already
+        // queued its UI and ops; they apply after this.
+        self.ui.clear_script_nodes();
+        for (_, sheet) in self.sheets.drain() {
+            self.ui.remove_stylesheet(sheet);
+        }
+        if let Some(sheet) = self.game_css.take() {
+            self.ui.remove_stylesheet(sheet);
+        }
+        let css_path = self.bundle_path.with_extension("css");
+        self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
+        self.ui_scale = ui_scale::UiScale::None;
+        self.physics = iron_physics::Physics::new();
+        // Dropping the mixer stops every sound.
+        self.audio = None;
+        self.handle_ui(Input::Refresh);
+
+        let has = |scripts: &mut QuickJsRuntime, f: &str| {
+            scripts
+                .eval(&format!("typeof {f} === 'function'"))
+                .is_ok_and(|v| v == iron_core::Value::Bool(true))
+        };
+        self.ui_events = has(&mut self.scripts, "__iron_ui_event");
+        self.game_input = has(&mut self.scripts, "__iron_input");
+        self.physics_events = has(&mut self.scripts, "__iron_physics");
+        self.audio_events = has(&mut self.scripts, "__iron_audio");
+        tracing::info!(
+            ?classes,
+            "reloaded {} in {:.1} ms",
+            self.bundle_name,
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+
     fn tick(&mut self) {
         let now = Instant::now();
+        if self.watcher.as_mut().is_some_and(|w| w.poll(now)) {
+            self.reload_scripts();
+        }
         let elapsed = self
             .last_frame
             .map(|t| now.duration_since(t).as_secs_f64())
@@ -846,6 +915,19 @@ fn load_sound(
     mixer
         .load(id as u32, bytes, stream)
         .map_err(|e| format!("`{src}`: {e}"))
+}
+
+/// Loads the stylesheet Bun writes next to the bundle (game.js -> game.css), if any.
+fn load_game_css(ui: &mut UiTree, root: &Path, css_path: &Path) -> Option<u32> {
+    let css = std::fs::read_to_string(css_path).ok()?;
+    let base = css_path
+        .parent()
+        .and_then(|dir| dir.strip_prefix(root).ok())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let id = add_stylesheet(ui, root, &css, &base, &css_path.display().to_string());
+    tracing::info!("loaded stylesheet {}", css_path.display());
+    Some(id)
 }
 
 fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &str) -> u32 {

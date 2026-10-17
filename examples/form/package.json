@@ -14,6 +14,7 @@
   "scripts": {
     "build": "bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser --define process.env.NODE_ENV='\"production\"'",
     "build:dev": "bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
+    "dev": "bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser --define process.env.NODE_ENV='\"development\"' --watch",
     "typecheck": "tsc --noEmit -p ."
   }
 }

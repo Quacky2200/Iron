@@ -274,14 +274,16 @@ layout pass):
 
 | ID | Kind | Checks |
 |---|---|---|
-| M4-HOT-01 | Integration | Changing a component's `onUpdate` and reloading runs the new code on the next tick. |
+| M4-HOT-01 | Integration | Changing a component's `onUpdate` and reloading runs the new code on the next tick (components start over until part 2 keeps their state). |
 | M4-HOT-02 | Integration | `@property` values survive a reload (e.g. `speed` set to 42 is still 42). |
 | M4-HOT-03 | Integration | Entities, transforms and physics bodies are untouched by a script reload (Rust owns the world). |
-| M4-HOT-04 | Integration | A reload with a syntax error keeps the old code running and reports the error. |
+| M4-HOT-04 | Integration | A reload with a syntax error (or a throwing top level) keeps the old code running and reports the error. |
 | M4-HOT-05 | Integration | A renamed or removed property is dropped with a warning; new properties get their defaults. |
 | M4-HOT-06 | Integration | React panel state (e.g. a counter) survives a Fast Refresh edit. |
 | M4-HOT-07 | Benchmark | Reload of a ~1 MB bundle with 1,000 components: **< 100 ms**. |
 | M4-HOT-08 | Manual | Edit a TS file while the game runs; the change appears without restarting. |
+| M4-HOT-09 | Integration | Clearing the UI tree for a reload removes every script node (attached or not, skipping `:outro`), and the new bundle's reconciler can reuse IDs from 1. |
+| M4-HOT-10 | Integration | The bundle watcher reports a change to `game.js` once, after it settles; other files in the folder are ignored. |
 
 ---
 

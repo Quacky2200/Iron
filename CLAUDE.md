@@ -65,6 +65,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 
 - `bun run build` builds all the examples.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
+- `bun run dev` in an example rebuilds on every edit (`bun build --watch`); a running `iron` window
+  reloads the scripts when `dist/` changes (state isn't kept yet; see TODO.md M5).
 - The `cargo run` line renders a screenshot and exits; check it by eye.
 - `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
   golden tests' renders.
@@ -124,13 +126,16 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3c step 7: `examples/form`. **M3c is done.**
   - M3d (CSS parity) is done: groups 1–10 and step 5.1 (inline SVG and SVG images via resvg),
     (`sound-in`/`sound-out` skipped: s&box-specific, CSS stays about display)
-- **Next:** M3d groups 11 (pointer capture), 12 (WOFF/WOFF2), 13 (`@media`) were added to
-  TODO.md; then check in with the user before M4 (agreed 2026-10-17). Later items noted in TODO.md:
-  GPU-tessellated SVG with SMIL and path morphing; UI and SVG editors (M5.e).
-  Milestones after M3 (2026-10-17): M4 hot reload + physics + audio; M5.a–e objects, scene,
-  assets, rendering, editor; M6 Script IO; M7 lighting; M8 multiplayer; M9.a–c backends, AOT,
-  release packaging; M10 optional (OpenXR, Steam Audio, ray tracing).
-  Commit per step; refresh docs once per group (Sonnet subagent, changed code only).
+  - M4 (2026-10-17): physics (`iron_physics`, rapier), audio (`iron_audio`, kira) and hot
+    reload plumbing (watch `dist/`, new runtime then swap, old code kept on error, world reset).
+    State-keeping reload and Fast Refresh moved after M5.a/b ("Hot reload, part 2" in TODO.md).
+- **Next:** M5.a GameObjects/Components for 2D and 3D (vectors, quaternions, transforms, planes;
+  first plane use: UI in 3D space). Decisions first: own renderer vs Bevy crates, and whether an
+  ECS crate sits underneath. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
+  morphing; UI and SVG editors (M5.e).
+  Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8
+  multiplayer; M9.a–c backends, AOT, release packaging; M10 optional (OpenXR, Steam Audio, ray
+  tracing). Commit per step; refresh docs once per group (Sonnet subagent, changed code only).
 - **Also planned:** "Script IO" (files, fetch, WebSocket) is M6, designed in
   `docs/research/networking-and-files.md`.
 - **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA

@@ -727,12 +727,18 @@ Accessibility and drag and drop moved to M5.e, as UI requirements before the edi
 ## M4 — Hot reload, physics and audio
 
 Physics and audio come ahead of the scene work (M5), so its object model is designed with them in
-mind.
+mind. Hot reload is split (2026-10-17): the plumbing is here; keeping state across a reload waits
+for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot reload, part 2" in M5.
 
-- [ ] Bun watch → rebuild → engine notified
-- [ ] Wipe-and-rebuild with property serialization — `M4-HOT-01`..`M4-HOT-05`
-- [ ] React Fast Refresh for panels — `M4-HOT-06`
-- [ ] Reload benchmark — `M4-HOT-07`
+- [x] Bun watch → rebuild → engine notified: `bun run dev` in an example (`bun build --watch`);
+  the app watches `dist/game.js` and `game.css` with `notify` and reloads once they settle —
+  `M4-HOT-10`
+- [x] Reload plumbing: the new bundle loads into a fresh runtime and is swapped in only if it
+  loads and its components spawn; otherwise the old code keeps running with the error logged.
+  The UI tree, script stylesheets and `game.css`, physics and audio are reset, and components
+  start over (`onStart` runs again) — `M4-HOT-01`, `M4-HOT-04`, `M4-HOT-09`
+- [ ] Edit a TS file while the game runs; the change appears without restarting (manual, needs
+  the window) — `M4-HOT-08`
 - [ ] `rapier` integration + TS components — `M4-PHY-*`
   - [x] `iron_physics` crate: rapier world driven by `physics.*` ops with script-chosen IDs;
     bodies (dynamic, fixed, kinematic), colliders (box, ball, capsule, cylinder, convex, mesh;
@@ -741,7 +747,7 @@ mind.
   - [x] TS API in `@iron/engine` (`physics`: `RigidBody`, `Collider`, collision handlers,
     `raycast` promises, `makeCharacter`/`move`), stepped in the app's fixed tick with results
     sent back through `__iron_physics`; `examples/physics` — `M4-PHY-02`
-  - [ ] Bodies survive script hot reload (with the hot reload work) — `M4-PHY-04`
+  - [ ] Bodies survive script hot reload (moved to hot reload part 2, M5) — `M4-PHY-04`
   - [ ] `Rigidbody` / `Collider` / `CharacterController` components on GameObjects (M5.a)
 - [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`
   - [x] `iron_audio` crate: kira mixer driven by `audio.*` ops with script-chosen IDs; decoded
@@ -756,11 +762,23 @@ mind.
 
 ## M5 — Scene, assets, rendering, editor
 
-- [ ] **M5.a** GameObject + Component model first (the s&box way), from TS components.
+- [ ] **M5.a** GameObject + Component model first (the s&box way), from TS components, for 2D
+  and 3D objects: vectors, quaternions and transforms in the TS API, and planes. The first plane
+  use is UI in 3D space (a menu drawn on a plane in the world).
   **Decision:** own renderer vs reuse Bevy crates (DESIGN §7.4). **Question:** an ECS as its own
   crate underneath (or alongside) GameObjects?
 - [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support
+- [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing
+  scene serialization
+  - [ ] `@property` (standard decorators, which Bun supports) feeds serialization; wipe and
+    rebuild restores properties, including handles to engine objects; `onReload` lets components
+    re-attach callbacks — `M4-HOT-02`, `M4-HOT-05`
+  - [ ] Rust-owned state survives (GameObjects, transforms, physics bodies, sounds); script-side
+    registries and ID counters are rebuilt from it — `M4-HOT-03`, `M4-PHY-04`
+  - [ ] React Fast Refresh for panels (React and the reconciler in a vendor bundle kept across
+    reloads) — `M4-HOT-06`
+  - [ ] Reload benchmark — `M4-HOT-07`
 - [ ] **M5.c** A basic cube object; model includes with meshes, and meshes as collision shapes
   (rapier, from M4); basic lighting and shadows
 - [ ] **M5.d** The rest of scene, assets and rendering:

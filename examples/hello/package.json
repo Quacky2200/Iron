@@ -9,6 +9,7 @@
   "scripts": {
     "build": "bun build src/main.ts --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"production\"'",
     "build:dev": "bun build src/main.ts --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
+    "dev": "bun build src/main.ts --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"' --watch",
     "typecheck": "tsc --noEmit -p ."
   }
 }
