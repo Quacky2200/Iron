@@ -23,6 +23,8 @@ pub struct WindowConfig {
     pub title: String,
     pub width: u32,
     pub height: u32,
+    /// The window and taskbar icon: RGBA pixels, width, height.
+    pub icon: Option<(Vec<u8>, u32, u32)>,
 }
 
 impl Default for WindowConfig {
@@ -31,6 +33,7 @@ impl Default for WindowConfig {
             title: "Iron".into(),
             width: 1280,
             height: 720,
+            icon: None,
         }
     }
 }
@@ -186,9 +189,15 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
         }
         // Hidden until the first frame is drawn, so the window never flashes its blank
         // (white) background.
+        let icon = self.config.icon.take().and_then(|(rgba, w, h)| {
+            winit::window::Icon::from_rgba(rgba, w, h)
+                .inspect_err(|e| tracing::warn!("window icon: {e}"))
+                .ok()
+        });
         let attrs = Window::default_attributes()
             .with_visible(false)
             .with_title(self.config.title.clone())
+            .with_window_icon(icon)
             .with_inner_size(LogicalSize::new(self.config.width, self.config.height));
         match event_loop.create_window(attrs) {
             Ok(window) => {

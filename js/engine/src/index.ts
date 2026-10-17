@@ -45,6 +45,7 @@ export {
 } from "./textures.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export { Cursor, CursorLockMode } from "./cursor.ts";
+export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
 export {
   Bounds,
   Color,

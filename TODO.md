@@ -904,10 +904,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     while locked), `mouseScrollDelta`, `getAxis("Mouse X" / "Mouse Y" / "Mouse
     ScrollWheel")`; mouse buttons are `MouseLeft` / `MouseRight` / `MouseMiddle` keys —
     `M5-CUR-01`
-  - [ ] Platform queries (`Platform` / `SystemInfo`): OS and version, device type and model,
-    screen size and DPI, GPU name, CPU count, memory, language; touch and gamepad presence
-  - [ ] `Application`: the game's name, version, company and icon from its manifest (the
-    window title and icon use them too), plus `quit()`
+  - [x] `SystemInfo`: OS name, family and version, device type and name, CPU model and
+    count, memory, architecture, language, touch; GPU name, vendor, API, kind and driver and
+    the monitor's size, refresh rate and DPI once the window opens (`sysinfo`, `sys-locale`,
+    wgpu's adapter info, winit's monitor); gamepads are `input.gamepads()` — `M5-APP-02`
+  - [x] `Application`: name, `productName`, version, company, identifier and engine
+    version from the game's `package.json` (`iron` section; the window title and icon use
+    them), `platform`, `systemLanguage`, `isMobilePlatform`, `quit()`; installed as
+    `globalThis.__iron_info` before the bundle runs (and on reload) — `M5-APP-01`, `M5-APP-02`
+  - [ ] App follow-ups: `Application.targetFrameRate`, `runInBackground`, focus events,
+    `persistentDataPath` (with M6 file IO), live monitor changes, battery / power state
 - [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support
   - [ ] Scene API (`SceneManager`): create, load (single or additive), unload and switch

@@ -7,6 +7,7 @@
 
 mod cursor;
 mod game_input;
+mod info;
 mod panels;
 mod particles;
 mod physics_sync;
@@ -86,7 +87,14 @@ fn main() -> Result<()> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "game.js".into());
 
+    // The game's manifest and the machine, for `Application` and `SystemInfo`, before
+    // the bundle's top level runs.
+    let manifest = info::Manifest::load(&asset_root);
+    let info = info::Info::new(&manifest);
     let mut scripts = QuickJsRuntime::new();
+    scripts
+        .eval(&info.script())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     scripts
         .load_bundle(&name, &code)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -179,10 +187,16 @@ fn main() -> Result<()> {
         frames: 0,
         screenshot: args.screenshot.map(|path| (path, args.frames)),
         done: false,
+        info,
     };
+    let icon = manifest
+        .icon
+        .as_deref()
+        .and_then(|path| info::load_icon(&app.asset_root, path));
     Platform::new().run(
         WindowConfig {
-            title: format!("Iron — {name}"),
+            title: manifest.title.clone(),
+            icon,
             ..Default::default()
         },
         app,
@@ -299,6 +313,8 @@ struct App {
     ui_scale: ui_scale::UiScale,
     /// A custom cursor for the platform to show.
     custom_cursor: Option<CustomCursorRequest>,
+    /// The game's manifest and the machine, as scripts see them (`__iron_info`).
+    info: info::Info,
     /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
     script_cursor: ScriptCursor,
     /// Whether the window has focus (raw mouse motion only counts then).
@@ -327,7 +343,10 @@ impl App {
                 return;
             }
         };
-        let fresh = QuickJsRuntime::new();
+        let mut fresh = QuickJsRuntime::new();
+        if let Err(e) = fresh.eval(&self.info.script()) {
+            tracing::error!("reload: {e}");
+        }
         let mut scene = iron_scene::ScriptScene::new();
         let classes = match iron_script::reload(
             &mut self.scripts,
@@ -715,6 +734,7 @@ impl App {
                         tracing::warn!("{name}: {e}");
                     }
                 }
+                "app.quit" => self.done = true,
                 name if name.starts_with("cursor.") => {
                     self.cursor_op(&name["cursor.".len()..], &op.args)
                 }
@@ -1136,6 +1156,31 @@ impl PlatformApp for App {
         match Gpu::with_surface(window.clone(), size.width, size.height) {
             Ok((gpu, surface)) => {
                 tracing::info!(adapter = %gpu.adapter_name(), "renderer ready");
+                // `SystemInfo` learns the GPU and the screen.
+                let adapter = gpu.adapter.get_info();
+                let monitor = window.current_monitor();
+                let (sw, sh) = monitor.as_ref().map_or((size.width, size.height), |m| {
+                    let s = m.size();
+                    (s.width, s.height)
+                });
+                let hz = monitor
+                    .as_ref()
+                    .and_then(|m| m.refresh_rate_millihertz())
+                    .map_or(0.0, |mhz| f64::from(mhz) / 1000.0);
+                self.info.set_system(serde_json::json!({
+                    "graphicsDeviceName": adapter.name,
+                    "graphicsDeviceVendorID": adapter.vendor,
+                    "graphicsDeviceType": format!("{:?}", adapter.backend),
+                    "graphicsDeviceKind": format!("{:?}", adapter.device_type),
+                    "graphicsDriver": adapter.driver_info,
+                    "screenWidth": sw,
+                    "screenHeight": sh,
+                    "screenRefreshRate": hz,
+                    "dpi": window.scale_factor() * 96.0,
+                }));
+                if let Err(e) = self.scripts.eval(&self.info.script()) {
+                    tracing::error!("system info: {e}");
+                }
                 let mut renderer = UiRenderer::new(&gpu);
                 renderer.set_asset_root(&self.asset_root);
                 let world = WorldRenderer::new(&gpu);

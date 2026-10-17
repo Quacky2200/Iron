@@ -5,8 +5,10 @@
 // (a ParticleSystem) when collected. Sprites sort by `sortingOrder`, not distance.
 //
 // Arrows / A-D run, Space jumps. Left alone for a few seconds, the fox runs and jumps
-// by itself (so screenshots show it moving).
+// by itself (so screenshots show it moving). The HUD shows the game's name and version
+// from its package.json (`Application`) and the OS (`SystemInfo`).
 import {
+  Application,
   BoxCollider2D,
   Camera,
   CapsuleCollider2D,
@@ -25,6 +27,7 @@ import {
   register,
   Sprite,
   SpriteRenderer,
+  SystemInfo,
   Texture,
   Time,
   Vector2,
@@ -262,6 +265,7 @@ function Hud() {
       >
         <text style={{ color: "#ffffff", fontSize: 18, fontWeight: 600 }}>{`Coins: ${coins}`}</text>
         <text style={{ color: "#d6e6ff", fontSize: 13 }}>Arrows / A-D to run, Space to jump</text>
+        <text style={{ color: "#b8cff0", fontSize: 11 }}>{`${Application.productName} ${Application.version} · ${SystemInfo.operatingSystem}`}</text>
       </box>
     </box>
   );

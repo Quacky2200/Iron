@@ -136,7 +136,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     camera system, `WorldPanel` (React UI on planes). M5.a2 step 1: `Rigidbody`/colliders.
 - **Next (M5.a2, see TODO.md for the exact order):** meshes and lights are done (`MeshRenderer`, `Light`,
   `createPrimitive`), CharacterController, joints/rope, AudioSource/AudioListener, textures/sprites, particles,
-  glows (halos, bloom, spot beams) and 2D too; next Cursor/Platform/Application APIs, glTF. API names and units follow Unity/s&box
+  glows (halos, bloom, spot beams), 2D, Cursor and Application/SystemInfo too; next glTF,
+  shadows, then the M5.a2 docs refresh. API names and units follow Unity/s&box
   (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
   morphing; UI and SVG editors (M5.e).
   Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8

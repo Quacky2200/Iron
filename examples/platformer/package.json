@@ -16,5 +16,11 @@
     "build:dev": "bun build src/main.tsx --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
     "dev": "bun build src/main.tsx --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"' --watch",
     "typecheck": "tsc --noEmit -p ."
+  },
+  "iron": {
+    "title": "Fox Run",
+    "company": "Iron examples",
+    "identifier": "dev.iron.examples.platformer",
+    "icon": "assets/icon.png"
   }
 }
