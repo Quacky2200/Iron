@@ -851,8 +851,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] glTF follow-ups: normal / metallic-roughness / emissive / occlusion maps (with PBR,
       M5.d), skins and animations (M5.d), cameras and lights from the file, KTX2 / Draco /
       meshopt compression, texture transforms
-    - [ ] Classic test models: the Stanford Bunny and the Newell teaset (teapot, teacup,
-      teaspoon) in an example (asked for 2026-10-17)
+    - [x] Classic test models: `examples/classics` shows the Stanford Bunny and the Newell
+      teaset (teapot, teacup, teaspoon) as .glb (converted by `tools/make_models.py` from the
+      downloaded originals, which aren't in the repo) on turntables, plus the material sweep
+      (spheres from matte to glossy)
+    - [ ] More classic test scenes (asked for 2026-10-17): the Cornell box (procedural; after
+      shadows), and, with downloads the user approves first, Suzanne, Sponza, the Damaged
+      Helmet (PBR), and the Stanford Dragon / Armadillo / Lucy
     - [ ] Shadows (directional shadow map)
   - [x] `AudioSource` (clip as a `Sound` or path, `playOnAwake`, volume, pitch, pan, mute,
     loop, `spatialBlend` 0 = flat / above 0 = from an emitter following its GameObject,
@@ -943,6 +948,18 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     reloads) — `M4-HOT-06`
   - [ ] Reload benchmark — `M4-HOT-07`
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
+  - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style:
+    - [ ] PBR shading (metallic / roughness, GGX specular, energy conserving) replacing the
+      Blinn-Phong `smoothness` (kept as 1 - roughness, Unity's name)
+    - [ ] Shininess / specular colour (the specular workflow) and `metallic`
+    - [ ] Reflective and mirror surfaces: a skybox / environment cube map for reflections
+      (IBL), reflection probes (baked and realtime), planar mirrors (a camera rendering
+      the reflected view), screen-space reflections later
+    - [ ] Maps: normal, metallic-roughness, occlusion, emission (glTF's), detail and tiling
+      per map
+    - [ ] Transparency modes (fade, transparent with specular kept), alpha cut-off,
+      double-sided; glass with refraction later
+    - [ ] A material test scene (spheres sweeping roughness × metallic, the classic grid)
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
     component with blending; skeletons and skinned meshes from glTF

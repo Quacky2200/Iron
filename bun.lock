@@ -20,6 +20,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/classics": {
+      "name": "classics",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/css": {
       "name": "css",
       "version": "0.1.0",
@@ -139,6 +151,8 @@
     "@types/react-reconciler": ["@types/react-reconciler@0.34.0", "", { "peerDependencies": { "@types/react": "*" } }, "sha512-zVDzX0Fk1XgDP2IutTpSrxd57jwOHlX3rlPrFz68Sc+06tpgOFRlqSUK2ZiqQeQXqnIfUb2cfJQUupXBKy498w=="],
 
     "boxes": ["boxes@workspace:examples/boxes"],
+
+    "classics": ["classics@workspace:examples/classics"],
 
     "css": ["css@workspace:examples/css"],
 
