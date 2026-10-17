@@ -28,6 +28,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [world-rendering.md](world-rendering.md) | The 3D world pass (cameras in depth order, viewports, background fill, opaque and see-through sorting, glow), lit meshes (PBR) and lights, halos and beams, the procedural sky and environment map, planar mirrors, reflection probes, directional shadows, layers and culling masks, frustum culling, LOD groups, bloom, `render.*` ops, `render_overlay` for screen UI, `WorldPanel` (commit targets, panel trees and textures, pointer and key routing), coordinates |
 | [assets-and-models.md](assets-and-models.md) | `Texture` (load, create, filters, CPU mipmaps), the missing-texture checker, `Material` (metallic, `create`/`with`)/`Mesh`, mesh colliders from render meshes, `Sprite`/`SpriteRenderer`, glTF `Model.load`/`instantiate`, engine ids |
 | [particles.md](particles.md) | `ParticleSystem`: settings as key/value pairs, the CPU simulation in `particles.rs`, reports to scripts, drawing as camera-facing quads |
+| [platform.md](platform.md) | Window modes (`FullScreenMode`, platform fallbacks), how display settings flow from manifest and saved prefs, `screen.set`, vsync and the frame cap, `PlayerPrefs` (file, keys, when written), limits |
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
@@ -36,7 +37,8 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 
 ```
 iron_core      Value, ids, Commit/Op, asset path safety          (no deps on other Iron crates)
-iron_platform  winit window + event loop, InputEvent (keys, pointer, IME, gamepads), gilrs
+iron_platform  winit window + event loop, InputEvent (keys, pointer, IME, gamepads), gilrs,
+               window modes and resolutions (display.rs, see platform.md)
 iron_script    ScriptRuntime trait, QuickJS backend, prelude.js, ComponentHost
 iron_scene     GameObject hierarchy (Scene), ScriptScene: scene.* ops and the move batch
 iron_ui        UiTree, styles, CSS, layout, text, draw list, events/interaction

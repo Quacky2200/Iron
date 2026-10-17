@@ -1,0 +1,112 @@
+# Window, display, frame pacing and saved settings
+
+How the window's mode, vsync, the frame cap and `PlayerPrefs` work. Code: `iron_platform`
+([display.rs](../crates/iron_platform/src/display.rs), [platform.rs](../crates/iron_platform/src/platform.rs)),
+`iron_render` ([surface.rs](../crates/iron_render/src/surface.rs)), `iron_app`
+([display.rs](../crates/iron_app/src/display.rs), [prefs.rs](../crates/iron_app/src/prefs.rs),
+[main.rs](../crates/iron_app/src/main.rs)) and `@iron/engine`
+([screen.ts](../js/engine/src/screen.ts), [prefs.ts](../js/engine/src/prefs.ts),
+[app.ts](../js/engine/src/app.ts), [quality.ts](../js/engine/src/quality.ts)).
+
+## Window modes
+
+`FullScreenMode` has Unity's four modes (scripts use the names):
+
+| Mode | What the window does |
+|---|---|
+| `ExclusiveFullScreen` | The display switches to the chosen size and refresh rate |
+| `FullScreenWindow` | A borderless window covering the monitor at its own resolution |
+| `MaximizedWindow` | A normal window, maximized |
+| `Windowed` | A normal window of the chosen size |
+
+`DisplaySettings` is the mode plus width, height (physical pixels) and refresh rate (Hz, 0 means
+"the monitor's rate"). The default is windowed, 1280x720.
+
+**Platform rules.** `supported_modes` lists what the platform offers, most fullscreen first:
+all four on desktop, three on Wayland (compositors own the display mode, so no exclusive
+fullscreen), and only `FullScreenWindow` on iOS and Android. `effective_mode` maps an unsupported
+request to the nearest mode: fullscreen requests try `FullScreenWindow` then `MaximizedWindow`,
+window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read the list from
+`Screen.supportedFullScreenModes` and show only those.
+
+**`display::apply`** puts a window in a mode and returns what took effect:
+- Exclusive: picks the monitor video mode closest to the request (size first, then refresh rate;
+  with no rate asked for, the fastest). The result carries that mode's real size and rate. If the
+  monitor reports no modes it falls back to borderless.
+- Windowed: the size is clamped between 320x240 and the monitor, then requested with
+  `request_inner_size`.
+- Borderless and maximized ignore the size.
+
+`resolutions` lists the monitor's video modes, largest and fastest first, without repeats.
+`current_resolution` is the monitor's size and rate now.
+
+## How settings flow
+
+1. At startup `main` reads the manifest's `iron.display` (`{ mode, width, height }`) as the defaults,
+   then lets the saved `iron.display` pref override them field by field (`display::from_json`;
+   unknown mode names and sizes below 1 are ignored). The window is created at the resulting size.
+2. `__iron_info.display` is set before the bundle runs (`display::state`). It holds the settings
+   plus `supportedModes`, `resolutions` and `currentResolution`; before the window exists the last
+   two are empty/null and all four modes are listed. It is rebuilt and re-evaluated once the window
+   is ready and after every `screen.set`.
+3. `window_ready` applies a non-windowed mode **before the first frame**, so the window never
+   flashes at the wrong size (it is created hidden and shown after its first frame).
+4. At run time `Screen.setResolution(w, h, mode, refreshRate)` (and the `fullScreenMode` and
+   `fullScreen` setters, which reuse the current size) send `screen.set mode width height
+   refreshRate`. The app applies it, writes what was asked for to the `iron.display` pref and
+   re-evaluates `__iron_info.display` with what took effect.
+5. **Screenshot runs** (`--screenshot`) stay windowed and never apply a mode, and their prefs are
+   kept in memory, so renders are the same every time.
+
+`Screen.width`/`height` (UI pixels) still come from `__iron_screen`; `Screen.windowSize` is the
+physical size from `__iron_info.display`.
+
+## Vsync and the frame cap
+
+- `QualitySettings.vSyncCount` (0 or 1) goes out as the seventh argument of `render.quality`. It
+  fills `Quality.vsync` (default on). The app calls `WindowSurface::set_vsync` before each frame,
+  which switches the present mode between `AutoVsync` and `AutoNoVsync` and reconfigures the
+  surface only when the mode changes. wgpu picks what the platform has (relaxed or plain FIFO;
+  mailbox or immediate).
+- `Application.targetFrameRate` sends `app.targetFrameRate` (-1 means no cap). Like Unity's, it only
+  counts with vsync off, since vsync already paces frames. Screenshot runs ignore it.
+- The cap is `PlatformApp::frame_interval`. After handling events, the loop in `about_to_wait`
+  checks the time since the last frame started; if the next frame is not due it sets
+  `ControlFlow::WaitUntil(due)` and does not request a redraw. Input events still wake the loop.
+  Otherwise it sets `ControlFlow::Wait` and requests a redraw.
+- The target frame rate is not saved; games keep it in `PlayerPrefs` if players choose it.
+
+## PlayerPrefs
+
+`PlayerPrefs` has `getInt`/`getFloat`/`getString` (with a fallback; a key of the wrong type gives the
+fallback, ints are truncated), `setInt`/`setFloat`/`setString`, `hasKey`, `deleteKey`, `deleteAll`
+and `save`. Values are numbers and strings.
+
+- **File.** One JSON object per game, `prefs.json`, in the OS settings folder:
+  - Windows: `%APPDATA%\<company>\<title>\`
+  - macOS: `~/Library/Application Support/<identifier, or company.title>/`
+  - Linux and others: `$XDG_CONFIG_HOME/<company>/<title>/` (or `~/.config`)
+
+  Names come from the manifest and are made file-name safe. `IRON_PREFS_DIR` replaces the folder
+  (tests, portable installs). With no settings folder, or on screenshot runs, prefs live in memory
+  only.
+- **Read.** The app loads the file at startup and puts it in `__iron_info.prefs`. `prefs.ts` copies
+  it into a map when the engine loads, so reads never cross the boundary. A file that is not a JSON
+  object is ignored with a warning.
+- **Write.** Sets and deletes go to the app as `prefs.set key value`, `prefs.delete key`,
+  `prefs.deleteAll` and `prefs.save`. The file is written on `save()` and when the `App` is dropped
+  (so on exit). `Prefs::save` skips the write when nothing changed and writes through a temporary
+  file and a rename, so a crash cannot leave half a file.
+- **Engine keys** start with `iron.`: `iron.display` (the window mode and size, a JSON object) and
+  `iron.quality` (the quality level and its current values, a JSON string). `deleteAll` removes
+  them too.
+- **Quality.** Every quality or shadow change saves `iron.quality`. `_applyDefaultQuality`
+  restores it when the engine loads (level by name, then the saved values over that level), without
+  writing the starting state back as if the player had chosen it.
+
+## Limits
+
+- One monitor: the window's current monitor is used, and there is no way to pick another.
+- Exclusive fullscreen is untested across platforms.
+- No HDR output modes.
+- Phones and tablets: no safe area or orientation handling yet; only `FullScreenWindow`.

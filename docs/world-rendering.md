@@ -271,7 +271,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
 | `render.bloom` | `0 threshold intensity scatter`, or `0 null` for off |
-| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias` (see Quality settings) |
+| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount` (see Quality settings) |
 | `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
 | `render.panel` | `component object [w h] pixelsPerMeter resolution [r g b a] interactive` (handled by `Panels`) |
@@ -437,7 +437,7 @@ masks are covered by the `M5-RND-15` golden.
 `WorldRenderer` has the knobs; scripts set them through `QualitySettings`
 (`js/engine/src/quality.ts`), whose levels (Low / Medium / High / Ultra, overridable in the game's
 `package.json` under `iron.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
-soft filter, `lodBias`) and `render.shadowSettings` (distance, map size). The default level is applied when the
+soft filter, `lodBias`, `vSyncCount`) and `render.shadowSettings` (distance, map size). The default level is applied when the
 engine loads; the app copies the values onto the renderer before each frame.
 
 - **MSAA** (`msaa`): the main world pass draws into a multisampled colour target (cached by size,
@@ -449,6 +449,10 @@ engine loads; the app copies the values onto the renderer before each frame.
 - **Render scale** (`render_scale`, 0.25 to 2): `render_views` draws the whole world (probes,
   mirrors, bloom) into a texture of the scaled size (`upscale.rs`) and stretches it over the target
   with a bilinear blit. Screen UI is drawn afterwards at full resolution.
+- **Vsync** (`vSyncCount`, 0 or 1; `Quality.vsync`): the app calls `WindowSurface::set_vsync` before each frame,
+  which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
+  frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `iron.quality`
+  and restored at startup.
 - **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 or 2):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
   soft filter is a (2r + 1)² box of comparison samples (`shadow.w` in the globals is the radius).

@@ -200,17 +200,17 @@ stack, other objects as JSON (cycles marked). `Log.trace` is `console.debug`.
 Press sets roll over in an `onTick` listener, so they follow `Time`.
 
 **Screen** ([screen.ts](../js/engine/src/screen.ts)). `Screen.width`, `height` (UI pixels, what
-pointer events use), `scale` and `aspect`, set by `__iron_screen`.
+pointer events use), `scale` and `aspect`, set by `__iron_screen`. Window mode, resolutions and `setResolution` are in [platform.md](platform.md).
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
-`isMobilePlatform`, `quit()`) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
+`isMobilePlatform`, `targetFrameRate`, `quit()`) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
 game's `package.json` (`name`, `version`, and an `iron` section with `title`, `company`, `identifier`
-and `icon`, a PNG used for the window icon; the title is the window title) and the machine
+`icon`, a PNG used for the window icon, and `display`, the default window mode and size; the title is the window title) and the machine
 ([info.rs](../crates/iron_app/src/info.rs)). It evaluates it **before the bundle's top level runs**
 (and again for a reloaded runtime). GPU and screen fields are added once the window and renderer exist,
-and the script is evaluated again. `quit()` sends `app.quit`, which sets the app's `done` flag.
+and the script is evaluated again; `prefs` and `display` sections are added too (see [platform.md](platform.md)). `quit()` sends `app.quit`, which sets the app's `done` flag.
 
 **Cursor** ([cursor.ts](../js/engine/src/cursor.ts)). `Cursor.visible`, `lockState`
 (`CursorLockMode.None`, `Locked`, `Confined`) and `setCursor(image, hotspot)`; see
