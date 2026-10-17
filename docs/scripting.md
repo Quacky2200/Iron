@@ -114,7 +114,7 @@ logged, disabled and destroyed; others keep running. The order within a frame is
 JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
 
 - `Component` base class (`id`, `gameObject`, `transform`, optional `onStart`, `onUpdate`,
-  `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`), `register({ Name: Class }, { spawn })`
+  `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`, `onReload`), `register({ Name: Class }, { spawn })`
   (an object, so names survive minification; `spawn: false` names a class for scene files without
   starting one). `GameObject`, math, `Time`, cameras and the rest of the
   M5.a API are in [scene-and-objects.md](scene-and-objects.md) and [world-rendering.md](world-rendering.md).
@@ -196,42 +196,82 @@ Flow, from an edit to the new code running:
 3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
    for `SETTLE` (150 ms), because Bun writes the JS and the CSS separately, and big files in
    several writes.
-4. `App::reload_scripts` reads the bundle and calls `iron_script::reload`.
+4. `App::reload_scripts` reads the bundle, saves the old code's state (below) and calls `iron_script::reload`.
 
 Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
 and runs without hot reload.
 
 **New runtime first, then swap.** `iron_script::reload(rt, fresh, host, name, code, bootstrap)` loads the code
 into a fresh `QuickJsRuntime`, reads `registered_classes` and calls the `bootstrap` closure, all
-in `fresh`. The app's closure is `spawn_starting_components`, which makes the objects and components
-in a new `ScriptScene`; `spawn_each` is the plain one-component-per-class bootstrap. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
+in `fresh`. The app's closure restores the saved state, or, with nothing to restore, calls
+`spawn_starting_components`, which makes the objects and components in a new `ScriptScene`;
+`spawn_each` is the plain one-component-per-class bootstrap. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
 is dropped). A syntax error, a throwing top level or a throwing constructor returns an error, and
 both stay as they were. `reload_scripts` logs `reload failed, keeping the old code` and returns
 before touching the UI, physics or audio. The game keeps running and the next save tries again.
 M4-HOT-01 and M4-HOT-04 cover the success and failure paths.
 
-**What is reset today.** After a successful swap `reload_scripts` wipes the world the old scripts
-built:
+**State is saved first.** `reload_scripts` asks the old runtime for its state before building the new one.
+If `__iron_save_state` exists (it does when the bundle imports `@iron/engine`'s scenes), the old code
+returns one JSON string; a bundle without it, or a save that throws (logged as `saving state failed,
+starting over`), just starts over. The JSON is a `ReloadState` ([scenes.ts](../js/engine/src/scenes.ts)):
+
+- Every scene, saved with the scene format ([scene-and-objects.md](scene-and-objects.md#scenes)):
+  objects, hierarchy, transforms, components and `@property` values, and which scene is active.
+  Default transforms are left out. The `DontDestroyOnLoad` scene too.
+- In this reload mode a script component's other plain fields are saved too (counters, timers,
+  state), with references to objects and components remapped. A field that can't be saved
+  (functions, engine handles, class instances) is left out quietly instead of warning.
+- The quality level and settings (`_qualityState`) and the clock (`Time`, frame count, time scale).
+
+**Restoring.** The fresh runtime gets `__iron_reloading = true` before the bundle loads, so the start
+scene is not loaded on top of the saved ones. After the bundle's top level and registration, the
+bootstrap sets the flag back and calls `__iron_restore_state(json)`. If it returns true, the scenes are
+rebuilt with `loadObjects` in reload mode and `spawn_starting_components` is skipped; otherwise it runs
+as on a first start.
+
+- Script components come back marked as restored: no `onAwake`, no `onStart` (they started already;
+  `__iron_hooks` leaves `onStart` out), and `onReload()` is called once everything is built. Put
+  re-attaching event listeners, timers and callbacks there. A throwing `onReload` is logged.
+- Engine components (`Rigidbody`, `MeshRenderer`, `Light`, ...) are rebuilt like a scene load:
+  `onAwake` and `onStart` run, so bodies and renderers are made again.
+- A property that no longer exists on the class (renamed or removed) is dropped with a warning; new
+  properties keep their defaults.
+- **Fallback.** If a saved component class isn't registered any more, `restoreState` warns with what to
+  register (`register({ X }, { spawn: false })`), loads the start scene and returns false, so the game
+  starts over.
+
+The log line `reloaded <bundle> in N ms` has a `restored` field that says which way it went.
+`IRON_RELOAD_AT_FRAME=N` makes a `--screenshot` run call `reload_scripts` after frame N, so a reload can
+be checked without a window or a file edit (the bundle on disk is reloaded as it is).
+
+**What is reset.** After a successful swap `reload_scripts` wipes the world the old scripts
+built, and the restored scenes rebuild their part of it as ops:
 
 - The UI tree: `UiTree::clear_script_nodes` (see [ui-tree.md](ui-tree.md#node-lifetime)), because
   the new bundle's reconciler starts its IDs again.
 - Script stylesheets (`addStyleSheet`) and `game.css`, which is removed and loaded again from disk
   with `load_game_css`.
 - `uiScale` goes back to unset.
-- Physics: a new `Physics::new()`. Bodies and their IDs are gone.
+- Physics: a new `Physics::new()`. Bodies and their IDs are gone; `Rigidbody` and colliders are made
+  again from their saved properties.
 - Audio: the mixer is dropped, which stops every sound; it is created again on first use.
 - The scene, cameras, planes and world panels: a new `ScriptScene` and `WorldViews`, no panels, and
   pointer and key focus back on the screen. The screen size is sent again on the next frame.
-- Components start over and `onStart` runs again.
 
 Then it sends `Input::Refresh` and probes `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio` and
 `__iron_scene` again. The new bundle's top level has already queued its UI and ops, and they apply
 after the wipe.
 
+M4-HOT-02, 03 and 05 cover the saved state, the rebuilt objects and the fallback. M4-HOT-07 is the
+benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 components, over the 100 ms target.
+
 **Limits.**
 
-- No state is kept. Component properties, React state, physics bodies and sounds all start over.
-  Keeping them waits for "Hot reload, part 2" in TODO.md (after M5.a/b, which it builds on).
+- Not kept: physics velocities and other body state beyond the saved properties, playing sounds,
+  particles in flight, module-level variables in the bundle (they start fresh; keep state in
+  component fields), React state (the new bundle renders its UI from scratch), and
+  fields that can't be saved.
 - `bun build --watch` doesn't watch `@iron/engine` or `@iron/react` sources outside the example
   folder, so editing those doesn't trigger a rebuild. Touch a file in the example or rebuild.
 - Keys held at the time of the reload are forgotten.

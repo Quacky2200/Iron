@@ -256,7 +256,7 @@ an offline mixer renders and drops that much audio, so sounds still progress and
 - Colliders follow scale changes: setting `localScale` or reparenting calls `scaleListeners`
   (`scene.ts`), and every collider on the object and its children whose world scale changed since
   it was made rebuilds its shape. Joint anchors don't follow.
-- Physics is reset on hot reload (a new `Physics` and empty `Attachments`), so body IDs are not preserved (M4-PHY-04 waits for hot reload part 2; see [scripting.md](scripting.md#hot-reload)).
+- Physics is reset on hot reload (a new `Physics` and empty `Attachments`), so body IDs are not preserved and velocities are lost; `Rigidbody` components are rebuilt from the restored scenes (M4-PHY-04 is not done; see [scripting.md](scripting.md#hot-reload)).
 - rapier's character autostep fails if a move pushes down as steeply as it moves forward. A
   strong downward pull can stop a character climbing a step.
 - Collision handlers' ops apply one tick late (see above), and ray hits arrive one tick after the ask.

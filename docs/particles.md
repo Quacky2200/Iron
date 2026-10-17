@@ -71,7 +71,7 @@ life: `life * cycles * frames`. The texture defaults to `DEFAULT_PARTICLE_TEXTUR
 - Particles are quads only (no meshes, ribbons or trails), with no collisions, force fields or
   sub-emitters.
 - Every particle is its own `WorldQuad`, rebuilt per camera per frame.
-- The simulation does not run on inactive objects, and particles are not saved across hot reload.
+- The simulation does not run on inactive objects, and particles in flight are not kept across hot reload (the emitters are, so they start emitting again).
 
 ## Tests
 

@@ -132,6 +132,10 @@ body there).
 `onDestroy` runs when the component or its object is removed. `onStart` always runs before the first
 other hook, in whichever step reaches the component first.
 
+`onReload` is optional and only runs after a hot reload that kept state. It replaces `onAwake` and
+`onStart` for script components brought back from the saved scenes, and runs once all objects are
+built. Re-attach listeners and callbacks there ([scripting.md](scripting.md#hot-reload)).
+
 ## TypeScript API overview
 
 All exported from [js/engine/src/index.ts](../js/engine/src/index.ts). The names follow Unity and
@@ -150,7 +154,7 @@ s&box.
   `transformDirection`.
 - `Component`: `id`, `gameObject`, `transform`, `getComponent`, `destroy`, and the optional hooks
   `onStart`, `onUpdate(dt)`, `onLateUpdate(dt)`, `onFixedUpdate(dt)`, `onPreRender()`, `onDestroy()`.
-- Optional hook `onAwake()` (above) too.
+- Optional hooks `onAwake()` and `onReload()` (above) too.
 - `register({ Name: Class }, { spawn })`. Registering names a class for scene files. Unless `spawn` is
   `false`, it is also a starting component (the engine makes one on its own object); `__iron_registered`
   lists only those. Engine classes such as `Camera` are not registered by games: scenes find them by
@@ -320,14 +324,14 @@ node objects are `_modelPart`. Saving writes `model` and skips the parts. Loadin
 - A value the encoder can't handle (a class instance, a texture made from pixels, a model's mesh) is
   saved as `null` with a `scene: ...` warning. Only `Mesh.create` meshes and file textures are kept.
 - A reference to an object outside what is saved becomes `null` (except in `instantiate`).
-- Hot reload still resets the world and does not keep scenes.
+- Hot reload keeps scenes by saving and loading them again; see [scripting.md](scripting.md#hot-reload). It adds `onReload` and plain fields to what is saved.
 
 ## Limits
 
-- State is not kept on hot reload. `reload_scripts` builds a new `ScriptScene` and
-  `WorldViews`, drops all panels and starts components again; `reload` takes a bootstrap closure
-  (`spawn_starting_components`) instead of spawning plain components. See
-  [scripting.md](scripting.md#hot-reload).
+- Hot reload saves every scene before the swap and rebuilds them in the new runtime
+  ([scripting.md](scripting.md#hot-reload)). `reload_scripts` still builds a new `ScriptScene` and
+  `WorldViews` and drops all panels. Restored script components get `onReload` instead of `onAwake` and
+  `onStart`; the bootstrap closure (`spawn_starting_components`) only runs when nothing could be restored.
 - Only local transforms cross to scripts, one batch per fixed tick.
 - Physics bodies are separate from GameObjects; the `Rigidbody` and collider components link them with
   `physics.attach`, and a body keeps its object's pose only while attached. Scale is not synced to

@@ -118,7 +118,11 @@ returns the captured messages.
 
 Criterion benches track, not gate: [restyle.rs](../crates/iron_ui/benches/restyle.rs) (incremental
 restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches/layout.rs) (M2-BEN-*),
-[commits.rs](../crates/iron_script/benches/commits.rs) (commit crossing cost).
+[commits.rs](../crates/iron_script/benches/commits.rs) (commit crossing cost),
+[reload.rs](../crates/iron_scene/benches/reload.rs) (a state-keeping hot reload of 1,000 components
+with a 1 MB bundle, M4-HOT-07). It measured about 146 ms on 2026-10-17 against the 100 ms target, so
+the target is not met yet: ~54 ms parsing the bundle, ~27 ms saving, ~58 ms restoring.
+Run it with `cargo bench -p iron_scene --bench reload`.
 
 ## Mapping to TESTS.md
 
@@ -148,10 +152,10 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-CUR` | `cursor` image lists, field cursors, cursor decoding | `iron_ui/tests/{pointer,editor}.rs`, `iron_app/src/cursor.rs` units |
 | `M3-DLG` | `dialog`, top layer, `::backdrop`, focus and close events | `iron_ui/tests/dialog.rs`, `js/react/test/events.test.tsx`, golden `M3-DLG-02` in `iron_render/tests/ui.rs` |
 | `M3-SVG` | SVG files as images, inline `<svg>` (see [svg.md](svg.md#tests)) | `iron_ui/tests/svg.rs`, unit tests in `iron_ui/src/svg.rs`, goldens `M3-SVG-01` and `M3-SVG-03` in `iron_render/tests/ui.rs` |
-| `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
-| `M4-PHY` | Physics (`M4-PHY-04`, ID kept across hot reload, waits for hot reload part 2): box falls and rests (`01`), collision start/stop with script IDs, also through TS components (`02`), character controller climbs a step and stops at a wall (`03`), raycasts answered after the step (`05`), bad ops rejected and meshes collide (`06`) | `iron_physics/tests/{physics,scripts}.rs` (scripts.rs runs fixture `tests/fixtures/src/physics.ts` in QuickJS), `js/engine/test/physics.test.ts` |
+| `M3-BEN`, `M2-BEN`, `M4-HOT-07` | Benchmarks | `benches/` |
+| `M4-PHY` | Physics (`M4-PHY-04`, ID kept across hot reload, not done): box falls and rests (`01`), collision start/stop with script IDs, also through TS components (`02`), character controller climbs a step and stops at a wall (`03`), raycasts answered after the step (`05`), bad ops rejected and meshes collide (`06`) | `iron_physics/tests/{physics,scripts}.rs` (scripts.rs runs fixture `tests/fixtures/src/physics.ts` in QuickJS), `js/engine/test/physics.test.ts` |
 | `M4-AUD` | Audio, mixed offline: output then ended event (`01`), emitters fall off with distance and pan (`02`), volume, pan, buses, stop (`03`), dB conversion and bad ops (`04`) | `iron_audio/tests/audio.rs` (`OfflineBackend::render`), `js/engine/test/audio.test.ts` |
-| `M4-HOT` | Hot reload plumbing (only these exist so far): new code runs after a reload and components start over (`01`), a syntax error or throwing top level keeps the old code (`04`), clearing the UI tree removes attached and detached script nodes and frees IDs (`09`), the bundle watcher reports a settled change once and ignores other files (`10`). `02`, `03`, `05`-`08` wait for "Hot reload, part 2" | `iron_script/tests/components.rs`, `iron_ui/tests/tree.rs`, unit test in `iron_app/src/reload.rs` |
+| `M4-HOT` | Hot reload: new code runs after a reload (`01`); script components' `@property` values and plain fields survive, references are remapped, `onStart` doesn't run again, `onReload` does, the clock carries on (`02`); objects, hierarchy and transforms come back (`03`); a syntax error or throwing top level keeps the old code (`04`); a gone property is dropped with a warning and an unregistered saved class makes the reload start over (`05`); clearing the UI tree removes attached and detached script nodes and frees IDs (`09`); the bundle watcher reports a settled change once and ignores other files (`10`). `07` is the benchmark above. `06` and `08` are not done | `iron_script/tests/components.rs`, `iron_scene/tests/scripts.rs` (`02`, `03`, `05`, fixture `tests/fixtures/src/scene.ts`), `iron_ui/tests/tree.rs`, unit test in `iron_app/src/reload.rs` |
 | `M5-OBJ` | GameObjects and components. Rust: hierarchy, nesting and stale ids (`01`), world transforms and re-parenting (`02`), moved sets and inactive subtrees (`03`) in `iron_scene/tests/scene.rs`. JS mirror and `addComponent` (`04`, `05`) in `scene.test.ts`. In QuickJS with fixture `tests/fixtures/src/scene.ts`: a spinning turret with a child (`06`), `scene.*` ops, the move batch and ids past 2^24 (`07`), lifecycle order (`08`) in `iron_scene/tests/scripts.rs` | `iron_scene/tests/{scene,scripts}.rs`, `js/engine/test/scene.test.ts` |
 | `M5-SCN` | Scenes: save and load round trips, load order and warnings (`01`), a save/load trip in QuickJS with fixture `tests/fixtures/src/scene.ts` (`02`, `iron_scene/tests/scripts.rs`), `SceneManager` (`03`), `GameObject.instantiate` (`04`); `examples/scenes` is the manual check | `js/engine/test/scenes.test.ts`, `iron_scene/tests/scripts.rs` |
 | `M5-MTH` | Math types: `Vector*`, `Mathf` (`01`), `Quaternion` (`02`), `Plane`/`Ray`/`Bounds`/`Rect`/`Pose`/`Color` (`03`) | `js/engine/test/math.test.ts` |
