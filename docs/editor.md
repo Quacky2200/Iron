@@ -7,10 +7,11 @@ library, `@iron/editor-ui`, so games and tools can use them too.
 | Path | Role |
 |---|---|
 | [bin/iron_editor.rs](../crates/iron_app/src/bin/iron_editor.rs) | The second binary: includes main.rs as a module and calls its `main` |
-| [editor.rs](../crates/iron_app/src/editor.rs) | `ENABLED`, where the UI lives, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
+| [editor.rs](../crates/iron_app/src/editor.rs) | `ENABLED`, where the UI lives, the project folder, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
+| [project.rs](../crates/iron_app/src/project.rs) | File operations on the project folder (list, copy in, move), confined to it |
 | [logging.rs](../crates/iron_app/src/logging.rs) | The capture layer and ring buffer the console reads |
 | [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/dist`) |
-| [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console` and their models |
+| [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser` and their models |
 
 ## One program, two binaries
 
@@ -23,8 +24,10 @@ run twice.
 `editor::ENABLED` compares `env!("CARGO_BIN_NAME")` with `iron_editor` at compile time. Where it
 is true:
 
-- `parse_args` replaces the default game (`.`) with `editor::ui_folder()`: `IRON_EDITOR_UI`, else
-  an `editor` folder next to the executable (a packaged editor), else the workspace's `editor/`.
+- `iron_editor [project]`: `parse_args` keeps the folder argument (default: the current folder)
+  as the project (`editor::set_project`, made absolute; `__iron_info.app.project`) and runs
+  `editor::ui_folder()` instead: `IRON_EDITOR_UI`, else an `editor` folder next to the executable
+  (a packaged editor), else the workspace's `editor/`.
   The folder is a game folder like any other (`dist/game.js`, `dist/game.css`, `package.json` for
   the title and window size), so `--screenshot`, hot reload and `bun run dev` work as for games.
 - `main` turns on log capture before anything logs.
@@ -52,6 +55,17 @@ which would feed them back.
 |---|---|---|
 | `editor.logHistory` | none | Starts the feed from the first kept record |
 | `editor.openFile` | `path, line, col` | Opens the file at that place in the user's code editor |
+| `editor.listDir` | `id, path` | Answers `{ path, entries: [{ name, dir, size }] }`: folders first, by name, without dot files |
+| `editor.copyIn` | `id, [sources], dir` | Copies files or whole folders from outside into a project folder, renaming (`a (2).png`) instead of overwriting; answers `{ created }` |
+| `editor.move` | `id, path, dir` | Moves a project file or folder into a project folder; refuses overwriting and moving a folder into itself; answers `{ path }` |
+
+The file ops answer a frame later through `__iron_editor_fs([id, ok, json or error, ...])`,
+sent by `EditorHost::pump`; `project.ts` turns them into promises. Their paths are relative to the
+project and go through `project::resolve`: `iron_core::resolve_asset`'s rules (no absolute paths,
+drives, schemes or `..`), and through symlinks the real path must still be inside. `copyIn`'s
+sources are the exception, being outside: only paths dropped on the window this session
+(`EditorHost::allow_sources`, fed by the file drag code) are allowed. A copy creates at most
+10,000 files and skips symlinks.
 
 `editor.openFile` resolves a relative path against the current folder, the UI's folder, then the
 source tree the program was built from, taking the first where it exists. The command comes from
@@ -147,16 +161,31 @@ again.
 skipping hosts right after a URL scheme. Each link is its own `Text` element (spans aren't hit
 targets of their own), and clicking it calls `openInEditor`, the `editor.openFile` op.
 
+### ProjectBrowser ([project.ts](../js/editor-ui/src/project.ts), [ProjectBrowser.tsx](../js/editor-ui/src/ProjectBrowser.tsx))
+
+The project folder's files on a `VirtualList`: breadcrumbs (the project's name, then each
+folder), a status and Refresh; rows with a folder or file icon, the name and the size, and `..`
+inside a folder. Double-click or Enter opens a folder, Backspace goes up. It uses drag and drop
+([input-and-events.md](input-and-events.md#drag-and-drop-m5e)):
+
+- Rows are `draggable`; `onDragStart` puts the item's path in the transfer
+  (`PROJECT_PATH_TYPE`).
+- Folder rows, breadcrumbs, `..` and the list itself (the folder shown) are drop targets: their
+  `onDragOver` accepts system files (copy) and project items that `canMoveInto` that folder
+  (move), highlights the folder, and stops propagation so the innermost one wins.
+- `onDrop` calls `copyIn` with the dropped paths or `moveInto` with the item's path, then logs
+  the result and lists the folder again.
+
 `useScreenSize()` gives the window size in UI pixels, re-rendering on `Screen.onChange` (added to
 `@iron/engine` for this).
 
 ## The editor UI ([editor/src/main.tsx](../editor/src/main.tsx))
 
 A menubar (File, Edit, View, Window, Help with accelerators and an Open Recent submenu), a dock
-and a status bar. The default layout: Hierarchy and Project on the left, Scene and Game in the
-middle, Inspector on the right, Console along the bottom. The Hierarchy is a demo tree of about
-20,000 nodes with icons and renaming; Project, Scene, Game and Inspector are placeholders (the
-Inspector shows the selection). Window > Save / Load / Reset Layout keeps the layout in
+and a status bar. The default layout: Hierarchy on the left, Scene and Game in the middle,
+Inspector on the right, Console and Project along the bottom. The Hierarchy is a demo tree of
+about 20,000 nodes with icons and renaming; Project is the project browser; Scene, Game and
+Inspector are placeholders (the Inspector shows the selection). Window > Save / Load / Reset Layout keeps the layout in
 PlayerPrefs (`editor.layout`), and the saved layout loads at start. Unimplemented menu items log
 what they would do.
 
@@ -165,7 +194,8 @@ what they would do.
 - `js/editor-ui/test/models.test.ts`: the models (`M5-EDT-06` to `-14`, `-18`, `-19`);
   `menubar.test.tsx`: the React menubar through the real reconciler with dispatched events
   (`M5-EDT-14`); `log.test.ts`: the log feed (`M5-EDT-20`).
-- Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`).
+- Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`); `project.rs`
+  (`M5-DND-07`); `project.test.ts` and `project-browser.test.tsx` (`M5-DND-08`, `-10`).
 - `bun run screenshots editor` renders `tests/output/editor.png` with `iron_editor` (`M5-EDT-21`,
   checked by eye). There is no golden: the editor uses system fonts.
 

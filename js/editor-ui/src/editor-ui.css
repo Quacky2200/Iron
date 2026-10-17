@@ -428,3 +428,110 @@
   color: var(--iron-text);
   font-size: 11px;
 }
+
+/* Project browser */
+.iron-project {
+  flex-direction: column;
+  font-family: var(--iron-font);
+  font-size: 12px;
+  color: var(--iron-text);
+}
+
+.iron-project-toolbar {
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 0 6px;
+  background-color: var(--iron-panel-alt);
+  border-bottom: 1px solid var(--iron-line);
+  overflow: hidden;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.iron-project-crumb,
+.iron-project-button {
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.iron-project-crumb:hover,
+.iron-project-button:hover {
+  background-color: var(--iron-hover);
+}
+
+.iron-project-crumb.over {
+  background-color: var(--iron-accent-dim);
+  outline: 1px solid var(--iron-accent);
+}
+
+.iron-project-status {
+  color: var(--iron-muted);
+  margin-right: 6px;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iron-project-list.over {
+  outline: 2px solid var(--iron-accent);
+  outline-offset: -2px;
+}
+
+.iron-project-row {
+  flex-direction: row;
+  align-items: center;
+  flex-grow: 1;
+  gap: 6px;
+  padding: 0 8px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.iron-project-row:hover {
+  background-color: var(--iron-hover);
+}
+
+.iron-project-row.over {
+  background-color: var(--iron-accent-dim);
+  outline: 1px solid var(--iron-accent);
+  outline-offset: -1px;
+}
+
+.iron-project-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.iron-project-icon.folder {
+  background-color: #d7a84a;
+  border-top: 2px solid #f0c66a;
+}
+
+.iron-project-icon.file {
+  width: 10px;
+  height: 13px;
+  margin: 0 2px;
+  background-color: #9aa3b2;
+  border-top-right-radius: 4px;
+}
+
+.iron-project-name {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iron-project-size {
+  flex-shrink: 0;
+  color: var(--iron-muted);
+  font-size: 11px;
+}

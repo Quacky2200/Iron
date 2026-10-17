@@ -1240,9 +1240,26 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 - [ ] **M5.e** Editor shell. UI requirements first (before the editor work starts):
   - [ ] Accessibility: an AccessKit tree from the UI tree (roles, names, states, focus, actions),
     so screen readers and platform accessibility tools work
-  - [ ] Drag and drop in the UI: `draggable`, `dragstart` / `drag` / `dragenter` / `dragover` /
+  - [x] Drag and drop in the UI: `draggable`, `dragstart` / `drag` / `dragenter` / `dragover` /
     `dragleave` / `drop` / `dragend` with a data payload, drop targets, a drag image, and files
     dropped onto the window (winit's `DroppedFile`); builds on pointer capture (M3d group 11)
+    — `M5-DND-01..06`, `-09`
+    - [x] `Interaction` (`interaction/dnd.rs`): threshold, events, accepting by preventing
+      `dragover`, Escape / blur cancel, a live drag image (`UiTree::set_drag_image`,
+      `setDragImage`), system files (`FileDragEnter` / `FileDrop` / `FileDragCancel`)
+    - [x] `@iron/react`: `onDrag*` props, `IronDragEvent`, `IronDataTransfer` (`setData`,
+      `getData`, `types`, `files`, `dropEffect`, `setDragImage`)
+    - [x] App: winit's hovered / dropped files gathered per frame (`file_drop.rs`), the cursor
+      position from the system during a drag on Windows
+    - [x] Editor example: a project browser (`iron_editor [project]`) listing the project
+      folder; files dropped from the system are copied into the folder they land on, items
+      dragged inside move into folders; editor-only ops `editor.listDir` / `copyIn` / `move`,
+      confined to the project — `M5-DND-07`, `-08`, `-10`
+    - [ ] Later: a snapshot drag image; `dragover` repeating while still; cursors per
+      `dropEffect`; text and URLs dragged in from other programs; drag positions from the
+      system on macOS and Linux (winit 0.31's drag events); dragging out of the window;
+      deleting, renaming and creating files in the project browser; the manual check in the
+      window (`M5-DND-11`)
   - [ ] Then the shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
     - [x] `iron_editor` (`iron_editor.exe` on Windows): a second binary of `iron_app`
       (`src/bin/iron_editor.rs` includes main.rs as a module; `editor::ENABLED` from

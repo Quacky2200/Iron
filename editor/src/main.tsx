@@ -12,6 +12,7 @@ import {
   group,
   type Menu,
   MenuBar,
+  ProjectBrowser,
   parseLayout,
   serializeLayout,
   split,
@@ -31,8 +32,8 @@ const LAYOUT_KEY = "editor.layout";
 
 const defaultLayout = (): DockNode =>
   split("root", "column", [
-    split("top", "row", [group("left", ["hierarchy", "project"]), group("center", ["scene", "game"]), group("right", ["inspector"])], [0.2, 0.58, 0.22]),
-    group("bottom", ["console"]),
+    split("top", "row", [group("left", ["hierarchy"]), group("center", ["scene", "game"]), group("right", ["inspector"])], [0.2, 0.58, 0.22]),
+    group("bottom", ["console", "project"]),
   ], [0.7, 0.3]);
 
 function savedLayout(): DockNode {
@@ -201,7 +202,7 @@ function App() {
           />
         ),
       },
-      project: { title: TITLES.project!, render: (s) => <Placeholder title="Project" note="Asset browser: coming next" {...s} /> },
+      project: { title: TITLES.project!, render: (s) => <ProjectBrowser {...s} /> },
       scene: { title: TITLES.scene!, render: (s) => <Placeholder title="Scene" note="Scene view: coming with the editor's camera" {...s} /> },
       game: { title: TITLES.game!, render: (s) => <Placeholder title="Game" note="Play mode: later in M5.e" {...s} /> },
       inspector: {
@@ -250,4 +251,4 @@ function rename<T>(nodes: TreeNode<T>[], id: string, label: string): TreeNode<T>
 
 createRoot().render(<App />);
 console.log("Iron editor started (UI: editor/src/main.tsx:1)");
-console.warn("The Scene, Game, Inspector and Project panels are placeholders (TODO.md:1180)");
+console.warn("The Scene, Game and Inspector panels are placeholders (TODO.md:1180)");

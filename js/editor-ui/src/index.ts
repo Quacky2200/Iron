@@ -1,7 +1,8 @@
 /**
  * @iron/editor-ui — the editor's UI components, drawn by Iron's own UI: a menubar,
- * docking panels, a virtualized list, a tree view and a log console. The models
- * (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) are plain functions,
+ * docking panels, a virtualized list, a tree view, a log console and a project
+ * browser. The models (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`,
+ * `project.ts`) are plain functions,
  * usable and testable without React.
  */
 
@@ -17,6 +18,8 @@ export { Dock, type DockPanel, type DockProps } from "./Dock.tsx";
 export { clearLog, logEntries, openInEditor, startLog, subscribeLog } from "./log.ts";
 export * from "./menu.ts";
 export { MenuBar, type MenuBarProps } from "./MenuBar.tsx";
+export * from "./project.ts";
+export { ProjectBrowser, type ProjectBrowserProps } from "./ProjectBrowser.tsx";
 export * from "./tree.ts";
 export { TreeView, type TreeViewProps } from "./TreeView.tsx";
 export * from "./virtual.ts";
