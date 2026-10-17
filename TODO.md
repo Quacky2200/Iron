@@ -434,7 +434,8 @@ already planned for M3c (`overflow`, `cursor`, `pointer-events`, scrolling) aren
 Where s&box has a custom extension, we prefer the standard CSS form if there is one.
 
 **Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, then groups 7, 8, 9, 10, then
-5.1 (SVG); then stop and check in with the user before M4. Done so far: 5h–5j, groups 7 and 8. Known deviations from browsers go in
+5.1 (SVG); then stop and check in with the user before M4. All done (2026-10-17) except
+`sound-in`/`sound-out`, which waits for M6 audio. Known deviations from browsers go in
 [docs/differences.md](docs/differences.md).
 
 We're already **ahead** of s&box on: custom properties and `var()` (s&box has none), `!important`
@@ -614,7 +615,7 @@ and `@font-face`.
      (cancelable) then `close`; scripts close by clearing `open`. A modal takes focus (its first
      focusable element, else itself), keeps Tab and the d-pad inside, and gives focus back when it
      closes; `[open]` / `[modal]` match — `M3-DLG-01`, `M3-DLG-02`. No `popover` yet
-   - [ ] **5.1** SVG: an `svg` element (React `<Svg>` and children) with the core shapes (`rect`,
+   - [x] **5.1** SVG: an `svg` element (React `<Svg>` and children) with the core shapes (`rect`,
      `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `g`, `text` basics), `viewBox` /
      `preserveAspectRatio`, `use`/`defs`, gradients (`linearGradient`, `radialGradient`), `clipPath`
      and `mask` (which also unlocks `clip-path: url(#id)`), and loading `.svg` files as images

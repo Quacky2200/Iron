@@ -26,7 +26,9 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
 ### UI model
-- **Elements:** `box`, `text`, `span` and `#text` nodes. `ROOT` is node 0. Generated `::before`/`::after` ids start at `0x8000_0000`.
+- **Elements:** `box`, `text`, `span`, `input`, `textarea`, `image`, `list`, `dialog`, `svg` (with SVG
+  elements inside) and `#text` nodes. `ROOT` is node 0. Generated `::before`/`::after`/`::marker`/
+  `::backdrop` ids start at `0x8000_0000`.
 - **Styles:** inline `style` props (camelCase) go through `apply_style`. Stylesheets go through `cssparser` + `selectors`, with cascade (specificity, inline, then `!important`), custom properties and `var()`, and a rule index plus dependency-aware restyle.
 - **Units:** layout is in logical pixels. The app divides by the window scale factor.
 
@@ -118,14 +120,10 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3c step 6: gamepads (`iron_platform::gamepad`) and keys to scripts through `@iron/engine`'s
     `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
   - M3c step 7: `examples/form`. **M3c is done.**
-  - M3d groups 1–4 (units/values, layout, backgrounds & borders, text); group 5 steps 5a–5j
-    (opacity %, filters, image-rendering, masks, transforms 2D/3D, visibility, lists, selection
-    and `::selection`/`::placeholder`, cursor images, `dialog` + top layer + `::backdrop`);
-    group 7 (transitions, `@keyframes`/animations, `@starting-style`, `:outro`); group 8
-    (`scrollbar-gutter`, `overscroll-behavior`)
-- **Next (agreed with the user, 2026-10-17):** finish the rest of M3d — group 9 (image tint, UI
-  scale; `sound-in/out` waits for M6 audio), group 10 (nesting, `@import`), then 5.1 (SVG with
-  CSS styling) — **then stop and check in with the user** before M4.
+  - M3d (CSS parity) is done: groups 1–10 and step 5.1 (inline SVG and SVG images via resvg),
+    except `sound-in`/`sound-out`, which waits for M6 audio
+- **Next:** check in with the user before M4 (agreed 2026-10-17). Later items noted in TODO.md:
+  GPU-tessellated SVG with SMIL and path morphing; UI and SVG editors (M7).
   Commit per step; refresh docs once per group (Sonnet subagent, changed code only).
 - **Also planned:** "Script IO" (files, fetch, WebSocket) in TODO.md, designed in
   `docs/research/networking-and-files.md`; where it lands is undecided.
