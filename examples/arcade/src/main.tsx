@@ -3,10 +3,17 @@
 // combo that multiplies points. Leave the controls alone and it plays itself.
 //
 // The game lives in components (`GameManager`, `Player`, `Pickup`); the HUD is React
-// (`ScoreBoard`, `Timer`, `RoundOver`), fed by `useGame()`. Both reload while it runs:
+// (`ScoreBoard`, `Timer`, `RoundOver`, `Settings`), fed by `useGame()`. Esc (or the
+// gear) pauses and opens the settings: window mode, resolution, vsync, frame cap and
+// quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
 // `bun run dev` and edit a HUD component (it keeps the score on screen) or a component's
 // code (the round, the score and every coin stay where they are).
 import {
+  Application,
+  type FullScreenMode,
+  PlayerPrefs,
+  QualitySettings,
+  Screen,
   Color,
   Component,
   GameObject,
@@ -37,6 +44,8 @@ class GameManager extends Component {
   @property comboWindow = 1;
   score = 0;
   best = 0;
+  /** The settings menu is open: the game stands still. */
+  paused = false;
   combo = 0;
   timeLeft = 45;
   lastPickup = -100;
@@ -50,6 +59,13 @@ class GameManager extends Component {
 
   get over(): boolean {
     return this.timeLeft <= 0;
+  }
+
+  setPaused(on: boolean): void {
+    this.paused = on;
+    Time.timeScale = on ? 0 : 1;
+    if (!on) PlayerPrefs.save();
+    notify();
   }
 
   /** Points times the combo (x1, x2 ... up to x5). */
@@ -82,7 +98,8 @@ class GameManager extends Component {
   }
 
   override onUpdate(dt: number) {
-    if (this.over) return;
+    if (input.getButtonDown("Cancel")) this.setPaused(!this.paused);
+    if (this.over || this.paused) return;
     const before = Math.ceil(this.timeLeft);
     this.timeLeft = Math.max(0, this.timeLeft - dt);
     if ((this.over || Time.time - this.lastPickup > this.comboWindow) && this.combo > 0) {
@@ -153,6 +170,8 @@ function randomSpot(y: number): Vector3 {
 /** Builds the arena once (a reload keeps what it made). */
 class Arcade extends Component {
   override onStart() {
+    // The frame cap the player chose last time (vsync and quality come back on their own).
+    Application.targetFrameRate = PlayerPrefs.getInt("arcade.frameCap", -1);
     RenderSettings.skybox = { sunDirection: new Vector3(-0.4, 0.8, 0.3) };
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(new Vector3(0.4, -0.8, -0.3)) });
     sun.addComponent(Light, { type: "directional", intensity: 1.1, shadows: "soft" });
@@ -205,6 +224,7 @@ function notify() {
 }
 
 interface GameView {
+  paused: boolean;
   score: number;
   best: number;
   combo: number;
@@ -217,7 +237,7 @@ interface GameView {
 function useGame(): GameView | null {
   const read = (): GameView | null => {
     const g = GameManager.current;
-    return g ? { score: g.score, best: g.best, combo: g.combo, timeLeft: g.timeLeft, over: g.over, recent: g.recent } : null;
+    return g ? { paused: g.paused, score: g.score, best: g.best, combo: g.combo, timeLeft: g.timeLeft, over: g.over, recent: g.recent } : null;
   };
   const [view, setView] = useState(read);
   useEffect(() => {
@@ -298,6 +318,148 @@ function FpsCounter() {
   );
 }
 
+const MODE_NAMES: Record<FullScreenMode, string> = {
+  ExclusiveFullScreen: "Fullscreen",
+  FullScreenWindow: "Borderless",
+  MaximizedWindow: "Maximized",
+  Windowed: "Windowed",
+};
+const WINDOW_SIZES = [
+  [1280, 720],
+  [1600, 900],
+  [1920, 1080],
+  [2560, 1440],
+] as const;
+const FRAME_CAPS = [30, 60, 120, 144, -1];
+
+function Choice(props: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <box
+      onClick={props.disabled ? undefined : props.onClick}
+      style={{
+        padding: "5px 11px",
+        borderRadius: 6,
+        cursor: props.disabled ? "default" : "pointer",
+        opacity: props.disabled ? 0.4 : 1,
+        backgroundColor: props.active ? "#4d8dff" : "rgba(255,255,255,0.1)",
+      }}
+    >
+      <text style={{ color: "#f0f3f8", fontSize: 13 }}>{props.label}</text>
+    </box>
+  );
+}
+
+function Row(props: { label: string; children: React.ReactNode }) {
+  return (
+    <box style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <text style={{ color: "#9fb0c8", fontSize: 13, width: 100, flexShrink: 0 }}>{props.label}</text>
+      <box style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>{props.children}</box>
+    </box>
+  );
+}
+
+/** Window mode, resolution, vsync, frame cap and quality; saved when it closes. */
+function Settings() {
+  // The engine applies window changes after this frame: look again shortly after.
+  const [, setTick] = useState(0);
+  const refresh = () => setTimeout(() => setTick((t) => t + 1), 100);
+  const mode = Screen.fullScreenMode;
+  const size = Screen.windowSize;
+  const monitor = Screen.currentResolution;
+  // Window sizes that fit the monitor; exclusive fullscreen uses the monitor's own modes.
+  const sizes =
+    mode === "ExclusiveFullScreen"
+      ? Screen.resolutions.slice(0, 6).map((r) => [r.width, r.height, r.refreshRate] as const)
+      : WINDOW_SIZES.filter(([w, h]) => monitor.width === 0 || (w <= monitor.width && h <= monitor.height)).map(([w, h]) => [w, h, 0] as const);
+  const vsync = QualitySettings.vSyncCount > 0;
+  const cap = Application.targetFrameRate;
+  return (
+    <box style={{ ...panel, padding: 22, gap: 12, pointerEvents: "auto", backgroundColor: "rgba(10, 12, 20, 0.94)", minWidth: 460 }}>
+      <text style={{ color: "#ffffff", fontSize: 22, fontWeight: 700 }}>Settings</text>
+      <Row label="Window">
+        {Screen.supportedFullScreenModes.map((m) => (
+          <Choice
+            key={m}
+            label={MODE_NAMES[m]}
+            active={m === mode}
+            onClick={() => {
+              Screen.fullScreenMode = m;
+              refresh();
+            }}
+          />
+        ))}
+      </Row>
+      <Row label="Resolution">
+        {sizes.map(([w, h, hz]) => (
+          <Choice
+            key={`${w}x${h}@${hz}`}
+            label={hz ? `${w}×${h} ${Math.round(hz)}Hz` : `${w}×${h}`}
+            active={w === size.width && h === size.height}
+            disabled={mode === "FullScreenWindow" || mode === "MaximizedWindow"}
+            onClick={() => {
+              Screen.setResolution(w, h, mode, hz);
+              refresh();
+            }}
+          />
+        ))}
+      </Row>
+      <Row label="VSync">
+        <Choice
+          label="On"
+          active={vsync}
+          onClick={() => {
+            QualitySettings.vSyncCount = 1;
+            refresh();
+          }}
+        />
+        <Choice
+          label="Off"
+          active={!vsync}
+          onClick={() => {
+            QualitySettings.vSyncCount = 0;
+            refresh();
+          }}
+        />
+      </Row>
+      <Row label="Frame cap">
+        {FRAME_CAPS.map((fps) => (
+          <Choice
+            key={fps}
+            label={fps > 0 ? String(fps) : "None"}
+            active={cap === fps}
+            disabled={vsync}
+            onClick={() => {
+              Application.targetFrameRate = fps;
+              PlayerPrefs.setInt("arcade.frameCap", fps);
+              refresh();
+            }}
+          />
+        ))}
+      </Row>
+      <Row label="Quality">
+        {QualitySettings.names.map((name, i) => (
+          <Choice
+            key={name}
+            label={name}
+            active={i === QualitySettings.getQualityLevel()}
+            onClick={() => {
+              // A level sets vsync too: keep the player's choice.
+              const v = QualitySettings.vSyncCount;
+              QualitySettings.setQualityLevel(i);
+              QualitySettings.vSyncCount = v;
+              refresh();
+            }}
+          />
+        ))}
+      </Row>
+      <text style={{ color: "#7d8aa0", fontSize: 12 }}>{vsync ? "With vsync on, frames follow the display; the cap applies with it off." : "Without vsync frames may tear; the cap keeps the GPU from running flat out."}</text>
+      <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+        <Choice label="Back to the game (Esc)" active onClick={() => GameManager.current?.setPaused(false)} />
+      </box>
+    </box>
+  );
+}
+
 function RoundOver(props: { score: number; best: number }) {
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}>
@@ -332,9 +494,17 @@ function Hud() {
         <box style={{ flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
           <Timer timeLeft={game.timeLeft} />
           <FpsCounter />
+          <box style={{ pointerEvents: "auto" }}>
+            <Choice label="Settings (Esc)" onClick={() => GameManager.current?.setPaused(true)} />
+          </box>
         </box>
       </box>
-      {game.over && (
+      {game.paused && (
+        <box style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}>
+          <Settings />
+        </box>
+      )}
+      {game.over && !game.paused && (
         <box style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%" }}>
           <RoundOver score={game.score} best={game.best} />
         </box>

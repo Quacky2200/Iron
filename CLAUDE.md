@@ -164,11 +164,15 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     ~146 ms against 100 ms (follow-ups in TODO.md).
   - React Fast Refresh (2026-10-17): dev builds reload game code in place (`hot.ts`,
     `js/react/src/vendor.ts` / `refresh.ts`, `scripts/dev.ts`, `react-refresh` 0.19).
+  - Display settings and PlayerPrefs (2026-10-17): window modes / resolution
+    (`iron_platform::display`, `screen.set`), vsync, `targetFrameRate`, `PlayerPrefs`
+    (`prefs.rs`, per-OS folder), saved display and quality choices; the arcade has a
+    settings menu (Esc).
 - **Next (in this order, see TODO.md):**
   1. Getting the reload benchmark under 100 ms; then M5.c's remaining rendering items or
      M5.d (animation, prefabs) per TODO.md.
   - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
-    transparency modes), FXAA/TAA, render textures, players' saved settings (M6), shadow and
+    transparency modes), FXAA/TAA, render textures, the rest of M6 file IO, shadow and
     glow follow-ups, more classic test scenes (downloads need the user's OK first).
   - API names and units follow Unity/s&box (degrees for Euler angles). Decided: own wgpu
     renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with

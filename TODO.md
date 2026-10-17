@@ -1064,7 +1064,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Project / game settings: the default level and per-level overrides in the game's
       manifest (`package.json` `iron.quality`); a settings UI menu in games (React, in the
       example); the editor's (M5.e) later
-    - [ ] Players' quality choices saved per user (M6 file IO)
+    - [x] Players' quality choices saved per user (`iron.quality` in `PlayerPrefs`)
+  - [x] Display settings (asked for 2026-10-17): `Screen.fullScreenMode` (exclusive,
+    borderless, maximized, windowed; platforms without a mode fall back: no exclusive on
+    Wayland, fullscreen only on phones), `Screen.setResolution` / `resolutions` /
+    `currentResolution` / `supportedFullScreenModes`, `QualitySettings.vSyncCount`,
+    `Application.targetFrameRate` (with vsync off); defaults in `iron.display`, the
+    player's choice saved and applied before the window shows; the arcade's settings
+    menu — `M5-DSP-01`..`03`
+  - [x] `PlayerPrefs` (part of M6 brought forward): a JSON file per game in the OS's
+    settings folder (`%APPDATA%`, `~/Library/Application Support`, `$XDG_CONFIG_HOME`),
+    `IRON_PREFS_DIR` to override — `M5-PRF-01`, `M5-PRF-02`
+  - [ ] Display follow-ups: picking the monitor (`Display.displays`), HDR output, a
+    window-position memory, mobile safe areas and orientation (`Screen.safeArea`,
+    `Screen.orientation`), console/handheld presets; exclusive fullscreen needs testing
+    on each platform
     - [x] `examples/quality`: a fence, a turning fan of thin blades and cables (aliasing,
       shadows, scaling) with a settings menu for levels and each setting; it cycles the
       levels until the menu is used
