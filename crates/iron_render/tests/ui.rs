@@ -1538,8 +1538,9 @@ fn list_markers() {
         &[("listStyleImage", "url(checker.png)".into())],
         false,
     );
-    let f = render_with_assets(s, (550, 90), 1.0, BLACK, Some(&images_dir()));
-    assert_golden("M3-LST-01", 550, 90, &f.pixels, TOLERANCE);
+    list(&mut s, 550.0, &[("listStyleType", "none".into())], false);
+    let f = render_with_assets(s, (660, 90), 1.0, BLACK, Some(&images_dir()));
+    assert_golden("M3-LST-01", 660, 90, &f.pixels, TOLERANCE);
     // Markers sit left of the first item's text, in the list's padding.
     let ink = |x0: u32, x1: u32| {
         (x0..x1)
@@ -1548,6 +1549,7 @@ fn list_markers() {
     };
     assert!(ink(4, 24), "a disc in the padding");
     assert!(ink(114, 134), "a number in the padding");
+    assert!(!ink(554, 574), "`none`: nothing in the padding");
 }
 
 // M2-DRW-06
