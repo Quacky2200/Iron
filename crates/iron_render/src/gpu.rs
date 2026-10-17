@@ -56,8 +56,11 @@ impl Gpu {
                 label: Some("iron device"),
                 // Lets MSAA use every sample count the GPU has (WebGPU only promises 1 and
                 // 4), where it's offered.
+                // Block-compressed (BC) textures when the GPU has them (desktop GPUs do):
+                // cooked games ship them.
                 required_features: adapter.features()
-                    & wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                    & (wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                        | wgpu::Features::TEXTURE_COMPRESSION_BC),
                 required_limits:
                     wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
                 ..Default::default()

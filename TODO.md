@@ -1226,7 +1226,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     hidden folders); textures, models (same mesh and texture ids) and sounds from a
     changed file load again in place, then `Assets.onChanged` listeners hear the paths —
     `M5-AST-01`, `M5-AST-02`. Placed model copies keep their materials and nodes.
-  - [ ] glTF import + cook, platform texture formats — `M5-AST-*`
+  - [x] Cooking: `iron --cook [game]` prepares textures (every mip, BC1 for opaque or
+    cut-out images, BC3 for smooth alpha, RGBA8 when not whole blocks; `.meta` import
+    settings) and glTF models (meshes ready to upload, textures cooked) into
+    `.iron/cooked/`; loads use a cooked file newer than its source (decoded on GPUs
+    without BC); the device asks for BC when the GPU has it — `M5-AST-06`
+  - [ ] Cooking follow-ups: mobile formats (ASTC / ETC2), BC7 and BC5 (normal maps),
+    better BC endpoint fitting, compression of cooked files, cooking scenes and sounds,
+    packing a release (with M9)
+  - [x] PBR, shadows, IBL, post-processing — done in M5.c (`M5-RND-11`..`21`)
   - [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
 - [ ] **M5.e** Editor shell. UI requirements first (before the editor work starts):
   - [ ] Accessibility: an AccessKit tree from the UI tree (roles, names, states, focus, actions),

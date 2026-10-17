@@ -10,6 +10,7 @@
 
 mod asset_db;
 mod cloth_sync;
+mod cook;
 mod cursor;
 mod display;
 mod game_input;
@@ -55,6 +56,8 @@ struct Args {
     game: PathBuf,
     screenshot: Option<PathBuf>,
     frames: u32,
+    /// Cook the game's assets (`--cook`) and exit.
+    cook: bool,
 }
 
 fn parse_args() -> Result<Args> {
@@ -64,17 +67,20 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N]";
+    let usage =
+        "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook]";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
         game: PathBuf::from("."),
         screenshot: None,
         frames: 60,
+        cook: false,
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
+            Some("--cook") => parsed.cook = true,
             Some("--frames") => {
                 parsed.frames = args
                     .next()
@@ -123,6 +129,25 @@ fn run() -> Result<()> {
         .filter(|_| args.screenshot.is_none());
     if let Some(log) = logging::init(logging::log_path(settings.as_deref())) {
         tracing::info!("log: {}", log.display());
+    }
+    if args.cook {
+        // Cooking needs only the folder, not a build.
+        let root = if args.game.is_dir() {
+            args.game.clone()
+        } else {
+            args.game.parent().unwrap_or(Path::new(".")).to_path_buf()
+        };
+        let report = cook::cook_game(&root);
+        tracing::info!(
+            "cooked {} textures and {} models into {}",
+            report.textures,
+            report.models,
+            root.join(".iron/cooked").display()
+        );
+        for f in &report.failed {
+            tracing::warn!("not cooked: {f}");
+        }
+        return Ok(());
     }
 
     let (bundle_path, asset_root) = resolve_bundle(&args.game)?;
@@ -1582,6 +1607,13 @@ impl App {
         for (id, size) in self.world_view.render_texture_uploads.drain(..) {
             gfx.world.set_render_texture(&gfx.gpu, id, size);
         }
+        for (id, cooked) in self.world_view.cooked_uploads.drain(..) {
+            // GPUs without BC get the blocks decoded.
+            if !gfx.world.set_cooked_texture(&gfx.gpu, id, &cooked) {
+                gfx.world
+                    .set_texture(&gfx.gpu, id, &cook::uncook_texture(&cooked));
+            }
+        }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (quads, textures) = self.panels.render(
             &gfx.gpu,
@@ -1948,6 +1980,13 @@ impl PlatformApp for App {
         for (id, size) in self.world_view.render_texture_uploads.drain(..) {
             gfx.world.set_render_texture(&gfx.gpu, id, size);
         }
+        for (id, cooked) in self.world_view.cooked_uploads.drain(..) {
+            // GPUs without BC get the blocks decoded.
+            if !gfx.world.set_cooked_texture(&gfx.gpu, id, &cooked) {
+                gfx.world
+                    .set_texture(&gfx.gpu, id, &cook::uncook_texture(&cooked));
+            }
+        }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (scene, world_view) = (&self.scene, &self.world_view);
         let Gfx {
@@ -2304,5 +2343,6 @@ mod tests {
         assert_eq!(args.game, PathBuf::from("examples/css"));
         assert!(parse(&["a", "b"]).is_err());
         assert!(parse(&["--nope"]).is_err());
+        assert!(parse(&["--cook", "examples/world"]).unwrap().cook);
     }
 }

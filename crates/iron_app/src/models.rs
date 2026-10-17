@@ -19,6 +19,8 @@ pub const ENGINE_IDS: u32 = 1 << 30;
 pub struct Model {
     pub meshes: Vec<(u32, MeshData)>,
     pub textures: Vec<(u32, TextureData)>,
+    /// From a cooked model (`iron --cook`): textures ready to upload.
+    pub cooked_textures: Vec<(u32, iron_render::CookedTexture)>,
     /// `{ nodes, roots, materials }` for `Model.instantiate`.
     pub description: Value,
 }
@@ -44,7 +46,8 @@ impl Default for EngineIds {
 }
 
 impl EngineIds {
-    fn next(&mut self) -> u32 {
+    /// The next id (a replayed one first).
+    pub fn next_id(&mut self) -> u32 {
         let id = self.replay.pop_front().unwrap_or_else(|| {
             self.last += 1;
             self.last
@@ -171,7 +174,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
             WrappingMode::MirroredRepeat => TextureWrap::Mirror,
             WrappingMode::Repeat => TextureWrap::Repeat,
         };
-        let id = ids.next();
+        let id = ids.next_id();
         textures.push((
             id,
             TextureData {
@@ -315,7 +318,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                 continue;
             }
             let [min, max] = bounds(&data.positions);
-            let id = ids.next();
+            let id = ids.next_id();
             meshes.push((id, data));
             prims.push(json!({
                 "mesh": id,
@@ -409,6 +412,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
     Ok(Model {
         meshes,
         textures,
+        cooked_textures: Vec::new(),
         description: json!({
             "nodes": nodes,
             "roots": roots,

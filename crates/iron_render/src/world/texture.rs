@@ -70,6 +70,85 @@ impl TextureData {
     }
 }
 
+/// How a cooked texture's texels are stored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TexelFormat {
+    /// 4 bytes a texel.
+    Rgba8,
+    /// 8 bytes per 4 × 4 block: colour with on/off alpha (DXT1).
+    Bc1,
+    /// 16 bytes per 4 × 4 block: colour and smooth alpha (DXT5).
+    Bc3,
+}
+
+impl TexelFormat {
+    /// Bytes per 4 × 4 block (or per texel, for RGBA8).
+    pub fn block_bytes(self) -> u32 {
+        match self {
+            Self::Rgba8 => 4,
+            Self::Bc1 => 8,
+            Self::Bc3 => 16,
+        }
+    }
+
+    /// The bytes a `width` × `height` level takes.
+    pub fn level_bytes(self, width: u32, height: u32) -> usize {
+        match self {
+            Self::Rgba8 => width as usize * height as usize * 4,
+            _ => {
+                width.div_ceil(4) as usize
+                    * height.div_ceil(4) as usize
+                    * self.block_bytes() as usize
+            }
+        }
+    }
+}
+
+/// A texture prepared ahead of time (`iron --cook`): every mip level made, possibly
+/// block-compressed, ready to upload as it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CookedTexture {
+    pub width: u32,
+    pub height: u32,
+    pub format: TexelFormat,
+    pub srgb: bool,
+    /// Level 0 first, each half the size of the one before (at least 1).
+    pub mips: Vec<Vec<u8>>,
+    pub filter: TextureFilter,
+    pub wrap: TextureWrap,
+    pub anisotropy: u16,
+}
+
+impl CookedTexture {
+    /// Whether each level holds the bytes its size needs (and BC sizes are whole blocks).
+    pub fn is_valid(&self) -> bool {
+        let block_ok = self.format == TexelFormat::Rgba8
+            || (self.width.is_multiple_of(4) && self.height.is_multiple_of(4));
+        block_ok
+            && self.width > 0
+            && self.height > 0
+            && !self.mips.is_empty()
+            && self.mips.iter().enumerate().all(|(i, m)| {
+                let (w, h) = ((self.width >> i).max(1), (self.height >> i).max(1));
+                m.len() == self.format.level_bytes(w, h)
+            })
+    }
+}
+
+/// The mip chain a texture's settings ask for (level 0 first; one level without mipmaps).
+pub fn mip_chain(data: &TextureData) -> Vec<(Vec<u8>, u32, u32)> {
+    let mut levels = vec![(data.rgba.clone(), data.width, data.height)];
+    if data.mipmaps {
+        while let Some((px, w, h)) = levels.last()
+            && (*w > 1 || *h > 1)
+        {
+            let next = half(px, *w, *h, data.srgb);
+            levels.push(next);
+        }
+    }
+    levels
+}
+
 /// Unity's `QualitySettings.anisotropicFiltering`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Anisotropic {

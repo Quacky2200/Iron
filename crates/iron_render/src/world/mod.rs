@@ -29,7 +29,9 @@ pub use bloom::{Bloom, Grading, Tonemapping};
 pub use environment::Sky;
 pub use mesh::{MeshData, primitive};
 use texture::SamplerKey;
-pub use texture::{Anisotropic, TextureData, TextureFilter, TextureWrap};
+pub use texture::{
+    Anisotropic, CookedTexture, TexelFormat, TextureData, TextureFilter, TextureWrap, mip_chain,
+};
 
 /// A texture a quad or mesh is drawn with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1356,22 +1358,79 @@ impl WorldRenderer {
             );
             return false;
         }
-        let mut levels = vec![(data.rgba.clone(), data.width, data.height)];
-        if data.mipmaps {
-            while let Some((px, w, h)) = levels.last()
-                && (*w > 1 || *h > 1)
-            {
-                let next = texture::half(px, *w, *h, data.srgb);
-                levels.push(next);
-            }
+        let levels: Vec<Vec<u8>> = texture::mip_chain(data)
+            .into_iter()
+            .map(|(px, _, _)| px)
+            .collect();
+        self.upload_texture(
+            gpu,
+            id,
+            &CookedTexture {
+                width: data.width,
+                height: data.height,
+                format: TexelFormat::Rgba8,
+                srgb: data.srgb,
+                mips: levels,
+                filter: data.filter,
+                wrap: data.wrap,
+                anisotropy: data.anisotropy,
+            },
+        );
+        true
+    }
+
+    /// Whether the GPU takes block-compressed (BC) textures.
+    pub fn supports_bc(gpu: &Gpu) -> bool {
+        gpu.device
+            .features()
+            .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
+    }
+
+    /// Sets texture `id` from a cooked texture (`iron --cook`): its levels upload as they
+    /// are. Refused when invalid, too big, or block-compressed on a GPU without BC.
+    pub fn set_cooked_texture(&mut self, gpu: &Gpu, id: u32, data: &CookedTexture) -> bool {
+        let max = gpu.device.limits().max_texture_dimension_2d;
+        if !data.is_valid()
+            || data.width > max
+            || data.height > max
+            || (data.format != TexelFormat::Rgba8 && !Self::supports_bc(gpu))
+        {
+            return false;
         }
+        self.upload_texture(gpu, id, data);
+        true
+    }
+
+    fn upload_texture(&mut self, gpu: &Gpu, id: u32, data: &CookedTexture) {
         // sRGB textures can also be read as data (a photo used as a bump map), and data
         // textures are the same either way.
-        let format = if data.srgb {
-            wgpu::TextureFormat::Rgba8UnormSrgb
-        } else {
-            wgpu::TextureFormat::Rgba8Unorm
+        let (format, linear_format) = match data.format {
+            TexelFormat::Rgba8 => (
+                if data.srgb {
+                    wgpu::TextureFormat::Rgba8UnormSrgb
+                } else {
+                    wgpu::TextureFormat::Rgba8Unorm
+                },
+                wgpu::TextureFormat::Rgba8Unorm,
+            ),
+            TexelFormat::Bc1 => (
+                if data.srgb {
+                    wgpu::TextureFormat::Bc1RgbaUnormSrgb
+                } else {
+                    wgpu::TextureFormat::Bc1RgbaUnorm
+                },
+                wgpu::TextureFormat::Bc1RgbaUnorm,
+            ),
+            TexelFormat::Bc3 => (
+                if data.srgb {
+                    wgpu::TextureFormat::Bc3RgbaUnormSrgb
+                } else {
+                    wgpu::TextureFormat::Bc3RgbaUnorm
+                },
+                wgpu::TextureFormat::Bc3RgbaUnorm,
+            ),
         };
+        let levels = &data.mips;
         let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("world texture"),
             size: wgpu::Extent3d {
@@ -1384,9 +1443,16 @@ impl WorldRenderer {
             dimension: wgpu::TextureDimension::D2,
             format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+            view_formats: &[linear_format],
         });
-        for (level, (px, w, h)) in levels.iter().enumerate() {
+        for (level, px) in levels.iter().enumerate() {
+            // Block-compressed levels copy whole blocks: their physical size.
+            let size = texture
+                .size()
+                .mip_level_size(level as u32, wgpu::TextureDimension::D2)
+                .physical_size(format);
+            let (bw, _) = format.block_dimensions();
+            let row = size.width / bw * data.format.block_bytes();
             gpu.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,
@@ -1397,19 +1463,15 @@ impl WorldRenderer {
                 px,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(w * 4),
+                    bytes_per_row: Some(row),
                     rows_per_image: None,
                 },
-                wgpu::Extent3d {
-                    width: *w,
-                    height: *h,
-                    depth_or_array_layers: 1,
-                },
+                size,
             );
         }
         let srgb = texture.create_view(&Default::default());
         let linear = texture.create_view(&wgpu::TextureViewDescriptor {
-            format: Some(wgpu::TextureFormat::Rgba8Unorm),
+            format: Some(linear_format),
             ..Default::default()
         });
         self.textures.insert(
@@ -1425,7 +1487,6 @@ impl WorldRenderer {
             },
         );
         self.material_groups.clear();
-        true
     }
 
     /// Makes (or resizes) render texture `id`: cameras draw into it

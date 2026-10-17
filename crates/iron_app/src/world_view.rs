@@ -331,6 +331,8 @@ pub struct WorldViews {
     texture_files: HashMap<u32, (String, Vec<Value>)>,
     /// Textures to upload (`None`: remove), applied by the app before drawing.
     pub texture_uploads: Vec<(u32, Option<TextureData>)>,
+    /// Cooked textures to upload (falling back to decoding them on GPUs without BC).
+    pub cooked_uploads: Vec<(u32, iron_render::CookedTexture)>,
     /// Render textures to make or resize, with their sizes.
     pub render_texture_uploads: Vec<(u32, (u32, u32))>,
     /// Render textures' sizes, for their cameras' aspect.
@@ -369,6 +371,7 @@ impl Default for WorldViews {
             texture_files: HashMap::new(),
             texture_uploads: Vec::new(),
             render_texture_uploads: Vec::new(),
+            cooked_uploads: Vec::new(),
             render_textures: HashMap::new(),
             skins: HashMap::new(),
             texture_sizes: HashMap::new(),
@@ -456,7 +459,11 @@ impl WorldViews {
         reuse: &[u32],
     ) -> Result<serde_json::Value, String> {
         self.model_ids.record(reuse);
-        let model = crate::models::load(root, src, &mut self.model_ids);
+        // A cooked model (`iron --cook`) when there's a fresh one.
+        let model = match crate::cook::cooked_model(root, src, &mut self.model_ids) {
+            Some(m) => Ok(m),
+            None => crate::models::load(root, src, &mut self.model_ids),
+        };
         let ids = self.model_ids.take_recorded();
         let model = model?;
         self.model_files
@@ -468,6 +475,10 @@ impl WorldViews {
         for (id, data) in model.textures {
             self.texture_sizes.insert(id, (data.width, data.height));
             self.texture_uploads.push((id, Some(data)));
+        }
+        for (id, data) in model.cooked_textures {
+            self.texture_sizes.insert(id, (data.width, data.height));
+            self.cooked_uploads.push((id, data));
         }
         Ok(model.description)
     }
@@ -623,6 +634,23 @@ impl WorldViews {
             None => TextureWrap::default(),
         };
         let mipmaps = !matches!(args.get(4), Some(Value::Bool(false)));
+        let srgb = !matches!(args.get(9), Some(Value::Bool(true)));
+        // A cooked texture (`iron --cook`) when there's a fresh one made the same way.
+        if let Some(Value::String(src)) = args.get(1)
+            && !src.trim_start().starts_with("data:")
+            && let Some(mut cooked) = crate::cook::cooked_texture(root, src, srgb, mipmaps)
+        {
+            // Sampling settings are the script's.
+            cooked.filter = filter;
+            cooked.wrap = wrap;
+            if let Some(a) = args.get(8).and_then(Value::as_f64) {
+                cooked.anisotropy = a.clamp(0.0, 16.0) as u16;
+            }
+            let size = (cooked.width, cooked.height);
+            self.texture_sizes.insert(id, size);
+            self.cooked_uploads.push((id, cooked));
+            return Ok(Some((id, size.0, size.1)));
+        }
         let (width, height, rgba) = match args.get(1) {
             Some(Value::String(src)) => {
                 let bytes = if src.trim_start().starts_with("data:") {
@@ -661,7 +689,7 @@ impl WorldViews {
                 .get(8)
                 .and_then(Value::as_f64)
                 .map_or(1, |a| a.clamp(0.0, 16.0) as u16),
-            srgb: !matches!(args.get(9), Some(Value::Bool(true))),
+            srgb,
         };
         if !data.is_valid() {
             return Err(format!(
