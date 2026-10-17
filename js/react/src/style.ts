@@ -300,6 +300,14 @@ export interface IronStyle {
   imageRendering?: "auto" | "smooth" | "high-quality" | "pixelated" | "crisp-edges";
   /** `hidden` (or `collapse`) keeps the layout space but draws nothing and takes no hits; children can be `visible` again. Inherited. */
   visibility?: "visible" | "hidden" | "collapse";
+  /** List markers: `disc`, `circle`, `square`, `decimal`, `decimal-leading-zero`, `lower-alpha`, `upper-alpha`, `lower-roman`, `upper-roman`, `lower-greek`, `none` or a quoted string. Inherited. */
+  listStyleType?: string;
+  /** `outside` (default: hangs left of the item) or `inside`. */
+  listStylePosition?: "inside" | "outside";
+  /** `url(...)` or `none`. */
+  listStyleImage?: string;
+  /** Type, position and image in any order. */
+  listStyle?: string;
   /** Text field caret; `auto` is the text colour. */
   caretColor?: string;
   /** `never` draws glyphs without anti-aliasing (pixel fonts). s&box keywords: `auto`, `never`, `always`. */

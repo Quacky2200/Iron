@@ -4,6 +4,15 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Lists (M3d step 5g)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Outside markers on `text` items | Drawn inline, like `inside` | Hang outside the line box | A text element's children are inline content; the marker can't be positioned outside it. Wrap the text in a box item for hanging markers |
+| Elements | `list` + any element children; no `ul`/`ol`/`li`/`p`/`h1` | HTML elements | Iron's element set stays small; use `list` and `text` with classes |
+| Counters | Markers number items by position; no `counter-reset` / `counter-increment` / `counter()`, `start` or `reversed` | Full CSS counters | Not implemented yet |
+| `::marker` | All properties apply | Only a few (colour, font, content, ...) | More permissive |
+
 ## Transforms (M3d step 5e)
 
 | Area | Iron | Browsers / spec | Why |

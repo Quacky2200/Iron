@@ -98,7 +98,7 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **Library versions:** cssparser 0.38, selectors 0.41, parley 0.12, taffy 0.15, rquickjs 0.14, edition 2024, Rust 1.99. APIs differ from older docs.
 - **Parley fonts:** after registering a font, Parley needs a fresh `LayoutContext`, or its resolver cache keeps the old fonts.
 
-## Status (2026-10-16)
+## Status (2026-10-17)
 - **Done:**
   - M1 scaffold
   - M2 React → Taffy → boxes
@@ -118,7 +118,16 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3c step 6: gamepads (`iron_platform::gamepad`) and keys to scripts through `@iron/engine`'s
     `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
   - M3c step 7: `examples/form`. **M3c is done.**
-- **Next:** M3d (CSS parity with s&box, TODO.md), or the next milestone in TODO.md.
+  - M3d groups 1–4 (units/values, layout, backgrounds & borders, text) and group 5 steps 5a–5g
+    (opacity %, filters, image-rendering, masks, transforms 2D/3D, visibility, lists)
+- **Next (agreed with the user, 2026-10-17):** finish the rest of M3d in this order — 5h
+  (user-select, static text selection, `::selection`, `::placeholder`), 5i (cursor images,
+  pointer-events gaps), 5j (`::backdrop` and a modal top layer), 5.1 (SVG with CSS styling),
+  then M3d groups 7 (transitions/animations), 8 (scrolling extras), 9 (game extensions),
+  10 (nesting, `@import`) — **then stop and check in with the user** before M4.
+  Commit per step; refresh docs once per group (Sonnet subagent, changed code only).
+- **Also planned:** "Script IO" (files, fetch, WebSocket) in TODO.md, designed in
+  `docs/research/networking-and-files.md`; where it lands is undecided.
 - **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA
   instability, also seen before Iron). Warn before launching the interactive window; prefer
   `--screenshot` runs for checks.

@@ -193,3 +193,115 @@ fn tabular_nums_give_digits_one_width() {
         "the shorthand applies"
     );
 }
+
+/// The marker texts of `list`'s items, in order.
+fn markers(tree: &mut UiTree, items: &[u32]) -> Vec<String> {
+    tree.layout_if_needed();
+    items
+        .iter()
+        .filter_map(|i| {
+            let marker = *tree.children(iron_core::NodeId(*i)).first()?;
+            let text = *tree.children(marker).first()?;
+            Some(tree.text(text)?.to_owned())
+        })
+        .collect()
+}
+
+// M3-LST-01
+#[test]
+fn list_items_get_numbered_markers() {
+    let mut d = Dom::new();
+    let list = d.add(0, "list", &[("listStyleType", "decimal".into())]);
+    let items: Vec<u32> = (0..3)
+        .map(|_| d.add(list, "box", &[("height", px(20.0))]))
+        .collect();
+    let mut tree = d.build("");
+    assert_eq!(markers(&mut tree, &items), vec!["1.", "2.", "3."]);
+
+    // Removing the first renumbers the rest.
+    tree.apply_commit(&iron_core::Commit {
+        ops: vec![common::op(
+            iron_ui::opcodes::REMOVE_CHILD,
+            &[common::n(list), common::n(items[0])],
+        )],
+    });
+    assert_eq!(markers(&mut tree, &items[1..]), vec!["1.", "2."]);
+
+    // Other types, and `none` removes the markers.
+    for (kind, first) in [
+        ("upper-roman", "I."),
+        ("lower-alpha", "a."),
+        ("disc", "\u{2022}"),
+        ("'-'", "-"),
+    ] {
+        let errors = tree.apply_commit(&iron_core::Commit {
+            ops: vec![common::op(
+                iron_ui::opcodes::SET_STYLE,
+                &[common::n(list), "listStyleType".into(), kind.into()],
+            )],
+        });
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            markers(&mut tree, &items[1..2]),
+            vec![first.to_owned()],
+            "{kind}"
+        );
+    }
+    tree.apply_commit(&iron_core::Commit {
+        ops: vec![common::op(
+            iron_ui::opcodes::SET_STYLE,
+            &[common::n(list), "listStyle".into(), "none".into()],
+        )],
+    });
+    tree.layout_if_needed();
+    assert!(
+        tree.children(iron_core::NodeId(items[1])).is_empty(),
+        "no marker"
+    );
+}
+
+// M3-LST-01
+#[test]
+fn outside_markers_hang_left_and_inside_ones_take_space() {
+    let build = |position: &str| {
+        let mut d = Dom::new();
+        let list = d.add(0, "list", &[("listStylePosition", position.into())]);
+        let item = d.add(list, "box", &[("height", px(20.0))]);
+        let child = d.add(item, "box", &[("width", px(10.0)), ("height", px(10.0))]);
+        let mut tree = d.build("");
+        tree.layout_if_needed();
+        let marker = tree.children(iron_core::NodeId(item))[0];
+        (
+            tree.rect(iron_core::NodeId(item)).unwrap(),
+            tree.rect(marker).unwrap(),
+            tree.rect(iron_core::NodeId(child)).unwrap(),
+        )
+    };
+    let (item, marker, child) = build("outside");
+    assert_eq!(item.x, 24.0, "the list's default left padding");
+    assert!(
+        marker.x + marker.width <= item.x + 0.5,
+        "{marker:?} hangs left of {item:?}"
+    );
+    assert_eq!(child.x, item.x, "content isn't pushed over");
+    let (item, marker, child) = build("inside");
+    assert!(
+        marker.x >= item.x && child.x > marker.x,
+        "inside: {marker:?} {child:?}"
+    );
+}
+
+// M3-LST-01
+#[test]
+fn marker_rules_style_the_marker() {
+    let mut d = Dom::new();
+    let list = d.add(0, "list", &[]);
+    let item = d.add(list, "box", &[]);
+    d.set_class(item, "item");
+    let mut tree = d.build(".item::marker { color: red; font-size: 30px }");
+    tree.layout_if_needed();
+    let marker = tree.children(iron_core::NodeId(item))[0];
+    let text = tree.computed_text(marker);
+    assert_eq!(text.color, iron_ui::Rgba::new(1.0, 0.0, 0.0, 1.0));
+    assert_eq!(text.font_size, 30.0);
+}

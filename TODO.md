@@ -433,6 +433,10 @@ Gaps found by comparing our CSS with s&box's (survey of 2026-10-16, from the off
 already planned for M3c (`overflow`, `cursor`, `pointer-events`, scrolling) aren't repeated here.
 Where s&box has a custom extension, we prefer the standard CSS form if there is one.
 
+**Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, 5.1 (SVG), then groups 7, 8, 9,
+10; then stop and check in with the user before M4. Known deviations from browsers go in
+[docs/differences.md](docs/differences.md).
+
 We're already **ahead** of s&box on: custom properties and `var()` (s&box has none), `!important`
 (accepted but ignored there), attribute selectors, `:checked`/`:disabled`/`:enabled`/`:focus-within`/
 `:focus-visible`/`:blank`, `:nth-child(An+B of S)` and the `*-of-type` family, `:is()`/`:where()`,
@@ -576,14 +580,18 @@ and `@font-face`.
    - [x] **5f** `visibility: visible | hidden | collapse` (keeps its layout space, isn't drawn or hit;
      children can opt back in with `visible`; inherited; text runs carry it, so visible spans in
      hidden text still draw; hidden elements can't take focus) — `M3-VIS-01`
-   - [ ] **5g** Lists: a `list` element (React `<List>`) with item children, `list-style-type`
-     (`disc`, `circle`, `square`, `decimal`, `lower/upper-alpha`, `lower/upper-roman`, `none`, a
-     string), `list-style-position`, `list-style-image`, the `list-style` shorthand and a `::marker`
-     pseudo-element for styling markers; counters (`counter-reset`/`-increment`, `counter()`) if
-     cheap. Paragraphs and headings stay `text` with classes (no `p`/`h1` elements)
+   - [x] **5g** Lists: a `list` element (React `<List>`; UA style: column, 24px left padding) whose
+     element children are list items (also `display: list-item`); `list-style-type` (`disc`,
+     `circle`, `square`, `decimal`, `decimal-leading-zero`, `lower/upper-alpha`, `lower/upper-roman`,
+     `lower-greek`, `none`, a string), `list-style-position`, `list-style-image`, `list-style`
+     (all inherited); markers are generated `::marker` children (outside: absolutely placed left of
+     the item; inside: first child), styled by `::marker` rules, renumbered when items change.
+     Paragraphs and headings stay `text` with classes (no `p`/`h1`). Counters aren't done —
+     `M3-LST-01`
    - [ ] **5h** `user-select: none | auto | text | all` and selecting static text (drag, double-click
      word, triple-click line, Ctrl+C) on text elements, with a `::selection` colour, sharing Parley's
-     selection geometry and the clipboard with the text fields (the M3c "selecting static text" item)
+     selection geometry and the clipboard with the text fields (the M3c "selecting static text" item);
+     `::placeholder` styling for text fields (colour, font, opacity) in the same step
    - [ ] **5i** `cursor` and `pointer-events` gaps (both exist since M3c: `pointerEvents: auto | none`,
      inherited, children can opt back in; `cursor` keywords → OS cursors). To add: custom cursor
      images `cursor: url(cursor.png) 4 4, pointer` (hotspot, fallback list, `.cur`/`.png`, scaled for
@@ -591,6 +599,11 @@ and `@font-face`.
      `not-allowed` when disabled via the UA stylesheet), and checking every keyword maps on each
      platform. SVG's extra `pointer-events` values (`visiblePainted`, `fill`, `stroke`, `bounding-box`,
      ...) come with 5.1
+   - [ ] **5j** `::backdrop`: a top layer for modal UI (a `dialog` element with `open`/`modal`, or
+     `popover`), painted above everything (above `position: fixed` too) and taking the input, with a
+     `::backdrop` box behind it covering the window (style it with `background`, `backdrop-filter`,
+     opacity; clicks on it reach the dialog's `onCancel`/`onClose`); Escape closes; focus stays inside
+     the modal (Tab wraps). `backdrop-filter` itself is done (5b)
    - [ ] **5.1** SVG: an `svg` element (React `<Svg>` and children) with the core shapes (`rect`,
      `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `g`, `text` basics), `viewBox` /
      `preserveAspectRatio`, `use`/`defs`, gradients (`linearGradient`, `radialGradient`), `clipPath`

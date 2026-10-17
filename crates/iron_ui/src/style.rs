@@ -102,6 +102,8 @@ pub struct Visual {
     /// `display: contents`: no box of its own; children join the parent's layout.
     /// Taffy has no such display, so `Style::display` stays `Block`.
     pub contents: bool,
+    /// `display: list-item`: a block with a marker, like the children of `list`.
+    pub list_item: bool,
     /// `position: fixed`: laid out (as absolute) against the window and painted above
     /// the normal tree. Taffy has no fixed, so `Style::position` is `Absolute`.
     pub fixed: bool,
@@ -159,6 +161,7 @@ impl Default for Visual {
             scrollbar_width: ScrollbarWidth::Auto,
             scrollbar_color: None,
             contents: false,
+            list_item: false,
             fixed: false,
             object_fit: ObjectFit::Fill,
             object_position: BackgroundPosition {
@@ -336,7 +339,8 @@ pub fn apply_style(
         "display" => {
             let k = kw()?.trim();
             visual.contents = k == "contents";
-            style.display = if visual.contents {
+            visual.list_item = k == "list-item";
+            style.display = if visual.contents || visual.list_item {
                 Display::Block
             } else {
                 parse_kw::<Display>(k).ok_or_else(invalid)?
@@ -983,6 +987,7 @@ pub(crate) fn copy_prop(
         "display" => {
             style.display = d.display;
             visual.contents = v.contents;
+            visual.list_item = v.list_item;
         }
         "position" => {
             style.position = d.position;

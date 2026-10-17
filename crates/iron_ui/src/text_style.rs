@@ -280,6 +280,111 @@ impl TextTransform {
     }
 }
 
+/// `list-style-type`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ListStyleType {
+    #[default]
+    Disc,
+    Circle,
+    Square,
+    Decimal,
+    DecimalLeadingZero,
+    LowerAlpha,
+    UpperAlpha,
+    LowerRoman,
+    UpperRoman,
+    LowerGreek,
+    None,
+    /// A quoted string used as the marker (`"→"`).
+    String(String),
+}
+
+impl ListStyleType {
+    fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if let Some(q) = s
+            .strip_prefix('"')
+            .and_then(|r| r.strip_suffix('"'))
+            .or_else(|| s.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')))
+        {
+            return Some(Self::String(q.to_owned()));
+        }
+        Some(match s {
+            "disc" => Self::Disc,
+            "circle" => Self::Circle,
+            "square" => Self::Square,
+            "decimal" => Self::Decimal,
+            "decimal-leading-zero" => Self::DecimalLeadingZero,
+            "lower-alpha" | "lower-latin" => Self::LowerAlpha,
+            "upper-alpha" | "upper-latin" => Self::UpperAlpha,
+            "lower-roman" => Self::LowerRoman,
+            "upper-roman" => Self::UpperRoman,
+            "lower-greek" => Self::LowerGreek,
+            "none" => Self::None,
+            _ => return None,
+        })
+    }
+
+    /// The marker for the `n`th item (from 1), or `None` for `none`.
+    pub fn marker(&self, n: usize) -> Option<String> {
+        let alpha = |base: char, count: u32| {
+            // Bijective base-N: a … z, aa, ab …
+            let mut n = n;
+            let mut out = Vec::new();
+            while n > 0 {
+                n -= 1;
+                out.push(char::from_u32(base as u32 + (n as u32 % count)).unwrap_or(base));
+                n /= count as usize;
+            }
+            out.iter().rev().collect::<String>()
+        };
+        Some(match self {
+            Self::Disc => "\u{2022}".into(),
+            Self::Circle => "\u{25E6}".into(),
+            Self::Square => "\u{25AA}".into(),
+            Self::Decimal => format!("{n}."),
+            Self::DecimalLeadingZero => format!("{n:02}."),
+            Self::LowerAlpha => format!("{}.", alpha('a', 26)),
+            Self::UpperAlpha => format!("{}.", alpha('A', 26)),
+            Self::LowerGreek => format!("{}.", alpha('\u{3B1}', 24)),
+            Self::LowerRoman => format!("{}.", roman(n).to_lowercase()),
+            Self::UpperRoman => format!("{}.", roman(n)),
+            Self::None => return None,
+            Self::String(s) => s.clone(),
+        })
+    }
+}
+
+/// Roman numerals (falls back to digits past 3999, as browsers do).
+fn roman(mut n: usize) -> String {
+    if n == 0 || n > 3999 {
+        return n.to_string();
+    }
+    let table = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut out = String::new();
+    for (value, digits) in table {
+        while n >= value {
+            out.push_str(digits);
+            n -= value;
+        }
+    }
+    out
+}
+
 /// `text-overflow` (not inherited): what shows where clipped text is cut off.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TextOverflow {
@@ -361,6 +466,11 @@ pub struct TextProps {
     /// `image-rendering: pixelated | crisp-edges` (`Some(true)`). Not a text property,
     /// but inherited like one, so it rides along here.
     pub pixelated: Option<bool>,
+    /// `list-style-type`, `-position` (`Some(true)` for `inside`) and `-image`
+    /// (`Some(None)` for `none`). Inherited, as in CSS.
+    pub list_style_type: Option<ListStyleType>,
+    pub list_inside: Option<bool>,
+    pub list_image: Option<Option<String>>,
     /// `visibility`: `Some(false)` for `hidden` / `collapse`. Inherited, so it rides
     /// along here like `pixelated`.
     pub visible: Option<bool>,
@@ -410,6 +520,9 @@ pub struct ComputedText {
     pub pixelated: bool,
     /// `visibility: visible`: the element paints and takes pointer hits.
     pub visible: bool,
+    pub list_style_type: ListStyleType,
+    pub list_inside: bool,
+    pub list_image: Option<String>,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
@@ -447,6 +560,9 @@ impl Default for ComputedText {
             smooth: true,
             pixelated: false,
             visible: true,
+            list_style_type: ListStyleType::Disc,
+            list_inside: false,
+            list_image: None,
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
@@ -513,6 +629,15 @@ impl ComputedText {
             smooth: props.smooth.unwrap_or(self.smooth),
             pixelated: props.pixelated.unwrap_or(self.pixelated),
             visible: props.visible.unwrap_or(self.visible),
+            list_style_type: props
+                .list_style_type
+                .clone()
+                .unwrap_or_else(|| self.list_style_type.clone()),
+            list_inside: props.list_inside.unwrap_or(self.list_inside),
+            list_image: props
+                .list_image
+                .clone()
+                .unwrap_or_else(|| self.list_image.clone()),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
                 .text_shadow
@@ -589,6 +714,10 @@ pub const TEXT_PROPS: &[&str] = &[
     "WebkitFontSmoothing",
     "imageRendering",
     "visibility",
+    "listStyle",
+    "listStyleType",
+    "listStylePosition",
+    "listStyleImage",
     "whiteSpace",
     "textShadow",
     "textTransform",
@@ -646,6 +775,14 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "fontSmooth" | "WebkitFontSmoothing" => props.smooth = None,
             "imageRendering" => props.pixelated = None,
             "visibility" => props.visible = None,
+            "listStyle" => {
+                props.list_style_type = None;
+                props.list_inside = None;
+                props.list_image = None;
+            }
+            "listStyleType" => props.list_style_type = None,
+            "listStylePosition" => props.list_inside = None,
+            "listStyleImage" => props.list_image = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
@@ -854,6 +991,46 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 None => None,
             }));
         }
+        "listStyleType" => {
+            props.list_style_type = Some(parse!(s.and_then(ListStyleType::parse)));
+        }
+        "listStylePosition" => {
+            props.list_inside = Some(parse!(match s {
+                Some("inside") => Some(true),
+                Some("outside") => Some(false),
+                _ => None,
+            }));
+        }
+        "listStyleImage" => props.list_image = Some(parse!(s.and_then(list_image))),
+        "listStyle" => {
+            // Type, position and image in any order; `none` sets whichever of type
+            // and image is left.
+            let (mut kind, mut inside, mut image, mut nones) = (None, None, None, 0);
+            for part in crate::paint::split_top_level(parse!(s), ' ') {
+                match part {
+                    "inside" | "outside" if inside.is_none() => inside = Some(part == "inside"),
+                    "none" => nones += 1,
+                    p if p.starts_with("url(") && image.is_none() => {
+                        image = Some(parse!(list_image(p)));
+                    }
+                    p if kind.is_none() => kind = Some(parse!(ListStyleType::parse(p))),
+                    _ => return Some(Err(())),
+                }
+            }
+            if nones > 2 {
+                return Some(Err(()));
+            }
+            if nones >= 1 && kind.is_none() {
+                kind = Some(ListStyleType::None);
+                nones -= 1;
+            }
+            if nones >= 1 && image.is_none() {
+                image = Some(None);
+            }
+            props.list_style_type = Some(kind.unwrap_or_default());
+            props.list_inside = Some(inside.unwrap_or(false));
+            props.list_image = Some(image.flatten());
+        }
         "visibility" => {
             props.visible = Some(parse!(match s {
                 Some("visible") => Some(true),
@@ -943,6 +1120,17 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
         _ => unreachable!("listed in TEXT_PROPS"),
     }
     Some(Ok(()))
+}
+
+/// `list-style-image`: `none` or `url(...)`.
+fn list_image(s: &str) -> Option<Option<String>> {
+    let s = s.trim();
+    if s == "none" {
+        return Some(None);
+    }
+    let path = s.strip_prefix("url(")?.strip_suffix(')')?.trim();
+    let path = path.trim_matches(['"', '\'']);
+    (!path.is_empty()).then(|| Some(path.to_owned()))
 }
 
 struct FontShorthand {

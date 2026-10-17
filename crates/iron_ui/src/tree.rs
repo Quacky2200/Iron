@@ -230,6 +230,25 @@ fn clip_area(clip: BackgroundClip, rect: Rect, radii: Radii, l: &NodeLayout) -> 
 /// The element type of images.
 const IMAGE: &str = "image";
 
+/// The element type of lists: their element children are list items.
+const LIST: &str = "list";
+
+/// An element's style before any declarations (the user-agent styles): lists are
+/// columns with room on the left for outside markers.
+fn base_style(kind: &str) -> Style {
+    match kind {
+        LIST => Style {
+            flex_direction: taffy::FlexDirection::Column,
+            padding: taffy::Rect {
+                left: taffy::LengthPercentage::length(24.0),
+                ..taffy::Rect::zero()
+            },
+            ..Style::default()
+        },
+        _ => Style::default(),
+    }
+}
+
 /// An image's content size from its natural size: a known width or height keeps the
 /// aspect ratio, like a replaced element with `auto` on the other axis.
 fn image_size(natural: (f32, f32), known: (Option<f32>, Option<f32>)) -> (f32, f32) {
@@ -304,6 +323,8 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
     /// `…` laid out in the style of text blocks with `text-overflow: ellipsis`.
     ellipses: HashMap<NodeId, parley::Layout<Brush>>,
+    /// Nodes whose list marker may need adding, removing or renumbering.
+    markers_dirty: HashSet<NodeId>,
     /// How many text blocks have been shaped (for tests and profiling).
     text_builds: u64,
 }
@@ -369,6 +390,7 @@ impl<L: LayoutEngine> UiTree<L> {
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
             ellipses: HashMap::default(),
+            markers_dirty: HashSet::default(),
             text_builds: 0,
         }
     }
@@ -556,12 +578,206 @@ impl<L: LayoutEngine> UiTree<L> {
     }
 
     /// Creates, updates or removes the `pseudo` content of element `id`.
-    fn update_pseudo(
-        &mut self,
+    /// Whether `id` is a list item: an element child of a `list`, or `display: list-item`.
+    fn is_list_item(&self, id: NodeId) -> bool {
+        let Some(node) = self.nodes.get(&id) else {
+            return false;
+        };
+        if node.kind == TEXT_NODE || node.generated.is_some() || node.style.display == Display::None
+        {
+            return false;
+        }
+        node.visual.list_item
+            || node
+                .parent
+                .and_then(|p| self.nodes.get(&p))
+                .is_some_and(|p| p.kind == LIST)
+    }
+
+    /// Adds, updates or removes the markers of the queued nodes.
+    fn refresh_markers(&mut self) {
+        if self.markers_dirty.is_empty() {
+            return;
+        }
+        let ids: Vec<NodeId> = self.markers_dirty.drain().collect();
+        let mut caches = selectors::context::SelectorCaches::default();
+        for id in ids {
+            self.update_marker(id, &mut caches);
+        }
+    }
+
+    /// Keeps `id`'s generated `::marker` child in step with its list styles and its
+    /// place among its siblings.
+    fn update_marker(&mut self, id: NodeId, caches: &mut selectors::context::SelectorCaches) {
+        if !self.nodes.contains_key(&id) {
+            return;
+        }
+        let existing = self.children(id).iter().copied().find(|c| {
+            self.nodes.get(c).and_then(|n| n.generated) == Some(PseudoElement::Marker)
+                && self.kind(*c) != Some(TEXT_NODE)
+        });
+        let text = self.computed_text(id);
+        enum Marker {
+            Text(String),
+            Image(String),
+        }
+        let wanted = if self.is_list_item(id) {
+            match &text.list_image {
+                Some(url) => Some(Marker::Image(url.clone())),
+                None => {
+                    let parent = self.parent(id).unwrap_or(ROOT);
+                    let n = self
+                        .children(parent)
+                        .iter()
+                        .filter(|c| self.is_list_item(**c))
+                        .position(|c| *c == id)
+                        .map_or(1, |i| i + 1);
+                    text.list_style_type.marker(n).map(Marker::Text)
+                }
+            }
+        } else {
+            None
+        };
+        // The marker's kind must match: text markers are spans, image markers images.
+        let existing_kind = existing.and_then(|e| self.kind(e)).map(str::to_owned);
+        let fits = matches!(
+            (&wanted, existing_kind.as_deref()),
+            (Some(Marker::Text(_)), Some("span")) | (Some(Marker::Image(_)), Some(IMAGE))
+        );
+        if let Some(old) = existing.filter(|_| !fits) {
+            let mut changed = HashSet::default();
+            self.detach(old, &mut changed);
+            self.destroy_subtree(old);
+            self.sync_children(id);
+            self.needs_layout = true;
+        }
+        let Some(wanted) = wanted else {
+            return;
+        };
+        let marker = match existing.filter(|_| fits) {
+            Some(m) => m,
+            None => match &wanted {
+                Marker::Text(_) => self.insert_generated(id, PseudoElement::Marker),
+                Marker::Image(_) => self.insert_marker_image(id),
+            },
+        };
+        // Outside markers hang left of the item; a text item's marker can only be
+        // inline, so it reads as `inside` there.
+        let item_is_text = self
+            .nodes
+            .get(&id)
+            .is_some_and(|n| is_inline_container(&n.kind));
+        let outside = !text.list_inside && !item_is_text;
+        let gap = (text.font_size * 0.5).round();
+        let mut style = Style::default();
+        let mut visual = Visual::default();
+        if outside {
+            style.position = taffy::Position::Absolute;
+            style.inset.right = taffy::LengthPercentageAuto::percent(1.0);
+            style.inset.top = taffy::LengthPercentageAuto::length(0.0);
+            style.padding.right = taffy::LengthPercentage::length(gap);
+        } else if !item_is_text {
+            style.margin.right = taffy::LengthPercentageAuto::length(gap);
+            style.flex_shrink = 0.0;
+        }
+        visual.text.white_space = Some(crate::text_style::WhiteSpace::Pre);
+        if !self.sheets.is_empty() {
+            let owner = self.nodes.get(&id).map(|n| (&n.style, &n.visual));
+            for (prop, value) in self.pseudo_declarations(id, PseudoElement::Marker, caches) {
+                if prop.starts_with("--") || prop == "content" {
+                    continue;
+                }
+                match WideKeyword::parse(&value) {
+                    Some(keyword) => {
+                        let _ = apply_wide_keyword(&mut style, &mut visual, &prop, keyword, owner);
+                    }
+                    None => {
+                        let _ = apply_style(&mut style, &mut visual, &prop, &value);
+                    }
+                }
+            }
+        }
+        let content = match wanted {
+            Marker::Text(t) if item_is_text || text.list_inside => {
+                // Inline: a no-break space keeps the gap from collapsing.
+                format!("{t}\u{00A0}")
+            }
+            Marker::Text(t) => t,
+            Marker::Image(url) => {
+                if let Some(node) = self.nodes.get_mut(&marker)
+                    && node.attrs.src.as_deref() != Some(url.as_str())
+                {
+                    node.attrs.src = Some(url.clone());
+                    self.request_image(&url);
+                    self.layout.mark_dirty(marker);
+                }
+                String::new()
+            }
+        };
+        let text_child = self.children(marker).first().copied();
+        if let Some(node) = self.nodes.get_mut(&marker) {
+            let restyled = node.style != style || node.visual != visual;
+            node.style = style.clone();
+            node.visual = visual;
+            if restyled {
+                self.layout.set_style(marker, &style);
+                if let Some(root) = self.text_root_of(marker) {
+                    self.dirty_text.insert(root);
+                }
+            }
+        }
+        if let Some(t) = text_child
+            && let Some(node) = self.nodes.get_mut(&t)
+            && node.text.as_deref() != Some(content.as_str())
+        {
+            node.text = Some(content);
+            if let Some(root) = self.text_root_of(t) {
+                self.dirty_text.insert(root);
+            }
+        }
+        self.needs_layout = true;
+    }
+
+    /// Adds an `image` marker as `id`'s first child.
+    fn insert_marker_image(&mut self, parent: NodeId) -> NodeId {
+        let id = NodeId(self.next_generated);
+        self.next_generated += 1;
+        let style = Style::default();
+        self.layout.create_node(id, &style);
+        self.layout.set_measured(id, true);
+        self.nodes.insert(
+            id,
+            Box::new(Node {
+                kind: IMAGE.to_owned(),
+                parent: Some(parent),
+                children: Vec::new(),
+                style,
+                visual: Visual::default(),
+                text: None,
+                attrs: Attrs::default(),
+                state: ElementState::default(),
+                inline: Vec::new(),
+                generated: Some(PseudoElement::Marker),
+                vars: Rc::default(),
+            }),
+        );
+        self.nodes
+            .get_mut(&parent)
+            .expect("parent exists")
+            .children
+            .insert(0, id);
+        self.sync_children(parent);
+        id
+    }
+
+    /// `pseudo`'s matched declarations for `id`, in cascade order, with `var()` and
+    /// relative units resolved.
+    fn pseudo_declarations(
+        &self,
         id: NodeId,
         pseudo: PseudoElement,
         caches: &mut selectors::context::SelectorCaches,
-    ) {
+    ) -> Vec<(String, Value)> {
         let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
         let (normal, important) = matched_declarations(
             self,
@@ -571,17 +787,12 @@ impl<L: LayoutEngine> UiTree<L> {
             Target::Pseudo(pseudo),
             caches,
         );
-        let existing = self.children(id).iter().copied().find(|c| {
-            self.nodes.get(c).and_then(|n| n.generated) == Some(pseudo)
-                && self.kind(*c) != Some(TEXT_NODE)
-        });
         let vars = self
             .nodes
             .get(&id)
             .map(|n| n.vars.clone())
             .unwrap_or_default();
         let lookup = |name: &str| vars.get(name).cloned();
-        // Generated content's relative units use its element's font size.
         let units = UnitContext {
             em: self.computed_text(id).font_size,
             rem: self.computed_text(ROOT).font_size,
@@ -600,20 +811,34 @@ impl<L: LayoutEngine> UiTree<L> {
             }
             Some(crate::cascade::css_value(&text))
         };
-        let ordered: Vec<(&str, Value)> = normal
+        normal
             .iter()
             .chain(important.iter())
-            .filter_map(|m| Some((m.prop.as_str(), resolve(&m.value)?)))
-            .collect();
-        let content = ordered
-            .iter()
-            .rev()
-            .find(|(p, _)| *p == "content")
-            .and_then(|(_, v)| match v {
-                Value::String(s) => parse_content(s, self.attrs(id)),
-                Value::Number(n) => Some(n.to_string()),
-                _ => None,
-            });
+            .filter_map(|m| Some((m.prop.clone(), resolve(&m.value)?)))
+            .collect()
+    }
+
+    fn update_pseudo(
+        &mut self,
+        id: NodeId,
+        pseudo: PseudoElement,
+        caches: &mut selectors::context::SelectorCaches,
+    ) {
+        let existing = self.children(id).iter().copied().find(|c| {
+            self.nodes.get(c).and_then(|n| n.generated) == Some(pseudo)
+                && self.kind(*c) != Some(TEXT_NODE)
+        });
+        let ordered = self.pseudo_declarations(id, pseudo, caches);
+        let content =
+            ordered
+                .iter()
+                .rev()
+                .find(|(p, _)| p == "content")
+                .and_then(|(_, v)| match v {
+                    Value::String(s) => parse_content(s, self.attrs(id)),
+                    Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                });
 
         let Some(content) = content else {
             if let Some(old) = existing {
@@ -634,7 +859,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let mut visual = Visual::default();
         let owner = self.nodes.get(&id).map(|n| (&n.style, &n.visual));
         for (prop, value) in &ordered {
-            if prop.starts_with("--") || *prop == "content" {
+            if prop.starts_with("--") || prop == "content" {
                 continue;
             }
             match WideKeyword::parse(value) {
@@ -698,9 +923,16 @@ impl<L: LayoutEngine> UiTree<L> {
                 }),
             );
         }
+        let first_is_marker = self
+            .children(parent)
+            .first()
+            .and_then(|c| self.nodes.get(c))
+            .is_some_and(|n| n.generated == Some(PseudoElement::Marker));
         let siblings = &mut self.nodes.get_mut(&parent).expect("parent exists").children;
         match pseudo {
-            PseudoElement::Before => siblings.insert(0, span),
+            // The marker comes first, then ::before.
+            PseudoElement::Marker => siblings.insert(0, span),
+            PseudoElement::Before => siblings.insert(usize::from(first_is_marker), span),
             PseudoElement::After => siblings.push(span),
         }
         self.layout.set_children(span, &[]);
@@ -832,7 +1064,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let mut style = if id == ROOT {
             root_style(self.size.0, self.size.1)
         } else {
-            Style::default()
+            base_style(&node.kind)
         };
         let mut visual = Visual::default();
         let parent_text = match node.parent {
@@ -978,6 +1210,10 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.update_pseudo(id, pseudo, caches);
             }
         }
+        // Its marker (if it's a list item) and its children's (if it's a list).
+        self.markers_dirty.insert(id);
+        let children = self.children(id).to_vec();
+        self.markers_dirty.extend(children);
         if vars_changed {
             // Children inherit the variables: restyle them too (they come later in
             // tree order, so this pass picks them up).
@@ -1211,6 +1447,9 @@ impl<L: LayoutEngine> UiTree<L> {
             .extend(children_changed.iter().copied());
         for id in &children_changed {
             self.update_fixed(*id);
+            // Items added, removed or moved renumber their siblings' markers.
+            let children = self.children(*id).to_vec();
+            self.markers_dirty.extend(children);
         }
         if !self.fixed.is_empty() {
             // Newly attached subtrees may hold fixed nodes, which the root lays out.
@@ -1300,7 +1539,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 let kind = arg(2)?
                     .as_str()
                     .ok_or_else(|| UiError(format!("CREATE needs an element type: {op:?}")))?;
-                let style = Style::default();
+                let style = base_style(kind);
                 self.layout.create_node(id, &style);
                 self.style_dirty.insert(id);
                 if is_editor_kind(kind) {
@@ -1500,6 +1739,18 @@ impl<L: LayoutEngine> UiTree<L> {
                     dir_fallback(node);
                 }
                 let changes = |name| pairs.chunks(2).any(|p| p[0].as_str() == Some(name));
+                if pairs
+                    .chunks(2)
+                    .any(|p| p[0].as_str().is_some_and(|n| n.starts_with("listStyle")))
+                {
+                    // Inherited: every marker below may change.
+                    let mut stack = vec![id];
+                    while let Some(n) = stack.pop() {
+                        self.markers_dirty.insert(n);
+                        stack.extend_from_slice(self.children(n));
+                    }
+                }
+                let node = self.node_mut(id)?;
                 if changes("display") || changes("position") {
                     // `contents` and `fixed` move children between layout parents.
                     children_changed.insert(id);
@@ -1641,6 +1892,7 @@ impl<L: LayoutEngine> UiTree<L> {
             return false;
         }
         self.restyle_dirty();
+        self.refresh_markers();
         // Re-shape text blocks whose content or style changed.
         for root in self.take_dirty_text() {
             let layout = self.build_text_layout(root);

@@ -130,7 +130,6 @@ fn render_with_assets(
     let mut tree = UiTree::new(logical.0 as f32, logical.1 as f32);
     let errors = tree.apply_commit(&Commit { ops: scene.ops });
     assert!(errors.is_empty(), "{errors:?}");
-    let cmds = tree.draw_list();
 
     let (w, h) = (
         (logical.0 as f32 * scale) as u32,
@@ -141,6 +140,14 @@ fn render_with_assets(
     if let Some(root) = assets {
         ui.set_asset_root(root);
     }
+    // Like the app: report the natural sizes of images the tree asked about, so image
+    // elements and image markers lay out before drawing.
+    tree.layout_if_needed();
+    for src in tree.take_image_requests() {
+        let size = ui.image_size(&gpu, &src);
+        tree.set_image_size(&src, size);
+    }
+    let cmds = tree.draw_list();
     let view = target.view().unwrap();
     let stats = ui.render(
         &gpu,
@@ -1483,6 +1490,64 @@ fn transforms_draw_rotated_skewed_and_in_perspective() {
         text.iter().any(|&(x, y)| f.px(x, y)[0] > 200 && y > 134),
         "scaled text reaches below its layout box"
     );
+}
+
+// M3-LST-01
+#[test]
+fn list_markers() {
+    let mut s = Scene::new();
+    let list = |s: &mut Scene, x: f64, style: &[(&'static str, Value)], text_items: bool| {
+        let mut st = at(
+            x,
+            4.0,
+            110.0,
+            120.0,
+            &[("color", "white".into()), ("fontSize", 14.0.into())],
+        );
+        st.extend_from_slice(style);
+        let l = s.element(0, "list", &st);
+        for word in ["Alpha", "Beta", "Gamma"] {
+            if text_items {
+                s.label(l, word, &[]);
+            } else {
+                let item = s.add(l, &[("height", 22.0.into())]);
+                s.label(item, word, &[]);
+            }
+        }
+    };
+    list(&mut s, 0.0, &[], false);
+    list(&mut s, 110.0, &[("listStyleType", "decimal".into())], false);
+    list(
+        &mut s,
+        220.0,
+        &[
+            ("listStyleType", "upper-roman".into()),
+            ("listStylePosition", "inside".into()),
+        ],
+        false,
+    );
+    list(
+        &mut s,
+        330.0,
+        &[("listStyleType", "'\u{2192}'".into())],
+        true,
+    );
+    list(
+        &mut s,
+        440.0,
+        &[("listStyleImage", "url(checker.png)".into())],
+        false,
+    );
+    let f = render_with_assets(s, (550, 90), 1.0, BLACK, Some(&images_dir()));
+    assert_golden("M3-LST-01", 550, 90, &f.pixels, TOLERANCE);
+    // Markers sit left of the first item's text, in the list's padding.
+    let ink = |x0: u32, x1: u32| {
+        (x0..x1)
+            .flat_map(|x| (4..26).map(move |y| (x, y)))
+            .any(|(x, y)| f.luma(x, y) > 120.0)
+    };
+    assert!(ink(4, 24), "a disc in the padding");
+    assert!(ink(114, 134), "a number in the padding");
 }
 
 // M2-DRW-06

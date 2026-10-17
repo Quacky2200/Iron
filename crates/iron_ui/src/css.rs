@@ -112,6 +112,8 @@ impl NonTSPseudoClass for PseudoClass {
 pub enum PseudoElement {
     Before,
     After,
+    /// A list item's marker (bullet or number).
+    Marker,
 }
 
 impl ToCss for PseudoElement {
@@ -119,6 +121,7 @@ impl ToCss for PseudoElement {
         dest.write_str(match self {
             PseudoElement::Before => "::before",
             PseudoElement::After => "::after",
+            PseudoElement::Marker => "::marker",
         })
     }
 }
@@ -194,6 +197,7 @@ impl<'i> SelectorParser<'i> for IronSelectorParser {
         match_ignore_ascii_case! { &name,
             "before" => Ok(PseudoElement::Before),
             "after" => Ok(PseudoElement::After),
+            "marker" => Ok(PseudoElement::Marker),
             _ => Err(ParseError::custom(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement,
             )),
@@ -548,7 +552,7 @@ mod tests {
             ":nth-last-child(2), :first-of-type, :last-of-type, :nth-of-type(3), :root, :empty, :blank",
             ":not(.a), :is(.a, .b), :where(.c), :has(> .child), :has(+ .sib)",
             ":hover, :active, :focus, :focus-visible, :focus-within, :enabled, :disabled, :checked",
-            ".x::before, .y::after",
+            ".x::before, .y::after, li::marker",
         ] {
             assert!(
                 parse_selectors(ok).is_ok(),
@@ -557,7 +561,7 @@ mod tests {
             );
         }
         assert!(parse_selectors(":visited-later").is_err());
-        assert!(parse_selectors("::marker").is_err());
+        assert!(parse_selectors("::first-letter").is_err());
     }
 
     #[test]

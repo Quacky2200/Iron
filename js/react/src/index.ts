@@ -109,6 +109,8 @@ declare module "react" {
   namespace JSX {
     interface IntrinsicElements {
       box: BoxProps;
+      /** A list: element children are items with markers (`listStyle*`, `::marker`). */
+      list: BoxProps;
     }
   }
 }
@@ -167,6 +169,15 @@ export interface ImageProps extends ElementAttrs, EventProps {
  */
 export function Image(props: ImageProps): ReactElement {
   return createElement("image" as never, props);
+}
+
+/**
+ * A list (CSS type selector `list`): a column whose element children are list items, each
+ * with a marker set by `listStyleType` / `listStylePosition` / `listStyleImage` and styled
+ * with `::marker`.
+ */
+export function List({ children, ...props }: BoxProps): ReactElement {
+  return createElement("list" as never, props, children);
 }
 
 /** An inline run inside `Text` with its own style (colour, weight, ...). */

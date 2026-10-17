@@ -106,7 +106,7 @@ export function flush() {
   __iron_commit(ops);
 }
 
-const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box", "text", "span", "input", "textarea", "image"]);
+const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box", "text", "span", "input", "textarea", "image", "list"]);
 
 let currentUpdatePriority: number = NoEventPriority;
 
