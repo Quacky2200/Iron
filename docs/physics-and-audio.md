@@ -237,11 +237,48 @@ normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) a
   `onPreRender`, only when the pose changed. Put one on the camera's object. With none, the listener
   stays at the origin facing -z. `AudioListener.volume` is the master volume.
 
+## Cloth
+
+`Cloth` (Unity's) simulates a copy of its object's mesh. Code: [cloth.rs](../crates/iron_physics/src/cloth.rs)
+(the solver), [cloth_sync.rs](../crates/iron_app/src/cloth_sync.rs) (`ClothSystem`, the `cloth.*` ops) and
+[cloth.ts](../js/engine/src/cloth.ts). Demo: [examples/cloth](../examples/cloth/src/main.tsx).
+
+- **Solver.** `iron_physics::cloth::Cloth` uses position-based dynamics: Verlet integration, then
+  `iterations` constraint passes. Each mesh edge keeps its length (`stretching_stiffness`), vertex pairs
+  across shared edges keep theirs (`bending_stiffness`), pinned vertices stay where the object holds them,
+  and `ClothCollider`s (`Sphere`, `Capsule`) push vertices out. Vertices at the same spot (seams) weld into
+  one particle. `ClothSettings` also has `damping`, `friction`, `acceleration` (gravity plus the external
+  push) and `random_acceleration` (gusts from a small xorshift generator). Positions are in world space;
+  `local_positions` gives them back in object space.
+- **Ops.** `cloth.cloth id object sourceMesh targetMesh [stretch bend damping friction iterations]
+  [extra acceleration] [random acceleration] useGravity [pin points] pinRadius [pin box]|null [colliders]`
+  sets up (or rebuilds) a cloth; colliders are `["sphere", object, radius, center]` or `["capsule", object,
+  radius, height, center]`. `cloth.remove id` drops it. `WorldViews::mesh_source` gives the source mesh's data.
+- **Per tick.** After `step_physics` (and before `send_scene_moves`), `ClothSystem::step(dt, gravity, ...)`
+  moves every cloth on an active object (`Physics::gravity()` supplies gravity, when `useGravity`). Pinned
+  vertices follow their object; colliders follow theirs, scaled like physics colliders. The new positions go to
+  `WorldViews::move_cloth_mesh`, which recomputes normals and tangents and queues one upload (only the
+  latest per step). `set_cloth_mesh` first gives the cloth its own copy of the mesh under `targetMesh`.
+  Cloths on removed objects are dropped (`retain`).
+- **Scripts.** `Cloth` sends its settings on `onStart` (and `rebuild()`), reserves a `Mesh` for the
+  simulated copy and points the object's renderer at it; `onDestroy` gives the original mesh back and frees
+  the copy. It needs a `MeshRenderer` (or `SkinnedMeshRenderer`) on the same object. Settings:
+  `stretchingStiffness`, `bendingStiffness`, `damping`, `useGravity`, `externalAcceleration`,
+  `randomAcceleration`, `friction`, `solverIterations`, `pins` (object-space points within `pinRadius`),
+  `pinBox` and `sphereColliders` / `capsuleColliders` (objects carrying those colliders).
+- Cloth does not collide with rapier bodies or itself; it only feels the colliders listed on it.
+- Tests: `M5-CLO-01` (solver, in `cloth.rs`), `-02` (`ClothSystem` hanging from a pinned edge, in
+  `cloth_sync.rs`) and `-03` (`Cloth` ops, `js/engine/test/cloth.test.ts`).
+
 ## The mixer and offline mode
 
 `iron_audio::Mixer` is the trait the app holds (`load`, `apply`, `poll`, `advance`).
 `open_mixer(offline)` returns a kira device mixer, or an offline one when `offline` is true or no
 output device could be opened (a warning is logged).
+
+`Mixer::set_muted(bool)` (also on `Audio`) silences the main track over 0.1 s for a game paused in the
+background ([platform.md](platform.md#focus-and-pausing)). `Audio` keeps the master volume scripts set
+(`master`), so a master volume set while muted applies when the mute ends, and nothing else is touched.
 
 The app opens the mixer **lazily**, on the first `audio.*` op, so games without sound never touch
 a device. `--screenshot` runs mix offline (`self.screenshot.is_some()`), silently.

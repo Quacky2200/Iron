@@ -136,11 +136,17 @@ the game folder:
 - Each triangle primitive becomes its own mesh under an engine id (`EngineIds`, counting up from
   `1 << 30`). Other primitive modes and malformed meshes are skipped with a warning. Missing normals and
   UVs are made up. Tangents are read from the file, or made from the UVs (glTF's convention matches ours).
-- The result is a description: `{ nodes, roots, materials }`. Nodes carry a decomposed transform,
+- The result is a description: `{ nodes, roots, materials, skins, animations }`. Nodes carry a decomposed transform,
   children and primitives (`mesh`, `material`, `bounds`); materials carry colour, emission, smoothness
   (1 - roughness), `metallic` (glTF's `metallicFactor`), `unlit` and the texture id and size. Also `alpha` mode (`alphaMode`: opaque, mask or blend),
   `alphaCutoff`, `doubleSided`, and the map ids: `normal` (id, scale), `metallicRoughness`, `occlusion`
   (id, strength) and `emissive`. Only `blend` materials keep their colour alpha.
+- Skinned primitives also carry per-vertex `joints` (indices into the node's skin) and `weights` (made
+  to sum to 1) in their `MeshData`. A node names its `skin`. `skins` lists each skin's joint nodes and
+  `inverseBind` matrices (column-major, 16 numbers per joint, identity when the file has none).
+  `animations` lists channels with the node, `path` (`translation`/`rotation`/`scale`),
+  `interpolation` (`linear`/`step`/`cubic`) and the `times` and `values` (cubic splines keep in-tangent,
+  value, out-tangent per key). Morph target channels are skipped.
 - Meshes go to `mesh_uploads` and `mesh_data`, textures to `texture_uploads`, and the description is
   sent to `__iron_models([id, json | null, ...])` (null: it failed) after the ops batch.
 
@@ -150,23 +156,99 @@ file with the model's nodes as children (each a `GameObject` with the node's tra
 read with `gltfPacking` (occlusion red, roughness green, metallic blue). A node with several primitives gets one child
 object per part. With `colliders: "mesh"` (exact triangles, for static scenery) or `"convex"` each
 renderer also gets a `MeshCollider` with `sharedMesh`. `instantiate` before loading finishes works: the
-nodes appear when the model arrives. The root remembers its source (`_model`) and the nodes are marked
+nodes appear when the model arrives. Skinned parts become a `SkinnedMeshRenderer` (bones from the
+skin's joints, bind poses from `inverseBind`) once every bone object exists, and the file's animations
+become `Model.animations` (`AnimationClip`s with paths from the copy's root); a copy with any gets an
+`Animation` playing the first ([animation-3d.md](animation-3d.md)). The root remembers its source (`_model`) and the nodes are marked
 `_modelPart`, so a saved scene stores the model path and rebuilds the nodes on load
 ([scene-and-objects.md](scene-and-objects.md#scenes)).
 
+## The asset database
+
+Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` and `importer`).
+[scripts/assets.ts](../scripts/assets.ts) writes them, and `scripts/dev.ts` runs it before building (or run
+`bun scripts/assets.ts [folders] [--prune]`).
+
+- Assets are found by extension: textures (png, jpg, jpeg, svg, hdr), models (glb, gltf, bin), audio (wav,
+  ogg, mp3, flac), fonts and other JSON data. Code, builds, `node_modules`, `package.json` and other
+  config are skipped.
+- A new asset gets a fresh GUID and its kind's default importer. Texture defaults are `filterMode`
+  `bilinear`, `wrapMode` `repeat`, `mipmaps`, `anisoLevel` 1 and `linear: false`; models `colliders`
+  `none`; audio `stream: false`. Existing metas are never rewritten.
+- A file moved without its `.meta` keeps its GUID when it is unambiguous (one orphaned meta and one new
+  file with that name). Orphaned metas are only reported, and deleted with `--prune`.
+- The app reads the metas at start-up with `asset_db::scan` ([asset_db.rs](../crates/iron_app/src/asset_db.rs))
+  and puts `[{ path, guid, importer }]` in `__iron_info.assets`. Unreadable metas are skipped with a warning.
+- In scripts: `Assets.all`, `guidToPath(guid)`, `pathToGuid(path)`, `importer(path)` and `resolve(src)`
+  ([assets.ts](../js/engine/src/assets.ts)). `Texture.load`, `Model.load` and `new Sound` accept
+  `"guid:<guid>"` sources. `Texture.load` takes unset options from the importer, and a `Sound` streams when
+  its importer says so. Scenes save the GUID next to the path of textures, sounds and models and load by
+  GUID first, so renamed files are still found.
+
+## Hot reload of assets
+
+While a game runs from a folder (not in screenshot runs), an `AssetWatcher`
+([reload.rs](../crates/iron_app/src/reload.rs)) watches it recursively with `notify`, ignoring `dist/`,
+`node_modules/`, `target/` and hidden folders. `poll` reports files created or modified once they have been
+quiet for `SETTLE`, as game paths (`asset_key`: forward slashes, no leading `./`). `App::tick` polls it
+and calls `reload_assets`:
+
+- **Textures.** `WorldViews` remembers each file texture's op arguments (`texture_files`). A changed file
+  runs the same op again under the same id, so every material using it updates, and scripts hear the new
+  size through `__iron_textures`.
+- **Models.** `model_files` keeps the path and engine ids a model got. `EngineIds::record(replay)` hands out
+  the old ids first, so meshes and textures keep their ids; extra parts get new ones. Placed copies keep
+  their old materials and nodes (place the model again to see new ones).
+- **Sounds.** `App::sound_files` keeps the `audio.load` arguments by file; the sound loads again under its
+  id. Playbacks already running keep the old audio.
+- Then `__iron_assets_changed(paths)` calls the `Assets.onChanged(fn)` listeners (it returns a function
+  that stops listening), for anything else scripts read from files. A throwing listener does not stop the
+  others.
+
+## Cooking
+
+`iron --cook <game folder>` ([cook.rs](../crates/iron_app/src/cook.rs)) prepares textures and models so the
+game loads them without decoding images, making mip levels or parsing glTF. It needs only the folder, not
+a build. It logs how many files it cooked, lists the ones that failed, then exits.
+
+- **Textures** (png, jpg, jpeg) are read with their `.meta` importer settings (filter, wrap, mipmaps,
+  aniso, linear). Every mip level is made (`iron_render::mip_chain`), then block-compressed when the
+  size is a multiple of 4 both ways: BC1 (8 bytes per 4 x 4 block) when every texel's alpha is 0 or 255,
+  BC3 (16 bytes) for smooth alpha. Other sizes stay RGBA8. `encode` and `decode` do the blocks: endpoints
+  come from the best diagonal of the block's colour bounding box, texels take the nearest palette entry,
+  and BC1 uses its 3-colour mode for cut-outs.
+- **Models** (glb, gltf) are loaded as usual with recorded engine ids, then saved with their meshes,
+  cooked textures and description (ids are renumbered on load).
+- Files go to `.iron/cooked/<game path>.tex` and `.model` (`cooked_path`). It is a hidden folder, so the
+  asset watcher and the next cook skip it.
+- At run time `WorldViews::texture_op` and `model_op` ask `cooked_texture` / `cooked_model` first. A
+  cooked file is used only when it is newer than its source, and a texture only when its colour space and
+  mipmap setting match the request. The filter, wrap and anisotropy stay the script's. Cooked textures go
+  to `cooked_uploads`; the app calls `WorldRenderer::set_cooked_texture`, which uploads the levels as they
+  are (rows of whole blocks). It refuses invalid data, and BC formats on a GPU without
+  `TEXTURE_COMPRESSION_BC` (`supports_bc`; the device asks for the feature when the adapter has it). Then
+  `uncook_texture` decodes the first level to RGBA8 and the normal path makes the mips.
+
 ## Limits
 
-- Textures are 2D only, RGBA8, and all mip levels are built on the CPU.
+- Textures are 2D only, RGBA8 (or BC1/BC3 when cooked), and all mip levels are built on the CPU
+  (cooking does it ahead of time).
 - Loading blocks the frame it happens in; there is no async or streaming load.
-- glTF: base colour, emissive, normal, metallic-roughness and occlusion textures, factors, alpha modes and
-  double-sided. No extensions, skins, animations or cameras, and
+- glTF: base colour, emissive, normal, metallic-roughness and occlusion textures, factors, alpha modes,
+  double-sided, skins and node animations. No extensions, morph targets or cameras, and
   only triangle meshes.
-- Hot reload makes a new `WorldViews`, and scripts load their textures and models again (see
-  [scripting.md](scripting.md#hot-reload)).
+- Hot reload of the scripts makes a new `WorldViews`, and scripts load their textures and models again (see
+  [scripting.md](scripting.md#hot-reload)). Asset reload keeps ids but not placed copies' materials.
+- Cooked textures are BC1/BC3 or RGBA8 only (no BC7 or ASTC), and the encoder is a fast single-pass one.
+  Cooked files are not packed into an archive.
 
 ## Tests
 
 `M5-TEX-01` and `M5-TEX-02` (texture ops, sprite sizing and pivot) are unit tests in `world_view.rs`;
 `M5-GLB-01` (mesh colliders from a render mesh) is there too. Goldens `M5-RND-08` cover textured meshes
 and sprites and the missing checker. JS units are `js/engine/test/{textures,models,meshes}.test.ts`; the
-fixture model is `tests/fixtures/assets/house.glb`.
+fixture model is `tests/fixtures/assets/house.glb`. Newer IDs: `M5-AST-01` (the asset watcher in
+`reload.rs`; textures and models reloading under their ids in `world_view.rs`), `M5-AST-02` and
+`M5-AST-05` (`Assets.onChanged`, GUIDs and importers: `js/engine/test/assets.test.ts`), `M5-AST-03`
+(`scripts/assets.test.ts`), `M5-AST-04` (`asset_db.rs`) and `M5-AST-06` (cooking, in `cook.rs`). Skins and
+animations in glTF are `M5-SKN-01` and `-02` ([animation-3d.md](animation-3d.md#tests)).

@@ -2,7 +2,8 @@
 
 How CSS motion works today. The code is [motion.rs](../crates/iron_ui/src/motion.rs) (timing,
 interpolation, parsing, running state) and the restyle hooks in [tree.rs](../crates/iron_ui/src/tree.rs).
-Browser differences are in [differences.md](differences.md).
+Browser differences are in [differences.md](differences.md). Animation of GameObjects (curves, clips,
+`Animator`, skinning) is a separate system: see [animation-3d.md](animation-3d.md).
 
 ## Properties
 

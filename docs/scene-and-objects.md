@@ -118,8 +118,9 @@ skipped. A component that throws is logged, disabled and destroyed; the others k
    `onFixedUpdate(dt)` for all; `apply_script_output`; `step_physics`; `send_scene_moves`.
 2. `ScriptRuntime::tick` (timers and microtasks).
 3. `apply_script_output`, then `update_active`: `__iron_tick(dt)` advances script `Time` and returns the
-   scaled `dt`; then `onStart` for new components and `onUpdate(dt)` for all; then `onLateUpdate(dt)`
-   for all. `dt` is the frame length, capped at `MAX_FRAME_DT` (0.1 s).
+   scaled `dt`; then `onStart` for new components and `onUpdate(dt)` for all; then `__iron_animate(dt)`
+   (animation players pose their objects, see [animation-3d.md](animation-3d.md#when-it-runs)); then
+   `onLateUpdate(dt)` for all. `dt` is the frame length, capped at `MAX_FRAME_DT` (0.1 s).
 4. `apply_script_output`, `update_audio`, `Input::Refresh` for the screen and every panel.
 5. Drawing: `pre_render` runs `onPreRender()`, then `apply_script_output`, then
    `__iron_screen(width, height, scale)` if the size changed, then the world and UI are drawn.
@@ -131,6 +132,10 @@ body there).
 
 `onDestroy` runs when the component or its object is removed. `onStart` always runs before the first
 other hook, in whichever step reaches the component first.
+
+`onApplicationPause(paused)` and `onApplicationFocus(focused)` are optional too. `__iron_focus` calls them
+on components of active objects when the window loses or gains focus, or the game pauses in the background
+(pause first, then focus, as in Unity); see [platform.md](platform.md#focus-and-pausing).
 
 `onReload` is optional and only runs after a hot reload that kept state. It replaces `onAwake` and
 `onStart` for script components brought back from the saved scenes, and runs once all objects are
@@ -204,7 +209,8 @@ pointer events use), `scale` and `aspect`, set by `__iron_screen`. Window mode, 
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
-`isMobilePlatform`, `targetFrameRate`, `quit()`) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
+`isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
+`quit()`; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
 game's `package.json` (`name`, `version`, and an `iron` section with `title`, `company`, `identifier`
 `icon`, a PNG used for the window icon, and `display`, the default window mode and size; the title is the window title) and the machine
@@ -305,6 +311,22 @@ copies. References to things outside it stay pointing at the originals (saved as
 only `instantiate` uses). With no parent the copy goes into the original's scene at the original's
 **world** placement; with a parent it keeps the local transform. `position` and `rotation` override.
 
+**Prefabs.** `Prefab` (Unity's prefab asset) is one object tree in the scene file's format, kept for
+placing copies. `PrefabData` is `{ format: "iron.prefab", version: 1, name, root, assets? }`, where
+`root` is a `GameObjectData` and `assets` holds the meshes and textures it shares by id.
+
+- `Prefab.fromObject(go)` captures an object and everything under it as it is now (the same `Saver`
+  as scenes, so the same limits). References to objects outside the tree are dropped. The root's own
+  position and rotation are removed, so a copy starts from the origin. The data is copied, so later
+  changes to the original don't leak in. A model part can't be captured on its own.
+- `Prefab.fromData(data)` reads saved data (`toJSON()`'s output, or a bundled `.prefab.json`); other data
+  is refused. `Prefab.load(path)` reads a file from the game folder through `asset.readText`, once per
+  path.
+- `prefab.instantiate({ parent, position, rotation })`, or `GameObject.instantiate(prefab, options)`,
+  loads a fresh copy of the tree (like a scene load, into the active scene or under `parent`). References
+  inside it point at the copy's objects. A copy from a file remembers its path: `GameObject._prefab` is
+  saved as `GameObjectData.prefab`, for tools. Saved scenes still hold the object in full.
+
 **Start scene.** `iron.startScene` in the game's `package.json` reaches scripts as
 `__iron_info.app.startScene`. When `scenes.ts` is imported it loads that file additively, makes it
 active and drops `Main` if nothing is in it. Starting components still spawn next to it. A failure
@@ -343,7 +365,8 @@ node objects are `_modelPart`. Saving writes `model` and skips the parts. Loadin
 `M5-OBJ-01..03` are in [tests/scene.rs](../crates/iron_scene/tests/scene.rs) (hierarchy, world
 transforms, moved sets). `M5-SCN-01..04` cover scenes: `js/engine/test/scenes.test.ts` (round trips, `SceneManager`,
 `instantiate`) and `M5-SCN-02` in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs) (save and
-load in QuickJS with fixture `tests/fixtures/src/scene.ts`). `examples/scenes` is the manual check.
+load in QuickJS with fixture `tests/fixtures/src/scene.ts`). `M5-PRE-01` (prefabs: capture, copies,
+references, JSON, files) is in `scenes.test.ts` too. `examples/scenes` is the manual check.
 `M5-OBJ-06..08` are in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs)
 (ops, move batch, lifecycle order, running `tests/fixtures/src/scene.ts` in QuickJS). JS units are
 `js/engine/test/{scene,math,time,helpers,camera}.test.ts`. See [testing.md](testing.md).

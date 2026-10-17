@@ -89,6 +89,43 @@ panic to the log (`M5-APP-04`).
   `ControlFlow::WaitUntil(due)` and does not request a redraw. Input events still wake the loop.
   Otherwise it sets `ControlFlow::Wait` and requests a redraw.
 - The target frame rate is not saved; games keep it in `PlayerPrefs` if players choose it.
+- `lifecycle::frame_cap(target_fps, vsync, screenshot)` makes the interval: `None` unless vsync is off,
+  the rate is above 0 and it is not a screenshot run (`M5-APP-08`). The rate set by scripts goes into
+  `__iron_info.app.targetFrameRate`, so a full script reload keeps it.
+
+## Focus and pausing
+
+[lifecycle.rs](../crates/iron_app/src/lifecycle.rs) holds `Lifecycle`, which decides whether the game is
+in the background and whether that pauses it.
+
+- **Background** means unfocused (`InputEvent::Focused(false)`), occluded (`InputEvent::Occluded`, sent on
+  platforms that tell, such as macOS and Wayland) or sized to 0 x 0 (how Windows reports a minimised
+  window). `App::input` feeds those three into `Lifecycle`.
+- **Pausing** happens in the background unless `runInBackground` is on (`Application.runInBackground`,
+  which sends `app.runInBackground`, or `iron.runInBackground` in `package.json`; default off). Screenshot
+  runs never pause. Switching `runInBackground` off while in the background pauses at once. The script
+  value goes into `__iron_info.app.runInBackground`, which a full reload keeps.
+- `Lifecycle::update` is called from `App::sync_lifecycle` (after each input event and op) and returns a
+  `Change`: `paused`, `resumed` (with how long the pause lasted) and `report`, the new
+  `(focused, paused)` for scripts when either changed.
+- **While paused**, `App::tick` returns early after polling the hot reload watchers: no fixed ticks,
+  updates, timers or animation. `Audio::set_muted(true)` fades the main track to silence over 0.1 s
+  without losing the master volume scripts set (a mixer opened during a pause starts muted).
+  `PlatformApp::paused()` is true, so the event loop requests no frames and waits; it calls
+  `PlatformApp::idle()` every `IDLE_POLL` (250 ms), which polls script hot reload so rebuilds show on resume.
+- **On resume**, `started` moves forward by the pause, so script time (timers, caret, UI time) skips it,
+  and `FixedClock::restart` makes the first frame count as one tick instead of catching up. `FixedClock`
+  turns frame times into fixed ticks (at most `MAX_TICKS_PER_FRAME`, dropping the rest after a hitch).
+  The mixer unmutes.
+- **Scripts.** `__iron_focus(focused, paused)` updates `Application.isFocused` and `isPaused`, then calls
+  `onApplicationPause(paused)` on active components when pausing changed, then the `onFocusChanged`
+  listeners and `onApplicationFocus(focused)` when focus changed. A throwing listener doesn't stop the
+  rest. New scripts after a reload start believing they are focused and running
+  (`scripts_restarted`), so the next update tells them the real state.
+
+Tests: `M5-APP-05` (window events), `-06` (muting, in `iron_audio/tests/audio.rs`), `-07` (`Lifecycle` and
+`FixedClock`), `-08` (the frame cap) and `-09` (manifest and `__iron_info`) in the app crate; `-10` (the JS
+side) in `js/engine/test/app.test.ts`.
 
 ## PlayerPrefs
 

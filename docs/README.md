@@ -17,18 +17,19 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | Page | Covers |
 |---|---|
 | [scripting.md](scripting.md) | `iron_script`, `@iron/engine`, ops and commits, `ComponentHost`, bundles and how `iron_app` loads them, dev builds (vendor + game), hot reload (state kept, or in place with Fast Refresh) |
-| [physics-and-audio.md](physics-and-audio.md) | `iron_physics` (rapier) and `iron_audio` (kira): ops and script IDs, per-tick order, batch formats, TS handle APIs, GameObject components (`Rigidbody`, colliders, joints, `Rope`, `CharacterController`, 2D physics, `AudioSource`/`AudioListener`), body-object sync, offline mixer, limits |
+| [physics-and-audio.md](physics-and-audio.md) | `iron_physics` (rapier) and `iron_audio` (kira): ops and script IDs, per-tick order, batch formats, TS handle APIs, GameObject components (`Rigidbody`, colliders, joints, `Rope`, `CharacterController`, 2D physics, `AudioSource`/`AudioListener`), body-object sync, `Cloth` (position-based solver, `cloth.*` ops), offline mixer and muting, limits |
 | [ui-tree.md](ui-tree.md) | `iron_ui` tree, opcodes, styles, Taffy layout, Parley text, text fields (`editor.rs`), draw list |
 | [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`/`::marker`/`::backdrop`/`::selection`/`::placeholder`, `@font-face` (incl. WOFF/WOFF2), `@media`, URL rebasing |
 | [react.md](react.md) | `@iron/react`: reconciler host config, style/attr diffing, `createRoot`, `Text`/`Span`/`Input`/`TextArea`, events, refs, Fast Refresh |
 | [input-and-events.md](input-and-events.md) | Platform input (incl. raw mouse motion), `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, script `Cursor` (hide, lock, image), scrolling, text fields (keys, clipboard, IME), custom cursors, dialogs, gamepads, game `input` API and mouse, gamepad UI navigation |
 | [animation.md](animation.md) | Transitions, `@keyframes` animations, interpolation, `@starting-style`, `:outro` deferred removal, `transition*`/`animation*` events |
+| [animation-3d.md](animation-3d.md) | Animation of GameObjects: `AnimationCurve`/`AnimationClip`, blending (`Pose`), `Animation`, `Animator` with `AnimatorController` (blend trees, transitions), `__iron_animate`, skinned meshes (bones, bind poses, GPU skinning), glTF skins and animations |
 | [svg.md](svg.md) | SVG files as images, inline `<svg>` (serialized and rasterized with resvg), CSS on SVG content, caching and eviction, limits |
-| [scene-and-objects.md](scene-and-objects.md) | `iron_scene` GameObjects, script and engine ids, `scene.*` ops, the move batch, component lifecycle order (incl. `onAwake`), scenes (file format, `@property`, `SceneManager`, `instantiate`, start scene), the TS API (math, `Transform`, `Time`, dates, logging, `Random`, input, `Application`/`SystemInfo`), limits |
-| [world-rendering.md](world-rendering.md) | The 3D world pass (cameras in depth order, viewports, background fill, opaque and see-through sorting, glow), lit meshes (PBR) and lights, halos and beams, the procedural sky and environment map, planar mirrors, reflection probes, cascaded sun, spot and point shadows, layers and culling masks, frustum culling, LOD groups, material maps and rendering modes, bloom, exposure, tonemapping and FXAA, render textures, `render.*` ops, `render_overlay` for screen UI, `WorldPanel` (commit targets, panel trees and textures, pointer and key routing), coordinates |
-| [assets-and-models.md](assets-and-models.md) | `Texture` (load, create, filters, CPU mipmaps), the missing-texture checker, `Material` (metallic, maps, rendering modes, `create`/`with`)/`RenderTexture`/`Mesh`, mesh colliders from render meshes, `Sprite`/`SpriteRenderer`, glTF `Model.load`/`instantiate`, engine ids |
+| [scene-and-objects.md](scene-and-objects.md) | `iron_scene` GameObjects, script and engine ids, `scene.*` ops, the move batch, component lifecycle order (incl. `onAwake` and the application focus and pause hooks), scenes (file format, `@property`, `SceneManager`, `instantiate`, prefabs, start scene), the TS API (math, `Transform`, `Time`, dates, logging, `Random`, input, `Application`/`SystemInfo`), limits |
+| [world-rendering.md](world-rendering.md) | The 3D world pass (cameras in depth order, viewports, background fill, opaque and see-through sorting, glow), lit meshes (PBR) and lights, skinned meshes, cooked (BC) texture uploads, halos and beams, the procedural sky and environment map, planar mirrors, reflection probes, cascaded sun, spot and point shadows, layers and culling masks, frustum culling, LOD groups, material maps and rendering modes, bloom, exposure, tonemapping and FXAA, render textures, `render.*` ops, `render_overlay` for screen UI, `WorldPanel` (commit targets, panel trees and textures, pointer and key routing), coordinates |
+| [assets-and-models.md](assets-and-models.md) | `Texture` (load, create, filters, CPU mipmaps), the missing-texture checker, `Material` (metallic, maps, rendering modes, `create`/`with`)/`RenderTexture`/`Mesh`, mesh colliders from render meshes, `Sprite`/`SpriteRenderer`, glTF `Model.load`/`instantiate` (skins, animations), engine ids, the asset database (`.meta` GUIDs and importers), asset hot reload, cooking (`iron --cook`, BC1/BC3) |
 | [particles.md](particles.md) | `ParticleSystem`: settings as key/value pairs, the CPU simulation in `particles.rs`, reports to scripts, drawing as camera-facing quads |
-| [platform.md](platform.md) | Window modes (`FullScreenMode`, platform fallbacks), how display settings flow from manifest and saved prefs, `screen.set`, the log file, vsync and the frame cap, `PlayerPrefs` (file, keys, when written), limits |
+| [platform.md](platform.md) | Window modes (`FullScreenMode`, platform fallbacks), how display settings flow from manifest and saved prefs, `screen.set`, the log file, vsync and the frame cap, `PlayerPrefs` (file, keys, when written), focus and background pausing (`runInBackground`, `Lifecycle`, `FixedClock`), limits |
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
@@ -45,7 +46,7 @@ iron_ui        UiTree, styles, CSS, layout, text, draw list, events/interaction
 iron_physics   rapier3d world driven by `physics.*` ops (bodies, colliders, characters, joints), per-tick batches (no deps on other Iron crates but iron_core)
 iron_audio     kira mixer driven by `audio.*` ops, offline backend
 iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd), WorldRenderer (lit meshes, quads, lights, shadows, bloom)
-iron_app       the `iron` binary that wires everything together (world_view, particles, models, physics_sync, info)
+iron_app       the `iron` binary that wires everything together (world_view, particles, models, physics_sync, cloth_sync, lifecycle, asset_db, cook, info)
 js/engine      @iron/engine   (GameObject, Component, register, op, loadFont, stylesheets, input, math, Time, cameras, meshes, lights, textures, particles, models, physics and audio components, Cursor, Application, WorldPanel)
 js/react       @iron/react    (reconciler, events)
 ```
@@ -67,10 +68,11 @@ The window is created hidden and shown after its first frame; a resize also draw
                                                               |  React handlers run, setState
  frame():                                                     v
    1. per fixed 60 Hz tick: ComponentHost::fixed_update -> apply_script_output -> step_physics
-      -> send_scene_moves (onFixedUpdate, then commits and ops, then bodies follow moved objects,
-      rapier, objects follow bodies, __iron_physics, then __iron_scene)
+      -> cloth step -> send_scene_moves (onFixedUpdate, then commits and ops, then bodies follow
+      moved objects, rapier, objects follow bodies, __iron_physics, cloth, then __iron_scene)
+      (while paused in the background none of this runs, see platform.md)
    2. ScriptRuntime::tick(now_ms)                 -> timers + microtasks (React scheduling)
-   2b. apply_script_output, ComponentHost::update_active (__iron_tick, onUpdate, onLateUpdate),
+   2b. apply_script_output, ComponentHost::update_active (__iron_tick, onUpdate, __iron_animate, onLateUpdate),
       apply_script_output, update_particles (+ __iron_particles), update_audio
    3. drain_targeted_commits -> UiTree::apply_commit of the screen tree or a world panel's tree
    4. drain_ops (loadFont, addStyleSheet, focus, scroll, cursor.*, render.texture/model, app.quit...)
@@ -115,6 +117,10 @@ Key ideas to keep in mind:
 | Add a scene op or component hook | [script.rs](../crates/iron_scene/src/script.rs), [components.rs](../crates/iron_script/src/components.rs), [scene-and-objects.md](scene-and-objects.md) |
 | Change meshes, lights, shadows, bloom, sky, mirrors or probes | [world/mod.rs](../crates/iron_render/src/world/mod.rs), [world.wgsl](../crates/iron_render/src/world/world.wgsl), [world_view.rs](../crates/iron_app/src/world_view.rs), [world-rendering.md](world-rendering.md) |
 | Change textures, sprites or glTF loading | [texture.rs](../crates/iron_render/src/world/texture.rs), [models.rs](../crates/iron_app/src/models.rs), [assets-and-models.md](assets-and-models.md) |
+| Change animation, `Animator` or skinning | [animation.ts](../js/engine/src/animation.ts), [world/mod.rs](../crates/iron_render/src/world/mod.rs), [world_view.rs](../crates/iron_app/src/world_view.rs), [animation-3d.md](animation-3d.md) |
+| Change asset reload, `.meta` files or cooking | [reload.rs](../crates/iron_app/src/reload.rs), [asset_db.rs](../crates/iron_app/src/asset_db.rs), [cook.rs](../crates/iron_app/src/cook.rs), [assets.ts](../scripts/assets.ts), [assets-and-models.md](assets-and-models.md) |
+| Change focus, pausing or the frame cap | [lifecycle.rs](../crates/iron_app/src/lifecycle.rs), [platform.md](platform.md#focus-and-pausing) |
+| Change cloth | [cloth.rs](../crates/iron_physics/src/cloth.rs), [cloth_sync.rs](../crates/iron_app/src/cloth_sync.rs), [physics-and-audio.md](physics-and-audio.md#cloth) |
 | Change particles | [particles.rs](../crates/iron_app/src/particles.rs), [particles.ts](../js/engine/src/particles.ts), [particles.md](particles.md) |
 | Change cameras, planes or world panels | [world/mod.rs](../crates/iron_render/src/world/mod.rs), [world_view.rs](../crates/iron_app/src/world_view.rs), [panels.rs](../crates/iron_app/src/panels.rs), [world-rendering.md](world-rendering.md) |
 | Add a draw command | [draw.rs](../crates/iron_ui/src/draw.rs), [ui/mod.rs](../crates/iron_render/src/ui/mod.rs), [rendering.md](rendering.md) |

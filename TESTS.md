@@ -402,11 +402,9 @@ layout pass):
 | M5-SCN-02 | Integration | In QuickJS, a component saves a scene (with `@property` fields and an engine `Light`), loads it back as the single scene and keeps itself with `dontDestroyOnLoad`; Rust's scene ends up with the loaded objects where they were saved. |
 | M5-SCN-03 | JS unit | `SceneManager`: the `Main` scene, additive loads, the active scene taking new objects, moving roots between scenes, unloading (not the last), events in order; single loads replacing all but `DontDestroyOnLoad`; `loadSceneAsync` from a file, failures rejecting; bad data refused. |
 | M5-SCN-04 | JS unit | `GameObject.instantiate` copies objects with children and components; references inside the copy point at the copies, outside ones stay; world placement without a parent, local under one. |
-| M5-SCN-05 | Unit | Asset references survive moving/renaming the file (GUID in `.meta`). |
-| M5-AST-01 | Integration | A fixture glTF cooks into the engine format; vertex/index counts match the source. |
-| M5-AST-02 | Integration | Cooking is deterministic: the same input gives byte-identical output. |
-| M5-AST-03 | Integration | Cooking for `desktop` gives BC7 textures; for `mobile`, ASTC. |
-| M5-AST-04 | Integration | Editing a source asset triggers re-cook and the GPU resource is swapped. |
+| M5-SCN-05 | — | Asset references survive moving/renaming the file (GUID in `.meta`): covered by `M5-AST-05`. |
+| M5-AST-07 | Integration (planned) | Cooking is deterministic: the same input gives byte-identical output. |
+| M5-AST-08 | Integration (planned) | Cooking per platform: BC7 / BC5 for desktop, ASTC for mobile. |
 | M5-RND-01 | Golden | A PBR sphere lit by a directional light. |
 | M5-RND-02 | Golden | A cube casting a shadow onto a plane. |
 | M5-RND-03 | Golden | IBL from a fixture HDRI on metallic and rough spheres. |

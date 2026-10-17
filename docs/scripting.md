@@ -80,7 +80,9 @@ Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops
 comment notes a binary encoding is planned once the op set settles (TESTS.md `M2-BEN-04`).
 There is no registry: the **app** matches on `op.name` in `App::tick`
 ([main.rs](../crates/iron_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
-forwarded to `Physics::apply` and the mixer; `scene.*` goes to `ScriptScene::apply` and `render.*` to
+forwarded to `Physics::apply` and the mixer; `cloth.*` goes to `ClothSystem`
+([physics-and-audio.md](physics-and-audio.md#cloth)); `app.runInBackground` and `app.targetFrameRate` are the
+app's own; `scene.*` goes to `ScriptScene::apply` and `render.*` to
 `WorldViews`/`Panels` (see [scene-and-objects.md](scene-and-objects.md) and
 [world-rendering.md](world-rendering.md)).
 
@@ -138,9 +140,13 @@ The scene globals, installed by `@iron/engine` and called by Rust: `__iron_regis
 `__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_destroy`,
 `__iron_tick(dt)` (script `Time`, once per frame), `__iron_scene(moved)` (engine moves of objects, see
 [scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__iron_screen(width, height, scale)`
-(the screen size in UI pixels, when it changes). `__iron_asset_text([id, text | null, ...])` answers
+(the screen size in UI pixels, when it changes). `__iron_animate(dt)` poses animated objects between `onUpdate`
+and `onLateUpdate` ([animation-3d.md](animation-3d.md#when-it-runs)); `__iron_focus(focused, paused)` reports
+focus and background pausing ([platform.md](platform.md#focus-and-pausing)); `__iron_assets_changed(paths)`
+reports reloaded asset files ([assets-and-models.md](assets-and-models.md#hot-reload-of-assets)). `__iron_asset_text([id, text | null, ...])` answers
 `asset.readText` (files scenes load, see [scene-and-objects.md](scene-and-objects.md#scenes)). Like `__iron_ui_event`, the optional ones
-(`__iron_tick`, `__iron_scene`, `__iron_screen`, `__iron_physics`, `__iron_audio`) are probed or
+(`__iron_tick`, `__iron_animate`, `__iron_focus`, `__iron_assets_changed`, `__iron_scene`, `__iron_screen`,
+`__iron_physics`, `__iron_audio`) are probed or
 called tolerantly, so games that don't import the engine still run.
 
 `iron_app` makes **one GameObject per starting class** (registered without `spawn: false`) with that
@@ -149,11 +155,15 @@ component (`spawn_starting_components`; a start scene is loaded by the scripts t
 frame). Per frame the order is:
 
 1. For each fixed tick: `fixed_update` (`onFixedUpdate`), `apply_script_output` (commits, then ops in
-   order), `step_physics` (calls `__iron_physics(moved, contacts, rays, characters)` if defined), then
-   `send_scene_moves` (`__iron_scene`).
+   order), `step_physics` (calls `__iron_physics(moved, contacts, rays, characters)` if defined), the
+   cloth step, then `send_scene_moves` (`__iron_scene`).
 2. `ScriptRuntime::tick` (timers and microtasks).
-3. `apply_script_output`, `update_active` (`__iron_tick`, then `onUpdate` and `onLateUpdate`, `dt`
-   capped at 0.1 s), `apply_script_output`, then `update_audio`, which calls `__iron_audio(ended)`.
+3. `apply_script_output`, `update_active` (`__iron_tick`, then `onUpdate`, `__iron_animate` and
+   `onLateUpdate`, `dt` capped at 0.1 s), `apply_script_output`, then `update_audio`, which calls
+   `__iron_audio(ended)`.
+
+Before all that, `App::tick` polls the script and asset watchers. While the game is paused in the
+background (see [platform.md](platform.md#focus-and-pausing)) it stops there: none of the steps run.
 4. At draw time: `pre_render` (`onPreRender`), `apply_script_output`, `__iron_screen` if the size
    changed, then panels and the world are drawn ([world-rendering.md](world-rendering.md)).
 
@@ -226,6 +236,14 @@ Flow, from an edit to the new code running:
 
 Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
 and runs without hot reload.
+
+Other files in the game folder (textures, models, sounds) have their own `AssetWatcher` in the same file.
+Those reload in place without touching the scripts: see
+[assets-and-models.md](assets-and-models.md#hot-reload-of-assets). `bun run dev` also writes `.meta` files
+for new assets before building ([assets-and-models.md](assets-and-models.md#the-asset-database)).
+
+**`--cook`.** `iron <folder> --cook` doesn't load any scripts: it prepares textures and models into
+`.iron/cooked/` and exits ([assets-and-models.md](assets-and-models.md#cooking)).
 
 **In place (dev builds, Fast Refresh).** When only `game.js` changed, `reload_in_place` runs the new
 code in the same runtime, so React state, the world, physics and sounds all stay. The sequence is

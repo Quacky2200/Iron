@@ -115,6 +115,25 @@ like Unity's Standard shader:
 - `emission` is added after lighting. Back faces are lit with the flipped normal.
 - Shadows scale each light's `N.L` term (see Shadows).
 
+### Skinned meshes
+
+`MeshData` can also hold `joints` and `weights` (four per vertex). A mesh with them gets a second vertex
+buffer of `SkinVertex { joints: [u32; 4], weights: [f32; 4] }` (attributes 4 and 5). `MeshInstance::bones`
+is `Some((first, count))` for a skinned renderer, pointing into `WorldView::bones`: one matrix per bone,
+the bone's world matrix times its inverse bind pose, made each frame by `WorldViews::views` from the
+renderer's `Skin` ([animation-3d.md](animation-3d.md#skinned-meshes) has the script side).
+
+- The main pass has four extra pipelines (`skinned`: opaque or see-through, one- or two-sided) using
+  `vs_mesh_skinned` with the normal `fs_mesh`. Bone matrices go in a storage buffer (binding 4 of the
+  mesh group). Every view's bones are appended in one list, each view after the earlier ones; the
+  instance's `maps.w` carries the first bone plus one (0: a rigid mesh).
+- `skin_matrix` blends the four bone matrices by weight. The object's own `model` matrix is ignored:
+  bones are already in world space.
+- The shadow pass has `vs_shadow_skinned` and its own bones buffer, so skinned casters bend the shadow.
+  Skinned cut-outs cast solid shadows. Skinned and rigid casters are drawn in separate runs.
+- Skinned meshes are never frustum culled: they move away from their mesh bounds.
+- The golden is `M5-RND-21`.
+
 ### Materials
 
 `MaterialMaps` and the other `MeshInstance` fields follow Unity's Standard shader. Maps are
@@ -347,8 +366,8 @@ Screenshot runs and window frames both go through `draw_frame`.
 |---|---|
 | `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical` |
 | `render.plane` | `component object [w h] [r g b a]` |
-| `render.mesh` | `id [positions] [normals] [uvs] [indices]` (a script mesh; `id null` removes it) |
-| `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic` |
+| `render.mesh` | `id [positions] [normals] [uvs] [indices] [joints, 4 per vertex] [weights, 4 per vertex]` (a script mesh; `id null` removes it) |
+| `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic ... [bone objects]\|null [bind poses, 16 each]` (the last two for `SkinnedMeshRenderer`) |
 | `render.light` | `component object type [r g b] intensity range spotAngle innerSpotAngle haloSize beamIntensity shadows shadowStrength cullingMask` |
 | `render.sprite` | `component object texture [x y w h]\|null [pivot x y] pixelsPerUnit [r g b a] flipX flipY sortingOrder` |
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
@@ -550,6 +569,17 @@ engine loads; the app copies the values onto the renderer before each frame.
   `Enable` uses the texture's level, `ForceEnable` uses at least 9. The mip limit drops that many top
   levels of every texture. Samplers are cached per filter, wrap and anisotropy.
 
+## Cooked texture uploads
+
+`WorldRenderer::set_texture` builds the mip chain (`mip_chain`) and calls the shared upload with a
+`CookedTexture { width, height, format, srgb, mips, filter, wrap, anisotropy }`. `TexelFormat` is `Rgba8`,
+`Bc1` (8 bytes per 4 x 4 block) or `Bc3` (16). `set_cooked_texture` uploads such levels as they are, with
+the matching wgpu format (the sRGB variant when `srgb`; a linear view format for the sampling path) and
+whole-block row sizes. It returns false for data that fails `is_valid`, is too big, or is BC when the GPU
+lacks `TEXTURE_COMPRESSION_BC` (`supports_bc`; `gpu.rs` requests it when the adapter has it). The app
+then decodes the cooked texture and uses `set_texture`. How cooking makes them:
+[assets-and-models.md](assets-and-models.md#cooking).
+
 ## Limits
 
 - Only the first directional light with shadows casts sun shadows; spot and point lights share 24 layers,
@@ -562,6 +592,8 @@ engine loads; the app copies the values onto the renderer before each frame.
   (by its centre), with no blending between probes; the cube mips are a box blur, not a GGX
   prefilter. The sky is one fixed 128-texel map, and only specular reflections use probes.
 - There is no screen-space reflection.
+- Skinning is four bones per vertex, in the vertex shader. Skinned meshes are never culled and a skinned
+  renderer's bones are rebuilt every frame for each view.
 - Frustum culling is conservative: meshes are tested by the bounding box of their mesh, quads by the unit
   quad, and nothing is occlusion culled. Cull distances are per layer, not per object.
 - Panels re-render every frame while visible, with no dirty tracking.
@@ -579,7 +611,9 @@ beam) and `-10` (directional shadows) cover the M5.a2 work. The materials work a
 procedural sky, with the skybox as background), `M5-RND-12` (a planar mirror: reflected camera, clip plane
 and screen-space sampling) and `M5-RND-13` (a box-projected reflection probe in a room). Later goldens: `M5-RND-17` (material maps and
 rendering modes under a sky), `-18` (tonemapping, exposure and FXAA), `-19` (a render texture shown on a
-monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count).
+monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count), and `-21`
+(a tube skinned to two bones, bent, with a bent shadow). Cooked textures are tested with cooking
+(`M5-AST-06`, see [assets-and-models.md](assets-and-models.md#tests)).
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
