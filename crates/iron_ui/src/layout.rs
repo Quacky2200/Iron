@@ -74,6 +74,9 @@ struct NodeData {
     final_layout: Layout,
     /// Out-of-flow boxes whose containing block is this node.
     hoisted: Vec<taffy::NodeId>,
+    /// The containing block whose `hoisted` list holds this node, so removing the node
+    /// takes it off that list too (a cached layout would otherwise still visit it).
+    hoisted_by: Option<taffy::NodeId>,
     cache: Cache,
     detailed: DetailedLayoutInfo,
 }
@@ -88,6 +91,7 @@ impl NodeData {
             unrounded: Layout::new(),
             final_layout: Layout::new(),
             hoisted: Vec::new(),
+            hoisted_by: None,
             cache: Cache::new(),
             detailed: DetailedLayoutInfo::None,
         }
@@ -158,6 +162,20 @@ impl LayoutEngine for TaffyLayout {
                 && c.parent == Some(k)
             {
                 c.parent = None;
+            }
+        }
+        // Off its containing block's out-of-flow list, and its own list's boxes free.
+        if let Some(owner) = node.hoisted_by
+            && let Some(o) = self.nodes.get_mut(&u64::from(owner))
+        {
+            o.hoisted.retain(|h| *h != k);
+            self.mark_dirty_up(owner);
+        }
+        for h in node.hoisted {
+            if let Some(n) = self.nodes.get_mut(&u64::from(h))
+                && n.hoisted_by == Some(k)
+            {
+                n.hoisted_by = None;
             }
         }
     }
@@ -380,7 +398,14 @@ impl LayoutContainingBlock for View<'_, '_> {
     }
 
     fn clear_hoisted_children(&mut self, node_id: taffy::NodeId) {
-        self.layout.node_mut(node_id).hoisted.clear();
+        let old = std::mem::take(&mut self.layout.node_mut(node_id).hoisted);
+        for h in old {
+            if let Some(n) = self.layout.nodes.get_mut(&u64::from(h))
+                && n.hoisted_by == Some(node_id)
+            {
+                n.hoisted_by = None;
+            }
+        }
     }
 
     fn add_hoisted_children(&mut self, node_id: taffy::NodeId, hoisted: &[taffy::NodeId]) {
@@ -388,6 +413,11 @@ impl LayoutContainingBlock for View<'_, '_> {
             .node_mut(node_id)
             .hoisted
             .extend_from_slice(hoisted);
+        for h in hoisted {
+            if let Some(n) = self.layout.nodes.get_mut(&u64::from(*h)) {
+                n.hoisted_by = Some(node_id);
+            }
+        }
     }
 
     fn get_detailed_layout_info(&self, node_id: taffy::NodeId) -> &DetailedLayoutInfo {
