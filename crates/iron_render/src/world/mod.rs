@@ -10,6 +10,7 @@
 //! passed to each render) or kept by the renderer ([`WorldRenderer::set_texture`]).
 
 pub mod bloom;
+pub mod cull;
 pub mod environment;
 pub mod mesh;
 pub mod texture;
@@ -422,6 +423,20 @@ struct MeshBuffers {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     count: u32,
+    /// The local bounding box, for frustum culling.
+    bounds: (Vec3, Vec3),
+}
+
+/// What the last frame drew and what culling skipped (every view, mirror and probe
+/// face counted), like Unity's rendering statistics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WorldStats {
+    pub meshes: usize,
+    pub culled_meshes: usize,
+    pub quads: usize,
+    pub culled_quads: usize,
+    pub lights: usize,
+    pub culled_lights: usize,
 }
 
 /// Quad, background-fill, opaque-mesh and see-through-mesh pipelines for one format.
@@ -438,7 +453,9 @@ struct Pipelines {
 }
 
 /// A view's opaque runs, its blended runs (`true`: a mesh) and its lights.
-type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>);
+/// Opaque runs, see-through runs, the view's lights in the light buffer, and which of
+/// the view's lights those are (culled ones left out).
+type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>, Vec<usize>);
 
 /// A run of instances drawn with one mesh or texture.
 struct Run {
@@ -450,6 +467,8 @@ struct Run {
     glow: bool,
     /// Opaque meshes that cast shadows (drawn into the shadow map).
     casts: bool,
+    /// In the camera's view; casters outside it are only drawn into the shadow map.
+    visible: bool,
     range: Range<u32>,
 }
 
@@ -503,6 +522,8 @@ pub struct WorldRenderer {
     quads: wgpu::Buffer,
     mesh_instances: wgpu::Buffer,
     meshes: HashMap<u32, MeshBuffers>,
+    /// What the last frame drew and culled.
+    stats: WorldStats,
     textures: HashMap<u32, AssetTexture>,
     samplers: HashMap<(TextureFilter, TextureWrap), wgpu::Sampler>,
     sampler: wgpu::Sampler,
@@ -746,6 +767,7 @@ impl WorldRenderer {
             quads: Self::storage::<GpuQuad>(gpu, "world quads", 64),
             mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
             meshes: HashMap::new(),
+            stats: WorldStats::default(),
             textures: HashMap::new(),
             samplers: HashMap::new(),
             sampler,
@@ -834,6 +856,7 @@ impl WorldRenderer {
                     wgpu::BufferUsages::INDEX,
                 ),
                 count: data.indices.len() as u32,
+                bounds: cull::bounds(&data.positions).unwrap_or_default(),
             },
         );
         true
@@ -843,6 +866,11 @@ impl WorldRenderer {
         if id < PRIMITIVE_BASE {
             self.meshes.remove(&id);
         }
+    }
+
+    /// What the last [`WorldRenderer::render_views`] drew and what culling skipped.
+    pub fn stats(&self) -> WorldStats {
+        self.stats
     }
 
     pub fn has_mesh(&self, id: u32) -> bool {
@@ -1251,6 +1279,7 @@ impl WorldRenderer {
         views: &[WorldView],
         textures: &[&wgpu::TextureView],
     ) {
+        self.stats = WorldStats::default();
         let scale = if self.render_scale.is_finite() {
             self.render_scale.clamp(0.25, 2.0)
         } else {
@@ -1583,14 +1612,30 @@ impl WorldRenderer {
                 .map_or(ALL_LAYERS, |l| l.culling_mask);
             let casts = |m: &MeshInstance| m.cast_shadows && in_mask(shadow_mask, m.layer);
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
+            let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
+            let sees = |m: &MeshInstance| {
+                self.meshes
+                    .get(&m.mesh)
+                    .is_none_or(|b| frustum.transformed(b.bounds, m.model))
+            };
             // Opaque meshes, grouped by mesh and texture (instancing).
             let mut opaque: Vec<&MeshInstance> = view
                 .meshes
                 .iter()
                 .filter(known)
                 .filter(|m| m.color[3] >= 1.0 && m.glow == MeshGlow::None)
+                // Out of view, they may still cast shadows into it.
+                .filter(|m| sees(m) || casts(m))
                 .collect();
-            opaque.sort_by_key(|m| (m.mesh, m.texture, casts(m), probe_for(m).map(|p| p.id)));
+            opaque.sort_by_key(|m| {
+                (
+                    m.mesh,
+                    m.texture,
+                    casts(m),
+                    sees(m),
+                    probe_for(m).map(|p| p.id),
+                )
+            });
             let mut opaque_runs: Vec<Run> = Vec::new();
             for m in opaque {
                 let i = meshes.len() as u32;
@@ -1600,6 +1645,7 @@ impl WorldRenderer {
                         if r.mesh == Some(m.mesh)
                             && r.texture == m.texture
                             && r.casts == casts(m)
+                            && r.visible == sees(m)
                             && r.probe == probe_for(m).map(|p| p.id)
                             && r.range.end == i =>
                     {
@@ -1611,6 +1657,7 @@ impl WorldRenderer {
                         probe: probe_for(m).map(|p| p.id),
                         glow: false,
                         casts: casts(m),
+                        visible: sees(m),
                         range: i..i + 1,
                     }),
                 }
@@ -1625,10 +1672,12 @@ impl WorldRenderer {
                 .iter()
                 .filter(known)
                 .filter(|m| m.color[3] < 1.0 || m.glow != MeshGlow::None)
+                .filter(|m| sees(m))
                 .map(|m| (0, depth_of(m.model), Item::Mesh(m)))
                 .chain(
                     view.quads
                         .iter()
+                        .filter(|q| frustum.transformed(cull::QUAD_BOUNDS, q.model))
                         .map(|q| (q.order, depth_of(q.model), Item::Quad(q))),
                 )
                 .collect();
@@ -1648,6 +1697,7 @@ impl WorldRenderer {
                                 probe: probe_for(m).map(|p| p.id),
                                 glow: m.glow != MeshGlow::None,
                                 casts: false,
+                                visible: true,
                                 range: i..i + 1,
                             },
                         ));
@@ -1687,6 +1737,7 @@ impl WorldRenderer {
                                     probe: None,
                                     glow: q.additive,
                                     casts: false,
+                                    visible: true,
                                     range: i..i + 1,
                                 },
                             )),
@@ -1694,8 +1745,36 @@ impl WorldRenderer {
                     }
                 }
             }
+            // Point and spot lights whose range doesn't reach the view are left out.
+            let kept: Vec<usize> = view
+                .lights
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| {
+                    l.kind == LightKind::Directional || frustum.sphere(l.position, l.range)
+                })
+                .map(|(i, _)| i)
+                .collect();
+            let drawn = opaque_runs
+                .iter()
+                .filter(|r| r.visible)
+                .chain(blended.iter().filter(|(mesh, _)| *mesh).map(|(_, r)| r))
+                .map(|r| r.range.len())
+                .sum::<usize>();
+            let all_meshes = view.meshes.iter().filter(known).count();
+            let drawn_quads = blended
+                .iter()
+                .filter(|(mesh, _)| !*mesh)
+                .map(|(_, r)| r.range.len())
+                .sum::<usize>();
+            self.stats.meshes += drawn;
+            self.stats.culled_meshes += all_meshes - drawn;
+            self.stats.quads += drawn_quads;
+            self.stats.culled_quads += view.quads.len() - drawn_quads;
+            self.stats.lights += kept.len();
+            self.stats.culled_lights += view.lights.len() - kept.len();
             let first_light = lights.len() as u32;
-            lights.extend(view.lights.iter().map(|l| {
+            lights.extend(kept.iter().map(|&k| &view.lights[k]).map(|l| {
                 let (kind, spot) = match l.kind {
                     LightKind::Directional => (0.0, [0.0; 4]),
                     LightKind::Point => (1.0, [0.0; 4]),
@@ -1720,7 +1799,7 @@ impl WorldRenderer {
                     mask: [l.culling_mask, 0, 0, 0],
                 }
             }));
-            per_view.push((opaque_runs, blended, first_light..lights.len() as u32));
+            per_view.push((opaque_runs, blended, first_light..lights.len() as u32, kept));
         }
         Self::upload(gpu, &mut self.quads, "world quads", &quads);
         Self::upload(gpu, &mut self.mesh_instances, "world meshes", &meshes);
@@ -1765,12 +1844,16 @@ impl WorldRenderer {
             let c = view.camera.clear;
             let p = view.camera.position;
             let count = per_view[i].2.len() as f32;
-            // Light indices are per view; every view has the same lights.
-            let (shadow_view_proj, shadow_params) = match &shadow {
-                Some((_, index, s, matrix)) => (
+            // The shadowing light (directional, so never culled) by its place among this
+            // view's kept lights.
+            let index = shadow
+                .as_ref()
+                .and_then(|(_, index, ..)| per_view[i].3.iter().position(|k| k == index));
+            let (shadow_view_proj, shadow_params) = match (&shadow, index) {
+                (Some((_, _, s, matrix)), Some(index)) => (
                     *matrix,
                     [
-                        *index as f32,
+                        index as f32,
                         s.strength.clamp(0.0, 1.0),
                         shadow_texel,
                         // The PCF radius in texels: 0 is hard.
@@ -1781,7 +1864,7 @@ impl WorldRenderer {
                         },
                     ],
                 ),
-                None => (Mat4::IDENTITY, [-1.0, 0.0, 0.0, 0.0]),
+                _ => (Mat4::IDENTITY, [-1.0, 0.0, 0.0, 0.0]),
             };
             let globals = GpuGlobals {
                 view_proj: view.camera.view_proj.to_cols_array_2d(),
@@ -1816,7 +1899,7 @@ impl WorldRenderer {
         // One lights buffer per view (they differ), bound with the view.
         let light_buffers: Vec<wgpu::Buffer> = per_view
             .iter()
-            .map(|(_, _, range)| {
+            .map(|(_, _, range, _)| {
                 let slice = &lights[range.start as usize..range.end as usize];
                 let mut buffer = Self::storage::<GpuLight>(gpu, "world lights", slice.len());
                 Self::upload(gpu, &mut buffer, "world lights", slice);
@@ -1976,7 +2059,7 @@ impl WorldRenderer {
                 }),
                 ..Default::default()
             });
-            for (i, (view, (opaque, blended, _))) in views.iter().zip(&per_view).enumerate() {
+            for (i, (view, (opaque, blended, ..))) in views.iter().zip(&per_view).enumerate() {
                 let Some(px) = viewport_px(view.viewport, size) else {
                     continue;
                 };
@@ -2026,7 +2109,7 @@ impl WorldRenderer {
                         None => {}
                     }
                 };
-                for run in opaque {
+                for run in opaque.iter().filter(|r| r.visible) {
                     draw(&mut pass, run, false);
                 }
                 for (_, run) in blended {

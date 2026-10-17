@@ -1305,3 +1305,115 @@ fn light_and_mirror_culling_masks() {
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-15", size.0, size.1, &pixels, 3);
 }
+
+// M5-CUL-02
+#[test]
+fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
+    use iron_render::{
+        Light, LightKind, MeshGlow, MeshInstance, Shadows, WorldStats, primitive_id,
+    };
+    let gpu = shared_gpu();
+    let size = (128, 128);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // Straight down at the floor from 4 m up: a 60 degree view covers about 4.6 m.
+    let eye = Vec3::new(0.0, 4.0, 0.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::NEG_Z).inverse(),
+        60.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let mesh = |name: &str, model: Mat4, cast_shadows: bool| MeshInstance {
+        mesh: primitive_id(name).unwrap(),
+        model,
+        color: [0.8, 0.8, 0.8, 1.0],
+        emission: [0.0; 3],
+        smoothness: 0.2,
+        metallic: 0.0,
+        unlit: false,
+        texture: None,
+        tiling: [1.0, 1.0, 0.0, 0.0],
+        glow: MeshGlow::None,
+        cast_shadows,
+        mirror: None,
+        layer: 0,
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.1, 0.1, 0.1];
+    v.meshes = vec![
+        mesh("plane", Mat4::IDENTITY, true),
+        // Behind the camera (above it): not drawn, but its shadow lands in view.
+        mesh(
+            "cube",
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(1.5, 0.2, 1.5),
+                Quat::IDENTITY,
+                Vec3::new(-1.0, 6.0, 0.0),
+            ),
+            true,
+        ),
+        // Far off to the side and casting nothing: skipped altogether.
+        mesh(
+            "sphere",
+            Mat4::from_translation(Vec3::new(30.0, 0.0, 0.0)),
+            false,
+        ),
+    ];
+    v.quads = vec![WorldQuad::colored(
+        Mat4::from_translation(Vec3::new(0.0, 0.0, 40.0)),
+        [1.0; 4],
+    )];
+    v.lights = vec![
+        Light {
+            kind: LightKind::Directional,
+            color: [1.0, 1.0, 1.0],
+            position: Vec3::ZERO,
+            direction: Vec3::NEG_Y,
+            range: 0.0,
+            shadows: Some(Shadows {
+                soft: false,
+                strength: 1.0,
+            }),
+            culling_mask: ALL_LAYERS,
+        },
+        // Out of reach of the view.
+        Light {
+            kind: LightKind::Point,
+            color: [5.0, 0.0, 0.0],
+            position: Vec3::new(40.0, 1.0, 0.0),
+            direction: Vec3::NEG_Y,
+            range: 5.0,
+            shadows: None,
+            culling_mask: ALL_LAYERS,
+        },
+    ];
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 20.0;
+    world.render_views(&gpu, &rt, &[v], &[]);
+    assert_eq!(
+        world.stats(),
+        WorldStats {
+            meshes: 1,
+            culled_meshes: 2,
+            quads: 0,
+            culled_quads: 1,
+            lights: 1,
+            culled_lights: 1,
+        }
+    );
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let at = |x: u32, y: u32| pixels[((y * size.0 + x) * 4) as usize];
+    // The plank shadows the floor below it (left of centre), not the right side.
+    let (shade, lit) = (at(64 - 27, 64), at(64 + 27, 64));
+    assert!(shade + 60 < lit, "shadow {shade} vs lit {lit}");
+}

@@ -1056,12 +1056,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       the casters); `ReflectionProbe.cullingMask` and `Mirror.cullingMask` (what they
       capture); `M5-RND-15`, `M5-LAY-04`
     - [ ] Culling distances: `Camera.layerCullDistances` and `layerCullSpherical` done
-      (above); per-light
+      (above); per-light range culling done (with frustum culling); per-light
       range culling (skip lights whose range doesn't reach the view); shadow distance per
       light; particle systems and sprites culled by distance too
-    - [ ] Frustum culling: bounds for every mesh, sprite, particle system and light; skip
-      what's outside each camera's view (and outside the shadow map's box for casters)
-      before building draw lists
+    - [x] Frustum culling (`world/cull.rs`): meshes by their local bounds (kept per
+      uploaded mesh) moved by their model, quads (sprites, particles, panels) by the unit
+      quad, point and spot lights by the sphere they reach; every view, mirror and probe
+      face. Casters out of view still go into the shadow map. `WorldRenderer::stats()`
+      counts drawn and culled meshes, quads and lights (`M5-CUL-01`, `M5-CUL-02`)
+    - [ ] Later: skip casters outside the shadow map's box too; cull whole particle
+      systems by their bounds before building quads; expose the stats to scripts
     - [ ] LOD groups (Unity's `LODGroup`): meshes swapped by screen size with optional
       cross-fade, and a cull level below the smallest
     - [ ] Occlusion culling later (GPU depth pyramid / Hi-Z), for big scenes
