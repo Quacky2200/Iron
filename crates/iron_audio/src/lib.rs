@@ -1,0 +1,525 @@
+//! Audio for scripts: kira driven by ops (DESIGN.md §8.2).
+//!
+//! Like physics, scripts pick numeric IDs for sounds, playing instances, buses and
+//! emitters, and queue `audio.*` ops; [`Audio::apply`] runs them. Sounds are decoded
+//! files from the game folder (the app reads the bytes); `stream` sounds decode as they
+//! play (music). Buses are mixer sub-tracks (`music`, `sfx`, ...) whose volume applies to
+//! everything played on them. Emitters are spatial tracks positioned in the world:
+//! sounds played on one pan and fade with distance from the listener.
+//!
+//! [`Audio::poll`] reports instances that finished, so scripts can drop them.
+
+mod offline;
+
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::sync::Arc;
+use std::time::Duration;
+
+use iron_core::Value;
+use kira::backend::Backend;
+use kira::listener::ListenerHandle;
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
+use kira::sound::streaming::{StreamingSoundData, StreamingSoundHandle};
+use kira::sound::{FromFileError, PlaybackState};
+use kira::track::{
+    SpatialTrackBuilder, SpatialTrackDistances, SpatialTrackHandle, TrackBuilder, TrackHandle,
+};
+use kira::{AudioManager, AudioManagerSettings, Decibels, Easing, Panning, PlaybackRate, Tween};
+
+pub use kira::DefaultBackend;
+pub use offline::OfflineBackend;
+
+/// What a sound, instance, bus or emitter is called by scripts.
+pub type ScriptId = u32;
+
+enum Sound {
+    /// Decoded up front: short effects, played many times at once.
+    Static(Box<StaticSoundData>),
+    /// The file's bytes, decoded while playing (music, ambience).
+    Stream(Arc<[u8]>),
+}
+
+enum Instance {
+    Static(StaticSoundHandle),
+    Stream(StreamingSoundHandle<FromFileError>),
+}
+
+/// A bus (plain sub-track) or an emitter (spatial sub-track).
+enum Track {
+    Bus(TrackHandle),
+    Emitter(SpatialTrackHandle),
+}
+
+/// Settings for one `play`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayOptions {
+    /// Linear gain, 1 = as recorded.
+    pub volume: f32,
+    /// Speed and pitch, 1 = normal.
+    pub rate: f32,
+    /// -1 left, 0 centre, 1 right.
+    pub pan: f32,
+    pub looped: bool,
+    /// Seconds to fade in over.
+    pub fade_in: f32,
+    /// Seconds into the sound to start at.
+    pub start: f32,
+}
+
+impl Default for PlayOptions {
+    fn default() -> Self {
+        Self {
+            volume: 1.0,
+            rate: 1.0,
+            pan: 0.0,
+            looped: false,
+            fade_in: 0.0,
+            start: 0.0,
+        }
+    }
+}
+
+/// Linear gain to decibels; 0 (or less) is silence.
+pub fn gain_to_db(gain: f32) -> Decibels {
+    if gain <= 0.0 {
+        Decibels::SILENCE
+    } else {
+        Decibels((20.0 * gain.log10()).max(Decibels::SILENCE.0))
+    }
+}
+
+fn tween(seconds: f32) -> Tween {
+    Tween {
+        duration: Duration::from_secs_f32(seconds.max(0.0)),
+        ..Default::default()
+    }
+}
+
+fn mint3(v: [f32; 3]) -> mint::Vector3<f32> {
+    mint::Vector3 {
+        x: v[0],
+        y: v[1],
+        z: v[2],
+    }
+}
+
+/// The mixer scripts drive.
+pub struct Audio<B: Backend = DefaultBackend> {
+    manager: AudioManager<B>,
+    sounds: HashMap<ScriptId, Sound>,
+    instances: HashMap<ScriptId, Instance>,
+    tracks: HashMap<ScriptId, Track>,
+    listener: Option<ListenerHandle>,
+}
+
+impl Audio<DefaultBackend> {
+    /// Opens the default output device.
+    pub fn new() -> Result<Self, String> {
+        Self::with_settings(AudioManagerSettings::default())
+    }
+}
+
+impl<B: Backend> Audio<B>
+where
+    B::Error: std::fmt::Debug,
+{
+    pub fn with_settings(settings: AudioManagerSettings<B>) -> Result<Self, String> {
+        let manager = AudioManager::new(settings).map_err(|e| format!("{e:?}"))?;
+        Ok(Self {
+            manager,
+            sounds: HashMap::new(),
+            instances: HashMap::new(),
+            tracks: HashMap::new(),
+            listener: None,
+        })
+    }
+
+    pub fn backend_mut(&mut self) -> &mut B {
+        self.manager.backend_mut()
+    }
+
+    /// Registers a sound from an audio file's bytes (WAV, OGG, MP3, FLAC). `stream`
+    /// sounds are decoded while they play instead of up front.
+    pub fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String> {
+        let sound = if stream {
+            // Check it decodes now, so a bad file fails at load like a static one.
+            let bytes: Arc<[u8]> = bytes.into();
+            StreamingSoundData::from_cursor(Cursor::new(bytes.clone()))
+                .map_err(|e| e.to_string())?;
+            Sound::Stream(bytes)
+        } else {
+            Sound::Static(Box::new(
+                StaticSoundData::from_cursor(Cursor::new(bytes)).map_err(|e| e.to_string())?,
+            ))
+        };
+        self.sounds.insert(id, sound);
+        Ok(())
+    }
+
+    /// Registers a sound from raw stereo frames (generated audio, tests).
+    pub fn load_frames(&mut self, id: ScriptId, sample_rate: u32, frames: Vec<[f32; 2]>) {
+        let frames: Arc<[kira::Frame]> = frames
+            .into_iter()
+            .map(|[left, right]| kira::Frame { left, right })
+            .collect();
+        self.sounds.insert(
+            id,
+            Sound::Static(Box::new(StaticSoundData {
+                sample_rate,
+                frames,
+                settings: Default::default(),
+                slice: None,
+            })),
+        );
+    }
+
+    /// Plays sound `sound` as instance `id`, on `track` (a bus or emitter) or the master.
+    pub fn play(
+        &mut self,
+        id: ScriptId,
+        sound: ScriptId,
+        track: Option<ScriptId>,
+        options: PlayOptions,
+    ) -> Result<(), String> {
+        let sound = self
+            .sounds
+            .get(&sound)
+            .ok_or_else(|| format!("no sound {sound}"))?;
+        let fade = (options.fade_in > 0.0).then(|| tween(options.fade_in));
+        let track = match track {
+            Some(t) => Some(
+                self.tracks
+                    .get_mut(&t)
+                    .ok_or_else(|| format!("no bus or emitter {t}"))?,
+            ),
+            None => None,
+        };
+        let instance = match sound {
+            Sound::Static(data) => {
+                let mut data = data
+                    .volume(gain_to_db(options.volume))
+                    .playback_rate(PlaybackRate(options.rate.max(0.0) as f64))
+                    .panning(Panning(options.pan.clamp(-1.0, 1.0)))
+                    .fade_in_tween(fade)
+                    .start_position(options.start.max(0.0) as f64);
+                if options.looped {
+                    data = data.loop_region(..);
+                }
+                let handle = match track {
+                    Some(Track::Bus(t)) => t.play(data),
+                    Some(Track::Emitter(t)) => t.play(data),
+                    None => self.manager.play(data),
+                }
+                .map_err(|e| e.to_string())?;
+                Instance::Static(handle)
+            }
+            Sound::Stream(bytes) => {
+                let mut data = StreamingSoundData::from_cursor(Cursor::new(bytes.clone()))
+                    .map_err(|e| e.to_string())?
+                    .volume(gain_to_db(options.volume))
+                    .playback_rate(PlaybackRate(options.rate.max(0.0) as f64))
+                    .panning(Panning(options.pan.clamp(-1.0, 1.0)))
+                    .fade_in_tween(fade)
+                    .start_position(options.start.max(0.0) as f64);
+                if options.looped {
+                    data = data.loop_region(..);
+                }
+                let handle = match track {
+                    Some(Track::Bus(t)) => t.play(data),
+                    Some(Track::Emitter(t)) => t.play(data),
+                    None => self.manager.play(data),
+                }
+                .map_err(|e| e.to_string())?;
+                Instance::Stream(handle)
+            }
+        };
+        if let Some(old) = self.instances.insert(id, instance) {
+            stop(old, Tween::default());
+        }
+        Ok(())
+    }
+
+    /// Runs one `audio.*` op (the name without the prefix). `load` needs the file's
+    /// bytes, so the app handles it and calls [`Self::load`].
+    pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
+        let a = Args(args);
+        match name {
+            // `play id sound track|null [volume rate pan loop fadeIn start]`
+            "play" => {
+                let o = a.list(3).unwrap_or(&[]);
+                let n = |i: usize, d: f32| o.get(i).and_then(Value::as_f64).map_or(d, |v| v as f32);
+                let options = PlayOptions {
+                    volume: n(0, 1.0),
+                    rate: n(1, 1.0),
+                    pan: n(2, 0.0),
+                    looped: matches!(o.get(3), Some(Value::Bool(true))),
+                    fade_in: n(4, 0.0),
+                    start: n(5, 0.0),
+                };
+                let track = a.opt_id(2);
+                self.play(a.id(0)?, a.id(1)?, track, options)?;
+            }
+            // `set id property value tweenSeconds`: volume, rate, pan.
+            "set" => {
+                let id = a.id(0)?;
+                let t = tween(a.opt_num(3).unwrap_or(0.0));
+                let v = a.num(2)?;
+                let instance = self
+                    .instances
+                    .get_mut(&id)
+                    .ok_or_else(|| format!("no instance {id}"))?;
+                match (a.str(1)?, instance) {
+                    ("volume", Instance::Static(h)) => h.set_volume(gain_to_db(v), t),
+                    ("volume", Instance::Stream(h)) => h.set_volume(gain_to_db(v), t),
+                    ("rate", Instance::Static(h)) => {
+                        h.set_playback_rate(PlaybackRate(v.max(0.0) as f64), t)
+                    }
+                    ("rate", Instance::Stream(h)) => {
+                        h.set_playback_rate(PlaybackRate(v.max(0.0) as f64), t)
+                    }
+                    ("pan", Instance::Static(h)) => h.set_panning(Panning(v.clamp(-1.0, 1.0)), t),
+                    ("pan", Instance::Stream(h)) => h.set_panning(Panning(v.clamp(-1.0, 1.0)), t),
+                    (other, _) => return Err(format!("unknown sound property `{other}`")),
+                }
+            }
+            // `pause|resume|stop id fadeSeconds`
+            "pause" | "resume" | "stop" => {
+                let id = a.id(0)?;
+                let t = tween(a.opt_num(1).unwrap_or(0.0));
+                let Some(instance) = self.instances.get_mut(&id) else {
+                    // Already finished (and reported): nothing to do.
+                    return Ok(());
+                };
+                match (name, instance) {
+                    ("pause", Instance::Static(h)) => h.pause(t),
+                    ("pause", Instance::Stream(h)) => h.pause(t),
+                    ("resume", Instance::Static(h)) => h.resume(t),
+                    ("resume", Instance::Stream(h)) => h.resume(t),
+                    // Kept until it has faded out; `poll` reports it then.
+                    (_, Instance::Static(h)) => h.stop(t),
+                    (_, Instance::Stream(h)) => h.stop(t),
+                }
+            }
+            "seek" => {
+                let id = a.id(0)?;
+                let to = a.num(1)?.max(0.0) as f64;
+                match self.instances.get_mut(&id) {
+                    Some(Instance::Static(h)) => h.seek_to(to),
+                    Some(Instance::Stream(h)) => h.seek_to(to),
+                    None => {}
+                }
+            }
+            "unload" => {
+                self.sounds.remove(&a.id(0)?);
+            }
+            // `bus id parent|null volume`
+            "bus" => {
+                let id = a.id(0)?;
+                let builder = TrackBuilder::new().volume(gain_to_db(a.opt_num(2).unwrap_or(1.0)));
+                let handle = match a.opt_id(1) {
+                    Some(p) => match self.tracks.get_mut(&p) {
+                        Some(Track::Bus(parent)) => parent.add_sub_track(builder),
+                        Some(Track::Emitter(parent)) => parent.add_sub_track(builder),
+                        None => return Err(format!("no bus {p}")),
+                    },
+                    None => self.manager.add_sub_track(builder),
+                }
+                .map_err(|e| e.to_string())?;
+                self.tracks.insert(id, Track::Bus(handle));
+            }
+            // `emitter id [x y z] [minDistance maxDistance] parent|null`
+            "emitter" => {
+                let id = a.id(0)?;
+                let position = mint3(a.floats::<3>(1)?);
+                let d = a.floats::<2>(2).unwrap_or([1.0, 50.0]);
+                let builder = SpatialTrackBuilder::new()
+                    .distances(SpatialTrackDistances {
+                        min_distance: d[0].max(0.0),
+                        max_distance: d[1].max(d[0] + 0.01),
+                    })
+                    // Inverse-square-like falloff between the distances.
+                    .attenuation_function(Easing::OutPowi(2));
+                let listener = self.listener()?;
+                let handle = match a.opt_id(3) {
+                    Some(p) => match self.tracks.get_mut(&p) {
+                        Some(Track::Bus(parent)) => {
+                            parent.add_spatial_sub_track(listener, position, builder)
+                        }
+                        Some(Track::Emitter(parent)) => {
+                            parent.add_spatial_sub_track(listener, position, builder)
+                        }
+                        None => return Err(format!("no bus {p}")),
+                    },
+                    None => self
+                        .manager
+                        .add_spatial_sub_track(listener, position, builder),
+                }
+                .map_err(|e| e.to_string())?;
+                self.tracks.insert(id, Track::Emitter(handle));
+            }
+            // `trackVolume id|null volume tweenSeconds` (null: the master)
+            "trackVolume" => {
+                let db = gain_to_db(a.num(1)?);
+                let t = tween(a.opt_num(2).unwrap_or(0.0));
+                match a.opt_id(0) {
+                    None => self.manager.main_track().set_volume(db, t),
+                    Some(id) => match self.tracks.get_mut(&id) {
+                        Some(Track::Bus(h)) => h.set_volume(db, t),
+                        Some(Track::Emitter(h)) => h.set_volume(db, t),
+                        None => return Err(format!("no bus or emitter {id}")),
+                    },
+                }
+            }
+            // `trackPause|trackResume id fadeSeconds`
+            "trackPause" | "trackResume" => {
+                let id = a.id(0)?;
+                let t = tween(a.opt_num(1).unwrap_or(0.0));
+                match (name, self.tracks.get_mut(&id)) {
+                    ("trackPause", Some(Track::Bus(h))) => h.pause(t),
+                    ("trackPause", Some(Track::Emitter(h))) => h.pause(t),
+                    (_, Some(Track::Bus(h))) => h.resume(t),
+                    (_, Some(Track::Emitter(h))) => h.resume(t),
+                    (_, None) => return Err(format!("no bus or emitter {id}")),
+                }
+            }
+            // `emitterPosition id [x y z] tweenSeconds`
+            "emitterPosition" => {
+                let id = a.id(0)?;
+                let t = tween(a.opt_num(2).unwrap_or(0.0));
+                match self.tracks.get_mut(&id) {
+                    Some(Track::Emitter(h)) => h.set_position(mint3(a.floats::<3>(1)?), t),
+                    _ => return Err(format!("no emitter {id}")),
+                }
+            }
+            // `removeTrack id`: its sounds stop with it.
+            "removeTrack" => {
+                self.tracks.remove(&a.id(0)?);
+            }
+            // `listener [x y z] [qx qy qz qw]`: where the player's ears are.
+            "listener" => {
+                let p = mint3(a.floats::<3>(0)?);
+                let [x, y, z, w] = a.floats::<4>(1).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+                let listener = self.listener_mut()?;
+                listener.set_position(p, Tween::default());
+                listener.set_orientation(
+                    mint::Quaternion {
+                        v: mint::Vector3 { x, y, z },
+                        s: w,
+                    },
+                    Tween::default(),
+                );
+            }
+            other => return Err(format!("unknown audio op `{other}`")),
+        }
+        Ok(())
+    }
+
+    fn listener_mut(&mut self) -> Result<&mut ListenerHandle, String> {
+        if self.listener.is_none() {
+            let origin = mint3([0.0; 3]);
+            let facing = mint::Quaternion {
+                v: mint::Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                s: 1.0,
+            };
+            let handle = self
+                .manager
+                .add_listener(origin, facing)
+                .map_err(|e| e.to_string())?;
+            self.listener = Some(handle);
+        }
+        Ok(self.listener.as_mut().expect("just set"))
+    }
+
+    fn listener(&mut self) -> Result<kira::listener::ListenerId, String> {
+        Ok(self.listener_mut()?.id())
+    }
+
+    /// Instances that finished since the last call (played out or stopped), which are
+    /// forgotten here; scripts get them as `ended` events.
+    pub fn poll(&mut self) -> Vec<ScriptId> {
+        let mut ended: Vec<ScriptId> = self
+            .instances
+            .iter()
+            .filter(|(_, i)| match i {
+                Instance::Static(h) => h.state() == PlaybackState::Stopped,
+                Instance::Stream(h) => h.state() == PlaybackState::Stopped,
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        ended.sort_unstable();
+        for id in &ended {
+            self.instances.remove(id);
+        }
+        ended
+    }
+
+    pub fn playing(&self) -> usize {
+        self.instances.len()
+    }
+}
+
+fn stop(instance: Instance, t: Tween) {
+    match instance {
+        Instance::Static(mut h) => h.stop(t),
+        Instance::Stream(mut h) => h.stop(t),
+    }
+}
+
+/// Reads op arguments with errors that say what was wrong.
+struct Args<'a>(&'a [Value]);
+
+impl Args<'_> {
+    fn num(&self, i: usize) -> Result<f32, String> {
+        self.0
+            .get(i)
+            .and_then(Value::as_f64)
+            .map(|v| v as f32)
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| format!("argument {i} must be a number"))
+    }
+
+    fn opt_num(&self, i: usize) -> Option<f32> {
+        self.num(i).ok()
+    }
+
+    fn id(&self, i: usize) -> Result<ScriptId, String> {
+        self.num(i).map(|v| v as ScriptId)
+    }
+
+    fn opt_id(&self, i: usize) -> Option<ScriptId> {
+        self.id(i).ok()
+    }
+
+    fn str(&self, i: usize) -> Result<&str, String> {
+        self.0
+            .get(i)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("argument {i} must be a string"))
+    }
+
+    fn list(&self, i: usize) -> Result<&[Value], String> {
+        match self.0.get(i) {
+            Some(Value::Array(items)) => Ok(items),
+            _ => Err(format!("argument {i} must be an array")),
+        }
+    }
+
+    fn floats<const N: usize>(&self, i: usize) -> Result<[f32; N], String> {
+        let items = self.list(i)?;
+        let mut out = [0.0; N];
+        for (k, slot) in out.iter_mut().enumerate() {
+            *slot = items
+                .get(k)
+                .and_then(Value::as_f64)
+                .map(|v| v as f32)
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| format!("argument {i} must hold {N} numbers"))?;
+        }
+        Ok(out)
+    }
+}

@@ -744,6 +744,11 @@ mind.
   - [ ] Bodies survive script hot reload (with the hot reload work) — `M4-PHY-04`
   - [ ] `Rigidbody` / `Collider` / `CharacterController` components on GameObjects (M5.a)
 - [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`
+  - [x] `iron_audio` crate: kira mixer driven by `audio.*` ops with script-chosen IDs; decoded
+    and streamed sounds, instances (volume, rate, pan, loop, fades, seek, pause/stop), buses,
+    spatial emitters around one listener, ended instances polled; an offline backend for tests
+    and deviceless runs — `M4-AUD-01`..`M4-AUD-04`
+  - [ ] TS API in `@iron/engine` (`audio`), app wiring (loading from the game folder), an example
 
 ## M5 — Scene, assets, rendering, editor
 
