@@ -120,6 +120,14 @@ describe("shapes and colours", () => {
     expect(near(ray.getPoint(8), new Vector3(0, 2, 0))).toBe(true);
     expect(floor.raycast(new Ray(Vector3.zero, Vector3.down))).toBeNull();
     expect(floor.raycast(new Ray(Vector3.zero, Vector3.right))).toBeNull();
+    expect(floor.intersect(ray)).toEqual(new Vector3(0, 2, 0));
+    expect(floor.translate(new Vector3(0, 3, 0)).getDistanceToPoint(new Vector3(0, 5, 0))).toBeCloseTo(0);
+    expect(floor.flipped.getDistanceToPoint(new Vector3(0, 5, 0))).toBe(-3);
+    expect(floor.sameSide(new Vector3(0, 3, 0), new Vector3(9, 9, 9))).toBe(true);
+    expect(floor.sameSide(new Vector3(0, 3, 0), Vector3.zero)).toBe(false);
+    const tri = Plane.fromPoints(Vector3.zero, new Vector3(1, 0, 0), new Vector3(0, 1, 0));
+    expect(tri.normal).toEqual(new Vector3(0, 0, 1));
+    expect(floor.projectVector(new Vector3(1, 1, 0))).toEqual(new Vector3(1, 0, 0));
 
     const box = Bounds.minMax(Vector3.zero, new Vector3(2, 2, 2));
     expect(box.center).toEqual(Vector3.one);

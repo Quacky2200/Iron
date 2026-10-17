@@ -32,6 +32,30 @@ class Game extends Component {
   }
 }
 
-register({ Game });
+/** Logs each lifecycle call (M5-OBJ-08). */
+const hooks: string[] = [];
+class Lifecycle extends Component {
+  override onStart() {
+    hooks.push("start");
+  }
+  override onFixedUpdate() {
+    hooks.push("fixed");
+  }
+  override onUpdate() {
+    hooks.push("update");
+  }
+  override onLateUpdate() {
+    hooks.push("late");
+  }
+  override onPreRender() {
+    hooks.push("prerender");
+  }
+  override onDestroy() {
+    hooks.push("destroy");
+  }
+}
+
+register({ Game, Lifecycle });
+(globalThis as { __hooks_log?: () => string }).__hooks_log = () => hooks.join(" ");
 
 (globalThis as { __scene_log?: () => string }).__scene_log = () => log.join(", ");

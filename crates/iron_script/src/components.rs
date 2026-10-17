@@ -3,14 +3,20 @@ use iron_core::ComponentId;
 use crate::{ScriptError, ScriptRuntime, Value};
 
 /// Drives script components through the JS-side host installed by `@iron/engine`:
-/// `__iron_registered()`, `__iron_create(class, id, object, name)`,
-/// `__iron_dispatch(id, method, ...args)`, `__iron_destroy(id)` and, once per tick,
+/// `__iron_registered()`, `__iron_create(class, id, object, name)`, `__iron_hooks(id)`,
+/// `__iron_dispatch(id, method, ...args)`, `__iron_destroy(id)` and, once per frame,
 /// `__iron_tick(dt)` (which advances script `Time` and returns the scaled `dt`).
+///
+/// The lifecycle follows Unity / s&box: `onStart` once before anything else, then
+/// `onFixedUpdate(dt)` on each fixed tick ([`Self::fixed_update`]), `onUpdate(dt)` and
+/// `onLateUpdate(dt)` each frame ([`Self::update_active`]), `onPreRender()` just before
+/// drawing ([`Self::pre_render`]) and `onDestroy` at the end.
 ///
 /// Rust keeps the list of components; JS only holds instances keyed by ID. Methods are
 /// always called by `(component id, method name)`, so a reloaded bundle's code is
-/// picked up automatically (DESIGN.md §3). Components belong to GameObjects (by the
-/// script's object id); those on inactive objects don't update.
+/// picked up automatically (DESIGN.md §3). Each component's hooks are looked up once,
+/// so missing ones cost nothing. Components belong to GameObjects (by the script's
+/// object id); those on inactive objects don't run.
 #[derive(Default)]
 pub struct ComponentHost {
     next_id: u32,
@@ -26,6 +32,61 @@ struct Entry {
     object: Option<u32>,
     started: bool,
     enabled: bool,
+    /// Which lifecycle methods the component has (looked up on its first run).
+    hooks: Option<Hooks>,
+}
+
+/// Lifecycle methods a component defines.
+#[derive(Clone, Copy, Debug, Default)]
+struct Hooks {
+    start: bool,
+    fixed_update: bool,
+    update: bool,
+    late_update: bool,
+    pre_render: bool,
+    destroy: bool,
+}
+
+impl Hooks {
+    fn has(&self, method: &str) -> bool {
+        match method {
+            "onStart" => self.start,
+            "onFixedUpdate" => self.fixed_update,
+            "onUpdate" => self.update,
+            "onLateUpdate" => self.late_update,
+            "onPreRender" => self.pre_render,
+            "onDestroy" => self.destroy,
+            _ => true,
+        }
+    }
+}
+
+/// Asks JS which lifecycle methods a component has (all of them if the bundle can't
+/// say, so nothing is skipped).
+fn hooks(rt: &mut dyn ScriptRuntime, id: ComponentId) -> Hooks {
+    let Ok(Value::Array(names)) = rt.call_global("__iron_hooks", &[id.raw().into()]) else {
+        return Hooks {
+            start: true,
+            fixed_update: true,
+            update: true,
+            late_update: true,
+            pre_render: true,
+            destroy: true,
+        };
+    };
+    let mut h = Hooks::default();
+    for name in names.iter().filter_map(Value::as_str) {
+        match name {
+            "onStart" => h.start = true,
+            "onFixedUpdate" => h.fixed_update = true,
+            "onUpdate" => h.update = true,
+            "onLateUpdate" => h.late_update = true,
+            "onPreRender" => h.pre_render = true,
+            "onDestroy" => h.destroy = true,
+            _ => {}
+        }
+    }
+    h
 }
 
 impl ComponentHost {
@@ -84,6 +145,7 @@ impl ComponentHost {
             object,
             started: false,
             enabled: true,
+            hooks: None,
         });
     }
 
@@ -95,6 +157,7 @@ impl ComponentHost {
         let entry = self.components.remove(i);
         if entry.started
             && entry.enabled
+            && entry.hooks.is_none_or(|h| h.destroy)
             && let Err(e) = dispatch(rt, id, "onDestroy", &[])
         {
             tracing::error!(component = %id, class = %entry.class, "onDestroy: {e}");
@@ -115,8 +178,7 @@ impl ComponentHost {
         }
     }
 
-    /// Runs one tick for every component: `onStart()` for new components, then
-    /// `onUpdate(dt)`. See [`Self::update_active`].
+    /// Runs one frame for every component. See [`Self::update_active`].
     pub fn update(
         &mut self,
         rt: &mut dyn ScriptRuntime,
@@ -125,10 +187,10 @@ impl ComponentHost {
         self.update_active(rt, dt, &|_| true)
     }
 
-    /// Runs one tick: `__iron_tick(dt)` (script time; it may scale `dt`), then for
-    /// components on active objects `onStart()` if new, then `onUpdate(dt)`. A component
-    /// that throws is reported and disabled; the others keep running. Returns the errors
-    /// raised this tick.
+    /// Runs one frame: `__iron_tick(dt)` (script time; it may scale `dt`), then, for
+    /// components on active objects, `onStart()` if new and `onUpdate(dt)`, then
+    /// `onLateUpdate(dt)` for all of them. A component that throws is reported and
+    /// disabled; the others keep running. Returns the errors raised.
     pub fn update_active(
         &mut self,
         rt: &mut dyn ScriptRuntime,
@@ -147,20 +209,58 @@ impl ComponentHost {
                 Err(e) => tracing::error!(target: "script", "__iron_tick: {e}"),
             }
         }
-        // Components added during this loop (by `addComponent` in a script) are adopted
-        // when the ops are applied, so the list doesn't change under us.
+        let mut errors = self.run(rt, "onUpdate", &[dt.into()], active);
+        errors.extend(self.run(rt, "onLateUpdate", &[dt.into()], active));
+        errors
+    }
+
+    /// Runs one fixed tick: `onFixedUpdate(dt)` (after `onStart` for new components).
+    pub fn fixed_update(
+        &mut self,
+        rt: &mut dyn ScriptRuntime,
+        dt: f64,
+        active: &dyn Fn(u32) -> bool,
+    ) -> Vec<(ComponentId, ScriptError)> {
+        self.run(rt, "onFixedUpdate", &[dt.into()], active)
+    }
+
+    /// Runs `onPreRender()`, just before the frame is drawn.
+    pub fn pre_render(
+        &mut self,
+        rt: &mut dyn ScriptRuntime,
+        active: &dyn Fn(u32) -> bool,
+    ) -> Vec<(ComponentId, ScriptError)> {
+        self.run(rt, "onPreRender", &[], active)
+    }
+
+    /// Calls `method` on every enabled component on an active object, starting new
+    /// ones first. Components added while this runs (`addComponent` in a script) are
+    /// adopted when the ops are applied, so the list doesn't change under us.
+    fn run(
+        &mut self,
+        rt: &mut dyn ScriptRuntime,
+        method: &str,
+        args: &[Value],
+        active: &dyn Fn(u32) -> bool,
+    ) -> Vec<(ComponentId, ScriptError)> {
         let mut errors = Vec::new();
         for i in 0..self.components.len() {
             let entry = &mut self.components[i];
             if !entry.enabled || entry.object.is_some_and(|o| !active(o)) {
                 continue;
             }
+            let h = *entry.hooks.get_or_insert_with(|| hooks(rt, entry.id));
             let result = (|| {
                 if !entry.started {
                     entry.started = true;
-                    dispatch(rt, entry.id, "onStart", &[])?;
+                    if h.start {
+                        dispatch(rt, entry.id, "onStart", &[])?;
+                    }
                 }
-                dispatch(rt, entry.id, "onUpdate", &[dt.into()])
+                if h.has(method) {
+                    dispatch(rt, entry.id, method, args)?;
+                }
+                Ok::<_, ScriptError>(())
             })();
             if let Err(e) = result {
                 tracing::error!(component = %entry.id, class = %entry.class, "{e}; component disabled");

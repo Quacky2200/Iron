@@ -34,10 +34,13 @@ declare global {
   var __iron_create: (className: string, id: number, objectId?: number, objectName?: string) => void;
   var __iron_dispatch: (id: number, method: string, ...args: unknown[]) => unknown;
   var __iron_destroy: (id: number) => void;
+  var __iron_hooks: (id: number) => string[];
   // Once per fixed tick, before components update: advances `Time`, returns the scaled dt.
   var __iron_tick: (dt: number) => number;
   var __iron_input: (type: string, ...args: unknown[]) => void;
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
+  // The screen size in UI pixels and the scale (screen.ts).
+  var __iron_screen: (width: number, height: number, scale: number) => void;
   // Objects the engine moved (scene.ts).
   var __iron_scene: (moved: number[]) => void;
   // Playing sounds that finished (audio.ts).

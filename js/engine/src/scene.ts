@@ -21,11 +21,23 @@ export abstract class Component {
     return this.gameObject.transform;
   }
 
-  /** Called once, before the first `onUpdate`. */
+  /** Called once, before any other update. */
   onStart?(): void;
 
-  /** Called every fixed tick while the object is active. `dt` is in seconds. */
+  /**
+   * Called every frame while the object is active. `dt` is the frame's length in seconds
+   * (`Time.deltaTime`, scaled by `Time.timeScale`): use it for movement, input and UI.
+   */
   onUpdate?(dt: number): void;
+
+  /** Called every frame after every component's `onUpdate` (cameras that follow things). */
+  onLateUpdate?(dt: number): void;
+
+  /** Called on each fixed 60 Hz tick (`Time.fixedDeltaTime`), with physics: forces and steady simulation. */
+  onFixedUpdate?(dt: number): void;
+
+  /** Called once per frame just before it's drawn, after layout: last-moment visual changes. */
+  onPreRender?(): void;
 
   /** Called when the component or its object is removed. */
   onDestroy?(): void;
@@ -454,6 +466,14 @@ globalThis.__iron_create = (className: string, id: number, objectId?: number, ob
     ? GameObject._adopt(-id - 1, className)
     : (objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className));
   instantiate(cls, id, object);
+};
+
+const HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"] as const;
+
+/** Which lifecycle methods a component has, so the engine only calls those. */
+globalThis.__iron_hooks = (id: number) => {
+  const instance = instances.get(id) as unknown as Record<string, unknown> | undefined;
+  return instance ? HOOKS.filter((h) => typeof instance[h] === "function") : [...HOOKS];
 };
 
 globalThis.__iron_dispatch = (id: number, method: string, ...args: unknown[]) => {

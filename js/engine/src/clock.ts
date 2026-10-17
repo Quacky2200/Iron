@@ -1,8 +1,8 @@
 // Game time, the Unity / s&box way: `Time` (deltaTime, time, frameCount, timeScale),
 // s&box's `TimeSince` / `TimeUntil`, and awaitable delays (`Task`).
 //
-// The engine advances `Time` once per fixed tick (`__iron_tick`, called by Rust before
-// the components update). Times are in seconds as numbers but come from millisecond
+// The engine advances `Time` once per frame (`__iron_tick`, called by Rust before the
+// components' `onUpdate`). Times are in seconds as numbers but come from millisecond
 // clocks: there's no sub-millisecond (µs/ns) timing; don't use these to profile.
 
 let time = 0;
@@ -24,18 +24,18 @@ export const Time = {
   get unscaledTime(): number {
     return unscaledTime;
   },
-  /** This tick's length in seconds, scaled by `timeScale` (what `onUpdate` gets). */
+  /** This frame's length in seconds, scaled by `timeScale` (what `onUpdate` gets). */
   get deltaTime(): number {
     return deltaTime;
   },
   get unscaledDeltaTime(): number {
     return unscaledDeltaTime;
   },
-  /** The fixed tick length (1/60 s). Iron updates components on fixed ticks only. */
+  /** The fixed tick length (1/60 s): what `onFixedUpdate` gets. */
   get fixedDeltaTime(): number {
-    return unscaledDeltaTime || 1 / 60;
+    return 1 / 60;
   },
-  /** Ticks run so far. */
+  /** Frames run so far. */
   get frameCount(): number {
     return frameCount;
   },

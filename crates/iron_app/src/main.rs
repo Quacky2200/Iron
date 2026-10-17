@@ -31,6 +31,8 @@ use iron_ui::{Clipboard, Input, Interaction, UiEvent, UiTree, events};
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
 const MAX_TICKS_PER_FRAME: u32 = 5;
+/// The longest frame `onUpdate` is told about (a hitch shouldn't teleport things).
+const MAX_FRAME_DT: f64 = 0.1;
 /// Pixels per wheel notch ("line"), like browsers.
 const WHEEL_LINE: f32 = 40.0;
 const CLEAR: Color = Color::rgb(0.05, 0.06, 0.09);
@@ -135,7 +137,8 @@ fn main() -> Result<()> {
         components,
         scene,
         scene_events,
-        world_view: world_view::WorldView::default(),
+        world_view: world_view::WorldViews::default(),
+        screen: (0.0, 0.0, 0.0),
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
@@ -208,17 +211,15 @@ fn draw_frame(
     renderer: &mut UiRenderer,
     world: &mut WorldRenderer,
     target: &RenderTarget<'_>,
-    view: Option<(iron_render::WorldCamera, Vec<iron_render::WorldQuad>)>,
+    views: &[iron_render::WorldView],
+    textures: &[&wgpu::TextureView],
     cmds: &[iron_ui::DrawCmd],
 ) {
-    match view {
-        Some((camera, quads)) => {
-            world.render(gpu, target, &camera, &quads, &[]);
-            renderer.render_overlay(gpu, target, cmds);
-        }
-        None => {
-            renderer.render(gpu, target, CLEAR, cmds);
-        }
+    if views.is_empty() {
+        renderer.render(gpu, target, CLEAR, cmds);
+    } else {
+        world.render_views(gpu, target, views, textures);
+        renderer.render_overlay(gpu, target, cmds);
     }
 }
 
@@ -227,8 +228,10 @@ struct App {
     scene: iron_scene::ScriptScene,
     /// Whether the game takes engine moves (`__iron_scene` exists).
     scene_events: bool,
+    /// The screen size in UI pixels and the UI scale, as last told to scripts.
+    screen: (f32, f32, f32),
     /// Cameras and planes scripts put in the world.
-    world_view: world_view::WorldView,
+    world_view: world_view::WorldViews,
     bundle_path: PathBuf,
     bundle_name: String,
     /// The tree's id for the game's bundled stylesheet (`game.css`), if it has one.
@@ -320,7 +323,9 @@ impl App {
         self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
         self.ui_scale = ui_scale::UiScale::None;
         self.scene = scene;
-        self.world_view = world_view::WorldView::default();
+        self.world_view = world_view::WorldViews::default();
+        // Tell the new scripts the screen size on the next frame.
+        self.screen = (0.0, 0.0, 0.0);
         self.physics = iron_physics::Physics::new();
         // Dropping the mixer stops every sound.
         self.audio = None;
@@ -360,7 +365,7 @@ impl App {
         while self.accumulator >= TICK && ticks < MAX_TICKS_PER_FRAME {
             let scene = &self.scene;
             self.components
-                .update_active(&mut self.scripts, TICK, &|o| scene.active(o));
+                .fixed_update(&mut self.scripts, TICK, &|o| scene.active(o));
             // What the components asked for applies before physics steps.
             self.apply_script_output();
             self.step_physics();
@@ -378,6 +383,13 @@ impl App {
             tracing::error!(target: "script", "uncaught: {e}");
         }
 
+        // Per-frame component updates (`onUpdate`, `onLateUpdate`).
+        self.apply_script_output();
+        let scene = &self.scene;
+        self.components
+            .update_active(&mut self.scripts, elapsed.min(MAX_FRAME_DT), &|o| {
+                scene.active(o)
+            });
         self.apply_script_output();
         self.update_audio(elapsed);
 
@@ -720,7 +732,7 @@ impl App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
-        let world_view = self.world_view.frame(&self.scene, (w, h));
+        let views = self.world_view.views(&self.scene, (w, h), &[]);
         draw_frame(
             &gfx.gpu,
             &mut gfx.renderer,
@@ -731,7 +743,8 @@ impl App {
                 size: (w, h),
                 scale: ui_factor(&gfx.window, self.ui_scale),
             },
-            world_view,
+            &views,
+            &[],
             &cmds,
         );
         let pixels = target.read_pixels(&gfx.gpu)?;
@@ -860,6 +873,11 @@ impl PlatformApp for App {
 
     fn frame(&mut self) {
         self.tick();
+        // Last-moment changes before drawing (`onPreRender`).
+        let scene = &self.scene;
+        self.components
+            .pre_render(&mut self.scripts, &|o| scene.active(o));
+        self.apply_script_output();
         // Caret blinking.
         self.ui.set_time(self.now_ms());
         // The caret may have moved with layout.
@@ -873,6 +891,14 @@ impl PlatformApp for App {
         let size = gfx.window.inner_size();
         self.ui
             .set_size(size.width as f32 / scale, size.height as f32 / scale);
+        // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
+        let screen = (size.width as f32 / scale, size.height as f32 / scale, scale);
+        if self.screen != screen {
+            self.screen = screen;
+            let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
+            // Games without @iron/engine's Screen don't have the hook.
+            let _ = self.scripts.call_global("__iron_screen", &args);
+        }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
         let dark = gfx.window.theme() == Some(iron_platform::Theme::Dark);
         self.ui.set_media_env(iron_ui::media::MediaEnv {
@@ -903,7 +929,8 @@ impl PlatformApp for App {
                 renderer,
                 world,
                 &target,
-                world_view.frame(scene, size),
+                &world_view.views(scene, size, &[]),
+                &[],
                 &cmds,
             );
         });

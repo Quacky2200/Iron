@@ -70,6 +70,26 @@ fn script_components_live_on_game_objects() {
     );
 }
 
+// M5-OBJ-08
+#[test]
+fn lifecycle_hooks_run_in_unity_order() {
+    let mut rt = QuickJsRuntime::new();
+    rt.load_bundle("scene.js", SCENE).unwrap();
+    let mut host = ComponentHost::new();
+    let id = host.spawn(&mut rt, "Lifecycle").unwrap();
+    let all = |_: u32| true;
+    // A frame: fixed ticks first, then update, late update, pre-render.
+    host.fixed_update(&mut rt, 1.0 / 60.0, &all);
+    host.fixed_update(&mut rt, 1.0 / 60.0, &all);
+    host.update_active(&mut rt, 1.0 / 30.0, &all);
+    host.pre_render(&mut rt, &all);
+    host.remove(&mut rt, id);
+    assert_eq!(
+        rt.eval("__hooks_log()").unwrap(),
+        Value::String("start fixed fixed update late prerender destroy".into())
+    );
+}
+
 // M5-OBJ-07
 #[test]
 fn engine_moves_reach_scripts_and_bad_ops_fail() {

@@ -1,9 +1,11 @@
-// The 3D world pass: instanced quads (planes) seen through a perspective camera.
-// Each quad is a unit square in its own XY plane (-0.5..0.5, facing +z), placed by
-// its model matrix. Colours are linear and premultiplied.
+// The 3D world pass: instanced quads (planes) seen through a perspective or
+// orthographic camera. Each quad is a unit square in its own XY plane (-0.5..0.5,
+// facing +z), placed by its model matrix. Colours are linear and premultiplied.
 
 struct Globals {
     view_proj: mat4x4<f32>,
+    // The camera's background (linear, premultiplied), for `fs_fill`.
+    background: vec4<f32>,
 };
 
 struct Quad {
@@ -49,4 +51,17 @@ fn fs_quad(in: VsOut) -> @location(0) vec4<f32> {
         discard;
     }
     return c;
+}
+
+// A camera's background over its viewport, at the far plane: it clears colour and
+// (with depth writes) depth for that camera only.
+@vertex
+fn vs_fill(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    let p = vec2<f32>(f32((vi << 1u) & 2u), f32(vi & 2u));
+    return vec4<f32>(p * 2.0 - 1.0, 1.0, 1.0);
+}
+
+@fragment
+fn fs_fill() -> @location(0) vec4<f32> {
+    return g.background;
 }

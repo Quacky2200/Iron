@@ -788,10 +788,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     (`WorldRenderer`: instanced quads, back-to-front, textured or coloured), `PlaneRenderer`
     (a plane in the object's XZ plane), screen UI blended over the world
     (`UiRenderer::render_overlay`); `examples/world` — `M5-RND-05`
-  - [ ] Camera system: main-camera choice by priority, perspective and orthographic (2D)
-    projections, viewport rects (split screen), rendering to a texture, screen/world
-    conversions (`screenPointToRay`, `worldToScreenPoint`, `viewportToWorldPoint`), follow and
-    orbit helpers
+  - [x] Camera system: draw order by `depth`, perspective and orthographic (2D) projections,
+    viewport rects (split screen, minimaps), `Camera.main` / `allCameras`, `Matrix4x4`,
+    `Screen`, screen/viewport/world conversions (`screenPointToRay`, `worldToScreenPoint`,
+    `viewportToWorldPoint`, ...), `CameraFollow` and `CameraOrbit` — `M5-CAM-01`, `M5-RND-06`
+  - [ ] Cameras rendering to a texture (`targetTexture`)
+  - [x] Lifecycle hooks the Unity / s&box way: `onStart`, `onUpdate` and `onLateUpdate` per
+    frame, `onFixedUpdate` on the 60 Hz tick, `onPreRender`, `onDestroy`; the engine only
+    calls the hooks a component has — `M5-OBJ-08`
   - [ ] Planes: a `UiPanel` component draws React UI on a plane in the world (UI rendered to a
     texture), with pointer input raycast onto it
 - [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5):

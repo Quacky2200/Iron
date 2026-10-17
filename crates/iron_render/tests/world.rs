@@ -161,3 +161,100 @@ fn planes_in_perspective_with_ui_over_them() {
     let sky = at(5, 40);
     assert!(sky[0] < 80 && sky[2] < 120, "sky {sky:?}");
 }
+
+// M5-RND-06
+#[test]
+fn cameras_draw_into_their_viewports_by_depth() {
+    use iron_render::{Projection, WorldView, viewport_size};
+    let gpu = shared_gpu();
+    let size = (320, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let flat = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+    let quads = vec![
+        WorldQuad::colored(place(Vec3::ZERO, flat, (6.0, 6.0)), [0.3, 0.3, 0.35, 1.0]),
+        WorldQuad::colored(
+            place(Vec3::new(0.0, 0.5, 0.0), Quat::IDENTITY, (1.0, 1.0)),
+            [0.9, 0.5, 0.1, 1.0],
+        ),
+    ];
+    let look = |eye: Vec3| {
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse()
+    };
+    // Left half: perspective from the front; right half: orthographic from above.
+    let left = [0.0, 0.0, 0.5, 1.0];
+    let right = [0.5, 0.0, 0.5, 1.0];
+    let views = [
+        WorldView {
+            camera: WorldCamera::new(
+                look(Vec3::new(0.0, 2.0, 4.0)),
+                Projection::Perspective {
+                    fov_y_degrees: 60.0,
+                },
+                0.1,
+                50.0,
+                viewport_size(left, size),
+                Color::rgb(0.1, 0.05, 0.05),
+            ),
+            viewport: left,
+            quads: quads.clone(),
+        },
+        WorldView {
+            camera: WorldCamera::new(
+                Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
+                Projection::Orthographic { half_height: 4.0 },
+                0.1,
+                50.0,
+                viewport_size(right, size),
+                Color::rgb(0.05, 0.05, 0.1),
+            ),
+            viewport: right,
+            // A red marker on the floor towards +x (east), seen from above.
+            quads: [
+                quads.as_slice(),
+                &[WorldQuad::colored(
+                    place(Vec3::new(2.0, 0.01, 0.0), flat, (1.0, 1.0)),
+                    [0.9, 0.1, 0.1, 1.0],
+                )],
+            ]
+            .concat(),
+        },
+        // A picture-in-picture inset over the left view (drawn after it, so on top).
+        WorldView {
+            camera: WorldCamera::new(
+                look(Vec3::new(3.0, 1.0, 0.0)),
+                Projection::Perspective {
+                    fov_y_degrees: 50.0,
+                },
+                0.1,
+                50.0,
+                viewport_size([0.05, 0.05, 0.15, 0.3], size),
+                Color::rgb(0.0, 0.2, 0.0),
+            ),
+            viewport: [0.05, 0.05, 0.15, 0.3],
+            quads: vec![],
+        },
+    ];
+    WorldRenderer::new(&gpu).render_views(&gpu, &rt, &views, &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-06", size.0, size.1, &pixels, 2);
+    let at = |x: u32, y: u32| {
+        let i = ((y * size.0 + x) * 4) as usize;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    // The inset's green background covers the left view's top-left corner.
+    assert!(at(20, 20)[1] > at(20, 20)[0] + 40, "{:?}", at(20, 20));
+    // From above, the 6 m floor is a square inside the 8 m tall ortho view: the top edge
+    // is background, and the marker is right of centre (east is +x on screen).
+    let edge = at(240, 3);
+    assert!(edge[2] > edge[0], "{edge:?}");
+    let marker = at(240 + 40, 80);
+    assert!(marker[0] > 150 && marker[1] < 120, "{marker:?}");
+}

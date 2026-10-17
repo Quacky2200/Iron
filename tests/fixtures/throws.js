@@ -908,6 +908,120 @@ ${err.stack}` : ""}`);
       return [this.x, this.y, this.z, this.w];
     }
   }
+
+  class Matrix4x4 {
+    m;
+    constructor(m) {
+      if (m.length !== 16)
+        throw new Error("Matrix4x4 needs 16 numbers");
+      this.m = m;
+    }
+    static identity = new Matrix4x4([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    get(row, col) {
+      return this.m[col * 4 + row];
+    }
+    static trs(position, rotation, scale = Vector3.one) {
+      const { x, y, z, w } = rotation;
+      const [xx, yy, zz] = [x * x, y * y, z * z];
+      const [xy, xz, yz, wx, wy, wz] = [x * y, x * z, y * z, w * x, w * y, w * z];
+      return new Matrix4x4([
+        (1 - 2 * (yy + zz)) * scale.x,
+        2 * (xy + wz) * scale.x,
+        2 * (xz - wy) * scale.x,
+        0,
+        2 * (xy - wz) * scale.y,
+        (1 - 2 * (xx + zz)) * scale.y,
+        2 * (yz + wx) * scale.y,
+        0,
+        2 * (xz + wy) * scale.z,
+        2 * (yz - wx) * scale.z,
+        (1 - 2 * (xx + yy)) * scale.z,
+        0,
+        position.x,
+        position.y,
+        position.z,
+        1
+      ]);
+    }
+    static perspective(fovDegrees, aspect, near, far) {
+      const f = 1 / Math.tan(fovDegrees * DEG / 2);
+      const r = far / (near - far);
+      return new Matrix4x4([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, r, -1, 0, 0, r * near, 0]);
+    }
+    static orthographic(left, right, bottom, top, near, far) {
+      const rw = 1 / (right - left);
+      const rh = 1 / (top - bottom);
+      const r = 1 / (near - far);
+      return new Matrix4x4([2 * rw, 0, 0, 0, 0, 2 * rh, 0, 0, 0, 0, r, 0, -(left + right) * rw, -(top + bottom) * rh, r * near, 1]);
+    }
+    mul(other) {
+      const a = this.m;
+      const b = other.m;
+      const out = new Array(16);
+      for (let c = 0;c < 4; c++) {
+        for (let r = 0;r < 4; r++) {
+          out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+        }
+      }
+      return new Matrix4x4(out);
+    }
+    get inverse() {
+      const m = this.m;
+      const inv = new Array(16);
+      inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+      inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+      inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+      inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+      inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+      inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+      inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+      inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+      inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+      inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+      inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+      inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+      inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+      inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+      inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+      inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+      const det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+      if (Math.abs(det) < 0.000000000001)
+        return Matrix4x4.identity;
+      return new Matrix4x4(inv.map((v) => v / det));
+    }
+    get determinant() {
+      const m = this.m;
+      const sub = (a, b, c, d, e, f, g, h, i) => a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+      return m[0] * sub(m[5], m[9], m[13], m[6], m[10], m[14], m[7], m[11], m[15]) - m[4] * sub(m[1], m[9], m[13], m[2], m[10], m[14], m[3], m[11], m[15]) + m[8] * sub(m[1], m[5], m[13], m[2], m[6], m[14], m[3], m[7], m[15]) - m[12] * sub(m[1], m[5], m[9], m[2], m[6], m[10], m[3], m[7], m[11]);
+    }
+    multiplyPoint(p) {
+      const m = this.m;
+      const x = m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12];
+      const y = m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13];
+      const z = m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14];
+      const w = m[3] * p.x + m[7] * p.y + m[11] * p.z + m[15];
+      return w !== 0 && w !== 1 ? new Vector3(x / w, y / w, z / w) : new Vector3(x, y, z);
+    }
+    multiplyPoint3x4(p) {
+      const m = this.m;
+      return new Vector3(m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12], m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13], m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]);
+    }
+    multiplyVector(v) {
+      const m = this.m;
+      return new Vector3(m[0] * v.x + m[4] * v.y + m[8] * v.z, m[1] * v.x + m[5] * v.y + m[9] * v.z, m[2] * v.x + m[6] * v.y + m[10] * v.z);
+    }
+    multiplyVector4(v) {
+      const m = this.m;
+      return new Vector4(m[0] * v.x + m[4] * v.y + m[8] * v.z + m[12] * v.w, m[1] * v.x + m[5] * v.y + m[9] * v.z + m[13] * v.w, m[2] * v.x + m[6] * v.y + m[10] * v.z + m[14] * v.w, m[3] * v.x + m[7] * v.y + m[11] * v.z + m[15] * v.w);
+    }
+    get transpose() {
+      const out = new Array(16);
+      for (let r = 0;r < 4; r++)
+        for (let c = 0;c < 4; c++)
+          out[r * 4 + c] = this.m[c * 4 + r];
+      return new Matrix4x4(out);
+    }
+  }
   class Color {
     r;
     g;
@@ -1551,6 +1665,11 @@ ${err.stack}` : ""}`);
     const object = objectId === undefined || objectId === null ? GameObject._adopt(-id - 1, className) : objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className);
     instantiate(cls, id, object);
   };
+  var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
+  globalThis.__iron_hooks = (id) => {
+    const instance = instances.get(id);
+    return instance ? HOOKS.filter((h) => typeof instance[h] === "function") : [...HOOKS];
+  };
   globalThis.__iron_dispatch = (id, method, ...args) => {
     const instance = instances.get(id);
     if (!instance)
@@ -1577,6 +1696,16 @@ ${err.stack}` : ""}`);
         continue;
       go.transform._set(new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]), new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]), new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]));
     }
+  };
+
+  // ../../js/engine/src/screen.ts
+  var width = 1280;
+  var height = 720;
+  var scale = 1;
+  globalThis.__iron_screen = (w, h, s) => {
+    width = w;
+    height = h;
+    scale = s;
   };
   // src/throws.ts
   class Hello extends Component {

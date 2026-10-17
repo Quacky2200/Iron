@@ -6,17 +6,21 @@ use std::collections::BTreeMap;
 
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
-use iron_render::{Color, WorldCamera, WorldQuad};
+use iron_render::{Color, Projection, WorldCamera, WorldQuad, WorldView, viewport_size};
 use iron_scene::{ScriptObject, ScriptScene};
 
 #[derive(Clone, Copy, Debug)]
 struct Camera {
     object: ScriptObject,
-    fov: f32,
+    projection: Projection,
     near: f32,
     far: f32,
     /// Linear RGBA.
     clear: [f32; 4],
+    /// Draw order: lower first, so higher ones draw over them (Unity's `depth`).
+    depth: f32,
+    /// x, y, width, height from the top-left, 0 to 1.
+    rect: [f32; 4],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -27,8 +31,7 @@ struct Plane {
 }
 
 #[derive(Default)]
-pub struct WorldView {
-    /// By component id; the lowest id among active ones is the main camera.
+pub struct WorldViews {
     cameras: BTreeMap<u32, Camera>,
     planes: BTreeMap<u32, Plane>,
 }
@@ -44,7 +47,17 @@ fn nums<const N: usize>(v: Option<&Value>) -> Option<[f32; N]> {
     Some(out)
 }
 
-impl WorldView {
+/// Lays a unit quad (facing +z) flat in an object's XZ plane, facing up (+y) like
+/// Unity's Plane, `size` across.
+pub fn lay_flat(size: (f32, f32)) -> Mat4 {
+    Mat4::from_scale_rotation_translation(
+        Vec3::new(size.0, size.1, 1.0),
+        Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+        Vec3::ZERO,
+    )
+}
+
+impl WorldViews {
     /// Runs one `render.*` op.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         let num = |i: usize| -> Result<f32, String> {
@@ -64,14 +77,27 @@ impl WorldView {
         };
         let id = id_at(0)?;
         match name {
-            // `camera component object fov near far [r g b a]`
+            // `camera component object fov near far [r g b a] depth orthographic
+            // orthographicSize [x y w h]`
             "camera" => {
+                let orthographic = matches!(args.get(7), Some(Value::Bool(true)));
+                let projection = if orthographic {
+                    Projection::Orthographic {
+                        half_height: num(8).unwrap_or(5.0),
+                    }
+                } else {
+                    Projection::Perspective {
+                        fov_y_degrees: num(2)?,
+                    }
+                };
                 let camera = Camera {
                     object: id_at(1)?,
-                    fov: num(2)?,
+                    projection,
                     near: num(3)?,
                     far: num(4)?,
                     clear: nums::<4>(args.get(5)).unwrap_or([0.05, 0.06, 0.09, 1.0]),
+                    depth: num(6).unwrap_or(0.0),
+                    rect: nums::<4>(args.get(9)).unwrap_or([0.0, 0.0, 1.0, 1.0]),
                 };
                 self.cameras.insert(id, camera);
             }
@@ -100,48 +126,59 @@ impl WorldView {
         self.planes.retain(|_, p| !objects.contains(&p.object));
     }
 
-    /// The main camera's view and the planes it sees, or `None` without an active
-    /// camera (then only screen UI is drawn).
-    pub fn frame(
+    /// Every active camera's view (lowest depth first, then the order they were added),
+    /// each seeing the planes and `extra` quads; empty without cameras (then only screen
+    /// UI is drawn).
+    pub fn views(
         &self,
         scene: &ScriptScene,
         size: (u32, u32),
-    ) -> Option<(WorldCamera, Vec<WorldQuad>)> {
+        extra: &[WorldQuad],
+    ) -> Vec<WorldView> {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
-        let camera = self.cameras.values().find(|c| scene.active(c.object))?;
-        // Cameras ignore scale: only where they are and which way they face.
-        let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
-        let camera_world = Mat4::from_rotation_translation(rotation, position);
-        let [r, g, b, a] = camera.clear;
-        let clear = Color {
-            r: r as f64,
-            g: g as f64,
-            b: b as f64,
-            a: a as f64,
-        };
-        let view = WorldCamera::perspective(
-            camera_world,
-            camera.fov,
-            camera.near,
-            camera.far,
-            size,
-            clear,
-        );
-        let quads = self
+        let quads: Vec<WorldQuad> = self
             .planes
             .values()
             .filter(|p| scene.active(p.object))
             .filter_map(|p| {
-                let m = Mat4::from(world(p.object)?);
-                // The plane lies in its object's XZ plane, facing up (+y), like Unity's.
-                let lay = Mat4::from_scale_rotation_translation(
-                    Vec3::new(p.size.0, p.size.1, 1.0),
-                    Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
-                    Vec3::ZERO,
-                );
-                Some(WorldQuad::colored(m * lay, p.color))
+                Some(WorldQuad::colored(
+                    Mat4::from(world(p.object)?) * lay_flat(p.size),
+                    p.color,
+                ))
             })
+            .chain(extra.iter().copied())
             .collect();
-        Some((view, quads))
+        let mut cameras: Vec<&Camera> = self
+            .cameras
+            .values()
+            .filter(|c| scene.active(c.object))
+            .collect();
+        cameras.sort_by(|a, b| a.depth.total_cmp(&b.depth));
+        cameras
+            .into_iter()
+            .filter_map(|camera| {
+                // Cameras ignore scale: only where they are and which way they face.
+                let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
+                let [r, g, b, a] = camera.clear;
+                let clear = Color {
+                    r: r as f64,
+                    g: g as f64,
+                    b: b as f64,
+                    a: a as f64,
+                };
+                Some(WorldView {
+                    camera: WorldCamera::new(
+                        Mat4::from_rotation_translation(rotation, position),
+                        camera.projection,
+                        camera.near,
+                        camera.far,
+                        viewport_size(camera.rect, size),
+                        clear,
+                    ),
+                    viewport: camera.rect,
+                    quads: quads.clone(),
+                })
+            })
+            .collect()
     }
 }

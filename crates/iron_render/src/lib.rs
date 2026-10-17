@@ -15,7 +15,7 @@ pub use offscreen::OffscreenTarget;
 pub use surface::WindowSurface;
 pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer};
 pub use wgpu;
-pub use world::{WorldCamera, WorldQuad, WorldRenderer};
+pub use world::{Projection, WorldCamera, WorldQuad, WorldRenderer, WorldView, viewport_size};
 
 /// A linear RGBA colour.
 #[derive(Clone, Copy, Debug, PartialEq)]
