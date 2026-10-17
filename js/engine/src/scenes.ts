@@ -60,7 +60,7 @@ import {
   type ComponentClass,
   type InstantiateObjectOptions,
 } from "./scene.ts";
-import { Sprite, SpriteRenderer, Texture } from "./textures.ts";
+import { RenderTexture, Sprite, SpriteRenderer, Texture } from "./textures.ts";
 
 _registerBuiltIns({
   AudioListener,
@@ -248,6 +248,9 @@ class Saver {
         ),
       };
     }
+    if (v instanceof RenderTexture) {
+      return this.asset(v, "texture", () => ({ type: "RenderTexture", width: v.width, height: v.height }));
+    }
     if (v instanceof Texture) {
       if (!v.src) return this.cannot(`${where}: only textures loaded from files are saved`);
       const t = v as unknown as { _mipmaps: boolean };
@@ -299,7 +302,9 @@ class Loader {
     if (this.assets.has(id)) return this.assets.get(id);
     const a = this.data[id];
     let made: unknown = null;
-    if (a?.type === "Texture") {
+    if (a?.type === "RenderTexture") {
+      made = new RenderTexture(Number(a.width), Number(a.height));
+    } else if (a?.type === "Texture") {
       made = Texture.load(String(a.src), {
         filterMode: a.filterMode as never,
         wrapMode: a.wrapMode as never,

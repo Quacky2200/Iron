@@ -792,7 +792,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     viewport rects (split screen, minimaps), `Camera.main` / `allCameras`, `Matrix4x4`,
     `Screen`, screen/viewport/world conversions (`screenPointToRay`, `worldToScreenPoint`,
     `viewportToWorldPoint`, ...), `CameraFollow` and `CameraOrbit` — `M5-CAM-01`, `M5-RND-06`
-  - [ ] Cameras rendering to a texture (`targetTexture`): moved to M5.c (render textures)
+  - [x] Cameras rendering to a texture (`targetTexture`): done in M5.c (render textures)
   - [x] Lifecycle hooks the Unity / s&box way: `onStart`, `onUpdate` and `onLateUpdate` per
     frame, `onFixedUpdate` on the 60 Hz tick, `onPreRender`, `onDestroy`; the engine only
     calls the hooks a component has — `M5-OBJ-08`
@@ -1068,11 +1068,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] Glass with refraction (screen-space), order-independent transparency
     - [x] A material test scene (spheres sweeping roughness × metallic, the classic grid):
       `examples/materials`, `M5-RND-11`
-  - [ ] Camera into a texture (asked for 2026-10-17; from M5.a's `targetTexture` and the
-    M5.a2 texture follow-ups): `RenderTexture` (size, depth, format), `Camera.targetTexture`
-    drawing that camera into it instead of the screen, usable as any material's or
-    sprite's texture (security cameras, minimaps, portals), sharing the render-scale
-    target code
+  - [x] Camera into a texture (asked for 2026-10-17; from M5.a's `targetTexture` and the
+    M5.a2 texture follow-ups): `RenderTexture` (`new RenderTexture(w, h)`, `setSize`,
+    saved in scenes), `Camera.targetTexture` drawing that camera into it before the
+    screen (post-processing included), usable as any material's or sprite's texture;
+    a camera can't show its own texture (plain colour there); texture cameras stay out
+    of `Camera.main` and pointer rays — `M5-RTX-01`, `M5-RND-19`
+  - [ ] Render texture follow-ups: formats (HDR, depth), mipmaps, `antiAliasing` per
+    texture, `Camera.Render()` on demand, reading pixels back
   - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels. Done:
     MSAA, render scale, shadow quality, levels, manifest defaults, the example (`M5-RND-14`,
     `M5-QUA-01`). Left: FXAA / TAA, render textures, texture quality, saving players'

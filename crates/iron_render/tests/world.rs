@@ -204,6 +204,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             clip_plane: None,
             probes: Vec::new(),
             fxaa: false,
+            target_texture: None,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -225,6 +226,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             clip_plane: None,
             probes: Vec::new(),
             fxaa: false,
+            target_texture: None,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -253,6 +255,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             clip_plane: None,
             probes: Vec::new(),
             fxaa: false,
+            target_texture: None,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -1893,4 +1896,108 @@ fn tonemapping_exposure_and_fxaa() {
         }
     }
     assert_golden("M5-RND-18", size.0 * 2, size.1 * 2, &pixels, 3);
+}
+
+// M5-RND-19
+#[test]
+fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
+    use iron_render::{Light, LightKind, MeshInstance, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    const SCREEN_TEXTURE: u32 = 50;
+    world.set_render_texture(&gpu, SCREEN_TEXTURE, (128, 96));
+    let id = |n: &str| primitive_id(n).unwrap();
+    // A red cube, a green sphere and a blue capsule on a floor; a monitor (a quad showing
+    // the render texture) on a post to the right.
+    let meshes = vec![
+        MeshInstance {
+            mesh: id("plane"),
+            color: [0.4, 0.4, 0.42, 1.0],
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("cube"),
+            model: Mat4::from_translation(Vec3::new(-1.2, 0.5, 0.0)),
+            color: [0.9, 0.15, 0.1, 1.0],
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("sphere"),
+            model: Mat4::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+            color: [0.1, 0.8, 0.2, 1.0],
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("capsule"),
+            model: Mat4::from_translation(Vec3::new(1.2, 1.0, 0.0))
+                * Mat4::from_scale(Vec3::splat(0.5)),
+            color: [0.15, 0.3, 0.95, 1.0],
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("quad"),
+            model: Mat4::from_translation(Vec3::new(2.6, 1.4, 0.8))
+                * Mat4::from_rotation_y(-0.5)
+                * Mat4::from_scale(Vec3::new(1.6, 1.2, 1.0)),
+            texture: Some(WorldTexture::Asset(SCREEN_TEXTURE)),
+            unlit: true,
+            ..Default::default()
+        },
+    ];
+    let lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.6, 1.5, 1.4],
+        position: Vec3::ZERO,
+        direction: Vec3::new(-0.4, -0.8, -0.5).normalize(),
+        range: 0.0,
+        shadows: None,
+        culling_mask: ALL_LAYERS,
+    }];
+    let look = |eye: Vec3, at: Vec3| {
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse()
+    };
+    // The texture camera looks down from above and behind, in a yellow fog colour.
+    let mut security = iron_render::WorldView::new(
+        WorldCamera::perspective(
+            look(Vec3::new(0.0, 4.0, -4.0), Vec3::new(0.3, 0.4, 0.0)),
+            55.0,
+            0.1,
+            50.0,
+            (128, 96),
+            Color::rgb(0.6, 0.55, 0.2),
+        ),
+        [0.0, 0.0, 1.0, 1.0],
+    );
+    security.meshes = meshes.clone();
+    security.lights = lights.clone();
+    security.target_texture = Some(SCREEN_TEXTURE);
+    let mut main = iron_render::WorldView::new(
+        WorldCamera::perspective(
+            look(Vec3::new(0.5, 2.2, 6.0), Vec3::new(0.8, 0.8, 0.0)),
+            45.0,
+            0.1,
+            50.0,
+            size,
+            Color::rgb(0.05, 0.06, 0.09),
+        ),
+        [0.0, 0.0, 1.0, 1.0],
+    );
+    main.meshes = meshes;
+    main.lights = lights;
+    // Twice: the second frame shows the same (the texture is drawn before the screen).
+    for _ in 0..2 {
+        world.render_views(&gpu, &rt, &[security.clone(), main.clone()], &[]);
+    }
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-19", size.0, size.1, &pixels, 3);
 }

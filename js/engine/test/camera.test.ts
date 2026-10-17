@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, CameraFollow, CameraOrbit, GameObject, Matrix4x4, Quaternion, Rect, Vector3 } from "../src/index.ts";
+import { Camera, CameraFollow, CameraOrbit, GameObject, Matrix4x4, Quaternion, Rect, RenderTexture, Vector3 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 import { _setScreenForTests } from "../src/screen.ts";
@@ -70,10 +70,28 @@ describe("Camera conversions", () => {
     const a = cam.screenPointToRay({ x: 450, y: 50 });
     const b = cam.screenPointToRay({ x: 750, y: 550 });
     expect(near(a.direction, b.direction)).toBe(true);
-    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false, "none"]);
+    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false, "none", null]);
     // Post anti-aliasing (M5-RND-18).
     cam.antialiasing = "fxaa";
-    expect(ops.at(-1)!.at(-1)).toBe("fxaa");
+    expect(ops.at(-1)![15]).toBe("fxaa");
+  });
+
+  // M5-RTX-01
+  test("render textures: cameras draw into them, and they leave Camera.main to the screen's", () => {
+    const screen = camera(new Vector3(0, 0, 10));
+    const rt = new RenderTexture(256.4, 128);
+    expect(ops.at(-1)).toEqual(["render.renderTexture", rt.id, 256, 128]);
+    expect(rt.isLoaded).toBe(true);
+    expect([rt.width, rt.height]).toEqual([256, 128]);
+    const security = camera(new Vector3(5, 5, 5));
+    security.targetTexture = rt;
+    expect(ops.at(-1)![0]).toBe("render.camera");
+    expect(ops.at(-1)!.at(-1)).toBe(rt.id);
+    expect(Camera.main).toBe(screen);
+    rt.setSize(64, 64);
+    expect(ops.at(-1)).toEqual(["render.renderTexture", rt.id, 64, 64]);
+    security.targetTexture = null;
+    expect(ops.at(-1)!.at(-1)).toBeNull();
   });
 
   test("main camera and draw order", () => {

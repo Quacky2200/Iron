@@ -72,8 +72,8 @@ pub(crate) struct Fxaa {
     pipeline_layout: wgpu::PipelineLayout,
     sampler: wgpu::Sampler,
     pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
-    /// The image before FXAA, with its size and format.
-    input: Option<(wgpu::TextureView, (u32, u32), wgpu::TextureFormat)>,
+    /// The image before FXAA, by size and format (the screen and render textures).
+    inputs: HashMap<((u32, u32), wgpu::TextureFormat), wgpu::TextureView>,
 }
 
 impl Fxaa {
@@ -121,7 +121,7 @@ impl Fxaa {
             pipeline_layout,
             sampler,
             pipelines: HashMap::new(),
-            input: None,
+            inputs: HashMap::new(),
         }
     }
 
@@ -132,11 +132,10 @@ impl Fxaa {
         size: (u32, u32),
         format: wgpu::TextureFormat,
     ) -> wgpu::TextureView {
-        if self
-            .input
-            .as_ref()
-            .is_none_or(|(_, s, f)| *s != size || *f != format)
-        {
+        if !self.inputs.contains_key(&(size, format)) {
+            if self.inputs.len() >= 4 {
+                self.inputs.clear();
+            }
             let view = gpu
                 .device
                 .create_texture(&wgpu::TextureDescriptor {
@@ -155,9 +154,9 @@ impl Fxaa {
                     view_formats: &[],
                 })
                 .create_view(&Default::default());
-            self.input = Some((view, size, format));
+            self.inputs.insert((size, format), view);
         }
-        self.input.as_ref().expect("just made").0.clone()
+        self.inputs[&(size, format)].clone()
     }
 
     /// Smooths the input's edges into `target`.
@@ -166,9 +165,10 @@ impl Fxaa {
         gpu: &Gpu,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
+        size: (u32, u32),
         format: wgpu::TextureFormat,
     ) {
-        let Some((input, ..)) = &self.input else {
+        let Some(input) = self.inputs.get(&(size, format)) else {
             return;
         };
         let pipeline = self.pipelines.entry(format).or_insert_with(|| {

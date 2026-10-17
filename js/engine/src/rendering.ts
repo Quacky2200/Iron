@@ -18,7 +18,7 @@ import {
 } from "./math.ts";
 import { Component, type GameObject } from "./scene.ts";
 import { Screen } from "./screen.ts";
-import type { Texture } from "./textures.ts";
+import type { RenderTexture, Texture } from "./textures.ts";
 
 const rgba = (c: Color) => [c.r, c.g, c.b, c.a];
 
@@ -47,6 +47,7 @@ export class Camera extends Component {
   private _layerCullDistances: number[] = new Array(32).fill(0);
   private _layerCullSpherical = false;
   private _antialiasing: "none" | "fxaa" = "none";
+  private _targetTexture: RenderTexture | null = null;
   private started = false;
 
   /** Vertical field of view in degrees (perspective), 1 to 179. */
@@ -211,6 +212,19 @@ export class Camera extends Component {
     this.send();
   }
 
+  /**
+   * Draws into this texture instead of the screen (Unity's `targetTexture`); its `rect`
+   * is then within the texture. `null`: the screen.
+   */
+  @property
+  get targetTexture(): RenderTexture | null {
+    return this._targetTexture;
+  }
+  set targetTexture(t: RenderTexture | null) {
+    this._targetTexture = t;
+    this.send();
+  }
+
   /** The camera's area of the screen in UI pixels. */
   get pixelRect(): Rect {
     return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
@@ -221,9 +235,9 @@ export class Camera extends Component {
     return r.width / Math.max(1e-6, r.height);
   }
 
-  /** The main camera: the first active one added (like Unity's tagged `Camera.main`). */
+  /** The main camera: the first active one added that draws to the screen (like Unity's tagged `Camera.main`). */
   static get main(): Camera | undefined {
-    return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed);
+    return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed && !c._targetTexture);
   }
 
   /** Every active camera, in draw order. */
@@ -328,6 +342,7 @@ export class Camera extends Component {
       this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null,
       this._layerCullSpherical,
       this._antialiasing,
+      this._targetTexture?.id ?? null,
     );
   }
 

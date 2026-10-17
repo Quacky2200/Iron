@@ -81,6 +81,9 @@ pub fn in_mask(mask: u32, layer: u8) -> bool {
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// Render textures hold finished (graded) colours, like the screen.
+pub const RENDER_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
 /// The open cone light beams are drawn with ([`mesh::beam`]).
 pub const BEAM_MESH: u32 = PRIMITIVE_BASE + 0xFFFE;
 
@@ -465,6 +468,9 @@ pub struct WorldView {
     /// FXAA over the whole target after it's drawn, when the main view (the biggest)
     /// asks for it (Unity's camera `antialiasing`).
     pub fxaa: bool,
+    /// Draws into this render texture ([`WorldRenderer::set_render_texture`]) instead
+    /// of the target (Unity's `Camera.targetTexture`); its viewport is within the texture.
+    pub target_texture: Option<u32>,
 }
 
 impl WorldView {
@@ -481,6 +487,7 @@ impl WorldView {
             clip_plane: None,
             probes: Vec::new(),
             fxaa: false,
+            target_texture: None,
         }
     }
 }
@@ -763,6 +770,8 @@ pub struct WorldRenderer {
 struct AssetTexture {
     srgb: wgpu::TextureView,
     linear: wgpu::TextureView,
+    /// A render texture's view to draw into (its only mip).
+    target: Option<wgpu::TextureView>,
     filter: TextureFilter,
     wrap: TextureWrap,
     anisotropy: u16,
@@ -1236,6 +1245,7 @@ impl WorldRenderer {
             AssetTexture {
                 srgb,
                 linear,
+                target: None,
                 filter: data.filter,
                 wrap: data.wrap,
                 anisotropy: data.anisotropy,
@@ -1244,6 +1254,53 @@ impl WorldRenderer {
         );
         self.material_groups.clear();
         true
+    }
+
+    /// Makes (or resizes) render texture `id`: cameras draw into it
+    /// ([`WorldView::target_texture`]) and materials and sprites show it like any kept
+    /// texture ([`WorldTexture::Asset`]).
+    pub fn set_render_texture(&mut self, gpu: &Gpu, id: u32, size: (u32, u32)) {
+        let max = gpu.device.limits().max_texture_dimension_2d;
+        let size = (size.0.clamp(1, max), size.1.clamp(1, max));
+        if self
+            .textures
+            .get(&id)
+            .is_some_and(|t| t.target.is_some() && t.size == size)
+        {
+            return;
+        }
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("render texture"),
+            size: wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: RENDER_TEXTURE_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+        });
+        let srgb = texture.create_view(&Default::default());
+        let linear = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba8Unorm),
+            ..Default::default()
+        });
+        self.textures.insert(
+            id,
+            AssetTexture {
+                target: Some(srgb.clone()),
+                srgb,
+                linear,
+                filter: TextureFilter::Bilinear,
+                wrap: TextureWrap::Clamp,
+                anisotropy: 1,
+                size,
+            },
+        );
+        self.material_groups.clear();
     }
 
     pub fn remove_texture(&mut self, id: u32) {
@@ -1578,6 +1635,30 @@ impl WorldRenderer {
         textures: &[&wgpu::TextureView],
     ) {
         self.stats = WorldStats::default();
+        // Cameras with a target texture first, each texture's in order, so the screen's
+        // cameras see this frame's render.
+        let mut targets: Vec<u32> = Vec::new();
+        for v in views {
+            if let Some(t) = v.target_texture
+                && !targets.contains(&t)
+            {
+                targets.push(t);
+            }
+        }
+        for id in targets {
+            self.render_into_texture(gpu, id, views, textures);
+        }
+        let screen: Vec<WorldView>;
+        let views = if views.iter().any(|v| v.target_texture.is_some()) {
+            screen = views
+                .iter()
+                .filter(|v| v.target_texture.is_none())
+                .cloned()
+                .collect();
+            &screen[..]
+        } else {
+            views
+        };
         let scale = if self.render_scale.is_finite() {
             self.render_scale.clamp(0.25, 2.0)
         } else {
@@ -1606,6 +1687,65 @@ impl WorldRenderer {
         if let Some(up) = self.upscale.as_mut() {
             up.blit(gpu, &texture, target.view, target.format);
         }
+    }
+
+    /// Draws the views targeting render texture `id` into it. The texture can't be read
+    /// while it's drawn, so in its own cameras' views things showing it show plain colour
+    /// (other render textures show their latest picture).
+    fn render_into_texture(
+        &mut self,
+        gpu: &Gpu,
+        id: u32,
+        views: &[WorldView],
+        textures: &[&wgpu::TextureView],
+    ) {
+        let Some((view, size)) = self
+            .textures
+            .get(&id)
+            .and_then(|t| Some((t.target.clone()?, t.size)))
+        else {
+            return;
+        };
+        let own = |t: &mut Option<WorldTexture>| {
+            if *t == Some(WorldTexture::Asset(id)) {
+                *t = None;
+            }
+        };
+        let mine: Vec<WorldView> = views
+            .iter()
+            .filter(|v| v.target_texture == Some(id))
+            .map(|v| {
+                let mut v = v.clone();
+                v.target_texture = None;
+                for m in &mut v.meshes {
+                    own(&mut m.texture);
+                    for t in [
+                        &mut m.maps.normal,
+                        &mut m.maps.metallic_gloss,
+                        &mut m.maps.occlusion,
+                        &mut m.maps.emission,
+                        &mut m.maps.detail,
+                    ] {
+                        own(t);
+                    }
+                }
+                for q in &mut v.quads {
+                    own(&mut q.texture);
+                }
+                // The screen's views refresh probes.
+                for p in &mut v.probes {
+                    p.render = false;
+                }
+                v
+            })
+            .collect();
+        let rt = RenderTarget {
+            view: &view,
+            format: RENDER_TEXTURE_FORMAT,
+            size,
+            scale: 1.0,
+        };
+        self.render_views_unscaled(gpu, &rt, &mine, textures);
     }
 
     fn render_views_unscaled(
@@ -2553,16 +2693,15 @@ impl WorldRenderer {
         }
         if post && let Some(pass) = self.bloom_pass.as_mut() {
             let out = fxaa_input.as_ref().unwrap_or(target.view);
-            pass.encode(
-                gpu,
-                &mut encoder,
-                out,
-                target.format,
-                bloom.as_ref(),
-                grading,
-            );
+            let out = RenderTarget {
+                view: out,
+                format: target.format,
+                size,
+                scale: target.scale,
+            };
+            pass.encode(gpu, &mut encoder, &out, bloom.as_ref(), grading);
             if fxaa && let Some(f) = self.fxaa.as_mut() {
-                f.encode(gpu, &mut encoder, target.view, target.format);
+                f.encode(gpu, &mut encoder, target.view, size, target.format);
             }
         }
         gpu.queue.submit([encoder.finish()]);

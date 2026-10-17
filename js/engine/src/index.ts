@@ -40,6 +40,7 @@ export {
   type FilterMode,
   Sprite,
   SpriteRenderer,
+  RenderTexture,
   Texture,
   type TextureOptions,
   type TextureWrapMode,

@@ -52,7 +52,7 @@ export class Texture {
   private pixels: number[] | null = null;
   private waiting: ((t: Texture) => void)[] = [];
 
-  private constructor(src: string | null, options: TextureOptions) {
+  protected constructor(src: string | null, options: TextureOptions) {
     this.id = nextTexture++;
     this.src = src;
     this._filterMode = options.filterMode ?? "bilinear";
@@ -155,7 +155,7 @@ export class Texture {
     __iron_op("render.textureRemove", this.id);
   }
 
-  private send(): void {
+  protected send(): void {
     __iron_op(
       "render.texture",
       this.id,
@@ -180,6 +180,35 @@ export class Texture {
     const waiting = this.waiting;
     this.waiting = [];
     for (const f of waiting) f(this);
+  }
+}
+
+/**
+ * A texture cameras draw into (Unity's `RenderTexture`): set it as a camera's
+ * `targetTexture`, then show it on any material or sprite (security monitors, minimaps,
+ * portals). It holds finished colours, like the screen. A camera drawing into it can't
+ * show it at the same time (things showing it show plain colour in that camera's view).
+ */
+export class RenderTexture extends Texture {
+  constructor(width: number, height: number) {
+    super(null, { wrapMode: "clamp", mipmaps: false });
+    this.width = Math.max(1, Math.round(width));
+    this.height = Math.max(1, Math.round(height));
+    this.isLoaded = true;
+    this.send();
+  }
+
+  /** Resizes it (cameras drawing into it adapt their aspect). */
+  setSize(width: number, height: number): void {
+    this.width = Math.max(1, Math.round(width));
+    this.height = Math.max(1, Math.round(height));
+    this.send();
+  }
+
+  protected override send(): void {
+    // Called by the base constructor before the size is set.
+    if (!this.isLoaded) return;
+    __iron_op("render.renderTexture", this.id, this.width, this.height);
   }
 }
 

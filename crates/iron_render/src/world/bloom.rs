@@ -95,8 +95,9 @@ pub(crate) struct BloomPass {
     composite: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// Exposure and tonemapping alone, by target format.
     grade: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
-    /// The HDR image and the blur levels, for one target size.
-    textures: Option<((u32, u32), wgpu::TextureView, Vec<wgpu::TextureView>)>,
+    /// The HDR image and the blur levels, by target size (the screen and render
+    /// textures).
+    textures: HashMap<(u32, u32), (wgpu::TextureView, Vec<wgpu::TextureView>)>,
 }
 
 fn pipeline(
@@ -210,13 +211,17 @@ impl BloomPass {
             layout,
             sampler,
             params,
-            textures: None,
+            textures: HashMap::new(),
         }
     }
 
     /// The HDR texture to draw the world into, made (or remade) for `size`.
     pub fn hdr_view(&mut self, gpu: &Gpu, size: (u32, u32)) -> wgpu::TextureView {
-        if self.textures.as_ref().is_none_or(|t| t.0 != size) {
+        if !self.textures.contains_key(&size) {
+            // A few sizes at most; a resized window leaves old ones behind.
+            if self.textures.len() >= 4 {
+                self.textures.clear();
+            }
             let make = |w: u32, h: u32| {
                 gpu.device
                     .create_texture(&wgpu::TextureDescriptor {
@@ -243,9 +248,9 @@ impl BloomPass {
                 h /= 2;
                 levels.push(make(w, h));
             }
-            self.textures = Some((size, make(size.0, size.1), levels));
+            self.textures.insert(size, (make(size.0, size.1), levels));
         }
-        self.textures.as_ref().expect("just made").1.clone()
+        self.textures[&size].0.clone()
     }
 
     /// Blurs the HDR image's bright parts (with `settings`) and writes the image plus the
@@ -254,12 +259,13 @@ impl BloomPass {
         &mut self,
         gpu: &Gpu,
         encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
-        format: wgpu::TextureFormat,
+        // Where the result goes (its size picks the HDR image).
+        out: &crate::RenderTarget<'_>,
         settings: Option<&Bloom>,
         grading: Grading,
     ) {
-        let Some((_, hdr, levels)) = &self.textures else {
+        let (target, format, size) = (out.view, out.format, out.size);
+        let Some((hdr, levels)) = self.textures.get(&size) else {
             return;
         };
         let bloom = settings.copied().unwrap_or(Bloom {

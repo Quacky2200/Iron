@@ -714,7 +714,9 @@ impl App {
         py: f32,
     ) -> Option<(iron_core::glam::Vec3, iron_core::glam::Vec3)> {
         let size = self.gfx.as_ref()?.surface.size();
-        let views = self.world_view.views(&self.scene, size, &[]);
+        // Cameras drawing into textures aren't on the screen.
+        let mut views = self.world_view.views(&self.scene, size, &[]);
+        views.retain(|v| v.target_texture.is_none());
         panels::camera_ray(&views, size, px, py)
     }
 
@@ -1427,6 +1429,9 @@ impl App {
                 None => gfx.world.remove_texture(id),
             }
         }
+        for (id, size) in self.world_view.render_texture_uploads.drain(..) {
+            gfx.world.set_render_texture(&gfx.gpu, id, size);
+        }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (quads, textures) = self.panels.render(
             &gfx.gpu,
@@ -1771,6 +1776,9 @@ impl PlatformApp for App {
                 }
                 None => gfx.world.remove_texture(id),
             }
+        }
+        for (id, size) in self.world_view.render_texture_uploads.drain(..) {
+            gfx.world.set_render_texture(&gfx.gpu, id, size);
         }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (scene, world_view) = (&self.scene, &self.world_view);

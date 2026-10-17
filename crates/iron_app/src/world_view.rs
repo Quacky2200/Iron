@@ -41,6 +41,8 @@ struct Camera {
     cull_spherical: bool,
     /// FXAA over the screen (Unity's camera `antialiasing`).
     fxaa: bool,
+    /// Draws into this render texture instead of the screen (`targetTexture`).
+    target: Option<u32>,
 }
 
 impl Camera {
@@ -317,6 +319,10 @@ pub struct WorldViews {
     model_ids: crate::models::EngineIds,
     /// Textures to upload (`None`: remove), applied by the app before drawing.
     pub texture_uploads: Vec<(u32, Option<TextureData>)>,
+    /// Render textures to make or resize, with their sizes.
+    pub render_texture_uploads: Vec<(u32, (u32, u32))>,
+    /// Render textures' sizes, for their cameras' aspect.
+    render_textures: HashMap<u32, (u32, u32)>,
     /// Loaded textures' sizes in pixels, for sprites.
     texture_sizes: HashMap<u32, (u32, u32)>,
 }
@@ -346,6 +352,8 @@ impl Default for WorldViews {
             mesh_data: HashMap::new(),
             model_ids: crate::models::EngineIds::default(),
             texture_uploads: Vec::new(),
+            render_texture_uploads: Vec::new(),
+            render_textures: HashMap::new(),
             texture_sizes: HashMap::new(),
         }
     }
@@ -496,6 +504,7 @@ impl WorldViews {
             .ok_or("a texture needs an id")? as u32;
         if name == "textureRemove" {
             self.texture_sizes.remove(&id);
+            self.render_textures.remove(&id);
             self.texture_uploads.push((id, None));
             return Ok(None);
         }
@@ -604,6 +613,10 @@ impl WorldViews {
                     cull_distances: nums::<32>(args.get(12)).unwrap_or([0.0; 32]),
                     cull_spherical: matches!(args.get(13), Some(Value::Bool(true))),
                     fxaa: args.get(14).and_then(Value::as_str) == Some("fxaa"),
+                    target: match args.get(15) {
+                        Some(Value::Null) | None => None,
+                        _ => Some(id_at(15)?),
+                    },
                 };
                 self.cameras.insert(id, camera);
             }
@@ -867,6 +880,17 @@ impl WorldViews {
             "shadowSettings" => {
                 let resolution = num(2).unwrap_or(2048.0).clamp(256.0, 8192.0) as u32;
                 self.shadow_settings = (num(1)?.max(1.0), resolution);
+            }
+            // `renderTexture id width height`: a texture cameras draw into (removed with
+            // `textureRemove`).
+            "renderTexture" => {
+                let size = (
+                    num(1)?.clamp(1.0, 16384.0) as u32,
+                    num(2)?.clamp(1.0, 16384.0) as u32,
+                );
+                self.render_textures.insert(id, size);
+                self.texture_sizes.insert(id, size);
+                self.render_texture_uploads.push((id, size));
             }
             // `post 0 postExposure(stops) tonemapping(none|neutral|aces)`.
             "post" => {
@@ -1223,6 +1247,11 @@ impl WorldViews {
                         layer: halo.layer,
                     });
                 }
+                // A camera with a missing render texture draws nothing.
+                let (target, target_size) = match camera.target {
+                    Some(t) => (Some(t), *self.render_textures.get(&t)?),
+                    None => (None, size),
+                };
                 let [r, g, b, a] = camera.clear;
                 let clear = Color {
                     r: r as f64,
@@ -1246,12 +1275,13 @@ impl WorldViews {
                     clip_plane: None,
                     probes: probes.clone(),
                     fxaa: camera.fxaa,
+                    target_texture: target,
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
                         camera.near,
                         camera.far,
-                        viewport_size(camera.rect, size),
+                        viewport_size(camera.rect, target_size),
                         clear,
                     ),
                     viewport: camera.rect,
