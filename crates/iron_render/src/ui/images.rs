@@ -1,8 +1,13 @@
 //! Background images: loading `url(...)` files from the game's folder into
 //! textures (cached by URL), and CSS `background-size` / `background-position`.
+//! SVG images (and inline `<svg>` elements) are rasterized with resvg at the size
+//! they're drawn, so they stay sharp.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use resvg::{tiny_skia, usvg};
 
 use iron_ui::{
     BackgroundPosition, BackgroundRepeat, BackgroundSize, BorderImageRepeat, Len, Rect, RepeatAxis,
@@ -30,12 +35,111 @@ pub struct LoadedImage {
 pub struct ImageCache {
     root: Option<PathBuf>,
     entries: HashMap<String, Option<LoadedImage>>,
+    /// Parsed SVG documents, by URL (or by content for inline SVG).
+    svgs: HashMap<String, Option<Arc<usvg::Tree>>>,
+    /// usvg's options, with the bundled font for `<text>` (made on first use).
+    svg_options: Option<usvg::Options<'static>>,
+}
+
+/// Whether `url` names an SVG image.
+pub fn is_svg(url: &str) -> bool {
+    let url = url.trim();
+    if url.starts_with("data:") {
+        return url.starts_with("data:image/svg+xml");
+    }
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    path.to_ascii_lowercase().ends_with(".svg")
+}
+
+/// Rounds a raster size up to a multiple of 8 (within 8..=4096), so small size
+/// changes reuse the same raster.
+fn bucket(px: f32) -> u32 {
+    let px = px.ceil().clamp(1.0, 4096.0) as u32;
+    px.div_ceil(8) * 8
 }
 
 impl ImageCache {
     pub fn set_root(&mut self, root: PathBuf) {
         self.root = Some(root);
         self.entries.clear();
+        self.svgs.clear();
+    }
+
+    /// An SVG drawn at `px` physical pixels: rasterized at about that size (cached)
+    /// and keyed for [`Self::get`]. `source` is a URL, or SVG text for `inline`.
+    /// Returns the key and the image's natural size.
+    #[allow(clippy::too_many_arguments)]
+    pub fn svg_at(
+        &mut self,
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &ImageSamplers,
+        source: &str,
+        inline: bool,
+        px: (f32, f32),
+    ) -> Option<(String, (u32, u32))> {
+        let id = if inline {
+            format!("svg-inline:{:016x}", hash(source))
+        } else {
+            source.to_owned()
+        };
+        let tree = self.svg_tree(&id, source, inline)?;
+        let natural = svg_natural(&tree);
+        let (w, h) = (bucket(px.0), bucket(px.1));
+        let key = format!("{id}#{w}x{h}");
+        if !self.entries.contains_key(&key) {
+            let loaded = rasterize(&tree, (w, h))
+                .and_then(|pixels| upload(gpu, layout, samplers, &key, &pixels, (w, h), natural));
+            self.entries.insert(key.clone(), loaded);
+        }
+        self.entries.get(&key)?.as_ref()?;
+        Some((key, natural))
+    }
+
+    /// The parsed SVG for `id` (a URL, or `svg-inline:<hash>` for `text`).
+    fn svg_tree(&mut self, id: &str, text: &str, inline: bool) -> Option<Arc<usvg::Tree>> {
+        if let Some(tree) = self.svgs.get(id) {
+            return tree.clone();
+        }
+        let options = self.svg_options.get_or_insert_with(|| {
+            let mut options = usvg::Options::default();
+            let db = Arc::make_mut(&mut options.fontdb);
+            db.load_font_data(iron_ui::text::INTER.to_vec());
+            db.load_font_data(iron_ui::text::INTER_ITALIC.to_vec());
+            // The file's own family name ("Inter Variable"), whatever Iron calls it.
+            let family = db
+                .faces()
+                .next()
+                .and_then(|f| f.families.first())
+                .map_or_else(|| iron_ui::text::DEFAULT_FAMILY.to_owned(), |f| f.0.clone());
+            db.set_sans_serif_family(family.clone());
+            db.set_serif_family(family.clone());
+            options.font_family = family;
+            options
+        });
+        let data = if inline {
+            Some(text.as_bytes().to_vec())
+        } else if text.trim_start().starts_with("data:") {
+            iron_core::decode_data_url(text)
+        } else {
+            self.root
+                .as_ref()
+                .and_then(|root| iron_core::resolve_asset(root, text))
+                .and_then(|path| std::fs::read(path).ok())
+        };
+        let tree = match data.map(|d| usvg::Tree::from_data(&d, options)) {
+            Some(Ok(tree)) => Some(Arc::new(tree)),
+            Some(Err(e)) => {
+                tracing::warn!("SVG `{}` couldn't be parsed: {e}", short(id));
+                None
+            }
+            None => {
+                tracing::warn!("SVG image `{}` couldn't be loaded", short(id));
+                None
+            }
+        };
+        self.svgs.insert(id.to_owned(), tree.clone());
+        tree
     }
 
     pub fn get(
@@ -53,12 +157,19 @@ impl ImageCache {
     }
 
     fn load(
-        &self,
+        &mut self,
         gpu: &Gpu,
         layout: &wgpu::BindGroupLayout,
         samplers: &ImageSamplers,
         url: &str,
     ) -> Option<LoadedImage> {
+        if is_svg(url) {
+            // At its natural size; draws ask for a sharper copy with `svg_at`.
+            let tree = self.svg_tree(url, url, false)?;
+            let natural = svg_natural(&tree);
+            let pixels = rasterize(&tree, natural)?;
+            return upload(gpu, layout, samplers, url, &pixels, natural, natural);
+        }
         let decoded = if url.trim_start().starts_with("data:") {
             // Inlined by the bundler (small images referenced from CSS).
             let Some(bytes) = iron_core::decode_data_url(url) else {
@@ -87,57 +198,106 @@ impl ImageCache {
             }
         };
         let (w, h) = image.dimensions();
-        let size = wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        };
-        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(url),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        gpu.queue.write_texture(
-            texture.as_image_copy(),
-            &image,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * w),
-                rows_per_image: Some(h),
-            },
-            size,
-        );
-        let view = texture.create_view(&Default::default());
-        let bind = |sampler: &wgpu::Sampler| {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(url),
-                layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(sampler),
-                    },
-                ],
-            })
-        };
-        let bind_group = bind(&samplers.smooth);
-        let bind_group_nearest = bind(&samplers.nearest);
-        tracing::debug!("loaded background image `{url}` ({w}x{h})");
-        Some(LoadedImage {
-            bind_group,
-            bind_group_nearest,
-            size: (w, h),
-        })
+        tracing::debug!("loaded background image `{}` ({w}x{h})", short(url));
+        upload(gpu, layout, samplers, url, &image, (w, h), (w, h))
     }
+}
+
+/// An SVG's natural size in CSS pixels (its `width`/`height`, else its `viewBox`).
+fn svg_natural(tree: &usvg::Tree) -> (u32, u32) {
+    let size = tree.size();
+    (
+        (size.width().ceil() as u32).max(1),
+        (size.height().ceil() as u32).max(1),
+    )
+}
+
+/// Renders `tree` stretched to `w` × `h` pixels, as straight-alpha RGBA.
+fn rasterize(tree: &usvg::Tree, (w, h): (u32, u32)) -> Option<Vec<u8>> {
+    let mut pixmap = tiny_skia::Pixmap::new(w, h)?;
+    let size = tree.size();
+    let transform =
+        tiny_skia::Transform::from_scale(w as f32 / size.width(), h as f32 / size.height());
+    resvg::render(tree, transform, &mut pixmap.as_mut());
+    // tiny-skia works premultiplied; textures here hold straight alpha.
+    let mut pixels = pixmap.take();
+    for p in pixels.as_chunks_mut::<4>().0 {
+        let a = p[3];
+        if a > 0 && a < 255 {
+            for c in &mut p[..3] {
+                *c = ((u32::from(*c) * 255 + u32::from(a) / 2) / u32::from(a)).min(255) as u8;
+            }
+        }
+    }
+    Some(pixels)
+}
+
+/// Uploads straight-alpha RGBA `pixels` (`w` × `h`) as a texture with both samplers.
+/// `natural` is the size layout uses (an SVG's raster can be bigger).
+fn upload(
+    gpu: &Gpu,
+    layout: &wgpu::BindGroupLayout,
+    samplers: &ImageSamplers,
+    url: &str,
+    pixels: &[u8],
+    (w, h): (u32, u32),
+    natural: (u32, u32),
+) -> Option<LoadedImage> {
+    let label = short(url);
+    let size = wgpu::Extent3d {
+        width: w,
+        height: h,
+        depth_or_array_layers: 1,
+    };
+    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    gpu.queue.write_texture(
+        texture.as_image_copy(),
+        pixels,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * w),
+            rows_per_image: Some(h),
+        },
+        size,
+    );
+    let view = texture.create_view(&Default::default());
+    let bind = |sampler: &wgpu::Sampler| {
+        gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        })
+    };
+    Some(LoadedImage {
+        bind_group: bind(&samplers.smooth),
+        bind_group_nearest: bind(&samplers.nearest),
+        size: natural,
+    })
+}
+
+/// A stable hash of inline SVG text (FNV-1a), for cache keys.
+fn hash(s: &str) -> u64 {
+    s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 /// Where one tile of an image of `natural` size goes in `area`, following CSS

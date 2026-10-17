@@ -623,7 +623,11 @@ and `@font-face`.
      `fill-rule`, `opacity`/`fill-opacity`/`stroke-opacity`, `transform` on shapes,
      `currentColor`), selectors matching SVG elements, inheritance, transitions later. Rendering:
      tessellate fills and strokes (e.g. lyon) into triangles, or rasterize with a vector rasterizer
-     into a texture (e.g. resvg/tiny-skia for files) — decide when starting
+     into a texture (e.g. resvg/tiny-skia for files) — decided: resvg, rasterized at the drawn size
+     - [x] **5.1a** `.svg` files and `data:image/svg+xml` URLs as images (`url()`, `Image src`): usvg
+       parses (with the bundled font for `<text>`), resvg rasterizes at the tile's physical size
+       (rounded up to 8px, cached per size), layout uses the SVG's natural size — `M3-SVG-01`
+     - [ ] **5.1b** The inline `svg` element tree with CSS styling
 6. **Transforms**
    - [x] Done as step 5e (2D and 3D); see group 5
 7. **Transitions and animations**

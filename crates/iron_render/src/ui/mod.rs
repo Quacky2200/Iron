@@ -799,6 +799,22 @@ impl UiRenderer {
                             let tile = images::tile_rect(q.rect, natural, fill.size, fill.position);
                             let (tile, gap, repeat) =
                                 images::repeat_tiles(tile, q.rect, fill.repeat);
+                            // SVGs are rasterized at the tile's size on screen.
+                            let key = if images::is_svg(url) {
+                                let px = (tile.width * scale, tile.height * scale);
+                                self.images
+                                    .svg_at(
+                                        gpu,
+                                        &self.blit_layout,
+                                        &self.image_samplers,
+                                        url,
+                                        false,
+                                        px,
+                                    )
+                                    .map_or_else(|| url.clone(), |(key, _)| key)
+                            } else {
+                                url.clone()
+                            };
                             flush(&mut steps, &instances, &mut batch_start, current);
                             instances.push(Instance {
                                 rect: rect4(fill.area),
@@ -821,7 +837,7 @@ impl UiRenderer {
                             steps.push(Step::Draw {
                                 target: current,
                                 range: batch_start..end,
-                                image: Some((url.clone(), fill.pixelated)),
+                                image: Some((key, fill.pixelated)),
                             });
                             batch_start = end;
                         }

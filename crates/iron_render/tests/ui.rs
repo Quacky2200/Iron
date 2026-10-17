@@ -1714,6 +1714,43 @@ fn image_tints() {
     assert!(r > 200 && g < 90 && b < 90, "{:?}", f.px(85, 15));
 }
 
+// M3-SVG-01
+#[test]
+fn svg_images_stay_sharp_at_any_size() {
+    let mut s = Scene::new();
+    // At its natural 32px, as a background.
+    s.add(
+        0,
+        &at(
+            10.0,
+            10.0,
+            32.0,
+            32.0,
+            &[("backgroundImage", "url(icon.svg)".into())],
+        ),
+    );
+    // Scaled up 3x as an image element: rasterized at 96px, not stretched.
+    let img = s.element(0, "image", &at(60.0, 10.0, 96.0, 96.0, &[]));
+    s.attrs(img, &[("src", "icon.svg".into())]);
+    // A data: URL, tiled.
+    let data = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Ccircle cx='4' cy='4' r='3' fill='%2340c0ff'/%3E%3C/svg%3E\")";
+    s.add(
+        0,
+        &at(170.0, 10.0, 80.0, 96.0, &[("backgroundImage", data.into())]),
+    );
+    let f = render_with_assets(s, (260, 116), 1.0, BLACK, Some(&images_dir()));
+    assert_golden("M3-SVG-01", 260, 116, &f.pixels, TOLERANCE);
+    // The big icon's check mark edge is crisp: dark and bright pixels sit close.
+    let center = f.px(95, 30);
+    assert!(center[0] > 200, "gradient fill: {center:?}");
+    let [r, g, b, _] = f.px(174, 14);
+    assert!(
+        b > 200 && r < 120 && g > 120,
+        "tiled data: SVG dots: {:?}",
+        [r, g, b]
+    );
+}
+
 // M3-DLG-02
 #[test]
 fn modal_dialog_over_a_blurred_backdrop() {

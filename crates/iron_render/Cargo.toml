@@ -11,6 +11,7 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 iron_core = { version = "0.1.0", path = "../iron_core" }
 iron_ui = { version = "0.1.0", path = "../iron_ui" }
 png = "0.18.1"
+resvg = { version = "0.48.1", default-features = false, features = ["text"] }
 pollster = "1.0.1"
 swash = "0.2.10"
 thiserror = "2.0.21"

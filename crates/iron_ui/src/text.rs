@@ -21,8 +21,9 @@ use crate::text_style::{
 /// The family name the bundled font is registered under.
 pub const DEFAULT_FAMILY: &str = "Inter";
 
-const INTER: &[u8] = include_bytes!("../fonts/InterVariable.ttf");
-const INTER_ITALIC: &[u8] = include_bytes!("../fonts/InterVariable-Italic.ttf");
+/// The bundled font (also given to the SVG renderer for `<text>`).
+pub const INTER: &[u8] = include_bytes!("../fonts/InterVariable.ttf");
+pub const INTER_ITALIC: &[u8] = include_bytes!("../fonts/InterVariable-Italic.ttf");
 
 /// What each glyph run carries through Parley: its colour and its decorations.
 #[derive(Clone, Copy, Debug, PartialEq)]
