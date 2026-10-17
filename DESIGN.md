@@ -236,11 +236,20 @@ One ray-traceable representation of scene geometry (meshes, materials, per-mater
 - ray tracing acceleration structures
 - generated physics colliders
 
-### 7.4 Renderer strategy *(open)*
-- **Own renderer:** full control and learning; expect a year or more to reach "looks good".
-- **Reuse Bevy's rendering and asset crates:** reach the novel parts (TS, React UI, hot reload, editor) much sooner.
+### 7.4 Renderer strategy *(decided 2026-10-17: own renderer)*
+- **Own renderer (chosen):** extend `iron_render` on wgpu. Full control; UI on planes in 3D is the
+  existing UI pass rendered to a texture and drawn on a quad. PBR, shadows and the rest are ours
+  to build (M5.c/d).
+- **Reuse Bevy's rendering and asset crates (not chosen):** faster to good-looking PBR, but brings
+  Bevy's ECS and app model, which clash with our loop and script-owned behaviour.
 
-Either way, the UI and scripting layers must not depend on renderer internals, so the renderer can improve underneath them.
+The UI and scripting layers must not depend on renderer internals, so the renderer can improve
+underneath them.
+
+### 7.5 Scene storage *(decided 2026-10-17: no ECS)*
+An `iron_scene` crate holds GameObjects in a generational arena with a parent/child transform
+hierarchy (glam vectors and quaternions). Components are typed Rust data plus TS script components,
+the s&box way. An ECS can go underneath later if profiling asks for it.
 
 ---
 
@@ -314,7 +323,7 @@ Milestones 1–4 together are a useful standalone result: React-driven native ga
 
 - Text: `cosmic-text` or `parley`?
 - Styling: CSS files, style objects, or both? How much of the CSS spec?
-- Renderer: own vs reuse Bevy crates (§7.4)?
+- ~~Renderer: own vs reuse Bevy crates (§7.4)?~~ Own renderer (2026-10-17).
 - First script backend: QuickJS or `deno_core`?
 - Entity model: full ECS or s&box-style GameObject + Component?
 - Distribution: Steam Workshop, own platform, or both?

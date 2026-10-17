@@ -765,8 +765,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 - [ ] **M5.a** GameObject + Component model first (the s&box way), from TS components, for 2D
   and 3D objects: vectors, quaternions and transforms in the TS API, and planes. The first plane
   use is UI in 3D space (a menu drawn on a plane in the world).
-  **Decision:** own renderer vs reuse Bevy crates (DESIGN §7.4). **Question:** an ECS as its own
-  crate underneath (or alongside) GameObjects?
+  **Decided (2026-10-17):** our own wgpu renderer (DESIGN §7.4); an `iron_scene` crate with
+  GameObjects in a generational arena, no ECS underneath (§7.5).
+  - [x] `iron_scene`: GameObjects (generational ids, names, enabled, parent/children), local and
+    world transforms (glam `Vec3`/`Quat`/scale), moved-object tracking — `M5-OBJ-01`..`M5-OBJ-03`
+  - [ ] TS API: `Vec3`, `Quat`, `Transform`, `GameObject`; script components attached to
+    GameObjects (`this.gameObject`, `this.transform`); transforms synced in one batch per tick
+  - [ ] `Rigidbody` / `Collider` components driving GameObject transforms (from M4)
+  - [ ] 3D view basics: `Camera` component, a perspective pass with depth in `iron_render`
+  - [ ] Planes: a `UiPanel` component draws React UI on a plane in the world (UI rendered to a
+    texture), with pointer input raycast onto it
 - [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support
 - [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing

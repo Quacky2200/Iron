@@ -291,6 +291,9 @@ layout pass):
 
 | ID | Kind | Checks |
 |---|---|---|
+| M5-OBJ-01 | Unit | GameObjects nest; walking is depth-first in order; parenting under itself is refused; destroying takes the subtree (parent first) and stale ids miss after their slot is reused. |
+| M5-OBJ-02 | Unit | World transforms compose through the hierarchy (rotation and scale), cached or not; re-parenting can keep the world position; setting a world position under a rotated parent lands there. |
+| M5-OBJ-03 | Unit | Moved objects (with their children) are reported once; unchanged sets aren't moves; a disabled parent deactivates its subtree. |
 | M5-SCN-01 | Unit | Scene save → load round-trips entities, components and properties exactly. |
 | M5-SCN-02 | Unit | Asset references survive moving/renaming the file (GUID in `.meta`). |
 | M5-AST-01 | Integration | A fixture glTF cooks into the engine format; vertex/index counts match the source. |
