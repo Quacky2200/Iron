@@ -701,7 +701,7 @@ and `@font-face`.
       (dragging sliders, scrollbars, windows); `gotpointercapture` / `lostpointercapture` events;
       capture ends on release, `pointercancel` or removal of the element. `:active` stays on it
       (browsers' implicit capture for presses)
-    - [ ] `touch-action` isn't needed until touch input exists; drag and drop stays "Later"
+    - [ ] `touch-action` isn't needed until touch input exists; drag and drop is in M5.e
 12. **Web fonts: WOFF and WOFF2**
     - [ ] Load `.woff` (zlib) and `.woff2` (Brotli + glyph transforms) fonts from `@font-face` and
       `loadFont`, decoding them to TTF/OTF before registering with Parley (e.g. the `woff2` /
@@ -715,7 +715,7 @@ and `@font-face`.
       window resizes or moves between monitors (and when the UI scale changes); M3b's parser
       already keeps `@media` blocks (with a warning), so the parser's structure doesn't change
 
-**Later (not M3):** accessibility (accesskit), drag and drop.
+Accessibility and drag and drop moved to M5.e, as UI requirements before the editor starts.
 
 ## M4 — Hot reload, physics and audio
 
@@ -743,7 +743,13 @@ mind.
   - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
   - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`
   - [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
-- [ ] **M5.e** Editor shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
+- [ ] **M5.e** Editor shell. UI requirements first (before the editor work starts):
+  - [ ] Accessibility: an AccessKit tree from the UI tree (roles, names, states, focus, actions),
+    so screen readers and platform accessibility tools work
+  - [ ] Drag and drop in the UI: `draggable`, `dragstart` / `drag` / `dragenter` / `dragover` /
+    `dragleave` / `drop` / `dragend` with a data payload, drop targets, a drag image, and files
+    dropped onto the window (winit's `DroppedFile`); builds on pointer capture (M3d group 11)
+  - [ ] Then the shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
   - [ ] Later editor tasks:
     - [ ] UI editor: pick elements in a running game's UI, inspect their computed styles and box
       model, edit styles live (like browser devtools), and edit/arrange React UI visually
