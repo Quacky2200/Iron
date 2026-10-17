@@ -164,6 +164,8 @@ fn main() -> Result<()> {
         cursor: ("default", Vec::new(), 1.0),
         ui_scale: ui_scale::UiScale::None,
         custom_cursor: None,
+        script_cursor: ScriptCursor::default(),
+        focused: true,
         cursors_loaded: HashSet::new(),
         cursors_failed: HashSet::new(),
         clipboard: None,
@@ -297,6 +299,10 @@ struct App {
     ui_scale: ui_scale::UiScale,
     /// A custom cursor for the platform to show.
     custom_cursor: Option<CustomCursorRequest>,
+    /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
+    script_cursor: ScriptCursor,
+    /// Whether the window has focus (raw mouse motion only counts then).
+    focused: bool,
     /// Cursor images (by `url@scale`) already sent to the platform, or unusable.
     cursors_loaded: HashSet<String>,
     cursors_failed: HashSet<String>,
@@ -709,6 +715,9 @@ impl App {
                         tracing::warn!("{name}: {e}");
                     }
                 }
+                name if name.starts_with("cursor.") => {
+                    self.cursor_op(&name["cursor.".len()..], &op.args)
+                }
                 name if name.starts_with("scene.") => {
                     self.scene_op(&name["scene.".len()..], &op.args)
                 }
@@ -797,23 +806,92 @@ impl App {
         self.update_cursor();
     }
 
+    /// Runs a `cursor.*` op: `visible bool`, `lock none|locked|confined`, `image
+    /// src|null [hotspot x y]`.
+    fn cursor_op(&mut self, name: &str, args: &[iron_core::Value]) {
+        match (name, args.first()) {
+            ("visible", Some(iron_core::Value::Bool(v))) => self.script_cursor.visible = *v,
+            ("lock", Some(iron_core::Value::String(mode))) => {
+                self.script_cursor.lock = match mode.as_str() {
+                    "locked" => CursorLock::Locked,
+                    "confined" => CursorLock::Confined,
+                    _ => CursorLock::None,
+                };
+                self.apply_cursor_lock();
+            }
+            ("image", Some(iron_core::Value::String(src))) => {
+                let hotspot = match args.get(1) {
+                    Some(iron_core::Value::Array(h)) => {
+                        let n =
+                            |i: usize| h.get(i).and_then(iron_core::Value::as_f64).unwrap_or(0.0);
+                        Some((n(0) as f32, n(1) as f32))
+                    }
+                    _ => None,
+                };
+                self.script_cursor.image = Some(iron_ui::CursorImage {
+                    url: src.clone(),
+                    hotspot,
+                });
+            }
+            ("image", _) => self.script_cursor.image = None,
+            _ => {
+                tracing::warn!("cursor.{name}: bad arguments {args:?}");
+                return;
+            }
+        }
+        // Show the change even if what's hovered didn't change.
+        self.cursor.0 = "";
+        self.update_cursor();
+    }
+
+    /// Holds the cursor as scripts asked. Locking isn't available everywhere (Windows
+    /// can only confine): it falls back to confining, with the cursor hidden.
+    fn apply_cursor_lock(&mut self) {
+        let Some(gfx) = &self.gfx else {
+            return;
+        };
+        use iron_platform::CursorGrabMode;
+        let result = match self.script_cursor.lock {
+            CursorLock::None => gfx.window.set_cursor_grab(CursorGrabMode::None),
+            CursorLock::Confined => gfx.window.set_cursor_grab(CursorGrabMode::Confined),
+            CursorLock::Locked => gfx
+                .window
+                .set_cursor_grab(CursorGrabMode::Locked)
+                .or_else(|_| gfx.window.set_cursor_grab(CursorGrabMode::Confined)),
+        };
+        if let Err(e) = result {
+            tracing::debug!("cursor lock: {e}");
+        }
+    }
+
     /// Shows the hovered element's cursor: its first image that loads, else its keyword.
+    /// Where the UI asks for nothing special, scripts' `Cursor` image is the default.
     fn update_cursor(&mut self) {
         let Some(gfx) = &self.gfx else {
             return;
         };
-        let (keyword, images) = match self.pointer_on {
+        let (keyword, ui_images) = match self.pointer_on {
             Surface::Panel(id) if self.panels.map.contains_key(&id) => {
                 let p = &self.panels.map[&id];
                 p.interaction.cursor_with_images(&p.tree)
             }
             _ => self.interaction.cursor_with_images(&self.ui),
         };
+        let script_image;
+        let images = match &self.script_cursor.image {
+            Some(image) if ui_images.is_empty() && keyword == "default" => {
+                script_image = [image.clone()];
+                &script_image[..]
+            }
+            _ => ui_images,
+        };
         let scale = gfx.window.scale_factor();
         if (keyword, images, scale) == (self.cursor.0, &self.cursor.1[..], self.cursor.2) {
             return;
         }
         self.cursor = (keyword, images.to_vec(), scale);
+        // Hidden by scripts, or locked (which hides it, as in Unity).
+        let shown = self.script_cursor.visible && self.script_cursor.lock != CursorLock::Locked;
         let custom = self.cursor.1.iter().find_map(|image| {
             let key = format!("{}@{scale}", image.url);
             if self.cursors_loaded.contains(&key) {
@@ -845,11 +923,11 @@ impl App {
         });
         match custom {
             Some(request) => {
-                gfx.window.set_cursor_visible(true);
+                gfx.window.set_cursor_visible(shown);
                 self.custom_cursor = Some(request);
             }
             None => {
-                gfx.window.set_cursor_visible(keyword != "none");
+                gfx.window.set_cursor_visible(shown && keyword != "none");
                 if let Ok(icon) = keyword.parse::<CursorIcon>() {
                     gfx.window.set_cursor(icon);
                 }
@@ -1081,6 +1159,53 @@ impl PlatformApp for App {
             if let Some(nav) = nav.filter(|_| self.interaction.focused().is_some()) {
                 self.handle_ui(nav);
             }
+            return;
+        }
+        // The mouse for gameplay code (`input.mousePosition`, buttons, look, wheel), in UI
+        // pixels, whatever the UI does with it.
+        let ui = self.scale() as f64;
+        let game_mouse: Option<Vec<iron_core::Value>> = match &event {
+            InputEvent::MouseMove { x, y } => {
+                Some(vec!["mousemove".into(), (x / ui).into(), (y / ui).into()])
+            }
+            InputEvent::MouseDown { button } | InputEvent::MouseUp { button } => {
+                let code = match button {
+                    MouseButton::Left => "MouseLeft".to_owned(),
+                    MouseButton::Right => "MouseRight".to_owned(),
+                    MouseButton::Middle => "MouseMiddle".to_owned(),
+                    MouseButton::Other(n) => format!("Mouse{n}"),
+                };
+                let down = matches!(event, InputEvent::MouseDown { .. });
+                Some(if down {
+                    vec!["keydown".into(), code.into(), "".into(), false.into()]
+                } else {
+                    vec!["keyup".into(), code.into(), "".into()]
+                })
+            }
+            InputEvent::MouseWheel(delta) => {
+                let (dx, dy) = match delta {
+                    WheelDelta::Lines { x, y } => (f64::from(*x), f64::from(*y)),
+                    // About a line per 40 pixels, like browsers.
+                    WheelDelta::Pixels { x, y } => (x / 40.0, y / 40.0),
+                };
+                Some(vec!["wheel".into(), dx.into(), dy.into()])
+            }
+            InputEvent::MouseMotion { dx, dy } if self.focused => {
+                Some(vec!["mousedelta".into(), (*dx).into(), (*dy).into()])
+            }
+            _ => None,
+        };
+        if let Some(args) = game_mouse {
+            self.send_game_input(&args);
+        }
+        if let InputEvent::Focused(focused) = event {
+            self.focused = focused;
+            // Grabs are let go while the window is in the background.
+            if focused {
+                self.apply_cursor_lock();
+            }
+        }
+        if let InputEvent::MouseMotion { .. } = event {
             return;
         }
         let game_key: Option<Vec<iron_core::Value>> = match &event {
@@ -1352,6 +1477,36 @@ fn dom_button(button: MouseButton) -> u8 {
         MouseButton::Middle => 1,
         MouseButton::Right => 2,
         MouseButton::Other(n) => n.min(u8::MAX as u16) as u8,
+    }
+}
+
+/// How scripts hold the cursor (Unity's `CursorLockMode`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CursorLock {
+    #[default]
+    None,
+    /// Hidden and held in place; raw motion still arrives (mouse look).
+    Locked,
+    /// Kept inside the window.
+    Confined,
+}
+
+/// Scripts' `Cursor` settings.
+#[derive(Clone, Debug)]
+struct ScriptCursor {
+    visible: bool,
+    lock: CursorLock,
+    /// Shown where the UI asks for no particular cursor.
+    image: Option<iron_ui::CursorImage>,
+}
+
+impl Default for ScriptCursor {
+    fn default() -> Self {
+        Self {
+            visible: true,
+            lock: CursorLock::None,
+            image: None,
+        }
     }
 }
 

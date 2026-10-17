@@ -44,6 +44,7 @@ export {
   type TextureWrapMode,
 } from "./textures.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
+export { Cursor, CursorLockMode } from "./cursor.ts";
 export {
   Bounds,
   Color,

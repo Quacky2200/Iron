@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CustomCursor, Window, WindowId};
 
@@ -227,6 +227,12 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
                 // background in the new area until our next frame.
                 self.app.frame();
             }
+        }
+    }
+
+    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
+            self.app.input(InputEvent::MouseMotion { dx, dy });
         }
     }
 

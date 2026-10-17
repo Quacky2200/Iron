@@ -29,6 +29,12 @@ pub enum InputEvent {
     },
     /// The cursor left the window.
     MouseLeave,
+    /// Raw mouse movement in device units, unclamped by the window's edges (it keeps
+    /// coming while the cursor is locked): for mouse look.
+    MouseMotion {
+        dx: f64,
+        dy: f64,
+    },
     MouseWheel(WheelDelta),
     /// The held modifier keys changed.
     Modifiers(Modifiers),

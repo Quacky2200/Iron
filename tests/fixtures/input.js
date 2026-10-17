@@ -2092,12 +2092,25 @@ ${err.stack}` : ""}`);
   var releasedPending = new Set;
   var pressedThisTick = new Set;
   var releasedThisTick = new Set;
+  var mouseX = 0;
+  var mouseY = 0;
+  var deltaPending = { x: 0, y: 0 };
+  var wheelPending = { x: 0, y: 0 };
+  var deltaThisTick = { x: 0, y: 0 };
+  var wheelThisTick = { x: 0, y: 0 };
   onTick(() => {
     pressedThisTick = pressedPending;
     releasedThisTick = releasedPending;
     pressedPending = new Set;
     releasedPending = new Set;
+    deltaThisTick = deltaPending;
+    wheelThisTick = wheelPending;
+    deltaPending = { x: 0, y: 0 };
+    wheelPending = { x: 0, y: 0 };
   });
+  var MOUSE_BUTTONS = ["MouseLeft", "MouseRight", "MouseMiddle"];
+  var mouseCode = (button) => MOUSE_BUTTONS[button] ?? `Mouse${button}`;
+  var MOUSE_SENSITIVITY = 0.1;
   var AXES = {
     Horizontal: { neg: ["KeyA", "ArrowLeft"], pos: ["KeyD", "ArrowRight"], stick: "LeftStickX" },
     Vertical: { neg: ["KeyS", "ArrowDown"], pos: ["KeyW", "ArrowUp"], stick: "LeftStickY" }
@@ -2143,7 +2156,31 @@ ${err.stack}` : ""}`);
     getKeyUp(code) {
       return releasedThisTick.has(code);
     },
+    get mousePosition() {
+      return new Vector2(mouseX, mouseY);
+    },
+    get mouseDelta() {
+      return new Vector2(deltaThisTick.x, 0 - deltaThisTick.y);
+    },
+    get mouseScrollDelta() {
+      return new Vector2(wheelThisTick.x, wheelThisTick.y);
+    },
+    getMouseButton(button) {
+      return keys.has(mouseCode(button));
+    },
+    getMouseButtonDown(button) {
+      return pressedThisTick.has(mouseCode(button));
+    },
+    getMouseButtonUp(button) {
+      return releasedThisTick.has(mouseCode(button));
+    },
     getAxis(name) {
+      if (name === "Mouse X")
+        return deltaThisTick.x * MOUSE_SENSITIVITY;
+      if (name === "Mouse Y")
+        return -deltaThisTick.y * MOUSE_SENSITIVITY;
+      if (name === "Mouse ScrollWheel")
+        return wheelThisTick.y * MOUSE_SENSITIVITY;
       const axis = AXES[name];
       if (!axis)
         return 0;
@@ -2200,6 +2237,21 @@ ${err.stack}` : ""}`);
           releasedPending.add(code);
         keys.delete(code);
         emit("keyup", { code, key, repeat: false });
+        break;
+      }
+      case "mousemove":
+        [mouseX, mouseY] = args;
+        break;
+      case "mousedelta": {
+        const [dx, dy] = args;
+        deltaPending.x += dx;
+        deltaPending.y += dy;
+        break;
+      }
+      case "wheel": {
+        const [dx, dy] = args;
+        wheelPending.x += dx;
+        wheelPending.y += dy;
         break;
       }
       case "blur":

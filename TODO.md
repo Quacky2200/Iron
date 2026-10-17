@@ -896,9 +896,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] 2D follow-ups: a real 2D physics world (rapier2d) if the slabs fall short,
     concave polygons (decomposition), 2D joints, `Physics2D.overlapCircle` and friends,
     tilemaps, sorting layers, pixel-perfect camera
-  - [ ] `Cursor` API on every platform: visible, lock / confine to the window, custom images
-    and hotspots (Unity's `Cursor.visible` / `lockState` / `SetCursor`), sharing the CSS
-    cursor code
+  - [x] `Cursor` API: `visible`, `lockState` (`CursorLockMode`: locked falls back to
+    confined + hidden where the OS can't pin it, as on Windows; re-applied on focus),
+    `setCursor(texture or path, hotspot)` through the CSS cursor code (UI cursors still win
+    where set); game mouse input: `input.mousePosition` (UI pixels, top-left),
+    `getMouseButton` / `Down` / `Up`, raw `mouseDelta` from device motion (keeps coming
+    while locked), `mouseScrollDelta`, `getAxis("Mouse X" / "Mouse Y" / "Mouse
+    ScrollWheel")`; mouse buttons are `MouseLeft` / `MouseRight` / `MouseMiddle` keys —
+    `M5-CUR-01`
   - [ ] Platform queries (`Platform` / `SystemInfo`): OS and version, device type and model,
     screen size and DPI, GPU name, CPU count, memory, language; touch and gamepad presence
   - [ ] `Application`: the game's name, version, company and icon from its manifest (the

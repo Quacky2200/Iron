@@ -3,6 +3,7 @@
 // field don't reach here.) Rust calls `__iron_input(type, ...args)`.
 
 import { onTick } from "./clock.ts";
+import { Vector2 } from "./math.ts";
 
 /** One connected (or recently disconnected) gamepad. */
 export interface Gamepad {
@@ -46,12 +47,30 @@ let pressedPending = new Set<string>();
 let releasedPending = new Set<string>();
 let pressedThisTick = new Set<string>();
 let releasedThisTick = new Set<string>();
+// The mouse: where it is, and movement and wheel since the last tick / this tick.
+let mouseX = 0;
+let mouseY = 0;
+let deltaPending = { x: 0, y: 0 };
+let wheelPending = { x: 0, y: 0 };
+let deltaThisTick = { x: 0, y: 0 };
+let wheelThisTick = { x: 0, y: 0 };
 onTick(() => {
   pressedThisTick = pressedPending;
   releasedThisTick = releasedPending;
   pressedPending = new Set();
   releasedPending = new Set();
+  deltaThisTick = deltaPending;
+  wheelThisTick = wheelPending;
+  deltaPending = { x: 0, y: 0 };
+  wheelPending = { x: 0, y: 0 };
 });
+
+/** Mouse buttons by Unity's numbers: 0 left, 1 right, 2 middle. */
+const MOUSE_BUTTONS = ["MouseLeft", "MouseRight", "MouseMiddle"];
+const mouseCode = (button: number) => MOUSE_BUTTONS[button] ?? `Mouse${button}`;
+
+/** Raw mouse movement per "Mouse X" / "Mouse Y" unit (Unity's default sensitivity). */
+const MOUSE_SENSITIVITY = 0.1;
 
 /** Keys and pad parts that make up the virtual axes (Unity's defaults). */
 const AXES: Record<string, { neg: string[]; pos: string[]; stick?: string }> = {
@@ -114,7 +133,44 @@ export const input = {
    * Unity's `GetAxis` for `"Horizontal"` (A/D, arrows, left stick X) and `"Vertical"`
    * (S/W, arrows, left stick Y): -1 to 1. Keys snap; the stick wins when pushed further.
    */
-  getAxis(name: "Horizontal" | "Vertical"): number {
+  /** Where the mouse is, in UI pixels from the top-left (like `Camera.screenPointToRay`). */
+  get mousePosition(): Vector2 {
+    return new Vector2(mouseX, mouseY);
+  },
+
+  /**
+   * How far the mouse moved this frame in raw device units, right and up positive. It
+   * keeps coming while the cursor is locked (`Cursor.lockState`): use it for mouse look.
+   */
+  get mouseDelta(): Vector2 {
+    return new Vector2(deltaThisTick.x, 0 - deltaThisTick.y);
+  },
+
+  /** Wheel movement this frame, in lines: y up (away from you) positive. */
+  get mouseScrollDelta(): Vector2 {
+    return new Vector2(wheelThisTick.x, wheelThisTick.y);
+  },
+
+  /** Whether mouse `button` (0 left, 1 right, 2 middle) is held. */
+  getMouseButton(button: number): boolean {
+    return keys.has(mouseCode(button));
+  },
+
+  /** Whether mouse `button` went down this frame. */
+  getMouseButtonDown(button: number): boolean {
+    return pressedThisTick.has(mouseCode(button));
+  },
+
+  /** Whether mouse `button` came up this frame. */
+  getMouseButtonUp(button: number): boolean {
+    return releasedThisTick.has(mouseCode(button));
+  },
+
+  getAxis(name: "Horizontal" | "Vertical" | "Mouse X" | "Mouse Y" | "Mouse ScrollWheel"): number {
+    // Unity's mouse axes: raw movement scaled by its sensitivity, and the wheel.
+    if (name === "Mouse X") return deltaThisTick.x * MOUSE_SENSITIVITY;
+    if (name === "Mouse Y") return -deltaThisTick.y * MOUSE_SENSITIVITY;
+    if (name === "Mouse ScrollWheel") return wheelThisTick.y * MOUSE_SENSITIVITY;
     const axis = AXES[name];
     if (!axis) return 0;
     const keyValue = (axis.pos.some((k) => keys.has(k)) ? 1 : 0) - (axis.neg.some((k) => keys.has(k)) ? 1 : 0);
@@ -174,6 +230,11 @@ export function _resetInputForTests() {
   pressedThisTick.clear();
   releasedThisTick.clear();
   pads.clear();
+  mouseX = mouseY = 0;
+  deltaPending = { x: 0, y: 0 };
+  wheelPending = { x: 0, y: 0 };
+  deltaThisTick = { x: 0, y: 0 };
+  wheelThisTick = { x: 0, y: 0 };
   for (const k of Object.keys(listeners)) delete (listeners as Record<string, unknown>)[k];
 }
 
@@ -191,6 +252,21 @@ globalThis.__iron_input = (type: string, ...args: unknown[]) => {
       if (keys.has(code)) releasedPending.add(code);
       keys.delete(code);
       emit("keyup", { code, key, repeat: false });
+      break;
+    }
+    case "mousemove":
+      [mouseX, mouseY] = args as [number, number];
+      break;
+    case "mousedelta": {
+      const [dx, dy] = args as [number, number];
+      deltaPending.x += dx;
+      deltaPending.y += dy;
+      break;
+    }
+    case "wheel": {
+      const [dx, dy] = args as [number, number];
+      wheelPending.x += dx;
+      wheelPending.y += dy;
       break;
     }
     // The window lost focus: releases may never arrive.

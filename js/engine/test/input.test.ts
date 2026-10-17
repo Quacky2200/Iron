@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
-import { input } from "../src/index.ts";
+import { Cursor, CursorLockMode, input, Vector2 } from "../src/index.ts";
 import { _resetInputForTests } from "../src/input.ts";
 
 const send = (type: string, ...args: unknown[]) => globalThis.__iron_input(type, ...args);
@@ -72,5 +72,49 @@ describe("game input", () => {
     expect(seen).toEqual(["Space"]);
     expect(error.mock.calls[0]![0]).toContain("boom");
     error.mockRestore();
+  });
+});
+
+// M5-CUR-01
+describe("mouse and cursor", () => {
+  const frame = () => globalThis.__iron_tick(1 / 60);
+
+  test("position, buttons, raw movement and the wheel, Unity style", () => {
+    send("mousemove", 120, 80);
+    expect(input.mousePosition).toEqual(new Vector2(120, 80));
+    send("keydown", "MouseLeft", "", false);
+    send("mousedelta", 3, 4);
+    send("mousedelta", 2, -1);
+    send("wheel", 0, 2);
+    frame();
+    expect(input.getMouseButton(0)).toBe(true);
+    expect(input.getMouseButtonDown(0)).toBe(true);
+    expect(input.getButton("Fire1")).toBe(true);
+    // Raw movement adds up within a frame; y is up positive.
+    expect(input.mouseDelta).toEqual(new Vector2(5, -3));
+    expect(input.getAxis("Mouse X")).toBeCloseTo(0.5);
+    expect(input.getAxis("Mouse Y")).toBeCloseTo(-0.3);
+    expect(input.getAxis("Mouse ScrollWheel")).toBeCloseTo(0.2);
+    send("keyup", "MouseLeft", "");
+    frame();
+    expect(input.getMouseButtonUp(0)).toBe(true);
+    expect(input.mouseDelta).toEqual(new Vector2(0, 0));
+  });
+
+  test("Cursor settings become ops", () => {
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    Cursor.visible = false;
+    Cursor.lockState = CursorLockMode.Locked;
+    Cursor.setCursor("assets/hand.png", new Vector2(4, 2));
+    Cursor.setCursor(null);
+    expect(ops).toEqual([
+      ["cursor.visible", false],
+      ["cursor.lock", "locked"],
+      ["cursor.image", "assets/hand.png", [4, 2]],
+      ["cursor.image", null],
+    ]);
+    expect([Cursor.visible, Cursor.lockState]).toEqual([false, "locked"]);
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
   });
 });

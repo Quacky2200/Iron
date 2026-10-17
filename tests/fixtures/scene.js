@@ -2127,11 +2127,21 @@ ${err.stack}` : ""}`);
   var releasedPending = new Set;
   var pressedThisTick = new Set;
   var releasedThisTick = new Set;
+  var mouseX = 0;
+  var mouseY = 0;
+  var deltaPending = { x: 0, y: 0 };
+  var wheelPending = { x: 0, y: 0 };
+  var deltaThisTick = { x: 0, y: 0 };
+  var wheelThisTick = { x: 0, y: 0 };
   onTick(() => {
     pressedThisTick = pressedPending;
     releasedThisTick = releasedPending;
     pressedPending = new Set;
     releasedPending = new Set;
+    deltaThisTick = deltaPending;
+    wheelThisTick = wheelPending;
+    deltaPending = { x: 0, y: 0 };
+    wheelPending = { x: 0, y: 0 };
   });
   var pads = new Map;
   var listeners = {};
@@ -2170,6 +2180,21 @@ ${err.stack}` : ""}`);
           releasedPending.add(code);
         keys.delete(code);
         emit("keyup", { code, key, repeat: false });
+        break;
+      }
+      case "mousemove":
+        [mouseX, mouseY] = args;
+        break;
+      case "mousedelta": {
+        const [dx, dy] = args;
+        deltaPending.x += dx;
+        deltaPending.y += dy;
+        break;
+      }
+      case "wheel": {
+        const [dx, dy] = args;
+        wheelPending.x += dx;
+        wheelPending.y += dy;
         break;
       }
       case "blur":
