@@ -291,6 +291,325 @@ pub fn split_space(s: &str) -> Vec<&str> {
         .collect()
 }
 
+// --- Animations ----------------------------------------------------------------------
+
+/// `animation-direction`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlayDirection {
+    #[default]
+    Normal,
+    Reverse,
+    Alternate,
+    AlternateReverse,
+}
+
+/// `animation-fill-mode`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FillMode {
+    #[default]
+    None,
+    Forwards,
+    Backwards,
+    Both,
+}
+
+/// One `animation` entry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnimationSpec {
+    pub name: String,
+    pub duration_ms: f64,
+    pub delay_ms: f64,
+    /// `infinite` is `f64::INFINITY`.
+    pub iterations: f64,
+    pub direction: PlayDirection,
+    pub fill: FillMode,
+    pub paused: bool,
+    pub timing: Timing,
+}
+
+/// The `animation*` longhands as set on an element (lists, combined by index).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AnimationLists {
+    pub name: Vec<String>,
+    pub duration: Vec<f64>,
+    pub delay: Vec<f64>,
+    pub iterations: Vec<f64>,
+    pub direction: Vec<PlayDirection>,
+    pub fill: Vec<FillMode>,
+    pub paused: Vec<bool>,
+    pub timing: Vec<Timing>,
+}
+
+fn cycle<T: Copy>(list: &[T], i: usize, default: T) -> T {
+    if list.is_empty() {
+        default
+    } else {
+        list[i % list.len()]
+    }
+}
+
+impl AnimationLists {
+    /// The entries: one per name (`none` skipped), the other lists repeating.
+    pub fn specs(&self) -> Vec<AnimationSpec> {
+        self.name
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.as_str() != "none")
+            .map(|(i, name)| AnimationSpec {
+                name: name.clone(),
+                duration_ms: cycle(&self.duration, i, 0.0),
+                delay_ms: cycle(&self.delay, i, 0.0),
+                iterations: cycle(&self.iterations, i, 1.0),
+                direction: cycle(&self.direction, i, PlayDirection::Normal),
+                fill: cycle(&self.fill, i, FillMode::None),
+                paused: cycle(&self.paused, i, false),
+                timing: cycle(&self.timing, i, Timing::EASE),
+            })
+            .collect()
+    }
+}
+
+pub fn parse_iterations(s: &str) -> Option<f64> {
+    match s.trim() {
+        "infinite" => Some(f64::INFINITY),
+        n => n.parse::<f64>().ok().filter(|n| *n >= 0.0 && n.is_finite()),
+    }
+}
+
+pub fn parse_direction(s: &str) -> Option<PlayDirection> {
+    Some(match s.trim() {
+        "normal" => PlayDirection::Normal,
+        "reverse" => PlayDirection::Reverse,
+        "alternate" => PlayDirection::Alternate,
+        "alternate-reverse" => PlayDirection::AlternateReverse,
+        _ => return None,
+    })
+}
+
+pub fn parse_fill(s: &str) -> Option<FillMode> {
+    Some(match s.trim() {
+        "none" => FillMode::None,
+        "forwards" => FillMode::Forwards,
+        "backwards" => FillMode::Backwards,
+        "both" => FillMode::Both,
+        _ => return None,
+    })
+}
+
+pub fn parse_play_state(s: &str) -> Option<bool> {
+    match s.trim() {
+        "running" => Some(false),
+        "paused" => Some(true),
+        _ => None,
+    }
+}
+
+/// An animation name: an identifier or a quoted string.
+pub fn parse_name(s: &str) -> Option<String> {
+    let s = s.trim();
+    let quoted = s
+        .strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .or_else(|| s.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')));
+    if let Some(q) = quoted {
+        return Some(q.to_owned());
+    }
+    let ok = !s.is_empty()
+        && !s.starts_with(|c: char| c.is_ascii_digit())
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    ok.then(|| s.to_owned())
+}
+
+/// Parses the `animation` shorthand into its longhand lists.
+pub fn parse_animation(s: &str) -> Option<AnimationLists> {
+    let mut out = AnimationLists::default();
+    for item in crate::paint::split_top_level(s, ',') {
+        let mut times = Vec::new();
+        let (mut name, mut timing, mut iterations, mut direction, mut fill, mut paused) =
+            (None, None, None, None, None, None);
+        for part in split_space(item) {
+            if let Some(t) = parse_time(part) {
+                times.push(t);
+            } else if timing.is_none()
+                && let Some(t) = Timing::parse(part)
+            {
+                timing = Some(t);
+            } else if iterations.is_none()
+                && let Some(n) = parse_iterations(part)
+            {
+                iterations = Some(n);
+            } else if direction.is_none()
+                && let Some(d) = parse_direction(part)
+            {
+                direction = Some(d);
+            } else if fill.is_none()
+                && part != "none"
+                && let Some(f) = parse_fill(part)
+            {
+                fill = Some(f);
+            } else if paused.is_none()
+                && let Some(p) = parse_play_state(part)
+            {
+                paused = Some(p);
+            } else if name.is_none() {
+                name = Some(parse_name(part)?);
+            } else {
+                return None;
+            }
+        }
+        if times.len() > 2 {
+            return None;
+        }
+        out.name.push(name.unwrap_or_else(|| "none".into()));
+        out.duration.push(times.first().copied().unwrap_or(0.0));
+        out.delay.push(times.get(1).copied().unwrap_or(0.0));
+        out.timing.push(timing.unwrap_or(Timing::EASE));
+        out.iterations.push(iterations.unwrap_or(1.0));
+        out.direction.push(direction.unwrap_or_default());
+        out.fill.push(fill.unwrap_or_default());
+        out.paused.push(paused.unwrap_or(false));
+    }
+    Some(out)
+}
+
+/// A running animation on one element.
+#[derive(Clone, Debug)]
+pub(crate) struct Animation {
+    pub name: String,
+    /// When it was applied, in engine milliseconds (before its delay).
+    pub start_ms: f64,
+    /// Set while `animation-play-state: paused`: when it paused.
+    pub paused_at: Option<f64>,
+    /// The last iteration reported (for `animationiteration`).
+    pub iteration: u64,
+    pub started: bool,
+    pub ended: bool,
+}
+
+/// Where an animation is at one moment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Phase {
+    /// Before its delay ends.
+    Before,
+    /// Running: the iteration and the directed progress through it (0..=1).
+    Active(u64, f64),
+    /// Finished.
+    After,
+}
+
+impl Animation {
+    /// The phase at `now`, and the directed progress to show (if any: fill modes
+    /// decide whether the before and after phases show a frame).
+    pub fn sample(&self, spec: &AnimationSpec, now: f64) -> (Phase, Option<f64>) {
+        let elapsed = self.paused_at.unwrap_or(now) - self.start_ms - spec.delay_ms;
+        let directed = |iteration: u64, f: f64| {
+            let odd = iteration % 2 == 1;
+            match spec.direction {
+                PlayDirection::Normal => f,
+                PlayDirection::Reverse => 1.0 - f,
+                PlayDirection::Alternate if odd => 1.0 - f,
+                PlayDirection::Alternate => f,
+                PlayDirection::AlternateReverse if odd => f,
+                PlayDirection::AlternateReverse => 1.0 - f,
+            }
+        };
+        if elapsed < 0.0 {
+            let fill = matches!(spec.fill, FillMode::Backwards | FillMode::Both);
+            return (Phase::Before, fill.then(|| directed(0, 0.0)));
+        }
+        let total = spec.duration_ms * spec.iterations;
+        if spec.duration_ms <= 0.0 || elapsed >= total {
+            let fill = matches!(spec.fill, FillMode::Forwards | FillMode::Both);
+            // The end of the last iteration (part-way for fractional counts).
+            let (iteration, f) = if spec.iterations > 0.0 && spec.iterations.fract() == 0.0 {
+                (spec.iterations as u64 - 1, 1.0)
+            } else {
+                (spec.iterations.floor() as u64, spec.iterations.fract())
+            };
+            return (Phase::After, fill.then(|| directed(iteration, f)));
+        }
+        let progress = elapsed / spec.duration_ms;
+        let iteration = progress.floor() as u64;
+        let f = progress - progress.floor();
+        (
+            Phase::Active(iteration, directed(iteration, f)),
+            Some(directed(iteration, f)),
+        )
+    }
+}
+
+/// Keyframes with resolved values: (offset, [(property, value)]), sorted by offset.
+pub(crate) type Frames = Vec<(f32, Vec<(String, String)>)>;
+
+/// Each animated property's value at progress `f` through `frames` (sorted). Missing
+/// 0% / 100% frames take `base(prop)` (the element's own value). Each segment eases
+/// with `timing` or its start frame's `animation-timing-function`.
+pub(crate) fn keyframe_values(
+    frames: &[(f32, Vec<(String, String)>)],
+    f: f64,
+    timing: Timing,
+    base: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    let mut props: Vec<&String> = frames
+        .iter()
+        .flat_map(|(_, decls)| decls.iter().map(|(p, _)| p))
+        .filter(|p| p.as_str() != "animationTimingFunction")
+        .collect();
+    props.sort();
+    props.dedup();
+    let mut out = Vec::new();
+    for prop in props {
+        // This property's frames, with the implicit ends.
+        let mut points: Vec<(f64, String, Timing)> = frames
+            .iter()
+            .filter_map(|(offset, decls)| {
+                let value = decls.iter().rev().find(|(p, _)| p == prop)?.1.clone();
+                let ease = decls
+                    .iter()
+                    .rev()
+                    .find(|(p, _)| p == "animationTimingFunction")
+                    .and_then(|(_, v)| Timing::parse(v))
+                    .unwrap_or(timing);
+                Some((f64::from(*offset), value, ease))
+            })
+            .collect();
+        if points.first().is_none_or(|p| p.0 > 0.0)
+            && let Some(b) = base(prop)
+        {
+            points.insert(0, (0.0, b, timing));
+        }
+        if points.last().is_none_or(|p| p.0 < 1.0)
+            && let Some(b) = base(prop)
+        {
+            points.push((1.0, b, timing));
+        }
+        let Some(first) = points.first() else {
+            continue;
+        };
+        let value = if f <= first.0 {
+            first.1.clone()
+        } else if let Some(i) = points.windows(2).position(|w| f >= w[0].0 && f <= w[1].0) {
+            let (a, b) = (&points[i], &points[i + 1]);
+            let span = b.0 - a.0;
+            let local = if span > 0.0 { (f - a.0) / span } else { 1.0 };
+            let eased = f64::from(a.2.eval(local as f32));
+            interpolate(&a.1, &b.1, eased).unwrap_or_else(|| {
+                // Discrete values flip halfway.
+                if eased < 0.5 {
+                    a.1.clone()
+                } else {
+                    b.1.clone()
+                }
+            })
+        } else {
+            points.last().expect("non-empty").1.clone()
+        };
+        out.push((prop.clone(), value));
+    }
+    out
+}
+
 // --- Running state -----------------------------------------------------------------
 
 /// What runs on one element: its transitions, and the values they start from.
@@ -300,6 +619,18 @@ pub(crate) struct Motion {
     /// transition is applied); `None` until the element was styled once.
     pub values: Option<std::collections::HashMap<String, String>>,
     pub transitions: Vec<Transition>,
+    pub animations: Vec<Animation>,
+}
+
+impl Motion {
+    /// Whether anything still changes over time (so the element restyles each frame).
+    pub fn is_moving(&self) -> bool {
+        !self.transitions.is_empty()
+            || self
+                .animations
+                .iter()
+                .any(|a| !a.ended && a.paused_at.is_none())
+    }
 }
 
 /// A running transition of one property.
@@ -771,6 +1102,108 @@ mod tests {
             "brightness(2)"
         );
         assert!(interpolate("none", "block", 0.5).is_none());
+    }
+
+    // M3-ANI-03
+    #[test]
+    fn animation_shorthand() {
+        let a = parse_animation(
+            "spin 2s linear infinite, fade 300ms ease-out 1s 3 alternate both paused",
+        )
+        .unwrap();
+        let s = a.specs();
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].name, "spin");
+        assert_eq!((s[0].duration_ms, s[0].iterations), (2000.0, f64::INFINITY));
+        assert_eq!(s[0].timing, Timing::Linear);
+        assert_eq!(s[1].name, "fade");
+        assert_eq!((s[1].delay_ms, s[1].iterations), (1000.0, 3.0));
+        assert_eq!(s[1].direction, PlayDirection::Alternate);
+        assert_eq!(s[1].fill, FillMode::Both);
+        assert!(s[1].paused);
+        assert!(parse_animation("none").unwrap().specs().is_empty());
+        assert!(parse_animation("a b").is_none(), "two names");
+    }
+
+    // M3-ANI-03
+    #[test]
+    fn animations_sample_by_phase_and_direction() {
+        let spec = |direction, fill, iterations| AnimationSpec {
+            name: "a".into(),
+            duration_ms: 1000.0,
+            delay_ms: 500.0,
+            iterations,
+            direction,
+            fill,
+            paused: false,
+            timing: Timing::Linear,
+        };
+        let a = Animation {
+            name: "a".into(),
+            start_ms: 0.0,
+            paused_at: None,
+            iteration: 0,
+            started: false,
+            ended: false,
+        };
+        let s = spec(PlayDirection::Normal, FillMode::None, 2.0);
+        assert_eq!(a.sample(&s, 100.0), (Phase::Before, None));
+        assert_eq!(a.sample(&s, 750.0), (Phase::Active(0, 0.25), Some(0.25)));
+        assert_eq!(a.sample(&s, 1750.0), (Phase::Active(1, 0.25), Some(0.25)));
+        assert_eq!(a.sample(&s, 2600.0), (Phase::After, None));
+        let s = spec(PlayDirection::Alternate, FillMode::Both, 2.0);
+        assert_eq!(a.sample(&s, 100.0).1, Some(0.0), "backwards fill");
+        assert_eq!(a.sample(&s, 1750.0).1, Some(0.75), "second run goes back");
+        assert_eq!(
+            a.sample(&s, 9000.0).1,
+            Some(0.0),
+            "ends where the reversed run ends"
+        );
+        let s = spec(PlayDirection::Reverse, FillMode::Forwards, 1.5);
+        assert_eq!(a.sample(&s, 9000.0).1, Some(0.5));
+        let paused = Animation {
+            paused_at: Some(1000.0),
+            ..a.clone()
+        };
+        let s = spec(PlayDirection::Normal, FillMode::None, 1.0);
+        assert_eq!(
+            paused.sample(&s, 5000.0).1,
+            Some(0.5),
+            "frozen while paused"
+        );
+    }
+
+    // M3-ANI-03
+    #[test]
+    fn keyframes_interpolate_with_implicit_ends() {
+        let frames = vec![(
+            0.5_f32,
+            vec![
+                ("opacity".to_owned(), "0".to_owned()),
+                ("display".into(), "none".into()),
+            ],
+        )];
+        let base = |p: &str| match p {
+            "opacity" => Some("1".to_owned()),
+            "display" => Some("flex".to_owned()),
+            _ => None,
+        };
+        let at = |f| keyframe_values(&frames, f, Timing::Linear, &base);
+        assert_eq!(
+            at(0.2),
+            [
+                ("display".to_owned(), "flex".to_owned()),
+                ("opacity".into(), "0.6".into())
+            ]
+        );
+        assert_eq!(at(0.5)[1].1, "0");
+        assert_eq!(at(0.75)[1].1, "0.5");
+        assert_eq!(
+            at(0.75)[0].1,
+            "flex",
+            "discrete: flips at the segment's middle"
+        );
+        assert_eq!(at(0.6)[0].1, "none");
     }
 
     // M3-ANI-01

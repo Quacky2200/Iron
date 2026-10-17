@@ -635,8 +635,12 @@ and `@font-face`.
      running ones on top; `set_time` restyles moving elements each frame; inline-only games switch to
      restyle once a `transition` is set. `transitionrun`/`start`/`end`/`cancel` events reach React
      (`onTransitionEnd`, ...) — `M3-ANI-01`, `M3-ANI-02`
-   - [ ] `@keyframes` and `animation` (+ name, duration, delay, iteration count, direction, fill mode,
-     play state, timing function)
+   - [x] **7b** `@keyframes` (`from`/`to`/percentages, selector lists, per-frame
+     `animation-timing-function`, `!important` ignored) and `animation` (+ name, duration, delay,
+     iteration count, direction, fill mode, play state, timing function). Keyframe values resolve
+     `var()` and units per element; missing 0%/100% frames use the element's own value; discrete
+     values flip halfway; animations apply under transitions. `animationstart`/`iteration`/`end`/
+     `cancel` events reach React (`onAnimationEnd`, ...) — `M3-ANI-03`
    - [x] Timing functions: `linear`, `ease*`, `cubic-bezier()`, `steps()` (all jump positions),
      `step-start`/`-end` (done with 7a; `linear()` with stops isn't)
    - [ ] Enter/exit styling, s&box's `:intro` / `:outro`: `@starting-style` (standard) for entry, and an

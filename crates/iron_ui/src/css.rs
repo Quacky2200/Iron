@@ -251,10 +251,25 @@ pub struct FontFace {
     pub italic: Option<bool>,
 }
 
+/// An `@keyframes` rule: its frames sorted by offset (0..=1); a selector list like
+/// `0%, 100%` gives one frame per offset.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Keyframes {
+    pub name: String,
+    pub frames: Vec<Keyframe>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Keyframe {
+    pub offset: f32,
+    pub declarations: Vec<Declaration>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Stylesheet {
     pub rules: Vec<StyleRule>,
     pub font_faces: Vec<FontFace>,
+    pub keyframes: Vec<Keyframes>,
     /// Problems found while parsing (invalid selectors, unsupported at-rules, ...).
     /// The rest of the sheet still applies.
     pub warnings: Vec<String>,
@@ -263,11 +278,13 @@ pub struct Stylesheet {
 enum Item {
     Rule(StyleRule),
     FontFace(FontFace),
+    Keyframes(Keyframes),
     Skipped(String),
 }
 
 enum AtPrelude {
     FontFace,
+    Keyframes(String),
     Media(String),
     Unsupported(String),
 }
@@ -314,6 +331,7 @@ impl<'i> AtRuleParser<'i> for SheetParser {
         let rest = input.slice_from(start).trim().to_owned();
         Ok(match_ignore_ascii_case! { &name,
             "font-face" => AtPrelude::FontFace,
+            "keyframes" | "-webkit-keyframes" => AtPrelude::Keyframes(unquote(&rest)),
             "media" => AtPrelude::Media(rest),
             _ => AtPrelude::Unsupported(name.to_string()),
         })
@@ -353,6 +371,19 @@ impl<'i> AtRuleParser<'i> for SheetParser {
                         "@font-face needs `font-family` and a `src: url(...)`".into(),
                     )),
                 }
+            }
+            AtPrelude::Keyframes(name) => {
+                let mut parser = KeyframeParser;
+                let mut frames: Vec<Keyframe> = RuleBodyParser::new(input, &mut parser)
+                    .filter_map(Result::ok)
+                    .flatten()
+                    .collect();
+                // Stable: a later block at the same offset comes after (and wins).
+                frames.sort_by(|a, b| a.offset.total_cmp(&b.offset));
+                if name.is_empty() || name == "none" {
+                    return Ok(Item::Skipped("@keyframes needs a name".into()));
+                }
+                Ok(Item::Keyframes(Keyframes { name, frames }))
             }
             AtPrelude::Media(query) => {
                 // Kept for later: @media isn't supported yet (TODO.md, "Later").
@@ -429,6 +460,79 @@ impl<'i> RuleBodyItemParser<'i, Declaration, ()> for DeclParser {
     }
 }
 
+/// The blocks inside `@keyframes`: `from`, `to` and percentages.
+struct KeyframeParser;
+
+impl<'i> QualifiedRuleParser<'i> for KeyframeParser {
+    type Prelude = Vec<f32>;
+    type QualifiedRule = Vec<Keyframe>;
+    type Error = ();
+
+    fn parse_prelude(
+        &mut self,
+        input: &mut CssParser<'i>,
+    ) -> Result<Self::Prelude, ParseError<()>> {
+        let start = input.position();
+        while input.next().is_ok() {}
+        let text = input.slice_from(start);
+        text.split(',')
+            .map(|s| match s.trim() {
+                s if s.eq_ignore_ascii_case("from") => Some(0.0),
+                s if s.eq_ignore_ascii_case("to") => Some(1.0),
+                s => s
+                    .strip_suffix('%')?
+                    .trim()
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|p| (0.0..=100.0).contains(p))
+                    .map(|p| p / 100.0),
+            })
+            .collect::<Option<Vec<f32>>>()
+            .ok_or_else(|| ParseError::custom(()))
+    }
+
+    fn parse_block(
+        &mut self,
+        offsets: Self::Prelude,
+        _start: &ParserState,
+        input: &mut CssParser<'i>,
+    ) -> Result<Vec<Keyframe>, ParseError<()>> {
+        // `!important` is ignored in keyframes, as in CSS.
+        let declarations: Vec<Declaration> = parse_declarations(input)
+            .into_iter()
+            .filter(|d| !d.important)
+            .collect();
+        Ok(offsets
+            .into_iter()
+            .map(|offset| Keyframe {
+                offset,
+                declarations: declarations.clone(),
+            })
+            .collect())
+    }
+}
+
+impl<'i> AtRuleParser<'i> for KeyframeParser {
+    type Prelude = ();
+    type AtRule = Vec<Keyframe>;
+    type Error = ();
+}
+
+impl<'i> DeclarationParser<'i> for KeyframeParser {
+    type Declaration = Vec<Keyframe>;
+    type Error = ();
+}
+
+impl<'i> RuleBodyItemParser<'i, Vec<Keyframe>, ()> for KeyframeParser {
+    fn parse_declarations(&self) -> bool {
+        false
+    }
+
+    fn parse_qualified(&self) -> bool {
+        true
+    }
+}
+
 /// `background-color` → `backgroundColor`; custom properties (`--x`) are unchanged.
 pub fn camel_case(prop: &str) -> String {
     if prop.starts_with("--") {
@@ -470,6 +574,7 @@ pub fn parse_stylesheet(css: &str) -> Stylesheet {
         match item {
             Ok(Item::Rule(rule)) => sheet.rules.push(rule),
             Ok(Item::FontFace(face)) => sheet.font_faces.push(face),
+            Ok(Item::Keyframes(k)) => sheet.keyframes.push(k),
             Ok(Item::Skipped(why)) => sheet.warnings.push(why),
             Err((error, text, location)) => sheet.warnings.push(format!(
                 "line {}: skipped `{}` ({:?})",
@@ -541,13 +646,37 @@ mod tests {
             .ok { width: 10px; }
             .broken:no-such-pseudo { width: 1px; }
             @media (min-width: 600px) { .ok { width: 20px; } }
-            @keyframes spin { from { opacity: 0 } }
+            @keyframes spin { from { opacity: 0 } bogus { opacity: 1 } }
+            @supports (display: grid) { .x { width: 1px } }
             .also-ok { height: 5px }
             "#,
         );
         assert_eq!(sheet.rules.len(), 2, "{:?}", sheet.warnings);
         assert_eq!(sheet.warnings.len(), 3, "{:?}", sheet.warnings);
         assert!(sheet.warnings.iter().any(|w| w.contains("@media")));
+        assert!(sheet.warnings.iter().any(|w| w.contains("@supports")));
+        // A bad keyframe selector drops just that block.
+        assert_eq!(sheet.keyframes.len(), 1);
+        assert_eq!(sheet.keyframes[0].frames.len(), 1);
+    }
+
+    // M3-ANI-03
+    #[test]
+    fn keyframes_parse_offsets_in_order() {
+        let sheet = parse_stylesheet(
+            "@keyframes pulse { to { opacity: 1 } 0%, 50% { opacity: 0 !important; width: 1px } 25% { width: 2px } }",
+        );
+        assert!(sheet.warnings.is_empty(), "{:?}", sheet.warnings);
+        let k = &sheet.keyframes[0];
+        assert_eq!(k.name, "pulse");
+        let offsets: Vec<f32> = k.frames.iter().map(|f| f.offset).collect();
+        assert_eq!(offsets, [0.0, 0.25, 0.5, 1.0]);
+        let props: Vec<&str> = k.frames[0]
+            .declarations
+            .iter()
+            .map(|d| d.prop.as_str())
+            .collect();
+        assert_eq!(props, ["width"], "!important is ignored in keyframes");
     }
 
     #[test]

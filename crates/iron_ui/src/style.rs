@@ -118,6 +118,8 @@ pub struct Visual {
     pub cursor_images: Vec<CursorImage>,
     /// `transition` and its longhands.
     pub transitions: crate::motion::TransitionLists,
+    /// `animation` and its longhands.
+    pub animations: crate::motion::AnimationLists,
     /// Inherited text properties set on this node (see [`text_style`]).
     pub text: TextProps,
 }
@@ -178,6 +180,7 @@ impl Default for Visual {
             cursor: None,
             cursor_images: Vec::new(),
             transitions: crate::motion::TransitionLists::default(),
+            animations: crate::motion::AnimationLists::default(),
             text: TextProps::default(),
         }
     }
@@ -976,6 +979,47 @@ pub fn apply_style(
                 }
             }
         }
+        "animation"
+        | "animationName"
+        | "animationDuration"
+        | "animationDelay"
+        | "animationIterationCount"
+        | "animationDirection"
+        | "animationFillMode"
+        | "animationPlayState"
+        | "animationTimingFunction" => {
+            use crate::motion as m;
+            let text = match value {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                _ => return Err(invalid()),
+            };
+            let a = &mut visual.animations;
+            let bad = invalid;
+            match prop {
+                "animation" => *a = m::parse_animation(&text).ok_or_else(bad)?,
+                "animationName" => a.name = m::parse_list(&text, m::parse_name).ok_or_else(bad)?,
+                "animationDuration" => {
+                    a.duration = m::parse_list(&text, m::parse_time).ok_or_else(bad)?
+                }
+                "animationDelay" => {
+                    a.delay = m::parse_list(&text, m::parse_time).ok_or_else(bad)?
+                }
+                "animationIterationCount" => {
+                    a.iterations = m::parse_list(&text, m::parse_iterations).ok_or_else(bad)?
+                }
+                "animationDirection" => {
+                    a.direction = m::parse_list(&text, m::parse_direction).ok_or_else(bad)?
+                }
+                "animationFillMode" => {
+                    a.fill = m::parse_list(&text, m::parse_fill).ok_or_else(bad)?
+                }
+                "animationPlayState" => {
+                    a.paused = m::parse_list(&text, m::parse_play_state).ok_or_else(bad)?
+                }
+                _ => a.timing = m::parse_list(&text, m::Timing::parse).ok_or_else(bad)?,
+            }
+        }
         "isolation" => {
             visual.isolate = match kw()?.trim() {
                 "auto" => false,
@@ -1309,6 +1353,15 @@ pub(crate) fn copy_prop(
         "transitionDelay" => visual.transitions.delay = v.transitions.delay,
         "transitionTimingFunction" => visual.transitions.timing = v.transitions.timing,
         "transitionBehavior" => {}
+        "animation" => visual.animations = v.animations,
+        "animationName" => visual.animations.name = v.animations.name,
+        "animationDuration" => visual.animations.duration = v.animations.duration,
+        "animationDelay" => visual.animations.delay = v.animations.delay,
+        "animationIterationCount" => visual.animations.iterations = v.animations.iterations,
+        "animationDirection" => visual.animations.direction = v.animations.direction,
+        "animationFillMode" => visual.animations.fill = v.animations.fill,
+        "animationPlayState" => visual.animations.paused = v.animations.paused,
+        "animationTimingFunction" => visual.animations.timing = v.animations.timing,
         "overflow" => set_overflow(style, visual, v.overflow),
         "overflowX" => set_overflow(style, visual, [v.overflow[0], visual.overflow[1]]),
         "overflowY" => set_overflow(style, visual, [visual.overflow[0], v.overflow[1]]),

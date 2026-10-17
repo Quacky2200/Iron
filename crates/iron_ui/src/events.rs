@@ -46,6 +46,11 @@ pub enum EventKind {
     TransitionStart,
     TransitionEnd,
     TransitionCancel,
+    /// Animations (bubble; `value` is the animation name, `delta_x` the elapsed seconds).
+    AnimationStart,
+    AnimationIteration,
+    AnimationEnd,
+    AnimationCancel,
 }
 
 impl EventKind {
@@ -73,6 +78,10 @@ impl EventKind {
             EventKind::TransitionStart => "transitionstart",
             EventKind::TransitionEnd => "transitionend",
             EventKind::TransitionCancel => "transitioncancel",
+            EventKind::AnimationStart => "animationstart",
+            EventKind::AnimationIteration => "animationiteration",
+            EventKind::AnimationEnd => "animationend",
+            EventKind::AnimationCancel => "animationcancel",
         }
     }
 }

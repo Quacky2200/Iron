@@ -14,6 +14,7 @@ a known gap, not an accident. When you fix one, delete its entry; when you add o
 | Shorthands | `transition: background 1s` also covers `backgroundColor` and the reverse (name prefixes) | Exact shorthand expansion | No longhand tables |
 | `transition-behavior: allow-discrete` | Accepted, no effect | Discrete properties flip at 50% | Rarely needed |
 | Inherited values | A transition on a parent's `color` animates; children follow through inheritance | Same | — |
+| Animations | `@keyframes` by name from any stylesheet (the last wins); no `animation-composition`, `animation-timeline`, `animation-range` or the Web Animations API | Full | Enough for UI motion |
 | Cost | Each moving element is restyled (selector matching included) every frame | Browsers update animated values without a full restyle | Simple; fine for UI-sized numbers of elements |
 
 ## Dialogs (M3d step 5j)

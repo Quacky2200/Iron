@@ -216,3 +216,113 @@ fn transition_events_reach_scripts_with_the_property() {
     assert_eq!((ends[0].1, ends[0].2.as_str()), (NodeId(b), "opacity"));
     assert!((ends[0].3 - 0.1).abs() < 1e-6, "elapsed seconds");
 }
+
+fn events(tree: &mut UiTree) -> Vec<String> {
+    tree.take_motion_events()
+        .iter()
+        .map(|e| format!("{} {}", e.kind.name(), e.name))
+        .collect()
+}
+
+// M3-ANI-03
+#[test]
+fn keyframe_animations_run_and_report() {
+    let mut d = Dom::new();
+    let b = d.add(0, "box", &[]);
+    d.set_class(b, "b");
+    let mut tree = UiTree::new(400.0, 400.0);
+    tree.set_time(0.0);
+    let errors = tree.apply_commit(&Commit { ops: d.ops });
+    assert!(errors.is_empty());
+    let added = tree.add_stylesheet(
+        "@keyframes fade { from { opacity: 0 } 50% { opacity: 0.2 } }
+         .b { animation: fade 1s linear 2 }",
+    );
+    assert!(added.warnings.is_empty(), "{:?}", added.warnings);
+    at(&mut tree, 0.0);
+    assert_eq!(opacity(&tree, b), 0.0);
+    at(&mut tree, 250.0);
+    assert!(
+        (opacity(&tree, b) - 0.1).abs() < 1e-3,
+        "{}",
+        opacity(&tree, b)
+    );
+    at(&mut tree, 750.0);
+    assert!(
+        (opacity(&tree, b) - 0.6).abs() < 1e-3,
+        "to the element's own 1 at 100%"
+    );
+    at(&mut tree, 1250.0);
+    assert!((opacity(&tree, b) - 0.1).abs() < 1e-3, "second iteration");
+    assert!(tree.is_animating());
+    at(&mut tree, 2100.0);
+    assert_eq!(opacity(&tree, b), 1.0, "no fill: back to its own value");
+    assert!(!tree.is_animating());
+    assert_eq!(
+        events(&mut tree),
+        [
+            "animationstart fade",
+            "animationiteration fade",
+            "animationend fade"
+        ]
+    );
+}
+
+// M3-ANI-03
+#[test]
+fn fill_modes_pause_and_inline_animation_names() {
+    let mut d = Dom::new();
+    let b = d.add(
+        0,
+        "box",
+        &[
+            ("animation", "slide 1s linear 0.5s both".into()),
+            ("width", px(10.0)),
+            ("height", px(10.0)),
+        ],
+    );
+    let mut tree = UiTree::new(400.0, 400.0);
+    tree.set_time(0.0);
+    assert!(tree.apply_commit(&Commit { ops: d.ops }).is_empty());
+    tree.add_stylesheet(
+        "@keyframes slide { from { width: 100px } to { width: var(--end, 300px) } }",
+    );
+    let width = |tree: &mut UiTree| tree.rect(NodeId(b)).unwrap().width;
+    at(&mut tree, 0.0);
+    assert_eq!(width(&mut tree), 100.0, "backwards fill during the delay");
+    at(&mut tree, 1000.0);
+    assert_eq!(width(&mut tree), 200.0);
+    set_style(&mut tree, b, "animationPlayState", "paused".into());
+    at(&mut tree, 1000.0);
+    at(&mut tree, 5000.0);
+    assert_eq!(width(&mut tree), 200.0, "frozen while paused");
+    set_style(&mut tree, b, "animationPlayState", "running".into());
+    at(&mut tree, 5000.0);
+    at(&mut tree, 5250.0);
+    assert_eq!(width(&mut tree), 250.0, "resumes where it paused");
+    at(&mut tree, 9000.0);
+    assert_eq!(width(&mut tree), 300.0, "forwards fill");
+    // Removing the animation drops it.
+    set_style(&mut tree, b, "animation", "none".into());
+    at(&mut tree, 9000.0);
+    assert_eq!(width(&mut tree), 10.0);
+}
+
+// M3-ANI-03
+#[test]
+fn infinite_alternating_transform_animation() {
+    let mut d = Dom::new();
+    let b = d.add(0, "box", &[("width", px(10.0)), ("height", px(10.0))]);
+    d.set_class(b, "spin");
+    let mut tree = d.build(
+        "@keyframes spin { to { transform: rotate(180deg) } }
+         .spin { animation: spin 1s linear infinite alternate }",
+    );
+    tree.set_time(0.0);
+    for ms in [0.0, 500.0, 1500.0, 2500.0, 100_000.0] {
+        at(&mut tree, ms);
+        assert!(tree.is_animating(), "still running at {ms}");
+    }
+    let ev = events(&mut tree);
+    assert!(!ev.iter().any(|e| e.starts_with("animationend")), "{ev:?}");
+}

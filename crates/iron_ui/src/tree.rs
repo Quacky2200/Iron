@@ -1534,7 +1534,48 @@ impl<L: LayoutEngine> UiTree<L> {
         let boxes_changed =
             node.visual.contents != visual.contents || node.visual.fixed != visual.fixed;
         let parent = node.parent;
-        self.run_transitions(id, winners, parent_text.color, &mut style, &mut visual);
+        // The keyframes of this element's animations, with `var()` and units resolved.
+        let mut keyframes = Vec::new();
+        for spec in visual.animations.specs() {
+            let found = self
+                .sheets
+                .iter()
+                .rev()
+                .find_map(|(_, s)| s.keyframes.iter().rev().find(|k| k.name == spec.name));
+            let Some(found) = found else {
+                continue;
+            };
+            let frames: crate::motion::Frames = found
+                .frames
+                .iter()
+                .map(|f| {
+                    let decls = f
+                        .declarations
+                        .iter()
+                        .filter_map(|d| {
+                            let mut scratch = Uses::default();
+                            let value = Value::String(d.value.clone());
+                            let text = match compute(&d.prop, &value, &units, &mut scratch)? {
+                                Value::String(s) => s,
+                                Value::Number(n) => n.to_string(),
+                                _ => return None,
+                            };
+                            Some((d.prop.clone(), text))
+                        })
+                        .collect();
+                    (f.offset, decls)
+                })
+                .collect();
+            keyframes.push((spec.name, frames));
+        }
+        self.run_motion(
+            id,
+            winners,
+            parent_text.color,
+            &keyframes,
+            &mut style,
+            &mut visual,
+        );
         let node = self.nodes.get_mut(&id).expect("checked above");
         node.vars = vars;
         let text_changed = node.visual.text != visual.text;
@@ -1606,21 +1647,27 @@ impl<L: LayoutEngine> UiTree<L> {
         self.needs_layout = true;
     }
 
-    /// Starts transitions for properties whose winning value changed (per the new
-    /// style's `transition` list), drops finished ones and applies the running ones on
-    /// top of `style` / `visual`.
-    fn run_transitions(
+    /// Runs `id`'s animations and transitions on top of its computed `style` /
+    /// `visual`: animations (by their `keyframes`) first, then transitions, which
+    /// start for properties whose winning value changed (per the new style's
+    /// `transition` list). Finished ones are dropped and reported.
+    fn run_motion(
         &mut self,
         id: NodeId,
         winners: std::collections::HashMap<String, String>,
         parent_color: Rgba,
+        keyframes: &[(String, crate::motion::Frames)],
         style: &mut Style,
         visual: &mut Visual,
     ) {
         use crate::events::EventKind;
-        use crate::motion::{MotionEvent, Transition, initial_value, interpolate, kebab_case};
+        use crate::motion::{
+            Animation, MotionEvent, Phase, Transition, initial_value, interpolate, kebab_case,
+            keyframe_values,
+        };
         let specs = visual.transitions.specs();
-        if specs.is_empty() && !self.motion.contains_key(&id) {
+        let anim_specs = visual.animations.specs();
+        if specs.is_empty() && anim_specs.is_empty() && !self.motion.contains_key(&id) {
             return;
         }
         let now = self.time_ms;
@@ -1687,6 +1734,85 @@ impl<L: LayoutEngine> UiTree<L> {
                 events.push(event(EventKind::TransitionRun, prop, 0.0));
             }
         }
+        // Animations: keep running ones by name, start new ones, drop removed ones.
+        let mut running = Vec::new();
+        for spec in &anim_specs {
+            let mut a = match m.animations.iter().position(|a| a.name == spec.name) {
+                Some(i) => m.animations.remove(i),
+                None => Animation {
+                    name: spec.name.clone(),
+                    start_ms: now,
+                    paused_at: None,
+                    iteration: 0,
+                    started: false,
+                    ended: false,
+                },
+            };
+            match (spec.paused, a.paused_at) {
+                (true, None) => a.paused_at = Some(now),
+                (false, Some(at)) => {
+                    a.start_ms += now - at;
+                    a.paused_at = None;
+                }
+                _ => {}
+            }
+            running.push(a);
+        }
+        for gone in m.animations.drain(..) {
+            if gone.started && !gone.ended {
+                events.push(MotionEvent {
+                    kind: EventKind::AnimationCancel,
+                    target: id,
+                    name: gone.name,
+                    elapsed: (now - gone.start_ms).max(0.0) / 1000.0,
+                });
+            }
+        }
+        m.animations = running;
+        let base = |prop: &str| winners.get(prop).cloned().or_else(|| initial(prop));
+        for (a, spec) in m.animations.iter_mut().zip(&anim_specs) {
+            let (phase, progress) = a.sample(spec, now);
+            let elapsed = ((a.paused_at.unwrap_or(now) - a.start_ms - spec.delay_ms).max(0.0)
+                / 1000.0)
+                .min(spec.duration_ms * spec.iterations / 1000.0);
+            let mut event = |kind| {
+                events.push(MotionEvent {
+                    kind,
+                    target: id,
+                    name: spec.name.clone(),
+                    elapsed,
+                })
+            };
+            match phase {
+                Phase::Active(iteration, _) => {
+                    if !a.started {
+                        a.started = true;
+                        event(EventKind::AnimationStart);
+                    }
+                    if iteration > a.iteration {
+                        a.iteration = iteration;
+                        event(EventKind::AnimationIteration);
+                    }
+                }
+                Phase::After if !a.ended => {
+                    if !a.started {
+                        a.started = true;
+                        event(EventKind::AnimationStart);
+                    }
+                    a.ended = true;
+                    event(EventKind::AnimationEnd);
+                }
+                _ => {}
+            }
+            let (Some(f), Some((_, frames))) =
+                (progress, keyframes.iter().find(|(n, _)| *n == spec.name))
+            else {
+                continue;
+            };
+            for (prop, value) in keyframe_values(frames, f, spec.timing, &base) {
+                let _ = apply_style(style, visual, &prop, &crate::cascade::css_value(&value));
+            }
+        }
         m.values = Some(winners);
         // A property no longer listed in `transition` stops transitioning.
         m.transitions.retain(|t| {
@@ -1713,7 +1839,7 @@ impl<L: LayoutEngine> UiTree<L> {
             let _ = apply_style(style, visual, &t.prop, &crate::cascade::css_value(&value));
             true
         });
-        if m.transitions.is_empty() && specs.is_empty() {
+        if m.transitions.is_empty() && specs.is_empty() && m.animations.is_empty() {
             self.motion.remove(&id);
         }
         self.motion_events.extend(events);
@@ -1726,7 +1852,7 @@ impl<L: LayoutEngine> UiTree<L> {
 
     /// Whether any transition is running (the app keeps drawing frames while so).
     pub fn is_animating(&self) -> bool {
-        self.motion.values().any(|m| !m.transitions.is_empty())
+        self.motion.values().any(crate::motion::Motion::is_moving)
     }
 
     /// The node's attributes (`className`, `id`, `data-*`, ...).
@@ -2543,7 +2669,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let moving: Vec<NodeId> = self
             .motion
             .iter()
-            .filter(|(_, m)| !m.transitions.is_empty())
+            .filter(|(_, m)| m.is_moving())
             .map(|(id, _)| *id)
             .collect();
         if !moving.is_empty() {

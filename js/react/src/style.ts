@@ -316,6 +316,16 @@ export interface IronStyle {
   /** `ease`, `linear`, `ease-in`, `ease-out`, `ease-in-out`, `cubic-bezier()`, `steps()`, ... */
   transitionTimingFunction?: string;
   transitionBehavior?: "normal" | "allow-discrete";
+  /** `animation: spin 1s linear infinite`, naming an `@keyframes` rule from a stylesheet. */
+  animation?: string;
+  animationName?: string;
+  animationDuration?: string;
+  animationDelay?: string;
+  animationIterationCount?: number | "infinite" | string;
+  animationDirection?: "normal" | "reverse" | "alternate" | "alternate-reverse" | string;
+  animationFillMode?: "none" | "forwards" | "backwards" | "both" | string;
+  animationPlayState?: "running" | "paused" | string;
+  animationTimingFunction?: string;
   userSelect?: "auto" | "text" | "none" | "all" | "contain";
   WebkitUserSelect?: "auto" | "text" | "none" | "all" | "contain";
   /** List markers: `disc`, `circle`, `square`, `decimal`, `decimal-leading-zero`, `lower-alpha`, `upper-alpha`, `lower-roman`, `upper-roman`, `lower-greek`, `none` or a quoted string. Inherited. */

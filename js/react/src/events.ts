@@ -34,6 +34,10 @@ const HANDLERS: Record<string, readonly string[]> = {
   transitionstart: ["onTransitionStart"],
   transitionend: ["onTransitionEnd"],
   transitioncancel: ["onTransitionCancel"],
+  animationstart: ["onAnimationStart"],
+  animationiteration: ["onAnimationIteration"],
+  animationend: ["onAnimationEnd"],
+  animationcancel: ["onAnimationCancel"],
 };
 
 // `scroll` doesn't bubble in React 17+ either.
@@ -191,6 +195,18 @@ export class IronTransitionEvent extends IronEvent {
   }
 }
 
+/** `onAnimation*`: which `@keyframes` animation and how long it has run, in seconds. */
+export class IronAnimationEvent extends IronEvent {
+  readonly animationName: string;
+  readonly elapsedTime: number;
+
+  constructor(type: string, target: Instance, data: readonly number[], strings: readonly string[]) {
+    super(type, target, true);
+    this.animationName = strings[0] ?? "";
+    this.elapsedTime = data[5] ?? 0;
+  }
+}
+
 /** `onScroll`: the element's new scroll position and sizes (logical pixels). */
 export class IronScrollEvent extends IronEvent {
   readonly scrollLeft: number;
@@ -257,6 +273,11 @@ function createEvent(
     case "transitionend":
     case "transitioncancel":
       return new IronTransitionEvent(type, target, data, strings);
+    case "animationstart":
+    case "animationiteration":
+    case "animationend":
+    case "animationcancel":
+      return new IronAnimationEvent(type, target, data, strings);
     default:
       return new IronPointerEvent(type, target, bubbles, data);
   }

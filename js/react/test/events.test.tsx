@@ -363,6 +363,13 @@ describe("@iron/react events", () => {
     dispatchUiEvent("transitionend", path("card", "page"), data, ["background-color"]);
     expect(log).toEqual(["card background-color 0.25", "page background-color"]);
   });
+  // M3-ANI-03
+  test("onAnimationEnd gets the animation name", () => {
+    let name = "";
+    createRoot().render(<box data-name="card" onAnimationEnd={(e) => (name = e.animationName)} />);
+    dispatchUiEvent("animationend", path("card"), [0, 0, 0, 0, 0, 1, 0, 0], ["spin"]);
+    expect(name).toBe("spin");
+  });
   // M3-INP-01
   test("onChange sees the new text in e.target.value and controlled fields commit it", () => {
     let event: IronInputEvent | undefined;

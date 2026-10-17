@@ -13,6 +13,7 @@ import { ConcurrentRoot } from "react-reconciler/constants";
 
 import "./events.ts";
 import type {
+  IronAnimationEvent,
   IronFocusEvent,
   IronInputEvent,
   IronKeyboardEvent,
@@ -27,6 +28,7 @@ import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
 export {
+  IronAnimationEvent,
   IronEvent,
   IronFocusEvent,
   IronInputEvent,
@@ -87,6 +89,11 @@ export interface EventProps {
   onTransitionStart?: (event: IronTransitionEvent) => void;
   onTransitionEnd?: (event: IronTransitionEvent) => void;
   onTransitionCancel?: (event: IronTransitionEvent) => void;
+  /** A `@keyframes` animation started, began another iteration, finished, or was removed. Bubble. */
+  onAnimationStart?: (event: IronAnimationEvent) => void;
+  onAnimationIteration?: (event: IronAnimationEvent) => void;
+  onAnimationEnd?: (event: IronAnimationEvent) => void;
+  onAnimationCancel?: (event: IronAnimationEvent) => void;
 }
 
 /** Attributes that CSS selectors can match. */
