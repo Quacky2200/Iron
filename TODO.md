@@ -1007,6 +1007,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     background thread while the old code keeps running (hides the parse), make
     `GameObject` construction cheaper in QuickJS (~10 µs each now), and a leaner state
     format than JSON
+- [ ] **Bug (next, found 2026-10-17): UI backdrop blur doesn't blur the 3D world.**
+  `backdrop-filter: blur(..)` on screen UI only blurs other UI: `render_overlay`
+  (crates/iron_render/src/ui/mod.rs) draws into a transparent canvas blended over the
+  target, and the world went straight into the swapchain image, which the UI pass can't
+  read. Fix: when the draw list has a backdrop filter (or a non-normal blend), seed the
+  canvas with the world (the world drawn into a texture first, as the render-scale path
+  does, or a readable surface where the platform allows) and blit it back; keep frames
+  without backdrop filters as cheap as now. A golden with a frosted panel over a 3D scene;
+  `examples/arcade`'s HUD panels show it
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style. Done so far: PBR,
     the sky and its reflections, planar mirrors, reflection probes, the showroom example and

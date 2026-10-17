@@ -169,7 +169,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     (`prefs.rs`, per-OS folder), saved display and quality choices; the arcade has a
     settings menu (Esc).
 - **Next (in this order, see TODO.md):**
-  1. Getting the reload benchmark under 100 ms; then M5.c's remaining rendering items or
+  1. Bug: UI backdrop blur doesn't blur the 3D world (`render_overlay` can't read the
+     world; TODO.md has the plan).
+  2. Getting the reload benchmark under 100 ms; then M5.c's remaining rendering items or
      M5.d (animation, prefabs) per TODO.md.
   - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
     transparency modes), FXAA/TAA, render textures, the rest of M6 file IO, shadow and
