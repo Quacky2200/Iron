@@ -352,6 +352,10 @@ pub struct MeshInstance {
     pub alpha_cutoff: f32,
     /// Draws its back faces too (leaves, cloth, open meshes), lit from that side.
     pub double_sided: bool,
+    /// A skinned mesh's bones: the first of its matrices in [`WorldView::bones`] and how
+    /// many. Its vertices go through them (`model` is then ignored: bones are in world
+    /// space).
+    pub bones: Option<(u32, u32)>,
 }
 
 impl Default for MeshInstance {
@@ -375,6 +379,7 @@ impl Default for MeshInstance {
             mode: RenderMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
+            bones: None,
         }
     }
 }
@@ -473,6 +478,9 @@ pub struct WorldView {
     /// Draws into this render texture ([`WorldRenderer::set_render_texture`]) instead
     /// of the target (Unity's `Camera.targetTexture`); its viewport is within the texture.
     pub target_texture: Option<u32>,
+    /// Skinned meshes' bone matrices (each bone's world matrix times its inverse bind
+    /// pose), which their [`MeshInstance::bones`] point into.
+    pub bones: Vec<Mat4>,
 }
 
 impl WorldView {
@@ -490,6 +498,7 @@ impl WorldView {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
+            bones: Vec::new(),
         }
     }
 }
@@ -620,6 +629,17 @@ struct Vertex {
     tangent: [f32; 4],
 }
 
+/// A skinned vertex's bones and weights (a second vertex buffer).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SkinVertex {
+    joints: [u32; 4],
+    weights: [f32; 4],
+}
+
+const SKIN_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![4 => Uint32x4, 5 => Float32x4];
+
 /// The mesh vertex layout every mesh pipeline uses.
 const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
     0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4
@@ -632,6 +652,8 @@ struct MeshBuffers {
     count: u32,
     /// The local bounding box, for frustum culling.
     bounds: (Vec3, Vec3),
+    /// Skinned meshes' bones and weights.
+    skin: Option<wgpu::Buffer>,
 }
 
 /// What the last frame drew and what culling skipped (every view, mirror and probe
@@ -662,6 +684,8 @@ struct Pipelines {
     /// Double-sided materials: both faces drawn.
     mesh_double: wgpu::RenderPipeline,
     mesh_blend_double: wgpu::RenderPipeline,
+    /// Skinned meshes: opaque, see-through, each one- or double-sided.
+    skinned: [wgpu::RenderPipeline; 4],
 }
 
 /// A view's opaque runs, its blended runs (`true`: a mesh) and its lights.
@@ -677,6 +701,8 @@ struct Run {
     double_sided: bool,
     /// Casts shadows with holes where its alpha is below the cut-off.
     cutout: bool,
+    /// Drawn through its bones.
+    skinned: bool,
     /// The reflection probe its meshes use (`None`: the sky).
     probe: Option<u32>,
     /// Additive quads (drawn without depth writes).
@@ -704,6 +730,10 @@ pub struct WorldRenderer {
     shadow_sampler: wgpu::Sampler,
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_cutout_pipeline: wgpu::RenderPipeline,
+    shadow_skinned_pipeline: wgpu::RenderPipeline,
+    /// Bone matrices: the views' (the main pass) and the shadow pass's.
+    bones: wgpu::Buffer,
+    shadow_bones: wgpu::Buffer,
     /// The sun's cascades and the spot / point lights' maps.
     sun_shadows: ShadowArray,
     local_shadows: ShadowArray,
@@ -869,6 +899,8 @@ impl WorldRenderer {
                 storage_entry(1, wgpu::ShaderStages::VERTEX),
                 storage_entry(2, wgpu::ShaderStages::VERTEX_FRAGMENT),
                 storage_entry(3, wgpu::ShaderStages::FRAGMENT),
+                // Skinned meshes' bone matrices.
+                storage_entry(4, wgpu::ShaderStages::VERTEX),
             ],
         });
         // A draw's textures: the main one and its sampler, then the material's maps
@@ -1003,6 +1035,45 @@ impl WorldRenderer {
             multiview_mask: None,
             cache: None,
         });
+        // Skinned casters go through their bones.
+        let shadow_skinned_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("world skinned shadow casters"),
+                layout: Some(&shadow_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_shadow_skinned"),
+                    compilation_options: Default::default(),
+                    buffers: &[
+                        Some(wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<Vertex>() as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &VERTEX_ATTRIBUTES,
+                        }),
+                        Some(wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<SkinVertex>() as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &SKIN_ATTRIBUTES,
+                        }),
+                    ],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: Default::default(),
+                fragment: None,
+                multiview_mask: None,
+                cache: None,
+            });
         // Cut-out casters test their texture's alpha, so their holes let light through.
         let cutout_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("world cut-out casters"),
@@ -1093,6 +1164,9 @@ impl WorldRenderer {
             shadow_sampler,
             shadow_pipeline,
             shadow_cutout_pipeline,
+            shadow_skinned_pipeline,
+            bones: Self::storage::<[[f32; 4]; 4]>(gpu, "world bones", 16),
+            shadow_bones: Self::storage::<[[f32; 4]; 4]>(gpu, "shadow bones", 16),
             sun_shadows: ShadowArray::new(gpu, "sun shadows", 1, 1),
             local_shadows: ShadowArray::new(gpu, "light shadows", 1, 1),
             shadow_plan: shadows::ShadowPlan::default(),
@@ -1231,6 +1305,22 @@ impl WorldRenderer {
                 ),
                 count: data.indices.len() as u32,
                 bounds: cull::bounds(&data.positions).unwrap_or_default(),
+                skin: (!data.joints.is_empty()).then(|| {
+                    let skin: Vec<SkinVertex> = data
+                        .joints
+                        .iter()
+                        .zip(&data.weights)
+                        .map(|(j, w)| SkinVertex {
+                            joints: j.map(u32::from),
+                            weights: *w,
+                        })
+                        .collect();
+                    make(
+                        "mesh skin",
+                        bytemuck::cast_slice(&skin),
+                        wgpu::BufferUsages::VERTEX,
+                    )
+                }),
             },
         );
         true
@@ -1488,8 +1578,11 @@ impl WorldRenderer {
             mesh: u32,
             material: MaterialKey,
             cutout: bool,
+            skinned: bool,
             range: Range<u32>,
         }
+        let bones: Vec<[[f32; 4]; 4]> = view.bones.iter().map(|m| m.to_cols_array_2d()).collect();
+        Self::upload(gpu, &mut self.shadow_bones, "shadow bones", &bones);
         let mut instances: Vec<GpuMesh> = Vec::new();
         let mut runs_by_mask: Vec<(u32, Vec<ShadowRun>)> = Vec::new();
         for &mask in &masks {
@@ -1499,8 +1592,16 @@ impl WorldRenderer {
                 .filter(|m| self.meshes.contains_key(&m.mesh))
                 .filter(|m| m.cast_shadows && !m.blended() && in_mask(mask, m.layer))
                 .collect();
-            let cutout = |m: &MeshInstance| m.mode == RenderMode::Cutout;
-            casters.sort_by_key(|m| (m.mesh, cutout(m), cutout(m).then(|| m.material_key())));
+            // Skinned cut-outs cast solid shadows.
+            let cutout = |m: &MeshInstance| m.mode == RenderMode::Cutout && m.bones.is_none();
+            casters.sort_by_key(|m| {
+                (
+                    m.mesh,
+                    m.bones.is_some(),
+                    cutout(m),
+                    cutout(m).then(|| m.material_key()),
+                )
+            });
             let mut runs: Vec<ShadowRun> = Vec::new();
             for m in casters {
                 let i = instances.len() as u32;
@@ -1508,7 +1609,12 @@ impl WorldRenderer {
                     model: m.model.to_cols_array_2d(),
                     color: m.color,
                     tiling: m.tiling,
-                    maps: [0.0, 0.0, m.alpha_cutoff, 0.0],
+                    maps: [
+                        0.0,
+                        0.0,
+                        m.alpha_cutoff,
+                        m.bones.map_or(0.0, |(start, _)| (start + 1) as f32),
+                    ],
                     ..Zeroable::zeroed()
                 });
                 let key = if cutout(m) {
@@ -1520,6 +1626,7 @@ impl WorldRenderer {
                     Some(r)
                         if r.mesh == m.mesh
                             && r.cutout == cutout(m)
+                            && r.skinned == m.bones.is_some()
                             && r.material == key
                             && r.range.end == i =>
                     {
@@ -1529,6 +1636,7 @@ impl WorldRenderer {
                         mesh: m.mesh,
                         material: key,
                         cutout: cutout(m),
+                        skinned: m.bones.is_some(),
                         range: i..i + 1,
                     }),
                 }
@@ -1592,6 +1700,10 @@ impl WorldRenderer {
                     binding: 3,
                     resource: self.shadow_casters.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.shadow_bones.as_entire_binding(),
+                },
             ],
         });
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -1641,11 +1753,16 @@ impl WorldRenderer {
                     if run.cutout {
                         pass.set_pipeline(&self.shadow_cutout_pipeline);
                         pass.set_bind_group(1, &groups[&run.material], &[]);
+                    } else if run.skinned {
+                        pass.set_pipeline(&self.shadow_skinned_pipeline);
                     } else {
                         pass.set_pipeline(&self.shadow_pipeline);
                     }
                     if let Some(mesh) = self.meshes.get(&run.mesh) {
                         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                        if let (true, Some(skin)) = (run.skinned, &mesh.skin) {
+                            pass.set_vertex_buffer(1, skin.slice(..));
+                        }
                         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
                         pass.draw_indexed(0..mesh.count, 0, run.range.clone());
                     }
@@ -1717,6 +1834,11 @@ impl WorldRenderer {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &VERTEX_ATTRIBUTES,
+        };
+        let skin_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<SkinVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &SKIN_ATTRIBUTES,
         };
         let make = |label: &str,
                     entry: (&str, &str),
@@ -1837,6 +1959,22 @@ impl WorldRenderer {
                     (less, false),
                     blend,
                 ),
+                skinned: [
+                    (Some(wgpu::Face::Back), true),
+                    (None, true),
+                    (Some(wgpu::Face::Back), false),
+                    (None, false),
+                ]
+                .map(|(cull, writes)| {
+                    make(
+                        "world skinned meshes",
+                        ("vs_mesh_skinned", "fs_mesh"),
+                        &[Some(vertex_layout.clone()), Some(skin_layout.clone())],
+                        cull,
+                        (less, writes),
+                        blend,
+                    )
+                }),
             })
             .clone()
     }
@@ -2337,7 +2475,11 @@ impl WorldRenderer {
         let mut meshes: Vec<GpuMesh> = Vec::new();
         let mut lights: Vec<GpuLight> = Vec::new();
         let mut per_view: Vec<ViewRuns> = Vec::new();
+        let mut bones: Vec<[[f32; 4]; 4]> = Vec::new();
         for view in views {
+            // This view's bones, after the earlier views'.
+            let bone_base = bones.len() as u32;
+            bones.extend(view.bones.iter().map(|m| m.to_cols_array_2d()));
             let eye = view.camera.position;
             // How far along the view something is: straight-line distance in
             // perspective, distance along the view direction in orthographic (where
@@ -2420,17 +2562,22 @@ impl WorldRenderer {
                         m.maps.normal_scale,
                         m.maps.occlusion_strength.clamp(0.0, 1.0),
                         m.alpha_cutoff,
-                        0.0,
+                        // The first bone in this frame's list, plus one (0: rigid).
+                        m.bones
+                            .map_or(0.0, |(start, _)| (bone_base + start + 1) as f32),
                     ],
                     detail: m.maps.detail_tiling,
                 }
             };
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
             let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
+            // Skinned meshes move with their bones, away from their bounds: always drawn.
             let sees = |m: &MeshInstance| {
-                self.meshes
-                    .get(&m.mesh)
-                    .is_none_or(|b| frustum.transformed(b.bounds, m.model))
+                m.bones.is_some()
+                    || self
+                        .meshes
+                        .get(&m.mesh)
+                        .is_none_or(|b| frustum.transformed(b.bounds, m.model))
             };
             // Opaque meshes, grouped by mesh and texture (instancing).
             let mut opaque: Vec<&MeshInstance> = view
@@ -2447,6 +2594,7 @@ impl WorldRenderer {
                     m.material_key(),
                     m.double_sided,
                     cutout(m),
+                    m.bones.is_some(),
                     probe_for(m).map(|p| p.id),
                 )
             });
@@ -2460,6 +2608,7 @@ impl WorldRenderer {
                             && r.material == m.material_key()
                             && r.double_sided == m.double_sided
                             && r.cutout == cutout(m)
+                            && r.skinned == m.bones.is_some()
                             && r.probe == probe_for(m).map(|p| p.id)
                             && r.range.end == i =>
                     {
@@ -2470,6 +2619,7 @@ impl WorldRenderer {
                         material: m.material_key(),
                         double_sided: m.double_sided,
                         cutout: cutout(m),
+                        skinned: m.bones.is_some(),
                         probe: probe_for(m).map(|p| p.id),
                         glow: false,
                         range: i..i + 1,
@@ -2510,6 +2660,7 @@ impl WorldRenderer {
                                 material: m.material_key(),
                                 double_sided: m.double_sided,
                                 cutout: false,
+                                skinned: m.bones.is_some(),
                                 probe: probe_for(m).map(|p| p.id),
                                 glow: m.glow != MeshGlow::None,
                                 range: i..i + 1,
@@ -2550,6 +2701,7 @@ impl WorldRenderer {
                                     material: MaterialKey::texture(q.texture),
                                     double_sided: true,
                                     cutout: false,
+                                    skinned: false,
                                     probe: None,
                                     glow: q.additive,
                                     range: i..i + 1,
@@ -2629,6 +2781,7 @@ impl WorldRenderer {
         }
         Self::upload(gpu, &mut self.quads, "world quads", &quads);
         Self::upload(gpu, &mut self.mesh_instances, "world meshes", &meshes);
+        Self::upload(gpu, &mut self.bones, "world bones", &bones);
         if self.globals.size() < self.stride * views.len().max(1) as u64 {
             self.globals = Self::buffer(
                 gpu,
@@ -2716,6 +2869,10 @@ impl WorldRenderer {
                         wgpu::BindGroupEntry {
                             binding: 3,
                             resource: lights.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: self.bones.as_entire_binding(),
                         },
                     ],
                 })
@@ -2849,12 +3006,18 @@ impl WorldRenderer {
                         Some(mesh) => {
                             pass.set_pipeline(match (run.glow, blend, run.double_sided) {
                                 (true, ..) => &pipelines.mesh_glow,
+                                (false, b, d) if run.skinned => {
+                                    &pipelines.skinned[usize::from(d) + 2 * usize::from(b)]
+                                }
                                 (false, true, false) => &pipelines.mesh_blend,
                                 (false, true, true) => &pipelines.mesh_blend_double,
                                 (false, false, false) => &pipelines.mesh,
                                 (false, false, true) => &pipelines.mesh_double,
                             });
                             pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                            if let (true, Some(skin)) = (run.skinned, &mesh.skin) {
+                                pass.set_vertex_buffer(1, skin.slice(..));
+                            }
                             pass.set_index_buffer(
                                 mesh.indices.slice(..),
                                 wgpu::IndexFormat::Uint32,

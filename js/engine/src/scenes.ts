@@ -13,7 +13,7 @@ import { Animation, AnimationClip, AnimationCurve, Animator, AnimatorController 
 import { AudioListener, AudioSource } from "./audio-components.ts";
 import { Sound } from "./audio.ts";
 import { LineRenderer } from "./lines.ts";
-import { Color, Quaternion, Rect, RectInt, Vector2, Vector2Int, Vector3, Vector3Int, Vector4 } from "./math.ts";
+import { Color, Matrix4x4, Quaternion, Rect, RectInt, Vector2, Vector2Int, Vector3, Vector3Int, Vector4 } from "./math.ts";
 import { Model } from "./models.ts";
 import { ParticleSystem } from "./particles.ts";
 import {
@@ -43,6 +43,7 @@ import {
   Material,
   Mesh,
   MeshRenderer,
+  SkinnedMeshRenderer,
   Mirror,
   PlaneRenderer,
   ReflectionProbe,
@@ -86,6 +87,7 @@ _registerBuiltIns({
   LODGroup,
   MeshCollider,
   MeshRenderer,
+  SkinnedMeshRenderer,
   Mirror,
   ParticleSystem,
   PlaneRenderer,
@@ -276,7 +278,11 @@ class Saver {
     if (v instanceof Mesh) {
       const data = v._data;
       if (!data) return this.cannot(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
-      return this.asset(v, "mesh", () => ({ type: "Mesh", ...data }));
+      return this.asset(v, "mesh", () => ({
+        type: "Mesh",
+        ...data,
+        ...(v.bindposes.length ? { bindposes: v.bindposes.flatMap((m) => [...m.m]) } : {}),
+      }));
     }
     if (v instanceof Sound) return { $type: "Sound", src: v.src };
     const proto = Object.getPrototypeOf(v);
@@ -322,11 +328,17 @@ class Loader {
       const flat = (k: string) => (a[k] as number[] | undefined) ?? [];
       const v3 = (f: number[]) => Array.from({ length: f.length / 3 }, (_, i) => new Vector3(f[i * 3], f[i * 3 + 1], f[i * 3 + 2]));
       const uv = flat("uv");
+      const joints = flat("joints");
+      const weights = flat("weights");
+      const four = (f: number[], i: number) => [f[i * 4], f[i * 4 + 1], f[i * 4 + 2], f[i * 4 + 3]] as [number, number, number, number];
+      const poses = flat("bindposes");
       made = Mesh.create({
         vertices: v3(flat("vertices")),
         triangles: flat("triangles"),
         normals: v3(flat("normals")),
         uv: Array.from({ length: uv.length / 2 }, (_, i) => new Vector2(uv[i * 2], uv[i * 2 + 1])),
+        boneWeights: Array.from({ length: joints.length / 4 }, (_, i) => ({ indices: four(joints, i), weights: four(weights, i) })),
+        bindposes: Array.from({ length: poses.length / 16 }, (_, i) => new Matrix4x4(poses.slice(i * 16, i * 16 + 16))),
       });
     } else {
       warn(`unknown asset ${id}`);

@@ -56,7 +56,8 @@ struct MeshInstance {
     layer: vec4<u32>,
     // rgb: the specular colour; w: 1 for the specular workflow.
     specular: vec4<f32>,
-    // x: normal map strength; y: occlusion strength; z: alpha cut-off.
+    // x: normal map strength; y: occlusion strength; z: alpha cut-off; w: the first
+    // bone + 1 for skinned meshes (0: rigid).
     maps: vec4<f32>,
     // The detail map's tiling: scale (xy), offset (zw).
     detail: vec4<f32>,
@@ -90,6 +91,8 @@ struct Light {
 @group(0) @binding(1) var<storage, read> quads: array<Quad>;
 @group(0) @binding(2) var<storage, read> meshes: array<MeshInstance>;
 @group(0) @binding(3) var<storage, read> lights: array<Light>;
+// Skinned meshes' bones: world matrix times inverse bind pose.
+@group(0) @binding(4) var<storage, read> bones: array<mat4x4<f32>>;
 // The material: its main texture and sampler (shared by the maps), then its maps.
 // Normal, metallic and occlusion maps are bound as data (linear), the rest as colour.
 @group(1) @binding(0) var tex: texture_2d<f32>;
@@ -215,6 +218,51 @@ fn vs_mesh(
     out.detail_uv = tiled(uv, m.detail);
     out.instance = ii;
     return out;
+}
+
+// A skinned vertex's matrix: its bones blended by weight.
+fn skin_matrix(m: MeshInstance, joints: vec4<u32>, weights: vec4<f32>) -> mat4x4<f32> {
+    let first = u32(m.maps.w) - 1u;
+    return bones[first + joints.x] * weights.x
+        + bones[first + joints.y] * weights.y
+        + bones[first + joints.z] * weights.z
+        + bones[first + joints.w] * weights.w;
+}
+
+@vertex
+fn vs_mesh_skinned(
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) tangent: vec4<f32>,
+    @location(4) joints: vec4<u32>,
+    @location(5) weights: vec4<f32>,
+    @builtin(instance_index) ii: u32,
+) -> MeshOut {
+    let m = meshes[ii];
+    // Bones are in world space: the object's own matrix doesn't apply.
+    let skin = skin_matrix(m, joints, weights);
+    let world = skin * vec4<f32>(position, 1.0);
+    var out: MeshOut;
+    out.pos = g.view_proj * world;
+    out.world = world.xyz;
+    out.normal = (skin * vec4<f32>(normal, 0.0)).xyz;
+    out.tangent = vec4<f32>((skin * vec4<f32>(tangent.xyz, 0.0)).xyz, tangent.w);
+    out.uv = tiled(uv, m.tiling);
+    out.detail_uv = tiled(uv, m.detail);
+    out.instance = ii;
+    return out;
+}
+
+@vertex
+fn vs_shadow_skinned(
+    @location(0) position: vec3<f32>,
+    @location(4) joints: vec4<u32>,
+    @location(5) weights: vec4<f32>,
+    @builtin(instance_index) ii: u32,
+) -> @builtin(position) vec4<f32> {
+    let skin = skin_matrix(meshes[ii], joints, weights);
+    return g.view_proj * skin * vec4<f32>(position, 1.0);
 }
 
 struct CutoutOut {

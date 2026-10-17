@@ -2,9 +2,10 @@
 // uploads its meshes and textures), and `instantiate` builds its node tree as
 // GameObjects with MeshRenderers, optionally with mesh colliders.
 
-import { Color, Quaternion, Vector2, Vector3, type QuaternionLike, type Vector3Like } from "./math.ts";
+import { Animation, AnimationClip, AnimationCurve } from "./animation.ts";
+import { Color, Matrix4x4, Quaternion, Vector2, Vector3, type QuaternionLike, type Vector3Like } from "./math.ts";
 import { MeshCollider } from "./physics-components.ts";
-import { Material, Mesh, MeshRenderer } from "./rendering.ts";
+import { Material, Mesh, MeshRenderer, SkinnedMeshRenderer } from "./rendering.ts";
 import { GameObject } from "./scene.ts";
 import { Texture } from "./textures.ts";
 
@@ -36,12 +37,35 @@ interface ModelNode {
   scale: [number, number, number];
   children: number[];
   primitives: { mesh: number; material: number | null; bounds: [[number, number, number], [number, number, number]] }[];
+  /** Its skin (`skins` index), for skinned meshes. */
+  skin?: number | null;
+}
+
+interface ModelSkin {
+  /** Joint nodes, in the order the mesh's bone indices use. */
+  joints: number[];
+  /** Inverse bind matrices, 16 numbers each, column-major. */
+  inverseBind: number[];
+}
+
+interface ModelAnimation {
+  name: string;
+  channels: {
+    node: number;
+    path: "translation" | "rotation" | "scale";
+    interpolation: "linear" | "step" | "cubic";
+    times: number[];
+    /** Per key: 3 or 4 numbers (cubic: in-tangent, value, out-tangent). */
+    values: number[];
+  }[];
 }
 
 interface ModelDescription {
   nodes: ModelNode[];
   roots: number[];
   materials: ModelMaterial[];
+  skins?: ModelSkin[];
+  animations?: ModelAnimation[];
 }
 
 export interface InstantiateOptions {
@@ -71,6 +95,11 @@ export class Model {
   materials: Material[] = [];
   /** Its meshes (after loading), one per glTF primitive. */
   meshes: Mesh[] = [];
+  /**
+   * Its animations as clips (after loading), with paths from the copy's root object.
+   * Copies get an `Animation` playing the first one.
+   */
+  animations: AnimationClip[] = [];
   private description: ModelDescription | null = null;
   private waiting: ((m: Model) => void)[] = [];
   private pending: { options: InstantiateOptions; root: GameObject }[] = [];
@@ -126,6 +155,8 @@ export class Model {
 
   private build(root: GameObject, options: InstantiateOptions): void {
     const d = this.description!;
+    const objects = new Map<number, GameObject>();
+    const skinned: { holder: GameObject; mesh: Mesh; material: Material; skin: ModelSkin }[] = [];
     const make = (index: number, parent: GameObject) => {
       const n = d.nodes[index]!;
       const go = new GameObject(n.name || `Node ${index}`, {
@@ -135,13 +166,17 @@ export class Model {
         scale: new Vector3(...n.scale),
       });
       go._modelPart = true;
+      objects.set(index, go);
       // One renderer per part: on the node itself, or on child objects when there are several.
       n.primitives.forEach((p, i) => {
         const holder = n.primitives.length === 1 ? go : new GameObject(`${go.name} ${i}`, { parent: go });
         holder._modelPart = true;
         const mesh = Mesh._engine(p.mesh);
         const material = p.material === null ? new Material() : (this.materials[p.material] ?? new Material());
-        holder.addComponent(MeshRenderer, { mesh, material });
+        const skin = n.skin == null ? undefined : d.skins?.[n.skin];
+        // Skinned parts wait for every bone to exist.
+        if (skin) skinned.push({ holder, mesh, material, skin });
+        else holder.addComponent(MeshRenderer, { mesh, material });
         if (options.colliders === "mesh" || options.colliders === "convex") {
           holder.addComponent(MeshCollider, { sharedMesh: mesh, convex: options.colliders === "convex" });
         }
@@ -149,6 +184,47 @@ export class Model {
       for (const c of n.children) make(c, go);
     };
     for (const r of d.roots) make(r, root);
+    for (const s of skinned) {
+      s.mesh.bindposes = Array.from({ length: s.skin.joints.length }, (_, i) => new Matrix4x4(s.skin.inverseBind.slice(i * 16, i * 16 + 16)));
+      const bones = s.skin.joints.map((j) => objects.get(j)).filter((b): b is GameObject => b !== undefined);
+      s.holder.addComponent(SkinnedMeshRenderer, { mesh: s.mesh, material: s.material, bones, rootBone: bones[0] ?? null });
+    }
+    if (this.animations.length && !root.getComponent(Animation)) {
+      root.addComponent(Animation, { clip: this.animations[0]!, clips: [...this.animations] });
+    }
+  }
+
+  /** The glTF's animations as clips, paths by node names from the copy's root. */
+  private clips(d: ModelDescription): AnimationClip[] {
+    const paths = new Map<number, string>();
+    const walk = (index: number, prefix: string) => {
+      const n = d.nodes[index]!;
+      const path = prefix + (n.name || `Node ${index}`);
+      paths.set(index, path);
+      for (const c of n.children) walk(c, `${path}/`);
+    };
+    for (const r of d.roots) walk(r, "");
+    return (d.animations ?? []).map((a, i) => {
+      const clip = new AnimationClip(a.name || `Animation ${i}`);
+      clip.wrapMode = "loop";
+      for (const ch of a.channels) {
+        const path = paths.get(ch.node);
+        if (path === undefined) continue;
+        const [property, size] =
+          ch.path === "translation" ? ["localPosition", 3] : ch.path === "rotation" ? ["localRotation", 4] : ["localScale", 3];
+        for (let k = 0; k < size; k++) {
+          const curve =
+            ch.interpolation === "cubic"
+              ? cubic(ch.times, ch.values, size, k)
+              : AnimationCurve.fromPoints(
+                  ch.times.map((t, i) => [t, ch.values[i * size + k]!] as const),
+                  ch.interpolation === "step" ? "step" : "linear",
+                );
+          clip.setCurve(path, "Transform", `${property}.${"xyzw"[k]}`, curve);
+        }
+      }
+      return clip;
+    });
   }
 
   /** @internal The engine's answer. */
@@ -184,6 +260,7 @@ export class Model {
         });
       });
       this.meshes = description.nodes.flatMap((n) => n.primitives.map((p) => Mesh._engine(p.mesh)));
+      this.animations = this.clips(description);
       for (const { root, options } of this.pending) if (!root.destroyed) this.build(root, options);
     } else {
       this.failed = true;
@@ -208,4 +285,19 @@ export function _resetModelsForTests() {
   models.clear();
   cache.clear();
   nextModel = 1;
+}
+
+/** A glTF cubic spline channel's component `k`: keys with the file's tangents. */
+function cubic(times: number[], values: number[], size: number, k: number): AnimationCurve {
+  const keys = times.map((t, i) => {
+    const at = (part: number) => values[(i * 3 + part) * size + k]!;
+    return { t, inT: at(0), v: at(1), outT: at(2) };
+  });
+  const curve = new AnimationCurve();
+  for (const key of keys) curve.addKey(key.t, key.v);
+  curve.keys.forEach((key, i) => {
+    key.inTangent = keys[i]!.inT;
+    key.outTangent = keys[i]!.outT;
+  });
+  return curve;
 }

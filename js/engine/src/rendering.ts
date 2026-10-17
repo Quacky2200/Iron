@@ -758,10 +758,33 @@ let nextMesh = 1;
  * texture coordinates (made up when missing), and triangles as index triples,
  * counter-clockwise seen from the front.
  */
+/** Up to four bones moving a vertex, by index into a skinned renderer's `bones`, with weights (Unity's `BoneWeight`). */
+export interface BoneWeight {
+  indices: readonly [number, number, number, number];
+  weights: readonly [number, number, number, number];
+}
+
+/** A mesh's data, for `Mesh.create` and `set`. */
+export interface MeshData {
+  vertices: readonly Vector3Like[];
+  triangles: readonly number[];
+  normals?: readonly Vector3Like[];
+  uv?: readonly Vector2Like[];
+  /** Skinned meshes: each vertex's bones and weights (weights are made to sum to 1). */
+  boneWeights?: readonly BoneWeight[];
+  /** Skinned meshes: each bone's inverse world matrix in the bind pose (Unity's `bindposes`). */
+  bindposes?: readonly Matrix4x4[];
+}
+
 export class Mesh {
   readonly id: number;
   /** @internal Its data as flat arrays (script meshes), for saving with scenes. */
-  _data: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[] } | null = null;
+  _data: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null = null;
+  /**
+   * Each bone's inverse bind pose, for `SkinnedMeshRenderer`s (a model's skinned meshes
+   * come with theirs).
+   */
+  bindposes: Matrix4x4[] = [];
   private constructor(id: number) {
     this.id = id;
   }
@@ -771,30 +794,27 @@ export class Mesh {
     return new Mesh(id);
   }
 
-  static create(data: {
-    vertices: readonly Vector3Like[];
-    triangles: readonly number[];
-    normals?: readonly Vector3Like[];
-    uv?: readonly Vector2Like[];
-  }): Mesh {
+  static create(data: MeshData): Mesh {
     const mesh = new Mesh(nextMesh++);
     mesh.set(data);
     return mesh;
   }
 
   /** Replaces the mesh's data (everything drawing it updates). */
-  set(data: {
-    vertices: readonly Vector3Like[];
-    triangles: readonly number[];
-    normals?: readonly Vector3Like[];
-    uv?: readonly Vector2Like[];
-  }): void {
+  set(data: MeshData): void {
+    const joints = (data.boneWeights ?? []).flatMap((b) => [...b.indices]);
+    const weights = (data.boneWeights ?? []).flatMap((b) => {
+      const sum = b.weights.reduce((s, w) => s + w, 0);
+      return sum > 0 ? b.weights.map((w) => w / sum) : [1, 0, 0, 0];
+    });
     this._data = {
       vertices: data.vertices.flatMap((v) => [v.x, v.y, v.z]),
       triangles: [...data.triangles],
       normals: (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]),
       uv: (data.uv ?? []).flatMap((v) => [v.x, v.y]),
+      ...(joints.length ? { joints, weights } : {}),
     };
+    if (data.bindposes) this.bindposes = [...data.bindposes];
     __iron_op(
       "render.mesh",
       this.id,
@@ -803,6 +823,7 @@ export class Mesh {
       // Unity's UVs run bottom-up; the engine's top-down.
       (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]),
       [...data.triangles],
+      ...(joints.length ? [joints, weights] : []),
     );
   }
 
@@ -853,7 +874,13 @@ export class MeshRenderer extends Component {
     this.send();
   }
 
-  private send(): void {
+  /** @internal Extra arguments a subclass sends (a skinned renderer's bones). */
+  protected _skinArgs(): unknown[] {
+    return [];
+  }
+
+  /** @internal */
+  protected send(): void {
     if (!this.started) return;
     const m = this._material;
     __iron_op(
@@ -870,6 +897,7 @@ export class MeshRenderer extends Component {
       this._shadowCastingMode !== "off",
       m.metallic,
       m._extras(),
+      ...this._skinArgs(),
     );
   }
 
@@ -880,6 +908,35 @@ export class MeshRenderer extends Component {
 
   override onDestroy(): void {
     __iron_op("render.remove", this.id);
+  }
+}
+
+/**
+ * Draws a skinned mesh (Unity's `SkinnedMeshRenderer`): each vertex moves with up to four
+ * of `bones` by its weights, from the mesh's bind poses. Animating the bones (an
+ * `Animator` or `Animation`) bends the mesh. The renderer's own transform doesn't
+ * apply: bones are in the world.
+ */
+export class SkinnedMeshRenderer extends MeshRenderer {
+  private _bones: GameObject[] = [];
+  /** The skeleton's top bone (Unity's `rootBone`). */
+  @property rootBone: GameObject | null = null;
+
+  /** The objects the mesh's bones follow, in the order its bone weights and bind poses use. */
+  @property
+  get bones(): GameObject[] {
+    return this._bones;
+  }
+  set bones(b: GameObject[]) {
+    this._bones = [...b];
+    this.send();
+  }
+
+  protected override _skinArgs(): unknown[] {
+    const mesh = this.mesh;
+    const bindposes = typeof mesh === "string" ? [] : mesh.bindposes;
+    const count = Math.min(this._bones.length, bindposes.length);
+    return [this._bones.slice(0, count).map((b) => b.id), bindposes.slice(0, count).flatMap((m) => [...m.m])];
   }
 }
 

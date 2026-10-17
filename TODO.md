@@ -1184,7 +1184,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       group size and reference point (now the object's origin and a given size)
     - [ ] Occlusion culling later (GPU depth pyramid / Hi-Z), for big scenes
 - [ ] **M5.d** The rest of scene, assets and rendering:
-  - [ ] Animation (Unity's): skeletons and skinned meshes from glTF still to do
+  - [x] Animation (Unity's), with `examples/animation` (a robot on an Animator, a skinned
+    glTF worm, a skinned tentacle made in code)
     - [x] `AnimationCurve` / `Keyframe` (Hermite tangents, steps, wrap modes),
       `AnimationClip` (curves by path for transform channels and component properties,
       events, `sampleAnimation`, JSON), the legacy `Animation` component (play,
@@ -1192,7 +1193,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       conditional / exit-time / Any State transitions with cross-fades); evaluated each
       frame between `onUpdate` and `onLateUpdate` (`__iron_animate`); saved in scenes —
       `M5-ANI-01`..`05`
-    - [ ] glTF animations as clips; skins and GPU skinning (`SkinnedMeshRenderer`)
+    - [x] glTF animations as clips (linear, step, cubic spline; copies get an `Animation`
+      playing the first), skins and GPU skinning: `SkinnedMeshRenderer` (`bones`,
+      `rootBone`), `Mesh` `boneWeights` / `bindposes`, bone matrices computed per frame
+      in the app, skinned pipelines and shadows — `M5-SKN-01`, `M5-SKN-02`, `M5-RND-21`
+    - [ ] Skinning follow-ups: bounds for culling skinned meshes (they're always drawn),
+      morph targets (blend shapes), more than four weights per vertex, GPU-side bone
+      matrices
     - [ ] Later: animator layers and avatar masks, 2D blend trees, root motion,
       `AnimationCurve` in particles' over-lifetime keys, `Gradient`
   - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering

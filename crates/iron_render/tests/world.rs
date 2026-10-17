@@ -205,6 +205,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
+            bones: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -227,6 +228,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
+            bones: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -256,6 +258,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
+            bones: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -2126,4 +2129,99 @@ fn cascaded_sun_spot_and_point_light_shadows() {
     });
     world.render_views(&gpu, &rt, &[probed], &[]);
     assert_eq!(world.stats().shadow_maps, 4 + 1 + 6);
+}
+
+// M5-RND-21
+#[test]
+fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
+    use iron_render::{Light, LightKind, MeshData, MeshInstance, Shadows, primitive_id};
+    let gpu = shared_gpu();
+    let size = (240, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // A square tube 2 m tall, rings every 0.25 m, blending from bone 0 (at the bottom)
+    // to bone 1 (1 m up) between 0.75 and 1.25 m.
+    let mut tube = MeshData::default();
+    let corners = [
+        (-0.15f32, -0.15f32),
+        (0.15, -0.15),
+        (0.15, 0.15),
+        (-0.15, 0.15),
+    ];
+    let rings = 9;
+    for r in 0..rings {
+        let y = r as f32 * 0.25;
+        let t = ((y - 0.75) / 0.5).clamp(0.0, 1.0);
+        for (x, z) in corners {
+            tube.positions.push([x, y, z]);
+            let l = (x * x + z * z).sqrt();
+            tube.normals.push([x / l, 0.0, z / l]);
+            tube.uvs.push([0.0, 0.0]);
+            tube.joints.push([0, 1, 0, 0]);
+            tube.weights.push([1.0 - t, t, 0.0, 0.0]);
+        }
+    }
+    for r in 0..rings - 1 {
+        for k in 0..4u32 {
+            let a = r * 4 + k;
+            let b = r * 4 + (k + 1) % 4;
+            tube.indices.extend([a, b, b + 4, a, b + 4, a + 4]);
+        }
+    }
+    let mut world = WorldRenderer::new(&gpu);
+    assert!(world.set_mesh(&gpu, 7, &tube));
+    // Bone 1 bent 45 degrees about z at its joint (1 m up); bone matrices are world
+    // times inverse bind.
+    let joint = Vec3::new(0.0, 1.0, 0.0);
+    let bone1 = Mat4::from_translation(joint) * Mat4::from_rotation_z(0.785);
+    let bones = vec![Mat4::IDENTITY, bone1 * Mat4::from_translation(-joint)];
+    let eye = Vec3::new(0.0, 1.4, 4.5);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.9, 0.0), Vec3::Y)
+            .inverse(),
+        45.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.05, 0.06, 0.09),
+    );
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.bones = bones;
+    v.meshes = vec![
+        MeshInstance {
+            mesh: primitive_id("plane").unwrap(),
+            color: [0.55, 0.55, 0.58, 1.0],
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: 7,
+            // Ignored for skinned meshes: the bones place it.
+            model: Mat4::from_translation(Vec3::new(50.0, 0.0, 0.0)),
+            color: [0.85, 0.45, 0.2, 1.0],
+            bones: Some((0, 2)),
+            ..Default::default()
+        },
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.6, 1.5, 1.4],
+        position: Vec3::ZERO,
+        direction: Vec3::new(0.5, -0.8, -0.4).normalize(),
+        range: 0.0,
+        shadows: Some(Shadows {
+            soft: true,
+            strength: 1.0,
+        }),
+        culling_mask: ALL_LAYERS,
+    }];
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-21", size.0, size.1, &pixels, 3);
 }

@@ -147,6 +147,14 @@ struct Renderer {
     extras: MaterialExtras,
 }
 
+/// A skinned renderer's bones (objects, in the mesh's joint order) and their inverse
+/// bind poses.
+#[derive(Clone, Debug)]
+struct Skin {
+    bones: Vec<ScriptObject>,
+    bindposes: Vec<Mat4>,
+}
+
 /// A material's settings past the basic ones.
 #[derive(Clone, Copy, Debug, Default)]
 struct MaterialExtras {
@@ -323,6 +331,8 @@ pub struct WorldViews {
     pub render_texture_uploads: Vec<(u32, (u32, u32))>,
     /// Render textures' sizes, for their cameras' aspect.
     render_textures: HashMap<u32, (u32, u32)>,
+    /// Skinned renderers' bones, by component.
+    skins: HashMap<u32, Skin>,
     /// Loaded textures' sizes in pixels, for sprites.
     texture_sizes: HashMap<u32, (u32, u32)>,
 }
@@ -354,6 +364,7 @@ impl Default for WorldViews {
             texture_uploads: Vec::new(),
             render_texture_uploads: Vec::new(),
             render_textures: HashMap::new(),
+            skins: HashMap::new(),
             texture_sizes: HashMap::new(),
         }
     }
@@ -630,7 +641,8 @@ impl WorldViews {
                 };
                 self.planes.insert(id, plane);
             }
-            // `mesh id [positions xyz...] [normals] [uvs] [indices]`; `mesh id null` removes it.
+            // `mesh id [positions xyz...] [normals] [uvs] [indices] [joints 4 per vertex]
+            // [weights 4 per vertex]`; `mesh id null` removes it.
             "mesh" => {
                 if matches!(args.get(1), Some(Value::Null) | None) {
                     self.mesh_uploads.push((id, None));
@@ -646,6 +658,18 @@ impl WorldViews {
                     normals: normals.as_chunks::<3>().0.to_vec(),
                     uvs: uvs.as_chunks::<2>().0.to_vec(),
                     tangents: Vec::new(),
+                    joints: flat(args.get(5))
+                        .unwrap_or_default()
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|j| j.map(|i| i.clamp(0.0, 65535.0) as u16))
+                        .collect(),
+                    weights: flat(args.get(6))
+                        .unwrap_or_default()
+                        .as_chunks::<4>()
+                        .0
+                        .to_vec(),
                     indices: indices.into_iter().map(|i| i as u32).collect(),
                 }
                 .complete();
@@ -659,9 +683,35 @@ impl WorldViews {
             }
             // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness
             // unlit texture|null [scale x y, offset x y] castShadows metallic [maps and
-            // modes]` (see `material_extras`)
+            // modes] (see `material_extras`) [bone objects]|null [bindposes, 16 each]`
             "meshRenderer" => {
                 let extras = material_extras(args.get(11))?;
+                match args.get(12) {
+                    Some(Value::Array(bones)) => {
+                        let bones: Vec<ScriptObject> = bones
+                            .iter()
+                            .map(|b| b.as_f64().map_or(u32::MAX, |b| b as u32))
+                            .collect();
+                        let flat = flat(args.get(13)).unwrap_or_default();
+                        let bindposes: Vec<Mat4> = flat
+                            .as_chunks::<16>()
+                            .0
+                            .iter()
+                            .map(Mat4::from_cols_array)
+                            .collect();
+                        if bindposes.len() != bones.len() {
+                            return Err(format!(
+                                "{} bones but {} bind poses",
+                                bones.len(),
+                                bindposes.len()
+                            ));
+                        }
+                        self.skins.insert(id, Skin { bones, bindposes });
+                    }
+                    _ => {
+                        self.skins.remove(&id);
+                    }
+                }
                 let mesh = match args.get(2) {
                     Some(Value::String(name)) => {
                         primitive_id(name).ok_or_else(|| format!("no primitive `{name}`"))?
@@ -923,6 +973,7 @@ impl WorldViews {
                 self.cameras.remove(&id);
                 self.planes.remove(&id);
                 self.renderers.remove(&id);
+                self.skins.remove(&id);
                 self.lights.remove(&id);
                 self.sprites.remove(&id);
                 self.mirrors.remove(&id);
@@ -940,6 +991,8 @@ impl WorldViews {
         self.cameras.retain(|_, c| !objects.contains(&c.object));
         self.planes.retain(|_, p| !objects.contains(&p.object));
         self.renderers.retain(|_, r| !objects.contains(&r.object));
+        let renderers = &self.renderers;
+        self.skins.retain(|id, _| renderers.contains_key(id));
         self.lights.retain(|_, l| !objects.contains(&l.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
         self.mirrors.retain(|_, m| !objects.contains(&m.0));
@@ -1060,6 +1113,18 @@ impl WorldViews {
                 ))
             })
             .collect();
+        // Skinned renderers' bone matrices, for every view: each bone's world matrix times
+        // its inverse bind pose (a missing bone holds its bind pose).
+        let mut bones: Vec<Mat4> = Vec::new();
+        let mut skinned: HashMap<u32, (u32, u32)> = HashMap::new();
+        for (&id, skin) in &self.skins {
+            let start = bones.len() as u32;
+            for (b, inverse) in skin.bones.iter().zip(&skin.bindposes) {
+                let world_bone = world(*b).map_or(inverse.inverse(), Mat4::from);
+                bones.push(world_bone * *inverse);
+            }
+            skinned.insert(id, (start, skin.bones.len() as u32));
+        }
         let meshes: Vec<Tagged<MeshInstance>> = self
             .renderers
             .iter()
@@ -1084,6 +1149,7 @@ impl WorldViews {
                     mode: r.extras.mode,
                     alpha_cutoff: r.extras.alpha_cutoff,
                     double_sided: r.extras.double_sided,
+                    bones: skinned.get(&id).copied(),
                 };
                 Some(Tagged {
                     renderer: Some(id),
@@ -1277,6 +1343,7 @@ impl WorldViews {
                     probes: probes.clone(),
                     fxaa: camera.fxaa,
                     target_texture: target,
+                    bones: bones.clone(),
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

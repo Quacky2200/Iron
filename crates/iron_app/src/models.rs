@@ -249,11 +249,35 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                 .read_tangents()
                 .map(Iterator::collect)
                 .unwrap_or_default();
+            // Skinned: bone indices into the node's skin's joints, and weights (made to
+            // sum to 1).
+            let joints: Vec<[u16; 4]> = reader
+                .read_joints(0)
+                .map(|j| j.into_u16().collect())
+                .unwrap_or_default();
+            let weights: Vec<[f32; 4]> = reader
+                .read_weights(0)
+                .map(|w| {
+                    w.into_f32()
+                        .map(|w| {
+                            let sum: f32 = w.iter().sum();
+                            if sum > 0.0 {
+                                w.map(|x| x / sum)
+                            } else {
+                                [1.0, 0.0, 0.0, 0.0]
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let skinned = !joints.is_empty() && joints.len() == weights.len();
             let data = MeshData {
                 positions,
                 normals,
                 uvs,
                 tangents,
+                joints: if skinned { joints } else { Vec::new() },
+                weights: if skinned { weights } else { Vec::new() },
                 indices,
             }
             .complete();
@@ -287,6 +311,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                 "scale": s,
                 "children": n.children().map(|c| c.index()).collect::<Vec<_>>(),
                 "primitives": n.mesh().map_or(Vec::new(), |m| mesh_primitives[m.index()].clone()),
+                "skin": n.skin().map(|s| s.index()),
             })
         })
         .collect();
@@ -304,10 +329,67 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                 .collect()
         }
     };
+    // Skins: their joint nodes and inverse bind matrices (column-major), in joint order.
+    let skins: Vec<Value> = doc
+        .skins()
+        .map(|s| {
+            let reader = s.reader(|b| buffers.get(b.index()).map(Vec::as_slice));
+            let joints: Vec<usize> = s.joints().map(|j| j.index()).collect();
+            let inverse: Vec<[[f32; 4]; 4]> = reader
+                .read_inverse_bind_matrices()
+                .map(Iterator::collect)
+                .unwrap_or_else(|| vec![iron_core::glam::Mat4::IDENTITY.to_cols_array_2d(); joints.len()]);
+            json!({
+                "joints": joints,
+                "inverseBind": inverse.iter().flat_map(|m| m.iter().flatten().copied()).collect::<Vec<f32>>(),
+            })
+        })
+        .collect();
+    // Animations: per channel, the node, what it moves, how it interpolates, and the
+    // keys (cubic splines bring in-tangent, value, out-tangent per key).
+    let animations: Vec<Value> = doc
+        .animations()
+        .map(|a| {
+            let channels: Vec<Value> = a
+                .channels()
+                .filter_map(|c| {
+                    use gltf::animation::util::ReadOutputs;
+                    let reader = c.reader(|b| buffers.get(b.index()).map(Vec::as_slice));
+                    let times: Vec<f32> = reader.read_inputs()?.collect();
+                    let (path, values): (&str, Vec<f32>) = match reader.read_outputs()? {
+                        ReadOutputs::Translations(t) => ("translation", t.flatten().collect()),
+                        ReadOutputs::Rotations(r) => ("rotation", r.into_f32().flatten().collect()),
+                        ReadOutputs::Scales(s) => ("scale", s.flatten().collect()),
+                        // Morph target weights aren't supported yet.
+                        ReadOutputs::MorphTargetWeights(_) => return None,
+                    };
+                    let interpolation = match c.sampler().interpolation() {
+                        gltf::animation::Interpolation::Linear => "linear",
+                        gltf::animation::Interpolation::Step => "step",
+                        gltf::animation::Interpolation::CubicSpline => "cubic",
+                    };
+                    Some(json!({
+                        "node": c.target().node().index(),
+                        "path": path,
+                        "interpolation": interpolation,
+                        "times": times,
+                        "values": values,
+                    }))
+                })
+                .collect();
+            json!({ "name": a.name().unwrap_or(""), "channels": channels })
+        })
+        .collect();
     Ok(Model {
         meshes,
         textures,
-        description: json!({ "nodes": nodes, "roots": roots, "materials": materials }),
+        description: json!({
+            "nodes": nodes,
+            "roots": roots,
+            "materials": materials,
+            "skins": skins,
+            "animations": animations,
+        }),
     })
 }
 
@@ -366,6 +448,36 @@ mod tests {
         assert_eq!(d["materials"][2]["unlit"], true);
         let red = d["materials"][0]["smoothness"].as_f64().unwrap();
         assert!((red - 0.6).abs() < 1e-5);
+    }
+
+    // M5-SKN-01
+    #[test]
+    fn a_skinned_glb_gives_joints_weights_skins_and_animations() {
+        let mut ids = EngineIds::default();
+        let m = load(&fixtures(), "assets/worm.glb", &mut ids).unwrap();
+        let body = &m.meshes[0].1;
+        assert_eq!(body.joints.len(), body.positions.len());
+        // Weights sum to 1; the middle ring is half Bone0, half Bone1.
+        assert!(
+            body.weights
+                .iter()
+                .all(|w| (w.iter().sum::<f32>() - 1.0).abs() < 1e-5)
+        );
+        assert_eq!(body.joints[8], [0, 1, 0, 0]);
+        assert!((body.weights[8][0] - 0.0).abs() < 1e-5);
+        let d = &m.description;
+        assert_eq!(d["nodes"][4]["skin"], json!(0));
+        assert_eq!(d["skins"][0]["joints"], json!([1, 2, 3]));
+        let ibm = d["skins"][0]["inverseBind"].as_array().unwrap();
+        assert_eq!(ibm.len(), 48);
+        // The second joint's bind pose is 1 m up: its inverse moves 1 m down.
+        assert_eq!(ibm[16 + 13], json!(-1.0));
+        let wave = &d["animations"][0];
+        assert_eq!(wave["name"], "wave");
+        assert_eq!(wave["channels"].as_array().unwrap().len(), 3);
+        assert_eq!(wave["channels"][0]["path"], "rotation");
+        assert_eq!(wave["channels"][0]["values"].as_array().unwrap().len(), 12);
+        assert_eq!(wave["channels"][2]["interpolation"], "step");
     }
 
     #[test]

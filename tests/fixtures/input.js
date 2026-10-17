@@ -3740,6 +3740,7 @@ ${err.stack}` : ""}`);
   class Mesh {
     id;
     _data = null;
+    bindposes = [];
     constructor(id) {
       this.id = id;
     }
@@ -3752,13 +3753,21 @@ ${err.stack}` : ""}`);
       return mesh;
     }
     set(data) {
+      const joints = (data.boneWeights ?? []).flatMap((b) => [...b.indices]);
+      const weights = (data.boneWeights ?? []).flatMap((b) => {
+        const sum = b.weights.reduce((s, w) => s + w, 0);
+        return sum > 0 ? b.weights.map((w) => w / sum) : [1, 0, 0, 0];
+      });
       this._data = {
         vertices: data.vertices.flatMap((v) => [v.x, v.y, v.z]),
         triangles: [...data.triangles],
         normals: (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]),
-        uv: (data.uv ?? []).flatMap((v) => [v.x, v.y])
+        uv: (data.uv ?? []).flatMap((v) => [v.x, v.y]),
+        ...joints.length ? { joints, weights } : {}
       };
-      __iron_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles]);
+      if (data.bindposes)
+        this.bindposes = [...data.bindposes];
+      __iron_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles], ...joints.length ? [joints, weights] : []);
     }
     destroy() {
       __iron_op("render.mesh", this.id, null);
@@ -3805,11 +3814,14 @@ ${err.stack}` : ""}`);
       this._material = m;
       this.send();
     }
+    _skinArgs() {
+      return [];
+    }
     send() {
       if (!this.started)
         return;
       const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic, m._extras());
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic, m._extras(), ...this._skinArgs());
     }
     onAwake() {
       this.started = true;
@@ -3819,25 +3831,58 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init10, _base10, _dec54, _dec55, _dec56, _dec57, _dec58, _dec59, _dec60, _dec61, _dec62, _dec63, _dec64;
+  var _init10, _base10, _dec54, _dec55;
 
-  class Light extends (_base10 = Component) {
+  class SkinnedMeshRenderer extends (_base10 = MeshRenderer) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init10, 11, this);
+    }
     static {
       _init10 = __decoratorStart(_base10);
-      __decorateElement(_init10, 2, "type", _dec54, this);
-      __decorateElement(_init10, 2, "color", _dec55, this);
-      __decorateElement(_init10, 2, "intensity", _dec56, this);
-      __decorateElement(_init10, 2, "range", _dec57, this);
-      __decorateElement(_init10, 2, "spotAngle", _dec58, this);
-      __decorateElement(_init10, 2, "innerSpotAngle", _dec59, this);
-      __decorateElement(_init10, 2, "haloSize", _dec60, this);
-      __decorateElement(_init10, 2, "beamIntensity", _dec61, this);
-      __decorateElement(_init10, 2, "shadows", _dec62, this);
-      __decorateElement(_init10, 2, "shadowStrength", _dec63, this);
-      __decorateElement(_init10, 2, "cullingMask", _dec64, this);
+      __decorateElement(_init10, 2, "bones", _dec55, this);
+      __decorateElement(_init10, 5, "rootBone", _dec54, this);
       __decoratorMetadata(_init10, this);
     }
-    _type = (__runInitializers(_init10, 5, this), "directional");
+    _bones = (__runInitializers(_init10, 5, this), []);
+    [(_dec54 = [
+      property
+    ], "rootBone")] = __runInitializers(_init10, 8, this, null);
+    get [(_dec55 = [
+      property
+    ], "bones")]() {
+      return this._bones;
+    }
+    set bones(b) {
+      this._bones = [...b];
+      this.send();
+    }
+    _skinArgs() {
+      const mesh = this.mesh;
+      const bindposes = typeof mesh === "string" ? [] : mesh.bindposes;
+      const count = Math.min(this._bones.length, bindposes.length);
+      return [this._bones.slice(0, count).map((b) => b.id), bindposes.slice(0, count).flatMap((m) => [...m.m])];
+    }
+  }
+  var _init11, _base11, _dec56, _dec57, _dec58, _dec59, _dec60, _dec61, _dec62, _dec63, _dec64, _dec65, _dec66;
+
+  class Light extends (_base11 = Component) {
+    static {
+      _init11 = __decoratorStart(_base11);
+      __decorateElement(_init11, 2, "type", _dec56, this);
+      __decorateElement(_init11, 2, "color", _dec57, this);
+      __decorateElement(_init11, 2, "intensity", _dec58, this);
+      __decorateElement(_init11, 2, "range", _dec59, this);
+      __decorateElement(_init11, 2, "spotAngle", _dec60, this);
+      __decorateElement(_init11, 2, "innerSpotAngle", _dec61, this);
+      __decorateElement(_init11, 2, "haloSize", _dec62, this);
+      __decorateElement(_init11, 2, "beamIntensity", _dec63, this);
+      __decorateElement(_init11, 2, "shadows", _dec64, this);
+      __decorateElement(_init11, 2, "shadowStrength", _dec65, this);
+      __decorateElement(_init11, 2, "cullingMask", _dec66, this);
+      __decoratorMetadata(_init11, this);
+    }
+    _type = (__runInitializers(_init11, 5, this), "directional");
     _color = Color.white;
     _intensity = 1;
     _range = 10;
@@ -3849,7 +3894,7 @@ ${err.stack}` : ""}`);
     _shadowStrength = 1;
     _cullingMask = 4294967295;
     started = false;
-    get [(_dec54 = [
+    get [(_dec56 = [
       property
     ], "type")]() {
       return this._type;
@@ -3858,7 +3903,7 @@ ${err.stack}` : ""}`);
       this._type = t;
       this.send();
     }
-    get [(_dec55 = [
+    get [(_dec57 = [
       property
     ], "color")]() {
       return this._color;
@@ -3867,7 +3912,7 @@ ${err.stack}` : ""}`);
       this._color = c;
       this.send();
     }
-    get [(_dec56 = [
+    get [(_dec58 = [
       property
     ], "intensity")]() {
       return this._intensity;
@@ -3876,7 +3921,7 @@ ${err.stack}` : ""}`);
       this._intensity = i;
       this.send();
     }
-    get [(_dec57 = [
+    get [(_dec59 = [
       property
     ], "range")]() {
       return this._range;
@@ -3885,7 +3930,7 @@ ${err.stack}` : ""}`);
       this._range = r;
       this.send();
     }
-    get [(_dec58 = [
+    get [(_dec60 = [
       property
     ], "spotAngle")]() {
       return this._spotAngle;
@@ -3894,7 +3939,7 @@ ${err.stack}` : ""}`);
       this._spotAngle = a;
       this.send();
     }
-    get [(_dec59 = [
+    get [(_dec61 = [
       property
     ], "innerSpotAngle")]() {
       return this._innerSpotAngle;
@@ -3903,7 +3948,7 @@ ${err.stack}` : ""}`);
       this._innerSpotAngle = a;
       this.send();
     }
-    get [(_dec60 = [
+    get [(_dec62 = [
       property
     ], "haloSize")]() {
       return this._haloSize;
@@ -3912,7 +3957,7 @@ ${err.stack}` : ""}`);
       this._haloSize = s;
       this.send();
     }
-    get [(_dec61 = [
+    get [(_dec63 = [
       property
     ], "beamIntensity")]() {
       return this._beamIntensity;
@@ -3921,7 +3966,7 @@ ${err.stack}` : ""}`);
       this._beamIntensity = b;
       this.send();
     }
-    get [(_dec62 = [
+    get [(_dec64 = [
       property
     ], "shadows")]() {
       return this._shadows;
@@ -3930,7 +3975,7 @@ ${err.stack}` : ""}`);
       this._shadows = s;
       this.send();
     }
-    get [(_dec63 = [
+    get [(_dec65 = [
       property
     ], "shadowStrength")]() {
       return this._shadowStrength;
@@ -3939,7 +3984,7 @@ ${err.stack}` : ""}`);
       this._shadowStrength = s;
       this.send();
     }
-    get [(_dec64 = [
+    get [(_dec66 = [
       property
     ], "cullingMask")]() {
       return this._cullingMask;
@@ -4036,25 +4081,25 @@ ${err.stack}` : ""}`);
       sendPost();
     }
   };
-  var _init11, _base11, _dec65, _dec66;
+  var _init12, _base12, _dec67, _dec68;
 
-  class Mirror extends (_base11 = Component) {
+  class Mirror extends (_base12 = Component) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init11, 15, this);
+      __runInitializers(_init12, 15, this);
     }
     static {
-      _init11 = __decoratorStart(_base11);
-      __decorateElement(_init11, 5, "normal", _dec65, this);
-      __decorateElement(_init11, 5, "cullingMask", _dec66, this);
-      __decoratorMetadata(_init11, this);
+      _init12 = __decoratorStart(_base12);
+      __decorateElement(_init12, 5, "normal", _dec67, this);
+      __decorateElement(_init12, 5, "cullingMask", _dec68, this);
+      __decoratorMetadata(_init12, this);
     }
-    [(_dec65 = [
+    [(_dec67 = [
       property
-    ], "normal")] = __runInitializers(_init11, 8, this, null);
-    [(_dec66 = [
+    ], "normal")] = __runInitializers(_init12, 8, this, null);
+    [(_dec68 = [
       property
-    ], "cullingMask")] = (__runInitializers(_init11, 11, this), __runInitializers(_init11, 12, this, 4294967295));
+    ], "cullingMask")] = (__runInitializers(_init12, 11, this), __runInitializers(_init12, 12, this, 4294967295));
     send() {
       const mesh = this.getComponent(MeshRenderer)?.mesh;
       const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
@@ -4067,37 +4112,37 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init12, _base12, _dec67, _dec68, _dec69, _dec70, _dec71;
+  var _init13, _base13, _dec69, _dec70, _dec71, _dec72, _dec73;
 
-  class ReflectionProbe extends (_base12 = Component) {
+  class ReflectionProbe extends (_base13 = Component) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init12, 27, this);
+      __runInitializers(_init13, 27, this);
     }
     static {
-      _init12 = __decoratorStart(_base12);
-      __decorateElement(_init12, 5, "size", _dec67, this);
-      __decorateElement(_init12, 5, "resolution", _dec68, this);
-      __decorateElement(_init12, 5, "boxProjection", _dec69, this);
-      __decorateElement(_init12, 5, "cullingMask", _dec70, this);
-      __decorateElement(_init12, 5, "refreshMode", _dec71, this);
-      __decoratorMetadata(_init12, this);
+      _init13 = __decoratorStart(_base13);
+      __decorateElement(_init13, 5, "size", _dec69, this);
+      __decorateElement(_init13, 5, "resolution", _dec70, this);
+      __decorateElement(_init13, 5, "boxProjection", _dec71, this);
+      __decorateElement(_init13, 5, "cullingMask", _dec72, this);
+      __decorateElement(_init13, 5, "refreshMode", _dec73, this);
+      __decoratorMetadata(_init13, this);
     }
-    [(_dec67 = [
-      property
-    ], "size")] = __runInitializers(_init12, 8, this, new Vector3(10, 10, 10));
-    [(_dec68 = [
-      property
-    ], "resolution")] = (__runInitializers(_init12, 11, this), __runInitializers(_init12, 12, this, 128));
     [(_dec69 = [
       property
-    ], "boxProjection")] = (__runInitializers(_init12, 15, this), __runInitializers(_init12, 16, this, false));
+    ], "size")] = __runInitializers(_init13, 8, this, new Vector3(10, 10, 10));
     [(_dec70 = [
       property
-    ], "cullingMask")] = (__runInitializers(_init12, 19, this), __runInitializers(_init12, 20, this, 4294967295));
+    ], "resolution")] = (__runInitializers(_init13, 11, this), __runInitializers(_init13, 12, this, 128));
     [(_dec71 = [
       property
-    ], "refreshMode")] = (__runInitializers(_init12, 23, this), __runInitializers(_init12, 24, this, "onAwake"));
+    ], "boxProjection")] = (__runInitializers(_init13, 15, this), __runInitializers(_init13, 16, this, false));
+    [(_dec72 = [
+      property
+    ], "cullingMask")] = (__runInitializers(_init13, 19, this), __runInitializers(_init13, 20, this, 4294967295));
+    [(_dec73 = [
+      property
+    ], "refreshMode")] = (__runInitializers(_init13, 23, this), __runInitializers(_init13, 24, this, "onAwake"));
     send() {
       const s = this.size;
       __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
@@ -4112,20 +4157,20 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init13, _base13, _dec72, _dec73;
+  var _init14, _base14, _dec74, _dec75;
 
-  class LODGroup extends (_base13 = Component) {
+  class LODGroup extends (_base14 = Component) {
     static {
-      _init13 = __decoratorStart(_base13);
-      __decorateElement(_init13, 2, "size", _dec72, this);
-      __decorateElement(_init13, 2, "lods", _dec73, this);
-      __decoratorMetadata(_init13, this);
+      _init14 = __decoratorStart(_base14);
+      __decorateElement(_init14, 2, "size", _dec74, this);
+      __decorateElement(_init14, 2, "lods", _dec75, this);
+      __decoratorMetadata(_init14, this);
     }
-    _lods = (__runInitializers(_init13, 5, this), []);
+    _lods = (__runInitializers(_init14, 5, this), []);
     _size = 1;
     _forced = -1;
     started = false;
-    get [(_dec72 = [
+    get [(_dec74 = [
       property
     ], "size")]() {
       return this._size;
@@ -4137,7 +4182,7 @@ ${err.stack}` : ""}`);
     get lodCount() {
       return this._lods.length;
     }
-    get [(_dec73 = [
+    get [(_dec75 = [
       property
     ], "lods")]() {
       return this.getLODs();
@@ -4230,34 +4275,34 @@ ${err.stack}` : ""}`);
     }
     return { vertices, normals, uv, triangles };
   }
-  var _init14, _base14, _dec74, _dec75, _dec76, _dec77, _dec78;
+  var _init15, _base15, _dec76, _dec77, _dec78, _dec79, _dec80;
 
-  class LineRenderer extends (_base14 = Component) {
+  class LineRenderer extends (_base15 = Component) {
     static {
-      _init14 = __decoratorStart(_base14);
-      __decorateElement(_init14, 5, "positions", _dec74, this);
-      __decorateElement(_init14, 5, "width", _dec75, this);
-      __decorateElement(_init14, 5, "sides", _dec76, this);
-      __decorateElement(_init14, 5, "smoothing", _dec77, this);
-      __decorateElement(_init14, 5, "material", _dec78, this);
-      __decoratorMetadata(_init14, this);
+      _init15 = __decoratorStart(_base15);
+      __decorateElement(_init15, 5, "positions", _dec76, this);
+      __decorateElement(_init15, 5, "width", _dec77, this);
+      __decorateElement(_init15, 5, "sides", _dec78, this);
+      __decorateElement(_init15, 5, "smoothing", _dec79, this);
+      __decorateElement(_init15, 5, "material", _dec80, this);
+      __decoratorMetadata(_init15, this);
     }
-    [(_dec74 = [
-      property
-    ], "positions")] = __runInitializers(_init14, 8, this, []);
-    [(_dec75 = [
-      property
-    ], "width")] = (__runInitializers(_init14, 11, this), __runInitializers(_init14, 12, this, 0.05));
     [(_dec76 = [
       property
-    ], "sides")] = (__runInitializers(_init14, 15, this), __runInitializers(_init14, 16, this, 8));
+    ], "positions")] = __runInitializers(_init15, 8, this, []);
     [(_dec77 = [
       property
-    ], "smoothing")] = (__runInitializers(_init14, 19, this), __runInitializers(_init14, 20, this, 3));
+    ], "width")] = (__runInitializers(_init15, 11, this), __runInitializers(_init15, 12, this, 0.05));
     [(_dec78 = [
       property
-    ], "material")] = (__runInitializers(_init14, 23, this), __runInitializers(_init14, 24, this, new Material(Color.white, Color.black, 0.3)));
-    mesh = (__runInitializers(_init14, 27, this), null);
+    ], "sides")] = (__runInitializers(_init15, 15, this), __runInitializers(_init15, 16, this, 8));
+    [(_dec79 = [
+      property
+    ], "smoothing")] = (__runInitializers(_init15, 19, this), __runInitializers(_init15, 20, this, 3));
+    [(_dec80 = [
+      property
+    ], "material")] = (__runInitializers(_init15, 23, this), __runInitializers(_init15, 24, this, new Material(Color.white, Color.black, 0.3)));
+    mesh = (__runInitializers(_init15, 27, this), null);
     renderer = null;
     drawn = "";
     onAwake() {
@@ -4337,22 +4382,22 @@ ${err.stack}` : ""}`);
     p.body.remove();
     objectPhysics.delete(go);
   }
-  var _init15, _base15, _dec79, _dec80, _dec81;
+  var _init16, _base16, _dec81, _dec82, _dec83;
 
-  class Collider extends (_base15 = Component) {
+  class Collider extends (_base16 = Component) {
     static {
-      _init15 = __decoratorStart(_base15);
-      __decorateElement(_init15, 2, "center", _dec79, this);
-      __decorateElement(_init15, 2, "isTrigger", _dec80, this);
-      __decorateElement(_init15, 2, "material", _dec81, this);
-      __decoratorMetadata(_init15, this);
+      _init16 = __decoratorStart(_base16);
+      __decorateElement(_init16, 2, "center", _dec81, this);
+      __decorateElement(_init16, 2, "isTrigger", _dec82, this);
+      __decorateElement(_init16, 2, "material", _dec83, this);
+      __decoratorMetadata(_init16, this);
     }
-    _center = (__runInitializers(_init15, 5, this), Vector3.zero);
+    _center = (__runInitializers(_init16, 5, this), Vector3.zero);
     _isTrigger = false;
     _material = new PhysicsMaterial;
     builtScale = null;
     handle = null;
-    get [(_dec79 = [
+    get [(_dec81 = [
       property
     ], "center")]() {
       return this._center;
@@ -4361,7 +4406,7 @@ ${err.stack}` : ""}`);
       this._center = Vector3.from(c);
       this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
     }
-    get [(_dec80 = [
+    get [(_dec82 = [
       property
     ], "isTrigger")]() {
       return this._isTrigger;
@@ -4370,7 +4415,7 @@ ${err.stack}` : ""}`);
       this._isTrigger = on;
       this.handle?.setSensor(on);
     }
-    get [(_dec81 = [
+    get [(_dec83 = [
       property
     ], "material")]() {
       return this._material;
@@ -4433,16 +4478,16 @@ ${err.stack}` : ""}`);
       releasePhysics(this.gameObject);
     }
   }
-  var _init16, _base16, _dec82;
+  var _init17, _base17, _dec84;
 
-  class BoxCollider extends (_base16 = Collider) {
+  class BoxCollider extends (_base17 = Collider) {
     static {
-      _init16 = __decoratorStart(_base16);
-      __decorateElement(_init16, 2, "size", _dec82, this);
-      __decoratorMetadata(_init16, this);
+      _init17 = __decoratorStart(_base17);
+      __decorateElement(_init17, 2, "size", _dec84, this);
+      __decoratorMetadata(_init17, this);
     }
-    _size = (__runInitializers(_init16, 5, this), Vector3.one);
-    get [(_dec82 = [
+    _size = (__runInitializers(_init17, 5, this), Vector3.one);
+    get [(_dec84 = [
       property
     ], "size")]() {
       return this._size;
@@ -4456,16 +4501,16 @@ ${err.stack}` : ""}`);
       return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
     }
   }
-  var _init17, _base17, _dec83;
+  var _init18, _base18, _dec85;
 
-  class SphereCollider extends (_base17 = Collider) {
+  class SphereCollider extends (_base18 = Collider) {
     static {
-      _init17 = __decoratorStart(_base17);
-      __decorateElement(_init17, 2, "radius", _dec83, this);
-      __decoratorMetadata(_init17, this);
+      _init18 = __decoratorStart(_base18);
+      __decorateElement(_init18, 2, "radius", _dec85, this);
+      __decoratorMetadata(_init18, this);
     }
-    _radius = (__runInitializers(_init17, 5, this), 0.5);
-    get [(_dec83 = [
+    _radius = (__runInitializers(_init18, 5, this), 0.5);
+    get [(_dec85 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -4478,18 +4523,18 @@ ${err.stack}` : ""}`);
       return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
     }
   }
-  var _init18, _base18, _dec84, _dec85;
+  var _init19, _base19, _dec86, _dec87;
 
-  class CapsuleCollider extends (_base18 = Collider) {
+  class CapsuleCollider extends (_base19 = Collider) {
     static {
-      _init18 = __decoratorStart(_base18);
-      __decorateElement(_init18, 2, "radius", _dec84, this);
-      __decorateElement(_init18, 2, "height", _dec85, this);
-      __decoratorMetadata(_init18, this);
+      _init19 = __decoratorStart(_base19);
+      __decorateElement(_init19, 2, "radius", _dec86, this);
+      __decorateElement(_init19, 2, "height", _dec87, this);
+      __decoratorMetadata(_init19, this);
     }
-    _radius = (__runInitializers(_init18, 5, this), 0.5);
+    _radius = (__runInitializers(_init19, 5, this), 0.5);
     _height = 2;
-    get [(_dec84 = [
+    get [(_dec86 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -4498,7 +4543,7 @@ ${err.stack}` : ""}`);
       this._radius = r;
       this.rebuild();
     }
-    get [(_dec85 = [
+    get [(_dec87 = [
       property
     ], "height")]() {
       return this._height;
@@ -4513,33 +4558,33 @@ ${err.stack}` : ""}`);
       return { capsule: { halfHeight, radius } };
     }
   }
-  var _init19, _base19, _dec86, _dec87, _dec88, _dec89;
+  var _init20, _base20, _dec88, _dec89, _dec90, _dec91;
 
-  class MeshCollider extends (_base19 = Collider) {
+  class MeshCollider extends (_base20 = Collider) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init19, 23, this);
+      __runInitializers(_init20, 23, this);
     }
     static {
-      _init19 = __decoratorStart(_base19);
-      __decorateElement(_init19, 5, "sharedMesh", _dec86, this);
-      __decorateElement(_init19, 5, "points", _dec87, this);
-      __decorateElement(_init19, 5, "indices", _dec88, this);
-      __decorateElement(_init19, 5, "convex", _dec89, this);
-      __decoratorMetadata(_init19, this);
+      _init20 = __decoratorStart(_base20);
+      __decorateElement(_init20, 5, "sharedMesh", _dec88, this);
+      __decorateElement(_init20, 5, "points", _dec89, this);
+      __decorateElement(_init20, 5, "indices", _dec90, this);
+      __decorateElement(_init20, 5, "convex", _dec91, this);
+      __decoratorMetadata(_init20, this);
     }
-    [(_dec86 = [
-      property
-    ], "sharedMesh")] = __runInitializers(_init19, 8, this, null);
-    [(_dec87 = [
-      property
-    ], "points")] = (__runInitializers(_init19, 11, this), __runInitializers(_init19, 12, this, []));
     [(_dec88 = [
       property
-    ], "indices")] = (__runInitializers(_init19, 15, this), __runInitializers(_init19, 16, this, []));
+    ], "sharedMesh")] = __runInitializers(_init20, 8, this, null);
     [(_dec89 = [
       property
-    ], "convex")] = (__runInitializers(_init19, 19, this), __runInitializers(_init19, 20, this, false));
+    ], "points")] = (__runInitializers(_init20, 11, this), __runInitializers(_init20, 12, this, []));
+    [(_dec90 = [
+      property
+    ], "indices")] = (__runInitializers(_init20, 15, this), __runInitializers(_init20, 16, this, []));
+    [(_dec91 = [
+      property
+    ], "convex")] = (__runInitializers(_init20, 19, this), __runInitializers(_init20, 20, this, false));
     shape(scale) {
       if (this.sharedMesh) {
         return { renderMesh: { mesh: this.sharedMesh.id, convex: this.convex, scale } };
@@ -4554,21 +4599,21 @@ ${err.stack}` : ""}`);
       this.rebuild();
     }
   }
-  var _init20, _base20, _dec90, _dec91, _dec92, _dec93, _dec94, _dec95, _dec96;
+  var _init21, _base21, _dec92, _dec93, _dec94, _dec95, _dec96, _dec97, _dec98;
 
-  class Rigidbody extends (_base20 = Component) {
+  class Rigidbody extends (_base21 = Component) {
     static {
-      _init20 = __decoratorStart(_base20);
-      __decorateElement(_init20, 2, "mass", _dec90, this);
-      __decorateElement(_init20, 2, "drag", _dec91, this);
-      __decorateElement(_init20, 2, "angularDrag", _dec92, this);
-      __decorateElement(_init20, 2, "useGravity", _dec93, this);
-      __decorateElement(_init20, 2, "isKinematic", _dec94, this);
-      __decorateElement(_init20, 2, "constraints", _dec95, this);
-      __decorateElement(_init20, 2, "collisionDetection", _dec96, this);
-      __decoratorMetadata(_init20, this);
+      _init21 = __decoratorStart(_base21);
+      __decorateElement(_init21, 2, "mass", _dec92, this);
+      __decorateElement(_init21, 2, "drag", _dec93, this);
+      __decorateElement(_init21, 2, "angularDrag", _dec94, this);
+      __decorateElement(_init21, 2, "useGravity", _dec95, this);
+      __decorateElement(_init21, 2, "isKinematic", _dec96, this);
+      __decorateElement(_init21, 2, "constraints", _dec97, this);
+      __decorateElement(_init21, 2, "collisionDetection", _dec98, this);
+      __decoratorMetadata(_init21, this);
     }
-    _mass = (__runInitializers(_init20, 5, this), 1);
+    _mass = (__runInitializers(_init21, 5, this), 1);
     _drag = 0;
     _angularDrag = 0.05;
     _useGravity = true;
@@ -4579,7 +4624,7 @@ ${err.stack}` : ""}`);
     get body() {
       return this.p?.body ?? null;
     }
-    get [(_dec90 = [
+    get [(_dec92 = [
       property
     ], "mass")]() {
       return this._mass;
@@ -4588,7 +4633,7 @@ ${err.stack}` : ""}`);
       this._mass = Math.max(0.000001, kg);
       this._sendMass();
     }
-    get [(_dec91 = [
+    get [(_dec93 = [
       property
     ], "drag")]() {
       return this._drag;
@@ -4597,7 +4642,7 @@ ${err.stack}` : ""}`);
       this._drag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec92 = [
+    get [(_dec94 = [
       property
     ], "angularDrag")]() {
       return this._angularDrag;
@@ -4606,7 +4651,7 @@ ${err.stack}` : ""}`);
       this._angularDrag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec93 = [
+    get [(_dec95 = [
       property
     ], "useGravity")]() {
       return this._useGravity;
@@ -4615,7 +4660,7 @@ ${err.stack}` : ""}`);
       this._useGravity = on;
       this.p?.body.setGravityScale(on ? 1 : 0);
     }
-    get [(_dec94 = [
+    get [(_dec96 = [
       property
     ], "isKinematic")]() {
       return this._isKinematic;
@@ -4624,7 +4669,7 @@ ${err.stack}` : ""}`);
       this._isKinematic = on;
       this.p?.body.setKind(on ? "kinematic" : "dynamic");
     }
-    get [(_dec95 = [
+    get [(_dec97 = [
       property
     ], "constraints")]() {
       return this._constraints;
@@ -4633,7 +4678,7 @@ ${err.stack}` : ""}`);
       this._constraints = flags;
       this.sendConstraints();
     }
-    get [(_dec96 = [
+    get [(_dec98 = [
       property
     ], "collisionDetection")]() {
       return this._continuous ? "continuous" : "discrete";
@@ -4783,25 +4828,25 @@ ${err.stack}` : ""}`);
     visit(go);
   });
   var CollisionFlags = { None: 0, Sides: 1, Above: 2, Below: 4 };
-  var _init21, _base21, _dec97, _dec98, _dec99, _dec100;
+  var _init22, _base22, _dec99, _dec100, _dec101, _dec102;
 
-  class CharacterController extends (_base21 = Collider) {
+  class CharacterController extends (_base22 = Collider) {
     static {
-      _init21 = __decoratorStart(_base21);
-      __decorateElement(_init21, 2, "radius", _dec97, this);
-      __decorateElement(_init21, 2, "height", _dec98, this);
-      __decorateElement(_init21, 2, "slopeLimit", _dec99, this);
-      __decorateElement(_init21, 2, "stepOffset", _dec100, this);
-      __decoratorMetadata(_init21, this);
+      _init22 = __decoratorStart(_base22);
+      __decorateElement(_init22, 2, "radius", _dec99, this);
+      __decorateElement(_init22, 2, "height", _dec100, this);
+      __decorateElement(_init22, 2, "slopeLimit", _dec101, this);
+      __decorateElement(_init22, 2, "stepOffset", _dec102, this);
+      __decoratorMetadata(_init22, this);
     }
-    _radius = (__runInitializers(_init21, 5, this), 0.5);
+    _radius = (__runInitializers(_init22, 5, this), 0.5);
     _height = 2;
     _slopeLimit = 45;
     _stepOffset = 0.3;
     fallSpeed = 0;
     last = Vector3.zero;
     _velocity = Vector3.zero;
-    get [(_dec97 = [
+    get [(_dec99 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -4810,7 +4855,7 @@ ${err.stack}` : ""}`);
       this._radius = r;
       this.rebuild();
     }
-    get [(_dec98 = [
+    get [(_dec100 = [
       property
     ], "height")]() {
       return this._height;
@@ -4819,7 +4864,7 @@ ${err.stack}` : ""}`);
       this._height = h;
       this.rebuild();
     }
-    get [(_dec99 = [
+    get [(_dec101 = [
       property
     ], "slopeLimit")]() {
       return this._slopeLimit;
@@ -4828,7 +4873,7 @@ ${err.stack}` : ""}`);
       this._slopeLimit = d;
       this.configure();
     }
-    get [(_dec100 = [
+    get [(_dec102 = [
       property
     ], "stepOffset")]() {
       return this._stepOffset;
@@ -4874,30 +4919,30 @@ ${err.stack}` : ""}`);
       return this.isGrounded;
     }
   }
-  var _init22, _base22, _dec101, _dec102, _dec103, _dec104;
+  var _init23, _base23, _dec103, _dec104, _dec105, _dec106;
 
-  class Joint extends (_base22 = Component) {
+  class Joint extends (_base23 = Component) {
     static {
-      _init22 = __decoratorStart(_base22);
-      __decorateElement(_init22, 5, "connectedBody", _dec101, this);
-      __decorateElement(_init22, 5, "anchor", _dec102, this);
-      __decorateElement(_init22, 5, "connectedAnchor", _dec103, this);
-      __decorateElement(_init22, 5, "autoConfigureConnectedAnchor", _dec104, this);
-      __decoratorMetadata(_init22, this);
+      _init23 = __decoratorStart(_base23);
+      __decorateElement(_init23, 5, "connectedBody", _dec103, this);
+      __decorateElement(_init23, 5, "anchor", _dec104, this);
+      __decorateElement(_init23, 5, "connectedAnchor", _dec105, this);
+      __decorateElement(_init23, 5, "autoConfigureConnectedAnchor", _dec106, this);
+      __decoratorMetadata(_init23, this);
     }
-    [(_dec101 = [
-      property
-    ], "connectedBody")] = __runInitializers(_init22, 8, this, null);
-    [(_dec102 = [
-      property
-    ], "anchor")] = (__runInitializers(_init22, 11, this), __runInitializers(_init22, 12, this, Vector3.zero));
     [(_dec103 = [
       property
-    ], "connectedAnchor")] = (__runInitializers(_init22, 15, this), __runInitializers(_init22, 16, this, Vector3.zero));
+    ], "connectedBody")] = __runInitializers(_init23, 8, this, null);
     [(_dec104 = [
       property
-    ], "autoConfigureConnectedAnchor")] = (__runInitializers(_init22, 19, this), __runInitializers(_init22, 20, this, true));
-    handle = (__runInitializers(_init22, 23, this), null);
+    ], "anchor")] = (__runInitializers(_init23, 11, this), __runInitializers(_init23, 12, this, Vector3.zero));
+    [(_dec105 = [
+      property
+    ], "connectedAnchor")] = (__runInitializers(_init23, 15, this), __runInitializers(_init23, 16, this, Vector3.zero));
+    [(_dec106 = [
+      property
+    ], "autoConfigureConnectedAnchor")] = (__runInitializers(_init23, 19, this), __runInitializers(_init23, 20, this, true));
+    handle = (__runInitializers(_init23, 23, this), null);
     params() {
       return [];
     }
@@ -4938,37 +4983,37 @@ ${err.stack}` : ""}`);
       return "ball";
     }
   }
-  var _init23, _base23, _dec105, _dec106, _dec107, _dec108, _dec109;
+  var _init24, _base24, _dec107, _dec108, _dec109, _dec110, _dec111;
 
-  class HingeJoint extends (_base23 = Joint) {
+  class HingeJoint extends (_base24 = Joint) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init23, 27, this);
+      __runInitializers(_init24, 27, this);
     }
     static {
-      _init23 = __decoratorStart(_base23);
-      __decorateElement(_init23, 5, "axis", _dec105, this);
-      __decorateElement(_init23, 5, "useLimits", _dec106, this);
-      __decorateElement(_init23, 5, "limits", _dec107, this);
-      __decorateElement(_init23, 5, "useMotor", _dec108, this);
-      __decorateElement(_init23, 5, "motor", _dec109, this);
-      __decoratorMetadata(_init23, this);
+      _init24 = __decoratorStart(_base24);
+      __decorateElement(_init24, 5, "axis", _dec107, this);
+      __decorateElement(_init24, 5, "useLimits", _dec108, this);
+      __decorateElement(_init24, 5, "limits", _dec109, this);
+      __decorateElement(_init24, 5, "useMotor", _dec110, this);
+      __decorateElement(_init24, 5, "motor", _dec111, this);
+      __decoratorMetadata(_init24, this);
     }
-    [(_dec105 = [
-      property
-    ], "axis")] = __runInitializers(_init23, 8, this, new Vector3(1, 0, 0));
-    [(_dec106 = [
-      property
-    ], "useLimits")] = (__runInitializers(_init23, 11, this), __runInitializers(_init23, 12, this, false));
     [(_dec107 = [
       property
-    ], "limits")] = (__runInitializers(_init23, 15, this), __runInitializers(_init23, 16, this, { min: -90, max: 90 }));
+    ], "axis")] = __runInitializers(_init24, 8, this, new Vector3(1, 0, 0));
     [(_dec108 = [
       property
-    ], "useMotor")] = (__runInitializers(_init23, 19, this), __runInitializers(_init23, 20, this, false));
+    ], "useLimits")] = (__runInitializers(_init24, 11, this), __runInitializers(_init24, 12, this, false));
     [(_dec109 = [
       property
-    ], "motor")] = (__runInitializers(_init23, 23, this), __runInitializers(_init23, 24, this, { targetVelocity: 0, force: 1 }));
+    ], "limits")] = (__runInitializers(_init24, 15, this), __runInitializers(_init24, 16, this, { min: -90, max: 90 }));
+    [(_dec110 = [
+      property
+    ], "useMotor")] = (__runInitializers(_init24, 19, this), __runInitializers(_init24, 20, this, false));
+    [(_dec111 = [
+      property
+    ], "motor")] = (__runInitializers(_init24, 23, this), __runInitializers(_init24, 24, this, { targetVelocity: 0, force: 1 }));
     kind() {
       return "hinge";
     }
@@ -4981,29 +5026,29 @@ ${err.stack}` : ""}`);
         this.build();
     }
   }
-  var _init24, _base24, _dec110, _dec111, _dec112;
+  var _init25, _base25, _dec112, _dec113, _dec114;
 
-  class SpringJoint extends (_base24 = Joint) {
+  class SpringJoint extends (_base25 = Joint) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init24, 19, this);
+      __runInitializers(_init25, 19, this);
     }
     static {
-      _init24 = __decoratorStart(_base24);
-      __decorateElement(_init24, 5, "spring", _dec110, this);
-      __decorateElement(_init24, 5, "damper", _dec111, this);
-      __decorateElement(_init24, 5, "restLength", _dec112, this);
-      __decoratorMetadata(_init24, this);
+      _init25 = __decoratorStart(_base25);
+      __decorateElement(_init25, 5, "spring", _dec112, this);
+      __decorateElement(_init25, 5, "damper", _dec113, this);
+      __decorateElement(_init25, 5, "restLength", _dec114, this);
+      __decoratorMetadata(_init25, this);
     }
-    [(_dec110 = [
-      property
-    ], "spring")] = __runInitializers(_init24, 8, this, 10);
-    [(_dec111 = [
-      property
-    ], "damper")] = (__runInitializers(_init24, 11, this), __runInitializers(_init24, 12, this, 0.2));
     [(_dec112 = [
       property
-    ], "restLength")] = (__runInitializers(_init24, 15, this), __runInitializers(_init24, 16, this, null));
+    ], "spring")] = __runInitializers(_init25, 8, this, 10);
+    [(_dec113 = [
+      property
+    ], "damper")] = (__runInitializers(_init25, 11, this), __runInitializers(_init25, 12, this, 0.2));
+    [(_dec114 = [
+      property
+    ], "restLength")] = (__runInitializers(_init25, 15, this), __runInitializers(_init25, 16, this, null));
     kind() {
       return "spring";
     }
@@ -5018,21 +5063,21 @@ ${err.stack}` : ""}`);
       return [rest, this.spring, this.damper];
     }
   }
-  var _init25, _base25, _dec113;
+  var _init26, _base26, _dec115;
 
-  class RopeJoint extends (_base25 = Joint) {
+  class RopeJoint extends (_base26 = Joint) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init25, 11, this);
+      __runInitializers(_init26, 11, this);
     }
     static {
-      _init25 = __decoratorStart(_base25);
-      __decorateElement(_init25, 5, "maxDistance", _dec113, this);
-      __decoratorMetadata(_init25, this);
+      _init26 = __decoratorStart(_base26);
+      __decorateElement(_init26, 5, "maxDistance", _dec115, this);
+      __decoratorMetadata(_init26, this);
     }
-    [(_dec113 = [
+    [(_dec115 = [
       property
-    ], "maxDistance")] = __runInitializers(_init25, 8, this, 2);
+    ], "maxDistance")] = __runInitializers(_init26, 8, this, 2);
     kind() {
       return "rope";
     }
@@ -5040,42 +5085,42 @@ ${err.stack}` : ""}`);
       return [this.maxDistance];
     }
   }
-  var _init26, _base26, _dec114, _dec115, _dec116, _dec117, _dec118, _dec119, _dec120;
+  var _init27, _base27, _dec116, _dec117, _dec118, _dec119, _dec120, _dec121, _dec122;
 
-  class Rope extends (_base26 = Component) {
+  class Rope extends (_base27 = Component) {
     static {
-      _init26 = __decoratorStart(_base26);
-      __decorateElement(_init26, 5, "length", _dec114, this);
-      __decorateElement(_init26, 5, "segments", _dec115, this);
-      __decorateElement(_init26, 5, "radius", _dec116, this);
-      __decorateElement(_init26, 5, "segmentMass", _dec117, this);
-      __decorateElement(_init26, 5, "color", _dec118, this);
-      __decorateElement(_init26, 5, "end", _dec119, this);
-      __decorateElement(_init26, 5, "renderMode", _dec120, this);
-      __decoratorMetadata(_init26, this);
+      _init27 = __decoratorStart(_base27);
+      __decorateElement(_init27, 5, "length", _dec116, this);
+      __decorateElement(_init27, 5, "segments", _dec117, this);
+      __decorateElement(_init27, 5, "radius", _dec118, this);
+      __decorateElement(_init27, 5, "segmentMass", _dec119, this);
+      __decorateElement(_init27, 5, "color", _dec120, this);
+      __decorateElement(_init27, 5, "end", _dec121, this);
+      __decorateElement(_init27, 5, "renderMode", _dec122, this);
+      __decoratorMetadata(_init27, this);
     }
-    [(_dec114 = [
-      property
-    ], "length")] = __runInitializers(_init26, 8, this, 3);
-    [(_dec115 = [
-      property
-    ], "segments")] = (__runInitializers(_init26, 11, this), __runInitializers(_init26, 12, this, 12));
     [(_dec116 = [
       property
-    ], "radius")] = (__runInitializers(_init26, 15, this), __runInitializers(_init26, 16, this, 0.04));
+    ], "length")] = __runInitializers(_init27, 8, this, 3);
     [(_dec117 = [
       property
-    ], "segmentMass")] = (__runInitializers(_init26, 19, this), __runInitializers(_init26, 20, this, 0.05));
+    ], "segments")] = (__runInitializers(_init27, 11, this), __runInitializers(_init27, 12, this, 12));
     [(_dec118 = [
       property
-    ], "color")] = (__runInitializers(_init26, 23, this), __runInitializers(_init26, 24, this, new Color(0.55, 0.42, 0.28, 1)));
+    ], "radius")] = (__runInitializers(_init27, 15, this), __runInitializers(_init27, 16, this, 0.04));
     [(_dec119 = [
       property
-    ], "end")] = (__runInitializers(_init26, 27, this), __runInitializers(_init26, 28, this, null));
+    ], "segmentMass")] = (__runInitializers(_init27, 19, this), __runInitializers(_init27, 20, this, 0.05));
     [(_dec120 = [
       property
-    ], "renderMode")] = (__runInitializers(_init26, 31, this), __runInitializers(_init26, 32, this, "tube"));
-    links = (__runInitializers(_init26, 35, this), []);
+    ], "color")] = (__runInitializers(_init27, 23, this), __runInitializers(_init27, 24, this, new Color(0.55, 0.42, 0.28, 1)));
+    [(_dec121 = [
+      property
+    ], "end")] = (__runInitializers(_init27, 27, this), __runInitializers(_init27, 28, this, null));
+    [(_dec122 = [
+      property
+    ], "renderMode")] = (__runInitializers(_init27, 31, this), __runInitializers(_init27, 32, this, "tube"));
+    links = (__runInitializers(_init27, 35, this), []);
     joints = [];
     line = null;
     onStart() {
@@ -5168,19 +5213,19 @@ ${err.stack}` : ""}`);
   function colliderFor(c) {
     return colliders2D.get(c.id) ?? null;
   }
-  var _init27, _base27, _dec121;
+  var _init28, _base28, _dec123;
 
-  class Collider2D extends (_base27 = Collider) {
+  class Collider2D extends (_base28 = Collider) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init27, 5, this);
+      __runInitializers(_init28, 5, this);
     }
     static {
-      _init27 = __decoratorStart(_base27);
-      __decorateElement(_init27, 2, "offset", _dec121, this);
-      __decoratorMetadata(_init27, this);
+      _init28 = __decoratorStart(_base28);
+      __decorateElement(_init28, 2, "offset", _dec123, this);
+      __decoratorMetadata(_init28, this);
     }
-    get [(_dec121 = [
+    get [(_dec123 = [
       property
     ], "offset")]() {
       return new Vector2(this.center.x, this.center.y);
@@ -5219,16 +5264,16 @@ ${err.stack}` : ""}`);
       super.onDestroy();
     }
   }
-  var _init28, _base28, _dec122;
+  var _init29, _base29, _dec124;
 
-  class BoxCollider2D extends (_base28 = Collider2D) {
+  class BoxCollider2D extends (_base29 = Collider2D) {
     static {
-      _init28 = __decoratorStart(_base28);
-      __decorateElement(_init28, 2, "size", _dec122, this);
-      __decoratorMetadata(_init28, this);
+      _init29 = __decoratorStart(_base29);
+      __decorateElement(_init29, 2, "size", _dec124, this);
+      __decoratorMetadata(_init29, this);
     }
-    _size = (__runInitializers(_init28, 5, this), Vector2.one);
-    get [(_dec122 = [
+    _size = (__runInitializers(_init29, 5, this), Vector2.one);
+    get [(_dec124 = [
       property
     ], "size")]() {
       return this._size;
@@ -5247,16 +5292,16 @@ ${err.stack}` : ""}`);
       };
     }
   }
-  var _init29, _base29, _dec123;
+  var _init30, _base30, _dec125;
 
-  class CircleCollider2D extends (_base29 = Collider2D) {
+  class CircleCollider2D extends (_base30 = Collider2D) {
     static {
-      _init29 = __decoratorStart(_base29);
-      __decorateElement(_init29, 2, "radius", _dec123, this);
-      __decoratorMetadata(_init29, this);
+      _init30 = __decoratorStart(_base30);
+      __decorateElement(_init30, 2, "radius", _dec125, this);
+      __decoratorMetadata(_init30, this);
     }
-    _radius = (__runInitializers(_init29, 5, this), 0.5);
-    get [(_dec123 = [
+    _radius = (__runInitializers(_init30, 5, this), 0.5);
+    get [(_dec125 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -5277,18 +5322,18 @@ ${err.stack}` : ""}`);
       return Quaternion.euler(90, 0, 0);
     }
   }
-  var _init30, _base30, _dec124, _dec125;
+  var _init31, _base31, _dec126, _dec127;
 
-  class CapsuleCollider2D extends (_base30 = Collider2D) {
+  class CapsuleCollider2D extends (_base31 = Collider2D) {
     static {
-      _init30 = __decoratorStart(_base30);
-      __decorateElement(_init30, 2, "size", _dec124, this);
-      __decorateElement(_init30, 2, "direction", _dec125, this);
-      __decoratorMetadata(_init30, this);
+      _init31 = __decoratorStart(_base31);
+      __decorateElement(_init31, 2, "size", _dec126, this);
+      __decorateElement(_init31, 2, "direction", _dec127, this);
+      __decoratorMetadata(_init31, this);
     }
-    _size = (__runInitializers(_init30, 5, this), new Vector2(1, 2));
+    _size = (__runInitializers(_init31, 5, this), new Vector2(1, 2));
     _direction = "vertical";
-    get [(_dec124 = [
+    get [(_dec126 = [
       property
     ], "size")]() {
       return this._size;
@@ -5297,7 +5342,7 @@ ${err.stack}` : ""}`);
       this._size = new Vector2(s.x, s.y);
       this.rebuild();
     }
-    get [(_dec125 = [
+    get [(_dec127 = [
       property
     ], "direction")]() {
       return this._direction;
@@ -5322,16 +5367,16 @@ ${err.stack}` : ""}`);
       return this.slab(pts, scale);
     }
   }
-  var _init31, _base31, _dec126;
+  var _init32, _base32, _dec128;
 
-  class PolygonCollider2D extends (_base31 = Collider2D) {
+  class PolygonCollider2D extends (_base32 = Collider2D) {
     static {
-      _init31 = __decoratorStart(_base31);
-      __decorateElement(_init31, 2, "points", _dec126, this);
-      __decoratorMetadata(_init31, this);
+      _init32 = __decoratorStart(_base32);
+      __decorateElement(_init32, 2, "points", _dec128, this);
+      __decoratorMetadata(_init32, this);
     }
-    _points = (__runInitializers(_init31, 5, this), [new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5), new Vector2(0, 0.5)]);
-    get [(_dec126 = [
+    _points = (__runInitializers(_init32, 5, this), [new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5), new Vector2(0, 0.5)]);
+    get [(_dec128 = [
       property
     ], "points")]() {
       return this._points;
@@ -5344,16 +5389,16 @@ ${err.stack}` : ""}`);
       return this.slab(this._points, scale);
     }
   }
-  var _init32, _base32, _dec127;
+  var _init33, _base33, _dec129;
 
-  class EdgeCollider2D extends (_base32 = Collider2D) {
+  class EdgeCollider2D extends (_base33 = Collider2D) {
     static {
-      _init32 = __decoratorStart(_base32);
-      __decorateElement(_init32, 2, "points", _dec127, this);
-      __decoratorMetadata(_init32, this);
+      _init33 = __decoratorStart(_base33);
+      __decorateElement(_init33, 2, "points", _dec129, this);
+      __decoratorMetadata(_init33, this);
     }
-    _points = (__runInitializers(_init32, 5, this), [new Vector2(-0.5, 0), new Vector2(0.5, 0)]);
-    get [(_dec127 = [
+    _points = (__runInitializers(_init33, 5, this), [new Vector2(-0.5, 0), new Vector2(0.5, 0)]);
+    get [(_dec129 = [
       property
     ], "points")]() {
       return this._points;
@@ -5376,21 +5421,21 @@ ${err.stack}` : ""}`);
       return { mesh: { points: pts, indices } };
     }
   }
-  var _init33, _base33, _dec128, _dec129, _dec130, _dec131, _dec132, _dec133, _dec134;
+  var _init34, _base34, _dec130, _dec131, _dec132, _dec133, _dec134, _dec135, _dec136;
 
-  class Rigidbody2D extends (_base33 = Component) {
+  class Rigidbody2D extends (_base34 = Component) {
     static {
-      _init33 = __decoratorStart(_base33);
-      __decorateElement(_init33, 2, "mass", _dec128, this);
-      __decorateElement(_init33, 2, "drag", _dec129, this);
-      __decorateElement(_init33, 2, "angularDrag", _dec130, this);
-      __decorateElement(_init33, 2, "gravityScale", _dec131, this);
-      __decorateElement(_init33, 2, "bodyType", _dec132, this);
-      __decorateElement(_init33, 2, "freezeRotation", _dec133, this);
-      __decorateElement(_init33, 2, "collisionDetectionMode", _dec134, this);
-      __decoratorMetadata(_init33, this);
+      _init34 = __decoratorStart(_base34);
+      __decorateElement(_init34, 2, "mass", _dec130, this);
+      __decorateElement(_init34, 2, "drag", _dec131, this);
+      __decorateElement(_init34, 2, "angularDrag", _dec132, this);
+      __decorateElement(_init34, 2, "gravityScale", _dec133, this);
+      __decorateElement(_init34, 2, "bodyType", _dec134, this);
+      __decorateElement(_init34, 2, "freezeRotation", _dec135, this);
+      __decorateElement(_init34, 2, "collisionDetectionMode", _dec136, this);
+      __decoratorMetadata(_init34, this);
     }
-    _mass = (__runInitializers(_init33, 5, this), 1);
+    _mass = (__runInitializers(_init34, 5, this), 1);
     _drag = 0;
     _angularDrag = 0.05;
     _gravityScale = 1;
@@ -5398,7 +5443,7 @@ ${err.stack}` : ""}`);
     _freezeRotation = false;
     _continuous = false;
     p = null;
-    get [(_dec128 = [
+    get [(_dec130 = [
       property
     ], "mass")]() {
       return this._mass;
@@ -5407,7 +5452,7 @@ ${err.stack}` : ""}`);
       this._mass = Math.max(0.000001, kg);
       this._sendMass();
     }
-    get [(_dec129 = [
+    get [(_dec131 = [
       property
     ], "drag")]() {
       return this._drag;
@@ -5416,7 +5461,7 @@ ${err.stack}` : ""}`);
       this._drag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec130 = [
+    get [(_dec132 = [
       property
     ], "angularDrag")]() {
       return this._angularDrag;
@@ -5425,7 +5470,7 @@ ${err.stack}` : ""}`);
       this._angularDrag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec131 = [
+    get [(_dec133 = [
       property
     ], "gravityScale")]() {
       return this._gravityScale;
@@ -5434,7 +5479,7 @@ ${err.stack}` : ""}`);
       this._gravityScale = s;
       this.p?.body.setGravityScale(s);
     }
-    get [(_dec132 = [
+    get [(_dec134 = [
       property
     ], "bodyType")]() {
       return this._bodyType;
@@ -5449,7 +5494,7 @@ ${err.stack}` : ""}`);
     set isKinematic(on) {
       this.bodyType = on ? "kinematic" : "dynamic";
     }
-    get [(_dec133 = [
+    get [(_dec135 = [
       property
     ], "freezeRotation")]() {
       return this._freezeRotation;
@@ -5458,7 +5503,7 @@ ${err.stack}` : ""}`);
       this._freezeRotation = on;
       this.sendAxes();
     }
-    get [(_dec134 = [
+    get [(_dec136 = [
       property
     ], "collisionDetectionMode")]() {
       return this._continuous ? "continuous" : "discrete";
@@ -5547,110 +5592,110 @@ ${err.stack}` : ""}`);
   }
   // ../../js/engine/src/particles.ts
   var systems = new Map;
-  var _init34, _base34, _dec135, _dec136, _dec137, _dec138, _dec139, _dec140, _dec141, _dec142, _dec143, _dec144, _dec145, _dec146, _dec147, _dec148, _dec149, _dec150, _dec151, _dec152, _dec153, _dec154, _dec155, _dec156, _dec157, _dec158;
+  var _init35, _base35, _dec137, _dec138, _dec139, _dec140, _dec141, _dec142, _dec143, _dec144, _dec145, _dec146, _dec147, _dec148, _dec149, _dec150, _dec151, _dec152, _dec153, _dec154, _dec155, _dec156, _dec157, _dec158, _dec159, _dec160;
 
-  class ParticleSystem extends (_base34 = Component) {
+  class ParticleSystem extends (_base35 = Component) {
     static {
-      _init34 = __decoratorStart(_base34);
-      __decorateElement(_init34, 5, "duration", _dec135, this);
-      __decorateElement(_init34, 5, "loop", _dec136, this);
-      __decorateElement(_init34, 5, "playOnAwake", _dec137, this);
-      __decorateElement(_init34, 5, "startDelay", _dec138, this);
-      __decorateElement(_init34, 5, "startLifetime", _dec139, this);
-      __decorateElement(_init34, 5, "startSpeed", _dec140, this);
-      __decorateElement(_init34, 5, "startSize", _dec141, this);
-      __decorateElement(_init34, 5, "startRotation", _dec142, this);
-      __decorateElement(_init34, 5, "angularVelocity", _dec143, this);
-      __decorateElement(_init34, 5, "startColor", _dec144, this);
-      __decorateElement(_init34, 5, "gravityModifier", _dec145, this);
-      __decorateElement(_init34, 5, "drag", _dec146, this);
-      __decorateElement(_init34, 5, "simulationSpace", _dec147, this);
-      __decorateElement(_init34, 5, "maxParticles", _dec148, this);
-      __decorateElement(_init34, 5, "randomSeed", _dec149, this);
-      __decorateElement(_init34, 5, "rateOverTime", _dec150, this);
-      __decorateElement(_init34, 5, "bursts", _dec151, this);
-      __decorateElement(_init34, 5, "shape", _dec152, this);
-      __decorateElement(_init34, 5, "sizeOverLifetime", _dec153, this);
-      __decorateElement(_init34, 5, "colorOverLifetime", _dec154, this);
-      __decorateElement(_init34, 5, "texture", _dec155, this);
-      __decorateElement(_init34, 5, "blendMode", _dec156, this);
-      __decorateElement(_init34, 5, "textureSheet", _dec157, this);
-      __decorateElement(_init34, 5, "stopAction", _dec158, this);
-      __decoratorMetadata(_init34, this);
+      _init35 = __decoratorStart(_base35);
+      __decorateElement(_init35, 5, "duration", _dec137, this);
+      __decorateElement(_init35, 5, "loop", _dec138, this);
+      __decorateElement(_init35, 5, "playOnAwake", _dec139, this);
+      __decorateElement(_init35, 5, "startDelay", _dec140, this);
+      __decorateElement(_init35, 5, "startLifetime", _dec141, this);
+      __decorateElement(_init35, 5, "startSpeed", _dec142, this);
+      __decorateElement(_init35, 5, "startSize", _dec143, this);
+      __decorateElement(_init35, 5, "startRotation", _dec144, this);
+      __decorateElement(_init35, 5, "angularVelocity", _dec145, this);
+      __decorateElement(_init35, 5, "startColor", _dec146, this);
+      __decorateElement(_init35, 5, "gravityModifier", _dec147, this);
+      __decorateElement(_init35, 5, "drag", _dec148, this);
+      __decorateElement(_init35, 5, "simulationSpace", _dec149, this);
+      __decorateElement(_init35, 5, "maxParticles", _dec150, this);
+      __decorateElement(_init35, 5, "randomSeed", _dec151, this);
+      __decorateElement(_init35, 5, "rateOverTime", _dec152, this);
+      __decorateElement(_init35, 5, "bursts", _dec153, this);
+      __decorateElement(_init35, 5, "shape", _dec154, this);
+      __decorateElement(_init35, 5, "sizeOverLifetime", _dec155, this);
+      __decorateElement(_init35, 5, "colorOverLifetime", _dec156, this);
+      __decorateElement(_init35, 5, "texture", _dec157, this);
+      __decorateElement(_init35, 5, "blendMode", _dec158, this);
+      __decorateElement(_init35, 5, "textureSheet", _dec159, this);
+      __decorateElement(_init35, 5, "stopAction", _dec160, this);
+      __decoratorMetadata(_init35, this);
     }
-    [(_dec135 = [
-      property
-    ], "duration")] = __runInitializers(_init34, 8, this, 5);
-    [(_dec136 = [
-      property
-    ], "loop")] = (__runInitializers(_init34, 11, this), __runInitializers(_init34, 12, this, true));
     [(_dec137 = [
       property
-    ], "playOnAwake")] = (__runInitializers(_init34, 15, this), __runInitializers(_init34, 16, this, true));
+    ], "duration")] = __runInitializers(_init35, 8, this, 5);
     [(_dec138 = [
       property
-    ], "startDelay")] = (__runInitializers(_init34, 19, this), __runInitializers(_init34, 20, this, 0));
+    ], "loop")] = (__runInitializers(_init35, 11, this), __runInitializers(_init35, 12, this, true));
     [(_dec139 = [
       property
-    ], "startLifetime")] = (__runInitializers(_init34, 23, this), __runInitializers(_init34, 24, this, 5));
+    ], "playOnAwake")] = (__runInitializers(_init35, 15, this), __runInitializers(_init35, 16, this, true));
     [(_dec140 = [
       property
-    ], "startSpeed")] = (__runInitializers(_init34, 27, this), __runInitializers(_init34, 28, this, 5));
+    ], "startDelay")] = (__runInitializers(_init35, 19, this), __runInitializers(_init35, 20, this, 0));
     [(_dec141 = [
       property
-    ], "startSize")] = (__runInitializers(_init34, 31, this), __runInitializers(_init34, 32, this, 1));
+    ], "startLifetime")] = (__runInitializers(_init35, 23, this), __runInitializers(_init35, 24, this, 5));
     [(_dec142 = [
       property
-    ], "startRotation")] = (__runInitializers(_init34, 35, this), __runInitializers(_init34, 36, this, 0));
+    ], "startSpeed")] = (__runInitializers(_init35, 27, this), __runInitializers(_init35, 28, this, 5));
     [(_dec143 = [
       property
-    ], "angularVelocity")] = (__runInitializers(_init34, 39, this), __runInitializers(_init34, 40, this, 0));
+    ], "startSize")] = (__runInitializers(_init35, 31, this), __runInitializers(_init35, 32, this, 1));
     [(_dec144 = [
       property
-    ], "startColor")] = (__runInitializers(_init34, 43, this), __runInitializers(_init34, 44, this, null));
+    ], "startRotation")] = (__runInitializers(_init35, 35, this), __runInitializers(_init35, 36, this, 0));
     [(_dec145 = [
       property
-    ], "gravityModifier")] = (__runInitializers(_init34, 47, this), __runInitializers(_init34, 48, this, 0));
+    ], "angularVelocity")] = (__runInitializers(_init35, 39, this), __runInitializers(_init35, 40, this, 0));
     [(_dec146 = [
       property
-    ], "drag")] = (__runInitializers(_init34, 51, this), __runInitializers(_init34, 52, this, 0));
+    ], "startColor")] = (__runInitializers(_init35, 43, this), __runInitializers(_init35, 44, this, null));
     [(_dec147 = [
       property
-    ], "simulationSpace")] = (__runInitializers(_init34, 55, this), __runInitializers(_init34, 56, this, "local"));
+    ], "gravityModifier")] = (__runInitializers(_init35, 47, this), __runInitializers(_init35, 48, this, 0));
     [(_dec148 = [
       property
-    ], "maxParticles")] = (__runInitializers(_init34, 59, this), __runInitializers(_init34, 60, this, 1000));
+    ], "drag")] = (__runInitializers(_init35, 51, this), __runInitializers(_init35, 52, this, 0));
     [(_dec149 = [
       property
-    ], "randomSeed")] = (__runInitializers(_init34, 63, this), __runInitializers(_init34, 64, this, 1));
+    ], "simulationSpace")] = (__runInitializers(_init35, 55, this), __runInitializers(_init35, 56, this, "local"));
     [(_dec150 = [
       property
-    ], "rateOverTime")] = (__runInitializers(_init34, 67, this), __runInitializers(_init34, 68, this, 10));
+    ], "maxParticles")] = (__runInitializers(_init35, 59, this), __runInitializers(_init35, 60, this, 1000));
     [(_dec151 = [
       property
-    ], "bursts")] = (__runInitializers(_init34, 71, this), __runInitializers(_init34, 72, this, []));
+    ], "randomSeed")] = (__runInitializers(_init35, 63, this), __runInitializers(_init35, 64, this, 1));
     [(_dec152 = [
       property
-    ], "shape")] = (__runInitializers(_init34, 75, this), __runInitializers(_init34, 76, this, { type: "cone", angle: 25, radius: 1 }));
+    ], "rateOverTime")] = (__runInitializers(_init35, 67, this), __runInitializers(_init35, 68, this, 10));
     [(_dec153 = [
       property
-    ], "sizeOverLifetime")] = (__runInitializers(_init34, 79, this), __runInitializers(_init34, 80, this, null));
+    ], "bursts")] = (__runInitializers(_init35, 71, this), __runInitializers(_init35, 72, this, []));
     [(_dec154 = [
       property
-    ], "colorOverLifetime")] = (__runInitializers(_init34, 83, this), __runInitializers(_init34, 84, this, null));
+    ], "shape")] = (__runInitializers(_init35, 75, this), __runInitializers(_init35, 76, this, { type: "cone", angle: 25, radius: 1 }));
     [(_dec155 = [
       property
-    ], "texture")] = (__runInitializers(_init34, 87, this), __runInitializers(_init34, 88, this, null));
+    ], "sizeOverLifetime")] = (__runInitializers(_init35, 79, this), __runInitializers(_init35, 80, this, null));
     [(_dec156 = [
       property
-    ], "blendMode")] = (__runInitializers(_init34, 91, this), __runInitializers(_init34, 92, this, "alpha"));
+    ], "colorOverLifetime")] = (__runInitializers(_init35, 83, this), __runInitializers(_init35, 84, this, null));
     [(_dec157 = [
       property
-    ], "textureSheet")] = (__runInitializers(_init34, 95, this), __runInitializers(_init34, 96, this, null));
+    ], "texture")] = (__runInitializers(_init35, 87, this), __runInitializers(_init35, 88, this, null));
     [(_dec158 = [
       property
-    ], "stopAction")] = (__runInitializers(_init34, 99, this), __runInitializers(_init34, 100, this, "none"));
-    onStopped = (__runInitializers(_init34, 103, this), undefined);
+    ], "blendMode")] = (__runInitializers(_init35, 91, this), __runInitializers(_init35, 92, this, "alpha"));
+    [(_dec159 = [
+      property
+    ], "textureSheet")] = (__runInitializers(_init35, 95, this), __runInitializers(_init35, 96, this, null));
+    [(_dec160 = [
+      property
+    ], "stopAction")] = (__runInitializers(_init35, 99, this), __runInitializers(_init35, 100, this, "none"));
+    onStopped = (__runInitializers(_init35, 103, this), undefined);
     _particleCount = 0;
     alive = false;
     paused = false;
@@ -5955,26 +6000,26 @@ ${err.stack}` : ""}`);
       return out;
     }
   }
-  var _init35, _base35, _dec159, _dec160, _dec161, _dec162, _dec163;
+  var _init36, _base36, _dec161, _dec162, _dec163, _dec164, _dec165;
 
-  class SpriteRenderer extends (_base35 = Component) {
+  class SpriteRenderer extends (_base36 = Component) {
     static {
-      _init35 = __decoratorStart(_base35);
-      __decorateElement(_init35, 2, "sprite", _dec159, this);
-      __decorateElement(_init35, 2, "color", _dec160, this);
-      __decorateElement(_init35, 2, "flipX", _dec161, this);
-      __decorateElement(_init35, 2, "flipY", _dec162, this);
-      __decorateElement(_init35, 2, "sortingOrder", _dec163, this);
-      __decoratorMetadata(_init35, this);
+      _init36 = __decoratorStart(_base36);
+      __decorateElement(_init36, 2, "sprite", _dec161, this);
+      __decorateElement(_init36, 2, "color", _dec162, this);
+      __decorateElement(_init36, 2, "flipX", _dec163, this);
+      __decorateElement(_init36, 2, "flipY", _dec164, this);
+      __decorateElement(_init36, 2, "sortingOrder", _dec165, this);
+      __decoratorMetadata(_init36, this);
     }
-    _sprite = (__runInitializers(_init35, 5, this), null);
+    _sprite = (__runInitializers(_init36, 5, this), null);
     _color = Color.white;
     _flipX = false;
     _flipY = false;
     _sortingOrder = 0;
     started = false;
     shown = false;
-    get [(_dec159 = [
+    get [(_dec161 = [
       property
     ], "sprite")]() {
       return this._sprite;
@@ -5983,7 +6028,7 @@ ${err.stack}` : ""}`);
       this._sprite = s;
       this.send();
     }
-    get [(_dec160 = [
+    get [(_dec162 = [
       property
     ], "color")]() {
       return this._color;
@@ -5992,7 +6037,7 @@ ${err.stack}` : ""}`);
       this._color = c;
       this.send();
     }
-    get [(_dec161 = [
+    get [(_dec163 = [
       property
     ], "flipX")]() {
       return this._flipX;
@@ -6001,7 +6046,7 @@ ${err.stack}` : ""}`);
       this._flipX = f;
       this.send();
     }
-    get [(_dec162 = [
+    get [(_dec164 = [
       property
     ], "flipY")]() {
       return this._flipY;
@@ -6010,7 +6055,7 @@ ${err.stack}` : ""}`);
       this._flipY = f;
       this.send();
     }
-    get [(_dec163 = [
+    get [(_dec165 = [
       property
     ], "sortingOrder")]() {
       return this._sortingOrder;
@@ -6346,6 +6391,7 @@ ${err.stack}` : ""}`);
     failed = false;
     materials = [];
     meshes = [];
+    animations = [];
     description = null;
     waiting = [];
     pending = [];
@@ -6392,6 +6438,8 @@ ${err.stack}` : ""}`);
     }
     build(root, options) {
       const d = this.description;
+      const objects = new Map;
+      const skinned = [];
       const make = (index, parent) => {
         const n = d.nodes[index];
         const go = new GameObject(n.name || `Node ${index}`, {
@@ -6401,12 +6449,17 @@ ${err.stack}` : ""}`);
           scale: new Vector3(...n.scale)
         });
         go._modelPart = true;
+        objects.set(index, go);
         n.primitives.forEach((p, i) => {
           const holder = n.primitives.length === 1 ? go : new GameObject(`${go.name} ${i}`, { parent: go });
           holder._modelPart = true;
           const mesh = Mesh._engine(p.mesh);
           const material = p.material === null ? new Material : this.materials[p.material] ?? new Material;
-          holder.addComponent(MeshRenderer, { mesh, material });
+          const skin = n.skin == null ? undefined : d.skins?.[n.skin];
+          if (skin)
+            skinned.push({ holder, mesh, material, skin });
+          else
+            holder.addComponent(MeshRenderer, { mesh, material });
           if (options.colliders === "mesh" || options.colliders === "convex") {
             holder.addComponent(MeshCollider, { sharedMesh: mesh, convex: options.colliders === "convex" });
           }
@@ -6416,6 +6469,41 @@ ${err.stack}` : ""}`);
       };
       for (const r of d.roots)
         make(r, root);
+      for (const s of skinned) {
+        s.mesh.bindposes = Array.from({ length: s.skin.joints.length }, (_, i) => new Matrix4x4(s.skin.inverseBind.slice(i * 16, i * 16 + 16)));
+        const bones = s.skin.joints.map((j) => objects.get(j)).filter((b) => b !== undefined);
+        s.holder.addComponent(SkinnedMeshRenderer, { mesh: s.mesh, material: s.material, bones, rootBone: bones[0] ?? null });
+      }
+      if (this.animations.length && !root.getComponent(Animation)) {
+        root.addComponent(Animation, { clip: this.animations[0], clips: [...this.animations] });
+      }
+    }
+    clips(d) {
+      const paths = new Map;
+      const walk = (index, prefix) => {
+        const n = d.nodes[index];
+        const path = prefix + (n.name || `Node ${index}`);
+        paths.set(index, path);
+        for (const c of n.children)
+          walk(c, `${path}/`);
+      };
+      for (const r of d.roots)
+        walk(r, "");
+      return (d.animations ?? []).map((a, i) => {
+        const clip = new AnimationClip(a.name || `Animation ${i}`);
+        clip.wrapMode = "loop";
+        for (const ch of a.channels) {
+          const path = paths.get(ch.node);
+          if (path === undefined)
+            continue;
+          const [property, size] = ch.path === "translation" ? ["localPosition", 3] : ch.path === "rotation" ? ["localRotation", 4] : ["localScale", 3];
+          for (let k = 0;k < size; k++) {
+            const curve = ch.interpolation === "cubic" ? cubic(ch.times, ch.values, size, k) : AnimationCurve.fromPoints(ch.times.map((t, i) => [t, ch.values[i * size + k]]), ch.interpolation === "step" ? "step" : "linear");
+            clip.setCurve(path, "Transform", `${property}.${"xyzw"[k]}`, curve);
+          }
+        }
+        return clip;
+      });
     }
     _loaded(description) {
       if (description) {
@@ -6439,6 +6527,7 @@ ${err.stack}` : ""}`);
           });
         });
         this.meshes = description.nodes.flatMap((n) => n.primitives.map((p) => Mesh._engine(p.mesh)));
+        this.animations = this.clips(description);
         for (const { root, options } of this.pending)
           if (!root.destroyed)
             this.build(root, options);
@@ -6459,6 +6548,20 @@ ${err.stack}` : ""}`);
       m?._loaded(typeof json === "string" ? JSON.parse(json) : null);
     }
   };
+  function cubic(times, values, size, k) {
+    const keys = times.map((t, i) => {
+      const at = (part) => values[(i * 3 + part) * size + k];
+      return { t, inT: at(0), v: at(1), outT: at(2) };
+    });
+    const curve = new AnimationCurve;
+    for (const key of keys)
+      curve.addKey(key.t, key.v);
+    curve.keys.forEach((key, i) => {
+      key.inTangent = keys[i].inT;
+      key.outTangent = keys[i].outT;
+    });
+    return curve;
+  }
   // ../../js/engine/src/scenes.ts
   _registerBuiltIns({
     AudioListener,
@@ -6483,6 +6586,7 @@ ${err.stack}` : ""}`);
     LODGroup,
     MeshCollider,
     MeshRenderer,
+    SkinnedMeshRenderer,
     Mirror,
     ParticleSystem,
     PlaneRenderer,
@@ -6633,7 +6737,11 @@ ${err.stack}` : ""}`);
         const data = v._data;
         if (!data)
           return this.cannot(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
-        return this.asset(v, "mesh", () => ({ type: "Mesh", ...data }));
+        return this.asset(v, "mesh", () => ({
+          type: "Mesh",
+          ...data,
+          ...v.bindposes.length ? { bindposes: v.bindposes.flatMap((m) => [...m.m]) } : {}
+        }));
       }
       if (v instanceof Sound)
         return { $type: "Sound", src: v.src };
@@ -6683,11 +6791,17 @@ ${err.stack}` : ""}`);
         const flat = (k) => a[k] ?? [];
         const v3 = (f) => Array.from({ length: f.length / 3 }, (_, i) => new Vector3(f[i * 3], f[i * 3 + 1], f[i * 3 + 2]));
         const uv = flat("uv");
+        const joints = flat("joints");
+        const weights = flat("weights");
+        const four = (f, i) => [f[i * 4], f[i * 4 + 1], f[i * 4 + 2], f[i * 4 + 3]];
+        const poses = flat("bindposes");
         made = Mesh.create({
           vertices: v3(flat("vertices")),
           triangles: flat("triangles"),
           normals: v3(flat("normals")),
-          uv: Array.from({ length: uv.length / 2 }, (_, i) => new Vector2(uv[i * 2], uv[i * 2 + 1]))
+          uv: Array.from({ length: uv.length / 2 }, (_, i) => new Vector2(uv[i * 2], uv[i * 2 + 1])),
+          boneWeights: Array.from({ length: joints.length / 4 }, (_, i) => ({ indices: four(joints, i), weights: four(weights, i) })),
+          bindposes: Array.from({ length: poses.length / 16 }, (_, i) => new Matrix4x4(poses.slice(i * 16, i * 16 + 16)))
         });
       } else {
         warn(`unknown asset ${id}`);

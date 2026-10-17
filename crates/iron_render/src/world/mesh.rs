@@ -15,6 +15,10 @@ pub struct MeshData {
     /// Along increasing u (xyz), and w = 1 or -1: the side the bitangent (towards the
     /// texture's top, decreasing v) is on, for normal maps. Made from the UVs when missing.
     pub tangents: Vec<[f32; 4]>,
+    /// Skinned meshes: up to four bones per vertex (indices into the renderer's bone
+    /// list) and their weights. Empty for rigid meshes.
+    pub joints: Vec<[u16; 4]>,
+    pub weights: Vec<[f32; 4]>,
     /// Three per triangle, counter-clockwise seen from the front.
     pub indices: Vec<u32>,
 }
@@ -74,6 +78,9 @@ impl MeshData {
             && self.positions.len() == self.normals.len()
             && self.positions.len() == self.uvs.len()
             && self.positions.len() == self.tangents.len()
+            && (self.joints.is_empty()
+                || (self.joints.len() == self.positions.len()
+                    && self.weights.len() == self.positions.len()))
             && self
                 .indices
                 .iter()
