@@ -11,7 +11,7 @@ library, `@iron/editor-ui`, so games and tools can use them too.
 | [project.rs](../crates/iron_app/src/project.rs) | File operations on the project folder (list, copy in, move), confined to it |
 | [logging.rs](../crates/iron_app/src/logging.rs) | The capture layer and ring buffer the console reads |
 | [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/dist`) |
-| [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser` and their models |
+| [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser`, `SceneView`, `onEditorFrame` and their models |
 
 ## One program, two binaries
 
@@ -114,8 +114,12 @@ JSON; `parseLayout` drops unknown tabs and returns null for malformed input.
 `flexBasis: 0`, with `SPLITTER`-pixel splitters between them, and groups as a `TAB_BAR`-high tab
 strip over the active panel. Iron has no layout read-back for scripts, so `computeRects` works out
 the same rects in JS from the `rect` prop (the dock's place on screen); panels get their content
-size from it (`render({ width, height })`), and drags use it:
+box from it (`render({ x, y, width, height })`: the size below the tab strip, and where it is on screen in UI
+pixels, for a camera drawing into it), and drags use it:
 
+- **Seeing through.** A panel with `seeThrough: true` gets a transparent group background (the
+  `see-through` class), and `.iron-dock` has no background of its own, so what is drawn under the UI (a
+  camera's view of the world) shows in the panel's box. Other groups keep the panel colour.
 - **Splitters** take pointer capture on press and resize from the layout as it was when the drag
   started (pixels moved divided by the split's free space).
 - **Tabs** take pointer capture on press. Past 5 pixels the press becomes a drag: `dropTarget`
@@ -179,21 +183,96 @@ inside a folder. Double-click or Enter opens a folder, Backspace goes up. It use
 `useScreenSize()` gives the window size in UI pixels, re-rendering on `Screen.onChange` (added to
 `@iron/engine` for this).
 
+## The Scene view ([SceneView.tsx](../js/editor-ui/src/SceneView.tsx), [scene-camera.ts](../js/editor-ui/src/scene-camera.ts), [frame.ts](../js/editor-ui/src/frame.ts))
+
+The editor's world is the engine's: the Scene view is a camera in it, drawing into the panel's box.
+
+**The camera.** `SceneView` makes a `Scene Camera` object with `hideFlags = HideAndDontSave` (not listed,
+never saved, never `Camera.main`) and `dontDestroyOnLoad`, with a skybox clear, a dark background and
+`depth: -100` so game cameras draw over it. The panel is `seeThrough`, so the view shows in its box. Each
+frame `place` sets the camera's position, rotation, projection, clip planes and `rect` (the panel's box
+over the screen size, written only when it changed), and `sceneGrid` follows the `grid` prop. The
+camera is destroyed when the panel unmounts.
+
+**The model** (scene-camera.ts) is plain functions from one `SceneCameraState { pivot, yaw, pitch,
+distance, orthographic }` to the next, tested without React (`M5-EDT-22`). The eye sits `distance` behind the
+pivot along the view direction (an orthographic view sits farther back and takes its size from
+`distance`, so nearby objects aren't cut by the near plane). Yaw 0 looks along -z; positive pitch looks down.
+
+| Control | Function |
+|---|---|
+| Right-drag | `look`: turns about the eye (the pivot moves to keep the distance) |
+| Right-drag + WASD / QE | `fly`: right, forward, down and up for the frame's `unscaledDeltaTime`; speed grows with `distance`, x4 with Shift |
+| Middle-drag | `pan`: slides the pivot so the point under the cursor at its depth follows |
+| Wheel | `zoom`: `distance` times 1.1 per 40 units, clamped |
+| Alt + left-drag | `orbit`: turns about the pivot |
+| F | `frame`: the pivot at the selection's centre, far enough back to see its padded bounds |
+| Axis gizmo | `lookAlong`: looks along an axis about the same pivot |
+
+Pointer capture keeps a drag going outside the panel. A left click that doesn't move selects nothing
+(`onSelect(null)`), and the context menu is suppressed.
+
+**Frame callbacks.** `onEditorFrame(fn)` ([frame.ts](../js/editor-ui/src/frame.ts)) calls `fn` every frame
+after scripts and animation have moved things. It makes one hidden object (`HideAndDontSave`,
+`dontDestroyOnLoad`) with a component whose `onLateUpdate` calls the listeners, and returns the function
+that unsubscribes. The Scene view and the live Hierarchy use it.
+
+**Orientation gizmo.** An SVG in the top-right corner draws the six axes from `gizmoAxes` (farthest
+first, so near ones paint over): positive axes are coloured discs with a line and a label, negative ones
+small grey rings, and axes pointing away are dimmer. SVG shapes are not hit targets, so transparent boxes
+sit over each axis end: clicking one looks along the opposite direction (towards the centre), and the
+centre box toggles perspective and orthographic, shown as `Persp` / `Iso` under it.
+
+**SceneIcons.** Cameras, directional, point and spot lights, audio sources and reflection probes (`iconKind`;
+`visibleObjects()` lists the objects, depth first, leaving out `HideInHierarchy` ones) get a round 22 px
+button at their projected position (`worldToScreenPoint`, dropped behind the near plane or outside the
+panel), so icons keep one size at any distance. The art is a 16 px SVG per kind with fixed markup, so each
+is rasterized once. A click selects the object (Ctrl or Shift adds); selected icons have an accent
+border.
+
+The icons move every frame but React doesn't: each frame's result is reduced to a key of the camera
+state and each icon's id, kind and position rounded to whole pixels, and `setView` is called only when
+the key changes. A still view costs a few projections and a string compare per frame.
+
+**Wire gizmos.** Each frame, for the selected objects (when Show Gizmos is on), `drawGizmos` calls
+`Gizmos` for what Unity draws: a camera's frustum (or a box for orthographic), a point light's sphere, a
+spot light's cone, a directional light's rays, a probe's box, and an audio source's min and max
+distance spheres. `Gizmos.present(camera)` then sends them to the Scene camera, so they draw over the
+view (faint where hidden) and are replaced next frame. The lines belong to that camera, so the Game view
+never shows them. See [world-rendering.md](world-rendering.md#editor-grid-and-gizmo-lines).
+
 ## The editor UI ([editor/src/main.tsx](../editor/src/main.tsx))
 
 A menubar (File, Edit, View, Window, Help with accelerators and an Open Recent submenu), a dock
 and a status bar. The default layout: Hierarchy on the left, Scene and Game in the middle,
-Inspector on the right, Console and Project along the bottom. The Hierarchy is a demo tree of
-about 20,000 nodes with icons and renaming; Project is the project browser; Scene, Game and
-Inspector are placeholders (the Inspector shows the selection). Window > Save / Load / Reset Layout keeps the layout in
-PlayerPrefs (`editor.layout`), and the saved layout loads at start. Unimplemented menu items log
-what they would do.
+Inspector on the right, Console and Project along the bottom. `.editor` has no background, so the
+see-through panels show the world.
+
+- **Demo scene.** `buildDemoScene()` ([demo-scene.ts](../editor/src/demo-scene.ts)) runs at startup: a
+  floor, four shapes, the three kinds of light, a `Main Camera` (its `rect` is empty, so it draws
+  nowhere until the Game panel gives it one), an audio source and a reflection probe, so every icon
+  shows. It stands in until scenes open from the project.
+- **Hierarchy.** A `TreeView` over `visibleObjects()`, with `GameObject.id` as node ids and an icon by
+  component (`kindOf`). `useSceneTree` computes a key of `id:parentId:name` per object in `onEditorFrame`
+  and rebuilds the tree only when it changes, so adding, moving or renaming objects shows at once.
+  Renaming sets `GameObject.name`.
+- **Selection** is the tree's selected ids, shared with the Scene view: selecting in either updates the
+  other (`select`), and the Inspector (a placeholder) names the selected objects.
+- **Game.** `GameView` sets `Camera.main`'s `rect` to the panel's box while it is shown and to an empty
+  rect when it is hidden or unmounted, so the game's camera draws only inside the Game tab.
+- **Project** is the project browser.
+- **View > Show Grid / Show Gizmos** toggle the Scene view's `grid` and `gizmos` props.
+- Window > Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
+  layout loads at start. Unimplemented menu items log what they would do.
 
 ## Tests and checks
 
 - `js/editor-ui/test/models.test.ts`: the models (`M5-EDT-06` to `-14`, `-18`, `-19`);
   `menubar.test.tsx`: the React menubar through the real reconciler with dispatched events
   (`M5-EDT-14`); `log.test.ts`: the log feed (`M5-EDT-20`).
+- `js/editor-ui/test/scene-camera.test.ts`: the Scene camera's controls and axis gizmo (`M5-EDT-22`);
+  `js/engine/test/gizmos.test.ts` (`Gizmos`, `M5-RND-23`) and the `HideFlags` cases in `scenes.test.ts` (`M5-SCN-06`).
+  The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes have goldens (`M5-RND-22`, `-23`).
 - Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`); `project.rs`
   (`M5-DND-07`); `project.test.ts` and `project-browser.test.tsx` (`M5-DND-08`, `-10`).
 - `bun run screenshots editor` renders `tests/output/editor.png` with `iron_editor` (`M5-EDT-21`,
@@ -202,6 +281,8 @@ what they would do.
 ## Limits
 
 - Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
+- The Scene view has no picking in the 3D view (only icons select), no move / rotate / scale
+  handles and no snapping; gizmos are drawn for the selection only.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
 - Accelerators don't run while a text field has focus (its keys don't reach `input`).
 - No native menus yet (TODO.md M5.e).

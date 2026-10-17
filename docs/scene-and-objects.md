@@ -337,6 +337,14 @@ node objects are `_modelPart`. Saving writes `model` and skips the parts. Loadin
 `Model._buildInto`, so the copy is rebuilt from the model file (waiting for the model to arrive, as
 `instantiate` does).
 
+**Hide flags.** `GameObject.hideFlags` holds `HideFlags` bits (Unity's values: `HideInHierarchy` 1,
+`HideInInspector` 2, `DontSaveInEditor` 4, `NotEditable` 8, `DontSaveInBuild` 16,
+`DontUnloadUnusedAsset` 32, and the combinations `DontSave` 52 and `HideAndDontSave` 61). The engine
+reads two: scene saving skips an object with any `DontSave` bits (and its children, with no file id for it
+or its components), and `Camera.main` skips a `HideInHierarchy` camera. Tools read the rest: the editor's
+Hierarchy and Scene view list `visibleObjects()`, which leaves out `HideInHierarchy` objects and what is under them. The editor's own scene camera and frame host are
+`HideAndDontSave`. The flags are not saved, and a hot reload restores only saved objects.
+
 **Limits of scenes.**
 
 - Nothing writes files yet (M6 Script IO), so a saved scene comes from `serialize()`'s output.

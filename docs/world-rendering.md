@@ -19,9 +19,10 @@ the app builds a flat `WorldView` per camera.
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
-  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture }`.
+  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines }`.
   The viewport is normalized, from the top-left of the target. `target_texture` names a render texture
-  to draw into instead of the screen (see Render textures).
+  to draw into instead of the screen (see Render textures). `grid` and `lines` are the editor's ground grid
+  and gizmo lines (see Editor grid and gizmo lines).
 - `WorldCamera { view_proj, position, forward, orthographic, clear }`. `WorldCamera::new(world,
   projection, near, far, size, clear)` builds it from the camera's world matrix and a viewport `size`
   in pixels (for the aspect). `Projection` is `Perspective { fov_y_degrees }` or `Orthographic {
@@ -66,6 +67,22 @@ then calls `render_views_with`, which does one render pass per target:
      premultiplied with zero coverage, so blending just adds it.
 
 Consecutive items with the same mesh or texture and kind draw in one call.
+
+### Editor grid and gizmo lines
+
+Two optional parts of a view, for the editor's Scene view. Both are left out of mirror and probe renders.
+
+- **Grid** (`WorldView.grid`, from `Camera.sceneGrid`). Drawn after the opaque meshes and before the
+  see-through things: a fullscreen triangle (`fs_grid`) that intersects each pixel's view ray with the
+  plane y = 0, so there is no geometry. Lines every 1 m and every 10 m are anti-aliased with `fwidth`
+  of the plane coordinates, fade with distance, and the X axis is red and the Z axis blue. The shader
+  writes `frag_depth` of the hit point, so meshes hide the grid by the normal depth test (`Less`);
+  depth is not written, so things drawn after it are unaffected. Rays that miss the plane are discarded.
+- **Lines** (`WorldView.lines: Vec<GizmoLine { a, b, color }>`, from `render.gizmos`). Drawn last in
+  the view, over everything. One instanced vertex buffer holds the segments; `vs_line` expands each
+  to a screen-space quad of constant width (so lines stay thin at any distance), clipping the segment
+  to the near plane first. Two pipelines draw the same lines: depth `LessEqual` at full alpha, and
+  `Greater` at 0.25 of the alpha, so a line behind a mesh shows faintly. Neither writes depth.
 
 Only the screen's last pass is the **final pass** (`render_views_with(..., final_pass)`): bloom, exposure,
 tonemapping and FXAA run there. Mirror, probe and render texture renders are ungraded and unsmoothed.
@@ -364,7 +381,8 @@ Screenshot runs and window frames both go through `draw_frame`.
 
 | Op | Arguments |
 |---|---|
-| `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical` |
+| `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical antialiasing targetTexture\|null grid` (`grid` is `Camera.sceneGrid`) |
+| `render.gizmos` | `camera [ax ay az bx by bz r g b a ...]` (10 floats per line segment, world space; the camera shows them until replaced, and a later `render.camera` keeps them; non-finite lines are dropped) |
 | `render.plane` | `component object [w h] [r g b a]` |
 | `render.mesh` | `id [positions] [normals] [uvs] [indices] [joints, 4 per vertex] [weights, 4 per vertex]` (a script mesh; `id null` removes it) |
 | `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic ... [bone objects]\|null [bind poses, 16 each]` (the last two for `SkinnedMeshRenderer`) |
@@ -408,6 +426,15 @@ object with the matching mesh and collider.
 - With no cameras it returns an empty list, so only screen UI is drawn.
 
 Components on destroyed objects are dropped by `forget_objects`.
+
+A `Camera` has `sceneGrid` (default off, not saved with scenes), and `Gizmos` ([gizmos.ts](../js/engine/src/gizmos.ts)) is
+Unity's immediate-mode line drawing: `color`, `matrix`, `drawLine`, `drawRay`, `drawWireCube`,
+`drawWireDisc`, `drawWireSphere` and `drawFrustum` append world-space segments (through `matrix`, in
+`color`) to one list, `lineCount` reads it, `clear()` drops it, and `present(camera)` sends it as
+`render.gizmos` and starts over. The lines belong to that camera until the next `present`, so calling it
+with nothing drawn clears them. Unlike Unity, nothing calls `OnDrawGizmos`: the editor draws what it wants
+and presents it each frame (see [editor.md](editor.md#the-scene-view)). `Camera.main` skips cameras whose
+object has `HideFlags.HideInHierarchy`.
 
 `CameraFollow` and `CameraOrbit` are script components that move a camera object in `onLateUpdate`.
 They have no Rust side.
@@ -612,7 +639,7 @@ procedural sky, with the skybox as background), `M5-RND-12` (a planar mirror: re
 and screen-space sampling) and `M5-RND-13` (a box-projected reflection probe in a room). Later goldens: `M5-RND-17` (material maps and
 rendering modes under a sky), `-18` (tonemapping, exposure and FXAA), `-19` (a render texture shown on a
 monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count), and `-21`
-(a tube skinned to two bones, bent, with a bent shadow). Cooked textures are tested with cooking
+(a tube skinned to two bones, bent, with a bent shadow), `-22` (the ground grid: axes, fade, hidden by a box) and `-23` (gizmo lines: constant width, faint behind a mesh). Cooked textures are tested with cooking
 (`M5-AST-06`, see [assets-and-models.md](assets-and-models.md#tests)).
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
