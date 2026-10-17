@@ -4,6 +4,7 @@ How the window's mode, vsync, the frame cap and `PlayerPrefs` work. Code: `iron_
 ([display.rs](../crates/iron_platform/src/display.rs), [platform.rs](../crates/iron_platform/src/platform.rs)),
 `iron_render` ([surface.rs](../crates/iron_render/src/surface.rs)), `iron_app`
 ([display.rs](../crates/iron_app/src/display.rs), [prefs.rs](../crates/iron_app/src/prefs.rs),
+[logging.rs](../crates/iron_app/src/logging.rs),
 [main.rs](../crates/iron_app/src/main.rs)) and `@iron/engine`
 ([screen.ts](../js/engine/src/screen.ts), [prefs.ts](../js/engine/src/prefs.ts),
 [app.ts](../js/engine/src/app.ts), [quality.ts](../js/engine/src/quality.ts)).
@@ -20,7 +21,8 @@ How the window's mode, vsync, the frame cap and `PlayerPrefs` work. Code: `iron_
 | `Windowed` | A normal window of the chosen size |
 
 `DisplaySettings` is the mode plus width, height (physical pixels) and refresh rate (Hz, 0 means
-"the monitor's rate"). The default is windowed, 1280x720.
+"the monitor's rate"). The default is windowed, 1280x720. A width and height of 0 mean "no size asked
+for"; `window_width` / `window_height` remember the last windowed size.
 
 **Platform rules.** `supported_modes` lists what the platform offers, most fullscreen first:
 all four on desktop, three on Wayland (compositors own the display mode, so no exclusive
@@ -30,11 +32,13 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
 `Screen.supportedFullScreenModes` and show only those.
 
 **`display::apply`** puts a window in a mode and returns what took effect:
-- Exclusive: picks the monitor video mode closest to the request (size first, then refresh rate;
-  with no rate asked for, the fastest). The result carries that mode's real size and rate. If the
-  monitor reports no modes it falls back to borderless.
-- Windowed: the size is clamped between 320x240 and the monitor, then requested with
-  `request_inner_size`.
+- Exclusive: `exclusive_target` gives the size and rate asked for, or with no size the monitor's current
+  resolution and rate (not the smallest mode). `closest_mode` then picks the video mode nearest to it
+  (size first, then refresh rate; with no rate asked for, the fastest). The result carries that mode's
+  real size and rate. If the monitor reports no modes it falls back to borderless.
+- Windowed: `windowed_target` gives the size asked for, or with none the remembered window size. It is
+  clamped between 320x240 and the monitor, then requested with `request_inner_size`. So leaving
+  fullscreen goes back to the previous window size (`M5-DSP-04`).
 - Borderless and maximized ignore the size.
 
 `resolutions` lists the monitor's video modes, largest and fastest first, without repeats.
@@ -51,15 +55,25 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
    is ready and after every `screen.set`.
 3. `window_ready` applies a non-windowed mode **before the first frame**, so the window never
    flashes at the wrong size (it is created hidden and shown after its first frame).
-4. At run time `Screen.setResolution(w, h, mode, refreshRate)` (and the `fullScreenMode` and
-   `fullScreen` setters, which reuse the current size) send `screen.set mode width height
-   refreshRate`. The app applies it, writes what was asked for to the `iron.display` pref and
+4. At run time `Screen.setResolution(w, h, mode, refreshRate)` sends `screen.set mode width height
+   refreshRate`. The `fullScreenMode` and `fullScreen` setters send a size of 0, so the app picks the
+   monitor's resolution or the last window size (see above). The app applies it, writes what was asked for to the `iron.display` pref and
    re-evaluates `__iron_info.display` with what took effect.
 5. **Screenshot runs** (`--screenshot`) stay windowed and never apply a mode, and their prefs are
    kept in memory, so renders are the same every time.
 
 `Screen.width`/`height` (UI pixels) still come from `__iron_screen`; `Screen.windowSize` is the
 physical size from `__iron_info.display`.
+
+## Log file
+
+`iron` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
+(`tracing`, default filter `info,wgpu_core=warn,wgpu_hal=error`, `RUST_LOG` overrides it) to `Player.log`
+in the game's settings folder, next to `prefs.json`, with the same ANSI colours a terminal shows. The
+previous run's file is kept as `Player-prev.log`. `IRON_LOG_FILE` names another file. Started from a
+terminal, it also logs there: on Windows `attach_console` attaches to the parent's console when stderr
+is not already redirected, and piped output (scripts, tests) works as before. A panic hook writes the
+panic to the log (`M5-APP-04`).
 
 ## Vsync and the frame cap
 

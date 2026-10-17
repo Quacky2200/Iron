@@ -168,7 +168,9 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
    Examples build with `NODE_ENV="production"` (smaller, faster React); `bun run build:dev` in an
    example keeps the development build.
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
-2. `iron <folder>` ([main.rs](../crates/iron_app/src/main.rs)) calls `resolve_bundle`: a directory
+2. `iron <folder>` ([main.rs](../crates/iron_app/src/main.rs)) runs the current folder when no game is
+   given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). It calls
+   `resolve_bundle`: a directory
    means `<dir>/dist/game.js` with the directory as the asset root; a `.js` path uses its parent.
 3. `QuickJsRuntime::new()`, `load_bundles`, then `ComponentHost::registered_classes` + `spawn` each.
    `load_bundles` loads `game.js` alone, or for a dev build (below) `vendor.js` and then the game's

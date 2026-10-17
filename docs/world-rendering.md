@@ -19,8 +19,9 @@ the app builds a flat `WorldView` per camera.
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
-  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes }`. The viewport is normalized, from the top-left of
-  the target.
+  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture }`.
+  The viewport is normalized, from the top-left of the target. `target_texture` names a render texture
+  to draw into instead of the screen (see Render textures).
 - `WorldCamera { view_proj, position, forward, orthographic, clear }`. `WorldCamera::new(world,
   projection, near, far, size, clear)` builds it from the camera's world matrix and a viewport `size`
   in pixels (for the aspect). `Projection` is `Perspective { fov_y_degrees }` or `Orthographic {
@@ -30,11 +31,11 @@ the app builds a flat `WorldView` per camera.
   `uv` is the part of the texture shown. `additive` adds light instead of covering (glows). `order` is
   the sorting order (see below). `layer` (0 to 31) is the object's layer, used by culling masks.
 - `MeshInstance { mesh, model, color, emission, smoothness, metallic, unlit, texture, tiling, glow,
-  cast_shadows, mirror, layer }`. `mesh` is a
+  cast_shadows, mirror, layer, maps, specular, mode, alpha_cutoff, double_sided }`. `mesh` is a
   built-in primitive id or a mesh set with `set_mesh`. `color` is linear straight-alpha RGBA;
   `emission` is light the mesh gives off (it lights nothing else); `smoothness` 0..1 is
   1 - roughness and `metallic` 0..1 is Unity's metallic workflow (see Shading); `unlit` ignores lights; `tiling` is scale (xy) and offset (zw), Unity's
-  `mainTextureScale`/`mainTextureOffset`. `glow` is `MeshGlow::None`, `Additive` or `Beam`.
+  `mainTextureScale`/`mainTextureOffset`. `glow` is `MeshGlow::None`, `Additive` or `Beam`. The material fields are under Materials.
 - `WorldTexture` is how quads and meshes name a texture: `Frame(i)` indexes the `textures` slice given
   to the render call (world panels, drawn fresh each frame, premultiplied alpha), and `Asset(id)` is a
   texture the renderer keeps (`set_texture`, straight alpha). `None` is plain colour. `Reflection(i)` is
@@ -51,9 +52,9 @@ then calls `render_views_with`, which does one render pass per target:
    or the sky along each pixel's view ray when the view has `skybox` and there is a sky, replaces the
    colour in the viewport (no blending, depth compare `Always`) and writes depth 1.0. So a later
    camera fully replaces what was under its viewport, and its depth starts fresh.
-4. **Opaque meshes** (colour alpha 1, no glow) are sorted by `(mesh, texture)` and drawn instanced:
+4. **Opaque meshes** (not `blended()`: no glow, and mode `Opaque` with colour alpha 1, or `Cutout`) are sorted by `(mesh, texture)` and drawn instanced:
    consecutive instances of one mesh and texture are one draw call. Depth test `Less`, depth writes on.
-5. **See-through things** (meshes with alpha below 1 or a glow, and all quads) are drawn after, back to
+5. **See-through things** (blended meshes: `Fade` or `Transparent` mode, alpha below 1 or a glow; and all quads) are drawn after, back to
    front in one list: first by `order` (lower first; meshes are order 0), then by distance. In a
    perspective view distance is straight-line (squared) to the camera; in an orthographic view it is
    the distance along the view direction, so everything at one depth is equally far, like Unity's 2D
@@ -66,9 +67,15 @@ then calls `render_views_with`, which does one render pass per target:
 
 Consecutive items with the same mesh or texture and kind draw in one call.
 
+Only the screen's last pass is the **final pass** (`render_views_with(..., final_pass)`): bloom, exposure,
+tonemapping and FXAA run there. Mirror, probe and render texture renders are ungraded and unsmoothed.
+
 One quad storage buffer and one mesh-instance buffer hold every view's data. A uniform buffer holds a
 `GpuGlobals` per view (`view_proj`, background, shadow matrix and settings), picked with a dynamic
-offset, and a lights buffer is bound per view. Buffers grow to a power of two. `GpuGlobals` also holds
+offset, and a lights buffer is bound per view. Group 1 is the material (`material_group`, one bind group
+per `MaterialKey`): the main texture and sampler, then the normal, metallic, occlusion, emission, detail
+and reflection textures (8 bindings; missing maps bind a 1 texel default). Group 2 holds the shadow
+arrays, the sky cube and the shadow matrices. Buffers grow to a power of two. `GpuGlobals` also holds
 `inv_view_proj` and the viewport (for the skybox), `env` (sky present, intensity, last mip, ambient from
 sky), `flags` (draw the sky; target size) and `clip` (the clip plane). Per mesh instance, `GpuMesh`
 carries `metallic` and the mirror flag (in `params`) and the probe it uses. The depth textures are
@@ -81,11 +88,12 @@ A 0x0 target returns early.
 ## Meshes and lights
 
 **Meshes.** [mesh.rs](../crates/iron_render/src/world/mesh.rs): `MeshData { positions, normals, uvs,
-indices }`. Meshes are right-handed, y up, counter-clockwise front faces, with Unity's sizes (a 1 m
+tangents, indices }`. Meshes are right-handed, y up, counter-clockwise front faces, with Unity's sizes (a 1 m
 cube, a sphere of radius 0.5, a 2 m capsule, a 10 m plane). `primitive(name)` builds `cube`, `sphere`,
 `capsule`, `cylinder`, `plane` and `quad`; every renderer registers them at `PRIMITIVE_BASE +
 index` (`primitive_id`). Script and model meshes use ids below `PRIMITIVE_BASE`. `MeshData::complete`
-makes up smooth normals and zero UVs when they are missing, and `is_valid` refuses indices that are out
+makes up smooth normals, zero UVs and tangents when they are missing (tangents point along increasing u,
+`w` gives the bitangent's side, `M5-MAT-01`), and `is_valid` refuses indices that are out
 of range or not whole triangles. `beam()` is the open cone for spot-light beams (`BEAM_MESH`). Mesh UVs
 run top-down; the shader flips them so tiling works bottom-up like Unity's.
 
@@ -105,6 +113,33 @@ like Unity's Standard shader:
   and `env_brdf_approx(f0, roughness, N.V) * reflected` for the specular. `env_brdf_approx` is Karis's
   analytic fit of the split-sum environment BRDF, so there is no lookup texture.
 - `emission` is added after lighting. Back faces are lit with the flipped normal.
+- Shadows scale each light's `N.L` term (see Shadows).
+
+### Materials
+
+`MaterialMaps` and the other `MeshInstance` fields follow Unity's Standard shader. Maps are
+`WorldTexture`s, each optional:
+
+- **Normal map** (`normal`, `normal_scale`): tangent space, green up, read as linear data. `vs_mesh` builds
+  the tangent frame from the mesh's tangents; `fs_mesh` perturbs the normal.
+- **Metallic and smoothness** (`metallic_gloss`): metallic in red and smoothness in alpha. The material's
+  metallic is replaced by the map's and its smoothness scales the map's. With `gltf_packing` it is read
+  the glTF way: occlusion in red, roughness in green, metallic in blue, multiplying the factors.
+- **Occlusion** (`occlusion`, `occlusion_strength`): darkens sky light and reflections only, not direct light.
+- **Emission** (`emission`) multiplies the emission colour.
+- **Detail** (`detail`, `detail_tiling`) is multiplied over the albedo (x2 in gamma space, so mid grey
+  changes nothing) with its own tiling.
+- **Specular workflow**: `specular: Some(rgb)` is the head-on reflectance, `metallic` is ignored, the
+  albedo is darkened by the specular's strength, and the metallic map is read as sRGB colour (rgb) plus
+  smoothness (a). `MaterialKey.metallic_srgb` picks that view.
+- **Rendering mode** (`RenderMode`): `Opaque` (a colour alpha below 1 still draws as `Fade`), `Cutout`
+  (holes where alpha is below `alpha_cutoff`; the shadow pass has its own entry points,
+  `vs_shadow_cutout` / `fs_shadow_cutout`, so shadows get the holes), `Fade` (everything fades) and
+  `Transparent` (highlights and reflections stay, for glass). `double_sided` draws back faces too.
+
+Textures keep two views: `Rgba8UnormSrgb` for colours and a linear `Rgba8Unorm` view of the same data
+for maps, chosen per binding. A texture's `srgb` flag (false for `linear` textures) also makes the CPU
+mip chain average in linear space. Samplers are keyed by filter, wrap and anisotropy (`SamplerKey`).
 
 **Lights from scripts.** `Light` sends `render.light component object type [r g b] intensity range
 spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength`. Colour is
@@ -201,38 +236,81 @@ when added and on `renderProbe()`.
 
 ## Shadows
 
-Only the **first directional light with shadows on** (`Shadows { soft, strength }`, strength above 0)
-casts them, and only the **main view's opaque meshes** are casters. The main view is the one with the
-biggest viewport; its shadow map is shared by every view.
+[shadows.rs](../crates/iron_render/src/world/shadows.rs). `WorldRenderer::draw_shadows` plans and draws
+all shadow maps **once a frame**, from the main screen view (the biggest viewport, not a render
+texture's). Every view drawn that frame reads the same maps: other cameras, mirrors, probe faces and
+render textures. Casters are the main view's opaque and cutout meshes with `cast_shadows` on (cutout
+casters keep their holes).
 
-- `shadow_matrix` fits an orthographic box `shadow_distance` across in front of the main camera (centre
-  half that distance ahead), looking along the light. The box is moved in whole shadow-map texels, so
-  edges do not crawl as the camera moves.
-- The map is a `Depth32Float` texture of `shadow_resolution` texels (clamped to 16 and the device
-  limit), recreated when the size changes. `vs_shadow` renders casters into it.
-- `shadow_at` in the shader pushes the position off the surface by a texel or two along its normal
-  (against acne), compares against the map, and returns 1 outside it. `soft` averages 3 × 3 samples,
-  `hard` takes one. The result is mixed with 1 by `strength`.
-- Scripts set the distance and size with `QualitySettings.shadowDistance` (default 25 m) and
-  `shadowResolution` (default 2048, 256 to 8192): `render.shadowSettings`. The app copies them to
-  `WorldRenderer` before each draw.
+`shadows::plan(camera, lights, settings)` returns a `ShadowPlan`: a `ShadowSlot` per casting light (a light
+with `Shadows { soft, strength }`, strength above 0), a matrix per map, and texel sizes for the normal
+offset.
 
-Spot and point lights cast no shadows yet. Each `MeshInstance` has `cast_shadows`
-(`MeshRenderer.shadowCastingMode`, `on` / `off`): opaque runs are grouped by it too, and the shadow
-pass draws only the casting ones.
+- **Sun.** The first directional light with shadows gets `shadow_cascades` (1 to 4) cascades in a
+  `Depth32Float` array of `shadow_resolution` texels. With 2 or more, the main camera's view out to
+  `shadow_distance` is split into slices that grow with distance, each fitted with a sphere and an
+  orthographic map, moved in whole texels so edges do not crawl. One cascade is a single sphere that
+  distance across in front of the camera.
+- **Spot and point lights.** A spot light gets one perspective map (a little wider than its cone), a
+  point light a cube of six 90 degree maps (faces +x, -x, +y, -y, +z, -z). They share a second array at
+  half the sun's resolution with at most `MAX_LOCAL_LAYERS` (24) layers. Lights are taken nearest the
+  camera first and a light that no longer fits goes without. The maps reach the light's `range`.
+- `ShadowArray` holds each texture array: one view to sample, one per layer to draw into. Arrays are
+  recreated when the size or layer count changes. `GpuLight.shadow` carries the slot's first matrix
+  index, strength, filter radius and texel size; `shadow_matrices` is a storage buffer in group 2.
+- **Shader.** `sun_shadow` takes the first cascade whose map holds the point (offset along the normal by
+  1.5 texels); `local_shadow` picks the cube face from the direction to the light (the offset grows with
+  distance). Both use `pcf`, a (2r + 1)^2 box of comparison samples, and mix the result with 1 by the
+  strength. Outside every map a point is lit.
+- `WorldStats::shadow_maps` counts the maps drawn in the frame (`M5-RND-20` checks 4 + 1 + 6).
+- Scripts set the distance, size and cascades with `QualitySettings.shadowDistance` (default 25 m),
+  `shadowResolution` (default 2048, 256 to 8192) and `shadowCascades` (1, 2 or 4; Low 1, Medium 2, High and
+  Ultra 4): `render.shadowSettings 0 distance resolution cascades`. The app copies them to `WorldRenderer`
+  before each draw.
 
-## Bloom
+Each `MeshInstance` has `cast_shadows` (`MeshRenderer.shadowCastingMode`, `on` / `off`): opaque runs are
+grouped by it too, and the shadow pass draws only the casting ones.
 
-[bloom.rs](../crates/iron_render/src/world/bloom.rs) and `bloom.wgsl`. `RenderSettings.bloom`
-(`{ threshold, intensity, scatter }`, default off) sends `render.bloom`; the app sets
-`WorldRenderer::bloom`.
+## Bloom and post-processing
 
-With bloom on (`intensity` above 0), `render_views` draws the world into an `Rgba16Float` texture
-(`HDR_FORMAT`), so emission and hot lights can be brighter than white. `BloomPass::encode` then picks the
-bright parts above `threshold` (with a soft knee), blurs them down a chain of half-size textures (at most
-7 levels, fewer for small targets) and back up, and adds the glow to the target as it copies the HDR
-texture over. `scatter` sets how far the blur spreads. Pipelines are built for the HDR format in that
-case, so the world pipelines are cached per colour format.
+[bloom.rs](../crates/iron_render/src/world/bloom.rs) and `bloom.wgsl`, [fxaa.rs](../crates/iron_render/src/world/fxaa.rs).
+Post effects run only in the screen's **final pass**.
+
+**Bloom.** `RenderSettings.bloom` (`{ threshold, intensity, scatter }`, default off) sends `render.bloom`; the
+app sets `WorldRenderer::bloom`. With bloom on (`intensity` above 0), `render_views` draws the world into an
+`Rgba16Float` texture (`HDR_FORMAT`), so emission and hot lights can be brighter than white.
+`BloomPass::encode` picks the bright parts above `threshold` (with a soft knee), blurs them down a chain
+of half-size textures (at most 7 levels, fewer for small targets) and back up. `scatter` sets how far the
+blur spreads. Pipelines are cached per colour format and the textures per size.
+
+**Exposure and tonemapping.** `Grading { exposure, tonemapping }` is applied after bloom by `fs_grade`
+as the HDR texture is copied to the target. `Tonemapping` is `None` (clipped at white), `Neutral`
+(Khronos PBR Neutral: colours kept until a soft shoulder) or `Aces` (filmic). Exposure multiplies the light
+by 2 to the stops. `RenderSettings.tonemapping` (`"none"`, `"neutral"`, `"aces"`) and `postExposure` (stops,
+-10 to 10) send `render.post 0 postExposure tonemapping`; the app sets `WorldRenderer::grading`. A
+non-identity grading also draws through the HDR texture.
+
+**FXAA.** `Camera.antialiasing = "fxaa"` (camera op argument 14) sets `WorldView.fxaa`. If the main view
+has it, `FxaaPass` runs over the finished, tonemapped image: it finds edges by gamma-space luma contrast
+and blends along them. It is cheaper than MSAA and smooths texture and shading edges too, a little
+blurrier. Its textures are cached per size.
+
+## Render textures
+
+A `RenderTexture(width, height)` ([textures.ts](../js/engine/src/textures.ts)) is a `Texture` that
+cameras draw into. It sends `render.renderTexture id width height` (`setSize` sends it again; up to 16384
+texels); the app calls `WorldRenderer::set_render_texture`, which makes a `RENDER_TEXTURE_FORMAT`
+(`Rgba8UnormSrgb`) texture kept under that id. Materials, sprites and quads show it like any asset
+texture (`WorldTexture::Asset(id)`). `Texture.destroy()` removes it.
+
+`Camera.targetTexture` (camera op argument 15, `null` clears it) sets `WorldView.target_texture`. A camera
+with a target texture is not `Camera.main` and is not a screen view.
+
+`render_views` draws in this order: shadows, then the render textures (`render_into_texture`, each
+texture's cameras in depth order, with the world's lights and sky but no bloom, grading or FXAA), then the
+screen. So the screen sees this frame's picture. A camera cannot sample its own texture: in its own
+views, things showing it draw plain colour; other render textures show their latest picture. Scenes save
+`RenderTexture` (size) like other textures (`M5-RTX-01`).
 
 ## Screen UI over the world
 
@@ -446,7 +524,8 @@ masks are covered by the `M5-RND-15` golden.
 `WorldRenderer` has the knobs; scripts set them through `QualitySettings`
 (`js/engine/src/quality.ts`), whose levels (Low / Medium / High / Ultra, overridable in the game's
 `package.json` under `iron.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
-soft filter, `lodBias`, `vSyncCount`) and `render.shadowSettings` (distance, map size). The default level is applied when the
+soft filter, `lodBias`, `vSyncCount`, anisotropic filtering, texture mip limit) and `render.shadowSettings`
+(distance, map size, cascades). The default level is applied when the
 engine loads; the app copies the values onto the renderer before each frame.
 
 - **MSAA** (`msaa`): the main world pass draws into a multisampled colour target (cached by size,
@@ -464,13 +543,19 @@ engine loads; the app copies the values onto the renderer before each frame.
   and restored at startup.
 - **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 or 2):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
-  soft filter is a (2r + 1)² box of comparison samples (`shadow.w` in the globals is the radius).
+  soft filter is a (2r + 1)^2 box of comparison samples (the radius is in `GpuLight.shadow`).
+- **Texture quality** (`anisotropicFiltering`: `disable`, `enable`, `forceEnable`; `globalTextureMipmapLimit`
+  0 to 3): `QualitySettings` sends them in `render.quality` (`M5-QUA-02`). `Anisotropic` sets how
+  each texture's `anisoLevel` (a Texture option, 1 to 16, trilinear only) is honoured: `Disable` makes it 1,
+  `Enable` uses the texture's level, `ForceEnable` uses at least 9. The mip limit drops that many top
+  levels of every texture. Samplers are cached per filter, wrap and anisotropy.
 
 ## Limits
 
-- Only the first directional light with shadows casts them, from the main view's opaque meshes; there
-  are no spot or point shadows, no transparent casters and no cascades.
-- Bloom is one setting for every camera.
+- Only the first directional light with shadows casts sun shadows; spot and point lights share 24 layers,
+  nearest first. Casters come from the main screen view's opaque and cutout meshes (no transparent casters).
+- Bloom, exposure and tonemapping are one setting for every camera; FXAA follows the main view's camera.
+  Mirrors, probes and render textures are ungraded.
 - Mirrors are flat, rendered only for the main view, show no mirrors inside mirrors, and cost a full
   extra scene render each. Other views see the sky in them.
 - Probes are captured from the main view's world without mirrors or other probes. A mesh uses one probe
@@ -492,7 +577,12 @@ over the view) and `M5-RND-06` (a perspective view, an orthographic top-down vie
 drawn in depth order). `M5-RND-07` (lit primitives), `-08` (textured meshes and sprites), `-09` (bloom, additive glows and a
 beam) and `-10` (directional shadows) cover the M5.a2 work. The materials work adds `M5-RND-11` (a smoothness by metallic sphere grid under the
 procedural sky, with the skybox as background), `M5-RND-12` (a planar mirror: reflected camera, clip plane
-and screen-space sampling) and `M5-RND-13` (a box-projected reflection probe in a room).
+and screen-space sampling) and `M5-RND-13` (a box-projected reflection probe in a room). Later goldens: `M5-RND-17` (material maps and
+rendering modes under a sky), `-18` (tonemapping, exposure and FXAA), `-19` (a render texture shown on a
+monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count).
+Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
+`M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
+`js/engine/test`.
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).

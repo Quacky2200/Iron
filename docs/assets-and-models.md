@@ -14,12 +14,16 @@ How these are drawn is in [world-rendering.md](world-rendering.md).
 A `Texture` is an image the world draws with (not the UI's `image` element, which has its own path in
 `iron_ui`). Scripts make one two ways:
 
-- `Texture.load(src, { filterMode, wrapMode, mipmaps })` reads a PNG or JPEG from the game folder.
+- `Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })` reads a PNG or JPEG from the game folder.
 - `Texture.create(width, height, colors, options)` takes linear `Color`s, bottom row first like Unity's
   `SetPixels`. They are converted to sRGB bytes, top row first, before they cross.
 
 Both send `render.texture id src filter wrap mipmaps [width height [pixels...]]`. `src` is `null` for
-pixel data. Defaults: bilinear, repeat, mipmaps on. `Texture.whenLoaded()` returns a promise.
+pixel data. Defaults: bilinear, repeat, mipmaps on, `anisoLevel` 1, `linear` false. `anisoLevel` (1 to 16,
+trilinear only) sharpens grazing angles within what `QualitySettings.anisotropicFiltering` allows.
+`linear: true` marks data (normal maps, masks) rather than colours: the renderer reads it without sRGB
+decoding and averages its mips in linear space. `Texture.whenLoaded()` returns a promise.
+A `RenderTexture` is a texture cameras draw into (see [world-rendering.md](world-rendering.md#render-textures)).
 
 **Ids.** Scripts count textures up from 1. The engine's own (a model's) start at `1 << 30`
 (`ENGINE_IDS`), so they never meet.
@@ -33,11 +37,13 @@ is also kept in `texture_sizes`, which sprites need before they can be laid out.
 sends `render.textureRemove`, and things still using it draw the checker.
 
 **Upload.** Before each draw the app moves `texture_uploads` into the renderer
-(`WorldRenderer::set_texture`). Textures are `Rgba8UnormSrgb`, so sampling decodes to linear. With
+(`WorldRenderer::set_texture`). Textures are `Rgba8UnormSrgb`, so sampling decodes to linear; a second
+`Rgba8Unorm` view of the same data (`AssetTexture` keeps both) is used when a material reads the texture as
+a map. With
 `mipmaps` on, the CPU builds every level (`texture::half`): each texel averages up to 2 x 2 texels **in
 linear light** (not encoded values), weighted by alpha so see-through texels do not darken their
 neighbours. A texture over the GPU's maximum size is refused with a warning. Samplers are shared per
-`(filter, wrap)`: `Point` is nearest and crisp, `Bilinear` blends texels but not mip levels,
+`(filter, wrap, anisotropy)` (`SamplerKey`): `Point` is nearest and crisp, `Bilinear` blends texels but not mip levels,
 `Trilinear` blends both; wrap is `Repeat`, `Clamp` or `Mirror`.
 
 **Alpha.** Kept textures hold **straight** alpha; the frame textures of world panels hold premultiplied.
@@ -71,8 +77,20 @@ mainTextureOffset })` builds one from named settings, and `material.with({...})`
 anything left out keeps its default or current value. `withColor` and `withTexture(texture, scale, offset)`
 are shortcuts for `with`.
 
+**Maps and modes.** `create` and `with` also take Unity's Standard shader settings: `normalMap` and
+`normalScale`, `metallicGlossMap` (metallic in red, smoothness in alpha), `specularColor` (switches to the
+specular workflow, and the map then holds specular colour and smoothness), `occlusionMap` and
+`occlusionStrength`, `emissionMap`, `detailAlbedoMap` with its own `detailAlbedoMapScale` and
+`detailAlbedoMapOffset`, `renderingMode` (`"opaque"`, `"cutout"`, `"fade"`, `"transparent"`, type
+`RenderingMode`), `alphaCutoff` and `doubleSided`. Load normal and metallic maps with `linear: true`. They
+travel in the last argument of `render.meshRenderer` (`_extras`, an array that is only sent when a value
+differs from the default); the app reads it in `material_extras` into `MaterialMaps`, `RenderMode` and the
+rest of `MeshInstance`. How they are shaded is in
+[world-rendering.md](world-rendering.md#materials). Scenes save a material's extra settings only when
+they differ from the defaults, and a texture's `linear` and `anisoLevel`.
+
 `Mesh.create({ positions, normals, uvs, indices })` sends `render.mesh id ...`. `WorldViews::apply`
-builds a `MeshData`, completes it (`complete`: smooth normals, zero UVs when missing), checks it
+builds a `MeshData`, completes it (`complete`: smooth normals, zero UVs and tangents when missing), checks it
 (`is_valid`) and keeps a copy in `mesh_data` (for mesh colliders) as well as queueing the upload.
 `Mesh.set` replaces the data and `Mesh.destroy` removes it (`render.mesh id null`); renderers using a
 removed mesh draw nothing. The renderer also keeps a mesh's buffers by id (`set_mesh`, `remove_mesh`).
@@ -109,22 +127,27 @@ the game folder:
 
 - The `.glb`/`.gltf` file and anything it names (buffers, images) must be inside the game folder
   (`resolve_asset`; `data:` URIs work; URIs are percent-decoded).
-- Each material's base colour texture becomes a texture under an engine id, with the sampler's filter
-  and wrap mapped (`Nearest` mag filter is `Point`; otherwise trilinear when the min filter has mips).
-  Textures are shared between materials that use the same image. An image that cannot be read gives the
+- Each material's textures (base colour, emissive, normal, metallic-roughness, occlusion) become textures
+  under engine ids, with the sampler's filter and wrap mapped (`Nearest` mag filter is `Point`;
+  otherwise trilinear when the min filter has mips). Colours (base, emissive) are sRGB and data (normal,
+  metallic-roughness, occlusion) is linear, so one image used both ways is two textures. Textures are
+  shared between materials that use the same image and role. An image that cannot be read gives the
   material `MISSING_TEXTURE`.
 - Each triangle primitive becomes its own mesh under an engine id (`EngineIds`, counting up from
   `1 << 30`). Other primitive modes and malformed meshes are skipped with a warning. Missing normals and
-  UVs are made up.
+  UVs are made up. Tangents are read from the file, or made from the UVs (glTF's convention matches ours).
 - The result is a description: `{ nodes, roots, materials }`. Nodes carry a decomposed transform,
   children and primitives (`mesh`, `material`, `bounds`); materials carry colour, emission, smoothness
-  (1 - roughness), `metallic` (glTF's `metallicFactor`), `unlit` and the texture id and size. Only `blend` materials keep their alpha.
+  (1 - roughness), `metallic` (glTF's `metallicFactor`), `unlit` and the texture id and size. Also `alpha` mode (`alphaMode`: opaque, mask or blend),
+  `alphaCutoff`, `doubleSided`, and the map ids: `normal` (id, scale), `metallicRoughness`, `occlusion`
+  (id, strength) and `emissive`. Only `blend` materials keep their colour alpha.
 - Meshes go to `mesh_uploads` and `mesh_data`, textures to `texture_uploads`, and the description is
   sent to `__iron_models([id, json | null, ...])` (null: it failed) after the ops batch.
 
 **In scripts.** `__iron_models` calls `Model._loaded`. `instantiate` makes a GameObject named after the
 file with the model's nodes as children (each a `GameObject` with the node's transform), and a
-`MeshRenderer` per primitive with the right `Material`. A node with several primitives gets one child
+`MeshRenderer` per primitive with the right `Material`. In scripts, `mask` becomes `cutout`, `blend` becomes `fade`, and the metallic-roughness map is
+read with `gltfPacking` (occlusion red, roughness green, metallic blue). A node with several primitives gets one child
 object per part. With `colliders: "mesh"` (exact triangles, for static scenery) or `"convex"` each
 renderer also gets a `MeshCollider` with `sharedMesh`. `instantiate` before loading finishes works: the
 nodes appear when the model arrives. The root remembers its source (`_model`) and the nodes are marked
@@ -135,7 +158,8 @@ nodes appear when the model arrives. The root remembers its source (`_model`) an
 
 - Textures are 2D only, RGBA8, and all mip levels are built on the CPU.
 - Loading blocks the frame it happens in; there is no async or streaming load.
-- glTF: base colour, emissive, roughness and metallic factors only (no metallic-roughness texture). No skins, animations, normal maps or cameras, and
+- glTF: base colour, emissive, normal, metallic-roughness and occlusion textures, factors, alpha modes and
+  double-sided. No extensions, skins, animations or cameras, and
   only triangle meshes.
 - Hot reload makes a new `WorldViews`, and scripts load their textures and models again (see
   [scripting.md](scripting.md#hot-reload)).
