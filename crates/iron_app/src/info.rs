@@ -34,7 +34,9 @@ impl Manifest {
     /// Reads `package.json` in `root`; a missing or broken one gives defaults named
     /// after the folder.
     pub fn load(root: &Path) -> Self {
-        let folder = root
+        // `.` (the current folder) has no name of its own until it's made absolute.
+        let absolute = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let folder = absolute
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "game".into());

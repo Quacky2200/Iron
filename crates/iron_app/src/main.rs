@@ -1,8 +1,8 @@
-//! `iron <game> [--screenshot out.png] [--frames N]`: opens a window, loads the
+//! `iron [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
-//! `<game>` is either a game folder (loads `<game>/dist/game.js`, built with
-//! `bun run build`) or a `.js` bundle directly. `--screenshot` saves the UI after
+//! `[game]` is either a game folder (loads `<game>/dist/game.js`, built with
+//! `bun run build`) or a `.js` bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 mod cursor;
@@ -51,10 +51,17 @@ struct Args {
 }
 
 fn parse_args() -> Result<Args> {
-    let usage = "usage: iron <game folder | bundle.js> [--screenshot out.png] [--frames N]";
-    let mut args = std::env::args_os().skip(1);
+    parse_args_from(std::env::args_os().skip(1))
+}
+
+/// Parses the arguments after the program name. The game is the first argument that isn't
+/// an option, or the current folder when there's none.
+fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
+    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N]";
+    let mut args = args.into_iter();
+    let mut game = None;
     let mut parsed = Args {
-        game: args.next().context(usage)?.into(),
+        game: PathBuf::from("."),
         screenshot: None,
         frames: 60,
     };
@@ -67,8 +74,13 @@ fn parse_args() -> Result<Args> {
                     .and_then(|n| n.to_str()?.parse().ok())
                     .context("--frames needs a number")?
             }
+            Some(s) if game.is_none() && !s.starts_with("--") => game = Some(PathBuf::from(s)),
+            None if game.is_none() => game = Some(PathBuf::from(arg)),
             _ => bail!("unexpected argument {arg:?}\n{usage}"),
         }
+    }
+    if let Some(game) = game {
+        parsed.game = game;
     }
     Ok(parsed)
 }
@@ -2033,4 +2045,37 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
         load_font(ui, root, &face.family, &face.src, face.weight, face.italic);
     }
     added.id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Args> {
+        parse_args_from(args.iter().map(std::ffi::OsString::from))
+    }
+
+    // M5-APP-03
+    #[test]
+    fn game_folder_defaults_to_the_current_folder() {
+        let args = parse(&[]).unwrap();
+        assert_eq!(args.game, PathBuf::from("."));
+        let args = parse(&["--screenshot", "out.png", "--frames", "5"]).unwrap();
+        assert_eq!(args.game, PathBuf::from("."));
+        assert_eq!(args.screenshot, Some(PathBuf::from("out.png")));
+        assert_eq!(args.frames, 5);
+    }
+
+    // M5-APP-03
+    #[test]
+    fn game_folder_can_come_before_or_after_options() {
+        assert_eq!(
+            parse(&["examples/css"]).unwrap().game,
+            PathBuf::from("examples/css")
+        );
+        let args = parse(&["--frames", "3", "examples/css"]).unwrap();
+        assert_eq!(args.game, PathBuf::from("examples/css"));
+        assert!(parse(&["a", "b"]).is_err());
+        assert!(parse(&["--nope"]).is_err());
+    }
 }
