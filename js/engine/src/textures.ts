@@ -198,6 +198,7 @@ export class SpriteRenderer extends Component {
   private _color = Color.white;
   private _flipX = false;
   private _flipY = false;
+  private _sortingOrder = 0;
   private started = false;
   private shown = false;
 
@@ -230,6 +231,15 @@ export class SpriteRenderer extends Component {
     this.send();
   }
 
+  /** Draw order: higher draws over lower, whatever the distance (Unity's `sortingOrder`). */
+  get sortingOrder(): number {
+    return this._sortingOrder;
+  }
+  set sortingOrder(o: number) {
+    this._sortingOrder = Math.trunc(o);
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const s = this._sprite;
@@ -251,6 +261,7 @@ export class SpriteRenderer extends Component {
       [c.r, c.g, c.b, c.a],
       this._flipX,
       this._flipY,
+      this._sortingOrder,
     );
     this.shown = true;
   }

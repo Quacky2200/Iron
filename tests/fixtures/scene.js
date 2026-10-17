@@ -1307,19 +1307,6 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/audio-components.ts
   var clips = new Map;
-  // ../../js/engine/src/particles.ts
-  var systems = new Map;
-  globalThis.__iron_particles = (changed) => {
-    for (let i = 0;i + 2 < changed.length; i += 3) {
-      systems.get(changed[i])?._report(changed[i + 1], changed[i + 2] === 1);
-    }
-  };
-  // ../../js/engine/src/textures.ts
-  var textures = new Map;
-  globalThis.__iron_textures = (loaded) => {
-    for (const [id, w, h] of loaded)
-      textures.get(id)?._loaded(w, h);
-  };
   // ../../js/engine/src/clock.ts
   var time = 0;
   var unscaledTime = 0;
@@ -1379,97 +1366,6 @@ ${err.stack}` : ""}`);
       fn();
   });
 
-  // ../../js/engine/src/input.ts
-  var keys = new Set;
-  var pressedPending = new Set;
-  var releasedPending = new Set;
-  var pressedThisTick = new Set;
-  var releasedThisTick = new Set;
-  onTick(() => {
-    pressedThisTick = pressedPending;
-    releasedThisTick = releasedPending;
-    pressedPending = new Set;
-    releasedPending = new Set;
-  });
-  var pads = new Map;
-  var listeners = {};
-  function emit(type, event) {
-    for (const fn of listeners[type] ?? []) {
-      try {
-        fn(event);
-      } catch (e) {
-        const err = e instanceof Error ? e : new Error(String(e));
-        console.error(`[input] error in ${type} listener: ${err.message}${err.stack ? `
-${err.stack}` : ""}`);
-      }
-    }
-  }
-  function pad(id, name = "") {
-    let p = pads.get(id);
-    if (!p) {
-      p = { id, name, connected: true, buttons: {}, axes: {} };
-      pads.set(id, p);
-    }
-    return p;
-  }
-  globalThis.__iron_input = (type, ...args) => {
-    switch (type) {
-      case "keydown": {
-        const [code, key, repeat] = args;
-        if (!repeat && !keys.has(code))
-          pressedPending.add(code);
-        keys.add(code);
-        emit("keydown", { code, key, repeat: !!repeat });
-        break;
-      }
-      case "keyup": {
-        const [code, key] = args;
-        if (keys.has(code))
-          releasedPending.add(code);
-        keys.delete(code);
-        emit("keyup", { code, key, repeat: false });
-        break;
-      }
-      case "blur":
-        keys.clear();
-        for (const p of pads.values())
-          for (const b of Object.keys(p.buttons))
-            p.buttons[b] = 0;
-        break;
-      case "gamepadconnected": {
-        const [id, name] = args;
-        const p = pad(id, name);
-        p.connected = true;
-        emit("gamepadconnected", { gamepad: p });
-        break;
-      }
-      case "gamepaddisconnected": {
-        const p = pad(args[0]);
-        p.connected = false;
-        emit("gamepaddisconnected", { gamepad: p });
-        break;
-      }
-      case "gamepadbutton": {
-        const [id, button, value] = args;
-        const p = pad(id);
-        const was = (p.buttons[button] ?? 0) > 0.5;
-        p.buttons[button] = value;
-        const now = value > 0.5;
-        if (now && !was)
-          emit("gamepadbuttondown", { gamepad: p, button });
-        if (!now && was)
-          emit("gamepadbuttonup", { gamepad: p, button });
-        break;
-      }
-      case "gamepadaxis": {
-        const [id, axis, value] = args;
-        const p = pad(id);
-        p.axes[axis] = value;
-        emit("gamepadaxis", { gamepad: p, axis, value });
-        break;
-      }
-    }
-  };
   // ../../js/engine/src/physics.ts
   var vec2 = (v) => v ? [v.x, v.y, v.z] : null;
   var quat2 = (q) => q ? [q.x, q.y, q.z, q.w] : null;
@@ -1542,6 +1438,7 @@ ${err.stack}` : ""}`);
     position;
     rotation;
     velocity;
+    angularVelocity = Vector3.zero;
     grounded = false;
     onCollisionStart;
     onCollisionEnd;
@@ -1699,13 +1596,14 @@ ${err.stack}` : ""}`);
     }
   }
   globalThis.__iron_physics = (moved, contacts, rays, characters) => {
-    for (let i = 0;i + 10 < moved.length; i += 11) {
+    for (let i = 0;i + 13 < moved.length; i += 14) {
       const b = bodies.get(moved[i]);
       if (!b)
         continue;
       b.position = new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]);
       b.rotation = new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]);
       b.velocity = new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]);
+      b.angularVelocity = new Vector3(moved[i + 11], moved[i + 12], moved[i + 13]);
     }
     for (let i = 0;i + 1 < characters.length; i += 2) {
       const b = bodies.get(characters[i]);
@@ -1756,6 +1654,562 @@ ${err.stack}` : ""}`);
         point: new Vector3(q.origin.x + q.dir.x * distance, q.origin.y + q.dir.y * distance, q.origin.z + q.dir.z * distance),
         normal: new Vector3(rays[i + 3], rays[i + 4], rays[i + 5])
       });
+    }
+  };
+
+  // ../../js/engine/src/screen.ts
+  var width = 1280;
+  var height = 720;
+  var scale = 1;
+  globalThis.__iron_screen = (w, h, s) => {
+    width = w;
+    height = h;
+    scale = s;
+  };
+
+  // ../../js/engine/src/rendering.ts
+  var rgba = (c) => [c.r, c.g, c.b, c.a];
+  class Material {
+    color;
+    emission;
+    smoothness;
+    unlit;
+    mainTexture;
+    mainTextureScale;
+    mainTextureOffset;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false, mainTexture = null, mainTextureScale = Vector2.one, mainTextureOffset = Vector2.zero) {
+      this.color = color;
+      this.emission = emission;
+      this.smoothness = smoothness;
+      this.unlit = unlit;
+      this.mainTexture = mainTexture;
+      this.mainTextureScale = mainTextureScale;
+      this.mainTextureOffset = mainTextureOffset;
+    }
+    withColor(color) {
+      return new Material(color, this.emission, this.smoothness, this.unlit, this.mainTexture, this.mainTextureScale, this.mainTextureOffset);
+    }
+    withTexture(texture, scale = Vector2.one, offset = Vector2.zero) {
+      return new Material(this.color, this.emission, this.smoothness, this.unlit, texture, new Vector2(scale.x, scale.y), new Vector2(offset.x, offset.y));
+    }
+  }
+  class MeshRenderer extends Component {
+    _mesh = "cube";
+    _material = new Material;
+    started = false;
+    get mesh() {
+      return this._mesh;
+    }
+    set mesh(m) {
+      this._mesh = m;
+      this.send();
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const m = this._material;
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y]);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var ambient = new Color(0.2, 0.2, 0.22);
+
+  // ../../js/engine/src/physics-components.ts
+  var RigidbodyConstraints = {
+    None: 0,
+    FreezePositionX: 2,
+    FreezePositionY: 4,
+    FreezePositionZ: 8,
+    FreezeRotationX: 16,
+    FreezeRotationY: 32,
+    FreezeRotationZ: 64,
+    FreezePosition: 14,
+    FreezeRotation: 112,
+    FreezeAll: 126
+  };
+
+  class PhysicsMaterial {
+    dynamicFriction;
+    bounciness;
+    constructor(dynamicFriction = 0.6, bounciness = 0) {
+      this.dynamicFriction = dynamicFriction;
+      this.bounciness = bounciness;
+    }
+  }
+  var objectPhysics = new Map;
+  var colliderOwners = new Map;
+  function physicsFor(go) {
+    let p = objectPhysics.get(go);
+    if (!p) {
+      const t = go.transform;
+      const body = physics.createBody({ kind: "fixed", position: t.position, rotation: t.rotation });
+      body.attachTo(go.id);
+      p = { body, rigidbody: null, colliders: new Set };
+      objectPhysics.set(go, p);
+    }
+    return p;
+  }
+  function releasePhysics(go) {
+    const p = objectPhysics.get(go);
+    if (!p || p.rigidbody || p.colliders.size > 0)
+      return;
+    p.body.remove();
+    objectPhysics.delete(go);
+  }
+
+  class Collider extends Component {
+    _center = Vector3.zero;
+    _isTrigger = false;
+    _material = new PhysicsMaterial;
+    handle = null;
+    get center() {
+      return this._center;
+    }
+    set center(c) {
+      this._center = Vector3.from(c);
+      this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
+    }
+    get isTrigger() {
+      return this._isTrigger;
+    }
+    set isTrigger(on) {
+      this._isTrigger = on;
+      this.handle?.setSensor(on);
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.handle?.setFriction(m.dynamicFriction);
+      this.handle?.setRestitution(m.bounciness);
+    }
+    get attachedRigidbody() {
+      const rb = objectPhysics.get(this.gameObject)?.rigidbody;
+      return rb instanceof Rigidbody ? rb : null;
+    }
+    get _is2D() {
+      return false;
+    }
+    shapeRotation() {
+      return;
+    }
+    rebuild() {
+      if (!this.handle)
+        return;
+      this.handle.remove();
+      colliderOwners.delete(this.handle.id);
+      this.create();
+    }
+    create() {
+      const p = physicsFor(this.gameObject);
+      const scale = this.gameObject.transform.lossyScale;
+      this.handle = p.body.addCollider({
+        shape: this.shape(scale),
+        position: this._center.mul(scale),
+        rotation: this.shapeRotation(),
+        sensor: this._isTrigger,
+        friction: this._material.dynamicFriction,
+        restitution: this._material.bounciness
+      });
+      colliderOwners.set(this.handle.id, this);
+      p.colliders.add(this);
+      p.rigidbody?._sendMass();
+    }
+    onAwake() {
+      this.create();
+    }
+    onDestroy() {
+      const p = objectPhysics.get(this.gameObject);
+      p?.colliders.delete(this);
+      if (this.handle) {
+        colliderOwners.delete(this.handle.id);
+        this.handle.remove();
+        this.handle = null;
+      }
+      p?.rigidbody?._sendMass();
+      releasePhysics(this.gameObject);
+    }
+  }
+
+  class BoxCollider extends Collider {
+    _size = Vector3.one;
+    get size() {
+      return this._size;
+    }
+    set size(s) {
+      this._size = Vector3.from(s);
+      this.rebuild();
+    }
+    shape(scale) {
+      const h = this._size.mul(scale).scale(0.5);
+      return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
+    }
+  }
+
+  class SphereCollider extends Collider {
+    _radius = 0.5;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    shape(scale) {
+      return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
+    }
+  }
+
+  class CapsuleCollider extends Collider {
+    _radius = 0.5;
+    _height = 2;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    get height() {
+      return this._height;
+    }
+    set height(h) {
+      this._height = h;
+      this.rebuild();
+    }
+    shape(scale) {
+      const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
+      const halfHeight = Math.max(0, this._height * Math.abs(scale.y) / 2 - radius);
+      return { capsule: { halfHeight, radius } };
+    }
+  }
+
+  class MeshCollider extends Collider {
+    points = [];
+    indices = [];
+    convex = false;
+    shape(scale) {
+      const pts = this.points.map((p) => Vector3.from(p).mul(scale));
+      return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
+    }
+    setMesh(points, indices, convex = this.convex) {
+      this.points = points;
+      this.indices = indices;
+      this.convex = convex;
+      this.rebuild();
+    }
+  }
+
+  class Rigidbody extends Component {
+    _mass = 1;
+    _drag = 0;
+    _angularDrag = 0.05;
+    _useGravity = true;
+    _isKinematic = false;
+    _constraints = RigidbodyConstraints.None;
+    _continuous = false;
+    p = null;
+    get body() {
+      return this.p?.body ?? null;
+    }
+    get mass() {
+      return this._mass;
+    }
+    set mass(kg) {
+      this._mass = Math.max(0.000001, kg);
+      this._sendMass();
+    }
+    get drag() {
+      return this._drag;
+    }
+    set drag(d) {
+      this._drag = d;
+      this.p?.body.setDamping(this._drag, this._angularDrag);
+    }
+    get angularDrag() {
+      return this._angularDrag;
+    }
+    set angularDrag(d) {
+      this._angularDrag = d;
+      this.p?.body.setDamping(this._drag, this._angularDrag);
+    }
+    get useGravity() {
+      return this._useGravity;
+    }
+    set useGravity(on) {
+      this._useGravity = on;
+      this.p?.body.setGravityScale(on ? 1 : 0);
+    }
+    get isKinematic() {
+      return this._isKinematic;
+    }
+    set isKinematic(on) {
+      this._isKinematic = on;
+      this.p?.body.setKind(on ? "kinematic" : "dynamic");
+    }
+    get constraints() {
+      return this._constraints;
+    }
+    set constraints(flags) {
+      this._constraints = flags;
+      this.sendConstraints();
+    }
+    get collisionDetection() {
+      return this._continuous ? "continuous" : "discrete";
+    }
+    set collisionDetection(mode) {
+      this._continuous = mode === "continuous";
+      this.p?.body.setCcd(this._continuous);
+    }
+    get velocity() {
+      return this.p ? Vector3.from(this.p.body.velocity) : Vector3.zero;
+    }
+    set velocity(v) {
+      this.p?.body.setVelocity(v);
+    }
+    get angularVelocity() {
+      return this.p ? Vector3.from(this.p.body.angularVelocity) : Vector3.zero;
+    }
+    set angularVelocity(v) {
+      this.p?.body.setAngularVelocity(v);
+    }
+    addForce(force, mode = 0 /* Force */) {
+      this.p?.body.applyImpulse(this.impulse(force, mode));
+    }
+    addTorque(torque, mode = 0 /* Force */) {
+      const dt = 1 / 60;
+      const t = Vector3.from(torque);
+      const instant = mode === 1 /* Impulse */ || mode === 2 /* VelocityChange */;
+      this.p?.body.applyTorqueImpulse(instant ? t : t.scale(dt));
+    }
+    addForceAtPosition(force, position, mode = 0 /* Force */) {
+      this.p?.body.applyImpulseAtPoint(this.impulse(force, mode), position);
+    }
+    addExplosionForce(force, position, radius, upwards = 0, mode = 1 /* Impulse */) {
+      const from = Vector3.from(position).sub(new Vector3(0, upwards, 0));
+      const offset = this.transform.position.sub(from);
+      const distance = offset.magnitude;
+      if (distance > radius)
+        return;
+      const falloff = 1 - Mathf.clamp01(distance / Math.max(radius, 0.000001));
+      this.addForce(offset.normalized.scale(force * falloff), mode);
+    }
+    movePosition(position) {
+      this.transform.position = position;
+    }
+    moveRotation(rotation) {
+      this.transform.rotation = rotation;
+    }
+    sleep() {
+      this.p?.body.sleep();
+    }
+    wakeUp() {
+      this.p?.body.wakeUp();
+    }
+    impulse(force, mode) {
+      const f = Vector3.from(force);
+      const dt = 1 / 60;
+      switch (mode) {
+        case 0 /* Force */:
+          return f.scale(dt);
+        case 5 /* Acceleration */:
+          return f.scale(this._mass * dt);
+        case 1 /* Impulse */:
+          return f;
+        case 2 /* VelocityChange */:
+          return f.scale(this._mass);
+      }
+    }
+    _sendMass() {
+      this.p?.body.setMass(this._mass);
+    }
+    sendConstraints() {
+      const c = this._constraints;
+      const free = (flag) => (c & flag) === 0;
+      this.p?.body.setAllowedAxes([free(RigidbodyConstraints.FreezePositionX), free(RigidbodyConstraints.FreezePositionY), free(RigidbodyConstraints.FreezePositionZ)], [free(RigidbodyConstraints.FreezeRotationX), free(RigidbodyConstraints.FreezeRotationY), free(RigidbodyConstraints.FreezeRotationZ)]);
+    }
+    onAwake() {
+      const p = physicsFor(this.gameObject);
+      p.rigidbody = this;
+      this.p = p;
+      p.body.setKind(this._isKinematic ? "kinematic" : "dynamic");
+      this._sendMass();
+      p.body.setDamping(this._drag, this._angularDrag);
+      p.body.setGravityScale(this._useGravity ? 1 : 0);
+      if (this._continuous)
+        p.body.setCcd(true);
+      if (this._constraints)
+        this.sendConstraints();
+    }
+    onDestroy() {
+      const p = this.p;
+      if (!p)
+        return;
+      p.rigidbody = null;
+      this.p = null;
+      p.body.setKind("fixed");
+      releasePhysics(this.gameObject);
+    }
+  }
+  contactListeners.push((a, b, started, sensor, speed) => {
+    const ca = colliderOwners.get(a.id);
+    const cb = colliderOwners.get(b.id);
+    if (!ca || !cb)
+      return;
+    for (const [self, other] of [
+      [ca, cb],
+      [cb, ca]
+    ]) {
+      const go = self.gameObject;
+      if (go.destroyed)
+        continue;
+      for (const component of [...go.components]) {
+        if (self._is2D) {
+          if (sensor) {
+            (started ? component.onTriggerEnter2D : component.onTriggerExit2D)?.call(component, other);
+          } else {
+            const collision = {
+              gameObject: other.gameObject,
+              collider: other,
+              rigidbody: objectPhysics.get(other.gameObject)?.rigidbody ?? null,
+              relativeSpeed: speed
+            };
+            (started ? component.onCollisionEnter2D : component.onCollisionExit2D)?.call(component, collision);
+          }
+        } else if (sensor) {
+          (started ? component.onTriggerEnter : component.onTriggerExit)?.call(component, other);
+        } else {
+          const collision = {
+            gameObject: other.gameObject,
+            collider: other,
+            rigidbody: other.attachedRigidbody,
+            relativeSpeed: speed
+          };
+          (started ? component.onCollisionEnter : component.onCollisionExit)?.call(component, collision);
+        }
+      }
+    }
+  });
+
+  // ../../js/engine/src/physics2d.ts
+  var gravity2D = new Vector2(0, -9.81);
+  var colliders2D = new Map;
+  // ../../js/engine/src/particles.ts
+  var systems = new Map;
+  globalThis.__iron_particles = (changed) => {
+    for (let i = 0;i + 2 < changed.length; i += 3) {
+      systems.get(changed[i])?._report(changed[i + 1], changed[i + 2] === 1);
+    }
+  };
+  // ../../js/engine/src/textures.ts
+  var textures = new Map;
+  globalThis.__iron_textures = (loaded) => {
+    for (const [id, w, h] of loaded)
+      textures.get(id)?._loaded(w, h);
+  };
+  // ../../js/engine/src/input.ts
+  var keys = new Set;
+  var pressedPending = new Set;
+  var releasedPending = new Set;
+  var pressedThisTick = new Set;
+  var releasedThisTick = new Set;
+  onTick(() => {
+    pressedThisTick = pressedPending;
+    releasedThisTick = releasedPending;
+    pressedPending = new Set;
+    releasedPending = new Set;
+  });
+  var pads = new Map;
+  var listeners = {};
+  function emit(type, event) {
+    for (const fn of listeners[type] ?? []) {
+      try {
+        fn(event);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[input] error in ${type} listener: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+      }
+    }
+  }
+  function pad(id, name = "") {
+    let p = pads.get(id);
+    if (!p) {
+      p = { id, name, connected: true, buttons: {}, axes: {} };
+      pads.set(id, p);
+    }
+    return p;
+  }
+  globalThis.__iron_input = (type, ...args) => {
+    switch (type) {
+      case "keydown": {
+        const [code, key, repeat] = args;
+        if (!repeat && !keys.has(code))
+          pressedPending.add(code);
+        keys.add(code);
+        emit("keydown", { code, key, repeat: !!repeat });
+        break;
+      }
+      case "keyup": {
+        const [code, key] = args;
+        if (keys.has(code))
+          releasedPending.add(code);
+        keys.delete(code);
+        emit("keyup", { code, key, repeat: false });
+        break;
+      }
+      case "blur":
+        keys.clear();
+        for (const p of pads.values())
+          for (const b of Object.keys(p.buttons))
+            p.buttons[b] = 0;
+        break;
+      case "gamepadconnected": {
+        const [id, name] = args;
+        const p = pad(id, name);
+        p.connected = true;
+        emit("gamepadconnected", { gamepad: p });
+        break;
+      }
+      case "gamepaddisconnected": {
+        const p = pad(args[0]);
+        p.connected = false;
+        emit("gamepaddisconnected", { gamepad: p });
+        break;
+      }
+      case "gamepadbutton": {
+        const [id, button, value] = args;
+        const p = pad(id);
+        const was = (p.buttons[button] ?? 0) > 0.5;
+        p.buttons[button] = value;
+        const now = value > 0.5;
+        if (now && !was)
+          emit("gamepadbuttondown", { gamepad: p, button });
+        if (!now && was)
+          emit("gamepadbuttonup", { gamepad: p, button });
+        break;
+      }
+      case "gamepadaxis": {
+        const [id, axis, value] = args;
+        const p = pad(id);
+        p.axes[axis] = value;
+        emit("gamepadaxis", { gamepad: p, axis, value });
+        break;
+      }
     }
   };
   // ../../js/engine/src/time.ts
@@ -1975,268 +2429,6 @@ ${err.stack}` : ""}`);
     }
   }
   var shared = new Rng;
-  // ../../js/engine/src/screen.ts
-  var width = 1280;
-  var height = 720;
-  var scale = 1;
-  globalThis.__iron_screen = (w, h, s) => {
-    width = w;
-    height = h;
-    scale = s;
-  };
-
-  // ../../js/engine/src/rendering.ts
-  var rgba = (c) => [c.r, c.g, c.b, c.a];
-  class Material {
-    color;
-    emission;
-    smoothness;
-    unlit;
-    mainTexture;
-    mainTextureScale;
-    mainTextureOffset;
-    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false, mainTexture = null, mainTextureScale = Vector2.one, mainTextureOffset = Vector2.zero) {
-      this.color = color;
-      this.emission = emission;
-      this.smoothness = smoothness;
-      this.unlit = unlit;
-      this.mainTexture = mainTexture;
-      this.mainTextureScale = mainTextureScale;
-      this.mainTextureOffset = mainTextureOffset;
-    }
-    withColor(color) {
-      return new Material(color, this.emission, this.smoothness, this.unlit, this.mainTexture, this.mainTextureScale, this.mainTextureOffset);
-    }
-    withTexture(texture, scale = Vector2.one, offset = Vector2.zero) {
-      return new Material(this.color, this.emission, this.smoothness, this.unlit, texture, new Vector2(scale.x, scale.y), new Vector2(offset.x, offset.y));
-    }
-  }
-  class MeshRenderer extends Component {
-    _mesh = "cube";
-    _material = new Material;
-    started = false;
-    get mesh() {
-      return this._mesh;
-    }
-    set mesh(m) {
-      this._mesh = m;
-      this.send();
-    }
-    get material() {
-      return this._material;
-    }
-    set material(m) {
-      this._material = m;
-      this.send();
-    }
-    send() {
-      if (!this.started)
-        return;
-      const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y]);
-    }
-    onAwake() {
-      this.started = true;
-      this.send();
-    }
-    onDestroy() {
-      __iron_op("render.remove", this.id);
-    }
-  }
-  var ambient = new Color(0.2, 0.2, 0.22);
-
-  // ../../js/engine/src/physics-components.ts
-  class PhysicsMaterial {
-    dynamicFriction;
-    bounciness;
-    constructor(dynamicFriction = 0.6, bounciness = 0) {
-      this.dynamicFriction = dynamicFriction;
-      this.bounciness = bounciness;
-    }
-  }
-  var objectPhysics = new Map;
-  var colliderOwners = new Map;
-  function physicsFor(go) {
-    let p = objectPhysics.get(go);
-    if (!p) {
-      const t = go.transform;
-      const body = physics.createBody({ kind: "fixed", position: t.position, rotation: t.rotation });
-      body.attachTo(go.id);
-      p = { body, rigidbody: null, colliders: new Set };
-      objectPhysics.set(go, p);
-    }
-    return p;
-  }
-  function releasePhysics(go) {
-    const p = objectPhysics.get(go);
-    if (!p || p.rigidbody || p.colliders.size > 0)
-      return;
-    p.body.remove();
-    objectPhysics.delete(go);
-  }
-
-  class Collider extends Component {
-    _center = Vector3.zero;
-    _isTrigger = false;
-    _material = new PhysicsMaterial;
-    handle = null;
-    get center() {
-      return this._center;
-    }
-    set center(c) {
-      this._center = Vector3.from(c);
-      this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
-    }
-    get isTrigger() {
-      return this._isTrigger;
-    }
-    set isTrigger(on) {
-      this._isTrigger = on;
-      this.handle?.setSensor(on);
-    }
-    get material() {
-      return this._material;
-    }
-    set material(m) {
-      this._material = m;
-      this.handle?.setFriction(m.dynamicFriction);
-      this.handle?.setRestitution(m.bounciness);
-    }
-    get attachedRigidbody() {
-      return objectPhysics.get(this.gameObject)?.rigidbody ?? null;
-    }
-    rebuild() {
-      if (!this.handle)
-        return;
-      this.handle.remove();
-      colliderOwners.delete(this.handle.id);
-      this.create();
-    }
-    create() {
-      const p = physicsFor(this.gameObject);
-      const scale = this.gameObject.transform.lossyScale;
-      this.handle = p.body.addCollider({
-        shape: this.shape(scale),
-        position: this._center.mul(scale),
-        sensor: this._isTrigger,
-        friction: this._material.dynamicFriction,
-        restitution: this._material.bounciness
-      });
-      colliderOwners.set(this.handle.id, this);
-      p.colliders.add(this);
-      p.rigidbody?._sendMass();
-    }
-    onAwake() {
-      this.create();
-    }
-    onDestroy() {
-      const p = objectPhysics.get(this.gameObject);
-      p?.colliders.delete(this);
-      if (this.handle) {
-        colliderOwners.delete(this.handle.id);
-        this.handle.remove();
-        this.handle = null;
-      }
-      p?.rigidbody?._sendMass();
-      releasePhysics(this.gameObject);
-    }
-  }
-
-  class BoxCollider extends Collider {
-    _size = Vector3.one;
-    get size() {
-      return this._size;
-    }
-    set size(s) {
-      this._size = Vector3.from(s);
-      this.rebuild();
-    }
-    shape(scale) {
-      const h = this._size.mul(scale).scale(0.5);
-      return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
-    }
-  }
-
-  class SphereCollider extends Collider {
-    _radius = 0.5;
-    get radius() {
-      return this._radius;
-    }
-    set radius(r) {
-      this._radius = r;
-      this.rebuild();
-    }
-    shape(scale) {
-      return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
-    }
-  }
-
-  class CapsuleCollider extends Collider {
-    _radius = 0.5;
-    _height = 2;
-    get radius() {
-      return this._radius;
-    }
-    set radius(r) {
-      this._radius = r;
-      this.rebuild();
-    }
-    get height() {
-      return this._height;
-    }
-    set height(h) {
-      this._height = h;
-      this.rebuild();
-    }
-    shape(scale) {
-      const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
-      const halfHeight = Math.max(0, this._height * Math.abs(scale.y) / 2 - radius);
-      return { capsule: { halfHeight, radius } };
-    }
-  }
-
-  class MeshCollider extends Collider {
-    points = [];
-    indices = [];
-    convex = false;
-    shape(scale) {
-      const pts = this.points.map((p) => Vector3.from(p).mul(scale));
-      return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
-    }
-    setMesh(points, indices, convex = this.convex) {
-      this.points = points;
-      this.indices = indices;
-      this.convex = convex;
-      this.rebuild();
-    }
-  }
-  contactListeners.push((a, b, started, sensor, speed) => {
-    const ca = colliderOwners.get(a.id);
-    const cb = colliderOwners.get(b.id);
-    if (!ca || !cb)
-      return;
-    for (const [self, other] of [
-      [ca, cb],
-      [cb, ca]
-    ]) {
-      const go = self.gameObject;
-      if (go.destroyed)
-        continue;
-      for (const component of [...go.components]) {
-        if (sensor) {
-          (started ? component.onTriggerEnter : component.onTriggerExit)?.call(component, other);
-        } else {
-          const collision = {
-            gameObject: other.gameObject,
-            collider: other,
-            rigidbody: other.attachedRigidbody,
-            relativeSpeed: speed
-          };
-          (started ? component.onCollisionEnter : component.onCollisionExit)?.call(component, collision);
-        }
-      }
-    }
-  });
   // ../../js/engine/src/primitives.ts
   function createPrimitive(type, options = {}) {
     const name = options.name ?? type[0].toUpperCase() + type.slice(1);

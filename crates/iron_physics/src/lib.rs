@@ -35,6 +35,8 @@ pub struct BodyState {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
     pub velocity: [f32; 3],
+    /// Radians per second about each world axis.
+    pub angular_velocity: [f32; 3],
 }
 
 /// The answer to a `physics.raycast` query.
@@ -66,19 +68,20 @@ impl Batch {
 
     /// The batch as `__iron_physics(bodies, contacts, rays, characters)` arguments: flat
     /// number arrays, so a tick crosses the boundary as four arrays rather than objects.
-    /// - bodies: `id, px, py, pz, qx, qy, qz, qw, vx, vy, vz` each
+    /// - bodies: `id, px, py, pz, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz` each
     /// - contacts: `started (1/0), a, b, sensor (1/0), speed` each
     /// - rays: `query, collider (-1: miss), distance, nx, ny, nz` each
     /// - characters: `id, grounded (1/0)` each
     pub fn to_args(&self) -> Vec<Value> {
         let num = |v: f32| Value::Number(v as f64);
         let flag = |b: bool| Value::Number(if b { 1.0 } else { 0.0 });
-        let mut bodies = Vec::with_capacity(self.bodies.len() * 11);
+        let mut bodies = Vec::with_capacity(self.bodies.len() * 14);
         for b in &self.bodies {
             bodies.push(b.id.into());
             bodies.extend(b.position.map(num));
             bodies.extend(b.rotation.map(num));
             bodies.extend(b.velocity.map(num));
+            bodies.extend(b.angular_velocity.map(num));
         }
         let mut contacts = Vec::with_capacity(self.contacts.len() * 5);
         for c in &self.contacts {
@@ -669,6 +672,7 @@ impl Physics {
                 position: body.translation().to_array(),
                 rotation: body.rotation().to_array(),
                 velocity: body.linvel().to_array(),
+                angular_velocity: body.angvel().to_array(),
             });
         }
 

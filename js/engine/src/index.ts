@@ -20,6 +20,20 @@ export {
   Sound,
 } from "./audio.ts";
 export { AudioListener, AudioSource } from "./audio-components.ts";
+export {
+  BoxCollider2D,
+  CapsuleCollider2D,
+  CircleCollider2D,
+  type Collision2D,
+  Collider2D,
+  EdgeCollider2D,
+  ForceMode2D,
+  Physics2D,
+  PolygonCollider2D,
+  type RaycastHit2D,
+  Rigidbody2D,
+  type RigidbodyType2D,
+} from "./physics2d.ts";
 export { type MinMax, type ParticleBurst, type ParticleShape, ParticleSystem } from "./particles.ts";
 export {
   type FilterMode,

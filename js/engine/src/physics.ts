@@ -154,6 +154,8 @@ export class PhysicsBody {
   position: Vector3;
   rotation: Quaternion;
   velocity: Vector3;
+  /** Spin in radians per second about each world axis (as of the last tick). */
+  angularVelocity = Vector3.zero;
   /** A character controller's ground contact after its last `move`. */
   grounded = false;
   /** Called when one of this body's colliders starts touching (or overlapping) another. */
@@ -399,12 +401,13 @@ export function _resetPhysicsForTests() {
 
 // Flat arrays, as documented on `Batch::to_args` (crates/iron_physics).
 globalThis.__iron_physics = (moved: number[], contacts: number[], rays: number[], characters: number[]) => {
-  for (let i = 0; i + 10 < moved.length; i += 11) {
+  for (let i = 0; i + 13 < moved.length; i += 14) {
     const b = bodies.get(moved[i]!);
     if (!b) continue;
     b.position = new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]);
     b.rotation = new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]);
     b.velocity = new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]);
+    b.angularVelocity = new Vector3(moved[i + 11], moved[i + 12], moved[i + 13]);
   }
   for (let i = 0; i + 1 < characters.length; i += 2) {
     const b = bodies.get(characters[i]!);

@@ -63,6 +63,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/platformer": {
+      "name": "platformer",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/text": {
       "name": "text",
       "version": "0.1.0",
@@ -139,6 +151,8 @@
     "iron-fixtures": ["iron-fixtures@workspace:tests/fixtures"],
 
     "physics": ["physics@workspace:examples/physics"],
+
+    "platformer": ["platformer@workspace:examples/platformer"],
 
     "react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
 

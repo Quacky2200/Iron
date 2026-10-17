@@ -883,7 +883,19 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Texture follow-ups: SVG textures, async decoding off the frame, `sortingOrder` /
     sorting layers for sprites, sprite atlases, `Texture.getPixel` / `setPixels` after
     creation, render textures (a camera into a texture)
-  - [ ] 2D: sprites and 2D physics shapes on the same GameObjects (`Vector2` APIs)
+  - [x] 2D: `Rigidbody2D` (body type, mass, drag, gravity scale, freeze rotation, Vector2
+    velocity, degrees, `addForce` / `addTorque` with `ForceMode2D`, `movePosition`) and
+    `BoxCollider2D` / `CircleCollider2D` / `CapsuleCollider2D` / `PolygonCollider2D` /
+    `EdgeCollider2D` (offset), `onCollisionEnter2D` / `onTriggerEnter2D` and friends,
+    `Physics2D.raycast` / `gravity`, in the same rapier world as 3D (planar bodies, colliders
+    extruded `Physics2D.depth` deep so z doesn't matter); the physics batch now carries
+    angular velocity (`Rigidbody.angularVelocity` reads it too); sprites get
+    `sortingOrder`, see-through things sort by order then depth (along the view for
+    orthographic cameras), quads depth-test `LessEqual`; `examples/platformer` — `M5-RB2D-01`,
+    `M5-RB2D-02`
+  - [ ] 2D follow-ups: a real 2D physics world (rapier2d) if the slabs fall short,
+    concave polygons (decomposition), 2D joints, `Physics2D.overlapCircle` and friends,
+    tilemaps, sorting layers, pixel-perfect camera
   - [ ] `Cursor` API on every platform: visible, lock / confine to the window, custom images
     and hotspots (Unity's `Cursor.visible` / `lockState` / `SetCursor`), sharing the CSS
     cursor code

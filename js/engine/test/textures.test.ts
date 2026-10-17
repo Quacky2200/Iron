@@ -75,7 +75,7 @@ describe("sprites", () => {
       sprite: Sprite.create(sheet, new Rect(16, 0, 16, 16), new Vector2(0.5, 0), 16),
       flipX: true,
     });
-    expect(renderOps().at(-1)).toEqual(["render.sprite", r.id, go.id, sheet.id, [16, 0, 16, 16], [0.5, 0], 16, [1, 1, 1, 1], true, false]);
+    expect(renderOps().at(-1)).toEqual(["render.sprite", r.id, go.id, sheet.id, [16, 0, 16, 16], [0.5, 0], 16, [1, 1, 1, 1], true, false, 0]);
     r.sprite = null;
     expect(renderOps().at(-1)).toEqual(["render.remove", r.id]);
   });

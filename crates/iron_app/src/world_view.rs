@@ -63,6 +63,8 @@ struct Sprite {
     pixels_per_unit: f32,
     color: [f32; 4],
     flip: (bool, bool),
+    /// Higher draws over lower (Unity's `sortingOrder`).
+    order: i32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -350,7 +352,7 @@ impl WorldViews {
                 self.renderers.insert(id, renderer);
             }
             // `sprite component object texture [x y w h]|null [pivot x y] pixelsPerUnit
-            // [r g b a] flipX flipY`
+            // [r g b a] flipX flipY sortingOrder`
             "sprite" => {
                 let sprite = Sprite {
                     object: id_at(1)?,
@@ -363,6 +365,7 @@ impl WorldViews {
                         matches!(args.get(7), Some(Value::Bool(true))),
                         matches!(args.get(8), Some(Value::Bool(true))),
                     ),
+                    order: num(9).unwrap_or(0.0) as i32,
                 };
                 self.sprites.insert(id, sprite);
             }
@@ -531,6 +534,7 @@ impl WorldViews {
                             texture: Some(WorldTexture::Asset(s.texture)),
                             uv,
                             additive: false,
+                            order: s.order,
                         })
                     }),
             )
@@ -650,6 +654,7 @@ impl WorldViews {
                         texture: Some(WorldTexture::Asset(particles::DEFAULT_TEXTURE)),
                         uv: [0.0, 0.0, 1.0, 1.0],
                         additive: true,
+                        order: 0,
                     });
                 }
                 let [r, g, b, a] = camera.clear;
@@ -692,6 +697,7 @@ mod tests {
             pixels_per_unit: 16.0,
             color: [1.0; 4],
             flip,
+            order: 0,
         }
     }
 

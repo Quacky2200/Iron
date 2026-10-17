@@ -38,12 +38,13 @@ describe("physics", () => {
   test("each tick's batch updates poses and character grounding", () => {
     const a = physics.createBody();
     const b = physics.createBody({ kind: "kinematic" });
-    tick([1, 1, 2, 3, 0, 0, 0, 1, 0, -9.8, 0], [], [], [2, 1]);
+    tick([1, 1, 2, 3, 0, 0, 0, 1, 0, -9.8, 0, 0, 0, 2], [], [], [2, 1]);
     expect(a.position).toEqual({ x: 1, y: 2, z: 3 });
     expect(a.velocity.y).toBe(-9.8);
+    expect(a.angularVelocity.z).toBe(2);
     expect(b.grounded).toBe(true);
     // Unknown ids (removed since) are skipped.
-    tick([99, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+    tick([99, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
   });
 
   // M4-PHY-02 (TS side)

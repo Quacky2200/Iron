@@ -81,6 +81,9 @@ pub struct WorldCamera {
     pub view_proj: Mat4,
     /// The camera's position, for sorting see-through things and specular highlights.
     pub position: Vec3,
+    /// Which way it looks (its -z).
+    pub forward: Vec3,
+    pub orthographic: bool,
     pub clear: Color,
 }
 
@@ -116,6 +119,8 @@ impl WorldCamera {
         Self {
             view_proj: proj * world.inverse(),
             position: world.w_axis.xyz(),
+            forward: (-world.z_axis.xyz()).normalize_or(Vec3::NEG_Z),
+            orthographic: matches!(projection, Projection::Orthographic { .. }),
             clear,
         }
     }
@@ -227,6 +232,9 @@ pub struct WorldQuad {
     pub uv: [f32; 4],
     /// Adds light instead of covering what's behind (glows, fire, sparks).
     pub additive: bool,
+    /// Draw order among see-through things: higher draws later (over), whatever the
+    /// distance (Unity's `sortingOrder`; meshes are 0).
+    pub order: i32,
 }
 
 impl WorldQuad {
@@ -237,6 +245,7 @@ impl WorldQuad {
             texture: None,
             uv: [0.0, 0.0, 1.0, 1.0],
             additive: false,
+            order: 0,
         }
     }
 }
@@ -705,6 +714,9 @@ impl WorldRenderer {
                 })
         };
         let less = wgpu::CompareFunction::Less;
+        // Quads at the same depth (2D sprites) draw in their sorted order: a later one
+        // isn't hidden by the depth an earlier one's soft edge wrote.
+        let less_equal = wgpu::CompareFunction::LessEqual;
         self.pipelines
             .entry(format)
             .or_insert_with(|| Pipelines {
@@ -714,7 +726,7 @@ impl WorldRenderer {
                     ("vs_quad", "fs_quad"),
                     &[],
                     None,
-                    (less, true),
+                    (less_equal, true),
                     blend,
                 ),
                 quad_glow: make(
@@ -722,7 +734,7 @@ impl WorldRenderer {
                     ("vs_quad", "fs_quad"),
                     &[],
                     None,
-                    (less, false),
+                    (less_equal, false),
                     blend,
                 ),
                 // The background replaces colour and resets depth in the viewport.
@@ -838,6 +850,19 @@ impl WorldRenderer {
         let mut per_view: Vec<ViewRuns> = Vec::new();
         for view in views {
             let eye = view.camera.position;
+            // How far along the view something is: straight-line distance in
+            // perspective, distance along the view direction in orthographic (where
+            // everything at one depth is equally far, like Unity's 2D sorting).
+            let forward = view.camera.forward;
+            let orthographic = view.camera.orthographic;
+            let depth_of = |model: Mat4| {
+                let at = model.w_axis.xyz();
+                if orthographic {
+                    (at - eye).dot(forward)
+                } else {
+                    at.distance_squared(eye)
+                }
+            };
             let gpu_mesh = |m: &MeshInstance| {
                 let normal = Mat3::from_mat4(m.model).inverse().transpose();
                 GpuMesh {
@@ -890,21 +915,22 @@ impl WorldRenderer {
                 Mesh(&'a MeshInstance),
                 Quad(&'a WorldQuad),
             }
-            let mut items: Vec<(f32, Item)> = view
+            let mut items: Vec<(i32, f32, Item)> = view
                 .meshes
                 .iter()
                 .filter(known)
                 .filter(|m| m.color[3] < 1.0 || m.glow != MeshGlow::None)
-                .map(|m| (m.model.w_axis.xyz().distance_squared(eye), Item::Mesh(m)))
+                .map(|m| (0, depth_of(m.model), Item::Mesh(m)))
                 .chain(
                     view.quads
                         .iter()
-                        .map(|q| (q.model.w_axis.xyz().distance_squared(eye), Item::Quad(q))),
+                        .map(|q| (q.order, depth_of(q.model), Item::Quad(q))),
                 )
                 .collect();
-            items.sort_by(|a, b| b.0.total_cmp(&a.0));
+            // Lower orders first, then far to near.
+            items.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.total_cmp(&a.1)));
             let mut blended: Vec<(bool, Run)> = Vec::new();
-            for (_, item) in items {
+            for (_, _, item) in items {
                 match item {
                     Item::Mesh(m) => {
                         let i = meshes.len() as u32;

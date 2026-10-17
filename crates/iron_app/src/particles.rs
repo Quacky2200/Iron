@@ -544,6 +544,7 @@ impl ParticleSystem {
                 texture: Some(WorldTexture::Asset(s.texture)),
                 uv,
                 additive: s.additive,
+                order: 0,
             });
         }
     }

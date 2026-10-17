@@ -61,15 +61,36 @@ export interface Collision {
   readonly relativeSpeed: number;
 }
 
+/** What simulates an object's body: a `Rigidbody` or a `Rigidbody2D`. */
+export interface BodyOwner {
+  /** Sends its mass again (colliders changed, which share it out). */
+  _sendMass(): void;
+}
+
 /** One physics body per GameObject, shared by its Rigidbody and colliders. */
-interface ObjectPhysics {
+export interface ObjectPhysics {
   body: PhysicsBody;
-  rigidbody: Rigidbody | null;
+  rigidbody: BodyOwner | null;
   colliders: Set<Collider>;
 }
 
 const objectPhysics = new Map<GameObject, ObjectPhysics>();
 const colliderOwners = new Map<number, Collider>();
+
+/** @internal The object's physics, if it has any (physics2d.ts). */
+export function _objectPhysics(go: GameObject): ObjectPhysics | undefined {
+  return objectPhysics.get(go);
+}
+
+/** @internal The object's body, made static at the object's pose the first time. */
+export function _physicsFor(go: GameObject): ObjectPhysics {
+  return physicsFor(go);
+}
+
+/** @internal Drops the body once nothing on the object needs it. */
+export function _releasePhysics(go: GameObject): void {
+  releasePhysics(go);
+}
 
 /** The object's body, made static at the object's pose the first time. */
 function physicsFor(go: GameObject): ObjectPhysics {
@@ -129,11 +150,22 @@ export abstract class Collider extends Component {
 
   /** The Rigidbody moving this collider, if any. */
   get attachedRigidbody(): Rigidbody | null {
-    return objectPhysics.get(this.gameObject)?.rigidbody ?? null;
+    const rb = objectPhysics.get(this.gameObject)?.rigidbody;
+    return rb instanceof Rigidbody ? rb : null;
+  }
+
+  /** @internal 2D colliders get the `...2D` callbacks. */
+  get _is2D(): boolean {
+    return false;
   }
 
   /** The physics shape at the object's current scale. */
   protected abstract shape(scale: Vector3): Shape;
+
+  /** How the shape is turned on the object (2D circles lie in the XY plane). */
+  protected shapeRotation(): Quaternion | undefined {
+    return undefined;
+  }
 
   /** Rebuilds the physics collider (after a size change). */
   protected rebuild(): void {
@@ -149,6 +181,7 @@ export abstract class Collider extends Component {
     this.handle = p.body.addCollider({
       shape: this.shape(scale),
       position: this._center.mul(scale),
+      rotation: this.shapeRotation(),
       sensor: this._isTrigger,
       friction: this._material.dynamicFriction,
       restitution: this._material.bounciness,
@@ -343,7 +376,10 @@ export class Rigidbody extends Component {
     this.p?.body.setVelocity(v);
   }
 
-  /** Spin in radians per second about each axis. */
+  /** Spin in radians per second about each axis (as of the last physics step). */
+  get angularVelocity(): Vector3 {
+    return this.p ? Vector3.from(this.p.body.angularVelocity) : Vector3.zero;
+  }
   set angularVelocity(v: Vector3Like) {
     this.p?.body.setAngularVelocity(v);
   }
@@ -450,7 +486,19 @@ type Hooks = {
   onCollisionExit?(c: Collision): void;
   onTriggerEnter?(other: Collider): void;
   onTriggerExit?(other: Collider): void;
+  onCollisionEnter2D?(c: Collision2DLike): void;
+  onCollisionExit2D?(c: Collision2DLike): void;
+  onTriggerEnter2D?(other: Collider): void;
+  onTriggerExit2D?(other: Collider): void;
 };
+
+/** What 2D callbacks get (physics2d.ts types it fully as `Collision2D`). */
+interface Collision2DLike {
+  readonly gameObject: GameObject;
+  readonly collider: Collider;
+  readonly rigidbody: BodyOwner | null;
+  readonly relativeSpeed: number;
+}
 
 // Contacts become Unity-style callbacks on every component of both objects.
 contactListeners.push((a, b, started, sensor, speed) => {
@@ -464,7 +512,20 @@ contactListeners.push((a, b, started, sensor, speed) => {
     const go = self.gameObject;
     if (go.destroyed) continue;
     for (const component of [...go.components] as (Component & Hooks)[]) {
-      if (sensor) {
+      if (self._is2D) {
+        // Unity keeps 2D and 3D callbacks apart.
+        if (sensor) {
+          (started ? component.onTriggerEnter2D : component.onTriggerExit2D)?.call(component, other);
+        } else {
+          const collision: Collision2DLike = {
+            gameObject: other.gameObject,
+            collider: other,
+            rigidbody: objectPhysics.get(other.gameObject)?.rigidbody ?? null,
+            relativeSpeed: speed,
+          };
+          (started ? component.onCollisionEnter2D : component.onCollisionExit2D)?.call(component, collision);
+        }
+      } else if (sensor) {
         (started ? component.onTriggerEnter : component.onTriggerExit)?.call(component, other);
       } else {
         const collision: Collision = {
@@ -749,7 +810,8 @@ export class Rope extends Component {
     // Segments' local -y points along the rope.
     const rotation = Quaternion.fromToRotation(Vector3.down, dir);
     const material = new Material(this.color, Color.black, 0.2);
-    let prev: PhysicsBody | null = objectPhysics.get(this.gameObject)?.rigidbody?.body ?? null;
+    const own = objectPhysics.get(this.gameObject);
+    let prev: PhysicsBody | null = own?.rigidbody ? own.body : null;
     let prevAnchor = prev ? Vector3.zero : start;
     for (let i = 0; i < n; i++) {
       const center = start.add(dir.scale(seg * (i + 0.5)));

@@ -119,6 +119,7 @@ fn planes_in_perspective_with_ui_over_them() {
             texture: Some(WorldTexture::Frame(0)),
             uv: [0.0, 0.0, 1.0, 1.0],
             additive: false,
+            order: 0,
         },
     ];
     let checker = checker(&gpu);
@@ -495,6 +496,7 @@ fn textured_meshes_and_sprites() {
         texture: Some(WorldTexture::Asset(2)),
         uv,
         additive: false,
+        order: 0,
     };
     v.quads = vec![
         sprite(-0.6, [0.0, 0.0, 1.0, 1.0]),
@@ -614,6 +616,7 @@ fn glows_bloom_and_spot_beams() {
         texture: Some(WorldTexture::Asset(DEFAULT_PARTICLE_TEXTURE)),
         uv: [0.0, 0.0, 1.0, 1.0],
         additive: true,
+        order: 0,
     };
     v.quads = vec![
         glow(Vec3::new(-0.6, 0.6, 0.8), 0.8, [1.0, 0.5, 0.2, 1.0]),
