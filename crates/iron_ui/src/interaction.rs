@@ -9,6 +9,7 @@
 
 use iron_core::NodeId;
 
+use crate::attrs::ClosedBy;
 use crate::editor::PointerSelect;
 use crate::events::{EventKind, Modifiers, Pointer, ScrollInfo, UiEvent, update_state};
 use crate::tree::{ROOT, Scrollbar, UiTree};
@@ -108,6 +109,9 @@ pub struct Interaction {
     selecting_text: bool,
     /// A clipboard request for the app.
     clipboard: Option<Clipboard>,
+    /// Open modal dialogs, oldest first, with the element focused before each opened
+    /// (focus goes back there when it closes).
+    modals: Vec<(NodeId, Option<NodeId>)>,
 }
 
 /// A direction for [`Input::Navigate`].
@@ -204,7 +208,11 @@ impl Interaction {
                     if event.kind == EventKind::PointerDown && button == 0 {
                         pressed_nothing = false;
                         if !prevented {
-                            let target = event.path.iter().copied().find(|id| focusable(tree, *id));
+                            let target = event
+                                .path
+                                .iter()
+                                .copied()
+                                .find(|id| focusable(tree, *id) && in_modal_scope(tree, *id));
                             self.pointer_focus(tree, target, dispatch);
                             let select = PointerSelect::Press {
                                 clicks: event.detail,
@@ -237,7 +245,12 @@ impl Interaction {
                         return;
                     }
                 }
-                send(self.pointer.up(tree, button), dispatch);
+                for event in self.pointer.up(tree, button) {
+                    let prevented = dispatch(&event);
+                    if event.kind == EventKind::Click && !prevented {
+                        self.backdrop_click(tree, &event, dispatch);
+                    }
+                }
             }
             Input::Wheel { dx, dy } => {
                 // Shift turns a vertical wheel horizontal (the Windows and Linux convention).
@@ -287,6 +300,14 @@ impl Interaction {
                     if out.handled {
                         return;
                     }
+                }
+                // Escape asks the top modal dialog to close.
+                if key == "Escape"
+                    && let Some(dialog) = tree.top_modal()
+                    && closed_by(tree, dialog) != ClosedBy::None
+                {
+                    self.request_close(tree, dialog, dispatch);
+                    return;
                 }
                 // Ctrl+C (Cmd+C) copies selected static text.
                 let command = self.modifiers.ctrl || self.modifiers.meta;
@@ -379,12 +400,82 @@ impl Interaction {
             }
             Input::Refresh => {
                 send(self.pointer.refresh(tree), dispatch);
+                self.track_modals(tree, dispatch);
+                let top = tree.top_modal();
                 if let Some(id) = self.focused
                     && !focusable(tree, id)
+                    && Some(id) != top
                 {
                     self.set_focus(tree, None, false, dispatch);
                 }
             }
+        }
+    }
+
+    /// Moves focus into a modal dialog that just opened (its first focusable element,
+    /// else the dialog), and back to where it was when one closes.
+    fn track_modals(&mut self, tree: &mut UiTree, dispatch: &mut dyn FnMut(&UiEvent) -> bool) {
+        while let Some(&(dialog, before)) = self.modals.last() {
+            if tree.contains(dialog) && tree.top_modal_contains(dialog) {
+                break;
+            }
+            self.modals.pop();
+            let lost = self.focused.is_none_or(|f| {
+                !tree.contains(f) || !focusable(tree, f) || tree.is_inclusive_ancestor(dialog, f)
+            });
+            if lost {
+                let back = before.filter(|b| focusable(tree, *b) && in_modal_scope(tree, *b));
+                self.set_focus(tree, back, false, dispatch);
+            }
+        }
+        if let Some(dialog) = tree.top_modal()
+            && !self.modals.iter().any(|(d, _)| *d == dialog)
+        {
+            self.modals.push((dialog, self.focused));
+            let first = tab_order(tree)
+                .into_iter()
+                .find(|id| tree.is_inclusive_ancestor(dialog, *id));
+            let visible = self.keyboard;
+            self.set_focus(tree, Some(first.unwrap_or(dialog)), visible, dispatch);
+        }
+    }
+
+    /// A click on the top modal's `::backdrop` (outside the dialog's box) closes it
+    /// when its `closedBy` is `any`.
+    fn backdrop_click(
+        &mut self,
+        tree: &mut UiTree,
+        event: &UiEvent,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        let Some(dialog) = tree.top_modal() else {
+            return;
+        };
+        if event.path.first() != Some(&dialog) || closed_by(tree, dialog) != ClosedBy::Any {
+            return;
+        }
+        let inside = tree
+            .to_local(dialog, event.x, event.y)
+            .zip(tree.rect(dialog))
+            .is_some_and(|((x, y), r)| {
+                x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height
+            });
+        if !inside {
+            self.request_close(tree, dialog, dispatch);
+        }
+    }
+
+    /// Sends `cancel` to a dialog and, unless that's prevented, `close`.
+    fn request_close(
+        &mut self,
+        tree: &UiTree,
+        dialog: NodeId,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        let path = tree.event_path(dialog);
+        let cancel = UiEvent::new(EventKind::Cancel, path.clone(), self.modifiers);
+        if !dispatch(&cancel) {
+            dispatch(&UiEvent::new(EventKind::Close, path, self.modifiers));
         }
     }
 
@@ -672,6 +763,20 @@ fn send(events: Vec<UiEvent>, dispatch: &mut dyn FnMut(&UiEvent) -> bool) {
     }
 }
 
+/// A dialog's `closedBy`, defaulting to `closerequest` (Escape only) like HTML's modals.
+fn closed_by(tree: &UiTree, dialog: NodeId) -> ClosedBy {
+    tree.attrs(dialog)
+        .and_then(|a| a.closed_by)
+        .unwrap_or(ClosedBy::CloseRequest)
+}
+
+/// Whether `id` can be reached while a modal dialog is open: everything outside the
+/// top modal is inert.
+fn in_modal_scope(tree: &UiTree, id: NodeId) -> bool {
+    tree.top_modal()
+        .is_none_or(|dialog| tree.is_inclusive_ancestor(dialog, id))
+}
+
 /// `id`'s tab index: its `tabIndex`, or 0 for text fields, which are focusable by
 /// default like in HTML.
 fn tab_index(tree: &UiTree, id: NodeId) -> Option<i32> {
@@ -714,7 +819,11 @@ pub fn tab_order(tree: &UiTree) -> Vec<NodeId> {
     }
     // Stable, so equal indexes keep tree order; 0 sorts after every positive index.
     order.sort_by_key(|(index, _)| if *index == 0 { i32::MAX } else { *index });
-    order.into_iter().map(|(_, id)| id).collect()
+    order
+        .into_iter()
+        .map(|(_, id)| id)
+        .filter(|id| in_modal_scope(tree, *id))
+        .collect()
 }
 
 /// The focusable element (in the Tab order) nearest to `from` in `direction`: its

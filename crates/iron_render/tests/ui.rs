@@ -14,6 +14,8 @@ const TOLERANCE: u8 = 3;
 struct Scene {
     ops: Vec<Value>,
     next: u32,
+    /// A stylesheet added after the ops.
+    css: &'static str,
 }
 
 impl Scene {
@@ -21,7 +23,18 @@ impl Scene {
         Self {
             ops: Vec::new(),
             next: 1,
+            css: "",
         }
+    }
+
+    /// Sets attributes on `id`.
+    fn attrs(&mut self, id: u32, attrs: &[(&str, Value)]) {
+        let mut set = vec![Value::Number(SET_ATTRS.into()), Value::Number(id.into())];
+        for (k, v) in attrs {
+            set.push((*k).into());
+            set.push(v.clone());
+        }
+        self.ops.push(Value::Array(set));
     }
 
     /// Adds an element of `kind` (`box`, `text`, `span`) under `parent`.
@@ -130,6 +143,10 @@ fn render_with_assets(
     let mut tree = UiTree::new(logical.0 as f32, logical.1 as f32);
     let errors = tree.apply_commit(&Commit { ops: scene.ops });
     assert!(errors.is_empty(), "{errors:?}");
+    if !scene.css.is_empty() {
+        let added = tree.add_stylesheet(scene.css);
+        assert!(added.warnings.is_empty(), "{:?}", added.warnings);
+    }
 
     let (w, h) = (
         (logical.0 as f32 * scale) as u32,
@@ -1489,6 +1506,70 @@ fn transforms_draw_rotated_skewed_and_in_perspective() {
     assert!(
         text.iter().any(|&(x, y)| f.px(x, y)[0] > 200 && y > 134),
         "scaled text reaches below its layout box"
+    );
+}
+
+// M3-DLG-02
+#[test]
+fn modal_dialog_over_a_blurred_backdrop() {
+    let mut s = Scene::new();
+    s.css = "dialog::backdrop { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(3px) }";
+    // A busy page: stripes and a label.
+    for i in 0..10 {
+        let color = if i % 2 == 0 { "#e04040" } else { "#40c0e0" };
+        s.add(
+            0,
+            &at(
+                f64::from(i) * 20.0,
+                0.0,
+                20.0,
+                120.0,
+                &[("backgroundColor", color.into())],
+            ),
+        );
+    }
+    s.label(
+        0,
+        "Game",
+        &at(
+            8.0,
+            90.0,
+            80.0,
+            24.0,
+            &[("color", "white".into()), ("fontSize", 20.0.into())],
+        ),
+    );
+    let dialog = s.element(
+        0,
+        "dialog",
+        &[
+            ("width", 110.0.into()),
+            ("height", 50.0.into()),
+            ("backgroundColor", "white".into()),
+            ("borderRadius", 8.0.into()),
+            ("justifyContent", "center".into()),
+            ("alignItems", "center".into()),
+        ],
+    );
+    s.label(
+        dialog,
+        "Paused",
+        &[("fontSize", 18.0.into()), ("color", "#202020".into())],
+    );
+    s.attrs(dialog, &[("open", true.into()), ("modal", true.into())]);
+    let f = render(s, (200, 120), 1.0, BLACK);
+    assert_golden("M3-DLG-02", 200, 120, &f.pixels, TOLERANCE);
+    // The dialog is centred and white; the page behind is darkened and blurred, so a
+    // stripe edge no longer jumps from red to blue.
+    assert_eq!(f.px(100, 38)[..3], [255, 255, 255]);
+    let [r, _, b, _] = f.px(10, 10);
+    assert!(r < 200 && b < 100, "darkened red: {:?}", f.px(10, 10));
+    let edge = |x| f.px(x, 10)[0] as i32;
+    assert!(
+        (edge(19) - edge(20)).abs() < 60,
+        "blurred: {} {}",
+        edge(19),
+        edge(20)
     );
 }
 

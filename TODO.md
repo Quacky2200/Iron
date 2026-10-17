@@ -605,11 +605,15 @@ and `@font-face`.
      when disabled; every CSS keyword is checked to map to a winit cursor (winit picks the nearest
      per platform) — `M3-CUR-01`. SVG's extra `pointer-events` values (`visiblePainted`, `fill`,
      `stroke`, `bounding-box`, ...) come with 5.1
-   - [ ] **5j** `::backdrop`: a top layer for modal UI (a `dialog` element with `open`/`modal`, or
-     `popover`), painted above everything (above `position: fixed` too) and taking the input, with a
-     `::backdrop` box behind it covering the window (style it with `background`, `backdrop-filter`,
-     opacity; clicks on it reach the dialog's `onCancel`/`onClose`); Escape closes; focus stays inside
-     the modal (Tab wraps). `backdrop-filter` itself is done (5b)
+   - [x] **5j** A `dialog` element (React `<Dialog open modal closedBy onCancel onClose>`): closed
+     dialogs are `display: none` (the authored value comes back on open); open ones are centred
+     (`left/top: 50%`, `translate: -50% -50%`). Modal ones are fixed and go in a top layer painted
+     and hit above everything, `zIndex` and fixed elements included, each over a generated
+     `::backdrop` box covering the window (default `rgba(0,0,0,0.1)`; `dialog::backdrop` rules,
+     `backdrop-filter` too). Escape (and backdrop clicks with `closedBy="any"`) send `cancel`
+     (cancelable) then `close`; scripts close by clearing `open`. A modal takes focus (its first
+     focusable element, else itself), keeps Tab and the d-pad inside, and gives focus back when it
+     closes; `[open]` / `[modal]` match — `M3-DLG-01`, `M3-DLG-02`. No `popover` yet
    - [ ] **5.1** SVG: an `svg` element (React `<Svg>` and children) with the core shapes (`rect`,
      `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `g`, `text` basics), `viewBox` /
      `preserveAspectRatio`, `use`/`defs`, gradients (`linearGradient`, `radialGradient`), `clipPath`

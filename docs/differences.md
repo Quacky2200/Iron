@@ -4,6 +4,15 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Dialogs (M3d step 5j)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Opening | `open` and `modal` attributes (React state) | `show()` / `showModal()` methods; `modal` isn't an attribute | Declarative fits React; scripts own the state |
+| Closing | Escape / backdrop clicks send `cancel` then `close`; the script clears `open` | The browser closes the dialog, then fires `close` | The engine never changes React-owned attributes |
+| UA style | Centred with `left/top: 50%` + `translate: -50% -50%`; no border, padding or background | `margin: auto`, `fit-content`, a border, padding and a canvas background | Iron's elements are unstyled; authors setting `translate` or insets take over the centring |
+| `:modal`, `popover`, `returnValue`, `inert` | No `:modal` (use `dialog[modal]`), no popovers, no return value; outside the modal only focus and pointer input are blocked | All supported | Not needed yet |
+
 ## Cursors (M3d step 5i)
 
 | Area | Iron | Browsers / spec | Why |

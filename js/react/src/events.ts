@@ -27,10 +27,13 @@ const HANDLERS: Record<string, readonly string[]> = {
   scroll: ["onScroll"],
   // React's onChange fires on every edit, like the DOM's `input` event.
   input: ["onChange", "onInput"],
+  // Dialogs (Escape, backdrop clicks): `cancel` can be prevented, then `close`.
+  cancel: ["onCancel"],
+  close: ["onClose"],
 };
 
 // `scroll` doesn't bubble in React 17+ either.
-const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave", "scroll"]);
+const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave", "scroll", "cancel", "close"]);
 
 // Like React DOM: frequent events render with continuous priority (batched into the
 // next tick), the rest synchronously before the call returns.

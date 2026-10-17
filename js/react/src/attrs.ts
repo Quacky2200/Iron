@@ -17,6 +17,10 @@ const ATTRS: ReadonlySet<string> = new Set([
   "rows",
   // Images.
   "src",
+  // Dialogs.
+  "open",
+  "modal",
+  "closedBy",
 ]);
 
 /** Props that are attributes: `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props, `data-*`. */

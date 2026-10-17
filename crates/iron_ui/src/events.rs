@@ -34,6 +34,12 @@ pub enum EventKind {
     Scroll,
     /// A text field's text changed (bubbles; React's `onChange` / `onInput`).
     Input,
+    /// A modal dialog was asked to close (Escape, a backdrop click); cancelable,
+    /// doesn't bubble.
+    Cancel,
+    /// A dialog should close: the `cancel` before it wasn't prevented. Scripts close
+    /// it by clearing `open`. Doesn't bubble.
+    Close,
 }
 
 impl EventKind {
@@ -55,6 +61,8 @@ impl EventKind {
             EventKind::FocusOut => "focusout",
             EventKind::Scroll => "scroll",
             EventKind::Input => "input",
+            EventKind::Cancel => "cancel",
+            EventKind::Close => "close",
         }
     }
 }

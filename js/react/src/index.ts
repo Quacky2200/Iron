@@ -180,6 +180,36 @@ export function List({ children, ...props }: BoxProps): ReactElement {
   return createElement("list" as never, props, children);
 }
 
+export interface DialogProps extends ElementAttrs, EventProps {
+  style?: IronStyle;
+  children?: ReactNode;
+  /** Shown while true; closed dialogs are `display: none`. */
+  open?: boolean;
+  /**
+   * A modal dialog goes in the top layer above everything (`position: fixed`, over a
+   * window-sized `::backdrop`), takes focus and keeps Tab inside until it closes.
+   */
+  modal?: boolean;
+  /**
+   * What else may close it: `"closerequest"` (Escape; the default), `"any"` (Escape and
+   * clicks on the backdrop) or `"none"`. Each sends `onCancel` (prevent it to stay
+   * open), then `onClose`, where you set `open` to false.
+   */
+  closedBy?: "any" | "closerequest" | "none";
+  onCancel?: (event: IronPointerEvent) => void;
+  onClose?: (event: IronPointerEvent) => void;
+  ref?: Ref<Instance>;
+}
+
+/**
+ * A dialog (CSS type selector `dialog`; `dialog[open]`, `dialog[modal]` and
+ * `dialog::backdrop` select it). Centred in its containing block, or the window when
+ * `modal`; unstyled otherwise.
+ */
+export function Dialog({ children, ...props }: DialogProps): ReactElement {
+  return createElement("dialog" as never, props, children);
+}
+
 /** An inline run inside `Text` with its own style (colour, weight, ...). */
 export function Span({ children, ...props }: TextProps): ReactElement {
   return createElement("span" as never, props, children);

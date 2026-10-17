@@ -118,6 +118,8 @@ pub enum PseudoElement {
     Selection,
     /// A text field's placeholder.
     Placeholder,
+    /// The box behind a modal dialog, covering the window.
+    Backdrop,
 }
 
 impl ToCss for PseudoElement {
@@ -128,6 +130,7 @@ impl ToCss for PseudoElement {
             PseudoElement::Marker => "::marker",
             PseudoElement::Selection => "::selection",
             PseudoElement::Placeholder => "::placeholder",
+            PseudoElement::Backdrop => "::backdrop",
         })
     }
 }
@@ -206,6 +209,7 @@ impl<'i> SelectorParser<'i> for IronSelectorParser {
             "marker" => Ok(PseudoElement::Marker),
             "selection" => Ok(PseudoElement::Selection),
             "placeholder" => Ok(PseudoElement::Placeholder),
+            "backdrop" => Ok(PseudoElement::Backdrop),
             _ => Err(ParseError::custom(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement,
             )),

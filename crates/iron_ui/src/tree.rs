@@ -61,6 +61,8 @@ struct Node {
     generated: Option<PseudoElement>,
     /// Computed custom properties (`--name`), inherited from the parent.
     vars: Rc<Vars>,
+    /// A closed dialog's authored `display`, kept while it shows as `none`.
+    dialog_display: Option<Display>,
 }
 
 /// What `::selection` and `::placeholder` rules set on an element.
@@ -255,6 +257,18 @@ const LIST: &str = "list";
 /// columns with room on the left for outside markers.
 fn base_style(kind: &str) -> Style {
     match kind {
+        // Centred in its containing block (the window when modal), with
+        // `translate: -50% -50%` from `base_visual`.
+        DIALOG => Style {
+            position: Position::Absolute,
+            inset: taffy::Rect {
+                left: taffy::LengthPercentageAuto::percent(0.5),
+                top: taffy::LengthPercentageAuto::percent(0.5),
+                right: taffy::LengthPercentageAuto::auto(),
+                bottom: taffy::LengthPercentageAuto::auto(),
+            },
+            ..Style::default()
+        },
         LIST => Style {
             flex_direction: taffy::FlexDirection::Column,
             padding: taffy::Rect {
@@ -269,6 +283,21 @@ fn base_style(kind: &str) -> Style {
 
 /// An image's content size from its natural size: a known width or height keeps the
 /// aspect ratio, like a replaced element with `auto` on the other axis.
+/// The user-agent `Visual` for `kind` (before stylesheets and inline styles).
+fn base_visual(kind: &str) -> Visual {
+    let mut visual = Visual::default();
+    if kind == DIALOG {
+        let mut style = Style::default();
+        let _ = apply_style(
+            &mut style,
+            &mut visual,
+            "translate",
+            &Value::from("-50% -50%"),
+        );
+    }
+    visual
+}
+
 fn image_size(natural: (f32, f32), known: (Option<f32>, Option<f32>)) -> (f32, f32) {
     let (iw, ih) = natural;
     let ratio = |a: f32, b: f32| if b > 0.0 { a / b } else { 0.0 };
@@ -287,8 +316,16 @@ fn is_contents(node: &Node) -> bool {
 
 /// `position: fixed` on a node that has a box (the root can't be fixed).
 fn is_fixed(id: NodeId, node: &Node) -> bool {
-    node.visual.fixed && id != ROOT && !is_contents(node)
+    (node.visual.fixed || is_modal(node)) && id != ROOT && !is_contents(node)
 }
+
+/// An open modal dialog: fixed, in the top layer.
+fn is_modal(node: &Node) -> bool {
+    node.kind == DIALOG && node.attrs.open && node.attrs.modal
+}
+
+/// Element type of dialogs.
+pub const DIALOG: &str = "dialog";
 
 /// Element types that are inline content when inside a text container.
 fn is_inline(kind: &str) -> bool {
@@ -351,6 +388,9 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     text_selection: Option<(NodeId, parley::Selection)>,
     /// `::selection` and `::placeholder` styles from stylesheets, by element.
     pseudo_styles: HashMap<(NodeId, PseudoElement), PseudoStyle>,
+    /// Open modal dialogs in the order they opened: the top layer, painted (each
+    /// over its `::backdrop`) above everything else.
+    top_layer: Vec<NodeId>,
 }
 
 impl UiTree<TaffyLayout> {
@@ -386,6 +426,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 inline: Vec::new(),
                 generated: None,
                 vars: Rc::default(),
+                dialog_display: None,
             }),
         );
         Self {
@@ -416,6 +457,7 @@ impl<L: LayoutEngine> UiTree<L> {
             layout_texts: HashMap::default(),
             text_selection: None,
             pseudo_styles: HashMap::default(),
+            top_layer: Vec::new(),
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
@@ -642,6 +684,9 @@ impl<L: LayoutEngine> UiTree<L> {
         if self.kind(id) == Some(LIST) {
             self.update_list_indent(id);
         }
+        if self.kind(id) == Some(DIALOG) {
+            self.update_dialog(id, caches);
+        }
         let existing = self.children(id).iter().copied().find(|c| {
             self.nodes.get(c).and_then(|n| n.generated) == Some(PseudoElement::Marker)
                 && self.kind(*c) != Some(TEXT_NODE)
@@ -768,6 +813,178 @@ impl<L: LayoutEngine> UiTree<L> {
         self.needs_layout = true;
     }
 
+    /// Shows or hides a dialog (closed ones are `display: none`, keeping the authored
+    /// value for when it opens), moves it in or out of the top layer and keeps its
+    /// `::backdrop`.
+    fn update_dialog(&mut self, id: NodeId, caches: &mut selectors::context::SelectorCaches) {
+        let Some(node) = self.nodes.get_mut(&id) else {
+            return;
+        };
+        let (open, modal) = (node.attrs.open, node.attrs.open && node.attrs.modal);
+        let display = if open {
+            match node.dialog_display.take() {
+                Some(d) if node.style.display == Display::None => Some(d),
+                _ => None,
+            }
+        } else if node.style.display != Display::None {
+            node.dialog_display = Some(node.style.display);
+            Some(Display::None)
+        } else {
+            None
+        };
+        if let Some(d) = display {
+            node.style.display = d;
+            let style = node.style.clone();
+            self.layout.set_style(id, &style);
+        }
+        let was_fixed = self.fixed.contains(&id);
+        self.update_fixed(id);
+        if was_fixed != self.fixed.contains(&id) {
+            if let Some(parent) = self.parent(id) {
+                self.set_layout_children(parent);
+            }
+            self.set_layout_children(ROOT);
+        }
+        let in_layer = self.top_layer.contains(&id);
+        if modal && !in_layer {
+            self.top_layer.push(id);
+        } else if !modal && in_layer {
+            self.top_layer.retain(|d| *d != id);
+        }
+        self.update_backdrop(id, modal, caches);
+        self.needs_layout = true;
+    }
+
+    /// Adds, restyles or removes a modal dialog's `::backdrop`: a fixed box covering
+    /// the window under the dialog (browsers' default tint, then `::backdrop` rules).
+    fn update_backdrop(
+        &mut self,
+        id: NodeId,
+        wanted: bool,
+        caches: &mut selectors::context::SelectorCaches,
+    ) {
+        let existing = self.backdrop_of(id);
+        if !wanted {
+            if let Some(old) = existing {
+                let mut changed = HashSet::default();
+                self.detach(old, &mut changed);
+                self.destroy_subtree(old);
+                self.fixed.remove(&old);
+                self.set_layout_children(id);
+                self.set_layout_children(ROOT);
+            }
+            return;
+        }
+        let mut style = Style {
+            position: Position::Absolute,
+            inset: taffy::Rect {
+                left: taffy::LengthPercentageAuto::length(0.0),
+                right: taffy::LengthPercentageAuto::length(0.0),
+                top: taffy::LengthPercentageAuto::length(0.0),
+                bottom: taffy::LengthPercentageAuto::length(0.0),
+            },
+            ..Style::default()
+        };
+        let mut visual = Visual {
+            background: Rgba::new(0.0, 0.0, 0.0, 0.1),
+            ..Visual::default()
+        };
+        if !self.sheets.is_empty() {
+            let owner = self.nodes.get(&id).map(|n| (&n.style, &n.visual));
+            for (prop, value) in self.pseudo_declarations(id, PseudoElement::Backdrop, caches) {
+                if prop.starts_with("--") {
+                    continue;
+                }
+                match WideKeyword::parse(&value) {
+                    Some(keyword) => {
+                        let _ = apply_wide_keyword(&mut style, &mut visual, &prop, keyword, owner);
+                    }
+                    None => {
+                        let _ = apply_style(&mut style, &mut visual, &prop, &value);
+                    }
+                }
+            }
+        }
+        // It always covers the window from the top layer.
+        visual.fixed = true;
+        style.position = Position::Absolute;
+        let backdrop = match existing {
+            Some(b) => b,
+            None => {
+                let b = NodeId(self.next_generated);
+                self.next_generated += 1;
+                self.layout.create_node(b, &style);
+                self.nodes.insert(
+                    b,
+                    Box::new(Node {
+                        kind: "box".to_owned(),
+                        parent: Some(id),
+                        children: Vec::new(),
+                        style: style.clone(),
+                        visual: visual.clone(),
+                        text: None,
+                        attrs: Attrs::default(),
+                        state: ElementState::default(),
+                        inline: Vec::new(),
+                        generated: Some(PseudoElement::Backdrop),
+                        vars: Rc::default(),
+                        dialog_display: None,
+                    }),
+                );
+                self.nodes
+                    .get_mut(&id)
+                    .expect("dialog exists")
+                    .children
+                    .push(b);
+                self.fixed.insert(b);
+                self.set_layout_children(id);
+                self.set_layout_children(ROOT);
+                b
+            }
+        };
+        if let Some(node) = self.nodes.get_mut(&backdrop)
+            && (node.style != style || node.visual != visual)
+        {
+            node.style = style.clone();
+            node.visual = visual;
+            self.layout.set_style(backdrop, &style);
+        }
+    }
+
+    /// A dialog's generated `::backdrop` box, if it has one.
+    fn backdrop_of(&self, id: NodeId) -> Option<NodeId> {
+        self.children(id)
+            .iter()
+            .copied()
+            .find(|c| self.nodes.get(c).and_then(|n| n.generated) == Some(PseudoElement::Backdrop))
+    }
+
+    /// The topmost open modal dialog, which takes the input (focus stays inside it).
+    pub fn top_modal(&self) -> Option<NodeId> {
+        self.top_layer
+            .iter()
+            .rev()
+            .copied()
+            .find(|d| self.is_displayed(*d))
+    }
+
+    /// Whether `dialog` is an open modal in the top layer.
+    pub fn top_modal_contains(&self, dialog: NodeId) -> bool {
+        self.top_layer.contains(&dialog) && self.is_displayed(dialog)
+    }
+
+    /// Whether `ancestor` is `id` or one of its ancestors.
+    pub fn is_inclusive_ancestor(&self, ancestor: NodeId, id: NodeId) -> bool {
+        let mut at = Some(id);
+        while let Some(n) = at {
+            if n == ancestor {
+                return true;
+            }
+            at = self.parent(n);
+        }
+        false
+    }
+
     /// A list's default 24px indent makes room for outside markers: without markers
     /// (`list-style: none`) it starts flush. Padding set by the author always wins.
     fn update_list_indent(&mut self, id: NodeId) {
@@ -810,6 +1027,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 inline: Vec::new(),
                 generated: Some(PseudoElement::Marker),
                 vars: Rc::default(),
+                dialog_display: None,
             }),
         );
         self.nodes
@@ -1026,6 +1244,7 @@ impl<L: LayoutEngine> UiTree<L> {
                     inline: Vec::new(),
                     generated: Some(pseudo),
                     vars: Rc::default(),
+                    dialog_display: None,
                 }),
             );
         }
@@ -1040,8 +1259,8 @@ impl<L: LayoutEngine> UiTree<L> {
             PseudoElement::Marker => siblings.insert(0, span),
             PseudoElement::Before => siblings.insert(usize::from(first_is_marker), span),
             PseudoElement::After => siblings.push(span),
-            PseudoElement::Selection | PseudoElement::Placeholder => {
-                unreachable!("not generated as nodes")
+            PseudoElement::Selection | PseudoElement::Placeholder | PseudoElement::Backdrop => {
+                unreachable!("not generated as spans")
             }
         }
         self.layout.set_children(span, &[]);
@@ -1175,7 +1394,7 @@ impl<L: LayoutEngine> UiTree<L> {
         } else {
             base_style(&node.kind)
         };
-        let mut visual = Visual::default();
+        let mut visual = base_visual(&node.kind);
         let parent_text = match node.parent {
             Some(p) => self.computed_text(p),
             None => ComputedText::default(),
@@ -1659,6 +1878,10 @@ impl<L: LayoutEngine> UiTree<L> {
                 let style = base_style(kind);
                 self.layout.create_node(id, &style);
                 self.style_dirty.insert(id);
+                if kind == DIALOG {
+                    // Closed until `open` is set.
+                    self.markers_dirty.insert(id);
+                }
                 if is_editor_kind(kind) {
                     self.editors.insert(id, Editor::new(kind == "textarea"));
                     // Sized by `measure` from the font, like a replaced element.
@@ -1675,13 +1898,14 @@ impl<L: LayoutEngine> UiTree<L> {
                         parent: None,
                         children: Vec::new(),
                         style,
-                        visual: Visual::default(),
+                        visual: base_visual(kind),
                         text: None,
                         attrs: Attrs::default(),
                         state: ElementState::default(),
                         inline: Vec::new(),
                         generated: None,
                         vars: Rc::default(),
+                        dialog_display: None,
                     }),
                 );
             }
@@ -1709,6 +1933,7 @@ impl<L: LayoutEngine> UiTree<L> {
                         inline: Vec::new(),
                         generated: None,
                         vars: Rc::default(),
+                        dialog_display: None,
                     }),
                 );
             }
@@ -1732,7 +1957,15 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
                 let keys = attr_keys_changed(&before, &node.attrs);
                 let attrs = node.attrs.clone();
-                if node.kind == IMAGE && before.src != attrs.src {
+                let kind_is = |k: &str| node.kind == k;
+                let dialog_changed =
+                    kind_is(DIALOG) && (before.open, before.modal) != (attrs.open, attrs.modal);
+                let image_changed = kind_is(IMAGE) && before.src != attrs.src;
+                if dialog_changed {
+                    self.markers_dirty.insert(id);
+                    self.needs_layout = true;
+                }
+                if image_changed {
                     if let Some(src) = &attrs.src {
                         self.request_image(src);
                     }
@@ -1868,6 +2101,10 @@ impl<L: LayoutEngine> UiTree<L> {
                         stack.extend_from_slice(self.children(n));
                     }
                 }
+                if changes("display") && self.kind(id) == Some(DIALOG) {
+                    // A closed dialog stays hidden whatever `display` says.
+                    self.markers_dirty.insert(id);
+                }
                 let node = self.node_mut(id)?;
                 if changes("display") || changes("position") {
                     // `contents` and `fixed` move children between layout parents.
@@ -1991,6 +2228,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.editors.remove(&id);
             self.unit_uses.remove(&id);
             self.fixed.remove(&id);
+            self.top_layer.retain(|d| *d != id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
@@ -3378,14 +3616,23 @@ impl<L: LayoutEngine> UiTree<L> {
         out
     }
 
-    /// Rendered fixed nodes in paint order: by `zIndex`, then document order.
+    /// Rendered fixed nodes in paint order: by `zIndex`, then document order; then
+    /// the top layer (each modal dialog over its `::backdrop`), whatever its `zIndex`.
     fn fixed_paint_order(&self) -> Vec<NodeId> {
         let mut fixed = self.fixed_nodes(true);
+        let top: Vec<NodeId> = self
+            .top_layer
+            .iter()
+            .filter(|d| fixed.contains(d))
+            .flat_map(|d| self.backdrop_of(*d).into_iter().chain([*d]))
+            .collect();
+        fixed.retain(|id| !top.contains(id));
         fixed.sort_by_key(|id| {
             self.nodes
                 .get(id)
                 .map_or(0, |n| n.visual.z_index.unwrap_or(0))
         });
+        fixed.extend(top);
         fixed
     }
 
@@ -3694,6 +3941,12 @@ fn attr_keys_changed(before: &Attrs, after: &Attrs) -> Vec<Key> {
     }
     if before.dir != after.dir {
         keys.push(Key::Attr("dir".into()));
+    }
+    if before.open != after.open {
+        keys.push(Key::Attr("open".into()));
+    }
+    if before.modal != after.modal {
+        keys.push(Key::Attr("modal".into()));
     }
     for (name, value) in before.data.iter().chain(after.data.iter()) {
         let _ = value;

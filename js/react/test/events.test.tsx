@@ -11,7 +11,7 @@ import {
   type IronWheelEvent,
 } from "../src/events.ts";
 import { type Instance, instances, resetForTests } from "../src/host.ts";
-import { _resetRootForTests, createRoot, Input, Text } from "../src/index.ts";
+import { _resetRootForTests, createRoot, Dialog, Input, Text } from "../src/index.ts";
 import { CREATE, type Op, SET_ATTRS, SET_STYLE } from "../src/opcodes.ts";
 
 let commits: Op[][] = [];
@@ -318,6 +318,38 @@ describe("@iron/react events", () => {
       ["scrollIntoView", id],
     ]);
     delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  });
+  // M3-DLG-01
+  test("dialogs send open/modal/closedBy and get onCancel then onClose, which don't bubble", () => {
+    const log: string[] = [];
+    function Menu() {
+      const [open, setOpen] = useState(true);
+      return (
+        // `close` doesn't bubble: the page's handler must not run.
+        <box data-name="page" {...({ onClose: () => log.push("page close") } as object)}>
+          <Dialog
+            data-name="dialog"
+            open={open}
+            modal
+            closedBy="any"
+            onCancel={() => log.push("cancel")}
+            onClose={() => {
+              log.push("close");
+              setOpen(false);
+            }}
+          />
+        </box>
+      );
+    }
+    createRoot().render(<Menu />);
+    const id = ids.get("dialog")!;
+    const attrs = commits.flat().find((op) => op[0] === SET_ATTRS && op[1] === id);
+    expect(attrs).toEqual([SET_ATTRS, id, "data-name", "dialog", "open", true, "modal", true, "closedBy", "any"]);
+    dispatchUiEvent("cancel", path("dialog", "page"), data());
+    dispatchUiEvent("close", path("dialog", "page"), data());
+    expect(log).toEqual(["cancel", "close"]);
+    const closed = commits.flat().filter((op) => op[0] === SET_ATTRS && op[1] === id);
+    expect(closed.at(-1)).toEqual([SET_ATTRS, id, "open", false]);
   });
   // M3-INP-01
   test("onChange sees the new text in e.target.value and controlled fields commit it", () => {

@@ -24,6 +24,10 @@ pub struct Attrs {
     pub rows: Option<u32>,
     /// Images: `src`, a path inside the game folder or a `data:` URL.
     pub src: Option<String>,
+    /// Dialogs: `open`, `modal` (in the top layer, with a `::backdrop`) and `closedBy`.
+    pub open: bool,
+    pub modal: bool,
+    pub closed_by: Option<ClosedBy>,
     /// `data-*` attributes, by full name (`data-kind`), in insertion order.
     pub data: Vec<(String, String)>,
 }
@@ -79,6 +83,21 @@ impl Attrs {
             "placeholder" => self.placeholder = text(),
             "readOnly" => self.read_only = truthy,
             "src" => self.src = text().filter(|s| !s.trim().is_empty()),
+            "open" => self.open = truthy,
+            "modal" => self.modal = truthy,
+            "closedBy" => {
+                self.closed_by = match text().as_deref() {
+                    None => None,
+                    Some("any") => Some(ClosedBy::Any),
+                    Some("closerequest") => Some(ClosedBy::CloseRequest),
+                    Some("none") => Some(ClosedBy::None),
+                    Some(other) => {
+                        return Err(format!(
+                            "invalid closedBy {other:?} (any, closerequest or none)"
+                        ));
+                    }
+                }
+            }
             "rows" => {
                 self.rows = match value {
                     Value::Null => None,
@@ -110,6 +129,8 @@ impl Attrs {
                 Direction::Ltr => "ltr",
                 Direction::Rtl => "rtl",
             }),
+            "open" => self.open.then_some(""),
+            "modal" => self.modal.then_some(""),
             n => self
                 .data
                 .iter()
@@ -117,6 +138,17 @@ impl Attrs {
                 .map(|(_, v)| v.as_str()),
         }
     }
+}
+
+/// A dialog's `closedBy`: what may close it besides scripts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClosedBy {
+    /// Escape and clicks on the backdrop.
+    Any,
+    /// Escape (the default for modal dialogs, as in HTML).
+    CloseRequest,
+    /// Only scripts.
+    None,
 }
 
 /// Interaction state for `:hover`, `:active` and `:focus*`, set by the engine.

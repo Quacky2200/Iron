@@ -24,7 +24,7 @@ pub mod transform;
 mod tree;
 pub mod units;
 
-pub use attrs::{Attrs, ElementState};
+pub use attrs::{Attrs, ClosedBy, ElementState};
 pub use color::Rgba;
 pub use draw::{
     ClipShape, DrawCmd, GlyphRun, ImageFill, LayerShadow, Polygon, PositionedGlyph, Quad, Radii,
