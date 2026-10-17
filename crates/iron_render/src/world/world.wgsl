@@ -358,8 +358,9 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         let kd = (vec3<f32>(1.0) - f) * albedo;
         color += (kd + spec * PI) * light.color.rgb * ndl * strength;
     }
-    // Light from all around: the environment (the ambient colour, for now) seen in the
-    // diffuse and reflected by the specular, with the split-sum approximation.
+    // Light from all around: sky light (or the ambient colour) in the diffuse, and the
+    // reflection (a mirror's render, a probe, the sky, or the ambient colour) in the
+    // specular, with the split-sum approximation.
     let env_brdf = env_brdf_approx(f0, roughness, ndv);
     var reflected: vec3<f32>;
     if (mirror) {

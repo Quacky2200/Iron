@@ -59,9 +59,17 @@ Neither can be removed.
 
 ## Materials and meshes
 
-`Material(color, emission, smoothness, unlit, mainTexture, tiling, offset)` is a plain value. A
-`MeshRenderer` sends it with its mesh in `render.meshRenderer`; the texture goes by id (`null`: plain
-colour). `Material.withTexture(texture, scale, offset)` copies with tiling set.
+`Material(color, emission, smoothness, unlit, mainTexture, tiling, offset, metallic)` is a plain value,
+Unity's Standard material (metallic workflow). `smoothness` 0..1 is 1 - roughness; `metallic` 0..1 (default
+0) makes a metal: tinted reflections and no diffuse (the shading is in
+[world-rendering.md](world-rendering.md#meshes-and-lights)). A `MeshRenderer` sends it with its mesh in
+`render.meshRenderer` (the last arguments are `castShadows` and `metallic`); the texture goes by id (`null`:
+plain colour).
+
+`Material.create({ color, emission, smoothness, metallic, unlit, mainTexture, mainTextureScale,
+mainTextureOffset })` builds one from named settings, and `material.with({...})` copies with some changed;
+anything left out keeps its default or current value. `withColor` and `withTexture(texture, scale, offset)`
+are shortcuts for `with`.
 
 `Mesh.create({ positions, normals, uvs, indices })` sends `render.mesh id ...`. `WorldViews::apply`
 builds a `MeshData`, completes it (`complete`: smooth normals, zero UVs when missing), checks it
@@ -110,7 +118,7 @@ the game folder:
   UVs are made up.
 - The result is a description: `{ nodes, roots, materials }`. Nodes carry a decomposed transform,
   children and primitives (`mesh`, `material`, `bounds`); materials carry colour, emission, smoothness
-  (1 - roughness), `unlit` and the texture id and size. Only `blend` materials keep their alpha.
+  (1 - roughness), `metallic` (glTF's `metallicFactor`), `unlit` and the texture id and size. Only `blend` materials keep their alpha.
 - Meshes go to `mesh_uploads` and `mesh_data`, textures to `texture_uploads`, and the description is
   sent to `__iron_models([id, json | null, ...])` (null: it failed) after the ops batch.
 
@@ -125,7 +133,7 @@ nodes appear when the model arrives.
 
 - Textures are 2D only, RGBA8, and all mip levels are built on the CPU.
 - Loading blocks the frame it happens in; there is no async or streaming load.
-- glTF: base colour, emissive and roughness only. No skins, animations, normal maps or cameras, and
+- glTF: base colour, emissive, roughness and metallic factors only (no metallic-roughness texture). No skins, animations, normal maps or cameras, and
   only triangle meshes.
 - Hot reload makes a new `WorldViews`, and scripts load their textures and models again (see
   [scripting.md](scripting.md#hot-reload)).

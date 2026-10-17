@@ -949,7 +949,7 @@ export class Mirror extends Component {
  * Captures the scene around its object into a cubemap that shiny things inside its box
  * reflect instead of the sky (Unity's `ReflectionProbe`). Rendering it costs six views of
  * the scene, so by default it renders once (`refreshMode: "onAwake"`); `everyFrame` keeps
- * it live, and `viaScripting` waits for `renderProbe()`.
+ * it live, and `viaScripting` renders once when added and then only on `renderProbe()`.
  */
 export class ReflectionProbe extends Component {
   /** The box of influence, centred on the object (metres). */
