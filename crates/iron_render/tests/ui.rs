@@ -1240,6 +1240,124 @@ fn pixelated_images_scale_without_smoothing() {
     assert_golden("M3-FX-03", 90, 40, &f.pixels, TOLERANCE);
 }
 
+// M3-FX-04
+#[test]
+fn masks_from_gradients() {
+    let mut s = Scene::new();
+    let masked = |y: f64, extra: &[(&'static str, Value)]| {
+        let mut v = at(0.0, y, 100.0, 30.0, &[("backgroundColor", "white".into())]);
+        v.extend_from_slice(extra);
+        v
+    };
+    // Alpha: opaque on the left, gone on the right.
+    s.add(
+        0,
+        &masked(
+            0.0,
+            &[(
+                "maskImage",
+                "linear-gradient(to right, black, transparent)".into(),
+            )],
+        ),
+    );
+    // Luminance: white shows, black hides.
+    s.add(
+        0,
+        &masked(
+            35.0,
+            &[
+                (
+                    "maskImage",
+                    "linear-gradient(to right, white, black)".into(),
+                ),
+                ("maskMode", "luminance".into()),
+            ],
+        ),
+    );
+    // A repeated dot mask over a box and its child.
+    let dots = s.add(
+        0,
+        &masked(
+            70.0,
+            &[
+                (
+                    "maskImage",
+                    "radial-gradient(circle, black 40%, transparent 42%)".into(),
+                ),
+                ("maskSize", "10px 10px".into()),
+            ],
+        ),
+    );
+    s.add(
+        dots,
+        &at(50.0, 0.0, 50.0, 30.0, &[("backgroundColor", "red".into())]),
+    );
+    let f = render(s, (100, 100), 1.0, BLACK);
+    assert!(f.luma(3, 15) > 240.0, "alpha: left shows");
+    // Iron composites in linear light, so the faint edge of the fade reads brighter
+    // than a browser's sRGB blend would.
+    assert!(f.luma(97, 15) < 50.0, "alpha: right nearly gone");
+    assert!(f.luma(3, 50) > 240.0, "luminance: white shows");
+    assert!(f.luma(97, 50) < 50.0, "luminance: black nearly hides");
+    assert!(f.luma(5, 75) > 200.0, "a dot centre");
+    assert!(f.luma(0, 70) < 30.0, "between dots");
+    assert_eq!(
+        f.px(55, 75)[0],
+        255,
+        "the child is masked too: a dot of red"
+    );
+    assert_eq!(f.px(50, 70), [0, 0, 0, 255], "and hidden between dots");
+    assert_golden("M3-FX-04", 100, 100, &f.pixels, TOLERANCE);
+}
+
+// M3-BG-04
+#[test]
+fn gradients_follow_background_size_position_and_repeat() {
+    let mut s = Scene::new();
+    // A 20px tile, repeated: hard red/blue halves every 10px.
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            100.0,
+            20.0,
+            &[
+                (
+                    "backgroundImage",
+                    "linear-gradient(to right, red 50%, blue 50%)".into(),
+                ),
+                ("backgroundSize", "20px 20px".into()),
+            ],
+        ),
+    );
+    // One tile, not repeated, at the right.
+    s.add(
+        0,
+        &at(
+            0.0,
+            30.0,
+            100.0,
+            20.0,
+            &[
+                ("backgroundColor", "white".into()),
+                ("backgroundImage", "linear-gradient(lime, lime)".into()),
+                ("backgroundSize", "20px 20px".into()),
+                ("backgroundPosition", "right".into()),
+                ("backgroundRepeat", "no-repeat".into()),
+            ],
+        ),
+    );
+    let f = render(s, (100, 50), 1.0, BLACK);
+    for (x, red) in [(5, true), (15, false), (45, true), (55, false), (85, true)] {
+        let p = f.px(x, 10);
+        assert!(if red { p[0] > 240 } else { p[2] > 240 }, "x {x}: {p:?}");
+    }
+    assert_eq!(f.px(90, 40), [0, 255, 0, 255], "the tile at the right");
+    assert_eq!(f.px(70, 40), [255, 255, 255, 255], "nothing outside it");
+    assert_golden("M3-BG-04", 100, 50, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

@@ -36,8 +36,8 @@ pub use paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
     BlendMode, BorderImage, BorderImageLength, BorderImagePiece, BorderImageRepeat, BorderStyle,
     ClipPath, ClipShapeSpec, ColorMatrix, ColorStop, CornerRadius, Corners, DropShadow, Filter,
-    GeometryBox, GradientDirection, Len, ObjectFit, Overflow, RadialShape, RepeatAxis, Shadow,
-    ShapeRadius,
+    GeometryBox, GradientDirection, Len, MaskMode, ObjectFit, Overflow, RadialShape, RepeatAxis,
+    Shadow, ShapeRadius,
 };
 pub use parley::FontData;
 pub use style::{

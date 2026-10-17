@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode, BorderImage,
-    BorderStyle, ColorMatrix,
+    BorderStyle, ColorMatrix, MaskMode,
 };
 use crate::text_style::DecorationStyle;
 
@@ -317,6 +317,9 @@ pub enum DrawCmd {
         shadows: Vec<LayerShadow>,
     },
     PopLayer,
+    /// Inside a layer, after its content: what follows (up to `PopLayer`) draws the
+    /// layer's mask, which the layer is multiplied by when composited.
+    BeginMask(MaskMode),
     /// A border that isn't one solid colour: per-side colours and styles (top, right,
     /// bottom, left) drawn in the ring between `rect` and its inner edge.
     Border {
@@ -472,7 +475,9 @@ impl DrawCmd {
             DrawCmd::InsetShadow { shadow, .. } => Some(shadow.rect),
             DrawCmd::PushLayer { bounds, .. } => Some(*bounds),
             DrawCmd::Text(t) => Some(t.bounds),
-            DrawCmd::PopLayer | DrawCmd::PushClip(_) | DrawCmd::PopClip => None,
+            DrawCmd::PopLayer | DrawCmd::BeginMask(_) | DrawCmd::PushClip(_) | DrawCmd::PopClip => {
+                None
+            }
         }
     }
 
@@ -506,6 +511,7 @@ impl DrawCmd {
             | DrawCmd::BorderImage { .. }
             | DrawCmd::PushLayer { .. }
             | DrawCmd::PopLayer
+            | DrawCmd::BeginMask(_)
             | DrawCmd::PushClip(_)
             | DrawCmd::PopClip => {}
         }

@@ -144,6 +144,19 @@ export interface IronStyle {
   // Paint
   background?: string;
   backgroundColor?: string;
+  /** Mask layers (images or gradients), top first; the element and its children show where the mask does. */
+  maskImage?: string;
+  /** Shorthand for `maskImage` only. */
+  mask?: string;
+  maskSize?: string;
+  maskPosition?: string;
+  maskRepeat?: string;
+  /** `alpha` (and `match-source`) or `luminance`; the top layer's mode applies to all. */
+  maskMode?: string;
+  WebkitMaskImage?: string;
+  WebkitMaskSize?: string;
+  WebkitMaskPosition?: string;
+  WebkitMaskRepeat?: string;
   /** Comma-separated layers, top first; the other background properties take matching lists. */
   backgroundImage?: string;
   backgroundSize?: string;

@@ -19,9 +19,9 @@ use crate::Rgba;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
     BlendMode, BorderImage, BorderStyle, ClipPath, ColorMatrix, CornerRadius, Corners, DropShadow,
-    Filter, Len, ObjectFit, Overflow, Shadow, parse_background_image, parse_background_position,
-    parse_background_repeat, parse_background_size, parse_clip_rect, parse_layers, parse_radii,
-    parse_shadows, split_top_level,
+    Filter, Len, MaskMode, ObjectFit, Overflow, Shadow, parse_background_image,
+    parse_background_position, parse_background_repeat, parse_background_size, parse_clip_rect,
+    parse_layers, parse_radii, parse_shadows, split_top_level,
 };
 use crate::text_style::{self, TextProps};
 
@@ -39,6 +39,13 @@ pub struct Visual {
     pub background_positions: Vec<BackgroundPosition>,
     pub background_repeats: Vec<BackgroundRepeat>,
     pub background_clips: Vec<BackgroundClip>,
+    /// `maskImage` layers (top first) and their lists, like the background ones.
+    /// Any mask puts the element in a layer.
+    pub mask_images: Vec<Option<Arc<BackgroundImage>>>,
+    pub mask_sizes: Vec<BackgroundSize>,
+    pub mask_positions: Vec<BackgroundPosition>,
+    pub mask_repeats: Vec<BackgroundRepeat>,
+    pub mask_modes: Vec<MaskMode>,
     /// `backgroundBlendMode`, per layer like the other background lists.
     pub background_blends: Vec<BlendMode>,
     /// `mixBlendMode`: blends the element (as a group) with what's beneath it.
@@ -115,6 +122,11 @@ impl Default for Visual {
             background_repeats: vec![BackgroundRepeat::default()],
             background_clips: vec![BackgroundClip::default()],
             background_blends: vec![BlendMode::Normal],
+            mask_images: Vec::new(),
+            mask_sizes: vec![BackgroundSize::default()],
+            mask_positions: vec![BackgroundPosition::default()],
+            mask_repeats: vec![BackgroundRepeat::default()],
+            mask_modes: vec![MaskMode::Alpha],
             mix_blend: BlendMode::Normal,
             border_colors: [Rgba::TRANSPARENT; 4],
             border_currents: [false; 4],
@@ -646,6 +658,24 @@ pub fn apply_style(
         "backgroundBlendMode" => {
             visual.background_blends = parse_layers(kw()?, BlendMode::parse).ok_or_else(invalid)?
         }
+        // The `mask` shorthand here takes just the images.
+        "maskImage" | "WebkitMaskImage" | "mask" => {
+            visual.mask_images = image_layers(kw()?).ok_or_else(invalid)?
+        }
+        "maskSize" | "WebkitMaskSize" => {
+            visual.mask_sizes = parse_layers(kw()?, parse_background_size).ok_or_else(invalid)?
+        }
+        "maskPosition" | "WebkitMaskPosition" => {
+            visual.mask_positions =
+                parse_layers(kw()?, parse_background_position).ok_or_else(invalid)?
+        }
+        "maskRepeat" | "WebkitMaskRepeat" => {
+            visual.mask_repeats =
+                parse_layers(kw()?, parse_background_repeat).ok_or_else(invalid)?
+        }
+        "maskMode" => {
+            visual.mask_modes = parse_layers(kw()?, MaskMode::parse).ok_or_else(invalid)?
+        }
         "mixBlendMode" => visual.mix_blend = BlendMode::parse(kw()?).ok_or_else(invalid)?,
         "objectFit" => visual.object_fit = ObjectFit::parse(kw()?).ok_or_else(invalid)?,
         "objectPosition" => {
@@ -1058,6 +1088,11 @@ pub(crate) fn copy_prop(
         }
         "backgroundClip" | "WebkitBackgroundClip" => visual.background_clips = v.background_clips,
         "backgroundBlendMode" => visual.background_blends = v.background_blends,
+        "maskImage" | "WebkitMaskImage" | "mask" => visual.mask_images = v.mask_images,
+        "maskSize" | "WebkitMaskSize" => visual.mask_sizes = v.mask_sizes,
+        "maskPosition" | "WebkitMaskPosition" => visual.mask_positions = v.mask_positions,
+        "maskRepeat" | "WebkitMaskRepeat" => visual.mask_repeats = v.mask_repeats,
+        "maskMode" => visual.mask_modes = v.mask_modes,
         "mixBlendMode" => visual.mix_blend = v.mix_blend,
         "objectFit" => visual.object_fit = v.object_fit,
         "objectPosition" => visual.object_position = v.object_position,
@@ -1891,6 +1926,17 @@ mod tests {
 
     #[test]
     fn visual_properties() {
+        // M3-FX-04
+        let (_, v) = apply(
+            "maskImage",
+            "linear-gradient(black, transparent), none".into(),
+        )
+        .unwrap();
+        assert_eq!(v.mask_images.len(), 2);
+        let (_, v) = apply("maskMode", "luminance, match-source".into()).unwrap();
+        assert_eq!(v.mask_modes, vec![MaskMode::Luminance, MaskMode::Alpha]);
+        assert!(apply("maskMode", "brightness".into()).is_err());
+        assert!(apply("WebkitMaskSize", "10px".into()).is_ok());
         // M3-FX-02
         assert!(apply("backdropFilter", "drop-shadow(1px 1px red)".into()).is_err());
         let (_, v) = apply("backdropFilter", "blur(4px) saturate(2)".into()).unwrap();

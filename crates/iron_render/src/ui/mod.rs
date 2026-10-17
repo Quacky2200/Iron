@@ -189,10 +189,16 @@ struct CompositeParams {
     tint: [f32; 4],
     /// xy: shift of the source (physical px); z: 1 to apply the matrix; w: 1 to tint.
     shift: [f32; 4],
+    /// x: mask mode (0 none, 1 alpha, 2 luminance).
+    mask: [f32; 4],
 }
 
 /// A layer that's open in the draw list, until its `PopLayer`.
 struct OpenLayer {
+    /// The layer's own texture (drawing may have moved on to its mask).
+    texture: usize,
+    /// The mask texture and mode, once `BeginMask` started it.
+    mask: Option<(usize, iron_ui::MaskMode)>,
     parent: usize,
     bounds: Rect,
     blur: f32,
@@ -249,6 +255,8 @@ enum Step {
         /// physical pixels.
         tint: Option<[f32; 4]>,
         shift: [f32; 2],
+        /// Multiply by this texture's alpha or luminance.
+        mask: Option<(usize, iron_ui::MaskMode)>,
     },
 }
 
@@ -368,6 +376,10 @@ impl UiRenderer {
                 storage(4, wgpu::ShaderStages::FRAGMENT),
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
+                    ..texture
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
                     ..texture
                 },
             ],
@@ -709,11 +721,23 @@ impl UiRenderer {
                         instances.push(quad(q.rect, q.radii, background, [0.0; 4], -1.0));
                     }
                     for fill in &q.images {
-                        if let Some(g) = gradient::build(&fill.image, fill.area) {
+                        if !matches!(*fill.image, iron_ui::BackgroundImage::Url(_)) {
+                            // A gradient has no size of its own: `auto` is the box. One
+                            // tile is laid out like an image's and repeats per the
+                            // repeat axes (round rescales it; space gaps aren't kept).
+                            let natural = (q.rect.width, q.rect.height);
+                            let tile = images::tile_rect(q.rect, natural, fill.size, fill.position);
+                            let (tile, _, repeat) = images::repeat_tiles(tile, q.rect, fill.repeat);
+                            let Some(g) = gradient::build(&fill.image, tile) else {
+                                continue;
+                            };
                             gradients.push(g);
                             let index = (gradients.len() - 1) as f32;
                             let mut layer = quad(fill.area, fill.radii, [0.0; 4], [0.0; 4], index);
                             layer.p0 = [0.0; 4];
+                            layer.p1 = rect4(tile);
+                            layer.params[1] = f32::from(u8::from(repeat[0]))
+                                + 2.0 * f32::from(u8::from(repeat[1]));
                             instances.push(layer);
                         } else if let iron_ui::BackgroundImage::Url(url) = &*fill.image
                             && let Some(loaded) =
@@ -1076,6 +1100,8 @@ impl UiRenderer {
                         color: wgpu::Color::TRANSPARENT,
                     });
                     layer_stack.push(OpenLayer {
+                        texture: layer,
+                        mask: None,
                         parent: current,
                         bounds: *bounds,
                         blur: *blur,
@@ -1088,8 +1114,26 @@ impl UiRenderer {
                     current = layer;
                     stats.layers += 1;
                 }
+                DrawCmd::BeginMask(mode) => {
+                    let Some(open) = layer_stack.last_mut() else {
+                        tracing::warn!("BeginMask outside a layer; ignored");
+                        continue;
+                    };
+                    tag(&mut instances, &mut clip_from, clip);
+                    flush(&mut steps, &instances, &mut batch_start, current);
+                    let mask = frame_textures.len();
+                    frame_textures.push(self.take_texture(gpu, size));
+                    steps.push(Step::Clear {
+                        target: mask,
+                        color: wgpu::Color::TRANSPARENT,
+                    });
+                    open.mask = Some((mask, *mode));
+                    current = mask;
+                }
                 DrawCmd::PopLayer => {
                     let Some(OpenLayer {
+                        texture: layer_texture,
+                        mask,
                         parent,
                         bounds,
                         blur,
@@ -1105,6 +1149,8 @@ impl UiRenderer {
                     };
                     tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
+                    // Drawing may have moved on to the mask; the layer is its own texture.
+                    let current_layer = layer_texture;
                     clip_stack = outer_clips;
                     let layer_clip = clip_stack.last().copied().unwrap_or(0);
                     let visible = match clips.bounds(layer_clip) {
@@ -1118,7 +1164,7 @@ impl UiRenderer {
                             let temp = frame_textures.len();
                             frame_textures.push(self.take_texture(gpu, size));
                             steps.push(Step::Blur {
-                                tex: current,
+                                tex: current_layer,
                                 temp,
                                 area,
                                 sigma: blur * scale,
@@ -1130,7 +1176,7 @@ impl UiRenderer {
                             let shadow = frame_textures.len();
                             frame_textures.push(self.take_texture(gpu, size));
                             steps.push(Step::Copy {
-                                src: current,
+                                src: current_layer,
                                 dst: shadow,
                             });
                             if s.sigma > 0.0 {
@@ -1154,6 +1200,7 @@ impl UiRenderer {
                                     matrix: None,
                                     tint: Some(linear_premultiplied(s.color)),
                                     shift: [s.offset_x * scale, s.offset_y * scale],
+                                    mask,
                                 });
                             }
                         }
@@ -1168,7 +1215,7 @@ impl UiRenderer {
                             (blend, backdrop)
                         });
                         steps.push(Step::Composite {
-                            src: current,
+                            src: current_layer,
                             dst: parent,
                             area: visible_area,
                             opacity,
@@ -1177,6 +1224,7 @@ impl UiRenderer {
                             matrix,
                             tint: None,
                             shift: [0.0; 2],
+                            mask,
                         });
                     }
                     current = parent;
@@ -1222,6 +1270,7 @@ impl UiRenderer {
                         matrix: *matrix,
                         tint: None,
                         shift: [0.0; 2],
+                        mask: None,
                     });
                 }
             }
@@ -1250,6 +1299,7 @@ impl UiRenderer {
                     matrix: None,
                     tint: None,
                     shift: [0.0; 2],
+                    mask: None,
                 });
             }
             current = parent;
@@ -1488,8 +1538,12 @@ impl UiRenderer {
                     matrix,
                     tint,
                     shift,
+                    mask,
                 } => {
                     settle(&mut encoder, &mut pending_clear, &mut stats, *src);
+                    if let Some((m, _)) = mask {
+                        settle(&mut encoder, &mut pending_clear, &mut stats, *m);
+                    }
                     if let Some((_, backdrop)) = blend {
                         settle(&mut encoder, &mut pending_clear, &mut stats, *backdrop);
                     }
@@ -1516,6 +1570,16 @@ impl UiRenderer {
                                 shift[1],
                                 f32::from(u8::from(matrix.is_some())),
                                 f32::from(u8::from(tint.is_some())),
+                            ],
+                            mask: [
+                                match mask {
+                                    None => 0.0,
+                                    Some((_, iron_ui::MaskMode::Alpha)) => 1.0,
+                                    Some((_, iron_ui::MaskMode::Luminance)) => 2.0,
+                                },
+                                0.0,
+                                0.0,
+                                0.0,
                             ],
                         }),
                         usage: wgpu::BufferUsages::UNIFORM,
@@ -1546,6 +1610,12 @@ impl UiRenderer {
                                 binding: 5,
                                 resource: wgpu::BindingResource::TextureView(
                                     &frame_textures[backdrop].view,
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 6,
+                                resource: wgpu::BindingResource::TextureView(
+                                    &frame_textures[mask.map_or(*src, |(m, _)| m)].view,
                                 ),
                             },
                         ],

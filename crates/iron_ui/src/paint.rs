@@ -1281,6 +1281,25 @@ impl BlendMode {
     }
 }
 
+/// `mask-mode`: what of the mask image counts. `match-source` is alpha for images
+/// and gradients (Iron has no SVG `<mask>` elements).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MaskMode {
+    #[default]
+    Alpha,
+    Luminance,
+}
+
+impl MaskMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "alpha" | "match-source" => Self::Alpha,
+            "luminance" => Self::Luminance,
+            _ => return None,
+        })
+    }
+}
+
 /// A comma-separated list of background layer values (`a, b, c`), top layer first.
 pub fn parse_layers<T>(s: &str, item: impl Fn(&str) -> Option<T>) -> Option<Vec<T>> {
     split_top_level(s, ',').into_iter().map(item).collect()

@@ -557,8 +557,12 @@ and `@font-face`.
    - [x] `image-rendering` (`pixelated`, `crisp-edges`, `auto`/`smooth`/`high-quality`), inherited,
      for background images, `Image` elements and border images: each image has a second bind
      group with a nearest-neighbour sampler — `M3-FX-03`
-   - [ ] Masks: `mask-image` (images and gradients), `mask-mode`, `mask-size`, `mask-position`,
-     `mask-repeat`
+   - [x] Masks: `mask-image` (images and gradients; `mask` takes just the images), `mask-mode`
+     (`alpha`/`match-source`, `luminance`; the top layer's mode applies to all), `mask-size`,
+     `mask-position`, `mask-repeat`, with `-webkit-` aliases. A masked element draws in a layer;
+     `BeginMask` switches drawing to a mask texture (ordinary background quads), which the
+     composite multiplies by — `M3-FX-04`. Along the way, gradients now follow
+     `background-size`/`-position`/`-repeat` (one tile, repeated in the shader) — `M3-BG-04`
    - [x] `opacity` as a percentage (and as a numeric string) — `M3-FX-01`
 6. **Transforms**
    - [ ] `transform`: `translate*`, `scale*`, `rotate*`, `skew*`, `matrix()`, `none`; `transform-origin`;

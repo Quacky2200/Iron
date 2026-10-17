@@ -541,8 +541,26 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     var fill = in.color0;
     let gradient = in.params.z;
     if gradient >= 0.0 {
-        let g = gradient_color(u32(gradient), p, in.rect);
-        fill = g + fill * (1.0 - g.a);
+        // A background gradient layer: `p1` is one tile, repeating along x when
+        // `params.y` has bit 1 and along y with bit 2.
+        var at = p;
+        var tile = in.rect;
+        var inside = true;
+        if in.p1.z > 0.0 && in.p1.w > 0.0 {
+            tile = in.p1;
+            let bits = u32(in.params.y);
+            let local = p - tile.xy;
+            let wrapped = local - floor(local / tile.zw) * tile.zw;
+            let rx = (bits & 1u) != 0u;
+            let ry = (bits & 2u) != 0u;
+            at = tile.xy + vec2(select(local.x, wrapped.x, rx), select(local.y, wrapped.y, ry));
+            inside = (rx || (local.x >= 0.0 && local.x <= tile.z))
+                && (ry || (local.y >= 0.0 && local.y <= tile.w));
+        }
+        if inside {
+            let g = gradient_color(u32(gradient), at, tile);
+            fill = g + fill * (1.0 - g.a);
+        }
     }
     // CSS backgrounds extend under the border (background-clip: border-box).
     let base = fill * outer;

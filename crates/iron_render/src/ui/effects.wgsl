@@ -57,6 +57,7 @@ struct CompositeParams {
     offset: vec4<f32>,   // its offset column
     tint: vec4<f32>,     // drop shadows: the source's alpha in this colour
     shift: vec4<f32>,    // xy: source shift (physical px); z: matrix on; w: tint on
+    mask: vec4<f32>,     // x: mask mode (0 none, 1 alpha, 2 luminance)
 };
 @group(0) @binding(3) var<uniform> composite: CompositeParams;
 @group(0) @binding(4) var<storage, read> clips: array<Clip>;
@@ -156,6 +157,22 @@ fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
     return cover;
 }
 
+@group(0) @binding(6) var mask_tex: texture_2d<f32>;
+
+// How much of the layer shows at `pos` (`mask-image`).
+fn mask_at(pos: vec4<f32>) -> f32 {
+    if composite.mask.x < 0.5 {
+        return 1.0;
+    }
+    let m = textureLoad(mask_tex, vec2<i32>(pos.xy), 0);
+    if composite.mask.x < 1.5 {
+        return m.a;
+    }
+    // Luminance of the (premultiplied, linear) mask colour, in sRGB like CSS.
+    let straight = select(vec3(0.0), m.rgb / m.a, m.a > 0.0);
+    return dot(to_srgb(straight), vec3(0.2126, 0.7152, 0.0722)) * m.a;
+}
+
 // The layer's pixel under `pos`, after its drop-shadow tint and `filter` colour matrix.
 fn filtered_source(pos: vec4<f32>) -> vec4<f32> {
     var c = textureSampleLevel(src, samp, uv_at(pos - vec4(composite.shift.xy, 0.0, 0.0)), 0.0);
@@ -177,7 +194,7 @@ fn filtered_source(pos: vec4<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_composite(in: VsOut) -> @location(0) vec4<f32> {
-    let color = filtered_source(in.pos) * composite.opacity;
+    let color = filtered_source(in.pos) * composite.opacity * mask_at(in.pos);
     return color * clip_coverage_with(in.pos.xy / composite.scale, u32(composite.clip), composite.scale);
 }
 
@@ -283,7 +300,7 @@ fn blend(mode: u32, cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_composite_blend(in: VsOut) -> @location(0) vec4<f32> {
-    let s = filtered_source(in.pos) * composite.opacity;
+    let s = filtered_source(in.pos) * composite.opacity * mask_at(in.pos);
     let b = textureLoad(backdrop, vec2<i32>(in.pos.xy), 0);
     let cs = to_srgb(s.rgb / max(s.a, 1e-6));
     let cb = to_srgb(b.rgb / max(b.a, 1e-6));

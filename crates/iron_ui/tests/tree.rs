@@ -178,6 +178,7 @@ fn shape(cmds: &[DrawCmd]) -> Vec<String> {
                 format!("push blur={blur} opacity={opacity}")
             }
             DrawCmd::PopLayer => "pop".into(),
+            DrawCmd::BeginMask(_) => "mask".into(),
             DrawCmd::PushClip(c) => format!("clip {}x{}", c.rect.width, c.rect.height),
             DrawCmd::PopClip => "unclip".into(),
             DrawCmd::Text(t) => format!("text {}", t.runs.len()),

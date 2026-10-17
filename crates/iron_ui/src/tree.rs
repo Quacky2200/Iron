@@ -187,6 +187,28 @@ fn blended_background(quad: Quad, v: &Visual, out: &mut Vec<DrawCmd>) {
     out.push(DrawCmd::PopLayer);
 }
 
+/// The mask layers, bottom first, over the border box (`mask-clip` and
+/// `mask-origin` are `border-box`). One mode applies to all of them: the top
+/// layer's.
+fn mask_layers(v: &Visual, rect: Rect, pixelated: bool) -> Vec<ImageFill> {
+    v.mask_images
+        .iter()
+        .enumerate()
+        .rev()
+        .filter_map(|(i, image)| {
+            Some(ImageFill {
+                image: image.clone()?,
+                size: v.mask_sizes[i % v.mask_sizes.len()],
+                position: v.mask_positions[i % v.mask_positions.len()],
+                repeat: v.mask_repeats[i % v.mask_repeats.len()],
+                area: rect,
+                radii: Radii::ZERO,
+                pixelated,
+            })
+        })
+        .collect()
+}
+
 /// The `background-clip` box and its corner radii (the outer radii shrunk by the inset).
 fn clip_area(clip: BackgroundClip, rect: Rect, radii: Radii, l: &NodeLayout) -> (Rect, Radii) {
     let inset = match clip {
@@ -2396,11 +2418,13 @@ impl<L: LayoutEngine> UiTree<L> {
             })
             .filter(|s| s.color.a > 0.0)
             .collect();
+        let masked = v.mask_images.iter().any(Option::is_some);
         if v.filter_blur > 0.0
             || group_opacity
             || v.mix_blend != BlendMode::Normal
             || v.filter_matrix.is_some()
             || !shadows.is_empty()
+            || masked
         {
             let start = out.len();
             let shadow_reach = shadows.clone();
@@ -2428,6 +2452,17 @@ impl<L: LayoutEngine> UiTree<L> {
             }
             if let DrawCmd::PushLayer { bounds, .. } = &mut out[start] {
                 *bounds = reach;
+            }
+            if masked {
+                out.push(DrawCmd::BeginMask(v.mask_modes[0]));
+                out.push(DrawCmd::Quad(Quad {
+                    rect,
+                    background: Rgba::TRANSPARENT,
+                    images: mask_layers(v, rect, text.pixelated),
+                    border_color: Rgba::TRANSPARENT,
+                    border: [0.0; 4],
+                    radii: Radii::ZERO,
+                }));
             }
             out.push(DrawCmd::PopLayer);
         } else {
