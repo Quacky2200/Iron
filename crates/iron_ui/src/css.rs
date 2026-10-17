@@ -270,6 +270,9 @@ pub struct Stylesheet {
     pub rules: Vec<StyleRule>,
     pub font_faces: Vec<FontFace>,
     pub keyframes: Vec<Keyframes>,
+    /// Rules inside `@starting-style`: the "before" style of newly shown elements,
+    /// which their transitions start from.
+    pub starting: Vec<StyleRule>,
     /// Problems found while parsing (invalid selectors, unsupported at-rules, ...).
     /// The rest of the sheet still applies.
     pub warnings: Vec<String>,
@@ -279,12 +282,14 @@ enum Item {
     Rule(StyleRule),
     FontFace(FontFace),
     Keyframes(Keyframes),
+    Starting(Stylesheet),
     Skipped(String),
 }
 
 enum AtPrelude {
     FontFace,
     Keyframes(String),
+    StartingStyle,
     Media(String),
     Unsupported(String),
 }
@@ -332,6 +337,7 @@ impl<'i> AtRuleParser<'i> for SheetParser {
         Ok(match_ignore_ascii_case! { &name,
             "font-face" => AtPrelude::FontFace,
             "keyframes" | "-webkit-keyframes" => AtPrelude::Keyframes(unquote(&rest)),
+            "starting-style" => AtPrelude::StartingStyle,
             "media" => AtPrelude::Media(rest),
             _ => AtPrelude::Unsupported(name.to_string()),
         })
@@ -384,6 +390,11 @@ impl<'i> AtRuleParser<'i> for SheetParser {
                     return Ok(Item::Skipped("@keyframes needs a name".into()));
                 }
                 Ok(Item::Keyframes(Keyframes { name, frames }))
+            }
+            AtPrelude::StartingStyle => {
+                let start = input.position();
+                while input.next().is_ok() {}
+                Ok(Item::Starting(parse_stylesheet(input.slice_from(start))))
             }
             AtPrelude::Media(query) => {
                 // Kept for later: @media isn't supported yet (TODO.md, "Later").
@@ -575,6 +586,10 @@ pub fn parse_stylesheet(css: &str) -> Stylesheet {
             Ok(Item::Rule(rule)) => sheet.rules.push(rule),
             Ok(Item::FontFace(face)) => sheet.font_faces.push(face),
             Ok(Item::Keyframes(k)) => sheet.keyframes.push(k),
+            Ok(Item::Starting(inner)) => {
+                sheet.starting.extend(inner.rules);
+                sheet.warnings.extend(inner.warnings);
+            }
             Ok(Item::Skipped(why)) => sheet.warnings.push(why),
             Err((error, text, location)) => sheet.warnings.push(format!(
                 "line {}: skipped `{}` ({:?})",

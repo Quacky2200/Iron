@@ -398,6 +398,12 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     uses_motion: bool,
     /// Transition events waiting for [`Self::take_motion_events`].
     motion_events: Vec<crate::motion::MotionEvent>,
+    /// `@starting-style` rules of each stylesheet, and their index.
+    starting_sheets: Vec<Stylesheet>,
+    starting_index: RuleIndex,
+    /// Elements not styled yet: their first style starts transitions from
+    /// `@starting-style`.
+    fresh: HashSet<NodeId>,
 }
 
 impl UiTree<TaffyLayout> {
@@ -468,6 +474,9 @@ impl<L: LayoutEngine> UiTree<L> {
             motion: HashMap::default(),
             uses_motion: false,
             motion_events: Vec::new(),
+            starting_sheets: Vec::new(),
+            starting_index: RuleIndex::default(),
+            fresh: HashSet::default(),
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
@@ -636,6 +645,15 @@ impl<L: LayoutEngine> UiTree<L> {
     fn restyle_everything(&mut self) {
         let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
         self.rule_index = RuleIndex::build(&sheets);
+        let starting: Vec<Stylesheet> = sheets
+            .iter()
+            .map(|s| Stylesheet {
+                rules: s.starting.clone(),
+                ..Stylesheet::default()
+            })
+            .collect();
+        self.starting_index = RuleIndex::build(&starting.iter().collect::<Vec<_>>());
+        self.starting_sheets = starting;
         let mut deps = Deps::default();
         for sheet in &sheets {
             deps.add_sheet(sheet);
@@ -1359,6 +1377,7 @@ impl<L: LayoutEngine> UiTree<L> {
         if self.sheets.is_empty() && !self.uses_vars && !self.uses_motion {
             // Without stylesheets inline styles are applied directly as they arrive.
             self.style_dirty.clear();
+            self.fresh.clear();
             return;
         }
         for (id, keys) in key_changes {
@@ -1534,6 +1553,29 @@ impl<L: LayoutEngine> UiTree<L> {
         let boxes_changed =
             node.visual.contents != visual.contents || node.visual.fixed != visual.fixed;
         let parent = node.parent;
+        // A new (or newly shown) element transitions from its `@starting-style`.
+        let shown = node.style.display == Display::None && style.display != Display::None;
+        let first = self.fresh.remove(&id) || shown;
+        let mut starting = std::collections::HashMap::new();
+        if first && !visual.transitions.specs().is_empty() && !self.starting_sheets.is_empty() {
+            let sheets: Vec<&Stylesheet> = self.starting_sheets.iter().collect();
+            let (normal, important) = matched_declarations(
+                self,
+                &sheets,
+                &self.starting_index,
+                id,
+                Target::Element,
+                caches,
+            );
+            for m in normal.iter().chain(important.iter()) {
+                let mut scratch = Uses::default();
+                match compute(&m.prop, &m.value, &units, &mut scratch) {
+                    Some(Value::String(s)) => starting.insert(m.prop.clone(), s),
+                    Some(Value::Number(n)) => starting.insert(m.prop.clone(), n.to_string()),
+                    _ => None,
+                };
+            }
+        }
         // The keyframes of this element's animations, with `var()` and units resolved.
         let mut keyframes = Vec::new();
         for spec in visual.animations.specs() {
@@ -1571,6 +1613,7 @@ impl<L: LayoutEngine> UiTree<L> {
         self.run_motion(
             id,
             winners,
+            starting,
             parent_text.color,
             &keyframes,
             &mut style,
@@ -1651,10 +1694,12 @@ impl<L: LayoutEngine> UiTree<L> {
     /// `visual`: animations (by their `keyframes`) first, then transitions, which
     /// start for properties whose winning value changed (per the new style's
     /// `transition` list). Finished ones are dropped and reported.
+    #[allow(clippy::too_many_arguments)]
     fn run_motion(
         &mut self,
         id: NodeId,
         winners: std::collections::HashMap<String, String>,
+        starting: std::collections::HashMap<String, String>,
         parent_color: Rgba,
         keyframes: &[(String, crate::motion::Frames)],
         style: &mut Style,
@@ -1690,7 +1735,16 @@ impl<L: LayoutEngine> UiTree<L> {
         };
         let m = self.motion.entry(id).or_default();
         let mut events = Vec::new();
-        if let Some(prev) = m.values.take() {
+        // A new or newly shown element has no old style: its `@starting-style`
+        // values stand in for the old ones.
+        let prev = if starting.is_empty() {
+            m.values.take()
+        } else {
+            let mut before = winners.clone();
+            before.extend(starting);
+            Some(before)
+        };
+        if let Some(prev) = prev {
             let mut changed: Vec<&String> = prev
                 .keys()
                 .chain(winners.keys())
@@ -2147,6 +2201,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 let style = base_style(kind);
                 self.layout.create_node(id, &style);
                 self.style_dirty.insert(id);
+                self.fresh.insert(id);
                 if kind == DIALOG {
                     // Closed until `open` is set.
                     self.markers_dirty.insert(id);
@@ -2232,6 +2287,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 let image_changed = kind_is(IMAGE) && before.src != attrs.src;
                 if dialog_changed {
                     self.markers_dirty.insert(id);
+                    // Opening restyles it, so `@starting-style` transitions run.
+                    self.style_dirty.insert(id);
                     self.needs_layout = true;
                 }
                 if image_changed {
@@ -2505,6 +2562,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.fixed.remove(&id);
             self.top_layer.retain(|d| *d != id);
             self.motion.remove(&id);
+            self.fresh.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);

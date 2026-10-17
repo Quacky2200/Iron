@@ -326,3 +326,78 @@ fn infinite_alternating_transform_animation() {
     let ev = events(&mut tree);
     assert!(!ev.iter().any(|e| e.starts_with("animationend")), "{ev:?}");
 }
+
+const FADE_IN: &str = ".card { opacity: 1; transition: opacity 1s linear }
+    @starting-style { .card { opacity: 0 } }";
+
+/// Adds a box with `class` (and optional extra ops) under the root at time 0.
+fn add_card(tree: &mut UiTree, id: u32, class: &str) {
+    let mut d = Dom::new();
+    d.next = id;
+    let b = d.add(0, "box", &[]);
+    if !class.is_empty() {
+        d.set_class(b, class);
+    }
+    assert!(tree.apply_commit(&Commit { ops: d.ops }).is_empty());
+}
+
+// M3-ANI-04
+#[test]
+fn new_elements_transition_from_their_starting_style() {
+    let mut tree = UiTree::new(400.0, 400.0);
+    tree.add_stylesheet(FADE_IN);
+    at(&mut tree, 0.0);
+    add_card(&mut tree, 1, "card");
+    at(&mut tree, 0.0);
+    assert_eq!(opacity(&tree, 1), 0.0, "starts from @starting-style");
+    at(&mut tree, 500.0);
+    assert!((opacity(&tree, 1) - 0.5).abs() < 1e-3);
+    at(&mut tree, 1000.0);
+    assert_eq!(opacity(&tree, 1), 1.0);
+}
+
+// M3-ANI-04
+#[test]
+fn existing_elements_ignore_starting_style() {
+    let mut tree = UiTree::new(400.0, 400.0);
+    tree.add_stylesheet(FADE_IN);
+    at(&mut tree, 0.0);
+    add_card(&mut tree, 1, "");
+    at(&mut tree, 0.0);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_ATTRS,
+            &[n(1), "className".into(), "card".into()],
+        )],
+    });
+    assert!(errors.is_empty());
+    at(&mut tree, 0.0);
+    at(&mut tree, 100.0);
+    assert_eq!(opacity(&tree, 1), 1.0, "already styled: no fade in");
+}
+
+// M3-ANI-04
+#[test]
+fn opening_a_dialog_runs_its_starting_style() {
+    let mut d = Dom::new();
+    let dialog = d.add(0, "dialog", &[]);
+    let mut tree = d.build(
+        "dialog { opacity: 1; transition: opacity 1s linear }
+         @starting-style { dialog[open] { opacity: 0 } }",
+    );
+    at(&mut tree, 0.0);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_ATTRS,
+            &[n(dialog), "open".into(), true.into()],
+        )],
+    });
+    assert!(errors.is_empty());
+    at(&mut tree, 0.0);
+    at(&mut tree, 250.0);
+    assert!(
+        (opacity(&tree, dialog) - 0.25).abs() < 1e-3,
+        "{}",
+        opacity(&tree, dialog)
+    );
+}

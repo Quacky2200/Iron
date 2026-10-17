@@ -643,9 +643,12 @@ and `@font-face`.
      `cancel` events reach React (`onAnimationEnd`, ...) — `M3-ANI-03`
    - [x] Timing functions: `linear`, `ease*`, `cubic-bezier()`, `steps()` (all jump positions),
      `step-start`/`-end` (done with 7a; `linear()` with stops isn't)
-   - [ ] Enter/exit styling, s&box's `:intro` / `:outro`: `@starting-style` (standard) for entry, and an
-     `:outro`-style state plus deferred removal in the React reconciler so exit transitions finish
-     before the node is deleted
+   - [x] **7c** Entry styling (s&box's `:intro`): `@starting-style` rules (their own rule index) are
+     the before-change style of new elements and of elements whose `display` goes from `none` to
+     shown (opening a dialog restyles it), so transitions run from them; elements already styled
+     ignore them — `M3-ANI-04`
+   - [ ] **7d** Exit styling (s&box's `:outro`): an `:outro`-style state plus deferred removal so exit
+     transitions finish before the node is deleted
 8. **Scrolling** (extends M3c overflow)
    - [ ] `scrollbar-width`, `scrollbar-color`, `scrollbar-gutter`, `overscroll-behavior`;
      `overflow: clip`
