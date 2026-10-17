@@ -305,3 +305,36 @@ fn run_data_ids(tree: &UiTree, id: u32) -> Vec<u64> {
     }
     out
 }
+
+// M3-FNT-01
+#[test]
+fn woff_and_woff2_fonts_register_and_shape() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/fonts");
+    for (file, family) in [
+        ("inter-subset.woff", "WebOne"),
+        ("inter-subset.woff2", "WebTwo"),
+    ] {
+        let data = std::fs::read(dir.join(file)).unwrap();
+        let mut tree = iron_ui::UiTree::new(400.0, 100.0);
+        let names = tree
+            .register_font(data.clone(), Some(family), None, None)
+            .unwrap_or_else(|e| panic!("{file}: {e}"));
+        assert_eq!(names, [family]);
+        // The decoded data is a plain font: it starts with a TrueType/OpenType tag.
+        let plain = iron_ui::text::decode_web_font(data.clone()).unwrap();
+        assert!(
+            plain.starts_with(&[0, 1, 0, 0])
+                || plain.starts_with(b"OTTO")
+                || plain.starts_with(b"true"),
+            "{file}: {:?}",
+            &plain[..4]
+        );
+        // Broken data is reported, not registered.
+        let mut cut = data;
+        cut.truncate(40);
+        assert!(
+            tree.register_font(cut, Some("Broken"), None, None).is_err(),
+            "{file}"
+        );
+    }
+}

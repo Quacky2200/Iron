@@ -144,6 +144,7 @@ impl TextEngine {
         weight: Option<f32>,
         italic: Option<bool>,
     ) -> Result<Vec<String>, String> {
+        let data = decode_web_font(data)?;
         let info = FontInfoOverride {
             family_name: family,
             weight: weight.map(FontWeight::new),
@@ -209,6 +210,18 @@ impl TextEngine {
             builder.pop_style_span();
         }
         builder.build()
+    }
+}
+
+/// WOFF and WOFF2 fonts (recognized by their signature) decompressed to plain TTF/OTF
+/// data; other data is passed through.
+pub fn decode_web_font(data: Vec<u8>) -> Result<Vec<u8>, String> {
+    match data.get(..4) {
+        Some(b"wOFF") => wuff::decompress_woff1(&data).map_err(|e| format!("bad WOFF data: {e:?}")),
+        Some(b"wOF2") => {
+            wuff::decompress_woff2(&data).map_err(|e| format!("bad WOFF2 data: {e:?}"))
+        }
+        _ => Ok(data),
     }
 }
 

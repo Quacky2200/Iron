@@ -44,7 +44,7 @@ export function op(name: string, ...args: unknown[]): void {
 export interface FontFace {
   /** The name to use in `fontFamily`. */
   family: string;
-  /** A TTF/OTF file, relative to the game folder (like `url()` in CSS). */
+  /** A TTF, OTF, WOFF or WOFF2 file, relative to the game folder (like `url()` in CSS). */
   src: string;
   /** `@font-face` weight; defaults to what the file says. */
   weight?: number | "normal" | "bold";

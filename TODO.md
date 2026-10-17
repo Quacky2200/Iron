@@ -705,10 +705,10 @@ and `@font-face`.
       so `pointerId` is ignored — `M3-EVT-06`
     - [ ] `touch-action` isn't needed until touch input exists; drag and drop is in M5.e
 12. **Web fonts: WOFF and WOFF2**
-    - [ ] Load `.woff` (zlib) and `.woff2` (Brotli + glyph transforms) fonts from `@font-face` and
-      `loadFont`, decoding them to TTF/OTF before registering with Parley (e.g. the `woff2` /
-      `wuff` crates, or a small decoder); `format("woff2")` hints in `src` lists pick the first
-      supported entry
+    - [x] `.woff` and `.woff2` fonts from `@font-face` and `loadFont`: `register_font` recognizes
+      their signatures and decompresses them to TTF/OTF with the pure-Rust `wuff` crate before
+      Parley sees them; `@font-face` `src` lists take the first entry Iron can load (by
+      `format()`, else extension), skipping `local()`, EOT and SVG fonts — `M3-FNT-01`
 13. **`@media` queries**
     - [ ] `width`/`height` (with `min-`/`max-` and range syntax), `orientation`, `aspect-ratio`,
       `resolution` (the window's scale factor), `prefers-color-scheme`, `prefers-reduced-motion`,

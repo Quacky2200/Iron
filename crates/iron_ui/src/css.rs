@@ -798,12 +798,44 @@ fn unquote(s: &str) -> String {
     s.trim().trim_matches(['"', '\'']).to_owned()
 }
 
-/// The first `url(...)` in an `@font-face` `src` list.
+/// The first `url(...)` in an `@font-face` `src` list that Iron can load: TrueType,
+/// OpenType, WOFF or WOFF2 (by `format()`, else by extension). `local()` entries and
+/// EOT / SVG fonts are skipped.
 fn first_url(src: &str) -> Option<String> {
-    let start = src.find("url(")? + 4;
-    let end = src[start..].find(')')? + start;
-    let url = unquote(&src[start..end]);
-    (!url.is_empty()).then_some(url)
+    crate::paint::split_top_level(src, ',')
+        .into_iter()
+        .find_map(|entry| {
+            let entry = entry.trim();
+            let start = entry.find("url(")? + 4;
+            let end = entry[start..].find(')')? + start;
+            let url = unquote(&entry[start..end]);
+            let format = entry[end..].find("format(").map(|f| {
+                unquote(entry[end + f + 7..].split(')').next().unwrap_or("")).to_ascii_lowercase()
+            });
+            let usable = match format.as_deref() {
+                Some(f) => matches!(
+                    f,
+                    "truetype"
+                        | "opentype"
+                        | "woff"
+                        | "woff2"
+                        | "collection"
+                        | "truetype-variations"
+                        | "opentype-variations"
+                        | "woff-variations"
+                        | "woff2-variations"
+                ),
+                None => {
+                    let path = url
+                        .split(['?', '#'])
+                        .next()
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    !(path.ends_with(".eot") || path.ends_with(".svg"))
+                }
+            };
+            (!url.is_empty() && usable).then_some(url)
+        })
 }
 
 /// Parses a stylesheet. Invalid rules are skipped with a warning; the rest applies.
@@ -907,6 +939,23 @@ mod tests {
         // A bad keyframe selector drops just that block.
         assert_eq!(sheet.keyframes.len(), 1);
         assert_eq!(sheet.keyframes[0].frames.len(), 1);
+    }
+
+    // M3-FNT-01
+    #[test]
+    fn font_face_src_lists_pick_a_usable_format() {
+        let src = |s: &str| first_url(s);
+        assert_eq!(
+            src(r#"local("Inter"), url(a.eot) format("embedded-opentype"), url(a.woff2) format("woff2"), url(a.ttf)"#)
+                .as_deref(),
+            Some("a.woff2")
+        );
+        assert_eq!(src("url(a.svg#f), url(b.woff)").as_deref(), Some("b.woff"));
+        assert_eq!(
+            src(r#"url("c.otf") format("opentype")"#).as_deref(),
+            Some("c.otf")
+        );
+        assert_eq!(src(r#"url(d.eot)"#), None);
     }
 
     // M3-CSS-11

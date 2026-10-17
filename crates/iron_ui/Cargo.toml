@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+wuff = "0.2.9"
 cssparser = "0.38"
 iron_core = { version = "0.1.0", path = "../iron_core" }
 # complex-scripts: dictionary word and line breaks for CJK, Thai, Lao, Khmer and Burmese.
