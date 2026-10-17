@@ -96,8 +96,10 @@ impl ClothSystem {
                 let s = nums(args.get(4));
                 let get = |i: usize, d: f32| s.get(i).copied().unwrap_or(d);
                 let pins: Vec<Vec3> = nums(args.get(8))
-                    .chunks_exact(3)
-                    .map(|c| Vec3::new(c[0], c[1], c[2]))
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|c| Vec3::from(*c))
                     .collect();
                 let pin_radius = args.get(9).and_then(Value::as_f64).unwrap_or(0.05) as f32;
                 let pin_box = match nums(args.get(10))[..] {

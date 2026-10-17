@@ -140,7 +140,7 @@ impl Cloth {
         let pins = particle_rest.iter().map(|v| pinned(*v)).collect();
         // Edges once each, and the far corners of triangles sharing an edge (bending).
         let mut edges: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
-        for t in indices.chunks_exact(3) {
+        for t in indices.as_chunks::<3>().0 {
             let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex_particle[i as usize]);
             for (x, y, other) in [(a, b, c), (b, c, a), (c, a, b)] {
                 if x == y {
