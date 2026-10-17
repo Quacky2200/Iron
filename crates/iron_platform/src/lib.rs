@@ -15,4 +15,4 @@ pub use platform::{
     CursorRgba, CustomCursorRequest, Platform, PlatformApp, PlatformError, WindowConfig,
 };
 pub use winit::dpi;
-pub use winit::window::{CursorIcon, Window};
+pub use winit::window::{CursorIcon, Theme, Window};

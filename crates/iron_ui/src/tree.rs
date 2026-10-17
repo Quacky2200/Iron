@@ -409,6 +409,10 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Elements not styled yet: their first style starts transitions from
     /// `@starting-style`.
     fresh: HashSet<NodeId>,
+    /// What `@media` queries match against, and each query's last result (a change
+    /// restyles everything).
+    media: crate::media::MediaEnv,
+    media_results: Vec<bool>,
     /// Elements removed by scripts but kept (`:outro`) until their exit transitions
     /// and animations finish.
     /// (When the exit began: only motion started since then holds it.)
@@ -487,6 +491,12 @@ impl<L: LayoutEngine> UiTree<L> {
             starting_index: RuleIndex::default(),
             fresh: HashSet::default(),
             leaving: HashMap::default(),
+            media: crate::media::MediaEnv {
+                width,
+                height,
+                ..Default::default()
+            },
+            media_results: Vec::new(),
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
@@ -511,6 +521,9 @@ impl<L: LayoutEngine> UiTree<L> {
             .collect();
         self.style_dirty.extend(viewport);
         self.needs_layout = true;
+        self.media.width = width;
+        self.media.height = height;
+        self.check_media();
     }
 
     pub fn size(&self) -> (f32, f32) {
@@ -654,7 +667,46 @@ impl<L: LayoutEngine> UiTree<L> {
         removed
     }
 
+    /// What `@media` queries are matched against.
+    pub fn media_env(&self) -> crate::media::MediaEnv {
+        self.media
+    }
+
+    /// Sets the device side of the media environment (resolution, colour scheme,
+    /// pointer, motion); the size comes from [`Self::set_size`]. Rules whose queries
+    /// change result apply or stop applying.
+    pub fn set_media_env(&mut self, env: crate::media::MediaEnv) {
+        let env = crate::media::MediaEnv {
+            width: self.media.width,
+            height: self.media.height,
+            ..env
+        };
+        if env != self.media {
+            self.media = env;
+            self.check_media();
+        }
+    }
+
+    /// Each `@media` condition's result now.
+    fn media_results(&self) -> Vec<bool> {
+        self.sheets
+            .iter()
+            .flat_map(|(_, s)| s.rules.iter().chain(s.starting.iter()))
+            .flat_map(|r| r.media.iter())
+            .map(|m| m.matches(&self.media))
+            .collect()
+    }
+
+    /// Restyles everything if any `@media` condition changed result.
+    fn check_media(&mut self) {
+        let results = self.media_results();
+        if results != self.media_results {
+            self.restyle_everything();
+        }
+    }
+
     fn restyle_everything(&mut self) {
+        self.media_results = self.media_results();
         let sheets: Vec<&Stylesheet> = self.sheets.iter().map(|(_, s)| s).collect();
         self.rule_index = RuleIndex::build(&sheets);
         let starting: Vec<Stylesheet> = sheets
@@ -4437,7 +4489,7 @@ fn expand_imports(
     rebase_sheet(&mut sheet, base);
     let imports = std::mem::take(&mut sheet.imports);
     let mut merged = Stylesheet::default();
-    for url in imports {
+    for (url, media) in imports {
         let path = join_path(base, &url);
         let Some(path) = path.filter(|_| !url.contains(':')) else {
             merged.warnings.push(format!(
@@ -4459,8 +4511,18 @@ fn expand_imports(
         };
         let dir = path.rsplit_once('/').map_or("", |(d, _)| d).to_owned();
         chain.push(path);
-        let imported = expand_imports(&text, &dir, load, chain);
+        let mut imported = expand_imports(&text, &dir, load, chain);
         chain.pop();
+        // `@import "x.css" (min-width: 600px)`: its rules apply only then.
+        if let Some(media) = media {
+            for rule in imported
+                .rules
+                .iter_mut()
+                .chain(imported.starting.iter_mut())
+            {
+                rule.media.insert(0, media.clone());
+            }
+        }
         merged.rules.extend(imported.rules);
         merged.font_faces.extend(imported.font_faces);
         merged.keyframes.extend(imported.keyframes);

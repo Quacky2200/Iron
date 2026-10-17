@@ -302,8 +302,13 @@ pub(crate) fn matched_declarations<L: LayoutEngine>(
 
     // Best specificity per matching rule.
     let mut matched_rules: Vec<((usize, usize), u32)> = Vec::new();
+    let env = tree.media_env();
     for entry in candidates {
-        let selector = &sheets[entry.sheet].rules[entry.rule].selectors.slice()[entry.selector];
+        let rule = &sheets[entry.sheet].rules[entry.rule];
+        if !rule.media.iter().all(|m| m.matches(&env)) {
+            continue;
+        }
+        let selector = &rule.selectors.slice()[entry.selector];
         if let Target::Pseudo(p) = target
             && selector.pseudo_element() != Some(&p)
         {

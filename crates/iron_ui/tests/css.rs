@@ -730,7 +730,13 @@ fn imports_load_before_the_importing_sheet() {
     tree.layout_if_needed();
     assert_eq!(
         asked,
-        ["dist/theme/base.css", "dist/colors.css", "dist/missing.css"]
+        // `print.css` loads too (`@import ... print`), but its rules only apply in print.
+        [
+            "dist/theme/base.css",
+            "dist/colors.css",
+            "dist/missing.css",
+            "dist/print.css"
+        ]
     );
     let v = tree.visual(NodeId(a)).unwrap();
     assert_eq!(
@@ -742,8 +748,67 @@ fn imports_load_before_the_importing_sheet() {
     let warnings = added.warnings.join("\n");
     assert!(warnings.contains("missing.css"), "{warnings}");
     assert!(warnings.contains("imports itself"), "{warnings}");
-    assert!(warnings.contains("conditions"), "{warnings}");
     // URLs in an imported sheet are relative to its own folder.
     let image = format!("{:?}", v.background_images);
     assert!(image.contains("dist/theme/img/x.png"), "{image}");
+}
+
+// M3-MQ-02
+#[test]
+fn media_rules_follow_the_window_and_device() {
+    let mut d = Dom::new();
+    let a = d.class(0, "a");
+    let mut tree = d.build(
+        "@media (min-width: 500px) { .a { opacity: 0.5 } }
+         .a { width: 50px; align-self: flex-start; @media (max-width: 450px) { width: 10px } }
+         @media (prefers-color-scheme: dark) { .a { height: 30px } }
+         @media print { .a { opacity: 0.1 } }",
+    );
+    let v = |tree: &UiTree| {
+        let r = tree.rect(NodeId(a)).unwrap();
+        (tree.visual(NodeId(a)).unwrap().opacity, r.width, r.height)
+    };
+    // 400 wide, light.
+    assert_eq!(v(&tree), (1.0, 10.0, 0.0));
+    tree.set_size(600.0, 400.0);
+    tree.layout_if_needed();
+    assert_eq!(
+        v(&tree),
+        (0.5, 50.0, 0.0),
+        "resizing re-evaluates the queries"
+    );
+    tree.set_media_env(iron_ui::media::MediaEnv {
+        dark: true,
+        ..tree.media_env()
+    });
+    tree.layout_if_needed();
+    assert_eq!(v(&tree).2, 30.0, "prefers-color-scheme");
+    tree.set_size(400.0, 400.0);
+    tree.layout_if_needed();
+    assert_eq!(v(&tree), (1.0, 10.0, 30.0));
+}
+
+// M3-MQ-02
+#[test]
+fn imports_can_carry_a_media_query() {
+    let mut d = Dom::new();
+    let a = d.class(0, "a");
+    let mut tree = UiTree::new(400.0, 400.0);
+    assert!(tree.apply_commit(&Commit { ops: d.ops }).is_empty());
+    let added = tree.add_stylesheet_with_imports(
+        r#"@import "wide.css" (min-width: 800px); @import "b.css" supports(display: grid);"#,
+        "",
+        &mut |path| (path == "wide.css").then(|| ".a { opacity: 0.25 }".to_owned()),
+    );
+    assert_eq!(
+        added.warnings.len(),
+        1,
+        "supports() is skipped: {:?}",
+        added.warnings
+    );
+    tree.layout_if_needed();
+    assert_eq!(tree.visual(NodeId(a)).unwrap().opacity, 1.0);
+    tree.set_size(900.0, 400.0);
+    tree.layout_if_needed();
+    assert_eq!(tree.visual(NodeId(a)).unwrap().opacity, 0.25);
 }

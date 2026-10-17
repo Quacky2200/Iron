@@ -628,6 +628,13 @@ impl PlatformApp for App {
         let size = gfx.window.inner_size();
         self.ui
             .set_size(size.width as f32 / scale, size.height as f32 / scale);
+        // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
+        let dark = gfx.window.theme() == Some(iron_platform::Theme::Dark);
+        self.ui.set_media_env(iron_ui::media::MediaEnv {
+            resolution: scale,
+            dark,
+            ..self.ui.media_env()
+        });
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         let Gfx {

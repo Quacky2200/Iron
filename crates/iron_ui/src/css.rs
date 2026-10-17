@@ -244,6 +244,8 @@ pub struct Declaration {
 pub struct StyleRule {
     pub selectors: SelectorList<IronSelectors>,
     pub declarations: Vec<Declaration>,
+    /// `@media` conditions around the rule: all must match for it to apply.
+    pub media: Vec<std::sync::Arc<crate::media::MediaList>>,
 }
 
 /// An `@font-face` rule, loaded by the engine like `loadFont()`.
@@ -278,9 +280,9 @@ pub struct Stylesheet {
     /// Rules inside `@starting-style`: the "before" style of newly shown elements,
     /// which their transitions start from.
     pub starting: Vec<StyleRule>,
-    /// `@import` URLs, in order (the engine loads them; see
-    /// `UiTree::add_stylesheet_with_imports`).
-    pub imports: Vec<String>,
+    /// `@import` URLs, in order, with their media condition (the engine loads them;
+    /// see `UiTree::add_stylesheet_with_imports`).
+    pub imports: Vec<(String, Option<std::sync::Arc<crate::media::MediaList>>)>,
     /// Problems found while parsing (invalid selectors, unsupported at-rules, ...).
     /// The rest of the sheet still applies.
     pub warnings: Vec<String>,
@@ -292,7 +294,9 @@ enum Item {
     FontFace(FontFace),
     Keyframes(Keyframes),
     Starting(Stylesheet),
-    Import(String),
+    Import(String, Option<std::sync::Arc<crate::media::MediaList>>),
+    /// The contents of an `@media` block, its rules already carrying the condition.
+    Media(Stylesheet),
     Skipped(String),
 }
 
@@ -300,8 +304,9 @@ enum AtPrelude {
     FontFace,
     Keyframes(String),
     StartingStyle,
-    /// The URL, and whether conditions (media, `supports()`, `layer`) followed it.
-    Import(Option<String>, bool),
+    /// The URL, and the conditions after it (a media query list; `supports()` and
+    /// `layer` aren't supported).
+    Import(Option<String>, String),
     Media(String),
     Unsupported(String),
 }
@@ -378,6 +383,7 @@ fn parse_rule_body(
         out.push(StyleRule {
             selectors,
             declarations,
+            media: Vec::new(),
         });
     }
     out.extend(nested);
@@ -479,7 +485,8 @@ impl<'i> QualifiedRuleParser<'i> for BodyParser<'_> {
 }
 
 impl<'i> AtRuleParser<'i> for BodyParser<'_> {
-    type Prelude = String;
+    /// The at-rule's name and prelude text.
+    type Prelude = (String, String);
     type AtRule = BodyItem;
     type Error = ();
 
@@ -487,12 +494,17 @@ impl<'i> AtRuleParser<'i> for BodyParser<'_> {
         &mut self,
         name: CowRcStr<'i>,
         input: &mut CssParser<'i>,
-    ) -> Result<String, ParseError<()>> {
+    ) -> Result<(String, String), ParseError<()>> {
+        let start = input.position();
         while input.next().is_ok() {}
-        Ok(name.to_string())
+        Ok((name.to_string(), input.slice_from(start).trim().to_owned()))
     }
 
-    fn rule_without_block(&mut self, name: String, _start: &ParserState) -> Result<BodyItem, ()> {
+    fn rule_without_block(
+        &mut self,
+        (name, _): (String, String),
+        _start: &ParserState,
+    ) -> Result<BodyItem, ()> {
         Ok(BodyItem::Skipped(format!(
             "nested @{name} isn't supported; skipped"
         )))
@@ -500,13 +512,34 @@ impl<'i> AtRuleParser<'i> for BodyParser<'_> {
 
     fn parse_block(
         &mut self,
-        name: String,
+        (name, prelude): (String, String),
         _start: &ParserState,
         input: &mut CssParser<'i>,
     ) -> Result<BodyItem, ParseError<()>> {
+        // `@media` inside a rule: its declarations and rules belong to the parent
+        // selector, under the condition.
+        if name.eq_ignore_ascii_case("media")
+            && let Some(media) = crate::media::MediaList::parse(&prelude)
+            && let Ok(selectors) = parse_selectors(self.parent)
+        {
+            let (mut rules, mut warnings) = (Vec::new(), Vec::new());
+            parse_rule_body(
+                input,
+                selectors,
+                self.parent,
+                &mut rules,
+                &mut warnings,
+                self.depth + 1,
+            );
+            let media = std::sync::Arc::new(media);
+            for rule in &mut rules {
+                rule.media.insert(0, media.clone());
+            }
+            return Ok(BodyItem::Rules(rules, warnings));
+        }
         while input.next().is_ok() {}
         Ok(BodyItem::Skipped(format!(
-            "nested @{name} isn't supported; skipped"
+            "nested @{name} {prelude} isn't supported; skipped"
         )))
     }
 }
@@ -553,7 +586,7 @@ impl<'i> AtRuleParser<'i> for SheetParser {
                 } else {
                     (None, String::new())
                 };
-                AtPrelude::Import(url.filter(|u| !u.is_empty()), !rest.is_empty())
+                AtPrelude::Import(url.filter(|u| !u.is_empty()), rest)
             },
             "media" => AtPrelude::Media(rest),
             _ => AtPrelude::Unsupported(name.to_string()),
@@ -562,12 +595,20 @@ impl<'i> AtRuleParser<'i> for SheetParser {
 
     fn rule_without_block(&mut self, prelude: AtPrelude, _start: &ParserState) -> Result<Item, ()> {
         if let AtPrelude::Import(url, conditions) = prelude {
-            return Ok(match (url, conditions) {
-                (Some(url), false) => Item::Import(url),
-                (Some(url), true) => Item::Skipped(format!(
-                    "@import \"{url}\": media, supports() and layer conditions aren't supported; skipped"
+            let Some(url) = url else {
+                return Ok(Item::Skipped("@import needs a URL; skipped".into()));
+            };
+            if conditions.is_empty() {
+                return Ok(Item::Import(url, None));
+            }
+            let media = (!conditions.contains("supports(") && !conditions.contains("layer"))
+                .then(|| crate::media::MediaList::parse(&conditions))
+                .flatten();
+            return Ok(match media {
+                Some(m) => Item::Import(url, Some(std::sync::Arc::new(m))),
+                None => Item::Skipped(format!(
+                    "@import \"{url}\": supports() and layer conditions aren't supported; skipped"
                 )),
-                (None, _) => Item::Skipped("@import needs a URL; skipped".into()),
             });
         }
         Ok(Item::Skipped(match prelude {
@@ -623,11 +664,19 @@ impl<'i> AtRuleParser<'i> for SheetParser {
                 Ok(Item::Starting(parse_stylesheet(input.slice_from(start))))
             }
             AtPrelude::Media(query) => {
-                // Kept for later: @media isn't supported yet (TODO.md, "Later").
+                let start = input.position();
                 while input.next().is_ok() {}
-                Ok(Item::Skipped(format!(
-                    "@media ({query}) isn't supported yet; its rules are ignored"
-                )))
+                let Some(media) = crate::media::MediaList::parse(&query) else {
+                    return Ok(Item::Skipped(format!(
+                        "@media {query}: invalid query; skipped"
+                    )));
+                };
+                let mut inner = parse_stylesheet(input.slice_from(start));
+                let media = std::sync::Arc::new(media);
+                for rule in inner.rules.iter_mut().chain(inner.starting.iter_mut()) {
+                    rule.media.insert(0, media.clone());
+                }
+                Ok(Item::Media(inner))
             }
             AtPrelude::Import(..) => {
                 while input.next().is_ok() {}
@@ -851,7 +900,15 @@ pub fn parse_stylesheet(css: &str) -> Stylesheet {
             }
             Ok(Item::FontFace(face)) => sheet.font_faces.push(face),
             Ok(Item::Keyframes(k)) => sheet.keyframes.push(k),
-            Ok(Item::Import(url)) => sheet.imports.push(url),
+            Ok(Item::Import(url, media)) => sheet.imports.push((url, media)),
+            Ok(Item::Media(inner)) => {
+                sheet.rules.extend(inner.rules);
+                sheet.starting.extend(inner.starting);
+                sheet.keyframes.extend(inner.keyframes);
+                sheet.font_faces.extend(inner.font_faces);
+                sheet.imports.extend(inner.imports);
+                sheet.warnings.extend(inner.warnings);
+            }
             Ok(Item::Starting(inner)) => {
                 sheet.starting.extend(inner.rules);
                 sheet.warnings.extend(inner.warnings);
@@ -932,10 +989,11 @@ mod tests {
             .also-ok { height: 5px }
             "#,
         );
-        assert_eq!(sheet.rules.len(), 2, "{:?}", sheet.warnings);
-        assert_eq!(sheet.warnings.len(), 3, "{:?}", sheet.warnings);
-        assert!(sheet.warnings.iter().any(|w| w.contains("@media")));
+        assert_eq!(sheet.rules.len(), 3, "{:?}", sheet.warnings);
+        assert_eq!(sheet.warnings.len(), 2, "{:?}", sheet.warnings);
         assert!(sheet.warnings.iter().any(|w| w.contains("@supports")));
+        // The @media rule is kept, with its condition.
+        assert_eq!(sheet.rules[1].media.len(), 1);
         // A bad keyframe selector drops just that block.
         assert_eq!(sheet.keyframes.len(), 1);
         assert_eq!(sheet.keyframes[0].frames.len(), 1);
@@ -1002,7 +1060,7 @@ mod tests {
     // M3-CSS-11
     #[test]
     fn bad_nested_rules_warn() {
-        let sheet = parse_stylesheet(".a { &::nope { width: 1px } @media (x) { } width: 2px }");
+        let sheet = parse_stylesheet(".a { &::nope { width: 1px } @supports (x) { } width: 2px }");
         assert_eq!(sheet.rules.len(), 1);
         assert_eq!(
             sheet.rules[0].declarations.len(),

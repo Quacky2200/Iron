@@ -710,12 +710,15 @@ and `@font-face`.
       Parley sees them; `@font-face` `src` lists take the first entry Iron can load (by
       `format()`, else extension), skipping `local()`, EOT and SVG fonts — `M3-FNT-01`
 13. **`@media` queries**
-    - [ ] `width`/`height` (with `min-`/`max-` and range syntax), `orientation`, `aspect-ratio`,
-      `resolution` (the window's scale factor), `prefers-color-scheme`, `prefers-reduced-motion`,
-      and `pointer`/`hover` (to tell mouse, touch and gamepad apart); `and`, `not`, `only`,
-      comma lists; nested inside rules (with nesting) and on `@import`. Re-evaluated when the
-      window resizes or moves between monitors (and when the UI scale changes); M3b's parser
-      already keeps `@media` blocks (with a warning), so the parser's structure doesn't change
+    - [x] `media.rs`: `width`/`height` (with `min-`/`max-` and range syntax like
+      `400px <= width < 800px`; px, em/rem as 16px), `orientation`, `aspect-ratio`, `resolution`
+      (dppx/dpi/x: the window's DPI times the UI scale), `prefers-color-scheme` (the window's
+      theme), `prefers-reduced-motion`, `pointer`/`any-pointer`, `hover`/`any-hover`; `and`, `or`,
+      `not`, `only`, media types (`screen`/`all` match, `print` doesn't), comma lists; unknown
+      features never match. `@media` blocks at the top level, nested in rules and on `@import`
+      give rules conditions the cascade checks; the tree keeps a `MediaEnv` (size from
+      `set_size`, the rest from `set_media_env`) and restyles when any condition's result flips
+      — `M3-MQ-01`, `M3-MQ-02`
 
 Accessibility and drag and drop moved to M5.e, as UI requirements before the editor starts.
 
