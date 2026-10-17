@@ -43,9 +43,9 @@ Component ids split too: `ComponentHost` counts the engine's own up from 0, and 
 `addComponent` ids from `1 << 24`. Ids go through `f64` in `Args::id`, because `f32`
 can't hold integers past 2^24.
 
-Until scene files exist (M5.b), `spawn_starting_components` in `main.rs` makes one GameObject per
-registered component class, named after it, holding that component. Games build the rest from
-`onStart`.
+`spawn_starting_components` in `main.rs` makes one GameObject per **starting** component class
+(registered without `spawn: false`), named after it, holding that component. Games build the rest from
+`onStart`, or load a scene file ([Scenes](#scenes)).
 
 ## `scene.*` ops
 
@@ -151,8 +151,14 @@ s&box.
 - `Component`: `id`, `gameObject`, `transform`, `getComponent`, `destroy`, and the optional hooks
   `onStart`, `onUpdate(dt)`, `onLateUpdate(dt)`, `onFixedUpdate(dt)`, `onPreRender()`, `onDestroy()`.
 - Optional hook `onAwake()` (above) too.
-- `register({ Name: Class })`. Registered classes are the starting components. Engine classes such as
-  `Camera` are not registered and go by class name.
+- `register({ Name: Class }, { spawn })`. Registering names a class for scene files. Unless `spawn` is
+  `false`, it is also a starting component (the engine makes one on its own object); `__iron_registered`
+  lists only those. Engine classes such as `Camera` are not registered by games: scenes find them by
+  class name (`_registerBuiltIns`, called from `scenes.ts`).
+- `@property` ([property.ts](../js/engine/src/property.ts)): a standard decorator for fields and
+  getter/setter pairs that marks what a component saves with its scene. See [Scenes](#scenes).
+- `GameObject` also has `scene`, `root`, `GameObject.dontDestroyOnLoad(go)` and
+  `GameObject.instantiate(original, { parent, position, rotation })`.
 
 **Math** ([math.ts](../js/engine/src/math.ts)). Immutable `Vector2`, `Vector3`, `Vector4`,
 `Vector2Int`, `Vector3Int`, `Quaternion` (Euler degrees in Unity's order, `lookRotation`, `slerp`),
@@ -212,9 +218,112 @@ and the script is evaluated again. `quit()` sends `app.quit`, which sets the app
 `MeshRenderer`, `Light`, `SpriteRenderer`, `ParticleSystem`, `WorldPanel`, `Rigidbody`, colliders, joints,
 2D physics, `AudioSource` and `AudioListener`.
 
+## Scenes
+
+Code: [scenes.ts](../js/engine/src/scenes.ts) and [property.ts](../js/engine/src/property.ts). This is
+all TypeScript; Rust only reads files for it (`asset.readText`). Rust's `Scene` is still one flat
+world of objects. A "scene" here is a set of root GameObjects that scripts keep together.
+
+**Scenes and roots.** Every root GameObject has `_scene`. Children belong to their root's scene. New
+roots go into the **active** scene. A game starts with one empty scene named `Main`.
+
+**File format.** `SceneData` is plain JSON (`format: "iron.scene"`, `version: 1`). Objects nest through
+`children`. Ids are unique in the file and are what references point at (components share the
+numbering with objects).
+
+```json
+{
+  "format": "iron.scene", "version": 1, "name": "Level 1",
+  "renderSettings": { "ambientLight": { "$type": "Color", "value": [0.1, 0.1, 0.1, 1] } },
+  "assets": { "mesh1": { "type": "Mesh", "vertices": [], "triangles": [], "normals": [], "uv": [] } },
+  "objects": [{
+    "id": 1, "name": "Door", "position": [0, 0, -5], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1],
+    "layer": 2, "enabled": false,
+    "components": [{ "id": 2, "type": "Door", "properties": {
+      "speed": 2, "target": { "$ref": "GameObject", "id": 3 } } }],
+    "children": [{ "id": 3, "name": "Handle" }]
+  }]
+}
+```
+
+`layer` (default 0) and `enabled` (default true) are only written when they differ. `model` marks a
+model copy (below). `type` is the registered name or an engine class name.
+
+**What is saved.** Each object's name, local transform, layer, enabled flag, children and components.
+For a component, only its `@property` values. The engine's own components have `@property` on all
+their settings, so a `MeshRenderer` or `Rigidbody` round-trips. Subclasses inherit their parents'
+properties (the list lives in the class's decorator metadata).
+
+**Value encoding.** Numbers, strings, booleans, `null`, arrays and plain objects go as they are. The
+rest are tagged:
+
+| Value | Saved as |
+|---|---|
+| `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Color`, `Rect`, `RectInt` | `{ "$type": "Vector3", "value": [x, y, z] }` |
+| A `GameObject` or `Component` in the file | `{ "$ref": "GameObject" or "Component", "id": n }` |
+| `Material`, `Sprite`, `Sound` | `{ "$type": ... }` with their fields |
+| A `Mesh` from `Mesh.create`, a `Texture` loaded from a file | once in `assets`, used as `{ "$asset": "mesh1" }`, so users share one copy |
+
+Also saved: the active scene's `RenderSettings` (ambient light and mode, reflection intensity, skybox,
+bloom), applied when that scene becomes active.
+
+**Load order.** `loadObjects` runs in three passes, like Unity: (1) build every object and add every
+component *asleep* (`_addComponentAsleep`, no `onAwake`); (2) set every property, resolving
+references through the file ids; (3) call `onAwake` on all components, then apply `enabled: false`.
+This lets a component refer to one that comes later in the file, and `onAwake` sees finished values.
+A component type that isn't registered is skipped with a warning.
+
+**SceneManager.** Unity's API:
+
+- `loadScene(data, "single" | "additive")` and `loadSceneAsync(dataOrPath, mode)`. `single` (the
+  default) unloads every other scene first, except `DontDestroyOnLoad` objects, and makes the new one
+  active. Bad data (wrong `format` or `version`) throws; the async version rejects.
+- `createScene(name)`, `unloadScene(scene)` (never the last one), `getActiveScene`, `setActiveScene`,
+  `sceneCount`, `getSceneAt`, `getSceneByName`, `moveGameObjectToScene(root, scene)`,
+  `mergeScenes(source, destination)`.
+- `onSceneLoaded(f)`, `onSceneUnloaded(f)`, `onActiveSceneChanged(f)`; each returns a function that
+  removes the listener.
+- `Scene`: `name`, `handle`, `path`, `isLoaded`, `getRootGameObjects()`, `rootCount`, and
+  `serialize()` (returns `SceneData`; nothing writes files yet, so scripts keep or log it).
+
+**Reading files.** `loadSceneAsync("scenes/level.scene.json")` sends `asset.readText id path`. The app
+resolves the path inside the game folder (`resolve_asset`, so escaping it is refused), reads it and
+answers with `__iron_asset_text([id, text | null, ...])` after the op batch. `null` (missing,
+unreadable or outside the folder) rejects the promise. Bundled data
+(`import level from "./level.scene.json"`) needs no read.
+
+**DontDestroyOnLoad.** `GameObject.dontDestroyOnLoad(go)` moves the root of `go` to a scene of that
+name. A `single` load leaves it alone, and it isn't counted in `sceneCount`.
+
+**Instantiate.** `GameObject.instantiate(original, { parent, position, rotation })` saves the object
+with the same code, then loads it again. References between objects inside the copy point at the
+copies. References to things outside it stay pointing at the originals (saved as `live` ids, which
+only `instantiate` uses). With no parent the copy goes into the original's scene at the original's
+**world** placement; with a parent it keeps the local transform. `position` and `rotation` override.
+
+**Start scene.** `iron.startScene` in the game's `package.json` reaches scripts as
+`__iron_info.app.startScene`. When `scenes.ts` is imported it loads that file additively, makes it
+active and drops `Main` if nothing is in it. Starting components still spawn next to it. A failure
+is logged as `start scene <path>: ...`.
+
+**Model copies.** An object from `Model.instantiate` has `_model` (`src`, `colliders`) and its
+node objects are `_modelPart`. Saving writes `model` and skips the parts. Loading calls
+`Model._buildInto`, so the copy is rebuilt from the model file (waiting for the model to arrive, as
+`instantiate` does).
+
+**Limits of scenes.**
+
+- Nothing writes files yet (M6 Script IO), so a saved scene comes from `serialize()`'s output.
+- Because model copies are rebuilt from the model, objects or components a user added **under a
+  model's nodes** are lost when saved. Components on the model's root object are kept. A part can't be
+  copied with `instantiate` on its own; copy the root.
+- A value the encoder can't handle (a class instance, a texture made from pixels, a model's mesh) is
+  saved as `null` with a `scene: ...` warning. Only `Mesh.create` meshes and file textures are kept.
+- A reference to an object outside what is saved becomes `null` (except in `instantiate`).
+- Hot reload still resets the world and does not keep scenes.
+
 ## Limits
 
-- No scene files yet. Scenes are built from script (M5.b adds loading and saving).
 - State is not kept on hot reload. `reload_scripts` builds a new `ScriptScene` and
   `WorldViews`, drops all panels and starts components again; `reload` takes a bootstrap closure
   (`spawn_starting_components`) instead of spawning plain components. See
@@ -228,6 +337,9 @@ and the script is evaluated again. `quit()` sends `app.quit`, which sets the app
 ## Tests
 
 `M5-OBJ-01..03` are in [tests/scene.rs](../crates/iron_scene/tests/scene.rs) (hierarchy, world
-transforms, moved sets). `M5-OBJ-06..08` are in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs)
+transforms, moved sets). `M5-SCN-01..04` cover scenes: `js/engine/test/scenes.test.ts` (round trips, `SceneManager`,
+`instantiate`) and `M5-SCN-02` in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs) (save and
+load in QuickJS with fixture `tests/fixtures/src/scene.ts`). `examples/scenes` is the manual check.
+`M5-OBJ-06..08` are in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs)
 (ops, move batch, lifecycle order, running `tests/fixtures/src/scene.ts` in QuickJS). JS units are
 `js/engine/test/{scene,math,time,helpers,camera}.test.ts`. See [testing.md](testing.md).

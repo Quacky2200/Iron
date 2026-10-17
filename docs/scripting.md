@@ -96,7 +96,7 @@ Rust side: [components.rs](../crates/iron_script/src/components.rs). `ComponentH
 
 | Rust call | JS global (installed by `@iron/engine`) |
 |---|---|
-| `registered_classes` | `__iron_registered()` -> class names |
+| `registered_classes` | `__iron_registered()` -> names of the starting classes (registered without `spawn: false`) |
 | `spawn_on(class, object, name)` (`spawn` has no object) | `__iron_create(class, id, object, name)` |
 | first run of a component | `__iron_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
 | `update_active(dt, active)` | `__iron_tick(dt)` (script `Time`; returns the scaled `dt`), then `__iron_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
@@ -114,8 +114,9 @@ logged, disabled and destroyed; others keep running. The order within a frame is
 JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
 
 - `Component` base class (`id`, `gameObject`, `transform`, optional `onStart`, `onUpdate`,
-  `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`), `register({ Name: Class })`
-  (an object, so names survive minification). `GameObject`, math, `Time`, cameras and the rest of the
+  `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`), `register({ Name: Class }, { spawn })`
+  (an object, so names survive minification; `spawn: false` names a class for scene files without
+  starting one). `GameObject`, math, `Time`, cameras and the rest of the
   M5.a API are in [scene-and-objects.md](scene-and-objects.md) and [world-rendering.md](world-rendering.md).
 - `op(name, ...args)`, `loadFont(face)`, `addStyleSheet(css)` / `removeStyleSheet(id)`. JS allocates
   stylesheet ids; the app maps them to tree ids (`App.sheets`).
@@ -137,12 +138,14 @@ The scene globals, installed by `@iron/engine` and called by Rust: `__iron_regis
 `__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_destroy`,
 `__iron_tick(dt)` (script `Time`, once per frame), `__iron_scene(moved)` (engine moves of objects, see
 [scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__iron_screen(width, height, scale)`
-(the screen size in UI pixels, when it changes). Like `__iron_ui_event`, the optional ones
+(the screen size in UI pixels, when it changes). `__iron_asset_text([id, text | null, ...])` answers
+`asset.readText` (files scenes load, see [scene-and-objects.md](scene-and-objects.md#scenes)). Like `__iron_ui_event`, the optional ones
 (`__iron_tick`, `__iron_scene`, `__iron_screen`, `__iron_physics`, `__iron_audio`) are probed or
 called tolerantly, so games that don't import the engine still run.
 
-Until scene files load (M5.b), `iron_app` makes **one GameObject per registered class** with that
-component (`spawn_starting_components`) and ticks at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per
+`iron_app` makes **one GameObject per starting class** (registered without `spawn: false`) with that
+component (`spawn_starting_components`; a start scene is loaded by the scripts themselves, see
+[scene-and-objects.md](scene-and-objects.md#scenes)) and ticks at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per
 frame). Per frame the order is:
 
 1. For each fixed tick: `fixed_update` (`onFixedUpdate`), `apply_script_output` (commits, then ops in

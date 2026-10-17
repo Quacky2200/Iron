@@ -127,7 +127,9 @@ file with the model's nodes as children (each a `GameObject` with the node's tra
 `MeshRenderer` per primitive with the right `Material`. A node with several primitives gets one child
 object per part. With `colliders: "mesh"` (exact triangles, for static scenery) or `"convex"` each
 renderer also gets a `MeshCollider` with `sharedMesh`. `instantiate` before loading finishes works: the
-nodes appear when the model arrives.
+nodes appear when the model arrives. The root remembers its source (`_model`) and the nodes are marked
+`_modelPart`, so a saved scene stores the model path and rebuilds the nodes on load
+([scene-and-objects.md](scene-and-objects.md#scenes)).
 
 ## Limits
 
