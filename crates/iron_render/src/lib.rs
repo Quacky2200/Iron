@@ -8,12 +8,14 @@ mod offscreen;
 mod surface;
 pub mod testing;
 pub mod ui;
+pub mod world;
 
 pub use gpu::{Gpu, RenderError};
 pub use offscreen::OffscreenTarget;
 pub use surface::WindowSurface;
 pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer};
 pub use wgpu;
+pub use world::{WorldCamera, WorldQuad, WorldRenderer};
 
 /// A linear RGBA colour.
 #[derive(Clone, Copy, Debug, PartialEq)]

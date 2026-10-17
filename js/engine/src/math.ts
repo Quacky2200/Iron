@@ -56,7 +56,83 @@ export const Mathf = {
     return length - Math.abs(r - length);
   },
   approximately: (a: number, b: number) => Math.abs(a - b) < Math.max(1e-6 * Math.max(Math.abs(a), Math.abs(b)), 1e-6),
+  /** 1 for zero or more, -1 below (Unity's `Sign`, which is never 0). */
+  sign: (v: number) => (v >= 0 ? 1 : -1),
+  /** Lerps between angles in degrees the short way round. */
+  lerpAngle: (a: number, b: number, t: number) => a + Mathf.deltaAngle(a, b) * Math.min(1, Math.max(0, t)),
+  /** Turns from `current` towards `target` (degrees) by at most `maxDelta`. */
+  moveTowardsAngle: (current: number, target: number, maxDelta: number) => {
+    const d = Mathf.deltaAngle(current, target);
+    return Math.abs(d) <= maxDelta ? current + d : current + Math.sign(d) * maxDelta;
+  },
+  /**
+   * Eases `current` towards `target` like a critically damped spring, taking about
+   * `smoothTime` seconds. Pass the returned velocity back in on the next call:
+   * `[x, v] = Mathf.smoothDamp(x, goal, v, 0.3, Time.deltaTime)`.
+   */
+  smoothDamp: (current: number, target: number, velocity: number, smoothTime: number, deltaTime: number, maxSpeed = Infinity): [number, number] => {
+    const st = Math.max(0.0001, smoothTime);
+    const omega = 2 / st;
+    const x = omega * deltaTime;
+    const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+    const maxChange = maxSpeed * st;
+    const change = Math.min(maxChange, Math.max(-maxChange, current - target));
+    const goal = current - change;
+    const temp = (velocity + omega * change) * deltaTime;
+    let v = (velocity - omega * temp) * exp;
+    let out = goal + (change + temp) * exp;
+    // Don't overshoot.
+    if (target - current > 0 === out > target) {
+      out = target;
+      v = (out - target) / deltaTime;
+    }
+    return [out, v];
+  },
+  /** Smooth 2D noise, about 0 to 1 (Unity's `PerlinNoise`). Same inputs, same output. */
+  perlinNoise: (x: number, y: number) => perlin2(x, y) * 0.5 + 0.5,
+  isPowerOfTwo: (v: number) => v > 0 && (v & (v - 1)) === 0,
+  nextPowerOfTwo: (v: number) => (v <= 1 ? 1 : 2 ** Math.ceil(Math.log2(v))),
+  closestPowerOfTwo: (v: number) => (v <= 1 ? 1 : 2 ** Math.round(Math.log2(v))),
+  /** sRGB (as written in colour pickers) to linear and back, per channel. */
+  gammaToLinearSpace: (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4),
+  linearToGammaSpace: (c: number) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055),
 };
+
+// Classic Perlin noise on a fixed permutation (Ken Perlin's reference table).
+const PERM = (() => {
+  const p = [
+    151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240,
+    21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237,
+    149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111,
+    229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73,
+    209, 76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52,
+    217, 226, 250, 124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189,
+    28, 42, 223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253,
+    19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144, 12, 191,
+    179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121,
+    50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180,
+  ];
+  return [...p, ...p];
+})();
+
+function perlin2(x: number, y: number): number {
+  const xi = Math.floor(x) & 255;
+  const yi = Math.floor(y) & 255;
+  const xf = x - Math.floor(x);
+  const yf = y - Math.floor(y);
+  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+  const grad = (h: number, gx: number, gy: number) => ((h & 1) === 0 ? gx : -gx) + ((h & 2) === 0 ? gy : -gy);
+  const u = fade(xf);
+  const v = fade(yf);
+  const aa = PERM[PERM[xi]! + yi]!;
+  const ab = PERM[PERM[xi]! + yi + 1]!;
+  const ba = PERM[PERM[xi + 1]! + yi]!;
+  const bb = PERM[PERM[xi + 1]! + yi + 1]!;
+  const x1 = grad(aa, xf, yf) + (grad(ba, xf - 1, yf) - grad(aa, xf, yf)) * u;
+  const x2 = grad(ab, xf, yf - 1) + (grad(bb, xf - 1, yf - 1) - grad(ab, xf, yf - 1)) * u;
+  // The 2D gradients above reach about ±1.
+  return x1 + (x2 - x1) * v;
+}
 
 export class Vector2 implements Vector2Like {
   constructor(
@@ -260,17 +336,85 @@ export class Vector4 {
     readonly w = 0,
   ) {}
   static readonly zero = new Vector4();
+  static readonly one = new Vector4(1, 1, 1, 1);
+  /** A point (`w` 1) or, with `w` 0, a direction. */
+  static fromVector3(v: Vector3Like, w = 1): Vector4 {
+    return new Vector4(v.x, v.y, v.z, w);
+  }
   add(v: Vector4): Vector4 {
     return new Vector4(this.x + v.x, this.y + v.y, this.z + v.z, this.w + v.w);
+  }
+  sub(v: Vector4): Vector4 {
+    return new Vector4(this.x - v.x, this.y - v.y, this.z - v.z, this.w - v.w);
   }
   scale(s: number): Vector4 {
     return new Vector4(this.x * s, this.y * s, this.z * s, this.w * s);
   }
+  /** Component-wise product. */
+  mul(v: Vector4): Vector4 {
+    return new Vector4(this.x * v.x, this.y * v.y, this.z * v.z, this.w * v.w);
+  }
   dot(v: Vector4): number {
     return this.x * v.x + this.y * v.y + this.z * v.z + this.w * v.w;
   }
+  get magnitude(): number {
+    return Math.hypot(this.x, this.y, this.z, this.w);
+  }
+  get normalized(): Vector4 {
+    const m = this.magnitude;
+    return m > 0 ? this.scale(1 / m) : Vector4.zero;
+  }
+  lerp(v: Vector4, t: number): Vector4 {
+    return this.add(v.sub(this).scale(Mathf.clamp01(t)));
+  }
+  equals(v: Vector4, epsilon = 1e-6): boolean {
+    return this.sub(v).magnitude <= epsilon;
+  }
+  toVector3(): Vector3 {
+    return new Vector3(this.x, this.y, this.z);
+  }
   toArray(): [number, number, number, number] {
     return [this.x, this.y, this.z, this.w];
+  }
+  toString(): string {
+    return `(${this.x}, ${this.y}, ${this.z}, ${this.w})`;
+  }
+}
+
+/** A position and rotation together, like Unity's `Pose` (spawn points, attachments). */
+export class Pose {
+  readonly position: Vector3;
+  readonly rotation: Quaternion;
+  constructor(position: Vector3Like = Vector3.zero, rotation: QuaternionLike = Quaternion.identity) {
+    this.position = Vector3.from(position);
+    this.rotation = Quaternion.from(rotation);
+  }
+  // A getter: `Quaternion` is defined further down this file.
+  static get identity(): Pose {
+    return new Pose();
+  }
+  get forward(): Vector3 {
+    return this.rotation.rotate(Vector3.forward);
+  }
+  get right(): Vector3 {
+    return this.rotation.rotate(Vector3.right);
+  }
+  get up(): Vector3 {
+    return this.rotation.rotate(Vector3.up);
+  }
+  /** This pose, given relative to `parent`, in the parent's space (Unity's `GetTransformedBy`). */
+  transformedBy(parent: Pose): Pose {
+    return new Pose(parent.position.add(parent.rotation.rotate(this.position)), parent.rotation.mul(this.rotation));
+  }
+  /** A point from this pose's local space to the world. */
+  transformPoint(p: Vector3Like): Vector3 {
+    return this.position.add(this.rotation.rotate(p));
+  }
+  inverseTransformPoint(p: Vector3Like): Vector3 {
+    return this.rotation.inverse().rotate(Vector3.from(p).sub(this.position));
+  }
+  lerp(to: Pose, t: number): Pose {
+    return new Pose(this.position.lerp(to.position, t), this.rotation.slerp(to.rotation, t));
   }
 }
 
@@ -665,12 +809,29 @@ export class Color {
   static readonly blue = new Color(0, 0, 1);
   static readonly yellow = new Color(1, 0.92, 0.016);
   static readonly clear = new Color(0, 0, 0, 0);
-  /** From a `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` hex string (sRGB, as written). */
+  /**
+   * From a `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` hex string. Hex colours are sRGB
+   * (as colour pickers and CSS write them), so they're converted to linear; alpha
+   * stays as is.
+   */
   static hex(hex: string): Color {
     let h = hex.replace(/^#/, "");
     if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
     const n = (i: number) => Number.parseInt(h.slice(i, i + 2), 16) / 255;
-    return new Color(n(0), n(2), n(4), h.length >= 8 ? n(6) : 1);
+    const lin = (i: number) => Mathf.gammaToLinearSpace(n(i));
+    return new Color(lin(0), lin(2), lin(4), h.length >= 8 ? n(6) : 1);
+  }
+
+  /** From sRGB components 0 to 1 (Unity's `Color` in gamma space), converted to linear. */
+  static fromSrgb(r: number, g: number, b: number, a = 1): Color {
+    return new Color(Mathf.gammaToLinearSpace(r), Mathf.gammaToLinearSpace(g), Mathf.gammaToLinearSpace(b), a);
+  }
+
+  /** The colour as sRGB hex, `#rrggbbaa` (the inverse of `hex`). */
+  toHex(): string {
+    const h = (v: number) => Math.round(Mathf.clamp01(v) * 255).toString(16).padStart(2, "0");
+    const g = (v: number) => h(Mathf.linearToGammaSpace(Mathf.clamp01(v)));
+    return `#${g(this.r)}${g(this.g)}${g(this.b)}${h(this.a)}`;
   }
   lerp(c: Color, t: number): Color {
     const k = Mathf.clamp01(t);

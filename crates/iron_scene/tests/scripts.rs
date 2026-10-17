@@ -104,6 +104,19 @@ fn engine_moves_reach_scripts_and_bad_ops_fail() {
     assert_eq!(batch[0], num(2.0));
     assert_eq!(batch[1], num(4.0), "local x under the parent at x = 1");
 
+    // Ids past 2^24 (script components start there) stay exact.
+    let added = s
+        .apply("addComponent", &[num(2.0), num(16_777_217.0), "C".into()])
+        .unwrap();
+    assert_eq!(
+        added,
+        Some(SceneEvent::ComponentAdded {
+            object: 2,
+            component: 16_777_217,
+            class: "C".into()
+        })
+    );
+
     let destroyed = s.apply("destroy", &[num(1.0)]).unwrap();
     assert_eq!(destroyed, Some(SceneEvent::Destroyed(vec![1, 2])));
     assert!(s.object(2).is_none());

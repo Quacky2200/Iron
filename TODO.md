@@ -784,7 +784,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     with `timeScale`), `TimeSince` / `TimeUntil`, `Task.delay` / `frame`, `Random` and a seedable
     `Rng`, Unity-style input (`getKey`, `getKeyDown`, `getAxis`, `getButton`) —
     `M5-HLP-01`..`M5-HLP-04`
-  - [ ] 3D view basics: `Camera` component, a perspective pass with depth in `iron_render`
+  - [x] 3D view basics: `Camera` component, a perspective pass with depth in `iron_render`
+    (`WorldRenderer`: instanced quads, back-to-front, textured or coloured), `PlaneRenderer`
+    (a plane in the object's XZ plane), screen UI blended over the world
+    (`UiRenderer::render_overlay`); `examples/world` — `M5-RND-05`
+  - [ ] Camera system: main-camera choice by priority, perspective and orthographic (2D)
+    projections, viewport rects (split screen), rendering to a texture, screen/world
+    conversions (`screenPointToRay`, `worldToScreenPoint`, `viewportToWorldPoint`), follow and
+    orbit helpers
   - [ ] Planes: a `UiPanel` component draws React UI on a plane in the world (UI rendered to a
     texture), with pointer input raycast onto it
 - [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5):
@@ -801,9 +808,20 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] `AudioSource` (an emitter following its GameObject) and `AudioListener` components
   - [ ] Particles: a `ParticleSystem` component (emission rate and bursts, lifetime, velocity,
     gravity, size and colour over life, GPU instanced quads)
+  - [ ] Textures and sprites: `Texture` assets (load from the game folder, size, filtering,
+    wrap), `Sprite` (a texture region with a pivot) and a `SpriteRenderer` component
   - [ ] 2D: sprites and 2D physics shapes on the same GameObjects (`Vector2` APIs)
+  - [ ] `Cursor` API on every platform: visible, lock / confine to the window, custom images
+    and hotspots (Unity's `Cursor.visible` / `lockState` / `SetCursor`), sharing the CSS
+    cursor code
+  - [ ] Platform queries (`Platform` / `SystemInfo`): OS and version, device type and model,
+    screen size and DPI, GPU name, CPU count, memory, language; touch and gamepad presence
+  - [ ] `Application`: the game's name, version, company and icon from its manifest (the
+    window title and icon use them too), plus `quit()`
 - [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support
+  - [ ] Scene API (`SceneManager`): create, load (single or additive), unload and switch
+    scenes; objects that persist across loads (`dontDestroyOnLoad`)
 - [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing
   scene serialization
   - [ ] `@property` (standard decorators, which Bun supports) feeds serialization; wipe and
@@ -816,6 +834,9 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Reload benchmark — `M4-HOT-07`
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
 - [ ] **M5.d** The rest of scene, assets and rendering:
+  - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
+    component with blending; skeletons and skinned meshes from glTF
+  - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering
   - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
   - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`
   - [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
@@ -875,6 +896,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 - [ ] OpenXR: Quest VR, PC VR
 - [ ] Steam Audio spatial sound
 - [ ] Ray tracing tier
+- [ ] Video: a `VideoClip` asset and `VideoPlayer` component (to a texture, UI or a plane)
 
 ## Later
 

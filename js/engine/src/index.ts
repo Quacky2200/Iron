@@ -25,6 +25,7 @@ export {
   Color,
   Mathf,
   Plane,
+  Pose,
   Quaternion,
   type QuaternionLike,
   Ray,
@@ -54,6 +55,7 @@ export { DateTime, type DateTimeKind, TimeSpan } from "./time.ts";
 export { Task, Time, TimeSince, TimeUntil } from "./clock.ts";
 export { Console, Debug, Log } from "./log.ts";
 export { Random, Rng } from "./random.ts";
+export { Camera, PlaneRenderer } from "./rendering.ts";
 export {
   Component,
   type ComponentClass,

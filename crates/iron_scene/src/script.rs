@@ -201,17 +201,15 @@ impl ScriptScene {
 struct Args<'a>(&'a [Value]);
 
 impl Args<'_> {
-    fn num(&self, i: usize) -> Result<f32, String> {
+    /// Ids go through `f64`: `f32` can't hold integers past 2^24 (script component
+    /// and engine object ids are bigger).
+    fn id(&self, i: usize) -> Result<u32, String> {
         self.0
             .get(i)
             .and_then(Value::as_f64)
-            .map(|v| v as f32)
-            .filter(|v| v.is_finite())
-            .ok_or_else(|| format!("argument {i} must be a number"))
-    }
-
-    fn id(&self, i: usize) -> Result<u32, String> {
-        self.num(i).map(|v| v as u32)
+            .filter(|v| v.is_finite() && *v >= 0.0 && *v <= u32::MAX as f64)
+            .map(|v| v as u32)
+            .ok_or_else(|| format!("argument {i} must be an id"))
     }
 
     fn opt_id(&self, i: usize) -> Option<u32> {

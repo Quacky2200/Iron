@@ -9,6 +9,7 @@ mod cursor;
 mod game_input;
 mod reload;
 mod ui_scale;
+mod world_view;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -21,7 +22,9 @@ use iron_platform::{
     WheelDelta, Window, WindowConfig,
 };
 use iron_render::wgpu;
-use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
+use iron_render::{
+    Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface, WorldRenderer,
+};
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
 use iron_ui::{Clipboard, Input, Interaction, UiEvent, UiTree, events};
 
@@ -132,6 +135,7 @@ fn main() -> Result<()> {
         components,
         scene,
         scene_events,
+        world_view: world_view::WorldView::default(),
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
@@ -194,6 +198,28 @@ struct Gfx {
     surface: WindowSurface,
     window: Arc<Window>,
     renderer: UiRenderer,
+    world: WorldRenderer,
+}
+
+/// Draws one frame into `target`: the 3D world when a camera is active, with the
+/// screen UI over it; otherwise the UI over the plain background.
+fn draw_frame(
+    gpu: &Gpu,
+    renderer: &mut UiRenderer,
+    world: &mut WorldRenderer,
+    target: &RenderTarget<'_>,
+    view: Option<(iron_render::WorldCamera, Vec<iron_render::WorldQuad>)>,
+    cmds: &[iron_ui::DrawCmd],
+) {
+    match view {
+        Some((camera, quads)) => {
+            world.render(gpu, target, &camera, &quads, &[]);
+            renderer.render_overlay(gpu, target, cmds);
+        }
+        None => {
+            renderer.render(gpu, target, CLEAR, cmds);
+        }
+    }
 }
 
 struct App {
@@ -201,6 +227,8 @@ struct App {
     scene: iron_scene::ScriptScene,
     /// Whether the game takes engine moves (`__iron_scene` exists).
     scene_events: bool,
+    /// Cameras and planes scripts put in the world.
+    world_view: world_view::WorldView,
     bundle_path: PathBuf,
     bundle_name: String,
     /// The tree's id for the game's bundled stylesheet (`game.css`), if it has one.
@@ -292,6 +320,7 @@ impl App {
         self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
         self.ui_scale = ui_scale::UiScale::None;
         self.scene = scene;
+        self.world_view = world_view::WorldView::default();
         self.physics = iron_physics::Physics::new();
         // Dropping the mixer stops every sound.
         self.audio = None;
@@ -385,9 +414,11 @@ impl App {
             Ok(Some(SceneEvent::ComponentRemoved(id))) => self
                 .components
                 .remove(&mut self.scripts, iron_core::ComponentId(id)),
-            Ok(Some(SceneEvent::Destroyed(objects))) => self
-                .components
-                .remove_on_objects(&mut self.scripts, &objects),
+            Ok(Some(SceneEvent::Destroyed(objects))) => {
+                self.components
+                    .remove_on_objects(&mut self.scripts, &objects);
+                self.world_view.forget_objects(&objects);
+            }
             Err(e) => tracing::warn!("scene.{name}: {e}"),
         }
     }
@@ -478,6 +509,11 @@ impl App {
                         "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
                         _ => Input::ScrollIntoView(id),
                     });
+                }
+                name if name.starts_with("render.") => {
+                    if let Err(e) = self.world_view.apply(&name["render.".len()..], &op.args) {
+                        tracing::warn!("{name}: {e}");
+                    }
                 }
                 name if name.starts_with("scene.") => {
                     self.scene_op(&name["scene.".len()..], &op.args)
@@ -683,15 +719,19 @@ impl App {
         let view = target.view().context("window has no size")?;
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
-        gfx.renderer.render(
+        self.scene.scene.update_world();
+        let world_view = self.world_view.frame(&self.scene, (w, h));
+        draw_frame(
             &gfx.gpu,
+            &mut gfx.renderer,
+            &mut gfx.world,
             &RenderTarget {
                 view: &view,
                 format: target.format(),
                 size: (w, h),
                 scale: ui_factor(&gfx.window, self.ui_scale),
             },
-            CLEAR,
+            world_view,
             &cmds,
         );
         let pixels = target.read_pixels(&gfx.gpu)?;
@@ -712,11 +752,13 @@ impl PlatformApp for App {
                 tracing::info!(adapter = %gpu.adapter_name(), "renderer ready");
                 let mut renderer = UiRenderer::new(&gpu);
                 renderer.set_asset_root(&self.asset_root);
+                let world = WorldRenderer::new(&gpu);
                 self.gfx = Some(Gfx {
                     gpu,
                     surface,
                     window,
                     renderer,
+                    world,
                 });
             }
             Err(e) => tracing::error!("renderer unavailable: {e}"),
@@ -840,22 +882,28 @@ impl PlatformApp for App {
         });
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
+        self.scene.scene.update_world();
+        let (scene, world_view) = (&self.scene, &self.world_view);
         let Gfx {
             gpu,
             surface,
             renderer,
+            world,
             ..
         } = gfx;
         surface.present_with(gpu, |view, format, size| {
-            renderer.render(
+            let target = RenderTarget {
+                view,
+                format,
+                size,
+                scale,
+            };
+            draw_frame(
                 gpu,
-                &RenderTarget {
-                    view,
-                    format,
-                    size,
-                    scale,
-                },
-                CLEAR,
+                renderer,
+                world,
+                &target,
+                world_view.frame(scene, size),
                 &cmds,
             );
         });

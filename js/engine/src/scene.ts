@@ -65,13 +65,17 @@ export function register(components: Record<string, ComponentClass>): void {
   }
 }
 
-/** The registered name of a class, registering it under its own name if needed. */
+/**
+ * The registered name of a class. Unregistered classes (like the engine's own
+ * `Camera`) go by their class name; they aren't starting components, so they stay
+ * out of `__iron_registered`.
+ */
 function nameOf(cls: ComponentClass): string {
   let name = names.get(cls);
   if (!name) {
     name = cls.name;
     if (!name) throw new Error("component classes need a name; register them with register({ ... })");
-    register({ [name]: cls });
+    names.set(cls, name);
   }
   return name;
 }

@@ -1,6 +1,20 @@
 import { describe, expect, test } from "bun:test";
 
-import { Bounds, Color, Mathf, Plane, Quaternion, Ray, Rect, RectInt, Vector2, Vector2Int, Vector3 } from "../src/index.ts";
+import {
+  Bounds,
+  Color,
+  Mathf,
+  Plane,
+  Pose,
+  Quaternion,
+  Ray,
+  Rect,
+  RectInt,
+  Vector2,
+  Vector2Int,
+  Vector3,
+  Vector4,
+} from "../src/index.ts";
 
 const near = (a: { x: number; y: number; z?: number }, b: { x: number; y: number; z?: number }, eps = 1e-5) =>
   Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps && Math.abs((a.z ?? 0) - (b.z ?? 0)) < eps;
@@ -42,6 +56,26 @@ describe("vectors", () => {
     expect(Mathf.moveTowards(0, 1, 0.25)).toBe(0.25);
     expect(Mathf.pingPong(3, 2)).toBe(1);
     expect(Mathf.repeat(-1, 360)).toBe(359);
+    expect(Mathf.lerpAngle(350, 10, 0.5)).toBe(360);
+    expect(Mathf.moveTowardsAngle(10, 350, 5)).toBe(5);
+    expect(Mathf.sign(0)).toBe(1);
+    expect([Mathf.isPowerOfTwo(64), Mathf.nextPowerOfTwo(65), Mathf.closestPowerOfTwo(90)]).toEqual([true, 128, 64]);
+    expect(Mathf.linearToGammaSpace(Mathf.gammaToLinearSpace(0.5))).toBeCloseTo(0.5);
+    // Perlin noise: repeatable, smooth, in range, and 0.5 on grid points.
+    expect(Mathf.perlinNoise(1.3, 2.7)).toBe(Mathf.perlinNoise(1.3, 2.7));
+    expect(Mathf.perlinNoise(3, 4)).toBe(0.5);
+    expect(Math.abs(Mathf.perlinNoise(1.3, 2.7) - Mathf.perlinNoise(1.31, 2.7))).toBeLessThan(0.05);
+    for (let i = 0; i < 200; i++) {
+      const n = Mathf.perlinNoise(i * 0.37, i * 0.11);
+      expect(n >= 0 && n <= 1).toBe(true);
+    }
+    // smoothDamp approaches without overshooting.
+    let [x, v] = [0, 0];
+    for (let i = 0; i < 120; i++) {
+      [x, v] = Mathf.smoothDamp(x, 10, v, 0.3, 1 / 60);
+      expect(x).toBeLessThanOrEqual(10);
+    }
+    expect(x).toBeCloseTo(10, 1);
   });
 });
 
@@ -99,9 +133,27 @@ describe("shapes and colours", () => {
     expect(r.overlaps(new Rect(9, 4, 2, 2))).toBe(true);
   });
 
+  test("Pose and Vector4", () => {
+    const parent = new Pose(new Vector3(10, 0, 0), Quaternion.euler(0, 90, 0));
+    const child = new Pose(new Vector3(0, 0, -1));
+    const world = child.transformedBy(parent);
+    expect(near(world.position, new Vector3(9, 0, 0))).toBe(true);
+    expect(near(world.forward, new Vector3(-1, 0, 0))).toBe(true);
+    expect(near(parent.inverseTransformPoint(parent.transformPoint(new Vector3(1, 2, 3))), new Vector3(1, 2, 3))).toBe(true);
+    const v = Vector4.fromVector3(new Vector3(1, 2, 2), 0);
+    expect(v.magnitude).toBe(3);
+    expect(v.normalized.equals(new Vector4(1 / 3, 2 / 3, 2 / 3, 0))).toBe(true);
+    expect(Vector4.zero.lerp(Vector4.one, 0.5)).toEqual(new Vector4(0.5, 0.5, 0.5, 0.5));
+  });
+
   test("Color", () => {
-    expect(Color.hex("#ff8000")).toEqual(new Color(1, 128 / 255, 0, 1));
+    // Hex is sRGB, stored linear.
+    const orange = Color.hex("#ff8000");
+    expect([orange.r, orange.b, orange.a]).toEqual([1, 0, 1]);
+    expect(orange.g).toBeCloseTo(0.2159, 4);
+    expect(orange.toHex()).toBe("#ff8000ff");
     expect(Color.hex("#0f08").a).toBeCloseTo(0x88 / 255);
+    expect(Color.fromSrgb(0.5, 0.5, 0.5).r).toBeCloseTo(0.214, 3);
     expect(Color.black.lerp(Color.white, 0.5)).toEqual(new Color(0.5, 0.5, 0.5, 1));
   });
 });

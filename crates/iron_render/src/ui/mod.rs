@@ -312,7 +312,8 @@ pub struct UiRenderer {
     composite_layout: wgpu::BindGroupLayout,
     blit_layout: wgpu::BindGroupLayout,
     blit_pipeline_layout: wgpu::PipelineLayout,
-    blit_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
+    /// By target format and whether the canvas blends over the target (overlay).
+    blit_pipelines: HashMap<(wgpu::TextureFormat, bool), wgpu::RenderPipeline>,
     effects_module: wgpu::ShaderModule,
     sampler: wgpu::Sampler,
     globals: wgpu::Buffer,
@@ -645,6 +646,34 @@ impl UiRenderer {
         target: &RenderTarget<'_>,
         clear: Color,
         cmds: &[DrawCmd],
+    ) -> RenderStats {
+        self.render_with(gpu, target, clear, cmds, false)
+    }
+
+    /// Draws `cmds` over what `target` already holds (screen UI over the 3D world):
+    /// the canvas starts transparent and is blended onto the target.
+    pub fn render_overlay(
+        &mut self,
+        gpu: &Gpu,
+        target: &RenderTarget<'_>,
+        cmds: &[DrawCmd],
+    ) -> RenderStats {
+        let clear = Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+        self.render_with(gpu, target, clear, cmds, true)
+    }
+
+    fn render_with(
+        &mut self,
+        gpu: &Gpu,
+        target: &RenderTarget<'_>,
+        clear: Color,
+        cmds: &[DrawCmd],
+        overlay: bool,
     ) -> RenderStats {
         let (size, scale) = (target.size, target.scale);
         let mut stats = RenderStats::default();
@@ -1721,7 +1750,7 @@ impl UiRenderer {
         settle(&mut encoder, &mut pending_clear, &mut stats, 0);
 
         // --- Blit the canvas to the target. ---
-        let blit = self.blit_pipeline(gpu, target.format);
+        let blit = self.blit_pipeline(gpu, target.format, overlay);
         let bind_group =
             self.texture_bind_group(gpu, &self.blit_layout, &frame_textures[0].view, None);
         {
@@ -1729,7 +1758,11 @@ impl UiRenderer {
                 label: Some("ui blit"),
                 color_attachments: &[Some(attachment(
                     target.view,
-                    wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    if overlay {
+                        wgpu::LoadOp::Load
+                    } else {
+                        wgpu::LoadOp::Clear(wgpu::Color::BLACK)
+                    },
                 ))],
                 ..Default::default()
             });
@@ -1775,9 +1808,14 @@ impl UiRenderer {
         })
     }
 
-    fn blit_pipeline(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+    fn blit_pipeline(
+        &mut self,
+        gpu: &Gpu,
+        format: wgpu::TextureFormat,
+        overlay: bool,
+    ) -> wgpu::RenderPipeline {
         self.blit_pipelines
-            .entry(format)
+            .entry((format, overlay))
             .or_insert_with(|| {
                 gpu.device
                     .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1798,7 +1836,9 @@ impl UiRenderer {
                             compilation_options: Default::default(),
                             targets: &[Some(wgpu::ColorTargetState {
                                 format,
-                                blend: None,
+                                // The canvas is premultiplied.
+                                blend: overlay
+                                    .then_some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                                 write_mask: wgpu::ColorWrites::ALL,
                             })],
                         }),
