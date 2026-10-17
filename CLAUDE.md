@@ -198,11 +198,13 @@ cargo run -p iron_app -- examples/world --cook
     (GPU skinning), prefabs, asset hot reload, GUID `.meta` files (`scripts/assets.ts`,
     `asset_db.rs`), cooking (`iron --cook`, BC1/BC3), cloth (`iron_physics::cloth`);
     `examples/animation`, `examples/cloth`.
-  - Background agents (2026-10-17): the editor (M5.e, `iron_editor`: menubar, docking,
-    tree view, virtual list, console, then drag and drop with a project browser) runs
-    in its own worktree; its commits are cherry-picked here (linear history, no merges).
-- **Next (in this order, see TODO.md):** M5.e, the editor (being built by a background
-  agent; bring its commits in when it reports), then M6 (Script IO).
+  - M5.e started (2026-10-17, built by a background agent, cherry-picked here: work from
+    agents' worktrees comes in as linear commits, no merges): `iron_editor` (a second
+    binary over main.rs, `editor.rs`), `@iron/editor-ui` (menubar, docking, virtual
+    list, tree view, console with code links, project browser) and the `editor/` app;
+    UI drag and drop (`dnd.rs`) with files dropped from the OS. See `docs/editor.md`.
+- **Next (in this order, see TODO.md):** the rest of M5.e (manual checks in the window,
+  inspector, live hierarchy, undo/redo, accessibility), then M6 (Script IO).
   - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
     cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture
     formats, ...): later.
