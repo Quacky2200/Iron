@@ -272,6 +272,32 @@ function Timer(props: { timeLeft: number }) {
   );
 }
 
+/** Frames per second, measured over each half second (real time, not game time). */
+function FpsCounter() {
+  const [fps, setFps] = useState(0);
+  useEffect(() => {
+    let frames = Time.frameCount;
+    let since = Time.unscaledTime;
+    let timer = 0;
+    const sample = () => {
+      const elapsed = Time.unscaledTime - since;
+      if (elapsed > 0) setFps(Math.round((Time.frameCount - frames) / elapsed));
+      frames = Time.frameCount;
+      since = Time.unscaledTime;
+      timer = setTimeout(sample, 500);
+    };
+    timer = setTimeout(sample, 500);
+    return () => clearTimeout(timer);
+  }, []);
+  const color = fps >= 55 ? "#7ee08a" : fps >= 30 ? "#ffcf4a" : "#ff6b5e";
+  return (
+    <box style={{ ...panel, padding: "4px 10px", flexDirection: "row", gap: 6, alignItems: "baseline" }}>
+      <text style={{ color, fontSize: 16, fontWeight: 700 }}>{String(fps)}</text>
+      <text style={{ color: "#9fb0c8", fontSize: 11 }}>FPS</text>
+    </box>
+  );
+}
+
 function RoundOver(props: { score: number; best: number }) {
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}>
@@ -303,7 +329,10 @@ function Hud() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none", flexDirection: "column" }}>
       <box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
         <ScoreBoard score={game.score} best={game.best} combo={game.combo} recent={game.recent} />
-        <Timer timeLeft={game.timeLeft} />
+        <box style={{ flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <Timer timeLeft={game.timeLeft} />
+          <FpsCounter />
+        </box>
       </box>
       {game.over && (
         <box style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%" }}>
