@@ -3,7 +3,9 @@
 // (scene-camera.ts), the x/y/z orientation gizmo in the corner, SceneIcons (an icon at
 // each camera, light, audio source and probe, at a constant size, that selects its
 // object when clicked) and wire gizmos on the selection (frustums, light ranges and
-// cones, probe boxes, audio distances) drawn by the renderer as thin lines.
+// cones, probe boxes, audio distances) drawn by the renderer as thin lines. The active
+// (last selected) object gets Unity's transform handles (Q view, W move, E rotate, R
+// scale; math in handles.ts), drawn as SVG over the view.
 
 import {
   AudioSource,
@@ -27,6 +29,17 @@ import { useEffect, useRef, useState } from "react";
 
 import type { Rect as DockRect } from "./dock.ts";
 import { onEditorFrame } from "./frame.ts";
+import {
+  beginDrag,
+  dragTo,
+  type HandleDrag,
+  type HandlePart,
+  type HandleShape,
+  type HandleTool,
+  type HandleView,
+  handleShapes,
+  pickHandle,
+} from "./handles.ts";
 import {
   defaultSceneCamera,
   eyePosition,
@@ -57,9 +70,23 @@ export interface SceneViewProps {
   gizmos?: boolean;
   /** Where the camera starts. */
   initial?: SceneCameraState;
+  /** After a handle drag: the object, and its transform before and after (for undo). */
+  onTransformed?: (object: GameObject, before: ObjectPose, after: ObjectPose) => void;
 }
 
-type Drag = { mode: "look" | "orbit" | "pan" | "click"; x: number; y: number; moved: boolean };
+/** An object's world position and rotation and its local scale. */
+export interface ObjectPose {
+  position: Vector3;
+  rotation: Quaternion;
+  scale: Vector3;
+}
+
+/** The Scene view's tools: `view` (Q) shows no handles. */
+export type SceneTool = "view" | HandleTool;
+
+type Drag =
+  | { mode: "look" | "orbit" | "pan" | "click"; x: number; y: number; moved: boolean }
+  | { mode: "handle"; x: number; y: number; moved: boolean; handle: HandleDrag; object: GameObject };
 
 /** A SceneIcon: what it stands for and where it is in the panel. */
 export interface SceneIcon {
@@ -155,7 +182,7 @@ export function visibleObjects(): GameObject[] {
   return out;
 }
 
-export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial }: SceneViewProps) {
+export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial, onTransformed }: SceneViewProps) {
   const [cameraObject] = useState(() => {
     const go = new GameObject("Scene Camera");
     go.hideFlags = HideFlags.HideAndDontSave;
@@ -172,6 +199,11 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const [view, setView] = useState<{ state: SceneCameraState; icons: SceneIcon[] }>(() => ({ state: state.current, icons: [] }));
+  const [tool, setTool] = useState<SceneTool>("move");
+  const [hover, setHover] = useState<HandlePart | null>(null);
+  const active = selected.length > 0 ? selected[selected.length - 1]! : null;
+  const activeRef = useRef(active);
+  activeRef.current = active && !active.destroyed ? active : null;
 
   useEffect(() => () => cameraObject.destroy(), [cameraObject]);
   useEffect(() => {
@@ -195,7 +227,10 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
       if (gizmos) for (const go of selectedRef.current) drawGizmos(go);
       Gizmos.present(camera);
       const found = gizmos ? sceneIcons(camera, r) : [];
-      const key = JSON.stringify([state.current, found.map((i) => [i.object.id, i.kind, Math.round(i.x), Math.round(i.y)])]);
+      // The active object's transform too: its handles follow it.
+      const a = activeRef.current;
+      const pose = a ? [a.transform.position, a.transform.rotation] : null;
+      const key = JSON.stringify([state.current, pose, found.map((i) => [i.object.id, i.kind, Math.round(i.x), Math.round(i.y)])]);
       if (key !== last) {
         last = key;
         setView({ state: state.current, icons: found });
@@ -208,17 +243,53 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     place(camera, next, rectRef.current);
   };
 
+  // The handles of the active object, as the camera sees them now.
+  const handleView = (): HandleView => handleViewOf(camera, rectRef.current);
+  const handlesNow = (): { shapes: HandleShape[]; object: GameObject } | null => {
+    const a = activeRef.current;
+    if (tool === "view" || !a || !gizmos || !a.activeInHierarchy) return null;
+    const v = handleView();
+    if (v.toPanel(a.transform.position).z <= camera.nearClipPlane) return null;
+    return { shapes: handleShapes(tool, v, frameOf(a)), object: a };
+  };
+
   const onPointerDown = (e: IronPointerEvent) => {
-    const mode: Drag["mode"] | null =
-      e.button === 2 ? "look" : e.button === 1 ? "pan" : e.button === 0 ? (e.altKey ? "orbit" : "click") : null;
+    e.currentTarget?.focus();
+    const r = rectRef.current;
+    if (e.button === 0 && !e.altKey && tool !== "view") {
+      const h = handlesNow();
+      const part = h ? pickHandle(h.shapes, e.clientX - r.x, e.clientY - r.y) : null;
+      if (h && part) {
+        const t = h.object.transform;
+        const pose = { position: t.position, rotation: t.rotation, scale: t.localScale };
+        const handle = beginDrag(tool, part, handleView(), pose, frameOf(h.object), e.clientX - r.x, e.clientY - r.y);
+        drag.current = { mode: "handle", x: e.clientX, y: e.clientY, moved: false, handle, object: h.object };
+        e.currentTarget?.setPointerCapture();
+        return;
+      }
+    }
+    const mode = e.button === 2 ? "look" : e.button === 1 ? "pan" : e.button === 0 ? (e.altKey ? "orbit" : "click") : null;
     if (!mode) return;
     drag.current = { mode, x: e.clientX, y: e.clientY, moved: false };
     e.currentTarget?.setPointerCapture();
-    e.currentTarget?.focus();
   };
   const onPointerMove = (e: IronPointerEvent) => {
     const d = drag.current;
-    if (!d) return;
+    if (!d) {
+      // Hovering lights up the part that a press would grab.
+      const h = handlesNow();
+      const r = rectRef.current;
+      const part = h ? pickHandle(h.shapes, e.clientX - r.x, e.clientY - r.y) : null;
+      if (part !== hover) setHover(part);
+      return;
+    }
+    if (d.mode === "handle") {
+      const r = rectRef.current;
+      const next = dragTo(d.handle, handleView(), e.clientX - r.x, e.clientY - r.y, e.ctrlKey);
+      apply(d.object, next);
+      drag.current = { ...d, moved: true };
+      return;
+    }
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (dx === 0 && dy === 0) return;
@@ -231,6 +302,10 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     const d = drag.current;
     drag.current = null;
     e.currentTarget?.releasePointerCapture();
+    if (d?.mode === "handle" && d.moved && !d.object.destroyed) {
+      const t = d.object.transform;
+      onTransformed?.(d.object, d.handle.start, { position: t.position, rotation: t.rotation, scale: t.localScale });
+    }
     // A click on nothing clears the selection.
     if (d?.mode === "click" && !d.moved) onSelect?.(null, e.ctrlKey || e.shiftKey);
   };
@@ -239,6 +314,13 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     set(zoom(state.current, e.deltaY));
   };
   const onKeyDown = (e: IronKeyboardEvent) => {
+    const tools: Record<string, SceneTool> = { KeyQ: "view", KeyW: "move", KeyE: "rotate", KeyR: "scale" };
+    // Not while flying: then W and E move the camera.
+    if (tools[e.code] && !drag.current && !e.ctrlKey && !e.altKey) {
+      setTool(tools[e.code]!);
+      e.preventDefault();
+      return;
+    }
     if (e.code === "KeyF" && !drag.current) {
       const target = framing(selected);
       if (target) set(frame(state.current, target.center, target.radius));
@@ -272,9 +354,116 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
           <IconArt kind={icon.kind} />
         </box>
       ))}
+      <Handles handles={handlesNow()} tool={tool} rect={rect} hot={drag.current?.mode === "handle" ? drag.current.handle.part : hover} />
+      <box className="iron-scene-tools" onPointerDown={(e) => e.stopPropagation()}>
+        {TOOLS.map(([t, label, key]) => (
+          <box key={t} className={t === tool ? "iron-scene-tool active" : "iron-scene-tool"} onClick={() => setTool(t)}>
+            <Text>{`${label} (${key})`}</Text>
+          </box>
+        ))}
+      </box>
       <OrientationGizmo state={view.state} onLook={(dir) => set(lookAlong(state.current, dir))} onToggle={() => set({ ...state.current, orthographic: !state.current.orthographic })} />
     </box>
   );
+}
+
+const TOOLS: [SceneTool, string, string][] = [
+  ["view", "View", "Q"],
+  ["move", "Move", "W"],
+  ["rotate", "Rotate", "E"],
+  ["scale", "Scale", "R"],
+];
+
+/** The handles' frame for an object: its place, turned with it (Unity's Local). */
+function frameOf(go: GameObject) {
+  return { position: go.transform.position, rotation: go.transform.rotation };
+}
+
+function apply(go: GameObject, pose: ObjectPose): void {
+  if (go.destroyed) return;
+  const t = go.transform;
+  if (!t.position.equals(pose.position)) t.position = pose.position;
+  const r = t.rotation;
+  const q = pose.rotation;
+  if (r.x !== q.x || r.y !== q.y || r.z !== q.z || r.w !== q.w) t.rotation = q;
+  if (!t.localScale.equals(pose.scale)) t.localScale = pose.scale;
+}
+
+/** The handles' view of a camera drawing into `r`: panel pixels to and from the world. */
+function handleViewOf(camera: Camera, r: DockRect): HandleView {
+  const forward = camera.transform.forward;
+  const eye = camera.transform.position;
+  const height = Math.max(1, r.height);
+  return {
+    toPanel: (p) => {
+      const s = camera.worldToScreenPoint(p);
+      return new Vector3(s.x - r.x, s.y - r.y, s.z);
+    },
+    ray: (x, y) => camera.screenPointToRay({ x: x + r.x, y: y + r.y }),
+    unitsPerPixel: (p) =>
+      camera.orthographic
+        ? (2 * camera.orthographicSize) / height
+        : (Math.max(1e-3, p.sub(eye).dot(forward)) * 2 * Math.tan(((camera.fieldOfView / 2) * Math.PI) / 180)) / height,
+    forward,
+  };
+}
+
+const HANDLE_COLORS: Record<HandlePart, string> = { x: "#e5484d", y: "#7ac74f", z: "#3d8ef0", center: "#d9d9d9" };
+const HOT = "#f2d24b";
+
+/** The handles as SVG, in a box just round them (so only that much is rasterized). */
+function Handles({ handles, tool, rect, hot }: { handles: { shapes: HandleShape[] } | null; tool: SceneTool; rect: DockRect; hot: HandlePart | null }) {
+  if (!handles) return null;
+  const { shapes } = handles;
+  const points = shapes.flatMap((s) => [...s.lines.flat(), ...s.back.flat()]);
+  if (points.length === 0) return null;
+  const pad = 16;
+  const x0 = Math.max(-pad, Math.min(...points.map((p) => p.x)) - pad);
+  const y0 = Math.max(-pad, Math.min(...points.map((p) => p.y)) - pad);
+  const x1 = Math.min(rect.width + pad, Math.max(...points.map((p) => p.x)) + pad);
+  const y1 = Math.min(rect.height + pad, Math.max(...points.map((p) => p.y)) + pad);
+  if (x1 <= x0 || y1 <= y0) return null;
+  const w = Math.ceil(x1 - x0);
+  const h = Math.ceil(y1 - y0);
+  const pts = (line: { x: number; y: number }[]) => line.map((p) => `${(p.x - x0).toFixed(1)},${(p.y - y0).toFixed(1)}`).join(" ");
+  return (
+    <box className="iron-scene-handles" style={{ left: x0, top: y0, width: w, height: h }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+        {shapes.map((s) => {
+          const color = s.part === hot ? HOT : HANDLE_COLORS[s.part];
+          if (s.part === "center") {
+            const c = s.lines[0]![0]!;
+            return <rect key="center" x={c.x - x0 - 5} y={c.y - y0 - 5} width={10} height={10} fill={color} stroke="#222" strokeWidth={1} />;
+          }
+          return (
+            <g key={s.part}>
+              {s.back.map((line, i) => (
+                <polyline key={`b${i}`} points={pts(line)} fill="none" stroke={color} strokeWidth={1.5} opacity={0.3} />
+              ))}
+              {s.lines.map((line, i) => (
+                <polyline key={`f${i}`} points={pts(line)} fill="none" stroke={color} strokeWidth={s.part === hot ? 3.5 : 2.5} />
+              ))}
+              {tool === "move" || tool === "scale" ? <Tip line={s.lines[0]!} color={color} x0={x0} y0={y0} square={tool === "scale"} /> : null}
+            </g>
+          );
+        })}
+      </svg>
+    </box>
+  );
+}
+
+/** An arrow head (move) or a square (scale) at the end of an axis line. */
+function Tip({ line, color, x0, y0, square }: { line: { x: number; y: number }[]; color: string; x0: number; y0: number; square: boolean }) {
+  const [a, b] = [line[0]!, line[line.length - 1]!];
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  if (len < 4) return null;
+  const dx = (b.x - a.x) / len;
+  const dy = (b.y - a.y) / len;
+  const bx = b.x - x0;
+  const by = b.y - y0;
+  if (square) return <rect x={bx - 4.5} y={by - 4.5} width={9} height={9} fill={color} />;
+  const p = (along: number, side: number) => `${(bx + dx * along - dy * side).toFixed(1)},${(by + dy * along + dx * side).toFixed(1)}`;
+  return <polygon points={`${p(10, 0)} ${p(-2, 5)} ${p(-2, -5)}`} fill={color} />;
 }
 
 /** Puts the editor camera where the state says, drawing into `r` (nothing when empty). */

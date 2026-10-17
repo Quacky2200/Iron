@@ -1314,8 +1314,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         outlines on selected meshes; the grid on the view's plane in side views (Unity
         flips it to XY / YZ when orthographic along an axis); gizmo icons for user
         components.
-      - [ ] Then: move / rotate / scale handles on the selection (W / E / R), and a live
-        Hierarchy and Inspector bound to the same scene.
+      - [x] Move / rotate / scale handles on the active (last selected) object (Q / W / E / R
+        and a toolbar; Ctrl snaps; local axes; `handles.ts`, `M5-EDT-24`), drawn as SVG over
+        the view; `SceneView.onTransformed` reports each drag for undo.
+      - [ ] Later handles: Global / Local and Pivot / Center toggles, plane handles (move
+        on two axes), the view-aligned rotation ring, multi-object drags, snap settings.
+      - [ ] Then: an Inspector bound to the same scene (the Hierarchy is live already).
     - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo
       (`M5-EDT-01..03`); the 10,000-row scroll benchmark (`M5-EDT-04`); the manual docking
       check in the window (`M5-EDT-05`)

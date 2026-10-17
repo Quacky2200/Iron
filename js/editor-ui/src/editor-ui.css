@@ -585,3 +585,37 @@
   font-size: 11px;
   color: var(--iron-text);
 }
+
+.iron-scene-handles {
+  position: absolute;
+  pointer-events: none;
+}
+
+.iron-scene-tools {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  flex-direction: row;
+  border-radius: 4px;
+  background-color: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  user-select: none;
+}
+
+.iron-scene-tool {
+  padding: 3px 9px;
+  font-size: 12px;
+  color: var(--iron-muted);
+  cursor: pointer;
+}
+
+.iron-scene-tool:hover {
+  color: var(--iron-text);
+  background-color: var(--iron-hover);
+}
+
+.iron-scene-tool.active {
+  color: #ffffff;
+  background-color: var(--iron-accent-dim);
+}
