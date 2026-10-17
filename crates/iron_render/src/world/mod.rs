@@ -50,6 +50,10 @@ pub enum MeshGlow {
     Beam,
 }
 
+/// A magenta and black checker, drawn wherever a texture is missing (never set, failed
+/// to load, or removed), so missing assets stand out instead of passing as white.
+pub const MISSING_TEXTURE: u32 = u32::MAX - 1;
+
 /// A soft round spot every renderer keeps as a texture (particles, halos).
 pub const DEFAULT_PARTICLE_TEXTURE: u32 = u32::MAX;
 
@@ -483,6 +487,7 @@ impl WorldRenderer {
             renderer.set_mesh(gpu, PRIMITIVE_BASE + i as u32, &data);
         }
         renderer.set_texture(gpu, DEFAULT_PARTICLE_TEXTURE, &texture::soft_spot(64));
+        renderer.set_texture(gpu, MISSING_TEXTURE, &texture::missing());
         renderer.set_mesh(gpu, BEAM_MESH, &mesh::beam());
         renderer
     }
@@ -655,6 +660,9 @@ impl WorldRenderer {
     }
 
     pub fn remove_texture(&mut self, id: u32) {
+        if id == MISSING_TEXTURE || id == DEFAULT_PARTICLE_TEXTURE {
+            return;
+        }
         self.textures.remove(&id);
     }
 
@@ -1110,7 +1118,8 @@ impl WorldRenderer {
             None => &groups[0],
             Some(WorldTexture::Frame(t)) => &groups[(t + 1).min(groups.len() - 1)],
             Some(WorldTexture::Asset(id)) => {
-                self.textures.get(&id).map_or(&groups[0], |t| &t.group)
+                let missing = &self.textures[&MISSING_TEXTURE].group;
+                self.textures.get(&id).map_or(missing, |t| &t.group)
             }
         };
 

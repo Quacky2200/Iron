@@ -8,6 +8,7 @@
 mod cursor;
 mod game_input;
 mod info;
+mod models;
 mod panels;
 mod particles;
 mod physics_sync;
@@ -653,8 +654,10 @@ impl App {
                 tracing::warn!(target: "ui", "{e}");
             }
         }
-        // Textures loaded by these ops, for `__iron_textures` after them.
+        // Textures and models loaded by these ops, for `__iron_textures` /
+        // `__iron_models` after them.
         let mut loaded: Vec<(u32, u32, u32)> = Vec::new();
+        let mut models: Vec<(u32, Option<serde_json::Value>)> = Vec::new();
         for op in self.scripts.drain_ops() {
             match op.name.as_str() {
                 "loadFont" => self.load_font_op(&op.args),
@@ -700,6 +703,20 @@ impl App {
                         },
                     );
                 }
+                "render.model" => {
+                    let id = op
+                        .args
+                        .first()
+                        .and_then(iron_core::Value::as_f64)
+                        .unwrap_or(0.0) as u32;
+                    match self.world_view.model_op(&self.asset_root, &op.args) {
+                        Ok(description) => models.push((id, Some(description))),
+                        Err(e) => {
+                            tracing::warn!("render.model: {e}");
+                            models.push((id, None));
+                        }
+                    }
+                }
                 "render.texture" | "render.textureRemove" => {
                     let name = &op.name["render.".len()..];
                     match self.world_view.texture_op(name, &self.asset_root, &op.args) {
@@ -710,6 +727,8 @@ impl App {
                             // Scripts hear about failures too (a 0 × 0 size).
                             if let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) {
                                 loaded.push((id as u32, 0, 0));
+                                // Sprites of it show the missing checker.
+                                self.world_view.mark_missing(id as u32);
                             }
                         }
                     }
@@ -746,14 +765,44 @@ impl App {
                 }
                 name if name.starts_with("physics.") => {
                     let name = &name["physics.".len()..];
+                    // Mesh colliders made from render meshes get the mesh's data here.
+                    let mut args = std::borrow::Cow::Borrowed(&op.args);
+                    if name == "collider"
+                        && op.args.get(2).and_then(iron_core::Value::as_str) == Some("renderMesh")
+                        && let Err(e) = self.world_view.resolve_mesh_collider(args.to_mut())
+                    {
+                        tracing::warn!("physics.collider: {e}");
+                        continue;
+                    }
                     // `attach` ties a body to its GameObject (Rigidbody, colliders).
-                    if !self.attachments.op(name, &op.args)
-                        && let Err(e) = self.physics.apply(name, &op.args)
+                    if !self.attachments.op(name, &args)
+                        && let Err(e) = self.physics.apply(name, &args)
                     {
                         tracing::warn!("physics.{name}: {e}");
                     }
                 }
                 other => tracing::warn!("unknown script op `{other}`"),
+            }
+        }
+        // `__iron_models([id, json | null, ...])`: what each model holds, for
+        // `Model.instantiate` (null: it failed).
+        if !models.is_empty() {
+            let list = models
+                .into_iter()
+                .flat_map(|(id, d)| {
+                    [
+                        iron_core::Value::from(id),
+                        d.map_or(iron_core::Value::Null, |d| {
+                            iron_core::Value::String(d.to_string())
+                        }),
+                    ]
+                })
+                .collect();
+            if let Err(e) = self
+                .scripts
+                .call_global("__iron_models", &[iron_core::Value::Array(list)])
+            {
+                tracing::error!("script error in __iron_models: {e}");
             }
         }
         // `__iron_textures([[id, width, height], ...])`: sizes for `Texture`s (0 × 0

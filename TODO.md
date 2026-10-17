@@ -839,7 +839,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Textures on meshes: `Material.mainTexture` / `mainTextureScale` /
       `mainTextureOffset` (`withTexture`), texture alpha on see-through meshes; `Mesh.create`
       takes Unity's bottom-up UVs — `M5-TEX-01`, `M5-RND-08`
-    - [ ] Shadows (directional shadow map), model meshes (glTF) usable as mesh colliders
+    - [x] glTF models (`.glb` / `.gltf`, `iron_app/src/models.rs`): meshes (one engine mesh per
+      primitive, ids from 2^30), base colour textures with their samplers, materials (colour,
+      emission and strength, roughness → smoothness, unlit, blend), node trees; buffers and
+      images only from inside the game folder; TS `Model.load` / `whenLoaded` /
+      `instantiate({ colliders: "mesh" | "convex" })`, `MeshCollider.sharedMesh` (resolved
+      engine-side from the render mesh's data); `examples/world` places a house — `M5-GLB-01`,
+      `M5-GLB-02`
+    - [x] Missing textures (never set, failed to load, a model image that can't be read) draw
+      a magenta / black checker (`MISSING_TEXTURE`), sprites too — `M5-RND-08`
+    - [ ] glTF follow-ups: normal / metallic-roughness / emissive / occlusion maps (with PBR,
+      M5.d), skins and animations (M5.d), cameras and lights from the file, KTX2 / Draco /
+      meshopt compression, texture transforms
+    - [ ] Classic test models: the Stanford Bunny and the Newell teaset (teapot, teacup,
+      teaspoon) in an example (asked for 2026-10-17)
+    - [ ] Shadows (directional shadow map)
   - [x] `AudioSource` (clip as a `Sound` or path, `playOnAwake`, volume, pitch, pan, mute,
     loop, `spatialBlend` 0 = flat / above 0 = from an emitter following its GameObject,
     min / max distance, `outputBus`, `play` / `stop` / `pause` / `unPause` / `isPlaying`,

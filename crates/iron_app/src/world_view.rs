@@ -94,6 +94,10 @@ pub struct WorldViews {
     ambient: [f32; 3],
     /// Script meshes to upload (`None`: remove), applied by the app before drawing.
     pub mesh_uploads: Vec<(u32, Option<MeshData>)>,
+    /// Every script and model mesh's data, for mesh colliders (`MeshCollider.sharedMesh`).
+    pub mesh_data: HashMap<u32, MeshData>,
+    /// Model meshes and textures get engine ids from here.
+    model_ids: crate::models::EngineIds,
     /// Textures to upload (`None`: remove), applied by the app before drawing.
     pub texture_uploads: Vec<(u32, Option<TextureData>)>,
     /// Loaded textures' sizes in pixels, for sprites.
@@ -113,6 +117,8 @@ impl Default for WorldViews {
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
+            mesh_data: HashMap::new(),
+            model_ids: crate::models::EngineIds::default(),
             texture_uploads: Vec::new(),
             texture_sizes: HashMap::new(),
         }
@@ -176,6 +182,72 @@ fn sprite_quad(s: &Sprite, (tw, th): (u32, u32)) -> (Mat4, [f32; 4]) {
 }
 
 impl WorldViews {
+    /// `model id src`: loads a glTF model, queuing its meshes and textures for upload.
+    /// Returns its description for scripts.
+    pub fn model_op(&mut self, root: &Path, args: &[Value]) -> Result<serde_json::Value, String> {
+        let src = args
+            .get(1)
+            .and_then(Value::as_str)
+            .ok_or("a model needs a path")?;
+        let model = crate::models::load(root, src, &mut self.model_ids)?;
+        for (id, data) in model.meshes {
+            self.mesh_data.insert(id, data.clone());
+            self.mesh_uploads.push((id, Some(data)));
+        }
+        for (id, data) in model.textures {
+            self.texture_sizes.insert(id, (data.width, data.height));
+            self.texture_uploads.push((id, Some(data)));
+        }
+        Ok(model.description)
+    }
+
+    /// A texture that failed to load: sprites using it draw the renderer's missing
+    /// checker (an 8 × 8 texel image) in its place.
+    pub fn mark_missing(&mut self, id: u32) {
+        self.texture_sizes.insert(id, (8, 8));
+    }
+
+    /// Rewrites a `physics.collider` op whose shape is `renderMesh` (`[mesh id, convex
+    /// 0/1, scale x y z]`) into a `mesh` or `convex` one with that mesh's data.
+    pub fn resolve_mesh_collider(&self, args: &mut [Value]) -> Result<(), String> {
+        if args.get(2).and_then(Value::as_str) != Some("renderMesh") {
+            return Ok(());
+        }
+        let dims = flat(args.get(3)).ok_or("renderMesh needs [mesh, convex, sx, sy, sz]")?;
+        let &[_, convex, sx, sy, sz] = dims
+            .first_chunk::<5>()
+            .ok_or("renderMesh needs [mesh, convex, sx, sy, sz]")?;
+        // The id through `f64`: engine ids (from 2^30) don't fit an `f32`.
+        let Some(Value::Array(raw)) = args.get(3) else {
+            unreachable!("checked above")
+        };
+        let mesh = raw.first().and_then(Value::as_f64).unwrap_or(0.0) as u32;
+        let data = self
+            .mesh_data
+            .get(&mesh)
+            .ok_or_else(|| format!("no mesh {mesh} for a mesh collider"))?;
+        let points: Vec<Value> = data
+            .positions
+            .iter()
+            .flat_map(|p| [p[0] * sx, p[1] * sy, p[2] * sz])
+            .map(|v| Value::from(f64::from(v)))
+            .collect();
+        args[2] = Value::String(if convex > 0.5 { "convex" } else { "mesh" }.into());
+        args[3] = Value::Array(points);
+        if convex <= 0.5 {
+            // The triangles go with the collider's other options.
+            let indices = Value::Array(data.indices.iter().map(|&i| Value::from(i)).collect());
+            match args.get_mut(6) {
+                Some(Value::Array(opts)) => {
+                    opts.resize(6, Value::Null);
+                    opts[5] = indices;
+                }
+                _ => return Err("collider options missing".into()),
+            }
+        }
+        Ok(())
+    }
+
     /// `texture id src filter wrap mipmaps [width height [r g b a ...]]`: loads image
     /// file `src` (relative to the game folder) or, with `src` null, takes the pixels
     /// given (sRGB bytes, top row first). `textureRemove id` drops one. Returns the
@@ -307,6 +379,7 @@ impl WorldViews {
             "mesh" => {
                 if matches!(args.get(1), Some(Value::Null) | None) {
                     self.mesh_uploads.push((id, None));
+                    self.mesh_data.remove(&id);
                     return Ok(());
                 }
                 let positions = flat(args.get(1)).ok_or("mesh needs positions")?;
@@ -325,6 +398,7 @@ impl WorldViews {
                         "mesh {id}: indices out of range or not whole triangles"
                     ));
                 }
+                self.mesh_data.insert(id, data.clone());
                 self.mesh_uploads.push((id, Some(data)));
             }
             // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness
@@ -717,6 +791,47 @@ mod tests {
         assert_eq!(uv, [0.75, 0.5, 0.25, 0.5]);
         let (_, flipped) = sprite_quad(&sprite(None, [0.5, 0.5], (true, true)), (64, 64));
         assert_eq!(flipped, [1.0, 1.0, -1.0, -1.0]);
+    }
+
+    // M5-GLB-01
+    #[test]
+    fn mesh_colliders_take_a_render_mesh_scaled() {
+        let mut views = WorldViews::default();
+        let tri = |v: &[f64]| Value::Array(v.iter().map(|x| Value::from(*x)).collect());
+        views
+            .apply(
+                "mesh",
+                &[
+                    // An engine id, past what an f32 holds exactly.
+                    Value::from(1_073_741_827.0),
+                    tri(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
+                    Value::Null,
+                    Value::Null,
+                    tri(&[0.0, 1.0, 2.0]),
+                ],
+            )
+            .unwrap();
+        let opts = Value::Array(vec![Value::from(0.5); 5]);
+        let mut args = vec![
+            Value::from(1.0),
+            Value::from(1.0),
+            Value::String("renderMesh".into()),
+            tri(&[1_073_741_827.0, 0.0, 2.0, 2.0, 2.0]),
+            Value::Null,
+            Value::Null,
+            opts,
+        ];
+        views.resolve_mesh_collider(&mut args).unwrap();
+        assert_eq!(args[2], Value::String("mesh".into()));
+        assert_eq!(args[3], tri(&[0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0]));
+        let Value::Array(opts) = &args[6] else {
+            panic!()
+        };
+        assert_eq!(opts[5], tri(&[0.0, 1.0, 2.0]));
+        // Unknown meshes are refused.
+        args[2] = Value::String("renderMesh".into());
+        args[3] = tri(&[9.0, 1.0, 1.0, 1.0, 1.0]);
+        assert!(views.resolve_mesh_collider(&mut args).is_err());
     }
 
     // M5-TEX-01

@@ -6,7 +6,8 @@
 // in 3D (an AudioSource each, heard from the camera's AudioListener). Cubes wear a
 // texture made in script; pixel-art coins spin as animated, camera-facing sprites. Sparks
 // fountain from the middle (a ParticleSystem), the lamp glows (a light halo), a spotlight
-// shows its beam, and bloom makes the bright bits glow.
+// shows its beam, and bloom makes the bright bits glow. A glTF model (a little house)
+// stands outside the ring with mesh colliders.
 import {
   AudioListener,
   AudioSource,
@@ -29,6 +30,7 @@ import {
   Light,
   Material,
   MeshRenderer,
+  Model,
   ParticleSystem,
   Random,
   RenderSettings,
@@ -116,6 +118,11 @@ class World extends Component {
     sun.addComponent(Light, { type: "directional", intensity: 0.55 });
     const lamp = new GameObject("Lamp", { position: new Vector3(0, 1.5, 0) });
     lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5, haloSize: 1.2 });
+
+    // A glTF model with mesh colliders, placed twice.
+    const house = Model.load("assets/house.glb");
+    house.instantiate({ position: new Vector3(-4.2, 0.5, -2.6), rotation: Quaternion.euler(0, 30, 0), scale: Vector3.one.scale(1.3), colliders: "mesh" });
+    house.instantiate({ position: new Vector3(4.4, 0.4, -3.2), rotation: Quaternion.euler(0, -20, 0), scale: Vector3.one.scale(0.8), colliders: "mesh" });
 
     // A spotlight from high on one side, its beam visible, aimed at the middle.
     const spot = new GameObject("Spotlight", { position: new Vector3(-3.4, 4.6, 2.4) });

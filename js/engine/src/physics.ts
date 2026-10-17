@@ -31,7 +31,9 @@ export type Shape =
   | { capsule: { halfHeight: number; radius: number } } // along y
   | { cylinder: { halfHeight: number; radius: number } } // along y
   | { convex: Vec3[] } // the convex hull of these points
-  | { mesh: { points: Vec3[]; indices: number[] } }; // triangles, for static level geometry
+  | { mesh: { points: Vec3[]; indices: number[] } } // triangles, for static level geometry
+  /** A render mesh's triangles (or their hull), scaled: the engine has the data. */
+  | { renderMesh: { mesh: number; convex: boolean; scale: Vec3 } };
 
 export interface ColliderOptions {
   shape: Shape;
@@ -106,6 +108,10 @@ export class PhysicsCollider {
     else if ("capsule" in s) [shape, dims] = ["capsule", [s.capsule.halfHeight, s.capsule.radius]];
     else if ("cylinder" in s) [shape, dims] = ["cylinder", [s.cylinder.halfHeight, s.cylinder.radius]];
     else if ("convex" in s) [shape, dims] = ["convex", s.convex.flatMap((p) => [p.x, p.y, p.z])];
+    else if ("renderMesh" in s) {
+      const r = s.renderMesh;
+      [shape, dims] = ["renderMesh", [r.mesh, r.convex ? 1 : 0, r.scale.x, r.scale.y, r.scale.z]];
+    }
     else {
       [shape, dims] = ["mesh", s.mesh.points.flatMap((p) => [p.x, p.y, p.z])];
       indices = s.mesh.indices;

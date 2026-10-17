@@ -51,6 +51,8 @@ declare global {
   // Textures the engine loaded: [id, width, height], 0 × 0 when it failed (textures.ts).
   // Particle systems whose count or state changed: [id, count, alive 0/1, ...] (particles.ts).
   var __iron_particles: (changed: number[]) => void;
+  // Models the engine loaded: [id, description JSON or null, ...] (models.ts).
+  var __iron_models: (loaded: unknown[]) => void;
   var __iron_textures: (loaded: [number, number, number][]) => void;
   var __iron_physics: (moved: number[], contacts: number[], rays: number[], characters: number[]) => void;
 

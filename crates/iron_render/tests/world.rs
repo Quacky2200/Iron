@@ -475,7 +475,7 @@ fn textured_meshes_and_sprites() {
                 [1.0; 4],
             )
         },
-        // A texture that doesn't exist draws white.
+        // A texture that doesn't exist draws the magenta missing checker.
         MeshInstance {
             texture: Some(WorldTexture::Asset(99)),
             ..mesh(

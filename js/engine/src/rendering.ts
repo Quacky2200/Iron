@@ -495,6 +495,11 @@ export class Mesh {
     this.id = id;
   }
 
+  /** @internal A mesh the engine made (a model's), by its id. */
+  static _engine(id: number): Mesh {
+    return new Mesh(id);
+  }
+
   static create(data: {
     vertices: readonly Vector3Like[];
     triangles: readonly number[];

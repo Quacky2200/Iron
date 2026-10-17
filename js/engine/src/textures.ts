@@ -53,6 +53,18 @@ export class Texture {
     textures.set(this.id, this);
   }
 
+  /** @internal A texture the engine made (a model's), already loaded. */
+  static _engine(id: number, width: number, height: number): Texture {
+    const t = new Texture(null, {});
+    textures.delete(t.id);
+    nextTexture--;
+    (t as { id: number }).id = id;
+    t.width = width;
+    t.height = height;
+    t.isLoaded = true;
+    return t;
+  }
+
   /** Loads a PNG or JPEG relative to the game folder. */
   static load(src: string, options: TextureOptions = {}): Texture {
     const t = new Texture(src, options);

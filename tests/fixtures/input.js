@@ -1363,7 +1363,10 @@ ${err.stack}` : ""}`);
         [shape, dims] = ["cylinder", [s.cylinder.halfHeight, s.cylinder.radius]];
       else if ("convex" in s)
         [shape, dims] = ["convex", s.convex.flatMap((p) => [p.x, p.y, p.z])];
-      else {
+      else if ("renderMesh" in s) {
+        const r = s.renderMesh;
+        [shape, dims] = ["renderMesh", [r.mesh, r.convex ? 1 : 0, r.scale.x, r.scale.y, r.scale.z]];
+      } else {
         [shape, dims] = ["mesh", s.mesh.points.flatMap((p) => [p.x, p.y, p.z])];
         indices = s.mesh.indices;
       }
@@ -1864,10 +1867,14 @@ ${err.stack}` : ""}`);
   }
 
   class MeshCollider extends Collider {
+    sharedMesh = null;
     points = [];
     indices = [];
     convex = false;
     shape(scale) {
+      if (this.sharedMesh) {
+        return { renderMesh: { mesh: this.sharedMesh.id, convex: this.convex, scale } };
+      }
       const pts = this.points.map((p) => Vector3.from(p).mul(scale));
       return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
     }
@@ -2292,6 +2299,16 @@ ${err.stack}` : ""}`);
         emit("gamepadaxis", { gamepad: p, axis, value });
         break;
       }
+    }
+  };
+  // ../../js/engine/src/models.ts
+  var models = new Map;
+  var cache2 = new Map;
+  globalThis.__iron_models = (loaded) => {
+    for (let i = 0;i + 1 < loaded.length; i += 2) {
+      const m = models.get(loaded[i]);
+      const json = loaded[i + 1];
+      m?._loaded(typeof json === "string" ? JSON.parse(json) : null);
     }
   };
   // ../../js/engine/src/time.ts

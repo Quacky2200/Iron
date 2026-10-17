@@ -138,6 +138,30 @@ pub(crate) fn half(src: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
     (out, nw, nh)
 }
 
+/// The missing-texture checker: 4 × 4 squares of magenta and black, crisp and repeating.
+pub fn missing() -> TextureData {
+    let n = 8u32;
+    let mut rgba = Vec::with_capacity((n * n * 4) as usize);
+    for y in 0..n {
+        for x in 0..n {
+            let on = (x / 2 + y / 2) % 2 == 0;
+            rgba.extend(if on {
+                [255, 0, 255, 255]
+            } else {
+                [0, 0, 0, 255]
+            });
+        }
+    }
+    TextureData {
+        width: n,
+        height: n,
+        rgba,
+        filter: TextureFilter::Point,
+        wrap: TextureWrap::Repeat,
+        mipmaps: false,
+    }
+}
+
 /// A white spot fading smoothly to clear at its edge, `n` × `n`.
 pub fn soft_spot(n: u32) -> TextureData {
     let mut rgba = Vec::with_capacity((n * n * 4) as usize);

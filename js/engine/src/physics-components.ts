@@ -13,7 +13,7 @@
 import { Time } from "./clock.ts";
 import { Color, Mathf, Quaternion, Vector3, type Vector3Like } from "./math.ts";
 import { contactListeners, type PhysicsBody, type PhysicsCollider, type PhysicsJoint, physics, type Shape } from "./physics.ts";
-import { Material, MeshRenderer } from "./rendering.ts";
+import { Material, type Mesh, MeshRenderer } from "./rendering.ts";
 import { Component, GameObject } from "./scene.ts";
 
 /** How `Rigidbody.addForce` treats its vector (Unity's `ForceMode`). */
@@ -267,14 +267,20 @@ export class CapsuleCollider extends Collider {
 
 /**
  * A triangle mesh (static level geometry), or with `convex` its convex hull (which can
- * move with a Rigidbody). Set `points` and `indices` when adding it.
+ * move with a Rigidbody). Give it a `sharedMesh` (a `Mesh`, such as a model's), or set
+ * `points` and `indices`, when adding it.
  */
 export class MeshCollider extends Collider {
+  /** A render mesh to collide as (Unity's `sharedMesh`); used instead of `points`. */
+  sharedMesh: Mesh | null = null;
   points: Vector3Like[] = [];
   /** Three per triangle, into `points`. */
   indices: number[] = [];
   convex = false;
   protected shape(scale: Vector3): Shape {
+    if (this.sharedMesh) {
+      return { renderMesh: { mesh: this.sharedMesh.id, convex: this.convex, scale } };
+    }
     const pts = this.points.map((p) => Vector3.from(p).mul(scale));
     return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
   }
