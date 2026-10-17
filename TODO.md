@@ -435,7 +435,8 @@ Where s&box has a custom extension, we prefer the standard CSS form if there is 
 
 **Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, then groups 7, 8, 9, 10, then
 5.1 (SVG); then stop and check in with the user before M4. All done (2026-10-17) except
-`sound-in`/`sound-out`, which waits for M6 audio. Known deviations from browsers go in
+`sound-in`/`sound-out`, which waits for M6 audio. Added afterwards: groups 11 (pointer capture),
+12 (WOFF/WOFF2) and 13 (`@media`). Known deviations from browsers go in
 [docs/differences.md](docs/differences.md).
 
 We're already **ahead** of s&box on: custom properties and `var()` (s&box has none), `!important`
@@ -694,12 +695,27 @@ and `@font-face`.
     - [ ] SCSS (`$variables`, `@mixin`/`@include`) is **not planned** in the engine: custom properties
       and nesting cover most uses, and a Bun plugin can compile `.scss` for those who want it
 
-**Later (not M3):** WOFF2, accessibility
-(accesskit), pointer capture, drag and drop, and **`@media` queries**: `width`/`height` (with
-`min-`/`max-` and range syntax), `orientation`, `aspect-ratio`, `resolution` (the window's scale
-factor), `prefers-color-scheme`, and `pointer`/`hover` (useful to tell mouse, touch and gamepad apart),
-re-evaluated when the window resizes or moves between monitors. M3b's stylesheet parser keeps
-`@media` blocks (with a warning) so adding this later doesn't change the parser's structure.
+11. **Pointer capture**
+    - [ ] `ref.setPointerCapture(pointerId)` / `releasePointerCapture` / `hasPointerCapture`: while
+      captured, pointer moves and the release go to the capturing element wherever the pointer is
+      (dragging sliders, scrollbars, windows); `gotpointercapture` / `lostpointercapture` events;
+      capture ends on release, `pointercancel` or removal of the element. `:active` stays on it
+      (browsers' implicit capture for presses)
+    - [ ] `touch-action` isn't needed until touch input exists; drag and drop stays "Later"
+12. **Web fonts: WOFF and WOFF2**
+    - [ ] Load `.woff` (zlib) and `.woff2` (Brotli + glyph transforms) fonts from `@font-face` and
+      `loadFont`, decoding them to TTF/OTF before registering with Parley (e.g. the `woff2` /
+      `wuff` crates, or a small decoder); `format("woff2")` hints in `src` lists pick the first
+      supported entry
+13. **`@media` queries**
+    - [ ] `width`/`height` (with `min-`/`max-` and range syntax), `orientation`, `aspect-ratio`,
+      `resolution` (the window's scale factor), `prefers-color-scheme`, `prefers-reduced-motion`,
+      and `pointer`/`hover` (to tell mouse, touch and gamepad apart); `and`, `not`, `only`,
+      comma lists; nested inside rules (with nesting) and on `@import`. Re-evaluated when the
+      window resizes or moves between monitors (and when the UI scale changes); M3b's parser
+      already keeps `@media` blocks (with a warning), so the parser's structure doesn't change
+
+**Later (not M3):** accessibility (accesskit), drag and drop.
 
 ## Script IO — files, fetch, WebSocket (proposed)
 
