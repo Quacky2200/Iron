@@ -404,6 +404,10 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Elements not styled yet: their first style starts transitions from
     /// `@starting-style`.
     fresh: HashSet<NodeId>,
+    /// Elements removed by scripts but kept (`:outro`) until their exit transitions
+    /// and animations finish.
+    /// (When the exit began: only motion started since then holds it.)
+    leaving: HashMap<NodeId, f64>,
 }
 
 impl UiTree<TaffyLayout> {
@@ -477,6 +481,7 @@ impl<L: LayoutEngine> UiTree<L> {
             starting_sheets: Vec::new(),
             starting_index: RuleIndex::default(),
             fresh: HashSet::default(),
+            leaving: HashMap::default(),
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
@@ -1899,6 +1904,60 @@ impl<L: LayoutEngine> UiTree<L> {
         self.motion_events.extend(events);
     }
 
+    /// Removes leaving (`:outro`) elements whose exit transitions and animations
+    /// are done (or never started).
+    fn remove_finished_outros(&mut self) {
+        if self.leaving.is_empty() {
+            return;
+        }
+        let done: Vec<NodeId> = self
+            .leaving
+            .iter()
+            .filter(|(id, since)| {
+                let mut stack = vec![**id];
+                while let Some(n) = stack.pop() {
+                    // Transitions, and animations the exit started (not an ongoing
+                    // spinner, which would hold it forever).
+                    let exiting = self.motion.get(&n).is_some_and(|m| {
+                        !m.transitions.is_empty()
+                            || m.animations
+                                .iter()
+                                .any(|a| !a.ended && a.paused_at.is_none() && a.start_ms >= **since)
+                    });
+                    if exiting {
+                        return false;
+                    }
+                    stack.extend_from_slice(self.children(n));
+                }
+                true
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in done {
+            self.leaving.remove(&id);
+            if self.nodes.contains_key(&id) {
+                let mut changed = HashSet::default();
+                let parent = self.parent(id);
+                self.detach(id, &mut changed);
+                self.destroy_subtree(id);
+                if let Some(p) = parent {
+                    self.sync_children(p);
+                    self.structure_changed.insert(p);
+                }
+                self.needs_layout = true;
+            }
+        }
+    }
+
+    /// Whether `id` or an ancestor is leaving (removed, playing its `:outro`).
+    fn is_leaving(&self, id: NodeId) -> bool {
+        !self.leaving.is_empty()
+            && self
+                .leaving
+                .keys()
+                .any(|l| self.is_inclusive_ancestor(*l, id))
+    }
+
     /// Transition events since the last call, for scripts.
     pub fn take_motion_events(&mut self) -> Vec<crate::motion::MotionEvent> {
         std::mem::take(&mut self.motion_events)
@@ -1932,6 +1991,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 (old.active != state.active, Key::Active),
                 (old.focus != state.focus, Key::Focus),
                 (old.focus_visible != state.focus_visible, Key::FocusVisible),
+                (old.outro != state.outro, Key::Outro),
             ] {
                 if changed {
                     keys.push(key);
@@ -2474,6 +2534,21 @@ impl<L: LayoutEngine> UiTree<L> {
                 if self.parent(child) != Some(parent) {
                     return Err(UiError(format!("node {child} is not a child of {parent}")));
                 }
+                // With `:outro` rules, an element stays to play its exit first.
+                if self.deps.uses_outro
+                    && self.kind(child).is_some_and(|k| k != TEXT_NODE)
+                    && !self.leaving.contains_key(&child)
+                {
+                    let state = ElementState {
+                        outro: true,
+                        hover: false,
+                        active: false,
+                        ..self.state(child)
+                    };
+                    self.set_state(child, state);
+                    self.leaving.insert(child, self.time_ms);
+                    return Ok(());
+                }
                 self.detach(child, children_changed);
                 self.destroy_subtree(child);
             }
@@ -2563,6 +2638,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.top_layer.retain(|d| *d != id);
             self.motion.remove(&id);
             self.fresh.remove(&id);
+            self.leaving.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
@@ -2588,6 +2664,7 @@ impl<L: LayoutEngine> UiTree<L> {
             return false;
         }
         self.restyle_dirty();
+        self.remove_finished_outros();
         self.refresh_markers();
         // Re-shape text blocks whose content or style changed.
         for root in self.take_dirty_text() {
@@ -3296,7 +3373,7 @@ impl<L: LayoutEngine> UiTree<L> {
     ) -> Option<NodeId> {
         let (wx, wy) = (x, y);
         let node = self.nodes.get(&id)?;
-        if node.style.display == Display::None {
+        if node.style.display == Display::None || self.leaving.contains_key(&id) {
             return None;
         }
         // `visibility: hidden` elements can't be hit, but visible children can.
@@ -3356,6 +3433,10 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Whether `id` is rendered: it exists and neither it nor an ancestor is
     /// `display: none`.
     pub fn is_displayed(&self, id: NodeId) -> bool {
+        if self.is_leaving(id) {
+            // On its way out: no focus, Tab stops or modal trapping.
+            return false;
+        }
         let mut at = Some(id);
         while let Some(id) = at {
             let Some(node) = self.nodes.get(&id) else {

@@ -647,8 +647,10 @@ and `@font-face`.
      the before-change style of new elements and of elements whose `display` goes from `none` to
      shown (opening a dialog restyles it), so transitions run from them; elements already styled
      ignore them — `M3-ANI-04`
-   - [ ] **7d** Exit styling (s&box's `:outro`): an `:outro`-style state plus deferred removal so exit
-     transitions finish before the node is deleted
+   - [x] **7d** Exit styling, s&box's `:outro`: when any rule uses `:outro`, an element React removes
+     stays in the tree with `:outro` set (no hits, focus or Tab stops) until the transitions and
+     animations its exit started finish, then goes; ongoing animations (a spinner) don't hold it.
+     Done in the tree, so the reconciler needs no changes — `M3-ANI-05`
 8. **Scrolling** (extends M3c overflow)
    - [ ] `scrollbar-width`, `scrollbar-color`, `scrollbar-gutter`, `overscroll-behavior`;
      `overflow: clip`

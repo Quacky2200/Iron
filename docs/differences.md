@@ -16,6 +16,7 @@ a known gap, not an accident. When you fix one, delete its entry; when you add o
 | Inherited values | A transition on a parent's `color` animates; children follow through inheritance | Same | — |
 | Animations | `@keyframes` by name from any stylesheet (the last wins); no `animation-composition`, `animation-timeline`, `animation-range` or the Web Animations API | Full | Enough for UI motion |
 | `@starting-style` | Top-level blocks only; applies to new elements and to an element whose own `display` leaves `none` (not to its descendants) | Also nested in rules, and descendants of a newly shown ancestor | Nesting comes with group 10 |
+| `:outro` | s&box's exit state (no standard equivalent): removed elements linger while it animates; structural selectors still count them | — | Lets exit transitions finish without reconciler work |
 | Cost | Each moving element is restyled (selector matching included) every frame | Browsers update animated values without a full restyle | Simple; fine for UI-sized numbers of elements |
 
 ## Dialogs (M3d step 5j)

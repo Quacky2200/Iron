@@ -159,6 +159,8 @@ pub struct ElementState {
     pub focus: bool,
     /// Focus that should show a focus ring (keyboard navigation).
     pub focus_visible: bool,
+    /// Removed by scripts, playing its `:outro` styles before it goes.
+    pub outro: bool,
 }
 
 #[cfg(test)]

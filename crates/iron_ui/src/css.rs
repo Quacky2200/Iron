@@ -73,6 +73,9 @@ pub enum PseudoClass {
     Checked,
     /// Selectors Level 4 `:blank`: no element children and only whitespace text.
     Blank,
+    /// s&box's `:outro`: the element was removed and plays its exit transitions
+    /// before it goes.
+    Outro,
 }
 
 impl ToCss for PseudoClass {
@@ -87,6 +90,7 @@ impl ToCss for PseudoClass {
             PseudoClass::Disabled => ":disabled",
             PseudoClass::Checked => ":checked",
             PseudoClass::Blank => ":blank",
+            PseudoClass::Outro => ":outro",
         })
     }
 }
@@ -192,6 +196,7 @@ impl<'i> SelectorParser<'i> for IronSelectorParser {
             "disabled" => PseudoClass::Disabled,
             "checked" => PseudoClass::Checked,
             "blank" => PseudoClass::Blank,
+            "outro" => PseudoClass::Outro,
             _ => return Err(ParseError::custom(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement,
             )),

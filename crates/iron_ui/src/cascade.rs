@@ -195,6 +195,7 @@ impl<'a, L: LayoutEngine> Element for NodeRef<'a, L> {
             PseudoClass::Disabled => disabled,
             PseudoClass::Checked => self.tree.attrs(self.id).is_some_and(|a| a.checked),
             PseudoClass::Blank => self.is_empty_like(true),
+            PseudoClass::Outro => state.outro,
         }
     }
 
@@ -374,6 +375,7 @@ pub(crate) enum Key {
     FocusVisible,
     Disabled,
     Checked,
+    Outro,
 }
 
 /// Which keys matter in which positions, so a change only restyles what it can
@@ -392,6 +394,8 @@ pub(crate) struct Deps {
     /// Some selector depends on position among siblings or on children
     /// (`:nth-child`, `:first-child`, `+`, `~`, `:empty`, `:blank`, `:has`).
     pub structural: bool,
+    /// Some selector uses `:outro`, so removed elements linger for their exit.
+    pub uses_outro: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -445,6 +449,10 @@ impl Deps {
                 PseudoClass::FocusVisible => Some(Key::FocusVisible),
                 PseudoClass::Enabled | PseudoClass::Disabled => Some(Key::Disabled),
                 PseudoClass::Checked => Some(Key::Checked),
+                PseudoClass::Outro => {
+                    self.uses_outro = true;
+                    Some(Key::Outro)
+                }
                 PseudoClass::FocusWithin => {
                     self.focus_within = true;
                     None

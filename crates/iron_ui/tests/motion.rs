@@ -401,3 +401,70 @@ fn opening_a_dialog_runs_its_starting_style() {
         opacity(&tree, dialog)
     );
 }
+
+/// A 100x100 `.item` box under the root, at time 0.
+fn item_tree(css: &str) -> UiTree {
+    let mut d = Dom::new();
+    let b = d.add(0, "box", &[("width", px(100.0)), ("height", px(100.0))]);
+    d.set_class(b, "item");
+    let mut tree = UiTree::new(400.0, 400.0);
+    tree.set_time(0.0);
+    assert!(tree.apply_commit(&Commit { ops: d.ops }).is_empty());
+    tree.add_stylesheet(css);
+    at(&mut tree, 0.0);
+    tree
+}
+
+fn remove_item(tree: &mut UiTree) {
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(iron_ui::opcodes::REMOVE_CHILD, &[n(0), n(1)])],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+// M3-ANI-05
+#[test]
+fn removed_elements_play_their_outro_first() {
+    let mut tree =
+        item_tree(".item { opacity: 1; transition: opacity 1s linear } .item:outro { opacity: 0 }");
+    remove_item(&mut tree);
+    at(&mut tree, 0.0);
+    at(&mut tree, 500.0);
+    assert!(tree.contains(NodeId(1)), "still fading out");
+    assert!((opacity(&tree, 1) - 0.5).abs() < 1e-3);
+    assert_eq!(tree.hit_test(50.0, 50.0), None, "but no longer hit");
+    assert!(!tree.is_displayed(NodeId(1)), "nor focusable");
+    at(&mut tree, 1000.0);
+    assert!(!tree.contains(NodeId(1)), "gone once it finished");
+}
+
+// M3-ANI-05
+#[test]
+fn removal_is_immediate_without_an_exit() {
+    // No :outro rules at all.
+    let mut tree = item_tree(".item { opacity: 1; transition: opacity 1s }");
+    remove_item(&mut tree);
+    assert!(!tree.contains(NodeId(1)));
+    // :outro rules that change nothing animated.
+    let mut tree = item_tree(".item:outro { width: 10px }");
+    remove_item(&mut tree);
+    at(&mut tree, 0.0);
+    assert!(!tree.contains(NodeId(1)));
+}
+
+// M3-ANI-05
+#[test]
+fn exit_animations_hold_removal_but_ongoing_ones_dont() {
+    let css = "@keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes out { to { opacity: 0 } }
+        .item { animation: spin 1s linear infinite }
+        .item:outro { animation: spin 1s linear infinite, out 300ms forwards }";
+    let mut tree = item_tree(css);
+    at(&mut tree, 100.0);
+    remove_item(&mut tree);
+    at(&mut tree, 100.0);
+    at(&mut tree, 300.0);
+    assert!(tree.contains(NodeId(1)), "the exit animation runs");
+    at(&mut tree, 450.0);
+    assert!(!tree.contains(NodeId(1)), "the spinner doesn't keep it");
+}
