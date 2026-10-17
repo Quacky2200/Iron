@@ -80,6 +80,7 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
   `parse_layers` for comma lists, `BlendMode`, `MaskMode`, `BorderStyle`, `BorderImage`, `clip-path` shapes
   (`ClipPath` resolved to a `ClipShape` against the box), `Overflow`.
   [svg_path.rs](../crates/iron_ui/src/svg_path.rs) turns a `path()` string into polygon contours.
+  [svg.rs](../crates/iron_ui/src/svg.rs) holds the inline `<svg>` helpers (see [svg.md](svg.md)).
 - [color.rs](../crates/iron_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours; modern colour functions and
   `color-mix()` live in [color_fn.rs](../crates/iron_ui/src/color_fn.rs) (see [css.md](css.md#colours)).
 - [text_style.rs](../crates/iron_ui/src/text_style.rs): `TextProps` are the *specified* text

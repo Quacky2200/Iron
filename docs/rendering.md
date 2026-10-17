@@ -219,6 +219,8 @@ in both shader files; keep them in sync with `GpuClip` in mod.rs.
   samplers, `smooth` (linear) and `nearest` (`image-rendering: pixelated`); each `LoadedImage` has a
   bind group for each (`bind_group`, `bind_group_nearest`), and `Step::Draw` picks one by its flag.
 
+**SVG.** `.svg` URLs and `data:image/svg+xml` URLs (inline `<svg>` elements) are rasterized by resvg at the tile's physical size (`ImageCache::svg_at`, sizes bucketed to 8 px) and cached; `data:` SVGs are evicted after 120 unused frames (`begin_frame`). See [svg.md](svg.md).
+
 **Gradient tiling.** A gradient fill is laid out like an image: `tile_rect` (natural size = the box)
 gives one tile from `background-size`/`position`, `repeat_tiles` its repeat axes (`round` rescales;
 `space` gaps are not kept), and `gradient::build` is built for that tile. The instance carries the

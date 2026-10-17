@@ -146,6 +146,7 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-SEL` | Static text selection, `::selection`, `::placeholder` | `iron_ui/tests/selection.rs` |
 | `M3-CUR` | `cursor` image lists, field cursors, cursor decoding | `iron_ui/tests/{pointer,editor}.rs`, `iron_app/src/cursor.rs` units |
 | `M3-DLG` | `dialog`, top layer, `::backdrop`, focus and close events | `iron_ui/tests/dialog.rs`, `js/react/test/events.test.tsx`, golden `M3-DLG-02` in `iron_render/tests/ui.rs` |
+| `M3-SVG` | SVG files as images, inline `<svg>` (see [svg.md](svg.md#tests)) | `iron_ui/tests/svg.rs`, unit tests in `iron_ui/src/svg.rs`, goldens `M3-SVG-01` and `M3-SVG-03` in `iron_render/tests/ui.rs` |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
 | `*-MAN` | Manual checks (resize, IME, gamepad) | no automated test; listed in TODO.md. Text input and gamepad checks (`M3-MAN-01`) use `examples/form` |
 
