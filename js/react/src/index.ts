@@ -94,6 +94,9 @@ export interface EventProps {
   onAnimationIteration?: (event: IronAnimationEvent) => void;
   onAnimationEnd?: (event: IronAnimationEvent) => void;
   onAnimationCancel?: (event: IronAnimationEvent) => void;
+  /** This element took or lost pointer capture (`ref.setPointerCapture`). */
+  onGotPointerCapture?: PointerHandler;
+  onLostPointerCapture?: PointerHandler;
 }
 
 /** Attributes that CSS selectors can match. */

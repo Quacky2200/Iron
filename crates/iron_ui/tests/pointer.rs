@@ -388,3 +388,76 @@ fn removed_targets_get_no_click() {
         "no leave for the removed node and no click"
     );
 }
+
+// M3-EVT-06
+#[test]
+fn pointer_capture_routes_moves_and_the_release_to_the_capturer() {
+    let (mut tree, [a, b, c]) = tree("");
+    let mut p = Pointer::new();
+    p.move_to(&mut tree, 30.0, 30.0);
+    // Capture needs a held button.
+    assert!(p.set_capture(&mut tree, b).is_empty());
+    p.down(&mut tree, 0, 0.0);
+    let e = p.set_capture(&mut tree, b);
+    assert_eq!(summary(&e)[0], ("gotpointercapture", vec![b, a]));
+    assert_eq!(p.capture(), Some(b));
+
+    // Over `c`, events still go to `b`, which stays hovered.
+    let e = p.move_to(&mut tree, 50.0, 250.0);
+    assert_eq!(summary(&e), [("pointermove", vec![b, a])]);
+    assert!(tree.state(b).hover);
+    assert!(!tree.state(c).hover);
+
+    // The release goes to `b` (and clicks it), then capture ends and hover moves to `c`.
+    let e = p.up(&mut tree, 0);
+    let names: Vec<_> = summary(&e)
+        .into_iter()
+        .map(|(n, path)| (n, path[0]))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("pointerup", b),
+            ("click", b),
+            ("lostpointercapture", b),
+            ("pointerleave", b),
+            ("pointerleave", a),
+            ("pointerenter", c),
+        ]
+    );
+    assert_eq!(p.capture(), None);
+    assert!(tree.state(c).hover);
+}
+
+// M3-EVT-06
+#[test]
+fn capture_ends_on_release_call_removal_or_window_blur() {
+    let (mut tree, [_, b, _]) = tree("");
+    let mut p = Pointer::new();
+    p.move_to(&mut tree, 30.0, 30.0);
+    p.down(&mut tree, 0, 0.0);
+    p.set_capture(&mut tree, b);
+    let e = p.release_capture(&mut tree, b);
+    assert_eq!(summary(&e)[0].0, "lostpointercapture");
+    assert_eq!(p.capture(), None);
+
+    p.set_capture(&mut tree, b);
+    commit(
+        &mut tree,
+        vec![op(iron_ui::opcodes::REMOVE_CHILD, &[n(1), n(b.0)])],
+    );
+    p.refresh(&mut tree);
+    assert_eq!(p.capture(), None, "a removed element loses capture");
+
+    let (mut tree, [_, b, _]) = tree_again();
+    let mut p = Pointer::new();
+    p.move_to(&mut tree, 30.0, 30.0);
+    p.down(&mut tree, 0, 0.0);
+    p.set_capture(&mut tree, b);
+    p.cancel(&mut tree);
+    assert_eq!(p.capture(), None, "window blur");
+}
+
+fn tree_again() -> (UiTree, [NodeId; 3]) {
+    tree("")
+}

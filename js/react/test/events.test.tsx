@@ -370,6 +370,36 @@ describe("@iron/react events", () => {
     dispatchUiEvent("animationend", path("card"), [0, 0, 0, 0, 0, 1, 0, 0], ["spin"]);
     expect(name).toBe("spin");
   });
+  // M3-EVT-06
+  test("pointer capture: ops go out, hasPointerCapture follows the engine's events", () => {
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    let ref: { current: Instance | null } = { current: null };
+    const log: string[] = [];
+    function Slider() {
+      ref = useRef<Instance>(null);
+      return (
+        <box
+          data-name="thumb"
+          ref={ref}
+          onPointerDown={() => ref.current!.setPointerCapture(1)}
+          onGotPointerCapture={() => log.push("got")}
+          onLostPointerCapture={() => log.push("lost")}
+        />
+      );
+    }
+    createRoot().render(<Slider />);
+    const id = ids.get("thumb")!;
+    dispatchUiEvent("pointerdown", path("thumb"), data());
+    expect(ops).toEqual([["setPointerCapture", id]]);
+    expect(ref.current!.hasPointerCapture(1)).toBe(false);
+    dispatchUiEvent("gotpointercapture", path("thumb"), data());
+    expect(ref.current!.hasPointerCapture(1)).toBe(true);
+    dispatchUiEvent("lostpointercapture", path("thumb"), data());
+    expect(ref.current!.hasPointerCapture(1)).toBe(false);
+    expect(log).toEqual(["got", "lost"]);
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  });
   // M3-INP-01
   test("onChange sees the new text in e.target.value and controlled fields commit it", () => {
     let event: IronInputEvent | undefined;

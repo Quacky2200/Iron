@@ -57,6 +57,26 @@ export class Instance {
   }
 
   /**
+   * Sends the pointer's moves and its release to this element wherever the pointer goes
+   * (drag a slider or window), until the button is released. Call it from `onPointerDown`;
+   * it applies on the next frame, followed by `onGotPointerCapture`. Iron has one pointer,
+   * so `pointerId` is ignored.
+   */
+  setPointerCapture(_pointerId?: number): void {
+    op("setPointerCapture", this.id);
+  }
+
+  /** Ends this element's pointer capture (`onLostPointerCapture` follows). */
+  releasePointerCapture(_pointerId?: number): void {
+    op("releasePointerCapture", this.id);
+  }
+
+  /** Whether this element has the pointer captured (as of the last capture event). */
+  hasPointerCapture(_pointerId?: number): boolean {
+    return pointerCapture.element === this;
+  }
+
+  /**
    * Scrolls the element's content to (`left`, `top`), clamped to its range. Works on
    * `overflow: hidden` too. Applied next frame; `onScroll` reports the result.
    */
@@ -89,6 +109,9 @@ export interface TextInstance {
 }
 
 type Node = Instance | TextInstance;
+
+/** The element holding pointer capture, kept by the capture events (events.ts). */
+export const pointerCapture: { element: Instance | null } = { element: null };
 
 /** Live elements by ID, so engine events can find their props. */
 export const instances = new Map<number, Instance>();

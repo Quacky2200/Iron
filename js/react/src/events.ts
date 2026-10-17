@@ -5,7 +5,15 @@
 
 import { ContinuousEventPriority, DiscreteEventPriority } from "react-reconciler/constants";
 
-import { flush, type Instance, instances, pending, reconciler, withUpdatePriority } from "./host.ts";
+import {
+  flush,
+  type Instance,
+  instances,
+  pending,
+  pointerCapture,
+  reconciler,
+  withUpdatePriority,
+} from "./host.ts";
 import { SET_ATTRS } from "./opcodes.ts";
 
 /** Event props for each engine event type. Mouse aliases run alongside the pointer ones. */
@@ -38,6 +46,8 @@ const HANDLERS: Record<string, readonly string[]> = {
   animationiteration: ["onAnimationIteration"],
   animationend: ["onAnimationEnd"],
   animationcancel: ["onAnimationCancel"],
+  gotpointercapture: ["onGotPointerCapture"],
+  lostpointercapture: ["onLostPointerCapture"],
 };
 
 // `scroll` doesn't bubble in React 17+ either.
@@ -297,6 +307,9 @@ export function dispatchUiEvent(
   data: readonly number[],
   strings: readonly string[] = [],
 ): boolean {
+  // `hasPointerCapture()` follows the engine's capture events.
+  if (type === "gotpointercapture") pointerCapture.element = instances.get(path[0] ?? -1) ?? null;
+  if (type === "lostpointercapture") pointerCapture.element = null;
   const names = HANDLERS[type];
   const target = instances.get(path[0] ?? -1);
   if (!names || !target) return false;

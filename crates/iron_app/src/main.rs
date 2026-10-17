@@ -258,16 +258,17 @@ impl App {
                     None => tracing::warn!("uiScale: invalid arguments {:?}", op.args),
                 },
                 "addStyleSheet" | "removeStyleSheet" => self.stylesheet_op(&op.name, &op.args),
-                "focus" | "blur" => {
+                "focus" | "blur" | "setPointerCapture" | "releasePointerCapture" => {
                     let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) else {
                         tracing::warn!("{} needs an element id", op.name);
                         continue;
                     };
                     let id = iron_core::NodeId(id as u32);
-                    self.handle_ui(if op.name == "focus" {
-                        Input::Focus(id)
-                    } else {
-                        Input::Blur(id)
+                    self.handle_ui(match op.name.as_str() {
+                        "focus" => Input::Focus(id),
+                        "blur" => Input::Blur(id),
+                        "setPointerCapture" => Input::SetPointerCapture(id),
+                        _ => Input::ReleasePointerCapture(id),
                     });
                 }
                 "scrollTo" | "scrollBy" | "scrollIntoView" => {

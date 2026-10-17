@@ -87,6 +87,9 @@ pub enum Input {
     },
     /// `ref.scrollIntoView()` from a script.
     ScrollIntoView(NodeId),
+    /// `ref.setPointerCapture()` / `releasePointerCapture()` from a script.
+    SetPointerCapture(NodeId),
+    ReleasePointerCapture(NodeId),
     /// The tree changed: re-hit-test the pointer and drop focus from removed or hidden
     /// elements. Call once per frame after commits.
     Refresh,
@@ -353,6 +356,10 @@ impl Interaction {
                 self.scroll(tree, id, x + dx, y + dy, false, dispatch);
             }
             Input::ScrollIntoView(id) => self.scroll_into_view(tree, id, dispatch),
+            Input::SetPointerCapture(id) => send(self.pointer.set_capture(tree, id), dispatch),
+            Input::ReleasePointerCapture(id) => {
+                send(self.pointer.release_capture(tree, id), dispatch)
+            }
             Input::ImePreedit { text, cursor } => {
                 if let Some(field) = self.focused.filter(|_| self.ime_area(tree).is_some()) {
                     tree.editor_compose(field, &text, cursor);

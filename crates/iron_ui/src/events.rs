@@ -51,6 +51,9 @@ pub enum EventKind {
     AnimationIteration,
     AnimationEnd,
     AnimationCancel,
+    /// The element took (`got`) or lost pointer capture (bubble).
+    GotPointerCapture,
+    LostPointerCapture,
 }
 
 impl EventKind {
@@ -82,6 +85,8 @@ impl EventKind {
             EventKind::AnimationIteration => "animationiteration",
             EventKind::AnimationEnd => "animationend",
             EventKind::AnimationCancel => "animationcancel",
+            EventKind::GotPointerCapture => "gotpointercapture",
+            EventKind::LostPointerCapture => "lostpointercapture",
         }
     }
 }
@@ -282,6 +287,9 @@ pub struct Pointer {
     last_press: Option<LastPress>,
     clicks: u32,
     modifiers: Modifiers,
+    /// The element capturing the pointer (`setPointerCapture`): it's the target of
+    /// moves and the release wherever the pointer is, until a release ends it.
+    capture: Option<NodeId>,
 }
 
 impl Pointer {
@@ -296,6 +304,45 @@ impl Pointer {
     /// The pointer position, or `None` when it's outside the window.
     pub fn position(&self) -> Option<(f32, f32)> {
         self.pos
+    }
+
+    /// The element capturing the pointer, if any.
+    pub fn capture(&self) -> Option<NodeId> {
+        self.capture
+    }
+
+    /// `setPointerCapture`: `id` gets the pointer's events until the buttons are
+    /// released. Like browsers, only while a button is held (otherwise nothing
+    /// happens); another element's capture moves to `id`.
+    pub fn set_capture(&mut self, tree: &mut UiTree, id: NodeId) -> Vec<UiEvent> {
+        if self.buttons == 0 || !tree.contains(id) || self.capture == Some(id) {
+            return Vec::new();
+        }
+        let mut events = self.release(tree);
+        self.capture = Some(id);
+        events.push(self.event(EventKind::GotPointerCapture, tree.event_path(id), 0));
+        events.extend(self.rehover(tree));
+        events
+    }
+
+    /// `releasePointerCapture`: ends `id`'s capture, if it has it.
+    pub fn release_capture(&mut self, tree: &mut UiTree, id: NodeId) -> Vec<UiEvent> {
+        if self.capture != Some(id) {
+            return Vec::new();
+        }
+        let mut events = self.release(tree);
+        events.extend(self.rehover(tree));
+        events
+    }
+
+    /// Ends any capture, with `lostpointercapture` if the element still exists.
+    fn release(&mut self, tree: &UiTree) -> Vec<UiEvent> {
+        match self.capture.take() {
+            Some(id) if tree.contains(id) => {
+                vec![self.event(EventKind::LostPointerCapture, tree.event_path(id), 0)]
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// The element under the pointer.
@@ -337,6 +384,10 @@ impl Pointer {
     /// pointer (an element moved in or out). Call once per frame after commits.
     pub fn refresh(&mut self, tree: &mut UiTree) -> Vec<UiEvent> {
         self.active.retain(|id| tree.contains(*id));
+        // A removed (or hidden) element loses its capture.
+        if self.capture.is_some_and(|id| !tree.is_displayed(id)) {
+            self.capture = None;
+        }
         self.rehover(tree)
     }
 
@@ -406,6 +457,12 @@ impl Pointer {
                 _ => {}
             }
         }
+        // Releasing the last button ends a capture; hover goes back to what's under
+        // the pointer.
+        if self.buttons == 0 && self.capture.is_some() {
+            events.extend(self.release(tree));
+            events.extend(self.rehover(tree));
+        }
         events
     }
 
@@ -425,6 +482,7 @@ impl Pointer {
     pub fn cancel(&mut self, tree: &mut UiTree) {
         self.buttons = 0;
         self.pressed = [None; 5];
+        self.capture = None;
         self.set_active(tree, Vec::new());
     }
 
@@ -448,7 +506,11 @@ impl Pointer {
     /// Hit-tests at the current position and moves `:hover`, returning
     /// `pointerleave`s (innermost first) then `pointerenter`s (outermost first).
     fn rehover(&mut self, tree: &mut UiTree) -> Vec<UiEvent> {
-        let target = self.pos.and_then(|(x, y)| tree.hit_test(x, y));
+        // A capturing element is the target wherever the pointer is.
+        let target = match self.capture.filter(|id| tree.contains(*id)) {
+            Some(id) => Some(id),
+            None => self.pos.and_then(|(x, y)| tree.hit_test(x, y)),
+        };
         let path = target.map(|t| tree.event_path(t)).unwrap_or_default();
         if path == self.hovered {
             return Vec::new();

@@ -696,11 +696,13 @@ and `@font-face`.
       and nesting cover most uses, and a Bun plugin can compile `.scss` for those who want it
 
 11. **Pointer capture**
-    - [ ] `ref.setPointerCapture(pointerId)` / `releasePointerCapture` / `hasPointerCapture`: while
-      captured, pointer moves and the release go to the capturing element wherever the pointer is
-      (dragging sliders, scrollbars, windows); `gotpointercapture` / `lostpointercapture` events;
-      capture ends on release, `pointercancel` or removal of the element. `:active` stays on it
-      (browsers' implicit capture for presses)
+    - [x] `ref.setPointerCapture(pointerId)` / `releasePointerCapture` / `hasPointerCapture`: while
+      captured (only while a button is held, as in browsers), the capturing element is the hit
+      target, so moves, `:hover` and the release (and its click) go to it wherever the pointer is;
+      `gotpointercapture` / `lostpointercapture` events (`onGotPointerCapture`, ...); capture ends
+      when the buttons are released, on `releasePointerCapture`, when the element is removed or
+      hidden, or when the window loses focus; `hasPointerCapture` follows the events. One pointer,
+      so `pointerId` is ignored — `M3-EVT-06`
     - [ ] `touch-action` isn't needed until touch input exists; drag and drop is in M5.e
 12. **Web fonts: WOFF and WOFF2**
     - [ ] Load `.woff` (zlib) and `.woff2` (Brotli + glyph transforms) fonts from `@font-face` and
