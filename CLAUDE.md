@@ -203,8 +203,11 @@ cargo run -p iron_app -- examples/world --cook
     binary over main.rs, `editor.rs`), `@iron/editor-ui` (menubar, docking, virtual
     list, tree view, console with code links, project browser) and the `editor/` app;
     UI drag and drop (`dnd.rs`) with files dropped from the OS. See `docs/editor.md`.
-- **Next (in this order, see TODO.md):** the rest of M5.e (manual checks in the window,
-  inspector, live hierarchy, undo/redo, accessibility), then M6 (Script IO).
+- **Next (in this order, see TODO.md):** the editor's Scene view (TODO.md M5.e "Next: the
+  Scene view": an editor camera in the panel, a ground grid drawn by the renderer, the
+  x/y/z orientation gizmo, SceneIcons for cameras / lights / other objects, wire gizmos on
+  the selection), then the rest of M5.e (manual checks in the window, inspector, live
+  hierarchy, undo/redo, accessibility), then M6 (Script IO).
   - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
     cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture
     formats, ...): later.
