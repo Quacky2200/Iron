@@ -183,6 +183,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                 "color": [r, g, b, if alpha == "blend" { a.min(0.999) } else { 1.0 }],
                 "emission": e,
                 "smoothness": 1.0 - pbr.roughness_factor(),
+                "metallic": pbr.metallic_factor(),
                 "unlit": m.unlit(),
                 "texture": texture.map(|(id, w, h)| json!([id, w, h])),
                 "alpha": alpha,

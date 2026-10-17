@@ -970,17 +970,41 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Reload benchmark — `M4-HOT-07`
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style:
-    - [ ] PBR shading (metallic / roughness, GGX specular, energy conserving) replacing the
-      Blinn-Phong `smoothness` (kept as 1 - roughness, Unity's name)
-    - [ ] Shininess / specular colour (the specular workflow) and `metallic`
-    - [ ] Reflective and mirror surfaces: a skybox / environment cube map for reflections
-      (IBL), reflection probes (baked and realtime), planar mirrors (a camera rendering
-      the reflected view), screen-space reflections later
+    - [x] PBR shading: Cook-Torrance (GGX, Smith, Schlick) metallic / roughness replacing
+      Blinn-Phong; `smoothness` stays as 1 - roughness (Unity's name); `Material.metallic`,
+      `Material.create({...})` / `with({...})`; glTF `metallicFactor`; ambient reflections
+      with the analytic split-sum BRDF — `M5-RND-11`
+    - [x] A procedural sky (`RenderSettings.skybox`: zenith, horizon, ground, sun) drawn
+      into an HDR environment cubemap with blurred mips: smooth surfaces reflect it sharply,
+      rough ones see blurrier mips; sky light for ambient (`ambientMode` `skybox` / `color`),
+      `reflectionIntensity`; cameras show it with `clearFlags: "skybox"` — `M5-RND-11`
+    - [ ] Shininess / specular colour (the specular workflow)
+    - [ ] Reflective and mirror surfaces: reflection probes (realtime cubemaps of the scene,
+      baked later), planar mirrors (a camera rendering the reflected view), screen-space
+      reflections later; skyboxes from images (cubemap faces, equirectangular HDR)
     - [ ] Maps: normal, metallic-roughness, occlusion, emission (glTF's), detail and tiling
       per map
     - [ ] Transparency modes (fade, transparent with specular kept), alpha cut-off,
       double-sided; glass with refraction later
     - [ ] A material test scene (spheres sweeping roughness × metallic, the classic grid)
+  - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels:
+    - [ ] Anti-aliasing: MSAA (2 / 4 / 8×) for the world pass, FXAA as a cheap post
+      pass, TAA later (needs motion vectors and jitter)
+    - [ ] Shadow quality: off / hard / soft, resolution, distance, cascades (with the
+      cascade work), filter size
+    - [ ] Render scale: draw the world into a render texture at a fraction (or a multiple)
+      of the window's size and scale it up (bilinear, later FSR-style sharpening), with
+      UI kept at native resolution; render textures as a general feature (a camera into
+      a texture, usable on materials)
+    - [ ] Texture quality (mip bias / max size), anisotropic filtering, bloom and
+      particle limits per level
+    - [ ] Named levels (Low / Medium / High / Ultra) setting all of the above;
+      `QualitySettings.setQualityLevel`
+    - [ ] Project / game settings: the levels and defaults saved in a project settings file
+      (with the manifest), editable through a settings UI menu in games (React) and later
+      the editor (M5.e); players' choices saved per user (M6 file IO)
+    - [ ] An example switching between low and high quality side by side (or with a
+      menu), showing the differences
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
     component with blending; skeletons and skinned meshes from glTF

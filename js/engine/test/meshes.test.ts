@@ -42,7 +42,7 @@ describe("meshes and lights", () => {
       mesh: "sphere",
       material: new Material(new Color(1, 0, 0, 1), Color.black, 0.8),
     });
-    expect(renderOps()).toEqual([["render.meshRenderer", r.id, go.id, "sphere", [1, 0, 0, 1], [0, 0, 0], 0.8, false, null, [1, 1, 0, 0], true]]);
+    expect(renderOps()).toEqual([["render.meshRenderer", r.id, go.id, "sphere", [1, 0, 0, 1], [0, 0, 0], 0.8, false, null, [1, 1, 0, 0], true, 0]]);
     r.material = r.material.withColor(Color.white);
     expect(renderOps().at(-1)![4]).toEqual([1, 1, 1, 1]);
   });
@@ -75,6 +75,12 @@ describe("meshes and lights", () => {
     expect(renderOps().at(-1)).toEqual(["render.bloom", 0, 1, 0.8, 0.6]);
     RenderSettings.bloom = null;
     expect(renderOps().at(-1)).toEqual(["render.bloom", 0, null]);
+    RenderSettings.skybox = { zenith: new Color(0, 0, 1, 1), sunDirection: null };
+    expect(renderOps().at(-1)).toEqual(["render.sky", 0, [0, 0, 1], [0.62, 0.72, 0.82], [0.22, 0.2, 0.18], null, [20, 18, 15], 1.5, 1, true]);
+    RenderSettings.ambientMode = "color";
+    expect(renderOps().at(-1)!.at(-1)).toBe(false);
+    RenderSettings.skybox = null;
+    expect(renderOps().at(-1)).toEqual(["render.sky", 0, null]);
   });
 
   test("createPrimitive adds a mesh and the matching collider", () => {

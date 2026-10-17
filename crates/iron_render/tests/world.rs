@@ -199,6 +199,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             meshes: Vec::new(),
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
+            skybox: false,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -216,6 +217,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             meshes: Vec::new(),
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
+            skybox: false,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -240,6 +242,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             meshes: Vec::new(),
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
+            skybox: false,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -302,6 +305,7 @@ fn lit_primitives_with_lights() {
         color,
         emission: [0.0; 3],
         smoothness: 0.6,
+        metallic: 0.0,
         unlit: false,
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
@@ -313,6 +317,7 @@ fn lit_primitives_with_lights() {
         MeshInstance {
             model: Mat4::from_scale(Vec3::splat(0.6)),
             smoothness: 0.0,
+            metallic: 0.0,
             ..mesh("plane", Vec3::ZERO, [0.5, 0.5, 0.5, 1.0])
         },
         mesh("cube", Vec3::new(-1.8, 0.5, 0.0), [0.9, 0.3, 0.2, 1.0]),
@@ -441,6 +446,7 @@ fn textured_meshes_and_sprites() {
         color: [1.0; 4],
         emission: [0.0; 3],
         smoothness: 0.2,
+        metallic: 0.0,
         unlit: false,
         texture: Some(WorldTexture::Asset(1)),
         tiling,
@@ -553,6 +559,7 @@ fn glows_bloom_and_spot_beams() {
         color,
         emission: [0.0; 3],
         smoothness: 0.3,
+        metallic: 0.0,
         unlit: false,
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
@@ -683,6 +690,7 @@ fn directional_shadows() {
         color,
         emission: [0.0; 3],
         smoothness: 0.3,
+        metallic: 0.0,
         unlit: false,
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
@@ -739,4 +747,80 @@ fn directional_shadows() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-10", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-11
+#[test]
+fn pbr_material_grid_under_a_sky() {
+    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Sky, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let eye = Vec3::new(0.0, 1.6, 7.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.1, 0.0), Vec3::Y)
+            .inverse(),
+        42.0,
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let ball = |x: usize, y: usize| {
+        let smoothness = x as f32 / 4.0;
+        let metallic = y as f32 / 2.0;
+        MeshInstance {
+            mesh: primitive_id("sphere").unwrap(),
+            model: Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.8),
+                Quat::IDENTITY,
+                Vec3::new(-2.0 + x as f32, 0.4 + y as f32 * 0.9, 0.0),
+            ),
+            color: [0.9, 0.55, 0.25, 1.0],
+            emission: [0.0; 3],
+            smoothness,
+            metallic,
+            unlit: false,
+            texture: None,
+            tiling: [1.0, 1.0, 0.0, 0.0],
+            glow: MeshGlow::None,
+            cast_shadows: true,
+        }
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.skybox = true;
+    // Columns: rough to smooth; rows: dielectric, half, metal.
+    v.meshes = (0..5)
+        .flat_map(|x| (0..3).map(move |y| ball(x, y)))
+        .collect();
+    // A dark, fairly smooth floor reflecting the sky.
+    v.meshes.push(MeshInstance {
+        mesh: primitive_id("plane").unwrap(),
+        model: Mat4::from_translation(Vec3::new(0.0, -0.01, 0.0)),
+        color: [0.08, 0.08, 0.09, 1.0],
+        smoothness: 0.85,
+        metallic: 0.0,
+        ..ball(0, 0)
+    });
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [2.0, 1.9, 1.7],
+        position: Vec3::ZERO,
+        direction: Vec3::new(-0.4, -0.6, -0.3).normalize(),
+        range: 0.0,
+        shadows: None,
+    }];
+    let mut world = WorldRenderer::new(&gpu);
+    world.set_sky(Some(Sky::default()));
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-11", size.0, size.1, &pixels, 3);
 }

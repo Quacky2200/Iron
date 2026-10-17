@@ -14,6 +14,14 @@ struct Globals {
     // x: the shadowed light's index (-1: none); y: strength; z: a shadow texel in
     // metres; w: 1 for soft (filtered) shadows.
     shadow: vec4<f32>,
+    // Screen to world, for the skybox.
+    inv_view_proj: mat4x4<f32>,
+    // The viewport in target pixels: x, y, width, height.
+    viewport: vec4<f32>,
+    // x: 1 with an environment map; y: intensity; z: its last mip; w: 1 for sky ambient.
+    env: vec4<f32>,
+    // x: 1 to draw the sky behind everything.
+    flags: vec4<f32>,
 };
 
 struct Quad {
@@ -33,7 +41,7 @@ struct MeshInstance {
     color: vec4<f32>,
     // rgb: emission; w: smoothness 0..1.
     emission: vec4<f32>,
-    // x: 1 when unlit; y: 1 additive, 2 a light beam.
+    // x: 1 when unlit; y: 1 additive, 2 a light beam; z: metallic 0..1.
     params: vec4<f32>,
     // Texture tiling: scale (xy), offset (zw), in bottom-up UV space like Unity's.
     tiling: vec4<f32>,
@@ -58,6 +66,8 @@ struct Light {
 @group(1) @binding(1) var samp: sampler;
 @group(2) @binding(0) var shadow_map: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
+@group(2) @binding(2) var env_map: texture_cube<f32>;
+@group(2) @binding(3) var env_samp: sampler;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -108,7 +118,15 @@ fn vs_fill(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
 }
 
 @fragment
-fn fs_fill() -> @location(0) vec4<f32> {
+fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    if (g.flags.x > 0.5) {
+        // The sky along this pixel's view ray.
+        let uv = (pos.xy - g.viewport.xy) / g.viewport.zw;
+        let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+        let far = g.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+        let dir = normalize(far.xyz / far.w - g.camera.xyz);
+        return vec4<f32>(textureSampleLevel(env_map, env_samp, dir, 0.0).rgb * g.env.y, 1.0);
+    }
     return g.background;
 }
 
@@ -138,6 +156,59 @@ fn vs_mesh(
     out.uv = vec2<f32>(uv.x * t.x + t.z, 1.0 - ((1.0 - uv.y) * t.y + t.w));
     out.instance = ii;
     return out;
+}
+
+const PI: f32 = 3.14159265;
+
+// GGX / Trowbridge-Reitz normal distribution.
+fn ggx(ndh: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let d = ndh * ndh * (a2 - 1.0) + 1.0;
+    return a2 / (PI * d * d);
+}
+
+// Smith-Schlick geometry (shadowing and masking), Unreal's k for direct light.
+fn smith(ndv: f32, ndl: f32, roughness: f32) -> f32 {
+    let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    return (ndv / (ndv * (1.0 - k) + k)) * (ndl / (ndl * (1.0 - k) + k));
+}
+
+fn fresnel(f0: vec3<f32>, vdh: f32) -> vec3<f32> {
+    let x = 1.0 - vdh;
+    let x5 = x * x * x * x * x;
+    return f0 + (vec3<f32>(1.0) - f0) * x5;
+}
+
+// The split-sum environment BRDF, fitted analytically (Karis, "Physically Based Shading
+// on Mobile"): how much of the environment a surface reflects.
+fn env_brdf_approx(f0: vec3<f32>, roughness: f32, ndv: f32) -> vec3<f32> {
+    let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let r = roughness * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * ndv)) * r.x + r.y;
+    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + ab.y;
+}
+
+// The light arriving from direction `dir`, blurred for `roughness`: the sky's map (lower,
+// blurrier mips for rougher surfaces), or the ambient colour without one.
+fn environment(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
+    if (g.env.x < 0.5) {
+        return g.ambient.rgb;
+    }
+    // Rough surfaces see mostly the blurriest mips: sqrt spreads smooth ones out.
+    let lod = sqrt(roughness) * g.env.z;
+    return textureSampleLevel(env_map, env_samp, dir, lod).rgb * g.env.y;
+}
+
+// Light from all around reaching a surface facing `n`: the sky's blurriest mip, or the
+// ambient colour.
+fn ambient_light(n: vec3<f32>) -> vec3<f32> {
+    if (g.env.w < 0.5) {
+        return g.ambient.rgb;
+    }
+    return textureSampleLevel(env_map, env_samp, n, g.env.z).rgb * g.env.y;
 }
 
 // Shadow casters: just depth, from the light.
@@ -203,10 +274,14 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         n = -n;
     }
     let v = normalize(g.camera.xyz - in.world);
-    let smooth_ = clamp(m.emission.w, 0.0, 1.0);
-    let shininess = mix(4.0, 256.0, smooth_ * smooth_);
-    var diffuse = g.ambient.rgb;
-    var specular = vec3<f32>(0.0);
+    // Metallic-roughness PBR (Cook-Torrance: GGX, Smith, Schlick), Unity's Standard
+    // shader's model: smoothness is 1 - roughness.
+    let roughness = clamp(1.0 - m.emission.w, 0.045, 1.0);
+    let metallic = clamp(m.params.z, 0.0, 1.0);
+    let f0 = mix(vec3<f32>(0.04), base, metallic);
+    let albedo = base * (1.0 - metallic);
+    let ndv = max(dot(n, v), 1e-4);
+    var color = vec3<f32>(0.0);
     let count = u32(g.ambient.w);
     for (var i = 0u; i < count; i++) {
         let light = lights[i];
@@ -231,12 +306,21 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
             strength *= shadow_at(in.world, n);
         }
         let ndl = max(dot(n, l), 0.0);
-        diffuse += light.color.rgb * ndl * strength;
+        if (ndl <= 0.0) {
+            continue;
+        }
         let h = normalize(l + v);
-        // Energy-ish normalised Blinn-Phong, scaled down for rough surfaces.
-        let spec = pow(max(dot(n, h), 0.0), shininess) * (shininess + 8.0) / 25.0 * smooth_;
-        specular += light.color.rgb * spec * ndl * strength;
+        let f = fresnel(f0, max(dot(v, h), 0.0));
+        let spec = ggx(max(dot(n, h), 0.0), roughness) * smith(ndv, ndl, roughness) * f / (4.0 * ndv * ndl + 1e-4);
+        // Diffuse isn't divided by pi (lights' intensities are as Unity's); specular is
+        // scaled up to match.
+        let kd = (vec3<f32>(1.0) - f) * albedo;
+        color += (kd + spec * PI) * light.color.rgb * ndl * strength;
     }
-    let lit = base * diffuse + specular * 0.04 + m.emission.rgb;
+    // Light from all around: the environment (the ambient colour, for now) seen in the
+    // diffuse and reflected by the specular, with the split-sum approximation.
+    let env_brdf = env_brdf_approx(f0, roughness, ndv);
+    color += albedo * ambient_light(n) + env_brdf * environment(reflect(-v, n), roughness);
+    let lit = color + m.emission.rgb;
     return vec4<f32>(lit * alpha, alpha);
 }

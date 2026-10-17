@@ -11,7 +11,7 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Projection,
-    Shadows, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture,
+    Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture,
     WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
@@ -30,6 +30,8 @@ struct Camera {
     depth: f32,
     /// x, y, width, height from the top-left, 0 to 1.
     rect: [f32; 4],
+    /// Shows the sky behind everything (Unity's skybox clear flag).
+    skybox: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -47,6 +49,7 @@ struct Renderer {
     color: [f32; 4],
     emission: [f32; 3],
     smoothness: f32,
+    metallic: f32,
     unlit: bool,
     texture: Option<u32>,
     tiling: [f32; 4],
@@ -93,6 +96,10 @@ pub struct WorldViews {
     pub bloom: Option<Bloom>,
     /// Shadow distance (metres) and map size (`render.shadowSettings`).
     pub shadow_settings: (f32, u32),
+    /// The sky (`render.sky`), applied by the app before drawing.
+    pub sky: Option<Sky>,
+    /// Reflection / sky light intensity, and whether ambient light comes from the sky.
+    pub environment: (f32, bool),
     /// `emit` requests waiting for the next particle update (which knows where objects are).
     pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
@@ -119,6 +126,8 @@ impl Default for WorldViews {
             particles: BTreeMap::new(),
             bloom: None,
             shadow_settings: (25.0, 2048),
+            sky: None,
+            environment: (1.0, true),
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
@@ -347,7 +356,7 @@ impl WorldViews {
         let id = id_at(0)?;
         match name {
             // `camera component object fov near far [r g b a] depth orthographic
-            // orthographicSize [x y w h]`
+            // orthographicSize [x y w h] clearFlags(skybox|color)`
             "camera" => {
                 let orthographic = matches!(args.get(7), Some(Value::Bool(true)));
                 let projection = if orthographic {
@@ -367,6 +376,7 @@ impl WorldViews {
                     clear: nums::<4>(args.get(5)).unwrap_or([0.05, 0.06, 0.09, 1.0]),
                     depth: num(6).unwrap_or(0.0),
                     rect: nums::<4>(args.get(9)).unwrap_or([0.0, 0.0, 1.0, 1.0]),
+                    skybox: args.get(10).and_then(Value::as_str) == Some("skybox"),
                 };
                 self.cameras.insert(id, camera);
             }
@@ -407,7 +417,7 @@ impl WorldViews {
                 self.mesh_uploads.push((id, Some(data)));
             }
             // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness
-            // unlit texture|null [scale x y, offset x y] castShadows`
+            // unlit texture|null [scale x y, offset x y] castShadows metallic`
             "meshRenderer" => {
                 let mesh = match args.get(2) {
                     Some(Value::String(name)) => {
@@ -421,6 +431,7 @@ impl WorldViews {
                     color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
                     emission: nums::<3>(args.get(4)).unwrap_or([0.0; 3]),
                     smoothness: num(5).unwrap_or(0.5),
+                    metallic: num(10).unwrap_or(0.0).clamp(0.0, 1.0),
                     unlit: matches!(args.get(6), Some(Value::Bool(true))),
                     texture: match args.get(7) {
                         Some(Value::Null) | None => None,
@@ -519,6 +530,27 @@ impl WorldViews {
                     }
                     other => return Err(format!("unknown particle action {other:?}")),
                 }
+            }
+            // `sky 0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]|null [sun rgb]
+            // sunSize intensity ambientFromSky`; `sky 0 null` removes it.
+            "sky" => {
+                if matches!(args.get(1), Some(Value::Null) | None) {
+                    self.sky = None;
+                    return Ok(());
+                }
+                let d = Sky::default();
+                self.sky = Some(Sky {
+                    zenith: nums::<3>(args.get(1)).unwrap_or(d.zenith),
+                    horizon: nums::<3>(args.get(2)).unwrap_or(d.horizon),
+                    ground: nums::<3>(args.get(3)).unwrap_or(d.ground),
+                    sun_direction: nums::<3>(args.get(4)).map(Vec3::from_array),
+                    sun_color: nums::<3>(args.get(5)).unwrap_or(d.sun_color),
+                    sun_size: num(6).unwrap_or(d.sun_size),
+                });
+                self.environment = (
+                    num(7).unwrap_or(1.0).max(0.0),
+                    !matches!(args.get(8), Some(Value::Bool(false))),
+                );
             }
             // `shadowSettings 0 distance resolution` (Unity's quality settings).
             "shadowSettings" => {
@@ -643,6 +675,7 @@ impl WorldViews {
                     color: r.color,
                     emission: r.emission,
                     smoothness: r.smoothness,
+                    metallic: r.metallic,
                     unlit: r.unlit,
                     texture: r.texture.map(WorldTexture::Asset),
                     tiling: r.tiling,
@@ -677,6 +710,7 @@ impl WorldViews {
                             color: [r / peak, g / peak, b / peak, 1.0],
                             emission: [0.0; 3],
                             smoothness: 0.0,
+                            metallic: 0.0,
                             unlit: true,
                             texture: None,
                             tiling: [1.0, 1.0, 0.0, 0.0],
@@ -763,6 +797,7 @@ impl WorldViews {
                     meshes: meshes.clone(),
                     lights: lights.clone(),
                     ambient: self.ambient,
+                    skybox: camera.skybox,
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

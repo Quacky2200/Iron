@@ -13,6 +13,7 @@ interface ModelMaterial {
   color: [number, number, number, number];
   emission: [number, number, number];
   smoothness: number;
+  metallic: number;
   unlit: boolean;
   /** [id, width, height] of the base colour texture. */
   texture: [number, number, number] | null;
@@ -148,6 +149,7 @@ export class Model {
           texture,
           Vector2.one,
           Vector2.zero,
+          m.metallic ?? 0,
         );
       });
       this.meshes = description.nodes.flatMap((n) => n.primitives.map((p) => Mesh._engine(p.mesh)));

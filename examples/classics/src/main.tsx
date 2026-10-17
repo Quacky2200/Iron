@@ -34,9 +34,17 @@ class Turntable extends Component {
 class Gallery extends Component {
   override onStart() {
     const cam = new GameObject("Main Camera");
-    cam.addComponent(Camera, { fieldOfView: 45, backgroundColor: Color.hex("#14161c") });
+    cam.addComponent(Camera, { fieldOfView: 45, clearFlags: "skybox" });
     cam.addComponent(CameraOrbit, { center: new Vector3(0, 0.8, 0), distance: 6.5, pitch: 18, yaw: 10, autoRotate: 6 });
-    RenderSettings.ambientLight = new Color(0.12, 0.12, 0.14);
+    // A dusk sky: reflections (the silver spoon, the glazed teapot) and soft sky light.
+    RenderSettings.skybox = {
+      zenith: new Color(0.05, 0.07, 0.14, 1),
+      horizon: new Color(0.45, 0.32, 0.28, 1),
+      ground: new Color(0.06, 0.06, 0.07, 1),
+      sunDirection: new Vector3(-0.6, 0.15, -0.8),
+      sunColor: new Color(12, 7, 4, 1),
+      sunSize: 3,
+    };
 
     const floor = new GameObject("Floor", { scale: Vector3.one.scale(1.6) });
     floor.addComponent(MeshRenderer, { mesh: "plane", material: new Material(Color.hex("#3a3f4b"), Color.black, 0.5) });

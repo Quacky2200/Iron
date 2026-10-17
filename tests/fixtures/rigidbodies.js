@@ -1687,7 +1687,8 @@ ${err.stack}` : ""}`);
     mainTexture;
     mainTextureScale;
     mainTextureOffset;
-    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false, mainTexture = null, mainTextureScale = Vector2.one, mainTextureOffset = Vector2.zero) {
+    metallic;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false, mainTexture = null, mainTextureScale = Vector2.one, mainTextureOffset = Vector2.zero, metallic = 0) {
       this.color = color;
       this.emission = emission;
       this.smoothness = smoothness;
@@ -1695,12 +1696,20 @@ ${err.stack}` : ""}`);
       this.mainTexture = mainTexture;
       this.mainTextureScale = mainTextureScale;
       this.mainTextureOffset = mainTextureOffset;
+      this.metallic = metallic;
+    }
+    static create(o = {}) {
+      return new Material().with(o);
+    }
+    with(o) {
+      const v2 = (v, d) => v ? new Vector2(v.x, v.y) : d;
+      return new Material(o.color ?? this.color, o.emission ?? this.emission, o.smoothness ?? this.smoothness, o.unlit ?? this.unlit, o.mainTexture === undefined ? this.mainTexture : o.mainTexture, v2(o.mainTextureScale, this.mainTextureScale), v2(o.mainTextureOffset, this.mainTextureOffset), o.metallic ?? this.metallic);
     }
     withColor(color) {
-      return new Material(color, this.emission, this.smoothness, this.unlit, this.mainTexture, this.mainTextureScale, this.mainTextureOffset);
+      return this.with({ color });
     }
     withTexture(texture, scale = Vector2.one, offset = Vector2.zero) {
-      return new Material(this.color, this.emission, this.smoothness, this.unlit, texture, new Vector2(scale.x, scale.y), new Vector2(offset.x, offset.y));
+      return this.with({ mainTexture: texture, mainTextureScale: scale, mainTextureOffset: offset });
     }
   }
   var nextMesh = 1;
@@ -1756,7 +1765,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off");
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic);
     }
     onAwake() {
       this.started = true;

@@ -78,6 +78,20 @@ export class Camera extends Component {
     this.send();
   }
 
+  private _clearFlags: "skybox" | "solidColor" = "solidColor";
+  /**
+   * What's behind everything (Unity's `clearFlags`): `skybox` shows
+   * `RenderSettings.skybox` (the background colour without one), `solidColor` the
+   * background colour.
+   */
+  get clearFlags(): "skybox" | "solidColor" {
+    return this._clearFlags;
+  }
+  set clearFlags(f: "skybox" | "solidColor") {
+    this._clearFlags = f;
+    this.send();
+  }
+
   /** Draw order: cameras with a higher depth draw over lower ones. */
   get depth(): number {
     return this._depth;
@@ -226,6 +240,7 @@ export class Camera extends Component {
       this._orthographic,
       this._orthographicSize,
       [r.x, r.y, r.width, r.height],
+      this._clearFlags === "skybox" ? "skybox" : "color",
     );
   }
 
@@ -445,13 +460,31 @@ export class WorldPanel extends Component {
 }
 
 /** How a surface looks: Unity's `Material` (the standard shader's main settings). */
+/** Settings for `Material.create` / `with`; anything left out keeps its default (or value). */
+export interface MaterialOptions {
+  color?: Color;
+  emission?: Color;
+  smoothness?: number;
+  metallic?: number;
+  unlit?: boolean;
+  mainTexture?: Texture | null;
+  mainTextureScale?: Vector2Like;
+  mainTextureOffset?: Vector2Like;
+}
+
+/**
+ * How a mesh looks: Unity's Standard material (metallic workflow). Physically based:
+ * `smoothness` 0 is rough (matte), 1 a polished mirror; `metallic` 1 makes it a metal
+ * (coloured reflections, no diffuse). Reflections show the sky or the nearest
+ * reflection probe.
+ */
 export class Material {
   constructor(
-    /** Base colour (linear; alpha below 1 makes it see-through). */
+    /** Base colour (linear; alpha below 1 makes it see-through). For metals, the reflection's tint. */
     readonly color: Color = Color.white,
     /** Light it gives off by itself (linear, can exceed 1 for glow). */
     readonly emission: Color = Color.black,
-    /** 0 (matte) to 1 (glossy): how sharp highlights are. */
+    /** 0 (rough, matte) to 1 (polished, mirror-like): 1 - roughness. */
     readonly smoothness = 0.5,
     /** Ignore lights: just the colour plus emission. */
     readonly unlit = false,
@@ -461,24 +494,38 @@ export class Material {
     readonly mainTextureScale: Vector2 = Vector2.one,
     /** Where the texture starts (in its 0..1 space). */
     readonly mainTextureOffset: Vector2 = Vector2.zero,
+    /** 0 (plastic, stone, wood, skin) to 1 (metal). */
+    readonly metallic = 0,
   ) {}
+
+  /** A material from named settings: `Material.create({ color, metallic: 1, smoothness: 0.9 })`. */
+  static create(o: MaterialOptions = {}): Material {
+    return new Material().with(o);
+  }
+
+  /** A copy with some settings changed. */
+  with(o: MaterialOptions): Material {
+    const v2 = (v: Vector2Like | undefined, d: Vector2) => (v ? new Vector2(v.x, v.y) : d);
+    return new Material(
+      o.color ?? this.color,
+      o.emission ?? this.emission,
+      o.smoothness ?? this.smoothness,
+      o.unlit ?? this.unlit,
+      o.mainTexture === undefined ? this.mainTexture : o.mainTexture,
+      v2(o.mainTextureScale, this.mainTextureScale),
+      v2(o.mainTextureOffset, this.mainTextureOffset),
+      o.metallic ?? this.metallic,
+    );
+  }
 
   /** A copy with another colour. */
   withColor(color: Color): Material {
-    return new Material(color, this.emission, this.smoothness, this.unlit, this.mainTexture, this.mainTextureScale, this.mainTextureOffset);
+    return this.with({ color });
   }
 
   /** A copy with a texture, repeated `scale` times from `offset`. */
   withTexture(texture: Texture | null, scale: Vector2Like = Vector2.one, offset: Vector2Like = Vector2.zero): Material {
-    return new Material(
-      this.color,
-      this.emission,
-      this.smoothness,
-      this.unlit,
-      texture,
-      new Vector2(scale.x, scale.y),
-      new Vector2(offset.x, offset.y),
-    );
+    return this.with({ mainTexture: texture, mainTextureScale: scale, mainTextureOffset: offset });
   }
 }
 
@@ -588,6 +635,7 @@ export class MeshRenderer extends Component {
       m.mainTexture?.id ?? null,
       [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y],
       this._shadowCastingMode !== "off",
+      m.metallic,
     );
   }
 
@@ -779,6 +827,48 @@ export interface BloomSettings {
 
 let bloom: BloomSettings | null = null;
 
+/**
+ * A procedural sky (Unity's procedural skybox): gradients from the zenith to the horizon
+ * to the ground, and a sun disc. Colours are linear and can exceed 1 (the sun usually
+ * does, so it glows and shows in shiny things).
+ */
+export interface ProceduralSky {
+  zenith?: Color;
+  horizon?: Color;
+  ground?: Color;
+  /** Towards the sun; `null` for no sun disc. */
+  sunDirection?: Vector3Like | null;
+  sunColor?: Color;
+  /** The disc's size in degrees. */
+  sunSize?: number;
+}
+
+let skybox: ProceduralSky | null = null;
+let ambientMode: "skybox" | "color" = "skybox";
+let reflectionIntensity = 1;
+
+function sendSky(): void {
+  if (!skybox) {
+    __iron_op("render.sky", 0, null);
+    return;
+  }
+  const s = skybox;
+  const rgb = (c: Color | undefined) => (c ? [c.r, c.g, c.b] : null);
+  const sun = s.sunDirection === null ? null : s.sunDirection ? [s.sunDirection.x, s.sunDirection.y, s.sunDirection.z] : [0.4, 0.6, 0.3];
+  __iron_op(
+    "render.sky",
+    0,
+    rgb(s.zenith) ?? [0.16, 0.32, 0.62],
+    rgb(s.horizon) ?? [0.62, 0.72, 0.82],
+    rgb(s.ground) ?? [0.22, 0.2, 0.18],
+    sun,
+    rgb(s.sunColor) ?? [20, 18, 15],
+    s.sunSize ?? 1.5,
+    reflectionIntensity,
+    ambientMode === "skybox",
+  );
+}
+
 /** Scene-wide lighting (Unity's `RenderSettings`). */
 export const RenderSettings = {
   /** Light everything gets regardless of lights (linear). */
@@ -788,6 +878,34 @@ export const RenderSettings = {
   set ambientLight(c: Color) {
     ambient = c;
     __iron_op("render.ambient", 0, [c.r, c.g, c.b]);
+  },
+  /**
+   * The sky: what reflections show, where sky light comes from, and what cameras with
+   * `clearFlags: "skybox"` show behind everything. `null` (the default) means none:
+   * reflections then show the ambient colour.
+   */
+  get skybox(): ProceduralSky | null {
+    return skybox;
+  },
+  set skybox(s: ProceduralSky | null) {
+    skybox = s ? { ...s } : null;
+    sendSky();
+  },
+  /** Where ambient light comes from: the sky (`skybox`, with one) or `ambientLight`. */
+  get ambientMode(): "skybox" | "color" {
+    return ambientMode;
+  },
+  set ambientMode(m: "skybox" | "color") {
+    ambientMode = m;
+    if (skybox) sendSky();
+  },
+  /** How bright the sky's reflections and light are. */
+  get reflectionIntensity(): number {
+    return reflectionIntensity;
+  },
+  set reflectionIntensity(i: number) {
+    reflectionIntensity = i;
+    if (skybox) sendSky();
   },
   /** Bloom over every camera (`null`: off, the default). */
   get bloom(): BloomSettings | null {

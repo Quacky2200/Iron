@@ -10,6 +10,7 @@
 //! passed to each render) or kept by the renderer ([`WorldRenderer::set_texture`]).
 
 pub mod bloom;
+pub mod environment;
 pub mod mesh;
 pub mod texture;
 
@@ -21,6 +22,7 @@ use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
 pub use bloom::Bloom;
+pub use environment::Sky;
 pub use mesh::{MeshData, primitive};
 pub use texture::{TextureData, TextureFilter, TextureWrap};
 
@@ -195,8 +197,10 @@ pub struct MeshInstance {
     pub color: [f32; 4],
     /// Linear light it gives off on its own (not lighting anything else).
     pub emission: [f32; 3],
-    /// 0 (matte) to 1 (glossy): how sharp highlights are.
+    /// 0 (matte) to 1 (mirror): 1 - roughness, Unity's name.
     pub smoothness: f32,
+    /// 0 (plastic, stone, wood) to 1 (metal: tinted reflections, no diffuse).
+    pub metallic: f32,
     /// Ignores lights: just its colour (and emission).
     pub unlit: bool,
     /// Multiplies the colour; `None` is plain colour.
@@ -220,6 +224,9 @@ pub struct WorldView {
     pub lights: Vec<Light>,
     /// Linear light everything gets regardless of lights.
     pub ambient: [f32; 3],
+    /// Fill the background with the sky ([`WorldRenderer::set_sky`]) instead of the
+    /// camera's colour (Unity's skybox clear flag).
+    pub skybox: bool,
 }
 
 impl WorldView {
@@ -232,6 +239,7 @@ impl WorldView {
             meshes: Vec::new(),
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
+            skybox: false,
         }
     }
 }
@@ -310,6 +318,15 @@ struct GpuGlobals {
     /// x: index of the shadowed light (-1: none); y: strength; z: a shadow-map texel in
     /// metres (for the normal offset); w: 1 for soft.
     shadow: [f32; 4],
+    /// Screen pixel to world direction, for the skybox.
+    inv_view_proj: [[f32; 4]; 4],
+    /// The view's viewport in target pixels: x, y, width, height.
+    viewport: [f32; 4],
+    /// x: 1 with an environment map; y: its intensity; z: its last mip; w: 1 when ambient
+    /// light comes from it.
+    env: [f32; 4],
+    /// x: 1 to draw the sky as the background.
+    flags: [f32; 4],
 }
 
 #[repr(C)]
@@ -368,6 +385,18 @@ pub struct WorldRenderer {
     pub shadow_distance: f32,
     /// The shadow map's size in texels.
     pub shadow_resolution: u32,
+    /// Fills environment maps (made on first use).
+    env_pass: Option<environment::EnvPass>,
+    /// The sky's environment map; a 1-texel black cube until there's a sky.
+    env_map: environment::EnvMap,
+    sky: Option<Sky>,
+    sky_dirty: bool,
+    env_sampler: wgpu::Sampler,
+    /// How bright reflections and sky light are (Unity's `reflectionIntensity`).
+    pub environment_intensity: f32,
+    /// Ambient light from the sky (Unity's `ambientMode` skybox) rather than each view's
+    /// `ambient` colour, when there's a sky.
+    pub ambient_from_sky: bool,
     texture_layout: wgpu::BindGroupLayout,
     /// One `GpuGlobals` per view, `stride` bytes apart (a dynamic offset picks one).
     globals: wgpu::Buffer,
@@ -467,6 +496,23 @@ impl WorldRenderer {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+                // The environment cube, for reflections, sky light and the skybox.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -569,6 +615,19 @@ impl WorldRenderer {
             shadow_map: None,
             shadow_distance: 25.0,
             shadow_resolution: 2048,
+            env_pass: None,
+            env_map: environment::EnvMap::new(gpu, 1),
+            sky: None,
+            sky_dirty: false,
+            env_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("environment"),
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::MipmapFilterMode::Linear,
+                ..Default::default()
+            }),
+            environment_intensity: 1.0,
+            ambient_from_sky: true,
             texture_layout,
             globals: Self::buffer(
                 gpu,
@@ -775,6 +834,35 @@ impl WorldRenderer {
     /// A kept texture's size in pixels.
     pub fn texture_size(&self, id: u32) -> Option<(u32, u32)> {
         self.textures.get(&id).map(|t| t.size)
+    }
+
+    /// Sets (or clears) the sky: the environment reflections and sky light come from, and
+    /// what views with `skybox` show behind everything. Redrawn on the next render.
+    pub fn set_sky(&mut self, sky: Option<Sky>) {
+        if self.sky != sky {
+            self.sky = sky;
+            self.sky_dirty = true;
+        }
+    }
+
+    pub fn sky(&self) -> Option<&Sky> {
+        self.sky.as_ref()
+    }
+
+    /// Draws the sky into a fresh environment map (or drops it with no sky).
+    fn redraw_sky(&mut self, gpu: &Gpu) {
+        let Some(sky) = self.sky else {
+            self.env_map = environment::EnvMap::new(gpu, 1);
+            return;
+        };
+        let pass = self
+            .env_pass
+            .get_or_insert_with(|| environment::EnvPass::new(gpu));
+        let map = environment::EnvMap::new(gpu, 128);
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        pass.draw_sky(gpu, &mut encoder, &map, &sky);
+        gpu.queue.submit([encoder.finish()]);
+        self.env_map = map;
     }
 
     /// The shadow map, made (or remade) at `shadow_resolution`.
@@ -1009,6 +1097,10 @@ impl WorldRenderer {
         let pipelines = self.pipelines(gpu, color_format);
         let depth = self.depth_view(gpu, size);
         let shadow_view = self.shadow_view(gpu);
+        if self.sky_dirty {
+            self.sky_dirty = false;
+            self.redraw_sky(gpu);
+        }
 
         // Everything for every view in shared buffers, with runs per view: opaque meshes
         // (grouped by mesh), then see-through meshes and quads back to front.
@@ -1045,7 +1137,7 @@ impl WorldRenderer {
                             MeshGlow::Additive => 1.0,
                             MeshGlow::Beam => 2.0,
                         },
-                        0.0,
+                        m.metallic,
                         0.0,
                     ],
                     tiling: m.tiling,
@@ -1214,7 +1306,14 @@ impl WorldRenderer {
                 self.shadow_matrix(&view.camera, light.direction),
             ))
         });
-        let shadow_texel = 2.0 * self.shadow_distance / 2.0 / self.shadow_resolution.max(1) as f32;
+        let shadow_texel = self.shadow_distance / self.shadow_resolution.max(1) as f32;
+        let has_env = self.sky.is_some();
+        let env = [
+            f32::from(u8::from(has_env)),
+            self.environment_intensity,
+            (self.env_map.mips - 1) as f32,
+            f32::from(u8::from(has_env && self.ambient_from_sky)),
+        ];
         for (i, view) in views.iter().enumerate() {
             let c = view.camera.clear;
             let p = view.camera.position;
@@ -1244,6 +1343,11 @@ impl WorldRenderer {
                 ambient: [view.ambient[0], view.ambient[1], view.ambient[2], count],
                 shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
                 shadow: shadow_params,
+                inv_view_proj: view.camera.view_proj.inverse().to_cols_array_2d(),
+                viewport: viewport_px(view.viewport, size)
+                    .map_or([0.0, 0.0, 1.0, 1.0], |p| p.map(|v| v as f32)),
+                env,
+                flags: [f32::from(u8::from(view.skybox && has_env)), 0.0, 0.0, 0.0],
             };
             gpu.queue.write_buffer(
                 &self.globals,
@@ -1334,6 +1438,14 @@ impl WorldRenderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&self.env_map.cube),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.env_sampler),
                 },
             ],
         });
