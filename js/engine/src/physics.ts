@@ -307,7 +307,42 @@ export class PhysicsBody {
   }
 }
 
+export type JointKind = "fixed" | "ball" | "hinge" | "spring" | "rope";
+
+let nextJoint = 1;
+
+/** A joint between two bodies (or a body and the world). */
+export class PhysicsJoint {
+  readonly id: number;
+  /** @internal Use `physics.createJoint()`. */
+  constructor(
+    readonly kind: JointKind,
+    a: PhysicsBody,
+    b: PhysicsBody | null,
+    anchorA: Vec3,
+    anchorB: Vec3,
+    params: number[] = [],
+  ) {
+    this.id = nextJoint++;
+    __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec(anchorA), vec(anchorB), params);
+  }
+
+  remove(): void {
+    __iron_op("physics.removeJoint", this.id);
+  }
+}
+
 export const physics = {
+  /**
+   * Joins body `a` to `b` (or the world, with `null`) at anchors in their own spaces (the
+   * world's, for `b` null). `params`: hinge [axis x, y, z, use limits 0/1, min, max
+   * (degrees), use motor 0/1, speed (degrees/s), strength]; spring [rest length,
+   * stiffness, damping]; rope [max length].
+   */
+  createJoint(kind: JointKind, a: PhysicsBody, b: PhysicsBody | null, anchorA: Vec3, anchorB: Vec3, params?: number[]): PhysicsJoint {
+    return new PhysicsJoint(kind, a, b, anchorA, anchorB, params);
+  },
+
   createBody(options?: BodyOptions): PhysicsBody {
     return new PhysicsBody(options);
   },
@@ -359,7 +394,7 @@ export function _resetPhysicsForTests() {
   bodies.clear();
   colliders.clear();
   queries.clear();
-  nextBody = nextCollider = nextQuery = 1;
+  nextBody = nextCollider = nextQuery = nextJoint = 1;
 }
 
 // Flat arrays, as documented on `Batch::to_args` (crates/iron_physics).

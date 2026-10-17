@@ -24,6 +24,7 @@ import {
   MeshRenderer,
   Random,
   Rigidbody,
+  Rope,
 } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
@@ -96,6 +97,13 @@ class World extends Component {
     const menu = new GameObject("Menu", { position: new Vector3(0, 3.1, -3.5), rotation: Quaternion.euler(-10, 0, 0) });
     const panel = menu.addComponent(WorldPanel, { width: 640, height: 400, pixelsPerMeter: 170 });
     createRoot(panel).render(<Menu />);
+
+    // A ball on a rope, hung from a point beside the ring and swinging.
+    const ball = GameObject.createPrimitive("sphere", { position: new Vector3(4.6, 1.3, 1), scale: Vector3.one.scale(0.6) });
+    const ballBody = ball.addComponent(Rigidbody, { mass: 2 });
+    ball.getComponent(MeshRenderer)!.material = new Material(Color.hex("#f2f2f2"), Color.black, 0.9);
+    const hook = new GameObject("Hook", { position: new Vector3(3.2, 3.6, 1) });
+    hook.addComponent(Rope, { length: 2.7, segments: 10, radius: 0.03, end: ballBody });
 
     // A see-through pane in the middle.
     const glass = new GameObject("Glass", { position: new Vector3(0, 1, 0), rotation: Quaternion.euler(90, 0, 0) });

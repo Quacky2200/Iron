@@ -1243,7 +1243,24 @@ ${err.stack}` : ""}`);
       __iron_op("physics.removeBody", this.id);
     }
   }
+  var nextJoint = 1;
+
+  class PhysicsJoint {
+    kind;
+    id;
+    constructor(kind, a, b, anchorA, anchorB, params = []) {
+      this.kind = kind;
+      this.id = nextJoint++;
+      __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec(anchorA), vec(anchorB), params);
+    }
+    remove() {
+      __iron_op("physics.removeJoint", this.id);
+    }
+  }
   var physics = {
+    createJoint(kind, a, b, anchorA, anchorB, params) {
+      return new PhysicsJoint(kind, a, b, anchorA, anchorB, params);
+    },
     createBody(options) {
       return new PhysicsBody(options);
     },
@@ -1913,6 +1930,67 @@ ${err.stack}` : ""}`);
     }
   };
 
+  // ../../js/engine/src/screen.ts
+  var width = 1280;
+  var height = 720;
+  var scale = 1;
+  globalThis.__iron_screen = (w, h, s) => {
+    width = w;
+    height = h;
+    scale = s;
+  };
+
+  // ../../js/engine/src/rendering.ts
+  var rgba = (c) => [c.r, c.g, c.b, c.a];
+  class Material {
+    color;
+    emission;
+    smoothness;
+    unlit;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
+      this.color = color;
+      this.emission = emission;
+      this.smoothness = smoothness;
+      this.unlit = unlit;
+    }
+    withColor(color) {
+      return new Material(color, this.emission, this.smoothness, this.unlit);
+    }
+  }
+  class MeshRenderer extends Component {
+    _mesh = "cube";
+    _material = new Material;
+    started = false;
+    get mesh() {
+      return this._mesh;
+    }
+    set mesh(m) {
+      this._mesh = m;
+      this.send();
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const m = this._material;
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var ambient = new Color(0.2, 0.2, 0.22);
+
   // ../../js/engine/src/physics-components.ts
   class PhysicsMaterial {
     dynamicFriction;
@@ -2105,66 +2183,6 @@ ${err.stack}` : ""}`);
       }
     }
   });
-  // ../../js/engine/src/screen.ts
-  var width = 1280;
-  var height = 720;
-  var scale = 1;
-  globalThis.__iron_screen = (w, h, s) => {
-    width = w;
-    height = h;
-    scale = s;
-  };
-
-  // ../../js/engine/src/rendering.ts
-  var rgba = (c) => [c.r, c.g, c.b, c.a];
-  class Material {
-    color;
-    emission;
-    smoothness;
-    unlit;
-    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
-      this.color = color;
-      this.emission = emission;
-      this.smoothness = smoothness;
-      this.unlit = unlit;
-    }
-    withColor(color) {
-      return new Material(color, this.emission, this.smoothness, this.unlit);
-    }
-  }
-  class MeshRenderer extends Component {
-    _mesh = "cube";
-    _material = new Material;
-    started = false;
-    get mesh() {
-      return this._mesh;
-    }
-    set mesh(m) {
-      this._mesh = m;
-      this.send();
-    }
-    get material() {
-      return this._material;
-    }
-    set material(m) {
-      this._material = m;
-      this.send();
-    }
-    send() {
-      if (!this.started)
-        return;
-      const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
-    }
-    onAwake() {
-      this.started = true;
-      this.send();
-    }
-    onDestroy() {
-      __iron_op("render.remove", this.id);
-    }
-  }
-  var ambient = new Color(0.2, 0.2, 0.22);
   // ../../js/engine/src/primitives.ts
   function createPrimitive(type, options = {}) {
     const name = options.name ?? type[0].toUpperCase() + type.slice(1);

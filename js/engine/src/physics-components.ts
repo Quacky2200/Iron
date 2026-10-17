@@ -10,9 +10,11 @@
 // Built on the lower-level `physics` handles (physics.ts). Collider sizes take the
 // object's scale when the collider is added; changing the scale later doesn't resize it.
 
-import { Mathf, Vector3, type Vector3Like } from "./math.ts";
-import { type PhysicsBody, type PhysicsCollider, contactListeners, physics, type Shape } from "./physics.ts";
-import { Component, type GameObject } from "./scene.ts";
+import { Time } from "./clock.ts";
+import { Color, Mathf, Quaternion, Vector3, type Vector3Like } from "./math.ts";
+import { contactListeners, type PhysicsBody, type PhysicsCollider, type PhysicsJoint, physics, type Shape } from "./physics.ts";
+import { Material, MeshRenderer } from "./rendering.ts";
+import { Component, GameObject } from "./scene.ts";
 
 /** How `Rigidbody.addForce` treats its vector (Unity's `ForceMode`). */
 export enum ForceMode {
@@ -141,7 +143,7 @@ export abstract class Collider extends Component {
     this.create();
   }
 
-  private create(): void {
+  protected create(): void {
     const p = physicsFor(this.gameObject);
     const scale = this.gameObject.transform.lossyScale;
     this.handle = p.body.addCollider({
@@ -481,4 +483,300 @@ contactListeners.push((a, b, started, sensor, speed) => {
 export function _resetPhysicsComponentsForTests() {
   objectPhysics.clear();
   colliderOwners.clear();
+}
+
+/** What a `CharacterController.move` touched (Unity's flags). */
+export const CollisionFlags = { None: 0, Sides: 1, Above: 2, Below: 4 } as const;
+
+/**
+ * Moves a character that walks rather than tumbles (Unity's `CharacterController`): a
+ * capsule that slides along walls, climbs slopes up to `slopeLimit` and steps up to
+ * `stepOffset`, moved only by `move` / `simpleMove`. Physics doesn't push it, and it
+ * pushes nothing; use a Rigidbody for that.
+ */
+export class CharacterController extends Collider {
+  private _radius = 0.5;
+  private _height = 2;
+  private _slopeLimit = 45;
+  private _stepOffset = 0.3;
+  private fallSpeed = 0;
+  private last = Vector3.zero;
+  private _velocity = Vector3.zero;
+
+  get radius(): number {
+    return this._radius;
+  }
+  set radius(r: number) {
+    this._radius = r;
+    this.rebuild();
+  }
+  get height(): number {
+    return this._height;
+  }
+  set height(h: number) {
+    this._height = h;
+    this.rebuild();
+  }
+  /** The steepest slope it walks up, in degrees. */
+  get slopeLimit(): number {
+    return this._slopeLimit;
+  }
+  set slopeLimit(d: number) {
+    this._slopeLimit = d;
+    this.configure();
+  }
+  /** The highest step it climbs, in metres. */
+  get stepOffset(): number {
+    return this._stepOffset;
+  }
+  set stepOffset(h: number) {
+    this._stepOffset = h;
+    this.configure();
+  }
+
+  /** Whether it touched the ground on its last move (as of the last physics step). */
+  get isGrounded(): boolean {
+    return objectPhysics.get(this.gameObject)?.body.grounded ?? false;
+  }
+
+  /** How fast it actually moved last frame (m/s). */
+  get velocity(): Vector3 {
+    return this._velocity;
+  }
+
+  protected shape(scale: Vector3): Shape {
+    const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
+    const halfHeight = Math.max(0, (this._height * Math.abs(scale.y)) / 2 - radius);
+    return { capsule: { halfHeight, radius } };
+  }
+
+  private configure(): void {
+    const body = objectPhysics.get(this.gameObject)?.body;
+    body?.makeCharacter({ maxSlope: this._slopeLimit, snapToGround: this._stepOffset, stepHeight: this._stepOffset });
+  }
+
+  override onAwake(): void {
+    this.create();
+    objectPhysics.get(this.gameObject)!.body.setKind("kinematic");
+    this.configure();
+    this.last = this.transform.position;
+  }
+
+  override onUpdate(dt: number): void {
+    const now = this.transform.position;
+    this._velocity = dt > 0 ? now.sub(this.last).scale(1 / dt) : Vector3.zero;
+    this.last = now;
+  }
+
+  /**
+   * Moves by `motion` (metres, world space) on the next physics step, sliding along what
+   * it hits. Returns `CollisionFlags.Below` if it was on the ground after its last move.
+   */
+  move(motion: Vector3Like): number {
+    objectPhysics.get(this.gameObject)?.body.move(motion);
+    return this.isGrounded ? CollisionFlags.Below : CollisionFlags.None;
+  }
+
+  /**
+   * Walks at `speed` (m/s, its y ignored) with gravity, for this frame (Unity's
+   * `SimpleMove`). Returns whether it's grounded.
+   */
+  simpleMove(speed: Vector3Like): boolean {
+    const dt = Time.deltaTime;
+    // A little downward pull on the ground keeps it grounded on slopes.
+    this.fallSpeed = this.isGrounded ? 1 : this.fallSpeed + 9.81 * dt;
+    this.move(new Vector3(speed.x * dt, -this.fallSpeed * dt, speed.z * dt));
+    return this.isGrounded;
+  }
+}
+
+/**
+ * Joins this object's Rigidbody to `connectedBody` (or to the world, when that's null),
+ * like Unity's joints. `anchor` is in this object's space; `connectedAnchor` in the
+ * connected body's (or the world's), worked out from where they are now unless
+ * `autoConfigureConnectedAnchor` is off. Made when the component starts.
+ */
+export abstract class Joint extends Component {
+  connectedBody: Rigidbody | null = null;
+  anchor = Vector3.zero;
+  connectedAnchor = Vector3.zero;
+  autoConfigureConnectedAnchor = true;
+  protected handle: PhysicsJoint | null = null;
+
+  protected abstract kind(): "fixed" | "ball" | "hinge" | "spring" | "rope";
+  protected params(): number[] {
+    return [];
+  }
+
+  /** (Re)creates the joint with the current settings. */
+  protected build(): void {
+    this.handle?.remove();
+    this.handle = null;
+    const body = objectPhysics.get(this.gameObject)?.body;
+    if (!body) {
+      console.warn(`${this.constructor.name} on ${this.gameObject.name} needs a Rigidbody`);
+      return;
+    }
+    const anchor = this.anchor.mul(this.transform.lossyScale);
+    const other = this.connectedBody?.body ?? null;
+    if (this.autoConfigureConnectedAnchor) {
+      const world = this.transform.transformPoint(this.anchor);
+      const t = this.connectedBody?.transform;
+      // Physics bodies don't scale, so the connected anchor is in its unscaled space.
+      this.connectedAnchor = t ? t.rotation.inverse().rotate(world.sub(t.position)) : world;
+    }
+    this.handle = physics.createJoint(this.kind(), body, other, anchor, this.connectedAnchor, this.params());
+  }
+
+  override onStart(): void {
+    this.build();
+  }
+
+  override onDestroy(): void {
+    this.handle?.remove();
+    this.handle = null;
+  }
+}
+
+/** Holds two bodies rigidly together (Unity's `FixedJoint`). */
+export class FixedJoint extends Joint {
+  protected kind() {
+    return "fixed" as const;
+  }
+}
+
+/** Lets the bodies turn freely about the anchor, ball-and-socket style (ragdoll limbs, chains). */
+export class CharacterJoint extends Joint {
+  protected kind() {
+    return "ball" as const;
+  }
+}
+
+/** Unity's `JointLimits`: the hinge's range in degrees. */
+export interface JointLimits {
+  min: number;
+  max: number;
+}
+
+/** Unity's `JointMotor`: drive the hinge at `targetVelocity` degrees per second. */
+export interface JointMotor {
+  targetVelocity: number;
+  /** How hard it pushes towards that speed. */
+  force: number;
+}
+
+/** A hinge about `axis` (doors, wheels, levers), with optional limits and a motor. */
+export class HingeJoint extends Joint {
+  axis = new Vector3(1, 0, 0);
+  useLimits = false;
+  limits: JointLimits = { min: -90, max: 90 };
+  useMotor = false;
+  motor: JointMotor = { targetVelocity: 0, force: 1 };
+
+  protected kind() {
+    return "hinge" as const;
+  }
+  protected override params(): number[] {
+    const a = this.axis;
+    return [a.x, a.y, a.z, this.useLimits ? 1 : 0, this.limits.min, this.limits.max, this.useMotor ? 1 : 0, this.motor.targetVelocity, this.motor.force];
+  }
+  /** Applies changed limits or motor settings. */
+  refresh(): void {
+    if (this.handle) this.build();
+  }
+}
+
+/** Pulls the bodies towards `restLength` apart like a spring (Unity's `SpringJoint`). */
+export class SpringJoint extends Joint {
+  /** Stiffness. */
+  spring = 10;
+  /** Damping. */
+  damper = 0.2;
+  /** The length it rests at; by default, the distance when it's made. */
+  restLength: number | null = null;
+
+  protected kind() {
+    return "spring" as const;
+  }
+  protected override params(): number[] {
+    let rest = this.restLength;
+    if (rest === null) {
+      const world = this.transform.transformPoint(this.anchor);
+      const t = this.connectedBody?.transform;
+      const other = t ? t.position.add(t.rotation.rotate(this.connectedAnchor)) : this.connectedAnchor;
+      rest = world.distance(other);
+    }
+    return [rest, this.spring, this.damper];
+  }
+}
+
+/** Keeps the bodies at most `maxDistance` apart, slack within it: a rope without segments. */
+export class RopeJoint extends Joint {
+  maxDistance = 2;
+  protected kind() {
+    return "rope" as const;
+  }
+  protected override params(): number[] {
+    return [this.maxDistance];
+  }
+}
+
+/**
+ * A rope you can see and hit: a chain of capsule segments with Rigidbodies joined by
+ * ball joints, hanging from this object (its Rigidbody, or the world where it is) to
+ * `end` (a Rigidbody it holds, optional). Made when the component starts.
+ */
+export class Rope extends Component {
+  /** Total length in metres. */
+  length = 3;
+  segments = 12;
+  radius = 0.04;
+  /** Each segment's mass in kg. */
+  segmentMass = 0.05;
+  color = new Color(0.55, 0.42, 0.28, 1);
+  /** What the far end holds, if anything. */
+  end: Rigidbody | null = null;
+  /** The segment objects (they hang in the world, not under this object). */
+  readonly links: GameObject[] = [];
+  private joints: PhysicsJoint[] = [];
+
+  override onStart(): void {
+    const start = this.transform.position;
+    const toEnd = this.end ? this.end.transform.position.sub(start) : Vector3.down.scale(this.length);
+    const dir = toEnd.magnitude > 1e-6 ? toEnd.normalized : Vector3.down;
+    const n = Math.max(1, Math.round(this.segments));
+    const seg = this.length / n;
+    // Segments' local -y points along the rope.
+    const rotation = Quaternion.fromToRotation(Vector3.down, dir);
+    const material = new Material(this.color, Color.black, 0.2);
+    let prev: PhysicsBody | null = objectPhysics.get(this.gameObject)?.rigidbody?.body ?? null;
+    let prevAnchor = prev ? Vector3.zero : start;
+    for (let i = 0; i < n; i++) {
+      const center = start.add(dir.scale(seg * (i + 0.5)));
+      const link = new GameObject(`${this.gameObject.name} rope ${i}`, {
+        position: center,
+        rotation,
+        // The capsule mesh is 1 m wide and 2 m tall.
+        scale: new Vector3(this.radius * 2, seg / 2, this.radius * 2),
+      });
+      link.addComponent(MeshRenderer, { mesh: "capsule", material });
+      link.addComponent(CapsuleCollider);
+      const rb = link.addComponent(Rigidbody, { mass: this.segmentMass, angularDrag: 0.5, drag: 0.1 });
+      const body = rb.body!;
+      this.joints.push(physics.createJoint("ball", body, prev, new Vector3(0, seg / 2, 0), prevAnchor));
+      prev = body;
+      prevAnchor = new Vector3(0, -seg / 2, 0);
+      this.links.push(link);
+    }
+    if (this.end?.body && prev) {
+      this.joints.push(physics.createJoint("ball", this.end.body, prev, Vector3.zero, prevAnchor));
+    }
+  }
+
+  override onDestroy(): void {
+    for (const j of this.joints) j.remove();
+    for (const l of this.links) l.destroy();
+    this.joints = [];
+    this.links.length = 0;
+  }
 }

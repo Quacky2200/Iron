@@ -165,10 +165,16 @@ pub struct Physics {
     /// Bodies moved by a character controller: the controller and the move asked for
     /// this tick.
     characters: HashMap<ScriptId, (KinematicCharacterController, Option<Vector>)>,
+    /// Joints by script id.
+    joints: HashMap<ScriptId, ImpulseJointHandle>,
+    /// A fixed body for joints to the world (`null` for the second body), made when
+    /// first needed.
+    world_anchor: Option<RigidBodyHandle>,
     /// Raycasts queued this tick, answered after the step.
     rays: Vec<(u32, Ray, f32)>,
-    /// Colliders were added or moved since the last step, so scene queries need the
-    /// broad phase brought up to date first.
+    /// Colliders were added or removed since the last step: they aren't in the query
+    /// structures until a step runs, so character moves wait a step (moving through a
+    /// floor that was just added would be wrong).
     dirty: bool,
     batch: Batch,
 }
@@ -190,6 +196,8 @@ impl Physics {
             colliders: HashMap::new(),
             characters: HashMap::new(),
             rays: Vec::new(),
+            joints: HashMap::new(),
+            world_anchor: None,
             dirty: false,
             batch: Batch::default(),
         }
@@ -213,10 +221,7 @@ impl Physics {
     /// for a bad op; nothing is changed then.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         let a = Args(args);
-        self.dirty |= matches!(
-            name,
-            "body" | "collider" | "removeBody" | "removeCollider" | "set" | "colliderSet"
-        );
+        self.dirty |= matches!(name, "collider" | "removeBody" | "removeCollider");
         match name {
             "gravity" => self.world.gravity = a.vec3(0)?,
             "timestep" => self.world.integration_parameters.dt = a.num(0)?.max(1e-4),
@@ -239,6 +244,13 @@ impl Physics {
             }
             "set" => self.set(&a)?,
             "colliderSet" => self.collider_set(&a)?,
+            "joint" => self.add_joint(&a)?,
+            "removeJoint" => {
+                if let Some(h) = self.joints.remove(&a.id(0)?) {
+                    // Gone already if one of its bodies was removed.
+                    self.world.remove_impulse_joint(h);
+                }
+            }
             "force" => {
                 let (body, v) = (self.body_mut(a.id(0)?)?, a.vec3(2)?);
                 match a.str(1)? {
@@ -488,6 +500,88 @@ impl Physics {
         Ok(())
     }
 
+    /// `joint id kind bodyA bodyB|null [anchorA] [anchorB] [params]`: joins two bodies at
+    /// anchors in their own spaces (`null`: to the world, anchor B in world space).
+    /// Kinds and params: `fixed`; `ball` (turns freely about the anchor); `hinge` [axis x
+    /// y z, use limits (0/1), min, max (degrees), use motor (0/1), target speed (degrees
+    /// per second), motor strength]; `spring` [rest length, stiffness, damping]; `rope`
+    /// [max length]. Joined bodies don't collide with each other.
+    fn add_joint(&mut self, a: &Args) -> Result<(), String> {
+        let id = a.id(0)?;
+        let body1 = *self
+            .bodies
+            .get(&a.id(2)?)
+            .ok_or_else(|| format!("joint {id}: no body {}", a.id(2).unwrap_or(0)))?;
+        let body2 = match a.0.get(3) {
+            Some(Value::Null) | None => self.world_anchor(),
+            _ => *self
+                .bodies
+                .get(&a.id(3)?)
+                .ok_or_else(|| format!("joint {id}: no body {}", a.id(3).unwrap_or(0)))?,
+        };
+        let anchor1 = a.vec3(4).unwrap_or(Vector::ZERO);
+        let anchor2 = a.vec3(5).unwrap_or(Vector::ZERO);
+        let p = a.list(6).unwrap_or(&[]);
+        let n = |i: usize, d: f32| p.get(i).and_then(Value::as_f64).map_or(d, |v| v as f32);
+        let joint: GenericJoint = match a.str(1)? {
+            "fixed" => FixedJointBuilder::new()
+                .local_anchor1(anchor1)
+                .local_anchor2(anchor2)
+                .contacts_enabled(false)
+                .into(),
+            "ball" => SphericalJointBuilder::new()
+                .local_anchor1(anchor1)
+                .local_anchor2(anchor2)
+                .contacts_enabled(false)
+                .into(),
+            "hinge" => {
+                let axis = Vector::new(n(0, 0.0), n(1, 1.0), n(2, 0.0)).normalize_or(Vector::Y);
+                let mut b = RevoluteJointBuilder::new(axis)
+                    .local_anchor1(anchor1)
+                    .local_anchor2(anchor2)
+                    .contacts_enabled(false);
+                if n(3, 0.0) > 0.5 {
+                    b = b.limits([n(4, -90.0).to_radians(), n(5, 90.0).to_radians()]);
+                }
+                if n(6, 0.0) > 0.5 {
+                    b = b.motor_velocity(n(7, 0.0).to_radians(), n(8, 1.0));
+                }
+                b.into()
+            }
+            "spring" => SpringJointBuilder::new(n(0, 1.0).max(0.0), n(1, 10.0), n(2, 0.5))
+                .local_anchor1(anchor1)
+                .local_anchor2(anchor2)
+                .contacts_enabled(false)
+                .into(),
+            "rope" => RopeJointBuilder::new(n(0, 1.0).max(0.0))
+                .local_anchor1(anchor1)
+                .local_anchor2(anchor2)
+                .contacts_enabled(false)
+                .into(),
+            other => return Err(format!("unknown joint kind `{other}`")),
+        };
+        if let Some(old) = self.joints.remove(&id) {
+            self.world.remove_impulse_joint(old);
+        }
+        let handle = self.world.insert_impulse_joint(body1, body2, joint);
+        self.joints.insert(id, handle);
+        Ok(())
+    }
+
+    /// The fixed body joints to the world hang from.
+    fn world_anchor(&mut self) -> RigidBodyHandle {
+        if let Some(h) = self.world_anchor {
+            return h;
+        }
+        let h = self.world.insert_body(RigidBodyBuilder::fixed());
+        self.world_anchor = Some(h);
+        h
+    }
+
+    pub fn joint_count(&self) -> usize {
+        self.joints.len()
+    }
+
     /// `colliderSet id property value`: `friction`, `restitution`, `sensor` (bool),
     /// `offset` ([x y z] [x y z w] from its body).
     fn collider_set(&mut self, a: &Args) -> Result<(), String> {
@@ -524,7 +618,6 @@ impl Physics {
             body.set_translation(position, true);
             body.set_rotation(rotation, true);
         }
-        self.dirty = true;
     }
 
     /// A body's position and rotation, if it exists.
@@ -543,8 +636,8 @@ impl Physics {
     /// Advances the world by one timestep (`physics.timestep`, 1/60 s by default):
     /// moves character controllers, steps, then answers raycasts and records what moved.
     pub fn step(&mut self) {
+        self.move_characters();
         let events = Events::default();
-        self.move_characters(&events);
         self.world.step_with_events(&(), &events);
 
         let script_id = |h: ColliderHandle| self.world.colliders.get(h).map(|c| c.user_data as u32);
@@ -592,10 +685,12 @@ impl Physics {
 
     /// Applies each character controller's pending move as its body's next kinematic
     /// position, sliding along and stepping over what it hits.
-    fn move_characters(&mut self, events: &Events) {
-        if std::mem::take(&mut self.dirty) && !self.characters.is_empty() {
-            // New colliders aren't in the query structures until collision detection runs.
-            self.world.detect_collisions(&(), events);
+    fn move_characters(&mut self) {
+        // New colliders aren't in the query structures until this step runs: their moves
+        // stay pending until the next one. (Running collision detection here instead
+        // trips rapier's island bookkeeping for bodies that just changed type.)
+        if std::mem::take(&mut self.dirty) {
+            return;
         }
         let dt = self.world.integration_parameters.dt;
         let mut moves = Vec::new();

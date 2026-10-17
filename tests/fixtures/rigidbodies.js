@@ -27,6 +27,35 @@ ${err.stack}` : ""}`);
   var timeScale = 1;
   var startedAt = Date.now();
   var tickListeners = [];
+  var Time = {
+    get time() {
+      return time;
+    },
+    get unscaledTime() {
+      return unscaledTime;
+    },
+    get deltaTime() {
+      return deltaTime;
+    },
+    get unscaledDeltaTime() {
+      return unscaledDeltaTime;
+    },
+    get fixedDeltaTime() {
+      return 1 / 60;
+    },
+    get frameCount() {
+      return frameCount;
+    },
+    get timeScale() {
+      return timeScale;
+    },
+    set timeScale(s) {
+      timeScale = Number.isFinite(s) && s >= 0 ? s : 1;
+    },
+    get realtimeSinceStartup() {
+      return (Date.now() - startedAt) / 1000;
+    }
+  };
   function onTick(fn) {
     tickListeners.push(fn);
   }
@@ -1243,7 +1272,24 @@ ${err.stack}` : ""}`);
       __iron_op("physics.removeBody", this.id);
     }
   }
+  var nextJoint = 1;
+
+  class PhysicsJoint {
+    kind;
+    id;
+    constructor(kind, a, b, anchorA, anchorB, params = []) {
+      this.kind = kind;
+      this.id = nextJoint++;
+      __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec(anchorA), vec(anchorB), params);
+    }
+    remove() {
+      __iron_op("physics.removeJoint", this.id);
+    }
+  }
   var physics = {
+    createJoint(kind, a, b, anchorA, anchorB, params) {
+      return new PhysicsJoint(kind, a, b, anchorA, anchorB, params);
+    },
     createBody(options) {
       return new PhysicsBody(options);
     },
@@ -1913,6 +1959,67 @@ ${err.stack}` : ""}`);
     }
   };
 
+  // ../../js/engine/src/screen.ts
+  var width = 1280;
+  var height = 720;
+  var scale = 1;
+  globalThis.__iron_screen = (w, h, s) => {
+    width = w;
+    height = h;
+    scale = s;
+  };
+
+  // ../../js/engine/src/rendering.ts
+  var rgba = (c) => [c.r, c.g, c.b, c.a];
+  class Material {
+    color;
+    emission;
+    smoothness;
+    unlit;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
+      this.color = color;
+      this.emission = emission;
+      this.smoothness = smoothness;
+      this.unlit = unlit;
+    }
+    withColor(color) {
+      return new Material(color, this.emission, this.smoothness, this.unlit);
+    }
+  }
+  class MeshRenderer extends Component {
+    _mesh = "cube";
+    _material = new Material;
+    started = false;
+    get mesh() {
+      return this._mesh;
+    }
+    set mesh(m) {
+      this._mesh = m;
+      this.send();
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const m = this._material;
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var ambient = new Color(0.2, 0.2, 0.22);
+
   // ../../js/engine/src/physics-components.ts
   var RigidbodyConstraints = {
     None: 0,
@@ -2267,66 +2374,182 @@ ${err.stack}` : ""}`);
       }
     }
   });
-  // ../../js/engine/src/screen.ts
-  var width = 1280;
-  var height = 720;
-  var scale = 1;
-  globalThis.__iron_screen = (w, h, s) => {
-    width = w;
-    height = h;
-    scale = s;
-  };
+  var CollisionFlags = { None: 0, Sides: 1, Above: 2, Below: 4 };
 
-  // ../../js/engine/src/rendering.ts
-  var rgba = (c) => [c.r, c.g, c.b, c.a];
-  class Material {
-    color;
-    emission;
-    smoothness;
-    unlit;
-    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
-      this.color = color;
-      this.emission = emission;
-      this.smoothness = smoothness;
-      this.unlit = unlit;
+  class CharacterController extends Collider {
+    _radius = 0.5;
+    _height = 2;
+    _slopeLimit = 45;
+    _stepOffset = 0.3;
+    fallSpeed = 0;
+    last = Vector3.zero;
+    _velocity = Vector3.zero;
+    get radius() {
+      return this._radius;
     }
-    withColor(color) {
-      return new Material(color, this.emission, this.smoothness, this.unlit);
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
     }
-  }
-  class MeshRenderer extends Component {
-    _mesh = "cube";
-    _material = new Material;
-    started = false;
-    get mesh() {
-      return this._mesh;
+    get height() {
+      return this._height;
     }
-    set mesh(m) {
-      this._mesh = m;
-      this.send();
+    set height(h) {
+      this._height = h;
+      this.rebuild();
     }
-    get material() {
-      return this._material;
+    get slopeLimit() {
+      return this._slopeLimit;
     }
-    set material(m) {
-      this._material = m;
-      this.send();
+    set slopeLimit(d) {
+      this._slopeLimit = d;
+      this.configure();
     }
-    send() {
-      if (!this.started)
-        return;
-      const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+    get stepOffset() {
+      return this._stepOffset;
+    }
+    set stepOffset(h) {
+      this._stepOffset = h;
+      this.configure();
+    }
+    get isGrounded() {
+      return objectPhysics.get(this.gameObject)?.body.grounded ?? false;
+    }
+    get velocity() {
+      return this._velocity;
+    }
+    shape(scale) {
+      const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
+      const halfHeight = Math.max(0, this._height * Math.abs(scale.y) / 2 - radius);
+      return { capsule: { halfHeight, radius } };
+    }
+    configure() {
+      const body = objectPhysics.get(this.gameObject)?.body;
+      body?.makeCharacter({ maxSlope: this._slopeLimit, snapToGround: this._stepOffset, stepHeight: this._stepOffset });
     }
     onAwake() {
-      this.started = true;
-      this.send();
+      this.create();
+      objectPhysics.get(this.gameObject).body.setKind("kinematic");
+      this.configure();
+      this.last = this.transform.position;
     }
-    onDestroy() {
-      __iron_op("render.remove", this.id);
+    onUpdate(dt) {
+      const now = this.transform.position;
+      this._velocity = dt > 0 ? now.sub(this.last).scale(1 / dt) : Vector3.zero;
+      this.last = now;
+    }
+    move(motion) {
+      objectPhysics.get(this.gameObject)?.body.move(motion);
+      return this.isGrounded ? CollisionFlags.Below : CollisionFlags.None;
+    }
+    simpleMove(speed) {
+      const dt = Time.deltaTime;
+      this.fallSpeed = this.isGrounded ? 1 : this.fallSpeed + 9.81 * dt;
+      this.move(new Vector3(speed.x * dt, -this.fallSpeed * dt, speed.z * dt));
+      return this.isGrounded;
     }
   }
-  var ambient = new Color(0.2, 0.2, 0.22);
+
+  class Joint extends Component {
+    connectedBody = null;
+    anchor = Vector3.zero;
+    connectedAnchor = Vector3.zero;
+    autoConfigureConnectedAnchor = true;
+    handle = null;
+    params() {
+      return [];
+    }
+    build() {
+      this.handle?.remove();
+      this.handle = null;
+      const body = objectPhysics.get(this.gameObject)?.body;
+      if (!body) {
+        console.warn(`${this.constructor.name} on ${this.gameObject.name} needs a Rigidbody`);
+        return;
+      }
+      const anchor = this.anchor.mul(this.transform.lossyScale);
+      const other = this.connectedBody?.body ?? null;
+      if (this.autoConfigureConnectedAnchor) {
+        const world = this.transform.transformPoint(this.anchor);
+        const t = this.connectedBody?.transform;
+        this.connectedAnchor = t ? t.rotation.inverse().rotate(world.sub(t.position)) : world;
+      }
+      this.handle = physics.createJoint(this.kind(), body, other, anchor, this.connectedAnchor, this.params());
+    }
+    onStart() {
+      this.build();
+    }
+    onDestroy() {
+      this.handle?.remove();
+      this.handle = null;
+    }
+  }
+  class HingeJoint extends Joint {
+    axis = new Vector3(1, 0, 0);
+    useLimits = false;
+    limits = { min: -90, max: 90 };
+    useMotor = false;
+    motor = { targetVelocity: 0, force: 1 };
+    kind() {
+      return "hinge";
+    }
+    params() {
+      const a = this.axis;
+      return [a.x, a.y, a.z, this.useLimits ? 1 : 0, this.limits.min, this.limits.max, this.useMotor ? 1 : 0, this.motor.targetVelocity, this.motor.force];
+    }
+    refresh() {
+      if (this.handle)
+        this.build();
+    }
+  }
+  class Rope extends Component {
+    length = 3;
+    segments = 12;
+    radius = 0.04;
+    segmentMass = 0.05;
+    color = new Color(0.55, 0.42, 0.28, 1);
+    end = null;
+    links = [];
+    joints = [];
+    onStart() {
+      const start = this.transform.position;
+      const toEnd = this.end ? this.end.transform.position.sub(start) : Vector3.down.scale(this.length);
+      const dir = toEnd.magnitude > 0.000001 ? toEnd.normalized : Vector3.down;
+      const n = Math.max(1, Math.round(this.segments));
+      const seg = this.length / n;
+      const rotation = Quaternion.fromToRotation(Vector3.down, dir);
+      const material = new Material(this.color, Color.black, 0.2);
+      let prev = objectPhysics.get(this.gameObject)?.rigidbody?.body ?? null;
+      let prevAnchor = prev ? Vector3.zero : start;
+      for (let i = 0;i < n; i++) {
+        const center = start.add(dir.scale(seg * (i + 0.5)));
+        const link = new GameObject(`${this.gameObject.name} rope ${i}`, {
+          position: center,
+          rotation,
+          scale: new Vector3(this.radius * 2, seg / 2, this.radius * 2)
+        });
+        link.addComponent(MeshRenderer, { mesh: "capsule", material });
+        link.addComponent(CapsuleCollider);
+        const rb = link.addComponent(Rigidbody, { mass: this.segmentMass, angularDrag: 0.5, drag: 0.1 });
+        const body = rb.body;
+        this.joints.push(physics.createJoint("ball", body, prev, new Vector3(0, seg / 2, 0), prevAnchor));
+        prev = body;
+        prevAnchor = new Vector3(0, -seg / 2, 0);
+        this.links.push(link);
+      }
+      if (this.end?.body && prev) {
+        this.joints.push(physics.createJoint("ball", this.end.body, prev, Vector3.zero, prevAnchor));
+      }
+    }
+    onDestroy() {
+      for (const j of this.joints)
+        j.remove();
+      for (const l of this.links)
+        l.destroy();
+      this.joints = [];
+      this.links.length = 0;
+    }
+  }
   // ../../js/engine/src/primitives.ts
   function createPrimitive(type, options = {}) {
     const name = options.name ?? type[0].toUpperCase() + type.slice(1);
@@ -2362,6 +2585,9 @@ ${err.stack}` : ""}`);
   var log = [];
   var crate;
   var paddle;
+  var walker;
+  var weight;
+  var wheel;
 
   class Logger extends Component {
     onCollisionEnter(c) {
@@ -2385,6 +2611,20 @@ ${err.stack}` : ""}`);
       paddle = new GameObject("paddle", { position: new Vector3(5, 0.5, 0) });
       paddle.addComponent(Rigidbody, { isKinematic: true });
       paddle.addComponent(SphereCollider);
+      walker = new GameObject("walker", { position: new Vector3(-5, 1.05, 0) });
+      walker.addComponent(CharacterController);
+      weight = new GameObject("weight", { position: new Vector3(8, 4, 0) });
+      const wrb = weight.addComponent(Rigidbody, { mass: 1 });
+      weight.addComponent(SphereCollider, { radius: 0.2 });
+      const anchor = new GameObject("anchor", { position: new Vector3(8, 6, 0) });
+      anchor.addComponent(Rope, { length: 2, segments: 8, end: wrb });
+      wheel = new GameObject("wheel", { position: new Vector3(-8, 3, 0) });
+      wheel.addComponent(Rigidbody, { useGravity: false });
+      wheel.addComponent(BoxCollider, { size: new Vector3(1, 0.2, 0.2) });
+      wheel.addComponent(HingeJoint, { axis: new Vector3(0, 0, 1), useMotor: true, motor: { targetVelocity: 180, force: 10 } });
+    }
+    onUpdate() {
+      walker.getComponent(CharacterController).simpleMove(new Vector3(0, 0, 2));
     }
     onFixedUpdate() {
       paddle.transform.position = new Vector3(2.5, 0.5, 0);
@@ -2395,4 +2635,10 @@ ${err.stack}` : ""}`);
   g.__rb_log = () => log.join(", ");
   g.__crate_y = () => crate.transform.position.y;
   g.__paddle_body_x = () => paddle.getComponent(Rigidbody).body.position.x;
+  g.__walker = () => {
+    const p = walker.transform.position;
+    return [p.x, p.y, p.z, walker.getComponent(CharacterController).isGrounded ? 1 : 0];
+  };
+  g.__weight_y = () => weight.transform.position.y;
+  g.__wheel_angle = () => wheel.transform.eulerAngles.z;
 })();

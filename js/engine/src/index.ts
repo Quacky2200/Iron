@@ -50,6 +50,8 @@ export {
   physics,
   type RayHit,
   PhysicsBody,
+  PhysicsJoint,
+  type JointKind,
   type Shape,
 } from "./physics.ts";
 export { DateTime, type DateTimeKind, TimeSpan } from "./time.ts";
@@ -59,7 +61,18 @@ export { Random, Rng } from "./random.ts";
 export {
   BoxCollider,
   CapsuleCollider,
+  CharacterController,
+  CharacterJoint,
   Collider,
+  CollisionFlags,
+  FixedJoint,
+  HingeJoint,
+  Joint,
+  type JointLimits,
+  type JointMotor,
+  Rope,
+  RopeJoint,
+  SpringJoint,
   type Collision,
   ForceMode,
   MeshCollider,

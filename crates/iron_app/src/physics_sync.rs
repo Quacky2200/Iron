@@ -95,6 +95,7 @@ mod tests {
         for _ in 0..150 {
             let active = |o: u32| scene.active(o);
             assert!(host.fixed_update(&mut rt, 1.0 / 60.0, &active).is_empty());
+            assert!(host.update_active(&mut rt, 1.0 / 60.0, &active).is_empty());
             for op in rt.drain_ops() {
                 if let Some(name) = op.name.strip_prefix("scene.") {
                     match scene.apply(name, &op.args).unwrap() {
@@ -117,7 +118,7 @@ mod tests {
                             .apply(name, &op.args)
                             .unwrap_or_else(|e| panic!("{name}: {e}"));
                     }
-                } else {
+                } else if !op.name.starts_with("render.") {
                     panic!("unexpected op {}", op.name);
                 }
             }
@@ -146,5 +147,22 @@ mod tests {
         assert!((crate_y - 0.5).abs() < 0.03, "crate y = {crate_y}");
         let paddle = rt.eval("__paddle_body_x()").unwrap().as_f64().unwrap();
         assert!((paddle - 2.5).abs() < 1e-3, "paddle body x = {paddle}");
+
+        // M5-RB-03: the character walked 2 m/s for 2.5 s along the floor, grounded, its
+        // capsule's bottom on the floor (centre 1 m up).
+        let Value::Array(w) = rt.eval("__walker()").unwrap() else {
+            panic!()
+        };
+        let w: Vec<f64> = w.iter().map(|v| v.as_f64().unwrap()).collect();
+        assert!(w[2] > 4.0 && w[2] < 5.2, "walked to z = {}", w[2]);
+        assert!((w[1] - 1.0).abs() < 0.1, "walker y = {}", w[1]);
+        assert_eq!(w[3], 1.0, "grounded");
+
+        // M5-JNT-02: the rope holds the weight about 2 m below its anchor (6 m up, plus the
+        // weight's radius of slack); the motor turned the wheel.
+        let weight = rt.eval("__weight_y()").unwrap().as_f64().unwrap();
+        assert!(weight > 3.5 && weight < 4.3, "weight y = {weight}");
+        let angle = rt.eval("__wheel_angle()").unwrap().as_f64().unwrap();
+        assert!(angle > 10.0, "wheel turned {angle} degrees");
     }
 }

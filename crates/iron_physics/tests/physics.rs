@@ -326,3 +326,129 @@ fn bad_ops_are_rejected_and_meshes_collide() {
     let y = p.position(2).unwrap()[1];
     assert!((y - 0.5).abs() < 0.05, "y = {y}");
 }
+
+// M5-JNT-01
+#[test]
+fn joints_hold_bodies_together() {
+    let mut p = Physics::new();
+    let ball = |p: &mut Physics, id: u32, at: &[f64; 3]| {
+        op(p, "body", vec![num(id as f64), "dynamic".into(), arr(at)]);
+        op(
+            p,
+            "collider",
+            vec![num(id as f64), num(id as f64), "ball".into(), arr(&[0.2])],
+        );
+    };
+    // A rope 2 m long from a world anchor at (0, 5, 0): the ball starts 1 m out and
+    // falls until the rope is taut.
+    ball(&mut p, 1, &[1.0, 5.0, 0.0]);
+    op(
+        &mut p,
+        "joint",
+        vec![
+            num(1.0),
+            "rope".into(),
+            num(1.0),
+            Value::Null,
+            arr(&[0.0, 0.0, 0.0]),
+            arr(&[0.0, 5.0, 0.0]),
+            arr(&[2.0]),
+        ],
+    );
+    // A pendulum on a ball joint, 1.5 m below its anchor.
+    ball(&mut p, 2, &[5.0, 3.5, 0.0]);
+    op(
+        &mut p,
+        "joint",
+        vec![
+            num(2.0),
+            "ball".into(),
+            num(2.0),
+            Value::Null,
+            arr(&[0.0, 1.5, 0.0]),
+            arr(&[5.0, 5.0, 0.0]),
+        ],
+    );
+    // A wheel on a motorised hinge about z, turning at 90°/s.
+    op(
+        &mut p,
+        "body",
+        vec![num(3.0), "dynamic".into(), arr(&[-5.0, 5.0, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(3.0), num(3.0), "box".into(), arr(&[0.5, 0.1, 0.1])],
+    );
+    op(
+        &mut p,
+        "set",
+        vec![num(3.0), "gravityScale".into(), num(0.0)],
+    );
+    op(
+        &mut p,
+        "joint",
+        vec![
+            num(3.0),
+            "hinge".into(),
+            num(3.0),
+            Value::Null,
+            arr(&[0.0, 0.0, 0.0]),
+            arr(&[-5.0, 5.0, 0.0]),
+            arr(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 90.0, 10.0]),
+        ],
+    );
+    // Two bodies on a stiff spring with a 1 m rest length, in zero gravity.
+    for (id, x) in [(4.0, 10.0), (5.0, 13.0)] {
+        ball(&mut p, id as u32, &[x, 5.0, 0.0]);
+        op(
+            &mut p,
+            "set",
+            vec![num(id), "gravityScale".into(), num(0.0)],
+        );
+        op(
+            &mut p,
+            "set",
+            vec![num(id), "linearDamping".into(), num(2.0)],
+        );
+    }
+    op(
+        &mut p,
+        "joint",
+        vec![
+            num(4.0),
+            "spring".into(),
+            num(4.0),
+            num(5.0),
+            Value::Null,
+            Value::Null,
+            arr(&[1.0, 200.0, 5.0]),
+        ],
+    );
+    assert_eq!(p.joint_count(), 4);
+    assert!(
+        p.apply("joint", &[num(9.0), "weld".into(), num(1.0), Value::Null])
+            .is_err()
+    );
+    assert!(
+        p.apply("joint", &[num(9.0), "rope".into(), num(99.0), Value::Null])
+            .is_err()
+    );
+
+    steps(&mut p, 240);
+    let dist = |a: [f32; 3], b: [f32; 3]| {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    };
+    let rope = dist(p.position(1).unwrap(), [0.0, 5.0, 0.0]);
+    assert!(rope <= 2.05 && rope > 1.5, "rope length {rope}");
+    let pendulum = dist(p.position(2).unwrap(), [5.0, 5.0, 0.0]);
+    assert!((pendulum - 1.5).abs() < 0.05, "pendulum length {pendulum}");
+    let (_, q) = p.pose(3).unwrap();
+    let angle = 2.0 * q[3].clamp(-1.0, 1.0).acos();
+    assert!(angle > 0.5, "the motor turned the wheel: {angle} rad");
+    let spring = dist(p.position(4).unwrap(), p.position(5).unwrap());
+    assert!((spring - 1.0).abs() < 0.2, "spring settled at {spring}");
+
+    op(&mut p, "removeJoint", vec![num(1.0)]);
+    assert_eq!(p.joint_count(), 3);
+}
