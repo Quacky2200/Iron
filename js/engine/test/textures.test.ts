@@ -59,7 +59,7 @@ describe("textures", () => {
     const t = Texture.load("assets/bricks.png");
     const go = new GameObject("wall");
     const r = go.addComponent(MeshRenderer, { mesh: "cube", material: new Material().withTexture(t, new Vector2(2, 3), new Vector2(0.5, 0)) });
-    expect(renderOps().at(-1)).toEqual(["render.meshRenderer", r.id, go.id, "cube", [1, 1, 1, 1], [0, 0, 0], 0.5, false, t.id, [2, 3, 0.5, 0]]);
+    expect(renderOps().at(-1)).toEqual(["render.meshRenderer", r.id, go.id, "cube", [1, 1, 1, 1], [0, 0, 0], 0.5, false, t.id, [2, 3, 0.5, 0], true]);
     // withColor keeps the texture.
     r.material = r.material.withColor(Color.white);
     expect(renderOps().at(-1)![8]).toBe(t.id);

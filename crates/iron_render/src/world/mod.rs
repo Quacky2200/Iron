@@ -205,6 +205,8 @@ pub struct MeshInstance {
     /// `mainTextureOffset` (in its bottom-up UV space).
     pub tiling: [f32; 4],
     pub glow: MeshGlow,
+    /// Whether it casts shadows (Unity's `shadowCastingMode` on / off).
+    pub cast_shadows: bool,
 }
 
 /// One camera's view: where on the target it draws and what it sees.
@@ -347,6 +349,8 @@ struct Run {
     texture: Option<WorldTexture>,
     /// Additive quads (drawn without depth writes).
     glow: bool,
+    /// Opaque meshes that cast shadows (drawn into the shadow map).
+    casts: bool,
     range: Range<u32>,
 }
 
@@ -1055,14 +1059,17 @@ impl WorldRenderer {
                 .filter(known)
                 .filter(|m| m.color[3] >= 1.0 && m.glow == MeshGlow::None)
                 .collect();
-            opaque.sort_by_key(|m| (m.mesh, m.texture));
+            opaque.sort_by_key(|m| (m.mesh, m.texture, m.cast_shadows));
             let mut opaque_runs: Vec<Run> = Vec::new();
             for m in opaque {
                 let i = meshes.len() as u32;
                 meshes.push(gpu_mesh(m));
                 match opaque_runs.last_mut() {
                     Some(r)
-                        if r.mesh == Some(m.mesh) && r.texture == m.texture && r.range.end == i =>
+                        if r.mesh == Some(m.mesh)
+                            && r.texture == m.texture
+                            && r.casts == m.cast_shadows
+                            && r.range.end == i =>
                     {
                         r.range.end += 1
                     }
@@ -1070,6 +1077,7 @@ impl WorldRenderer {
                         mesh: Some(m.mesh),
                         texture: m.texture,
                         glow: false,
+                        casts: m.cast_shadows,
                         range: i..i + 1,
                     }),
                 }
@@ -1105,6 +1113,7 @@ impl WorldRenderer {
                                 mesh: Some(m.mesh),
                                 texture: m.texture,
                                 glow: m.glow != MeshGlow::None,
+                                casts: false,
                                 range: i..i + 1,
                             },
                         ));
@@ -1142,6 +1151,7 @@ impl WorldRenderer {
                                     mesh: None,
                                     texture: q.texture,
                                     glow: q.additive,
+                                    casts: false,
                                     range: i..i + 1,
                                 },
                             )),
@@ -1349,7 +1359,7 @@ impl WorldRenderer {
                 &globals_groups[main],
                 &[(self.stride * main as u64) as u32],
             );
-            for run in &per_view[main].0 {
+            for run in per_view[main].0.iter().filter(|r| r.casts) {
                 if let Some(mesh) = run.mesh.and_then(|m| self.meshes.get(&m)) {
                     pass.set_vertex_buffer(0, mesh.vertices.slice(..));
                     pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);

@@ -42,7 +42,7 @@ describe("meshes and lights", () => {
       mesh: "sphere",
       material: new Material(new Color(1, 0, 0, 1), Color.black, 0.8),
     });
-    expect(renderOps()).toEqual([["render.meshRenderer", r.id, go.id, "sphere", [1, 0, 0, 1], [0, 0, 0], 0.8, false, null, [1, 1, 0, 0]]]);
+    expect(renderOps()).toEqual([["render.meshRenderer", r.id, go.id, "sphere", [1, 0, 0, 1], [0, 0, 0], 0.8, false, null, [1, 1, 0, 0], true]]);
     r.material = r.material.withColor(Color.white);
     expect(renderOps().at(-1)![4]).toEqual([1, 1, 1, 1]);
   });

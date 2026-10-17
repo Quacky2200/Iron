@@ -545,7 +545,17 @@ export type PrimitiveMesh = "cube" | "sphere" | "capsule" | "cylinder" | "plane"
 export class MeshRenderer extends Component {
   private _mesh: PrimitiveMesh | Mesh = "cube";
   private _material = new Material();
+  private _shadowCastingMode: "on" | "off" = "on";
   private started = false;
+
+  /** Whether it casts shadows (Unity's `shadowCastingMode`: `on` or `off`). */
+  get shadowCastingMode(): "on" | "off" {
+    return this._shadowCastingMode;
+  }
+  set shadowCastingMode(m: "on" | "off") {
+    this._shadowCastingMode = m;
+    this.send();
+  }
 
   get mesh(): PrimitiveMesh | Mesh {
     return this._mesh;
@@ -577,6 +587,7 @@ export class MeshRenderer extends Component {
       m.unlit,
       m.mainTexture?.id ?? null,
       [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y],
+      this._shadowCastingMode !== "off",
     );
   }
 

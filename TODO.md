@@ -801,8 +801,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     into a texture each frame; the pointer is raycast from the camera under it into the
     nearest panel (screen UI wins where it has elements), drags stay with the panel, keys go
     to the surface clicked last; stylesheets and fonts reach every tree — `M5-PNL-01`..`M5-PNL-03`
-- [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5).
-  Left: the Cornell box.
+- [x] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5); done
+  2026-10-17.
   - [x] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
     `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, at a point,
     explosions, constraints, continuous detection) and collider components (`BoxCollider`,
@@ -826,9 +826,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     points, Catmull-Rom smoothed, parallel-transported rings, rebuilt when the points change;
     unlike Unity's flat ribbon) draws `Rope`s by default (`renderMode: "segments"` keeps the
     capsules) — `M5-LIN-01`
-  - [ ] More classic test scenes (asked for 2026-10-17): the Cornell box (procedural, now
-    that there are shadows), and, with downloads the user approves first, Suzanne, Sponza,
-    the Damaged Helmet (PBR), and the Stanford Dragon / Armadillo / Lucy
+  - [x] The Cornell box (`examples/cornell`): built from primitives with the original's
+    reflectances; lit by an emissive panel, a point light, a soft-shadowed light from above
+    and bounce lights (soft point lights tinted by the walls and floor, faking GI's colour
+    bleeding); the room's shell doesn't cast (`MeshRenderer.shadowCastingMode`, new:
+    `on` / `off`, per-mesh in the shadow pass)
   - [x] Meshes, lights, textures on meshes, glTF models, the missing-texture checker,
     classic test models and shadows:
     - [x] Renderer: `iron_render::world::mesh` builds Unity's primitives (cube, sphere, capsule,
@@ -928,6 +930,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     them), `platform`, `systemLanguage`, `isMobilePlatform`, `quit()`; installed as
     `globalThis.__iron_info` before the bundle runs (and on reload) — `M5-APP-01`, `M5-APP-02`
 - [ ] **M5.a2 follow-ups** (after M5.a2 or with the milestone that needs them):
+  - [ ] More classic test scenes, with downloads the user approves first: Suzanne, Sponza,
+    the Damaged Helmet (PBR), the Stanford Dragon / Armadillo / Lucy
   - [ ] glTF follow-ups: normal / metallic-roughness / emissive / occlusion maps (with PBR,
     M5.d), skins and animations (M5.d), cameras and lights from the file, KTX2 / Draco /
     meshopt compression, texture transforms
@@ -1015,6 +1019,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 ## M7 — Lighting
 
 - [ ] Baked lighting (lightmaps), light and reflection probes
+- [ ] Global illumination: bounced light and colour bleeding computed, not faked with bounce
+  lights (`Light.bounceIntensity`, Unity's): baked with the lightmaps first, then a realtime
+  approximation (virtual point lights from shadow-map hits, or probe volumes); the Cornell
+  box is the test scene (asked for 2026-10-17)
 
 ## M8 — Multiplayer
 

@@ -25,7 +25,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random` |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models) games (each has `bun run build`) |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
@@ -137,8 +137,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **Next (M5.a2, see TODO.md for the exact order):** meshes and lights are done (`MeshRenderer`, `Light`,
   `createPrimitive`), CharacterController, joints/rope, AudioSource/AudioListener, textures/sprites, particles,
   glows (halos, bloom, spot beams), 2D, Cursor, Application/SystemInfo, glTF models,
-  the missing-texture checker, directional shadows and the M5.a2 docs too. Left in M5.a2:
-  collider scale changes, the rope tube, the Cornell box; then M5.b (TODO.md). API names and units follow Unity/s&box
+  the missing-texture checker, directional shadows, colliders following scale, LineRenderer
+  ropes and the Cornell box: **M5.a2 is done**. Next: M5.b, scenes (TODO.md). API names and units follow Unity/s&box
   (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
   morphing; UI and SVG editors (M5.e).
   Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8

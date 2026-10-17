@@ -1706,7 +1706,15 @@ ${err.stack}` : ""}`);
   class MeshRenderer extends Component {
     _mesh = "cube";
     _material = new Material;
+    _shadowCastingMode = "on";
     started = false;
+    get shadowCastingMode() {
+      return this._shadowCastingMode;
+    }
+    set shadowCastingMode(m) {
+      this._shadowCastingMode = m;
+      this.send();
+    }
     get mesh() {
       return this._mesh;
     }
@@ -1725,7 +1733,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y]);
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off");
     }
     onAwake() {
       this.started = true;

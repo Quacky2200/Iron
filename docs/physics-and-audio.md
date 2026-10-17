@@ -194,8 +194,12 @@ The result is returned so `step_physics` can still call `__iron_physics`.
   `add_joint` builds a rapier impulse joint with `contacts_enabled(false)`, so joined bodies do not
   collide with each other. A joint to the world hangs from `world_anchor`, a fixed body made when first
   needed.
-- `Rope`: a chain of capsule segments (each a GameObject with a MeshRenderer, CapsuleCollider and
-  Rigidbody) joined by ball joints, from this object to an optional `end` Rigidbody.
+- `Rope`: a chain of capsule segments (each a GameObject with a CapsuleCollider and Rigidbody)
+  joined by ball joints, from this object to an optional `end` Rigidbody. By default it's drawn as
+  one smooth tube: a `LineRenderer` (`js/engine/src/lines.ts`) on its own object, given the links'
+  joint points each `onPreRender`. It rebuilds a script `Mesh` (Catmull-Rom smoothed path, rings
+  carried along by parallel transport so they don't twist) only when the points change.
+  `renderMode: "segments"` draws each link as a capsule instead.
 
 **Callbacks.** The handle layer calls every function in `contactListeners` for each contact. The
 component layer's listener looks both colliders up in `colliderOwners` and calls these on every
@@ -249,7 +253,9 @@ an offline mixer renders and drops that much audio, so sounds still progress and
 
 ## Known limits
 
-- Collider sizes take the object's scale when added; changing the scale later does not resize them.
+- Colliders follow scale changes: setting `localScale` or reparenting calls `scaleListeners`
+  (`scene.ts`), and every collider on the object and its children whose world scale changed since
+  it was made rebuilds its shape. Joint anchors don't follow.
 - Physics is reset on hot reload (a new `Physics` and empty `Attachments`), so body IDs are not preserved (M4-PHY-04 waits for hot reload part 2; see [scripting.md](scripting.md#hot-reload)).
 - rapier's character autostep fails if a move pushes down as steeply as it moves forward. A
   strong downward pull can stop a character climbing a step.

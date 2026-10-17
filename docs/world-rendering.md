@@ -118,7 +118,9 @@ biggest viewport; its shadow map is shared by every view.
   `shadowResolution` (default 2048, 256 to 8192): `render.shadowSettings`. The app copies them to
   `WorldRenderer` before each draw.
 
-Spot and point lights cast no shadows yet.
+Spot and point lights cast no shadows yet. Each `MeshInstance` has `cast_shadows`
+(`MeshRenderer.shadowCastingMode`, `on` / `off`): opaque runs are grouped by it too, and the shadow
+pass draws only the casting ones.
 
 ## Bloom
 

@@ -50,6 +50,7 @@ struct Renderer {
     unlit: bool,
     texture: Option<u32>,
     tiling: [f32; 4],
+    cast_shadows: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -406,7 +407,7 @@ impl WorldViews {
                 self.mesh_uploads.push((id, Some(data)));
             }
             // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness
-            // unlit texture|null [scale x y, offset x y]`
+            // unlit texture|null [scale x y, offset x y] castShadows`
             "meshRenderer" => {
                 let mesh = match args.get(2) {
                     Some(Value::String(name)) => {
@@ -426,6 +427,7 @@ impl WorldViews {
                         _ => Some(id_at(7)?),
                     },
                     tiling: nums::<4>(args.get(8)).unwrap_or([1.0, 1.0, 0.0, 0.0]),
+                    cast_shadows: !matches!(args.get(9), Some(Value::Bool(false))),
                 };
                 self.renderers.insert(id, renderer);
             }
@@ -645,6 +647,7 @@ impl WorldViews {
                     texture: r.texture.map(WorldTexture::Asset),
                     tiling: r.tiling,
                     glow: MeshGlow::None,
+                    cast_shadows: r.cast_shadows,
                 })
             })
             .collect();
@@ -678,6 +681,7 @@ impl WorldViews {
                             texture: None,
                             tiling: [1.0, 1.0, 0.0, 0.0],
                             glow: MeshGlow::Beam,
+                            cast_shadows: false,
                         })
                     }),
             )

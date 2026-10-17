@@ -306,6 +306,7 @@ fn lit_primitives_with_lights() {
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
         glow: iron_render::MeshGlow::None,
+        cast_shadows: true,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -444,6 +445,7 @@ fn textured_meshes_and_sprites() {
         texture: Some(WorldTexture::Asset(1)),
         tiling,
         glow: MeshGlow::None,
+        cast_shadows: true,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -555,6 +557,7 @@ fn glows_bloom_and_spot_beams() {
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
         glow: MeshGlow::None,
+        cast_shadows: true,
     };
     // A spot light shining down at an angle from the upper left, with its beam.
     let spot_at = Vec3::new(-1.6, 3.0, 0.0);
@@ -604,6 +607,7 @@ fn glows_bloom_and_spot_beams() {
         MeshInstance {
             mesh: BEAM_MESH,
             glow: MeshGlow::Beam,
+            cast_shadows: false,
             unlit: true,
             ..mesh(
                 "cube",
@@ -683,6 +687,7 @@ fn directional_shadows() {
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
         glow: MeshGlow::None,
+        cast_shadows: true,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.12, 0.12, 0.14];
