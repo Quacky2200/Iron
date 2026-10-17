@@ -24,6 +24,7 @@ use crate::paint::{
     parse_layers, parse_radii, parse_shadows, split_top_level,
 };
 use crate::text_style::{self, TextProps};
+use crate::transform::Transforms;
 
 /// Paint-only properties (layout properties live in Taffy's `Style`).
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +56,8 @@ pub struct Visual {
     /// `currentColor` per side (also the CSS default when `border` omits a colour).
     pub border_currents: [bool; 4],
     pub border_styles: [BorderStyle; 4],
+    /// Transforms and their related properties; `None` when all are at their defaults.
+    pub transform: Option<Arc<Transforms>>,
     /// `borderImage` and its longhands; `None` is the default (no image).
     pub border_image: Option<Arc<BorderImage>>,
     /// `outline`: drawn outside the border box (plus `outline_offset`), over the
@@ -132,6 +135,7 @@ impl Default for Visual {
             border_currents: [false; 4],
             border_styles: [BorderStyle::Solid; 4],
             border_image: None,
+            transform: None,
             outline_width: 3.0,
             outline_style: BorderStyle::None,
             outline_color: Rgba::TRANSPARENT,
@@ -699,6 +703,61 @@ pub fn apply_style(
                 visual.border_colors[side] = c.unwrap_or(Rgba::TRANSPARENT);
             }
         }
+        "transform"
+        | "translate"
+        | "rotate"
+        | "scale"
+        | "transformOrigin"
+        | "perspective"
+        | "perspectiveOrigin"
+        | "transformStyle"
+        | "backfaceVisibility"
+        | "WebkitBackfaceVisibility" => {
+            let s = kw()?;
+            let t = Arc::make_mut(visual.transform.get_or_insert_with(Default::default));
+            match prop {
+                "transform" => {
+                    t.spec.functions = crate::transform::parse_transform(s).ok_or_else(invalid)?
+                }
+                "translate" => {
+                    t.spec.translate = crate::transform::parse_translate(s).ok_or_else(invalid)?
+                }
+                "rotate" => {
+                    t.spec.rotate = crate::transform::parse_rotate(s).ok_or_else(invalid)?
+                }
+                "scale" => t.spec.scale = crate::transform::parse_scale(s).ok_or_else(invalid)?,
+                "transformOrigin" => {
+                    t.origin = crate::transform::parse_origin(s).ok_or_else(invalid)?
+                }
+                "perspective" => {
+                    t.perspective = match s.trim() {
+                        "none" => None,
+                        d => match Len::parse(d) {
+                            Some(Len::Px(px)) if px >= 0.0 => Some(px),
+                            _ => return Err(invalid()),
+                        },
+                    }
+                }
+                "perspectiveOrigin" => {
+                    let p = parse_background_position(s).ok_or_else(invalid)?;
+                    t.perspective_origin = (p.x, p.y);
+                }
+                "transformStyle" => {
+                    t.preserve_3d = match s.trim() {
+                        "flat" => false,
+                        "preserve-3d" => true,
+                        _ => return Err(invalid()),
+                    }
+                }
+                _ => {
+                    t.backface_hidden = match s.trim() {
+                        "visible" => false,
+                        "hidden" => true,
+                        _ => return Err(invalid()),
+                    }
+                }
+            }
+        }
         "borderImage" => {
             visual.border_image = Some(Arc::new(BorderImage::parse(kw()?).ok_or_else(invalid)?))
         }
@@ -1038,6 +1097,30 @@ pub(crate) fn copy_prop(
         }
         "borderStyle" => visual.border_styles = v.border_styles,
         "borderImage" => visual.border_image = v.border_image,
+        "transform"
+        | "translate"
+        | "rotate"
+        | "scale"
+        | "transformOrigin"
+        | "perspective"
+        | "perspectiveOrigin"
+        | "transformStyle"
+        | "backfaceVisibility"
+        | "WebkitBackfaceVisibility" => {
+            let from = v.transform.unwrap_or_default();
+            let t = Arc::make_mut(visual.transform.get_or_insert_with(Default::default));
+            match prop {
+                "transform" => t.spec.functions = from.spec.functions.clone(),
+                "translate" => t.spec.translate = from.spec.translate,
+                "rotate" => t.spec.rotate = from.spec.rotate,
+                "scale" => t.spec.scale = from.spec.scale,
+                "transformOrigin" => t.origin = from.origin,
+                "perspective" => t.perspective = from.perspective,
+                "perspectiveOrigin" => t.perspective_origin = from.perspective_origin,
+                "transformStyle" => t.preserve_3d = from.preserve_3d,
+                _ => t.backface_hidden = from.backface_hidden,
+            }
+        }
         "borderImageSource" | "borderImageSlice" | "borderImageWidth" | "borderImageOutset"
         | "borderImageRepeat" => {
             let from = v.border_image.unwrap_or_default();

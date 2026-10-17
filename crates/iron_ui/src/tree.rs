@@ -22,6 +22,7 @@ use crate::paint::{
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, Direction, TextOverflow, is_text_prop};
+use crate::transform::{Homography, Mat4, TransformContext};
 use crate::units::{UnitContext, Uses};
 
 /// The root container every React root renders into.
@@ -2061,11 +2062,80 @@ impl<L: LayoutEngine> UiTree<L> {
         // Fixed nodes paint above the tree, so they're tested first.
         for id in self.fixed_paint_order().iter().rev() {
             let inherited = self.pointer_events_of(self.parent(*id));
-            if let Some(hit) = self.hit(*id, x, y, inherited) {
+            if let Some(hit) = self.hit(*id, x, y, inherited, TransformContext::ROOT) {
                 return Some(hit);
             }
         }
-        self.hit(ROOT, x, y, true)
+        self.hit(ROOT, x, y, true, TransformContext::ROOT)
+    }
+
+    /// `node`'s own 4×4 transform (with its parent's `perspective`), if it has one.
+    fn node_matrix(&self, node: &Node, rect: Rect) -> Option<Mat4> {
+        let t = node.visual.transform.as_ref()?;
+        let m = t.spec.matrix(rect, t.origin)?;
+        // The parent's `perspective` applies to its transformed children.
+        let parent = node
+            .parent
+            .and_then(|p| Some((self.nodes.get(&p)?, self.rects.get(&p)?)));
+        match parent {
+            Some((p, prect)) => match p
+                .visual
+                .transform
+                .as_ref()
+                .and_then(|t| Some((t.perspective?, t.perspective_origin)))
+            {
+                Some((d, (ox, oy))) => {
+                    let (ox, oy) = (
+                        prect.x + ox.resolve(prect.width),
+                        prect.y + oy.resolve(prect.height),
+                    );
+                    Some(
+                        Mat4::translate(ox, oy, 0.0)
+                            .mul(&Mat4::perspective(d))
+                            .mul(&Mat4::translate(-ox, -oy, 0.0))
+                            .mul(&m),
+                    )
+                }
+                None => Some(m),
+            },
+            None => Some(m),
+        }
+    }
+
+    /// The plane `node` draws in, and the context for its children: `None` when it's
+    /// a back-facing `backface-visibility: hidden` element (not drawn or hit).
+    fn transform_step(
+        &self,
+        node: &Node,
+        rect: Rect,
+        xf: TransformContext,
+    ) -> Option<(Homography, TransformContext, bool)> {
+        let own = self.node_matrix(node, rect);
+        let acc = match &own {
+            Some(m) => xf.pending.mul(m),
+            None => xf.pending,
+        };
+        let t = node.visual.transform.as_deref();
+        if t.is_some_and(|t| t.backface_hidden) && acc.is_backface() {
+            return None;
+        }
+        let plane = if acc.is_identity() {
+            xf.world
+        } else {
+            xf.world.mul(&acc.flatten())
+        };
+        let child = if t.is_some_and(|t| t.preserve_3d) {
+            TransformContext {
+                world: xf.world,
+                pending: acc,
+            }
+        } else {
+            TransformContext {
+                world: plane,
+                pending: Mat4::IDENTITY,
+            }
+        };
+        Some((plane, child, own.is_some()))
     }
 
     /// Whether pointer events are enabled for `id` (inherited `pointerEvents`).
@@ -2080,7 +2150,16 @@ impl<L: LayoutEngine> UiTree<L> {
         true
     }
 
-    fn hit(&self, id: NodeId, x: f32, y: f32, inherited: bool) -> Option<NodeId> {
+    /// `x`, `y` are window coordinates; each element maps them into its own plane.
+    fn hit(
+        &self,
+        id: NodeId,
+        x: f32,
+        y: f32,
+        inherited: bool,
+        xf: TransformContext,
+    ) -> Option<NodeId> {
+        let (wx, wy) = (x, y);
         let node = self.nodes.get(&id)?;
         if node.style.display == Display::None {
             return None;
@@ -2092,9 +2171,15 @@ impl<L: LayoutEngine> UiTree<L> {
                 .iter()
                 .rev()
                 .filter(|c| !self.nodes.get(c).is_some_and(|n| is_fixed(**c, n)))
-                .find_map(|c| self.hit(*c, x, y, enabled));
+                .find_map(|c| self.hit(*c, wx, wy, enabled, xf));
         }
         let rect = *self.rects.get(&id)?;
+        let (plane, child_xf, _) = self.transform_step(node, rect, xf)?;
+        let (x, y) = if plane.is_identity() {
+            (wx, wy)
+        } else {
+            plane.inverse()?.apply(wx, wy)?
+        };
         let radii = resolve_radii(&node.visual.border_radius, rect.width, rect.height);
         // Hit testing matches what's drawn: clipped-away parts can't be hit.
         let l = self.layout.layout(id).unwrap_or_default();
@@ -2113,7 +2198,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 if self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
                     continue;
                 }
-                if let Some(hit) = self.hit(*child, x, y, enabled) {
+                if let Some(hit) = self.hit(*child, wx, wy, enabled, child_xf) {
                     return Some(hit);
                 }
             }
@@ -2188,19 +2273,30 @@ impl<L: LayoutEngine> UiTree<L> {
     pub fn draw_list(&mut self) -> Vec<DrawCmd> {
         self.layout_if_needed();
         let mut out = Vec::new();
-        self.collect(ROOT, &ComputedText::default(), &mut out);
+        self.collect(
+            ROOT,
+            &ComputedText::default(),
+            TransformContext::ROOT,
+            &mut out,
+        );
         // Fixed nodes paint last, outside their ancestors' clips and layers.
         for id in self.fixed_paint_order() {
             let text = match self.parent(id) {
                 Some(p) => self.computed_text(p),
                 None => ComputedText::default(),
             };
-            self.collect(id, &text, &mut out);
+            self.collect(id, &text, TransformContext::ROOT, &mut out);
         }
         out
     }
 
-    fn collect(&self, id: NodeId, inherited: &ComputedText, out: &mut Vec<DrawCmd>) {
+    fn collect(
+        &self,
+        id: NodeId,
+        inherited: &ComputedText,
+        xf: TransformContext,
+        out: &mut Vec<DrawCmd>,
+    ) {
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
@@ -2212,12 +2308,15 @@ impl<L: LayoutEngine> UiTree<L> {
             let text = inherited.child(&v.text);
             for child in self.paint_order(node).iter() {
                 if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
-                    self.collect(*child, &text, out);
+                    self.collect(*child, &text, xf, out);
                 }
             }
             return;
         }
         let (Some(&rect), Some(l)) = (self.rects.get(&id), self.layout.layout(id)) else {
+            return;
+        };
+        let Some((plane, child_xf, transformed)) = self.transform_step(node, rect, xf) else {
             return;
         };
         let radii = resolve_radii(&v.border_radius, rect.width, rect.height);
@@ -2389,6 +2488,9 @@ impl<L: LayoutEngine> UiTree<L> {
 
         // clip-path (and legacy `clip`) clip the element and everything inside it;
         // `overflow` clips only the children, to the padding box.
+        if transformed {
+            out.push(DrawCmd::PushTransform(plane));
+        }
         let self_clips = self.self_clips(node, rect, &l, radii);
         for clip in &self_clips {
             out.push(DrawCmd::PushClip(clip.clone()));
@@ -2437,7 +2539,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 shadows,
             });
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, out);
+            self.collect_children(node, &text, overflow_clip, child_xf, out);
             self.collect_scrollbars(id, out);
             out.extend(outline);
             // The layer must cover everything drawn into it, plus the blur's spread.
@@ -2472,7 +2574,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
             }
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, out);
+            self.collect_children(node, &text, overflow_clip, child_xf, out);
             self.collect_scrollbars(id, out);
             if let Some(mut outline) = outline {
                 if v.opacity < 1.0 {
@@ -2484,6 +2586,9 @@ impl<L: LayoutEngine> UiTree<L> {
         for _ in &self_clips {
             out.push(DrawCmd::PopClip);
         }
+        if transformed {
+            out.push(DrawCmd::PopTransform);
+        }
     }
 
     fn collect_children(
@@ -2491,6 +2596,7 @@ impl<L: LayoutEngine> UiTree<L> {
         node: &Node,
         text: &ComputedText,
         clip: Option<ClipShape>,
+        xf: TransformContext,
         out: &mut Vec<DrawCmd>,
     ) {
         if node.children.is_empty() {
@@ -2502,7 +2608,7 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         for child in self.paint_order(node).iter() {
             if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
-                self.collect(*child, text, out);
+                self.collect(*child, text, xf, out);
             }
         }
         if clipped {

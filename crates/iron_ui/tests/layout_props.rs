@@ -427,3 +427,150 @@ fn contents_and_fixed_from_stylesheets() {
     assert_eq!(rect(&mut tree, a).x, 0.0, "no wrapper padding");
     assert_eq!(rect(&mut tree, f), Rect::new(395.0, 395.0, 5.0, 5.0));
 }
+
+// M3-XF-02
+#[test]
+fn hit_testing_follows_transforms() {
+    let mut d = Dom::new();
+    let rotated = d.add(
+        0,
+        "box",
+        &[
+            ("position", "absolute".into()),
+            ("left", px(100.0)),
+            ("top", px(100.0)),
+            ("width", px(100.0)),
+            ("height", px(100.0)),
+            ("transform", "rotate(45deg)".into()),
+        ],
+    );
+    let mut tree = d.build("");
+    let hit = |tree: &mut UiTree, x: f32, y: f32| tree.hit_test(x, y).map(|n| n.0);
+    assert_eq!(hit(&mut tree, 150.0, 150.0), Some(rotated), "the centre");
+    assert_eq!(hit(&mut tree, 103.0, 103.0), None, "a corner turned away");
+    assert_eq!(
+        hit(&mut tree, 150.0, 85.0),
+        Some(rotated),
+        "a tip beyond the layout box"
+    );
+    assert_eq!(
+        tree.rect(NodeId(rotated)).unwrap().x,
+        100.0,
+        "layout is unchanged"
+    );
+
+    // Children move with their transformed parent; 3D turns squash it.
+    let mut d = Dom::new();
+    let card = d.add(
+        0,
+        "box",
+        &[
+            ("position", "absolute".into()),
+            ("left", px(0.0)),
+            ("top", px(0.0)),
+            ("width", px(100.0)),
+            ("height", px(50.0)),
+            ("transform", "translateX(200px) rotateY(60deg)".into()),
+        ],
+    );
+    let child = d.add(card, "box", &[("width", px(100.0)), ("height", px(50.0))]);
+    let mut tree = d.build("");
+    assert_eq!(hit(&mut tree, 250.0, 25.0), Some(child));
+    assert_eq!(
+        hit(&mut tree, 220.0, 25.0),
+        None,
+        "squashed to half its width"
+    );
+    assert_eq!(hit(&mut tree, 50.0, 25.0), None, "moved away");
+
+    // A back-facing `backface-visibility: hidden` element can't be hit.
+    let mut d = Dom::new();
+    d.add(
+        0,
+        "box",
+        &[
+            ("width", px(100.0)),
+            ("height", px(100.0)),
+            ("transform", "rotateY(180deg)".into()),
+            ("backfaceVisibility", "hidden".into()),
+        ],
+    );
+    let mut tree = d.build("");
+    assert_eq!(hit(&mut tree, 50.0, 50.0), None);
+    let _ = card;
+}
+
+// M3-XF-02
+#[test]
+fn transform_properties_parse_and_reset() {
+    let (mut tree, k) = row(&[&[]]);
+    for (prop, value) in [
+        (
+            "transform",
+            "rotate(0.5turn) translate(12px, 50%) scale(2, 0.5)",
+        ),
+        ("transform", "translateY(3in)"),
+        (
+            "transform",
+            "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)",
+        ),
+        ("translate", "10px 20px"),
+        ("rotate", "x 30deg"),
+        ("scale", "1.5"),
+        ("transformOrigin", "left top"),
+        ("perspective", "500px"),
+        ("perspectiveOrigin", "center"),
+        ("transformStyle", "preserve-3d"),
+        ("backfaceVisibility", "hidden"),
+        ("transform", "inherit"),
+        ("transform", "none"),
+    ] {
+        set_style(&mut tree, k[0], prop, value.into());
+    }
+    for (prop, value) in [
+        ("transform", "rotate(10)"),
+        ("transformStyle", "3d"),
+        ("perspective", "-1px"),
+    ] {
+        let errors = tree.apply_commit(&iron_core::Commit {
+            ops: vec![common::op(
+                iron_ui::opcodes::SET_STYLE,
+                &[common::n(k[0]), prop.into(), value.into()],
+            )],
+        });
+        assert!(!errors.is_empty(), "{prop}: {value}");
+    }
+}
+
+// M3-XF-02
+#[test]
+fn preserve_3d_combines_turns_before_flattening() {
+    // A parent turned 60° about y and a child turned back -60°: in 3D they cancel;
+    // flattened one after the other, the child is squashed twice.
+    let child_hit = |style: &str| {
+        let mut d = Dom::new();
+        let parent = d.add(
+            0,
+            "box",
+            &[
+                ("width", px(100.0)),
+                ("height", px(50.0)),
+                ("transform", "rotateY(60deg)".into()),
+                ("transformStyle", style.into()),
+            ],
+        );
+        let child = d.add(
+            parent,
+            "box",
+            &[
+                ("width", px(100.0)),
+                ("height", px(50.0)),
+                ("transform", "rotateY(-60deg)".into()),
+            ],
+        );
+        let mut tree = d.build("");
+        tree.hit_test(95.0, 25.0).map(|n| n.0) == Some(child)
+    };
+    assert!(child_hit("preserve-3d"), "the turns cancel: full width");
+    assert!(!child_hit("flat"), "flattened twice: squashed");
+}

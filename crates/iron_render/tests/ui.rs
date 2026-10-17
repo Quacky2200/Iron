@@ -1358,6 +1358,133 @@ fn gradients_follow_background_size_position_and_repeat() {
     assert_golden("M3-BG-04", 100, 50, &f.pixels, TOLERANCE);
 }
 
+// M3-XF-02
+#[test]
+fn transforms_draw_rotated_skewed_and_in_perspective() {
+    let mut s = Scene::new();
+    // 1. Rotated, rounded, bordered, with text that turns with it.
+    let a = s.add(
+        0,
+        &at(
+            20.0,
+            20.0,
+            80.0,
+            50.0,
+            &[
+                ("backgroundColor", "rgb(40, 120, 220)".into()),
+                ("border", "3px solid white".into()),
+                ("borderRadius", 10.0.into()),
+                ("transform", "rotate(30deg)".into()),
+            ],
+        ),
+    );
+    s.label(
+        a,
+        "Turn",
+        &[
+            ("color", "white".into()),
+            ("fontSize", 18.0.into()),
+            ("margin", 8.0.into()),
+        ],
+    );
+    // 2. Skewed gradient.
+    s.add(
+        0,
+        &at(
+            140.0,
+            20.0,
+            80.0,
+            50.0,
+            &[
+                (
+                    "backgroundImage",
+                    "linear-gradient(to right, orange, purple)".into(),
+                ),
+                ("transform", "skewX(-20deg)".into()),
+            ],
+        ),
+    );
+    // 3. A card turned in perspective (the parent's `perspective`), with a child
+    //    clipped by the card's rounded overflow.
+    let stage = s.add(
+        0,
+        &at(0.0, 100.0, 120.0, 90.0, &[("perspective", "200px".into())]),
+    );
+    let card = s.add(
+        stage,
+        &at(
+            20.0,
+            10.0,
+            80.0,
+            70.0,
+            &[
+                ("backgroundColor", "rgb(30, 160, 90)".into()),
+                ("borderRadius", 12.0.into()),
+                ("overflow", "hidden".into()),
+                ("transform", "rotateY(50deg)".into()),
+            ],
+        ),
+    );
+    s.add(
+        card,
+        &at(
+            40.0,
+            35.0,
+            80.0,
+            80.0,
+            &[("backgroundColor", "yellow".into())],
+        ),
+    );
+    // 4. Scaled text from its top-left corner.
+    s.label(
+        0,
+        "Big",
+        &at(
+            140.0,
+            110.0,
+            60.0,
+            24.0,
+            &[
+                ("color", "white".into()),
+                ("fontSize", 16.0.into()),
+                ("transform", "scale(2)".into()),
+                ("transformOrigin", "left top".into()),
+            ],
+        ),
+    );
+    let f = render(s, (240, 200), 1.0, BLACK);
+    assert_golden("M3-XF-02", 240, 200, &f.pixels, TOLERANCE);
+    let blue = |p: [u8; 4]| p[2] > 180 && p[0] < 90;
+    assert!(
+        blue(f.px(52, 58)),
+        "inside the rotated box: {:?}",
+        f.px(52, 58)
+    );
+    assert_eq!(
+        f.px(22, 22),
+        [0, 0, 0, 255],
+        "its layout corner is empty once turned"
+    );
+    let [r, g, b, _] = f.px(40, 130);
+    assert!(
+        g > r && g > b,
+        "the card in perspective: {:?}",
+        f.px(40, 130)
+    );
+    assert_eq!(
+        f.px(25, 112),
+        [0, 0, 0, 255],
+        "the turned card's near edge moved in"
+    );
+    let text: Vec<_> = (140..236)
+        .flat_map(|x| (110..158).map(move |y| (x, y)))
+        .collect();
+    assert!(
+        text.iter().any(|&(x, y)| f.px(x, y)[0] > 200 && y > 134),
+        "scaled text reaches below its layout box"
+    );
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

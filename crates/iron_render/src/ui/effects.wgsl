@@ -71,8 +71,9 @@ struct Clip {
     rx: vec4<f32>,     // corner radii x: top-left, top-right, bottom-right, bottom-left
     ry: vec4<f32>,     // corner radii y
     bounds: vec4<f32>, // the whole chain's bounding box (x, y, w, h)
-    info: vec4<f32>,   // x: parent index (1-based, 0 = none); y: 0 box, 1 nonzero
-                       // polygon, 2 evenodd; z: first point (vec4 index); w: point count
+    info: vec4<f32>,   // x: parent index (1-based, 0 = none); y: kind (0 box, 1 nonzero
+                       // polygon, 2 evenodd) + 4 × transform index; z: first point (vec4
+                       // index); w: point count
 };
 
 fn clip_corner(q: vec2<f32>, radii: vec4<f32>) -> f32 {
@@ -96,6 +97,24 @@ fn sd_clip(p: vec2<f32>, c: Clip) -> f32 {
     return min(max(edge.x, edge.y), 0.0) + length(max(edge, vec2(0.0)));
 }
 
+// Transforms (`PushTransform`) are stored in the clip table too: entry i - 1 holds
+// the homography from the element's plane to the window and its inverse.
+fn xf_apply(i: u32, p: vec2<f32>) -> vec2<f32> {
+    let e = clips[i - 1u];
+    let x = e.rect.x * p.x + e.rect.y * p.y + e.rect.z;
+    let y = e.rect.w * p.x + e.rx.x * p.y + e.rx.y;
+    let w = e.rx.z * p.x + e.rx.w * p.y + e.ry.x;
+    return vec2(x, y) / max(w, 1e-6);
+}
+
+fn xf_unapply(i: u32, p: vec2<f32>) -> vec2<f32> {
+    let e = clips[i - 1u];
+    let x = e.ry.y * p.x + e.ry.z * p.y + e.ry.w;
+    let y = e.bounds.x * p.x + e.bounds.y * p.y + e.bounds.z;
+    let w = e.bounds.w * p.x + e.info.x * p.y + e.info.y;
+    return vec2(x, y) / max(w, 1e-6);
+}
+
 // Polygon clips (`clip-path: polygon()` / `path()`): the points follow the entry
 // in the table, one vec4 each (x, y, and their contour's point range), read as a
 // flat array of vec4s.
@@ -111,7 +130,7 @@ fn clip_word(i: u32) -> vec4<f32> {
 }
 
 // Signed distance to the polygon's edges: negative inside, by its fill rule.
-fn sd_polygon(p: vec2<f32>, c: Clip) -> f32 {
+fn sd_polygon(p: vec2<f32>, c: Clip, even_odd: bool) -> f32 {
     let first = u32(c.info.z);
     let count = u32(c.info.w);
     var d = 1e9;
@@ -136,7 +155,7 @@ fn sd_polygon(p: vec2<f32>, c: Clip) -> f32 {
             crossings += 1u;
         }
     }
-    let inside = select(winding != 0, (crossings & 1u) == 1u, c.info.y > 1.5);
+    let inside = select(winding != 0, (crossings & 1u) == 1u, even_odd);
     return select(d, -d, inside);
 }
 
@@ -145,11 +164,19 @@ fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
     var cover = 1.0;
     for (var n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
         let c = clips[i - 1u];
+        // info.y: the shape kind (0 box, 1 nonzero polygon, 2 evenodd) + 4 × the
+        // transform its shape is in.
+        let kind = u32(c.info.y) % 4u;
+        let t = u32(c.info.y) / 4u;
+        var q = p;
+        if t > 0u {
+            q = xf_unapply(t, p);
+        }
         var d: f32;
-        if c.info.y > 0.5 {
-            d = sd_polygon(p, c);
+        if kind > 0u {
+            d = sd_polygon(q, c, kind == 2u);
         } else {
-            d = sd_clip(p, c);
+            d = sd_clip(q, c);
         }
         cover *= clamp(0.5 - d * scale, 0.0, 1.0);
         i = u32(c.info.x);

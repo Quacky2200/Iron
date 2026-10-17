@@ -78,6 +78,9 @@ struct Instance {
     color1: [f32; 4],
     params: [f32; 4],
     radii_y: [f32; 4],
+    /// x: transform index in the clip table (1-based, 0 = none): `rect` and the
+    /// rest are in that transform's plane.
+    xf: [f32; 4],
 }
 
 /// Circular corners approximating elliptical ones (the mean radius per corner),
@@ -110,8 +113,14 @@ struct Clips {
 
 impl Clips {
     /// Adds `shape` inside `parent`; returns the new index.
-    fn push(&mut self, shape: &ClipShape, parent: u32) -> u32 {
-        let mut bounds = shape.rect;
+    /// `xf`: the transform the shape is in (its clip-table index and homography).
+    fn push(
+        &mut self,
+        shape: &ClipShape,
+        parent: u32,
+        xf: Option<&(u32, iron_ui::transform::Homography)>,
+    ) -> u32 {
+        let mut bounds = xf.map_or(shape.rect, |(_, h)| h.map_rect(shape.rect));
         if parent > 0 {
             bounds = bounds.intersect(self.bounds[parent as usize - 1]);
         }
@@ -124,6 +133,9 @@ impl Clips {
             info: [parent as f32, 0.0, 0.0, 0.0],
         });
         self.bounds.push(bounds);
+        // The transform index rides above the shape kind: kind + 4 × index.
+        let xf_index = xf.map_or(0, |(i, _)| *i) as f32;
+        self.table[index].info[1] = 4.0 * xf_index;
         if let Some(polygon) = &shape.polygon {
             // The points follow the entry in the table, one vec4 each: x, y, and the
             // point range of its contour (start, end), so the shader can close it.
@@ -137,7 +149,7 @@ impl Clips {
             let first = (index + 1) * 5;
             self.table[index].info = [
                 parent as f32,
-                if polygon.even_odd { 2.0 } else { 1.0 },
+                4.0 * xf_index + if polygon.even_odd { 2.0 } else { 1.0 },
                 first as f32,
                 words.len() as f32,
             ];
@@ -150,6 +162,25 @@ impl Clips {
             }
         }
         index as u32 + 1
+    }
+
+    /// Stores a transform (homography and inverse) as a table entry; returns its
+    /// 1-based index. It isn't a clip: nothing chains to it.
+    fn push_transform(&mut self, h: &iron_ui::transform::Homography) -> u32 {
+        let m = h.0;
+        let i = h
+            .inverse()
+            .unwrap_or(iron_ui::transform::Homography::IDENTITY)
+            .0;
+        self.table.push(GpuClip {
+            rect: [m[0][0], m[0][1], m[0][2], m[1][0]],
+            rx: [m[1][1], m[1][2], m[2][0], m[2][1]],
+            ry: [m[2][2], i[0][0], i[0][1], i[0][2]],
+            bounds: [i[1][0], i[1][1], i[1][2], i[2][0]],
+            info: [i[2][1], i[2][2], 0.0, 0.0],
+        });
+        self.bounds.push(Rect::new(-1e6, -1e6, 2e6, 2e6));
+        self.table.len() as u32
     }
 
     fn bounds(&self, index: u32) -> Option<Rect> {
@@ -400,6 +431,7 @@ impl UiRenderer {
         let instance_attributes = wgpu::vertex_attr_array![
             0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
             4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
+            8 => Float32x4,
         ];
         let premultiplied = wgpu::ColorTargetState {
             format: CANVAS_FORMAT,
@@ -640,12 +672,16 @@ impl UiRenderer {
         let mut clip_stack: Vec<u32> = Vec::new();
         // Instances from `clip_from` on haven't been given their clip index yet.
         let mut clip_from = 0usize;
-        let tag = |instances: &mut Vec<Instance>, clip_from: &mut usize, clip: u32| {
+        // Instances since the last clip or transform change get the current ones.
+        let tag = |instances: &mut Vec<Instance>, clip_from: &mut usize, clip: u32, xf: u32| {
             for instance in &mut instances[*clip_from..] {
                 instance.params[3] = clip as f32;
+                instance.xf[0] = xf as f32;
             }
             *clip_from = instances.len();
         };
+        // Open `PushTransform`s: (clip-table index, homography to the window).
+        let mut xf_stack: Vec<(u32, iron_ui::transform::Homography)> = Vec::new();
 
         let flush = |steps: &mut Vec<Step>,
                      instances: &Vec<Instance>,
@@ -676,8 +712,12 @@ impl UiRenderer {
 
         for cmd in cmds {
             let clip = clip_stack.last().copied().unwrap_or(0);
+            let xf = xf_stack.last().map_or(0, |x| x.0);
+            let xf_h = xf_stack.last().map(|x| x.1);
+            // Window-space bounds of something drawn in the current plane.
+            let world = |r: Rect| xf_h.map_or(r, |h| h.map_rect(r));
             // Skip anything the active clip removes entirely.
-            if let (Some(bounds), Some(clip_bounds)) = (cmd.bounds(), clips.bounds(clip))
+            if let (Some(bounds), Some(clip_bounds)) = (cmd.bounds().map(world), clips.bounds(clip))
                 && !matches!(cmd, DrawCmd::PushLayer { .. })
                 && bounds.intersect(clip_bounds).is_empty()
             {
@@ -685,11 +725,21 @@ impl UiRenderer {
             }
             match cmd {
                 DrawCmd::PushClip(shape) => {
-                    tag(&mut instances, &mut clip_from, clip);
-                    clip_stack.push(clips.push(shape, clip));
+                    tag(&mut instances, &mut clip_from, clip, xf);
+                    clip_stack.push(clips.push(shape, clip, xf_stack.last()));
+                }
+                DrawCmd::PushTransform(h) => {
+                    tag(&mut instances, &mut clip_from, clip, xf);
+                    xf_stack.push((clips.push_transform(h), *h));
+                }
+                DrawCmd::PopTransform => {
+                    tag(&mut instances, &mut clip_from, clip, xf);
+                    if xf_stack.pop().is_none() {
+                        tracing::warn!("PopTransform without PushTransform; ignored");
+                    }
                 }
                 DrawCmd::PopClip => {
-                    tag(&mut instances, &mut clip_from, clip);
+                    tag(&mut instances, &mut clip_from, clip, xf);
                     if clip_stack.pop().is_none() {
                         tracing::warn!("PopClip without PushClip; ignored");
                     }
@@ -708,6 +758,7 @@ impl UiRenderer {
                         color1: border_color,
                         params: [KIND_QUAD, 0.0, gradient, 0.0],
                         radii_y: radii.y,
+                        xf: [0.0; 4],
                     };
                     let background = linear_premultiplied(q.background);
                     let border_color = linear_premultiplied(q.border_color);
@@ -753,6 +804,7 @@ impl UiRenderer {
                                 rect: rect4(fill.area),
                                 radii: fill.radii.x,
                                 radii_y: fill.radii.y,
+                                xf: [0.0; 4],
                                 p0: rect4(tile),
                                 p1: [gap[0], gap[1], 0.0, 0.0],
                                 color0: [0.0; 4],
@@ -783,6 +835,7 @@ impl UiRenderer {
                             rect: rect4(rect),
                             radii: [0.0; 4],
                             radii_y: [0.0; 4],
+                            xf: [0.0; 4],
                             p0: [0.0; 4],
                             p1: [0.0; 4],
                             color0: linear_premultiplied(d.color),
@@ -861,6 +914,7 @@ impl UiRenderer {
                                 ],
                                 radii: [0.0; 4],
                                 radii_y: [0.0; 4],
+                                xf: [0.0; 4],
                                 p0: [e.x as f32, e.y as f32, e.width as f32, e.height as f32],
                                 p1: [0.0; 4],
                                 color0: color,
@@ -925,6 +979,7 @@ impl UiRenderer {
                         rect: rect4(clamp_size(shape)),
                         radii: grown,
                         radii_y: grown,
+                        xf: [0.0; 4],
                         p0: rect4(s.rect),
                         p1: circular(s.radii),
                         color0: linear_premultiplied(s.color),
@@ -949,6 +1004,7 @@ impl UiRenderer {
                         rect: rect4(padding),
                         radii: inner.x,
                         radii_y: inner.y,
+                        xf: [0.0; 4],
                         p0: rect4(hole),
                         p1: circular(inner).map(|r| (r - s.spread).max(0.0)),
                         color0: linear_premultiplied(s.color),
@@ -977,6 +1033,7 @@ impl UiRenderer {
                         rect: rect4(*rect),
                         radii: radii.x,
                         radii_y: radii.y,
+                        xf: [0.0; 4],
                         p0: *widths,
                         p1: [0.0; 4],
                         color0: [0.0; 4],
@@ -1031,6 +1088,7 @@ impl UiRenderer {
                                     rect: rect4(dst),
                                     radii: [0.0; 4],
                                     radii_y: [0.0; 4],
+                                    xf: [0.0; 4],
                                     p0: [tx, ty, tw, th],
                                     p1: [gx, gy, 0.0, 0.0],
                                     // The piece's part of the texture (uv).
@@ -1072,6 +1130,7 @@ impl UiRenderer {
                                     rect: rect4(snap(piece.dst)),
                                     radii: [0.0; 4],
                                     radii_y: [0.0; 4],
+                                    xf: [0.0; 4],
                                     p0: [area.x + src.x, area.y + src.y, src.width, src.height],
                                     p1: rect4(*area),
                                     color0: [0.0; 4],
@@ -1091,7 +1150,7 @@ impl UiRenderer {
                     matrix,
                     shadows,
                 } => {
-                    tag(&mut instances, &mut clip_from, clip);
+                    tag(&mut instances, &mut clip_from, clip, xf);
                     flush(&mut steps, &instances, &mut batch_start, current);
                     let layer = frame_textures.len();
                     frame_textures.push(self.take_texture(gpu, size));
@@ -1103,7 +1162,7 @@ impl UiRenderer {
                         texture: layer,
                         mask: None,
                         parent: current,
-                        bounds: *bounds,
+                        bounds: world(*bounds),
                         blur: *blur,
                         opacity: *opacity,
                         blend: blend.index(),
@@ -1119,7 +1178,7 @@ impl UiRenderer {
                         tracing::warn!("BeginMask outside a layer; ignored");
                         continue;
                     };
-                    tag(&mut instances, &mut clip_from, clip);
+                    tag(&mut instances, &mut clip_from, clip, xf);
                     flush(&mut steps, &instances, &mut batch_start, current);
                     let mask = frame_textures.len();
                     frame_textures.push(self.take_texture(gpu, size));
@@ -1147,7 +1206,7 @@ impl UiRenderer {
                         tracing::warn!("PopLayer without PushLayer; ignored");
                         continue;
                     };
-                    tag(&mut instances, &mut clip_from, clip);
+                    tag(&mut instances, &mut clip_from, clip, xf);
                     flush(&mut steps, &instances, &mut batch_start, current);
                     // Drawing may have moved on to the mask; the layer is its own texture.
                     let current_layer = layer_texture;
@@ -1235,12 +1294,13 @@ impl UiRenderer {
                     blur,
                     matrix,
                 } => {
-                    tag(&mut instances, &mut clip_from, clip);
+                    tag(&mut instances, &mut clip_from, clip, xf);
                     flush(&mut steps, &instances, &mut batch_start, current);
-                    let own_clip = clips.push(&ClipShape::rounded(*rect, *radii), clip);
-                    let visible = clips.bounds(own_clip).unwrap_or(*rect);
+                    let own_clip =
+                        clips.push(&ClipShape::rounded(*rect, *radii), clip, xf_stack.last());
+                    let visible = clips.bounds(own_clip).unwrap_or(world(*rect));
                     let (Some(area), Some(blur_area)) =
-                        (to_px(visible), to_px(rect.expand(3.0 * blur)))
+                        (to_px(visible), to_px(world(rect.expand(3.0 * blur))))
                     else {
                         continue;
                     };
@@ -1276,7 +1336,8 @@ impl UiRenderer {
             }
         }
         let clip = clip_stack.last().copied().unwrap_or(0);
-        tag(&mut instances, &mut clip_from, clip);
+        let xf = xf_stack.last().map_or(0, |x| x.0);
+        tag(&mut instances, &mut clip_from, clip, xf);
         flush(&mut steps, &instances, &mut batch_start, current);
         // Close layers left open by an unbalanced list.
         while let Some(OpenLayer {

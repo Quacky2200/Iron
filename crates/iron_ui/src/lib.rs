@@ -20,6 +20,7 @@ mod style;
 mod svg_path;
 pub mod text;
 pub mod text_style;
+pub mod transform;
 mod tree;
 pub mod units;
 

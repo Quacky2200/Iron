@@ -47,6 +47,7 @@ struct Instance {
     @location(6) params: vec4<f32>, // x: kind, y: sigma (logical px), z: gradient index or -1,
                                     // w: clip index (1-based, 0 = none)
     @location(7) radii_y: vec4<f32>, // vertical corner radii (elliptical corners)
+    @location(8) xf: vec4<f32>,      // x: transform index in the clip table (0 = none)
 };
 
 struct VsOut {
@@ -59,6 +60,7 @@ struct VsOut {
     @location(5) @interpolate(flat) color1: vec4<f32>,
     @location(6) @interpolate(flat) params: vec4<f32>,
     @location(7) @interpolate(flat) radii_y: vec4<f32>,
+    @location(8) @interpolate(flat) xf: vec4<f32>,
 };
 
 @vertex
@@ -77,7 +79,9 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     var area = vec4<f32>(inst.rect.xy - vec2(grow), inst.rect.zw + vec2(2.0 * grow));
     // Don't rasterize what the clip removes anyway (fragments only use `rect`).
     let clip = u32(inst.params.w);
-    if clip > 0u {
+    let xf = u32(inst.xf.x);
+    // (The clip bounds are in window space, so this only works untransformed.)
+    if clip > 0u && xf == 0u {
         let b = clips[clip - 1u].bounds;
         let lo = max(area.xy, b.xy - vec2(grow));
         let hi = max(lo, min(area.xy + area.zw, b.xy + b.zw + vec2(grow)));
@@ -88,7 +92,11 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
         vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0),
         vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
     );
-    let logical = area.xy + corners[vi] * area.zw;
+    var logical = area.xy + corners[vi] * area.zw;
+    if xf > 0u {
+        // Into the window through the element's plane (straight edges stay straight).
+        logical = xf_apply(xf, logical);
+    }
     let physical = logical * globals.scale;
     let ndc = vec2(physical.x / globals.viewport.x * 2.0 - 1.0, 1.0 - physical.y / globals.viewport.y * 2.0);
 
@@ -102,6 +110,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     out.color1 = inst.color1;
     out.params = inst.params;
     out.radii_y = inst.radii_y;
+    out.xf = inst.xf;
     return out;
 }
 
@@ -343,9 +352,10 @@ fn text_coverage(a: f32, color: vec4<f32>) -> f32 {
     return mix(a, pow(a, 1.0 / 1.6), dark);
 }
 
-fn glyph(in: VsOut) -> vec4<f32> {
+// `p` is the fragment in the glyph's plane (logical px).
+fn glyph(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     let origin = round(in.rect.xy * globals.scale);
-    let local = floor(in.pos.xy) - origin;
+    let local = floor(p * globals.scale) - origin;
     let size = in.p0.zw;
     if local.x < 0.0 || local.y < 0.0 || local.x >= size.x || local.y >= size.y {
         discard;
@@ -364,7 +374,7 @@ fn glyph(in: VsOut) -> vec4<f32> {
     }
     if in.params.z >= 0.0 {
         // `background-clip: text`: the gradient over the element's box (p1).
-        let c = gradient_color(u32(in.params.z), in.pos.xy / globals.scale, in.p1);
+        let c = gradient_color(u32(in.params.z), p, in.p1);
         return c * text_coverage(a, c);
     }
     return in.color0 * text_coverage(a, in.color0);
@@ -379,8 +389,9 @@ struct Clip {
     rx: vec4<f32>,     // corner radii x: top-left, top-right, bottom-right, bottom-left
     ry: vec4<f32>,     // corner radii y
     bounds: vec4<f32>, // the whole chain's bounding box (x, y, w, h)
-    info: vec4<f32>,   // x: parent index (1-based, 0 = none); y: 0 box, 1 nonzero
-                       // polygon, 2 evenodd; z: first point (vec4 index); w: point count
+    info: vec4<f32>,   // x: parent index (1-based, 0 = none); y: kind (0 box, 1 nonzero
+                       // polygon, 2 evenodd) + 4 × transform index; z: first point (vec4
+                       // index); w: point count
 };
 
 fn clip_corner(q: vec2<f32>, radii: vec4<f32>) -> f32 {
@@ -404,6 +415,24 @@ fn sd_clip(p: vec2<f32>, c: Clip) -> f32 {
     return min(max(edge.x, edge.y), 0.0) + length(max(edge, vec2(0.0)));
 }
 
+// Transforms (`PushTransform`) are stored in the clip table too: entry i - 1 holds
+// the homography from the element's plane to the window and its inverse.
+fn xf_apply(i: u32, p: vec2<f32>) -> vec2<f32> {
+    let e = clips[i - 1u];
+    let x = e.rect.x * p.x + e.rect.y * p.y + e.rect.z;
+    let y = e.rect.w * p.x + e.rx.x * p.y + e.rx.y;
+    let w = e.rx.z * p.x + e.rx.w * p.y + e.ry.x;
+    return vec2(x, y) / max(w, 1e-6);
+}
+
+fn xf_unapply(i: u32, p: vec2<f32>) -> vec2<f32> {
+    let e = clips[i - 1u];
+    let x = e.ry.y * p.x + e.ry.z * p.y + e.ry.w;
+    let y = e.bounds.x * p.x + e.bounds.y * p.y + e.bounds.z;
+    let w = e.bounds.w * p.x + e.info.x * p.y + e.info.y;
+    return vec2(x, y) / max(w, 1e-6);
+}
+
 // Polygon clips (`clip-path: polygon()` / `path()`): the points follow the entry
 // in the table, one vec4 each (x, y, and their contour's point range), read as a
 // flat array of vec4s.
@@ -419,7 +448,7 @@ fn clip_word(i: u32) -> vec4<f32> {
 }
 
 // Signed distance to the polygon's edges: negative inside, by its fill rule.
-fn sd_polygon(p: vec2<f32>, c: Clip) -> f32 {
+fn sd_polygon(p: vec2<f32>, c: Clip, even_odd: bool) -> f32 {
     let first = u32(c.info.z);
     let count = u32(c.info.w);
     var d = 1e9;
@@ -444,7 +473,7 @@ fn sd_polygon(p: vec2<f32>, c: Clip) -> f32 {
             crossings += 1u;
         }
     }
-    let inside = select(winding != 0, (crossings & 1u) == 1u, c.info.y > 1.5);
+    let inside = select(winding != 0, (crossings & 1u) == 1u, even_odd);
     return select(d, -d, inside);
 }
 
@@ -453,11 +482,19 @@ fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
     var cover = 1.0;
     for (var n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
         let c = clips[i - 1u];
+        // info.y: the shape kind (0 box, 1 nonzero polygon, 2 evenodd) + 4 × the
+        // transform its shape is in.
+        let kind = u32(c.info.y) % 4u;
+        let t = u32(c.info.y) / 4u;
+        var q = p;
+        if t > 0u {
+            q = xf_unapply(t, p);
+        }
         var d: f32;
-        if c.info.y > 0.5 {
-            d = sd_polygon(p, c);
+        if kind > 0u {
+            d = sd_polygon(q, c, kind == 2u);
         } else {
-            d = sd_clip(p, c);
+            d = sd_clip(q, c);
         }
         cover *= clamp(0.5 - d * scale, 0.0, 1.0);
         i = u32(c.info.x);
@@ -473,12 +510,21 @@ fn clip_coverage(p: vec2<f32>, params: vec4<f32>) -> f32 {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let p = in.pos.xy / globals.scale;
-    let clip = clip_coverage(p, in.params);
+    let world = in.pos.xy / globals.scale;
+    let clip = clip_coverage(world, in.params);
     if clip <= 0.0 {
         discard;
     }
-    return shade(in, p) * clip;
+    return shade(in, local_point(in, world)) * clip;
+}
+
+// The fragment in the instance's own plane.
+fn local_point(in: VsOut, world: vec2<f32>) -> vec2<f32> {
+    let xf = u32(in.xf.x);
+    if xf > 0u {
+        return xf_unapply(xf, world);
+    }
+    return world;
 }
 
 fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
@@ -491,7 +537,7 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
         return in.color0 * shadow * (1.0 - shape_coverage(p, in.p0, in.p1, in.p1));
     }
     if kind == KIND_GLYPH {
-        return glyph(in);
+        return glyph(in, p);
     }
     if kind == KIND_BORDER {
         return styled_border(in, p);
@@ -578,8 +624,9 @@ fn shade(in: VsOut, p: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
-    let p = in.pos.xy / globals.scale;
-    let clip = shape_coverage(p, in.rect, in.radii, in.radii_y) * clip_coverage(p, in.params);
+    let world = in.pos.xy / globals.scale;
+    let p = local_point(in, world);
+    let clip = shape_coverage(p, in.rect, in.radii, in.radii_y) * clip_coverage(world, in.params);
     if clip <= 0.0 {
         discard;
     }

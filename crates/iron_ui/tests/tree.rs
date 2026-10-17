@@ -179,6 +179,8 @@ fn shape(cmds: &[DrawCmd]) -> Vec<String> {
             }
             DrawCmd::PopLayer => "pop".into(),
             DrawCmd::BeginMask(_) => "mask".into(),
+            DrawCmd::PushTransform(_) => "transform".into(),
+            DrawCmd::PopTransform => "untransform".into(),
             DrawCmd::PushClip(c) => format!("clip {}x{}", c.rect.width, c.rect.height),
             DrawCmd::PopClip => "unclip".into(),
             DrawCmd::Text(t) => format!("text {}", t.runs.len()),

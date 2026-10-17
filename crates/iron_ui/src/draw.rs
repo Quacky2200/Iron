@@ -9,6 +9,7 @@ use crate::paint::{
     BorderStyle, ColorMatrix, MaskMode,
 };
 use crate::text_style::DecorationStyle;
+use crate::transform::Homography;
 
 /// An axis-aligned rectangle in logical pixels (window space).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -317,6 +318,11 @@ pub enum DrawCmd {
         shadows: Vec<LayerShadow>,
     },
     PopLayer,
+    /// What follows (up to the matching `PopTransform`) is drawn in a transformed
+    /// plane: the homography maps its coordinates to the window (it replaces, not
+    /// composes with, the transform outside).
+    PushTransform(Homography),
+    PopTransform,
     /// Inside a layer, after its content: what follows (up to `PopLayer`) draws the
     /// layer's mask, which the layer is multiplied by when composited.
     BeginMask(MaskMode),
@@ -475,9 +481,12 @@ impl DrawCmd {
             DrawCmd::InsetShadow { shadow, .. } => Some(shadow.rect),
             DrawCmd::PushLayer { bounds, .. } => Some(*bounds),
             DrawCmd::Text(t) => Some(t.bounds),
-            DrawCmd::PopLayer | DrawCmd::BeginMask(_) | DrawCmd::PushClip(_) | DrawCmd::PopClip => {
-                None
-            }
+            DrawCmd::PopLayer
+            | DrawCmd::BeginMask(_)
+            | DrawCmd::PushTransform(_)
+            | DrawCmd::PopTransform
+            | DrawCmd::PushClip(_)
+            | DrawCmd::PopClip => None,
         }
     }
 
@@ -512,6 +521,8 @@ impl DrawCmd {
             | DrawCmd::PushLayer { .. }
             | DrawCmd::PopLayer
             | DrawCmd::BeginMask(_)
+            | DrawCmd::PushTransform(_)
+            | DrawCmd::PopTransform
             | DrawCmd::PushClip(_)
             | DrawCmd::PopClip => {}
         }

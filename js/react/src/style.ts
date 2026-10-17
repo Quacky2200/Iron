@@ -157,6 +157,26 @@ export interface IronStyle {
   WebkitMaskSize?: string;
   WebkitMaskPosition?: string;
   WebkitMaskRepeat?: string;
+  /**
+   * Transform functions, applied right to left about `transformOrigin`: `matrix`, `matrix3d`,
+   * `perspective`, `rotate`/`rotateX`/`rotateY`/`rotateZ`/`rotate3d`, `translate`/`translateX`/`Y`/`Z`/
+   * `translate3d`, `scale`/`scaleX`/`Y`/`Z`/`scale3d`, `skew`/`skewX`/`skewY`, or `none`.
+   */
+  transform?: string;
+  /** `x [y [z]]`, applied before `transform`. */
+  translate?: string;
+  /** `angle`, `x|y|z angle` or `vx vy vz angle`, applied after `translate`. */
+  rotate?: string;
+  /** `x [y [z]]` (numbers or percentages), applied after `rotate`. */
+  scale?: string | number;
+  /** `x y [z]`; default `50% 50%`. */
+  transformOrigin?: string;
+  /** Depth for this element's transformed children (`none` or a length). */
+  perspective?: Length | "none";
+  perspectiveOrigin?: string;
+  /** `preserve-3d` lets children share this element's 3D space (no depth sorting). */
+  transformStyle?: "flat" | "preserve-3d";
+  backfaceVisibility?: "visible" | "hidden";
   /** Comma-separated layers, top first; the other background properties take matching lists. */
   backgroundImage?: string;
   backgroundSize?: string;

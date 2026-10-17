@@ -42,6 +42,8 @@ impl Uses {
 
 const RELATIVE_UNITS: &[&str] = &[
     "em", "rem", "vw", "vh", "vmin", "vmax", "dvw", "dvh", "svw", "svh", "lvw", "lvh",
+    // Absolute units also become px here (96px to the inch, as in CSS).
+    "in", "cm", "mm", "q", "pt", "pc",
 ];
 const MATH: &[&str] = &["calc", "min", "max", "clamp"];
 
@@ -229,6 +231,12 @@ fn unit_px(unit: &str, ctx: &UnitContext, uses: &mut Uses) -> Option<f32> {
         "vh" | "dvh" | "svh" | "lvh" => vh,
         "vmin" => vw.min(vh),
         "vmax" => vw.max(vh),
+        "in" => return Some(96.0),
+        "cm" => return Some(96.0 / 2.54),
+        "mm" => return Some(96.0 / 25.4),
+        "q" => return Some(96.0 / 101.6),
+        "pt" => return Some(96.0 / 72.0),
+        "pc" => return Some(16.0),
         _ => return None,
     };
     if unit.ends_with('w') || unit.ends_with('h') || unit.starts_with('v') {

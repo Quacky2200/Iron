@@ -366,9 +366,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] System clipboard (arboard, opened on first use) for the requests above, in `iron_app`
    - [ ] Later: undo/redo, `type="password"`, `maxLength`, wheel scrolling inside a textarea,
      `::placeholder` / `::selection` / `caret-color` styling
-   - [ ] Selecting static text (drag, double-click word, triple-click line, Ctrl+C) on text elements,
-     with `user-select: none | text` and a `::selection` colour; shares Parley's selection geometry
-     and the clipboard with the editors
+   - [ ] Selecting static text and `user-select`: moved to M3d step 5h
    - [x] IME: winit `Ime` events → pre-edit shown underlined at the caret (not part of the value,
      no `input` events), commit inserted with an `input` event, pre-edit dropped when focus
      leaves; IME is allowed only while an editable field has focus and the candidate window
@@ -564,10 +562,39 @@ and `@font-face`.
      composite multiplies by — `M3-FX-04`. Along the way, gradients now follow
      `background-size`/`-position`/`-repeat` (one tile, repeated in the shader) — `M3-BG-04`
    - [x] `opacity` as a percentage (and as a numeric string) — `M3-FX-01`
+   - [x] **5e** Transforms (moved up from group 6): `transform` with every function — `matrix`,
+     `matrix3d`, `perspective`, `rotate`/`rotateX`/`rotateY`/`rotateZ`/`rotate3d`, `translate`/
+     `translateX`/`Y`/`Z`/`translate3d`, `scale`/`scaleX`/`Y`/`Z`/`scale3d`, `skew`/`skewX`/`skewY`, `none`,
+     several functions, and the CSS-wide keywords; the `translate` / `rotate` / `scale` properties;
+     `transform-origin` (with z); `perspective` / `perspective-origin`; `transform-style: flat |
+     preserve-3d`; `backface-visibility`. Drawing and hit testing through them. Absolute length units
+     (`in`, `cm`, `mm`, `Q`, `pt`, `pc`) everywhere. Each element's 4×4 transform flattens to a 3×3
+     homography (`transform.rs`); `PushTransform`/`PopTransform` in the draw list, transforms stored
+     in the renderer's clip table, instances carry a transform index (the vertex shader maps corners,
+     fragments map back to the plane), clips remember their plane; hit testing inverts — `M3-XF-01`,
+     `M3-XF-02`
+   - [ ] **5f** `visibility: visible | hidden | collapse` (keeps its layout space, isn't drawn or hit;
+     children can opt back in with `visible`; inherited)
+   - [ ] **5g** Lists: a `list` element (React `<List>`) with item children, `list-style-type`
+     (`disc`, `circle`, `square`, `decimal`, `lower/upper-alpha`, `lower/upper-roman`, `none`, a
+     string), `list-style-position`, `list-style-image`, the `list-style` shorthand and a `::marker`
+     pseudo-element for styling markers; counters (`counter-reset`/`-increment`, `counter()`) if
+     cheap. Paragraphs and headings stay `text` with classes (no `p`/`h1` elements)
+   - [ ] **5h** `user-select: none | auto | text | all` and selecting static text (drag, double-click
+     word, triple-click line, Ctrl+C) on text elements, with a `::selection` colour, sharing Parley's
+     selection geometry and the clipboard with the text fields (the M3c "selecting static text" item)
+   - [ ] **5.1** SVG: an `svg` element (React `<Svg>` and children) with the core shapes (`rect`,
+     `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `g`, `text` basics), `viewBox` /
+     `preserveAspectRatio`, `use`/`defs`, gradients (`linearGradient`, `radialGradient`), `clipPath`
+     and `mask` (which also unlocks `clip-path: url(#id)`), and loading `.svg` files as images
+     (`url(icon.svg)`, `Image src`). CSS styling: presentation attributes and properties (`fill`,
+     `stroke`, `stroke-width`, `stroke-linecap`/`-linejoin`/`-dasharray`/`-dashoffset`,
+     `fill-rule`, `opacity`/`fill-opacity`/`stroke-opacity`, `transform` on shapes,
+     `currentColor`), selectors matching SVG elements, inheritance, transitions later. Rendering:
+     tessellate fills and strokes (e.g. lyon) into triangles, or rasterize with a vector rasterizer
+     into a texture (e.g. resvg/tiny-skia for files) — decide when starting
 6. **Transforms**
-   - [ ] `transform`: `translate*`, `scale*`, `rotate*`, `skew*`, `matrix()`, `none`; `transform-origin`;
-     drawing and hit testing through transforms
-   - [ ] 3D: `perspective()`, `perspective-origin`, `rotateX`/`rotateY`, `translateZ` (UI on world panels)
+   - [x] Done as step 5e (2D and 3D); see group 5
 7. **Transitions and animations**
    - [ ] `transition` (+ `-property`, `-duration`, `-delay`, `-timing-function`) for numbers, lengths,
      colours, shadows and transforms; discrete properties snap
