@@ -22,8 +22,7 @@ import type {
   IronTransitionEvent,
   IronWheelEvent,
 } from "./events.ts";
-import { type Container, type Instance, reconciler } from "./host.ts";
-import { ROOT_ID } from "./opcodes.ts";
+import { containerFor, type Instance, reconciler, screenContainer } from "./host.ts";
 import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
@@ -238,7 +237,7 @@ export interface Root {
   unmount(): void;
 }
 
-let rootCreated = false;
+const rootsCreated = new Set<number>();
 
 const reportError = (kind: string) => (error: unknown) => {
   const e = error instanceof Error ? error : new Error(String(error));
@@ -246,14 +245,18 @@ const reportError = (kind: string) => (error: unknown) => {
 };
 
 /**
- * Creates the UI root. The engine has a single root container (node 0), so
- * there is one root per game; render more UI by composing components.
+ * Creates a UI root: the screen's (no argument), or a world panel's (pass the
+ * `WorldPanel` component, or its id) to draw React UI on a plane in the world. Each
+ * target has one root; render more UI by composing components.
  */
-export function createRoot(): Root {
-  if (rootCreated) throw new Error("createRoot() can only be called once per game");
-  rootCreated = true;
+export function createRoot(target?: { readonly id: number } | number): Root {
+  const id = typeof target === "number" ? target : (target?.id ?? 0);
+  if (rootsCreated.has(id)) {
+    throw new Error(id === 0 ? "createRoot() can only be called once per game" : `panel ${id} already has a root`);
+  }
+  rootsCreated.add(id);
 
-  const container: Container = { id: ROOT_ID, children: new Set() };
+  const container = id === 0 ? screenContainer : containerFor(id);
   const root = reconciler.createContainer(
     container,
     ConcurrentRoot,
@@ -276,11 +279,12 @@ export function createRoot(): Root {
     unmount() {
       reconciler.updateContainerSync(null, root, null, null);
       reconciler.flushSyncWork();
+      rootsCreated.delete(id);
     },
   };
 }
 
 /** Lets tests create fresh roots. Not part of the game API. */
 export function _resetRootForTests() {
-  rootCreated = false;
+  rootsCreated.clear();
 }

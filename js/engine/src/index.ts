@@ -56,7 +56,7 @@ export { DateTime, type DateTimeKind, TimeSpan } from "./time.ts";
 export { Task, Time, TimeSince, TimeUntil } from "./clock.ts";
 export { Console, Debug, Log } from "./log.ts";
 export { Random, Rng } from "./random.ts";
-export { Camera, CameraFollow, CameraOrbit, PlaneRenderer } from "./rendering.ts";
+export { Camera, CameraFollow, CameraOrbit, PlaneRenderer, WorldPanel } from "./rendering.ts";
 export { Screen } from "./screen.ts";
 export {
   Component,

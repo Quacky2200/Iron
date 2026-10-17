@@ -1,7 +1,8 @@
 // M5.a showcase: GameObjects in 3D. A camera orbits a floor with standing coloured
 // planes; a ring of panels spins as one object (children follow their parent). An
 // orthographic camera draws a top-down minimap in the corner (camera depth and rect),
-// and screen UI is drawn over the world.
+// and screen UI is drawn over the world. A menu stands in the world on a WorldPanel:
+// React UI on a plane, with hover and clicks through the camera.
 import {
   Camera,
   CameraOrbit,
@@ -15,6 +16,8 @@ import {
   Time,
   Vector2,
   Vector3,
+  WorldPanel,
+  addStyleSheet,
 } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
@@ -30,7 +33,7 @@ class World extends Component {
   override onStart() {
     const cam = new GameObject("Main Camera");
     cam.addComponent(Camera, { fieldOfView: 55, backgroundColor: Color.hex("#0b0e14") });
-    cam.addComponent(CameraOrbit, { center: new Vector3(0, 0.8, 0), distance: 7.5, pitch: 22, yaw: 20, autoRotate: 15 });
+    cam.addComponent(CameraOrbit, { center: new Vector3(0, 0.8, 0), distance: 7.5, pitch: 22, yaw: 20, autoRotate: 10 });
 
     // A minimap: straight down, orthographic, drawn over the main view (higher depth).
     const map = new GameObject("Minimap", { position: new Vector3(0, 20, 0), rotation: Quaternion.euler(-90, 0, 0) });
@@ -63,6 +66,11 @@ class World extends Component {
       const tile = new GameObject(`Tile ${i}`, { parent: ring, position: dir.scale(2.5).add(new Vector3(0, -0.88, 0)) });
       tile.addComponent(PlaneRenderer, { size: new Vector2(1.2, 1.2), color: color.withAlpha(0.6) });
     }
+    // A menu in the world, behind the ring.
+    const menu = new GameObject("Menu", { position: new Vector3(0, 3.1, -3.5), rotation: Quaternion.euler(-10, 0, 0) });
+    const panel = menu.addComponent(WorldPanel, { width: 640, height: 400, pixelsPerMeter: 170 });
+    createRoot(panel).render(<Menu />);
+
     // A see-through pane in the middle.
     const glass = new GameObject("Glass", { position: new Vector3(0, 1, 0), rotation: Quaternion.euler(90, 0, 0) });
     glass.addComponent(PlaneRenderer, { size: new Vector2(2, 2), color: new Color(0.6, 0.9, 1, 0.35) });
@@ -70,6 +78,38 @@ class World extends Component {
 }
 
 register({ World });
+
+addStyleSheet(`
+  .menu-item { padding: 12px 22px; border-radius: 10px; background-color: rgba(255,255,255,0.08);
+    transition: background-color 0.15s; cursor: pointer; }
+  .menu-item:hover { background-color: #4d96ff; }
+  .menu-item text { color: #e8eefc; font-size: 30px; }
+`);
+
+function Menu() {
+  const [clicks, setClicks] = useState(0);
+  return (
+    <box
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: 28,
+        gap: 14,
+        flexDirection: "column",
+        borderRadius: 24,
+        backgroundColor: "rgba(14, 18, 28, 0.88)",
+        border: "2px solid rgba(255,255,255,0.18)",
+      }}
+    >
+      <text style={{ color: "#ffd93d", fontSize: 38, fontWeight: 700 }}>World Panel</text>
+      {["Play", "Options", `Clicked ${clicks}×`].map((label) => (
+        <box key={label} className="menu-item" onClick={() => setClicks((n) => n + 1)}>
+          <text>{label}</text>
+        </box>
+      ))}
+    </box>
+  );
+}
 
 function Hud() {
   const [t, setT] = useState(0);
@@ -83,7 +123,8 @@ function Hud() {
     return () => clearTimeout(id);
   }, []);
   return (
-    <box style={{ width: "100%", height: "100%", padding: 20 }}>
+    // The full-screen layout box lets the pointer through to the world panel.
+    <box style={{ width: "100%", height: "100%", padding: 20, pointerEvents: "none" }}>
       <box
         style={{
           alignSelf: "flex-start",

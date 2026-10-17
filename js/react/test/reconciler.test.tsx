@@ -345,3 +345,31 @@ describe("@iron/react reconciler", () => {
     expect(() => createRoot()).toThrow("only be called once");
   });
 });
+
+// M5-PNL-01
+describe("roots for world panels", () => {
+  test("each root commits to its own engine tree; updates follow their nodes", () => {
+    const sent: [number, Op[]][] = [];
+    (globalThis as { __iron_commit?: (ops: Op[], target?: number) => void }).__iron_commit = (ops, target) => {
+      sent.push([target ?? 0, ops]);
+    };
+    const screen = createRoot();
+    const panel = createRoot({ id: 77 });
+    expect(() => createRoot({ id: 77 })).toThrow("already has a root");
+    screen.render(<box style={{ width: 1 }} />);
+    panel.render(<box style={{ width: 2 }} />);
+    expect(sent.map(([t]) => t)).toEqual([0, 77]);
+    // Both trees start their own root at node 0, with different node ids.
+    const [screenOps, panelOps] = [sent[0]![1], sent[1]![1]];
+    expect(screenOps.at(-1)).toEqual([APPEND_CHILD, ROOT_ID, screenOps[0]![1]]);
+    expect(panelOps.at(-1)).toEqual([APPEND_CHILD, ROOT_ID, panelOps[0]![1]]);
+    expect(panelOps[0]![1]).not.toBe(screenOps[0]![1]);
+
+    // Updating the panel only sends to the panel's tree.
+    sent.length = 0;
+    panel.render(<box style={{ width: 3 }} />);
+    expect(sent.map(([t]) => t)).toEqual([77]);
+    panel.unmount();
+    expect(sent.at(-1)![1].at(-1)![0]).toBe(REMOVE_CHILD);
+  });
+});

@@ -9,8 +9,8 @@ import {
   flush,
   type Instance,
   instances,
-  pending,
   pointerCapture,
+  queueFor,
   reconciler,
   withUpdatePriority,
 } from "./host.ts";
@@ -350,7 +350,7 @@ function restoreControlledValue(target: Instance) {
   const value = String(controlled);
   if (target.value === value) return;
   target.value = value;
-  pending.push([SET_ATTRS, target.id, "value", value]);
+  queueFor(target.id).push([SET_ATTRS, target.id, "value", value]);
   flush();
 }
 

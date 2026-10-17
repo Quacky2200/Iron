@@ -14,8 +14,11 @@ declare global {
   /** Queues an op for the engine; drained by Rust once per frame. */
   function __iron_op(name: string, ...args: unknown[]): void;
 
-  /** Sends one UI commit (a list of `[opcode, ...args]` ops) to the engine. */
-  function __iron_commit(ops: unknown[][]): void;
+  /**
+   * Sends one UI commit (a list of `[opcode, ...args]` ops) to the engine, for the
+   * screen's UI tree or (with `target`) a world panel's.
+   */
+  function __iron_commit(ops: unknown[][], target?: number): void;
 
   // Timers run on engine time: they fire during the frame's `tick`.
   function setTimeout<A extends unknown[]>(

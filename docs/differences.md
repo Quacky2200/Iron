@@ -19,6 +19,7 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | `Time.timeScale` | Scales `Time.deltaTime`, `Time.time` and the `dt` components get; physics isn't scaled yet | Scales physics too | Physics time scaling comes with the Rigidbody component (M5.a2) |
 | Hook names | `onUpdate` (per frame), `onFixedUpdate` (60 Hz), `onLateUpdate`, `onPreRender`, `onStart`, `onDestroy` | Unity: `Update`, `FixedUpdate`, ...; s&box: `OnUpdate`, `OnFixedUpdate`, ... | JS naming; same order and meaning |
 | Screen coordinates | Screen points are UI pixels from the **top-left** (like pointer events); viewport points and `Camera.rect` are 0 to 1 from the top-left too | Unity: pixels and viewport from the bottom-left | Matches the UI and pointer events, so `screenPointToRay(event.clientX, ...)` just works |
+| World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Iron | The CSS way, no extra flags |
 | Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
 
 ## SVG (M3d step 5.1)

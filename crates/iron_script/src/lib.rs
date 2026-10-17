@@ -71,6 +71,12 @@ pub trait ScriptRuntime {
     /// Takes every UI commit since the last drain, in order.
     fn drain_commits(&mut self) -> Vec<Commit>;
 
+    /// Takes every UI commit since the last drain, in order, with the UI tree each is for
+    /// (`__iron_commit(ops, target)`: 0 is the screen, others are world panels).
+    fn drain_targeted_commits(&mut self) -> Vec<(u32, Commit)> {
+        self.drain_commits().into_iter().map(|c| (0, c)).collect()
+    }
+
     /// Throws away all script state and starts a fresh context (used by hot reload).
     /// Pending ops, commits, timers and errors are dropped; the log sink is kept.
     fn reset(&mut self);

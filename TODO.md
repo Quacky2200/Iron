@@ -796,8 +796,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [x] Lifecycle hooks the Unity / s&box way: `onStart`, `onUpdate` and `onLateUpdate` per
     frame, `onFixedUpdate` on the 60 Hz tick, `onPreRender`, `onDestroy`; the engine only
     calls the hooks a component has — `M5-OBJ-08`
-  - [ ] Planes: a `UiPanel` component draws React UI on a plane in the world (UI rendered to a
-    texture), with pointer input raycast onto it
+  - [x] Planes: a `WorldPanel` component (s&box's name) draws React UI on a plane in the world:
+    `createRoot(panel)` commits to the panel's own UI tree (`__iron_commit(ops, target)`), drawn
+    into a texture each frame; the pointer is raycast from the camera under it into the
+    nearest panel (screen UI wins where it has elements), drags stay with the panel, keys go
+    to the surface clicked last; stylesheets and fonts reach every tree — `M5-PNL-01`..`M5-PNL-03`
 - [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5):
   - [ ] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
     `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, constraints) and

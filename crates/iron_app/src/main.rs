@@ -7,6 +7,7 @@
 
 mod cursor;
 mod game_input;
+mod panels;
 mod reload;
 mod ui_scale;
 mod world_view;
@@ -119,6 +120,7 @@ fn main() -> Result<()> {
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
     let css_path = bundle_path.with_extension("css");
     let game_css = load_game_css(&mut ui, &asset_root, &css_path);
+    let game_css_source = game_css_source(&asset_root, &css_path);
 
     // Rebuilds by `bun build --watch` reload the scripts (not for screenshot runs).
     let watcher = match args.screenshot {
@@ -138,6 +140,13 @@ fn main() -> Result<()> {
         scene,
         scene_events,
         world_view: world_view::WorldViews::default(),
+        panels: panels::Panels::default(),
+        pointer_on: Surface::Screen,
+        keys_on: Surface::Screen,
+        buttons_down: 0,
+        pointer_px: None,
+        sheet_sources: game_css_source.into_iter().collect(),
+        font_sources: Vec::new(),
         screen: (0.0, 0.0, 0.0),
         ui,
         sheets: HashMap::new(),
@@ -230,6 +239,20 @@ struct App {
     scene_events: bool,
     /// The screen size in UI pixels and the UI scale, as last told to scripts.
     screen: (f32, f32, f32),
+    /// React UI on planes in the world (`WorldPanel`s), each with its own tree.
+    panels: panels::Panels,
+    /// The surface under the pointer (or holding it while a button is down), and the one
+    /// keys go to (the last one clicked).
+    pointer_on: Surface,
+    keys_on: Surface,
+    buttons_down: u32,
+    /// The pointer in window pixels, while it's over the window.
+    pointer_px: Option<(f32, f32)>,
+    /// Stylesheets every UI tree gets: (key, css, base, source name). Keys are script
+    /// sheet ids, or `GAME_CSS`.
+    sheet_sources: Vec<(u32, String, String, String)>,
+    /// Fonts scripts loaded (family, src, weight, italic), replayed into new panel trees.
+    font_sources: Vec<(String, String, Option<f32>, Option<bool>)>,
     /// Cameras and planes scripts put in the world.
     world_view: world_view::WorldViews,
     bundle_path: PathBuf,
@@ -321,6 +344,12 @@ impl App {
         }
         let css_path = self.bundle_path.with_extension("css");
         self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
+        self.sheet_sources = game_css_source(&self.asset_root, &css_path)
+            .into_iter()
+            .collect();
+        self.font_sources.clear();
+        self.panels = panels::Panels::default();
+        (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
         self.ui_scale = ui_scale::UiScale::None;
         self.scene = scene;
         self.world_view = world_view::WorldViews::default();
@@ -393,8 +422,12 @@ impl App {
         self.apply_script_output();
         self.update_audio(elapsed);
 
-        // The tree may have moved under a still pointer, or the focused element gone.
+        // The trees may have moved under a still pointer, or the focused element gone.
         self.handle_ui(Input::Refresh);
+        let ids: Vec<u32> = self.panels.map.keys().copied().collect();
+        for id in ids {
+            self.handle_on(Surface::Panel(id), Input::Refresh);
+        }
     }
 
     /// Objects the engine moved this tick, to scripts (`__iron_scene`).
@@ -430,6 +463,7 @@ impl App {
                 self.components
                     .remove_on_objects(&mut self.scripts, &objects);
                 self.world_view.forget_objects(&objects);
+                self.panels.forget_objects(&objects);
             }
             Err(e) => tracing::warn!("scene.{name}: {e}"),
         }
@@ -446,6 +480,84 @@ impl App {
             tracing::error!(target: "script", "physics events: {e}");
         }
         // Collision handlers may have queued more ops; they apply next tick.
+    }
+
+    /// The screen and every world panel.
+    fn surfaces(&self) -> Vec<Surface> {
+        std::iter::once(Surface::Screen)
+            .chain(self.panels.map.keys().map(|id| Surface::Panel(*id)))
+            .collect()
+    }
+
+    /// The UI tree holding a node (ops like `focus` name nodes, not trees).
+    fn surface_of(&self, node: iron_core::NodeId) -> Surface {
+        if self.ui.contains(node) {
+            return Surface::Screen;
+        }
+        self.panels
+            .map
+            .iter()
+            .find(|(_, p)| p.tree.contains(node))
+            .map_or(Surface::Screen, |(id, _)| Surface::Panel(*id))
+    }
+
+    /// The ray from the camera under a window pixel.
+    fn camera_ray(
+        &self,
+        px: f32,
+        py: f32,
+    ) -> Option<(iron_core::glam::Vec3, iron_core::glam::Vec3)> {
+        let size = self.gfx.as_ref()?.surface.size();
+        let views = self.world_view.views(&self.scene, size, &[]);
+        panels::camera_ray(&views, size, px, py)
+    }
+
+    /// What the pointer at a window pixel is over: screen UI wherever the screen has an
+    /// element (layout boxes covering the screen should use `pointerEvents: none`),
+    /// otherwise the nearest world panel the camera ray hits, otherwise the screen.
+    fn surface_at(&mut self, px: f32, py: f32) -> (Surface, f32, f32) {
+        let scale = self.scale();
+        let (ux, uy) = (px / scale, py / scale);
+        let on_screen = self.ui.hit_test(ux, uy).is_some_and(|n| n != iron_ui::ROOT);
+        if !on_screen
+            && !self.panels.map.is_empty()
+            && let Some((origin, dir)) = self.camera_ray(px, py)
+            && let Some(hit) = self.panels.hit(&self.scene, origin, dir)
+        {
+            return (Surface::Panel(hit.id), hit.x, hit.y);
+        }
+        (Surface::Screen, ux, uy)
+    }
+
+    /// Sends the pointer's position to the surface it's over (or the one holding it while
+    /// a button is down), leaving the previous one.
+    fn route_pointer(&mut self) {
+        let Some((px, py)) = self.pointer_px else {
+            return;
+        };
+        let (surface, x, y) = if self.buttons_down > 0 {
+            // A drag stays with where it started, even off the panel's edge.
+            match self.pointer_on {
+                Surface::Panel(id) => {
+                    let point = self
+                        .camera_ray(px, py)
+                        .and_then(|(o, d)| self.panels.project(&self.scene, id, o, d));
+                    let (x, y) = point.unwrap_or((-1e6, -1e6));
+                    (Surface::Panel(id), x, y)
+                }
+                Surface::Screen => {
+                    let scale = self.scale();
+                    (Surface::Screen, px / scale, py / scale)
+                }
+            }
+        } else {
+            self.surface_at(px, py)
+        };
+        if surface != self.pointer_on {
+            self.handle_on(self.pointer_on, Input::PointerLeave);
+            self.pointer_on = surface;
+        }
+        self.handle_on(surface, Input::PointerMove { x, y });
     }
 
     /// Lets audio progress and tells scripts which sounds finished (`__iron_audio`).
@@ -483,8 +595,18 @@ impl App {
 
     /// Applies React commits, then the ops scripts queued, in order.
     fn apply_script_output(&mut self) {
-        for commit in self.scripts.drain_commits() {
-            for e in self.ui.apply_commit(&commit) {
+        for (target, commit) in self.scripts.drain_targeted_commits() {
+            let tree = if target == 0 {
+                &mut self.ui
+            } else {
+                let (root, fonts, sheets) =
+                    (&self.asset_root, &self.font_sources, &self.sheet_sources);
+                &mut self
+                    .panels
+                    .get_or_create(target, || new_panel_tree(root, fonts, sheets))
+                    .tree
+            };
+            for e in tree.apply_commit(&commit) {
                 tracing::warn!(target: "ui", "{e}");
             }
         }
@@ -502,12 +624,19 @@ impl App {
                         continue;
                     };
                     let id = iron_core::NodeId(id as u32);
-                    self.handle_ui(match op.name.as_str() {
-                        "focus" => Input::Focus(id),
-                        "blur" => Input::Blur(id),
-                        "setPointerCapture" => Input::SetPointerCapture(id),
-                        _ => Input::ReleasePointerCapture(id),
-                    });
+                    let surface = self.surface_of(id);
+                    if op.name == "focus" {
+                        self.keys_on = surface;
+                    }
+                    self.handle_on(
+                        surface,
+                        match op.name.as_str() {
+                            "focus" => Input::Focus(id),
+                            "blur" => Input::Blur(id),
+                            "setPointerCapture" => Input::SetPointerCapture(id),
+                            _ => Input::ReleasePointerCapture(id),
+                        },
+                    );
                 }
                 "scrollTo" | "scrollBy" | "scrollIntoView" => {
                     let num = |i: usize| op.args.get(i).and_then(iron_core::Value::as_f64);
@@ -516,13 +645,32 @@ impl App {
                         continue;
                     };
                     let (a, b) = (num(1).unwrap_or(0.0) as f32, num(2).unwrap_or(0.0) as f32);
-                    self.handle_ui(match op.name.as_str() {
-                        "scrollTo" => Input::ScrollTo { id, x: a, y: b },
-                        "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
-                        _ => Input::ScrollIntoView(id),
-                    });
+                    let surface = self.surface_of(id);
+                    self.handle_on(
+                        surface,
+                        match op.name.as_str() {
+                            "scrollTo" => Input::ScrollTo { id, x: a, y: b },
+                            "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
+                            _ => Input::ScrollIntoView(id),
+                        },
+                    );
+                }
+                "render.panel" => {
+                    let (root, fonts, sheets) =
+                        (&self.asset_root, &self.font_sources, &self.sheet_sources);
+                    if let Err(e) = self
+                        .panels
+                        .apply(&op.args, || new_panel_tree(root, fonts, sheets))
+                    {
+                        tracing::warn!("render.panel: {e}");
+                    }
                 }
                 name if name.starts_with("render.") => {
+                    if name == "render.remove"
+                        && let Some(id) = op.args.first().and_then(iron_core::Value::as_f64)
+                    {
+                        self.panels.remove(id as u32);
+                    }
                     if let Err(e) = self.world_view.apply(&name["render.".len()..], &op.args) {
                         tracing::warn!("{name}: {e}");
                     }
@@ -545,11 +693,31 @@ impl App {
 
     /// Runs one UI input, sending its events to scripts, then updates the OS cursor.
     fn handle_ui(&mut self, input: Input) {
+        self.handle_on(Surface::Screen, input);
+    }
+
+    /// Runs one UI input on the screen's UI or a world panel's, sending its events to
+    /// scripts, then updates the IME and the OS cursor.
+    fn handle_on(&mut self, surface: Surface, input: Input) {
         let (scripts, ui_events) = (&mut self.scripts, self.ui_events);
-        self.interaction.handle(&mut self.ui, input, &mut |event| {
-            dispatch(scripts, ui_events, event)
-        });
-        match self.interaction.take_clipboard() {
+        let clipboard = match surface {
+            Surface::Screen => {
+                self.interaction.handle(&mut self.ui, input, &mut |event| {
+                    dispatch(scripts, ui_events, event)
+                });
+                self.interaction.take_clipboard()
+            }
+            Surface::Panel(id) => {
+                let Some(p) = self.panels.map.get_mut(&id) else {
+                    return;
+                };
+                p.interaction.handle(&mut p.tree, input, &mut |event| {
+                    dispatch(scripts, ui_events, event)
+                });
+                p.interaction.take_clipboard()
+            }
+        };
+        match clipboard {
             Some(Clipboard::Copy(text)) => {
                 if let Some(Err(e)) = self.clipboard().map(|c| c.set_text(text)) {
                     tracing::warn!("copy failed: {e}");
@@ -557,7 +725,7 @@ impl App {
             }
             Some(Clipboard::Paste) => {
                 if let Some(text) = self.clipboard().and_then(|c| c.get_text().ok()) {
-                    self.handle_ui(Input::Paste(text));
+                    self.handle_on(surface, Input::Paste(text));
                 }
             }
             None => {}
@@ -571,7 +739,13 @@ impl App {
         let Some(gfx) = &self.gfx else {
             return;
         };
-        let (keyword, images) = self.interaction.cursor_with_images(&self.ui);
+        let (keyword, images) = match self.pointer_on {
+            Surface::Panel(id) if self.panels.map.contains_key(&id) => {
+                let p = &self.panels.map[&id];
+                p.interaction.cursor_with_images(&p.tree)
+            }
+            _ => self.interaction.cursor_with_images(&self.ui),
+        };
         let scale = gfx.window.scale_factor();
         if (keyword, images, scale) == (self.cursor.0, &self.cursor.1[..], self.cursor.2) {
             return;
@@ -626,9 +800,23 @@ impl App {
         let Some(gfx) = &self.gfx else {
             return;
         };
-        let area = self.interaction.ime_area(&self.ui);
-        if area.is_some() != self.ime_allowed {
-            self.ime_allowed = area.is_some();
+        // A field on a world panel takes IME text too; its candidate window stays where
+        // the platform puts it.
+        let (allowed, area) = match self.keys_on {
+            Surface::Panel(id) => (
+                self.panels
+                    .map
+                    .get(&id)
+                    .is_some_and(|p| p.interaction.ime_area(&p.tree).is_some()),
+                None,
+            ),
+            Surface::Screen => {
+                let area = self.interaction.ime_area(&self.ui);
+                (area.is_some(), area)
+            }
+        };
+        if allowed != self.ime_allowed {
+            self.ime_allowed = allowed;
             gfx.window.set_ime_allowed(self.ime_allowed);
             self.ime_area = None;
         }
@@ -698,6 +886,11 @@ impl App {
         };
         let italic = args.get(3).and_then(Value::as_str).map(|s| s == "italic");
         load_font(&mut self.ui, &self.asset_root, family, src, weight, italic);
+        for p in self.panels.map.values_mut() {
+            load_font(&mut p.tree, &self.asset_root, family, src, weight, italic);
+        }
+        self.font_sources
+            .push((family.to_owned(), src.to_owned(), weight, italic));
     }
 
     /// `addStyleSheet(id, css)` / `removeStyleSheet(id)` from `@iron/engine`.
@@ -710,6 +903,13 @@ impl App {
             tracing::warn!("{name} needs an id: {args:?}");
             return;
         };
+        // Every UI tree (the screen's and each panel's) has the same stylesheets.
+        self.sheet_sources.retain(|(key, ..)| *key != js_id);
+        for p in self.panels.map.values_mut() {
+            if let Some(id) = p.sheets.remove(&js_id) {
+                p.tree.remove_stylesheet(id);
+            }
+        }
         if name == "removeStyleSheet" {
             if let Some(id) = self.sheets.remove(&js_id) {
                 self.ui.remove_stylesheet(id);
@@ -721,6 +921,12 @@ impl App {
         if let Some(old) = self.sheets.insert(js_id, id) {
             self.ui.remove_stylesheet(old);
         }
+        for p in self.panels.map.values_mut() {
+            let id = add_stylesheet(&mut p.tree, &self.asset_root, css, "", "addStyleSheet");
+            p.sheets.insert(js_id, id);
+        }
+        self.sheet_sources
+            .push((js_id, css.to_owned(), String::new(), "addStyleSheet".into()));
     }
 
     fn save_screenshot(&mut self, path: &Path) -> Result<()> {
@@ -732,7 +938,16 @@ impl App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
-        let views = self.world_view.views(&self.scene, (w, h), &[]);
+        let now = self.started.elapsed().as_secs_f64() * 1000.0;
+        let (quads, textures) = self.panels.render(
+            &gfx.gpu,
+            &mut gfx.renderer,
+            &self.scene,
+            now,
+            |tree, renderer| load_images(tree, renderer, &gfx.gpu),
+        );
+        let views = self.world_view.views(&self.scene, (w, h), &quads);
+        let textures: Vec<&wgpu::TextureView> = textures.iter().collect();
         draw_frame(
             &gfx.gpu,
             &mut gfx.renderer,
@@ -744,7 +959,7 @@ impl App {
                 scale: ui_factor(&gfx.window, self.ui_scale),
             },
             &views,
-            &[],
+            &textures,
             &cmds,
         );
         let pixels = target.read_pixels(&gfx.gpu)?;
@@ -813,24 +1028,51 @@ impl PlatformApp for App {
                 }
                 return;
             }
-            InputEvent::MouseMove { x, y } => Input::PointerMove {
-                x: (x / scale) as f32,
-                y: (y / scale) as f32,
-            },
-            InputEvent::MouseLeave => Input::PointerLeave,
-            InputEvent::MouseDown { button } => Input::PointerDown {
-                button: dom_button(button),
-                time_ms: self.now_ms(),
-            },
-            InputEvent::MouseUp { button } => Input::PointerUp {
-                button: dom_button(button),
-            },
+            InputEvent::MouseMove { x, y } => {
+                self.pointer_px = Some((x as f32, y as f32));
+                self.route_pointer();
+                return;
+            }
+            InputEvent::MouseLeave => {
+                self.pointer_px = None;
+                self.handle_on(self.pointer_on, Input::PointerLeave);
+                return;
+            }
+            InputEvent::MouseDown { button } => {
+                self.buttons_down += 1;
+                // Keys go to whatever was clicked last.
+                self.keys_on = self.pointer_on;
+                let time_ms = self.now_ms();
+                self.handle_on(
+                    self.pointer_on,
+                    Input::PointerDown {
+                        button: dom_button(button),
+                        time_ms,
+                    },
+                );
+                return;
+            }
+            InputEvent::MouseUp { button } => {
+                self.handle_on(
+                    self.pointer_on,
+                    Input::PointerUp {
+                        button: dom_button(button),
+                    },
+                );
+                self.buttons_down = self.buttons_down.saturating_sub(1);
+                // The pointer may be over something else now.
+                if self.buttons_down == 0 {
+                    self.route_pointer();
+                }
+                return;
+            }
             InputEvent::MouseWheel(delta) => {
                 let (dx, dy) = match delta {
                     WheelDelta::Lines { x, y } => (x * WHEEL_LINE, y * WHEEL_LINE),
                     WheelDelta::Pixels { x, y } => ((x / scale) as f32, (y / scale) as f32),
                 };
-                Input::Wheel { dx, dy }
+                self.handle_on(self.pointer_on, Input::Wheel { dx, dy });
+                return;
             }
             InputEvent::KeyDown {
                 code,
@@ -844,14 +1086,29 @@ impl PlatformApp for App {
                 text,
             },
             InputEvent::KeyUp { code, key } => Input::KeyUp { key, code },
-            InputEvent::Modifiers(m) => Input::Modifiers(events::Modifiers {
-                shift: m.shift,
-                ctrl: m.ctrl,
-                alt: m.alt,
-                meta: m.meta,
-            }),
+            InputEvent::Modifiers(m) => {
+                let modifiers = events::Modifiers {
+                    shift: m.shift,
+                    ctrl: m.ctrl,
+                    alt: m.alt,
+                    meta: m.meta,
+                };
+                for surface in self.surfaces() {
+                    self.handle_on(surface, Input::Modifiers(modifiers));
+                }
+                return;
+            }
             // Releases outside an unfocused window may never arrive.
-            InputEvent::Focused(false) => Input::WindowBlur,
+            InputEvent::Focused(false) => {
+                self.buttons_down = 0;
+                for surface in self.surfaces() {
+                    self.handle_on(surface, Input::WindowBlur);
+                }
+                if let Some(args) = game_key {
+                    self.send_game_input(&args);
+                }
+                return;
+            }
             InputEvent::Ime(ImeEvent::Preedit(text, cursor)) => Input::ImePreedit { text, cursor },
             InputEvent::Ime(ImeEvent::Commit(text)) => Input::ImeCommit(text),
             InputEvent::Ime(ImeEvent::Disabled) => Input::ImePreedit {
@@ -860,12 +1117,20 @@ impl PlatformApp for App {
             },
             _ => return,
         };
-        self.handle_ui(input);
+        // Keys and IME text go to the surface clicked last.
+        self.handle_on(self.keys_on, input);
         // Keys typed into a text field are the field's, not the game's.
-        let typing = self
-            .interaction
-            .focused()
-            .is_some_and(|id| self.ui.is_editor(id));
+        let typing = match self.keys_on {
+            Surface::Screen => self
+                .interaction
+                .focused()
+                .is_some_and(|id| self.ui.is_editor(id)),
+            Surface::Panel(id) => self
+                .panels
+                .map
+                .get(&id)
+                .is_some_and(|p| p.interaction.focused().is_some_and(|f| p.tree.is_editor(f))),
+        };
         if let Some(args) = game_key.filter(|_| !typing) {
             self.send_game_input(&args);
         }
@@ -909,6 +1174,7 @@ impl PlatformApp for App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
+        let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (scene, world_view) = (&self.scene, &self.world_view);
         let Gfx {
             gpu,
@@ -917,6 +1183,13 @@ impl PlatformApp for App {
             world,
             ..
         } = gfx;
+        // World panels draw into their textures first.
+        let (quads, textures) = self
+            .panels
+            .render(gpu, renderer, scene, now, |tree, renderer| {
+                load_images(tree, renderer, gpu)
+            });
+        let textures: Vec<&wgpu::TextureView> = textures.iter().collect();
         surface.present_with(gpu, |view, format, size| {
             let target = RenderTarget {
                 view,
@@ -929,8 +1202,8 @@ impl PlatformApp for App {
                 renderer,
                 world,
                 &target,
-                &world_view.views(scene, size, &[]),
-                &[],
+                &world_view.views(scene, size, &quads),
+                &textures,
                 &cmds,
             );
         });
@@ -1044,6 +1317,44 @@ fn load_sound(
     mixer
         .load(id as u32, bytes, stream)
         .map_err(|e| format!("`{src}`: {e}"))
+}
+
+/// A UI that takes input: the screen's, or a world panel's (by its id).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Surface {
+    Screen,
+    Panel(u32),
+}
+
+/// The key `game.css` has among the stylesheets every UI tree gets.
+const GAME_CSS: u32 = u32::MAX;
+
+/// `game.css` as a stylesheet source for panel trees.
+fn game_css_source(root: &Path, css_path: &Path) -> Option<(u32, String, String, String)> {
+    let css = std::fs::read_to_string(css_path).ok()?;
+    let base = css_path
+        .parent()
+        .and_then(|dir| dir.strip_prefix(root).ok())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    Some((GAME_CSS, css, base, css_path.display().to_string()))
+}
+
+/// A UI tree for a new world panel, with the fonts and stylesheets the screen has.
+fn new_panel_tree(
+    root: &Path,
+    fonts: &[(String, String, Option<f32>, Option<bool>)],
+    sheets: &[(u32, String, String, String)],
+) -> panels::NewTree {
+    let mut tree = UiTree::with_system_fonts(1.0, 1.0);
+    for (family, src, weight, italic) in fonts {
+        load_font(&mut tree, root, family, src, *weight, *italic);
+    }
+    let ids = sheets
+        .iter()
+        .map(|(key, css, base, source)| (*key, add_stylesheet(&mut tree, root, css, base, source)))
+        .collect();
+    (tree, ids)
 }
 
 /// The starting components (until scenes load from files, M5.b): one GameObject per

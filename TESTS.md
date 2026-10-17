@@ -311,6 +311,9 @@ layout pass):
 | M5-RND-06 | Golden | Cameras draw into their viewports in depth order: a perspective view on the left, an orthographic top-down view on the right (a floor marker to the east appears right of centre), and a picture-in-picture inset over the left view. |
 | M5-CAM-01 | JS unit | `Matrix4x4` (TRS, inverse, determinant); camera conversions for perspective and orthographic cameras with a `rect` (screen and viewport points round-trip, parallel orthographic rays); `Camera.main` / `allCameras` order; `CameraFollow` and `CameraOrbit`. |
 | M5-OBJ-08 | Integration | Lifecycle hooks run in Unity's order: start, fixed updates, update, late update, pre-render, destroy. |
+| M5-PNL-01 | JS unit | Each React root (screen or world panel) commits to its own engine tree with its target id; updates to a panel's nodes only go to the panel's tree; one root per target. |
+| M5-PNL-02 | Unit | Rays meet panel quads at the right UV and distance (centre, corner); rays behind or parallel miss. |
+| M5-PNL-03 | Manual | In `examples/world`, hovering the world panel's menu items highlights them, clicking counts, and the screen HUD still takes clicks over the panel. |
 | M5-SCN-01 | Unit | Scene save → load round-trips entities, components and properties exactly. |
 | M5-SCN-02 | Unit | Asset references survive moving/renaming the file (GUID in `.meta`). |
 | M5-AST-01 | Integration | A fixture glTF cooks into the engine format; vertex/index counts match the source. |

@@ -343,3 +343,102 @@ export class CameraOrbit extends Component {
     this.transform.lookAt(center);
   }
 }
+
+/**
+ * Screen-style UI on a plane in the world, like s&box's `WorldPanel`: render React into
+ * it with `createRoot(panel)` from `@iron/react`. The panel stands in its object's XY
+ * plane facing +z (towards a camera looking down -z), `width`×`height` UI pixels at
+ * `pixelsPerMeter`, centred on the object. Pointer events reach it through the camera
+ * (screen UI over it wins), and keys go to it after it's clicked.
+ */
+export class WorldPanel extends Component {
+  private _width = 800;
+  private _height = 600;
+  private _pixelsPerMeter = 500;
+  private _resolution = 2;
+  private _tint = Color.white;
+  private _interactive = true;
+  private started = false;
+
+  /** Width in UI pixels. */
+  get width(): number {
+    return this._width;
+  }
+  set width(v: number) {
+    this._width = v;
+    this.send();
+  }
+
+  /** Height in UI pixels. */
+  get height(): number {
+    return this._height;
+  }
+  set height(v: number) {
+    this._height = v;
+    this.send();
+  }
+
+  /** UI pixels per metre: 500 makes an 800×600 panel 1.6 × 1.2 m. */
+  get pixelsPerMeter(): number {
+    return this._pixelsPerMeter;
+  }
+  set pixelsPerMeter(v: number) {
+    this._pixelsPerMeter = v;
+    this.send();
+  }
+
+  /** Texture pixels per UI pixel: higher keeps text sharp up close (costs memory). */
+  get resolution(): number {
+    return this._resolution;
+  }
+  set resolution(v: number) {
+    this._resolution = v;
+    this.send();
+  }
+
+  /** A colour multiplied over the panel (alpha fades it). */
+  get tint(): Color {
+    return this._tint;
+  }
+  set tint(c: Color) {
+    this._tint = c;
+    this.send();
+  }
+
+  /** Whether the pointer can use it. */
+  get interactive(): boolean {
+    return this._interactive;
+  }
+  set interactive(on: boolean) {
+    this._interactive = on;
+    this.send();
+  }
+
+  /** Its size in metres. */
+  get worldSize(): Vector2 {
+    return new Vector2(this._width / this._pixelsPerMeter, this._height / this._pixelsPerMeter);
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    __iron_op(
+      "render.panel",
+      this.id,
+      this.gameObject.id,
+      [this._width, this._height],
+      this._pixelsPerMeter,
+      this._resolution,
+      rgba(this._tint),
+      this._interactive,
+    );
+  }
+
+  override onStart(): void {
+    this.started = true;
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}

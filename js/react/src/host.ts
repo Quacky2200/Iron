@@ -97,8 +97,12 @@ export class Instance {
 
 export interface Container {
   readonly id: typeof ROOT_ID;
+  /** The engine UI tree it renders into: 0 is the screen, others are world panels. */
+  readonly target: number;
   /** Root children, so `clearContainer` can remove them. */
   readonly children: Set<number>;
+  /** Ops waiting for this root's next commit. */
+  readonly pending: Op[];
 }
 
 /** A run of characters (React string children). */
@@ -116,17 +120,45 @@ export const pointerCapture: { element: Instance | null } = { element: null };
 /** Live elements by ID, so engine events can find their props. */
 export const instances = new Map<number, Instance>();
 
-/** Ops waiting for the next commit. Exposed for tests. */
-export const pending: Op[] = [];
+/** The screen's root container; world panels get their own (`containerFor`). */
+export const screenContainer: Container = { id: ROOT_ID, target: 0, children: new Set(), pending: [] };
+const containers = new Map<number, Container>([[0, screenContainer]]);
+
+/** The container for an engine UI tree (0: the screen). */
+export function containerFor(target: number): Container {
+  let c = containers.get(target);
+  if (!c) {
+    c = { id: ROOT_ID, target, children: new Set(), pending: [] };
+    containers.set(target, c);
+  }
+  return c;
+}
+
+/** Ops waiting for the screen's next commit. Exposed for tests. */
+export const pending: Op[] = screenContainer.pending;
+
+/** Which container each node belongs to, so its ops go to the right tree. */
+const owners = new Map<number, Container>();
+
+/** The op queue for a node's tree. */
+export function queueFor(id: number): Op[] {
+  return (owners.get(id) ?? screenContainer).pending;
+}
 
 // IDs are never reused within a session (M2-REC-05). 0 is the root container.
 let nextId = 1;
 
-/** Sends pending ops now (outside a React commit). */
+/** Sends a container's pending ops as one commit to its tree. */
+function flushContainer(c: Container) {
+  if (c.pending.length === 0) return;
+  const ops = c.pending.splice(0, c.pending.length);
+  if (c.target === 0) __iron_commit(ops);
+  else __iron_commit(ops, c.target);
+}
+
+/** Sends pending ops now (outside a React commit), each root to its own tree. */
 export function flush() {
-  if (pending.length === 0) return;
-  const ops = pending.splice(0, pending.length);
-  __iron_commit(ops);
+  for (const c of containers.values()) flushContainer(c);
 }
 
 const ELEMENT_TYPES: ReadonlySet<string> = new Set([
@@ -165,11 +197,13 @@ export const reconciler = createReconciler({
     return log.bind(console, `[${badgeName}]`, ...args);
   },
 
-  createInstance(type: string, props: Props): Instance {
+  createInstance(type: string, props: Props, root: Container): Instance {
     if (!ELEMENT_TYPES.has(type)) {
       throw new Error(`<${type}> is not an Iron element; available: ${[...ELEMENT_TYPES].join(", ")}`);
     }
     const id = nextId++;
+    owners.set(id, root);
+    const pending = root.pending;
     pending.push([CREATE, id, type]);
     const entries = styleEntries(props.style);
     if (entries.length > 0) pending.push([SET_STYLE, id, ...entries]);
@@ -180,42 +214,43 @@ export const reconciler = createReconciler({
     return instance;
   },
 
-  createTextInstance(text: string): TextInstance {
+  createTextInstance(text: string, root: Container): TextInstance {
     const id = nextId++;
-    pending.push([CREATE_TEXT, id, text]);
+    owners.set(id, root);
+    root.pending.push([CREATE_TEXT, id, text]);
     return { id, type: "#text", text };
   },
   commitTextUpdate(instance: TextInstance, _oldText: string, newText: string) {
     instance.text = newText;
-    pending.push([SET_TEXT, instance.id, newText]);
+    queueFor(instance.id).push([SET_TEXT, instance.id, newText]);
   },
 
   appendInitialChild(parent: Instance, child: Node) {
-    pending.push([APPEND_CHILD, parent.id, child.id]);
+    queueFor(parent.id).push([APPEND_CHILD, parent.id, child.id]);
   },
   appendChild(parent: Instance, child: Node) {
-    pending.push([APPEND_CHILD, parent.id, child.id]);
+    queueFor(parent.id).push([APPEND_CHILD, parent.id, child.id]);
   },
   appendChildToContainer(container: Container, child: Node) {
     container.children.add(child.id);
-    pending.push([APPEND_CHILD, ROOT_ID, child.id]);
+    container.pending.push([APPEND_CHILD, ROOT_ID, child.id]);
   },
   insertBefore(parent: Instance, child: Node, before: Node) {
-    pending.push([INSERT_BEFORE, parent.id, child.id, before.id]);
+    queueFor(parent.id).push([INSERT_BEFORE, parent.id, child.id, before.id]);
   },
   insertInContainerBefore(container: Container, child: Node, before: Node) {
     container.children.add(child.id);
-    pending.push([INSERT_BEFORE, ROOT_ID, child.id, before.id]);
+    container.pending.push([INSERT_BEFORE, ROOT_ID, child.id, before.id]);
   },
   removeChild(parent: Instance, child: Node) {
-    pending.push([REMOVE_CHILD, parent.id, child.id]);
+    queueFor(parent.id).push([REMOVE_CHILD, parent.id, child.id]);
   },
   removeChildFromContainer(container: Container, child: Node) {
     container.children.delete(child.id);
-    pending.push([REMOVE_CHILD, ROOT_ID, child.id]);
+    container.pending.push([REMOVE_CHILD, ROOT_ID, child.id]);
   },
   clearContainer(container: Container) {
-    for (const id of container.children) pending.push([REMOVE_CHILD, ROOT_ID, id]);
+    for (const id of container.children) container.pending.push([REMOVE_CHILD, ROOT_ID, id]);
     container.children.clear();
   },
 
@@ -223,25 +258,25 @@ export const reconciler = createReconciler({
     const value = (nextProps as { value?: unknown }).value;
     if (value !== undefined && value !== null) instance.value = String(value);
     const changes = styleDiff(prevProps.style, nextProps.style);
-    if (changes.length > 0) pending.push([SET_STYLE, instance.id, ...changes]);
+    if (changes.length > 0) queueFor(instance.id).push([SET_STYLE, instance.id, ...changes]);
     const attrs = attrDiff(prevProps as Record<string, unknown>, nextProps as Record<string, unknown>, type);
-    if (attrs.length > 0) pending.push([SET_ATTRS, instance.id, ...attrs]);
+    if (attrs.length > 0) queueFor(instance.id).push([SET_ATTRS, instance.id, ...attrs]);
     instance.props = nextProps;
   },
 
   // Suspense hides and reveals subtrees with these.
   hideInstance(instance: Instance) {
-    pending.push([SET_STYLE, instance.id, "display", "none"]);
+    queueFor(instance.id).push([SET_STYLE, instance.id, "display", "none"]);
   },
   unhideInstance(instance: Instance, props: Props) {
-    pending.push([SET_STYLE, instance.id, "display", props.style?.display ?? null]);
+    queueFor(instance.id).push([SET_STYLE, instance.id, "display", props.style?.display ?? null]);
   },
   hideTextInstance(instance: TextInstance) {
-    pending.push([SET_TEXT, instance.id, ""]);
+    queueFor(instance.id).push([SET_TEXT, instance.id, ""]);
   },
   unhideTextInstance(instance: TextInstance, text: string) {
     instance.text = text;
-    pending.push([SET_TEXT, instance.id, text]);
+    queueFor(instance.id).push([SET_TEXT, instance.id, text]);
   },
 
   finalizeInitialChildren: () => false,
@@ -250,10 +285,11 @@ export const reconciler = createReconciler({
   getChildHostContext: (parent: object) => parent,
   getPublicInstance: (instance: Instance) => instance,
   prepareForCommit: () => null,
-  resetAfterCommit: () => flush(),
+  resetAfterCommit: (container: Container) => flushContainer(container),
   preparePortalMount: () => {},
   detachDeletedInstance(node: Node) {
     instances.delete(node.id);
+    owners.delete(node.id);
   },
   getInstanceFromNode: () => null,
   beforeActiveInstanceBlur: () => {},
@@ -304,7 +340,10 @@ export function withUpdatePriority(priority: number, fn: () => void) {
 
 /** Resets ID allocation and pending ops. Only for tests. */
 export function resetForTests() {
-  pending.length = 0;
+  for (const c of containers.values()) c.pending.length = 0;
+  for (const [t] of containers) if (t !== 0) containers.delete(t);
+  screenContainer.children.clear();
+  owners.clear();
   instances.clear();
   nextId = 1;
 }

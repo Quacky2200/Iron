@@ -22,7 +22,8 @@ pub struct QuickJsRuntime {
 /// State the native functions write into; survives `reset()` (but is cleared by it).
 struct Shared {
     ops: OpBuffer,
-    commits: Vec<Commit>,
+    /// Each with the UI tree it's for (0: the screen; else a world panel's id).
+    commits: Vec<(u32, Commit)>,
     errors: Vec<ScriptError>,
     log: LogSink,
 }
@@ -130,6 +131,13 @@ impl ScriptRuntime for QuickJsRuntime {
 
     fn drain_commits(&mut self) -> Vec<Commit> {
         std::mem::take(&mut self.shared.borrow_mut().commits)
+            .into_iter()
+            .map(|(_, c)| c)
+            .collect()
+    }
+
+    fn drain_targeted_commits(&mut self) -> Vec<(u32, Commit)> {
+        std::mem::take(&mut self.shared.borrow_mut().commits)
     }
 
     fn reset(&mut self) {
@@ -199,13 +207,20 @@ fn install_globals<'js>(ctx: &Ctx<'js>, shared: &Rc<RefCell<Shared>>) -> rquickj
     globals.set("__iron_op", op)?;
 
     let s = shared.clone();
-    let commit = Function::new(ctx.clone(), move |ops: rquickjs::Value| {
-        let ops = match from_js(&ops) {
-            Value::Array(ops) => ops,
-            other => vec![other],
-        };
-        s.borrow_mut().commits.push(Commit { ops });
-    })?;
+    let commit = Function::new(
+        ctx.clone(),
+        move |ops: rquickjs::Value, target: rquickjs::function::Opt<f64>| {
+            let ops = match from_js(&ops) {
+                Value::Array(ops) => ops,
+                other => vec![other],
+            };
+            let target = target
+                .0
+                .filter(|t| t.is_finite() && *t >= 0.0)
+                .unwrap_or(0.0) as u32;
+            s.borrow_mut().commits.push((target, Commit { ops }));
+        },
+    )?;
     globals.set("__iron_commit", commit)?;
 
     let s = shared.clone();
