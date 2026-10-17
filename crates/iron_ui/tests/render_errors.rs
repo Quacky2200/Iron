@@ -14,7 +14,7 @@ fn a_render_error_unmounts_the_ui_without_breaking_the_tree() {
     let _logs = capture_logs(&mut rt);
     rt.load_bundle("render_error.js", RENDER_ERROR).unwrap();
     let mut tree = UiTree::new(400.0, 300.0);
-    let mut apply = |rt: &mut QuickJsRuntime, tree: &mut UiTree| {
+    let apply = |rt: &mut QuickJsRuntime, tree: &mut UiTree| {
         for commit in rt.drain_commits() {
             for e in tree.apply_commit(&commit) {
                 eprintln!("commit error: {e}");
