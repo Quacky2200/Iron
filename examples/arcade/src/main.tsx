@@ -2,10 +2,15 @@
 // to collect coins (1 point) and gems (5) before the round ends; quick pickups build a
 // combo that multiplies points. Leave the controls alone and it plays itself.
 //
+// Two looks, each its own scene: Classic (a sky, plain floor and walls) and Deluxe (black
+// space with glowing bubbles, a stainless floor with soft reflections, a riveted steel
+// frame). The Style button builds the other arena in a new scene and unloads the old;
+// the round (score, timer) lives on through it (`dontDestroyOnLoad`).
+//
 // The game lives in components (`GameManager`, `Player`, `Pickup`); the HUD is React
 // (`ScoreBoard`, `Timer`, `RoundOver`, `Settings`), fed by `useGame()`. Esc (or the
-// gear) pauses and opens the settings: window mode, resolution, vsync, frame cap and
-// quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
+// Settings button) pauses and opens the settings: style, window mode, resolution, vsync,
+// frame cap and quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
 // `bun run dev` and edit a HUD component (it keeps the score on screen) or a component's
 // code (the round, the score and every coin stay where they are).
 import {
@@ -21,7 +26,14 @@ import {
   Light,
   Material,
   MeshRenderer,
+  Mirror,
+  ParticleSystem,
   property,
+  Rng,
+  type Scene,
+  SceneManager,
+  Texture,
+  Vector2,
   Quaternion,
   Random,
   register,
@@ -144,17 +156,24 @@ class Player extends Component {
 /** A coin or a gem: spins, and moves somewhere else once collected. */
 class Pickup extends Component {
   @property value = 1;
+  /** Degrees a second. */
   @property spin = 120;
-  bornAt = 0;
+  /** How far it bobs up and down (metres; 0 stays put). */
+  @property bob = 0;
+  /** Where it floats. */
+  @property height = 0.6;
 
   override onUpdate(dt: number) {
     this.transform.rotate(new Vector3(0, this.spin * dt, 0), "world");
+    const p = this.transform.position;
+    const y = this.bob > 0 ? this.height + Math.sin(Time.time * 3 + p.x) * this.bob : this.height;
+    if (y !== p.y) this.transform.position = new Vector3(p.x, y, p.z);
     const player = GameObject.findObjectOfType(Player);
     const game = GameManager.current;
     if (!player || !game || game.over) return;
     if (player.transform.position.distance(this.transform.position) < 0.9) {
       game.collect(this.value);
-      this.transform.position = randomSpot(this.transform.position.y);
+      this.transform.position = randomSpot(this.height);
     }
   }
 }
@@ -167,49 +186,278 @@ function randomSpot(y: number): Vector3 {
   return new Vector3(Random.range(-ARENA + 1, ARENA - 1), y, Random.range(-ARENA + 1, ARENA - 1));
 }
 
-/** Builds the arena once (a reload keeps what it made). */
+// ---- The two arenas ----
+
+type Style = "classic" | "deluxe";
+
+/** Starts the game: the round (kept through style switches) and the saved style's arena. */
 class Arcade extends Component {
   override onStart() {
     // The frame cap the player chose last time (vsync and quality come back on their own).
     Application.targetFrameRate = PlayerPrefs.getInt("arcade.frameCap", -1);
-    RenderSettings.skybox = { sunDirection: new Vector3(-0.4, 0.8, 0.3) };
-    const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(new Vector3(0.4, -0.8, -0.3)) });
-    sun.addComponent(Light, { type: "directional", intensity: 1.1, shadows: "soft" });
-    const cam = new GameObject("Main Camera", { position: new Vector3(0, 17, 15.5), rotation: Quaternion.euler(-50, 0, 0) });
-    cam.addComponent(Camera, { fieldOfView: 50, clearFlags: "skybox" });
-
-    const floor = new GameObject("Floor", { scale: new Vector3(2, 1, 2) });
-    floor.addComponent(MeshRenderer, { mesh: "plane", material: Material.create({ color: new Color(0.07, 0.09, 0.14, 1), smoothness: 0.5 }) });
-    const wall = Material.create({ color: new Color(0.16, 0.2, 0.3, 1), smoothness: 0.3 });
-    for (const [x, z, w, d] of [
-      [0, -ARENA - 0.5, ARENA * 2 + 2, 1],
-      [0, ARENA + 0.5, ARENA * 2 + 2, 1],
-      [-ARENA - 0.5, 0, 1, ARENA * 2],
-      [ARENA + 0.5, 0, 1, ARENA * 2],
-    ] as const) {
-      new GameObject("Wall", { position: new Vector3(x, 0.3, z), scale: new Vector3(w, 0.6, d) }).addComponent(MeshRenderer, { mesh: "cube", material: wall });
-    }
-
-    const ball = new GameObject("Player", { position: new Vector3(0, 0.5, 0) });
-    ball.addComponent(MeshRenderer, { mesh: "sphere", material: Material.create({ color: new Color(0.95, 0.4, 0.2, 1), smoothness: 0.7 }) });
-    ball.addComponent(Player);
-
-    const gold = Material.create({ color: new Color(1, 0.75, 0.2, 1), emission: new Color(0.35, 0.22, 0.02, 1), metallic: 0.5, smoothness: 0.7 });
-    for (let i = 0; i < 10; i++) {
-      const coin = new GameObject(`Coin ${i}`, { position: randomSpot(0.6) });
-      const disc = new GameObject("Disc", { parent: coin, rotation: Quaternion.euler(90, 0, 0), scale: new Vector3(0.7, 0.08, 0.7) });
-      disc.addComponent(MeshRenderer, { mesh: "cylinder", material: gold });
-      coin.addComponent(Pickup, { value: 1 });
-    }
-    const amethyst = Material.create({ color: new Color(0.6, 0.3, 1, 1), emission: new Color(0.25, 0.1, 0.5, 1), smoothness: 0.9 });
-    for (let i = 0; i < 2; i++) {
-      const gem = new GameObject(`Gem ${i}`, { position: randomSpot(0.7), scale: Vector3.one.scale(0.55) });
-      gem.addComponent(MeshRenderer, { mesh: "sphere", material: amethyst });
-      gem.addComponent(Pickup, { value: 5, spin: 200 });
-    }
-
-    new GameObject("Game").addComponent(GameManager);
+    const game = new GameObject("Game");
+    game.addComponent(GameManager);
+    GameObject.dontDestroyOnLoad(game);
+    switchStyle(PlayerPrefs.getString("arcade.style", "classic") === "deluxe" ? "deluxe" : "classic");
   }
+}
+
+let arenaCount = 0;
+
+/** The arena showing now, read from its scene's name. */
+function currentStyle(): Style {
+  return SceneManager.getActiveScene().name.startsWith("Deluxe") ? "deluxe" : "classic";
+}
+
+/** Where the ball and each pickup are, so a new arena can put them back. */
+interface Positions {
+  ball: { position: Vector3; rotation: Quaternion; velocity: Vector3; idle: number };
+  pickups: { value: number; x: number; z: number }[];
+}
+
+function positionsNow(): Positions | null {
+  const ball = GameObject.findObjectOfType(Player);
+  if (!ball) return null;
+  return {
+    ball: { position: ball.transform.position, rotation: ball.transform.rotation, velocity: ball.velocity, idle: ball.idle },
+    pickups: pickups().map((p) => ({ value: p.value, x: p.transform.position.x, z: p.transform.position.z })),
+  };
+}
+
+/** Moves the new arena's ball and pickups to where the old one's were (pickups by kind). */
+function restorePositions(scene: Scene, saved: Positions) {
+  const roots = scene.getRootGameObjects();
+  const ball = roots.map((g) => g.getComponent(Player)).find((p) => p);
+  if (ball) {
+    ball.transform.position = saved.ball.position;
+    ball.transform.rotation = saved.ball.rotation;
+    ball.velocity = saved.ball.velocity;
+    ball.idle = saved.ball.idle;
+  }
+  const fresh = roots.map((g) => g.getComponent(Pickup)).filter((p): p is Pickup => !!p);
+  for (const old of saved.pickups) {
+    const i = fresh.findIndex((p) => p.value === old.value);
+    if (i < 0) continue;
+    const [p] = fresh.splice(i, 1);
+    p!.transform.position = new Vector3(old.x, p!.height, old.z);
+  }
+}
+
+/**
+ * Builds `style`'s arena in a new scene, makes it active (its lighting with it) and
+ * unloads the arenas before it. The round goes on, and the ball and pickups stay where
+ * they were: only the look changes.
+ */
+function switchStyle(style: Style) {
+  const saved = positionsNow();
+  PlayerPrefs.setString("arcade.style", style);
+  const old: Scene[] = [];
+  for (let i = 0; i < SceneManager.sceneCount; i++) {
+    const scene = SceneManager.getSceneAt(i);
+    if (/^(Classic|Deluxe)/.test(scene.name)) old.push(scene);
+  }
+  const scene = SceneManager.createScene(`${style === "deluxe" ? "Deluxe" : "Classic"} ${++arenaCount}`);
+  SceneManager.setActiveScene(scene);
+  buildArena(style);
+  if (saved) restorePositions(scene, saved);
+  for (const s of old) SceneManager.unloadScene(s);
+  notify();
+}
+
+function buildArena(style: Style) {
+  const deluxe = style === "deluxe";
+  const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(new Vector3(0.4, -0.8, -0.3)) });
+  sun.addComponent(Light, { type: "directional", intensity: 1.1, shadows: "soft" });
+  const cam = new GameObject("Main Camera", { position: new Vector3(0, 17, 15.5), rotation: Quaternion.euler(-50, 0, 0) });
+  cam.addComponent(Camera, { fieldOfView: 50, clearFlags: "skybox" });
+  if (deluxe) buildDeluxe();
+  else buildClassic();
+
+  const ball = new GameObject("Player", { position: new Vector3(0, 0.5, 0) });
+  ball.addComponent(MeshRenderer, { mesh: "sphere", material: Material.create({ color: new Color(0.95, 0.4, 0.2, 1), smoothness: 0.7 }) });
+  ball.addComponent(Player);
+
+  // Deluxe pickups spin slower and bob gently.
+  const gold = Material.create({ color: new Color(1, 0.75, 0.2, 1), emission: new Color(0.35, 0.22, 0.02, 1), metallic: 0.5, smoothness: 0.7 });
+  for (let i = 0; i < 10; i++) {
+    const height = deluxe ? 0.65 : 0.6;
+    const coin = new GameObject(`Coin ${i}`, { position: randomSpot(height) });
+    const disc = new GameObject("Disc", { parent: coin, rotation: Quaternion.euler(90, 0, 0), scale: new Vector3(0.7, 0.08, 0.7) });
+    disc.addComponent(MeshRenderer, { mesh: "cylinder", material: gold });
+    coin.addComponent(Pickup, { value: 1, spin: deluxe ? 72 : 120, bob: deluxe ? 0.12 : 0, height });
+  }
+  const amethyst = Material.create({ color: new Color(0.6, 0.3, 1, 1), emission: new Color(0.25, 0.1, 0.5, 1), smoothness: 0.9 });
+  for (let i = 0; i < 2; i++) {
+    const height = 0.7;
+    const gem = new GameObject(`Gem ${i}`, { position: randomSpot(height), scale: Vector3.one.scale(0.55) });
+    gem.addComponent(MeshRenderer, { mesh: "sphere", material: amethyst });
+    gem.addComponent(Pickup, { value: 5, spin: deluxe ? 120 : 200, bob: deluxe ? 0.12 : 0, height });
+  }
+}
+
+/** The original look: a sunny sky, a dark floor and plain walls. */
+function buildClassic() {
+  RenderSettings.skybox = { sunDirection: new Vector3(-0.4, 0.8, 0.3) };
+  RenderSettings.ambientMode = "skybox";
+  RenderSettings.bloom = null;
+  const floor = new GameObject("Floor", { scale: new Vector3(2, 1, 2) });
+  floor.addComponent(MeshRenderer, { mesh: "plane", material: Material.create({ color: new Color(0.07, 0.09, 0.14, 1), smoothness: 0.5 }) });
+  const wall = Material.create({ color: new Color(0.16, 0.2, 0.3, 1), smoothness: 0.3 });
+  for (const [x, z, w, d] of [
+    [0, -ARENA - 0.5, ARENA * 2 + 2, 1],
+    [0, ARENA + 0.5, ARENA * 2 + 2, 1],
+    [-ARENA - 0.5, 0, 1, ARENA * 2],
+    [ARENA + 0.5, 0, 1, ARENA * 2],
+  ] as const) {
+    new GameObject("Wall", { position: new Vector3(x, 0.3, z), scale: new Vector3(w, 0.6, d) }).addComponent(MeshRenderer, { mesh: "cube", material: wall });
+  }
+}
+
+/**
+ * Space: a black sky with glowing bubbles behind the board, a polished stainless floor
+ * under a faint mirror sheet (exact reflections right below the coins), and the borders
+ * as a riveted steel frame.
+ */
+function buildDeluxe() {
+  RenderSettings.skybox = { zenith: Color.black, horizon: Color.black, ground: Color.black, sunDirection: null };
+  // A black sky lights nothing: a fixed ambient keeps the board visible.
+  RenderSettings.ambientMode = "color";
+  RenderSettings.ambientLight = new Color(0.25, 0.25, 0.3, 1);
+  RenderSettings.bloom = { threshold: 0.9, intensity: 1.1, scatter: 0.7 };
+
+  // The floor (a 10 m plane, scaled) ends at the frame's outer edge. Stainless: bright and
+  // shiny, but mostly its own colour (a black sky gives pure metal nothing to show).
+  const span = ((ARENA + 0.6) * 2) / 10;
+  const floor = new GameObject("Floor", { scale: new Vector3(span, 1, span) });
+  floor.addComponent(MeshRenderer, {
+    mesh: "plane",
+    material: Material.create({ color: Color.white, mainTexture: brushedMetal(), mainTextureScale: new Vector2(2, 2), smoothness: 0.88, metallic: 0.35 }),
+  });
+  // Reflections: a see-through mirror sheet just above the floor (a reflection probe
+  // sees the room from one point and stretches things near the floor). Its opacity is
+  // how strongly it reflects.
+  const sheet = new GameObject("Floor mirror", { position: new Vector3(0, 0.01, 0), scale: new Vector3(span, 1, span) });
+  sheet.addComponent(MeshRenderer, {
+    mesh: "plane",
+    material: Material.create({ color: new Color(1, 1, 1, 0.09), metallic: 1, smoothness: 1 }),
+    shadowCastingMode: "off",
+  });
+  sheet.addComponent(Mirror);
+
+  // The frame: 0.6 × 0.6 beams running along their own x (a square cross-section keeps
+  // the rivets round on every face; the texture runs along x, so the side beams are
+  // turned 90°), tiled along their length.
+  const metal = rivetedMetal();
+  const out = ARENA + 0.3;
+  for (const [x, z, length, turn] of [
+    [0, -out, (ARENA + 0.6) * 2, false],
+    [0, out, (ARENA + 0.6) * 2, false],
+    [-out, 0, ARENA * 2, true],
+    [out, 0, ARENA * 2, true],
+  ] as const) {
+    const beam = new GameObject("Wall", {
+      position: new Vector3(x, 0.3, z),
+      rotation: turn ? Quaternion.euler(0, 90, 0) : Quaternion.identity,
+      scale: new Vector3(length, 0.6, 0.6),
+    });
+    beam.addComponent(MeshRenderer, {
+      mesh: "cube",
+      material: Material.create({ color: Color.white, mainTexture: metal, mainTextureScale: new Vector2(length / 0.6, 1), smoothness: 0.75, metallic: 0.35 }),
+    });
+  }
+
+  // Glowing bubbles floating in a wide layer far below and beyond the board: the camera
+  // sees them all around it, and the board hides the middle.
+  const bubbles = new GameObject("Bubbles", { position: new Vector3(0, -30, -20) });
+  bubbles.addComponent(ParticleSystem, {
+    shape: { type: "box", size: { x: 140, y: 20, z: 120 } },
+    rateOverTime: 60,
+    maxParticles: 600,
+    startLifetime: [6, 10],
+    // Barely drifting: floating, not rising.
+    startSpeed: [0, 0.4],
+    startSize: [2, 5],
+    // Colours above 1 glow through the bloom.
+    startColor: [hue(0.55, 2.5), hue(0.85, 2.5)],
+    drag: 0.05,
+    simulationSpace: "world",
+    blendMode: "additive",
+    sizeOverLifetime: [
+      { time: 0, value: 0.3 },
+      { time: 0.3, value: 1 },
+      { time: 1, value: 1.3 },
+    ],
+    colorOverLifetime: [
+      { time: 0, color: new Color(1, 1, 1, 0) },
+      { time: 0.25, color: new Color(1, 1, 1, 1) },
+      { time: 0.75, color: new Color(1, 1, 1, 0.8) },
+      { time: 1, color: new Color(1, 1, 1, 0) },
+    ],
+  });
+}
+
+/** A colour around the hue wheel (0..1), fully saturated, at `value` brightness. */
+function hue(h: number, value: number): Color {
+  const k = (n: number) => (n + h * 6) % 6;
+  const f = (n: number) => value * (1 - Math.max(0, Math.min(k(n), 4 - k(n), 1)));
+  return new Color(f(5), f(3), f(1), 1);
+}
+
+/**
+ * The borders as a riveted frame: brushed steel with a strap along each long edge and a
+ * row of small rivets down its middle. It repeats seamlessly along x (no seams across),
+ * so each wall reads as one piece; one tile is a 0.6 m stretch with two rivets per row.
+ */
+function rivetedMetal(): Texture {
+  const size = 256;
+  const colors: Color[] = [];
+  const rng = new Rng(7);
+  // Grain runs along the wall (x), so it repeats without a seam.
+  const grain = Array.from({ length: size }, () => rng.nextDouble() * 0.04);
+  const strap = 56; // px from each long edge
+  const rivetsY = [strap / 2, size - strap / 2];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let v = 0.66 + grain[y]! + (rng.nextDouble() - 0.5) * 0.02;
+      // The straps: a touch lighter, with a thin groove on their inner edge.
+      const fromEdge = Math.min(y, size - 1 - y);
+      if (fromEdge < strap) v += 0.04;
+      if (Math.abs(fromEdge - strap) < 3) v -= 0.24;
+      else if (Math.abs(fromEdge - strap - 2.5) < 1) v += 0.05;
+      // Rivets every half tile along each strap (x wraps, so the row is continuous).
+      for (const ry of rivetsY) {
+        for (const rx of [size / 4, (size * 3) / 4]) {
+          const dx = x - rx;
+          const dy = y - ry;
+          const d = Math.hypot(dx, dy);
+          // A domed head lit from the top left: bright on that side, dark on the
+          // other, a small highlight, and a dark ring where it meets the strap.
+          if (d < 19) {
+            v = 0.62 + ((-dx - dy) / 38) * 0.6;
+            if (Math.hypot(dx + 6, dy + 6) < 4) v = 1;
+          } else if (d < 23) v = 0.22;
+        }
+      }
+      colors.push(new Color(v * 0.95, v * 0.97, v, 1));
+    }
+  }
+  return Texture.create(size, size, colors, { filterMode: "bilinear", wrapMode: "repeat" });
+}
+
+/** Polished, brushed steel: fine grain running along x, no seams. */
+function brushedMetal(): Texture {
+  const size = 256;
+  const rng = new Rng(11);
+  const grain = Array.from({ length: size }, () => rng.nextDouble());
+  const colors: Color[] = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Long streaks (per row) with a little fine noise across them.
+      const v = 0.8 + grain[y]! * 0.06 + (rng.nextDouble() - 0.5) * 0.02;
+      colors.push(new Color(v * 0.97, v * 0.98, v, 1));
+    }
+  }
+  return Texture.create(size, size, colors, { filterMode: "bilinear", wrapMode: "repeat" });
 }
 
 // Registered so hot reload can bring them back with their state.
@@ -224,6 +472,7 @@ function notify() {
 }
 
 interface GameView {
+  style: Style;
   paused: boolean;
   score: number;
   best: number;
@@ -237,7 +486,7 @@ interface GameView {
 function useGame(): GameView | null {
   const read = (): GameView | null => {
     const g = GameManager.current;
-    return g ? { paused: g.paused, score: g.score, best: g.best, combo: g.combo, timeLeft: g.timeLeft, over: g.over, recent: g.recent } : null;
+    return g ? { style: currentStyle(), paused: g.paused, score: g.score, best: g.best, combo: g.combo, timeLeft: g.timeLeft, over: g.over, recent: g.recent } : null;
   };
   const [view, setView] = useState(read);
   useEffect(() => {
@@ -251,23 +500,49 @@ function useGame(): GameView | null {
   return view;
 }
 
-const panel = {
-  padding: "10px 16px",
-  borderRadius: 12,
-  backgroundColor: "rgba(10, 12, 20, 0.72)",
-  flexDirection: "column" as const,
+/** How the HUD looks in each style. */
+interface Theme {
+  panel: Record<string, unknown>;
+  /** Small labels (TIME, Best, settings rows). */
+  label: string;
+  /** The score's title and colour. */
+  scoreTitle: string;
+  score: string;
+}
+
+const THEMES: Record<Style, Theme> = {
+  classic: {
+    panel: { padding: "10px 16px", borderRadius: 12, backgroundColor: "rgba(10, 12, 20, 0.72)", flexDirection: "column" },
+    label: "#9fb0c8",
+    scoreTitle: "SCORE",
+    score: "#ffffff",
+  },
+  deluxe: {
+    // Tinted glass (a backdrop blur costs a full-screen copy and blur each frame).
+    panel: {
+      padding: "10px 16px",
+      borderRadius: 12,
+      backgroundColor: "rgba(20, 24, 40, 0.55)",
+      border: "1px solid rgba(255, 255, 255, 0.12)",
+      flexDirection: "column",
+    },
+    label: "#ffffff",
+    scoreTitle: "POINTS",
+    score: "#ffcf4a",
+  },
 };
 
 /** The current score, the best and the combo, with "+N" popups for the last pickups. */
-function ScoreBoard(props: { score: number; best: number; combo: number; recent: GameView["recent"] }) {
+function ScoreBoard(props: { t: Theme; score: number; best: number; combo: number; recent: GameView["recent"] }) {
+  const { t } = props;
   return (
-    <box style={{ ...panel, gap: 2, minWidth: 180 }}>
-      <text style={{ color: "#9fb0c8", fontSize: 12, letterSpacing: 1 }}>SCORE</text>
+    <box style={{ ...t.panel, gap: 2, minWidth: 180 }}>
+      <text style={{ color: t.scoreTitle === "SCORE" ? t.label : t.score, fontSize: 12, letterSpacing: 1 }}>{t.scoreTitle}</text>
       <box style={{ flexDirection: "row", alignItems: "baseline", gap: 10 }}>
-        <text style={{ color: "#ffffff", fontSize: 40, fontWeight: 700 }}>{String(props.score)}</text>
+        <text style={{ color: t.score, fontSize: 40, fontWeight: 700 }}>{String(props.score)}</text>
         {props.combo > 1 && <text style={{ color: "#ffcf4a", fontSize: 18, fontWeight: 700 }}>{`x${props.combo}`}</text>}
       </box>
-      <text style={{ color: "#9fb0c8", fontSize: 12 }}>{`Best ${props.best}`}</text>
+      <text style={{ color: t.label, fontSize: 12 }}>{`Best ${props.best}`}</text>
       <box style={{ flexDirection: "row", gap: 6, height: 18 }}>
         {props.recent
           .filter((p) => Time.time - p.at < 1.2)
@@ -282,18 +557,18 @@ function ScoreBoard(props: { score: number; best: number; combo: number; recent:
 }
 
 /** Seconds left, red for the last ten. */
-function Timer(props: { timeLeft: number }) {
+function Timer(props: { t: Theme; timeLeft: number }) {
   const s = Math.ceil(props.timeLeft);
   return (
-    <box style={{ ...panel, alignItems: "center", minWidth: 90 }}>
-      <text style={{ color: "#9fb0c8", fontSize: 12, letterSpacing: 1 }}>TIME</text>
+    <box style={{ ...props.t.panel, alignItems: "center", minWidth: 90 }}>
+      <text style={{ color: props.t.label, fontSize: 12, letterSpacing: 1 }}>TIME</text>
       <text style={{ color: s <= 10 ? "#ff6b5e" : "#ffffff", fontSize: 32, fontWeight: 700 }}>{String(s)}</text>
     </box>
   );
 }
 
 /** Frames per second, measured over each half second (real time, not game time). */
-function FpsCounter() {
+function FpsCounter(props: { t: Theme }) {
   const [fps, setFps] = useState(0);
   useEffect(() => {
     let frames = Time.frameCount;
@@ -311,9 +586,9 @@ function FpsCounter() {
   }, []);
   const color = fps >= 55 ? "#7ee08a" : fps >= 30 ? "#ffcf4a" : "#ff6b5e";
   return (
-    <box style={{ ...panel, padding: "4px 10px", flexDirection: "row", gap: 6, alignItems: "baseline" }}>
+    <box style={{ ...props.t.panel, padding: "4px 10px", flexDirection: "row", gap: 6, alignItems: "baseline" }}>
       <text style={{ color, fontSize: 16, fontWeight: 700 }}>{String(fps)}</text>
-      <text style={{ color: "#9fb0c8", fontSize: 11 }}>FPS</text>
+      <text style={{ color: props.t.label, fontSize: 11 }}>FPS</text>
     </box>
   );
 }
@@ -349,17 +624,18 @@ function Choice(props: { label: string; active?: boolean; disabled?: boolean; on
   );
 }
 
-function Row(props: { label: string; children: React.ReactNode }) {
+function Row(props: { t: Theme; label: string; children: React.ReactNode }) {
   return (
     <box style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-      <text style={{ color: "#9fb0c8", fontSize: 13, width: 100, flexShrink: 0 }}>{props.label}</text>
+      <text style={{ color: props.t.label, fontSize: 13, width: 100, flexShrink: 0 }}>{props.label}</text>
       <box style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>{props.children}</box>
     </box>
   );
 }
 
 /** Window mode, resolution, vsync, frame cap and quality; saved when it closes. */
-function Settings() {
+function Settings(props: { t: Theme; style: Style }) {
+  const { t } = props;
   // The engine applies window changes after this frame: look again shortly after.
   const [, setTick] = useState(0);
   const refresh = () => setTimeout(() => setTick((t) => t + 1), 100);
@@ -374,9 +650,13 @@ function Settings() {
   const vsync = QualitySettings.vSyncCount > 0;
   const cap = Application.targetFrameRate;
   return (
-    <box style={{ ...panel, padding: 22, gap: 12, pointerEvents: "auto", backgroundColor: "rgba(10, 12, 20, 0.94)", minWidth: 460 }}>
+    <box style={{ ...t.panel, padding: 22, gap: 12, pointerEvents: "auto", minWidth: 460 }}>
       <text style={{ color: "#ffffff", fontSize: 22, fontWeight: 700 }}>Settings</text>
-      <Row label="Window">
+      <Row t={t} label="Style">
+        <Choice label="Classic" active={props.style === "classic"} onClick={() => switchStyle("classic")} />
+        <Choice label="Deluxe" active={props.style === "deluxe"} onClick={() => switchStyle("deluxe")} />
+      </Row>
+      <Row t={t} label="Window">
         {Screen.supportedFullScreenModes.map((m) => (
           <Choice
             key={m}
@@ -389,7 +669,7 @@ function Settings() {
           />
         ))}
       </Row>
-      <Row label="Resolution">
+      <Row t={t} label="Resolution">
         {sizes.map(([w, h, hz]) => (
           <Choice
             key={`${w}x${h}@${hz}`}
@@ -403,7 +683,7 @@ function Settings() {
           />
         ))}
       </Row>
-      <Row label="VSync">
+      <Row t={t} label="VSync">
         <Choice
           label="On"
           active={vsync}
@@ -421,7 +701,7 @@ function Settings() {
           }}
         />
       </Row>
-      <Row label="Frame cap">
+      <Row t={t} label="Frame cap">
         {FRAME_CAPS.map((fps) => (
           <Choice
             key={fps}
@@ -436,7 +716,7 @@ function Settings() {
           />
         ))}
       </Row>
-      <Row label="Quality">
+      <Row t={t} label="Quality">
         {QualitySettings.names.map((name, i) => (
           <Choice
             key={name}
@@ -452,7 +732,7 @@ function Settings() {
           />
         ))}
       </Row>
-      <text style={{ color: "#7d8aa0", fontSize: 12 }}>{vsync ? "With vsync on, frames follow the display; the cap applies with it off." : "Without vsync frames may tear; the cap keeps the GPU from running flat out."}</text>
+      <text style={{ color: t.label, fontSize: 12 }}>{vsync ? "With vsync on, frames follow the display; the cap applies with it off." : "Without vsync frames may tear; the cap keeps the GPU from running flat out."}</text>
       <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
         <Choice label="Back to the game (Esc)" active onClick={() => GameManager.current?.setPaused(false)} />
       </box>
@@ -460,10 +740,10 @@ function Settings() {
   );
 }
 
-function RoundOver(props: { score: number; best: number }) {
+function RoundOver(props: { t: Theme; score: number; best: number }) {
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}>
-      <box style={{ ...panel, padding: 28, gap: 10, alignItems: "center", pointerEvents: "auto", backgroundColor: "rgba(10, 12, 20, 0.94)" }}>
+      <box style={{ ...props.t.panel, padding: 28, gap: 10, alignItems: "center", pointerEvents: "auto" }}>
         <text style={{ color: "#ffffff", fontSize: 28, fontWeight: 700 }}>Round over</text>
         <text style={{ color: "#ffcf4a", fontSize: 20 }}>{`${props.score} points${props.score >= props.best && props.score > 0 ? " — a new best!" : ""}`}</text>
         <box
@@ -487,26 +767,29 @@ function Hud() {
     return () => clearTimeout(t);
   });
   if (!game) return null;
+  const t = THEMES[game.style];
+  const other: Style = game.style === "deluxe" ? "classic" : "deluxe";
   return (
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none", flexDirection: "column" }}>
       <box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <ScoreBoard score={game.score} best={game.best} combo={game.combo} recent={game.recent} />
+        <ScoreBoard t={t} score={game.score} best={game.best} combo={game.combo} recent={game.recent} />
         <box style={{ flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-          <Timer timeLeft={game.timeLeft} />
-          <FpsCounter />
-          <box style={{ pointerEvents: "auto" }}>
+          <Timer t={t} timeLeft={game.timeLeft} />
+          <FpsCounter t={t} />
+          <box style={{ pointerEvents: "auto", flexDirection: "row", gap: 6 }}>
+            <Choice label={other === "deluxe" ? "Deluxe" : "Classic"} onClick={() => switchStyle(other)} />
             <Choice label="Settings (Esc)" onClick={() => GameManager.current?.setPaused(true)} />
           </box>
         </box>
       </box>
       {game.paused && (
         <box style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}>
-          <Settings />
+          <Settings t={t} style={game.style} />
         </box>
       )}
       {game.over && !game.paused && (
         <box style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%" }}>
-          <RoundOver score={game.score} best={game.best} />
+          <RoundOver t={t} score={game.score} best={game.best} />
         </box>
       )}
     </box>
