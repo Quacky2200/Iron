@@ -19,7 +19,7 @@ Defined in [lib.rs](../crates/iron_script/src/lib.rs). Every backend provides th
 
 | Method | Purpose |
 |---|---|
-| `load_bundle(name, code)` | Evaluate a Bun-built IIFE; `name` is used in error locations |
+| `load_bundle(name, code)` | Evaluate a Bun-built IIFE (or, for a dev build's game code, the CommonJS wrapper `load_game` makes); `name` is used in error locations |
 | `eval(code)` | Evaluate an expression to a `Value` (tests, console, feature checks) |
 | `call_global(name, args)` | Call a global function: the way Rust calls into JS |
 | `tick(now_ms)` | Fire due timers (see below); returns uncaught errors since last tick |
@@ -170,7 +170,9 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
 2. `iron <folder>` ([main.rs](../crates/iron_app/src/main.rs)) calls `resolve_bundle`: a directory
    means `<dir>/dist/game.js` with the directory as the asset root; a `.js` path uses its parent.
-3. `QuickJsRuntime::new()`, `load_bundle`, then `ComponentHost::registered_classes` + `spawn` each.
+3. `QuickJsRuntime::new()`, `load_bundles`, then `ComponentHost::registered_classes` + `spawn` each.
+   `load_bundles` loads `game.js` alone, or for a dev build (below) `vendor.js` and then the game's
+   code through `iron_script::load_game`.
 4. `ui_events` is probed once with `typeof __iron_ui_event === 'function'` (set by `@iron/react`);
    games without React UI skip event dispatch.
 5. `dist/game.css`, if present, is added with `add_stylesheet_with_base(css, "dist")` so its relative
@@ -181,6 +183,25 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
    drive letters. `data:` URLs (Bun inlines small assets) go through `decode_data_url`.
    Game scripts therefore cannot read arbitrary files.
 
+**Dev builds.** `bun run dev` in an example runs [scripts/dev.ts](../scripts/dev.ts) instead of the
+`build` script. It writes two files to `dist/`:
+
+- `vendor.js`: an IIFE with React, the reconciler, the `react-refresh` runtime, `@iron/engine` and
+  `@iron/react` ([vendor.ts](../js/react/src/vendor.ts)), built once. It keeps a table of those
+  modules behind `globalThis.__iron_require`.
+- `game.js`: the game's own code as CommonJS (`--format cjs`), with `react`, `react/*` and `@iron/*`
+  left external, so its `require` calls get the vendor bundle's copies. Bun's `--react-fast-refresh`
+  adds the `$RefreshReg$` / `$RefreshSig$` calls. It starts with the banner `// @iron-dev`.
+
+The split exists because React, the reconciler and the engine must stay in one runtime for Fast
+Refresh: the game's code can run again while their module state (the fiber tree, the scene's
+classes and instances) stays. `bun run dev --once` builds once without watching. A production
+`bun run build` still makes one self-contained `game.js`.
+
+The app detects a dev build by the banner (`dev_vendor` in [main.rs](../crates/iron_app/src/main.rs)):
+if `game.js` starts with `// @iron-dev`, it reads `vendor.js` from the same folder (a missing one is
+logged as an error and the code loads as a plain bundle).
+
 Test bundles are built the same way into `tests/fixtures/*.js` (`bun run build:fixtures`) and
 embedded in Rust tests with `include_str!`; see [testing.md](testing.md).
 
@@ -188,21 +209,66 @@ embedded in Rust tests with `include_str!`; see [testing.md](testing.md).
 
 Flow, from an edit to the new code running:
 
-1. `bun run dev` in an example runs `bun build --watch` (same flags as `build`), so every save
+1. `bun run dev` in an example runs `scripts/dev.ts` (see "Dev builds" above), which builds
+   `dist/vendor.js` once and runs `bun build --watch` for the game's code, so every save
    rewrites `dist/game.js` and, when CSS is imported, `dist/game.css`.
 2. `iron <folder>` starts a `BundleWatcher` ([reload.rs](../crates/iron_app/src/reload.rs)). It uses
    `notify` on the `dist` folder (not the files: Bun may replace them) and only counts events for
-   the bundle and its CSS by file name. Access events are ignored.
+   the bundle, its CSS and `vendor.js` by file name. Access events are ignored.
 3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
    for `SETTLE` (150 ms), because Bun writes the JS and the CSS separately, and big files in
    several writes.
-4. `App::reload_scripts` reads the bundle, saves the old code's state (below) and calls `iron_script::reload`.
+4. `App::reload_scripts` reads the bundle. If it is a dev build and `vendor.js` is the same text as
+   the loaded one, it takes the in-place path (next). Otherwise it saves the old code's state
+   (below) and calls `iron_script::reload`.
 
 Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
 and runs without hot reload.
 
-**New runtime first, then swap.** `iron_script::reload(rt, fresh, host, name, code, bootstrap)` loads the code
-into a fresh `QuickJsRuntime`, reads `registered_classes` and calls the `bootstrap` closure, all
+**In place (dev builds, Fast Refresh).** When only `game.js` changed, `reload_in_place` runs the new
+code in the same runtime, so React state, the world, physics and sounds all stay. The sequence is
+`iron_script::load_game` ([components.rs](../crates/iron_script/src/components.rs)):
+
+1. `__iron_hot_begin()` ([hot.ts](../js/engine/src/hot.ts)) runs the undo callbacks the old top level
+   registered with `_undoOnReload` (only `addStyleSheet` does: it removes its sheet), then sets
+   `_loadingGame()`.
+2. The code is evaluated inside a wrapper, `(function (require, module, exports) { <code>\n})(__iron_require, ...)`.
+   The wrapper shares the code's first line, so error line numbers stay right. The top level runs
+   again: `register` replaces the classes by name, and `createRoot()` returns the live root while
+   `_loadingGame()` is set, and that root's `render` does nothing then ([react.md](react.md#createroot)).
+3. `__iron_hot_end()` runs, even if the code threw. It calls `_patchClasses` ([scene.ts](../js/engine/src/scene.ts)):
+   every live component whose class is now registered as a different class under its name gets the
+   new prototype (`Object.setPrototypeOf`), keeps its fields and gets defaults for fields the new
+   class added. Then the after-load callbacks run: `vendor.ts` registers `performReactRefresh`, which
+   re-renders the components whose code changed and keeps their state where the hooks still match.
+4. Back in Rust: `ComponentHost::refresh_hooks` forgets which lifecycle methods each component has
+   (the new classes may add or drop some), `game.css` is removed and loaded again, and
+   `Input::Refresh` is sent. The log line is `reloaded <bundle> in place in N ms`.
+
+A syntax error stops before anything ran. A throwing top level may have run partly. Either way the
+error is logged as `reload failed: ...` and the runtime stays (there is no fresh runtime to fall
+back on, unlike the full reload).
+
+It falls back to the full reload below when the build isn't a dev build, when `vendor.js` changed
+(or can't be read). That path keeps state through scenes, but React state is lost.
+
+Limits of the in-place path:
+
+- Only style sheets are undone from the top level. Fonts (`loadFont`), `input` and scene listeners and
+  timers registered at the top level are not, so they pile up on each reload. Register them in
+  components instead.
+- Class statics start fresh, since the class is a new object. Top-level objects (constants,
+  `new GameObject(...)`) are created again, and module-level variables are new.
+- A live component whose class is no longer registered keeps its old code. `__iron_hot_end` warns
+  `reload: X isn't registered, so its components keep the old code (register({ X }, { spawn: false }))`.
+- Fast Refresh needs the dev build's transform. Production builds don't refresh; they use the full
+  reload.
+
+M4-HOT-06 covers the in-place path ([testing.md](testing.md#fixture-bundles)).
+
+**New runtime first, then swap.** `iron_script::reload(rt, fresh, host, load, bootstrap)` runs the
+`load` closure on a fresh `QuickJsRuntime` (one `load_bundle`, or `load_bundles` for a dev build: vendor, then
+game code), reads `registered_classes` and calls the `bootstrap` closure, all
 in `fresh`. The app's closure restores the saved state, or, with nothing to restore, calls
 `spawn_starting_components`, which makes the objects and components in a new `ScriptScene`;
 `spawn_each` is the plain one-component-per-class bootstrap. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
@@ -270,8 +336,9 @@ benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 componen
 
 - Not kept: physics velocities and other body state beyond the saved properties, playing sounds,
   particles in flight, module-level variables in the bundle (they start fresh; keep state in
-  component fields), React state (the new bundle renders its UI from scratch), and
-  fields that can't be saved.
+  component fields), React state (the new bundle renders its UI from scratch; only the in-place
+  path above keeps it), and fields that can't be saved.
 - `bun build --watch` doesn't watch `@iron/engine` or `@iron/react` sources outside the example
-  folder, so editing those doesn't trigger a rebuild. Touch a file in the example or rebuild.
+  folder, so editing those doesn't trigger a rebuild. Touch a file in the example or rebuild
+  (in a dev build, restart `bun run dev`: `vendor.js` is built once).
 - Keys held at the time of the reload are forgotten.

@@ -88,6 +88,22 @@ Unmounting frees the target for a new root. `root.render(el)` uses
 `updateContainerSync` + `flushSyncWork` so the commit lands the same frame; `unmount` renders
 `null`. Uncaught/caught/recoverable React errors go to `console.error` with the stack.
 
+**Fast Refresh (dev builds).** In a dev build ([scripting.md](scripting.md#from-typescript-to-a-running-game))
+React lives in `vendor.js` and the game's code runs again on each edit:
+
+- [refresh.ts](../js/react/src/refresh.ts) loads first in the vendor bundle. It calls
+  `injectIntoGlobalHook(globalThis)` before React and the reconciler load, and defines the
+  `$RefreshReg$` / `$RefreshSig$` globals that Bun's `--react-fast-refresh` transform calls in the
+  game's code. Typings for the runtime are in [react-refresh.d.ts](../js/react/src/react-refresh.d.ts).
+- `host.ts` ends with `reconciler.injectIntoDevTools()`, so the hook sees the renderer and can find
+  its roots. Without the hook (production builds) this does nothing.
+- While the game's code is loading again (`_loadingGame()` from `@iron/engine`), `createRoot(target)`
+  returns the live root of that target (kept in a `roots` map) instead of throwing the
+  "only once" error, and its `render` returns without touching the tree once it has rendered.
+  The tree stays, so state stays.
+- After the new code ran, `performReactRefresh` re-renders the components whose code changed. State
+  is kept where the hook signatures still match; React remounts a component whose hooks changed.
+
 ## Events ([events.ts](../js/react/src/events.ts))
 
 Importing `@iron/react` runs `globalThis.__iron_ui_event = dispatchUiEvent`; the app detects that
