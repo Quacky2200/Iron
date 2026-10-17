@@ -116,6 +116,8 @@ pub struct Visual {
     pub cursor: Option<&'static str>,
     /// `cursor` images to try before the keyword (`url(x.png) 4 4, pointer`).
     pub cursor_images: Vec<CursorImage>,
+    /// `transition` and its longhands.
+    pub transitions: crate::motion::TransitionLists,
     /// Inherited text properties set on this node (see [`text_style`]).
     pub text: TextProps,
 }
@@ -175,6 +177,7 @@ impl Default for Visual {
             },
             cursor: None,
             cursor_images: Vec::new(),
+            transitions: crate::motion::TransitionLists::default(),
             text: TextProps::default(),
         }
     }
@@ -936,6 +939,43 @@ pub fn apply_style(
                 v => Some(integer(v).ok_or_else(invalid)?),
             }
         }
+        "transition"
+        | "transitionProperty"
+        | "transitionDuration"
+        | "transitionDelay"
+        | "transitionTimingFunction"
+        | "transitionBehavior" => {
+            use crate::motion as m;
+            // Stylesheet values like `0` arrive as numbers.
+            let text = match value {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                _ => return Err(invalid()),
+            };
+            let t = &mut visual.transitions;
+            match prop {
+                "transition" => *t = m::parse_transition(&text).ok_or_else(invalid)?,
+                "transitionProperty" => {
+                    t.property = m::parse_list(&text, m::parse_property).ok_or_else(invalid)?
+                }
+                "transitionDuration" => {
+                    t.duration = m::parse_list(&text, m::parse_time).ok_or_else(invalid)?
+                }
+                "transitionDelay" => {
+                    t.delay = m::parse_list(&text, m::parse_time).ok_or_else(invalid)?
+                }
+                "transitionTimingFunction" => {
+                    t.timing = m::parse_list(&text, m::Timing::parse).ok_or_else(invalid)?
+                }
+                // `allow-discrete` is accepted; discrete properties never transition.
+                _ => {
+                    m::parse_list(&text, |b| {
+                        matches!(b, "normal" | "allow-discrete").then_some(())
+                    })
+                    .ok_or_else(invalid)?;
+                }
+            }
+        }
         "isolation" => {
             visual.isolate = match kw()?.trim() {
                 "auto" => false,
@@ -1263,6 +1303,12 @@ pub(crate) fn copy_prop(
         "order" => visual.order = v.order,
         "zIndex" => visual.z_index = v.z_index,
         "isolation" => visual.isolate = v.isolate,
+        "transition" => visual.transitions = v.transitions,
+        "transitionProperty" => visual.transitions.property = v.transitions.property,
+        "transitionDuration" => visual.transitions.duration = v.transitions.duration,
+        "transitionDelay" => visual.transitions.delay = v.transitions.delay,
+        "transitionTimingFunction" => visual.transitions.timing = v.transitions.timing,
+        "transitionBehavior" => {}
         "overflow" => set_overflow(style, visual, v.overflow),
         "overflowX" => set_overflow(style, visual, [v.overflow[0], visual.overflow[1]]),
         "overflowY" => set_overflow(style, visual, [visual.overflow[0], v.overflow[1]]),

@@ -351,6 +351,18 @@ describe("@iron/react events", () => {
     const closed = commits.flat().filter((op) => op[0] === SET_ATTRS && op[1] === id);
     expect(closed.at(-1)).toEqual([SET_ATTRS, id, "open", false]);
   });
+  // M3-ANI-02
+  test("onTransitionEnd gets the property name and elapsed seconds, and bubbles", () => {
+    const log: string[] = [];
+    createRoot().render(
+      <box data-name="page" onTransitionEnd={(e) => log.push(`page ${e.propertyName}`)}>
+        <box data-name="card" onTransitionEnd={(e) => log.push(`card ${e.propertyName} ${e.elapsedTime}`)} />
+      </box>,
+    );
+    const data = [0, 0, 0, 0, 0, 0.25, 0, 0];
+    dispatchUiEvent("transitionend", path("card", "page"), data, ["background-color"]);
+    expect(log).toEqual(["card background-color 0.25", "page background-color"]);
+  });
   // M3-INP-01
   test("onChange sees the new text in e.target.value and controlled fields commit it", () => {
     let event: IronInputEvent | undefined;

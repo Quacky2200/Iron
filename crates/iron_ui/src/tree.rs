@@ -391,6 +391,13 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Open modal dialogs in the order they opened: the top layer, painted (each
     /// over its `::backdrop`) above everything else.
     top_layer: Vec<NodeId>,
+    /// Transitions (and the values they start from) by element.
+    motion: HashMap<NodeId, crate::motion::Motion>,
+    /// An inline style set `transition*`: inline changes then go through restyle,
+    /// where transitions start.
+    uses_motion: bool,
+    /// Transition events waiting for [`Self::take_motion_events`].
+    motion_events: Vec<crate::motion::MotionEvent>,
 }
 
 impl UiTree<TaffyLayout> {
@@ -458,6 +465,9 @@ impl<L: LayoutEngine> UiTree<L> {
             text_selection: None,
             pseudo_styles: HashMap::default(),
             top_layer: Vec::new(),
+            motion: HashMap::default(),
+            uses_motion: false,
+            motion_events: Vec::new(),
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
@@ -1346,7 +1356,7 @@ impl<L: LayoutEngine> UiTree<L> {
     fn restyle_dirty(&mut self) {
         let key_changes = std::mem::take(&mut self.key_changes);
         let structure_changed: Vec<NodeId> = self.structure_changed.drain().collect();
-        if self.sheets.is_empty() && !self.uses_vars {
+        if self.sheets.is_empty() && !self.uses_vars && !self.uses_motion {
             // Without stylesheets inline styles are applied directly as they arrive.
             self.style_dirty.clear();
             return;
@@ -1471,6 +1481,8 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
         units.em = parent_text.child(&sized.text).font_size;
+        // Each property's winning computed value, which transitions compare.
+        let mut winners: std::collections::HashMap<String, String> = Default::default();
         for (prop, value) in &ordered {
             if prop.starts_with("--") || *prop == "content" {
                 continue;
@@ -1487,12 +1499,19 @@ impl<L: LayoutEngine> UiTree<L> {
                 let parent = node.parent.and_then(|p| self.nodes.get(&p));
                 let parent = parent.map(|p| (&p.style, &p.visual));
                 let _ = apply_wide_keyword(&mut style, &mut visual, prop, keyword, parent);
+                winners.remove(*prop);
                 continue;
             }
             let Some(value) = compute(prop, value, &ctx, &mut unit_uses) else {
                 continue;
             };
-            let _ = apply_style(&mut style, &mut visual, prop, &value);
+            if apply_style(&mut style, &mut visual, prop, &value).is_ok() {
+                match &value {
+                    Value::String(s) => winners.insert((*prop).to_owned(), s.clone()),
+                    Value::Number(n) => winners.insert((*prop).to_owned(), n.to_string()),
+                    _ => None,
+                };
+            }
         }
         if unit_uses.any() {
             self.unit_uses.insert(id, unit_uses);
@@ -1515,6 +1534,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let boxes_changed =
             node.visual.contents != visual.contents || node.visual.fixed != visual.fixed;
         let parent = node.parent;
+        self.run_transitions(id, winners, parent_text.color, &mut style, &mut visual);
         let node = self.nodes.get_mut(&id).expect("checked above");
         node.vars = vars;
         let text_changed = node.visual.text != visual.text;
@@ -1584,6 +1604,129 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
         self.needs_layout = true;
+    }
+
+    /// Starts transitions for properties whose winning value changed (per the new
+    /// style's `transition` list), drops finished ones and applies the running ones on
+    /// top of `style` / `visual`.
+    fn run_transitions(
+        &mut self,
+        id: NodeId,
+        winners: std::collections::HashMap<String, String>,
+        parent_color: Rgba,
+        style: &mut Style,
+        visual: &mut Visual,
+    ) {
+        use crate::events::EventKind;
+        use crate::motion::{MotionEvent, Transition, initial_value, interpolate, kebab_case};
+        let specs = visual.transitions.specs();
+        if specs.is_empty() && !self.motion.contains_key(&id) {
+            return;
+        }
+        let now = self.time_ms;
+        let initial = |prop: &str| match prop {
+            // `color` inherits: without a declaration it's the parent's.
+            "color" => Some(format!(
+                "rgba({}, {}, {}, {})",
+                parent_color.r * 255.0,
+                parent_color.g * 255.0,
+                parent_color.b * 255.0,
+                parent_color.a
+            )),
+            p => initial_value(p).map(str::to_owned),
+        };
+        let event = |kind, name: &str, elapsed: f64| MotionEvent {
+            kind,
+            target: id,
+            name: kebab_case(name),
+            elapsed: elapsed / 1000.0,
+        };
+        let m = self.motion.entry(id).or_default();
+        let mut events = Vec::new();
+        if let Some(prev) = m.values.take() {
+            let mut changed: Vec<&String> = prev
+                .keys()
+                .chain(winners.keys())
+                .filter(|p| prev.get(*p) != winners.get(*p))
+                .collect();
+            changed.sort();
+            changed.dedup();
+            for prop in changed {
+                // A change mid-transition starts from where it is now.
+                let current = match m.transitions.iter().position(|t| &t.prop == prop) {
+                    Some(i) => {
+                        let old = m.transitions.remove(i);
+                        let elapsed = (now - old.start_ms).max(0.0);
+                        events.push(event(EventKind::TransitionCancel, prop, elapsed));
+                        Some(old.value_at(now).0)
+                    }
+                    None => None,
+                };
+                let Some(spec) = specs.iter().rev().find(|s| s.matches(prop)) else {
+                    continue;
+                };
+                let from = current
+                    .or_else(|| prev.get(prop).cloned())
+                    .or_else(|| initial(prop));
+                let to = winners.get(prop).cloned().or_else(|| initial(prop));
+                let (Some(from), Some(to)) = (from, to) else {
+                    continue;
+                };
+                if from == to || interpolate(&from, &to, 0.5).is_none() {
+                    continue;
+                }
+                m.transitions.push(Transition {
+                    prop: prop.clone(),
+                    from,
+                    to,
+                    start_ms: now + spec.delay_ms,
+                    duration_ms: spec.duration_ms,
+                    timing: spec.timing,
+                    started: false,
+                });
+                events.push(event(EventKind::TransitionRun, prop, 0.0));
+            }
+        }
+        m.values = Some(winners);
+        // A property no longer listed in `transition` stops transitioning.
+        m.transitions.retain(|t| {
+            let keep = specs.iter().any(|s| s.matches(&t.prop));
+            if !keep {
+                events.push(event(
+                    EventKind::TransitionCancel,
+                    &t.prop,
+                    (now - t.start_ms).max(0.0),
+                ));
+            }
+            keep
+        });
+        m.transitions.retain_mut(|t| {
+            if now >= t.start_ms && !t.started {
+                t.started = true;
+                events.push(event(EventKind::TransitionStart, &t.prop, 0.0));
+            }
+            let (value, done) = t.value_at(now);
+            if done {
+                events.push(event(EventKind::TransitionEnd, &t.prop, t.duration_ms));
+                return false;
+            }
+            let _ = apply_style(style, visual, &t.prop, &crate::cascade::css_value(&value));
+            true
+        });
+        if m.transitions.is_empty() && specs.is_empty() {
+            self.motion.remove(&id);
+        }
+        self.motion_events.extend(events);
+    }
+
+    /// Transition events since the last call, for scripts.
+    pub fn take_motion_events(&mut self) -> Vec<crate::motion::MotionEvent> {
+        std::mem::take(&mut self.motion_events)
+    }
+
+    /// Whether any transition is running (the app keeps drawing frames while so).
+    pub fn is_animating(&self) -> bool {
+        self.motion.values().any(|m| !m.transitions.is_empty())
     }
 
     /// The node's attributes (`className`, `id`, `data-*`, ...).
@@ -2121,7 +2264,13 @@ impl<L: LayoutEngine> UiTree<L> {
                 if saw_var {
                     self.uses_vars = true;
                 }
-                if !self.sheets.is_empty() || self.uses_vars {
+                if pairs.chunks(2).any(|p| {
+                    p[0].as_str()
+                        .is_some_and(|n| n.starts_with("transition") || n.starts_with("animation"))
+                }) {
+                    self.uses_motion = true;
+                }
+                if !self.sheets.is_empty() || self.uses_vars || self.uses_motion {
                     // Inline styles sit between normal and !important rules.
                     self.style_dirty.insert(id);
                 }
@@ -2229,6 +2378,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.unit_uses.remove(&id);
             self.fixed.remove(&id);
             self.top_layer.retain(|d| *d != id);
+            self.motion.remove(&id);
             if let Some(node) = self.nodes.remove(&id) {
                 stack.extend(node.children);
                 self.layout.remove_node(id);
@@ -2389,6 +2539,17 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Sets engine time (ms) for caret blinking.
     pub fn set_time(&mut self, now_ms: f64) {
         self.time_ms = now_ms;
+        // Running transitions restyle every frame.
+        let moving: Vec<NodeId> = self
+            .motion
+            .iter()
+            .filter(|(_, m)| !m.transitions.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        if !moving.is_empty() {
+            self.style_dirty.extend(moving);
+            self.needs_layout = true;
+        }
     }
 
     /// Whether `id` is a text field (`input` or `textarea`).

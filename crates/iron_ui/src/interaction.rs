@@ -400,6 +400,16 @@ impl Interaction {
             }
             Input::Refresh => {
                 send(self.pointer.refresh(tree), dispatch);
+                for e in tree.take_motion_events() {
+                    if !tree.contains(e.target) {
+                        continue;
+                    }
+                    dispatch(&UiEvent {
+                        value: Some(e.name),
+                        delta_x: e.elapsed as f32,
+                        ..UiEvent::new(e.kind, tree.event_path(e.target), self.modifiers)
+                    });
+                }
                 self.track_modals(tree, dispatch);
                 let top = tree.top_modal();
                 if let Some(id) = self.focused

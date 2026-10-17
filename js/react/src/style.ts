@@ -304,6 +304,18 @@ export interface IronStyle {
   imageRendering?: "auto" | "smooth" | "high-quality" | "pixelated" | "crisp-edges";
   /** `hidden` (or `collapse`) keeps the layout space but draws nothing and takes no hits; children can be `visible` again. Inherited. */
   visibility?: "visible" | "hidden" | "collapse";
+  /**
+   * `transition: opacity 0.3s ease-out, transform 200ms 50ms`. Lengths, numbers, colours and
+   * same-shaped transforms, filters and shadows animate; other properties change at once.
+   */
+  transition?: string;
+  transitionProperty?: string;
+  /** Times with units: `"0.3s"`, `"150ms"`. */
+  transitionDuration?: string;
+  transitionDelay?: string;
+  /** `ease`, `linear`, `ease-in`, `ease-out`, `ease-in-out`, `cubic-bezier()`, `steps()`, ... */
+  transitionTimingFunction?: string;
+  transitionBehavior?: "normal" | "allow-discrete";
   userSelect?: "auto" | "text" | "none" | "all" | "contain";
   WebkitUserSelect?: "auto" | "text" | "none" | "all" | "contain";
   /** List markers: `disc`, `circle`, `square`, `decimal`, `decimal-leading-zero`, `lower-alpha`, `upper-alpha`, `lower-roman`, `upper-roman`, `lower-greek`, `none` or a quoted string. Inherited. */

@@ -40,6 +40,12 @@ pub enum EventKind {
     /// A dialog should close: the `cancel` before it wasn't prevented. Scripts close
     /// it by clearing `open`. Doesn't bubble.
     Close,
+    /// Transitions (bubble; `value` is the kebab-case property, `delta_x` the elapsed
+    /// seconds): created (`run`), past its delay (`start`), done, or replaced/removed.
+    TransitionRun,
+    TransitionStart,
+    TransitionEnd,
+    TransitionCancel,
 }
 
 impl EventKind {
@@ -63,6 +69,10 @@ impl EventKind {
             EventKind::Input => "input",
             EventKind::Cancel => "cancel",
             EventKind::Close => "close",
+            EventKind::TransitionRun => "transitionrun",
+            EventKind::TransitionStart => "transitionstart",
+            EventKind::TransitionEnd => "transitionend",
+            EventKind::TransitionCancel => "transitioncancel",
         }
     }
 }

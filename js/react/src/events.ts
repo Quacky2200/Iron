@@ -30,6 +30,10 @@ const HANDLERS: Record<string, readonly string[]> = {
   // Dialogs (Escape, backdrop clicks): `cancel` can be prevented, then `close`.
   cancel: ["onCancel"],
   close: ["onClose"],
+  transitionrun: ["onTransitionRun"],
+  transitionstart: ["onTransitionStart"],
+  transitionend: ["onTransitionEnd"],
+  transitioncancel: ["onTransitionCancel"],
 };
 
 // `scroll` doesn't bubble in React 17+ either.
@@ -175,6 +179,18 @@ export class IronInputEvent extends IronEvent {
   }
 }
 
+/** `onTransition*`: which property (kebab-case) and how long it ran, in seconds. */
+export class IronTransitionEvent extends IronEvent {
+  readonly propertyName: string;
+  readonly elapsedTime: number;
+
+  constructor(type: string, target: Instance, data: readonly number[], strings: readonly string[]) {
+    super(type, target, true);
+    this.propertyName = strings[0] ?? "";
+    this.elapsedTime = data[5] ?? 0;
+  }
+}
+
 /** `onScroll`: the element's new scroll position and sizes (logical pixels). */
 export class IronScrollEvent extends IronEvent {
   readonly scrollLeft: number;
@@ -236,6 +252,11 @@ function createEvent(
       return new IronScrollEvent(type, target, data);
     case "input":
       return new IronInputEvent(type, target, strings);
+    case "transitionrun":
+    case "transitionstart":
+    case "transitionend":
+    case "transitioncancel":
+      return new IronTransitionEvent(type, target, data, strings);
     default:
       return new IronPointerEvent(type, target, bubbles, data);
   }

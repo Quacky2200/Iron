@@ -627,11 +627,18 @@ and `@font-face`.
 6. **Transforms**
    - [x] Done as step 5e (2D and 3D); see group 5
 7. **Transitions and animations**
-   - [ ] `transition` (+ `-property`, `-duration`, `-delay`, `-timing-function`) for numbers, lengths,
-     colours, shadows and transforms; discrete properties snap
+   - [x] **7a** `transition` (+ `-property`, `-duration`, `-delay`, `-timing-function`, `-behavior`)
+     for numbers, lengths, colours, shadows, filters and transforms; discrete properties snap.
+     `motion.rs` interpolates computed values as CSS text, token by token (mixed units through
+     `calc()`, colours premultiplied, `none` as the neutral list); restyle compares each property's
+     winning value, starts transitions from the current value (so reversals don't jump) and applies
+     running ones on top; `set_time` restyles moving elements each frame; inline-only games switch to
+     restyle once a `transition` is set. `transitionrun`/`start`/`end`/`cancel` events reach React
+     (`onTransitionEnd`, ...) — `M3-ANI-01`, `M3-ANI-02`
    - [ ] `@keyframes` and `animation` (+ name, duration, delay, iteration count, direction, fill mode,
      play state, timing function)
-   - [ ] Timing functions: `linear`, `ease*`, `cubic-bezier()`, `steps()`, `step-start`/`-end`
+   - [x] Timing functions: `linear`, `ease*`, `cubic-bezier()`, `steps()` (all jump positions),
+     `step-start`/`-end` (done with 7a; `linear()` with stops isn't)
    - [ ] Enter/exit styling, s&box's `:intro` / `:outro`: `@starting-style` (standard) for entry, and an
      `:outro`-style state plus deferred removal in the React reconciler so exit transitions finish
      before the node is deleted

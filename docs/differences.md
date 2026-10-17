@@ -4,6 +4,18 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Transitions (M3d step 7a)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| What interpolates | Computed values as text, token by token: same-shaped values only (same functions, same number of shadows/layers); mixed units via `calc()` | Typed interpolation per property (e.g. transforms with different functions go through matrices) | One generic interpolator covers most real uses |
+| `auto`, `currentColor`, keywords | Change at once | Some interpolate (`currentColor` in colours, `interpolate-size`) | Not representable as plain tokens |
+| Colour space | Premultiplied sRGB | Same for legacy colours; Color 4 spaces otherwise | Matches what games usually expect |
+| Shorthands | `transition: background 1s` also covers `backgroundColor` and the reverse (name prefixes) | Exact shorthand expansion | No longhand tables |
+| `transition-behavior: allow-discrete` | Accepted, no effect | Discrete properties flip at 50% | Rarely needed |
+| Inherited values | A transition on a parent's `color` animates; children follow through inheritance | Same | — |
+| Cost | Each moving element is restyled (selector matching included) every frame | Browsers update animated values without a full restyle | Simple; fine for UI-sized numbers of elements |
+
 ## Dialogs (M3d step 5j)
 
 | Area | Iron | Browsers / spec | Why |

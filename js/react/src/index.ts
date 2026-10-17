@@ -18,6 +18,7 @@ import type {
   IronKeyboardEvent,
   IronPointerEvent,
   IronScrollEvent,
+  IronTransitionEvent,
   IronWheelEvent,
 } from "./events.ts";
 import { type Container, type Instance, reconciler } from "./host.ts";
@@ -32,6 +33,7 @@ export {
   IronKeyboardEvent,
   IronPointerEvent,
   IronScrollEvent,
+  IronTransitionEvent,
   IronWheelEvent,
 } from "./events.ts";
 export { Instance as IronElement } from "./host.ts";
@@ -80,6 +82,11 @@ export interface EventProps {
   onBlurCapture?: (event: IronFocusEvent) => void;
   /** The element scrolled (by the wheel, keys, its scrollbar or `scrollTo`). Doesn't bubble. */
   onScroll?: (event: IronScrollEvent) => void;
+  /** A transition was created, passed its delay, finished, or was replaced / removed. Bubble. */
+  onTransitionRun?: (event: IronTransitionEvent) => void;
+  onTransitionStart?: (event: IronTransitionEvent) => void;
+  onTransitionEnd?: (event: IronTransitionEvent) => void;
+  onTransitionCancel?: (event: IronTransitionEvent) => void;
 }
 
 /** Attributes that CSS selectors can match. */

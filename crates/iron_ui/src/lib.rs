@@ -14,6 +14,7 @@ pub mod editor;
 pub mod events;
 pub mod interaction;
 mod layout;
+pub mod motion;
 pub mod opcodes;
 mod paint;
 mod style;
