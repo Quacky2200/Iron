@@ -366,7 +366,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] System clipboard (arboard, opened on first use) for the requests above, in `iron_app`
    - [ ] Later: undo/redo, `type="password"`, `maxLength`, wheel scrolling inside a textarea,
      `::placeholder` / `::selection` / `caret-color` styling
-   - [ ] Selecting static text and `user-select`: moved to M3d step 5h
+   - [x] Selecting static text and `user-select`: done in M3d step 5h
    - [x] IME: winit `Ime` events → pre-edit shown underlined at the caret (not part of the value,
      no `input` events), commit inserted with an `input` event, pre-edit dropped when focus
      leaves; IME is allowed only while an editable field has focus and the candidate window
@@ -589,10 +589,14 @@ and `@font-face`.
      A list without markers (`list-style: none`, no image) drops its default indent unless its start
      padding is set. Paragraphs and headings stay `text` with classes (no `p`/`h1`). Counters aren't done —
      `M3-LST-01`
-   - [ ] **5h** `user-select: none | auto | text | all` and selecting static text (drag, double-click
-     word, triple-click line, Ctrl+C) on text elements, with a `::selection` colour, sharing Parley's
-     selection geometry and the clipboard with the text fields (the M3c "selecting static text" item);
-     `::placeholder` styling for text fields (colour, font, opacity) in the same step
+   - [x] **5h** `user-select: none | auto | text | all` (and `-webkit-`; `auto` takes the parent's
+     value, so children can opt back in) and selecting static text: drag, double-click word,
+     triple-click line, Shift+click extends, Ctrl+C copies through the fields' clipboard request.
+     The tree keeps a Parley `Selection` on one text block (presses map through transforms, which
+     fields now do too); `::selection` sets the highlight and recolours the selected glyphs (also in
+     fields); `::placeholder` styles placeholders (text properties, colour, opacity); the I-beam
+     shows only over selectable text — `M3-SEL-01`, `M3-SEL-02`. Selections stay in one block (see
+     docs/differences.md)
    - [ ] **5i** `cursor` and `pointer-events` gaps (both exist since M3c: `pointerEvents: auto | none`,
      inherited, children can opt back in; `cursor` keywords → OS cursors). To add: custom cursor
      images `cursor: url(cursor.png) 4 4, pointer` (hotspot, fallback list, `.cur`/`.png`, scaled for

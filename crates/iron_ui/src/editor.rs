@@ -11,6 +11,7 @@ use crate::draw::Rect;
 use crate::events::Modifiers;
 use crate::text::{self, Brush, TextEngine};
 use crate::text_style::{ComputedText, Direction, TextAlign};
+use crate::tree::PseudoStyle;
 
 /// Default width of an `<input>` without one, about 20 characters (like browsers).
 pub const INPUT_WIDTH: f32 = 160.0;
@@ -67,6 +68,8 @@ pub(crate) struct Editor {
     style: Option<ComputedText>,
     /// The placeholder text and its laid-out form (dimmed text colour).
     placeholder: Option<(String, Option<Layout<Brush>>)>,
+    /// What `::placeholder` rules set.
+    placeholder_style: Option<PseudoStyle>,
     /// How far the text is scrolled inside the content box (keeps the caret in view).
     pub(crate) scroll: (f32, f32),
     /// Content box size from the last layout.
@@ -85,6 +88,7 @@ impl Editor {
             rows: TEXTAREA_ROWS,
             style: None,
             placeholder: None,
+            placeholder_style: None,
             scroll: (0.0, 0.0),
             size: (0.0, 0.0),
             activity_ms: 0.0,
@@ -128,6 +132,16 @@ impl Editor {
         }
     }
 
+    /// Applies `::placeholder` styles.
+    pub(crate) fn set_placeholder_style(&mut self, style: Option<PseudoStyle>) {
+        if self.placeholder_style != style {
+            self.placeholder_style = style;
+            if let Some((_, layout)) = &mut self.placeholder {
+                *layout = None;
+            }
+        }
+    }
+
     /// Applies the computed text style; returns whether it changed.
     pub(crate) fn set_style(&mut self, style: &ComputedText) -> bool {
         if self.style.as_ref() == Some(style) {
@@ -165,8 +179,15 @@ impl Editor {
         if let (Some((placeholder, layout @ None)), Some(style)) =
             (&mut self.placeholder, &self.style)
         {
+            // Browsers dim the placeholder; `::placeholder` can restyle it.
             let mut dim = style.clone();
             dim.color = dim.color.with_alpha_scaled(0.5);
+            if let Some(p) = &self.placeholder_style {
+                dim = dim.child(&p.text);
+                if let Some(opacity) = p.opacity {
+                    dim.color = dim.color.with_alpha_scaled(opacity.clamp(0.0, 1.0));
+                }
+            }
             let mut built = text.build(&dim, &[(placeholder.clone(), dim.clone())]);
             built.break_all_lines(self.multiline.then_some(width.max(1.0)));
             built.align(

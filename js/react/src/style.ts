@@ -300,6 +300,8 @@ export interface IronStyle {
   imageRendering?: "auto" | "smooth" | "high-quality" | "pixelated" | "crisp-edges";
   /** `hidden` (or `collapse`) keeps the layout space but draws nothing and takes no hits; children can be `visible` again. Inherited. */
   visibility?: "visible" | "hidden" | "collapse";
+  userSelect?: "auto" | "text" | "none" | "all" | "contain";
+  WebkitUserSelect?: "auto" | "text" | "none" | "all" | "contain";
   /** List markers: `disc`, `circle`, `square`, `decimal`, `decimal-leading-zero`, `lower-alpha`, `upper-alpha`, `lower-roman`, `upper-roman`, `lower-greek`, `none` or a quoted string. Inherited. */
   listStyleType?: string;
   /** `outside` (default: hangs left of the item) or `inside`. */

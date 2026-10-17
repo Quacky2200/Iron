@@ -21,7 +21,9 @@ use crate::paint::{
 };
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
 use crate::text::{self, Brush, TextEngine};
-use crate::text_style::{ComputedText, Direction, TextOverflow, is_text_prop};
+use crate::text_style::{
+    ComputedText, Direction, TextOverflow, TextProps, UserSelect, is_text_prop,
+};
 use crate::transform::{Homography, Mat4, TransformContext};
 use crate::units::{UnitContext, Uses};
 
@@ -59,6 +61,14 @@ struct Node {
     generated: Option<PseudoElement>,
     /// Computed custom properties (`--name`), inherited from the parent.
     vars: Rc<Vars>,
+}
+
+/// What `::selection` and `::placeholder` rules set on an element.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct PseudoStyle {
+    pub text: TextProps,
+    pub background: Option<Rgba>,
+    pub opacity: Option<f32>,
 }
 
 /// Custom properties by name (`--accent` → `red`).
@@ -335,6 +345,12 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     markers_dirty: HashSet<NodeId>,
     /// How many text blocks have been shaped (for tests and profiling).
     text_builds: u64,
+    /// The text each block laid out (white space collapsed), which selections index.
+    layout_texts: HashMap<NodeId, String>,
+    /// Selected static text: the text block and Parley's selection in it.
+    text_selection: Option<(NodeId, parley::Selection)>,
+    /// `::selection` and `::placeholder` styles from stylesheets, by element.
+    pseudo_styles: HashMap<(NodeId, PseudoElement), PseudoStyle>,
 }
 
 impl UiTree<TaffyLayout> {
@@ -397,6 +413,9 @@ impl<L: LayoutEngine> UiTree<L> {
             next_generated: FIRST_GENERATED_ID,
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
+            layout_texts: HashMap::default(),
+            text_selection: None,
+            pseudo_styles: HashMap::default(),
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
@@ -927,6 +946,61 @@ impl<L: LayoutEngine> UiTree<L> {
         self.needs_layout = true;
     }
 
+    /// Stores what `::selection` / `::placeholder` rules set on `id`.
+    fn update_pseudo_style(
+        &mut self,
+        id: NodeId,
+        pseudo: PseudoElement,
+        caches: &mut selectors::context::SelectorCaches,
+    ) {
+        let ordered = self.pseudo_declarations(id, pseudo, caches);
+        if ordered.is_empty() {
+            if self.pseudo_styles.remove(&(id, pseudo)).is_some() {
+                self.needs_layout = true;
+            }
+            return;
+        }
+        let mut style = Style::default();
+        let mut visual = Visual::default();
+        let (mut background, mut opacity) = (false, false);
+        for (prop, value) in &ordered {
+            if prop.starts_with("--") {
+                continue;
+            }
+            if apply_style(&mut style, &mut visual, prop, value).is_ok() {
+                background |= matches!(prop.as_str(), "background" | "backgroundColor");
+                opacity |= prop == "opacity";
+            }
+        }
+        let computed = PseudoStyle {
+            text: visual.text.clone(),
+            background: background.then_some(visual.background),
+            opacity: opacity.then_some(visual.opacity),
+        };
+        if self.pseudo_styles.get(&(id, pseudo)) != Some(&computed) {
+            self.pseudo_styles.insert((id, pseudo), computed);
+            self.needs_layout = true;
+        }
+    }
+
+    /// `::selection` colours for `id`: each from the nearest element (itself or an
+    /// ancestor) whose `::selection` rule sets it.
+    fn selection_colors(&self, id: NodeId) -> (Option<Rgba>, Option<Rgba>) {
+        let (mut color, mut background) = (None, None);
+        let mut at = Some(id);
+        while let Some(n) = at {
+            if let Some(s) = self.pseudo_styles.get(&(n, PseudoElement::Selection)) {
+                color = color.or(s.text.color);
+                background = background.or(s.background);
+            }
+            if color.is_some() && background.is_some() {
+                break;
+            }
+            at = self.parent(n);
+        }
+        (color, background)
+    }
+
     /// Adds an empty generated span (with a text child) as the first or last child.
     fn insert_generated(&mut self, parent: NodeId, pseudo: PseudoElement) -> NodeId {
         let span = NodeId(self.next_generated);
@@ -966,6 +1040,9 @@ impl<L: LayoutEngine> UiTree<L> {
             PseudoElement::Marker => siblings.insert(0, span),
             PseudoElement::Before => siblings.insert(usize::from(first_is_marker), span),
             PseudoElement::After => siblings.push(span),
+            PseudoElement::Selection | PseudoElement::Placeholder => {
+                unreachable!("not generated as nodes")
+            }
         }
         self.layout.set_children(span, &[]);
         self.sync_children(parent);
@@ -1244,6 +1321,12 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.update_pseudo(id, pseudo, caches);
             }
         }
+        if !self.sheets.is_empty() {
+            self.update_pseudo_style(id, PseudoElement::Selection, caches);
+            if self.is_editor(id) {
+                self.update_pseudo_style(id, PseudoElement::Placeholder, caches);
+            }
+        }
         // Its marker (if it's a list item) and its children's (if it's a list).
         self.markers_dirty.insert(id);
         let children = self.children(id).to_vec();
@@ -1397,7 +1480,7 @@ impl<L: LayoutEngine> UiTree<L> {
         self.text_layouts.get(&id)
     }
 
-    fn build_text_layout(&mut self, root: NodeId) -> parley::Layout<Brush> {
+    fn build_text_layout(&mut self, root: NodeId) -> (parley::Layout<Brush>, String) {
         let block = self.computed_text(root);
         if block.text_overflow == TextOverflow::Ellipsis {
             let mut dots = self
@@ -1430,7 +1513,7 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
         self.text_builds += 1;
-        self.text.build(&block, &runs)
+        self.text.build_with_text(&block, &runs)
     }
 
     /// How many text blocks have been shaped since the tree was created.
@@ -1913,6 +1996,12 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.layout.remove_node(id);
                 self.rects.remove(&id);
                 self.text_layouts.remove(&id);
+                self.layout_texts.remove(&id);
+                self.pseudo_styles.remove(&(id, PseudoElement::Selection));
+                self.pseudo_styles.remove(&(id, PseudoElement::Placeholder));
+                if self.text_selection.as_ref().is_some_and(|(r, _)| *r == id) {
+                    self.text_selection = None;
+                }
                 self.ellipses.remove(&id);
                 self.dirty_text.remove(&id);
                 self.style_dirty.remove(&id);
@@ -1930,8 +2019,18 @@ impl<L: LayoutEngine> UiTree<L> {
         self.refresh_markers();
         // Re-shape text blocks whose content or style changed.
         for root in self.take_dirty_text() {
-            let layout = self.build_text_layout(root);
+            let (layout, laid_out) = self.build_text_layout(root);
+            // A selection survives restyling, but not a change of text.
+            if self
+                .text_selection
+                .as_ref()
+                .is_some_and(|(r, _)| *r == root)
+                && self.layout_texts.get(&root) != Some(&laid_out)
+            {
+                self.text_selection = None;
+            }
             self.text_layouts.insert(root, layout);
+            self.layout_texts.insert(root, laid_out);
             self.layout.mark_dirty(root);
         }
         let Self {
@@ -2026,6 +2125,11 @@ impl<L: LayoutEngine> UiTree<L> {
                 continue;
             };
             editor.set_style(&style);
+            editor.set_placeholder_style(
+                self.pseudo_styles
+                    .get(&(id, PseudoElement::Placeholder))
+                    .cloned(),
+            );
             editor.refresh(text, content.width, content.height);
         }
     }
@@ -2121,6 +2225,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let Some(content) = self.content_box(id) else {
             return;
         };
+        let (x, y) = self.to_local(id, x, y).unwrap_or((x, y));
         let now = self.time_ms;
         let Self {
             editors,
@@ -2172,6 +2277,164 @@ impl<L: LayoutEngine> UiTree<L> {
         let content = self.content_box(id)?;
         let area = editor.ime_area();
         Some(area.offset(content.x - editor.scroll.0, content.y - editor.scroll.1))
+    }
+
+    /// Maps window point (x, y) into the plane `id` is laid out in, undoing the
+    /// transforms of it and its ancestors. `None` if a transform can't be inverted.
+    pub fn to_local(&self, id: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
+        let mut chain = Vec::new();
+        let mut at = Some(id);
+        while let Some(n) = at {
+            let node = self.nodes.get(&n)?;
+            chain.push(n);
+            // Fixed elements ignore their ancestors' transforms.
+            if is_fixed(n, node) {
+                break;
+            }
+            at = node.parent;
+        }
+        let mut xf = TransformContext::ROOT;
+        let mut plane = Homography::IDENTITY;
+        for n in chain.into_iter().rev() {
+            let node = self.nodes.get(&n)?;
+            if is_contents(node) {
+                continue;
+            }
+            let rect = *self.rects.get(&n)?;
+            let (p, child, _) = self.transform_step(node, rect, xf)?;
+            plane = p;
+            xf = child;
+        }
+        if plane.is_identity() {
+            Some((x, y))
+        } else {
+            plane.inverse()?.apply(x, y)
+        }
+    }
+
+    /// Starts (or with Shift extends) a static text selection at window point (x, y)
+    /// in the text block holding `target`: one press places a caret, two select a
+    /// word, three a line; `user-select: all` takes the whole block. Returns whether a
+    /// selection started; otherwise any selection is cleared.
+    pub fn select_text(&mut self, target: NodeId, x: f32, y: f32, select: PointerSelect) -> bool {
+        self.layout_if_needed();
+        let root = self
+            .text_root_of(target)
+            .filter(|r| self.text_layouts.contains_key(r) && !self.is_editor(*r));
+        let mode = self.computed_text(target).user_select;
+        let (Some(root), false) = (root, mode == UserSelect::None) else {
+            self.clear_text_selection();
+            return false;
+        };
+        let Some((lx, ly)) = self.text_point(root, x, y) else {
+            self.clear_text_selection();
+            return false;
+        };
+        let Some(layout) = self.text_layouts.get(&root) else {
+            return false;
+        };
+        let current = self
+            .text_selection
+            .as_ref()
+            .filter(|(r, _)| *r == root)
+            .map(|(_, s)| s.refresh(layout));
+        let selection = if mode == UserSelect::All {
+            whole_text(layout, self.layout_texts.get(&root).map_or(0, String::len))
+        } else {
+            match select {
+                PointerSelect::Press {
+                    clicks: 1,
+                    shift: true,
+                } => match current {
+                    Some(s) => s.shift_click_extension(layout, lx, ly),
+                    None => parley::Selection::from_point(layout, lx, ly),
+                },
+                PointerSelect::Press { clicks: 0 | 1, .. } => {
+                    parley::Selection::from_point(layout, lx, ly)
+                }
+                PointerSelect::Press { clicks: 2, .. } => {
+                    parley::Selection::word_from_point(layout, lx, ly)
+                }
+                PointerSelect::Press { .. } => {
+                    parley::Selection::hard_line_from_point(layout, lx, ly)
+                }
+                PointerSelect::Drag => match current {
+                    Some(s) => s.extend_to_point(layout, lx, ly),
+                    None => parley::Selection::from_point(layout, lx, ly),
+                },
+            }
+        };
+        self.text_selection = Some((root, selection));
+        true
+    }
+
+    /// Extends the static selection to window point (x, y) while dragging.
+    pub fn extend_text_selection(&mut self, x: f32, y: f32) {
+        let Some(root) = self.text_selection.as_ref().map(|(r, _)| *r) else {
+            return;
+        };
+        if self.computed_text(root).user_select == UserSelect::All {
+            return;
+        }
+        let Some((lx, ly)) = self.text_point(root, x, y) else {
+            return;
+        };
+        if let (Some(layout), Some((_, s))) =
+            (self.text_layouts.get(&root), self.text_selection.as_mut())
+        {
+            *s = s.refresh(layout).extend_to_point(layout, lx, ly);
+        }
+    }
+
+    pub fn clear_text_selection(&mut self) {
+        self.text_selection = None;
+    }
+
+    /// The selected static text and its text block, if any is selected.
+    pub fn text_selection(&self) -> Option<(NodeId, String)> {
+        let (root, s) = self.text_selection.as_ref()?;
+        let text = self.layout_texts.get(root)?;
+        let range = s.text_range();
+        let selected = text.get(range)?;
+        (!selected.is_empty()).then(|| (*root, selected.to_owned()))
+    }
+
+    /// Window point (x, y) relative to text block `root`'s content box.
+    fn text_point(&self, root: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
+        let (x, y) = self.to_local(root, x, y)?;
+        let content = self.content_box(root)?;
+        Some((x - content.x, y - content.y))
+    }
+
+    /// Selected text's highlight (behind the text) and, when `::selection` sets a
+    /// colour, the text again in that colour, clipped to the highlight.
+    fn selection_cmds(
+        &self,
+        id: NodeId,
+        rects: &[Rect],
+        text: &crate::draw::TextCmd,
+        out_behind: &mut Vec<DrawCmd>,
+        out_above: &mut Vec<DrawCmd>,
+    ) {
+        let (color, background) = self.selection_colors(id);
+        let background = background.unwrap_or(crate::editor::SELECTION);
+        for r in rects {
+            if background.a > 0.0 {
+                out_behind.push(DrawCmd::Quad(Quad {
+                    rect: *r,
+                    background,
+                    images: Vec::new(),
+                    border_color: Rgba::TRANSPARENT,
+                    border: [0.0; 4],
+                    radii: Radii::ZERO,
+                }));
+            }
+            if let Some(color) = color {
+                out_above.push(DrawCmd::PushClip(ClipShape::rect(*r)));
+                out_above.push(DrawCmd::Text(text.shadow(0.0, 0.0, color)));
+                out_above.push(DrawCmd::PopClip);
+            }
+        }
     }
 
     /// The scroll offset (x, y) of `id`; (0, 0) for elements that never scrolled.
@@ -2528,7 +2791,16 @@ impl<L: LayoutEngine> UiTree<L> {
     /// and `default` elsewhere.
     pub fn cursor(&self, id: Option<NodeId>) -> &'static str {
         let auto = match id.and_then(|id| self.nodes.get(&id)) {
-            Some(node) if is_inline_container(&node.kind) || is_editor_kind(&node.kind) => "text",
+            Some(node) if is_editor_kind(&node.kind) => "text",
+            // Text shows the I-beam unless it can't be selected.
+            Some(node)
+                if is_inline_container(&node.kind)
+                    && id.is_some_and(|id| {
+                        self.computed_text(id).user_select != UserSelect::None
+                    }) =>
+            {
+                "text"
+            }
             _ => "default",
         };
         let mut at = id;
@@ -2774,14 +3046,37 @@ impl<L: LayoutEngine> UiTree<L> {
                         own.push(DrawCmd::Text(copy));
                     }
                 }
+                let selected = self
+                    .text_selection
+                    .as_ref()
+                    .filter(|(r, s)| *r == id && !s.is_collapsed())
+                    .map(|(_, s)| {
+                        s.refresh(layout)
+                            .geometry(layout)
+                            .into_iter()
+                            .map(|(b, _)| {
+                                Rect::new(
+                                    origin.0 + b.x0 as f32,
+                                    origin.1 + b.y0 as f32,
+                                    (b.x1 - b.x0) as f32,
+                                    (b.y1 - b.y0) as f32,
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                let mut above = Vec::new();
+                if let Some(rects) = selected {
+                    self.selection_cmds(id, &rects, &cmd, &mut own, &mut above);
+                }
                 own.push(DrawCmd::Text(cmd));
+                own.extend(above);
             }
         }
 
         if let Some(editor) = self.editors.get(&id)
             && text.visible
         {
-            self.editor_cmds(editor, node, rect, &l, radii, &text, &mut own);
+            self.editor_cmds(id, editor, node, rect, &l, radii, &text, &mut own);
         }
 
         // clip-path (and legacy `clip`) clip the element and everything inside it;
@@ -3106,6 +3401,7 @@ impl<L: LayoutEngine> UiTree<L> {
     #[allow(clippy::too_many_arguments)]
     fn editor_cmds(
         &self,
+        node_id: NodeId,
         editor: &Editor,
         node: &Node,
         rect: Rect,
@@ -3142,22 +3438,26 @@ impl<L: LayoutEngine> UiTree<L> {
             l.border,
         )));
         let focused = node.state.focus && !node.attrs.disabled;
-        if focused {
-            out.extend(
-                editor
-                    .selection_rects()
-                    .into_iter()
-                    .map(|r| quad(r, crate::editor::SELECTION)),
-            );
-        }
+        let selection: Vec<Rect> = if focused {
+            editor
+                .selection_rects()
+                .into_iter()
+                .map(|r| r.offset(origin.0, origin.1))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let placeholder = editor
             .placeholder_layout()
             .map(|l| (l, editor.placeholder_x()));
         if let Some((layout, dx)) = placeholder.or(editor.layout().map(|l| (l, 0.0))) {
             let cmd = text::draw(layout, (origin.0 + dx, origin.1));
+            let mut above = Vec::new();
+            self.selection_cmds(node_id, &selection, &cmd, out, &mut above);
             if !cmd.runs.is_empty() || !cmd.decorations.is_empty() {
                 out.push(DrawCmd::Text(cmd));
             }
+            out.extend(above);
         }
         if focused
             && editor.caret_on(self.time_ms)
@@ -3267,6 +3567,15 @@ fn overflow_clip(v: &Visual, rect: Rect, l: &NodeLayout, radii: Radii) -> Option
         clip.radii_y = [0.0; 4];
     }
     Some(clip)
+}
+
+/// A selection of all `len` bytes of a layout's text.
+fn whole_text(layout: &parley::Layout<Brush>, len: usize) -> parley::Selection {
+    use parley::{Affinity, Cursor};
+    parley::Selection::new(
+        Cursor::from_byte_index(layout, 0, Affinity::Downstream),
+        Cursor::from_byte_index(layout, len, Affinity::Upstream),
+    )
 }
 
 fn root_style(width: f32, height: f32) -> Style {

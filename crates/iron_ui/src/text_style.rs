@@ -280,6 +280,17 @@ impl TextTransform {
     }
 }
 
+/// `user-select`: whether the pointer can select an element's text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UserSelect {
+    /// Text can be selected (`auto` and `text`).
+    #[default]
+    Text,
+    None,
+    /// A press selects the whole text block.
+    All,
+}
+
 /// `list-style-type`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum ListStyleType {
@@ -474,6 +485,9 @@ pub struct TextProps {
     /// `visibility`: `Some(false)` for `hidden` / `collapse`. Inherited, so it rides
     /// along here like `pixelated`.
     pub visible: Option<bool>,
+    /// `user-select`. `auto` is `None` here: it takes the parent's value, which is
+    /// what CSS computes for `none` and `all` parents (and `text` otherwise).
+    pub user_select: Option<UserSelect>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
@@ -520,6 +534,7 @@ pub struct ComputedText {
     pub pixelated: bool,
     /// `visibility: visible`: the element paints and takes pointer hits.
     pub visible: bool,
+    pub user_select: UserSelect,
     pub list_style_type: ListStyleType,
     pub list_inside: bool,
     pub list_image: Option<String>,
@@ -560,6 +575,7 @@ impl Default for ComputedText {
             smooth: true,
             pixelated: false,
             visible: true,
+            user_select: UserSelect::Text,
             list_style_type: ListStyleType::Disc,
             list_inside: false,
             list_image: None,
@@ -629,6 +645,7 @@ impl ComputedText {
             smooth: props.smooth.unwrap_or(self.smooth),
             pixelated: props.pixelated.unwrap_or(self.pixelated),
             visible: props.visible.unwrap_or(self.visible),
+            user_select: props.user_select.unwrap_or(self.user_select),
             list_style_type: props
                 .list_style_type
                 .clone()
@@ -714,6 +731,8 @@ pub const TEXT_PROPS: &[&str] = &[
     "WebkitFontSmoothing",
     "imageRendering",
     "visibility",
+    "userSelect",
+    "WebkitUserSelect",
     "listStyle",
     "listStyleType",
     "listStylePosition",
@@ -775,6 +794,7 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "fontSmooth" | "WebkitFontSmoothing" => props.smooth = None,
             "imageRendering" => props.pixelated = None,
             "visibility" => props.visible = None,
+            "userSelect" | "WebkitUserSelect" => props.user_select = None,
             "listStyle" => {
                 props.list_style_type = None;
                 props.list_inside = None;
@@ -1038,6 +1058,15 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 Some("hidden" | "collapse") => Some(false),
                 _ => None,
             }));
+        }
+        "userSelect" | "WebkitUserSelect" => {
+            props.user_select = match parse!(s) {
+                "auto" => None,
+                "text" | "contain" => Some(UserSelect::Text),
+                "none" => Some(UserSelect::None),
+                "all" => Some(UserSelect::All),
+                _ => return Some(Err(())),
+            };
         }
         "imageRendering" => {
             props.pixelated = Some(parse!(match s {

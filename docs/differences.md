@@ -4,6 +4,16 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Selection (M3d step 5h)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Extent | A selection stays inside one text block (one `text` element and its spans) | Selections run across elements | Each block has its own Parley layout; cross-block ranges need a document-wide position model |
+| `::selection` | Only `color` and `background(-color)`; each comes from the nearest element (the block or an ancestor) with a `::selection` rule that sets it; spans inside the block can't restyle their part | Highlight inheritance per element, including spans | Enough for theming; per-span styles need per-run highlight drawing |
+| `user-select: contain` | Same as `text` | Keeps the selection inside the element | Selections can't leave a block anyway |
+| Ctrl+A outside fields | Does nothing | Selects the whole page | No page-wide selection (see Extent) |
+| Default | Text is selectable, as in browsers | Same | Set `userSelect: "none"` on menus and HUDs where double-clicks shouldn't highlight |
+
 ## Lists (M3d step 5g)
 
 | Area | Iron | Browsers / spec | Why |

@@ -187,6 +187,16 @@ impl TextEngine {
         block: &ComputedText,
         runs: &[(String, ComputedText)],
     ) -> Layout<Brush> {
+        self.build_with_text(block, runs).0
+    }
+
+    /// [`Self::build`], also returning the text as laid out (white space collapsed),
+    /// which selection byte ranges index.
+    pub fn build_with_text(
+        &mut self,
+        block: &ComputedText,
+        runs: &[(String, ComputedText)],
+    ) -> (Layout<Brush>, String) {
         let root = to_parley(block);
         let mut builder = self
             .layout_cx
@@ -197,8 +207,7 @@ impl TextEngine {
             builder.push_text(text);
             builder.pop_style_span();
         }
-        let (layout, _) = builder.build();
-        layout
+        builder.build()
     }
 }
 

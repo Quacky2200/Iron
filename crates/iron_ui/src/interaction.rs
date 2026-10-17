@@ -104,6 +104,8 @@ pub struct Interaction {
     drag: Option<(Scrollbar, f32)>,
     /// A text field being selected by dragging.
     selecting: Option<NodeId>,
+    /// Static text being selected by dragging.
+    selecting_text: bool,
     /// A clipboard request for the app.
     clipboard: Option<Clipboard>,
 }
@@ -175,6 +177,9 @@ impl Interaction {
                 if let Some(field) = self.selecting {
                     tree.editor_pointer(field, x, y, PointerSelect::Drag);
                 }
+                if self.selecting_text {
+                    tree.extend_text_selection(x, y);
+                }
                 if let Some((bar, grab)) = self.drag {
                     self.drag_scrollbar(tree, bar, grab, x, y, dispatch);
                 }
@@ -193,26 +198,33 @@ impl Interaction {
                         if !prevented {
                             let target = event.path.iter().copied().find(|id| focusable(tree, *id));
                             self.pointer_focus(tree, target, dispatch);
-                            // In a field, the press places the caret or selects.
+                            let select = PointerSelect::Press {
+                                clicks: event.detail,
+                                shift: event.modifiers.shift,
+                            };
+                            // In a field, the press places the caret or selects;
+                            // elsewhere it selects static text (or clears).
                             if let Some(field) = target.filter(|id| tree.is_editor(*id)) {
-                                let select = PointerSelect::Press {
-                                    clicks: event.detail,
-                                    shift: event.modifiers.shift,
-                                };
+                                tree.clear_text_selection();
                                 tree.editor_pointer(field, event.x, event.y, select);
                                 self.selecting = Some(field);
+                            } else if let Some(&hit) = event.path.first() {
+                                self.selecting_text =
+                                    tree.select_text(hit, event.x, event.y, select);
                             }
                         }
                     }
                 }
                 // A press on empty space (the root) blurs, like clicking the page body.
                 if pressed_nothing {
+                    tree.clear_text_selection();
                     self.pointer_focus(tree, None, dispatch);
                 }
             }
             Input::PointerUp { button } => {
                 if button == 0 {
                     self.selecting = None;
+                    self.selecting_text = false;
                     if self.drag.take().is_some() {
                         return;
                     }
@@ -267,6 +279,15 @@ impl Interaction {
                     if out.handled {
                         return;
                     }
+                }
+                // Ctrl+C (Cmd+C) copies selected static text.
+                let command = self.modifiers.ctrl || self.modifiers.meta;
+                if command
+                    && (key.eq_ignore_ascii_case("c") || code == "KeyC")
+                    && let Some((_, text)) = tree.text_selection()
+                {
+                    self.clipboard = Some(Clipboard::Copy(text));
+                    return;
                 }
                 if key == "Tab" {
                     self.keyboard = true;

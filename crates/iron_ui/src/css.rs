@@ -114,6 +114,10 @@ pub enum PseudoElement {
     After,
     /// A list item's marker (bullet or number).
     Marker,
+    /// Selected text (colour and background only).
+    Selection,
+    /// A text field's placeholder.
+    Placeholder,
 }
 
 impl ToCss for PseudoElement {
@@ -122,6 +126,8 @@ impl ToCss for PseudoElement {
             PseudoElement::Before => "::before",
             PseudoElement::After => "::after",
             PseudoElement::Marker => "::marker",
+            PseudoElement::Selection => "::selection",
+            PseudoElement::Placeholder => "::placeholder",
         })
     }
 }
@@ -198,6 +204,8 @@ impl<'i> SelectorParser<'i> for IronSelectorParser {
             "before" => Ok(PseudoElement::Before),
             "after" => Ok(PseudoElement::After),
             "marker" => Ok(PseudoElement::Marker),
+            "selection" => Ok(PseudoElement::Selection),
+            "placeholder" => Ok(PseudoElement::Placeholder),
             _ => Err(ParseError::custom(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement,
             )),
