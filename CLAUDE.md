@@ -156,8 +156,14 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     `property.ts`), `SceneManager` (single / additive / async from files, unload,
     active scene, events), `dontDestroyOnLoad`, `GameObject.instantiate`,
     `iron.startScene`, `register(..., { spawn: false })`, `examples/scenes`.
+  - Hot reload part 2, state (2026-10-17): the old code saves every scene
+    (`__iron_save_state`), the new code restores it (`__iron_restore_state`); restored
+    script components get `onReload`; unregistered classes make it start over.
+    `IRON_RELOAD_AT_FRAME=N` reloads during screenshot runs. Benchmark `M4-HOT-07` at
+    ~146 ms against 100 ms (follow-ups in TODO.md).
 - **Next (in this order, see TODO.md):**
-  1. Hot reload part 2 (state kept across reloads through scene serialization).
+  1. The rest of hot reload part 2: React Fast Refresh for panels (`M4-HOT-06`), getting
+     the reload benchmark under 100 ms.
   - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
     transparency modes), FXAA/TAA, render textures, players' saved settings (M6), shadow and
     glow follow-ups, more classic test scenes (downloads need the user's OK first).
