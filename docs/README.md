@@ -16,7 +16,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 
 | Page | Covers |
 |---|---|
-| [scripting.md](scripting.md) | `iron_script`, `@iron/engine`, ops and commits, `ComponentHost`, bundles and how `iron_app` loads them |
+| [scripting.md](scripting.md) | `iron_script`, `@iron/engine`, ops and commits, `ComponentHost`, bundles and how `iron_app` loads them, hot reload |
 | [physics-and-audio.md](physics-and-audio.md) | `iron_physics` (rapier) and `iron_audio` (kira): ops and script IDs, per-tick order, batch formats, TS APIs, offline mixer, limits |
 | [ui-tree.md](ui-tree.md) | `iron_ui` tree, opcodes, styles, Taffy layout, Parley text, text fields (`editor.rs`), draw list |
 | [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`/`::marker`/`::backdrop`/`::selection`/`::placeholder`, `@font-face` (incl. WOFF/WOFF2), `@media`, URL rebasing |
@@ -95,4 +95,5 @@ Key ideas to keep in mind:
 | Change gamepad / game input | [gamepad.rs](../crates/iron_platform/src/gamepad.rs), [game_input.rs](../crates/iron_app/src/game_input.rs), [input.ts](../js/engine/src/input.ts), [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6) |
 | Add a physics or audio op | [physics-and-audio.md](physics-and-audio.md), [iron_physics](../crates/iron_physics/src/lib.rs), [iron_audio](../crates/iron_audio/src/lib.rs) |
 | Add a script op | [main.rs](../crates/iron_app/src/main.rs) `tick()`, [scripting.md](scripting.md) |
+| Change script hot reload | [reload.rs](../crates/iron_app/src/reload.rs), `App::reload_scripts` in [main.rs](../crates/iron_app/src/main.rs), [scripting.md](scripting.md#hot-reload) |
 | Add a draw command | [draw.rs](../crates/iron_ui/src/draw.rs), [ui/mod.rs](../crates/iron_render/src/ui/mod.rs), [rendering.md](rendering.md) |

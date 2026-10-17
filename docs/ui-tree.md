@@ -62,6 +62,15 @@ get none, see below), text blocks are marked dirty. Finally `needs_layout` is se
 so the cascade can re-apply it later (see [css.md](css.md)). Values containing `var(`, CSS-wide keywords
 (`inherit` etc.) or `--custom` props are deferred to restyle because they depend on inherited variables.
 
+### Node lifetime
+
+`REMOVE_CHILD` destroys the subtree; a node created but never attached stays in the tree until
+something removes it. `UiTree::clear_script_nodes` is the bulk version used by script hot reload
+([scripting.md](scripting.md#hot-reload)): it removes every child of `ROOT` through a normal
+commit, then destroys every remaining script-created node (id below `FIRST_GENERATED_ID`) that was
+never attached. While it runs, the `clearing` flag skips `:outro` exit animations. The result is an
+empty root, so a new bundle's reconciler can reuse ids from 1 (M4-HOT-09).
+
 ## Styles
 
 [style.rs](../crates/iron_ui/src/style.rs) `apply_style(&mut Style, &mut Visual, prop, &Value)` is

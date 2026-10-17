@@ -143,7 +143,7 @@ an offline mixer renders and drops that much audio, so sounds still progress and
 
 - There are no GameObject components yet (M5.a). Bodies and sounds are created by scripts
   directly, and nothing ties them to scene objects.
-- Body IDs are not preserved across hot reload yet (M4-PHY-04 is pending).
+- Physics is reset on hot reload (a new `Physics`), so body IDs are not preserved (M4-PHY-04 waits for hot reload part 2; see [scripting.md](scripting.md#hot-reload)).
 - rapier's character autostep fails if a move pushes down as steeply as it moves forward. A
   strong downward pull can stop a character climbing a step.
 - Collision handlers' ops apply one tick late (see above), and ray hits arrive one tick after the ask.

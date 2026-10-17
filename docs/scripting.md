@@ -24,7 +24,7 @@ Defined in [lib.rs](../crates/iron_script/src/lib.rs). Every backend provides th
 | `call_global(name, args)` | Call a global function: the way Rust calls into JS |
 | `tick(now_ms)` | Fire due timers (see below); returns uncaught errors since last tick |
 | `drain_ops()` / `drain_commits()` | Take what scripts queued since last call |
-| `reset()` | Fresh context for hot reload; drops ops, commits, timers, errors; keeps the log sink |
+| `reset()` | Fresh context; drops ops, commits, timers, errors; keeps the log sink |
 | `set_log_sink(sink)` | Where `console.*` goes (default: `tracing`, target `script`) |
 
 Difference from DESIGN.md section 4.1: the trait there has no `tick` or `drain_commits`; the code
@@ -155,6 +155,49 @@ embedded in Rust tests with `include_str!`; see [testing.md](testing.md).
 
 ## Hot reload
 
-`reset()` exists and is tested, but hot reload is not wired into `iron_app` yet (milestone M4).
-Because the Rust tree owns all UI state and JS holds only ids, the planned flow is: `reset()`,
-reload the bundle, re-render.
+Flow, from an edit to the new code running:
+
+1. `bun run dev` in an example runs `bun build --watch` (same flags as `build`), so every save
+   rewrites `dist/game.js` and, when CSS is imported, `dist/game.css`.
+2. `iron <folder>` starts a `BundleWatcher` ([reload.rs](../crates/iron_app/src/reload.rs)). It uses
+   `notify` on the `dist` folder (not the files: Bun may replace them) and only counts events for
+   the bundle and its CSS by file name. Access events are ignored.
+3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
+   for `SETTLE` (150 ms), because Bun writes the JS and the CSS separately, and big files in
+   several writes.
+4. `App::reload_scripts` reads the bundle and calls `iron_script::reload`.
+
+Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
+and runs without hot reload.
+
+**New runtime first, then swap.** `iron_script::reload(rt, fresh, host, name, code)` loads the code
+into a fresh `QuickJsRuntime`, reads `registered_classes` and spawns one component per class, all
+in `fresh`. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
+is dropped). A syntax error, a throwing top level or a throwing constructor returns an error, and
+both stay as they were. `reload_scripts` logs `reload failed, keeping the old code` and returns
+before touching the UI, physics or audio. The game keeps running and the next save tries again.
+M4-HOT-01 and M4-HOT-04 cover the success and failure paths.
+
+**What is reset today.** After a successful swap `reload_scripts` wipes the world the old scripts
+built:
+
+- The UI tree: `UiTree::clear_script_nodes` (see [ui-tree.md](ui-tree.md#node-lifetime)), because
+  the new bundle's reconciler starts its IDs again.
+- Script stylesheets (`addStyleSheet`) and `game.css`, which is removed and loaded again from disk
+  with `load_game_css`.
+- `uiScale` goes back to unset.
+- Physics: a new `Physics::new()`. Bodies and their IDs are gone.
+- Audio: the mixer is dropped, which stops every sound; it is created again on first use.
+- Components start over and `onStart` runs again.
+
+Then it sends `Input::Refresh` and probes `__iron_ui_event`, `__iron_input`, `__iron_physics` and
+`__iron_audio` again. The new bundle's top level has already queued its UI and ops, and they apply
+after the wipe.
+
+**Limits.**
+
+- No state is kept. Component properties, React state, physics bodies and sounds all start over.
+  Keeping them waits for "Hot reload, part 2" in TODO.md (after M5.a/b, which it builds on).
+- `bun build --watch` doesn't watch `@iron/engine` or `@iron/react` sources outside the example
+  folder, so editing those doesn't trigger a rebuild. Touch a file in the example or rebuild.
+- Keys held at the time of the reload are forgotten.
