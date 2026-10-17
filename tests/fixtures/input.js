@@ -987,6 +987,7 @@ ${err.stack}` : ""}`);
   }
   var vec = (v) => [v.x, v.y, v.z];
   var quat = (q) => [q.x, q.y, q.z, q.w];
+  var scaleListeners = [];
 
   class Transform {
     gameObject;
@@ -1022,8 +1023,12 @@ ${err.stack}` : ""}`);
       return this._scale;
     }
     set localScale(v) {
+      const old = this._scale;
       this._scale = Vector3.from(v);
       this.send();
+      if (!old.equals(this._scale))
+        for (const f of scaleListeners)
+          f(this.gameObject);
     }
     get localEulerAngles() {
       return this._rotation.eulerAngles;
@@ -1158,6 +1163,8 @@ ${err.stack}` : ""}`);
         t.position = position;
         t.rotation = rotation;
       }
+      for (const f of scaleListeners)
+        f(this);
     }
     get enabled() {
       return this._enabled;
@@ -1742,6 +1749,7 @@ ${err.stack}` : ""}`);
     _center = Vector3.zero;
     _isTrigger = false;
     _material = new PhysicsMaterial;
+    builtScale = null;
     handle = null;
     get center() {
       return this._center;
@@ -1782,9 +1790,15 @@ ${err.stack}` : ""}`);
       colliderOwners.delete(this.handle.id);
       this.create();
     }
+    _rescale() {
+      if (this.handle && this.builtScale && !this.builtScale.equals(this.gameObject.transform.lossyScale)) {
+        this.rebuild();
+      }
+    }
     create() {
       const p = physicsFor(this.gameObject);
       const scale = this.gameObject.transform.lossyScale;
+      this.builtScale = scale;
       this.handle = p.body.addCollider({
         shape: this.shape(scale),
         position: this._center.mul(scale),
@@ -2075,6 +2089,17 @@ ${err.stack}` : ""}`);
         }
       }
     }
+  });
+  scaleListeners.push((go) => {
+    const visit = (o) => {
+      const p = objectPhysics.get(o);
+      if (p)
+        for (const c of [...p.colliders])
+          c._rescale();
+      for (const child of o.children)
+        visit(child);
+    };
+    visit(go);
   });
 
   // ../../js/engine/src/physics2d.ts

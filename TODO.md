@@ -802,7 +802,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     nearest panel (screen UI wins where it has elements), drags stay with the panel, keys go
     to the surface clicked last; stylesheets and fonts reach every tree — `M5-PNL-01`..`M5-PNL-03`
 - [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5).
-  Left: collider sizes following scale changes, the rope as a tube, the Cornell box.
+  Left: the Cornell box.
   - [x] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
     `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, at a point,
     explosions, constraints, continuous detection) and collider components (`BoxCollider`,
@@ -810,7 +810,9 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     GameObject transforms both ways (`physics.attach`); `onCollisionEnter/Exit` and
     `onTriggerEnter/Exit` on the object's components; `onAwake` for components; the low-level
     handles are now `PhysicsBody` / `PhysicsCollider` — `M5-RB-01`, `M5-RB-02`
-  - [ ] Collider sizes follow later scale changes (they take the scale when added)
+  - [x] Collider sizes follow scale changes: setting `localScale` (or reparenting) tells
+    `scaleListeners`, and colliders on the object and its children whose world scale changed
+    rebuild — `M5-RB-04`
   - [x] `CharacterController` component (Unity's: a `Collider` with `move` returning
     `CollisionFlags`, `simpleMove` with gravity, `isGrounded`, `velocity`, slope limit, step
     offset) on rapier's character controller; character moves wait a step after colliders
@@ -820,7 +822,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     (or the world), anchors and auto-configured connected anchors; `iron_physics` `joint` /
     `removeJoint` ops; a `Rope` component builds a visible, colliding chain of capsule
     segments on ball joints, holding an optional end body — `M5-JNT-01`, `M5-JNT-02`
-  - [ ] Rope rendering as one smooth tube (a line renderer) instead of capsule segments
+  - [x] Rope rendering as one smooth tube: `LineRenderer` (a round tube through world-space
+    points, Catmull-Rom smoothed, parallel-transported rings, rebuilt when the points change;
+    unlike Unity's flat ribbon) draws `Rope`s by default (`renderMode: "segments"` keeps the
+    capsules) — `M5-LIN-01`
   - [ ] More classic test scenes (asked for 2026-10-17): the Cornell box (procedural, now
     that there are shadows), and, with downloads the user approves first, Suzanne, Sponza,
     the Damaged Helmet (PBR), and the Stanford Dragon / Armadillo / Lucy

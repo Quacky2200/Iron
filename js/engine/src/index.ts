@@ -46,6 +46,7 @@ export {
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export { Cursor, CursorLockMode } from "./cursor.ts";
 export { type InstantiateOptions, Model } from "./models.ts";
+export { LineRenderer } from "./lines.ts";
 export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
 export {
   Bounds,

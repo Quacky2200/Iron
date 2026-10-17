@@ -13,8 +13,9 @@
 import { Time } from "./clock.ts";
 import { Color, Mathf, Quaternion, Vector3, type Vector3Like } from "./math.ts";
 import { contactListeners, type PhysicsBody, type PhysicsCollider, type PhysicsJoint, physics, type Shape } from "./physics.ts";
+import { LineRenderer } from "./lines.ts";
 import { Material, type Mesh, MeshRenderer } from "./rendering.ts";
-import { Component, GameObject } from "./scene.ts";
+import { Component, GameObject, scaleListeners } from "./scene.ts";
 
 /** How `Rigidbody.addForce` treats its vector (Unity's `ForceMode`). */
 export enum ForceMode {
@@ -118,6 +119,8 @@ export abstract class Collider extends Component {
   private _center = Vector3.zero;
   private _isTrigger = false;
   private _material = new PhysicsMaterial();
+  /** The world scale the physics shape was made for. */
+  private builtScale: Vector3 | null = null;
   /** The underlying physics collider (after the component is added). */
   handle: PhysicsCollider | null = null;
 
@@ -175,9 +178,17 @@ export abstract class Collider extends Component {
     this.create();
   }
 
+  /** @internal Remakes the shape if the object's world scale changed since it was made. */
+  _rescale(): void {
+    if (this.handle && this.builtScale && !this.builtScale.equals(this.gameObject.transform.lossyScale)) {
+      this.rebuild();
+    }
+  }
+
   protected create(): void {
     const p = physicsFor(this.gameObject);
     const scale = this.gameObject.transform.lossyScale;
+    this.builtScale = scale;
     this.handle = p.body.addCollider({
       shape: this.shape(scale),
       position: this._center.mul(scale),
@@ -546,6 +557,16 @@ contactListeners.push((a, b, started, sensor, speed) => {
   }
 });
 
+// Colliders resize with their object, and with its children's.
+scaleListeners.push((go) => {
+  const visit = (o: GameObject) => {
+    const p = objectPhysics.get(o);
+    if (p) for (const c of [...p.colliders]) c._rescale();
+    for (const child of o.children) visit(child);
+  };
+  visit(go);
+});
+
 /** Clears the component bookkeeping. Only for tests. */
 export function _resetPhysicsComponentsForTests() {
   objectPhysics.clear();
@@ -803,9 +824,12 @@ export class Rope extends Component {
   color = new Color(0.55, 0.42, 0.28, 1);
   /** What the far end holds, if anything. */
   end: Rigidbody | null = null;
+  /** `tube`: one smooth tube through the links (a `LineRenderer`); `segments`: each link drawn as a capsule. */
+  renderMode: "tube" | "segments" = "tube";
   /** The segment objects (they hang in the world, not under this object). */
   readonly links: GameObject[] = [];
   private joints: PhysicsJoint[] = [];
+  private line: GameObject | null = null;
 
   override onStart(): void {
     const start = this.transform.position;
@@ -827,7 +851,7 @@ export class Rope extends Component {
         // The capsule mesh is 1 m wide and 2 m tall.
         scale: new Vector3(this.radius * 2, seg / 2, this.radius * 2),
       });
-      link.addComponent(MeshRenderer, { mesh: "capsule", material });
+      if (this.renderMode === "segments") link.addComponent(MeshRenderer, { mesh: "capsule", material });
       link.addComponent(CapsuleCollider);
       const rb = link.addComponent(Rigidbody, { mass: this.segmentMass, angularDrag: 0.5, drag: 0.1 });
       const body = rb.body!;
@@ -839,11 +863,34 @@ export class Rope extends Component {
     if (this.end?.body && prev) {
       this.joints.push(physics.createJoint("ball", this.end.body, prev, Vector3.zero, prevAnchor));
     }
+    if (this.renderMode === "tube") {
+      this.line = new GameObject(`${this.gameObject.name} rope line`);
+      this.line.addComponent(LineRenderer, { width: this.radius * 2, material, positions: this.points() });
+    }
+  }
+
+  /** Where the rope runs: the first link's top, then every link's bottom (where they join). */
+  points(): Vector3[] {
+    if (this.links.length === 0) return [];
+    // A link's local y runs back up the rope; its scaled capsule spans -1..1.
+    const out = [this.links[0]!.transform.transformPoint(Vector3.up)];
+    for (const l of this.links) out.push(l.transform.transformPoint(Vector3.down));
+    return out;
+  }
+
+  override onPreRender(): void {
+    const r = this.line?.getComponent(LineRenderer);
+    if (r) {
+      r.positions = this.points();
+      r.redraw();
+    }
   }
 
   override onDestroy(): void {
     for (const j of this.joints) j.remove();
     for (const l of this.links) l.destroy();
+    this.line?.destroy();
+    this.line = null;
     this.joints = [];
     this.links.length = 0;
   }

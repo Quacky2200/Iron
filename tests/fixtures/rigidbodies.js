@@ -993,6 +993,7 @@ ${err.stack}` : ""}`);
   }
   var vec = (v) => [v.x, v.y, v.z];
   var quat = (q) => [q.x, q.y, q.z, q.w];
+  var scaleListeners = [];
 
   class Transform {
     gameObject;
@@ -1028,8 +1029,12 @@ ${err.stack}` : ""}`);
       return this._scale;
     }
     set localScale(v) {
+      const old = this._scale;
       this._scale = Vector3.from(v);
       this.send();
+      if (!old.equals(this._scale))
+        for (const f of scaleListeners)
+          f(this.gameObject);
     }
     get localEulerAngles() {
       return this._rotation.eulerAngles;
@@ -1164,6 +1169,8 @@ ${err.stack}` : ""}`);
         t.position = position;
         t.rotation = rotation;
       }
+      for (const f of scaleListeners)
+        f(this);
     }
     get enabled() {
       return this._enabled;
@@ -1696,6 +1703,29 @@ ${err.stack}` : ""}`);
       return new Material(this.color, this.emission, this.smoothness, this.unlit, texture, new Vector2(scale.x, scale.y), new Vector2(offset.x, offset.y));
     }
   }
+  var nextMesh = 1;
+
+  class Mesh {
+    id;
+    constructor(id) {
+      this.id = id;
+    }
+    static _engine(id) {
+      return new Mesh(id);
+    }
+    static create(data) {
+      const mesh = new Mesh(nextMesh++);
+      mesh.set(data);
+      return mesh;
+    }
+    set(data) {
+      __iron_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles]);
+    }
+    destroy() {
+      __iron_op("render.mesh", this.id, null);
+    }
+  }
+
   class MeshRenderer extends Component {
     _mesh = "cube";
     _material = new Material;
@@ -1729,6 +1759,97 @@ ${err.stack}` : ""}`);
     }
   }
   var ambient = new Color(0.2, 0.2, 0.22);
+
+  // ../../js/engine/src/lines.ts
+  function catmullRom(a, b, c, d, t) {
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const k = (p0, p1, p2, p3) => 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    return new Vector3(k(a.x, b.x, c.x, d.x), k(a.y, b.y, c.y, d.y), k(a.z, b.z, c.z, d.z));
+  }
+  function tubeMesh(points, radius, sides, smoothing) {
+    const src = points.map((p) => Vector3.from(p));
+    const path = [];
+    for (let i = 0;i < src.length - 1; i++) {
+      const a = src[Math.max(0, i - 1)];
+      const b = src[i];
+      const c = src[i + 1];
+      const d = src[Math.min(src.length - 1, i + 2)];
+      for (let s = 0;s <= smoothing; s++)
+        path.push(catmullRom(a, b, c, d, s / (smoothing + 1)));
+    }
+    path.push(src[src.length - 1]);
+    const n = path.length;
+    const tangents = path.map((_, i) => path[Math.min(n - 1, i + 1)].sub(path[Math.max(0, i - 1)]).normalized);
+    let normal = Math.abs(tangents[0].y) < 0.9 ? Vector3.up : Vector3.right;
+    normal = normal.sub(tangents[0].scale(normal.dot(tangents[0]))).normalized;
+    const vertices = [];
+    const normals = [];
+    const uv = [];
+    let along = 0;
+    for (let i = 0;i < n; i++) {
+      const t = tangents[i];
+      if (i > 0) {
+        along += path[i].distance(path[i - 1]);
+        const fixed = normal.sub(t.scale(normal.dot(t)));
+        if (fixed.magnitude > 0.000001)
+          normal = fixed.normalized;
+      }
+      const binormal = t.cross(normal);
+      for (let s = 0;s <= sides; s++) {
+        const a = s / sides * Math.PI * 2;
+        const dir = normal.scale(Math.cos(a)).add(binormal.scale(Math.sin(a)));
+        vertices.push(path[i].add(dir.scale(radius)));
+        normals.push(dir);
+        uv.push({ x: s / sides, y: along });
+      }
+    }
+    const triangles = [];
+    const ring = sides + 1;
+    for (let i = 0;i < n - 1; i++) {
+      for (let s = 0;s < sides; s++) {
+        const a = i * ring + s;
+        const b = a + ring;
+        triangles.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+    }
+    return { vertices, normals, uv, triangles };
+  }
+
+  class LineRenderer extends Component {
+    positions = [];
+    width = 0.05;
+    sides = 8;
+    smoothing = 3;
+    material = new Material(Color.white, Color.black, 0.3);
+    mesh = null;
+    renderer = null;
+    drawn = "";
+    onAwake() {
+      this.mesh = Mesh.create({ vertices: [Vector3.zero, Vector3.zero, Vector3.zero], triangles: [0, 1, 2] });
+      this.renderer = this.gameObject.addComponent(MeshRenderer, { mesh: this.mesh, material: this.material });
+      this.redraw();
+    }
+    onPreRender() {
+      this.redraw();
+    }
+    redraw() {
+      if (!this.mesh)
+        return;
+      if (this.renderer && this.renderer.material !== this.material)
+        this.renderer.material = this.material;
+      const key = `${this.width},${this.sides},${this.smoothing},${this.positions.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
+      if (key === this.drawn || this.positions.length < 2)
+        return;
+      this.drawn = key;
+      const local = this.positions.map((p) => this.transform.inverseTransformPoint(p));
+      this.mesh.set(tubeMesh(local, this.width / 2, Math.max(3, Math.round(this.sides)), Math.max(0, Math.round(this.smoothing))));
+    }
+    onDestroy() {
+      this.mesh?.destroy();
+      this.mesh = null;
+    }
+  }
 
   // ../../js/engine/src/physics-components.ts
   var RigidbodyConstraints = {
@@ -1777,6 +1898,7 @@ ${err.stack}` : ""}`);
     _center = Vector3.zero;
     _isTrigger = false;
     _material = new PhysicsMaterial;
+    builtScale = null;
     handle = null;
     get center() {
       return this._center;
@@ -1817,9 +1939,15 @@ ${err.stack}` : ""}`);
       colliderOwners.delete(this.handle.id);
       this.create();
     }
+    _rescale() {
+      if (this.handle && this.builtScale && !this.builtScale.equals(this.gameObject.transform.lossyScale)) {
+        this.rebuild();
+      }
+    }
     create() {
       const p = physicsFor(this.gameObject);
       const scale = this.gameObject.transform.lossyScale;
+      this.builtScale = scale;
       this.handle = p.body.addCollider({
         shape: this.shape(scale),
         position: this._center.mul(scale),
@@ -2111,6 +2239,17 @@ ${err.stack}` : ""}`);
       }
     }
   });
+  scaleListeners.push((go) => {
+    const visit = (o) => {
+      const p = objectPhysics.get(o);
+      if (p)
+        for (const c of [...p.colliders])
+          c._rescale();
+      for (const child of o.children)
+        visit(child);
+    };
+    visit(go);
+  });
   var CollisionFlags = { None: 0, Sides: 1, Above: 2, Below: 4 };
 
   class CharacterController extends Collider {
@@ -2246,8 +2385,10 @@ ${err.stack}` : ""}`);
     segmentMass = 0.05;
     color = new Color(0.55, 0.42, 0.28, 1);
     end = null;
+    renderMode = "tube";
     links = [];
     joints = [];
+    line = null;
     onStart() {
       const start = this.transform.position;
       const toEnd = this.end ? this.end.transform.position.sub(start) : Vector3.down.scale(this.length);
@@ -2266,7 +2407,8 @@ ${err.stack}` : ""}`);
           rotation,
           scale: new Vector3(this.radius * 2, seg / 2, this.radius * 2)
         });
-        link.addComponent(MeshRenderer, { mesh: "capsule", material });
+        if (this.renderMode === "segments")
+          link.addComponent(MeshRenderer, { mesh: "capsule", material });
         link.addComponent(CapsuleCollider);
         const rb = link.addComponent(Rigidbody, { mass: this.segmentMass, angularDrag: 0.5, drag: 0.1 });
         const body = rb.body;
@@ -2278,12 +2420,33 @@ ${err.stack}` : ""}`);
       if (this.end?.body && prev) {
         this.joints.push(physics.createJoint("ball", this.end.body, prev, Vector3.zero, prevAnchor));
       }
+      if (this.renderMode === "tube") {
+        this.line = new GameObject(`${this.gameObject.name} rope line`);
+        this.line.addComponent(LineRenderer, { width: this.radius * 2, material, positions: this.points() });
+      }
+    }
+    points() {
+      if (this.links.length === 0)
+        return [];
+      const out = [this.links[0].transform.transformPoint(Vector3.up)];
+      for (const l of this.links)
+        out.push(l.transform.transformPoint(Vector3.down));
+      return out;
+    }
+    onPreRender() {
+      const r = this.line?.getComponent(LineRenderer);
+      if (r) {
+        r.positions = this.points();
+        r.redraw();
+      }
     }
     onDestroy() {
       for (const j of this.joints)
         j.remove();
       for (const l of this.links)
         l.destroy();
+      this.line?.destroy();
+      this.line = null;
       this.joints = [];
       this.links.length = 0;
     }

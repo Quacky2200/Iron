@@ -109,6 +109,12 @@ function instantiate(cls: ComponentClass, id: number, object: GameObject): Compo
 const vec = (v: Vector3Like) => [v.x, v.y, v.z];
 const quat = (q: QuaternionLike) => [q.x, q.y, q.z, q.w];
 
+/**
+ * @internal Told when an object's world scale may have changed (its `localScale` was set,
+ * or it moved to another parent): colliders resize with it.
+ */
+export const scaleListeners: ((go: GameObject) => void)[] = [];
+
 /** Position, rotation and scale of a GameObject, like Unity's `Transform`. */
 export class Transform {
   /** @internal */
@@ -152,8 +158,10 @@ export class Transform {
     return this._scale;
   }
   set localScale(v: Vector3Like) {
+    const old = this._scale;
     this._scale = Vector3.from(v);
     this.send();
+    if (!old.equals(this._scale)) for (const f of scaleListeners) f(this.gameObject);
   }
 
   /** Local rotation as Euler angles in degrees. */
@@ -340,6 +348,8 @@ export class GameObject {
       t.position = position;
       t.rotation = rotation;
     }
+    // A new parent can mean a new world scale.
+    for (const f of scaleListeners) f(this);
   }
 
   /** Whether this object is enabled (its children may still be off through their own flag). */

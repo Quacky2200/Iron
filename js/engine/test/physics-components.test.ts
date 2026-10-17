@@ -113,3 +113,27 @@ describe("physics components", () => {
     expect(log).toEqual(["a hit b at 4", "b hit a at 4", "a left b", "b left a", "a entered zone"]);
   });
 });
+
+// M5-RB-04
+describe("colliders and scale", () => {
+  test("colliders resize when their object or a parent is scaled, and when reparented", () => {
+    const parent = new GameObject("parent");
+    const go = new GameObject("crate", { parent });
+    go.addComponent(BoxCollider, { size: new Vector3(1, 2, 1) });
+    const shapes = () => ops.filter((o) => o[0] === "physics.collider").map((o) => o[4]);
+    expect(shapes()).toEqual([[0.5, 1, 0.5]]);
+    go.transform.localScale = new Vector3(2, 2, 2);
+    expect(shapes().at(-1)).toEqual([1, 2, 1]);
+    // The old shape went.
+    expect(ops.some((o) => o[0] === "physics.removeCollider")).toBe(true);
+    parent.transform.localScale = new Vector3(3, 1, 1);
+    expect(shapes().at(-1)).toEqual([3, 2, 1]);
+    // Same scale again: nothing rebuilt.
+    const count = shapes().length;
+    parent.transform.localScale = new Vector3(3, 1, 1);
+    go.transform.localScale = new Vector3(2, 2, 2);
+    expect(shapes().length).toBe(count);
+    go.setParent(null, true);
+    expect(shapes().at(-1)).toEqual([1, 2, 1]);
+  });
+});
