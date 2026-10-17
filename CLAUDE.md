@@ -131,11 +131,14 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M4 (2026-10-17): physics (`iron_physics`, rapier), audio (`iron_audio`, kira) and hot
     reload plumbing (watch `dist/`, new runtime then swap, old code kept on error, world reset).
     State-keeping reload and Fast Refresh moved after M5.a/b ("Hot reload, part 2" in TODO.md).
-- **Next:** M5.a GameObjects/Components for 2D and 3D (`Vector2`, `Vector3`, `Quaternion`,
-  transforms, planes; first plane use: UI in 3D space), then M5.a2: Unity/s&box-style components
-  (Rigidbody with ForceMode, colliders, joints and rope, meshes, lights, AudioSource, particles,
-  2D). API names and units follow Unity/s&box (degrees for Euler angles). Decided: own wgpu
-  renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
+  - M5.a done (2026-10-17): `iron_scene`, GameObjects/components with Unity/s&box-style TS APIs
+    (math, DateTime/TimeSpan, Time, Debug/Log, Random, input), lifecycle hooks, 3D world pass,
+    camera system, `WorldPanel` (React UI on planes). M5.a2 step 1: `Rigidbody`/colliders.
+- **Next (M5.a2, see TODO.md for the exact order):** meshes and lights — the renderer side is
+  done (lit mesh pass, primitives, lights); next the script side (`MeshRenderer`, `Light`,
+  `createPrimitive`), then CharacterController, joints/rope, AudioSource, textures/sprites,
+  particles, 2D, Cursor/Platform/Application APIs, glTF. API names and units follow Unity/s&box
+  (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
   morphing; UI and SVG editors (M5.e).
   Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8
   multiplayer; M9.a–c backends, AOT, release packaging; M10 optional (OpenXR, Steam Audio, ray

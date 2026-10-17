@@ -167,6 +167,9 @@ impl WorldViews {
                     a: a as f64,
                 };
                 Some(WorldView {
+                    meshes: Vec::new(),
+                    lights: Vec::new(),
+                    ambient: [0.2, 0.2, 0.22],
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

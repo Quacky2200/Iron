@@ -193,6 +193,9 @@ fn cameras_draw_into_their_viewports_by_depth() {
     let right = [0.5, 0.0, 0.5, 1.0];
     let views = [
         WorldView {
+            meshes: Vec::new(),
+            lights: Vec::new(),
+            ambient: [0.2, 0.2, 0.22],
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -207,6 +210,9 @@ fn cameras_draw_into_their_viewports_by_depth() {
             quads: quads.clone(),
         },
         WorldView {
+            meshes: Vec::new(),
+            lights: Vec::new(),
+            ambient: [0.2, 0.2, 0.22],
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -228,6 +234,9 @@ fn cameras_draw_into_their_viewports_by_depth() {
         },
         // A picture-in-picture inset over the left view (drawn after it, so on top).
         WorldView {
+            meshes: Vec::new(),
+            lights: Vec::new(),
+            ambient: [0.2, 0.2, 0.22],
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -257,4 +266,77 @@ fn cameras_draw_into_their_viewports_by_depth() {
     assert!(edge[2] > edge[0], "{edge:?}");
     let marker = at(240 + 40, 80);
     assert!(marker[0] > 150 && marker[1] < 120, "{marker:?}");
+}
+
+// M5-RND-07
+#[test]
+fn lit_primitives_with_lights() {
+    use iron_render::{Light, LightKind, MeshInstance, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let eye = Vec3::new(0.0, 2.5, 6.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
+            .inverse(),
+        50.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.02, 0.02, 0.03),
+    );
+    let mesh = |name: &str, at: Vec3, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id(name).unwrap(),
+        model: Mat4::from_rotation_translation(Quat::from_rotation_y(0.6), at),
+        color,
+        emission: [0.0; 3],
+        smoothness: 0.6,
+        unlit: false,
+        texture: None,
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.meshes = vec![
+        MeshInstance {
+            model: Mat4::from_scale(Vec3::splat(0.6)),
+            smoothness: 0.0,
+            ..mesh("plane", Vec3::ZERO, [0.5, 0.5, 0.5, 1.0])
+        },
+        mesh("cube", Vec3::new(-1.8, 0.5, 0.0), [0.9, 0.3, 0.2, 1.0]),
+        mesh("sphere", Vec3::new(0.0, 0.5, 0.0), [0.2, 0.5, 0.9, 1.0]),
+        mesh("capsule", Vec3::new(1.8, 1.0, 0.0), [0.3, 0.8, 0.3, 1.0]),
+        // An emissive, unlit marker and a see-through cylinder in front.
+        MeshInstance {
+            unlit: true,
+            emission: [1.0, 0.8, 0.2],
+            ..mesh("cube", Vec3::new(0.0, 2.2, 0.0), [0.2, 0.2, 0.2, 1.0])
+        },
+        mesh("cylinder", Vec3::new(0.9, 0.5, 1.5), [1.0, 1.0, 1.0, 0.35]),
+    ];
+    v.lights = vec![
+        Light {
+            kind: LightKind::Directional,
+            color: [1.0, 0.95, 0.9],
+            position: Vec3::ZERO,
+            direction: Vec3::new(-0.5, -1.0, -0.6).normalize(),
+            range: 0.0,
+        },
+        Light {
+            kind: LightKind::Point,
+            color: [6.0, 2.0, 1.0],
+            position: Vec3::new(-1.0, 1.2, 1.2),
+            direction: Vec3::ZERO,
+            range: 4.0,
+        },
+    ];
+    WorldRenderer::new(&gpu).render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-07", size.0, size.1, &pixels, 3);
 }

@@ -1,21 +1,38 @@
-//! The 3D world pass (M5.a): what the cameras see, drawn before the screen UI.
+//! The 3D world pass (M5): what the cameras see, drawn before the screen UI.
 //!
-//! For now the world is quads: coloured or textured planes, such as UI panels in the
-//! world. Meshes and lights come with M5.a2. Each camera is a [`WorldView`] with its
-//! own viewport; views are drawn in order, each first filling its viewport with its
-//! background (which also resets depth there), so later cameras draw over earlier
-//! ones, like Unity's camera depth. Quads are drawn back to front with depth testing,
-//! so see-through ones blend over what's behind them.
+//! The world is lit meshes ([`MeshInstance`], built-in primitives or meshes set with
+//! [`WorldRenderer::set_mesh`]) and quads: coloured or textured planes, such as UI
+//! panels in the world. Each camera is a [`WorldView`] with its own viewport and lights;
+//! views are drawn in order, each first filling its viewport with its background (which
+//! also resets depth there), so later cameras draw over earlier ones, like Unity's camera
+//! depth. Opaque meshes go first, then see-through meshes and quads back to front, so
+//! they blend over what's behind them.
+
+pub mod mesh;
 
 use std::collections::HashMap;
 use std::ops::Range;
 
 use bytemuck::{Pod, Zeroable};
-use iron_core::glam::{Mat4, Vec3, Vec4Swizzles};
+use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
+pub use mesh::{MeshData, primitive};
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// The built-in meshes, registered by every renderer at [`primitive_id`].
+pub const PRIMITIVES: [&str; 6] = ["cube", "sphere", "capsule", "cylinder", "plane", "quad"];
+/// Mesh ids from here on are the built-in primitives; scripts use ids below it.
+pub const PRIMITIVE_BASE: u32 = 0xFFFF_0000;
+
+/// The mesh id of a built-in primitive by name.
+pub fn primitive_id(name: &str) -> Option<u32> {
+    PRIMITIVES
+        .iter()
+        .position(|p| *p == name)
+        .map(|i| PRIMITIVE_BASE + i as u32)
+}
 
 /// How a camera projects the world.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -30,7 +47,7 @@ pub enum Projection {
 #[derive(Clone, Copy, Debug)]
 pub struct WorldCamera {
     pub view_proj: Mat4,
-    /// The camera's position, for sorting see-through quads.
+    /// The camera's position, for sorting see-through things and specular highlights.
     pub position: Vec3,
     pub clear: Color,
 }
@@ -91,6 +108,49 @@ impl WorldCamera {
     }
 }
 
+/// A light (Unity's `Light` types).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LightKind {
+    /// Like the sun: parallel rays along `direction`, everywhere.
+    Directional,
+    /// From `position` in all directions, fading out at `range`.
+    Point,
+    /// A cone from `position` along `direction`, with soft edges between the inner and
+    /// outer half-angles (degrees), fading out at `range`.
+    Spot {
+        inner_degrees: f32,
+        outer_degrees: f32,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Light {
+    pub kind: LightKind,
+    /// Linear colour already multiplied by the intensity.
+    pub color: [f32; 3],
+    pub position: Vec3,
+    pub direction: Vec3,
+    pub range: f32,
+}
+
+/// One mesh drawn in the world.
+#[derive(Clone, Copy, Debug)]
+pub struct MeshInstance {
+    /// A built-in ([`primitive_id`]) or a mesh set with [`WorldRenderer::set_mesh`].
+    pub mesh: u32,
+    pub model: Mat4,
+    /// Linear RGBA, straight alpha.
+    pub color: [f32; 4],
+    /// Linear light it gives off on its own (not lighting anything else).
+    pub emission: [f32; 3],
+    /// 0 (matte) to 1 (glossy): how sharp highlights are.
+    pub smoothness: f32,
+    /// Ignores lights: just its colour (and emission).
+    pub unlit: bool,
+    /// Index into the `textures` given to [`WorldRenderer::render_views`].
+    pub texture: Option<usize>,
+}
+
 /// One camera's view: where on the target it draws and what it sees.
 #[derive(Clone, Debug)]
 pub struct WorldView {
@@ -98,6 +158,24 @@ pub struct WorldView {
     /// The part of the target it covers: x, y, width, height from the top-left, 0 to 1.
     pub viewport: [f32; 4],
     pub quads: Vec<WorldQuad>,
+    pub meshes: Vec<MeshInstance>,
+    pub lights: Vec<Light>,
+    /// Linear light everything gets regardless of lights.
+    pub ambient: [f32; 3],
+}
+
+impl WorldView {
+    /// A view of nothing yet (add quads, meshes and lights).
+    pub fn new(camera: WorldCamera, viewport: [f32; 4]) -> Self {
+        Self {
+            camera,
+            viewport,
+            quads: Vec::new(),
+            meshes: Vec::new(),
+            lights: Vec::new(),
+            ambient: [0.2, 0.2, 0.22],
+        }
+    }
 }
 
 /// One plane in the world.
@@ -134,25 +212,94 @@ struct GpuQuad {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct GpuMesh {
+    model: [[f32; 4]; 4],
+    normal: [[f32; 4]; 4],
+    color: [f32; 4],
+    emission: [f32; 4],
+    params: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GpuLight {
+    position: [f32; 4],
+    direction: [f32; 4],
+    color: [f32; 4],
+    spot: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct GpuGlobals {
     view_proj: [[f32; 4]; 4],
     background: [f32; 4],
+    camera: [f32; 4],
+    ambient: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    normal: [f32; 3],
+    uv: [f32; 2],
+}
+
+/// A mesh's buffers on the GPU.
+struct MeshBuffers {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    count: u32,
+}
+
+/// Quad, background-fill, opaque-mesh and see-through-mesh pipelines for one format.
+#[derive(Clone)]
+struct Pipelines {
+    quad: wgpu::RenderPipeline,
+    fill: wgpu::RenderPipeline,
+    mesh: wgpu::RenderPipeline,
+    mesh_blend: wgpu::RenderPipeline,
+}
+
+/// A view's opaque runs, its blended runs (`true`: a mesh) and its lights.
+type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>);
+
+/// A run of instances drawn with one mesh or texture.
+struct Run {
+    mesh: Option<u32>,
+    texture: Option<usize>,
+    range: Range<u32>,
 }
 
 pub struct WorldRenderer {
     layout: wgpu::PipelineLayout,
     module: wgpu::ShaderModule,
-    /// Quad and background-fill pipelines by target format.
-    pipelines: HashMap<wgpu::TextureFormat, (wgpu::RenderPipeline, wgpu::RenderPipeline)>,
+    pipelines: HashMap<wgpu::TextureFormat, Pipelines>,
     globals_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     /// One `GpuGlobals` per view, `stride` bytes apart (a dynamic offset picks one).
     globals: wgpu::Buffer,
     stride: u64,
     quads: wgpu::Buffer,
+    mesh_instances: wgpu::Buffer,
+    meshes: HashMap<u32, MeshBuffers>,
     sampler: wgpu::Sampler,
     white: wgpu::TextureView,
     depth: Option<(wgpu::TextureView, (u32, u32))>,
+}
+
+fn storage_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only: true },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
 }
 
 impl WorldRenderer {
@@ -174,16 +321,9 @@ impl WorldRenderer {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                storage_entry(1, wgpu::ShaderStages::VERTEX),
+                storage_entry(2, wgpu::ShaderStages::VERTEX_FRAGMENT),
+                storage_entry(3, wgpu::ShaderStages::FRAGMENT),
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -214,8 +354,6 @@ impl WorldRenderer {
         });
         let align = u64::from(device.limits().min_uniform_buffer_offset_alignment);
         let stride = (std::mem::size_of::<GpuGlobals>() as u64).div_ceil(align) * align;
-        let globals = Self::globals_buffer(gpu, stride, 4);
-        let quads = Self::quad_buffer(gpu, 64);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("world"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -246,49 +384,125 @@ impl WorldRenderer {
             },
             white.size(),
         );
-        Self {
+        let mut renderer = Self {
             layout,
             module,
             pipelines: HashMap::new(),
             globals_layout,
             texture_layout,
-            globals,
+            globals: Self::buffer(
+                gpu,
+                "world globals",
+                stride * 4,
+                wgpu::BufferUsages::UNIFORM,
+            ),
             stride,
-            quads,
+            quads: Self::storage::<GpuQuad>(gpu, "world quads", 64),
+            mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
+            meshes: HashMap::new(),
             sampler,
             white: white.create_view(&Default::default()),
             depth: None,
+        };
+        for (i, name) in PRIMITIVES.iter().enumerate() {
+            let data = primitive(name).expect("built in");
+            renderer.set_mesh(gpu, PRIMITIVE_BASE + i as u32, &data);
+        }
+        renderer
+    }
+
+    fn buffer(gpu: &Gpu, label: &str, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
+        gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: size.max(16),
+            usage: usage | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn storage<T>(gpu: &Gpu, label: &str, count: usize) -> wgpu::Buffer {
+        Self::buffer(
+            gpu,
+            label,
+            (count.max(1) * std::mem::size_of::<T>()) as u64,
+            wgpu::BufferUsages::STORAGE,
+        )
+    }
+
+    /// Uploads `data` to `buffer`, growing it first if it's too small.
+    fn upload<T: Pod>(gpu: &Gpu, buffer: &mut wgpu::Buffer, label: &str, data: &[T]) {
+        let bytes = std::mem::size_of_val(data) as u64;
+        if buffer.size() < bytes {
+            *buffer = Self::storage::<T>(gpu, label, data.len().next_power_of_two());
+        }
+        if !data.is_empty() {
+            gpu.queue
+                .write_buffer(buffer, 0, bytemuck::cast_slice(data));
         }
     }
 
-    fn globals_buffer(gpu: &Gpu, stride: u64, views: usize) -> wgpu::Buffer {
-        gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("world globals"),
-            size: stride * views as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        })
+    /// Sets (or replaces) a mesh scripts can draw by `id` (below [`PRIMITIVE_BASE`]).
+    /// Incomplete data gets normals and texture coordinates made up; invalid data is
+    /// refused.
+    pub fn set_mesh(&mut self, gpu: &Gpu, id: u32, data: &MeshData) -> bool {
+        let data = data.clone().complete();
+        if !data.is_valid() || data.indices.is_empty() {
+            return false;
+        }
+        let vertices: Vec<Vertex> = (0..data.positions.len())
+            .map(|i| Vertex {
+                position: data.positions[i],
+                normal: data.normals[i],
+                uv: data.uvs[i],
+            })
+            .collect();
+        let make = |label: &str, bytes: &[u8], usage: wgpu::BufferUsages| {
+            let buffer = Self::buffer(gpu, label, bytes.len() as u64, usage);
+            gpu.queue.write_buffer(&buffer, 0, bytes);
+            buffer
+        };
+        self.meshes.insert(
+            id,
+            MeshBuffers {
+                vertices: make(
+                    "mesh vertices",
+                    bytemuck::cast_slice(&vertices),
+                    wgpu::BufferUsages::VERTEX,
+                ),
+                indices: make(
+                    "mesh indices",
+                    bytemuck::cast_slice(&data.indices),
+                    wgpu::BufferUsages::INDEX,
+                ),
+                count: data.indices.len() as u32,
+            },
+        );
+        true
     }
 
-    fn quad_buffer(gpu: &Gpu, count: usize) -> wgpu::Buffer {
-        gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("world quads"),
-            size: (count * std::mem::size_of::<GpuQuad>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        })
+    pub fn remove_mesh(&mut self, id: u32) {
+        if id < PRIMITIVE_BASE {
+            self.meshes.remove(&id);
+        }
     }
 
-    fn pipelines(
-        &mut self,
-        gpu: &Gpu,
-        format: wgpu::TextureFormat,
-    ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    pub fn has_mesh(&self, id: u32) -> bool {
+        self.meshes.contains_key(&id)
+    }
+
+    fn pipelines(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Pipelines {
         let (layout, module) = (&self.layout, &self.module);
+        let blend = Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+        let vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+        };
         let make = |label: &str,
-                    vs: &str,
-                    fs: &str,
-                    depth_compare: wgpu::CompareFunction,
+                    entry: (&str, &str),
+                    buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
+                    cull: Option<wgpu::Face>,
+                    depth: (wgpu::CompareFunction, bool),
                     blend: Option<wgpu::BlendState>| {
             gpu.device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -296,26 +510,25 @@ impl WorldRenderer {
                     layout: Some(layout),
                     vertex: wgpu::VertexState {
                         module,
-                        entry_point: Some(vs),
+                        entry_point: Some(entry.0),
                         compilation_options: Default::default(),
-                        buffers: &[],
+                        buffers,
                     },
-                    // Planes are seen from both sides.
                     primitive: wgpu::PrimitiveState {
-                        cull_mode: None,
+                        cull_mode: cull,
                         ..Default::default()
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: DEPTH_FORMAT,
-                        depth_write_enabled: Some(true),
-                        depth_compare: Some(depth_compare),
+                        depth_write_enabled: Some(depth.1),
+                        depth_compare: Some(depth.0),
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
                     multisample: Default::default(),
                     fragment: Some(wgpu::FragmentState {
                         module,
-                        entry_point: Some(fs),
+                        entry_point: Some(entry.1),
                         compilation_options: Default::default(),
                         targets: &[Some(wgpu::ColorTargetState {
                             format,
@@ -327,26 +540,45 @@ impl WorldRenderer {
                     cache: None,
                 })
         };
+        let less = wgpu::CompareFunction::Less;
         self.pipelines
             .entry(format)
-            .or_insert_with(|| {
-                (
-                    make(
-                        "world quads",
-                        "vs_quad",
-                        "fs_quad",
-                        wgpu::CompareFunction::Less,
-                        Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    ),
-                    // The background replaces colour and resets depth in the viewport.
-                    make(
-                        "world background",
-                        "vs_fill",
-                        "fs_fill",
-                        wgpu::CompareFunction::Always,
-                        None,
-                    ),
-                )
+            .or_insert_with(|| Pipelines {
+                // Planes are seen from both sides.
+                quad: make(
+                    "world quads",
+                    ("vs_quad", "fs_quad"),
+                    &[],
+                    None,
+                    (less, true),
+                    blend,
+                ),
+                // The background replaces colour and resets depth in the viewport.
+                fill: make(
+                    "world background",
+                    ("vs_fill", "fs_fill"),
+                    &[],
+                    None,
+                    (wgpu::CompareFunction::Always, true),
+                    None,
+                ),
+                mesh: make(
+                    "world meshes",
+                    ("vs_mesh", "fs_mesh"),
+                    &[Some(vertex_layout.clone())],
+                    Some(wgpu::Face::Back),
+                    (less, true),
+                    blend,
+                ),
+                // See-through meshes don't hide what's drawn after them.
+                mesh_blend: make(
+                    "world see-through meshes",
+                    ("vs_mesh", "fs_mesh"),
+                    &[Some(vertex_layout.clone())],
+                    Some(wgpu::Face::Back),
+                    (less, false),
+                    blend,
+                ),
             })
             .clone()
     }
@@ -385,17 +617,14 @@ impl WorldRenderer {
         quads: &[WorldQuad],
         textures: &[&wgpu::TextureView],
     ) {
-        let view = WorldView {
-            camera: *camera,
-            viewport: [0.0, 0.0, 1.0, 1.0],
-            quads: quads.to_vec(),
-        };
+        let mut view = WorldView::new(*camera, [0.0, 0.0, 1.0, 1.0]);
+        view.quads = quads.to_vec();
         self.render_views(gpu, target, &[view], textures);
     }
 
     /// Draws each camera's view into its viewport, in order. `target` is cleared to
     /// black first; parts no view covers stay black. `textures` are the textures
-    /// quads refer to by index.
+    /// quads and meshes refer to by index.
     pub fn render_views(
         &mut self,
         gpu: &Gpu,
@@ -407,42 +636,153 @@ impl WorldRenderer {
         if size.0 == 0 || size.1 == 0 {
             return;
         }
-        let (quad_pipeline, fill_pipeline) = self.pipelines(gpu, target.format);
+        let pipelines = self.pipelines(gpu, target.format);
         let depth = self.depth_view(gpu, size);
 
-        // Every view's quads in one buffer: back to front by distance from that view's
-        // camera (so see-through quads blend over what's behind them).
-        let mut data: Vec<GpuQuad> = Vec::new();
-        let mut ranges: Vec<(Range<u32>, Vec<Option<usize>>)> = Vec::new();
+        // Everything for every view in shared buffers, with runs per view: opaque meshes
+        // (grouped by mesh), then see-through meshes and quads back to front.
+        let mut quads: Vec<GpuQuad> = Vec::new();
+        let mut meshes: Vec<GpuMesh> = Vec::new();
+        let mut lights: Vec<GpuLight> = Vec::new();
+        let mut per_view: Vec<ViewRuns> = Vec::new();
         for view in views {
-            let mut order: Vec<&WorldQuad> = view.quads.iter().collect();
             let eye = view.camera.position;
-            let distance = |q: &WorldQuad| q.model.w_axis.xyz().distance_squared(eye);
-            order.sort_by(|a, b| distance(b).total_cmp(&distance(a)));
-            let start = data.len() as u32;
-            data.extend(order.iter().map(|q| {
-                let [r, g, b, a] = q.color;
-                GpuQuad {
-                    model: q.model.to_cols_array_2d(),
-                    color: [r * a, g * a, b * a, a],
-                    uv: q.uv,
+            let gpu_mesh = |m: &MeshInstance| {
+                let normal = Mat3::from_mat4(m.model).inverse().transpose();
+                GpuMesh {
+                    model: m.model.to_cols_array_2d(),
+                    normal: Mat4::from_mat3(normal).to_cols_array_2d(),
+                    color: m.color,
+                    emission: [m.emission[0], m.emission[1], m.emission[2], m.smoothness],
+                    params: [if m.unlit { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+                }
+            };
+            let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
+            // Opaque meshes, grouped by mesh and texture (instancing).
+            let mut opaque: Vec<&MeshInstance> = view
+                .meshes
+                .iter()
+                .filter(known)
+                .filter(|m| m.color[3] >= 1.0)
+                .collect();
+            opaque.sort_by_key(|m| (m.mesh, m.texture));
+            let mut opaque_runs: Vec<Run> = Vec::new();
+            for m in opaque {
+                let i = meshes.len() as u32;
+                meshes.push(gpu_mesh(m));
+                match opaque_runs.last_mut() {
+                    Some(r)
+                        if r.mesh == Some(m.mesh) && r.texture == m.texture && r.range.end == i =>
+                    {
+                        r.range.end += 1
+                    }
+                    _ => opaque_runs.push(Run {
+                        mesh: Some(m.mesh),
+                        texture: m.texture,
+                        range: i..i + 1,
+                    }),
+                }
+            }
+            // See-through meshes and quads, back to front together.
+            enum Item<'a> {
+                Mesh(&'a MeshInstance),
+                Quad(&'a WorldQuad),
+            }
+            let mut items: Vec<(f32, Item)> = view
+                .meshes
+                .iter()
+                .filter(known)
+                .filter(|m| m.color[3] < 1.0)
+                .map(|m| (m.model.w_axis.xyz().distance_squared(eye), Item::Mesh(m)))
+                .chain(
+                    view.quads
+                        .iter()
+                        .map(|q| (q.model.w_axis.xyz().distance_squared(eye), Item::Quad(q))),
+                )
+                .collect();
+            items.sort_by(|a, b| b.0.total_cmp(&a.0));
+            let mut blended: Vec<(bool, Run)> = Vec::new();
+            for (_, item) in items {
+                match item {
+                    Item::Mesh(m) => {
+                        let i = meshes.len() as u32;
+                        meshes.push(gpu_mesh(m));
+                        blended.push((
+                            true,
+                            Run {
+                                mesh: Some(m.mesh),
+                                texture: m.texture,
+                                range: i..i + 1,
+                            },
+                        ));
+                    }
+                    Item::Quad(q) => {
+                        let i = quads.len() as u32;
+                        let [r, g, b, a] = q.color;
+                        quads.push(GpuQuad {
+                            model: q.model.to_cols_array_2d(),
+                            color: [r * a, g * a, b * a, a],
+                            uv: q.uv,
+                        });
+                        match blended.last_mut() {
+                            Some((false, run))
+                                if run.texture == q.texture && run.range.end == i =>
+                            {
+                                run.range.end += 1
+                            }
+                            _ => blended.push((
+                                false,
+                                Run {
+                                    mesh: None,
+                                    texture: q.texture,
+                                    range: i..i + 1,
+                                },
+                            )),
+                        }
+                    }
+                }
+            }
+            let first_light = lights.len() as u32;
+            lights.extend(view.lights.iter().map(|l| {
+                let (kind, spot) = match l.kind {
+                    LightKind::Directional => (0.0, [0.0; 4]),
+                    LightKind::Point => (1.0, [0.0; 4]),
+                    LightKind::Spot {
+                        inner_degrees,
+                        outer_degrees,
+                    } => (
+                        2.0,
+                        [
+                            (inner_degrees.min(outer_degrees).to_radians() / 2.0).cos(),
+                            (outer_degrees.to_radians() / 2.0).cos(),
+                            0.0,
+                            0.0,
+                        ],
+                    ),
+                };
+                GpuLight {
+                    position: [l.position.x, l.position.y, l.position.z, kind],
+                    direction: [l.direction.x, l.direction.y, l.direction.z, l.range],
+                    color: [l.color[0], l.color[1], l.color[2], 0.0],
+                    spot,
                 }
             }));
-            let textures = order.iter().map(|q| q.texture).collect();
-            ranges.push((start..data.len() as u32, textures));
+            per_view.push((opaque_runs, blended, first_light..lights.len() as u32));
         }
-        if self.quads.size() < (data.len().max(1) * std::mem::size_of::<GpuQuad>()) as u64 {
-            self.quads = Self::quad_buffer(gpu, data.len().next_power_of_two());
-        }
-        if !data.is_empty() {
-            gpu.queue
-                .write_buffer(&self.quads, 0, bytemuck::cast_slice(&data));
-        }
+        Self::upload(gpu, &mut self.quads, "world quads", &quads);
+        Self::upload(gpu, &mut self.mesh_instances, "world meshes", &meshes);
         if self.globals.size() < self.stride * views.len().max(1) as u64 {
-            self.globals = Self::globals_buffer(gpu, self.stride, views.len().next_power_of_two());
+            self.globals = Self::buffer(
+                gpu,
+                "world globals",
+                self.stride * views.len().next_power_of_two() as u64,
+                wgpu::BufferUsages::UNIFORM,
+            );
         }
         for (i, view) in views.iter().enumerate() {
             let c = view.camera.clear;
+            let p = view.camera.position;
+            let count = per_view[i].2.len() as f32;
             let globals = GpuGlobals {
                 view_proj: view.camera.view_proj.to_cols_array_2d(),
                 background: [
@@ -451,6 +791,8 @@ impl WorldRenderer {
                     (c.b * c.a) as f32,
                     c.a as f32,
                 ],
+                camera: [p.x, p.y, p.z, 1.0],
+                ambient: [view.ambient[0], view.ambient[1], view.ambient[2], count],
             };
             gpu.queue.write_buffer(
                 &self.globals,
@@ -458,24 +800,49 @@ impl WorldRenderer {
                 bytemuck::bytes_of(&globals),
             );
         }
-        let globals = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("world globals"),
-            layout: &self.globals_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.globals,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(std::mem::size_of::<GpuGlobals>() as u64),
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.quads.as_entire_binding(),
-                },
-            ],
-        });
+        // One lights buffer per view (they differ), bound with the view.
+        let light_buffers: Vec<wgpu::Buffer> = per_view
+            .iter()
+            .map(|(_, _, range)| {
+                let slice = &lights[range.start as usize..range.end as usize];
+                let mut buffer = Self::storage::<GpuLight>(gpu, "world lights", slice.len());
+                Self::upload(gpu, &mut buffer, "world lights", slice);
+                buffer
+            })
+            .collect();
+        let globals_groups: Vec<wgpu::BindGroup> = light_buffers
+            .iter()
+            .map(|lights| {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("world globals"),
+                    layout: &self.globals_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &self.globals,
+                                offset: 0,
+                                size: wgpu::BufferSize::new(
+                                    std::mem::size_of::<GpuGlobals>() as u64
+                                ),
+                            }),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.quads.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: self.mesh_instances.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: lights.as_entire_binding(),
+                        },
+                    ],
+                })
+            })
+            .collect();
         let texture_group = |view: &wgpu::TextureView| {
             gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("world texture"),
@@ -496,6 +863,8 @@ impl WorldRenderer {
             .chain(textures.iter().copied())
             .map(texture_group)
             .collect();
+        let group_for =
+            |texture: Option<usize>| &groups[texture.map_or(0, |t| (t + 1).min(groups.len() - 1))];
 
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         {
@@ -520,7 +889,7 @@ impl WorldRenderer {
                 }),
                 ..Default::default()
             });
-            for (i, (view, (range, quad_textures))) in views.iter().zip(&ranges).enumerate() {
+            for (i, (view, (opaque, blended, _))) in views.iter().zip(&per_view).enumerate() {
                 let Some(px) = viewport_px(view.viewport, size) else {
                     continue;
                 };
@@ -533,23 +902,39 @@ impl WorldRenderer {
                     1.0,
                 );
                 pass.set_scissor_rect(px[0], px[1], px[2], px[3]);
-                pass.set_bind_group(0, &globals, &[(self.stride * i as u64) as u32]);
+                pass.set_bind_group(0, &globals_groups[i], &[(self.stride * i as u64) as u32]);
                 pass.set_bind_group(1, &groups[0], &[]);
-                pass.set_pipeline(&fill_pipeline);
+                pass.set_pipeline(&pipelines.fill);
                 pass.draw(0..3, 0..1);
 
-                pass.set_pipeline(&quad_pipeline);
-                let mut start = 0;
-                while start < quad_textures.len() {
-                    let texture = quad_textures[start];
-                    let mut end = start + 1;
-                    while end < quad_textures.len() && quad_textures[end] == texture {
-                        end += 1;
+                let draw = |pass: &mut wgpu::RenderPass<'_>, run: &Run, blend: bool| {
+                    pass.set_bind_group(1, group_for(run.texture), &[]);
+                    match run.mesh.and_then(|m| self.meshes.get(&m)) {
+                        Some(mesh) => {
+                            pass.set_pipeline(if blend {
+                                &pipelines.mesh_blend
+                            } else {
+                                &pipelines.mesh
+                            });
+                            pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                            pass.set_index_buffer(
+                                mesh.indices.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+                            pass.draw_indexed(0..mesh.count, 0, run.range.clone());
+                        }
+                        None if run.mesh.is_none() => {
+                            pass.set_pipeline(&pipelines.quad);
+                            pass.draw(0..6, run.range.clone());
+                        }
+                        None => {}
                     }
-                    let group = texture.map_or(0, |t| (t + 1).min(groups.len() - 1));
-                    pass.set_bind_group(1, &groups[group], &[]);
-                    pass.draw(0..6, range.start + start as u32..range.start + end as u32);
-                    start = end;
+                };
+                for run in opaque {
+                    draw(&mut pass, run, false);
+                }
+                for (_, run) in blended {
+                    draw(&mut pass, run, true);
                 }
             }
         }
