@@ -106,19 +106,21 @@ class World extends Component {
     });
 
     const floor = new GameObject("Floor");
-    floor.addComponent(PlaneRenderer, { size: new Vector2(12, 12), color: Color.hex("#4a5263") });
+    // A lit mesh (Unity's 10 m plane, on a child scaled to 12 m) so lights land on it.
+    const floorMesh = new GameObject("Floor mesh", { parent: floor, scale: Vector3.one.scale(1.2) });
+    floorMesh.addComponent(MeshRenderer, { mesh: "plane", material: new Material(Color.hex("#6a7387"), Color.black, 0.35) });
     floor.addComponent(BoxCollider, { size: new Vector3(12, 0.2, 12), center: new Vector3(0, -0.1, 0) });
 
     // A sun and a warm point light for the meshes.
     const sun = new GameObject("Sun", { rotation: Quaternion.euler(-50, 30, 0) });
-    sun.addComponent(Light, { type: "directional", intensity: 1.1 });
+    sun.addComponent(Light, { type: "directional", intensity: 0.55 });
     const lamp = new GameObject("Lamp", { position: new Vector3(0, 1.5, 0) });
     lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5, haloSize: 1.2 });
 
     // A spotlight from high on one side, its beam visible, aimed at the middle.
     const spot = new GameObject("Spotlight", { position: new Vector3(-3.4, 4.6, 2.4) });
     spot.transform.lookAt(new Vector3(0, 0, 0));
-    spot.addComponent(Light, { type: "spot", color: Color.hex("#bcd4ff"), intensity: 14, range: 9, spotAngle: 28, beamIntensity: 0.35 });
+    spot.addComponent(Light, { type: "spot", color: Color.hex("#bcd4ff"), intensity: 70, range: 12, spotAngle: 30, beamIntensity: 0.35 });
     RenderSettings.bloom = { threshold: 1, intensity: 0.8, scatter: 0.65 };
 
     // A fountain of glowing sparks that fall and fade, with a puff every two seconds.
