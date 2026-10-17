@@ -38,6 +38,8 @@ pub struct Brush {
     /// `None`: the text colour.
     pub stroke_color: Option<Rgba>,
     pub smooth: bool,
+    /// `visibility: hidden` text keeps its place but isn't drawn.
+    pub hidden: bool,
 }
 
 /// The initial text style's brush (anti-aliased, black).
@@ -59,6 +61,7 @@ impl Brush {
             stroke_width: style.stroke_width,
             stroke_color: style.stroke_color,
             smooth: style.smooth,
+            hidden: !style.visible,
         }
     }
 }
@@ -317,7 +320,7 @@ fn draw_lines(
                 kept_lo = kept_lo.min(g.x);
                 kept_hi = kept_hi.max(g.x + g.advance);
             }
-            if !glyphs.is_empty() {
+            if !glyphs.is_empty() && !style.brush.hidden {
                 runs.push(GlyphRun {
                     font: run.font().clone(),
                     font_size: run.font_size(),
@@ -356,7 +359,12 @@ fn draw_lines(
             }
             // Offsets are up from the baseline; the thickness and colour can be
             // set, or come from the font and the text colour.
-            let color = brush.line_color.unwrap_or(brush.color);
+            // Hidden runs draw no decorations either.
+            let color = if brush.hidden {
+                crate::Rgba::TRANSPARENT
+            } else {
+                brush.line_color.unwrap_or(brush.color)
+            };
             let mut decorate = |offset: f32, size: f32| {
                 let size = brush.thickness.unwrap_or(size).max(1.0);
                 decorations.push(TextDecoration {

@@ -655,6 +655,7 @@ pub fn focusable(tree: &UiTree, id: NodeId) -> bool {
     tab_index(tree, id).is_some()
         && tree.attrs(id).is_some_and(|a| !a.disabled)
         && tree.is_displayed(id)
+        && tree.computed_text(id).visible
 }
 
 /// The Tab order: positive `tabIndex` values first (ascending, ties in tree order),

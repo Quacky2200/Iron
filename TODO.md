@@ -573,8 +573,9 @@ and `@font-face`.
      in the renderer's clip table, instances carry a transform index (the vertex shader maps corners,
      fragments map back to the plane), clips remember their plane; hit testing inverts — `M3-XF-01`,
      `M3-XF-02`
-   - [ ] **5f** `visibility: visible | hidden | collapse` (keeps its layout space, isn't drawn or hit;
-     children can opt back in with `visible`; inherited)
+   - [x] **5f** `visibility: visible | hidden | collapse` (keeps its layout space, isn't drawn or hit;
+     children can opt back in with `visible`; inherited; text runs carry it, so visible spans in
+     hidden text still draw; hidden elements can't take focus) — `M3-VIS-01`
    - [ ] **5g** Lists: a `list` element (React `<List>`) with item children, `list-style-type`
      (`disc`, `circle`, `square`, `decimal`, `lower/upper-alpha`, `lower/upper-roman`, `none`, a
      string), `list-style-position`, `list-style-image`, the `list-style` shorthand and a `::marker`

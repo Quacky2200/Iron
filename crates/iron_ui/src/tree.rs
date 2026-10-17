@@ -2062,11 +2062,12 @@ impl<L: LayoutEngine> UiTree<L> {
         // Fixed nodes paint above the tree, so they're tested first.
         for id in self.fixed_paint_order().iter().rev() {
             let inherited = self.pointer_events_of(self.parent(*id));
-            if let Some(hit) = self.hit(*id, x, y, inherited, TransformContext::ROOT) {
+            let visible = self.computed_text(*id).visible;
+            if let Some(hit) = self.hit(*id, x, y, inherited, visible, TransformContext::ROOT) {
                 return Some(hit);
             }
         }
-        self.hit(ROOT, x, y, true, TransformContext::ROOT)
+        self.hit(ROOT, x, y, true, true, TransformContext::ROOT)
     }
 
     /// `node`'s own 4×4 transform (with its parent's `perspective`), if it has one.
@@ -2157,6 +2158,7 @@ impl<L: LayoutEngine> UiTree<L> {
         x: f32,
         y: f32,
         inherited: bool,
+        visible: bool,
         xf: TransformContext,
     ) -> Option<NodeId> {
         let (wx, wy) = (x, y);
@@ -2164,6 +2166,8 @@ impl<L: LayoutEngine> UiTree<L> {
         if node.style.display == Display::None {
             return None;
         }
+        // `visibility: hidden` elements can't be hit, but visible children can.
+        let shown = node.visual.text.visible.unwrap_or(visible);
         if is_contents(node) {
             let enabled = node.visual.pointer_events.unwrap_or(inherited);
             return self
@@ -2171,7 +2175,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 .iter()
                 .rev()
                 .filter(|c| !self.nodes.get(c).is_some_and(|n| is_fixed(**c, n)))
-                .find_map(|c| self.hit(*c, wx, wy, enabled, xf));
+                .find_map(|c| self.hit(*c, wx, wy, enabled, shown, xf));
         }
         let rect = *self.rects.get(&id)?;
         let (plane, child_xf, _) = self.transform_step(node, rect, xf)?;
@@ -2198,12 +2202,12 @@ impl<L: LayoutEngine> UiTree<L> {
                 if self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
                     continue;
                 }
-                if let Some(hit) = self.hit(*child, wx, wy, enabled, child_xf) {
+                if let Some(hit) = self.hit(*child, wx, wy, enabled, shown, child_xf) {
                     return Some(hit);
                 }
             }
         }
-        if !enabled || id == ROOT {
+        if !enabled || !shown || id == ROOT {
             return None;
         }
         if !rect.contains_rounded(radii, x, y) {
@@ -2431,6 +2435,11 @@ impl<L: LayoutEngine> UiTree<L> {
         {
             self.draw_image(src, v, (rect, radii), &l, text.pixelated, &mut own);
         }
+        // `visibility: hidden`: nothing of the box itself (its text runs carry their own
+        // visibility, so visible spans inside still draw).
+        if !text.visible {
+            own.clear();
+        }
         if let Some(layout) = self.text_layouts.get(&id) {
             let origin = (
                 rect.x + l.border[3] + l.padding[3],
@@ -2482,7 +2491,9 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
 
-        if let Some(editor) = self.editors.get(&id) {
+        if let Some(editor) = self.editors.get(&id)
+            && text.visible
+        {
             self.editor_cmds(editor, node, rect, &l, radii, &text, &mut own);
         }
 
@@ -2497,7 +2508,7 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         let overflow_clip = overflow_clip(v, rect, &l, radii);
 
-        if v.backdrop_blur > 0.0 || v.backdrop_matrix.is_some() {
+        if text.visible && (v.backdrop_blur > 0.0 || v.backdrop_matrix.is_some()) {
             out.push(DrawCmd::BackdropBlur {
                 rect,
                 radii,
@@ -2506,7 +2517,7 @@ impl<L: LayoutEngine> UiTree<L> {
             });
         }
 
-        let outline = outline(v, rect, radii, text.color);
+        let outline = outline(v, rect, radii, text.color).filter(|_| text.visible);
         let own_count = own.len() + usize::from(outline.is_some());
         let group_opacity = v.opacity < 1.0 && (!node.children.is_empty() || own_count > 1);
         let shadows: Vec<LayerShadow> = v

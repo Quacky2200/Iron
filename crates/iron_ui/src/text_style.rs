@@ -361,6 +361,9 @@ pub struct TextProps {
     /// `image-rendering: pixelated | crisp-edges` (`Some(true)`). Not a text property,
     /// but inherited like one, so it rides along here.
     pub pixelated: Option<bool>,
+    /// `visibility`: `Some(false)` for `hidden` / `collapse`. Inherited, so it rides
+    /// along here like `pixelated`.
+    pub visible: Option<bool>,
     pub white_space: Option<WhiteSpace>,
     pub text_shadow: Option<Vec<Shadow>>,
     pub text_transform: Option<TextTransform>,
@@ -405,6 +408,8 @@ pub struct ComputedText {
     pub smooth: bool,
     /// Images scale with nearest-neighbour sampling.
     pub pixelated: bool,
+    /// `visibility: visible`: the element paints and takes pointer hits.
+    pub visible: bool,
     pub white_space: WhiteSpace,
     pub text_shadow: Vec<Shadow>,
     pub text_transform: TextTransform,
@@ -441,6 +446,7 @@ impl Default for ComputedText {
             caret_color: None,
             smooth: true,
             pixelated: false,
+            visible: true,
             white_space: WhiteSpace::Normal,
             text_shadow: Vec::new(),
             text_transform: TextTransform::None,
@@ -506,6 +512,7 @@ impl ComputedText {
             caret_color: props.caret_color.unwrap_or(self.caret_color),
             smooth: props.smooth.unwrap_or(self.smooth),
             pixelated: props.pixelated.unwrap_or(self.pixelated),
+            visible: props.visible.unwrap_or(self.visible),
             white_space: props.white_space.unwrap_or(self.white_space),
             text_shadow: props
                 .text_shadow
@@ -581,6 +588,7 @@ pub const TEXT_PROPS: &[&str] = &[
     "fontSmooth",
     "WebkitFontSmoothing",
     "imageRendering",
+    "visibility",
     "whiteSpace",
     "textShadow",
     "textTransform",
@@ -637,6 +645,7 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
             "caretColor" => props.caret_color = None,
             "fontSmooth" | "WebkitFontSmoothing" => props.smooth = None,
             "imageRendering" => props.pixelated = None,
+            "visibility" => props.visible = None,
             "whiteSpace" => props.white_space = None,
             "textShadow" => props.text_shadow = None,
             "textTransform" => props.text_transform = None,
@@ -843,6 +852,14 @@ pub fn apply(props: &mut TextProps, prop: &str, value: &Value) -> Option<Result<
                 Some(c) if c.eq_ignore_ascii_case("currentcolor") => Some(None),
                 Some(c) => Rgba::parse(c).map(Some),
                 None => None,
+            }));
+        }
+        "visibility" => {
+            props.visible = Some(parse!(match s {
+                Some("visible") => Some(true),
+                // No tables: `collapse` is `hidden`.
+                Some("hidden" | "collapse") => Some(false),
+                _ => None,
             }));
         }
         "imageRendering" => {

@@ -574,3 +574,74 @@ fn preserve_3d_combines_turns_before_flattening() {
     assert!(child_hit("preserve-3d"), "the turns cancel: full width");
     assert!(!child_hit("flat"), "flattened twice: squashed");
 }
+
+// M3-VIS-01
+#[test]
+fn visibility_hidden_keeps_space_but_draws_and_hits_nothing() {
+    let mut d = Dom::new();
+    let col = d.add(0, "box", &[("flexDirection", "column".into())]);
+    let hidden = d.add(
+        col,
+        "box",
+        &[
+            ("width", px(100.0)),
+            ("height", px(40.0)),
+            ("backgroundColor", "red".into()),
+            ("visibility", "hidden".into()),
+        ],
+    );
+    // A child that opts back in.
+    let shown = d.add(
+        hidden,
+        "box",
+        &[
+            ("width", px(20.0)),
+            ("height", px(20.0)),
+            ("backgroundColor", "blue".into()),
+            ("visibility", "visible".into()),
+        ],
+    );
+    let after = d.add(col, "box", &[("width", px(100.0)), ("height", px(10.0))]);
+    let mut tree = d.build("");
+    assert_eq!(
+        rect(&mut tree, after).y,
+        40.0,
+        "the hidden box keeps its space"
+    );
+    let colours: Vec<_> = tree
+        .draw_list()
+        .iter()
+        .filter_map(|c| match c {
+            iron_ui::DrawCmd::Quad(q) => Some(q.background),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(colours.len(), 1, "only the visible child: {colours:?}");
+    assert_eq!(colours[0].b, 1.0);
+    assert_eq!(
+        tree.hit_test(50.0, 30.0).map(|n| n.0),
+        Some(col),
+        "the hidden box isn't hit: the column behind it is"
+    );
+    assert_eq!(tree.hit_test(10.0, 10.0).map(|n| n.0), Some(shown));
+}
+
+// M3-VIS-01
+#[test]
+fn hidden_text_and_spans() {
+    let mut d = Dom::new();
+    let t = d.add(0, "text", &[("visibility", "hidden".into())]);
+    d.text(t, "gone ");
+    let span = d.add(t, "span", &[("visibility", "visible".into())]);
+    d.text(span, "here");
+    let mut tree = d.build("");
+    let glyphs: usize = tree
+        .draw_list()
+        .iter()
+        .filter_map(|c| match c {
+            iron_ui::DrawCmd::Text(t) => Some(t.runs.iter().map(|r| r.glyphs.len()).sum::<usize>()),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(glyphs, 4, "only the visible span's glyphs");
+}
