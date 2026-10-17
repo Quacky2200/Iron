@@ -7,7 +7,7 @@ React handlers. React 19 and `react-reconciler` run unmodified inside QuickJS.
 | File | Role |
 |---|---|
 | [index.ts](../js/react/src/index.ts) | Public API: `createRoot`, `Text`, `Span`, prop and JSX types, re-exports |
-| [host.ts](../js/react/src/host.ts) | The reconciler host config, `Instance`, `instances`, `pending`, `flush` |
+| [host.ts](../js/react/src/host.ts) | The reconciler host config, `Instance`, `instances`, `Container`s with their op queues, `flush` |
 | [style.ts](../js/react/src/style.ts) | `IronStyle` type, `styleEntries`, `styleDiff` |
 | [attrs.ts](../js/react/src/attrs.ts) | Attribute props, `attrEntries`, `attrDiff` |
 | [events.ts](../js/react/src/events.ts) | Event classes and `dispatchUiEvent` (installed as `__iron_ui_event`) |
@@ -29,9 +29,15 @@ Mutation mode only (`supportsMutation: true`). The design is: **collect ops duri
 send one `__iron_commit` at the end** (decision D1 in TODO.md).
 
 ```
-createInstance / appendChild / commitUpdate ...  -->  pending.push([OPCODE, ...])
-resetAfterCommit()                               -->  flush(): __iron_commit(pending.splice(0))
+createInstance / appendChild / commitUpdate ...  -->  queueFor(id).push([OPCODE, ...])
+resetAfterCommit(container)                      -->  flushContainer(container): __iron_commit(ops[, target])
 ```
+
+Each root has a `Container { id, target, children, pending }`. `owners` maps every node id to the
+container that created it, and `queueFor(id)` picks that container's `pending` queue, so ops for a
+world panel's nodes never mix with the screen's. `flushContainer` sends the screen's ops as
+`__iron_commit(ops)` and others as `__iron_commit(ops, target)`; `flush()` (outside a commit, for
+controlled-field restores) flushes every container. `pending` still exports the screen's queue for tests.
 
 | Host function | Ops produced |
 |---|---|
@@ -72,9 +78,13 @@ Note the ops carry **raw values** (numbers or CSS strings); Rust does all parsin
 
 ## `createRoot`
 
-`createRoot()` ([index.ts](../js/react/src/index.ts)) builds a `ConcurrentRoot` container whose id is
-the engine's root node 0. It may be called **once per game** (a second call throws): there is a
-single engine root, so compose more UI as components. `root.render(el)` uses
+`createRoot(target?)` ([index.ts](../js/react/src/index.ts)) builds a `ConcurrentRoot`. With no argument
+it is the **screen's** root: the container is `screenContainer` (target 0, the engine's root node 0).
+Pass a `WorldPanel` component, or its id, to get that panel's root (`containerFor(id)`), whose commits
+go to the panel's own UI tree ([world-rendering.md](world-rendering.md#world-panels)). Each target
+may have **one root** (`rootsCreated`): a second `createRoot()` throws `createRoot() can only be
+called once per game`, and a second root for a panel throws `panel N already has a root`.
+Unmounting frees the target for a new root. `root.render(el)` uses
 `updateContainerSync` + `flushSyncWork` so the commit lands the same frame; `unmount` renders
 `null`. Uncaught/caught/recoverable React errors go to `console.error` with the stack.
 

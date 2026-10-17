@@ -24,6 +24,7 @@ Defined in [lib.rs](../crates/iron_script/src/lib.rs). Every backend provides th
 | `call_global(name, args)` | Call a global function: the way Rust calls into JS |
 | `tick(now_ms)` | Fire due timers (see below); returns uncaught errors since last tick |
 | `drain_ops()` / `drain_commits()` | Take what scripts queued since last call |
+| `drain_targeted_commits()` | Like `drain_commits`, with the UI tree each commit is for (the default method says 0 for all) |
 | `reset()` | Fresh context; drops ops, commits, timers, errors; keeps the log sink |
 | `set_log_sink(sink)` | Where `console.*` goes (default: `tracing`, target `script`) |
 
@@ -44,7 +45,9 @@ backend must pass via `runtime_conformance_tests!`.
 - **Native globals** installed by `install_globals`:
   - `console.log/info/debug/warn/error` -> the log sink.
   - `__iron_op(name, ...args)` -> pushes an `Op { name, args }` onto `Shared.ops`.
-  - `__iron_commit(ops)` -> pushes a `Commit { ops }` onto `Shared.commits`.
+  - `__iron_commit(ops, target?)` -> pushes a `Commit { ops }` onto `Shared.commits` with its UI tree
+    `target` (default 0, the screen; others are world panels). `drain_commits()` drops the targets;
+    `drain_targeted_commits()` returns `(target, Commit)` pairs.
   - `__iron_report_error(e)` -> pushes onto `Shared.errors` (used by the prelude).
 - **Microtasks**: every entry point (`load_bundle`, `eval`, `call_global`) ends with `run_jobs()`,
   draining pending promise jobs. React 19 relies on microtasks, so "jobs run before returning to
@@ -71,13 +74,15 @@ between timers because `call_global` drains jobs. The loop is capped at `MAX_TIM
 | Channel | JS side | Rust side | Used for |
 |---|---|---|---|
 | Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`..., and the `physics.*` and `audio.*` families |
-| Commits | `__iron_commit(ops)` | `drain_commits()` -> `Vec<Commit>` | React UI mutations |
+| Commits | `__iron_commit(ops, target)` | `drain_targeted_commits()` -> `Vec<(u32, Commit)>` | React UI mutations, for the screen or a world panel |
 
 Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops.rs)); the doc
 comment notes a binary encoding is planned once the op set settles (TESTS.md `M2-BEN-04`).
 There is no registry: the **app** matches on `op.name` in `App::tick`
 ([main.rs](../crates/iron_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
-forwarded to `Physics::apply` and the mixer.
+forwarded to `Physics::apply` and the mixer; `scene.*` goes to `ScriptScene::apply` and `render.*` to
+`WorldViews`/`Panels` (see [scene-and-objects.md](scene-and-objects.md) and
+[world-rendering.md](world-rendering.md)).
 
 A `Commit` is a `Vec<Value>`, each op `[opcode, ...args]`
 ([opcodes.rs](../crates/iron_ui/src/opcodes.rs), mirrored by
@@ -87,23 +92,31 @@ A `Commit` is a `Vec<Value>`, each op `[opcode, ...args]`
 ## `ComponentHost` and `@iron/engine`
 
 Rust side: [components.rs](../crates/iron_script/src/components.rs). `ComponentHost` keeps a
-`Vec<Entry { id, class, started, enabled }>` and talks to JS only by calling globals:
+`Vec<Entry { id, class, object, hooks, started, enabled }>` and talks to JS only by calling globals:
 
 | Rust call | JS global (installed by `@iron/engine`) |
 |---|---|
 | `registered_classes` | `__iron_registered()` -> class names |
-| `spawn(class)` | `__iron_create(class, id)` |
-| `update(dt)` | `__iron_dispatch(id, "onStart"/"onUpdate", ...args)` |
-| on error | `__iron_destroy(id)` |
+| `spawn_on(class, object, name)` (`spawn` has no object) | `__iron_create(class, id, object, name)` |
+| first run of a component | `__iron_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
+| `update_active(dt, active)` | `__iron_tick(dt)` (script `Time`; returns the scaled `dt`), then `__iron_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
+| `fixed_update(dt, active)` | `__iron_dispatch(id, "onFixedUpdate", dt)` |
+| `pre_render(active)` | `__iron_dispatch(id, "onPreRender")` |
+| `remove`, `remove_on_objects`, and on error | `onDestroy` (not after an error), then `__iron_destroy(id)` |
+| `adopt(id, class, object)` | none: takes over a component a script made with `addComponent` |
 
-`update` runs `onStart` once, then `onUpdate(dt)`, per component. A component that throws is
-logged, disabled and destroyed; others keep running. Callbacks are looked up by
+`onStart` runs once before any other hook. Each hook only runs on components that define it and whose
+GameObject is active (the `active` closure). A component that throws is
+logged, disabled and destroyed; others keep running. The order within a frame is in
+[scene-and-objects.md](scene-and-objects.md#components-and-the-lifecycle). Callbacks are looked up by
 `(component id, method name)` at call time, never stored, so a reloaded bundle's code is picked up.
 
 JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
 
-- `Component` base class (`id`, optional `onStart`, `onUpdate`), `register({ Name: Class })`
-  (an object, so names survive minification).
+- `Component` base class (`id`, `gameObject`, `transform`, optional `onStart`, `onUpdate`,
+  `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`), `register({ Name: Class })`
+  (an object, so names survive minification). `GameObject`, math, `Time`, cameras and the rest of the
+  M5.a API are in [scene-and-objects.md](scene-and-objects.md) and [world-rendering.md](world-rendering.md).
 - `op(name, ...args)`, `loadFont(face)`, `addStyleSheet(css)` / `removeStyleSheet(id)`. JS allocates
   stylesheet ids; the app maps them to tree ids (`App.sheets`).
 - `setUiScale(scale)`: sends the `uiScale` op (`"none"`, `"fixed" f`, `"height" h`, `"fit" w h`).
@@ -118,15 +131,30 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
 - The `__iron_*` host functions are assigned on `globalThis` at import time; instances live in a
   `Map<number, Component>`.
 - [globals.ts](../js/engine/src/globals.ts) declares the ambient types (`__iron_op`, timers,
-  `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio`). It is hand-written for now (a generated `.d.ts` is planned).
+  `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio`, and the scene hooks below). It is hand-written for now (a generated `.d.ts` is planned).
 
-Today `iron_app` has no scene system (M5): it spawns **one instance of every registered class**
-at startup and ticks them at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per frame). Each tick runs
-components, then `apply_script_output` (commits, then ops in order), then `step_physics`, which
-calls `__iron_physics(moved, contacts, rays, characters)` if the game defines it. After the tick
-loop the frame applies output again and `update_audio` calls `__iron_audio(ended)`. Both globals
-are probed once at startup, like `__iron_ui_event` and `__iron_input`. See
-[physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
+The scene globals, installed by `@iron/engine` and called by Rust: `__iron_registered`,
+`__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_destroy`,
+`__iron_tick(dt)` (script `Time`, once per frame), `__iron_scene(moved)` (engine moves of objects, see
+[scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__iron_screen(width, height, scale)`
+(the screen size in UI pixels, when it changes). Like `__iron_ui_event`, the optional ones
+(`__iron_tick`, `__iron_scene`, `__iron_screen`, `__iron_physics`, `__iron_audio`) are probed or
+called tolerantly, so games that don't import the engine still run.
+
+Until scene files load (M5.b), `iron_app` makes **one GameObject per registered class** with that
+component (`spawn_starting_components`) and ticks at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per
+frame). Per frame the order is:
+
+1. For each fixed tick: `fixed_update` (`onFixedUpdate`), `apply_script_output` (commits, then ops in
+   order), `step_physics` (calls `__iron_physics(moved, contacts, rays, characters)` if defined), then
+   `send_scene_moves` (`__iron_scene`).
+2. `ScriptRuntime::tick` (timers and microtasks).
+3. `apply_script_output`, `update_active` (`__iron_tick`, then `onUpdate` and `onLateUpdate`, `dt`
+   capped at 0.1 s), `apply_script_output`, then `update_audio`, which calls `__iron_audio(ended)`.
+4. At draw time: `pre_render` (`onPreRender`), `apply_script_output`, `__iron_screen` if the size
+   changed, then panels and the world are drawn ([world-rendering.md](world-rendering.md)).
+
+See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
 
 ## From TypeScript to a running game
 
@@ -170,9 +198,10 @@ Flow, from an edit to the new code running:
 Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
 and runs without hot reload.
 
-**New runtime first, then swap.** `iron_script::reload(rt, fresh, host, name, code)` loads the code
-into a fresh `QuickJsRuntime`, reads `registered_classes` and spawns one component per class, all
-in `fresh`. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
+**New runtime first, then swap.** `iron_script::reload(rt, fresh, host, name, code, bootstrap)` loads the code
+into a fresh `QuickJsRuntime`, reads `registered_classes` and calls the `bootstrap` closure, all
+in `fresh`. The app's closure is `spawn_starting_components`, which makes the objects and components
+in a new `ScriptScene`; `spawn_each` is the plain one-component-per-class bootstrap. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
 is dropped). A syntax error, a throwing top level or a throwing constructor returns an error, and
 both stay as they were. `reload_scripts` logs `reload failed, keeping the old code` and returns
 before touching the UI, physics or audio. The game keeps running and the next save tries again.
@@ -188,10 +217,12 @@ built:
 - `uiScale` goes back to unset.
 - Physics: a new `Physics::new()`. Bodies and their IDs are gone.
 - Audio: the mixer is dropped, which stops every sound; it is created again on first use.
+- The scene, cameras, planes and world panels: a new `ScriptScene` and `WorldViews`, no panels, and
+  pointer and key focus back on the screen. The screen size is sent again on the next frame.
 - Components start over and `onStart` runs again.
 
-Then it sends `Input::Refresh` and probes `__iron_ui_event`, `__iron_input`, `__iron_physics` and
-`__iron_audio` again. The new bundle's top level has already queued its UI and ops, and they apply
+Then it sends `Input::Refresh` and probes `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio` and
+`__iron_scene` again. The new bundle's top level has already queued its UI and ops, and they apply
 after the wipe.
 
 **Limits.**
