@@ -70,13 +70,14 @@ between timers because `call_global` drains jobs. The loop is capped at `MAX_TIM
 
 | Channel | JS side | Rust side | Used for |
 |---|---|---|---|
-| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`... |
+| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`..., and the `physics.*` and `audio.*` families |
 | Commits | `__iron_commit(ops)` | `drain_commits()` -> `Vec<Commit>` | React UI mutations |
 
 Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops.rs)); the doc
 comment notes a binary encoding is planned once the op set settles (TESTS.md `M2-BEN-04`).
 There is no registry: the **app** matches on `op.name` in `App::tick`
-([main.rs](../crates/iron_app/src/main.rs)) and logs `unknown script op` otherwise.
+([main.rs](../crates/iron_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
+forwarded to `Physics::apply` and the mixer.
 
 A `Commit` is a `Vec<Value>`, each op `[opcode, ...args]`
 ([opcodes.rs](../crates/iron_ui/src/opcodes.rs), mirrored by
@@ -111,13 +112,21 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
 - `input` ([input.ts](../js/engine/src/input.ts)): keyboard and gamepad state and events for
   gameplay code, fed by `__iron_input(type, ...args)` from the app (see
   [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6)).
+- `physics` ([physics.ts](../js/engine/src/physics.ts)) and `audio` ([audio.ts](../js/engine/src/audio.ts)):
+  bodies, colliders, sounds, buses. They queue `physics.*`/`audio.*` ops and receive results through
+  `__iron_physics` and `__iron_audio` (see [physics-and-audio.md](physics-and-audio.md)).
 - The `__iron_*` host functions are assigned on `globalThis` at import time; instances live in a
   `Map<number, Component>`.
 - [globals.ts](../js/engine/src/globals.ts) declares the ambient types (`__iron_op`, timers,
-  `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`). It is hand-written for now (a generated `.d.ts` is planned).
+  `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio`). It is hand-written for now (a generated `.d.ts` is planned).
 
 Today `iron_app` has no scene system (M5): it spawns **one instance of every registered class**
-at startup and ticks them at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per frame).
+at startup and ticks them at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per frame). Each tick runs
+components, then `apply_script_output` (commits, then ops in order), then `step_physics`, which
+calls `__iron_physics(moved, contacts, rays, characters)` if the game defines it. After the tick
+loop the frame applies output again and `update_audio` calls `__iron_audio(ended)`. Both globals
+are probed once at startup, like `__iron_ui_event` and `__iron_input`. See
+[physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
 
 ## From TypeScript to a running game
 

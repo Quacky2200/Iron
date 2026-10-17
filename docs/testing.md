@@ -28,11 +28,11 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 |---|---|---|
 | Rust unit | `#[cfg(test)]` inside the source file | [css.rs](../crates/iron_ui/src/css.rs) (parser, `rebase_urls`, `var()`), [color_fn.rs](../crates/iron_ui/src/color_fn.rs) (colour functions, `color-mix()`), [input.rs](../crates/iron_platform/src/input.rs), [assets.rs](../crates/iron_core/src/assets.rs), [attrs.rs](../crates/iron_ui/src/attrs.rs), [paint.rs](../crates/iron_ui/src/paint.rs) |
 | Rust integration | `crates/*/tests/*.rs` | see below |
-| JS unit | `js/*/test/*.test.ts(x)` (`bun:test`) | [reconciler.test.tsx](../js/react/test/reconciler.test.tsx), [events.test.tsx](../js/react/test/events.test.tsx), [engine.test.ts](../js/engine/test/engine.test.ts), [input.test.ts](../js/engine/test/input.test.ts) |
+| JS unit | `js/*/test/*.test.ts(x)` (`bun:test`) | [reconciler.test.tsx](../js/react/test/reconciler.test.tsx), [events.test.tsx](../js/react/test/events.test.tsx), [engine.test.ts](../js/engine/test/engine.test.ts), [input.test.ts](../js/engine/test/input.test.ts), [physics.test.ts](../js/engine/test/physics.test.ts), [audio.test.ts](../js/engine/test/audio.test.ts) |
 | Render (headless) | [iron_render/tests](../crates/iron_render/tests) | `headless.rs`, `ui.rs` |
 | Golden images | `tests/golden/<id>.png` | compared inside `ui.rs` |
 | Layout fixtures | `tests/layout/*.json` | run by `layout_fixtures.rs` |
-| JS bundles for Rust | `tests/fixtures/*.js` (built from `tests/fixtures/src`) | `boxes.js`, `events.js` (also has an `Input`), `hello.js`, `input.js`, `throws.js` |
+| JS bundles for Rust | `tests/fixtures/*.js` (built from `tests/fixtures/src`) | `boxes.js`, `events.js` (also has an `Input`), `hello.js`, `input.js`, `physics.js`, `throws.js` |
 | Benchmarks | `crates/*/benches` (Criterion) | `restyle.rs`, `layout.rs`, `commits.rs` |
 
 ### `iron_ui` integration tests ([crates/iron_ui/tests](../crates/iron_ui/tests))
@@ -149,6 +149,8 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-DLG` | `dialog`, top layer, `::backdrop`, focus and close events | `iron_ui/tests/dialog.rs`, `js/react/test/events.test.tsx`, golden `M3-DLG-02` in `iron_render/tests/ui.rs` |
 | `M3-SVG` | SVG files as images, inline `<svg>` (see [svg.md](svg.md#tests)) | `iron_ui/tests/svg.rs`, unit tests in `iron_ui/src/svg.rs`, goldens `M3-SVG-01` and `M3-SVG-03` in `iron_render/tests/ui.rs` |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
+| `M4-PHY` | Physics (`M4-PHY-04`, ID kept across hot reload, is pending): box falls and rests (`01`), collision start/stop with script IDs, also through TS components (`02`), character controller climbs a step and stops at a wall (`03`), raycasts answered after the step (`05`), bad ops rejected and meshes collide (`06`) | `iron_physics/tests/{physics,scripts}.rs` (scripts.rs runs fixture `tests/fixtures/src/physics.ts` in QuickJS), `js/engine/test/physics.test.ts` |
+| `M4-AUD` | Audio, mixed offline: output then ended event (`01`), emitters fall off with distance and pan (`02`), volume, pan, buses, stop (`03`), dB conversion and bad ops (`04`) | `iron_audio/tests/audio.rs` (`OfflineBackend::render`), `js/engine/test/audio.test.ts` |
 | `*-MAN` | Manual checks (resize, IME, gamepad) | no automated test; listed in TODO.md. Text input and gamepad checks (`M3-MAN-01`) use `examples/form` |
 
 When you add a test for a plan item, put the ID in a comment, tick the checkbox in TODO.md and add

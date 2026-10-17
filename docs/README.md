@@ -17,6 +17,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | Page | Covers |
 |---|---|
 | [scripting.md](scripting.md) | `iron_script`, `@iron/engine`, ops and commits, `ComponentHost`, bundles and how `iron_app` loads them |
+| [physics-and-audio.md](physics-and-audio.md) | `iron_physics` (rapier) and `iron_audio` (kira): ops and script IDs, per-tick order, batch formats, TS APIs, offline mixer, limits |
 | [ui-tree.md](ui-tree.md) | `iron_ui` tree, opcodes, styles, Taffy layout, Parley text, text fields (`editor.rs`), draw list |
 | [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`/`::marker`/`::backdrop`/`::selection`/`::placeholder`, `@font-face` (incl. WOFF/WOFF2), `@media`, URL rebasing |
 | [react.md](react.md) | `@iron/react`: reconciler host config, style/attr diffing, `createRoot`, `Text`/`Span`/`Input`/`TextArea`, events, refs |
@@ -34,6 +35,8 @@ iron_core      Value, ids, Commit/Op, asset path safety          (no deps on oth
 iron_platform  winit window + event loop, InputEvent (keys, pointer, IME, gamepads), gilrs
 iron_script    ScriptRuntime trait, QuickJS backend, prelude.js, ComponentHost
 iron_ui        UiTree, styles, CSS, layout, text, draw list, events/interaction
+iron_physics   rapier3d world driven by `physics.*` ops, per-tick batches (no deps on other Iron crates but iron_core)
+iron_audio     kira mixer driven by `audio.*` ops, offline backend
 iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd)
 iron_app       the `iron` binary that wires everything together
 js/engine      @iron/engine   (Component, register, op, loadFont, stylesheets, input)
@@ -56,7 +59,8 @@ The window is created hidden and shown after its first frame; a resize also draw
                                        __iron_ui_event(type, path, data) in QuickJS
                                                               |  React handlers run, setState
  frame():                                                     v
-   1. ComponentHost::update (fixed 60 Hz ticks)   -> script components (onStart/onUpdate)
+   1. per fixed 60 Hz tick: ComponentHost::update -> apply_script_output -> step_physics
+      (components, then their commits and ops, then rapier and __iron_physics)
    2. ScriptRuntime::tick(now_ms)                 -> timers + microtasks (React scheduling)
    3. drain_commits -> UiTree::apply_commit       -> node tree mutated, dirty sets filled
    4. drain_ops (loadFont, addStyleSheet, focus, scroll...) handled by the app
@@ -89,5 +93,6 @@ Key ideas to keep in mind:
 | Change text field editing | [editor.rs](../crates/iron_ui/src/editor.rs), [input-and-events.md](input-and-events.md#text-fields-m3c-step-5) |
 | Add a UI event | [events.rs](../crates/iron_ui/src/events.rs), [events.ts](../js/react/src/events.ts), [input-and-events.md](input-and-events.md) |
 | Change gamepad / game input | [gamepad.rs](../crates/iron_platform/src/gamepad.rs), [game_input.rs](../crates/iron_app/src/game_input.rs), [input.ts](../js/engine/src/input.ts), [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6) |
+| Add a physics or audio op | [physics-and-audio.md](physics-and-audio.md), [iron_physics](../crates/iron_physics/src/lib.rs), [iron_audio](../crates/iron_audio/src/lib.rs) |
 | Add a script op | [main.rs](../crates/iron_app/src/main.rs) `tick()`, [scripting.md](scripting.md) |
 | Add a draw command | [draw.rs](../crates/iron_ui/src/draw.rs), [ui/mod.rs](../crates/iron_render/src/ui/mod.rs), [rendering.md](rendering.md) |
