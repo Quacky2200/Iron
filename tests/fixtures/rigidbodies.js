@@ -2322,6 +2322,14 @@ ${err.stack}` : ""}`);
   var width = 1280;
   var height = 720;
   var scale = 1;
+  var display = () => globalThis.__iron_info?.display ?? {};
+  var mode = () => display().mode ?? "Windowed";
+  var isFullScreen = (m) => m === "FullScreenWindow" || m === "ExclusiveFullScreen";
+  var windowSize = () => ({ width: display().width ?? 1280, height: display().height ?? 720 });
+  function setResolution(w, h, m = mode(), refreshRate = 0) {
+    const chosen = typeof m === "boolean" ? m ? "FullScreenWindow" : "Windowed" : m;
+    __iron_op("screen.set", chosen, Math.round(w), Math.round(h), refreshRate);
+  }
   var Screen = {
     get width() {
       return width;
@@ -2334,6 +2342,35 @@ ${err.stack}` : ""}`);
     },
     get aspect() {
       return width / Math.max(1, height);
+    },
+    get fullScreenMode() {
+      return mode();
+    },
+    set fullScreenMode(m) {
+      const size = windowSize();
+      setResolution(size.width, size.height, m);
+    },
+    get fullScreen() {
+      return isFullScreen(mode());
+    },
+    set fullScreen(on) {
+      if (on === isFullScreen(mode()))
+        return;
+      const size = windowSize();
+      setResolution(size.width, size.height, on ? "FullScreenWindow" : "Windowed");
+    },
+    setResolution,
+    get windowSize() {
+      return windowSize();
+    },
+    get resolutions() {
+      return [...display().resolutions ?? []];
+    },
+    get currentResolution() {
+      return display().currentResolution ?? { width: 0, height: 0, refreshRate: 0 };
+    },
+    get supportedFullScreenModes() {
+      return [...display().supportedModes ?? ["ExclusiveFullScreen", "FullScreenWindow", "MaximizedWindow", "Windowed"]];
     }
   };
   globalThis.__iron_screen = (w, h, s) => {
@@ -5224,12 +5261,32 @@ ${err.stack}` : ""}`);
       }
     }
   };
+  // ../../js/engine/src/prefs.ts
+  var values = new Map(Object.entries(globalThis.__iron_info?.prefs ?? {}));
+  function set(key, value) {
+    values.set(key, value);
+    __iron_op("prefs.set", key, value);
+  }
+  function _loadJson(key) {
+    const v = values.get(key);
+    if (typeof v !== "string")
+      return null;
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  function _saveJson(key, value) {
+    set(key, JSON.stringify(value));
+  }
+
   // ../../js/engine/src/quality.ts
   var DEFAULT_LEVELS = [
-    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4 },
-    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7 },
-    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1 },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2 }
+    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1 },
+    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1 },
+    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1 },
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1 }
   ];
   var manifest = () => {
     const q = globalThis.__iron_info?.app?.quality;
@@ -5244,11 +5301,19 @@ ${err.stack}` : ""}`);
   var current = { ...levels[levelIndex] };
   function sendQuality() {
     const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias);
+    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount);
+    remember();
   }
   function sendShadows() {
     __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution);
+    remember();
   }
+  function remember() {
+    if (restoring)
+      return;
+    _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
+  }
+  var restoring = false;
   var listeners2 = new Set;
   function _qualityState() {
     return { level: levelIndex, current };
@@ -5263,8 +5328,20 @@ ${err.stack}` : ""}`);
     sendShadows();
   }
   function _applyDefaultQuality() {
-    sendQuality();
-    sendShadows();
+    const saved = _loadJson("iron.quality");
+    if (saved?.current) {
+      const i = levels.findIndex((l) => l.name === saved.level);
+      if (i >= 0)
+        levelIndex = i;
+      current = { ...levels[levelIndex], ...saved.current, name: levels[levelIndex].name };
+    }
+    restoring = true;
+    try {
+      sendQuality();
+      sendShadows();
+    } finally {
+      restoring = false;
+    }
   }
   if (typeof __iron_op === "function")
     _applyDefaultQuality();

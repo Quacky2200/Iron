@@ -6,6 +6,8 @@
 //
 // The default level is applied when the engine loads.
 
+import { _loadJson, _saveJson } from "./prefs.ts";
+
 /** Which shadows are drawn (Unity's `ShadowQuality`). */
 export type ShadowQualityMode = "disable" | "hardOnly" | "all";
 
@@ -24,13 +26,15 @@ export interface QualityLevel {
   shadowDistance: number;
   /** LOD groups switch as if things were this many times taller on screen (more detail above 1). */
   lodBias: number;
+  /** 1: frames wait for the display's refresh (no tearing); 0: they don't (`targetFrameRate` caps them). */
+  vSyncCount: number;
 }
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1 },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1 },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1 },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1 },
 ];
 
 interface ManifestQuality {
@@ -55,12 +59,21 @@ let current: QualityLevel = { ...levels[levelIndex]! };
 
 function sendQuality(): void {
   const c = current;
-  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias);
+  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount);
+  remember();
 }
 
 function sendShadows(): void {
   __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution);
+  remember();
 }
+
+/** The player's choice is saved (`iron.quality` in PlayerPrefs) and comes back next time. */
+function remember(): void {
+  if (restoring) return;
+  _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
+}
+let restoring = false;
 
 const listeners = new Set<(level: number) => void>();
 
@@ -140,6 +153,15 @@ export const QualitySettings = {
     sendShadows();
   },
 
+  /** 1: frames wait for the display's refresh; 0: they don't (`Application.targetFrameRate` caps them). */
+  get vSyncCount(): number {
+    return current.vSyncCount;
+  },
+  set vSyncCount(n: number) {
+    current.vSyncCount = n > 0 ? 1 : 0;
+    sendQuality();
+  },
+
   /** LOD groups switch as if things were this many times taller on screen: above 1 keeps detail farther away. */
   get lodBias(): number {
     return current.lodBias;
@@ -174,10 +196,22 @@ export function _restoreQuality(state: unknown): void {
   sendShadows();
 }
 
-/** @internal Applies the default level (done when the engine loads). */
+/** @internal Applies the player's saved choice, else the default level (done when the engine loads). */
 export function _applyDefaultQuality(): void {
-  sendQuality();
-  sendShadows();
+  const saved = _loadJson("iron.quality") as { level?: string; current?: Partial<QualityLevel> } | null;
+  if (saved?.current) {
+    const i = levels.findIndex((l) => l.name === saved.level);
+    if (i >= 0) levelIndex = i;
+    current = { ...levels[levelIndex]!, ...saved.current, name: levels[levelIndex]!.name };
+  }
+  // The starting state isn't a choice to save.
+  restoring = true;
+  try {
+    sendQuality();
+    sendShadows();
+  } finally {
+    restoring = false;
+  }
 }
 
 /** Resets to the default levels and level. Only for tests. */

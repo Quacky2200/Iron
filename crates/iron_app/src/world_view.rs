@@ -150,6 +150,8 @@ pub struct Quality {
     pub soft_radius: u32,
     /// LOD groups pick levels as if things were this many times taller on screen.
     pub lod_bias: f32,
+    /// Frames wait for the display's refresh (`QualitySettings.vSyncCount` > 0).
+    pub vsync: bool,
 }
 
 impl Default for Quality {
@@ -160,6 +162,7 @@ impl Default for Quality {
             shadows: ShadowQuality::All,
             soft_radius: 1,
             lod_bias: 1.0,
+            vsync: true,
         }
     }
 }
@@ -755,7 +758,7 @@ impl WorldViews {
                 );
             }
             // `quality 0 antiAliasing renderScale shadows(disable|hardOnly|all) softRadius
-            // lodBias`
+            // lodBias vSyncCount`
             "quality" => {
                 self.quality = Quality {
                     msaa: num(1).unwrap_or(1.0).clamp(1.0, 8.0) as u32,
@@ -767,6 +770,7 @@ impl WorldViews {
                     },
                     soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
                     lod_bias: num(5).unwrap_or(1.0).max(0.01),
+                    vsync: num(6).ok().is_none_or(|v| v >= 1.0),
                 };
             }
             // `shadowSettings 0 distance resolution` (Unity's quality settings).

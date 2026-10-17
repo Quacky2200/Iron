@@ -52,6 +52,28 @@ impl WindowSurface {
         self.configured = true;
     }
 
+    /// Vsync on (frames wait for the display's refresh) or off (shown as soon as
+    /// they're drawn; may tear). wgpu picks what the platform has for each:
+    /// relaxed / plain FIFO, or mailbox / immediate.
+    pub fn set_vsync(&mut self, gpu: &Gpu, on: bool) {
+        let mode = if on {
+            wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
+        if self.config.present_mode == mode {
+            return;
+        }
+        self.config.present_mode = mode;
+        if self.configured {
+            self.surface.configure(&gpu.device, &self.config);
+        }
+    }
+
+    pub fn vsync(&self) -> bool {
+        self.config.present_mode != wgpu::PresentMode::AutoNoVsync
+    }
+
     /// Size in physical pixels.
     pub fn size(&self) -> (u32, u32) {
         (self.config.width, self.config.height)

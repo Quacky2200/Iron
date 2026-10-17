@@ -24,20 +24,23 @@ describe("QualitySettings", () => {
     let heard = -1;
     QualitySettings.onLevelChanged((l) => (heard = l));
     QualitySettings.setQualityLevel("Low");
+    // The choice is also saved (prefs.set), checked in display.test.ts.
+    ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
-      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4],
+      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4, 1],
       ["render.shadowSettings", 0, 20, 1024],
     ]);
     expect(heard).toBe(0);
     ops = [];
     QualitySettings.antiAliasing = 3;
     QualitySettings.renderScale = 5;
+    ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
-      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4],
-      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4],
+      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4, 1],
+      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4, 1],
     ]);
     QualitySettings.lodBias = 3;
-    expect(ops.at(-1)!.at(-1)).toBe(3);
+    expect(ops.filter((o) => o[0] === "render.quality").at(-1)!.at(-2)).toBe(3);
     expect(() => QualitySettings.setQualityLevel("Potato")).toThrow("Potato");
   });
 

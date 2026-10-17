@@ -6,12 +6,14 @@
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 mod cursor;
+mod display;
 mod game_input;
 mod info;
 mod models;
 mod panels;
 mod particles;
 mod physics_sync;
+mod prefs;
 mod reload;
 mod ui_scale;
 mod world_view;
@@ -19,7 +21,7 @@ mod world_view;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use iron_platform::{
@@ -91,7 +93,22 @@ fn main() -> Result<()> {
     // The game's manifest and the machine, for `Application` and `SystemInfo`, before
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&asset_root);
-    let info = info::Info::new(&manifest);
+    let mut info = info::Info::new(&manifest);
+    // The player's saved settings (not for screenshot runs, which stay the same every
+    // time) and the window mode: the manifest's default, then the player's choice.
+    let prefs = match args.screenshot {
+        Some(_) => prefs::Prefs::in_memory(),
+        None => prefs::Prefs::load(&manifest),
+    };
+    let display_settings = display::from_json(
+        prefs.get("iron.display"),
+        display::from_json(Some(&manifest.display), Default::default()),
+    );
+    if let Some(path) = prefs.path() {
+        tracing::info!("player prefs: {}", path.display());
+    }
+    info.set("prefs", serde_json::Value::Object(prefs.all().clone()));
+    info.set("display", display::state(None, &display_settings));
     let mut scripts = QuickJsRuntime::new();
     scripts
         .eval(&info.script())
@@ -148,6 +165,9 @@ fn main() -> Result<()> {
     };
 
     let app = App {
+        prefs,
+        display: display_settings,
+        target_frame_rate: -1,
         vendor,
         bundle_path,
         bundle_name: name.clone(),
@@ -201,11 +221,14 @@ fn main() -> Result<()> {
         .icon
         .as_deref()
         .and_then(|path| info::load_icon(&app.asset_root, path));
+    // A window opens at the saved size; fullscreen modes are applied once it exists.
+    let (width, height) = (display_settings.width, display_settings.height);
     Platform::new().run(
         WindowConfig {
             title: manifest.title.clone(),
             icon,
-            ..Default::default()
+            width,
+            height,
         },
         app,
     )?;
@@ -260,6 +283,12 @@ fn draw_frame(
 }
 
 struct App {
+    /// The player's saved settings (`PlayerPrefs`), written on `prefs.save` and on exit.
+    prefs: prefs::Prefs,
+    /// The window's mode and size, as last applied.
+    display: iron_platform::DisplaySettings,
+    /// `Application.targetFrameRate` (-1: no cap); ignored while vsync is on.
+    target_frame_rate: i32,
     /// A dev build's vendor bundle (React, the engine), kept while only the game's code
     /// changes: then reloads happen in place, with Fast Refresh.
     vendor: Option<String>,
@@ -853,6 +882,14 @@ impl App {
                     });
                 }
                 "app.quit" => self.done = true,
+                "app.targetFrameRate" => {
+                    let rate = op.args.first().and_then(iron_core::Value::as_f64);
+                    self.target_frame_rate = rate.map_or(-1, |r| r.round() as i32);
+                }
+                name if name.starts_with("prefs.") => {
+                    self.prefs_op(&name["prefs.".len()..], &op.args)
+                }
+                "screen.set" => self.screen_op(&op.args),
                 name if name.starts_with("cursor.") => {
                     self.cursor_op(&name["cursor.".len()..], &op.args)
                 }
@@ -984,6 +1021,59 @@ impl App {
 
     /// Runs a `cursor.*` op: `visible bool`, `lock none|locked|confined`, `image
     /// src|null [hotspot x y]`.
+    /// `prefs.set key value`, `prefs.delete key`, `prefs.deleteAll`, `prefs.save`.
+    fn prefs_op(&mut self, name: &str, args: &[iron_core::Value]) {
+        let key = args.first().and_then(iron_core::Value::as_str);
+        match (name, key) {
+            ("set", Some(key)) => {
+                let value = args.get(1).map_or(serde_json::Value::Null, prefs::json_of);
+                self.prefs.set(key, value);
+            }
+            ("delete", Some(key)) => self.prefs.delete(key),
+            ("deleteAll", _) => self.prefs.delete_all(),
+            ("save", _) => self.prefs.save(),
+            _ => tracing::warn!("prefs.{name}: bad arguments {args:?}"),
+        }
+    }
+
+    /// `screen.set mode width height refreshRate`: changes the window's mode and size,
+    /// remembers it for next time and tells scripts what took effect.
+    fn screen_op(&mut self, args: &[iron_core::Value]) {
+        let num = |i: usize| args.get(i).and_then(iron_core::Value::as_f64);
+        let wanted = iron_platform::DisplaySettings {
+            mode: args
+                .first()
+                .and_then(iron_core::Value::as_str)
+                .and_then(iron_platform::FullScreenMode::parse)
+                .unwrap_or(self.display.mode),
+            width: num(1)
+                .filter(|w| *w >= 1.0)
+                .map_or(self.display.width, |w| w as u32),
+            height: num(2)
+                .filter(|h| *h >= 1.0)
+                .map_or(self.display.height, |h| h as u32),
+            refresh_rate: num(3).map_or(self.display.refresh_rate, |r| r.max(0.0) as f32),
+        };
+        self.apply_display(wanted);
+        self.prefs
+            .set("iron.display", display::to_json(&self.display));
+    }
+
+    /// Puts the window in a mode (screenshot runs leave it alone) and updates
+    /// `__iron_info.display`.
+    fn apply_display(&mut self, wanted: iron_platform::DisplaySettings) {
+        let window = self.gfx.as_ref().map(|g| g.window.clone());
+        self.display = match (&window, &self.screenshot) {
+            (Some(w), None) => iron_platform::display::apply(w, &wanted),
+            _ => wanted,
+        };
+        self.info
+            .set("display", display::state(window.as_deref(), &self.display));
+        if let Err(e) = self.scripts.eval(&self.info.script()) {
+            tracing::error!("display info: {e}");
+        }
+    }
+
     fn cursor_op(&mut self, name: &str, args: &[iron_core::Value]) {
         match (name, args.first()) {
             ("visible", Some(iron_core::Value::Bool(v))) => self.script_cursor.visible = *v,
@@ -1267,6 +1357,7 @@ impl App {
         (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
         gfx.world.set_sky(self.world_view.sky);
         let q = self.world_view.quality;
+        gfx.surface.set_vsync(&gfx.gpu, q.vsync);
         gfx.world.msaa = q.msaa;
         gfx.world.render_scale = q.render_scale;
         gfx.world.shadow_quality = q.shadows;
@@ -1316,6 +1407,12 @@ impl PlatformApp for App {
     }
 
     fn window_ready(&mut self, window: Arc<Window>) {
+        // The saved (or default) window mode, before the first frame shows. Screenshot
+        // runs stay windowed.
+        if self.screenshot.is_none() && self.display.mode != iron_platform::FullScreenMode::Windowed
+        {
+            self.display = iron_platform::display::apply(&window, &self.display);
+        }
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {
             Ok((gpu, surface)) => {
@@ -1342,6 +1439,8 @@ impl PlatformApp for App {
                     "screenRefreshRate": hz,
                     "dpi": window.scale_factor() * 96.0,
                 }));
+                self.info
+                    .set("display", display::state(Some(&window), &self.display));
                 if let Err(e) = self.scripts.eval(&self.info.script()) {
                     tracing::error!("system info: {e}");
                 }
@@ -1600,6 +1699,7 @@ impl PlatformApp for App {
         (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
         gfx.world.set_sky(self.world_view.sky);
         let q = self.world_view.quality;
+        gfx.surface.set_vsync(&gfx.gpu, q.vsync);
         gfx.world.msaa = q.msaa;
         gfx.world.render_scale = q.render_scale;
         gfx.world.shadow_quality = q.shadows;
@@ -1672,6 +1772,20 @@ impl PlatformApp for App {
 
     fn should_exit(&self) -> bool {
         self.done
+    }
+
+    fn frame_interval(&self) -> Option<Duration> {
+        // Like Unity: the cap only counts with vsync off (vsync paces frames itself).
+        let capped = self.screenshot.is_none() && !self.world_view.quality.vsync;
+        (capped && self.target_frame_rate > 0)
+            .then(|| Duration::from_secs_f64(1.0 / f64::from(self.target_frame_rate)))
+    }
+}
+
+impl Drop for App {
+    /// The player's settings are written when the game closes, like Unity's.
+    fn drop(&mut self) {
+        self.prefs.save();
     }
 }
 

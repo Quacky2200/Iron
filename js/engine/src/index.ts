@@ -145,7 +145,8 @@ export {
   WorldPanel,
 } from "./rendering.ts";
 export { createPrimitive, PrimitiveType } from "./primitives.ts";
-export { Screen } from "./screen.ts";
+export { type FullScreenMode, type Resolution, Screen } from "./screen.ts";
+export { PlayerPrefs } from "./prefs.ts";
 export {
   Component,
   type ComponentClass,

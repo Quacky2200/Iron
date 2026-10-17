@@ -26,6 +26,8 @@ pub struct Manifest {
     pub layers: Value,
     /// `iron.startScene`: a scene file scripts load at startup.
     pub start_scene: Option<String>,
+    /// `iron.display`: the window's default mode and size (`{ mode, width, height }`).
+    pub display: Value,
 }
 
 impl Manifest {
@@ -62,6 +64,7 @@ impl Manifest {
             quality: iron["quality"].clone(),
             layers: iron["layers"].clone(),
             start_scene: text(&iron["startScene"]),
+            display: iron["display"].clone(),
             name,
         }
     }
@@ -107,6 +110,11 @@ impl Info {
         );
         map.insert("system".into(), system());
         Self(map)
+    }
+
+    /// Sets a top-level section (`prefs`, `display`).
+    pub fn set(&mut self, key: &str, value: Value) {
+        self.0.insert(key.to_owned(), value);
     }
 
     /// Adds (or replaces) fields of the `system` section.

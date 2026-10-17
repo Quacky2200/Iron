@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{CustomCursor, Window, WindowId};
 
 use crate::gamepad::convert_gamepad;
@@ -73,6 +74,11 @@ pub trait PlatformApp {
     fn take_custom_cursor(&mut self) -> Option<CustomCursorRequest> {
         None
     }
+    /// The shortest time between frames (Unity's `targetFrameRate`): the loop waits
+    /// out the rest. `None`: as often as presenting allows (vsync paces it, or nothing).
+    fn frame_interval(&self) -> Option<Duration> {
+        None
+    }
 }
 
 /// Owns gamepad input and, when not headless, runs the window event loop.
@@ -129,6 +135,7 @@ impl Platform {
             window: None,
             error: None,
             cursors: HashMap::new(),
+            last_frame: None,
         };
         event_loop.run_app(&mut runner)?;
         match runner.error {
@@ -152,6 +159,8 @@ struct Runner<A> {
     error: Option<PlatformError>,
     /// Custom cursors created so far, by request key.
     cursors: HashMap<String, CustomCursor>,
+    /// When the last frame started, for the frame rate cap.
+    last_frame: Option<Instant>,
 }
 
 impl<A: PlatformApp> Runner<A> {
@@ -219,6 +228,7 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if let WindowEvent::RedrawRequested = event {
+            self.last_frame = Some(Instant::now());
             self.app.frame();
             self.update_cursor(event_loop);
             return;
@@ -254,6 +264,15 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             self.app.input(event);
         }
         self.update_cursor(event_loop);
+        // A frame rate cap: sleep until the next frame is due (events still wake us).
+        if let (Some(interval), Some(last)) = (self.app.frame_interval(), self.last_frame) {
+            let due = last + interval;
+            if Instant::now() < due {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(due));
+                return;
+            }
+        }
+        event_loop.set_control_flow(ControlFlow::Wait);
         if let Some(window) = &self.window {
             window.request_redraw();
         }

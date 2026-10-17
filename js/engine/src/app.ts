@@ -45,6 +45,8 @@ declare global {
   var __iron_info: { app: InfoApp; system: InfoSystem } | undefined;
 }
 
+let targetFrameRate = -1;
+
 const app = (): Partial<InfoApp> => globalThis.__iron_info?.app ?? {};
 const sys = (): Partial<InfoSystem> => globalThis.__iron_info?.system ?? {};
 
@@ -91,6 +93,18 @@ export const Application = {
   },
   get isMobilePlatform(): boolean {
     return sys().deviceType === "Handheld";
+  },
+  /**
+   * Frames per second to aim for (-1: as fast as presenting allows). Like Unity's, it
+   * only counts with vsync off (`QualitySettings.vSyncCount = 0`): vsync paces frames
+   * to the display. Not saved: games keep it in `PlayerPrefs` if players choose it.
+   */
+  get targetFrameRate(): number {
+    return targetFrameRate;
+  },
+  set targetFrameRate(fps: number) {
+    targetFrameRate = fps > 0 ? Math.round(fps) : -1;
+    __iron_op("app.targetFrameRate", targetFrameRate);
   },
   /** Closes the game after this frame. */
   quit(): void {
