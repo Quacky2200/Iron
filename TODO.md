@@ -584,6 +584,13 @@ and `@font-face`.
    - [ ] **5h** `user-select: none | auto | text | all` and selecting static text (drag, double-click
      word, triple-click line, Ctrl+C) on text elements, with a `::selection` colour, sharing Parley's
      selection geometry and the clipboard with the text fields (the M3c "selecting static text" item)
+   - [ ] **5i** `cursor` and `pointer-events` gaps (both exist since M3c: `pointerEvents: auto | none`,
+     inherited, children can opt back in; `cursor` keywords → OS cursors). To add: custom cursor
+     images `cursor: url(cursor.png) 4 4, pointer` (hotspot, fallback list, `.cur`/`.png`, scaled for
+     the window's DPI; winit `CustomCursor`), cursors per text field state (`text` over editable,
+     `not-allowed` when disabled via the UA stylesheet), and checking every keyword maps on each
+     platform. SVG's extra `pointer-events` values (`visiblePainted`, `fill`, `stroke`, `bounding-box`,
+     ...) come with 5.1
    - [ ] **5.1** SVG: an `svg` element (React `<Svg>` and children) with the core shapes (`rect`,
      `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `g`, `text` basics), `viewBox` /
      `preserveAspectRatio`, `use`/`defs`, gradients (`linearGradient`, `radialGradient`), `clipPath`
