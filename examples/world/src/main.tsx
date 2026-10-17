@@ -2,8 +2,12 @@
 // planes; a ring of panels spins as one object (children follow their parent). An
 // orthographic camera draws a top-down minimap in the corner (camera depth and rect),
 // and screen UI is drawn over the world. A menu stands in the world on a WorldPanel:
-// React UI on a plane, with hover and clicks through the camera.
+// React UI on a plane, with hover and clicks through the camera. Falling primitives thud
+// in 3D (an AudioSource each, heard from the camera's AudioListener).
 import {
+  AudioListener,
+  AudioSource,
+  type Collision,
   Camera,
   CameraOrbit,
   Color,
@@ -36,10 +40,19 @@ class Spin extends Component {
   }
 }
 
+/** Thuds from its object when it lands, louder for harder hits. */
+class Thud extends Component {
+  onCollisionEnter(c: Collision) {
+    if (c.relativeSpeed < 0.8) return;
+    this.getComponent(AudioSource)?.playOneShot("assets/thud.wav", Math.min(1, c.relativeSpeed / 6));
+  }
+}
+
 class World extends Component {
   override onStart() {
     const cam = new GameObject("Main Camera");
     cam.addComponent(Camera, { fieldOfView: 55, backgroundColor: Color.hex("#0b0e14") });
+    cam.addComponent(AudioListener);
     cam.addComponent(CameraOrbit, { center: new Vector3(0, 0.8, 0), distance: 7.5, pitch: 22, yaw: 20, autoRotate: 10 });
 
     // A minimap: straight down, orthographic, drawn over the main view (higher depth).
@@ -72,6 +85,8 @@ class World extends Component {
         scale: Vector3.one.scale(0.45),
       });
       go.addComponent(Rigidbody, { mass: 1 });
+      go.addComponent(AudioSource, { spatialBlend: 1, maxDistance: 25, pitch: 0.9 + (i % 4) * 0.1 });
+      go.addComponent(Thud);
       go.getComponent(MeshRenderer)!.material = new Material(Color.hex(["#e85d75", "#5dade8", "#7be07b", "#e8c25d"][i % 4]!), Color.black, 0.7);
     }
 

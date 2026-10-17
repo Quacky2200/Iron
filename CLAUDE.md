@@ -135,7 +135,7 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     (math, DateTime/TimeSpan, Time, Debug/Log, Random, input), lifecycle hooks, 3D world pass,
     camera system, `WorldPanel` (React UI on planes). M5.a2 step 1: `Rigidbody`/colliders.
 - **Next (M5.a2, see TODO.md for the exact order):** meshes and lights are done (`MeshRenderer`, `Light`,
-  `createPrimitive`), CharacterController and joints/rope too; next AudioSource, textures/sprites,
+  `createPrimitive`), CharacterController, joints/rope and AudioSource/AudioListener too; next textures/sprites,
   particles, 2D, Cursor/Platform/Application APIs, glTF. API names and units follow Unity/s&box
   (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
   morphing; UI and SVG editors (M5.e).

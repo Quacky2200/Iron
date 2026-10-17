@@ -838,7 +838,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] Docs for meshes and lights (and the Rigidbody components) at the end of M5.a2
     - [ ] Shadows (directional shadow map), textures on meshes (with `Texture` assets), model
       meshes (glTF) usable as mesh colliders
-  - [ ] `AudioSource` (an emitter following its GameObject) and `AudioListener` components
+  - [x] `AudioSource` (clip as a `Sound` or path, `playOnAwake`, volume, pitch, pan, mute,
+    loop, `spatialBlend` 0 = flat / above 0 = from an emitter following its GameObject,
+    min / max distance, `outputBus`, `play` / `stop` / `pause` / `unPause` / `isPlaying`,
+    `playOneShot`, `playClipAtPoint`) and `AudioListener` (its object's pose, static
+    `volume`) components, in TS over the existing `audio.*` ops; `examples/world`'s
+    primitives thud in 3D — `M5-AUD-01`, `M5-AUD-02`
+  - [ ] Audio follow-ups: partial `spatialBlend` (kira's spatialization strength), Doppler,
+    a source's playback `time`, `onDisable` pausing sources
   - [ ] Particles: a `ParticleSystem` component (emission rate and bursts, lifetime, velocity,
     gravity, size and colour over life, GPU instanced quads)
   - [ ] Textures and sprites: `Texture` assets (load from the game folder, size, filtering,

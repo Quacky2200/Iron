@@ -19,6 +19,7 @@ export {
   type PlayOptions,
   Sound,
 } from "./audio.ts";
+export { AudioListener, AudioSource } from "./audio-components.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export {
   Bounds,

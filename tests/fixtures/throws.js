@@ -18,127 +18,6 @@ ${err.stack}` : ""}`);
       }
     }
   };
-  // ../../js/engine/src/clock.ts
-  var time = 0;
-  var unscaledTime = 0;
-  var deltaTime = 0;
-  var unscaledDeltaTime = 0;
-  var frameCount = 0;
-  var timeScale = 1;
-  var startedAt = Date.now();
-  var tickListeners = [];
-  function onTick(fn) {
-    tickListeners.push(fn);
-  }
-  globalThis.__iron_tick = (dt) => {
-    unscaledDeltaTime = dt;
-    deltaTime = dt * timeScale;
-    unscaledTime += dt;
-    time += deltaTime;
-    frameCount++;
-    for (const fn of tickListeners)
-      fn();
-    return deltaTime;
-  };
-  var pending = [];
-  onTick(() => {
-    const now = pending;
-    pending = [];
-    for (const fn of now)
-      fn();
-  });
-
-  // ../../js/engine/src/input.ts
-  var keys = new Set;
-  var pressedPending = new Set;
-  var releasedPending = new Set;
-  var pressedThisTick = new Set;
-  var releasedThisTick = new Set;
-  onTick(() => {
-    pressedThisTick = pressedPending;
-    releasedThisTick = releasedPending;
-    pressedPending = new Set;
-    releasedPending = new Set;
-  });
-  var pads = new Map;
-  var listeners = {};
-  function emit(type, event) {
-    for (const fn of listeners[type] ?? []) {
-      try {
-        fn(event);
-      } catch (e) {
-        const err = e instanceof Error ? e : new Error(String(e));
-        console.error(`[input] error in ${type} listener: ${err.message}${err.stack ? `
-${err.stack}` : ""}`);
-      }
-    }
-  }
-  function pad(id, name = "") {
-    let p = pads.get(id);
-    if (!p) {
-      p = { id, name, connected: true, buttons: {}, axes: {} };
-      pads.set(id, p);
-    }
-    return p;
-  }
-  globalThis.__iron_input = (type, ...args) => {
-    switch (type) {
-      case "keydown": {
-        const [code, key, repeat] = args;
-        if (!repeat && !keys.has(code))
-          pressedPending.add(code);
-        keys.add(code);
-        emit("keydown", { code, key, repeat: !!repeat });
-        break;
-      }
-      case "keyup": {
-        const [code, key] = args;
-        if (keys.has(code))
-          releasedPending.add(code);
-        keys.delete(code);
-        emit("keyup", { code, key, repeat: false });
-        break;
-      }
-      case "blur":
-        keys.clear();
-        for (const p of pads.values())
-          for (const b of Object.keys(p.buttons))
-            p.buttons[b] = 0;
-        break;
-      case "gamepadconnected": {
-        const [id, name] = args;
-        const p = pad(id, name);
-        p.connected = true;
-        emit("gamepadconnected", { gamepad: p });
-        break;
-      }
-      case "gamepaddisconnected": {
-        const p = pad(args[0]);
-        p.connected = false;
-        emit("gamepaddisconnected", { gamepad: p });
-        break;
-      }
-      case "gamepadbutton": {
-        const [id, button, value] = args;
-        const p = pad(id);
-        const was = (p.buttons[button] ?? 0) > 0.5;
-        p.buttons[button] = value;
-        const now = value > 0.5;
-        if (now && !was)
-          emit("gamepadbuttondown", { gamepad: p, button });
-        if (!now && was)
-          emit("gamepadbuttonup", { gamepad: p, button });
-        break;
-      }
-      case "gamepadaxis": {
-        const [id, axis, value] = args;
-        const p = pad(id);
-        p.axes[axis] = value;
-        emit("gamepadaxis", { gamepad: p, axis, value });
-        break;
-      }
-    }
-  };
   // ../../js/engine/src/math.ts
   var DEG = Math.PI / 180;
   var Mathf = {
@@ -1067,9 +946,491 @@ ${err.stack}` : ""}`);
       return [this.r, this.g, this.b, this.a];
     }
   }
+
+  // ../../js/engine/src/scene.ts
+  class Component {
+    id;
+    gameObject;
+    get transform() {
+      return this.gameObject.transform;
+    }
+    getComponent(cls) {
+      return this.gameObject.getComponent(cls);
+    }
+    destroy() {
+      this.gameObject.removeComponent(this);
+    }
+  }
+  var classes = new Map;
+  var names = new Map;
+  var instances = new Map;
+  var objects = new Map;
+  var roots = [];
+  var nextObject = 1;
+  var nextComponent = 1 << 24;
+  function register(components) {
+    for (const [name, cls] of Object.entries(components)) {
+      classes.set(name, cls);
+      names.set(cls, name);
+    }
+  }
+  function nameOf(cls) {
+    let name = names.get(cls);
+    if (!name) {
+      name = cls.name;
+      if (!name)
+        throw new Error("component classes need a name; register them with register({ ... })");
+      names.set(cls, name);
+    }
+    return name;
+  }
+  function instantiate(cls, id, object) {
+    const instance = new cls;
+    Object.assign(instance, { id, gameObject: object });
+    instances.set(id, instance);
+    object.components.push(instance);
+    return instance;
+  }
+  var vec = (v) => [v.x, v.y, v.z];
+  var quat = (q) => [q.x, q.y, q.z, q.w];
+
+  class Transform {
+    gameObject;
+    _position = Vector3.zero;
+    _rotation = Quaternion.identity;
+    _scale = Vector3.one;
+    constructor(gameObject) {
+      this.gameObject = gameObject;
+    }
+    send() {
+      __iron_op("scene.local", this.gameObject.id, vec(this._position), quat(this._rotation), vec(this._scale));
+    }
+    _set(position, rotation, scale) {
+      this._position = position;
+      this._rotation = rotation;
+      this._scale = scale;
+    }
+    get localPosition() {
+      return this._position;
+    }
+    set localPosition(v) {
+      this._position = Vector3.from(v);
+      this.send();
+    }
+    get localRotation() {
+      return this._rotation;
+    }
+    set localRotation(q) {
+      this._rotation = Quaternion.from(q).normalized;
+      this.send();
+    }
+    get localScale() {
+      return this._scale;
+    }
+    set localScale(v) {
+      this._scale = Vector3.from(v);
+      this.send();
+    }
+    get localEulerAngles() {
+      return this._rotation.eulerAngles;
+    }
+    set localEulerAngles(v) {
+      this.localRotation = Quaternion.euler(v);
+    }
+    parentWorld() {
+      const p = this.gameObject.parent?.transform;
+      return p ? { position: p.position, rotation: p.rotation, scale: p.lossyScale } : { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one };
+    }
+    get position() {
+      const p = this.parentWorld();
+      return p.position.add(p.rotation.rotate(p.scale.mul(this._position)));
+    }
+    set position(v) {
+      const p = this.parentWorld();
+      this._position = p.rotation.inverse().rotate(Vector3.from(v).sub(p.position)).div(p.scale);
+      this.send();
+    }
+    get rotation() {
+      return this.parentWorld().rotation.mul(this._rotation);
+    }
+    set rotation(q) {
+      this._rotation = this.parentWorld().rotation.inverse().mul(q).normalized;
+      this.send();
+    }
+    get eulerAngles() {
+      return this.rotation.eulerAngles;
+    }
+    set eulerAngles(v) {
+      this.rotation = Quaternion.euler(v);
+    }
+    get lossyScale() {
+      return this.parentWorld().scale.mul(this._scale);
+    }
+    get forward() {
+      return this.rotation.rotate(Vector3.forward);
+    }
+    get right() {
+      return this.rotation.rotate(Vector3.right);
+    }
+    get up() {
+      return this.rotation.rotate(Vector3.up);
+    }
+    translate(delta, space = "world") {
+      const d = space === "self" ? this.rotation.rotate(delta) : Vector3.from(delta);
+      this.position = this.position.add(d);
+    }
+    rotate(euler, space = "self") {
+      const q = Quaternion.euler(euler);
+      this.rotation = space === "self" ? this.rotation.mul(q) : q.mul(this.rotation);
+    }
+    lookAt(target, up = Vector3.up) {
+      this.rotation = Quaternion.lookRotation(Vector3.from(target).sub(this.position), up);
+    }
+    transformPoint(p) {
+      return this.position.add(this.rotation.rotate(this.lossyScale.mul(p)));
+    }
+    inverseTransformPoint(p) {
+      return this.rotation.inverse().rotate(Vector3.from(p).sub(this.position)).div(this.lossyScale);
+    }
+    transformDirection(d) {
+      return this.rotation.rotate(d);
+    }
+    get parent() {
+      return this.gameObject.parent?.transform ?? null;
+    }
+  }
+
+  class GameObject {
+    id;
+    transform;
+    components = [];
+    children = [];
+    _name;
+    _parent = null;
+    _enabled = true;
+    _destroyed = false;
+    constructor(name = "GameObject", options = {}) {
+      this.id = nextObject++;
+      this._name = name;
+      this.transform = new Transform(this);
+      this.transform._set(Vector3.from(options.position ?? Vector3.zero), Quaternion.from(options.rotation ?? Quaternion.identity).normalized, Vector3.from(options.scale ?? Vector3.one));
+      objects.set(this.id, this);
+      const parent = options.parent ?? null;
+      this._parent = parent;
+      (parent ? parent.children : roots).push(this);
+      const t = this.transform;
+      __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
+    }
+    static _adopt(id, name) {
+      const go = Object.create(GameObject.prototype);
+      Object.assign(go, {
+        id,
+        components: [],
+        children: [],
+        _name: name,
+        _parent: null,
+        _enabled: true,
+        _destroyed: false
+      });
+      Object.assign(go, { transform: new Transform(go) });
+      objects.set(id, go);
+      roots.push(go);
+      return go;
+    }
+    get name() {
+      return this._name;
+    }
+    set name(name) {
+      this._name = name;
+      __iron_op("scene.name", this.id, name);
+    }
+    get parent() {
+      return this._parent;
+    }
+    setParent(parent, keepWorld = true) {
+      for (let p = parent;p; p = p._parent) {
+        if (p === this)
+          throw new Error(`can't parent ${this._name} under itself`);
+      }
+      const t = this.transform;
+      const position = t.position;
+      const rotation = t.rotation;
+      const siblings = this._parent ? this._parent.children : roots;
+      siblings.splice(siblings.indexOf(this), 1);
+      this._parent = parent;
+      (parent ? parent.children : roots).push(this);
+      __iron_op("scene.parent", this.id, parent?.id ?? null);
+      if (keepWorld) {
+        t.position = position;
+        t.rotation = rotation;
+      }
+    }
+    get enabled() {
+      return this._enabled;
+    }
+    set enabled(on) {
+      this._enabled = on;
+      __iron_op("scene.enabled", this.id, on);
+    }
+    get activeInHierarchy() {
+      for (let o = this;o; o = o._parent)
+        if (!o._enabled)
+          return false;
+      return true;
+    }
+    get destroyed() {
+      return this._destroyed;
+    }
+    addComponent(cls, props) {
+      const name = nameOf(cls);
+      const id = nextComponent++;
+      const instance = instantiate(cls, id, this);
+      if (props)
+        Object.assign(instance, props);
+      __iron_op("scene.addComponent", this.id, id, name);
+      instance.onAwake?.();
+      return instance;
+    }
+    getComponent(cls) {
+      return this.components.find((c) => c instanceof cls);
+    }
+    getComponents(cls) {
+      return this.components.filter((c) => c instanceof cls);
+    }
+    getComponentInChildren(cls) {
+      return this.getComponent(cls) ?? this.children.map((c) => c.getComponentInChildren(cls)).find((c) => c);
+    }
+    removeComponent(component) {
+      const i = this.components.indexOf(component);
+      if (i < 0)
+        return;
+      this.components.splice(i, 1);
+      __iron_op("scene.removeComponent", component.id);
+    }
+    destroy() {
+      if (this._destroyed)
+        return;
+      __iron_op("scene.destroy", this.id);
+      forget(this);
+    }
+    findChild(name) {
+      return this.children.find((c) => c._name === name);
+    }
+    static find(name) {
+      const walk = (list) => {
+        for (const o of list) {
+          if (o._name === name)
+            return o;
+          const found = walk(o.children);
+          if (found)
+            return found;
+        }
+        return;
+      };
+      return walk(roots);
+    }
+    static get roots() {
+      return roots;
+    }
+    static byId(id) {
+      return objects.get(id);
+    }
+    static createPrimitive(type, options) {
+      if (!primitiveFactory)
+        throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+      return primitiveFactory(type, options);
+    }
+    static findObjectOfType(cls) {
+      for (const c of instances.values())
+        if (c instanceof cls)
+          return c;
+      return;
+    }
+  }
+  var primitiveFactory = null;
+  function setPrimitiveFactory(f) {
+    primitiveFactory = f;
+  }
+  function forget(go) {
+    const siblings = go.parent ? go.parent.children : roots;
+    const i = siblings.indexOf(go);
+    if (i >= 0)
+      siblings.splice(i, 1);
+    const stack = [go];
+    while (stack.length) {
+      const o = stack.pop();
+      o._destroyed = true;
+      objects.delete(o.id);
+      stack.push(...o.children);
+    }
+  }
+  globalThis.__iron_registered = () => [...classes.keys()];
+  globalThis.__iron_create = (className, id, objectId, objectName) => {
+    const cls = classes.get(className);
+    if (!cls)
+      throw new Error(`unknown component class '${className}'`);
+    const object = objectId === undefined || objectId === null ? GameObject._adopt(-id - 1, className) : objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className);
+    instantiate(cls, id, object).onAwake?.();
+  };
+  var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
+  globalThis.__iron_hooks = (id) => {
+    const instance = instances.get(id);
+    return instance ? HOOKS.filter((h) => typeof instance[h] === "function") : [...HOOKS];
+  };
+  globalThis.__iron_dispatch = (id, method, ...args) => {
+    const instance = instances.get(id);
+    if (!instance)
+      throw new Error(`no component with id ${id}`);
+    const fn = instance[method];
+    if (typeof fn === "function")
+      return fn.apply(instance, args);
+    return;
+  };
+  globalThis.__iron_destroy = (id) => {
+    const instance = instances.get(id);
+    instances.delete(id);
+    if (!instance)
+      return;
+    const list = instance.gameObject.components;
+    const i = list.indexOf(instance);
+    if (i >= 0)
+      list.splice(i, 1);
+  };
+  globalThis.__iron_scene = (moved) => {
+    for (let i = 0;i + 10 < moved.length; i += 11) {
+      const go = objects.get(moved[i]);
+      if (!go)
+        continue;
+      go.transform._set(new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]), new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]), new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]));
+    }
+  };
+
+  // ../../js/engine/src/audio-components.ts
+  var clips = new Map;
+  // ../../js/engine/src/clock.ts
+  var time = 0;
+  var unscaledTime = 0;
+  var deltaTime = 0;
+  var unscaledDeltaTime = 0;
+  var frameCount = 0;
+  var timeScale = 1;
+  var startedAt = Date.now();
+  var tickListeners = [];
+  function onTick(fn) {
+    tickListeners.push(fn);
+  }
+  globalThis.__iron_tick = (dt) => {
+    unscaledDeltaTime = dt;
+    deltaTime = dt * timeScale;
+    unscaledTime += dt;
+    time += deltaTime;
+    frameCount++;
+    for (const fn of tickListeners)
+      fn();
+    return deltaTime;
+  };
+  var pending = [];
+  onTick(() => {
+    const now = pending;
+    pending = [];
+    for (const fn of now)
+      fn();
+  });
+
+  // ../../js/engine/src/input.ts
+  var keys = new Set;
+  var pressedPending = new Set;
+  var releasedPending = new Set;
+  var pressedThisTick = new Set;
+  var releasedThisTick = new Set;
+  onTick(() => {
+    pressedThisTick = pressedPending;
+    releasedThisTick = releasedPending;
+    pressedPending = new Set;
+    releasedPending = new Set;
+  });
+  var pads = new Map;
+  var listeners = {};
+  function emit(type, event) {
+    for (const fn of listeners[type] ?? []) {
+      try {
+        fn(event);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[input] error in ${type} listener: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+      }
+    }
+  }
+  function pad(id, name = "") {
+    let p = pads.get(id);
+    if (!p) {
+      p = { id, name, connected: true, buttons: {}, axes: {} };
+      pads.set(id, p);
+    }
+    return p;
+  }
+  globalThis.__iron_input = (type, ...args) => {
+    switch (type) {
+      case "keydown": {
+        const [code, key, repeat] = args;
+        if (!repeat && !keys.has(code))
+          pressedPending.add(code);
+        keys.add(code);
+        emit("keydown", { code, key, repeat: !!repeat });
+        break;
+      }
+      case "keyup": {
+        const [code, key] = args;
+        if (keys.has(code))
+          releasedPending.add(code);
+        keys.delete(code);
+        emit("keyup", { code, key, repeat: false });
+        break;
+      }
+      case "blur":
+        keys.clear();
+        for (const p of pads.values())
+          for (const b of Object.keys(p.buttons))
+            p.buttons[b] = 0;
+        break;
+      case "gamepadconnected": {
+        const [id, name] = args;
+        const p = pad(id, name);
+        p.connected = true;
+        emit("gamepadconnected", { gamepad: p });
+        break;
+      }
+      case "gamepaddisconnected": {
+        const p = pad(args[0]);
+        p.connected = false;
+        emit("gamepaddisconnected", { gamepad: p });
+        break;
+      }
+      case "gamepadbutton": {
+        const [id, button, value] = args;
+        const p = pad(id);
+        const was = (p.buttons[button] ?? 0) > 0.5;
+        p.buttons[button] = value;
+        const now = value > 0.5;
+        if (now && !was)
+          emit("gamepadbuttondown", { gamepad: p, button });
+        if (!now && was)
+          emit("gamepadbuttonup", { gamepad: p, button });
+        break;
+      }
+      case "gamepadaxis": {
+        const [id, axis, value] = args;
+        const p = pad(id);
+        p.axes[axis] = value;
+        emit("gamepadaxis", { gamepad: p, axis, value });
+        break;
+      }
+    }
+  };
   // ../../js/engine/src/physics.ts
-  var vec = (v) => v ? [v.x, v.y, v.z] : null;
-  var quat = (q) => q ? [q.x, q.y, q.z, q.w] : null;
+  var vec2 = (v) => v ? [v.x, v.y, v.z] : null;
+  var quat2 = (q) => q ? [q.x, q.y, q.z, q.w] : null;
   var nextBody = 1;
   var nextCollider = 1;
   var nextQuery = 1;
@@ -1104,7 +1465,7 @@ ${err.stack}` : ""}`);
         indices = s.mesh.indices;
       }
       colliders.set(this.id, this);
-      __iron_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec(options.position), quat(options.rotation), [
+      __iron_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec2(options.position), quat2(options.rotation), [
         options.friction ?? 0.5,
         options.restitution ?? 0,
         options.density ?? 1,
@@ -1124,7 +1485,7 @@ ${err.stack}` : ""}`);
       __iron_op("physics.colliderSet", this.id, "sensor", sensor);
     }
     setOffset(position, rotation) {
-      __iron_op("physics.colliderSet", this.id, "offset", vec(position), quat(rotation));
+      __iron_op("physics.colliderSet", this.id, "offset", vec2(position), quat2(rotation));
     }
     remove() {
       if (!colliders.delete(this.id))
@@ -1149,7 +1510,7 @@ ${err.stack}` : ""}`);
       this.rotation = Quaternion.from(options.rotation ?? Quaternion.identity);
       this.velocity = Vector3.from(options.velocity ?? Vector3.zero);
       bodies.set(this.id, this);
-      __iron_op("physics.body", this.id, this.kind, vec(this.position), quat(this.rotation), vec(this.velocity), [
+      __iron_op("physics.body", this.id, this.kind, vec2(this.position), quat2(this.rotation), vec2(this.velocity), [
         options.gravityScale ?? 1,
         options.linearDamping ?? 0,
         options.angularDamping ?? 0,
@@ -1162,39 +1523,39 @@ ${err.stack}` : ""}`);
     }
     setPosition(p) {
       this.position = Vector3.from(p);
-      __iron_op("physics.set", this.id, "position", vec(p));
+      __iron_op("physics.set", this.id, "position", vec2(p));
     }
     setRotation(q) {
       this.rotation = Quaternion.from(q);
-      __iron_op("physics.set", this.id, "rotation", quat(q));
+      __iron_op("physics.set", this.id, "rotation", quat2(q));
     }
     setVelocity(v) {
       this.velocity = Vector3.from(v);
-      __iron_op("physics.set", this.id, "velocity", vec(v));
+      __iron_op("physics.set", this.id, "velocity", vec2(v));
     }
     setAngularVelocity(v) {
-      __iron_op("physics.set", this.id, "angularVelocity", vec(v));
+      __iron_op("physics.set", this.id, "angularVelocity", vec2(v));
     }
     moveTo(p) {
-      __iron_op("physics.set", this.id, "target", vec(p));
+      __iron_op("physics.set", this.id, "target", vec2(p));
     }
     applyImpulse(impulse) {
-      __iron_op("physics.force", this.id, "impulse", vec(impulse));
+      __iron_op("physics.force", this.id, "impulse", vec2(impulse));
     }
     applyTorqueImpulse(impulse) {
-      __iron_op("physics.force", this.id, "torqueImpulse", vec(impulse));
+      __iron_op("physics.force", this.id, "torqueImpulse", vec2(impulse));
     }
     addForce(force) {
-      __iron_op("physics.force", this.id, "force", vec(force));
+      __iron_op("physics.force", this.id, "force", vec2(force));
     }
     addTorque(torque) {
-      __iron_op("physics.force", this.id, "torque", vec(torque));
+      __iron_op("physics.force", this.id, "torque", vec2(torque));
     }
     clearForces() {
       __iron_op("physics.clearForces", this.id);
     }
     applyImpulseAtPoint(impulse, point) {
-      __iron_op("physics.force", this.id, "impulseAt", vec(impulse), vec(point));
+      __iron_op("physics.force", this.id, "impulseAt", vec2(impulse), vec2(point));
     }
     setKind(kind) {
       this.kind = kind;
@@ -1232,7 +1593,7 @@ ${err.stack}` : ""}`);
       __iron_op("physics.character", this.id, options.maxSlope ?? 45, options.snapToGround ?? null, options.stepHeight ?? null);
     }
     move(delta) {
-      __iron_op("physics.move", this.id, vec(delta));
+      __iron_op("physics.move", this.id, vec2(delta));
     }
     remove() {
       if (!bodies.delete(this.id))
@@ -1251,7 +1612,7 @@ ${err.stack}` : ""}`);
     constructor(kind, a, b, anchorA, anchorB, params = []) {
       this.kind = kind;
       this.id = nextJoint++;
-      __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec(anchorA), vec(anchorB), params);
+      __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec2(anchorA), vec2(anchorB), params);
     }
     remove() {
       __iron_op("physics.removeJoint", this.id);
@@ -1268,7 +1629,7 @@ ${err.stack}` : ""}`);
       return new PhysicsCollider(null, options);
     },
     setGravity(g) {
-      __iron_op("physics.gravity", vec(g));
+      __iron_op("physics.gravity", vec2(g));
     },
     raycast(origin, direction, maxDistance = 1000) {
       const id = nextQuery++;
@@ -1276,7 +1637,7 @@ ${err.stack}` : ""}`);
       const dir = { x: direction.x / len, y: direction.y / len, z: direction.z / len };
       return new Promise((resolve) => {
         queries.set(id, { origin: { ...origin }, dir, resolve });
-        __iron_op("physics.raycast", id, vec(origin), vec(dir), maxDistance);
+        __iron_op("physics.raycast", id, vec2(origin), vec2(dir), maxDistance);
       });
     },
     body(id) {
@@ -1572,364 +1933,6 @@ ${err.stack}` : ""}`);
     }
   }
   var shared = new Rng;
-  // ../../js/engine/src/scene.ts
-  class Component {
-    id;
-    gameObject;
-    get transform() {
-      return this.gameObject.transform;
-    }
-    getComponent(cls) {
-      return this.gameObject.getComponent(cls);
-    }
-    destroy() {
-      this.gameObject.removeComponent(this);
-    }
-  }
-  var classes = new Map;
-  var names = new Map;
-  var instances = new Map;
-  var objects = new Map;
-  var roots = [];
-  var nextObject = 1;
-  var nextComponent = 1 << 24;
-  function register(components) {
-    for (const [name, cls] of Object.entries(components)) {
-      classes.set(name, cls);
-      names.set(cls, name);
-    }
-  }
-  function nameOf(cls) {
-    let name = names.get(cls);
-    if (!name) {
-      name = cls.name;
-      if (!name)
-        throw new Error("component classes need a name; register them with register({ ... })");
-      names.set(cls, name);
-    }
-    return name;
-  }
-  function instantiate(cls, id, object) {
-    const instance = new cls;
-    Object.assign(instance, { id, gameObject: object });
-    instances.set(id, instance);
-    object.components.push(instance);
-    return instance;
-  }
-  var vec2 = (v) => [v.x, v.y, v.z];
-  var quat2 = (q) => [q.x, q.y, q.z, q.w];
-
-  class Transform {
-    gameObject;
-    _position = Vector3.zero;
-    _rotation = Quaternion.identity;
-    _scale = Vector3.one;
-    constructor(gameObject) {
-      this.gameObject = gameObject;
-    }
-    send() {
-      __iron_op("scene.local", this.gameObject.id, vec2(this._position), quat2(this._rotation), vec2(this._scale));
-    }
-    _set(position, rotation, scale) {
-      this._position = position;
-      this._rotation = rotation;
-      this._scale = scale;
-    }
-    get localPosition() {
-      return this._position;
-    }
-    set localPosition(v) {
-      this._position = Vector3.from(v);
-      this.send();
-    }
-    get localRotation() {
-      return this._rotation;
-    }
-    set localRotation(q) {
-      this._rotation = Quaternion.from(q).normalized;
-      this.send();
-    }
-    get localScale() {
-      return this._scale;
-    }
-    set localScale(v) {
-      this._scale = Vector3.from(v);
-      this.send();
-    }
-    get localEulerAngles() {
-      return this._rotation.eulerAngles;
-    }
-    set localEulerAngles(v) {
-      this.localRotation = Quaternion.euler(v);
-    }
-    parentWorld() {
-      const p = this.gameObject.parent?.transform;
-      return p ? { position: p.position, rotation: p.rotation, scale: p.lossyScale } : { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one };
-    }
-    get position() {
-      const p = this.parentWorld();
-      return p.position.add(p.rotation.rotate(p.scale.mul(this._position)));
-    }
-    set position(v) {
-      const p = this.parentWorld();
-      this._position = p.rotation.inverse().rotate(Vector3.from(v).sub(p.position)).div(p.scale);
-      this.send();
-    }
-    get rotation() {
-      return this.parentWorld().rotation.mul(this._rotation);
-    }
-    set rotation(q) {
-      this._rotation = this.parentWorld().rotation.inverse().mul(q).normalized;
-      this.send();
-    }
-    get eulerAngles() {
-      return this.rotation.eulerAngles;
-    }
-    set eulerAngles(v) {
-      this.rotation = Quaternion.euler(v);
-    }
-    get lossyScale() {
-      return this.parentWorld().scale.mul(this._scale);
-    }
-    get forward() {
-      return this.rotation.rotate(Vector3.forward);
-    }
-    get right() {
-      return this.rotation.rotate(Vector3.right);
-    }
-    get up() {
-      return this.rotation.rotate(Vector3.up);
-    }
-    translate(delta, space = "world") {
-      const d = space === "self" ? this.rotation.rotate(delta) : Vector3.from(delta);
-      this.position = this.position.add(d);
-    }
-    rotate(euler, space = "self") {
-      const q = Quaternion.euler(euler);
-      this.rotation = space === "self" ? this.rotation.mul(q) : q.mul(this.rotation);
-    }
-    lookAt(target, up = Vector3.up) {
-      this.rotation = Quaternion.lookRotation(Vector3.from(target).sub(this.position), up);
-    }
-    transformPoint(p) {
-      return this.position.add(this.rotation.rotate(this.lossyScale.mul(p)));
-    }
-    inverseTransformPoint(p) {
-      return this.rotation.inverse().rotate(Vector3.from(p).sub(this.position)).div(this.lossyScale);
-    }
-    transformDirection(d) {
-      return this.rotation.rotate(d);
-    }
-    get parent() {
-      return this.gameObject.parent?.transform ?? null;
-    }
-  }
-
-  class GameObject {
-    id;
-    transform;
-    components = [];
-    children = [];
-    _name;
-    _parent = null;
-    _enabled = true;
-    _destroyed = false;
-    constructor(name = "GameObject", options = {}) {
-      this.id = nextObject++;
-      this._name = name;
-      this.transform = new Transform(this);
-      this.transform._set(Vector3.from(options.position ?? Vector3.zero), Quaternion.from(options.rotation ?? Quaternion.identity).normalized, Vector3.from(options.scale ?? Vector3.one));
-      objects.set(this.id, this);
-      const parent = options.parent ?? null;
-      this._parent = parent;
-      (parent ? parent.children : roots).push(this);
-      const t = this.transform;
-      __iron_op("scene.create", this.id, name, parent?.id ?? null, vec2(t._position), quat2(t._rotation), vec2(t._scale));
-    }
-    static _adopt(id, name) {
-      const go = Object.create(GameObject.prototype);
-      Object.assign(go, {
-        id,
-        components: [],
-        children: [],
-        _name: name,
-        _parent: null,
-        _enabled: true,
-        _destroyed: false
-      });
-      Object.assign(go, { transform: new Transform(go) });
-      objects.set(id, go);
-      roots.push(go);
-      return go;
-    }
-    get name() {
-      return this._name;
-    }
-    set name(name) {
-      this._name = name;
-      __iron_op("scene.name", this.id, name);
-    }
-    get parent() {
-      return this._parent;
-    }
-    setParent(parent, keepWorld = true) {
-      for (let p = parent;p; p = p._parent) {
-        if (p === this)
-          throw new Error(`can't parent ${this._name} under itself`);
-      }
-      const t = this.transform;
-      const position = t.position;
-      const rotation = t.rotation;
-      const siblings = this._parent ? this._parent.children : roots;
-      siblings.splice(siblings.indexOf(this), 1);
-      this._parent = parent;
-      (parent ? parent.children : roots).push(this);
-      __iron_op("scene.parent", this.id, parent?.id ?? null);
-      if (keepWorld) {
-        t.position = position;
-        t.rotation = rotation;
-      }
-    }
-    get enabled() {
-      return this._enabled;
-    }
-    set enabled(on) {
-      this._enabled = on;
-      __iron_op("scene.enabled", this.id, on);
-    }
-    get activeInHierarchy() {
-      for (let o = this;o; o = o._parent)
-        if (!o._enabled)
-          return false;
-      return true;
-    }
-    get destroyed() {
-      return this._destroyed;
-    }
-    addComponent(cls, props) {
-      const name = nameOf(cls);
-      const id = nextComponent++;
-      const instance = instantiate(cls, id, this);
-      if (props)
-        Object.assign(instance, props);
-      __iron_op("scene.addComponent", this.id, id, name);
-      instance.onAwake?.();
-      return instance;
-    }
-    getComponent(cls) {
-      return this.components.find((c) => c instanceof cls);
-    }
-    getComponents(cls) {
-      return this.components.filter((c) => c instanceof cls);
-    }
-    getComponentInChildren(cls) {
-      return this.getComponent(cls) ?? this.children.map((c) => c.getComponentInChildren(cls)).find((c) => c);
-    }
-    removeComponent(component) {
-      const i = this.components.indexOf(component);
-      if (i < 0)
-        return;
-      this.components.splice(i, 1);
-      __iron_op("scene.removeComponent", component.id);
-    }
-    destroy() {
-      if (this._destroyed)
-        return;
-      __iron_op("scene.destroy", this.id);
-      forget(this);
-    }
-    findChild(name) {
-      return this.children.find((c) => c._name === name);
-    }
-    static find(name) {
-      const walk = (list) => {
-        for (const o of list) {
-          if (o._name === name)
-            return o;
-          const found = walk(o.children);
-          if (found)
-            return found;
-        }
-        return;
-      };
-      return walk(roots);
-    }
-    static get roots() {
-      return roots;
-    }
-    static byId(id) {
-      return objects.get(id);
-    }
-    static createPrimitive(type, options) {
-      if (!primitiveFactory)
-        throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
-      return primitiveFactory(type, options);
-    }
-    static findObjectOfType(cls) {
-      for (const c of instances.values())
-        if (c instanceof cls)
-          return c;
-      return;
-    }
-  }
-  var primitiveFactory = null;
-  function setPrimitiveFactory(f) {
-    primitiveFactory = f;
-  }
-  function forget(go) {
-    const siblings = go.parent ? go.parent.children : roots;
-    const i = siblings.indexOf(go);
-    if (i >= 0)
-      siblings.splice(i, 1);
-    const stack = [go];
-    while (stack.length) {
-      const o = stack.pop();
-      o._destroyed = true;
-      objects.delete(o.id);
-      stack.push(...o.children);
-    }
-  }
-  globalThis.__iron_registered = () => [...classes.keys()];
-  globalThis.__iron_create = (className, id, objectId, objectName) => {
-    const cls = classes.get(className);
-    if (!cls)
-      throw new Error(`unknown component class '${className}'`);
-    const object = objectId === undefined || objectId === null ? GameObject._adopt(-id - 1, className) : objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className);
-    instantiate(cls, id, object).onAwake?.();
-  };
-  var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
-  globalThis.__iron_hooks = (id) => {
-    const instance = instances.get(id);
-    return instance ? HOOKS.filter((h) => typeof instance[h] === "function") : [...HOOKS];
-  };
-  globalThis.__iron_dispatch = (id, method, ...args) => {
-    const instance = instances.get(id);
-    if (!instance)
-      throw new Error(`no component with id ${id}`);
-    const fn = instance[method];
-    if (typeof fn === "function")
-      return fn.apply(instance, args);
-    return;
-  };
-  globalThis.__iron_destroy = (id) => {
-    const instance = instances.get(id);
-    instances.delete(id);
-    if (!instance)
-      return;
-    const list = instance.gameObject.components;
-    const i = list.indexOf(instance);
-    if (i >= 0)
-      list.splice(i, 1);
-  };
-  globalThis.__iron_scene = (moved) => {
-    for (let i = 0;i + 10 < moved.length; i += 11) {
-      const go = objects.get(moved[i]);
-      if (!go)
-        continue;
-      go.transform._set(new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]), new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]), new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]));
-    }
-  };
-
   // ../../js/engine/src/screen.ts
   var width = 1280;
   var height = 720;
