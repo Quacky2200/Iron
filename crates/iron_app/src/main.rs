@@ -14,6 +14,7 @@ pub(crate) mod cook;
 mod cursor;
 mod display;
 mod editor;
+mod file_drop;
 mod game_input;
 // `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
@@ -25,6 +26,7 @@ mod panels;
 pub(crate) mod particles;
 mod physics_sync;
 mod prefs;
+mod project;
 pub(crate) mod reload;
 mod ui_scale;
 pub(crate) mod world_view;
@@ -65,8 +67,9 @@ struct Args {
 
 fn parse_args() -> Result<Args> {
     let mut args = parse_args_from(std::env::args_os().skip(1))?;
-    // The editor runs its own UI unless given another one.
-    if editor::ENABLED && args.game == Path::new(".") {
+    // `iron_editor [project]`: the editor runs its own UI on the project folder.
+    if editor::ENABLED {
+        editor::set_project(&args.game);
         args.game = editor::ui_folder();
     }
     Ok(args)
@@ -307,6 +310,7 @@ fn run() -> Result<()> {
         done: false,
         info,
         editor: editor::EditorHost::default(),
+        file_drag: file_drop::FileDrag::default(),
     };
     let icon = manifest
         .icon
@@ -481,6 +485,8 @@ struct App {
     ime_area: Option<iron_ui::Rect>,
     /// The editor's log feed and `editor.*` ops (refused outside `iron_editor`).
     editor: editor::EditorHost,
+    /// Files dragged onto the window from the system.
+    file_drag: file_drop::FileDrag,
     done: bool,
 }
 
@@ -1073,6 +1079,7 @@ impl App {
                     self.prefs_op(&name["prefs.".len()..], &op.args)
                 }
                 "screen.set" => self.screen_op(&op.args),
+                "dragImage" => self.drag_image_op(&op.args),
                 name if name.starts_with("editor.") => {
                     self.editor
                         .op(&name["editor.".len()..], &op.args, &self.asset_root)
@@ -1720,6 +1727,9 @@ impl PlatformApp for App {
     }
 
     fn input(&mut self, event: InputEvent) {
+        if self.file_drag.event(&event) {
+            return;
+        }
         if let InputEvent::Gamepad { id, event } = &event {
             self.send_game_input(&game_input::script_args(*id, event));
             // The d-pad moves UI focus only once something has it.
@@ -1923,8 +1933,9 @@ impl PlatformApp for App {
 
     fn frame(&mut self) {
         self.tick();
-        // New log lines for the editor's console.
+        // New log lines and file results for the editor.
         self.editor.pump(&mut self.scripts);
+        self.pump_file_drag();
         // Last-moment changes before drawing (`onPreRender`).
         if !self.lifecycle.paused() {
             let scene = &self.scene;

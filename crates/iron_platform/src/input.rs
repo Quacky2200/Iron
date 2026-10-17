@@ -54,6 +54,12 @@ pub enum InputEvent {
     /// or visible again.
     Occluded(bool),
     CloseRequested,
+    /// A file from the system is dragged over the window (one event per file).
+    FileHovered(std::path::PathBuf),
+    /// A file from the system was dropped on the window (one event per file).
+    FileDropped(std::path::PathBuf),
+    /// The system drag left the window or was cancelled.
+    FileHoverCancelled,
 }
 
 /// Input method events (Japanese, Chinese, Korean, ... input).
@@ -142,6 +148,9 @@ pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
             },
         }),
         WindowEvent::CursorLeft { .. } => Some(InputEvent::MouseLeave),
+        WindowEvent::HoveredFile(path) => Some(InputEvent::FileHovered(path.clone())),
+        WindowEvent::DroppedFile(path) => Some(InputEvent::FileDropped(path.clone())),
+        WindowEvent::HoveredFileCancelled => Some(InputEvent::FileHoverCancelled),
         // winit's deltas are positive when scrolling up/left; the DOM's are the opposite.
         WindowEvent::MouseWheel { delta, .. } => Some(InputEvent::MouseWheel(match delta {
             MouseScrollDelta::LineDelta(x, y) => WheelDelta::Lines { x: -x, y: -y },

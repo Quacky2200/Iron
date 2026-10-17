@@ -14,6 +14,7 @@ import { ConcurrentRoot } from "react-reconciler/constants";
 import "./events.ts";
 import type {
   IronAnimationEvent,
+  IronDragEvent,
   IronFocusEvent,
   IronInputEvent,
   IronKeyboardEvent,
@@ -27,7 +28,10 @@ import type { IronStyle } from "./style.ts";
 
 export type { IronStyle } from "./style.ts";
 export {
+  type DroppedFile,
   IronAnimationEvent,
+  IronDataTransfer,
+  IronDragEvent,
   IronEvent,
   IronFocusEvent,
   IronInputEvent,
@@ -96,6 +100,26 @@ export interface EventProps {
   /** This element took or lost pointer capture (`ref.setPointerCapture`). */
   onGotPointerCapture?: PointerHandler;
   onLostPointerCapture?: PointerHandler;
+  /**
+   * Drag and drop. On a `draggable` element: `onDragStart` (prevent to cancel; put data
+   * in `dataTransfer`), `onDrag` while it moves, `onDragEnd` after (`dropped`). On the
+   * element under the pointer: `onDragEnter`, `onDragOver` (prevent to accept a drop),
+   * `onDragLeave`, `onDrop`. Files from the system arrive as `dataTransfer.files`.
+   */
+  onDragStart?: (event: IronDragEvent) => void;
+  onDragStartCapture?: (event: IronDragEvent) => void;
+  onDrag?: (event: IronDragEvent) => void;
+  onDragCapture?: (event: IronDragEvent) => void;
+  onDragEnter?: (event: IronDragEvent) => void;
+  onDragEnterCapture?: (event: IronDragEvent) => void;
+  onDragOver?: (event: IronDragEvent) => void;
+  onDragOverCapture?: (event: IronDragEvent) => void;
+  onDragLeave?: (event: IronDragEvent) => void;
+  onDragLeaveCapture?: (event: IronDragEvent) => void;
+  onDrop?: (event: IronDragEvent) => void;
+  onDropCapture?: (event: IronDragEvent) => void;
+  onDragEnd?: (event: IronDragEvent) => void;
+  onDragEndCapture?: (event: IronDragEvent) => void;
 }
 
 /** Attributes that CSS selectors can match. */
@@ -104,6 +128,8 @@ export interface ElementAttrs {
   id?: string;
   disabled?: boolean;
   checked?: boolean;
+  /** A press and move starts dragging the element (`onDragStart`, ...). */
+  draggable?: boolean;
   /**
    * Makes the element focusable: 0 joins the Tab order in tree order, positive values
    * come first (ascending), negative values focus by click or `ref.focus()` only.

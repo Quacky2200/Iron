@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import {
   dispatchUiEvent,
+  type IronDragEvent,
   type IronFocusEvent,
   type IronInputEvent,
   type IronKeyboardEvent,
@@ -455,5 +456,62 @@ describe("@iron/react events", () => {
     dispatchUiEvent("input", path("free"), data(), ["hi!"]);
     expect(seen).toEqual(["hi!"]);
     expect(commits.length).toBe(before);
+  });
+});
+
+describe("drag and drop", () => {
+  // M5-DND-06
+  test("one dataTransfer carries data from dragstart to drop; dragover accepts by preventing", () => {
+    const log: string[] = [];
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    createRoot().render(
+      <box data-name="root">
+        <box
+          data-name="item"
+          draggable
+          onDragStart={(e: IronDragEvent) => {
+            e.dataTransfer.setData("text/plain", "asset.png");
+            e.dataTransfer.setDragImage(e.target, 4, 5);
+            log.push("start");
+          }}
+          onDragEnd={(e: IronDragEvent) => log.push(`end dropped=${e.dropped} effect=${e.dataTransfer.dropEffect}`)}
+        />
+        <box
+          data-name="folder"
+          onDragOver={(e: IronDragEvent) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(e: IronDragEvent) => log.push(`drop ${e.dataTransfer.getData("text/plain")} ${e.dataTransfer.types.join(",")}`)}
+        />
+      </box>,
+    );
+    const item = ids.get("item")!;
+    expect(commits.flat().some((op) => op[0] === SET_ATTRS && op[1] === item && op.includes("draggable"))).toBe(true);
+    expect(dispatchUiEvent("dragstart", path("item", "root"), data())).toBe(false);
+    expect(ops).toEqual([["dragImage", item, 4, 5]]);
+    expect(dispatchUiEvent("dragover", path("folder", "root"), data())).toBe(true);
+    dispatchUiEvent("drop", path("folder", "root"), data());
+    dispatchUiEvent("dragend", path("item", "root"), data(0, 0, 0, 0, 1));
+    expect(log).toEqual(["start", "drop asset.png text/plain", "end dropped=true effect=move"]);
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  });
+
+  // M5-DND-06
+  test("files from the system arrive as dataTransfer.files", () => {
+    const got: string[] = [];
+    createRoot().render(
+      <box
+        data-name="drop"
+        onDragOver={(e: IronDragEvent) => e.preventDefault()}
+        onDrop={(e: IronDragEvent) => got.push(...e.dataTransfer.files.map((f) => `${f.name}@${f.path}`), e.dataTransfer.types.join())}
+      />,
+    );
+    const files = ["C:\\in\\a.png", "/home/me/b.txt"];
+    expect(dispatchUiEvent("dragenter", path("drop"), data(), files)).toBe(false);
+    expect(dispatchUiEvent("dragover", path("drop"), data(), files)).toBe(true);
+    dispatchUiEvent("drop", path("drop"), data(), files);
+    expect(got).toEqual(["a.png@C:\\in\\a.png", "b.txt@/home/me/b.txt", "Files"]);
   });
 });

@@ -69,7 +69,7 @@ Details that are easy to miss:
   props; Rust treats `null` as "reset to default". Style objects are not frozen or hashed, so
   creating a new object with identical values costs a loop but sends nothing.
 - `attrEntries` / `attrDiff` do the same for attribute props. A prop is an attribute if it is
-  `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, a text field prop (`value`, `defaultValue`,
+  `className`, `id`, `disabled`, `checked`, `draggable`, `tabIndex`, `dir`, a text field prop (`value`, `defaultValue`,
   `placeholder`, `readOnly`, `rows`) or starts with `data-` (`isAttr`). Everything
   else (including `on*` handlers) stays in `props` and never crosses to Rust.
 
@@ -112,7 +112,7 @@ global to decide whether to dispatch events at all. Flow and data layout are in
 
 - `HANDLERS` maps an engine event type to prop names. Pointer events also trigger the mouse alias
   (`pointermove` runs `onPointerMove` then `onMouseMove`); `focusin`/`focusout` map to
-  `onFocus`/`onBlur` (which bubble, like React DOM); `input` -> `onChange` then `onInput` (`IronInputEvent`, bubbles); `scroll` -> `onScroll` (`IronScrollEvent`: `scrollLeft/Top/Width/Height`, `clientWidth/Height`, read from `data[10..16]`; does not bubble, continuous priority); `cancel` -> `onCancel`, `close` -> `onClose` (dialogs; `cancel` can be prevented, which stops `close`); `transitionrun/start/end/cancel` -> `onTransitionRun/Start/End/Cancel` (`IronTransitionEvent`: `propertyName`, `elapsedTime` in seconds) and `animationstart/iteration/end/cancel` -> `onAnimationStart/Iteration/End/Cancel` (`IronAnimationEvent`: `animationName`, `elapsedTime`); all bubble. See [animation.md](animation.md).
+  `onFocus`/`onBlur` (which bubble, like React DOM); `input` -> `onChange` then `onInput` (`IronInputEvent`, bubbles); `scroll` -> `onScroll` (`IronScrollEvent`: `scrollLeft/Top/Width/Height`, `clientWidth/Height`, read from `data[10..16]`; does not bubble, continuous priority); `cancel` -> `onCancel`, `close` -> `onClose` (dialogs; `cancel` can be prevented, which stops `close`); `dragstart`/`drag`/`dragenter`/`dragover`/`dragleave`/`drop`/`dragend` -> `onDragStart` ... `onDragEnd` (`IronDragEvent` with `dataTransfer: IronDataTransfer` and `dropped`; see [input-and-events.md](input-and-events.md#drag-and-drop-m5e)); `transitionrun/start/end/cancel` -> `onTransitionRun/Start/End/Cancel` (`IronTransitionEvent`: `propertyName`, `elapsedTime` in seconds) and `animationstart/iteration/end/cancel` -> `onAnimationStart/Iteration/End/Cancel` (`IronAnimationEvent`: `animationName`, `elapsedTime`); all bubble. See [animation.md](animation.md).
 - `dispatchUiEvent(type, path, data, strings)`: `path[0]` is the target and the rest are its ancestors.
   It builds the event object (`IronPointerEvent`, `IronWheelEvent`, `IronKeyboardEvent`,
   `IronFocusEvent`, `IronInputEvent`, `IronScrollEvent`, `IronTransitionEvent` or `IronAnimationEvent`), then runs the **capture phase** from the
@@ -171,10 +171,10 @@ Ops are drained once per frame, so focus changes apply on the next frame, not sy
 
 `BoxProps = ElementAttrs & EventProps & { style, children, key, ref }`:
 
-- `ElementAttrs`: `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir` (`'ltr' | 'rtl'`), `data-*`. Text fields add
+- `ElementAttrs`: `className`, `id`, `disabled`, `checked`, `draggable`, `tabIndex`, `dir` (`'ltr' | 'rtl'`), `data-*`. Text fields add
   `FieldProps` (above).
 - `EventProps`: pointer/mouse (`onClick`, `onDoubleClick`, `onContextMenu`, `onPointerDown/Up/Move/Enter/Leave`,
-  `onMouse*`, `onWheel`), keyboard (`onKeyDown/Up`), focus (`onFocus`, `onBlur`), pointer capture (`onGotPointerCapture`, `onLostPointerCapture`; no `*Capture` variants), `onChange`/`onInput` on fields, each with a
+  `onMouse*`, `onWheel`), keyboard (`onKeyDown/Up`), focus (`onFocus`, `onBlur`), pointer capture (`onGotPointerCapture`, `onLostPointerCapture`; no `*Capture` variants), drag and drop (`onDragStart` ... `onDragEnd`), `onChange`/`onInput` on fields, each with a
   `*Capture` variant except enter/leave.
 - `IronStyle` ([style.ts](../js/react/src/style.ts)) is a type only. The authoritative list of
   properties is `apply_style` in Rust; add a property in both places.

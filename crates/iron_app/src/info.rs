@@ -115,6 +115,7 @@ impl Info {
                 "runInBackground": manifest.run_in_background,
                 "targetFrameRate": -1,
                 "isEditor": super::editor::ENABLED,
+                "project": super::editor::project().map(|p| p.to_string_lossy().into_owned()),
             }),
         );
         map.insert("system".into(), system());

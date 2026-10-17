@@ -419,6 +419,9 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// and animations finish.
     /// (When the exit began: only motion started since then holds it.)
     leaving: HashMap<NodeId, f64>,
+    /// The drag image while something is dragged: the element drawn again on top,
+    /// translucent and moved by (dx, dy) (see [`Self::set_drag_image`]).
+    drag_image: Option<(NodeId, f32, f32)>,
 }
 
 impl UiTree<TaffyLayout> {
@@ -493,6 +496,7 @@ impl<L: LayoutEngine> UiTree<L> {
             starting_index: RuleIndex::default(),
             fresh: HashSet::default(),
             leaving: HashMap::default(),
+            drag_image: None,
             clearing: false,
             media: crate::media::MediaEnv {
                 width,
@@ -3752,7 +3756,64 @@ impl<L: LayoutEngine> UiTree<L> {
             };
             self.collect(id, &text, TransformContext::ROOT, &mut out);
         }
+        self.collect_drag_image(&mut out);
         out
+    }
+
+    /// Draws element `id` again over everything, moved by (dx, dy) and translucent, as
+    /// the image of a drag in progress; `None` stops. The element itself stays where
+    /// it is (like HTML's drag image, but live rather than a snapshot).
+    pub fn set_drag_image(&mut self, image: Option<(NodeId, f32, f32)>) {
+        self.drag_image = image;
+    }
+
+    /// The drag image: element and offset (see [`Self::set_drag_image`]).
+    pub fn drag_image(&self) -> Option<(NodeId, f32, f32)> {
+        self.drag_image
+    }
+
+    fn collect_drag_image(&self, out: &mut Vec<DrawCmd>) {
+        const OPACITY: f32 = 0.6;
+        let Some((id, dx, dy)) = self.drag_image else {
+            return;
+        };
+        let Some(&rect) = self.rects.get(&id) else {
+            return;
+        };
+        let text = match self.parent(id) {
+            Some(p) => self.computed_text(p),
+            None => ComputedText::default(),
+        };
+        let shift = Homography([[1.0, 0.0, dx], [0.0, 1.0, dy], [0.0, 0.0, 1.0]]);
+        let xf = TransformContext {
+            world: shift,
+            pending: Mat4::IDENTITY,
+        };
+        let start = out.len();
+        out.push(DrawCmd::PushTransform(shift));
+        out.push(DrawCmd::PushLayer {
+            bounds: rect,
+            blur: 0.0,
+            opacity: OPACITY,
+            blend: BlendMode::Normal,
+            matrix: None,
+            shadows: Vec::new(),
+        });
+        let content = out.len();
+        self.collect(id, &text, xf, out);
+        if out.len() == content {
+            out.truncate(start);
+            return;
+        }
+        let bounds = out[content..]
+            .iter()
+            .filter_map(DrawCmd::bounds)
+            .fold(rect, Rect::union);
+        if let DrawCmd::PushLayer { bounds: b, .. } = &mut out[start + 1] {
+            *b = bounds;
+        }
+        out.push(DrawCmd::PopLayer);
+        out.push(DrawCmd::PopTransform);
     }
 
     fn collect(

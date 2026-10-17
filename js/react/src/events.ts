@@ -3,6 +3,7 @@
 // its ancestors); this runs React-style capture and bubble phases over the
 // elements' `on*` / `on*Capture` props and reports `preventDefault()` back.
 
+import { op } from "@iron/engine";
 import { ContinuousEventPriority, DiscreteEventPriority } from "react-reconciler/constants";
 
 import {
@@ -48,6 +49,13 @@ const HANDLERS: Record<string, readonly string[]> = {
   animationcancel: ["onAnimationCancel"],
   gotpointercapture: ["onGotPointerCapture"],
   lostpointercapture: ["onLostPointerCapture"],
+  dragstart: ["onDragStart"],
+  drag: ["onDrag"],
+  dragenter: ["onDragEnter"],
+  dragover: ["onDragOver"],
+  dragleave: ["onDragLeave"],
+  drop: ["onDrop"],
+  dragend: ["onDragEnd"],
 };
 
 // `scroll` doesn't bubble in React 17+ either.
@@ -55,7 +63,7 @@ const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave
 
 // Like React DOM: frequent events render with continuous priority (batched into the
 // next tick), the rest synchronously before the call returns.
-const CONTINUOUS: ReadonlySet<string> = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll"]);
+const CONTINUOUS: ReadonlySet<string> = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll", "drag", "dragover"]);
 
 /** Base event, shaped like React's synthetic events. */
 export class IronEvent {
@@ -217,6 +225,92 @@ export class IronAnimationEvent extends IronEvent {
   }
 }
 
+/** A file dragged in from the system. */
+export interface DroppedFile {
+  /** The full path on this machine. */
+  readonly path: string;
+  /** The file (or folder) name. */
+  readonly name: string;
+}
+
+/**
+ * What a drag carries, like the DOM's `DataTransfer`. For a drag of an element it is
+ * one object from `dragstart` to `dragend`, holding what `setData` put in; for files
+ * from the system, `files` lists them (and `types` includes `"Files"`).
+ */
+export class IronDataTransfer {
+  /** Set in `dragover` to say what a drop would do (shown nowhere yet; read in `drop`). */
+  dropEffect: "none" | "copy" | "move" | "link" = "none";
+  effectAllowed: "none" | "copy" | "move" | "link" | "copyMove" | "copyLink" | "linkMove" | "all" | "uninitialized" =
+    "uninitialized";
+  readonly files: readonly DroppedFile[];
+  private readonly data = new Map<string, string>();
+
+  constructor(files: readonly string[] = []) {
+    this.files = files.map((path) => ({ path, name: path.split(/[\\/]/).filter(Boolean).pop() ?? path }));
+  }
+
+  get types(): string[] {
+    const types = [...this.data.keys()];
+    if (this.files.length) types.push("Files");
+    return types;
+  }
+
+  setData(format: string, data: string): void {
+    this.data.set(format.toLowerCase(), String(data));
+  }
+
+  getData(format: string): string {
+    return this.data.get(format.toLowerCase()) ?? "";
+  }
+
+  clearData(format?: string): void {
+    if (format === undefined) this.data.clear();
+    else this.data.delete(format.toLowerCase());
+  }
+
+  /**
+   * Shows `element` under the pointer while dragging, held at (x, y) inside it (the
+   * default is the dragged element where it was pressed); `null` shows none. Unlike
+   * the DOM's snapshot, the element is drawn live, so it must stay rendered.
+   */
+  setDragImage(element: { readonly id: number } | null, x = 0, y = 0): void {
+    op("dragImage", element?.id ?? 0, x, y);
+  }
+}
+
+// The transfer of the element drag in progress (from `dragstart` to `dragend`), and
+// the last one made for system files.
+let elementDrag: IronDataTransfer | null = null;
+let fileDrag: { key: string; transfer: IronDataTransfer } | null = null;
+
+function transferFor(type: string, files: readonly string[]): IronDataTransfer {
+  if (files.length) {
+    const key = files.join("\n");
+    if (fileDrag?.key !== key) fileDrag = { key, transfer: new IronDataTransfer(files) };
+    return fileDrag.transfer;
+  }
+  if (type === "dragstart" || !elementDrag) elementDrag = new IronDataTransfer();
+  return elementDrag;
+}
+
+/**
+ * Drag and drop (`onDragStart`, `onDragOver`, `onDrop`, ...). Prevent `dragover` to
+ * accept a drop there; prevent `dragstart` to cancel the drag. In `onDragEnd`,
+ * `dropped` says whether it was dropped somewhere that accepted it.
+ */
+export class IronDragEvent extends IronPointerEvent {
+  readonly dataTransfer: IronDataTransfer;
+  readonly dropped: boolean;
+
+  constructor(type: string, target: Instance, data: readonly number[], transfer: IronDataTransfer) {
+    super(type, target, true, data);
+    this.dataTransfer = transfer;
+    this.dropped = type === "dragend" && data[4] === 1;
+    if (type === "dragend" && !this.dropped) transfer.dropEffect = "none";
+  }
+}
+
 /** `onScroll`: the element's new scroll position and sizes (logical pixels). */
 export class IronScrollEvent extends IronEvent {
   readonly scrollLeft: number;
@@ -288,6 +382,14 @@ function createEvent(
     case "animationend":
     case "animationcancel":
       return new IronAnimationEvent(type, target, data, strings);
+    case "dragstart":
+    case "drag":
+    case "dragenter":
+    case "dragover":
+    case "dragleave":
+    case "drop":
+    case "dragend":
+      return new IronDragEvent(type, target, data, transferFor(type, strings));
     default:
       return new IronPointerEvent(type, target, bubbles, data);
   }
@@ -297,7 +399,8 @@ function createEvent(
  * Dispatches an engine event. `path` is the target then its ancestors; `data` is
  * `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related,
  * scrollLeft, scrollTop, scrollWidth, scrollHeight, clientWidth, clientHeight]` and
- * `strings` is `[key, code]` for keyboard events and `[value]` for input events.
+ * `strings` is `[key, code]` for keyboard events, `[value]` for input events and the
+ * file paths for drag events.
  * Returns whether a handler called
  * `preventDefault()`.
  */
@@ -312,7 +415,11 @@ export function dispatchUiEvent(
   if (type === "lostpointercapture") pointerCapture.element = null;
   const names = HANDLERS[type];
   const target = instances.get(path[0] ?? -1);
-  if (!names || !target) return false;
+  if (!names || !target) {
+    // An element drag is over even when its element is gone.
+    if (type === "dragend") elementDrag = null;
+    return false;
+  }
   const nodes = path.map((id) => instances.get(id)).filter((n): n is Instance => n !== undefined);
   const bubbles = !NON_BUBBLING.has(type);
   const event = createEvent(type, target, bubbles, data, strings);
@@ -334,6 +441,7 @@ export function dispatchUiEvent(
   });
   event.currentTarget = null;
   event.eventPhase = 0;
+  if (type === "dragend") elementDrag = null;
   // Discrete updates commit now, so the next frame shows them.
   reconciler.flushSyncWork();
   if (event instanceof IronInputEvent) restoreControlledValue(target);

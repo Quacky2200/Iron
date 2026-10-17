@@ -323,6 +323,34 @@ fn set_black_background(window: &Window) {
 #[cfg(not(windows))]
 fn set_black_background(_window: &Window) {}
 
+/// Where the cursor is in the window (physical pixels), asked of the system. During
+/// a drag from another program the window gets no cursor moves, so this is how the
+/// drop point is followed. `None` where the platform can't say.
+#[cfg(windows)]
+pub fn cursor_in_window(window: &Window) -> Option<(f64, f64)> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let handle = window.window_handle().ok()?;
+    let RawWindowHandle::Win32(h) = handle.as_raw() else {
+        return None;
+    };
+    let mut p = POINT { x: 0, y: 0 };
+    // SAFETY: `p` is a valid out pointer and `hwnd` is our live window.
+    unsafe {
+        if GetCursorPos(&mut p) == 0 || ScreenToClient(h.hwnd.get() as _, &mut p) == 0 {
+            return None;
+        }
+    }
+    Some((f64::from(p.x), f64::from(p.y)))
+}
+
+#[cfg(not(windows))]
+pub fn cursor_in_window(_window: &Window) -> Option<(f64, f64)> {
+    None
+}
+
 // M1-PLT-01
 #[cfg(test)]
 mod tests {

@@ -12,6 +12,8 @@ pub struct Attrs {
     pub classes: Vec<String>,
     pub disabled: bool,
     pub checked: bool,
+    /// `draggable`: a press and move on the element starts a drag (`dragstart`).
+    pub draggable: bool,
     /// `tabIndex`: focusable when set; negative values are skipped by Tab.
     pub tab_index: Option<i32>,
     /// `dir`: the element's `direction` unless CSS sets one (the HTML UA-style rule).
@@ -61,6 +63,7 @@ impl Attrs {
             }
             "disabled" => self.disabled = truthy,
             "checked" => self.checked = truthy,
+            "draggable" => self.draggable = truthy,
             "tabIndex" => {
                 self.tab_index = match value {
                     Value::Null => None,

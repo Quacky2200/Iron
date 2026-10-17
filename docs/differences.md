@@ -145,6 +145,17 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | Blurred shadows on elliptical corners | Drawn with circular corners (the mean radius) | Elliptical | The analytic blurred-box shader is circular-only |
 | Background colour with `background-clip: text` | Dropped | Clipped to the text | Only the topmost gradient layer fills text |
 
+## Drag and drop (M5.e)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Drag image | The element drawn live at 0.6 opacity, so it must stay rendered | A snapshot taken at `dragstart` | No offscreen snapshot of a subtree yet |
+| `getData` | Works in every drag event | Only in `drop` (protected mode elsewhere) | The data stays in the scripts, so there's nothing to protect |
+| `dragover` | Sent when the pointer moves | Also every ~350 ms while still | Nothing changes without movement here |
+| `dropEffect` / `effectAllowed` | Kept for scripts; the cursor only shows accepted (`grabbing`, `copy` for files) or not (`no-drop`) | Pick the cursor and filter drops | Enough for the editor; easy to add |
+| `dragenter` | Doesn't need to be prevented | Must be prevented (with `dragover`) to accept | Fewer handlers for the same result |
+| System drags | Files only (paths); on Windows the position comes from `GetCursorPos`, elsewhere the last pointer position | Files, text, URLs, live position | winit 0.30 reports files without positions |
+
 ## Layout (M3d group 2)
 
 | Area | Iron | Browsers / spec | Why |

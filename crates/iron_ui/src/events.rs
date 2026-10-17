@@ -54,6 +54,18 @@ pub enum EventKind {
     /// The element took (`got`) or lost pointer capture (bubble).
     GotPointerCapture,
     LostPointerCapture,
+    /// Drag and drop (all bubble). `dragstart`, `drag` and `dragend` go to the dragged
+    /// element; `dragenter`, `dragover`, `dragleave` and `drop` to the element under
+    /// the pointer. Preventing `dragstart` cancels the drag; preventing `dragover`
+    /// accepts a drop there. `dragend`'s `detail` is 1 when it was dropped. Files
+    /// dragged in from the system come as `files` (no `dragstart` / `drag` / `dragend`).
+    DragStart,
+    Drag,
+    DragEnter,
+    DragOver,
+    DragLeave,
+    Drop,
+    DragEnd,
 }
 
 impl EventKind {
@@ -87,7 +99,28 @@ impl EventKind {
             EventKind::AnimationCancel => "animationcancel",
             EventKind::GotPointerCapture => "gotpointercapture",
             EventKind::LostPointerCapture => "lostpointercapture",
+            EventKind::DragStart => "dragstart",
+            EventKind::Drag => "drag",
+            EventKind::DragEnter => "dragenter",
+            EventKind::DragOver => "dragover",
+            EventKind::DragLeave => "dragleave",
+            EventKind::Drop => "drop",
+            EventKind::DragEnd => "dragend",
         }
+    }
+
+    /// Drag and drop events, which carry the dragged files.
+    pub fn is_drag(self) -> bool {
+        matches!(
+            self,
+            EventKind::DragStart
+                | EventKind::Drag
+                | EventKind::DragEnter
+                | EventKind::DragOver
+                | EventKind::DragLeave
+                | EventKind::Drop
+                | EventKind::DragEnd
+        )
     }
 }
 
@@ -141,6 +174,9 @@ pub struct UiEvent {
     pub scroll: Option<ScrollInfo>,
     /// Input events: the field's new text.
     pub value: Option<String>,
+    /// Drag events: paths of files dragged in from the system (empty for drags of
+    /// elements).
+    pub files: Vec<String>,
 }
 
 /// A scroll container's position and sizes, like the DOM's `scrollTop` and friends.
@@ -191,6 +227,7 @@ impl UiEvent {
             related: None,
             scroll: None,
             value: None,
+            files: Vec::new(),
         }
     }
 
@@ -201,7 +238,8 @@ impl UiEvent {
     /// Arguments for `__iron_ui_event(type, path, data, keys)`: `data` is `[x, y, button,
     /// buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
     /// scrollWidth, scrollHeight, clientWidth, clientHeight]` (`related` 0 for none) and
-    /// `strings` is `[key, code]` for keyboard events and `[value]` for input events.
+    /// `strings` is `[key, code]` for keyboard events, `[value]` for input events and
+    /// the file paths for drag events.
     pub fn script_args(&self) -> Vec<Value> {
         let path = self
             .path
@@ -243,6 +281,11 @@ impl UiEvent {
         }
         if let Some(value) = &self.value {
             args.push(Value::Array(vec![value.as_str().into()]));
+        }
+        if self.kind.is_drag() {
+            args.push(Value::Array(
+                self.files.iter().map(|f| f.as_str().into()).collect(),
+            ));
         }
         args
     }
@@ -304,6 +347,11 @@ impl Pointer {
     /// The pointer position, or `None` when it's outside the window.
     pub fn position(&self) -> Option<(f32, f32)> {
         self.pos
+    }
+
+    /// Held buttons, as the DOM's `buttons` bitmask.
+    pub fn buttons(&self) -> u8 {
+        self.buttons
     }
 
     /// The element capturing the pointer, if any.
@@ -476,6 +524,19 @@ impl Pointer {
             events.push(e);
         }
         events
+    }
+
+    /// Moves the pointer without hit-testing (during a drag, hover stays put).
+    pub fn set_position(&mut self, x: f32, y: f32) {
+        self.pos = Some((x, y));
+    }
+
+    /// The primary press became a drag: no click will follow it, `:active` and any
+    /// capture end (with `lostpointercapture`). Buttons stay held.
+    pub fn cancel_press(&mut self, tree: &mut UiTree) -> Vec<UiEvent> {
+        self.pressed[0] = None;
+        self.set_active(tree, Vec::new());
+        self.release(tree)
     }
 
     /// Forgets held buttons (the window lost focus, so releases may never arrive).

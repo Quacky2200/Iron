@@ -15,6 +15,7 @@ pub use input::{
 };
 pub use platform::{
     CursorRgba, CustomCursorRequest, Platform, PlatformApp, PlatformError, WindowConfig,
+    cursor_in_window,
 };
 pub use winit::dpi;
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, Theme, Window};

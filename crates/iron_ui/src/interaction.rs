@@ -14,6 +14,9 @@ use crate::editor::PointerSelect;
 use crate::events::{EventKind, Modifiers, Pointer, ScrollInfo, UiEvent, update_state};
 use crate::tree::{ROOT, Scrollbar, UiTree};
 
+mod dnd;
+pub use dnd::DRAG_THRESHOLD;
+
 /// Pixels per arrow-key press.
 pub const SCROLL_LINE: f32 = 40.0;
 /// Page Up / Page Down scroll this fraction of the visible height.
@@ -90,6 +93,25 @@ pub enum Input {
     /// `ref.setPointerCapture()` / `releasePointerCapture()` from a script.
     SetPointerCapture(NodeId),
     ReleasePointerCapture(NodeId),
+    /// Files from the system are dragged over the window at (x, y).
+    FileDragEnter {
+        files: Vec<String>,
+        x: f32,
+        y: f32,
+    },
+    /// Files from the system were dropped at the pointer's position.
+    FileDrop {
+        files: Vec<String>,
+    },
+    /// The system drag left the window or was cancelled.
+    FileDragCancel,
+    /// `dataTransfer.setDragImage(element, x, y)` from a script during a drag: the
+    /// element is drawn under the pointer, grabbed at (x, y) in it. `None`: no image.
+    SetDragImage {
+        id: Option<NodeId>,
+        x: f32,
+        y: f32,
+    },
     /// The tree changed: re-hit-test the pointer and drop focus from removed or hidden
     /// elements. Call once per frame after commits.
     Refresh,
@@ -115,6 +137,8 @@ pub struct Interaction {
     /// Open modal dialogs, oldest first, with the element focused before each opened
     /// (focus goes back there when it closes).
     modals: Vec<(NodeId, Option<NodeId>)>,
+    /// Drag and drop: a press that may become a drag, and the drag in progress.
+    dnd: dnd::Dnd,
 }
 
 /// A direction for [`Input::Navigate`].
@@ -149,9 +173,10 @@ impl Interaction {
         self.focused
     }
 
-    /// The CSS cursor for the hovered element.
+    /// The CSS cursor for the hovered element (during a drag: whether it can drop).
     pub fn cursor(&self, tree: &UiTree) -> &'static str {
-        self.pointer.cursor(tree)
+        self.drag_cursor()
+            .unwrap_or_else(|| self.pointer.cursor(tree))
     }
 
     /// The hovered element's cursor with its custom images to try first.
@@ -159,7 +184,10 @@ impl Interaction {
         &self,
         tree: &'t UiTree,
     ) -> (&'static str, &'t [crate::style::CursorImage]) {
-        self.pointer.cursor_with_images(tree)
+        match self.drag_cursor() {
+            Some(cursor) => (cursor, &[]),
+            None => self.pointer.cursor_with_images(tree),
+        }
     }
 
     /// While an editable field has focus, where the IME candidate window should go
@@ -186,6 +214,9 @@ impl Interaction {
         input: Input,
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) {
+        if self.dnd_input(tree, &input, dispatch) {
+            return;
+        }
         match input {
             Input::PointerMove { x, y } => {
                 send(self.pointer.move_to(tree, x, y), dispatch);
@@ -227,6 +258,10 @@ impl Interaction {
                                 tree.clear_text_selection();
                                 tree.editor_pointer(field, event.x, event.y, select);
                                 self.selecting = Some(field);
+                            } else if self.dnd_press(tree, &event) {
+                                // A draggable element: moving starts a drag, not a
+                                // text selection.
+                                tree.clear_text_selection();
                             } else if let Some(&hit) = event.path.first() {
                                 self.selecting_text =
                                     tree.select_text(hit, event.x, event.y, select);
@@ -339,7 +374,15 @@ impl Interaction {
                 self.modifiers = m;
                 self.pointer.set_modifiers(m);
             }
-            Input::WindowBlur => self.pointer.cancel(tree),
+            Input::WindowBlur => {
+                self.dnd_cancel(tree, dispatch);
+                self.pointer.cancel(tree);
+            }
+            // Handled by `dnd_input` (here only when there's nothing to do).
+            Input::FileDragEnter { .. }
+            | Input::FileDrop { .. }
+            | Input::FileDragCancel
+            | Input::SetDragImage { .. } => {}
             // Like the DOM, focusing an element that can't take focus does nothing.
             Input::Focus(id) => {
                 if focusable(tree, id) {

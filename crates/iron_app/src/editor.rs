@@ -1,13 +1,28 @@
-//! What only the editor (`iron_editor`) does: where its UI lives, feeding the log to its
-//! console (`__iron_log`) and the `editor.*` ops. In `iron` the ops are refused, so
-//! games can't use them.
+//! What only the editor (`iron_editor`) does: where its UI lives, the project folder,
+//! feeding the log to its console (`__iron_log`) and the `editor.*` ops (opening code,
+//! project files). In `iron` the ops are refused, so games can't use them.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use iron_core::Value;
 use iron_script::ScriptRuntime;
 
-use super::logging;
+use super::{logging, project};
+
+static PROJECT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Sets the project folder the editor works on (`iron_editor [project]`), once.
+pub fn set_project(dir: &Path) {
+    let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let _ = PROJECT.set(dir);
+}
+
+/// The project folder (`None` outside the editor).
+pub fn project() -> Option<&'static Path> {
+    PROJECT.get().map(PathBuf::as_path)
+}
 
 /// Whether this program is `iron_editor` (the same source is built as both binaries).
 pub const ENABLED: bool = same(env!("CARGO_BIN_NAME").as_bytes(), b"iron_editor");
@@ -49,19 +64,37 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The editor's side of the app: which log records its console has seen.
+/// The editor's side of the app: which log records its console has seen, files it
+/// may copy in, and answers to file ops waiting for the scripts.
 #[derive(Default)]
 pub struct EditorHost {
     /// Set by `editor.logHistory`: the scripts want the log.
     subscribed: bool,
     /// The last record sent to `__iron_log`.
     sent: u64,
+    /// Files and folders dropped on the window: the only outside paths
+    /// `editor.copyIn` copies from.
+    dropped: HashSet<PathBuf>,
+    /// Answers for `__iron_editor_fs`: `[id, ok, json or error, ...]`.
+    results: Vec<Value>,
 }
 
 impl EditorHost {
-    /// Sends log records the scripts haven't seen to `__iron_log([seq, level, target,
-    /// message, timeMs, ...])`, once per frame.
+    /// Paths dropped on the window from the system, which `editor.copyIn` may copy.
+    pub fn allow_sources(&mut self, files: &[String]) {
+        self.dropped.extend(files.iter().map(PathBuf::from));
+    }
+
+    /// Once per frame: answers to file ops go to `__iron_editor_fs([id, ok, data,
+    /// ...])`, and log records the scripts haven't seen to `__iron_log([seq, level,
+    /// target, message, timeMs, ...])`.
     pub fn pump(&mut self, scripts: &mut dyn ScriptRuntime) {
+        if !self.results.is_empty() {
+            let results = std::mem::take(&mut self.results);
+            if let Err(e) = scripts.call_global("__iron_editor_fs", &[Value::Array(results)]) {
+                tracing::error!("script error in __iron_editor_fs: {e}");
+            }
+        }
         if !self.subscribed {
             return;
         }
@@ -109,8 +142,56 @@ impl EditorHost {
                 let num = |i: usize| args.get(i).and_then(Value::as_f64).map_or(1, |n| n as u32);
                 open_file(file, num(1).max(1), num(2).max(1), root);
             }
+            "listDir" | "copyIn" | "move" => {
+                let id = args.first().and_then(Value::as_f64).unwrap_or(0.0);
+                let result = self.fs_op(name, &args[args.len().min(1)..]);
+                if let Err(e) = &result {
+                    tracing::warn!("editor.{name}: {e}");
+                }
+                self.results.push(Value::Number(id));
+                self.results.push(Value::Bool(result.is_ok()));
+                self.results
+                    .push(Value::String(result.unwrap_or_else(|e| e)));
+            }
             other => tracing::warn!("unknown editor op `editor.{other}`"),
         }
+    }
+
+    /// Project file ops; answers are JSON:
+    /// - `listDir path` -> `{ path, entries: [{ name, dir, size }] }`
+    /// - `copyIn [sources] dir` (sources must have been dropped on the window) ->
+    ///   `{ created: [paths] }`
+    /// - `move path dir` -> `{ path }`
+    fn fs_op(&self, name: &str, args: &[Value]) -> Result<String, String> {
+        let root = project().ok_or("no project folder")?;
+        let text = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or("");
+        let json = match name {
+            "listDir" => {
+                let entries = project::list(root, text(0))?;
+                let entries: Vec<_> = entries
+                    .into_iter()
+                    .map(|e| serde_json::json!({ "name": e.name, "dir": e.dir, "size": e.size }))
+                    .collect();
+                serde_json::json!({ "path": text(0), "entries": entries })
+            }
+            "copyIn" => {
+                let sources: Vec<PathBuf> = match args.first() {
+                    Some(Value::Array(list)) => list
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(PathBuf::from)
+                        .collect(),
+                    _ => return Err("copyIn needs a list of files".into()),
+                };
+                if let Some(bad) = sources.iter().find(|s| !self.dropped.contains(*s)) {
+                    return Err(format!("{} wasn't dropped on the editor", bad.display()));
+                }
+                let created = project::copy_in(root, &sources, text(1))?;
+                serde_json::json!({ "created": created })
+            }
+            _ => serde_json::json!({ "path": project::move_into(root, text(0), text(1))? }),
+        };
+        Ok(json.to_string())
     }
 }
 

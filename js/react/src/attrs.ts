@@ -7,6 +7,7 @@ const ATTRS: ReadonlySet<string> = new Set([
   "id",
   "disabled",
   "checked",
+  "draggable",
   "tabIndex",
   "dir",
   // Text fields.

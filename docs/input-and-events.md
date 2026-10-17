@@ -412,6 +412,54 @@ considers the elements in `tab_order`, keeps those whose centre lies that way (m
 along the direction) and scores `along + 2 * |across|`, so elements in line beat closer ones off to
 the side. The lowest score wins; there is no wrap-around.
 
+## Drag and drop (M5.e)
+
+[interaction/dnd.rs](../crates/iron_ui/src/interaction/dnd.rs) adds HTML-style drag and drop to
+`Interaction`; `dnd_input` sees each input first and takes the ones a drag changes.
+
+- **Starting.** A primary press that scripts don't prevent, on an element with the `draggable`
+  attribute (or inside one; not text fields or disabled elements), is remembered (`dnd_press`;
+  it also skips starting a text selection). Once the pointer moves more than `DRAG_THRESHOLD`
+  (4 px) with the button held, `dragstart` goes to that element. Preventing it cancels the drag
+  and the move goes on as a normal one. Otherwise the press becomes a drag:
+  `Pointer::cancel_press` drops `:active`, any pointer capture (`lostpointercapture`) and the
+  click that would follow.
+- **During.** Pointer events stop (`Pointer::set_position` moves without hit-testing, so
+  `:hover` stays put). Each move sends `drag` to the dragged element, then, if the element under
+  the pointer changed, `dragenter` to the new one and `dragleave` to the old one, then
+  `dragover` to it. Its prevented flag is "accepted": the cursor is `grabbing` (or `copy` for
+  files) when accepted, else `no-drop`.
+- **Ending.** The release sends `drop` where the last `dragover` was accepted, else
+  `dragleave`; then `dragend` to the dragged element with `detail` 1 if dropped. Then the button
+  is released in `Pointer` (only enter/leave events go out: no `pointerup`, no `click`). Escape
+  and `WindowBlur` cancel: `dragleave` and `dragend` with `detail` 0.
+- **Drag image.** By default the dragged element itself, held where it was pressed:
+  `UiTree::set_drag_image(id, dx, dy)` makes `draw_list` draw that subtree again at the end,
+  inside `PushTransform` (a translation) and a `PushLayer` at 0.6 opacity. It is live, not a
+  snapshot. `Input::SetDragImage { id, x, y }` (from `dataTransfer.setDragImage`, the
+  `dragImage` op) picks another element, grabbed at (x, y), or none.
+- **Files from the system.** `Input::FileDragEnter { files, x, y }`, `FileDrop { files }` and
+  `FileDragCancel` run the same events without a dragged element (no `dragstart` / `drag` /
+  `dragend`); the paths ride on every drag event as `UiEvent::files` (the `strings` argument for
+  scripts).
+
+**App side.** `iron_platform` turns winit's `HoveredFile`, `DroppedFile` and
+`HoveredFileCancelled` into `InputEvent::FileHovered/FileDropped/FileHoverCancelled` (one per
+file). [file_drop.rs](../crates/iron_app/src/file_drop.rs) gathers them and, once a frame
+(`pump_file_drag`, after `EditorHost::pump`), sends the screen's UI `FileDragEnter`, then
+`PointerMove`s while the cursor moves, then `FileDrop` or `FileDragCancel`. Windows sends the
+window no cursor moves during a drag from another program, so the position comes from
+`iron_platform::cursor_in_window` (`GetCursorPos`); elsewhere it is the last pointer position.
+Dropped paths are also given to `EditorHost::allow_sources` (see [editor.md](editor.md)).
+
+**Scripts.** [events.ts](../js/react/src/events.ts) maps the seven events to `onDragStart`,
+`onDrag`, `onDragEnter`, `onDragOver`, `onDragLeave`, `onDrop` and `onDragEnd` (all bubble;
+`drag` and `dragover` have continuous priority). `IronDragEvent` (a pointer event) has
+`dataTransfer: IronDataTransfer` and, for `dragend`, `dropped`. The transfer of an element drag
+is one JS object from `dragstart` to `dragend` (`setData`/`getData`/`clearData`/`types`,
+`dropEffect`, `effectAllowed`, `setDragImage`); for system files a transfer is made from the
+paths, with `files: { path, name }[]` and `"Files"` in `types`. The data never crosses to Rust.
+
 ## UI scale (M3d step 9b)
 
 Screen UI can be laid out in "UI pixels" that the engine draws bigger or smaller, so a menu designed

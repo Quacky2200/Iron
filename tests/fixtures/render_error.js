@@ -15965,6 +15965,7 @@ ${err.stack}` : ""}`);
     "id",
     "disabled",
     "checked",
+    "draggable",
     "tabIndex",
     "dir",
     "value",
@@ -16321,10 +16322,17 @@ ${err.stack}` : ""}`);
     animationend: ["onAnimationEnd"],
     animationcancel: ["onAnimationCancel"],
     gotpointercapture: ["onGotPointerCapture"],
-    lostpointercapture: ["onLostPointerCapture"]
+    lostpointercapture: ["onLostPointerCapture"],
+    dragstart: ["onDragStart"],
+    drag: ["onDrag"],
+    dragenter: ["onDragEnter"],
+    dragover: ["onDragOver"],
+    dragleave: ["onDragLeave"],
+    drop: ["onDrop"],
+    dragend: ["onDragEnd"]
   };
   var NON_BUBBLING = new Set(["pointerenter", "pointerleave", "scroll", "cancel", "close"]);
-  var CONTINUOUS = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll"]);
+  var CONTINUOUS = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll", "drag", "dragover"]);
 
   class IronEvent {
     type;
@@ -16460,6 +16468,63 @@ ${err.stack}` : ""}`);
     }
   }
 
+  class IronDataTransfer {
+    dropEffect = "none";
+    effectAllowed = "uninitialized";
+    files;
+    data = new Map;
+    constructor(files = []) {
+      this.files = files.map((path) => ({ path, name: path.split(/[\\/]/).filter(Boolean).pop() ?? path }));
+    }
+    get types() {
+      const types = [...this.data.keys()];
+      if (this.files.length)
+        types.push("Files");
+      return types;
+    }
+    setData(format, data) {
+      this.data.set(format.toLowerCase(), String(data));
+    }
+    getData(format) {
+      return this.data.get(format.toLowerCase()) ?? "";
+    }
+    clearData(format) {
+      if (format === undefined)
+        this.data.clear();
+      else
+        this.data.delete(format.toLowerCase());
+    }
+    setDragImage(element, x = 0, y = 0) {
+      op("dragImage", element?.id ?? 0, x, y);
+    }
+  }
+  var elementDrag = null;
+  var fileDrag = null;
+  function transferFor(type, files) {
+    if (files.length) {
+      const key = files.join(`
+`);
+      if (fileDrag?.key !== key)
+        fileDrag = { key, transfer: new IronDataTransfer(files) };
+      return fileDrag.transfer;
+    }
+    if (type === "dragstart" || !elementDrag)
+      elementDrag = new IronDataTransfer;
+    return elementDrag;
+  }
+
+  class IronDragEvent extends IronPointerEvent {
+    dataTransfer;
+    dropped;
+    constructor(type, target, data, transfer) {
+      super(type, target, true, data);
+      this.dataTransfer = transfer;
+      this.dropped = type === "dragend" && data[4] === 1;
+      if (type === "dragend" && !this.dropped)
+        transfer.dropEffect = "none";
+    }
+  }
+
   class IronScrollEvent extends IronEvent {
     scrollLeft;
     scrollTop;
@@ -16518,6 +16583,14 @@ ${err.stack}` : ""}`);
       case "animationend":
       case "animationcancel":
         return new IronAnimationEvent(type, target, data, strings);
+      case "dragstart":
+      case "drag":
+      case "dragenter":
+      case "dragover":
+      case "dragleave":
+      case "drop":
+      case "dragend":
+        return new IronDragEvent(type, target, data, transferFor(type, strings));
       default:
         return new IronPointerEvent(type, target, bubbles, data);
     }
@@ -16529,8 +16602,11 @@ ${err.stack}` : ""}`);
       pointerCapture.element = null;
     const names = HANDLERS[type];
     const target = instances2.get(path[0] ?? -1);
-    if (!names || !target)
+    if (!names || !target) {
+      if (type === "dragend")
+        elementDrag = null;
       return false;
+    }
     const nodes = path.map((id) => instances2.get(id)).filter((n) => n !== undefined);
     const bubbles = !NON_BUBBLING.has(type);
     const event = createEvent(type, target, bubbles, data, strings);
@@ -16549,6 +16625,8 @@ ${err.stack}` : ""}`);
     });
     event.currentTarget = null;
     event.eventPhase = 0;
+    if (type === "dragend")
+      elementDrag = null;
     reconciler.flushSyncWork();
     if (event instanceof IronInputEvent)
       restoreControlledValue(target);
