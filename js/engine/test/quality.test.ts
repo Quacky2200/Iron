@@ -28,7 +28,7 @@ describe("QualitySettings", () => {
     ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
       ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1],
-      ["render.shadowSettings", 0, 20, 1024],
+      ["render.shadowSettings", 0, 20, 1024, 1],
     ]);
     expect(heard).toBe(0);
     ops = [];

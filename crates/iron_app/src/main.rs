@@ -1410,7 +1410,11 @@ impl App {
         }
         gfx.world.bloom = self.world_view.bloom;
         gfx.world.grading = self.world_view.grading;
-        (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
+        (
+            gfx.world.shadow_distance,
+            gfx.world.shadow_resolution,
+            gfx.world.shadow_cascades,
+        ) = self.world_view.shadow_settings;
         gfx.world.set_sky(self.world_view.sky);
         let q = self.world_view.quality;
         gfx.surface.set_vsync(&gfx.gpu, q.vsync);
@@ -1758,7 +1762,11 @@ impl PlatformApp for App {
         }
         gfx.world.bloom = self.world_view.bloom;
         gfx.world.grading = self.world_view.grading;
-        (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
+        (
+            gfx.world.shadow_distance,
+            gfx.world.shadow_resolution,
+            gfx.world.shadow_cascades,
+        ) = self.world_view.shadow_settings;
         gfx.world.set_sky(self.world_view.sky);
         let q = self.world_view.quality;
         gfx.surface.set_vsync(&gfx.gpu, q.vsync);

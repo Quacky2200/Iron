@@ -9,11 +9,10 @@ struct Globals {
     camera: vec4<f32>,
     // rgb: ambient light; w: how many lights this view has.
     ambient: vec4<f32>,
-    // The shadow map's view-projection.
-    shadow_view_proj: mat4x4<f32>,
-    // x: the shadowed light's index (-1: none); y: strength; z: a shadow texel in
-    // metres; w: the soft filter's radius in texels (0: hard).
+    // x: the sun's shadow cascades (0: none).
     shadow: vec4<f32>,
+    // Each cascade's texel size in metres (for the normal offset).
+    cascade_texels: vec4<f32>,
     // Screen to world, for the skybox.
     inv_view_proj: mat4x4<f32>,
     // The viewport in target pixels: x, y, width, height.
@@ -81,6 +80,10 @@ struct Light {
     spot: vec4<f32>,
     // x: the layers it lights.
     mask: vec4<u32>,
+    // x: its first shadow matrix (-1: none; the sun's are its cascades); y: strength;
+    // z: the soft filter's radius in texels (0: hard); w: a texel's size at 1 m (spot
+    // and point lights).
+    shadow: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -98,10 +101,16 @@ struct Light {
 @group(1) @binding(6) var detail_map: texture_2d<f32>;
 // A mirror's reflection, rendered this frame.
 @group(1) @binding(7) var reflection_tex: texture_2d<f32>;
-@group(2) @binding(0) var shadow_map: texture_depth_2d;
+// Shadows (drawn once a frame) and the environment.
+@group(2) @binding(0) var sun_shadows: texture_depth_2d_array;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
 @group(2) @binding(2) var env_map: texture_cube<f32>;
 @group(2) @binding(3) var env_samp: sampler;
+@group(2) @binding(4) var local_shadows: texture_depth_2d_array;
+// The sun's cascades (4 slots), then spot and point lights' layers.
+@group(2) @binding(5) var<storage, read> shadow_matrices: array<mat4x4<f32>>;
+
+const MAX_CASCADES: i32 = 4;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -223,7 +232,7 @@ fn vs_shadow_cutout(
 ) -> CutoutOut {
     let m = meshes[ii];
     var out: CutoutOut;
-    out.pos = g.shadow_view_proj * m.model * vec4<f32>(position, 1.0);
+    out.pos = g.view_proj * m.model * vec4<f32>(position, 1.0);
     out.uv = tiled(uv, m.tiling);
     out.instance = ii;
     return out;
@@ -315,34 +324,74 @@ fn ambient_light(n: vec3<f32>) -> vec3<f32> {
 // Shadow casters: just depth, from the light.
 @vertex
 fn vs_shadow(@location(0) position: vec3<f32>, @builtin(instance_index) ii: u32) -> @builtin(position) vec4<f32> {
-    return g.shadow_view_proj * meshes[ii].model * vec4<f32>(position, 1.0);
+    // The layer's matrix is the view in the shadow pass's globals.
+    return g.view_proj * meshes[ii].model * vec4<f32>(position, 1.0);
 }
 
-// How much of the shadowed light reaches `world` (1: all), whose normal is `n`.
-fn shadow_at(world: vec3<f32>, n: vec3<f32>) -> f32 {
-    // Pushed off the surface by a texel or two, against acne.
-    let p = g.shadow_view_proj * vec4<f32>(world + n * g.shadow.z * 1.5, 1.0);
-    let ndc = p.xyz / p.w;
+// The share of a shadow map's comparisons that pass at `uv` (1: lit): a (2r + 1)² box of
+// them, each bilinear-filtered by the sampler, or one when `r` is 0.
+fn pcf(t: texture_depth_2d_array, layer: i32, uv: vec2<f32>, depth: f32, r: i32) -> f32 {
+    if (r <= 0) {
+        return textureSampleCompareLevel(t, shadow_samp, uv, layer, depth);
+    }
+    let ts = 1.0 / f32(textureDimensions(t).x);
+    var lit = 0.0;
+    for (var y = -r; y <= r; y++) {
+        for (var x = -r; x <= r; x++) {
+            lit += textureSampleCompareLevel(t, shadow_samp, uv + vec2<f32>(f32(x), f32(y)) * ts, layer, depth);
+        }
+    }
+    let side = f32(2 * r + 1);
+    return lit / (side * side);
+}
+
+// A point through a shadow matrix: map uv (xy) and depth (z); w < 0 when off the map.
+fn shadow_coords(m: mat4x4<f32>, p: vec3<f32>) -> vec4<f32> {
+    let c = m * vec4<f32>(p, 1.0);
+    let ndc = c.xyz / c.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z > 1.0) {
+    let inside = c.w > 0.0 && all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0)) && ndc.z <= 1.0;
+    return vec4<f32>(uv, ndc.z, select(-1.0, 1.0, inside));
+}
+
+// How much of the sun reaches `world` (normal `n`): the first cascade holding it.
+fn sun_shadow(light: Light, world: vec3<f32>, n: vec3<f32>) -> f32 {
+    let count = min(i32(g.shadow.x), MAX_CASCADES);
+    let r = i32(light.shadow.z + 0.5);
+    for (var c = 0; c < count; c++) {
+        // Pushed off the surface by a texel or two, against acne.
+        let s = shadow_coords(shadow_matrices[c], world + n * g.cascade_texels[c] * 1.5);
+        if (s.w > 0.0) {
+            return mix(1.0, pcf(sun_shadows, c, s.xy, s.z, r), light.shadow.y);
+        }
+    }
+    return 1.0;
+}
+
+// How much of a spot or point light reaches `world`: its map, or a point light's cube
+// face towards `world`.
+fn local_shadow(light: Light, world: vec3<f32>, n: vec3<f32>) -> f32 {
+    var index = i32(light.shadow.x);
+    let to = world - light.position.xyz;
+    if (light.position.w < 1.5) {
+        // Faces in order +x, -x, +y, -y, +z, -z.
+        let a = abs(to);
+        if (a.x >= a.y && a.x >= a.z) {
+            index += select(1, 0, to.x > 0.0);
+        } else if (a.y >= a.z) {
+            index += select(3, 2, to.y > 0.0);
+        } else {
+            index += select(5, 4, to.z > 0.0);
+        }
+    }
+    // Texels grow with distance from the light; so does the push off the surface.
+    let offset = n * length(to) * light.shadow.w * 1.5;
+    let s = shadow_coords(shadow_matrices[index], world + offset);
+    if (s.w < 0.0) {
         return 1.0;
     }
-    var lit = 0.0;
-    // Soft: a (2r + 1)² box of comparisons (each one bilinear-filtered by the sampler).
-    let r = i32(g.shadow.w + 0.5);
-    if (r > 0) {
-        let ts = 1.0 / f32(textureDimensions(shadow_map).x);
-        for (var y = -r; y <= r; y++) {
-            for (var x = -r; x <= r; x++) {
-                lit += textureSampleCompareLevel(shadow_map, shadow_samp, uv + vec2<f32>(f32(x), f32(y)) * ts, ndc.z);
-            }
-        }
-        let side = f32(2 * r + 1);
-        lit /= side * side;
-    } else {
-        lit = textureSampleCompareLevel(shadow_map, shadow_samp, uv, ndc.z);
-    }
-    return mix(1.0, lit, g.shadow.y);
+    let r = i32(light.shadow.z + 0.5);
+    return mix(1.0, pcf(local_shadows, index - MAX_CASCADES, s.xy, s.z, r), light.shadow.y);
 }
 
 @fragment
@@ -477,8 +526,12 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
                 strength *= smoothstep(light.spot.y, light.spot.x, c);
             }
         }
-        if (i32(i) == i32(g.shadow.x)) {
-            strength *= shadow_at(in.world, n);
+        if (light.shadow.x >= 0.0) {
+            if (light.position.w < 0.5) {
+                strength *= sun_shadow(light, in.world, n);
+            } else {
+                strength *= local_shadow(light, in.world, n);
+            }
         }
         let ndl = max(dot(n, l), 0.0);
         if (ndl <= 0.0) {

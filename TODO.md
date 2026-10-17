@@ -935,9 +935,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] glTF follow-ups: normal / metallic-roughness / emissive / occlusion maps (with PBR,
     M5.d), skins and animations (M5.d), cameras and lights from the file, KTX2 / Draco /
     meshopt compression, texture transforms
-  - [ ] Shadow follow-ups: cascades for long distances, spot and point light shadows (cube
-    maps), shadows on quads / sprites / particles, transparent and alpha-cut casters,
-    contact shadows
+  - [ ] Shadow follow-ups: cascades (1 / 2 / 4, `QualitySettings.shadowCascades`), spot
+    and point light shadows (a cube of six maps) and alpha-cut casters done in M5.c
+    (`M5-SHD-01`, `M5-RND-20`); left: shadows on quads / sprites / particles, transparent
+    casters, contact shadows, per-light shadow resolution, skipping casters outside each
+    map, cascade blending
   - [ ] Audio follow-ups: partial `spatialBlend` (kira's spatialization strength), Doppler,
     a source's playback `time`, `onDisable` pausing sources
   - [ ] Particle follow-ups: GPU simulation for big systems, collisions, velocity / force
@@ -1014,12 +1016,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   drawn into a sampleable texture (`backdrop_target`) and the UI canvas starts as a copy of it
   (`render_over`); other frames are unchanged — `M5-RND-16`; the arcade's frosted HUD
 - [ ] **Optimisation fixes** (found 2026-10-17 with `examples/arcade`; not scheduled yet):
-  - [ ] Reflection probes redraw the shadow map six times: `update_probes` renders each
-    cube face through `render_views_with`, which renders the sun's shadow map for
-    whatever view it's given, so a live (`everyFrame`) probe costs six full shadow passes
-    a frame (the arcade went from ~600 to ~290 FPS uncapped). Render the shadow map once
-    a frame and reuse it in probe faces and mirror views (or skip shadows there). Measure
-    with the arcade's FPS counter (vsync off) and a test that counts shadow passes.
+  - [x] Reflection probes redrew the shadow map six times: shadow maps are now drawn once
+    a frame from the main view and shared by probe faces, mirrors and render textures
+    (`WorldStats::shadow_maps` counts them, `M5-RND-20`). Not yet re-measured in the
+    arcade.
   - [x] Mirrors that keep their texture: the reflection has its own binding now (with
     the material maps), so a mirrored surface keeps its texture and maps. The arcade
     still has its see-through mirror sheet (parked).

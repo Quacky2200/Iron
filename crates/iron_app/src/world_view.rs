@@ -298,8 +298,8 @@ pub struct WorldViews {
     particles: BTreeMap<u32, ParticleSystem>,
     /// Bloom over the world (`render.bloom`), applied by the app before drawing.
     pub bloom: Option<Bloom>,
-    /// Shadow distance (metres) and map size (`render.shadowSettings`).
-    pub shadow_settings: (f32, u32),
+    /// Shadow distance (metres), map size and the sun's cascades (`render.shadowSettings`).
+    pub shadow_settings: (f32, u32, u32),
     /// Anti-aliasing, render scale and shadow quality (`render.quality`).
     pub quality: Quality,
     /// Exposure and tonemapping (`render.post`).
@@ -341,7 +341,7 @@ impl Default for WorldViews {
             probe_requests: std::collections::HashSet::new(),
             particles: BTreeMap::new(),
             bloom: None,
-            shadow_settings: (25.0, 2048),
+            shadow_settings: (25.0, 2048, 1),
             quality: Quality::default(),
             grading: Grading::default(),
             sky: None,
@@ -876,10 +876,11 @@ impl WorldViews {
                     texture_mip_limit: num(8).unwrap_or(0.0).clamp(0.0, 3.0) as u32,
                 };
             }
-            // `shadowSettings 0 distance resolution` (Unity's quality settings).
+            // `shadowSettings 0 distance resolution cascades` (Unity's quality settings).
             "shadowSettings" => {
                 let resolution = num(2).unwrap_or(2048.0).clamp(256.0, 8192.0) as u32;
-                self.shadow_settings = (num(1)?.max(1.0), resolution);
+                let cascades = num(3).unwrap_or(1.0).clamp(1.0, 4.0) as u32;
+                self.shadow_settings = (num(1)?.max(1.0), resolution, cascades);
             }
             // `renderTexture id width height`: a texture cameras draw into (removed with
             // `textureRemove`).

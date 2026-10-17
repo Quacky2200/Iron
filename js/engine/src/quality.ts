@@ -24,6 +24,8 @@ export interface QualityLevel {
   shadowResolution: number;
   /** How far shadows reach from the camera (metres). */
   shadowDistance: number;
+  /** The sun's shadow cascades: 1, 2 or 4 (more keeps near shadows sharp far out). */
+  shadowCascades: number;
   /** LOD groups switch as if things were this many times taller on screen (more detail above 1). */
   lodBias: number;
   /** 1: frames wait for the display's refresh (no tearing); 0: they don't (`targetFrameRate` caps them). */
@@ -38,10 +40,10 @@ export interface QualityLevel {
 export type AnisotropicFiltering = "disable" | "enable" | "forceEnable";
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
 ];
 
 interface ManifestQuality {
@@ -71,7 +73,7 @@ function sendQuality(): void {
 }
 
 function sendShadows(): void {
-  __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution);
+  __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
   remember();
 }
 
@@ -194,6 +196,15 @@ export const QualitySettings = {
   set globalTextureMipmapLimit(n: number) {
     current.globalTextureMipmapLimit = Math.min(3, Math.max(0, Math.round(n)));
     sendQuality();
+  },
+
+  /** The sun's shadow cascades: 1, 2 or 4 (Unity's `shadowCascades`). */
+  get shadowCascades(): number {
+    return current.shadowCascades;
+  },
+  set shadowCascades(n: number) {
+    current.shadowCascades = n >= 4 ? 4 : n >= 2 ? 2 : 1;
+    sendShadows();
   },
 
   /** The shadow map's size in texels (256 to 8192). */

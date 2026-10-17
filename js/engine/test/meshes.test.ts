@@ -106,7 +106,10 @@ describe("meshes and lights", () => {
     l.shadowStrength = 0.7;
     expect(renderOps().at(-1)!.slice(11, 13)).toEqual(["soft", 0.7]);
     QualitySettings.shadowDistance = 40;
-    expect(renderOps().at(-1)).toEqual(["render.shadowSettings", 0, 40, 2048]);
+    expect(renderOps().at(-1)).toEqual(["render.shadowSettings", 0, 40, 2048, 4]);
+    // Cascades round to 1, 2 or 4 (M5-SHD-02).
+    QualitySettings.shadowCascades = 3;
+    expect(renderOps().at(-1)).toEqual(["render.shadowSettings", 0, 40, 2048, 2]);
     RenderSettings.bloom = { threshold: 1, intensity: 0.8, scatter: 0.6 };
     expect(renderOps().at(-1)).toEqual(["render.bloom", 0, 1, 0.8, 0.6]);
     RenderSettings.bloom = null;

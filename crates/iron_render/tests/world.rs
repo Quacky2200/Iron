@@ -1427,6 +1427,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
             culled_quads: 1,
             lights: 1,
             culled_lights: 1,
+            shadow_maps: 1,
         }
     );
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -2000,4 +2001,129 @@ fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
     }
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-19", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-20
+#[test]
+fn cascaded_sun_spot_and_point_light_shadows() {
+    use iron_render::{Light, LightKind, MeshInstance, ReflectionProbe, Shadows, primitive_id};
+    let gpu = shared_gpu();
+    let size = (360, 220);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let id = |n: &str| primitive_id(n).unwrap();
+    let shadows = Some(Shadows {
+        soft: true,
+        strength: 1.0,
+    });
+    let eye = Vec3::new(0.0, 3.0, 9.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, -6.0), Vec3::Y)
+            .inverse(),
+        50.0,
+        0.1,
+        200.0,
+        size,
+        Color::rgb(0.03, 0.03, 0.05),
+    );
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.08, 0.08, 0.1];
+    // A long floor with posts receding into the distance (the sun's cascades), a cube
+    // under a spot light on the left and a ring of pillars round a point light on the
+    // right.
+    v.meshes.push(MeshInstance {
+        mesh: id("plane"),
+        model: Mat4::from_scale(Vec3::new(2.0, 1.0, 6.0))
+            * Mat4::from_translation(Vec3::new(0.0, 0.0, -3.0)),
+        color: [0.6, 0.6, 0.62, 1.0],
+        smoothness: 0.1,
+        ..Default::default()
+    });
+    for i in 0..8 {
+        v.meshes.push(MeshInstance {
+            mesh: id("cube"),
+            model: Mat4::from_translation(Vec3::new(0.0, 0.75, 2.0 - i as f32 * 6.0))
+                * Mat4::from_scale(Vec3::new(0.3, 1.5, 0.3)),
+            color: [0.8, 0.75, 0.6, 1.0],
+            ..Default::default()
+        });
+    }
+    v.meshes.push(MeshInstance {
+        mesh: id("cube"),
+        model: Mat4::from_translation(Vec3::new(-3.5, 0.5, 2.5)),
+        color: [0.9, 0.3, 0.2, 1.0],
+        ..Default::default()
+    });
+    for k in 0..6 {
+        let a = k as f32 / 6.0 * std::f32::consts::TAU;
+        v.meshes.push(MeshInstance {
+            mesh: id("cylinder"),
+            model: Mat4::from_translation(Vec3::new(3.5 + a.cos() * 1.3, 0.5, 2.0 + a.sin() * 1.3))
+                * Mat4::from_scale(Vec3::new(0.25, 0.5, 0.25)),
+            color: [0.3, 0.5, 0.9, 1.0],
+            ..Default::default()
+        });
+    }
+    v.lights = vec![
+        Light {
+            kind: LightKind::Directional,
+            color: [0.9, 0.85, 0.8],
+            position: Vec3::ZERO,
+            direction: Vec3::new(0.6, -0.5, 0.25).normalize(),
+            range: 0.0,
+            shadows,
+            culling_mask: ALL_LAYERS,
+        },
+        Light {
+            kind: LightKind::Spot {
+                inner_degrees: 30.0,
+                outer_degrees: 45.0,
+            },
+            color: [6.0, 5.0, 3.0],
+            position: Vec3::new(-2.6, 3.0, 1.6),
+            direction: Vec3::new(-0.3, -1.0, 0.3).normalize(),
+            range: 8.0,
+            shadows,
+            culling_mask: ALL_LAYERS,
+        },
+        Light {
+            kind: LightKind::Point,
+            color: [2.0, 4.0, 6.0],
+            position: Vec3::new(3.5, 0.6, 2.0),
+            direction: Vec3::NEG_Y,
+            range: 6.0,
+            shadows,
+            culling_mask: ALL_LAYERS,
+        },
+    ];
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 50.0;
+    world.shadow_cascades = 4;
+    world.render_views(&gpu, &rt, &[v.clone()], &[]);
+    // Four cascades, one spot map and six point faces, drawn once.
+    assert_eq!(world.stats().shadow_maps, 4 + 1 + 6);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-20", size.0, size.1, &pixels, 3);
+
+    // A probe refreshed every frame reuses the frame's shadow maps (it used to draw
+    // the sun's map again for each of its six faces).
+    let mut probed = v;
+    probed.probes.push(ReflectionProbe {
+        id: 1,
+        position: Vec3::new(0.0, 1.0, 0.0),
+        half_extents: Vec3::splat(10.0),
+        resolution: 32,
+        box_projection: false,
+        render: true,
+        culling_mask: ALL_LAYERS,
+    });
+    world.render_views(&gpu, &rt, &[probed], &[]);
+    assert_eq!(world.stats().shadow_maps, 4 + 1 + 6);
 }
