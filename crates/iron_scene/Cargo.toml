@@ -9,4 +9,9 @@ glam = "0.34.1"
 iron_core = { path = "../iron_core" }
 
 [dev-dependencies]
+criterion = "0.8.2"
 iron_script = { path = "../iron_script" }
+
+[[bench]]
+name = "reload"
+harness = false

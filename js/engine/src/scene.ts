@@ -364,7 +364,7 @@ export class GameObject {
     this.transform = new Transform(this);
     this.transform._set(
       Vector3.from(options.position ?? Vector3.zero),
-      Quaternion.from(options.rotation ?? Quaternion.identity).normalized,
+      options.rotation ? Quaternion.from(options.rotation).normalized : Quaternion.identity,
       Vector3.from(options.scale ?? Vector3.one),
     );
     objects.set(this.id, this);

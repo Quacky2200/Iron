@@ -1431,7 +1431,7 @@ ${err.stack}` : ""}`);
       this.id = nextObject++;
       this._name = name;
       this.transform = new Transform(this);
-      this.transform._set(Vector3.from(options.position ?? Vector3.zero), Quaternion.from(options.rotation ?? Quaternion.identity).normalized, Vector3.from(options.scale ?? Vector3.one));
+      this.transform._set(Vector3.from(options.position ?? Vector3.zero), options.rotation ? Quaternion.from(options.rotation).normalized : Quaternion.identity, Vector3.from(options.scale ?? Vector3.one));
       objects.set(this.id, this);
       const parent = options.parent ?? null;
       this._parent = parent;
@@ -5607,13 +5607,13 @@ ${err.stack}` : ""}`);
     const p = t.localPosition;
     const r = t.localRotation;
     const s = t.localScale;
-    const data = {
-      id: saver.id(go),
-      name: go.name,
-      position: [p.x, p.y, p.z],
-      rotation: [r.x, r.y, r.z, r.w],
-      scale: [s.x, s.y, s.z]
-    };
+    const data = { id: saver.id(go), name: go.name };
+    if (p.x !== 0 || p.y !== 0 || p.z !== 0)
+      data.position = [p.x, p.y, p.z];
+    if (r.x !== 0 || r.y !== 0 || r.z !== 0 || r.w !== 1)
+      data.rotation = [r.x, r.y, r.z, r.w];
+    if (s.x !== 1 || s.y !== 1 || s.z !== 1)
+      data.scale = [s.x, s.y, s.z];
     if (!go.enabled)
       data.enabled = false;
     if (go.layer !== 0)
@@ -5653,11 +5653,12 @@ ${err.stack}` : ""}`);
     const pending = [];
     const disabled = [];
     const build = (d, under) => {
+      const [p, r, s] = [d.position, d.rotation, d.scale];
       const go = new GameObject(d.name ?? "GameObject", {
         parent: under,
-        position: d.position ? new Vector3(...d.position) : undefined,
-        rotation: d.rotation ? new Quaternion(...d.rotation) : undefined,
-        scale: d.scale ? new Vector3(...d.scale) : undefined
+        position: p ? new Vector3(p[0], p[1], p[2]) : undefined,
+        rotation: r ? new Quaternion(r[0], r[1], r[2], r[3]) : undefined,
+        scale: s ? new Vector3(s[0], s[1], s[2]) : undefined
       });
       loader.things.set(d.id, go);
       if (d.layer)
@@ -5697,13 +5698,13 @@ ${err.stack}` : ""}`);
         }
       }
     }
-    const restored = reload ? pending.filter(({ component }) => !_isBuiltIn(component.constructor)) : [];
-    for (const { component } of restored)
+    const restored = new Set(reload ? pending.map((p) => p.component).filter((c) => !_isBuiltIn(c.constructor)) : []);
+    for (const component of restored)
       _markRestored(component);
     for (const { component } of pending)
-      if (!restored.some((r) => r.component === component))
+      if (!restored.has(component))
         component.onAwake?.();
-    for (const { component } of restored) {
+    for (const component of restored) {
       try {
         component.onReload?.();
       } catch (e) {
@@ -6409,6 +6410,13 @@ ${err.stack}` : ""}`);
     }
   }
   register({ Game, Lifecycle, Door, SceneTrip, HotCounter });
+  globalThis.__hot_spawn = (n) => {
+    for (let i = 0;i < n; i++) {
+      const go = new GameObject(`Counter ${i}`, { position: new Vector3(i, 0, 0) });
+      const c = go._addComponentAsleep(HotCounter, { speed: i, count: i });
+      c.child = new GameObject(`Child ${i}`, { parent: go });
+    }
+  };
   globalThis.__hot_log = () => {
     const c = GameObject.findObjectOfType(HotCounter);
     return [c.speed, c.label, c.count, c.child === GameObject.find("HotChild"), starts, reloads, Time.frameCount].join(" ");

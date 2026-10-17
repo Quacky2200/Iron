@@ -993,7 +993,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     React state (Fast Refresh below); `M4-PHY-04`
   - [ ] React Fast Refresh for panels (React and the reconciler in a vendor bundle kept across
     reloads) — `M4-HOT-06`
-  - [ ] Reload benchmark — `M4-HOT-07`
+  - [ ] Reload benchmark — `M4-HOT-07`: the bench exists (`cargo bench -p iron_scene
+    --bench reload`) and measures ~146 ms against the 100 ms target (1 MB bundle parse
+    ~54 ms, save ~27 ms, restore ~58 ms). To get under it: parse the new bundle on a
+    background thread while the old code keeps running (hides the parse), make
+    `GameObject` construction cheaper in QuickJS (~10 µs each now), and a leaner state
+    format than JSON
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style. Done so far: PBR,
     the sky and its reflections, planar mirrors, reflection probes, the showroom example and

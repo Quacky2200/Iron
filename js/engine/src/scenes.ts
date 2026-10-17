@@ -120,7 +120,7 @@ export interface GameObjectData {
   enabled?: boolean;
   /** Default 0. */
   layer?: number;
-  /** Local position, rotation (x, y, z, w) and scale. */
+  /** Local position, rotation (x, y, z, w) and scale; left out when 0, identity and 1. */
   position?: [number, number, number];
   rotation?: [number, number, number, number];
   scale?: [number, number, number];
@@ -380,13 +380,11 @@ function saveObject(saver: Saver, go: GameObject): GameObjectData | null {
   const p = t.localPosition;
   const r = t.localRotation;
   const s = t.localScale;
-  const data: GameObjectData = {
-    id: saver.id(go),
-    name: go.name,
-    position: [p.x, p.y, p.z],
-    rotation: [r.x, r.y, r.z, r.w],
-    scale: [s.x, s.y, s.z],
-  };
+  const data: GameObjectData = { id: saver.id(go), name: go.name };
+  // Defaults are left out: smaller files, faster loads.
+  if (p.x !== 0 || p.y !== 0 || p.z !== 0) data.position = [p.x, p.y, p.z];
+  if (r.x !== 0 || r.y !== 0 || r.z !== 0 || r.w !== 1) data.rotation = [r.x, r.y, r.z, r.w];
+  if (s.x !== 1 || s.y !== 1 || s.z !== 1) data.scale = [s.x, s.y, s.z];
   if (!go.enabled) data.enabled = false;
   if (go.layer !== 0) data.layer = go.layer;
   if (go._model) data.model = { ...go._model };
@@ -429,11 +427,12 @@ function loadObjects(
   const pending: { component: Component; properties: Record<string, unknown> }[] = [];
   const disabled: GameObject[] = [];
   const build = (d: GameObjectData, under: GameObject | null): GameObject => {
+    const [p, r, s] = [d.position, d.rotation, d.scale];
     const go = new GameObject(d.name ?? "GameObject", {
       parent: under,
-      position: d.position ? new Vector3(...d.position) : undefined,
-      rotation: d.rotation ? new Quaternion(...d.rotation) : undefined,
-      scale: d.scale ? new Vector3(...d.scale) : undefined,
+      position: p ? new Vector3(p[0], p[1], p[2]) : undefined,
+      rotation: r ? new Quaternion(r[0], r[1], r[2], r[3]) : undefined,
+      scale: s ? new Vector3(s[0], s[1], s[2]) : undefined,
     });
     loader.things.set(d.id, go);
     if (d.layer) go.layer = d.layer;
@@ -472,10 +471,12 @@ function loadObjects(
   }
   // Script components carried over a reload have already woken and started: they get
   // `onReload` instead. The engine's are rebuilt like any load.
-  const restored = reload ? pending.filter(({ component }) => !_isBuiltIn(component.constructor as ComponentClass)) : [];
-  for (const { component } of restored) _markRestored(component);
-  for (const { component } of pending) if (!restored.some((r) => r.component === component)) component.onAwake?.();
-  for (const { component } of restored) {
+  const restored = new Set(
+    reload ? pending.map((p) => p.component).filter((c) => !_isBuiltIn(c.constructor as ComponentClass)) : [],
+  );
+  for (const component of restored) _markRestored(component);
+  for (const { component } of pending) if (!restored.has(component)) component.onAwake?.();
+  for (const component of restored) {
     try {
       component.onReload?.();
     } catch (e) {

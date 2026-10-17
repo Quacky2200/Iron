@@ -1564,6 +1564,7 @@ dependencies = [
 name = "iron_scene"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "glam 0.34.1",
  "iron_core",
  "iron_script",

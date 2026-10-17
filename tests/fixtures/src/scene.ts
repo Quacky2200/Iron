@@ -104,6 +104,14 @@ class HotCounter extends Component {
 }
 
 register({ Game, Lifecycle, Door, SceneTrip, HotCounter });
+/** M4-HOT-07: lots of components to carry over a reload. */
+(globalThis as { __hot_spawn?: (n: number) => void }).__hot_spawn = (n) => {
+  for (let i = 0; i < n; i++) {
+    const go = new GameObject(`Counter ${i}`, { position: new Vector3(i, 0, 0) });
+    const c = go._addComponentAsleep(HotCounter, { speed: i, count: i });
+    c.child = new GameObject(`Child ${i}`, { parent: go });
+  }
+};
 (globalThis as { __hot_log?: () => string }).__hot_log = () => {
   const c = GameObject.findObjectOfType(HotCounter)!;
   return [c.speed, c.label, c.count, c.child === GameObject.find("HotChild"), starts, reloads, Time.frameCount].join(" ");
