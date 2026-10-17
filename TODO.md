@@ -436,7 +436,7 @@ Where s&box has a custom extension, we prefer the standard CSS form if there is 
 
 **Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, then groups 7, 8, 9, 10, then
 5.1 (SVG); then stop and check in with the user before M4. All done (2026-10-17) except
-`sound-in`/`sound-out`, which waits for M4 audio. Added afterwards: groups 11 (pointer capture),
+`sound-in`/`sound-out`, skipped as s&box-specific (CSS stays about display). Added afterwards: groups 11 (pointer capture),
 12 (WOFF/WOFF2) and 13 (`@media`). Known deviations from browsers go in
 [docs/differences.md](docs/differences.md).
 
@@ -674,8 +674,9 @@ and `@font-face`.
      `-inline`/`-block`; `contain` and `none` stop wheel and key scrolling from chaining outward;
      there's no bounce to turn off) — `M3-SCR-01`
 9. **Game-specific extensions** (s&box custom properties worth copying)
-   - [ ] (waits for M4 audio) `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
-     `:active`); only the winning rule plays (needs M4 audio)
+   - [~] **Skipped:** s&box's `sound-in` / `sound-out` (play a named sound when a rule starts or
+     stops applying). CSS is for UI display, not sound, so this stays an s&box-specific feature;
+     Iron games play UI sounds from scripts (`onPointerEnter`, `onClick`) with M4 audio
    - [x] **9a** Tint for images: s&box's `background-image-tint` (background images and an `image`
      element's picture) and `border-image-tint`, a colour (alpha too) multiplied into the image's
      pixels in the image shader; gradients aren't tinted — `M3-GAME-01`
@@ -733,8 +734,7 @@ mind.
 - [ ] React Fast Refresh for panels — `M4-HOT-06`
 - [ ] Reload benchmark — `M4-HOT-07`
 - [ ] `rapier` integration + TS components — `M4-PHY-*`
-- [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`; then M3d's `sound-in` /
-  `sound-out` CSS properties
+- [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`
 
 ## M5 — Scene, assets, rendering, editor
 

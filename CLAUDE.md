@@ -121,7 +121,7 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
   - M3c step 7: `examples/form`. **M3c is done.**
   - M3d (CSS parity) is done: groups 1–10 and step 5.1 (inline SVG and SVG images via resvg),
-    except `sound-in`/`sound-out`, which waits for M4 audio
+    (`sound-in`/`sound-out` skipped: s&box-specific, CSS stays about display)
 - **Next:** M3d groups 11 (pointer capture), 12 (WOFF/WOFF2), 13 (`@media`) were added to
   TODO.md; then check in with the user before M4 (agreed 2026-10-17). Later items noted in TODO.md:
   GPU-tessellated SVG with SMIL and path morphing; UI and SVG editors (M5.e).

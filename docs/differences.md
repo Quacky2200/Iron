@@ -28,6 +28,7 @@ a known gap, not an accident. When you fix one, delete its entry; when you add o
 
 | Area | Iron | Browsers / spec | Why |
 |---|---|---|---|
+| `sound-in` / `sound-out` | Not supported | s&box only (not CSS) | CSS stays about display; play UI sounds from event handlers |
 | UI scale | `setUiScale` zooms all screen UI (layout in UI pixels) | CSS `zoom` per element | One switch for the whole HUD, like s&box's ScreenPanel |
 | `background-image-tint`, `border-image-tint` | s&box properties, no CSS equivalent; multiply image pixels by a colour; gradients and masks aren't tinted | — | Common in game UI (one white icon, many colours) |
 
