@@ -625,6 +625,22 @@ factor), `prefers-color-scheme`, and `pointer`/`hover` (useful to tell mouse, to
 re-evaluated when the window resizes or moves between monitors. M3b's stylesheet parser keeps
 `@media` blocks (with a warning) so adding this later doesn't change the parser's structure.
 
+## Script IO — files, fetch, WebSocket (proposed)
+
+Research and design: [docs/research/networking-and-files.md](docs/research/networking-and-files.md).
+Where this lands among the milestones is still to decide.
+
+- [ ] Bridge: `Value::Bytes`, JS-side promise table (`asyncOp`), one `__iron_io(events)` batch per
+  frame with a budget, new `iron_io` crate (`IoHost`, generations for hot reload) — `IO-BRG-*`
+- [ ] Files: game manifest; read-only `game` root and per-game writable `data` root (cap-std,
+  stricter names, quotas, atomic writes); `Bun.file`-shaped async API — `IO-FS-*`
+- [ ] `fetch`: lazy tokio runtime, reqwest over rustls; policy (manifest hosts, HTTPS-only when
+  shipped, resolved-address guard with pinning, checked redirects, forbidden headers, limits);
+  `fetch`/`Headers`/`Request`/`Response`/`AbortController`/`URL` — `IO-NET-*`
+- [ ] WebSocket: tokio-tungstenite on the same policy; text/binary, close codes, backpressure,
+  limits — `IO-WS-*`
+- No raw TCP/UDP for scripts: multiplayer stays engine-side (see "Later")
+
 ## M4 — Hot reload
 
 - [ ] Bun watch → rebuild → engine notified
