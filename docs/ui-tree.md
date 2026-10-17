@@ -72,12 +72,12 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 
 - Layout properties land in `taffy::Style` (flex, grid, margin, padding, border widths, inset...).
 - Paint properties land in `Visual`: colours (with `currentColor` flags), border radius
-  (`Corners<CornerRadius>`, each a horizontal and vertical `Len`), `shadows`, background layer lists, border colours, styles and image, `outline_*`, `mix_blend`, `filter_blur`,
-  `backdrop_blur`, `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `contents`, `fixed`, `overflow`, `clip_path`, `clip_rect`,
+  (`Corners<CornerRadius>`, each a horizontal and vertical `Len`), `shadows`, background layer lists, border colours, styles and image, `outline_*`, `mix_blend`, `filter_blur`, `filter_matrix`,
+  `drop_shadows`, `backdrop_blur`, `backdrop_matrix`, mask lists (`mask_images/sizes/positions/repeats/modes`), `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `contents`, `fixed`, `overflow`, `clip_path`, `clip_rect`,
   `scrollbar_width/color`, `cursor`, and `text: TextProps`.
-- [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, blur filters,
+- [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, `Filter` chains (`ColorMatrix`, `DropShadow`),
   backgrounds (`linear-gradient`, `radial-gradient`, `conic-gradient`, `repeating-*`, `url()`),
-  `parse_layers` for comma lists, `BlendMode`, `BorderStyle`, `BorderImage`, `clip-path` shapes
+  `parse_layers` for comma lists, `BlendMode`, `MaskMode`, `BorderStyle`, `BorderImage`, `clip-path` shapes
   (`ClipPath` resolved to a `ClipShape` against the box), `Overflow`.
   [svg_path.rs](../crates/iron_ui/src/svg_path.rs) turns a `path()` string into polygon contours.
 - [color.rs](../crates/iron_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours; modern colour functions and
@@ -272,13 +272,14 @@ shape), `ClipShape` (rect with elliptical corners, or an `Arc<Polygon>`; no long
 
 | Command | Meaning |
 |---|---|
-| `BackdropBlur{rect,radii,blur}` | Blur what is already drawn behind the box |
+| `BackdropBlur{rect,radii,blur,matrix}` | Blur and/or recolour (`backdrop-filter`) what is already drawn behind the box |
 | `BoxShadow(ShadowShape)` | Outer shadow, before its box |
 | `Quad(Quad)` | Background colour, `images: Vec<ImageFill>` layers (bottom first), uniform border, radii |
 | `Border{rect,radii,widths,colors,styles}` | Border with per-side colours or styles; also the `outline` |
-| `BorderImage{area,border,image}` | A `border-image` over the border box grown by the outset |
+| `BorderImage{area,border,image,pixelated}` | A `border-image` over the border box grown by the outset |
 | `InsetShadow{shadow,border}` | Inside the padding box, over the background |
-| `PushLayer{bounds,blur,opacity,blend}` / `PopLayer` | Offscreen group (filter blur, group opacity, blend mode) |
+| `PushLayer{bounds,blur,opacity,blend,matrix,shadows}` / `PopLayer` | Offscreen group (filter blur and colour matrix, `LayerShadow` drop shadows, group opacity, blend mode) |
+| `BeginMask(MaskMode)` | Inside a layer, after its content: the commands up to `PopLayer` draw the layer's mask |
 | `PushClip(ClipShape)` / `PopClip` | Clip following commands |
 | `Text(TextCmd)` | Glyph runs and decorations |
 
@@ -315,6 +316,23 @@ node. `draw_list` paints the fixed nodes after the root (see below).
 - **Blend modes.** `BlendMode` has the 16 W3C modes (`index()` is the shader id). `mix-blend-mode`
   sets `PushLayer.blend`. `blended_background` wraps blended background layers in their own
   `PushLayer`s inside an isolated group.
+- **Filters** (`Filter::parse`). `filter`/`backdrop-filter` take `blur`, `brightness`, `contrast`,
+  `saturate`, `grayscale`, `sepia`, `hue-rotate`, `invert`, `opacity` and (`filter` only)
+  `drop-shadow`. Blurs add in quadrature; colour functions multiply, in order, into one `ColorMatrix`
+  (4x5, row-major, straight-alpha sRGB). Drop shadows (no inset or spread, `currentColor` default)
+  become `LayerShadow`s with sigma = blur / 2. Iron applies blur, then colours, then shadows. A
+  layer is pushed for blur, a matrix, shadows, a mask, group opacity or a blend mode, and its
+  `bounds` grow by `3 * blur` and by each shadow's offset and `3 * sigma`. `backdrop-filter` with
+  `drop-shadow` is invalid.
+- **Masks.** `mask-image` (and `-webkit-`; the `mask` shorthand takes only images), `mask-size`,
+  `-position`, `-repeat` and `-mode` are lists like the background ones. `mask_layers` builds the
+  `ImageFill`s (bottom first) over the border box. After the layer's content `collect` emits
+  `BeginMask(mask_modes[0])` and one `Quad` of those fills; the top layer's mode applies to all.
+  `match-source` is alpha.
+- **`image-rendering`.** Parsed with the text props (`TextProps.pixelated`, `ComputedText.pixelated`;
+  inherited, `pixelated` and `crisp-edges` set it) and copied into `ImageFill.pixelated` (backgrounds,
+  masks, `image` elements) and `BorderImage` commands.
+- **`opacity`** takes a number or a percentage (`"40%"`, `number_or_percent`), clamped to 0-1.
 
 Decisions worth knowing:
 

@@ -63,10 +63,10 @@ Walk `cmds` once, producing:
 | Step | Meaning |
 |---|---|
 | `Clear{target,color}` | Deferred (applied as the load op of the next pass on that target) |
-| `Draw{target, range, image}` | One instanced draw of `instances[range]`; with `image`, the image pipeline for one background image |
+| `Draw{target, range, image}` | One instanced draw of `instances[range]`; with `image: Some((url, pixelated))`, the image pipeline for one background image (nearest-neighbour bind group when `pixelated`) |
 | `Copy{src,dst}` | Snapshot a texture (for backdrop blur) |
 | `Blur{tex,temp,area,sigma}` | Separable Gaussian: horizontal into `temp`, vertical back |
-| `Composite{src,dst,area,opacity,clip,blend}` | Alpha-composite a layer, scissored, with clip; `blend: Option<(mode, backdrop)>` for a blend mode |
+| `Composite{src,dst,area,opacity,clip,blend,matrix,tint,shift,mask}` | Alpha-composite a layer, scissored, with clip; `blend: Option<(mode, backdrop)>` for a blend mode; `matrix` is the `filter` colour matrix, `tint`/`shift` make a drop-shadow copy, `mask: Option<(texture, MaskMode)>` multiplies by a mask |
 
 **Batching.** Consecutive boxes, shadows and glyphs stay in one `Step::Draw` regardless of draw
 order, because the instance order is the paint order and a single pipeline draws all kinds
@@ -85,10 +85,29 @@ in sRGB with a replace blend state.
 `current`. `PopLayer` flushes, optionally adds `Blur` (`filter: blur`, sigma = blur x scale), then
 `Composite` into the parent with `opacity`, scissored to the part of `bounds` the surrounding clip
 allows. `take_texture`/`pool` reuse textures between frames. Unbalanced pushes/pops log a warning
-and are repaired.
+and are repaired. Open layers live on `layer_stack` as `OpenLayer` (own texture, mask, parent, bounds,
+blur, opacity, blend, matrix, shadows, outer clips).
 
-**Backdrop blur.** `Copy` the current target, blur the copy over `rect.expand(3 * blur)`, then
-composite it back using a **rounded-rect clip** of the box. The result is frosted glass of
+**Filters.** The order is fixed: blur, then drop shadows, then the colour matrix (at composite),
+whatever order the CSS lists them. `PopLayer` blurs the layer, then for each `LayerShadow` (last
+first, so the first listed ends on top) copies the layer, blurs the copy by the shadow's sigma and
+composites it under the layer with `tint` (the source's alpha in the shadow colour, linear
+premultiplied) and `shift` (offset x scale, physical px). The layer itself then composites with
+`matrix`. `filtered_source` in effects.wgsl does the tint and the matrix: it un-premultiplies, goes to
+sRGB, applies the 4x5 matrix (`CompositeParams.matrix` as WGSL columns plus `offset`), clamps and
+converts back, like CSS filter functions in browsers. `shift.z`/`shift.w` switch matrix and tint on.
+
+**Masks.** `BeginMask(mode)` (inside a layer, after its content) flushes, takes a second pooled
+texture, clears it and makes it `current`, so the following quad (the mask layers) draws there;
+`OpenLayer.texture` keeps the content texture. `PopLayer` then passes `mask: Some((mask, mode))` to
+every `Composite` of that layer, shadows included. The composite bind group gets the mask at
+binding 6 (the source texture when there is no mask); `mask_at` returns 1 with no mask, the mask's
+alpha for `Alpha`, or its sRGB luminance times alpha for `Luminance`, and `fs_composite` and
+`fs_composite_blend` multiply the colour by it.
+
+**Backdrop filter.** `Copy` the current target, blur the copy over `rect.expand(3 * blur)` (skipped
+when `blur` is 0, a colour-only filter), then composite it back using a **rounded-rect clip** of the
+box, with `BackdropBlur.matrix` as the composite's `matrix`. The result is frosted glass of
 whatever was already drawn.
 
 **Clip table.** `PushClip` appends a `GpuClip { rect, rx, ry, bounds, parent }` to a per-frame
@@ -162,7 +181,7 @@ no layer is created).
 
 [effects.wgsl](../crates/iron_render/src/ui/effects.wgsl): `vs_fullscreen` (one oversized triangle),
 `fs_blur` (1D Gaussian with `radius = ceil(3 sigma)`, max `MAX_BLUR_RADIUS` = 128), `fs_composite`
-(opacity and clip coverage), `fs_composite_blend` (blend mode against a backdrop copy), `fs_blit`. The same `Clip` struct and coverage function are duplicated
+(`filtered_source`, opacity, `mask_at` and clip coverage), `fs_composite_blend` (the same against a backdrop copy), `fs_blit`. The same `Clip` struct and coverage function are duplicated
 in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
 ## Glyph atlas and images
@@ -175,7 +194,16 @@ in both shader files; keep them in sync with `GpuClip` in mod.rs.
   cached too so they are reported once. `url()` values are `data:` URLs (decoded with
   `decode_data_url`) or paths resolved by `iron_core::resolve_asset` against `set_asset_root` (the
   app sets it to the game folder). `UiRenderer::image_size(gpu, url)` loads through this cache so the app can report natural sizes for `image` elements. `tile_rect` implements `background-size`
-  (`auto`/`cover`/`contain`/lengths) and `background-position`.
+  (`auto`/`cover`/`contain`/lengths) and `background-position`. `ImageSamplers` holds two repeating
+  samplers, `smooth` (linear) and `nearest` (`image-rendering: pixelated`); each `LoadedImage` has a
+  bind group for each (`bind_group`, `bind_group_nearest`), and `Step::Draw` picks one by its flag.
+
+**Gradient tiling.** A gradient fill is laid out like an image: `tile_rect` (natural size = the box)
+gives one tile from `background-size`/`position`, `repeat_tiles` its repeat axes (`round` rescales;
+`space` gaps are not kept), and `gradient::build` is built for that tile. The instance carries the
+tile in `p1` and the repeat axes in `params.y` (bit 1 = x, bit 2 = y); `shade` in quad.wgsl wraps the
+pixel into the tile on repeating axes, skips the gradient outside the tile on others, and evaluates
+`gradient_color` against the tile instead of the box.
 
 ## Offscreen and screenshot path
 

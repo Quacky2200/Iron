@@ -64,7 +64,7 @@ normal rule declarations  ->  inline style declarations  ->  !important rule dec
 
 and applies them in that order (later wins). This gives "inline beats rules, `!important` beats
 inline", matching browsers. Notes: there is no origin/layer system, and a value like `0.5` is turned into a number by `css_value` so `opacity: .5` equals
-the inline form `opacity: 0.5`.
+the inline form `opacity: 0.5`; `opacity: 40%` is also accepted.
 
 ### Rule index
 
