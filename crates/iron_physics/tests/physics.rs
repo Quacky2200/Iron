@@ -1,0 +1,325 @@
+use iron_core::Value;
+use iron_physics::{Contact, Physics};
+
+fn num(v: f64) -> Value {
+    Value::Number(v)
+}
+
+fn arr(items: &[f64]) -> Value {
+    Value::Array(items.iter().copied().map(num).collect())
+}
+
+fn op(p: &mut Physics, name: &str, args: Vec<Value>) {
+    p.apply(name, &args)
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+}
+
+/// A fixed 20×1×20 floor whose top is at y = 0, collider 1 on body 1.
+fn floor(p: &mut Physics) {
+    op(
+        p,
+        "body",
+        vec![num(1.0), "fixed".into(), arr(&[0.0, -0.5, 0.0])],
+    );
+    op(
+        p,
+        "collider",
+        vec![num(1.0), num(1.0), "box".into(), arr(&[10.0, 0.5, 10.0])],
+    );
+}
+
+fn steps(p: &mut Physics, n: usize) {
+    for _ in 0..n {
+        p.step();
+    }
+}
+
+// M4-PHY-01
+#[test]
+fn dropped_box_comes_to_rest_on_the_floor() {
+    let mut p = Physics::new();
+    floor(&mut p);
+    op(
+        &mut p,
+        "body",
+        vec![num(2.0), "dynamic".into(), arr(&[0.0, 3.0, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(2.0), num(2.0), "box".into(), arr(&[0.5, 0.5, 0.5])],
+    );
+    steps(&mut p, 240);
+    let [x, y, z] = p.position(2).unwrap();
+    // Half its height above the floor's top, give or take the contact skin.
+    assert!((y - 0.5).abs() < 0.02, "y = {y}");
+    assert!(x.abs() < 0.02 && z.abs() < 0.02, "drifted to {x}, {z}");
+
+    // Moving bodies are reported each tick; the fixed floor never is.
+    let batch = p.take_batch();
+    assert!(batch.bodies.iter().all(|b| b.id == 2));
+    assert!(!batch.bodies.is_empty());
+}
+
+// M4-PHY-02
+#[test]
+fn collisions_start_and_stop_with_script_ids() {
+    let mut p = Physics::new();
+    floor(&mut p);
+    // A ball dropped through a sensor (a trigger volume) onto the floor.
+    op(
+        &mut p,
+        "body",
+        vec![num(3.0), "fixed".into(), arr(&[0.0, 2.0, 0.0])],
+    );
+    let sensor_opts = Value::Array(vec![
+        num(0.5),
+        num(0.0),
+        num(1.0),
+        Value::Bool(true),
+        Value::Bool(true),
+    ]);
+    op(
+        &mut p,
+        "collider",
+        vec![
+            num(30.0),
+            num(3.0),
+            "box".into(),
+            arr(&[1.0, 0.25, 1.0]),
+            arr(&[0.0, 0.0, 0.0]),
+            arr(&[0.0, 0.0, 0.0, 1.0]),
+            sensor_opts,
+        ],
+    );
+    op(
+        &mut p,
+        "body",
+        vec![num(2.0), "dynamic".into(), arr(&[0.0, 4.0, 0.0])],
+    );
+    let events = Value::Array(vec![
+        num(0.5),
+        num(0.0),
+        num(1.0),
+        Value::Bool(false),
+        Value::Bool(true),
+    ]);
+    op(
+        &mut p,
+        "collider",
+        vec![
+            num(20.0),
+            num(2.0),
+            "ball".into(),
+            arr(&[0.25]),
+            Value::Null,
+            Value::Null,
+            events,
+        ],
+    );
+    steps(&mut p, 180);
+    let contacts = p.take_batch().contacts;
+    let pair = |c: &Contact, a, b| (c.a, c.b) == (a, b) || (c.a, c.b) == (b, a);
+    let sensor: Vec<_> = contacts.iter().filter(|c| pair(c, 20, 30)).collect();
+    assert_eq!(sensor.len(), 2, "enter and exit the trigger: {contacts:?}");
+    assert!(sensor[0].started && !sensor[1].started && sensor[0].sensor);
+    let floor_hits: Vec<_> = contacts.iter().filter(|c| pair(c, 20, 1)).collect();
+    assert!(
+        floor_hits.first().is_some_and(|c| c.started && !c.sensor),
+        "{contacts:?}"
+    );
+
+    // Removing the ball ends its contact with the floor.
+    op(&mut p, "removeBody", vec![num(2.0)]);
+    assert_eq!(p.collider_count(), 2);
+    steps(&mut p, 1);
+    let after = p.take_batch().contacts;
+    assert!(after.iter().all(|c| !c.started), "{after:?}");
+}
+
+// M4-PHY-03
+#[test]
+fn character_controller_climbs_a_step_and_stops_at_a_wall() {
+    let mut p = Physics::new();
+    floor(&mut p);
+    // A 0.2 m step from x = 1, and a wall at x = 4.
+    op(
+        &mut p,
+        "body",
+        vec![num(5.0), "fixed".into(), arr(&[2.5, 0.1, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(5.0), num(5.0), "box".into(), arr(&[1.5, 0.1, 2.0])],
+    );
+    op(
+        &mut p,
+        "body",
+        vec![num(6.0), "fixed".into(), arr(&[4.5, 1.5, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(6.0), num(6.0), "box".into(), arr(&[0.5, 1.5, 2.0])],
+    );
+    // A capsule character standing at the origin: 0.5 half height + 0.3 radius.
+    op(
+        &mut p,
+        "body",
+        vec![num(7.0), "kinematic".into(), arr(&[0.0, 0.8, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(7.0), num(7.0), "capsule".into(), arr(&[0.5, 0.3])],
+    );
+    // 45° slopes, snap 0.2 m down, step up to 0.3 m.
+    op(
+        &mut p,
+        "character",
+        vec![num(7.0), num(45.0), num(0.2), num(0.3)],
+    );
+
+    let mut grounded = false;
+    for _ in 0..300 {
+        // 3 m/s forward, with a small downward pull so it stays grounded (a pull as
+        // steep as the forward move makes rapier treat the step edge as a slope).
+        op(&mut p, "move", vec![num(7.0), arr(&[0.05, -0.01, 0.0])]);
+        p.step();
+        grounded = p.take_batch().characters.last().is_some_and(|c| c.1);
+    }
+    let [x, y, _] = p.position(7).unwrap();
+    assert!(grounded);
+    // On top of the step (0.2 + 0.8 above it), pressed against the wall (x = 4 - 0.3).
+    assert!((y - 1.0).abs() < 0.05, "x = {x}, y = {y}");
+    assert!(x > 3.5 && x < 3.71, "x = {x}");
+}
+
+// M4-PHY-05
+#[test]
+fn raycasts_answer_after_the_step() {
+    let mut p = Physics::new();
+    floor(&mut p);
+    op(
+        &mut p,
+        "raycast",
+        vec![
+            num(9.0),
+            arr(&[0.0, 5.0, 0.0]),
+            arr(&[0.0, -2.0, 0.0]),
+            num(100.0),
+        ],
+    );
+    op(
+        &mut p,
+        "raycast",
+        vec![
+            num(10.0),
+            arr(&[0.0, 5.0, 0.0]),
+            arr(&[0.0, 1.0, 0.0]),
+            num(100.0),
+        ],
+    );
+    p.step();
+    let rays = p.take_batch().rays;
+    assert_eq!(rays.len(), 2);
+    let (collider, dist, normal) = rays[0].hit.unwrap();
+    assert_eq!((rays[0].query, collider), (9, 1));
+    assert!((dist - 5.0).abs() < 1e-3 && (normal[1] - 1.0).abs() < 1e-3);
+    assert_eq!((rays[1].query, rays[1].hit), (10, None));
+
+    // Flat on the wire: query, collider (-1: miss), distance, normal.
+    let args = iron_physics::Batch {
+        rays,
+        ..Default::default()
+    }
+    .to_args();
+    let Value::Array(flat) = &args[2] else {
+        panic!()
+    };
+    assert_eq!(flat.len(), 12);
+    assert_eq!(flat[7], num(-1.0));
+}
+
+// M4-PHY-06
+#[test]
+fn bad_ops_are_rejected_and_meshes_collide() {
+    let mut p = Physics::new();
+    for (name, args) in [
+        ("body", vec![num(1.0), "floating".into()]),
+        (
+            "collider",
+            vec![num(1.0), num(99.0), "box".into(), arr(&[1.0, 1.0, 1.0])],
+        ),
+        (
+            "collider",
+            vec![num(1.0), Value::Null, "blob".into(), arr(&[1.0])],
+        ),
+        (
+            "set",
+            vec![num(42.0), "position".into(), arr(&[0.0, 0.0, 0.0])],
+        ),
+        (
+            "raycast",
+            vec![
+                num(1.0),
+                arr(&[0.0, 0.0, 0.0]),
+                arr(&[0.0, 0.0, 0.0]),
+                num(1.0),
+            ],
+        ),
+        ("gravity", vec![arr(&[0.0, f64::NAN, 0.0])]),
+        ("warp", vec![]),
+    ] {
+        assert!(p.apply(name, &args).is_err(), "{name} {args:?} should fail");
+    }
+    assert_eq!((p.body_count(), p.collider_count()), (0, 0));
+
+    // A triangle-mesh floor (two triangles) catches a ball.
+    let points = arr(&[
+        -5.0, 0.0, -5.0, 5.0, 0.0, -5.0, 5.0, 0.0, 5.0, -5.0, 0.0, 5.0,
+    ]);
+    let bad = Value::Array(vec![
+        num(0.5),
+        num(0.0),
+        num(1.0),
+        Value::Bool(false),
+        Value::Bool(false),
+        arr(&[0.0, 1.0, 9.0]),
+    ]);
+    let mesh_args = |opts| {
+        vec![
+            num(1.0),
+            Value::Null,
+            "mesh".into(),
+            points.clone(),
+            Value::Null,
+            Value::Null,
+            opts,
+        ]
+    };
+    assert!(p.apply("collider", &mesh_args(bad)).is_err());
+    let good = Value::Array(vec![
+        num(0.5),
+        num(0.0),
+        num(1.0),
+        Value::Bool(false),
+        Value::Bool(false),
+        arr(&[0.0, 2.0, 1.0, 0.0, 3.0, 2.0]),
+    ]);
+    op(&mut p, "collider", mesh_args(good));
+    op(
+        &mut p,
+        "body",
+        vec![num(2.0), "dynamic".into(), arr(&[0.0, 2.0, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(2.0), num(2.0), "ball".into(), arr(&[0.5])],
+    );
+    steps(&mut p, 240);
+    let y = p.position(2).unwrap()[1];
+    assert!((y - 0.5).abs() < 0.05, "y = {y}");
+}

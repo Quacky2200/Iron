@@ -1,0 +1,10 @@
+[package]
+name = "iron_physics"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+iron_core = { path = "../iron_core" }
+rapier3d = "0.36.1"
+tracing = "0.1.44"
