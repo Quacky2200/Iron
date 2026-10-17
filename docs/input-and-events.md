@@ -84,6 +84,12 @@ IME area arguments.
 - Children are tested before their parent, **later siblings before earlier ones** (reverse paint
   order, i.e. `paint_order`: `zIndex`, then `order`, then DOM order). Children outside their parent's box can still hit (no automatic clipping unless the
   parent clips).
+- Transforms: `hit` takes the window point and a `TransformContext`; each node maps the point into
+  its own plane through the inverse homography (see [ui-tree.md](ui-tree.md#transforms)). A point
+  behind the viewer, or a back-facing `backface-visibility: hidden` node, is a miss; children are
+  tested with the window point and their own context.
+- `visibility: hidden` (inherited, passed down as a `visible` flag) means the node itself is never
+  the target, but its children are still searched and visible ones can hit.
 - `display: none` returns nothing. The element's own `clip-path`/`clip` and, for children, its
   `overflow` clip must contain the point: **what is clipped away cannot be hit**, using the same
   `self_clips`/`overflow_clip` functions as drawing, so hit testing and painting stay in sync.
@@ -146,8 +152,8 @@ default; **default actions run after the script sees the event**, like a browser
 Focus details:
 
 - `focusable(tree, id)`: has a tab index (`tab_index`: the `tabIndex` attribute, or 0 for text fields,
-  which are focusable by default like in HTML), not `disabled`, and `is_displayed` (no `display: none`
-  ancestor). Plain `<box>`es without `tabIndex` are never focusable.
+  which are focusable by default like in HTML), not `disabled`, `is_displayed` (no `display: none`
+  ancestor) and not `visibility: hidden` (`computed_text(id).visible`). Plain `<box>`es without `tabIndex` are never focusable.
 - `tab_order(tree)`: depth-first in tree order skipping generated nodes and `display: none`
   subtrees; positive `tabIndex` first (ascending, stable), then `tabIndex = 0` in tree order;
   negative values are skipped (focusable by click or `ref.focus()` only). `tab_target` wraps around.

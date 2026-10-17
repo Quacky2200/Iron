@@ -158,7 +158,7 @@ keyword declarations without warnings. Tests: [wide_keywords.rs](../crates/iron_
 
 ## Relative units and math ([units.rs](../crates/iron_ui/src/units.rs))
 
-`em`, `rem`, `vw`/`vh`/`vmin`/`vmax` (and the `d`/`s`/`l` variants) and `calc()`, `min()`,
+`em`, `rem`, `vw`/`vh`/`vmin`/`vmax` (and the `d`/`s`/`l` variants), the absolute units `in`, `cm`, `mm`, `Q`, `pt`, `pc` (96 px per inch, so `1in` is `96px` and `1pt` is `96/72` px; they need no context) and `calc()`, `min()`,
 `max()`, `clamp()` are resolved to plain pixel text during restyle, like `var()`, so every property
 parser stays unchanged (`2em` becomes `32px`).
 

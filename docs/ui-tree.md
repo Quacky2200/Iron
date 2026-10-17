@@ -74,7 +74,7 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 - Paint properties land in `Visual`: colours (with `currentColor` flags), border radius
   (`Corners<CornerRadius>`, each a horizontal and vertical `Len`), `shadows`, background layer lists, border colours, styles and image, `outline_*`, `mix_blend`, `filter_blur`, `filter_matrix`,
   `drop_shadows`, `backdrop_blur`, `backdrop_matrix`, mask lists (`mask_images/sizes/positions/repeats/modes`), `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `contents`, `fixed`, `overflow`, `clip_path`, `clip_rect`,
-  `scrollbar_width/color`, `cursor`, and `text: TextProps`.
+  `scrollbar_width/color`, `cursor`, `transform: Option<Arc<Transforms>>` (all transform properties; `None` at defaults) and `text: TextProps`.
 - [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, `Filter` chains (`ColorMatrix`, `DropShadow`),
   backgrounds (`linear-gradient`, `radial-gradient`, `conic-gradient`, `repeating-*`, `url()`),
   `parse_layers` for comma lists, `BlendMode`, `MaskMode`, `BorderStyle`, `BorderImage`, `clip-path` shapes
@@ -144,7 +144,7 @@ Taffy has neither, so `Visual` carries `contents` and `fixed` flags.
   ancestor still hides it.
 
 Relative units (`em`, `rem`, viewport units) and `calc()`/`min()`/`max()`/`clamp()` in either path
-are resolved to pixels at restyle before `apply_style` sees them; see [css.md](css.md#relative-units-and-math-unitsrs).
+are resolved to pixels at restyle before `apply_style` sees them (so are the absolute units `in`, `cm`, `mm`, `Q`, `pt`, `pc`, at 96 px per inch); see [css.md](css.md#relative-units-and-math-unitsrs).
 
 `Visual` has a field-wise `PartialEq` so restyle can detect "no visible change".
 
@@ -196,7 +196,7 @@ overflow), used for clipping, scrollbars and event data.
 ## Text
 
 [text.rs](../crates/iron_ui/src/text.rs) wraps Parley (`TextEngine` = `FontContext` +
-`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour and `smooth`; `Brush::of(&ComputedText)`). Fonts: bundled Inter (variable, upright and
+`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth` and `hidden` (`visibility: hidden`); `Brush::of(&ComputedText)`). Fonts: bundled Inter (variable, upright and
 italic) is always registered and put first for the generic sans-serif families; `with_system_fonts`
 adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no system fonts) to stay
 deterministic. `register_font` accepts overrides for family/weight/style (like `@font-face`), then
@@ -281,12 +281,13 @@ shape), `ClipShape` (rect with elliptical corners, or an `Arc<Polygon>`; no long
 | `PushLayer{bounds,blur,opacity,blend,matrix,shadows}` / `PopLayer` | Offscreen group (filter blur and colour matrix, `LayerShadow` drop shadows, group opacity, blend mode) |
 | `BeginMask(MaskMode)` | Inside a layer, after its content: the commands up to `PopLayer` draw the layer's mask |
 | `PushClip(ClipShape)` / `PopClip` | Clip following commands |
+| `PushTransform(Homography)` / `PopTransform` | What follows is drawn in a transformed plane; the homography maps that plane to the window and replaces (does not compose with) any outer one |
 | `Text(TextCmd)` | Glyph runs and decorations |
 
 `UiTree::draw_list()` runs `layout_if_needed` then `collect(ROOT)` recursively. Per node, in
-CSS painting order: `PushClip` for the element's own `clip-path`/`clip: rect()`, `BackdropBlur`,
+CSS painting order: `PushTransform` if the element has a transform (see [Transforms](#transforms)), `PushClip` for the element's own `clip-path`/`clip: rect()`, `BackdropBlur`,
 `PushLayer` if needed, outer shadows (last listed first, so the first shadow ends on top), the
-`Quad` (or `Border`/`BorderImage` when the border needs them), inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`.
+`Quad` (or `Border`/`BorderImage` when the border needs them), inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`/`PopTransform`.
 `collect` skips `position: fixed` children and paints only the children of a `display: contents`
 node. `draw_list` paints the fixed nodes after the root (see below).
 
@@ -332,6 +333,15 @@ node. `draw_list` paints the fixed nodes after the root (see below).
 - **`image-rendering`.** Parsed with the text props (`TextProps.pixelated`, `ComputedText.pixelated`;
   inherited, `pixelated` and `crisp-edges` set it) and copied into `ImageFill.pixelated` (backgrounds,
   masks, `image` elements) and `BorderImage` commands.
+- **`visibility`.** `visible | hidden | collapse` (`collapse` = `hidden`, there are no tables), parsed
+  with the text props (`TextProps.visible`, `ComputedText.visible`; inherited, children can set
+  `visible` again). A hidden element keeps its layout space. In `collect`, `own` (the node's own
+  commands: shadows, `Quad`, images, text-field content) is cleared when `!text.visible`, and its
+  `BackdropBlur` and outline are skipped; children still draw. Text runs carry the flag in
+  `Brush.hidden`, so `draw_lines` drops the glyph runs and gives decorations a transparent colour,
+  while a visible `span` inside hidden text still draws. `hit` takes a `visible` flag (the
+  inherited value, overridden by the node's own) and a hidden node returns nothing, though its
+  visible children can hit; `focusable` also checks `computed_text(id).visible`. Test: M3-VIS-01.
 - **`opacity`** takes a number or a percentage (`"40%"`, `number_or_percent`), clamped to 0-1.
 
 Decisions worth knowing:
@@ -347,6 +357,42 @@ Decisions worth knowing:
   curves and arcs are split into segments); `url()` is unsupported. An axis that does not clip gets an effectively unbounded clip edge
   (`UNCLIPPED`). Hit testing uses the same clip functions, so clipped-away parts cannot be hit.
 - `currentColor` is resolved here (`current()`), using the node's computed text colour.
+
+## Transforms
+
+[transform.rs](../crates/iron_ui/src/transform.rs) parses `transform` (every 2D and 3D function;
+`parse_transform` gives `Vec<TransformFn>`, where `Fixed(Mat4)` is size-independent and
+`Translate(Len, Len, f32)` may hold percentages), `translate`, `rotate`, `scale`, `transform-origin`,
+`perspective`, `perspective-origin`, `transform-style` and `backface-visibility`. `apply_style` stores
+them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin, perspective,
+`preserve_3d`, `backface_hidden`); `copy_prop` handles the CSS-wide keywords.
+
+- **Model.** Every element is a flat plane. `TransformSpec::matrix(rect, origin)` builds its `Mat4`
+  (`m[row][col]`, column vectors, y down): translate to the origin, then `translate`, `rotate`,
+  `scale`, then the `transform` functions, then translate back. The parent's `perspective` (about
+  its `perspective-origin`) is multiplied in front by `UiTree::node_matrix`. `Mat4::flatten` drops z
+  to a 3x3 `Homography` (rows and columns x, y, w), which maps lines to lines and inverts exactly,
+  so drawing and hit testing only need homographies. `Homography::apply` returns `None` when w <= 0
+  (behind the viewer); `map_rect` gives the bounds of a mapped rect (unlimited if a corner is behind
+  the viewer).
+- **`TransformContext { world, pending }`** is passed down `collect` and `hit`. `world` maps the
+  current plane to the window; `pending` is 3D transform not yet flattened. `transform_step` combines
+  `pending` with the node's matrix, returns `None` for a `backface-visibility: hidden` node facing
+  away (not drawn or hit), and yields the node's plane (`world * flatten(acc)`) plus the children's
+  context: normally `world = plane, pending = identity`; under `transform-style: preserve-3d`
+  `world` stays and `pending = acc`, so the children's turns multiply in before flattening.
+  Planes are still painted in tree order (no depth sorting; see [differences.md](differences.md)).
+- **Draw list.** A node with its own transform is bracketed by `PushTransform(plane)` /
+  `PopTransform`, outside its self clips. Everything inside is in the node's own coordinates; the
+  homography carries the absolute plane-to-window map. Culling and layer bounds in the renderer map
+  through it (see [rendering.md](rendering.md)).
+- **Hit testing.** `hit` keeps the window point (`wx`, `wy`), asks `transform_step` for the node's
+  plane and maps the point into it with `plane.inverse().apply(..)` (a failed inverse or a point
+  behind the viewer is a miss). Its own box test and its `overflow` clip then run in that plane;
+  children get the window point and the child context. `position: fixed` nodes start from
+  `TransformContext::ROOT`.
+- Tests: unit tests in `transform.rs` (M3-XF-01), `layout_props.rs` (hit testing, property forms,
+  `preserve-3d`: M3-XF-02) and the `M3-XF-02` golden.
 
 ## Scrolling
 

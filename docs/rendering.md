@@ -52,11 +52,12 @@ stages. Planning never touches the GPU encoder, which keeps the logic easy to re
 
 Walk `cmds` once, producing:
 
-- `instances: Vec<Instance>` (8 x `vec4`, matching `struct Instance` in quad.wgsl). `params.x` is
+- `instances: Vec<Instance>` (9 x `vec4`, matching `struct Instance` in quad.wgsl). `params.x` is
   the **kind**: `KIND_QUAD`, `OUTER_SHADOW`, `INSET_SHADOW`, `IMAGE`, `GLYPH`, `KIND_BORDER`,
-  `KIND_GRADIENT_PIECE`, `KIND_WAVY`. `rect`/`radii` (horizontal) and `radii_y` (location 7, last so earlier
-  locations stay put) are the shape, `p0/p1` kind-specific data (border widths, shadow source box, atlas rect),
-  `color0/color1` fill and border, `params.y/z/w` blur sigma / gradient index / clip index.
+  `KIND_GRADIENT_PIECE`, `KIND_WAVY`. `rect`/`radii` (horizontal) and `radii_y` (location 7) are the shape, `p0/p1` kind-specific data (border widths, shadow source box, atlas rect),
+  `color0/color1` fill and border, `params.y/z/w` blur sigma / gradient index / clip index, and
+  `xf.x` (location 8) the transform index (1-based, 0 = none): the instance's rect and data are in
+  that transform's plane.
 - `gradients: Vec<GpuGradient>` (up to 8 stops each, extras dropped with a warning).
 - `steps: Vec<Step>`: the ordered render program, over a pool of full-size textures:
 
@@ -118,13 +119,33 @@ Instances do **not** break batches for clips: each carries its clip index in `pa
 elliptical rounded-box signed distance. A polygon clip (`clip-path: polygon()`/`path()`) stores its
 points after the entry, one `vec4` each (x, y, contour start, contour end); `info.y` is the kind,
 `info.z` the first point vec4 and `info.w` the count. `clip_word` and `sd_polygon` (in both
-shaders) evaluate it. Consequences:
+shaders) evaluate it. `info.y` also carries the transform the shape is in, as `kind + 4 x transform
+index` (kind 0 box, 1 nonzero, 2 evenodd); `clip_coverage_with` splits it with `% 4` and `/ 4`.
+Consequences:
 
 - Anything whose bounds do not intersect the active clip's bounds is **culled** in the plan.
 - The vertex shader shrinks each quad to the clip bounds, so overdraw outside the clip costs nothing.
 - A layer starts with an empty clip stack (its content is unclipped) and is clipped **when
   composited** (`Composite.clip`), so a blur inside a clipped layer is cut off correctly.
 - `BackdropBlur` registers its own rounded clip entry (which is why `RenderStats.clips` counts it).
+
+**Transforms.** `PushTransform(h)` stores the homography and its inverse as an entry in the same table
+(`Clips::push_transform`, packed into the `GpuClip` fields; nothing chains to it and its bounds are
+unlimited) and pushes `(index, h)` on `xf_stack`; `PopTransform` pops it. `tag()` stamps pending
+instances with the clip index and `xf.x` together, so transforms do not break batches either. A
+`PushClip` inside a transform stores its shape in the element's plane (`Clips::push` with the
+current transform; its `bounds` are `Homography::map_rect` of the shape) and the shader tests it in
+that plane. In the plan, culling bounds and `PushLayer`/`BackdropBlur` bounds go through `world()`
+(`map_rect` with the current homography). Shaders:
+
+- `vs_main` maps each corner of the (grown) quad with `xf_apply` (a perspective divide, so straight
+  edges stay straight). The shrink-to-clip-bounds step is skipped when `xf` is set, as those bounds
+  are in window space.
+- Fragments compute the window point, then `local_point` maps it back with `xf_unapply` to the
+  instance's plane for the shape, glyph atlas lookup and gradients (`shade`, `glyph`, `fs_image`).
+  `clip_coverage` runs on the window point and un-applies each clip's own transform.
+- Glyph masks are sampled nearest-neighbour in the plane, so rotated text is slightly jagged
+  ([differences.md](differences.md)).
 
 **Text.** For each `GlyphRun`, glyph positions are snapped to whole pixels vertically and to
 quarter pixels horizontally (`SUBPIXEL_BINS` = 4; the sub-pixel offset is baked into the cached
