@@ -654,29 +654,6 @@ export type LightType = "directional" | "point" | "spot";
 /** Unity's `LightShadows`. */
 export type LightShadows = "none" | "hard" | "soft";
 
-let shadowDistance = 25;
-let shadowResolution = 2048;
-
-/** Rendering quality (Unity's `QualitySettings`). */
-export const QualitySettings = {
-  /** How far from the camera shadows reach, in metres: shorter is sharper. */
-  get shadowDistance(): number {
-    return shadowDistance;
-  },
-  set shadowDistance(d: number) {
-    shadowDistance = d;
-    __iron_op("render.shadowSettings", 0, shadowDistance, shadowResolution);
-  },
-  /** The shadow map's size in texels (256 to 8192). */
-  get shadowResolution(): number {
-    return shadowResolution;
-  },
-  set shadowResolution(r: number) {
-    shadowResolution = r;
-    __iron_op("render.shadowSettings", 0, shadowDistance, shadowResolution);
-  },
-};
-
 /**
  * Lights meshes (Unity's `Light`). Directional lights shine along the object's forward
  * (-z) everywhere, like the sun; point lights shine from the object out to `range`;

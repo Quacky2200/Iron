@@ -18,8 +18,8 @@ pub use wgpu;
 pub use world::{
     BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Light, LightKind, MISSING_TEXTURE, MeshData,
     MeshGlow, MeshInstance, Mirror, PRIMITIVE_BASE, PRIMITIVES, Projection, ReflectionProbe,
-    Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldRenderer,
-    WorldTexture, WorldView, primitive, primitive_id, viewport_size,
+    ShadowQuality, Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad,
+    WorldRenderer, WorldTexture, WorldView, primitive, primitive_id, viewport_size,
 };
 
 /// A linear RGBA colour.

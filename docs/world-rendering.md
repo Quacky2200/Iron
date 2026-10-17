@@ -379,6 +379,27 @@ tree and interaction.
   ray with the quad plane in the quad's own space and returns `(u, v, distance)` with (0, 0) at the
   top-left. `None` means parallel or behind.
 
+## Quality settings
+
+`WorldRenderer` has the knobs; scripts set them through `QualitySettings`
+(`js/engine/src/quality.ts`), whose levels (Low / Medium / High / Ultra, overridable in the game's
+`package.json` under `iron.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
+soft filter) and `render.shadowSettings` (distance, map size). The default level is applied when the
+engine loads; the app copies the values onto the renderer before each frame.
+
+- **MSAA** (`msaa`): the main world pass draws into a multisampled colour target (cached by size,
+  format and count) with a multisampled depth buffer, resolving into the target (or the bloom HDR
+  texture). Pipelines are cached by format and sample count. `supported_samples` lowers the count to
+  what the GPU allows for the format and depth: without `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES`
+  (requested at device creation when the adapter has it) only WebGPU's guaranteed 1 and 4. Mirror
+  and probe renders stay single-sampled.
+- **Render scale** (`render_scale`, 0.25 to 2): `render_views` draws the whole world (probes,
+  mirrors, bloom) into a texture of the scaled size (`upscale.rs`) and stretches it over the target
+  with a bilinear blit. Screen UI is drawn afterwards at full resolution.
+- **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 or 2):
+  the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
+  soft filter is a (2r + 1)² box of comparison samples (`shadow.w` in the globals is the radius).
+
 ## Limits
 
 - Only the first directional light with shadows casts them, from the main view's opaque meshes; there

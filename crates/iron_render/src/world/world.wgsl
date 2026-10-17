@@ -12,7 +12,7 @@ struct Globals {
     // The shadow map's view-projection.
     shadow_view_proj: mat4x4<f32>,
     // x: the shadowed light's index (-1: none); y: strength; z: a shadow texel in
-    // metres; w: 1 for soft (filtered) shadows.
+    // metres; w: the soft filter's radius in texels (0: hard).
     shadow: vec4<f32>,
     // Screen to world, for the skybox.
     inv_view_proj: mat4x4<f32>,
@@ -262,14 +262,17 @@ fn shadow_at(world: vec3<f32>, n: vec3<f32>) -> f32 {
         return 1.0;
     }
     var lit = 0.0;
-    if (g.shadow.w > 0.5) {
+    // Soft: a (2r + 1)² box of comparisons (each one bilinear-filtered by the sampler).
+    let r = i32(g.shadow.w + 0.5);
+    if (r > 0) {
         let ts = 1.0 / f32(textureDimensions(shadow_map).x);
-        for (var y = -1; y <= 1; y++) {
-            for (var x = -1; x <= 1; x++) {
+        for (var y = -r; y <= r; y++) {
+            for (var x = -r; x <= r; x++) {
                 lit += textureSampleCompareLevel(shadow_map, shadow_samp, uv + vec2<f32>(f32(x), f32(y)) * ts, ndc.z);
             }
         }
-        lit /= 9.0;
+        let side = f32(2 * r + 1);
+        lit /= side * side;
     } else {
         lit = textureSampleCompareLevel(shadow_map, shadow_samp, uv, ndc.z);
     }

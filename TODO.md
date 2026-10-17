@@ -1002,28 +1002,37 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       double-sided; glass with refraction later
     - [x] A material test scene (spheres sweeping roughness × metallic, the classic grid):
       `examples/materials`, `M5-RND-11`
-  - [ ] Quality settings (asked for 2026-10-17; in progress, in this order), Unity's
-    `QualitySettings` levels:
-    - [ ] Anti-aliasing: MSAA (2 / 4 / 8×, capped by what the GPU supports for the format)
-      for the main world pass (mirrors and probes stay 1×); FXAA as a cheap post pass and
-      TAA (needs motion vectors and jitter) later
-    - [ ] Shadow quality: off / hard only / all (soft allowed), filter size (3 × 3 or
-      5 × 5 PCF), resolution, distance; cascades with the cascade work
-    - [ ] Render scale: draw the world into a texture at a fraction (or a multiple) of the
-      window's size and scale it up (bilinear; FSR-style sharpening later), with UI kept at
-      native resolution
+  - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels. Done:
+    MSAA, render scale, shadow quality, levels, manifest defaults, the example (`M5-RND-14`,
+    `M5-QUA-01`). Left: FXAA / TAA, render textures, texture quality, saving players'
+    choices.
+    - [x] Anti-aliasing: MSAA (2 / 4 / 8x, capped by what the GPU supports for the format;
+      the adapter-specific feature is requested so 2x and 8x work where offered) for the main
+      world pass; mirrors and probes stay 1x
+    - [ ] FXAA as a cheap post pass; TAA later (needs motion vectors and jitter)
+    - [x] Shadow quality: off / hard only / all, soft filter 3 x 3 or 5 x 5, resolution,
+      distance; cascades with the cascade work
+    - [x] Render scale (0.25 to 2): the world drawn into a texture at the scaled size and
+      stretched onto the target (bilinear), UI kept at native resolution; FSR-style
+      sharpening later
     - [ ] Render textures as a general feature (a camera into a texture, usable on
       materials), sharing the render-scale target code
     - [ ] Texture quality (mip bias / max size), anisotropic filtering, bloom and
       particle limits per level
-    - [ ] Named levels (Low / Medium / High / Ultra) setting all of the above;
-      `QualitySettings.setQualityLevel`
-    - [ ] Project / game settings: the default level and per-level overrides in the game's
-      manifest (`package.json` `iron.quality`), editable through a settings UI menu in games
-      (React) now and the editor (M5.e) later; players' choices saved per user (M6 file IO)
-    - [ ] `examples/quality`: thin and shiny things that show aliasing, shadows and scaling,
-      with a settings menu (levels and the individual settings) and screenshots of low and
-      high side by side
+    - [x] Named levels (Low / Medium / High / Ultra) setting all of the above;
+      `QualitySettings.setQualityLevel` / `getQualityLevel` / `names` / `levels` /
+      `onLevelChanged`; the default level applied when the engine loads
+    - [x] Project / game settings: the default level and per-level overrides in the game's
+      manifest (`package.json` `iron.quality`); a settings UI menu in games (React, in the
+      example); the editor's (M5.e) later
+    - [ ] Players' quality choices saved per user (M6 file IO)
+    - [x] `examples/quality`: a fence, a turning fan of thin blades and cables (aliasing,
+      shadows, scaling) with a settings menu for levels and each setting; it cycles the
+      levels until the menu is used
+  - [ ] Camera render groups and distance (asked for 2026-10-17): Unity's layers
+    (`GameObject.layer`, named layers, `LayerMask`) with `Camera.cullingMask` turning groups on
+    and off per camera, `Camera.farClipPlane` as the render distance, and per-layer cull
+    distances (`Camera.layerCullDistances`)
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
     component with blending; skeletons and skinned meshes from glTF

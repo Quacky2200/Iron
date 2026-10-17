@@ -45,6 +45,7 @@ export {
 } from "./textures.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export { Cursor, CursorLockMode } from "./cursor.ts";
+export { type QualityLevel, QualitySettings, type ShadowQualityMode } from "./quality.ts";
 export { type InstantiateOptions, Model } from "./models.ts";
 export { LineRenderer } from "./lines.ts";
 export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
@@ -127,7 +128,6 @@ export {
   RenderSettings,
   type ProceduralSky,
   type LightShadows,
-  QualitySettings,
   WorldPanel,
 } from "./rendering.ts";
 export { createPrimitive, PrimitiveType } from "./primitives.ts";

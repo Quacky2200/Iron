@@ -13,6 +13,7 @@ pub mod bloom;
 pub mod environment;
 pub mod mesh;
 pub mod texture;
+mod upscale;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -206,6 +207,18 @@ pub struct Light {
     pub shadows: Option<Shadows>,
 }
 
+/// Which shadows are drawn at all (Unity's `QualitySettings.shadows`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ShadowQuality {
+    /// No shadows.
+    Disable,
+    /// Soft shadows are drawn hard (one sample).
+    HardOnly,
+    /// As each light asks.
+    #[default]
+    All,
+}
+
 /// How a light casts shadows (Unity's `LightShadows`: hard or soft) and how dark they are.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shadows {
@@ -357,7 +370,7 @@ struct GpuGlobals {
     /// The shadow map's view-projection.
     shadow_view_proj: [[f32; 4]; 4],
     /// x: index of the shadowed light (-1: none); y: strength; z: a shadow-map texel in
-    /// metres (for the normal offset); w: 1 for soft.
+    /// metres (for the normal offset); w: the soft filter's radius in texels (0: hard).
     shadow: [f32; 4],
     /// Screen pixel to world direction, for the skybox.
     inv_view_proj: [[f32; 4]; 4],
@@ -419,7 +432,18 @@ struct Run {
 pub struct WorldRenderer {
     layout: wgpu::PipelineLayout,
     module: wgpu::ShaderModule,
-    pipelines: HashMap<wgpu::TextureFormat, Pipelines>,
+    /// By colour format and sample count.
+    pipelines: HashMap<(wgpu::TextureFormat, u32), Pipelines>,
+    /// Multisampled colour targets the main pass resolves from, by size, format, samples.
+    msaa_targets: HashMap<((u32, u32), wgpu::TextureFormat, u32), wgpu::TextureView>,
+    /// The world's resolution relative to the target (0.25 to 2; Unity URP's `renderScale`):
+    /// below 1 is faster and blurrier, above 1 supersamples. Screen UI isn't scaled.
+    pub render_scale: f32,
+    upscale: Option<upscale::Upscale>,
+    /// Anti-aliasing for the main world pass: 1 (off), 2, 4 or 8 samples per pixel
+    /// (Unity's `antiAliasing`), lowered to what the GPU supports. Mirrors and probes
+    /// render without it.
+    pub msaa: u32,
     globals_layout: wgpu::BindGroupLayout,
     shadow_layout: wgpu::BindGroupLayout,
     shadow_sampler: wgpu::Sampler,
@@ -430,6 +454,10 @@ pub struct WorldRenderer {
     pub shadow_distance: f32,
     /// The shadow map's size in texels.
     pub shadow_resolution: u32,
+    /// Which shadows are drawn.
+    pub shadow_quality: ShadowQuality,
+    /// Soft shadows' filter radius in texels: 1 (3 × 3 samples) or 2 (5 × 5, smoother).
+    pub soft_shadow_radius: u32,
     /// Fills environment maps (made on first use).
     env_pass: Option<environment::EnvPass>,
     /// The sky's environment map; a 1-texel black cube until there's a sky.
@@ -455,8 +483,8 @@ pub struct WorldRenderer {
     samplers: HashMap<(TextureFilter, TextureWrap), wgpu::Sampler>,
     sampler: wgpu::Sampler,
     white: wgpu::TextureView,
-    /// Depth buffers by size (the screen, mirrors and probe faces).
-    depth: HashMap<(u32, u32), wgpu::TextureView>,
+    /// Depth buffers by size and sample count (the screen, mirrors and probe faces).
+    depth: HashMap<((u32, u32), u32), wgpu::TextureView>,
     /// Reflection probes' cubemaps, by probe id.
     probe_maps: HashMap<u32, environment::EnvMap>,
     /// 2D targets probe faces are drawn into before copying, by face size.
@@ -667,6 +695,8 @@ impl WorldRenderer {
             shadow_map: None,
             shadow_distance: 25.0,
             shadow_resolution: 2048,
+            shadow_quality: ShadowQuality::All,
+            soft_shadow_radius: 1,
             env_pass: None,
             env_map: environment::EnvMap::new(gpu, 1),
             sky: None,
@@ -697,6 +727,10 @@ impl WorldRenderer {
             sampler,
             white: white.create_view(&Default::default()),
             depth: HashMap::new(),
+            msaa_targets: HashMap::new(),
+            msaa: 1,
+            render_scale: 1.0,
+            upscale: None,
             probe_maps: HashMap::new(),
             probe_faces: HashMap::new(),
             bloom: None,
@@ -973,7 +1007,61 @@ impl WorldRenderer {
         proj * Mat4::from_translation(snap) * view
     }
 
-    fn pipelines(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Pipelines {
+    /// The most samples per pixel up to `wanted` that the GPU can render `format` (and
+    /// depth) with.
+    fn supported_samples(gpu: &Gpu, format: wgpu::TextureFormat, wanted: u32) -> u32 {
+        // Without the adapter-specific feature, only WebGPU's guaranteed 1 and 4 work.
+        let specific = gpu
+            .device
+            .features()
+            .contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES);
+        let color = gpu.adapter.get_texture_format_features(format).flags;
+        let depth = gpu.adapter.get_texture_format_features(DEPTH_FORMAT).flags;
+        [8, 4, 2]
+            .into_iter()
+            .filter(|&n| specific || n == 4)
+            .find(|&n| {
+                n <= wanted && color.sample_count_supported(n) && depth.sample_count_supported(n)
+            })
+            .unwrap_or(1)
+    }
+
+    /// The multisampled colour target for `size` and `format`.
+    fn msaa_target(
+        &mut self,
+        gpu: &Gpu,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+        samples: u32,
+    ) -> wgpu::TextureView {
+        if self.msaa_targets.len() > 4 && !self.msaa_targets.contains_key(&(size, format, samples))
+        {
+            self.msaa_targets.clear();
+        }
+        self.msaa_targets
+            .entry((size, format, samples))
+            .or_insert_with(|| {
+                gpu.device
+                    .create_texture(&wgpu::TextureDescriptor {
+                        label: Some("world msaa"),
+                        size: wgpu::Extent3d {
+                            width: size.0,
+                            height: size.1,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: samples,
+                        dimension: wgpu::TextureDimension::D2,
+                        format,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                        view_formats: &[],
+                    })
+                    .create_view(&Default::default())
+            })
+            .clone()
+    }
+
+    fn pipelines(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, samples: u32) -> Pipelines {
         let (layout, module) = (&self.layout, &self.module);
         let blend = Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
         let vertex_layout = wgpu::VertexBufferLayout {
@@ -1008,7 +1096,10 @@ impl WorldRenderer {
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
-                    multisample: Default::default(),
+                    multisample: wgpu::MultisampleState {
+                        count: samples,
+                        ..Default::default()
+                    },
                     fragment: Some(wgpu::FragmentState {
                         module,
                         entry_point: Some(entry.1),
@@ -1028,7 +1119,7 @@ impl WorldRenderer {
         // isn't hidden by the depth an earlier one's soft edge wrote.
         let less_equal = wgpu::CompareFunction::LessEqual;
         self.pipelines
-            .entry(format)
+            .entry((format, samples))
             .or_insert_with(|| Pipelines {
                 // Planes are seen from both sides.
                 quad: make(
@@ -1085,8 +1176,8 @@ impl WorldRenderer {
             .clone()
     }
 
-    fn depth_view(&mut self, gpu: &Gpu, size: (u32, u32)) -> wgpu::TextureView {
-        if let Some(view) = self.depth.get(&size) {
+    fn depth_view(&mut self, gpu: &Gpu, size: (u32, u32), samples: u32) -> wgpu::TextureView {
+        if let Some(view) = self.depth.get(&(size, samples)) {
             return view.clone();
         }
         let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -1097,7 +1188,7 @@ impl WorldRenderer {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -1108,7 +1199,7 @@ impl WorldRenderer {
         if self.depth.len() > 8 {
             self.depth.clear();
         }
-        self.depth.insert(size, view.clone());
+        self.depth.insert((size, samples), view.clone());
         view
     }
 
@@ -1136,12 +1227,49 @@ impl WorldRenderer {
         views: &[WorldView],
         textures: &[&wgpu::TextureView],
     ) {
+        let scale = if self.render_scale.is_finite() {
+            self.render_scale.clamp(0.25, 2.0)
+        } else {
+            1.0
+        };
+        let scaled = (
+            ((target.size.0 as f32 * scale).round() as u32).max(1),
+            ((target.size.1 as f32 * scale).round() as u32).max(1),
+        );
+        if scaled == target.size {
+            self.render_views_unscaled(gpu, target, views, textures);
+            return;
+        }
+        // Drawn at the scaled size, then stretched onto the target.
+        let up = self
+            .upscale
+            .get_or_insert_with(|| upscale::Upscale::new(gpu));
+        let texture = up.target(gpu, scaled, target.format);
+        let rt = RenderTarget {
+            view: &texture,
+            format: target.format,
+            size: scaled,
+            scale: target.scale * scale,
+        };
+        self.render_views_unscaled(gpu, &rt, views, textures);
+        if let Some(up) = self.upscale.as_mut() {
+            up.blit(gpu, &texture, target.view, target.format);
+        }
+    }
+
+    fn render_views_unscaled(
+        &mut self,
+        gpu: &Gpu,
+        target: &RenderTarget<'_>,
+        views: &[WorldView],
+        textures: &[&wgpu::TextureView],
+    ) {
         self.update_probes(gpu, views, textures);
         if !views
             .iter()
             .any(|v| v.meshes.iter().any(|m| m.mirror.is_some()))
         {
-            self.render_views_with(gpu, target, views, textures, &[]);
+            self.render_views_with(gpu, target, views, textures, &[], self.msaa);
             return;
         }
         // Mirrors: each mirror in the main view (the biggest) gets the scene rendered from
@@ -1168,7 +1296,7 @@ impl WorldRenderer {
                 size: target.size,
                 scale: target.scale,
             };
-            self.render_views_with(gpu, &rt, &[view], textures, &[]);
+            self.render_views_with(gpu, &rt, &[view], textures, &[], 1);
             views[main].meshes[i].texture = Some(WorldTexture::Reflection(k));
             reflections.push(texture);
         }
@@ -1180,7 +1308,7 @@ impl WorldRenderer {
                 }
             }
         }
-        self.render_views_with(gpu, target, &views, textures, &reflections);
+        self.render_views_with(gpu, target, &views, textures, &reflections, self.msaa);
     }
 
     /// Renders the main view's reflection probes that need it: six 90° views from each
@@ -1243,7 +1371,7 @@ impl WorldRenderer {
                     size: (res, res),
                     scale: 1.0,
                 };
-                self.render_views_with(gpu, &rt, &[v], textures, &[]);
+                self.render_views_with(gpu, &rt, &[v], textures, &[], 1);
                 let pass = self
                     .env_pass
                     .get_or_insert_with(|| environment::EnvPass::new(gpu));
@@ -1326,6 +1454,7 @@ impl WorldRenderer {
         views: &[WorldView],
         textures: &[&wgpu::TextureView],
         reflections: &[wgpu::TextureView],
+        samples: u32,
     ) {
         let size = target.size;
         if size.0 == 0 || size.1 == 0 {
@@ -1342,8 +1471,10 @@ impl WorldRenderer {
             Some(view) => (view, bloom::HDR_FORMAT),
             None => (target.view, target.format),
         };
-        let pipelines = self.pipelines(gpu, color_format);
-        let depth = self.depth_view(gpu, size);
+        let samples = Self::supported_samples(gpu, color_format, samples);
+        let pipelines = self.pipelines(gpu, color_format, samples);
+        let depth = self.depth_view(gpu, size, samples);
+        let msaa = (samples > 1).then(|| self.msaa_target(gpu, size, color_format, samples));
         let shadow_view = self.shadow_view(gpu);
         if self.sky_dirty {
             self.sky_dirty = false;
@@ -1578,6 +1709,9 @@ impl WorldRenderer {
         });
         let shadow = main_view.and_then(|m| {
             let view = &views[m];
+            if self.shadow_quality == ShadowQuality::Disable {
+                return None;
+            }
             let (index, light) = view.lights.iter().enumerate().find(|(_, l)| {
                 l.kind == LightKind::Directional && l.shadows.is_some_and(|s| s.strength > 0.0)
             })?;
@@ -1608,7 +1742,12 @@ impl WorldRenderer {
                         *index as f32,
                         s.strength.clamp(0.0, 1.0),
                         shadow_texel,
-                        f32::from(u8::from(s.soft)),
+                        // The PCF radius in texels: 0 is hard.
+                        if s.soft && self.shadow_quality == ShadowQuality::All {
+                            self.soft_shadow_radius.clamp(1, 2) as f32
+                        } else {
+                            0.0
+                        },
                     ],
                 ),
                 None => (Mat4::IDENTITY, [-1.0, 0.0, 0.0, 0.0]),
@@ -1782,13 +1921,18 @@ impl WorldRenderer {
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("world"),
+                // With MSAA, draw into the multisampled target and resolve into the colour one.
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
+                    view: msaa.as_ref().unwrap_or(color_view),
                     depth_slice: None,
-                    resolve_target: None,
+                    resolve_target: msaa.as_ref().map(|_| color_view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
+                        store: if msaa.is_some() {
+                            wgpu::StoreOp::Discard
+                        } else {
+                            wgpu::StoreOp::Store
+                        },
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {

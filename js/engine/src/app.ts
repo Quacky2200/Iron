@@ -10,6 +10,8 @@ interface InfoApp {
   companyName: string;
   identifier: string;
   engineVersion: string;
+  /** The manifest's `iron.quality` (QualitySettings reads it). */
+  quality?: unknown;
 }
 
 interface InfoSystem {

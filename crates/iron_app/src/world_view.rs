@@ -11,8 +11,8 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Mirror,
-    Projection, ReflectionProbe, Shadows, Sky, TextureData, TextureFilter, TextureWrap,
-    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    Projection, ReflectionProbe, ShadowQuality, Shadows, Sky, TextureData, TextureFilter,
+    TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -54,6 +54,26 @@ struct Renderer {
     texture: Option<u32>,
     tiling: [f32; 4],
     cast_shadows: bool,
+}
+
+/// Rendering quality scripts chose (`QualitySettings`), applied to the renderer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quality {
+    pub msaa: u32,
+    pub render_scale: f32,
+    pub shadows: ShadowQuality,
+    pub soft_radius: u32,
+}
+
+impl Default for Quality {
+    fn default() -> Self {
+        Self {
+            msaa: 1,
+            render_scale: 1.0,
+            shadows: ShadowQuality::All,
+            soft_radius: 1,
+        }
+    }
 }
 
 /// A `ReflectionProbe` component.
@@ -112,6 +132,8 @@ pub struct WorldViews {
     pub bloom: Option<Bloom>,
     /// Shadow distance (metres) and map size (`render.shadowSettings`).
     pub shadow_settings: (f32, u32),
+    /// Anti-aliasing, render scale and shadow quality (`render.quality`).
+    pub quality: Quality,
     /// The sky (`render.sky`), applied by the app before drawing.
     pub sky: Option<Sky>,
     /// Reflection / sky light intensity, and whether ambient light comes from the sky.
@@ -145,6 +167,7 @@ impl Default for WorldViews {
             particles: BTreeMap::new(),
             bloom: None,
             shadow_settings: (25.0, 2048),
+            quality: Quality::default(),
             sky: None,
             environment: (1.0, true),
             pending_emits: Vec::new(),
@@ -593,6 +616,19 @@ impl WorldViews {
             "mirror" => {
                 let normal = nums::<3>(args.get(2)).map_or(Vec3::Y, Vec3::from_array);
                 self.mirrors.insert(id, (id_at(1)?, normal));
+            }
+            // `quality 0 antiAliasing renderScale shadows(disable|hardOnly|all) softRadius`
+            "quality" => {
+                self.quality = Quality {
+                    msaa: num(1).unwrap_or(1.0).clamp(1.0, 8.0) as u32,
+                    render_scale: num(2).unwrap_or(1.0).clamp(0.25, 2.0),
+                    shadows: match args.get(3).and_then(Value::as_str) {
+                        Some("disable") => ShadowQuality::Disable,
+                        Some("hardOnly") => ShadowQuality::HardOnly,
+                        _ => ShadowQuality::All,
+                    },
+                    soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
+                };
             }
             // `shadowSettings 0 distance resolution` (Unity's quality settings).
             "shadowSettings" => {

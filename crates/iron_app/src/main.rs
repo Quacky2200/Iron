@@ -1159,6 +1159,11 @@ impl App {
         gfx.world.bloom = self.world_view.bloom;
         (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
         gfx.world.set_sky(self.world_view.sky);
+        let q = self.world_view.quality;
+        gfx.world.msaa = q.msaa;
+        gfx.world.render_scale = q.render_scale;
+        gfx.world.shadow_quality = q.shadows;
+        gfx.world.soft_shadow_radius = q.soft_radius;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
@@ -1487,6 +1492,11 @@ impl PlatformApp for App {
         gfx.world.bloom = self.world_view.bloom;
         (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
         gfx.world.set_sky(self.world_view.sky);
+        let q = self.world_view.quality;
+        gfx.world.msaa = q.msaa;
+        gfx.world.render_scale = q.render_scale;
+        gfx.world.shadow_quality = q.shadows;
+        gfx.world.soft_shadow_radius = q.soft_radius;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {

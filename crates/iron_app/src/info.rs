@@ -19,6 +19,9 @@ pub struct Manifest {
     pub identifier: String,
     /// The window and taskbar icon, a path in the game folder.
     pub icon: Option<String>,
+    /// `iron.quality`: the default quality level and per-level overrides, passed to
+    /// scripts' `QualitySettings` as is.
+    pub quality: Value,
 }
 
 impl Manifest {
@@ -52,6 +55,7 @@ impl Manifest {
                 .unwrap_or_default(),
             identifier: text(&iron["identifier"]).unwrap_or_default(),
             icon: text(&iron["icon"]),
+            quality: iron["quality"].clone(),
             name,
         }
     }
@@ -90,6 +94,7 @@ impl Info {
                 "companyName": manifest.company,
                 "identifier": manifest.identifier,
                 "engineVersion": env!("CARGO_PKG_VERSION"),
+                "quality": manifest.quality,
             }),
         );
         map.insert("system".into(), system());

@@ -54,6 +54,10 @@ impl Gpu {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                 label: Some("iron device"),
+                // Lets MSAA use every sample count the GPU has (WebGPU only promises 1 and
+                // 4), where it's offered.
+                required_features: adapter.features()
+                    & wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 required_limits:
                     wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
                 ..Default::default()

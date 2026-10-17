@@ -1,0 +1,60 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+import { QualitySettings } from "../src/index.ts";
+import { _resetQualityForTests } from "../src/quality.ts";
+
+let ops: unknown[][] = [];
+
+beforeEach(() => {
+  ops = [];
+  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+});
+
+afterEach(() => {
+  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete globalThis.__iron_info;
+  _resetQualityForTests();
+});
+
+// M5-QUA-01
+describe("QualitySettings", () => {
+  test("levels set anti-aliasing, scale and shadows together; settings change on their own", () => {
+    expect(QualitySettings.names).toEqual(["Low", "Medium", "High", "Ultra"]);
+    expect(QualitySettings.getQualityLevel()).toBe(2);
+    let heard = -1;
+    QualitySettings.onLevelChanged((l) => (heard = l));
+    QualitySettings.setQualityLevel("Low");
+    expect(ops).toEqual([
+      ["render.quality", 0, 1, 0.75, "hardOnly", 1],
+      ["render.shadowSettings", 0, 20, 1024],
+    ]);
+    expect(heard).toBe(0);
+    ops = [];
+    QualitySettings.antiAliasing = 3;
+    QualitySettings.renderScale = 5;
+    expect(ops).toEqual([
+      ["render.quality", 0, 4, 0.75, "hardOnly", 1],
+      ["render.quality", 0, 4, 2, "hardOnly", 1],
+    ]);
+    expect(() => QualitySettings.setQualityLevel("Potato")).toThrow("Potato");
+  });
+
+  test("the game's manifest picks the default level and overrides levels", () => {
+    globalThis.__iron_info = {
+      app: {
+        name: "g",
+        productName: "g",
+        version: "1",
+        companyName: "",
+        identifier: "",
+        engineVersion: "0",
+        quality: { default: "Low", levels: { Low: { renderScale: 0.5 } } },
+      },
+      system: {} as never,
+    };
+    _resetQualityForTests();
+    expect(QualitySettings.getQualityLevel()).toBe(0);
+    expect(QualitySettings.renderScale).toBe(0.5);
+    expect(QualitySettings.levels[0]!.renderScale).toBe(0.5);
+  });
+});

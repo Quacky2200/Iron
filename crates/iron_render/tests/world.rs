@@ -1059,3 +1059,106 @@ fn reflection_probe_in_a_room() {
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-13", size.0, size.1, &pixels, 3);
 }
+
+// M5-RND-14
+#[test]
+fn quality_low_and_high() {
+    use iron_render::{
+        Light, LightKind, MeshGlow, MeshInstance, ShadowQuality, Shadows, primitive_id,
+    };
+    let gpu = shared_gpu();
+    let size = (240, 160);
+    let scene = || {
+        let eye = Vec3::new(0.0, 2.2, 5.0);
+        let camera = WorldCamera::perspective(
+            iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.6, 0.0), Vec3::Y)
+                .inverse(),
+            45.0,
+            0.1,
+            50.0,
+            size,
+            Color::rgb(0.1, 0.12, 0.16),
+        );
+        let bar = |model: Mat4, color: [f32; 4]| MeshInstance {
+            mesh: primitive_id("cube").unwrap(),
+            model,
+            color,
+            emission: [0.0; 3],
+            smoothness: 0.3,
+            metallic: 0.0,
+            unlit: false,
+            texture: None,
+            tiling: [1.0, 1.0, 0.0, 0.0],
+            glow: MeshGlow::None,
+            cast_shadows: true,
+            mirror: None,
+        };
+        let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+        v.meshes.push(MeshInstance {
+            mesh: primitive_id("plane").unwrap(),
+            ..bar(Mat4::from_scale(Vec3::splat(0.5)), [0.75, 0.75, 0.72, 1.0])
+        });
+        // A fence of thin, leaning bars: their edges and shadows alias at low quality.
+        for i in 0..9 {
+            let x = -2.0 + i as f32 * 0.5;
+            v.meshes.push(bar(
+                Mat4::from_scale_rotation_translation(
+                    Vec3::new(0.05, 1.4, 0.05),
+                    Quat::from_rotation_z(0.35),
+                    Vec3::new(x, 0.65, 0.0),
+                ),
+                [0.85, 0.3, 0.2, 1.0],
+            ));
+        }
+        v.lights = vec![Light {
+            kind: LightKind::Directional,
+            color: [1.0, 0.97, 0.9],
+            position: Vec3::ZERO,
+            direction: Vec3::new(-0.6, -1.0, -0.9).normalize(),
+            range: 0.0,
+            shadows: Some(Shadows {
+                soft: true,
+                strength: 0.85,
+            }),
+        }];
+        v
+    };
+    let render = |configure: &dyn Fn(&mut WorldRenderer)| {
+        let target =
+            OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let view = target.view().unwrap();
+        let rt = RenderTarget {
+            view: &view,
+            format: target.format(),
+            size,
+            scale: 1.0,
+        };
+        let mut world = WorldRenderer::new(&gpu);
+        world.shadow_distance = 10.0;
+        configure(&mut world);
+        world.render_views(&gpu, &rt, &[scene()], &[]);
+        target.read_pixels(&gpu).unwrap()
+    };
+    // Low: half resolution, no MSAA, small hard shadows. High: 4× MSAA, full resolution,
+    // big soft shadows with the wide filter.
+    let low = render(&|w| {
+        w.render_scale = 0.5;
+        w.msaa = 1;
+        w.shadow_resolution = 512;
+        w.shadow_quality = ShadowQuality::HardOnly;
+    });
+    let high = render(&|w| {
+        w.render_scale = 1.0;
+        w.msaa = 4;
+        w.shadow_resolution = 2048;
+        w.soft_shadow_radius = 2;
+    });
+    // Side by side: low on the left.
+    let row = (size.0 * 4) as usize;
+    let mut pixels = Vec::with_capacity(row * 2 * size.1 as usize);
+    for y in 0..size.1 as usize {
+        pixels.extend_from_slice(&low[y * row..(y + 1) * row]);
+        pixels.extend_from_slice(&high[y * row..(y + 1) * row]);
+    }
+    assert_golden("M5-RND-14", size.0 * 2, size.1, &pixels, 3);
+}
