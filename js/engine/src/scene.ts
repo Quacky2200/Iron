@@ -9,7 +9,7 @@
 // the host functions at the end of this file, skipping components on inactive objects.
 
 import { checkLayer } from "./layers.ts";
-import type { Scene } from "./scenes.ts";
+import type { Prefab, Scene } from "./scenes.ts";
 import { Quaternion, type QuaternionLike, Vector3, type Vector3Like } from "./math.ts";
 
 export abstract class Component {
@@ -177,7 +177,7 @@ export interface SceneHooks {
   /** The scene new objects go into (the active one). */
   active(): Scene;
   dontDestroyOnLoad(go: GameObject): void;
-  instantiate(original: GameObject, options: InstantiateObjectOptions): GameObject;
+  instantiate(original: GameObject | Prefab, options: InstantiateObjectOptions): GameObject;
   reset(): void;
 }
 
@@ -404,6 +404,8 @@ export class GameObject {
   _model: { src: string; colliders?: string } | null = null;
   /** @internal Built from a model's nodes: saved scenes rebuild these from the model. */
   _modelPart = false;
+  /** @internal A prefab copy's file (`Prefab.load`), kept when saved. */
+  _prefab: string | null = null;
 
   /**
    * Creates an object in the world (at the origin, or as given). `position` and
@@ -442,6 +444,7 @@ export class GameObject {
       _scene: sceneHooks?.active() ?? null,
       _model: null,
       _modelPart: false,
+      _prefab: null,
     });
     Object.assign(go, { transform: new Transform(go) });
     objects.set(id, go);
@@ -590,9 +593,10 @@ export class GameObject {
   /**
    * A copy of an object with its children and components (Unity's `Instantiate`):
    * references inside the copy point at the copies, others at what they pointed at.
-   * Without a parent the copy starts where the original is in the world.
+   * Without a parent the copy starts where the original is in the world. A `Prefab`
+   * places a copy of it.
    */
-  static instantiate(original: GameObject, options: InstantiateObjectOptions = {}): GameObject {
+  static instantiate(original: GameObject | Prefab, options: InstantiateObjectOptions = {}): GameObject {
     if (!sceneHooks) throw new Error("instantiate needs @iron/engine's scenes.ts loaded");
     return sceneHooks.instantiate(original, options);
   }

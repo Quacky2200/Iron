@@ -131,6 +131,8 @@ export interface GameObjectData {
   scale?: [number, number, number];
   /** A model's copy: its nodes are rebuilt from the model, not saved. */
   model?: { src: string; colliders?: string };
+  /** The prefab file it was placed from (kept for tools; the object is saved in full). */
+  prefab?: string;
   components?: ComponentData[];
   children?: GameObjectData[];
 }
@@ -454,6 +456,7 @@ function saveObject(saver: Saver, go: GameObject): GameObjectData | null {
   if (!go.enabled) data.enabled = false;
   if (go.layer !== 0) data.layer = go.layer;
   if (go._model) data.model = { ...go._model };
+  if (go._prefab) data.prefab = go._prefab;
   const components = go.components.map((c): ComponentData => {
     const cls = c.constructor as ComponentClass;
     const properties: Record<string, unknown> = {};
@@ -504,6 +507,7 @@ function loadObjects(
     if (d.layer) go.layer = d.layer;
     if (d.enabled === false) disabled.push(go);
     if (d.model) Model.load(d.model.src)._buildInto(go, { colliders: d.model.colliders as never });
+    if (d.prefab) go._prefab = d.prefab;
     for (const c of d.components ?? []) {
       const cls = _classByName(c.type);
       if (!cls) {
@@ -792,11 +796,90 @@ export const SceneManager = {
   },
 };
 
+/** A saved prefab (Unity's prefab asset): one object tree in the scene file's format. */
+export interface PrefabData {
+  format: "iron.prefab";
+  version: 1;
+  name: string;
+  root: GameObjectData;
+  /** Meshes and textures, shared by id (`{ "$asset": id }`). */
+  assets?: Record<string, Record<string, unknown>>;
+}
+
+const prefabFiles = new Map<string, Promise<Prefab>>();
+
+/**
+ * An object tree to place copies of (Unity's prefab): made from a live object
+ * (`Prefab.fromObject`), from data (`fromData`, e.g. a bundled `.prefab.json`), or read
+ * from the game folder (`Prefab.load`). Copies (`instantiate`, or
+ * `GameObject.instantiate(prefab)`) are independent objects; references inside the
+ * prefab point at the copy's own objects.
+ */
+export class Prefab {
+  private constructor(
+    private readonly data: PrefabData,
+    /** The file it came from, if any. */
+    readonly src: string | null,
+  ) {}
+
+  /** Captures an object and everything under it as it is now. References to objects outside it are dropped. */
+  static fromObject(go: GameObject): Prefab {
+    const saver = new Saver(false);
+    number(saver, [go]);
+    const root = saveObject(saver, go);
+    if (!root) throw new Error("parts of a model can't be prefabs on their own; use the model's root");
+    // The prefab's own placement starts from the origin.
+    delete root.position;
+    delete root.rotation;
+    const data: PrefabData = { format: "iron.prefab", version: 1, name: go.name, root };
+    if (Object.keys(saver.assets).length) data.assets = saver.assets;
+    return new Prefab(JSON.parse(JSON.stringify(data)) as PrefabData, null);
+  }
+
+  /** A prefab from saved data (`toJSON()`'s output). */
+  static fromData(data: unknown, src: string | null = null): Prefab {
+    const d = data as Partial<PrefabData>;
+    if (d?.format !== "iron.prefab" || !d.root) throw new Error(`not prefab data${src ? `: ${src}` : ""}`);
+    return new Prefab(d as PrefabData, src);
+  }
+
+  /** Reads a prefab file (JSON) from the game folder, once per path. */
+  static load(path: string): Promise<Prefab> {
+    let p = prefabFiles.get(path);
+    if (!p) {
+      p = readText(path).then((text) => Prefab.fromData(JSON.parse(text), path));
+      prefabFiles.set(path, p);
+      p.catch(() => prefabFiles.delete(path));
+    }
+    return p;
+  }
+
+  get name(): string {
+    return this.data.name;
+  }
+
+  /** Places a copy: in the active scene (or under `parent`), at `position` / `rotation`. */
+  instantiate(options: InstantiateObjectOptions = {}): GameObject {
+    const root = JSON.parse(JSON.stringify(this.data.root)) as GameObjectData;
+    if (options.position) root.position = [options.position.x, options.position.y, options.position.z];
+    if (options.rotation) root.rotation = [options.rotation.x, options.rotation.y, options.rotation.z, options.rotation.w];
+    if (this.src) root.prefab = this.src;
+    return loadObjects([root], this.data.assets, options.parent ?? null)[0]!;
+  }
+
+  /** As JSON-ready data, for a `.prefab.json` file. */
+  toJSON(): PrefabData {
+    return JSON.parse(JSON.stringify(this.data)) as PrefabData;
+  }
+}
+
 /**
  * Copies an object with its children and components (Unity's `Instantiate`):
- * references inside the copy point at the copies, others at the originals.
+ * references inside the copy point at the copies, others at the originals. A `Prefab`
+ * places a copy of it.
  */
-function instantiate(original: GameObject, options: InstantiateObjectOptions = {}): GameObject {
+function instantiate(original: GameObject | Prefab, options: InstantiateObjectOptions = {}): GameObject {
+  if (original instanceof Prefab) return original.instantiate(options);
   const saver = new Saver(true);
   number(saver, [original]);
   const data = saveObject(saver, original);

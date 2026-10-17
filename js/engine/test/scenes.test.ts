@@ -9,6 +9,7 @@ import {
   Material,
   Mesh,
   MeshRenderer,
+  Prefab,
   property,
   register,
   RenderSettings,
@@ -229,5 +230,40 @@ describe("GameObject.instantiate", () => {
     const gun = GameObject.instantiate(player.findChild("Gun")!, { parent: holder });
     expect(gun.parent).toBe(holder);
     expect(gun.transform.position.equals(new Vector3(0, 6, 0))).toBe(true);
+  });
+});
+
+// M5-PRE-01
+describe("Prefab", () => {
+  test("captures an object tree, places independent copies with inner references, and round-trips as data", () => {
+    const enemy = new GameObject("Enemy", { position: new Vector3(9, 9, 9) });
+    const gunObject = new GameObject("Gun", { parent: enemy, position: new Vector3(0, 1, 0) });
+    const turret = gunObject.addComponent(Turret, { range: 30 });
+    const outsider = new GameObject("Outsider");
+    enemy.addComponent(Health, { max: 80, gun: turret, target: outsider });
+    const prefab = Prefab.fromObject(enemy);
+    expect(prefab.name).toBe("Enemy");
+    // Placed copies: at the given spot, their own gun, the outside reference dropped.
+    const a = GameObject.instantiate(prefab, { position: new Vector3(1, 0, 0) });
+    const b = prefab.instantiate({ position: new Vector3(-1, 0, 0) });
+    expect(a).not.toBe(b);
+    expect(a.transform.localPosition.x).toBe(1);
+    const ha = a.getComponent(Health)!;
+    expect(ha.max).toBe(80);
+    expect(ha.gun).toBe(a.findChild("Gun")!.getComponent(Turret)!);
+    expect(ha.gun).not.toBe(turret);
+    expect(ha.target).toBeNull();
+    // Changing the original later doesn't change the prefab.
+    enemy.getComponent(Health)!.max = 5;
+    expect(prefab.instantiate().getComponent(Health)!.max).toBe(80);
+    // As data (a .prefab.json file), and placed copies from a file keep its path when saved.
+    const again = Prefab.fromData(JSON.parse(JSON.stringify(prefab.toJSON())), "prefabs/enemy.prefab.json");
+    const c = again.instantiate({ parent: outsider });
+    expect(c.parent).toBe(outsider);
+    expect(c.findChild("Gun")!.getComponent(Turret)!.range).toBe(30);
+    const saved = SceneManager.getActiveScene().serialize();
+    const out = saved.objects.find((o) => o.name === "Outsider")!.children![0]!;
+    expect(out.prefab).toBe("prefabs/enemy.prefab.json");
+    expect(() => Prefab.fromData({ format: "iron.scene" })).toThrow("not prefab data");
   });
 });

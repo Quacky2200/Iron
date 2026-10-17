@@ -1307,6 +1307,7 @@
     _scene = null;
     _model = null;
     _modelPart = false;
+    _prefab = null;
     constructor(name = "GameObject", options = {}) {
       this.id = nextObject++;
       this._name = name;
@@ -1334,7 +1335,8 @@
         _layer: 0,
         _scene: sceneHooks?.active() ?? null,
         _model: null,
-        _modelPart: false
+        _modelPart: false,
+        _prefab: null
       });
       Object.assign(go, { transform: new Transform(go) });
       objects.set(id, go);
@@ -6842,6 +6844,8 @@ ${err.stack}` : ""}`);
       data.layer = go.layer;
     if (go._model)
       data.model = { ...go._model };
+    if (go._prefab)
+      data.prefab = go._prefab;
     const components = go.components.map((c) => {
       const cls = c.constructor;
       const properties = {};
@@ -6889,6 +6893,8 @@ ${err.stack}` : ""}`);
         disabled.push(go);
       if (d.model)
         Model.load(d.model.src)._buildInto(go, { colliders: d.model.colliders });
+      if (d.prefab)
+        go._prefab = d.prefab;
       for (const c of d.components ?? []) {
         const cls = _classByName(c.type);
         if (!cls) {
@@ -7144,7 +7150,63 @@ ${err.stack}` : ""}`);
       return () => activeListeners.delete(f);
     }
   };
+  var prefabFiles = new Map;
+
+  class Prefab {
+    data;
+    src;
+    constructor(data, src) {
+      this.data = data;
+      this.src = src;
+    }
+    static fromObject(go) {
+      const saver = new Saver(false);
+      number(saver, [go]);
+      const root = saveObject(saver, go);
+      if (!root)
+        throw new Error("parts of a model can't be prefabs on their own; use the model's root");
+      delete root.position;
+      delete root.rotation;
+      const data = { format: "iron.prefab", version: 1, name: go.name, root };
+      if (Object.keys(saver.assets).length)
+        data.assets = saver.assets;
+      return new Prefab(JSON.parse(JSON.stringify(data)), null);
+    }
+    static fromData(data, src = null) {
+      const d = data;
+      if (d?.format !== "iron.prefab" || !d.root)
+        throw new Error(`not prefab data${src ? `: ${src}` : ""}`);
+      return new Prefab(d, src);
+    }
+    static load(path) {
+      let p = prefabFiles.get(path);
+      if (!p) {
+        p = readText(path).then((text) => Prefab.fromData(JSON.parse(text), path));
+        prefabFiles.set(path, p);
+        p.catch(() => prefabFiles.delete(path));
+      }
+      return p;
+    }
+    get name() {
+      return this.data.name;
+    }
+    instantiate(options = {}) {
+      const root = JSON.parse(JSON.stringify(this.data.root));
+      if (options.position)
+        root.position = [options.position.x, options.position.y, options.position.z];
+      if (options.rotation)
+        root.rotation = [options.rotation.x, options.rotation.y, options.rotation.z, options.rotation.w];
+      if (this.src)
+        root.prefab = this.src;
+      return loadObjects([root], this.data.assets, options.parent ?? null)[0];
+    }
+    toJSON() {
+      return JSON.parse(JSON.stringify(this.data));
+    }
+  }
   function instantiate2(original, options = {}) {
+    if (original instanceof Prefab)
+      return original.instantiate(options);
     const saver = new Saver(true);
     number(saver, [original]);
     const data = saveObject(saver, original);

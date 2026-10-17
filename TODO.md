@@ -1202,6 +1202,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       matrices
     - [ ] Later: animator layers and avatar masks, 2D blend trees, root motion,
       `AnimationCurve` in particles' over-lifetime keys, `Gradient`
+  - [x] Prefabs (Unity's): `Prefab.fromObject` / `fromData` / `load` (a `.prefab.json` in
+    the game folder) / `toJSON`, `prefab.instantiate` and `GameObject.instantiate(prefab)`;
+    copies keep references inside the prefab, drop those outside, and remember their file
+    when saved in scenes — `M5-PRE-01`
+  - [ ] Prefab follow-ups: linked instances with overrides (save only what differs, update
+    copies when the prefab changes), nested prefabs and variants (with the editor, M5.e)
   - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering
   - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
   - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`
