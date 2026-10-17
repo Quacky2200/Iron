@@ -5,6 +5,7 @@ import {
   Color,
   Component,
   GameObject,
+  HideFlags,
   Light,
   Material,
   Mesh,
@@ -18,6 +19,7 @@ import {
   Texture,
   Vector3,
 } from "../src/index.ts";
+import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 
 let ops: unknown[][] = [];
@@ -265,5 +267,25 @@ describe("Prefab", () => {
     const out = saved.objects.find((o) => o.name === "Outsider")!.children![0]!;
     expect(out.prefab).toBe("prefabs/enemy.prefab.json");
     expect(() => Prefab.fromData({ format: "iron.scene" })).toThrow("not prefab data");
+  });
+});
+
+// M5-SCN-06
+describe("hide flags", () => {
+  test("DontSave objects stay out of saved scenes and hidden cameras aren't Camera.main", () => {
+    _resetCamerasForTests();
+    const editorCam = new GameObject("Scene Camera");
+    editorCam.hideFlags = HideFlags.HideAndDontSave;
+    const scam = editorCam.addComponent(Camera);
+    const kept = new GameObject("Kept");
+    const notSaved = new GameObject("Temp", { parent: kept });
+    notSaved.hideFlags = HideFlags.DontSaveInEditor;
+    const game = new GameObject("Main Camera").addComponent(Camera);
+    for (const c of [scam, game]) c.onStart();
+    const saved = SceneManager.getActiveScene().serialize();
+    expect(saved.objects.map((o) => o.name)).toEqual(["Kept", "Main Camera"]);
+    expect(saved.objects[0]!.children ?? []).toEqual([]);
+    expect(Camera.main).toBe(game);
+    expect(HideFlags.HideAndDontSave & HideFlags.HideInHierarchy).toBeTruthy();
   });
 });

@@ -180,6 +180,7 @@ export {
   type ComponentClass,
   GameObject,
   type GameObjectOptions,
+  HideFlags,
   type InstantiateObjectOptions,
   register,
   Transform,

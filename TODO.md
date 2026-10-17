@@ -1283,24 +1283,26 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         placeholders, Console, status bar — `M5-EDT-21`
     - [ ] **Next: the Scene view** (asked for 2026-10-17), replacing the placeholder panel in
       `editor/src/main.tsx`:
-      - An editor camera drawing into the Scene panel: a `Camera` whose `rect` follows the
+      - [ ] An editor camera drawing into the Scene panel: a `Camera` whose `rect` follows the
         panel's layout box (the UI over it left see-through), kept out of the Hierarchy
         and scene saves. Unity's controls: right-drag to look (WASD / QE to fly, Shift
         faster), middle-drag to pan, wheel to zoom, Alt+left-drag to orbit, F to frame
         the selection. A demo scene to look at until scenes open from the project.
-      - A grid on the ground plane, drawn by the renderer (`WorldView.grid`): a pass after
-        the opaque meshes that intersects each pixel's ray with y = 0, draws anti-aliased
-        1 m and 10 m lines that fade with distance, the X axis red and the Z axis blue,
-        and writes the plane's depth so objects hide it.
-      - The x/y/z orientation gizmo in the panel's corner (Unity's scene gizmo): axes from
+      - [x] A grid on the ground plane, drawn by the renderer (`WorldView.grid`,
+        `Camera.sceneGrid`): a pass after the opaque meshes that intersects each pixel's
+        ray with y = 0, draws anti-aliased 1 m and 10 m lines that fade with distance, the
+        X axis red and the Z axis blue, depth-tested at the plane's depth so objects hide
+        it (`M5-RND-22`). `HideFlags` on GameObjects (`DontSave` objects aren't saved,
+        hidden cameras aren't `Camera.main`; `M5-SCN-06`).
+      - [ ] The x/y/z orientation gizmo in the panel's corner (Unity's scene gizmo): axes from
         the camera's rotation, drawn as SVG in the UI; clicking an axis looks along it,
         the centre toggles perspective / orthographic.
-      - **SceneIcons** (the user's name for Unity's gizmo icons): icons at cameras, lights
+      - [ ] **SceneIcons** (the user's name for Unity's gizmo icons): icons at cameras, lights
         (directional, point, spot), audio sources, probes and other icon-less objects,
         always facing the view at a constant screen size, drawn as UI over the view from
         projected positions; clicking one selects its object. Selected objects also get
         wire gizmos (a camera's frustum, a light's range or cone, a probe's box).
-      - Then: move / rotate / scale handles on the selection (W / E / R), and a live
+      - [ ] Then: move / rotate / scale handles on the selection (W / E / R), and a live
         Hierarchy and Inspector bound to the same scene.
     - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo
       (`M5-EDT-01..03`); the 10,000-row scroll benchmark (`M5-EDT-04`); the manual docking

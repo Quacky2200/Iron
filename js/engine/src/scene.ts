@@ -388,6 +388,30 @@ export interface GameObjectOptions {
   scale?: Vector3Like;
 }
 
+/**
+ * Flags that keep an object out of the editor's views and out of saved scenes (Unity's
+ * `HideFlags`; combine with `|`). The editor's own scene camera is `HideAndDontSave`.
+ */
+export const HideFlags = {
+  None: 0,
+  /** Not listed in the Hierarchy. */
+  HideInHierarchy: 1,
+  /** Not shown in the Inspector. */
+  HideInInspector: 2,
+  /** Not saved with scenes in the editor. */
+  DontSaveInEditor: 4,
+  /** Not editable in the Inspector. */
+  NotEditable: 8,
+  /** Not saved with scenes in a build. */
+  DontSaveInBuild: 16,
+  /** Kept when unused assets are unloaded. */
+  DontUnloadUnusedAsset: 32,
+  /** Never saved. */
+  DontSave: 52,
+  /** Hidden and never saved. */
+  HideAndDontSave: 61,
+} as const;
+
 export class GameObject {
   readonly id: number;
   readonly transform: Transform;
@@ -406,6 +430,8 @@ export class GameObject {
   _modelPart = false;
   /** @internal A prefab copy's file (`Prefab.load`), kept when saved. */
   _prefab: string | null = null;
+  /** Keeps it out of the editor's views and saved scenes (`HideFlags` bits). */
+  hideFlags = 0;
 
   /**
    * Creates an object in the world (at the origin, or as given). `position` and
@@ -445,6 +471,7 @@ export class GameObject {
       _model: null,
       _modelPart: false,
       _prefab: null,
+      hideFlags: 0,
     });
     Object.assign(go, { transform: new Transform(go) });
     objects.set(id, go);

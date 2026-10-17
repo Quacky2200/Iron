@@ -483,6 +483,9 @@ pub struct WorldView {
     /// Skinned meshes' bone matrices (each bone's world matrix times its inverse bind
     /// pose), which their [`MeshInstance::bones`] point into.
     pub bones: Vec<Mat4>,
+    /// Draws the editor's ground grid on y = 0 after the opaque meshes: 1 m and 10 m
+    /// lines fading with distance, the X axis red and the Z axis blue.
+    pub grid: bool,
 }
 
 impl WorldView {
@@ -501,6 +504,7 @@ impl WorldView {
             fxaa: false,
             target_texture: None,
             bones: Vec::new(),
+            grid: false,
         }
     }
 }
@@ -681,6 +685,8 @@ struct Pipelines {
     /// Additive meshes, seen from inside too (a beam around the camera).
     mesh_glow: wgpu::RenderPipeline,
     fill: wgpu::RenderPipeline,
+    /// The editor's ground grid ([`WorldView::grid`]): depth-tested, blended, no writes.
+    grid: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
     /// Double-sided materials: both faces drawn.
@@ -1979,6 +1985,14 @@ impl WorldRenderer {
                     (wgpu::CompareFunction::Always, true),
                     None,
                 ),
+                grid: make(
+                    "world grid",
+                    ("vs_fill", "fs_grid"),
+                    &[],
+                    None,
+                    (less, false),
+                    blend,
+                ),
                 mesh: make(
                     "world meshes",
                     ("vs_mesh", "fs_mesh"),
@@ -2303,6 +2317,7 @@ impl WorldRenderer {
                 )
                 .inverse();
                 let mut v = main_view.clone();
+                v.grid = false;
                 v.camera = WorldCamera::new(
                     world,
                     Projection::Perspective {
@@ -2882,7 +2897,7 @@ impl WorldRenderer {
                     f32::from(u8::from(view.skybox && has_env)),
                     size.0 as f32,
                     size.1 as f32,
-                    0.0,
+                    f32::from(u8::from(view.grid)),
                 ],
                 clip: view.clip_plane.unwrap_or([0.0; 4]),
             };
@@ -3099,6 +3114,13 @@ impl WorldRenderer {
                 for run in opaque {
                     draw(&mut pass, run, false);
                 }
+                // The grid is see-through: over the opaque meshes, under the blended ones.
+                if view.grid {
+                    pass.set_bind_group(1, plain, &[]);
+                    pass.set_bind_group(2, &shadow_group, &[]);
+                    pass.set_pipeline(&pipelines.grid);
+                    pass.draw(0..3, 0..1);
+                }
                 for (_, run) in blended {
                     draw(&mut pass, run, true);
                 }
@@ -3136,6 +3158,7 @@ fn reflection_view(view: &WorldView, mirror: Mirror) -> WorldView {
     );
     let flip = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
     let mut v = view.clone();
+    v.grid = false;
     v.meshes
         .retain(|m| m.mirror.is_none() && in_mask(mirror.culling_mask, m.layer));
     v.quads.retain(|q| in_mask(mirror.culling_mask, q.layer));

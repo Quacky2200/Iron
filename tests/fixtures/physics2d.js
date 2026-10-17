@@ -1293,6 +1293,17 @@
       return this.gameObject.parent?.transform ?? null;
     }
   }
+  var HideFlags = {
+    None: 0,
+    HideInHierarchy: 1,
+    HideInInspector: 2,
+    DontSaveInEditor: 4,
+    NotEditable: 8,
+    DontSaveInBuild: 16,
+    DontUnloadUnusedAsset: 32,
+    DontSave: 52,
+    HideAndDontSave: 61
+  };
 
   class GameObject {
     id;
@@ -1308,6 +1319,7 @@
     _model = null;
     _modelPart = false;
     _prefab = null;
+    hideFlags = 0;
     constructor(name = "GameObject", options = {}) {
       this.id = nextObject++;
       this._name = name;
@@ -1336,7 +1348,8 @@
         _scene: sceneHooks?.active() ?? null,
         _model: null,
         _modelPart: false,
-        _prefab: null
+        _prefab: null,
+        hideFlags: 0
       });
       Object.assign(go, { transform: new Transform(go) });
       objects.set(id, go);
@@ -2089,6 +2102,7 @@ ${err.stack}` : ""}`);
     _layerCullDistances = new Array(32).fill(0);
     _layerCullSpherical = false;
     _antialiasing = "none";
+    _sceneGrid = false;
     _targetTexture = null;
     started = false;
     get [(_dec = [
@@ -2232,6 +2246,13 @@ ${err.stack}` : ""}`);
       this._targetTexture = t;
       this.send();
     }
+    get sceneGrid() {
+      return this._sceneGrid;
+    }
+    set sceneGrid(on) {
+      this._sceneGrid = on;
+      this.send();
+    }
     get pixelRect() {
       return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
     }
@@ -2240,7 +2261,7 @@ ${err.stack}` : ""}`);
       return r.width / Math.max(0.000001, r.height);
     }
     static get main() {
-      return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed && !c._targetTexture);
+      return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed && !c._targetTexture && (c.gameObject.hideFlags & HideFlags.HideInHierarchy) === 0);
     }
     static get allCameras() {
       return cameras.filter((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed).sort((a, b) => a._depth - b._depth);
@@ -2302,7 +2323,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const r = this._rect;
-      __iron_op("render.camera", this.id, this.gameObject.id, this._fov, this._near, this._far, rgba(this._background), this._depth, this._orthographic, this._orthographicSize, [r.x, r.y, r.width, r.height], this._clearFlags === "skybox" ? "skybox" : "color", this._cullingMask, this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null, this._layerCullSpherical, this._antialiasing, this._targetTexture?.id ?? null);
+      __iron_op("render.camera", this.id, this.gameObject.id, this._fov, this._near, this._far, rgba(this._background), this._depth, this._orthographic, this._orthographicSize, [r.x, r.y, r.width, r.height], this._clearFlags === "skybox" ? "skybox" : "color", this._cullingMask, this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null, this._layerCullSpherical, this._antialiasing, this._targetTexture?.id ?? null, this._sceneGrid);
     }
     onStart() {
       this.started = true;
@@ -6990,7 +7011,7 @@ ${err.stack}` : ""}`);
   }
   function number(saver, roots) {
     const walk = (go) => {
-      if (go._modelPart)
+      if (go._modelPart || unsaved(go))
         return;
       saver.id(go);
       for (const c of go.components)
@@ -7001,8 +7022,9 @@ ${err.stack}` : ""}`);
     for (const r of roots)
       walk(r);
   }
+  var unsaved = (go) => (go.hideFlags & HideFlags.DontSave) !== 0;
   function saveObject(saver, go) {
-    if (go._modelPart)
+    if (go._modelPart || unsaved(go))
       return null;
     const t = go.transform;
     const p = t.localPosition;

@@ -16,7 +16,7 @@ import {
   Vector3,
   type Vector3Like,
 } from "./math.ts";
-import { Component, type GameObject } from "./scene.ts";
+import { Component, type GameObject, HideFlags } from "./scene.ts";
 import { Screen } from "./screen.ts";
 import type { RenderTexture, Texture } from "./textures.ts";
 
@@ -47,6 +47,7 @@ export class Camera extends Component {
   private _layerCullDistances: number[] = new Array(32).fill(0);
   private _layerCullSpherical = false;
   private _antialiasing: "none" | "fxaa" = "none";
+  private _sceneGrid = false;
   private _targetTexture: RenderTexture | null = null;
   private started = false;
 
@@ -225,6 +226,18 @@ export class Camera extends Component {
     this.send();
   }
 
+  /**
+   * Draws the editor's ground grid on y = 0 (1 m and 10 m lines, the X axis red and the
+   * Z axis blue) over the opaque meshes. For editor views; not saved with scenes.
+   */
+  get sceneGrid(): boolean {
+    return this._sceneGrid;
+  }
+  set sceneGrid(on: boolean) {
+    this._sceneGrid = on;
+    this.send();
+  }
+
   /** The camera's area of the screen in UI pixels. */
   get pixelRect(): Rect {
     return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
@@ -235,9 +248,18 @@ export class Camera extends Component {
     return r.width / Math.max(1e-6, r.height);
   }
 
-  /** The main camera: the first active one added that draws to the screen (like Unity's tagged `Camera.main`). */
+  /**
+   * The main camera: the first active one added that draws to the screen (like Unity's
+   * tagged `Camera.main`). Hidden ones (the editor's scene camera) don't count.
+   */
   static get main(): Camera | undefined {
-    return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed && !c._targetTexture);
+    return cameras.find(
+      (c) =>
+        c.gameObject.activeInHierarchy &&
+        !c.gameObject.destroyed &&
+        !c._targetTexture &&
+        (c.gameObject.hideFlags & HideFlags.HideInHierarchy) === 0,
+    );
   }
 
   /** Every active camera, in draw order. */
@@ -343,6 +365,7 @@ export class Camera extends Component {
       this._layerCullSpherical,
       this._antialiasing,
       this._targetTexture?.id ?? null,
+      this._sceneGrid,
     );
   }
 

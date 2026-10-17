@@ -19,7 +19,8 @@ struct Globals {
     viewport: vec4<f32>,
     // x: 1 with an environment map; y: intensity; z: its last mip; w: 1 for sky ambient.
     env: vec4<f32>,
-    // x: 1 to draw the sky behind everything; yz: the target's size in pixels.
+    // x: 1 to draw the sky behind everything; yz: the target's size in pixels; w: 1 to
+    // draw the editor's ground grid.
     flags: vec4<f32>,
     // Fragments where dot(xyz, p) + w < 0 are dropped (all zero: none).
     clip: vec4<f32>,
@@ -180,6 +181,67 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         return vec4<f32>(textureSampleLevel(env_map, env_samp, dir, 0.0).rgb * g.env.y, 1.0);
     }
     return g.background;
+}
+
+// The editor's ground grid: each pixel's view ray meets y = 0, where 1 m and 10 m lines
+// are drawn anti-aliased (by their screen-space width) and fade out with distance, the
+// X axis (z = 0) red and the Z axis (x = 0) blue. It writes the plane's depth for the
+// depth test only, so objects in front hide it. Derivatives come before any discard.
+struct GridOut {
+    @location(0) color: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+};
+
+// How much of a line every `spacing` metres covers this pixel (0 to 1).
+fn grid_lines(p: vec2<f32>, spacing: f32, width_px: f32) -> f32 {
+    let c = p / spacing;
+    let w = max(fwidth(c), vec2<f32>(1e-5));
+    let d = abs(fract(c - 0.5) - 0.5) / w;
+    let line = 1.0 - min(min(d.x, d.y) / width_px, 1.0);
+    // Lines closer than about two pixels apart turn to mush: fade them out.
+    return line * (1.0 - smoothstep(0.25, 0.5, max(w.x, w.y)));
+}
+
+@fragment
+fn fs_grid(@builtin(position) pos: vec4<f32>) -> GridOut {
+    let uv = (pos.xy - g.viewport.xy) / g.viewport.zw;
+    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let near4 = g.inv_view_proj * vec4<f32>(ndc, 0.0, 1.0);
+    let far4 = g.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    let a = near4.xyz / near4.w;
+    let ray = far4.xyz / far4.w - a;
+    let safe_y = select(ray.y, 1e-6, abs(ray.y) < 1e-6);
+    let t = -a.y / safe_y;
+    let p = a + ray * clamp(t, 0.0, 1.0);
+
+    let minor = grid_lines(p.xz, 1.0, 1.0);
+    let major = grid_lines(p.xz, 10.0, 1.5);
+    let fw = max(fwidth(p.xz), vec2<f32>(1e-5));
+    let x_axis = 1.0 - min(abs(p.z) / fw.y / 1.5, 1.0);
+    let z_axis = 1.0 - min(abs(p.x) / fw.x / 1.5, 1.0);
+
+    // Fade with distance, farther the higher the camera is.
+    let reach = max(abs(g.camera.y) * 12.0, 30.0);
+    let fade = 1.0 - smoothstep(reach * 0.3, reach, length(p.xz - g.camera.xz));
+    // Lines seen at a grazing angle fade too (they'd alias).
+    let facing = smoothstep(0.0, 0.15, abs(normalize(ray).y));
+
+    var c = vec4<f32>(0.5, 0.5, 0.5, max(minor * 0.25, major * 0.5));
+    let axis = max(x_axis, z_axis);
+    if (axis > 0.0) {
+        let tint = select(vec3<f32>(0.2, 0.35, 1.0), vec3<f32>(1.0, 0.2, 0.2), x_axis >= z_axis);
+        c = mix(c, vec4<f32>(tint, 0.9), axis);
+    }
+    let alpha = c.a * fade * facing;
+
+    var out: GridOut;
+    let clip = g.view_proj * vec4<f32>(p, 1.0);
+    out.depth = clamp(clip.z / clip.w, 0.0, 1.0);
+    out.color = vec4<f32>(c.rgb * alpha, alpha);
+    if (t <= 0.0 || t >= 1.0 || alpha <= 0.002) {
+        discard;
+    }
+    return out;
 }
 
 struct MeshOut {

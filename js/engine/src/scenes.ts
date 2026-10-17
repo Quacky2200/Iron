@@ -55,6 +55,7 @@ import {
 import {
   Component,
   GameObject,
+  HideFlags,
   _classByName,
   _isBuiltIn,
   _markRestored,
@@ -448,7 +449,7 @@ function liveComponent(id: number): Component | undefined {
 /** Gives every object and component under `roots` a file id (so references work both ways). */
 function number(saver: Saver, roots: readonly GameObject[]): void {
   const walk = (go: GameObject) => {
-    if (go._modelPart) return;
+    if (go._modelPart || unsaved(go)) return;
     saver.id(go);
     for (const c of go.components) saver.id(c);
     for (const child of go.children) walk(child);
@@ -456,8 +457,11 @@ function number(saver: Saver, roots: readonly GameObject[]): void {
   for (const r of roots) walk(r);
 }
 
+/** Objects flagged `DontSave` (in the editor or a build) stay out of saved scenes. */
+const unsaved = (go: GameObject) => (go.hideFlags & HideFlags.DontSave) !== 0;
+
 function saveObject(saver: Saver, go: GameObject): GameObjectData | null {
-  if (go._modelPart) return null;
+  if (go._modelPart || unsaved(go)) return null;
   const t = go.transform;
   const p = t.localPosition;
   const r = t.localRotation;

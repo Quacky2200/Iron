@@ -326,6 +326,7 @@ layout pass):
 | M5-SKN-01 | Unit | A skinned glTF (`worm.glb`, made by `make_worm.py`) gives joints and normalized weights per vertex, its skin's joints and inverse bind matrices, and its animation's channels (rotation keys, a step channel). |
 | M5-SKN-02 | JS unit | Skinned model parts get a `SkinnedMeshRenderer` with their bones (ids and bind poses in the op); the file's animations become clips with paths from the copy's root and play on their own; script meshes send bone weights (normalized) and bind poses. |
 | M5-RND-21 | Golden | A tube skinned to two bones bends where the upper bone turns, ignoring its object's matrix, and casts a bent shadow. |
+| M5-RND-22 | Golden | The editor's ground grid (`WorldView.grid`): 1 m and 10 m lines on y = 0 fading with distance, the X axis red and the Z axis blue, hidden behind a cube standing on the origin. |
 | M5-PRE-01 | JS unit | `Prefab`: captured from a live tree, copies are independent and placed where asked, references inside point at the copy's objects and outside ones are dropped; later changes to the original don't leak in; JSON round trip; copies from a file save its path; other data is refused. |
 | M5-AST-01 | Unit | The asset watcher reports changed files by game path once settled (not builds); a texture whose file changes loads again under its id with its new size, a model again with the same mesh ids, other files change nothing. |
 | M5-AST-02 | JS unit | `Assets.onChanged` listeners hear changed paths until stopped; a throwing listener doesn't stop the others. |
@@ -403,6 +404,7 @@ layout pass):
 | M5-SCN-03 | JS unit | `SceneManager`: the `Main` scene, additive loads, the active scene taking new objects, moving roots between scenes, unloading (not the last), events in order; single loads replacing all but `DontDestroyOnLoad`; `loadSceneAsync` from a file, failures rejecting; bad data refused. |
 | M5-SCN-04 | JS unit | `GameObject.instantiate` copies objects with children and components; references inside the copy point at the copies, outside ones stay; world placement without a parent, local under one. |
 | M5-SCN-05 | — | Asset references survive moving/renaming the file (GUID in `.meta`): covered by `M5-AST-05`. |
+| M5-SCN-06 | JS unit | `HideFlags`: objects flagged `DontSave` (and their children) stay out of saved scenes; a camera on a `HideInHierarchy` object is never `Camera.main`. |
 | M5-AST-07 | Integration (planned) | Cooking is deterministic: the same input gives byte-identical output. |
 | M5-AST-08 | Integration (planned) | Cooking per platform: BC7 / BC5 for desktop, ASTC for mobile. |
 | M5-RND-01 | Golden | A PBR sphere lit by a directional light. |

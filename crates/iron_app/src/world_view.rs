@@ -43,6 +43,8 @@ struct Camera {
     fxaa: bool,
     /// Draws into this render texture instead of the screen (`targetTexture`).
     target: Option<u32>,
+    /// Draws the editor's ground grid (`Camera.sceneGrid`).
+    grid: bool,
 }
 
 impl Camera {
@@ -722,7 +724,7 @@ impl WorldViews {
         match name {
             // `camera component object fov near far [r g b a] depth orthographic
             // orthographicSize [x y w h] clearFlags(skybox|color) cullingMask
-            // [32 cull distances]|null cullSpherical`
+            // [32 cull distances]|null cullSpherical antialiasing targetTexture|null grid`
             "camera" => {
                 let orthographic = matches!(args.get(7), Some(Value::Bool(true)));
                 let projection = if orthographic {
@@ -751,6 +753,7 @@ impl WorldViews {
                         Some(Value::Null) | None => None,
                         _ => Some(id_at(15)?),
                     },
+                    grid: matches!(args.get(16), Some(Value::Bool(true))),
                 };
                 self.cameras.insert(id, camera);
             }
@@ -1467,6 +1470,7 @@ impl WorldViews {
                     fxaa: camera.fxaa,
                     target_texture: target,
                     bones: bones.clone(),
+                    grid: camera.grid,
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

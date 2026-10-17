@@ -206,6 +206,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fxaa: false,
             target_texture: None,
             bones: Vec::new(),
+            grid: false,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -229,6 +230,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fxaa: false,
             target_texture: None,
             bones: Vec::new(),
+            grid: false,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -259,6 +261,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fxaa: false,
             target_texture: None,
             bones: Vec::new(),
+            grid: false,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -2224,4 +2227,62 @@ fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-21", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-22
+#[test]
+fn editor_grid_lies_on_the_ground_with_coloured_axes_behind_objects() {
+    use iron_render::{MeshInstance, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let eye = Vec3::new(6.0, 4.0, 8.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse(),
+        60.0,
+        0.1,
+        500.0,
+        size,
+        Color::rgb(0.2, 0.2, 0.22),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.grid = true;
+    // An unlit cube on the origin hides the axes' crossing.
+    v.meshes = vec![MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model: Mat4::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+        color: [0.9, 0.7, 0.2, 1.0],
+        unlit: true,
+        ..Default::default()
+    }];
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    // Where a world point lands on screen.
+    let at = |p: Vec3| {
+        let c = view_proj.project_point3(p);
+        let x = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let y = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        let i = (y * size.0 as usize + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    let x_axis = at(Vec3::new(3.0, 0.0, 0.0));
+    assert!(x_axis[0] > x_axis[2] + 40, "the X axis is red: {x_axis:?}");
+    let z_axis = at(Vec3::new(0.0, 0.0, 3.0));
+    assert!(z_axis[2] > z_axis[0] + 40, "the Z axis is blue: {z_axis:?}");
+    let cube = at(Vec3::new(0.0, 0.5, 0.0));
+    assert!(
+        cube[0] > 230 && cube[1] > 200 && cube[2] < 140,
+        "the cube hides the grid: {cube:?}"
+    );
+    assert_golden("M5-RND-22", size.0, size.1, &pixels, 3);
 }
