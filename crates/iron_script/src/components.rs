@@ -23,6 +23,8 @@ pub struct ComponentHost {
     components: Vec<Entry>,
     /// Whether the bundle has `__iron_tick` (checked on the first update).
     tick_hook: Option<bool>,
+    /// Whether the bundle has `__iron_animate` (animation players).
+    animate_hook: Option<bool>,
     /// The last frame's scaled length (`frame_dt`).
     frame_dt: f64,
 }
@@ -213,6 +215,15 @@ impl ComponentHost {
         }
         self.frame_dt = dt;
         let mut errors = self.run(rt, "onUpdate", &[dt.into()], active);
+        // Animation poses objects after updates set its parameters, before late updates
+        // (cameras following animated things) read them.
+        let has_animate = *self.animate_hook.get_or_insert_with(|| {
+            rt.eval("typeof __iron_animate === 'function'")
+                .is_ok_and(|v| v == Value::Bool(true))
+        });
+        if has_animate && let Err(e) = rt.call_global("__iron_animate", &[dt.into()]) {
+            tracing::error!(target: "script", "__iron_animate: {e}");
+        }
         errors.extend(self.run(rt, "onLateUpdate", &[dt.into()], active));
         errors
     }

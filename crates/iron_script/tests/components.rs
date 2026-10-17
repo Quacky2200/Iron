@@ -189,3 +189,17 @@ fn reloads_in_place_keep_react_state_and_swap_component_classes() {
         "{logs:?}"
     );
 }
+
+// M5-ANI-05
+#[test]
+fn animation_runs_after_every_update_each_frame() {
+    let mut rt = QuickJsRuntime::new();
+    let logs = capture_logs(&mut rt);
+    rt.load_bundle("hello.js", HELLO).unwrap();
+    rt.eval("globalThis.__iron_animate = (dt) => console.log(`animate ${dt}`)")
+        .unwrap();
+    let mut host = ComponentHost::new();
+    host.spawn(&mut rt, "Hello").unwrap();
+    assert!(host.update(&mut rt, 0.5).is_empty());
+    assert_eq!(messages(&logs), ["hello", "tick", "animate 0.5"]);
+}

@@ -11,6 +11,26 @@ import "./globals";
 import { _undoOnReload } from "./hot.ts";
 
 export {
+  Animation,
+  AnimationClip,
+  AnimationCurve,
+  type AnimationEvent,
+  AnimationState,
+  Animator,
+  type AnimatorCondition,
+  AnimatorController,
+  type AnimatorParameter,
+  type AnimatorParameterType,
+  type AnimatorState,
+  type AnimatorStateInfo,
+  type AnimatorTransition,
+  type BlendTree,
+  type ConditionMode,
+  type CurveTarget,
+  Keyframe,
+  type WrapMode,
+} from "./animation.ts";
+export {
   audio,
   Bus,
   Emitter,

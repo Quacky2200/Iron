@@ -1171,8 +1171,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       group size and reference point (now the object's origin and a given size)
     - [ ] Occlusion culling later (GPU depth pyramid / Hi-Z), for big scenes
 - [ ] **M5.d** The rest of scene, assets and rendering:
-  - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
-    component with blending; skeletons and skinned meshes from glTF
+  - [ ] Animation (Unity's): skeletons and skinned meshes from glTF still to do
+    - [x] `AnimationCurve` / `Keyframe` (Hermite tangents, steps, wrap modes),
+      `AnimationClip` (curves by path for transform channels and component properties,
+      events, `sampleAnimation`, JSON), the legacy `Animation` component (play,
+      crossFade), `Animator` + `AnimatorController` (parameters, states, 1D blend trees,
+      conditional / exit-time / Any State transitions with cross-fades); evaluated each
+      frame between `onUpdate` and `onLateUpdate` (`__iron_animate`); saved in scenes —
+      `M5-ANI-01`..`05`
+    - [ ] glTF animations as clips; skins and GPU skinning (`SkinnedMeshRenderer`)
+    - [ ] Later: animator layers and avatar masks, 2D blend trees, root motion,
+      `AnimationCurve` in particles' over-lifetime keys, `Gradient`
   - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering
   - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
   - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`

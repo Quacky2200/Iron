@@ -232,6 +232,16 @@ export class Transform {
     __iron_op("scene.local", this.gameObject.id, vec(this._position), quat(this._rotation), vec(this._scale));
   }
 
+  /** @internal Sets the whole local transform with one op (animation). */
+  _setLocal(position: Vector3, rotation: Quaternion, scale: Vector3): void {
+    const old = this._scale;
+    this._position = position;
+    this._rotation = rotation;
+    this._scale = scale;
+    this.send();
+    if (!old.equals(scale)) for (const f of scaleListeners) f(this.gameObject);
+  }
+
   /** @internal Sets the local transform without telling the engine (it told us). */
   _set(position: Vector3, rotation: Quaternion, scale: Vector3): void {
     this._position = position;

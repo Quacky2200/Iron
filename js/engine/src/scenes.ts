@@ -9,6 +9,7 @@
 // with `SceneManager.loadScene(level)`; `loadSceneAsync("scenes/level.scene.json")`
 // reads one from the game folder instead.
 
+import { Animation, AnimationClip, AnimationCurve, Animator, AnimatorController } from "./animation.ts";
 import { AudioListener, AudioSource } from "./audio-components.ts";
 import { Sound } from "./audio.ts";
 import { LineRenderer } from "./lines.ts";
@@ -72,6 +73,8 @@ _registerBuiltIns({
   CameraOrbit,
   CapsuleCollider,
   CapsuleCollider2D,
+  Animation,
+  Animator,
   CharacterController,
   CharacterJoint,
   CircleCollider2D,
@@ -227,6 +230,9 @@ class Saver {
       if (this.keepExternal) return { $ref: kind, live: v instanceof GameObject ? v.id : v.id };
       return null;
     }
+    if (v instanceof AnimationCurve) return { $type: "AnimationCurve", data: v._toJSON() };
+    if (v instanceof AnimationClip) return { $type: "AnimationClip", data: v.toJSON() };
+    if (v instanceof AnimatorController) return { $type: "AnimatorController", data: v.toJSON() };
     if (v instanceof Material) {
       return {
         $type: "Material",
@@ -362,6 +368,12 @@ class Loader {
           return new Rect(n[0], n[1], n[2], n[3]);
         case "RectInt":
           return new RectInt(n[0], n[1], n[2], n[3]);
+        case "AnimationCurve":
+          return AnimationCurve._fromJSON(o.data);
+        case "AnimationClip":
+          return AnimationClip.fromJSON(o.data);
+        case "AnimatorController":
+          return AnimatorController.fromJSON(o.data);
         case "Material":
           return Material.create({
             color: this.value(o.color) as Color,

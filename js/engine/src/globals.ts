@@ -40,6 +40,8 @@ declare global {
   var __iron_hooks: (id: number) => string[];
   // Once per fixed tick, before components update: advances `Time`, returns the scaled dt.
   var __iron_tick: (dt: number) => number;
+  // Each frame after every onUpdate and before onLateUpdate: animation players (animation.ts).
+  var __iron_animate: (dt: number) => void;
   var __iron_input: (type: string, ...args: unknown[]) => void;
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
   // The screen size in UI pixels and the scale (screen.ts).
