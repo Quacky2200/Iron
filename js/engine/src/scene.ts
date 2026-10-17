@@ -429,11 +429,34 @@ export class GameObject {
     return objects.get(id);
   }
 
+  /**
+   * An object with a built-in mesh and the matching collider, like Unity's:
+   * `GameObject.createPrimitive("cube")` (or `PrimitiveType.Cube`).
+   */
+  static createPrimitive(
+    type: "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad",
+    options?: GameObjectOptions & { name?: string },
+  ): GameObject {
+    if (!primitiveFactory) throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+    return primitiveFactory(type, options);
+  }
+
   /** The first component of this class on any object. */
   static findObjectOfType<T extends Component>(cls: ComponentClass<T>): T | undefined {
     for (const c of instances.values()) if (c instanceof cls) return c as T;
     return undefined;
   }
+}
+
+type PrimitiveFactory = (
+  type: "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad",
+  options?: GameObjectOptions & { name?: string },
+) => GameObject;
+let primitiveFactory: PrimitiveFactory | null = null;
+
+/** @internal primitives.ts provides `createPrimitive` (it needs the render and physics components). */
+export function setPrimitiveFactory(f: PrimitiveFactory) {
+  primitiveFactory = f;
 }
 
 /** Drops a destroyed object and its subtree from the mirror. */

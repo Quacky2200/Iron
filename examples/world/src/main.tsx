@@ -18,6 +18,12 @@ import {
   Vector3,
   WorldPanel,
   addStyleSheet,
+  BoxCollider,
+  Light,
+  Material,
+  MeshRenderer,
+  Random,
+  Rigidbody,
 } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
@@ -47,6 +53,26 @@ class World extends Component {
 
     const floor = new GameObject("Floor");
     floor.addComponent(PlaneRenderer, { size: new Vector2(12, 12), color: Color.hex("#4a5263") });
+    floor.addComponent(BoxCollider, { size: new Vector3(12, 0.2, 12), center: new Vector3(0, -0.1, 0) });
+
+    // A sun and a warm point light for the meshes.
+    const sun = new GameObject("Sun", { rotation: Quaternion.euler(-50, 30, 0) });
+    sun.addComponent(Light, { type: "directional", intensity: 1.1 });
+    const lamp = new GameObject("Lamp", { position: new Vector3(0, 1.5, 0) });
+    lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5 });
+
+    // Lit primitives with Rigidbodies, dropped into the ring.
+    Random.initState(3);
+    const kinds = ["cube", "sphere", "capsule", "cylinder"] as const;
+    for (let i = 0; i < 10; i++) {
+      const go = GameObject.createPrimitive(kinds[i % 4]!, {
+        position: new Vector3(Random.range(-1.2, 1.2), 2 + i * 0.7, Random.range(-1.2, 1.2)),
+        rotation: Random.rotation,
+        scale: Vector3.one.scale(0.45),
+      });
+      go.addComponent(Rigidbody, { mass: 1 });
+      go.getComponent(MeshRenderer)!.material = new Material(Color.hex(["#e85d75", "#5dade8", "#7be07b", "#e8c25d"][i % 4]!), Color.black, 0.7);
+    }
 
     // Six panels on a ring, children of one spinning object.
     const ring = new GameObject("Ring", { position: new Vector3(0, 0.9, 0) });

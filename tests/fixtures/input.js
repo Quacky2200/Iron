@@ -1133,9 +1133,204 @@ ${err.stack}` : ""}`);
     }
   }
   // ../../js/engine/src/physics.ts
+  var vec = (v) => v ? [v.x, v.y, v.z] : null;
+  var quat = (q) => q ? [q.x, q.y, q.z, q.w] : null;
+  var nextBody = 1;
+  var nextCollider = 1;
+  var nextQuery = 1;
   var bodies = new Map;
   var colliders = new Map;
   var queries = new Map;
+
+  class PhysicsCollider {
+    id;
+    body;
+    sensor;
+    constructor(body, options) {
+      this.id = nextCollider++;
+      this.body = body;
+      this.sensor = !!options.sensor;
+      const s = options.shape;
+      let shape;
+      let dims;
+      let indices = null;
+      if ("box" in s)
+        [shape, dims] = ["box", [s.box.x, s.box.y, s.box.z]];
+      else if ("ball" in s)
+        [shape, dims] = ["ball", [s.ball]];
+      else if ("capsule" in s)
+        [shape, dims] = ["capsule", [s.capsule.halfHeight, s.capsule.radius]];
+      else if ("cylinder" in s)
+        [shape, dims] = ["cylinder", [s.cylinder.halfHeight, s.cylinder.radius]];
+      else if ("convex" in s)
+        [shape, dims] = ["convex", s.convex.flatMap((p) => [p.x, p.y, p.z])];
+      else {
+        [shape, dims] = ["mesh", s.mesh.points.flatMap((p) => [p.x, p.y, p.z])];
+        indices = s.mesh.indices;
+      }
+      colliders.set(this.id, this);
+      __iron_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec(options.position), quat(options.rotation), [
+        options.friction ?? 0.5,
+        options.restitution ?? 0,
+        options.density ?? 1,
+        this.sensor,
+        true,
+        indices
+      ]);
+    }
+    setFriction(friction) {
+      __iron_op("physics.colliderSet", this.id, "friction", friction);
+    }
+    setRestitution(restitution) {
+      __iron_op("physics.colliderSet", this.id, "restitution", restitution);
+    }
+    setSensor(sensor) {
+      this.sensor = sensor;
+      __iron_op("physics.colliderSet", this.id, "sensor", sensor);
+    }
+    setOffset(position, rotation) {
+      __iron_op("physics.colliderSet", this.id, "offset", vec(position), quat(rotation));
+    }
+    remove() {
+      if (!colliders.delete(this.id))
+        return;
+      __iron_op("physics.removeCollider", this.id);
+    }
+  }
+
+  class PhysicsBody {
+    id;
+    kind;
+    position;
+    rotation;
+    velocity;
+    grounded = false;
+    onCollisionStart;
+    onCollisionEnd;
+    constructor(options = {}) {
+      this.id = nextBody++;
+      this.kind = options.kind ?? "dynamic";
+      this.position = Vector3.from(options.position ?? Vector3.zero);
+      this.rotation = Quaternion.from(options.rotation ?? Quaternion.identity);
+      this.velocity = Vector3.from(options.velocity ?? Vector3.zero);
+      bodies.set(this.id, this);
+      __iron_op("physics.body", this.id, this.kind, vec(this.position), quat(this.rotation), vec(this.velocity), [
+        options.gravityScale ?? 1,
+        options.linearDamping ?? 0,
+        options.angularDamping ?? 0,
+        !!options.ccd,
+        !!options.lockRotations
+      ]);
+    }
+    addCollider(options) {
+      return new PhysicsCollider(this, options);
+    }
+    setPosition(p) {
+      this.position = Vector3.from(p);
+      __iron_op("physics.set", this.id, "position", vec(p));
+    }
+    setRotation(q) {
+      this.rotation = Quaternion.from(q);
+      __iron_op("physics.set", this.id, "rotation", quat(q));
+    }
+    setVelocity(v) {
+      this.velocity = Vector3.from(v);
+      __iron_op("physics.set", this.id, "velocity", vec(v));
+    }
+    setAngularVelocity(v) {
+      __iron_op("physics.set", this.id, "angularVelocity", vec(v));
+    }
+    moveTo(p) {
+      __iron_op("physics.set", this.id, "target", vec(p));
+    }
+    applyImpulse(impulse) {
+      __iron_op("physics.force", this.id, "impulse", vec(impulse));
+    }
+    applyTorqueImpulse(impulse) {
+      __iron_op("physics.force", this.id, "torqueImpulse", vec(impulse));
+    }
+    addForce(force) {
+      __iron_op("physics.force", this.id, "force", vec(force));
+    }
+    addTorque(torque) {
+      __iron_op("physics.force", this.id, "torque", vec(torque));
+    }
+    clearForces() {
+      __iron_op("physics.clearForces", this.id);
+    }
+    applyImpulseAtPoint(impulse, point) {
+      __iron_op("physics.force", this.id, "impulseAt", vec(impulse), vec(point));
+    }
+    setKind(kind) {
+      this.kind = kind;
+      __iron_op("physics.set", this.id, "kind", kind);
+    }
+    setMass(kg) {
+      __iron_op("physics.set", this.id, "mass", kg);
+    }
+    setGravityScale(scale) {
+      __iron_op("physics.set", this.id, "gravityScale", scale);
+    }
+    setDamping(linear, angular) {
+      __iron_op("physics.set", this.id, "linearDamping", linear);
+      __iron_op("physics.set", this.id, "angularDamping", angular);
+    }
+    setCcd(on) {
+      __iron_op("physics.set", this.id, "ccd", on);
+    }
+    setAllowedAxes(translation, rotation) {
+      __iron_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
+    }
+    sleep() {
+      __iron_op("physics.set", this.id, "sleep");
+    }
+    wakeUp() {
+      __iron_op("physics.set", this.id, "wake");
+    }
+    attachTo(objectId) {
+      __iron_op("physics.attach", this.id, objectId);
+    }
+    setEnabled(enabled) {
+      __iron_op("physics.set", this.id, "enabled", enabled);
+    }
+    makeCharacter(options = {}) {
+      __iron_op("physics.character", this.id, options.maxSlope ?? 45, options.snapToGround ?? null, options.stepHeight ?? null);
+    }
+    move(delta) {
+      __iron_op("physics.move", this.id, vec(delta));
+    }
+    remove() {
+      if (!bodies.delete(this.id))
+        return;
+      for (const [id, c] of colliders)
+        if (c.body === this)
+          colliders.delete(id);
+      __iron_op("physics.removeBody", this.id);
+    }
+  }
+  var physics = {
+    createBody(options) {
+      return new PhysicsBody(options);
+    },
+    addCollider(options) {
+      return new PhysicsCollider(null, options);
+    },
+    setGravity(g) {
+      __iron_op("physics.gravity", vec(g));
+    },
+    raycast(origin, direction, maxDistance = 1000) {
+      const id = nextQuery++;
+      const len = Math.hypot(direction.x, direction.y, direction.z) || 1;
+      const dir = { x: direction.x / len, y: direction.y / len, z: direction.z / len };
+      return new Promise((resolve) => {
+        queries.set(id, { origin: { ...origin }, dir, resolve });
+        __iron_op("physics.raycast", id, vec(origin), vec(dir), maxDistance);
+      });
+    },
+    body(id) {
+      return bodies.get(id);
+    }
+  };
   var contactListeners = [];
   function report(fn, event) {
     if (!fn)
@@ -1426,6 +1621,19 @@ ${err.stack}` : ""}`);
   }
   var shared = new Rng;
   // ../../js/engine/src/scene.ts
+  class Component {
+    id;
+    gameObject;
+    get transform() {
+      return this.gameObject.transform;
+    }
+    getComponent(cls) {
+      return this.gameObject.getComponent(cls);
+    }
+    destroy() {
+      this.gameObject.removeComponent(this);
+    }
+  }
   var classes = new Map;
   var names = new Map;
   var instances = new Map;
@@ -1450,8 +1658,8 @@ ${err.stack}` : ""}`);
     object.components.push(instance);
     return instance;
   }
-  var vec = (v) => [v.x, v.y, v.z];
-  var quat = (q) => [q.x, q.y, q.z, q.w];
+  var vec2 = (v) => [v.x, v.y, v.z];
+  var quat2 = (q) => [q.x, q.y, q.z, q.w];
 
   class Transform {
     gameObject;
@@ -1462,7 +1670,7 @@ ${err.stack}` : ""}`);
       this.gameObject = gameObject;
     }
     send() {
-      __iron_op("scene.local", this.gameObject.id, vec(this._position), quat(this._rotation), vec(this._scale));
+      __iron_op("scene.local", this.gameObject.id, vec2(this._position), quat2(this._rotation), vec2(this._scale));
     }
     _set(position, rotation, scale) {
       this._position = position;
@@ -1578,7 +1786,7 @@ ${err.stack}` : ""}`);
       this._parent = parent;
       (parent ? parent.children : roots).push(this);
       const t = this.transform;
-      __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
+      __iron_op("scene.create", this.id, name, parent?.id ?? null, vec2(t._position), quat2(t._rotation), vec2(t._scale));
     }
     static _adopt(id, name) {
       const go = Object.create(GameObject.prototype);
@@ -1694,12 +1902,21 @@ ${err.stack}` : ""}`);
     static byId(id) {
       return objects.get(id);
     }
+    static createPrimitive(type, options) {
+      if (!primitiveFactory)
+        throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+      return primitiveFactory(type, options);
+    }
     static findObjectOfType(cls) {
       for (const c of instances.values())
         if (c instanceof cls)
           return c;
       return;
     }
+  }
+  var primitiveFactory = null;
+  function setPrimitiveFactory(f) {
+    primitiveFactory = f;
   }
   function forget(go) {
     const siblings = go.parent ? go.parent.children : roots;
@@ -1756,8 +1973,170 @@ ${err.stack}` : ""}`);
   };
 
   // ../../js/engine/src/physics-components.ts
+  class PhysicsMaterial {
+    dynamicFriction;
+    bounciness;
+    constructor(dynamicFriction = 0.6, bounciness = 0) {
+      this.dynamicFriction = dynamicFriction;
+      this.bounciness = bounciness;
+    }
+  }
   var objectPhysics = new Map;
   var colliderOwners = new Map;
+  function physicsFor(go) {
+    let p = objectPhysics.get(go);
+    if (!p) {
+      const t = go.transform;
+      const body = physics.createBody({ kind: "fixed", position: t.position, rotation: t.rotation });
+      body.attachTo(go.id);
+      p = { body, rigidbody: null, colliders: new Set };
+      objectPhysics.set(go, p);
+    }
+    return p;
+  }
+  function releasePhysics(go) {
+    const p = objectPhysics.get(go);
+    if (!p || p.rigidbody || p.colliders.size > 0)
+      return;
+    p.body.remove();
+    objectPhysics.delete(go);
+  }
+
+  class Collider extends Component {
+    _center = Vector3.zero;
+    _isTrigger = false;
+    _material = new PhysicsMaterial;
+    handle = null;
+    get center() {
+      return this._center;
+    }
+    set center(c) {
+      this._center = Vector3.from(c);
+      this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
+    }
+    get isTrigger() {
+      return this._isTrigger;
+    }
+    set isTrigger(on) {
+      this._isTrigger = on;
+      this.handle?.setSensor(on);
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.handle?.setFriction(m.dynamicFriction);
+      this.handle?.setRestitution(m.bounciness);
+    }
+    get attachedRigidbody() {
+      return objectPhysics.get(this.gameObject)?.rigidbody ?? null;
+    }
+    rebuild() {
+      if (!this.handle)
+        return;
+      this.handle.remove();
+      colliderOwners.delete(this.handle.id);
+      this.create();
+    }
+    create() {
+      const p = physicsFor(this.gameObject);
+      const scale = this.gameObject.transform.lossyScale;
+      this.handle = p.body.addCollider({
+        shape: this.shape(scale),
+        position: this._center.mul(scale),
+        sensor: this._isTrigger,
+        friction: this._material.dynamicFriction,
+        restitution: this._material.bounciness
+      });
+      colliderOwners.set(this.handle.id, this);
+      p.colliders.add(this);
+      p.rigidbody?._sendMass();
+    }
+    onAwake() {
+      this.create();
+    }
+    onDestroy() {
+      const p = objectPhysics.get(this.gameObject);
+      p?.colliders.delete(this);
+      if (this.handle) {
+        colliderOwners.delete(this.handle.id);
+        this.handle.remove();
+        this.handle = null;
+      }
+      p?.rigidbody?._sendMass();
+      releasePhysics(this.gameObject);
+    }
+  }
+
+  class BoxCollider extends Collider {
+    _size = Vector3.one;
+    get size() {
+      return this._size;
+    }
+    set size(s) {
+      this._size = Vector3.from(s);
+      this.rebuild();
+    }
+    shape(scale) {
+      const h = this._size.mul(scale).scale(0.5);
+      return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
+    }
+  }
+
+  class SphereCollider extends Collider {
+    _radius = 0.5;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    shape(scale) {
+      return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
+    }
+  }
+
+  class CapsuleCollider extends Collider {
+    _radius = 0.5;
+    _height = 2;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    get height() {
+      return this._height;
+    }
+    set height(h) {
+      this._height = h;
+      this.rebuild();
+    }
+    shape(scale) {
+      const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
+      const halfHeight = Math.max(0, this._height * Math.abs(scale.y) / 2 - radius);
+      return { capsule: { halfHeight, radius } };
+    }
+  }
+
+  class MeshCollider extends Collider {
+    points = [];
+    indices = [];
+    convex = false;
+    shape(scale) {
+      const pts = this.points.map((p) => Vector3.from(p).mul(scale));
+      return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
+    }
+    setMesh(points, indices, convex = this.convex) {
+      this.points = points;
+      this.indices = indices;
+      this.convex = convex;
+      this.rebuild();
+    }
+  }
   contactListeners.push((a, b, started, sensor, speed) => {
     const ca = colliderOwners.get(a.id);
     const cb = colliderOwners.get(b.id);
@@ -1794,6 +2173,88 @@ ${err.stack}` : ""}`);
     height = h;
     scale = s;
   };
+
+  // ../../js/engine/src/rendering.ts
+  var rgba = (c) => [c.r, c.g, c.b, c.a];
+  class Material {
+    color;
+    emission;
+    smoothness;
+    unlit;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
+      this.color = color;
+      this.emission = emission;
+      this.smoothness = smoothness;
+      this.unlit = unlit;
+    }
+    withColor(color) {
+      return new Material(color, this.emission, this.smoothness, this.unlit);
+    }
+  }
+  class MeshRenderer extends Component {
+    _mesh = "cube";
+    _material = new Material;
+    started = false;
+    get mesh() {
+      return this._mesh;
+    }
+    set mesh(m) {
+      this._mesh = m;
+      this.send();
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const m = this._material;
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var ambient = new Color(0.2, 0.2, 0.22);
+  // ../../js/engine/src/primitives.ts
+  function createPrimitive(type, options = {}) {
+    const name = options.name ?? type[0].toUpperCase() + type.slice(1);
+    const go = new GameObject(name, options);
+    go.addComponent(MeshRenderer, { mesh: type });
+    switch (type) {
+      case "cube":
+        go.addComponent(BoxCollider);
+        break;
+      case "sphere":
+        go.addComponent(SphereCollider);
+        break;
+      case "capsule":
+        go.addComponent(CapsuleCollider);
+        break;
+      case "cylinder":
+        go.addComponent(CapsuleCollider);
+        break;
+      case "plane":
+        go.addComponent(BoxCollider, { size: new Vector3(10, 0.01, 10) });
+        break;
+      case "quad":
+        go.addComponent(MeshCollider, {
+          points: [new Vector3(-0.5, -0.5, 0), new Vector3(0.5, -0.5, 0), new Vector3(0.5, 0.5, 0), new Vector3(-0.5, 0.5, 0)],
+          indices: [0, 1, 2, 0, 2, 3]
+        });
+        break;
+    }
+    return go;
+  }
+  setPrimitiveFactory(createPrimitive);
   // src/input.ts
   var log = [];
   input.on("gamepadconnected", (e) => log.push(`connected ${e.gamepad.name}`));

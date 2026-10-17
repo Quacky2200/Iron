@@ -822,14 +822,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       texture), `Light` / `LightKind` (directional, point with range, spot with soft cone),
       per-view `ambient`; opaque meshes first, then see-through meshes and quads back to
       front — `M5-MSH-01`, `M5-RND-07`
-    - [ ] Next: script side. `render.mesh` (custom meshes: positions, normals, uvs, indices)
-      and `render.meshRenderer` / `render.light` ops in `crates/iron_app/src/world_view.rs`
-      (add `meshes`/`lights` to `WorldViews::views`, today they're empty `Vec::new()`), and
-      TS components in `js/engine/src/rendering.ts`: `MeshRenderer` (mesh: primitive name or
-      `Mesh`, `Material` with color / emission / smoothness / unlit / texture), `Mesh` class,
-      `Light` (type, color, intensity, range, spotAngle), `RenderSettings.ambientLight`,
-      `GameObject.createPrimitive(PrimitiveType.Cube)` (mesh + matching collider, Unity's)
-    - [ ] Then: an example (physics crates as lit cubes in `examples/world`), docs
+    - [x] Script side: `render.mesh` / `render.meshRenderer` / `render.light` /
+      `render.ambient` ops (`crates/iron_app/src/world_view.rs`; script meshes uploaded before
+      drawing); TS `MeshRenderer` (primitive name or `Mesh`), `Material` (color, emission,
+      smoothness, unlit), `Mesh.create`, `Light` (directional / point / spot, color,
+      intensity, range, spot angles), `RenderSettings.ambientLight`,
+      `GameObject.createPrimitive` / `PrimitiveType` (mesh + matching collider);
+      `examples/world` drops lit primitives with Rigidbodies — `M5-MSH-02`
+    - [ ] Docs for meshes and lights (and the Rigidbody components) at the end of M5.a2
     - [ ] Shadows (directional shadow map), textures on meshes (with `Texture` assets), model
       meshes (glTF) usable as mesh colliders
   - [ ] `AudioSource` (an emitter following its GameObject) and `AudioListener` components

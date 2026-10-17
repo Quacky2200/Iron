@@ -442,3 +442,224 @@ export class WorldPanel extends Component {
     __iron_op("render.remove", this.id);
   }
 }
+
+/** How a surface looks: Unity's `Material` (the standard shader's main settings). */
+export class Material {
+  constructor(
+    /** Base colour (linear; alpha below 1 makes it see-through). */
+    readonly color: Color = Color.white,
+    /** Light it gives off by itself (linear, can exceed 1 for glow). */
+    readonly emission: Color = Color.black,
+    /** 0 (matte) to 1 (glossy): how sharp highlights are. */
+    readonly smoothness = 0.5,
+    /** Ignore lights: just the colour plus emission. */
+    readonly unlit = false,
+  ) {}
+
+  /** A copy with another colour. */
+  withColor(color: Color): Material {
+    return new Material(color, this.emission, this.smoothness, this.unlit);
+  }
+}
+
+let nextMesh = 1;
+
+/**
+ * A triangle mesh made by a script (Unity's `Mesh`): vertices, optional normals and
+ * texture coordinates (made up when missing), and triangles as index triples,
+ * counter-clockwise seen from the front.
+ */
+export class Mesh {
+  readonly id: number;
+  private constructor(id: number) {
+    this.id = id;
+  }
+
+  static create(data: {
+    vertices: readonly Vector3Like[];
+    triangles: readonly number[];
+    normals?: readonly Vector3Like[];
+    uv?: readonly Vector2Like[];
+  }): Mesh {
+    const mesh = new Mesh(nextMesh++);
+    mesh.set(data);
+    return mesh;
+  }
+
+  /** Replaces the mesh's data (everything drawing it updates). */
+  set(data: {
+    vertices: readonly Vector3Like[];
+    triangles: readonly number[];
+    normals?: readonly Vector3Like[];
+    uv?: readonly Vector2Like[];
+  }): void {
+    __iron_op(
+      "render.mesh",
+      this.id,
+      data.vertices.flatMap((v) => [v.x, v.y, v.z]),
+      (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]),
+      (data.uv ?? []).flatMap((v) => [v.x, v.y]),
+      [...data.triangles],
+    );
+  }
+
+  /** Frees it (renderers still using it draw nothing). */
+  destroy(): void {
+    __iron_op("render.mesh", this.id, null);
+  }
+}
+
+/** Unity's built-in meshes. */
+export type PrimitiveMesh = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
+
+/**
+ * Draws a mesh at the object (Unity's `MeshFilter` + `MeshRenderer` in one): a built-in
+ * primitive by name, or a script `Mesh`, with a `Material`.
+ */
+export class MeshRenderer extends Component {
+  private _mesh: PrimitiveMesh | Mesh = "cube";
+  private _material = new Material();
+  private started = false;
+
+  get mesh(): PrimitiveMesh | Mesh {
+    return this._mesh;
+  }
+  set mesh(m: PrimitiveMesh | Mesh) {
+    this._mesh = m;
+    this.send();
+  }
+
+  get material(): Material {
+    return this._material;
+  }
+  set material(m: Material) {
+    this._material = m;
+    this.send();
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    const m = this._material;
+    __iron_op(
+      "render.meshRenderer",
+      this.id,
+      this.gameObject.id,
+      typeof this._mesh === "string" ? this._mesh : this._mesh.id,
+      rgba(m.color),
+      [m.emission.r, m.emission.g, m.emission.b],
+      m.smoothness,
+      m.unlit,
+    );
+  }
+
+  override onAwake(): void {
+    this.started = true;
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}
+
+export type LightType = "directional" | "point" | "spot";
+
+/**
+ * Lights meshes (Unity's `Light`). Directional lights shine along the object's forward
+ * (-z) everywhere, like the sun; point lights shine from the object out to `range`;
+ * spot lights shine a cone `spotAngle` degrees wide along forward.
+ */
+export class Light extends Component {
+  private _type: LightType = "directional";
+  private _color = Color.white;
+  private _intensity = 1;
+  private _range = 10;
+  private _spotAngle = 30;
+  private _innerSpotAngle = 21.8;
+  private started = false;
+
+  get type(): LightType {
+    return this._type;
+  }
+  set type(t: LightType) {
+    this._type = t;
+    this.send();
+  }
+  get color(): Color {
+    return this._color;
+  }
+  set color(c: Color) {
+    this._color = c;
+    this.send();
+  }
+  get intensity(): number {
+    return this._intensity;
+  }
+  set intensity(i: number) {
+    this._intensity = i;
+    this.send();
+  }
+  /** How far point and spot lights reach (metres). */
+  get range(): number {
+    return this._range;
+  }
+  set range(r: number) {
+    this._range = r;
+    this.send();
+  }
+  /** A spot light's full cone angle in degrees. */
+  get spotAngle(): number {
+    return this._spotAngle;
+  }
+  set spotAngle(a: number) {
+    this._spotAngle = a;
+    this.send();
+  }
+  /** Where a spot light starts fading towards its edge (degrees, full angle). */
+  get innerSpotAngle(): number {
+    return this._innerSpotAngle;
+  }
+  set innerSpotAngle(a: number) {
+    this._innerSpotAngle = a;
+    this.send();
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    const c = this._color;
+    __iron_op(
+      "render.light",
+      this.id,
+      this.gameObject.id,
+      this._type,
+      [c.r, c.g, c.b],
+      this._intensity,
+      this._range,
+      this._spotAngle,
+      this._innerSpotAngle,
+    );
+  }
+
+  override onAwake(): void {
+    this.started = true;
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}
+
+let ambient = new Color(0.2, 0.2, 0.22);
+
+/** Scene-wide lighting (Unity's `RenderSettings`). */
+export const RenderSettings = {
+  /** Light everything gets regardless of lights (linear). */
+  get ambientLight(): Color {
+    return ambient;
+  },
+  set ambientLight(c: Color) {
+    ambient = c;
+    __iron_op("render.ambient", 0, [c.r, c.g, c.b]);
+  },
+};

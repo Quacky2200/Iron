@@ -1843,12 +1843,21 @@ ${err.stack}` : ""}`);
     static byId(id) {
       return objects.get(id);
     }
+    static createPrimitive(type, options) {
+      if (!primitiveFactory)
+        throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+      return primitiveFactory(type, options);
+    }
     static findObjectOfType(cls) {
       for (const c of instances.values())
         if (c instanceof cls)
           return c;
       return;
     }
+  }
+  var primitiveFactory = null;
+  function setPrimitiveFactory(f) {
+    primitiveFactory = f;
   }
   function forget(go) {
     const siblings = go.parent ? go.parent.children : roots;
@@ -1905,8 +1914,170 @@ ${err.stack}` : ""}`);
   };
 
   // ../../js/engine/src/physics-components.ts
+  class PhysicsMaterial {
+    dynamicFriction;
+    bounciness;
+    constructor(dynamicFriction = 0.6, bounciness = 0) {
+      this.dynamicFriction = dynamicFriction;
+      this.bounciness = bounciness;
+    }
+  }
   var objectPhysics = new Map;
   var colliderOwners = new Map;
+  function physicsFor(go) {
+    let p = objectPhysics.get(go);
+    if (!p) {
+      const t = go.transform;
+      const body = physics.createBody({ kind: "fixed", position: t.position, rotation: t.rotation });
+      body.attachTo(go.id);
+      p = { body, rigidbody: null, colliders: new Set };
+      objectPhysics.set(go, p);
+    }
+    return p;
+  }
+  function releasePhysics(go) {
+    const p = objectPhysics.get(go);
+    if (!p || p.rigidbody || p.colliders.size > 0)
+      return;
+    p.body.remove();
+    objectPhysics.delete(go);
+  }
+
+  class Collider extends Component {
+    _center = Vector3.zero;
+    _isTrigger = false;
+    _material = new PhysicsMaterial;
+    handle = null;
+    get center() {
+      return this._center;
+    }
+    set center(c) {
+      this._center = Vector3.from(c);
+      this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
+    }
+    get isTrigger() {
+      return this._isTrigger;
+    }
+    set isTrigger(on) {
+      this._isTrigger = on;
+      this.handle?.setSensor(on);
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.handle?.setFriction(m.dynamicFriction);
+      this.handle?.setRestitution(m.bounciness);
+    }
+    get attachedRigidbody() {
+      return objectPhysics.get(this.gameObject)?.rigidbody ?? null;
+    }
+    rebuild() {
+      if (!this.handle)
+        return;
+      this.handle.remove();
+      colliderOwners.delete(this.handle.id);
+      this.create();
+    }
+    create() {
+      const p = physicsFor(this.gameObject);
+      const scale = this.gameObject.transform.lossyScale;
+      this.handle = p.body.addCollider({
+        shape: this.shape(scale),
+        position: this._center.mul(scale),
+        sensor: this._isTrigger,
+        friction: this._material.dynamicFriction,
+        restitution: this._material.bounciness
+      });
+      colliderOwners.set(this.handle.id, this);
+      p.colliders.add(this);
+      p.rigidbody?._sendMass();
+    }
+    onAwake() {
+      this.create();
+    }
+    onDestroy() {
+      const p = objectPhysics.get(this.gameObject);
+      p?.colliders.delete(this);
+      if (this.handle) {
+        colliderOwners.delete(this.handle.id);
+        this.handle.remove();
+        this.handle = null;
+      }
+      p?.rigidbody?._sendMass();
+      releasePhysics(this.gameObject);
+    }
+  }
+
+  class BoxCollider extends Collider {
+    _size = Vector3.one;
+    get size() {
+      return this._size;
+    }
+    set size(s) {
+      this._size = Vector3.from(s);
+      this.rebuild();
+    }
+    shape(scale) {
+      const h = this._size.mul(scale).scale(0.5);
+      return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
+    }
+  }
+
+  class SphereCollider extends Collider {
+    _radius = 0.5;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    shape(scale) {
+      return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
+    }
+  }
+
+  class CapsuleCollider extends Collider {
+    _radius = 0.5;
+    _height = 2;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    get height() {
+      return this._height;
+    }
+    set height(h) {
+      this._height = h;
+      this.rebuild();
+    }
+    shape(scale) {
+      const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
+      const halfHeight = Math.max(0, this._height * Math.abs(scale.y) / 2 - radius);
+      return { capsule: { halfHeight, radius } };
+    }
+  }
+
+  class MeshCollider extends Collider {
+    points = [];
+    indices = [];
+    convex = false;
+    shape(scale) {
+      const pts = this.points.map((p) => Vector3.from(p).mul(scale));
+      return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
+    }
+    setMesh(points, indices, convex = this.convex) {
+      this.points = points;
+      this.indices = indices;
+      this.convex = convex;
+      this.rebuild();
+    }
+  }
   contactListeners.push((a, b, started, sensor, speed) => {
     const ca = colliderOwners.get(a.id);
     const cb = colliderOwners.get(b.id);
@@ -1943,6 +2114,88 @@ ${err.stack}` : ""}`);
     height = h;
     scale = s;
   };
+
+  // ../../js/engine/src/rendering.ts
+  var rgba = (c) => [c.r, c.g, c.b, c.a];
+  class Material {
+    color;
+    emission;
+    smoothness;
+    unlit;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
+      this.color = color;
+      this.emission = emission;
+      this.smoothness = smoothness;
+      this.unlit = unlit;
+    }
+    withColor(color) {
+      return new Material(color, this.emission, this.smoothness, this.unlit);
+    }
+  }
+  class MeshRenderer extends Component {
+    _mesh = "cube";
+    _material = new Material;
+    started = false;
+    get mesh() {
+      return this._mesh;
+    }
+    set mesh(m) {
+      this._mesh = m;
+      this.send();
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const m = this._material;
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var ambient = new Color(0.2, 0.2, 0.22);
+  // ../../js/engine/src/primitives.ts
+  function createPrimitive(type, options = {}) {
+    const name = options.name ?? type[0].toUpperCase() + type.slice(1);
+    const go = new GameObject(name, options);
+    go.addComponent(MeshRenderer, { mesh: type });
+    switch (type) {
+      case "cube":
+        go.addComponent(BoxCollider);
+        break;
+      case "sphere":
+        go.addComponent(SphereCollider);
+        break;
+      case "capsule":
+        go.addComponent(CapsuleCollider);
+        break;
+      case "cylinder":
+        go.addComponent(CapsuleCollider);
+        break;
+      case "plane":
+        go.addComponent(BoxCollider, { size: new Vector3(10, 0.01, 10) });
+        break;
+      case "quad":
+        go.addComponent(MeshCollider, {
+          points: [new Vector3(-0.5, -0.5, 0), new Vector3(0.5, -0.5, 0), new Vector3(0.5, 0.5, 0), new Vector3(-0.5, 0.5, 0)],
+          indices: [0, 1, 2, 0, 2, 3]
+        });
+        break;
+    }
+    return go;
+  }
+  setPrimitiveFactory(createPrimitive);
   // src/physics.ts
   var log = [];
 

@@ -946,6 +946,14 @@ impl App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
+        for (id, data) in self.world_view.mesh_uploads.drain(..) {
+            match data {
+                Some(data) => {
+                    gfx.world.set_mesh(&gfx.gpu, id, &data);
+                }
+                None => gfx.world.remove_mesh(id),
+            }
+        }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (quads, textures) = self.panels.render(
             &gfx.gpu,
@@ -1182,6 +1190,14 @@ impl PlatformApp for App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
+        for (id, data) in self.world_view.mesh_uploads.drain(..) {
+            match data {
+                Some(data) => {
+                    gfx.world.set_mesh(&gfx.gpu, id, &data);
+                }
+                None => gfx.world.remove_mesh(id),
+            }
+        }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (scene, world_view) = (&self.scene, &self.world_view);
         let Gfx {

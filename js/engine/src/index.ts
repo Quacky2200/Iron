@@ -68,7 +68,21 @@ export {
   RigidbodyConstraints,
   SphereCollider,
 } from "./physics-components.ts";
-export { Camera, CameraFollow, CameraOrbit, PlaneRenderer, WorldPanel } from "./rendering.ts";
+export {
+  Camera,
+  CameraFollow,
+  CameraOrbit,
+  Light,
+  type LightType,
+  Material,
+  Mesh,
+  MeshRenderer,
+  PlaneRenderer,
+  type PrimitiveMesh,
+  RenderSettings,
+  WorldPanel,
+} from "./rendering.ts";
+export { createPrimitive, PrimitiveType } from "./primitives.ts";
 export { Screen } from "./screen.ts";
 export {
   Component,

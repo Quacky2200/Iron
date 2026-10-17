@@ -1843,12 +1843,21 @@ ${err.stack}` : ""}`);
     static byId(id) {
       return objects.get(id);
     }
+    static createPrimitive(type, options) {
+      if (!primitiveFactory)
+        throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+      return primitiveFactory(type, options);
+    }
     static findObjectOfType(cls) {
       for (const c of instances.values())
         if (c instanceof cls)
           return c;
       return;
     }
+  }
+  var primitiveFactory = null;
+  function setPrimitiveFactory(f) {
+    primitiveFactory = f;
   }
   function forget(go) {
     const siblings = go.parent ? go.parent.children : roots;
@@ -2042,6 +2051,47 @@ ${err.stack}` : ""}`);
       return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
     }
   }
+
+  class CapsuleCollider extends Collider {
+    _radius = 0.5;
+    _height = 2;
+    get radius() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    get height() {
+      return this._height;
+    }
+    set height(h) {
+      this._height = h;
+      this.rebuild();
+    }
+    shape(scale) {
+      const radius = this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.z));
+      const halfHeight = Math.max(0, this._height * Math.abs(scale.y) / 2 - radius);
+      return { capsule: { halfHeight, radius } };
+    }
+  }
+
+  class MeshCollider extends Collider {
+    points = [];
+    indices = [];
+    convex = false;
+    shape(scale) {
+      const pts = this.points.map((p) => Vector3.from(p).mul(scale));
+      return this.convex ? { convex: pts } : { mesh: { points: pts, indices: this.indices } };
+    }
+    setMesh(points, indices, convex = this.convex) {
+      this.points = points;
+      this.indices = indices;
+      this.convex = convex;
+      this.rebuild();
+    }
+  }
+
   class Rigidbody extends Component {
     _mass = 1;
     _drag = 0;
@@ -2226,6 +2276,88 @@ ${err.stack}` : ""}`);
     height = h;
     scale = s;
   };
+
+  // ../../js/engine/src/rendering.ts
+  var rgba = (c) => [c.r, c.g, c.b, c.a];
+  class Material {
+    color;
+    emission;
+    smoothness;
+    unlit;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
+      this.color = color;
+      this.emission = emission;
+      this.smoothness = smoothness;
+      this.unlit = unlit;
+    }
+    withColor(color) {
+      return new Material(color, this.emission, this.smoothness, this.unlit);
+    }
+  }
+  class MeshRenderer extends Component {
+    _mesh = "cube";
+    _material = new Material;
+    started = false;
+    get mesh() {
+      return this._mesh;
+    }
+    set mesh(m) {
+      this._mesh = m;
+      this.send();
+    }
+    get material() {
+      return this._material;
+    }
+    set material(m) {
+      this._material = m;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const m = this._material;
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var ambient = new Color(0.2, 0.2, 0.22);
+  // ../../js/engine/src/primitives.ts
+  function createPrimitive(type, options = {}) {
+    const name = options.name ?? type[0].toUpperCase() + type.slice(1);
+    const go = new GameObject(name, options);
+    go.addComponent(MeshRenderer, { mesh: type });
+    switch (type) {
+      case "cube":
+        go.addComponent(BoxCollider);
+        break;
+      case "sphere":
+        go.addComponent(SphereCollider);
+        break;
+      case "capsule":
+        go.addComponent(CapsuleCollider);
+        break;
+      case "cylinder":
+        go.addComponent(CapsuleCollider);
+        break;
+      case "plane":
+        go.addComponent(BoxCollider, { size: new Vector3(10, 0.01, 10) });
+        break;
+      case "quad":
+        go.addComponent(MeshCollider, {
+          points: [new Vector3(-0.5, -0.5, 0), new Vector3(0.5, -0.5, 0), new Vector3(0.5, 0.5, 0), new Vector3(-0.5, 0.5, 0)],
+          indices: [0, 1, 2, 0, 2, 3]
+        });
+        break;
+    }
+    return go;
+  }
+  setPrimitiveFactory(createPrimitive);
   // src/rigidbodies.ts
   var log = [];
   var crate;
