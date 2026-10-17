@@ -203,7 +203,8 @@ export interface IronStyle {
   boxShadow?: string;
   filter?: string;
   backdropFilter?: string;
-  opacity?: number;
+  /** 0-1, or a percentage string (`"40%"`). */
+  opacity?: number | string;
 
   // Images
   /** How an `Image` fills its content box. Default `fill`. */

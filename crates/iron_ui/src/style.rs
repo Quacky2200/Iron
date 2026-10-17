@@ -764,7 +764,11 @@ pub fn apply_style(
         "boxShadow" => visual.shadows = parse_shadows(kw()?).ok_or_else(invalid)?,
         "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
         "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
-        "opacity" => visual.opacity = num(value)?.clamp(0.0, 1.0),
+        "opacity" => {
+            visual.opacity = number_or_percent(value)
+                .ok_or_else(invalid)?
+                .clamp(0.0, 1.0)
+        }
         "order" => visual.order = integer(value).ok_or_else(invalid)?,
         "zIndex" => {
             visual.z_index = match value {
@@ -1100,6 +1104,21 @@ fn integer(v: &Value) -> Option<i32> {
         _ => return None,
     };
     (n.fract() == 0.0).then_some(n as i32)
+}
+
+/// A number, or a percentage as a fraction (`50%` → 0.5), from a number or string.
+fn number_or_percent(v: &Value) -> Option<f32> {
+    match v {
+        Value::Number(n) => Some(*n as f32),
+        Value::String(s) => {
+            let s = s.trim();
+            match s.strip_suffix('%') {
+                Some(p) => p.trim().parse::<f32>().ok().map(|p| p / 100.0),
+                None => s.parse().ok(),
+            }
+        }
+        _ => None,
+    }
 }
 
 /// `background-image` layers: images, gradients or `none`; a lone `none` is no layers.
@@ -1845,6 +1864,12 @@ mod tests {
 
     #[test]
     fn visual_properties() {
+        // M3-FX-01
+        let (_, v) = apply("opacity", "40%".into()).unwrap();
+        assert!((v.opacity - 0.4).abs() < 1e-6);
+        let (_, v) = apply("opacity", "0.25".into()).unwrap();
+        assert_eq!(v.opacity, 0.25);
+        assert!(apply("opacity", "half".into()).is_err());
         let (_, v) = apply("backgroundColor", "#ff0000".into()).unwrap();
         assert_eq!(v.background, Rgba::new(1.0, 0.0, 0.0, 1.0));
         let (_, v) = apply("borderRadius", "8px".into()).unwrap();

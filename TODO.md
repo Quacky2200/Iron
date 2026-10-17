@@ -554,7 +554,7 @@ and `@font-face`.
    - [ ] `image-rendering` (`pixelated`, `crisp-edges`, smooth) for background images
    - [ ] Masks: `mask-image` (images and gradients), `mask-mode`, `mask-size`, `mask-position`,
      `mask-repeat`
-   - [ ] `opacity` as a percentage
+   - [x] `opacity` as a percentage (and as a numeric string) — `M3-FX-01`
 6. **Transforms**
    - [ ] `transform`: `translate*`, `scale*`, `rotate*`, `skew*`, `matrix()`, `none`; `transform-origin`;
      drawing and hit testing through transforms
