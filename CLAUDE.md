@@ -62,6 +62,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - `bun run build` builds all the examples.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
 - The `cargo run` line renders a screenshot and exits; check it by eye.
+- `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
+  golden tests' renders.
 - Benchmarks: `cargo bench -p iron_ui --bench restyle` (and the other benches in `crates/iron_ui/benches`).
 
 ## Working agreements

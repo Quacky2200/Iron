@@ -6,7 +6,8 @@
     "build": "bun run --filter hello --filter boxes --filter text --filter css --filter form build",
     "build:fixtures": "bun run --filter iron-fixtures build",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test"
+    "test": "bun test",
+    "screenshots": "bun scripts/screenshots.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

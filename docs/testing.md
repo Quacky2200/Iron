@@ -96,6 +96,9 @@ returns the captured messages.
 - `IRON_UPDATE_GOLDEN=1 cargo test -p iron_render` rewrites references instead of comparing.
 - Every `assert_golden` call also writes its render to `tests/output/<id>.png`, passing or
   not, for inspection. The folder is git-ignored.
+- `bun run screenshots [names...]` builds `iron_app` and renders each example to
+  `tests/output/examples-<name>.png` (run `bun run build` first). `tests/output/history/`
+  keeps older screenshots for comparison.
   Updating goldens is always explicit; review the PNG by eye before committing.
 - `shared_gpu()` is **required** in GPU tests: one device per test binary behind a mutex
   (creating devices from parallel threads can deadlock some Vulkan layers).
