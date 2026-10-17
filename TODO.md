@@ -1040,7 +1040,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     (10–25% of the arcade's uncapped frame rate): blur only the panels' areas at a lower
     resolution, and skip the copy when no panel overlaps the world.
   - [ ] Reload benchmark under 100 ms (`M4-HOT-07`, ~146 ms): see "Hot reload, part 2".
-- [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
+- [x] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
+  (done 2026-10-17; the unticked items below are follow-ups for later)
   - [x] Materials (asked for 2026-10-17), Unity Standard / URP Lit style: PBR, the sky and
     its reflections, planar mirrors, reflection probes, the showroom example (`8bac39e`);
     the specular workflow, maps, rendering modes and texture quality (2026-10-17).
@@ -1089,10 +1090,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     of `Camera.main` and pointer rays — `M5-RTX-01`, `M5-RND-19`
   - [ ] Render texture follow-ups: formats (HDR, depth), mipmaps, `antiAliasing` per
     texture, `Camera.Render()` on demand, reading pixels back
-  - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels. Done:
-    MSAA, render scale, shadow quality, levels, manifest defaults, the example (`M5-RND-14`,
-    `M5-QUA-01`). Left: FXAA / TAA, render textures, texture quality, saving players'
-    choices.
+  - [x] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels. MSAA,
+    FXAA, render scale, shadows, texture quality, levels, manifest defaults, saved choices,
+    the example (`M5-RND-14`, `M5-QUA-01`, `M5-QUA-02`). Left: TAA, bloom and particle
+    limits per level.
     - [x] Anti-aliasing: MSAA (2 / 4 / 8x, capped by what the GPU supports for the format;
       the adapter-specific feature is requested so 2x and 8x work where offered) for the main
       world pass; mirrors and probes stay 1x
@@ -1104,7 +1105,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Render scale (0.25 to 2): the world drawn into a texture at the scaled size and
       stretched onto the target (bilinear), UI kept at native resolution; FSR-style
       sharpening later
-    - [ ] Render textures: see "Camera into a texture" below
+    - [x] Render textures: see "Camera into a texture" above
     - [x] Texture quality: `QualitySettings.globalTextureMipmapLimit` (top mips skipped),
       `anisotropicFiltering` (disable / enable / forceEnable) with `Texture.anisoLevel`;
       per level (Low: half size, no anisotropy; Ultra: forced) — `M5-QUA-02`
@@ -1159,7 +1160,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       by mask and distance (objects a camera skips don't cast shadows in its view either,
       like Unity's)
     - [ ] Later: layers for physics (collision matrix, raycast masks) and light culling masks
-  - [ ] Culling (asked for 2026-10-17), with the render groups above:
+  - [x] Culling (asked for 2026-10-17), with the render groups above:
     - [x] Culling masks: `Camera.cullingMask` (above); `Light.cullingMask` (which layers a
       light lights, in the shader per instance; the shadowing light's mask also picks
       the casters); `ReflectionProbe.cullingMask` and `Mirror.cullingMask` (what they
@@ -1183,7 +1184,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] LOD cross-fade (dithered) and `QualitySettings.maximumLODLevel`; bounds-based
       group size and reference point (now the object's origin and a given size)
     - [ ] Occlusion culling later (GPU depth pyramid / Hi-Z), for big scenes
-- [ ] **M5.d** The rest of scene, assets and rendering:
+- [x] **M5.d** The rest of scene, assets and rendering (done 2026-10-17; the unticked items
+  below are follow-ups for later):
   - [x] Animation (Unity's), with `examples/animation` (a robot on an Animator, a skinned
     glTF worm, a skinned tentacle made in code)
     - [x] `AnimationCurve` / `Keyframe` (Hermite tangents, steps, wrap modes),
@@ -1235,7 +1237,6 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     better BC endpoint fitting, compression of cooked files, cooking scenes and sounds,
     packing a release (with M9)
   - [x] PBR, shadows, IBL, post-processing — done in M5.c (`M5-RND-11`..`21`)
-  - [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
 - [ ] **M5.e** Editor shell. UI requirements first (before the editor work starts):
   - [ ] Accessibility: an AccessKit tree from the UI tree (roles, names, states, focus, actions),
     so screen readers and platform accessibility tools work

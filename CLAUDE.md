@@ -25,7 +25,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_app` | The `iron` binary: `iron [game folder] [--screenshot out.png] [--frames N]` (no folder: the current one). Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random` |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD) games (each has `bun run build`) |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
@@ -64,13 +64,19 @@ bun run build:fixtures
 ```bash
 cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 ```
+```bash
+cargo run -p iron_app -- examples/world --cook
+```
 
 - `bun run build` builds all the examples.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
 - `bun run dev` in an example (`scripts/dev.ts`) makes a dev build (vendor.js + game.js) and rebuilds
   game.js on every edit; a running `iron` window reloads it in place (React Fast Refresh, components
   swap classes, the world stays). Other reloads keep state through scene serialization.
-- The `cargo run` line renders a screenshot and exits; check it by eye.
+- The `cargo run` line renders a screenshot and exits; check it by eye. `--cook` prepares a
+  game's textures and models into `.iron/cooked/` (git-ignored) and exits.
+- `bun scripts/assets.ts <game folder>` writes `.meta` files (GUIDs, import settings) for new
+  assets; `bun run dev` runs it.
 - `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
   golden tests' renders.
 - Benchmarks: `cargo bench -p iron_ui --bench restyle` (and the other benches in `crates/iron_ui/benches`).
@@ -177,12 +183,29 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - `examples/arcade` (2026-10-17): a coin collector with a React HUD, FPS counter and
     settings menu; Classic and Deluxe arenas as separate scenes (Style button), the round
     and positions kept across the switch.
-- **Next (in this order, see TODO.md):** the arcade is parked; back to the milestones.
-  1. M5.c's remaining rendering items (the rest of materials: specular workflow, texture
-     maps, transparency modes; FXAA/TAA; render textures; shadow and glow follow-ups),
-     then M5.d (animation, prefabs) per TODO.md.
-  - "Optimisation fixes" in TODO.md (probe shadow passes, textured mirrors, backdrop blur
-    cost, the reload benchmark) wait until they're picked.
+  - App (2026-10-17): `iron` with no folder runs the current one; a GUI-subsystem program
+    logging to `Player.log`; exclusive fullscreen at the monitor's resolution;
+    `Application.runInBackground`, focus events and pause hooks (`lifecycle.rs`).
+  - M5.c done (2026-10-17): material maps (normal, metallic, occlusion, emission,
+    detail), the specular workflow, rendering modes (cutout / fade / transparent),
+    double-sided, texture quality (anisotropy, mip limit); tonemapping (neutral, ACES),
+    exposure and FXAA; render textures (`Camera.targetTexture`); shadows drawn once a
+    frame with sun cascades and spot / point light shadows. Goldens `M5-RND-17`..`20`.
+  - M5.d done (2026-10-17): animation (`animation.ts`: curves, clips, `Animation`,
+    `Animator` with blend trees and transitions), skinned meshes and glTF animations
+    (GPU skinning), prefabs, asset hot reload, GUID `.meta` files (`scripts/assets.ts`,
+    `asset_db.rs`), cooking (`iron --cook`, BC1/BC3), cloth (`iron_physics::cloth`);
+    `examples/animation`, `examples/cloth`.
+  - Background agents (2026-10-17): the editor (M5.e, `iron_editor`: menubar, docking,
+    tree view, virtual list, console, then drag and drop with a project browser) runs
+    in its own worktree; its commits are cherry-picked here (linear history, no merges).
+- **Next (in this order, see TODO.md):** M5.e, the editor (being built by a background
+  agent; bring its commits in when it reports), then M6 (Script IO).
+  - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
+    cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture
+    formats, ...): later.
+  - "Optimisation fixes" in TODO.md (backdrop blur cost, the reload benchmark) wait until
+    they're picked.
   - Also open in TODO.md: the rest of M6 file IO, more classic test scenes (downloads
     need the user's OK first).
   - API names and units follow Unity/s&box (degrees for Euler angles). Decided: own wgpu
