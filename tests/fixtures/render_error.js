@@ -9664,6 +9664,19 @@ No matching component was found for:
       stack.push(...o.children);
     }
   }
+  function _forEachActiveComponent(method, f) {
+    for (const c of [...instances.values()]) {
+      if (typeof c[method] !== "function")
+        continue;
+      if (!c.gameObject?.activeInHierarchy)
+        continue;
+      try {
+        f(c);
+      } catch (e) {
+        console.error(`${c.gameObject.name}: ${method}: ${e}`);
+      }
+    }
+  }
   globalThis.__iron_registered = () => [...starting];
   globalThis.__iron_create = (className, id, objectId, objectName) => {
     const cls = classes.get(className);
@@ -15291,6 +15304,29 @@ ${err.stack}` : ""}`);
     instantiate: instantiate2,
     reset
   });
+  // ../../js/engine/src/app.ts
+  var focused = true;
+  var paused = false;
+  var focusListeners = new Set;
+  globalThis.__iron_focus = (hasFocus, isPaused) => {
+    const focusChanged = hasFocus !== focused;
+    const pauseChanged = isPaused !== paused;
+    focused = hasFocus;
+    paused = isPaused;
+    if (pauseChanged) {
+      _forEachActiveComponent("onApplicationPause", (c) => c.onApplicationPause?.(isPaused));
+    }
+    if (focusChanged) {
+      for (const f of [...focusListeners]) {
+        try {
+          f(hasFocus);
+        } catch (e) {
+          console.error(`Application.onFocusChanged: ${e}`);
+        }
+      }
+      _forEachActiveComponent("onApplicationFocus", (c) => c.onApplicationFocus?.(hasFocus));
+    }
+  };
   // ../../js/engine/src/time.ts
   var MS_PER_SECOND = 1000;
   var MS_PER_MINUTE = 60000;

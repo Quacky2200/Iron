@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { Application, SystemInfo } from "../src/index.ts";
+import { _resetApplicationForTests } from "../src/app.ts";
+import { Application, Component, GameObject, SystemInfo } from "../src/index.ts";
+import { _resetSceneForTests } from "../src/scene.ts";
 
 afterEach(() => {
+  _resetApplicationForTests();
   delete globalThis.__iron_info;
   delete (globalThis as { __iron_op?: unknown }).__iron_op;
 });
@@ -56,5 +59,64 @@ describe("Application and SystemInfo", () => {
     (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
     Application.quit();
     expect(ops).toEqual([["app.quit"]]);
+  });
+});
+
+class Watcher extends Component {
+  events: string[] = [];
+  override onApplicationFocus(hasFocus: boolean) {
+    this.events.push(`focus ${hasFocus}`);
+  }
+  override onApplicationPause(paused: boolean) {
+    this.events.push(`pause ${paused}`);
+  }
+}
+
+// M5-APP-10
+describe("Running in the background and focus", () => {
+  test("runInBackground starts from the manifest and goes to the engine when set", () => {
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    expect(Application.runInBackground).toBe(false);
+    globalThis.__iron_info = { app: { runInBackground: true, targetFrameRate: 30 }, system: {} } as never;
+    // The engine's values (the manifest's, or kept over a reload).
+    expect([Application.runInBackground, Application.targetFrameRate]).toEqual([true, 30]);
+    Application.runInBackground = false;
+    expect(Application.runInBackground).toBe(false);
+    expect(ops).toEqual([["app.runInBackground", false]]);
+  });
+
+  test("focus and pause reach listeners and active components' hooks", () => {
+    _resetSceneForTests();
+    (globalThis as { __iron_op?: unknown }).__iron_op = () => {};
+    const on = new GameObject("On").addComponent(Watcher);
+    const offObject = new GameObject("Off");
+    const off = offObject.addComponent(Watcher);
+    offObject.enabled = false;
+
+    const seen: boolean[] = [];
+    const stop = Application.onFocusChanged((f) => seen.push(f));
+    Application.onFocusChanged(() => {
+      throw new Error("a broken listener doesn't stop the others");
+    });
+    expect([Application.isFocused, Application.isPaused]).toEqual([true, false]);
+
+    const errors = console.error;
+    console.error = () => {};
+    try {
+      globalThis.__iron_focus(false, true);
+      expect([Application.isFocused, Application.isPaused]).toEqual([false, true]);
+      // Same state again: nothing new.
+      globalThis.__iron_focus(false, true);
+      globalThis.__iron_focus(true, false);
+      stop();
+      // Running in the background: focus changes, the pause doesn't.
+      globalThis.__iron_focus(false, false);
+    } finally {
+      console.error = errors;
+    }
+    expect(seen).toEqual([false, true]);
+    expect(on.events).toEqual(["pause true", "focus false", "pause false", "focus true", "focus false"]);
+    expect(off.events).toEqual([]);
   });
 });

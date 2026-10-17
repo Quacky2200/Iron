@@ -111,6 +111,10 @@ pub struct Audio<B: Backend = DefaultBackend> {
     instances: HashMap<ScriptId, Instance>,
     tracks: HashMap<ScriptId, Track>,
     listener: Option<ListenerHandle>,
+    /// The master volume scripts set; the main track plays it unless muted.
+    master: Decibels,
+    /// Silenced while the game is paused in the background (`runInBackground`).
+    muted: bool,
 }
 
 impl Audio<DefaultBackend> {
@@ -132,6 +136,8 @@ where
             instances: HashMap::new(),
             tracks: HashMap::new(),
             listener: None,
+            master: Decibels::IDENTITY,
+            muted: false,
         })
     }
 
@@ -363,7 +369,12 @@ where
                 let db = gain_to_db(a.num(1)?);
                 let t = tween(a.opt_num(2).unwrap_or(0.0));
                 match a.opt_id(0) {
-                    None => self.manager.main_track().set_volume(db, t),
+                    None => {
+                        self.master = db;
+                        if !self.muted {
+                            self.manager.main_track().set_volume(db, t);
+                        }
+                    }
                     Some(id) => match self.tracks.get_mut(&id) {
                         Some(Track::Bus(h)) => h.set_volume(db, t),
                         Some(Track::Emitter(h)) => h.set_volume(db, t),
@@ -461,6 +472,21 @@ where
     pub fn playing(&self) -> usize {
         self.instances.len()
     }
+
+    /// Fades everything out (or back to the scripts' master volume) without touching
+    /// what scripts set: for a game paused in the background.
+    pub fn set_muted(&mut self, muted: bool) {
+        if muted == self.muted {
+            return;
+        }
+        self.muted = muted;
+        let db = if muted {
+            Decibels::SILENCE
+        } else {
+            self.master
+        };
+        self.manager.main_track().set_volume(db, tween(0.1));
+    }
 }
 
 fn stop(instance: Instance, t: Tween) {
@@ -540,6 +566,8 @@ pub trait Mixer {
     /// Lets `seconds` of audio play: a device plays on its own; an offline mixer renders
     /// (and drops) that much, so sounds still progress and end.
     fn advance(&mut self, seconds: f64);
+    /// See [`Audio::set_muted`].
+    fn set_muted(&mut self, muted: bool);
 }
 
 impl Mixer for Audio<DefaultBackend> {
@@ -553,6 +581,9 @@ impl Mixer for Audio<DefaultBackend> {
         Audio::poll(self)
     }
     fn advance(&mut self, _seconds: f64) {}
+    fn set_muted(&mut self, muted: bool) {
+        Audio::set_muted(self, muted)
+    }
 }
 
 impl Mixer for Audio<OfflineBackend> {
@@ -569,6 +600,9 @@ impl Mixer for Audio<OfflineBackend> {
         let backend = self.backend_mut();
         let frames = (seconds.max(0.0) * backend.sample_rate() as f64).round() as usize;
         backend.render(frames);
+    }
+    fn set_muted(&mut self, muted: bool) {
+        Audio::set_muted(self, muted)
     }
 }
 

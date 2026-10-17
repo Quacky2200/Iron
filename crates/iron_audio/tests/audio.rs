@@ -134,6 +134,29 @@ fn volume_pan_buses_and_stop() {
     assert_eq!(a.poll(), vec![1]);
 }
 
+// M5-APP-06
+#[test]
+fn muting_for_the_background_keeps_the_scripts_master_volume() {
+    let mut a = audio();
+    a.load_frames(1, RATE, tone(5.0));
+    op(&mut a, "play", vec![num(1.0), num(1.0), Value::Null]);
+    let full = level(&a.backend_mut().render(400))[0];
+    assert!(full > 0.4, "{full}");
+
+    a.set_muted(true);
+    a.backend_mut().render(2000);
+    assert!(level(&a.backend_mut().render(400))[0] < 1e-3);
+    // The master set while muted applies once unmuted, not before.
+    op(&mut a, "trackVolume", vec![Value::Null, num(0.5)]);
+    a.backend_mut().render(400);
+    assert!(level(&a.backend_mut().render(400))[0] < 1e-3);
+
+    a.set_muted(false);
+    a.backend_mut().render(2000);
+    let back = level(&a.backend_mut().render(400))[0];
+    assert!((back - full * 0.5).abs() < 0.02, "{back} vs {full}");
+}
+
 // M4-AUD-02
 #[test]
 fn emitters_fall_off_with_distance_and_pan_to_their_side() {

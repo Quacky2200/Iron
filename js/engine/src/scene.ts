@@ -56,6 +56,15 @@ export abstract class Component {
    */
   onReload?(): void;
 
+  /** Called when the window gains or loses focus (Unity's `OnApplicationFocus`). */
+  onApplicationFocus?(hasFocus: boolean): void;
+
+  /**
+   * Called when the game pauses in the background or resumes
+   * (`Application.runInBackground` off; Unity's `OnApplicationPause`).
+   */
+  onApplicationPause?(paused: boolean): void;
+
   /** Another component on the same object. */
   getComponent<T extends Component>(cls: ComponentClass<T>): T | undefined {
     return this.gameObject.getComponent(cls);
@@ -657,6 +666,22 @@ function forget(go: GameObject): void {
     (o as unknown as { _destroyed: boolean })._destroyed = true;
     objects.delete(o.id);
     stack.push(...o.children);
+  }
+}
+
+/**
+ * @internal Runs `f` on every component of an active object that has `method`,
+ * logging (not throwing) its errors. For engine-wide events like focus.
+ */
+export function _forEachActiveComponent(method: string, f: (c: Component) => void): void {
+  for (const c of [...instances.values()]) {
+    if (typeof (c as unknown as Record<string, unknown>)[method] !== "function") continue;
+    if (!c.gameObject?.activeInHierarchy) continue;
+    try {
+      f(c);
+    } catch (e) {
+      console.error(`${c.gameObject.name}: ${method}: ${e}`);
+    }
   }
 }
 

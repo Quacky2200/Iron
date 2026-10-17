@@ -2,6 +2,11 @@
 // engine installs `globalThis.__iron_info` before the game's code runs: the game's
 // manifest (its `package.json`: `name`, `version` and an `iron` section with `title`,
 // `company`, `identifier` and `icon`) and what the OS and GPU report.
+//
+// Focus: Rust calls `__iron_focus(focused, paused)` when the window gains or loses
+// focus (or is minimised) and when that pauses the game (`runInBackground` off).
+
+import { _forEachActiveComponent } from "./scene.ts";
 
 interface InfoApp {
   name: string;
@@ -16,6 +21,10 @@ interface InfoApp {
   layers?: unknown;
   /** The manifest's `iron.startScene`: loaded when the game starts. */
   startScene?: string | null;
+  /** The manifest's `iron.runInBackground`, or what scripts last set (kept over reloads). */
+  runInBackground?: boolean;
+  /** What scripts last set (kept over reloads). */
+  targetFrameRate?: number;
 }
 
 interface InfoSystem {
@@ -43,9 +52,15 @@ interface InfoSystem {
 
 declare global {
   var __iron_info: { app: InfoApp; system: InfoSystem } | undefined;
+  var __iron_focus: (focused: boolean, paused: boolean) => void;
 }
 
-let targetFrameRate = -1;
+// Set by scripts; until then the engine's (or the manifest's) value.
+let targetFrameRate: number | undefined;
+let runInBackground: boolean | undefined;
+let focused = true;
+let paused = false;
+const focusListeners = new Set<(focused: boolean) => void>();
 
 const app = (): Partial<InfoApp> => globalThis.__iron_info?.app ?? {};
 const sys = (): Partial<InfoSystem> => globalThis.__iron_info?.system ?? {};
@@ -100,11 +115,38 @@ export const Application = {
    * to the display. Not saved: games keep it in `PlayerPrefs` if players choose it.
    */
   get targetFrameRate(): number {
-    return targetFrameRate;
+    return targetFrameRate ?? app().targetFrameRate ?? -1;
   },
   set targetFrameRate(fps: number) {
     targetFrameRate = fps > 0 ? Math.round(fps) : -1;
     __iron_op("app.targetFrameRate", targetFrameRate);
+  },
+  /**
+   * Keep running while the window is in the background (unfocused or minimised).
+   * Off by default (`iron.runInBackground` in `package.json` changes that): then the
+   * game pauses — no updates, fixed ticks or timers, sounds muted — until it's back.
+   */
+  get runInBackground(): boolean {
+    return runInBackground ?? app().runInBackground ?? false;
+  },
+  set runInBackground(on: boolean) {
+    runInBackground = !!on;
+    __iron_op("app.runInBackground", runInBackground);
+  },
+  /** Whether the window has focus (and isn't minimised). */
+  get isFocused(): boolean {
+    return focused;
+  },
+  /** Whether the game is paused in the background. */
+  get isPaused(): boolean {
+    return paused;
+  },
+  /** Calls `f` when the window gains or loses focus; returns a function that stops it. */
+  onFocusChanged(f: (focused: boolean) => void): () => void {
+    focusListeners.add(f);
+    return () => {
+      focusListeners.delete(f);
+    };
   },
   /** Closes the game after this frame. */
   quit(): void {
@@ -174,3 +216,33 @@ export const SystemInfo = {
     return { width: s.screenWidth ?? 0, height: s.screenHeight ?? 0, refreshRate: s.screenRefreshRate ?? 0, dpi: s.dpi ?? 96 };
   },
 };
+
+globalThis.__iron_focus = (hasFocus: boolean, isPaused: boolean) => {
+  const focusChanged = hasFocus !== focused;
+  const pauseChanged = isPaused !== paused;
+  focused = hasFocus;
+  paused = isPaused;
+  // Unity's order: pausing, then focus.
+  if (pauseChanged) {
+    _forEachActiveComponent("onApplicationPause", (c) => c.onApplicationPause?.(isPaused));
+  }
+  if (focusChanged) {
+    for (const f of [...focusListeners]) {
+      try {
+        f(hasFocus);
+      } catch (e) {
+        console.error(`Application.onFocusChanged: ${e}`);
+      }
+    }
+    _forEachActiveComponent("onApplicationFocus", (c) => c.onApplicationFocus?.(hasFocus));
+  }
+};
+
+/** Back to a focused, running game with no listeners. Only for tests. */
+export function _resetApplicationForTests() {
+  targetFrameRate = undefined;
+  runInBackground = undefined;
+  focused = true;
+  paused = false;
+  focusListeners.clear();
+}

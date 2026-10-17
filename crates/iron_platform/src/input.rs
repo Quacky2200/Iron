@@ -50,6 +50,9 @@ pub enum InputEvent {
         height: u32,
     },
     Focused(bool),
+    /// The window became fully hidden (minimised, or covered on platforms that tell)
+    /// or visible again.
+    Occluded(bool),
     CloseRequested,
 }
 
@@ -125,6 +128,7 @@ pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
             height: size.height,
         }),
         WindowEvent::Focused(f) => Some(InputEvent::Focused(*f)),
+        WindowEvent::Occluded(o) => Some(InputEvent::Occluded(*o)),
         WindowEvent::CursorMoved { position, .. } => Some(InputEvent::MouseMove {
             x: position.x,
             y: position.y,
@@ -222,6 +226,19 @@ mod tests {
                 width: 800,
                 height: 600
             })
+        );
+    }
+
+    // M5-APP-05
+    #[test]
+    fn converts_focus_and_occlusion() {
+        assert_eq!(
+            convert_window_event(&WindowEvent::Focused(false)),
+            Some(InputEvent::Focused(false))
+        );
+        assert_eq!(
+            convert_window_event(&WindowEvent::Occluded(true)),
+            Some(InputEvent::Occluded(true))
         );
     }
 

@@ -79,7 +79,19 @@ pub trait PlatformApp {
     fn frame_interval(&self) -> Option<Duration> {
         None
     }
+    /// Whether the game is paused (Unity's `runInBackground` off and the window in the
+    /// background): no frames are requested, the loop sleeps until events arrive and
+    /// calls [`PlatformApp::idle`] now and then.
+    fn paused(&self) -> bool {
+        false
+    }
+    /// Called about every [`IDLE_POLL`] while paused, for work that can't wait for
+    /// focus (watching files for hot reload).
+    fn idle(&mut self) {}
 }
+
+/// How often a paused app's [`PlatformApp::idle`] runs.
+pub const IDLE_POLL: Duration = Duration::from_millis(250);
 
 /// Owns gamepad input and, when not headless, runs the window event loop.
 pub struct Platform {
@@ -264,6 +276,12 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             self.app.input(event);
         }
         self.update_cursor(event_loop);
+        // Paused: no redraws, just a slow wake-up for `idle` (events still wake us).
+        if self.app.paused() {
+            self.app.idle();
+            event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + IDLE_POLL));
+            return;
+        }
         // A frame rate cap: sleep until the next frame is due (events still wake us).
         if let (Some(interval), Some(last)) = (self.app.frame_interval(), self.last_frame) {
             let due = last + interval;

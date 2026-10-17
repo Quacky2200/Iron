@@ -28,6 +28,9 @@ pub struct Manifest {
     pub start_scene: Option<String>,
     /// `iron.display`: the window's default mode and size (`{ mode, width, height }`).
     pub display: Value,
+    /// `iron.runInBackground`: keep running while the window is in the background
+    /// (Unity's `Application.runInBackground`, off by default).
+    pub run_in_background: bool,
 }
 
 impl Manifest {
@@ -67,6 +70,7 @@ impl Manifest {
             layers: iron["layers"].clone(),
             start_scene: text(&iron["startScene"]),
             display: iron["display"].clone(),
+            run_in_background: iron["runInBackground"].as_bool().unwrap_or(false),
             name,
         }
     }
@@ -108,6 +112,8 @@ impl Info {
                 "quality": manifest.quality,
                 "layers": manifest.layers,
                 "startScene": manifest.start_scene,
+                "runInBackground": manifest.run_in_background,
+                "targetFrameRate": -1,
             }),
         );
         map.insert("system".into(), system());
@@ -117,6 +123,14 @@ impl Info {
     /// Sets a top-level section (`prefs`, `display`).
     pub fn set(&mut self, key: &str, value: Value) {
         self.0.insert(key.to_owned(), value);
+    }
+
+    /// Sets a field of the `app` section, so scripts reloaded later see what the
+    /// old ones chose (`runInBackground`, `targetFrameRate`).
+    pub fn set_app(&mut self, key: &str, value: Value) {
+        if let Some(Value::Object(app)) = self.0.get_mut("app") {
+            app.insert(key.to_owned(), value);
+        }
     }
 
     /// Adds (or replaces) fields of the `system` section.
@@ -207,5 +221,20 @@ mod tests {
         assert!(script.contains("\"productName\":\"Fox Run\""));
         assert!(script.contains("\"graphicsDeviceName\":\"Test GPU\""));
         assert!(script.contains("\"processorCount\":"));
+    }
+
+    // M5-APP-09
+    #[test]
+    fn run_in_background_comes_from_the_manifest_and_follows_scripts() {
+        let m = Manifest::from_json(&json!({ "iron": { "runInBackground": true } }), "g");
+        assert!(m.run_in_background);
+        assert!(!Manifest::from_json(&Value::Null, "g").run_in_background);
+        let mut info = Info::new(&m);
+        assert!(info.script().contains("\"runInBackground\":true"));
+        info.set_app("runInBackground", json!(false));
+        info.set_app("targetFrameRate", json!(30));
+        let script = info.script();
+        assert!(script.contains("\"runInBackground\":false"));
+        assert!(script.contains("\"targetFrameRate\":30"));
     }
 }

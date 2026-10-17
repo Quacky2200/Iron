@@ -12,6 +12,7 @@ mod cursor;
 mod display;
 mod game_input;
 mod info;
+mod lifecycle;
 mod logging;
 mod models;
 mod panels;
@@ -250,8 +251,8 @@ fn run() -> Result<()> {
         asset_root,
         gfx: None,
         started: Instant::now(),
-        last_frame: None,
-        accumulator: 0.0,
+        clock: lifecycle::FixedClock::default(),
+        lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, args.screenshot.is_some()),
         frames: 0,
         screenshot: args.screenshot.map(|path| (path, args.frames)),
         done: false,
@@ -380,8 +381,9 @@ struct App {
     asset_root: PathBuf,
     gfx: Option<Gfx>,
     started: Instant,
-    last_frame: Option<Instant>,
-    accumulator: f64,
+    clock: lifecycle::FixedClock,
+    /// Focus, and pausing in the background (`Application.runInBackground`).
+    lifecycle: lifecycle::Lifecycle,
     frames: u32,
     screenshot: Option<(PathBuf, u32)>,
     /// Stylesheets added by scripts: script id -> tree id.
@@ -530,6 +532,8 @@ impl App {
         self.physics_events = has(&mut self.scripts, "__iron_physics");
         self.audio_events = has(&mut self.scripts, "__iron_audio");
         self.scene_events = has(&mut self.scripts, "__iron_scene");
+        self.lifecycle.scripts_restarted();
+        self.sync_lifecycle();
         tracing::info!(
             ?classes,
             restored,
@@ -572,20 +576,53 @@ impl App {
             .collect();
     }
 
+    /// Starts or ends a pause in the background and tells scripts about focus and
+    /// pausing (`__iron_focus(focused, paused)`).
+    fn sync_lifecycle(&mut self) {
+        let change = self.lifecycle.update(Instant::now());
+        if change.paused
+            && let Some(audio) = self.audio.as_mut()
+        {
+            audio.set_muted(true);
+        }
+        if let Some(gap) = change.resumed {
+            // Script time (timers, caret, UI time) skips the pause, and fixed ticks
+            // start over instead of catching up.
+            self.started += gap;
+            self.clock.restart();
+            if let Some(audio) = self.audio.as_mut() {
+                audio.set_muted(false);
+            }
+        }
+        if let Some((focused, paused)) = change.report {
+            // Games without @iron/engine's Application don't have the hook.
+            let has = self
+                .scripts
+                .eval("typeof __iron_focus === 'function'")
+                .is_ok_and(|v| v == iron_core::Value::Bool(true));
+            if has
+                && let Err(e) = self
+                    .scripts
+                    .call_global("__iron_focus", &[focused.into(), paused.into()])
+            {
+                tracing::error!(target: "script", "__iron_focus: {e}");
+            }
+            // What the hooks asked for (a pause menu, paused sounds) applies now.
+            self.apply_script_output();
+        }
+    }
+
     fn tick(&mut self) {
         let now = Instant::now();
         if self.watcher.as_mut().is_some_and(|w| w.poll(now)) {
             self.reload_scripts();
         }
-        let elapsed = self
-            .last_frame
-            .map(|t| now.duration_since(t).as_secs_f64())
-            .unwrap_or(TICK);
-        self.last_frame = Some(now);
-
-        self.accumulator += elapsed;
-        let mut ticks = 0;
-        while self.accumulator >= TICK && ticks < MAX_TICKS_PER_FRAME {
+        // Paused in the background: the game's time stands still.
+        if self.lifecycle.paused() {
+            return;
+        }
+        let (elapsed, ticks) = self.clock.advance(now, TICK, MAX_TICKS_PER_FRAME);
+        for _ in 0..ticks {
             let scene = &self.scene;
             self.components
                 .fixed_update(&mut self.scripts, TICK, &|o| scene.active(o));
@@ -593,11 +630,6 @@ impl App {
             self.apply_script_output();
             self.step_physics();
             self.send_scene_moves();
-            self.accumulator -= TICK;
-            ticks += 1;
-        }
-        if ticks == MAX_TICKS_PER_FRAME {
-            self.accumulator = 0.0;
         }
 
         // Script time: timers and their microtasks, once per frame.
@@ -788,9 +820,12 @@ impl App {
     /// open a device). Screenshot runs mix offline, silently.
     fn audio_op(&mut self, name: &str, args: &[iron_core::Value]) {
         let offline = self.screenshot.is_some();
+        let paused = self.lifecycle.paused();
         let mixer = self
             .audio
             .get_or_insert_with(|| iron_audio::open_mixer(offline));
+        // A mixer opened during a pause starts silent.
+        mixer.set_muted(paused);
         let result = if name == "load" {
             load_sound(mixer.as_mut(), &self.asset_root, args)
         } else {
@@ -942,6 +977,14 @@ impl App {
                 "app.targetFrameRate" => {
                     let rate = op.args.first().and_then(iron_core::Value::as_f64);
                     self.target_frame_rate = rate.map_or(-1, |r| r.round() as i32);
+                    self.info
+                        .set_app("targetFrameRate", self.target_frame_rate.into());
+                }
+                "app.runInBackground" => {
+                    let on = op.args.first() == Some(&iron_core::Value::Bool(true));
+                    self.lifecycle.run_in_background = on;
+                    self.info.set_app("runInBackground", on.into());
+                    self.sync_lifecycle();
                 }
                 name if name.starts_with("prefs.") => {
                     self.prefs_op(&name["prefs.".len()..], &op.args)
@@ -1571,6 +1614,18 @@ impl PlatformApp for App {
         if let Some(args) = game_mouse {
             self.send_game_input(&args);
         }
+        match event {
+            InputEvent::Focused(f) => self.lifecycle.set_focused(f),
+            InputEvent::Occluded(o) => self.lifecycle.set_occluded(o),
+            InputEvent::Resized { width, height } => self.lifecycle.set_size(width, height),
+            _ => {}
+        }
+        if matches!(
+            event,
+            InputEvent::Focused(_) | InputEvent::Occluded(_) | InputEvent::Resized { .. }
+        ) {
+            self.sync_lifecycle();
+        }
         if let InputEvent::Focused(focused) = event {
             self.focused = focused;
             // Grabs are let go while the window is in the background.
@@ -1717,10 +1772,12 @@ impl PlatformApp for App {
     fn frame(&mut self) {
         self.tick();
         // Last-moment changes before drawing (`onPreRender`).
-        let scene = &self.scene;
-        self.components
-            .pre_render(&mut self.scripts, &|o| scene.active(o));
-        self.apply_script_output();
+        if !self.lifecycle.paused() {
+            let scene = &self.scene;
+            self.components
+                .pre_render(&mut self.scripts, &|o| scene.active(o));
+            self.apply_script_output();
+        }
         // Caret blinking.
         self.ui.set_time(self.now_ms());
         // The caret may have moved with layout.
@@ -1850,10 +1907,26 @@ impl PlatformApp for App {
     }
 
     fn frame_interval(&self) -> Option<Duration> {
-        // Like Unity: the cap only counts with vsync off (vsync paces frames itself).
-        let capped = self.screenshot.is_none() && !self.world_view.quality.vsync;
-        (capped && self.target_frame_rate > 0)
-            .then(|| Duration::from_secs_f64(1.0 / f64::from(self.target_frame_rate)))
+        lifecycle::frame_cap(
+            self.target_frame_rate,
+            self.world_view.quality.vsync,
+            self.screenshot.is_some(),
+        )
+    }
+
+    fn paused(&self) -> bool {
+        self.lifecycle.paused()
+    }
+
+    fn idle(&mut self) {
+        // Hot reload still picks up rebuilds; they show once the game resumes.
+        if self
+            .watcher
+            .as_mut()
+            .is_some_and(|w| w.poll(Instant::now()))
+        {
+            self.reload_scripts();
+        }
     }
 }
 

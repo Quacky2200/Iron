@@ -955,8 +955,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] 2D follow-ups: a real 2D physics world (rapier2d) if the slabs fall short,
     concave polygons (decomposition), 2D joints, `Physics2D.overlapCircle` and friends,
     tilemaps, sorting layers, pixel-perfect camera
-  - [ ] App follow-ups: `Application.targetFrameRate`, `runInBackground`, focus events,
-    `persistentDataPath` (with M6 file IO), live monitor changes, battery / power state
+  - [ ] App follow-ups:
+    - [x] `Application.targetFrameRate` (2026-10-17): the `app.targetFrameRate` op caps
+      frames with `ControlFlow::WaitUntil` while vsync is off (`lifecycle::frame_cap`);
+      the value survives a full reload through `__iron_info` — `M5-APP-08`, `M5-DSP-03`
+    - [x] `Application.runInBackground` (2026-10-17, off by default, `iron.runInBackground`
+      in `package.json`): unfocused or minimised, the game pauses — no fixed ticks,
+      updates or timers, the mixer fades out, the event loop sleeps (`PlatformApp::paused`
+      / `idle`, which still polls hot reload) — and resumes without catch-up ticks
+      (`FixedClock::restart`, script time skips the pause). Screenshot runs never pause —
+      `M5-APP-06`, `M5-APP-07`, `M5-APP-09`
+    - [x] Focus events (2026-10-17): `InputEvent::Focused` / `Occluded` (and Windows'
+      0 × 0 minimise) → `__iron_focus(focused, paused)`; `Application.isFocused`,
+      `isPaused`, `onFocusChanged(fn)`; component hooks `onApplicationFocus(hasFocus)` and
+      `onApplicationPause(paused)` on active objects — `M5-APP-05`, `M5-APP-07`, `M5-APP-10`
+    - [ ] `persistentDataPath` (with M6 file IO), live monitor changes, battery / power state
 - [x] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support (2026-10-17, `examples/scenes`)
   - [x] Scene files (`SceneData`, JSON `iron.scene` v1): objects (name, enabled, layer,
