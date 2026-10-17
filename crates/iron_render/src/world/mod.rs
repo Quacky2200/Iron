@@ -53,6 +53,8 @@ pub struct ReflectionProbe {
     pub box_projection: bool,
     /// Render it this frame (it's also rendered when first seen or resized).
     pub render: bool,
+    /// The layers it captures, a bit each (Unity's `cullingMask`).
+    pub culling_mask: u32,
 }
 
 /// A flat mirror: the plane a mesh reflects the scene in.
@@ -62,6 +64,16 @@ pub struct Mirror {
     pub normal: Vec3,
     /// A point on the plane.
     pub point: Vec3,
+    /// The layers it reflects, a bit each.
+    pub culling_mask: u32,
+}
+
+/// A culling mask with every layer.
+pub const ALL_LAYERS: u32 = u32::MAX;
+
+/// Whether `mask` has `layer`'s bit.
+pub fn in_mask(mask: u32, layer: u8) -> bool {
+    mask & (1u32 << (layer & 31)) != 0
 }
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -205,6 +217,9 @@ pub struct Light {
     pub range: f32,
     /// Shadows it casts (only the first directional light with them does, for now).
     pub shadows: Option<Shadows>,
+    /// The layers it lights (and whose objects cast its shadows), a bit each (Unity's
+    /// `cullingMask`).
+    pub culling_mask: u32,
 }
 
 /// Which shadows are drawn at all (Unity's `QualitySettings.shadows`).
@@ -254,6 +269,8 @@ pub struct MeshInstance {
     pub cast_shadows: bool,
     /// Reflects the scene exactly in this plane (a planar mirror) instead of the sky.
     pub mirror: Option<Mirror>,
+    /// Its object's layer (0 to 31): lights, probes and mirrors with masks skip it.
+    pub layer: u8,
 }
 
 /// One camera's view: where on the target it draws and what it sees.
@@ -310,6 +327,8 @@ pub struct WorldQuad {
     /// Draw order among see-through things: higher draws later (over), whatever the
     /// distance (Unity's `sortingOrder`; meshes are 0).
     pub order: i32,
+    /// Its object's layer (0 to 31), for probes' and mirrors' masks.
+    pub layer: u8,
 }
 
 impl WorldQuad {
@@ -321,6 +340,7 @@ impl WorldQuad {
             uv: [0.0, 0.0, 1.0, 1.0],
             additive: false,
             order: 0,
+            layer: 0,
         }
     }
 }
@@ -349,6 +369,8 @@ struct GpuMesh {
     probe: [f32; 4],
     /// The probe's half extents (xyz) and 1 for box projection (w).
     probe_box: [f32; 4],
+    /// x: its layer's bit, for lights' masks.
+    layer: [u32; 4],
 }
 
 #[repr(C)]
@@ -358,6 +380,8 @@ struct GpuLight {
     direction: [f32; 4],
     color: [f32; 4],
     spot: [f32; 4],
+    /// x: the layers it lights.
+    mask: [u32; 4],
 }
 
 #[repr(C)]
@@ -1360,8 +1384,11 @@ impl WorldRenderer {
                 );
                 v.viewport = [0.0, 0.0, 1.0, 1.0];
                 v.clip_plane = None;
-                // Probes don't see probes or mirrors (those reflect the sky here).
+                // Probes don't see probes or mirrors (those reflect the sky here), nor
+                // layers outside their mask.
                 v.probes.clear();
+                v.meshes.retain(|m| in_mask(probe.culling_mask, m.layer));
+                v.quads.retain(|q| in_mask(probe.culling_mask, q.layer));
                 for m in &mut v.meshes {
                     m.mirror = None;
                 }
@@ -1543,8 +1570,18 @@ impl WorldRenderer {
                         let h = p.half_extents;
                         [h.x, h.y, h.z, f32::from(u8::from(p.box_projection))]
                     }),
+                    layer: [1 << (m.layer & 31), 0, 0, 0],
                 }
             };
+            // Only layers in the shadowing light's mask cast its shadows.
+            let shadow_mask = view
+                .lights
+                .iter()
+                .find(|l| {
+                    l.kind == LightKind::Directional && l.shadows.is_some_and(|s| s.strength > 0.0)
+                })
+                .map_or(ALL_LAYERS, |l| l.culling_mask);
+            let casts = |m: &MeshInstance| m.cast_shadows && in_mask(shadow_mask, m.layer);
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
             // Opaque meshes, grouped by mesh and texture (instancing).
             let mut opaque: Vec<&MeshInstance> = view
@@ -1553,14 +1590,7 @@ impl WorldRenderer {
                 .filter(known)
                 .filter(|m| m.color[3] >= 1.0 && m.glow == MeshGlow::None)
                 .collect();
-            opaque.sort_by_key(|m| {
-                (
-                    m.mesh,
-                    m.texture,
-                    m.cast_shadows,
-                    probe_for(m).map(|p| p.id),
-                )
-            });
+            opaque.sort_by_key(|m| (m.mesh, m.texture, casts(m), probe_for(m).map(|p| p.id)));
             let mut opaque_runs: Vec<Run> = Vec::new();
             for m in opaque {
                 let i = meshes.len() as u32;
@@ -1569,7 +1599,7 @@ impl WorldRenderer {
                     Some(r)
                         if r.mesh == Some(m.mesh)
                             && r.texture == m.texture
-                            && r.casts == m.cast_shadows
+                            && r.casts == casts(m)
                             && r.probe == probe_for(m).map(|p| p.id)
                             && r.range.end == i =>
                     {
@@ -1580,7 +1610,7 @@ impl WorldRenderer {
                         texture: m.texture,
                         probe: probe_for(m).map(|p| p.id),
                         glow: false,
-                        casts: m.cast_shadows,
+                        casts: casts(m),
                         range: i..i + 1,
                     }),
                 }
@@ -1687,6 +1717,7 @@ impl WorldRenderer {
                     direction: [l.direction.x, l.direction.y, l.direction.z, l.range],
                     color: [l.color[0], l.color[1], l.color[2], 0.0],
                     spot,
+                    mask: [l.culling_mask, 0, 0, 0],
                 }
             }));
             per_view.push((opaque_runs, blended, first_light..lights.len() as u32));
@@ -2025,7 +2056,9 @@ fn reflection_view(view: &WorldView, mirror: Mirror) -> WorldView {
     );
     let flip = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
     let mut v = view.clone();
-    v.meshes.retain(|m| m.mirror.is_none());
+    v.meshes
+        .retain(|m| m.mirror.is_none() && in_mask(mirror.culling_mask, m.layer));
+    v.quads.retain(|q| in_mask(mirror.culling_mask, q.layer));
     v.camera.view_proj = flip * view.camera.view_proj * reflect;
     v.camera.position = reflect.transform_point3(view.camera.position);
     v.camera.forward = reflect.transform_vector3(view.camera.forward);

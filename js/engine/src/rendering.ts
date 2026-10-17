@@ -728,6 +728,7 @@ export class Light extends Component {
   private _beamIntensity = 0;
   private _shadows: LightShadows = "none";
   private _shadowStrength = 1;
+  private _cullingMask = 0xffffffff;
   private started = false;
 
   get type(): LightType {
@@ -818,6 +819,18 @@ export class Light extends Component {
     this.send();
   }
 
+  /**
+   * The layers it lights, a bit each (all by default). Objects on other layers ignore
+   * it and don't cast its shadows.
+   */
+  get cullingMask(): number {
+    return this._cullingMask;
+  }
+  set cullingMask(mask: number) {
+    this._cullingMask = mask >>> 0;
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -835,6 +848,7 @@ export class Light extends Component {
       this._beamIntensity,
       this._shadows,
       this._shadowStrength,
+      this._cullingMask,
     );
   }
 
@@ -963,12 +977,14 @@ export const RenderSettings = {
 export class Mirror extends Component {
   /** The plane's normal in the object's space: up (+y) for planes, +z for quads. */
   normal: Vector3Like | null = null;
+  /** The layers it reflects, a bit each (all by default; set before it starts). */
+  cullingMask = 0xffffffff;
 
   private send(): void {
     const mesh = this.getComponent(MeshRenderer)?.mesh;
     // Quads face +z (`Vector3.back`: forward is -z here).
     const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
-    __iron_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z]);
+    __iron_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z], this.cullingMask >>> 0);
   }
 
   override onAwake(): void {
@@ -993,11 +1009,13 @@ export class ReflectionProbe extends Component {
   resolution = 128;
   /** Correct reflections for the box's walls (rooms) instead of treating them as far away. */
   boxProjection = false;
+  /** The layers it captures, a bit each (all by default; set before it starts). */
+  cullingMask = 0xffffffff;
   refreshMode: "onAwake" | "everyFrame" | "viaScripting" = "onAwake";
 
   private send(): void {
     const s = this.size;
-    __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame");
+    __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
   }
 
   /** Captures the scene again on the next frame (after moving things, say). */

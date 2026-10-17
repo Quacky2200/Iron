@@ -10,8 +10,8 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Mirror,
-    Projection, ReflectionProbe, ShadowQuality, Shadows, Sky, TextureData, TextureFilter,
+    ALL_LAYERS, BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance,
+    Mirror, Projection, ReflectionProbe, ShadowQuality, Shadows, Sky, TextureData, TextureFilter,
     TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
@@ -128,6 +128,7 @@ struct Probe {
     resolution: u32,
     box_projection: bool,
     every_frame: bool,
+    culling_mask: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -157,6 +158,7 @@ struct LightComponent {
     /// How bright a spot light's visible beam is (0: none).
     beam: f32,
     shadows: Option<Shadows>,
+    culling_mask: u32,
 }
 
 pub struct WorldViews {
@@ -165,8 +167,9 @@ pub struct WorldViews {
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
     sprites: BTreeMap<u32, Sprite>,
-    /// Planar mirrors: their objects and the local normals of their planes.
-    mirrors: BTreeMap<u32, (ScriptObject, Vec3)>,
+    /// Planar mirrors: their objects, the local normals of their planes and the layers
+    /// they reflect.
+    mirrors: BTreeMap<u32, (ScriptObject, Vec3, u32)>,
     /// Reflection probes by component.
     probes: BTreeMap<u32, Probe>,
     /// Probes asked to render on the next frame (`render.probeRender`, or just added).
@@ -231,6 +234,11 @@ fn flat(v: Option<&Value>) -> Option<Vec<f32>> {
         Some(Value::Array(items)) => items.iter().map(|x| x.as_f64().map(|n| n as f32)).collect(),
         _ => None,
     }
+}
+
+/// A culling mask (through `f64`, so all 32 bits survive); missing or null: every layer.
+fn mask(v: Option<&Value>) -> u32 {
+    v.and_then(Value::as_f64).map_or(ALL_LAYERS, |m| m as u32)
 }
 
 fn nums<const N: usize>(v: Option<&Value>) -> Option<[f32; N]> {
@@ -464,11 +472,7 @@ impl WorldViews {
                     depth: num(6).unwrap_or(0.0),
                     rect: nums::<4>(args.get(9)).unwrap_or([0.0, 0.0, 1.0, 1.0]),
                     skybox: args.get(10).and_then(Value::as_str) == Some("skybox"),
-                    // Through `f64`: all 32 bits.
-                    culling_mask: args
-                        .get(11)
-                        .and_then(Value::as_f64)
-                        .map_or(u32::MAX, |m| m as u32),
+                    culling_mask: mask(args.get(11)),
                     cull_distances: nums::<32>(args.get(12)).unwrap_or([0.0; 32]),
                     cull_spherical: matches!(args.get(13), Some(Value::Bool(true))),
                 };
@@ -555,7 +559,7 @@ impl WorldViews {
                 self.sprites.insert(id, sprite);
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
-            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength`
+            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
@@ -582,6 +586,7 @@ impl WorldViews {
                         }),
                         _ => None,
                     },
+                    culling_mask: mask(args.get(12)),
                 };
                 self.lights.insert(id, light);
             }
@@ -646,7 +651,8 @@ impl WorldViews {
                     !matches!(args.get(8), Some(Value::Bool(false))),
                 );
             }
-            // `probe component object [sx sy sz] resolution boxProjection everyFrame`
+            // `probe component object [sx sy sz] resolution boxProjection everyFrame
+            // cullingMask`
             "probe" => {
                 let [x, y, z] = nums::<3>(args.get(2)).unwrap_or([10.0; 3]);
                 let probe = Probe {
@@ -655,6 +661,7 @@ impl WorldViews {
                     resolution: num(3).unwrap_or(128.0).clamp(16.0, 1024.0) as u32,
                     box_projection: matches!(args.get(4), Some(Value::Bool(true))),
                     every_frame: matches!(args.get(5), Some(Value::Bool(true))),
+                    culling_mask: mask(args.get(6)),
                 };
                 self.probes.insert(id, probe);
                 self.probe_requests.insert(id);
@@ -663,11 +670,12 @@ impl WorldViews {
             "probeRender" => {
                 self.probe_requests.insert(id);
             }
-            // `mirror component object [nx ny nz]`: the object's MeshRenderer reflects the
-            // scene in the plane through its origin with this (local) normal.
+            // `mirror component object [nx ny nz] cullingMask`: the object's MeshRenderer
+            // reflects the scene in the plane through its origin with this (local) normal.
             "mirror" => {
                 let normal = nums::<3>(args.get(2)).map_or(Vec3::Y, Vec3::from_array);
-                self.mirrors.insert(id, (id_at(1)?, normal));
+                self.mirrors
+                    .insert(id, (id_at(1)?, normal, mask(args.get(3))));
             }
             // `quality 0 antiAliasing renderScale shadows(disable|hardOnly|all) softRadius`
             "quality" => {
@@ -797,6 +805,7 @@ impl WorldViews {
                             uv,
                             additive: false,
                             order: s.order,
+                            layer: 0,
                         };
                         Tagged::new(scene, s.object, quad)
                     }),
@@ -820,6 +829,7 @@ impl WorldViews {
                     resolution: p.resolution,
                     box_projection: p.box_projection,
                     render: p.every_frame || self.probe_requests.contains(&id),
+                    culling_mask: p.culling_mask,
                 })
             })
             .collect();
@@ -827,13 +837,14 @@ impl WorldViews {
         let mirror_planes: HashMap<ScriptObject, Mirror> = self
             .mirrors
             .values()
-            .filter_map(|&(object, normal)| {
+            .filter_map(|&(object, normal, culling_mask)| {
                 let w = Mat4::from(world(object)?);
                 Some((
                     object,
                     Mirror {
                         normal: w.transform_vector3(normal).normalize_or(Vec3::Y),
                         point: w.transform_point3(Vec3::ZERO),
+                        culling_mask,
                     },
                 ))
             })
@@ -856,6 +867,7 @@ impl WorldViews {
                     glow: MeshGlow::None,
                     cast_shadows: r.cast_shadows,
                     mirror: mirror_planes.get(&r.object).copied(),
+                    layer: 0,
                 };
                 Tagged::new(scene, r.object, mesh)
             })
@@ -893,6 +905,7 @@ impl WorldViews {
                             glow: MeshGlow::Beam,
                             cast_shadows: false,
                             mirror: None,
+                            layer: 0,
                         };
                         Tagged::new(scene, l.object, beam)
                     }),
@@ -928,6 +941,7 @@ impl WorldViews {
                     direction: rotation * Vec3::NEG_Z,
                     range: l.range,
                     shadows: l.shadows,
+                    culling_mask: l.culling_mask,
                 })
             })
             .collect();
@@ -947,14 +961,22 @@ impl WorldViews {
                 let mut quads: Vec<WorldQuad> = quads
                     .iter()
                     .filter(|q| shows(q.layer, q.at))
-                    .map(|q| q.item)
+                    .map(|q| WorldQuad {
+                        layer: q.layer,
+                        ..q.item
+                    })
                     .collect();
                 // Particles and halos face this camera.
                 for p in self.particles.values().filter(|p| scene.active(p.object)) {
                     if let Some(w) = world(p.object)
                         && shows(scene.layer(p.object), w.translation.into())
                     {
+                        let first = quads.len();
                         p.quads(&w, rotation, &mut quads);
+                        let layer = scene.layer(p.object);
+                        for q in &mut quads[first..] {
+                            q.layer = layer;
+                        }
                     }
                 }
                 for halo in halos.iter().filter(|h| shows(h.layer, h.at)) {
@@ -974,6 +996,7 @@ impl WorldViews {
                         uv: [0.0, 0.0, 1.0, 1.0],
                         additive: true,
                         order: 0,
+                        layer: halo.layer,
                     });
                 }
                 let [r, g, b, a] = camera.clear;
@@ -987,7 +1010,10 @@ impl WorldViews {
                     meshes: meshes
                         .iter()
                         .filter(|m| shows(m.layer, m.at))
-                        .map(|m| m.item)
+                        .map(|m| MeshInstance {
+                            layer: m.layer,
+                            ..m.item
+                        })
                         .collect(),
                     lights: lights.clone(),
                     ambient: self.ambient,

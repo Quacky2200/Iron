@@ -52,6 +52,8 @@ struct MeshInstance {
     probe: vec4<f32>,
     // The probe's half extents, and 1 for box projection.
     probe_box: vec4<f32>,
+    // x: its layer's bit, for lights' masks.
+    layer: vec4<u32>,
 };
 
 struct Light {
@@ -63,6 +65,8 @@ struct Light {
     color: vec4<f32>,
     // x, y: cosines of the spot's inner and outer half-angles.
     spot: vec4<f32>,
+    // x: the layers it lights.
+    mask: vec4<u32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -329,6 +333,10 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     let count = u32(g.ambient.w);
     for (var i = 0u; i < count; i++) {
         let light = lights[i];
+        // Lights skip layers outside their culling mask.
+        if ((light.mask.x & m.layer.x) == 0u) {
+            continue;
+        }
         var l: vec3<f32>;
         var strength = 1.0;
         if (light.position.w < 0.5) {

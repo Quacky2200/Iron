@@ -1051,9 +1051,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       like Unity's)
     - [ ] Later: layers for physics (collision matrix, raycast masks) and light culling masks
   - [ ] Culling (asked for 2026-10-17), with the render groups above:
-    - [ ] Culling masks: `Camera.cullingMask` (above); `Light.cullingMask` (which layers a
-      light lights); `ReflectionProbe.cullingMask` and `Mirror` masks (what they capture);
-      `MeshRenderer.shadowCastingMode` exists, plus per-layer shadow caster masks
+    - [x] Culling masks: `Camera.cullingMask` (above); `Light.cullingMask` (which layers a
+      light lights, in the shader per instance; the shadowing light's mask also picks
+      the casters); `ReflectionProbe.cullingMask` and `Mirror.cullingMask` (what they
+      capture); `M5-RND-15`, `M5-LAY-04`
     - [ ] Culling distances: `Camera.layerCullDistances` and `layerCullSpherical` done
       (above); per-light
       range culling (skip lights whose range doesn't reach the view); shadow distance per

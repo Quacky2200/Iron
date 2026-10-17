@@ -545,6 +545,7 @@ impl ParticleSystem {
                 uv,
                 additive: s.additive,
                 order: 0,
+                layer: 0,
             });
         }
     }

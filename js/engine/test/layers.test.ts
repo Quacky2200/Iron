@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, GameObject, LayerMask } from "../src/index.ts";
+import { Camera, GameObject, LayerMask, Light } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 
@@ -60,6 +60,15 @@ describe("layers", () => {
     expect(ops.filter((o) => o[0] === "render.camera").at(-1)![3]).toBeCloseTo(40, 6);
     cam.fieldOfView = 500;
     expect(cam.fieldOfView).toBe(179);
+  });
+
+  test("lights send their culling mask", () => {
+    const light = new GameObject("lamp").addComponent(Light, { type: "point" });
+    const last = () => ops.filter((o) => o[0] === "render.light").at(-1)!;
+    expect(last().at(-1)).toBe(0xffffffff);
+    light.cullingMask = ~LayerMask.getMask("UI");
+    expect(light.cullingMask).toBe(0xffffffdf);
+    expect(last().at(-1)).toBe(0xffffffdf);
   });
 
   test("cameras send their culling mask and cull distances", () => {

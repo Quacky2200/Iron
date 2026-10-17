@@ -219,6 +219,7 @@ impl Panels {
                 uv: [0.0, 0.0, 1.0, 1.0],
                 additive: false,
                 order: 0,
+                layer: 0,
             };
             quads.push((object, quad));
             views.push(view.clone());

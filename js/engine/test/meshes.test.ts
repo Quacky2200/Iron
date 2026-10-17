@@ -62,7 +62,7 @@ describe("meshes and lights", () => {
   test("lights and ambient", () => {
     const sun = new GameObject("sun");
     const l = sun.addComponent(Light, { type: "spot", intensity: 2, range: 15, spotAngle: 40 });
-    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0, 0, "none", 1]);
+    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0, 0, "none", 1, 0xffffffff]);
     RenderSettings.ambientLight = new Color(0.1, 0.1, 0.1);
     expect(renderOps().at(-1)).toEqual(["render.ambient", 0, [0.1, 0.1, 0.1]]);
     l.haloSize = 1;
@@ -70,7 +70,7 @@ describe("meshes and lights", () => {
     expect(renderOps().at(-1)!.slice(9, 11)).toEqual([1, 0.5]);
     l.shadows = "soft";
     l.shadowStrength = 0.7;
-    expect(renderOps().at(-1)!.slice(11)).toEqual(["soft", 0.7]);
+    expect(renderOps().at(-1)!.slice(11, 13)).toEqual(["soft", 0.7]);
     QualitySettings.shadowDistance = 40;
     expect(renderOps().at(-1)).toEqual(["render.shadowSettings", 0, 40, 2048]);
     RenderSettings.bloom = { threshold: 1, intensity: 0.8, scatter: 0.6 };
@@ -87,10 +87,14 @@ describe("meshes and lights", () => {
     const glass = new GameObject("glass");
     glass.addComponent(MeshRenderer, { mesh: "quad" });
     const mirror = glass.addComponent(Mirror);
-    expect(renderOps().at(-1)).toEqual(["render.mirror", mirror.id, glass.id, [0, 0, 1]]);
+    expect(renderOps().at(-1)).toEqual(["render.mirror", mirror.id, glass.id, [0, 0, 1], 0xffffffff]);
     const room = new GameObject("room");
     const probe = room.addComponent(ReflectionProbe, { size: new Vector3(4, 3, 6), boxProjection: true });
-    expect(renderOps().at(-1)).toEqual(["render.probe", probe.id, room.id, [4, 3, 6], 128, true, false]);
+    expect(renderOps().at(-1)).toEqual(["render.probe", probe.id, room.id, [4, 3, 6], 128, true, false, 0xffffffff]);
+    // Culling masks go out unsigned, whatever was set (M5-LAY-04).
+    const only = room.addComponent(ReflectionProbe, { cullingMask: ~(1 << 5) });
+    expect(renderOps().at(-1)!.at(-1)).toBe(0xffffffdf);
+    expect(only.cullingMask).toBe(~(1 << 5));
     probe.renderProbe();
     expect(renderOps().at(-1)).toEqual(["render.probeRender", probe.id]);
   });
