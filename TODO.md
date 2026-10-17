@@ -1110,6 +1110,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [x] `PlayerPrefs` (part of M6 brought forward): a JSON file per game in the OS's
     settings folder (`%APPDATA%`, `~/Library/Application Support`, `$XDG_CONFIG_HOME`),
     `IRON_PREFS_DIR` to override — `M5-PRF-01`, `M5-PRF-02`
+  - [x] Fixes (asked for 2026-10-17): exclusive fullscreen at the monitor's current
+    resolution unless one is chosen, the window size kept through fullscreen
+    (`M5-DSP-04`); `iron` is a windowed (GUI-subsystem) program logging to `Player.log`
+    (with colours) in the game's settings folder, and to the terminal it was started
+    from (`M5-APP-04`)
   - [ ] Display follow-ups: picking the monitor (`Display.displays`), HDR output, a
     window-position memory, mobile safe areas and orientation (`Screen.safeArea`,
     `Screen.orientation`), console/handheld presets; exclusive fullscreen needs testing

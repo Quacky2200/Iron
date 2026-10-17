@@ -96,6 +96,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/iron_app.exe`.
   Run `cargo build -p iron_app` before any manual check in the window. A running window locks the
   exe, so close it before rebuilding.
+- **Logs:** `iron` is a GUI-subsystem program. Its log goes to `Player.log` (last run:
+  `Player-prev.log`) next to the game's `prefs.json`, with ANSI colours, and to stderr when
+  started from a terminal or piped. Screenshot runs write no file unless `IRON_LOG_FILE` is set.
 - **Graphics backend:** Vulkan by default on Windows; `WGPU_BACKEND=dx12` switches.
   `IRON_FRAME_LATENCY` (1 or 2) sets the queued frames. The default is 1, or 2 on DX12, where 1 made
   resizing jitter.

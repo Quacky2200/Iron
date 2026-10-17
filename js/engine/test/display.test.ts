@@ -71,10 +71,14 @@ describe("display settings", () => {
     Screen.fullScreen = true;
     Screen.setResolution(1280.4, 720, "ExclusiveFullScreen", 60);
     Screen.setResolution(800, 600, false);
+    // Choosing a mode without a size (M5-DSP-04): the engine picks the monitor's
+    // resolution for exclusive and the last window size for windowed.
+    Screen.fullScreenMode = "ExclusiveFullScreen";
     expect(ops).toEqual([
-      ["screen.set", "FullScreenWindow", 1600, 900, 0],
+      ["screen.set", "FullScreenWindow", 0, 0, 0],
       ["screen.set", "ExclusiveFullScreen", 1280, 720, 60],
       ["screen.set", "Windowed", 800, 600, 0],
+      ["screen.set", "ExclusiveFullScreen", 0, 0, 0],
     ]);
   });
 

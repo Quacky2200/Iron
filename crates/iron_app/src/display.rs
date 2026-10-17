@@ -6,23 +6,39 @@ use iron_platform::Window;
 use iron_platform::display::{self, DisplaySettings, FullScreenMode};
 use serde_json::{Value, json};
 
-/// `base` with whatever `v` (`{ mode, width, height, refreshRate }`) sets.
+/// `base` with whatever `v` (`{ mode, width, height, refreshRate, windowWidth,
+/// windowHeight }`) sets. Exclusive fullscreen without a size takes the monitor's current
+/// resolution.
 pub fn from_json(v: Option<&Value>, base: DisplaySettings) -> DisplaySettings {
     let Some(v) = v else { return base };
     let num = |k: &str| v.get(k).and_then(Value::as_f64);
+    let size = |k: &str, default: u32| num(k).filter(|w| *w >= 1.0).map_or(default, |w| w as u32);
+    let mode = v
+        .get("mode")
+        .and_then(Value::as_str)
+        .and_then(FullScreenMode::parse)
+        .unwrap_or(base.mode);
+    let sized = num("width").is_some_and(|w| w >= 1.0);
+    let (width, height) = if mode == FullScreenMode::ExclusiveFullScreen && !sized {
+        (0, 0)
+    } else {
+        (size("width", base.width), size("height", base.height))
+    };
+    // The window size: given, else the windowed size given, else the base's.
+    let windowed = mode == FullScreenMode::Windowed && sized;
     DisplaySettings {
-        mode: v
-            .get("mode")
-            .and_then(Value::as_str)
-            .and_then(FullScreenMode::parse)
-            .unwrap_or(base.mode),
-        width: num("width")
-            .filter(|w| *w >= 1.0)
-            .map_or(base.width, |w| w as u32),
-        height: num("height")
-            .filter(|h| *h >= 1.0)
-            .map_or(base.height, |h| h as u32),
+        mode,
+        width,
+        height,
         refresh_rate: num("refreshRate").map_or(base.refresh_rate, |r| r.max(0.0) as f32),
+        window_width: size(
+            "windowWidth",
+            if windowed { width } else { base.window_width },
+        ),
+        window_height: size(
+            "windowHeight",
+            if windowed { height } else { base.window_height },
+        ),
     }
 }
 
@@ -33,6 +49,8 @@ pub fn to_json(s: &DisplaySettings) -> Value {
         "width": s.width,
         "height": s.height,
         "refreshRate": s.refresh_rate,
+        "windowWidth": s.window_width,
+        "windowHeight": s.window_height,
     })
 }
 
@@ -53,6 +71,8 @@ pub fn state(window: Option<&Window>, s: &DisplaySettings) -> Value {
         "width": s.width,
         "height": s.height,
         "refreshRate": s.refresh_rate,
+        "windowWidth": s.window_width,
+        "windowHeight": s.window_height,
         "supportedModes": supported.iter().map(|m| m.name()).collect::<Vec<_>>(),
         "resolutions": resolutions.into_iter().map(resolution).collect::<Vec<_>>(),
         "currentResolution": current.map(resolution),
@@ -75,6 +95,11 @@ mod tests {
         assert_eq!(s.mode, FullScreenMode::Windowed);
         assert_eq!((s.width, s.height, s.refresh_rate), (1920, 900, 144.0));
         assert_eq!(from_json(Some(&to_json(&s)), base), s);
+        // Exclusive without a size: the monitor's own (0 until applied); the window size
+        // stays for later.
+        let full = from_json(Some(&json!({ "mode": "ExclusiveFullScreen" })), s);
+        assert_eq!((full.width, full.height), (0, 0));
+        assert_eq!((full.window_width, full.window_height), (1920, 900));
         let odd = json!({ "mode": "Sideways" });
         assert_eq!(
             from_json(Some(&odd), base).mode,

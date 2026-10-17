@@ -59,10 +59,16 @@ pub struct Resolution {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DisplaySettings {
     pub mode: FullScreenMode,
+    /// The window's size (windowed) or the display mode's (exclusive). 0 asks for the
+    /// mode's default: the monitor's current resolution (exclusive), or `window_width` /
+    /// `window_height` (windowed).
     pub width: u32,
     pub height: u32,
     /// For exclusive fullscreen (0: the monitor's current rate).
     pub refresh_rate: f32,
+    /// The windowed size, kept through fullscreen so leaving it goes back to it.
+    pub window_width: u32,
+    pub window_height: u32,
 }
 
 impl Default for DisplaySettings {
@@ -72,7 +78,35 @@ impl Default for DisplaySettings {
             width: 1280,
             height: 720,
             refresh_rate: 0.0,
+            window_width: 1280,
+            window_height: 720,
         }
+    }
+}
+
+/// The display mode exclusive fullscreen asks for: the given size, else the monitor's
+/// current one (its desktop resolution and rate), not the smallest it offers.
+pub fn exclusive_target(s: &DisplaySettings, current: Option<Resolution>) -> (u32, u32, f32) {
+    match current {
+        Some(c) if s.width == 0 || s.height == 0 => (
+            c.width,
+            c.height,
+            if s.refresh_rate > 0.0 {
+                s.refresh_rate
+            } else {
+                c.refresh_rate
+            },
+        ),
+        _ => (s.width, s.height, s.refresh_rate),
+    }
+}
+
+/// The windowed size asked for: the given size, else the remembered window size.
+pub fn windowed_target(s: &DisplaySettings) -> (u32, u32) {
+    if s.width == 0 || s.height == 0 {
+        (s.window_width.max(1), s.window_height.max(1))
+    } else {
+        (s.width, s.height)
     }
 }
 
@@ -135,12 +169,11 @@ fn to_resolution(mode: &VideoModeHandle) -> Resolution {
 }
 
 /// The monitor mode closest to the request: size first, then refresh rate.
-fn closest_mode(monitor: &MonitorHandle, s: &DisplaySettings) -> Option<VideoModeHandle> {
-    let want = s.refresh_rate;
+fn closest_mode(monitor: &MonitorHandle, (w, h, want): (u32, u32, f32)) -> Option<VideoModeHandle> {
     monitor.video_modes().min_by(|a, b| {
         let key = |m: &VideoModeHandle| {
             let r = to_resolution(m);
-            let size = r.width.abs_diff(s.width) + r.height.abs_diff(s.height);
+            let size = r.width.abs_diff(w) + r.height.abs_diff(h);
             // No rate asked for: the fastest.
             let rate = if want > 0.0 {
                 (r.refresh_rate - want).abs()
@@ -186,7 +219,10 @@ pub fn apply(window: &Window, s: &DisplaySettings) -> DisplaySettings {
     let mut out = DisplaySettings { mode, ..*s };
     match mode {
         FullScreenMode::ExclusiveFullScreen => {
-            let video = window.current_monitor().and_then(|m| closest_mode(&m, s));
+            let target = exclusive_target(s, current_resolution(window));
+            let video = window
+                .current_monitor()
+                .and_then(|m| closest_mode(&m, target));
             match video {
                 Some(video) => {
                     let r = to_resolution(&video);
@@ -214,8 +250,10 @@ pub fn apply(window: &Window, s: &DisplaySettings) -> DisplaySettings {
             let (mw, mh) = window
                 .current_monitor()
                 .map_or((u32::MAX, u32::MAX), |m| (m.size().width, m.size().height));
-            out.width = s.width.clamp(320, mw.max(320));
-            out.height = s.height.clamp(240, mh.max(240));
+            let (w, h) = windowed_target(s);
+            out.width = w.clamp(320, mw.max(320));
+            out.height = h.clamp(240, mh.max(240));
+            (out.window_width, out.window_height) = (out.width, out.height);
             let _ = window.request_inner_size(PhysicalSize::new(out.width, out.height));
         }
     }
@@ -247,5 +285,41 @@ mod tests {
             assert_eq!(FullScreenMode::parse(m.name()), Some(m));
         }
         assert_eq!(FullScreenMode::parse("Borderless"), None);
+    }
+
+    // M5-DSP-04
+    #[test]
+    fn exclusive_fullscreen_defaults_to_the_monitors_current_resolution() {
+        let monitor = Resolution {
+            width: 2560,
+            height: 1440,
+            refresh_rate: 165.0,
+        };
+        let native = DisplaySettings {
+            mode: FullScreenMode::ExclusiveFullScreen,
+            width: 0,
+            height: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            exclusive_target(&native, Some(monitor)),
+            (2560, 1440, 165.0)
+        );
+        // An explicit size (Screen.setResolution) is kept.
+        let asked = DisplaySettings {
+            width: 1920,
+            height: 1080,
+            refresh_rate: 60.0,
+            ..native
+        };
+        assert_eq!(exclusive_target(&asked, Some(monitor)), (1920, 1080, 60.0));
+        // Leaving fullscreen with no size goes back to the remembered window size.
+        let back = DisplaySettings {
+            mode: FullScreenMode::Windowed,
+            window_width: 1600,
+            window_height: 900,
+            ..native
+        };
+        assert_eq!(windowed_target(&back), (1600, 900));
     }
 }

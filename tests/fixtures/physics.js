@@ -2325,7 +2325,10 @@ ${err.stack}` : ""}`);
   var display = () => globalThis.__iron_info?.display ?? {};
   var mode = () => display().mode ?? "Windowed";
   var isFullScreen = (m) => m === "FullScreenWindow" || m === "ExclusiveFullScreen";
-  var windowSize = () => ({ width: display().width ?? 1280, height: display().height ?? 720 });
+  var windowSize = () => ({
+    width: display().windowWidth ?? display().width ?? 1280,
+    height: display().windowHeight ?? display().height ?? 720
+  });
   function setResolution(w, h, m = mode(), refreshRate = 0) {
     const chosen = typeof m === "boolean" ? m ? "FullScreenWindow" : "Windowed" : m;
     __iron_op("screen.set", chosen, Math.round(w), Math.round(h), refreshRate);
@@ -2347,8 +2350,7 @@ ${err.stack}` : ""}`);
       return mode();
     },
     set fullScreenMode(m) {
-      const size = windowSize();
-      setResolution(size.width, size.height, m);
+      __iron_op("screen.set", m, 0, 0, 0);
     },
     get fullScreen() {
       return isFullScreen(mode());
@@ -2356,8 +2358,7 @@ ${err.stack}` : ""}`);
     set fullScreen(on) {
       if (on === isFullScreen(mode()))
         return;
-      const size = windowSize();
-      setResolution(size.width, size.height, on ? "FullScreenWindow" : "Windowed");
+      __iron_op("screen.set", on ? "FullScreenWindow" : "Windowed", 0, 0, 0);
     },
     setResolution,
     get windowSize() {

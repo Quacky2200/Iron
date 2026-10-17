@@ -22,6 +22,8 @@ interface DisplayInfo {
   width: number;
   height: number;
   refreshRate: number;
+  windowWidth: number;
+  windowHeight: number;
   supportedModes: FullScreenMode[];
   resolutions: Resolution[];
   currentResolution: Resolution | null;
@@ -32,7 +34,10 @@ const display = (): Partial<DisplayInfo> => (globalThis.__iron_info as { display
 
 const mode = (): FullScreenMode => display().mode ?? "Windowed";
 const isFullScreen = (m: FullScreenMode) => m === "FullScreenWindow" || m === "ExclusiveFullScreen";
-const windowSize = () => ({ width: display().width ?? 1280, height: display().height ?? 720 });
+const windowSize = () => ({
+  width: display().windowWidth ?? display().width ?? 1280,
+  height: display().windowHeight ?? display().height ?? 720,
+});
 
 function setResolution(w: number, h: number, m: FullScreenMode | boolean = mode(), refreshRate = 0): void {
   const chosen: FullScreenMode = typeof m === "boolean" ? (m ? "FullScreenWindow" : "Windowed") : m;
@@ -65,8 +70,9 @@ export const Screen = {
     return mode();
   },
   set fullScreenMode(m: FullScreenMode) {
-    const size = windowSize();
-    setResolution(size.width, size.height, m);
+    // No size: exclusive takes the monitor's current resolution, windowed goes back to
+    // the last window size.
+    __iron_op("screen.set", m, 0, 0, 0);
   },
 
   /** Fullscreen (borderless, or exclusive when that's the mode) or not. */
@@ -75,8 +81,7 @@ export const Screen = {
   },
   set fullScreen(on: boolean) {
     if (on === isFullScreen(mode())) return;
-    const size = windowSize();
-    setResolution(size.width, size.height, on ? "FullScreenWindow" : "Windowed");
+    __iron_op("screen.set", on ? "FullScreenWindow" : "Windowed", 0, 0, 0);
   },
 
   /**
@@ -86,7 +91,7 @@ export const Screen = {
    */
   setResolution,
 
-  /** The size the window has (windowed) or asked for (exclusive), in physical pixels. */
+  /** The window's size when windowed (kept through fullscreen), in physical pixels. */
   get windowSize(): { width: number; height: number } {
     return windowSize();
   },

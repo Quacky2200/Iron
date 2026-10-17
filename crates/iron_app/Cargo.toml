@@ -23,3 +23,6 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system"] 
 sys-locale = "0.3.2"
 serde_json = "1.0.154"
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names", "KHR_materials_unlit", "KHR_materials_emissive_strength"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Foundation"] }

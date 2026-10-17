@@ -1,3 +1,6 @@
+// A windowed program: no console window of its own (the log goes to a file, see
+// `logging`); tests keep the console harness.
+#![cfg_attr(not(test), windows_subsystem = "windows")]
 //! `iron [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
@@ -9,6 +12,7 @@ mod cursor;
 mod display;
 mod game_input;
 mod info;
+mod logging;
 mod models;
 mod panels;
 mod particles;
@@ -86,14 +90,38 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,wgpu_core=warn,wgpu_hal=error".into()),
-        )
-        .init();
+    logging::attach_console();
+    let result = run();
+    if let Err(e) = &result {
+        // Into the log as well as stderr: a windowed program's stderr may go nowhere.
+        tracing::error!("{e:#}");
+    }
+    result
+}
 
-    let args = parse_args()?;
+fn run() -> Result<()> {
+    let args = match parse_args() {
+        Ok(a) => a,
+        Err(e) => {
+            logging::init(None);
+            return Err(e);
+        }
+    };
+    // The log file sits with the game's settings (not for screenshot runs, which leave
+    // the player's files alone; `IRON_LOG_FILE` still works there).
+    let manifest_dir = match resolve_bundle(&args.game) {
+        Ok((_, root)) => Some(root),
+        Err(_) => None,
+    };
+    let settings = manifest_dir
+        .as_deref()
+        .map(info::Manifest::load)
+        .and_then(|m| prefs::settings_dir(&m))
+        .filter(|_| args.screenshot.is_none());
+    if let Some(log) = logging::init(logging::log_path(settings.as_deref())) {
+        tracing::info!("log: {}", log.display());
+    }
+
     let (bundle_path, asset_root) = resolve_bundle(&args.game)?;
     let code = std::fs::read_to_string(&bundle_path)
         .with_context(|| format!("reading {}", bundle_path.display()))?;
@@ -233,8 +261,11 @@ fn main() -> Result<()> {
         .icon
         .as_deref()
         .and_then(|path| info::load_icon(&app.asset_root, path));
-    // A window opens at the saved size; fullscreen modes are applied once it exists.
-    let (width, height) = (display_settings.width, display_settings.height);
+    // A window opens at the saved window size; fullscreen modes are applied once it exists.
+    let (width, height) = (
+        display_settings.window_width,
+        display_settings.window_height,
+    );
     Platform::new().run(
         WindowConfig {
             title: manifest.title.clone(),
@@ -1061,7 +1092,8 @@ impl App {
     }
 
     /// `screen.set mode width height refreshRate`: changes the window's mode and size,
-    /// remembers it for next time and tells scripts what took effect.
+    /// remembers it for next time and tells scripts what took effect. A size of 0 is the
+    /// mode's default: the monitor's resolution (exclusive) or the last window size.
     fn screen_op(&mut self, args: &[iron_core::Value]) {
         let num = |i: usize| args.get(i).and_then(iron_core::Value::as_f64);
         let wanted = iron_platform::DisplaySettings {
@@ -1070,13 +1102,10 @@ impl App {
                 .and_then(iron_core::Value::as_str)
                 .and_then(iron_platform::FullScreenMode::parse)
                 .unwrap_or(self.display.mode),
-            width: num(1)
-                .filter(|w| *w >= 1.0)
-                .map_or(self.display.width, |w| w as u32),
-            height: num(2)
-                .filter(|h| *h >= 1.0)
-                .map_or(self.display.height, |h| h as u32),
+            width: num(1).map_or(self.display.width, |w| w.max(0.0) as u32),
+            height: num(2).map_or(self.display.height, |h| h.max(0.0) as u32),
             refresh_rate: num(3).map_or(self.display.refresh_rate, |r| r.max(0.0) as f32),
+            ..self.display
         };
         self.apply_display(wanted);
         self.prefs
