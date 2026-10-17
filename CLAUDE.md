@@ -118,13 +118,14 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - M3c step 6: gamepads (`iron_platform::gamepad`) and keys to scripts through `@iron/engine`'s
     `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
   - M3c step 7: `examples/form`. **M3c is done.**
-  - M3d groups 1–4 (units/values, layout, backgrounds & borders, text) and group 5 steps 5a–5g
-    (opacity %, filters, image-rendering, masks, transforms 2D/3D, visibility, lists)
-- **Next (agreed with the user, 2026-10-17):** finish the rest of M3d in this order — 5h
-  (user-select, static text selection, `::selection`, `::placeholder`), 5i (cursor images,
-  pointer-events gaps), 5j (`::backdrop` and a modal top layer), 5.1 (SVG with CSS styling),
-  then M3d groups 7 (transitions/animations), 8 (scrolling extras), 9 (game extensions),
-  10 (nesting, `@import`) — **then stop and check in with the user** before M4.
+  - M3d groups 1–4 (units/values, layout, backgrounds & borders, text); group 5 steps 5a–5j
+    (opacity %, filters, image-rendering, masks, transforms 2D/3D, visibility, lists, selection
+    and `::selection`/`::placeholder`, cursor images, `dialog` + top layer + `::backdrop`);
+    group 7 (transitions, `@keyframes`/animations, `@starting-style`, `:outro`); group 8
+    (`scrollbar-gutter`, `overscroll-behavior`)
+- **Next (agreed with the user, 2026-10-17):** finish the rest of M3d — group 9 (image tint, UI
+  scale; `sound-in/out` waits for M6 audio), group 10 (nesting, `@import`), then 5.1 (SVG with
+  CSS styling) — **then stop and check in with the user** before M4.
   Commit per step; refresh docs once per group (Sonnet subagent, changed code only).
 - **Also planned:** "Script IO" (files, fetch, WebSocket) in TODO.md, designed in
   `docs/research/networking-and-files.md`; where it lands is undecided.

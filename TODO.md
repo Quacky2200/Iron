@@ -433,8 +433,8 @@ Gaps found by comparing our CSS with s&box's (survey of 2026-10-16, from the off
 already planned for M3c (`overflow`, `cursor`, `pointer-events`, scrolling) aren't repeated here.
 Where s&box has a custom extension, we prefer the standard CSS form if there is one.
 
-**Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, 5.1 (SVG), then groups 7, 8, 9,
-10; then stop and check in with the user before M4. Known deviations from browsers go in
+**Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, then groups 7, 8, 9, 10, then
+5.1 (SVG); then stop and check in with the user before M4. Done so far: 5h–5j, groups 7 and 8. Known deviations from browsers go in
 [docs/differences.md](docs/differences.md).
 
 We're already **ahead** of s&box on: custom properties and `var()` (s&box has none), `!important`
