@@ -203,6 +203,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             skybox: false,
             clip_plane: None,
             probes: Vec::new(),
+            fxaa: false,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -223,6 +224,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             skybox: false,
             clip_plane: None,
             probes: Vec::new(),
+            fxaa: false,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -250,6 +252,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             skybox: false,
             clip_plane: None,
             probes: Vec::new(),
+            fxaa: false,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -1765,4 +1768,129 @@ fn material_maps_and_rendering_modes() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-17", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-18
+#[test]
+fn tonemapping_exposure_and_fxaa() {
+    use iron_render::{Grading, Light, LightKind, MeshInstance, Sky, Tonemapping, primitive_id};
+    let gpu = shared_gpu();
+    let size = (200, 150);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // Bright, saturated balls (lit past white) and a thin tilted bar with hard edges.
+    let scene = |fxaa: bool| {
+        let eye = Vec3::new(0.0, 1.4, 4.2);
+        let camera = WorldCamera::perspective(
+            iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.6, 0.0), Vec3::Y)
+                .inverse(),
+            45.0,
+            0.1,
+            50.0,
+            size,
+            Color::rgb(0.0, 0.0, 0.0),
+        );
+        let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+        v.skybox = true;
+        v.fxaa = fxaa;
+        let ball = |x: f32, color: [f32; 4]| MeshInstance {
+            mesh: primitive_id("sphere").unwrap(),
+            model: Mat4::from_translation(Vec3::new(x, 0.5, 0.0)),
+            color,
+            smoothness: 0.7,
+            ..Default::default()
+        };
+        v.meshes = vec![
+            MeshInstance {
+                mesh: primitive_id("plane").unwrap(),
+                color: [0.3, 0.3, 0.32, 1.0],
+                ..Default::default()
+            },
+            ball(-1.1, [1.0, 0.2, 0.1, 1.0]),
+            ball(0.0, [0.2, 1.0, 0.3, 1.0]),
+            ball(1.1, [0.2, 0.4, 1.0, 1.0]),
+            MeshInstance {
+                mesh: primitive_id("cube").unwrap(),
+                model: Mat4::from_translation(Vec3::new(0.0, 1.35, 0.3))
+                    * Mat4::from_rotation_z(0.18)
+                    * Mat4::from_scale(Vec3::new(3.0, 0.05, 0.05)),
+                color: [1.0, 1.0, 1.0, 1.0],
+                unlit: true,
+                ..Default::default()
+            },
+        ];
+        v.lights = vec![Light {
+            kind: LightKind::Directional,
+            color: [4.0, 3.8, 3.5],
+            position: Vec3::ZERO,
+            direction: Vec3::new(-0.3, -0.8, -0.5).normalize(),
+            range: 0.0,
+            shadows: None,
+            culling_mask: ALL_LAYERS,
+        }];
+        v
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    world.set_sky(Some(Sky::default()));
+    // Clipped, neutral, ACES a stop darker, then ACES with FXAA.
+    let looks = [
+        (Grading::default(), false),
+        (
+            Grading {
+                exposure: 1.0,
+                tonemapping: Tonemapping::Neutral,
+            },
+            false,
+        ),
+        (
+            Grading {
+                exposure: 0.5,
+                tonemapping: Tonemapping::Aces,
+            },
+            false,
+        ),
+        (
+            Grading {
+                exposure: 0.5,
+                tonemapping: Tonemapping::Aces,
+            },
+            true,
+        ),
+    ];
+    let shots: Vec<Vec<u8>> = looks
+        .iter()
+        .map(|&(grading, fxaa)| {
+            world.grading = grading;
+            world.render_views(&gpu, &rt, &[scene(fxaa)], &[]);
+            target.read_pixels(&gpu).unwrap()
+        })
+        .collect();
+    // FXAA changed the bar's edges, and only near edges.
+    let changed = shots[2]
+        .chunks(4)
+        .zip(shots[3].chunks(4))
+        .filter(|(a, b)| a.iter().zip(*b).any(|(x, y)| x.abs_diff(*y) > 8))
+        .count();
+    let total = (size.0 * size.1) as usize;
+    assert!(
+        changed > 50 && changed < total / 5,
+        "FXAA changed {changed} pixels"
+    );
+    // Two by two.
+    let row = size.0 as usize * 4;
+    let mut pixels = Vec::new();
+    for pair in shots.chunks(2) {
+        for y in 0..size.1 as usize {
+            pixels.extend_from_slice(&pair[0][y * row..(y + 1) * row]);
+            pixels.extend_from_slice(&pair[1][y * row..(y + 1) * row]);
+        }
+    }
+    assert_golden("M5-RND-18", size.0 * 2, size.1 * 2, &pixels, 3);
 }

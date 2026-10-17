@@ -792,7 +792,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     viewport rects (split screen, minimaps), `Camera.main` / `allCameras`, `Matrix4x4`,
     `Screen`, screen/viewport/world conversions (`screenPointToRay`, `worldToScreenPoint`,
     `viewportToWorldPoint`, ...), `CameraFollow` and `CameraOrbit` — `M5-CAM-01`, `M5-RND-06`
-  - [ ] Cameras rendering to a texture (`targetTexture`)
+  - [ ] Cameras rendering to a texture (`targetTexture`): moved to M5.c (render textures)
   - [x] Lifecycle hooks the Unity / s&box way: `onStart`, `onUpdate` and `onLateUpdate` per
     frame, `onFixedUpdate` on the 60 Hz tick, `onPreRender`, `onDestroy`; the engine only
     calls the hooks a component has — `M5-OBJ-08`
@@ -943,12 +943,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Particle follow-ups: GPU simulation for big systems, collisions, velocity / force
     over lifetime, stretched billboards, sub-emitters, trails, soft particles (fade near
     surfaces), `AnimationCurve` / `Gradient` types for the over-lifetime keys
-  - [ ] Glow follow-ups: tonemapping (ACES / neutral) and exposure, per-camera
-    post-processing settings, `Material` blend modes for additive meshes in scripts,
+  - [ ] Glow follow-ups: tonemapping (`RenderSettings.tonemapping` none / neutral / aces)
+    and `postExposure` done in M5.c (`M5-RND-18`); left: per-camera post-processing
+    settings (volumes), `Material` blend modes for additive meshes in scripts,
     lens flares
   - [ ] Texture follow-ups: SVG textures, async decoding off the frame, sorting layers
     for sprites, sprite atlases, `Texture.getPixel` / `setPixels` after
-    creation, render textures (a camera into a texture)
+    creation; render textures (a camera into a texture) moved to M5.c
   - [ ] 2D follow-ups: a real 2D physics world (rapier2d) if the slabs fall short,
     concave polygons (decomposition), 2D joints, `Physics2D.overlapCircle` and friends,
     tilemaps, sorting layers, pixel-perfect camera
@@ -1067,6 +1068,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] Glass with refraction (screen-space), order-independent transparency
     - [x] A material test scene (spheres sweeping roughness × metallic, the classic grid):
       `examples/materials`, `M5-RND-11`
+  - [ ] Camera into a texture (asked for 2026-10-17; from M5.a's `targetTexture` and the
+    M5.a2 texture follow-ups): `RenderTexture` (size, depth, format), `Camera.targetTexture`
+    drawing that camera into it instead of the screen, usable as any material's or
+    sprite's texture (security cameras, minimaps, portals), sharing the render-scale
+    target code
   - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels. Done:
     MSAA, render scale, shadow quality, levels, manifest defaults, the example (`M5-RND-14`,
     `M5-QUA-01`). Left: FXAA / TAA, render textures, texture quality, saving players'
@@ -1074,14 +1080,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Anti-aliasing: MSAA (2 / 4 / 8x, capped by what the GPU supports for the format;
       the adapter-specific feature is requested so 2x and 8x work where offered) for the main
       world pass; mirrors and probes stay 1x
-    - [ ] FXAA as a cheap post pass; TAA later (needs motion vectors and jitter)
+    - [x] FXAA as a cheap post pass after tonemapping (`Camera.antialiasing: "fxaa"`, the
+      main camera's choice for the screen) — `M5-RND-18`
+    - [ ] TAA (needs motion vectors and jitter), SMAA
     - [x] Shadow quality: off / hard only / all, soft filter 3 x 3 or 5 x 5, resolution,
       distance; cascades with the cascade work
     - [x] Render scale (0.25 to 2): the world drawn into a texture at the scaled size and
       stretched onto the target (bilinear), UI kept at native resolution; FSR-style
       sharpening later
-    - [ ] Render textures as a general feature (a camera into a texture, usable on
-      materials), sharing the render-scale target code
+    - [ ] Render textures: see "Camera into a texture" below
     - [x] Texture quality: `QualitySettings.globalTextureMipmapLimit` (top mips skipped),
       `anisotropicFiltering` (disable / enable / forceEnable) with `Texture.anisoLevel`;
       per level (Low: half size, no anisotropy; Ultra: forced) — `M5-QUA-02`

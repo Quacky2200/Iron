@@ -111,6 +111,10 @@ describe("meshes and lights", () => {
     expect(renderOps().at(-1)).toEqual(["render.bloom", 0, 1, 0.8, 0.6]);
     RenderSettings.bloom = null;
     expect(renderOps().at(-1)).toEqual(["render.bloom", 0, null]);
+    // Exposure and tonemapping (M5-RND-18).
+    RenderSettings.tonemapping = "aces";
+    RenderSettings.postExposure = 1.5;
+    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces"]);
     RenderSettings.skybox = { zenith: new Color(0, 0, 1, 1), sunDirection: null };
     expect(renderOps().at(-1)).toEqual(["render.sky", 0, [0, 0, 1], [0.62, 0.72, 0.82], [0.22, 0.2, 0.18], null, [20, 18, 15], 1.5, 1, true]);
     RenderSettings.ambientMode = "color";

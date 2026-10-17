@@ -16,11 +16,11 @@ pub use surface::WindowSurface;
 pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, needs_backdrop};
 pub use wgpu;
 pub use world::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Light, LightKind,
+    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Grading, Light, LightKind,
     MISSING_TEXTURE, MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, PRIMITIVE_BASE,
     PRIMITIVES, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows, Sky, TextureData,
-    TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldRenderer, WorldStats, WorldTexture,
-    WorldView, in_mask, primitive, primitive_id, viewport_size,
+    TextureFilter, TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldRenderer, WorldStats,
+    WorldTexture, WorldView, in_mask, primitive, primitive_id, viewport_size,
 };
 
 /// A linear RGBA colour.

@@ -76,7 +76,7 @@ describe("layers", () => {
     cam.onStart();
     const last = () => ops.filter((o) => o[0] === "render.camera").at(-1)!;
     expect(cam.cullingMask).toBe(0xffffffff);
-    expect(last().slice(12)).toEqual([0xffffffff, null, false]);
+    expect(last().slice(12)).toEqual([0xffffffff, null, false, "none"]);
     // Signed masks (Unity's ~) come out unsigned.
     cam.cullingMask &= ~LayerMask.getMask("UI");
     expect(cam.cullingMask).toBe(0xffffffdf);
@@ -86,7 +86,7 @@ describe("layers", () => {
     expect(cam.layerCullDistances[8]).toBe(0);
     cam.layerCullDistances = far;
     cam.layerCullSpherical = true;
-    const [mask, distances, spherical] = last().slice(12) as [number, number[], boolean];
+    const [mask, distances, spherical] = last().slice(12, 15) as [number, number[], boolean];
     expect(mask).toBe(0xffffffdf);
     expect(distances).toHaveLength(32);
     expect(distances[8]).toBe(30);

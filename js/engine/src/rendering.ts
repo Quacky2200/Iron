@@ -46,6 +46,7 @@ export class Camera extends Component {
   private _cullingMask = 0xffffffff;
   private _layerCullDistances: number[] = new Array(32).fill(0);
   private _layerCullSpherical = false;
+  private _antialiasing: "none" | "fxaa" = "none";
   private started = false;
 
   /** Vertical field of view in degrees (perspective), 1 to 179. */
@@ -196,6 +197,20 @@ export class Camera extends Component {
     this.send();
   }
 
+  /**
+   * Post anti-aliasing (Unity's camera `antialiasing`): `fxaa` smooths edges the cheap
+   * way, after tonemapping, including ones MSAA can't (textures, shading). The main
+   * (biggest) camera's choice applies to the screen.
+   */
+  @property
+  get antialiasing(): "none" | "fxaa" {
+    return this._antialiasing;
+  }
+  set antialiasing(mode: "none" | "fxaa") {
+    this._antialiasing = mode;
+    this.send();
+  }
+
   /** The camera's area of the screen in UI pixels. */
   get pixelRect(): Rect {
     return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
@@ -312,6 +327,7 @@ export class Camera extends Component {
       this._cullingMask,
       this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null,
       this._layerCullSpherical,
+      this._antialiasing,
     );
   }
 
@@ -1032,6 +1048,12 @@ export interface BloomSettings {
 
 let bloom: BloomSettings | null = null;
 
+/** How HDR light becomes screen colours (Unity's `TonemappingMode`). */
+export type TonemappingMode = "none" | "neutral" | "aces";
+let tonemapping: TonemappingMode = "none";
+let postExposure = 0;
+const sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping);
+
 /**
  * A procedural sky (Unity's procedural skybox): gradients from the zenith to the horizon
  * to the ground, and a sun disc. Colours are linear and can exceed 1 (the sun usually
@@ -1120,6 +1142,25 @@ export const RenderSettings = {
     bloom = b ? { ...b } : null;
     if (b) __iron_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
     else __iron_op("render.bloom", 0, null);
+  },
+  /**
+   * How HDR light (brighter than white) becomes screen colours: `none` clips it (the
+   * default), `neutral` keeps colours and rolls highlights off softly, `aces` is filmic.
+   */
+  get tonemapping(): TonemappingMode {
+    return tonemapping;
+  },
+  set tonemapping(t: TonemappingMode) {
+    tonemapping = t;
+    sendPost();
+  },
+  /** Brightens (positive) or darkens (negative) everything, in stops, before tonemapping. */
+  get postExposure(): number {
+    return postExposure;
+  },
+  set postExposure(ev: number) {
+    postExposure = ev;
+    sendPost();
   },
 };
 

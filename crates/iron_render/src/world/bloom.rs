@@ -1,6 +1,7 @@
-//! Bloom for the world pass: with it on, the world draws into an HDR texture
-//! ([`HDR_FORMAT`]), whose bright parts are blurred down and up a chain of half-size
-//! textures and added back as it's copied to the target.
+//! Post-processing for the world pass: with bloom, exposure or tonemapping on, the world
+//! draws into an HDR texture ([`HDR_FORMAT`]), whose bright parts are blurred down and up
+//! a chain of half-size textures and added back as it's copied to the target, with
+//! exposure and tonemapping applied on the way.
 
 use std::collections::HashMap;
 
@@ -32,13 +33,51 @@ impl Default for Bloom {
     }
 }
 
+/// How HDR light becomes screen colours (Unity's `TonemappingMode`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tonemapping {
+    /// Clipped at white.
+    #[default]
+    None,
+    /// Colours kept as they are until a soft shoulder (Khronos PBR Neutral).
+    Neutral,
+    /// Filmic: more contrast, highlights roll off (ACES).
+    Aces,
+}
+
+/// Exposure and tonemapping, applied after bloom.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grading {
+    /// Multiplies the light (2 to the post exposure's stops).
+    pub exposure: f32,
+    pub tonemapping: Tonemapping,
+}
+
+impl Default for Grading {
+    fn default() -> Self {
+        Self {
+            exposure: 1.0,
+            tonemapping: Tonemapping::None,
+        }
+    }
+}
+
+impl Grading {
+    /// Changes nothing, so no post pass is needed for it.
+    pub fn is_identity(&self) -> bool {
+        self.tonemapping == Tonemapping::None && (self.exposure - 1.0).abs() < 1e-6
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Params {
     threshold: f32,
     knee: f32,
     intensity: f32,
-    _pad: f32,
+    exposure: f32,
+    tonemap: u32,
+    _pad: [u32; 3],
 }
 
 /// The most half-size levels the blur goes down.
@@ -54,6 +93,8 @@ pub(crate) struct BloomPass {
     down: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
     composite: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
+    /// Exposure and tonemapping alone, by target format.
+    grade: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// The HDR image and the blur levels, for one target size.
     textures: Option<((u32, u32), wgpu::TextureView, Vec<wgpu::TextureView>)>,
 }
@@ -163,6 +204,7 @@ impl BloomPass {
             down: pipeline(gpu, &module, &layout, "fs_down", HDR_FORMAT, None),
             up: pipeline(gpu, &module, &layout, "fs_up", HDR_FORMAT, Some(mix)),
             composite: HashMap::new(),
+            grade: HashMap::new(),
             module,
             group_layout,
             layout,
@@ -206,39 +248,50 @@ impl BloomPass {
         self.textures.as_ref().expect("just made").1.clone()
     }
 
-    /// Blurs the HDR image's bright parts and writes the image plus the glow to `target`.
+    /// Blurs the HDR image's bright parts (with `settings`) and writes the image plus the
+    /// glow to `target`, graded.
     pub fn encode(
         &mut self,
         gpu: &Gpu,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         format: wgpu::TextureFormat,
-        settings: &Bloom,
+        settings: Option<&Bloom>,
+        grading: Grading,
     ) {
         let Some((_, hdr, levels)) = &self.textures else {
             return;
         };
-        let knee = (settings.threshold * 0.5).max(1e-3);
+        let bloom = settings.copied().unwrap_or(Bloom {
+            intensity: 0.0,
+            ..Default::default()
+        });
+        let knee = (bloom.threshold * 0.5).max(1e-3);
         gpu.queue.write_buffer(
             &self.params,
             0,
             bytemuck::bytes_of(&Params {
-                threshold: settings.threshold,
+                threshold: bloom.threshold,
                 knee,
-                intensity: settings.intensity,
-                _pad: 0.0,
+                intensity: bloom.intensity,
+                exposure: grading.exposure.max(0.0),
+                tonemap: match grading.tonemapping {
+                    Tonemapping::None => 0,
+                    Tonemapping::Neutral => 1,
+                    Tonemapping::Aces => 2,
+                },
+                _pad: [0; 3],
             }),
         );
-        let composite = self.composite.entry(format).or_insert_with(|| {
-            pipeline(
-                gpu,
-                &self.module,
-                &self.layout,
-                "fs_composite",
-                format,
-                None,
-            )
-        });
+        let (module, layout) = (&self.module, &self.layout);
+        let composite = self
+            .composite
+            .entry(format)
+            .or_insert_with(|| pipeline(gpu, module, layout, "fs_composite", format, None));
+        let grade = self
+            .grade
+            .entry(format)
+            .or_insert_with(|| pipeline(gpu, module, layout, "fs_grade", format, None));
         let group = |src: &wgpu::TextureView| {
             gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("bloom"),
@@ -294,6 +347,10 @@ impl BloomPass {
             pass.draw(0..3, 0..1);
         };
         let clear = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
+        if settings.is_none() {
+            draw(encoder, target, hdr, grade, clear, 0.0);
+            return;
+        }
         if levels.is_empty() {
             draw(encoder, target, hdr, composite, clear, 0.0);
             return;
@@ -302,7 +359,7 @@ impl BloomPass {
         for i in 1..levels.len() {
             draw(encoder, &levels[i], &levels[i - 1], &self.down, clear, 0.0);
         }
-        let scatter = f64::from(settings.scatter.clamp(0.0, 1.0));
+        let scatter = f64::from(bloom.scatter.clamp(0.0, 1.0));
         for i in (0..levels.len() - 1).rev() {
             draw(
                 encoder,

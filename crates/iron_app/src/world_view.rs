@@ -10,10 +10,10 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, Light, LightKind, MaterialMaps, MeshData,
-    MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode, ShadowQuality,
-    Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture,
-    WorldView, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, Grading, Light, LightKind, MaterialMaps,
+    MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode,
+    ShadowQuality, Shadows, Sky, TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera,
+    WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -39,6 +39,8 @@ struct Camera {
     cull_distances: [f32; 32],
     /// Cull distances measured straight from the camera, not along its view.
     cull_spherical: bool,
+    /// FXAA over the screen (Unity's camera `antialiasing`).
+    fxaa: bool,
 }
 
 impl Camera {
@@ -298,6 +300,8 @@ pub struct WorldViews {
     pub shadow_settings: (f32, u32),
     /// Anti-aliasing, render scale and shadow quality (`render.quality`).
     pub quality: Quality,
+    /// Exposure and tonemapping (`render.post`).
+    pub grading: Grading,
     /// The sky (`render.sky`), applied by the app before drawing.
     pub sky: Option<Sky>,
     /// Reflection / sky light intensity, and whether ambient light comes from the sky.
@@ -333,6 +337,7 @@ impl Default for WorldViews {
             bloom: None,
             shadow_settings: (25.0, 2048),
             quality: Quality::default(),
+            grading: Grading::default(),
             sky: None,
             environment: (1.0, true),
             pending_emits: Vec::new(),
@@ -598,6 +603,7 @@ impl WorldViews {
                     culling_mask: mask(args.get(11)),
                     cull_distances: nums::<32>(args.get(12)).unwrap_or([0.0; 32]),
                     cull_spherical: matches!(args.get(13), Some(Value::Bool(true))),
+                    fxaa: args.get(14).and_then(Value::as_str) == Some("fxaa"),
                 };
                 self.cameras.insert(id, camera);
             }
@@ -861,6 +867,17 @@ impl WorldViews {
             "shadowSettings" => {
                 let resolution = num(2).unwrap_or(2048.0).clamp(256.0, 8192.0) as u32;
                 self.shadow_settings = (num(1)?.max(1.0), resolution);
+            }
+            // `post 0 postExposure(stops) tonemapping(none|neutral|aces)`.
+            "post" => {
+                self.grading = Grading {
+                    exposure: 2f32.powf(num(1).unwrap_or(0.0).clamp(-10.0, 10.0)),
+                    tonemapping: match args.get(2).and_then(Value::as_str) {
+                        Some("neutral") => Tonemapping::Neutral,
+                        Some("aces") => Tonemapping::Aces,
+                        _ => Tonemapping::None,
+                    },
+                };
             }
             // `bloom 0 threshold intensity scatter`; `bloom 0 null` turns it off.
             "bloom" => {
@@ -1228,6 +1245,7 @@ impl WorldViews {
                     skybox: camera.skybox,
                     clip_plane: None,
                     probes: probes.clone(),
+                    fxaa: camera.fxaa,
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

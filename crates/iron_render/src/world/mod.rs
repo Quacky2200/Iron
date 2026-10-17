@@ -12,6 +12,7 @@
 pub mod bloom;
 pub mod cull;
 pub mod environment;
+mod fxaa;
 pub mod mesh;
 pub mod texture;
 mod upscale;
@@ -23,7 +24,7 @@ use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
-pub use bloom::Bloom;
+pub use bloom::{Bloom, Grading, Tonemapping};
 pub use environment::Sky;
 pub use mesh::{MeshData, primitive};
 use texture::SamplerKey;
@@ -461,6 +462,9 @@ pub struct WorldView {
     pub clip_plane: Option<[f32; 4]>,
     /// Reflection probes in this view's world (rendered for the main view).
     pub probes: Vec<ReflectionProbe>,
+    /// FXAA over the whole target after it's drawn, when the main view (the biggest)
+    /// asks for it (Unity's camera `antialiasing`).
+    pub fxaa: bool,
 }
 
 impl WorldView {
@@ -476,6 +480,7 @@ impl WorldView {
             skybox: false,
             clip_plane: None,
             probes: Vec::new(),
+            fxaa: false,
         }
     }
 }
@@ -745,8 +750,12 @@ pub struct WorldRenderer {
     probe_faces: HashMap<u32, wgpu::TextureView>,
     /// Bloom over every view (`None`: off).
     pub bloom: Option<Bloom>,
-    /// Made the first time bloom is on.
+    /// Made the first time bloom (or grading) is on.
     bloom_pass: Option<bloom::BloomPass>,
+    /// Exposure and tonemapping over every view.
+    pub grading: Grading,
+    /// Made the first time a view asks for FXAA.
+    fxaa: Option<fxaa::Fxaa>,
 }
 
 /// A texture the renderer keeps: views reading it as colour (sRGB) and as data
@@ -1052,6 +1061,8 @@ impl WorldRenderer {
             probe_faces: HashMap::new(),
             bloom: None,
             bloom_pass: None,
+            grading: Grading::default(),
+            fxaa: None,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
             let data = primitive(name).expect("built in");
@@ -1609,7 +1620,7 @@ impl WorldRenderer {
             .iter()
             .any(|v| v.meshes.iter().any(|m| m.mirror.is_some()))
         {
-            self.render_views_with(gpu, target, views, textures, &[], self.msaa);
+            self.render_views_with(gpu, target, views, textures, &[], true);
             return;
         }
         // Mirrors: each mirror in the main view (the biggest) gets the scene rendered from
@@ -1622,7 +1633,6 @@ impl WorldRenderer {
             .unwrap_or(0);
         let mut views = views.to_vec();
         let mut reflections = Vec::new();
-        let bloom = self.bloom.take();
         for i in 0..views[main].meshes.len() {
             let Some(mirror) = views[main].meshes[i].mirror else {
                 continue;
@@ -1636,11 +1646,10 @@ impl WorldRenderer {
                 size: target.size,
                 scale: target.scale,
             };
-            self.render_views_with(gpu, &rt, &[view], textures, &[], 1);
+            self.render_views_with(gpu, &rt, &[view], textures, &[], false);
             views[main].meshes[i].maps.reflection = Some(WorldTexture::Reflection(k));
             reflections.push(texture);
         }
-        self.bloom = bloom;
         for (j, v) in views.iter_mut().enumerate() {
             if j != main {
                 for m in &mut v.meshes {
@@ -1648,7 +1657,7 @@ impl WorldRenderer {
                 }
             }
         }
-        self.render_views_with(gpu, target, &views, textures, &reflections, self.msaa);
+        self.render_views_with(gpu, target, &views, textures, &reflections, true);
     }
 
     /// Renders the main view's reflection probes that need it: six 90° views from each
@@ -1678,7 +1687,6 @@ impl WorldRenderer {
                 _ => environment::EnvMap::new(gpu, res),
             };
             let face_target = self.probe_face_target(gpu, res);
-            let bloom = self.bloom.take();
             for face in 0..6u32 {
                 let (forward, up) = environment::face_camera(face);
                 let world = iron_core::glam::camera::rh::view::look_at_mat4(
@@ -1714,7 +1722,7 @@ impl WorldRenderer {
                     size: (res, res),
                     scale: 1.0,
                 };
-                self.render_views_with(gpu, &rt, &[v], textures, &[], 1);
+                self.render_views_with(gpu, &rt, &[v], textures, &[], false);
                 let pass = self
                     .env_pass
                     .get_or_insert_with(|| environment::EnvPass::new(gpu));
@@ -1728,7 +1736,6 @@ impl WorldRenderer {
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             pass.blur_mips(gpu, &mut encoder, &map);
             gpu.queue.submit([encoder.finish()]);
-            self.bloom = bloom;
             self.probe_maps.insert(probe.id, map);
         }
     }
@@ -1870,24 +1877,44 @@ impl WorldRenderer {
         views: &[WorldView],
         textures: &[&wgpu::TextureView],
         reflections: &[wgpu::TextureView],
-        samples: u32,
+        // The frame's last render (with MSAA), which post-processing applies to (not mirrors' and
+        // probes', which are inputs to it).
+        final_pass: bool,
     ) {
         let size = target.size;
         if size.0 == 0 || size.1 == 0 {
             return;
         }
-        // With bloom, the world goes into an HDR texture first.
-        let bloom = self.bloom.filter(|b| b.intensity > 0.0);
-        let hdr = bloom.map(|_| {
+        // With post-processing, the world goes into an HDR texture first.
+        let bloom = self
+            .bloom
+            .filter(|b| b.intensity > 0.0)
+            .filter(|_| final_pass);
+        let main = (0..views.len()).max_by(|&a, &b| {
+            let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
+            area(&views[a]).total_cmp(&area(&views[b]))
+        });
+        let fxaa = final_pass && main.is_some_and(|m| views[m].fxaa);
+        let grading = self.grading;
+        let post = final_pass && (bloom.is_some() || fxaa || !grading.is_identity());
+        let hdr = post.then(|| {
             self.bloom_pass
                 .get_or_insert_with(|| bloom::BloomPass::new(gpu))
                 .hdr_view(gpu, size)
+        });
+        // FXAA reads the graded image, so that goes into a texture of its own.
+        let fxaa_input = fxaa.then(|| {
+            self.fxaa
+                .get_or_insert_with(|| fxaa::Fxaa::new(gpu))
+                .input(gpu, size, target.format)
         });
         let (color_view, color_format) = match &hdr {
             Some(view) => (view, bloom::HDR_FORMAT),
             None => (target.view, target.format),
         };
-        let samples = Self::supported_samples(gpu, color_format, samples);
+        // Mirrors and probes render without MSAA.
+        let wanted = if final_pass { self.msaa } else { 1 };
+        let samples = Self::supported_samples(gpu, color_format, wanted);
         let pipelines = self.pipelines(gpu, color_format, samples);
         let depth = self.depth_view(gpu, size, samples);
         let msaa = (samples > 1).then(|| self.msaa_target(gpu, size, color_format, samples));
@@ -2524,8 +2551,19 @@ impl WorldRenderer {
                 }
             }
         }
-        if let (Some(settings), Some(pass)) = (bloom, self.bloom_pass.as_mut()) {
-            pass.encode(gpu, &mut encoder, target.view, target.format, &settings);
+        if post && let Some(pass) = self.bloom_pass.as_mut() {
+            let out = fxaa_input.as_ref().unwrap_or(target.view);
+            pass.encode(
+                gpu,
+                &mut encoder,
+                out,
+                target.format,
+                bloom.as_ref(),
+                grading,
+            );
+            if fxaa && let Some(f) = self.fxaa.as_mut() {
+                f.encode(gpu, &mut encoder, target.view, target.format);
+            }
         }
         gpu.queue.submit([encoder.finish()]);
     }
