@@ -4,7 +4,7 @@
   width: 100%;
   height: 100%;
   flex-direction: column;
-  background-color: var(--iron-bg);
+  /* None: the Scene view's camera shows through its panel. */
   font-family: var(--iron-font);
   font-size: 13px;
   color: var(--iron-text);

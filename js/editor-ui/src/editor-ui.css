@@ -142,7 +142,6 @@
 /* Docking */
 .iron-dock {
   flex-direction: row;
-  background-color: var(--iron-line);
   font-family: var(--iron-font);
   font-size: 13px;
   color: var(--iron-text);
@@ -162,6 +161,10 @@
   min-width: 0;
   min-height: 0;
   background-color: var(--iron-panel);
+}
+
+.iron-dock-group.see-through {
+  background-color: transparent;
 }
 
 .iron-dock-tabs {
@@ -534,4 +537,51 @@
   flex-shrink: 0;
   color: var(--iron-muted);
   font-size: 11px;
+}
+
+/* Scene view */
+.iron-scene-view {
+  position: relative;
+  overflow: hidden;
+}
+
+.iron-scene-icon {
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: rgba(30, 31, 34, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  user-select: none;
+}
+
+.iron-scene-icon:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.iron-scene-icon.selected {
+  border: 2px solid var(--iron-accent);
+}
+
+.iron-scene-gizmo {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+}
+
+.iron-scene-gizmo-hit {
+  position: absolute;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.iron-scene-gizmo-label {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background-color: rgba(30, 31, 34, 0.6);
+  font-size: 11px;
+  color: var(--iron-text);
 }

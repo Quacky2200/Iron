@@ -1283,25 +1283,30 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         placeholders, Console, status bar — `M5-EDT-21`
     - [ ] **Next: the Scene view** (asked for 2026-10-17), replacing the placeholder panel in
       `editor/src/main.tsx`:
-      - [ ] An editor camera drawing into the Scene panel: a `Camera` whose `rect` follows the
-        panel's layout box (the UI over it left see-through), kept out of the Hierarchy
-        and scene saves. Unity's controls: right-drag to look (WASD / QE to fly, Shift
-        faster), middle-drag to pan, wheel to zoom, Alt+left-drag to orbit, F to frame
-        the selection. A demo scene to look at until scenes open from the project.
+      - [x] An editor camera drawing into the Scene panel: a `Camera` whose `rect` follows the
+        panel's layout box (the UI over it left see-through: `DockPanel.seeThrough`), kept
+        out of the Hierarchy and scene saves (`HideAndDontSave`). Unity's controls:
+        right-drag to look (WASD / QE to fly, Shift faster), middle-drag to pan, wheel to
+        zoom, Alt+left-drag to orbit, F to frame the selection (`scene-camera.ts`,
+        `SceneView.tsx`, `M5-EDT-22`). A demo scene (`editor/src/demo-scene.ts`) until
+        scenes open from the project; the Hierarchy is live; the Game tab shows
+        `Camera.main` in its box (`M5-EDT-23`).
+        - [ ] Check the controls by hand in the window (`M5-EDT-23`).
       - [x] A grid on the ground plane, drawn by the renderer (`WorldView.grid`,
         `Camera.sceneGrid`): a pass after the opaque meshes that intersects each pixel's
         ray with y = 0, draws anti-aliased 1 m and 10 m lines that fade with distance, the
         X axis red and the Z axis blue, depth-tested at the plane's depth so objects hide
         it (`M5-RND-22`). `HideFlags` on GameObjects (`DontSave` objects aren't saved,
         hidden cameras aren't `Camera.main`; `M5-SCN-06`).
-      - [ ] The x/y/z orientation gizmo in the panel's corner (Unity's scene gizmo): axes from
+      - [x] The x/y/z orientation gizmo in the panel's corner (Unity's scene gizmo): axes from
         the camera's rotation, drawn as SVG in the UI; clicking an axis looks along it,
         the centre toggles perspective / orthographic.
-      - [ ] **SceneIcons** (the user's name for Unity's gizmo icons): icons at cameras, lights
-        (directional, point, spot), audio sources, probes and other icon-less objects,
-        always facing the view at a constant screen size, drawn as UI over the view from
-        projected positions; clicking one selects its object. Selected objects also get
-        wire gizmos (a camera's frustum, a light's range or cone, a probe's box).
+      - [x] **SceneIcons** (the user's name for Unity's gizmo icons): icons at cameras, lights
+        (directional, point, spot), audio sources and probes, at a constant screen size,
+        drawn as UI (small SVGs) over the view from projected positions; clicking one
+        selects its object.
+      - [ ] Wire gizmos on selected objects (a camera's frustum, a light's range or cone,
+        a probe's box): thin lines drawn by the renderer, faint where hidden.
       - [ ] Then: move / rotate / scale handles on the selection (W / E / R), and a live
         Hierarchy and Inspector bound to the same scene.
     - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo

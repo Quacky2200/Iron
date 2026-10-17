@@ -25,8 +25,13 @@ import {
 /** A dockable panel. */
 export interface DockPanel {
   title: string;
-  /** The panel's content, given the size it has (below the tab strip). */
-  render: (size: { width: number; height: number }) => ReactNode;
+  /**
+   * The panel's content, given its box below the tab strip: the size, and where it is
+   * on screen in UI pixels (for a camera drawing into it).
+   */
+  render: (box: Rect) => ReactNode;
+  /** No background: what's drawn under the UI (a camera's view) shows through. */
+  seeThrough?: boolean;
 }
 
 export interface DockProps {
@@ -109,10 +114,10 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
 
   const renderGroup = (g: DockGroup) => {
     const r = rects.get(g.id)!;
-    const size = { width: r.width, height: Math.max(0, r.height - TAB_BAR) };
+    const box = { x: r.x, y: r.y + TAB_BAR, width: r.width, height: Math.max(0, r.height - TAB_BAR) };
     const panel = g.active ? panels[g.active] : undefined;
     return (
-      <box className="iron-dock-group">
+      <box className={panel?.seeThrough ? "iron-dock-group see-through" : "iron-dock-group"}>
         <box className="iron-dock-tabs" style={{ height: TAB_BAR }}>
           {g.tabs.map((tab) => (
             <DockTab
@@ -141,7 +146,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
           ))}
         </box>
         <box className="iron-dock-content" style={{ flexGrow: 1, minHeight: 0, overflow: "hidden" }}>
-          {panel ? panel.render(size) : null}
+          {panel ? panel.render(box) : null}
         </box>
       </box>
     );

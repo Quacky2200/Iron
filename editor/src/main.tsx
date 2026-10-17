@@ -1,6 +1,7 @@
-// The Iron editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Inspector,
-// Console) and a status bar, built with @iron/editor-ui. `iron_editor` loads this
-// bundle (editor/dist). The Scene and Inspector are placeholders for now.
+// The Iron editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
+// Inspector, Console, Project) and a status bar, built with @iron/editor-ui.
+// `iron_editor` loads this bundle (editor/dist). The Hierarchy and Scene view show the
+// editor's own world (a demo scene for now); the Inspector is a placeholder.
 import "./editor.css";
 
 import {
@@ -12,18 +13,24 @@ import {
   group,
   type Menu,
   MenuBar,
+  onEditorFrame,
   ProjectBrowser,
   parseLayout,
+  type Rect,
+  SceneView,
   serializeLayout,
   split,
   type TreeNode,
   type TreeState,
   TreeView,
   useScreenSize,
+  visibleObjects,
 } from "@iron/editor-ui";
-import { Application, PlayerPrefs } from "@iron/engine";
+import { Application, AudioSource, Camera, GameObject, Light, MeshRenderer, PlayerPrefs, Rect as ViewRect, ReflectionProbe, Screen } from "@iron/engine";
 import { createRoot, Text } from "@iron/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { buildDemoScene } from "./demo-scene.ts";
 
 const MENUBAR = 26;
 const STATUS = 22;
@@ -42,39 +49,68 @@ function savedLayout(): DockNode {
 }
 
 interface Thing {
-  kind: "scene" | "object" | "light" | "camera" | "mesh";
+  kind: "object" | "light" | "camera" | "mesh" | "audio" | "probe";
+  object: GameObject;
 }
 
-// A demo hierarchy, big enough to show the virtual list at work (about 20,000 nodes).
-function demoHierarchy(): TreeNode<Thing>[] {
-  const kinds: Thing["kind"][] = ["object", "mesh", "light", "mesh", "object"];
-  const children = (prefix: string, depth: number, width: number): TreeNode<Thing>[] =>
-    Array.from({ length: width }, (_, i) => {
-      const id = `${prefix}/${i}`;
-      const kind = kinds[(i + depth) % kinds.length]!;
-      return {
-        id,
-        label: `${kind === "mesh" ? "Mesh" : kind === "light" ? "Light" : "GameObject"} ${i + 1}`,
-        data: { kind },
-        children: depth < 3 ? children(id, depth + 1, width) : undefined,
-      };
+function kindOf(go: GameObject): Thing["kind"] {
+  if (go.getComponent(Light)) return "light";
+  if (go.getComponent(Camera)) return "camera";
+  if (go.getComponent(MeshRenderer)) return "mesh";
+  if (go.getComponent(AudioSource)) return "audio";
+  if (go.getComponent(ReflectionProbe)) return "probe";
+  return "object";
+}
+
+/** The world's objects as tree nodes (hidden ones left out), keyed by object id. */
+function sceneTree(): TreeNode<Thing>[] {
+  const shown = new Set(visibleObjects());
+  const node = (go: GameObject): TreeNode<Thing> => {
+    const children = go.children.filter((c) => shown.has(c));
+    return {
+      id: String(go.id),
+      label: go.name,
+      data: { kind: kindOf(go), object: go },
+      children: children.length > 0 ? children.map(node) : undefined,
+    };
+  };
+  return GameObject.roots.filter((g) => shown.has(g)).map(node);
+}
+
+/** The live hierarchy: rebuilt when objects, names or parents change. */
+function useSceneTree(): TreeNode<Thing>[] {
+  const [roots, setRoots] = useState(sceneTree);
+  useEffect(() => {
+    let last = "";
+    return onEditorFrame(() => {
+      const key = visibleObjects()
+        .map((g) => `${g.id}:${g.parent?.id ?? ""}:${g.name}`)
+        .join("|");
+      if (key !== last) {
+        last = key;
+        setRoots(sceneTree());
+      }
     });
-  return [
-    {
-      id: "scene",
-      label: "Main Scene",
-      data: { kind: "scene" },
-      children: [
-        { id: "camera", label: "Main Camera", data: { kind: "camera" } },
-        { id: "sun", label: "Directional Light", data: { kind: "light" } },
-        { id: "world", label: "World", data: { kind: "object" }, children: children("w", 0, 12) },
-        { id: "player", label: "Player", data: { kind: "object" }, children: children("p", 2, 3) },
-      ],
-    },
-  ];
+  }, []);
+  return roots;
 }
 
-const ICONS: Record<Thing["kind"], string> = { scene: "◆", object: "■", light: "☀", camera: "◉", mesh: "▲" };
+const ICONS: Record<Thing["kind"], string> = { object: "■", light: "☀", camera: "◉", mesh: "▲", audio: "♪", probe: "◍" };
+
+/** The Game panel: the main camera draws into it while it's shown. */
+function GameView({ rect }: { rect: Rect }) {
+  useEffect(() => {
+    const camera = Camera.main;
+    if (!camera) return;
+    const sw = Math.max(1, Screen.width);
+    const sh = Math.max(1, Screen.height);
+    camera.rect = new ViewRect(rect.x / sw, rect.y / sh, rect.width / sw, rect.height / sh);
+    return () => {
+      if (!camera.gameObject.destroyed) camera.rect = new ViewRect(0, 0, 0, 0);
+    };
+  }, [rect.x, rect.y, rect.width, rect.height]);
+  return <box style={{ width: rect.width, height: rect.height }} />;
+}
 
 function Placeholder({ title, note, width, height }: { title: string; note: string; width: number; height: number }) {
   return (
@@ -88,9 +124,14 @@ function Placeholder({ title, note, width, height }: { title: string; note: stri
 function App() {
   const screen = useScreenSize();
   const [layout, setLayout] = useState<DockNode>(savedLayout);
-  const [roots, setRoots] = useState(demoHierarchy);
-  const [tree, setTree] = useState<TreeState>(() => ({ ...emptyTreeState(), expanded: new Set(["scene", "world"]) }));
+  const roots = useSceneTree();
+  const [tree, setTree] = useState<TreeState>(() => ({
+    ...emptyTreeState(),
+    expanded: new Set(roots.filter((r) => r.children).map((r) => r.id)),
+  }));
   const [status, setStatus] = useState("Ready");
+  const [showGrid, setShowGrid] = useState(true);
+  const [showIcons, setShowIcons] = useState(true);
 
   const say = (text: string) => {
     setStatus(text);
@@ -104,6 +145,21 @@ function App() {
   const todo = (what: string) => () => say(`${what}: not implemented yet (see TODO.md M5.e)`);
 
   const selectedIds = [...tree.selected];
+  const byId = new Map(visibleObjects().map((g) => [String(g.id), g]));
+  const selectedObjects = selectedIds.map((id) => byId.get(id)).filter((g): g is GameObject => !!g && !g.destroyed);
+  const select = (go: GameObject | null, additive: boolean) => {
+    if (!go) {
+      if (!additive) setTree((t) => ({ ...t, selected: new Set() }));
+      return;
+    }
+    const id = String(go.id);
+    setTree((t) => {
+      const selected = new Set(additive ? t.selected : []);
+      if (additive && selected.has(id)) selected.delete(id);
+      else selected.add(id);
+      return { ...t, selected, focus: id, anchor: id };
+    });
+  };
   const menus: Menu[] = [
     {
       label: "File",
@@ -149,8 +205,8 @@ function App() {
           submenu: PANELS.map((id) => ({ label: TITLES[id], action: () => say(`${TITLES[id]} panel`) })),
         },
         { separator: true },
-        { label: "Show Grid", checked: true, action: todo("Grid") },
-        { label: "Show Gizmos", checked: true, action: todo("Gizmos") },
+        { label: "Show Grid", checked: showGrid, action: () => setShowGrid((v) => !v) },
+        { label: "Show Gizmos", checked: showIcons, action: () => setShowIcons((v) => !v) },
       ],
     },
     {
@@ -196,28 +252,39 @@ function App() {
             height={height}
             renderIcon={(node) => <Text className={`icon ${node.data?.kind ?? ""}`}>{ICONS[node.data?.kind ?? "object"]}</Text>}
             onRename={(node, name) => {
-              setRoots((r) => rename(r, node.id, name));
+              if (node.data) node.data.object.name = name;
               say(`Renamed ${node.label} to ${name}`);
             }}
           />
         ),
       },
       project: { title: TITLES.project!, render: (s) => <ProjectBrowser {...s} /> },
-      scene: { title: TITLES.scene!, render: (s) => <Placeholder title="Scene" note="Scene view: coming with the editor's camera" {...s} /> },
-      game: { title: TITLES.game!, render: (s) => <Placeholder title="Game" note="Play mode: later in M5.e" {...s} /> },
+      scene: {
+        title: TITLES.scene!,
+        seeThrough: true,
+        render: (r) => <SceneView rect={r} selected={selectedObjects} onSelect={select} grid={showGrid} icons={showIcons} />,
+      },
+      game: { title: TITLES.game!, seeThrough: true, render: (r) => <GameView rect={r} /> },
       inspector: {
         title: TITLES.inspector!,
         render: (s) => (
           <Placeholder
             title="Inspector"
-            note={tree.selected.size === 0 ? "Nothing selected" : `${tree.selected.size} selected: ${[...tree.selected].slice(0, 3).join(", ")}`}
+            note={
+              selectedObjects.length === 0
+                ? "Nothing selected"
+                : `${selectedObjects.length} selected: ${selectedObjects
+                    .slice(0, 3)
+                    .map((g) => g.name)
+                    .join(", ")}`
+            }
             {...s}
           />
         ),
       },
       console: { title: TITLES.console!, render: (s) => <Console {...s} /> },
     }),
-    [roots, tree],
+    [roots, tree, showGrid, showIcons],
   );
 
   const dockRect = { x: 0, y: MENUBAR, width: screen.width, height: Math.max(0, screen.height - MENUBAR - STATUS) };
@@ -243,12 +310,7 @@ const TITLES: Record<string, string> = {
   console: "Console",
 };
 
-function rename<T>(nodes: TreeNode<T>[], id: string, label: string): TreeNode<T>[] {
-  return nodes.map((n) =>
-    n.id === id ? { ...n, label } : n.children ? { ...n, children: rename(n.children, id, label) } : n,
-  );
-}
-
+buildDemoScene();
 createRoot().render(<App />);
 console.log("Iron editor started (UI: editor/src/main.tsx:1)");
-console.warn("The Scene, Game and Inspector panels are placeholders (TODO.md:1180)");
+console.warn("The Inspector is a placeholder (TODO.md M5.e)");
