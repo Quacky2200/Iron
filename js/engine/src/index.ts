@@ -9,6 +9,20 @@
 import "./globals";
 
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
+export {
+  type BodyKind,
+  type BodyOptions,
+  type CharacterOptions,
+  Collider,
+  type ColliderOptions,
+  type CollisionEvent,
+  physics,
+  type Quat,
+  type RayHit,
+  RigidBody,
+  type Shape,
+  type Vec3,
+} from "./physics.ts";
 
 export abstract class Component {
   /** Set by the engine when the component is created. */

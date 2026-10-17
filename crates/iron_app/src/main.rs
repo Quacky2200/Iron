@@ -100,6 +100,9 @@ fn main() -> Result<()> {
     let game_input = scripts
         .eval("typeof __iron_input === 'function'")
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
+    let physics_events = scripts
+        .eval("typeof __iron_physics === 'function'")
+        .is_ok_and(|v| v == iron_core::Value::Bool(true));
 
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
@@ -128,6 +131,8 @@ fn main() -> Result<()> {
         interaction: Interaction::new(),
         ui_events,
         game_input,
+        physics: iron_physics::Physics::new(),
+        physics_events,
         nav: game_input::GamepadNav::default(),
         cursor: ("default", Vec::new(), 1.0),
         ui_scale: ui_scale::UiScale::None,
@@ -201,6 +206,10 @@ struct App {
     ui_events: bool,
     /// Whether the game reads input (`__iron_input` exists).
     game_input: bool,
+    /// The physics world scripts drive with `physics.*` ops.
+    physics: iron_physics::Physics,
+    /// Whether the game takes physics results (`__iron_physics` exists).
+    physics_events: bool,
     nav: game_input::GamepadNav,
     /// The CSS cursor currently shown: keyword, images, and the scale they were for.
     cursor: (&'static str, Vec<iron_ui::CursorImage>, f64),
@@ -231,6 +240,9 @@ impl App {
         let mut ticks = 0;
         while self.accumulator >= TICK && ticks < MAX_TICKS_PER_FRAME {
             self.components.update(&mut self.scripts, TICK);
+            // What the components asked for applies before physics steps.
+            self.apply_script_output();
+            self.step_physics();
             self.accumulator -= TICK;
             ticks += 1;
         }
@@ -244,7 +256,27 @@ impl App {
             tracing::error!(target: "script", "uncaught: {e}");
         }
 
-        // React commits update the UI tree; generic ops have no consumer yet.
+        self.apply_script_output();
+
+        // The tree may have moved under a still pointer, or the focused element gone.
+        self.handle_ui(Input::Refresh);
+    }
+
+    /// One physics tick, then its results to scripts (`__iron_physics`).
+    fn step_physics(&mut self) {
+        self.physics.step();
+        let batch = self.physics.take_batch();
+        if !self.physics_events || batch.is_empty() {
+            return;
+        }
+        if let Err(e) = self.scripts.call_global("__iron_physics", &batch.to_args()) {
+            tracing::error!(target: "script", "physics events: {e}");
+        }
+        // Collision handlers may have queued more ops; they apply next tick.
+    }
+
+    /// Applies React commits, then the ops scripts queued, in order.
+    fn apply_script_output(&mut self) {
         for commit in self.scripts.drain_commits() {
             for e in self.ui.apply_commit(&commit) {
                 tracing::warn!(target: "ui", "{e}");
@@ -284,12 +316,14 @@ impl App {
                         _ => Input::ScrollIntoView(id),
                     });
                 }
+                name if name.starts_with("physics.") => {
+                    if let Err(e) = self.physics.apply(&name["physics.".len()..], &op.args) {
+                        tracing::warn!("{name}: {e}");
+                    }
+                }
                 other => tracing::warn!("unknown script op `{other}`"),
             }
         }
-
-        // The tree may have moved under a still pointer, or the focused element gone.
-        self.handle_ui(Input::Refresh);
     }
 
     /// Runs one UI input, sending its events to scripts, then updates the OS cursor.

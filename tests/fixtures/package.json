@@ -12,12 +12,13 @@
     "@types/react": "19.3.0"
   },
   "scripts": {
-    "build": "bun run build:hello && bun run build:throws && bun run build:boxes && bun run build:events && bun run build:input",
+    "build": "bun run build:hello && bun run build:throws && bun run build:boxes && bun run build:events && bun run build:input && bun run build:physics",
     "build:hello": "bun build src/hello.ts --outfile hello.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:throws": "bun build src/throws.ts --outfile throws.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:boxes": "bun build src/boxes.tsx --outfile boxes.js --format iife --minify --define process.env.NODE_ENV='\"production\"'",
     "build:events": "bun build src/events.tsx --outfile events.js --format iife --minify --define process.env.NODE_ENV='\"production\"'",
     "build:input": "bun build src/input.ts --outfile input.js --format iife --define process.env.NODE_ENV='\"production\"'",
+    "build:physics": "bun build src/physics.ts --outfile physics.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "typecheck": "tsc --noEmit -p ."
   }
 }

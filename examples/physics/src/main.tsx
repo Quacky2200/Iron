@@ -1,0 +1,130 @@
+// M4 physics showcase, seen from the side: crates and balls fall onto a floor and a
+// ramp (rapier in Rust), drawn as UI boxes from each body's last-tick pose. Click to
+// drop another; a sensor zone counts what passes through it.
+import { Component, physics, type RigidBody, register } from "@iron/engine";
+import { createRoot } from "@iron/react";
+import { useEffect, useState } from "react";
+
+/** Pixels per metre, and the world origin on screen (bottom centre). */
+const SCALE = 60;
+const ORIGIN = { x: 640, y: 660 };
+
+interface Thing {
+  body: RigidBody;
+  shape: "box" | "ball";
+  half: number;
+  color: string;
+}
+
+const things: Thing[] = [];
+let passes = 0;
+
+/** Ground, a ramp tilted 20° about z, and a trigger zone over the floor. */
+function buildLevel() {
+  physics.addCollider({ shape: { box: { x: 10, y: 0.5, z: 2 } }, position: { x: 0, y: -0.5, z: 0 } });
+  const tilt = (-20 * Math.PI) / 360;
+  physics.addCollider({
+    shape: { box: { x: 3, y: 0.15, z: 2 } },
+    position: { x: -4, y: 3, z: 0 },
+    rotation: { x: 0, y: 0, z: Math.sin(tilt), w: Math.cos(tilt) },
+    friction: 0.2,
+  });
+  const zone = physics.createBody({ kind: "fixed", position: { x: 3, y: 1.5, z: 0 } });
+  zone.addCollider({ shape: { box: { x: 1, y: 1.5, z: 2 } }, sensor: true });
+  zone.onCollisionStart = () => passes++;
+}
+
+function drop(x: number, y: number, i: number) {
+  const shape = i % 3 === 0 ? "ball" : "box";
+  const half = 0.25 + (i % 4) * 0.08;
+  // Bodies stay in the z = 0 plane: the scene is 2D, seen from the side.
+  const body = physics.createBody({ position: { x, y, z: 0 }, angularDamping: 0.2 });
+  body.addCollider({
+    shape: shape === "ball" ? { ball: half } : { box: { x: half, y: half, z: half } },
+    restitution: shape === "ball" ? 0.5 : 0.1,
+  });
+  things.push({ body, shape, half, color: `hsl(${(i * 47) % 360} 70% 60%)` });
+}
+
+class Spawner extends Component {
+  override onStart() {
+    buildLevel();
+    for (let i = 0; i < 14; i++) drop(-5 + (i % 7) * 1.4, 6 + Math.floor(i / 7) * 1.5, i);
+  }
+}
+register({ Spawner });
+
+/** Re-renders every tick, so boxes follow their bodies. */
+function useFrame() {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    let id = 0;
+    const loop = () => {
+      setN((n) => n + 1);
+      id = setTimeout(loop, 16);
+    };
+    id = setTimeout(loop, 16);
+    return () => clearTimeout(id);
+  }, []);
+}
+
+/** Rotation about z, in degrees, from a quaternion (screen y points down). */
+const angle = (q: { z: number; w: number }) => (-2 * Math.atan2(q.z, q.w) * 180) / Math.PI;
+
+function World() {
+  useFrame();
+  return (
+    <box
+      style={{ width: "100%", height: "100%", backgroundImage: "linear-gradient(#1b2433, #0c1018)" }}
+      onClick={(e) => drop((e.clientX - ORIGIN.x) / SCALE, (ORIGIN.y - e.clientY) / SCALE, things.length)}
+    >
+      <box style={{ position: "absolute", left: ORIGIN.x - 10 * SCALE, top: ORIGIN.y, width: 20 * SCALE, height: 30, backgroundColor: "#3a4559" }} />
+      <box
+        style={{
+          position: "absolute",
+          left: ORIGIN.x - 7 * SCALE,
+          top: ORIGIN.y - 3 * SCALE - 0.15 * SCALE,
+          width: 6 * SCALE,
+          height: 0.3 * SCALE,
+          backgroundColor: "#56627a",
+          transform: "rotate(20deg)",
+        }}
+      />
+      <box
+        style={{
+          position: "absolute",
+          left: ORIGIN.x + 2 * SCALE,
+          top: ORIGIN.y - 3 * SCALE,
+          width: 2 * SCALE,
+          height: 3 * SCALE,
+          border: "2px dashed rgba(120,220,160,0.6)",
+          backgroundColor: "rgba(120,220,160,0.08)",
+        }}
+      />
+      {things.map((t) => {
+        const size = t.half * 2 * SCALE;
+        return (
+          <box
+            key={t.body.id}
+            style={{
+              position: "absolute",
+              left: ORIGIN.x + t.body.position.x * SCALE - size / 2,
+              top: ORIGIN.y - t.body.position.y * SCALE - size / 2,
+              width: size,
+              height: size,
+              backgroundColor: t.color,
+              borderRadius: t.shape === "ball" ? "50%" : 4,
+              boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
+              transform: `rotate(${angle(t.body.rotation)}deg)`,
+            }}
+          />
+        );
+      })}
+      <text style={{ position: "absolute", left: 24, top: 20, color: "#d8e0ee", fontSize: 20 }}>
+        {`Physics — ${things.length} bodies, ${passes} passes through the zone. Click to drop more.`}
+      </text>
+    </box>
+  );
+}
+
+createRoot().render(<World />);

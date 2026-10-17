@@ -8,3 +8,6 @@ publish.workspace = true
 iron_core = { path = "../iron_core" }
 rapier3d = "0.36.1"
 tracing = "0.1.44"
+
+[dev-dependencies]
+iron_script = { path = "../iron_script" }

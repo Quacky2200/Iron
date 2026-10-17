@@ -76,6 +76,75 @@ ${err.stack}` : ""}`);
       }
     }
   };
+  // ../../js/engine/src/physics.ts
+  var bodies = new Map;
+  var colliders = new Map;
+  var queries = new Map;
+  function report(fn, event) {
+    if (!fn)
+      return;
+    try {
+      fn(event);
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.error(`[physics] error in collision handler: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+    }
+  }
+  globalThis.__iron_physics = (moved, contacts, rays, characters) => {
+    for (let i = 0;i + 10 < moved.length; i += 11) {
+      const b = bodies.get(moved[i]);
+      if (!b)
+        continue;
+      Object.assign(b.position, { x: moved[i + 1], y: moved[i + 2], z: moved[i + 3] });
+      Object.assign(b.rotation, { x: moved[i + 4], y: moved[i + 5], z: moved[i + 6], w: moved[i + 7] });
+      Object.assign(b.velocity, { x: moved[i + 8], y: moved[i + 9], z: moved[i + 10] });
+    }
+    for (let i = 0;i + 1 < characters.length; i += 2) {
+      const b = bodies.get(characters[i]);
+      if (b)
+        b.grounded = characters[i + 1] === 1;
+    }
+    for (let i = 0;i + 3 < contacts.length; i += 4) {
+      const a = colliders.get(contacts[i + 1]);
+      const b = colliders.get(contacts[i + 2]);
+      if (!a || !b)
+        continue;
+      const started = contacts[i] === 1;
+      const sensor = contacts[i + 3] === 1;
+      for (const [self, other] of [
+        [a, b],
+        [b, a]
+      ]) {
+        const body = self.body;
+        if (!body)
+          continue;
+        report(started ? body.onCollisionStart : body.onCollisionEnd, { collider: self, other, sensor });
+      }
+    }
+    for (let i = 0;i + 5 < rays.length; i += 6) {
+      const q = queries.get(rays[i]);
+      if (!q)
+        continue;
+      queries.delete(rays[i]);
+      const collider = colliders.get(rays[i + 1]);
+      if (!collider) {
+        q.resolve(null);
+        continue;
+      }
+      const distance = rays[i + 2];
+      q.resolve({
+        collider,
+        distance,
+        point: {
+          x: q.origin.x + q.dir.x * distance,
+          y: q.origin.y + q.dir.y * distance,
+          z: q.origin.z + q.dir.z * distance
+        },
+        normal: { x: rays[i + 3], y: rays[i + 4], z: rays[i + 5] }
+      });
+    }
+  };
 
   // ../../js/engine/src/index.ts
   class Component {

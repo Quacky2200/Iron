@@ -1311,6 +1311,7 @@ dependencies = [
  "arboard",
  "image",
  "iron_core",
+ "iron_physics",
  "iron_platform",
  "iron_render",
  "iron_script",
@@ -1333,6 +1334,7 @@ name = "iron_physics"
 version = "0.1.0"
 dependencies = [
  "iron_core",
+ "iron_script",
  "rapier3d",
  "tracing",
 ]

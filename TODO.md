@@ -738,7 +738,11 @@ mind.
     bodies (dynamic, fixed, kinematic), colliders (box, ball, capsule, cylinder, convex, mesh;
     sensors), forces, character controller, raycasts; one flat batch back per tick —
     `M4-PHY-01`..`M4-PHY-03`, `M4-PHY-05`, `M4-PHY-06`
-  - [ ] TS API in `@iron/engine` (`physics`), app wiring, an example — `M4-PHY-02` (TS side)
+  - [x] TS API in `@iron/engine` (`physics`: `RigidBody`, `Collider`, collision handlers,
+    `raycast` promises, `makeCharacter`/`move`), stepped in the app's fixed tick with results
+    sent back through `__iron_physics`; `examples/physics` — `M4-PHY-02`
+  - [ ] Bodies survive script hot reload (with the hot reload work) — `M4-PHY-04`
+  - [ ] `Rigidbody` / `Collider` / `CharacterController` components on GameObjects (M5.a)
 - [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`
 
 ## M5 — Scene, assets, rendering, editor

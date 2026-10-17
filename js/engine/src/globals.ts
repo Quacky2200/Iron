@@ -35,6 +35,8 @@ declare global {
   var __iron_dispatch: (id: number, method: string, ...args: unknown[]) => unknown;
   var __iron_destroy: (id: number) => void;
   var __iron_input: (type: string, ...args: unknown[]) => void;
+  // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
+  var __iron_physics: (moved: number[], contacts: number[], rays: number[], characters: number[]) => void;
 
   // Installed by @iron/react, called by Rust: a UI event for the element path
   // (target first). Returns whether the default action was prevented.

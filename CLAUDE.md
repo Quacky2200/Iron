@@ -18,10 +18,11 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_script` | `ScriptRuntime` trait + QuickJS backend (rquickjs 0.14), timers prelude, `ComponentHost` (component lifecycle) |
 | `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`), focus/keys/default actions (`interaction.rs`) |
 | `crates/iron_render` | wgpu renderer for the draw list: quads, SDF rounded boxes, shadows, blur layers, gradients, images, glyph atlas (swash). `testing.rs` has golden helpers and a shared test GPU |
+| `crates/iron_physics` | rapier world driven by `physics.*` ops (script-chosen body/collider IDs); `step()` per fixed tick, `take_batch()` → `__iron_physics(moved, contacts, rays, characters)` |
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
-| `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads) |
+| `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller) |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css`, `form` games (each has `bun run build`) |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
