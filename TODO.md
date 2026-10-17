@@ -658,12 +658,15 @@ and `@font-face`.
      `-inline`/`-block`; `contain` and `none` stop wheel and key scrolling from chaining outward;
      there's no bounce to turn off) — `M3-SCR-01`
 9. **Game-specific extensions** (s&box custom properties worth copying)
-   - [ ] `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
+   - [ ] (waits for M6 audio) `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
      `:active`); only the winning rule plays (needs M6 audio)
    - [x] **9a** Tint for images: s&box's `background-image-tint` (background images and an `image`
      element's picture) and `border-image-tint`, a colour (alpha too) multiplied into the image's
      pixels in the image shader; gradients aren't tinted — `M3-GAME-01`
-   - [ ] UI scale: scale screen UI to a target resolution (s&box's ScreenPanel targets 1080p height)
+   - [x] **9b** UI scale: `setUiScale({ height: 1080 })` (s&box's ScreenPanel), `{ width, height }`
+     (fit a design), a fixed number, or `null`, from `@iron/engine` (`uiScale` op). The app lays
+     the tree out in UI pixels and multiplies the factor (clamped to 0.25–8) into rendering, pointer
+     and wheel input and the IME area, so text stays sharp — `M3-GAME-02`
 10. **Stylesheet authoring**
     - [ ] Native CSS nesting (`&`, nested rules, implicit descendant) — covers s&box's SCSS nesting
     - [ ] `@import` (Bun inlines imports when bundling; runtime `addStyleSheet` would need it too)

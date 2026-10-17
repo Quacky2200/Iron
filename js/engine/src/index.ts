@@ -73,6 +73,22 @@ export function addStyleSheet(css: string): number {
   return id;
 }
 
+/**
+ * How screen UI scales with the window (s&box's ScreenPanel). UI is laid out in "UI
+ * pixels"; the engine draws them bigger or smaller:
+ * - `{ height: 1080 }`: the window is always 1080 UI pixels high (s&box's default target).
+ * - `{ width: 1920, height: 1080 }`: that design always fits inside the window.
+ * - a number: a fixed zoom (`1.5`).
+ * - `null`: one UI pixel per logical pixel (the default).
+ * The factor is kept between 0.25 and 8.
+ */
+export function setUiScale(scale: { height: number; width?: number } | number | null): void {
+  if (scale === null) op("uiScale", "none");
+  else if (typeof scale === "number") op("uiScale", "fixed", scale);
+  else if (scale.width !== undefined) op("uiScale", "fit", scale.width, scale.height);
+  else op("uiScale", "height", scale.height);
+}
+
 /** Removes a stylesheet added with `addStyleSheet`. */
 export function removeStyleSheet(id: number): void {
   op("removeStyleSheet", id);

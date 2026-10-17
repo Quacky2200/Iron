@@ -7,6 +7,7 @@
 
 mod cursor;
 mod game_input;
+mod ui_scale;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -129,6 +130,7 @@ fn main() -> Result<()> {
         game_input,
         nav: game_input::GamepadNav::default(),
         cursor: ("default", Vec::new(), 1.0),
+        ui_scale: ui_scale::UiScale::None,
         custom_cursor: None,
         cursors_loaded: HashSet::new(),
         cursors_failed: HashSet::new(),
@@ -202,6 +204,8 @@ struct App {
     nav: game_input::GamepadNav,
     /// The CSS cursor currently shown: keyword, images, and the scale they were for.
     cursor: (&'static str, Vec<iron_ui::CursorImage>, f64),
+    /// How screen UI is scaled to the window (`setUiScale`).
+    ui_scale: ui_scale::UiScale,
     /// A custom cursor for the platform to show.
     custom_cursor: Option<CustomCursorRequest>,
     /// Cursor images (by `url@scale`) already sent to the platform, or unusable.
@@ -249,6 +253,10 @@ impl App {
         for op in self.scripts.drain_ops() {
             match op.name.as_str() {
                 "loadFont" => self.load_font_op(&op.args),
+                "uiScale" => match ui_scale::UiScale::from_op(&op.args) {
+                    Some(s) => self.ui_scale = s,
+                    None => tracing::warn!("uiScale: invalid arguments {:?}", op.args),
+                },
                 "addStyleSheet" | "removeStyleSheet" => self.stylesheet_op(&op.name, &op.args),
                 "focus" | "blur" => {
                     let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) else {
@@ -376,9 +384,14 @@ impl App {
             && Some(a) != self.ime_area
         {
             self.ime_area = Some(a);
+            // UI pixels → the window's logical pixels.
+            let z = ui_factor(&gfx.window, self.ui_scale) / gfx.window.scale_factor() as f32;
             gfx.window.set_ime_cursor_area(
-                iron_platform::dpi::LogicalPosition::new(a.x, a.y),
-                iron_platform::dpi::LogicalSize::new(a.width.max(1.0), a.height.max(1.0)),
+                iron_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
+                iron_platform::dpi::LogicalSize::new(
+                    (a.width * z).max(1.0),
+                    (a.height * z).max(1.0),
+                ),
             );
         }
     }
@@ -404,11 +417,11 @@ impl App {
         self.clipboard.as_mut()
     }
 
-    /// Converts a window position (physical pixels) to the UI's logical pixels.
+    /// Physical pixels per UI pixel: the window's DPI scale times the UI scale.
     fn scale(&self) -> f32 {
         self.gfx
             .as_ref()
-            .map_or(1.0, |gfx| gfx.window.scale_factor() as f32)
+            .map_or(1.0, |gfx| ui_factor(&gfx.window, self.ui_scale))
     }
 
     fn now_ms(&self) -> f64 {
@@ -472,7 +485,7 @@ impl App {
                 view: &view,
                 format: target.format(),
                 size: (w, h),
-                scale: gfx.window.scale_factor() as f32,
+                scale: ui_factor(&gfx.window, self.ui_scale),
             },
             CLEAR,
             &cmds,
@@ -609,8 +622,8 @@ impl PlatformApp for App {
             return;
         };
 
-        // The UI lays out in logical pixels: the window size divided by its scale.
-        let scale = gfx.window.scale_factor() as f32;
+        // The UI lays out in UI pixels: the window size divided by its DPI and UI scale.
+        let scale = ui_factor(&gfx.window, self.ui_scale);
         let size = gfx.window.inner_size();
         self.ui
             .set_size(size.width as f32 / scale, size.height as f32 / scale);
@@ -665,6 +678,15 @@ fn dispatch(scripts: &mut QuickJsRuntime, enabled: bool, event: &UiEvent) -> boo
             false
         }
     }
+}
+
+/// Physical pixels per UI pixel for `window`: its DPI scale times `ui_scale`'s factor
+/// for its logical size.
+fn ui_factor(window: &Window, ui_scale: ui_scale::UiScale) -> f32 {
+    let dpi = window.scale_factor() as f32;
+    let size = window.inner_size();
+    let (w, h) = (size.width as f32 / dpi, size.height as f32 / dpi);
+    dpi * ui_scale.factor(w, h)
 }
 
 /// The DOM's button number: 0 primary, 1 middle, 2 secondary, 3 back, 4 forward.

@@ -44,3 +44,23 @@ describe("component host", () => {
     expect(() => globalThis.__iron_dispatch(200, "onUpdate", 1)).toThrow("no component");
   });
 });
+
+// M3-GAME-02
+describe("setUiScale", () => {
+  test("sends the uiScale op for each form", async () => {
+    const { setUiScale } = await import("../src/index.ts");
+    const ops: unknown[][] = [];
+    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    setUiScale({ height: 1080 });
+    setUiScale({ width: 1920, height: 1080 });
+    setUiScale(1.5);
+    setUiScale(null);
+    expect(ops).toEqual([
+      ["uiScale", "height", 1080],
+      ["uiScale", "fit", 1920, 1080],
+      ["uiScale", "fixed", 1.5],
+      ["uiScale", "none"],
+    ]);
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  });
+});
