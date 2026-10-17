@@ -748,7 +748,11 @@ mind.
     and streamed sounds, instances (volume, rate, pan, loop, fades, seek, pause/stop), buses,
     spatial emitters around one listener, ended instances polled; an offline backend for tests
     and deviceless runs — `M4-AUD-01`..`M4-AUD-04`
-  - [ ] TS API in `@iron/engine` (`audio`), app wiring (loading from the game folder), an example
+  - [x] TS API in `@iron/engine` (`audio`: `Sound`, `Playback` with `onEnded`, `Bus`, `Emitter`,
+    `setListener`, `audio.play(src)`); the app opens the mixer on the first `audio.*` op (offline
+    for `--screenshot` runs or without a device), loads files from the game folder and reports
+    finished sounds through `__iron_audio`; `examples/physics` knocks on impacts
+    (`CollisionEvent.speed`)
 
 ## M5 — Scene, assets, rendering, editor
 

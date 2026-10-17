@@ -54,15 +54,15 @@ describe("physics", () => {
     const zoneCol = zone.addCollider({ shape: { box: { x: 1, y: 1, z: 1 } }, sensor: true });
     const floor = physics.addCollider({ shape: { box: { x: 10, y: 0.5, z: 10 } } });
     const log: string[] = [];
-    const name = (e: CollisionEvent) => `${e.collider.id}-${e.other.id}${e.sensor ? " sensor" : ""}`;
+    const name = (e: CollisionEvent) => `${e.collider.id}-${e.other.id}${e.sensor ? " sensor" : ""} ${e.speed}`;
     ball.onCollisionStart = (e) => log.push(`ball start ${name(e)}`);
     ball.onCollisionEnd = (e) => log.push(`ball end ${name(e)}`);
     zone.onCollisionStart = () => {
       throw new Error("boom");
     };
     const error = spyOn(console, "error").mockImplementation(() => {});
-    tick([], [1, ballCol.id, zoneCol.id, 1, 0, ballCol.id, zoneCol.id, 1, 1, floor.id, ballCol.id, 0]);
-    expect(log).toEqual([`ball start 1-2 sensor`, `ball end 1-2 sensor`, `ball start 1-3`]);
+    tick([], [1, ballCol.id, zoneCol.id, 1, 3, 0, ballCol.id, zoneCol.id, 1, 0, 1, floor.id, ballCol.id, 0, 7.5]);
+    expect(log).toEqual([`ball start 1-2 sensor 3`, `ball end 1-2 sensor 0`, `ball start 1-3 7.5`]);
     // A throwing handler is reported and the batch carries on.
     expect(error).toHaveBeenCalledTimes(1);
     error.mockRestore();

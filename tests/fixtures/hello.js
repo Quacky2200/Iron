@@ -1,4 +1,23 @@
 (() => {
+  // ../../js/engine/src/audio.ts
+  var playing = new Map;
+  var cache = new Map;
+  globalThis.__iron_audio = (ended) => {
+    for (const id of ended) {
+      const p = playing.get(id);
+      if (!p)
+        continue;
+      playing.delete(id);
+      p.playing = false;
+      try {
+        p.onEnded?.();
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[audio] error in onEnded: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+      }
+    }
+  };
   // ../../js/engine/src/input.ts
   var keys = new Set;
   var pads = new Map;
@@ -105,13 +124,14 @@ ${err.stack}` : ""}`);
       if (b)
         b.grounded = characters[i + 1] === 1;
     }
-    for (let i = 0;i + 3 < contacts.length; i += 4) {
+    for (let i = 0;i + 4 < contacts.length; i += 5) {
       const a = colliders.get(contacts[i + 1]);
       const b = colliders.get(contacts[i + 2]);
       if (!a || !b)
         continue;
       const started = contacts[i] === 1;
       const sensor = contacts[i + 3] === 1;
+      const speed = contacts[i + 4];
       for (const [self, other] of [
         [a, b],
         [b, a]
@@ -119,7 +139,7 @@ ${err.stack}` : ""}`);
         const body = self.body;
         if (!body)
           continue;
-        report(started ? body.onCollisionStart : body.onCollisionEnd, { collider: self, other, sensor });
+        report(started ? body.onCollisionStart : body.onCollisionEnd, { collider: self, other, sensor, speed });
       }
     }
     for (let i = 0;i + 5 < rays.length; i += 6) {

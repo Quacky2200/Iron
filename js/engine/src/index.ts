@@ -8,6 +8,16 @@
 
 import "./globals";
 
+export {
+  audio,
+  Bus,
+  Emitter,
+  type EmitterOptions,
+  type LoadOptions,
+  Playback,
+  type PlayOptions,
+  Sound,
+} from "./audio.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export {
   type BodyKind,

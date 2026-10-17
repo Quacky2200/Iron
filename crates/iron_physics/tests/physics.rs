@@ -128,6 +128,9 @@ fn collisions_start_and_stop_with_script_ids() {
         floor_hits.first().is_some_and(|c| c.started && !c.sensor),
         "{contacts:?}"
     );
+    // Dropped from 4 m to 0.25 m: about sqrt(2 g h) = 8.6 m/s going in.
+    let speed = floor_hits[0].speed;
+    assert!((speed - 8.6).abs() < 0.4, "impact speed {speed}");
 
     // Removing the ball ends its contact with the floor.
     op(&mut p, "removeBody", vec![num(2.0)]);

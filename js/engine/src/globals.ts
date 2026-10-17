@@ -36,6 +36,8 @@ declare global {
   var __iron_destroy: (id: number) => void;
   var __iron_input: (type: string, ...args: unknown[]) => void;
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
+  // Playing sounds that finished (audio.ts).
+  var __iron_audio: (ended: number[]) => void;
   var __iron_physics: (moved: number[], contacts: number[], rays: number[], characters: number[]) => void;
 
   // Installed by @iron/react, called by Rust: a UI event for the element path

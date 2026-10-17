@@ -68,6 +68,8 @@ export interface CollisionEvent {
   other: Collider;
   /** Whether either collider is a sensor (an overlap, not a contact). */
   sensor: boolean;
+  /** How fast they were moving relative to each other going in (m/s); 0 on end. */
+  speed: number;
 }
 
 export interface RayHit {
@@ -318,19 +320,20 @@ globalThis.__iron_physics = (moved: number[], contacts: number[], rays: number[]
     const b = bodies.get(characters[i]!);
     if (b) b.grounded = characters[i + 1] === 1;
   }
-  for (let i = 0; i + 3 < contacts.length; i += 4) {
+  for (let i = 0; i + 4 < contacts.length; i += 5) {
     const a = colliders.get(contacts[i + 1]!);
     const b = colliders.get(contacts[i + 2]!);
     if (!a || !b) continue;
     const started = contacts[i] === 1;
     const sensor = contacts[i + 3] === 1;
+    const speed = contacts[i + 4]!;
     for (const [self, other] of [
       [a, b],
       [b, a],
     ] as const) {
       const body = self.body;
       if (!body) continue;
-      report(started ? body.onCollisionStart : body.onCollisionEnd, { collider: self, other, sensor });
+      report(started ? body.onCollisionStart : body.onCollisionEnd, { collider: self, other, sensor, speed });
     }
   }
   for (let i = 0; i + 5 < rays.length; i += 6) {

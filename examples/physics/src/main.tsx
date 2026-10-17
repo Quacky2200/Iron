@@ -1,7 +1,8 @@
 // M4 physics showcase, seen from the side: crates and balls fall onto a floor and a
 // ramp (rapier in Rust), drawn as UI boxes from each body's last-tick pose. Click to
-// drop another; a sensor zone counts what passes through it.
-import { Component, physics, type RigidBody, register } from "@iron/engine";
+// drop another; a sensor zone counts what passes through it. Impacts knock (kira),
+// louder when harder and panned to where they happen.
+import { audio, Component, physics, type RigidBody, register } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
 
@@ -43,6 +44,16 @@ function drop(x: number, y: number, i: number) {
     shape: shape === "ball" ? { ball: half } : { box: { x: half, y: half, z: half } },
     restitution: shape === "ball" ? 0.5 : 0.1,
   });
+  body.onCollisionStart = (e) => {
+    if (e.sensor) return;
+    const speed = e.speed;
+    if (speed < 0.8) return;
+    audio.play("assets/thud.wav", {
+      volume: Math.min(1, speed / 8),
+      rate: 0.8 + (1 - half) * 0.5,
+      pan: Math.max(-1, Math.min(1, body.position.x / 8)),
+    });
+  };
   things.push({ body, shape, half, color: `hsl(${(i * 47) % 360} 70% 60%)` });
 }
 

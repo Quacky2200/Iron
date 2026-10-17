@@ -100,6 +100,9 @@ fn main() -> Result<()> {
     let game_input = scripts
         .eval("typeof __iron_input === 'function'")
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
+    let audio_events = scripts
+        .eval("typeof __iron_audio === 'function'")
+        .is_ok_and(|v| v == iron_core::Value::Bool(true));
     let physics_events = scripts
         .eval("typeof __iron_physics === 'function'")
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
@@ -132,6 +135,8 @@ fn main() -> Result<()> {
         ui_events,
         game_input,
         physics: iron_physics::Physics::new(),
+        audio: None,
+        audio_events,
         physics_events,
         nav: game_input::GamepadNav::default(),
         cursor: ("default", Vec::new(), 1.0),
@@ -210,6 +215,10 @@ struct App {
     physics: iron_physics::Physics,
     /// Whether the game takes physics results (`__iron_physics` exists).
     physics_events: bool,
+    /// The sound mixer, opened by the first `audio.*` op.
+    audio: Option<Box<dyn iron_audio::Mixer>>,
+    /// Whether the game takes finished-sound events (`__iron_audio` exists).
+    audio_events: bool,
     nav: game_input::GamepadNav,
     /// The CSS cursor currently shown: keyword, images, and the scale they were for.
     cursor: (&'static str, Vec<iron_ui::CursorImage>, f64),
@@ -257,6 +266,7 @@ impl App {
         }
 
         self.apply_script_output();
+        self.update_audio(elapsed);
 
         // The tree may have moved under a still pointer, or the focused element gone.
         self.handle_ui(Input::Refresh);
@@ -273,6 +283,39 @@ impl App {
             tracing::error!(target: "script", "physics events: {e}");
         }
         // Collision handlers may have queued more ops; they apply next tick.
+    }
+
+    /// Lets audio progress and tells scripts which sounds finished (`__iron_audio`).
+    fn update_audio(&mut self, elapsed: f64) {
+        let Some(mixer) = self.audio.as_mut() else {
+            return;
+        };
+        mixer.advance(elapsed);
+        let ended = mixer.poll();
+        if ended.is_empty() || !self.audio_events {
+            return;
+        }
+        let ended = iron_core::Value::Array(ended.into_iter().map(Into::into).collect());
+        if let Err(e) = self.scripts.call_global("__iron_audio", &[ended]) {
+            tracing::error!(target: "script", "audio events: {e}");
+        }
+    }
+
+    /// Runs one `audio.*` op, opening the mixer on first use (games without sound never
+    /// open a device). Screenshot runs mix offline, silently.
+    fn audio_op(&mut self, name: &str, args: &[iron_core::Value]) {
+        let offline = self.screenshot.is_some();
+        let mixer = self
+            .audio
+            .get_or_insert_with(|| iron_audio::open_mixer(offline));
+        let result = if name == "load" {
+            load_sound(mixer.as_mut(), &self.asset_root, args)
+        } else {
+            mixer.apply(name, args)
+        };
+        if let Err(e) = result {
+            tracing::warn!("audio.{name}: {e}");
+        }
     }
 
     /// Applies React commits, then the ops scripts queued, in order.
@@ -315,6 +358,9 @@ impl App {
                         "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
                         _ => Input::ScrollIntoView(id),
                     });
+                }
+                name if name.starts_with("audio.") => {
+                    self.audio_op(&name["audio.".len()..], &op.args)
                 }
                 name if name.starts_with("physics.") => {
                     if let Err(e) = self.physics.apply(&name["physics.".len()..], &op.args) {
@@ -777,6 +823,31 @@ fn load_font(
 
 /// Adds a stylesheet, logging its warnings and loading its `@font-face` fonts.
 /// `base` is the stylesheet's folder inside the game folder (for its `url()`s).
+/// `audio.load id src stream`: reads the file (or `data:` URL) from the game folder.
+fn load_sound(
+    mixer: &mut dyn iron_audio::Mixer,
+    root: &Path,
+    args: &[iron_core::Value],
+) -> Result<(), String> {
+    let (Some(id), Some(src)) = (
+        args.first().and_then(iron_core::Value::as_f64),
+        args.get(1).and_then(iron_core::Value::as_str),
+    ) else {
+        return Err("needs an id and a file".into());
+    };
+    let stream = matches!(args.get(2), Some(iron_core::Value::Bool(true)));
+    let bytes = if src.trim_start().starts_with("data:") {
+        iron_core::decode_data_url(src).ok_or_else(|| "invalid data URL".to_owned())?
+    } else {
+        let path = iron_core::resolve_asset(root, src)
+            .ok_or_else(|| format!("`{src}` must be a relative path inside the game folder"))?;
+        std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?
+    };
+    mixer
+        .load(id as u32, bytes, stream)
+        .map_err(|e| format!("`{src}`: {e}"))
+}
+
 fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &str) -> u32 {
     // `@import`s load from the game folder (Bun inlines them when bundling; this is
     // for stylesheets added at runtime).

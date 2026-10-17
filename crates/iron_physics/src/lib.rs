@@ -21,6 +21,9 @@ pub struct Contact {
     pub started: bool,
     pub a: ScriptId,
     pub b: ScriptId,
+    /// How fast they were moving towards or past each other (m/s), going into the
+    /// contact: for impact sounds and damage. Zero when it stops.
+    pub speed: f32,
     /// One of them is a sensor (a trigger: reports overlaps, doesn't push).
     pub sensor: bool,
 }
@@ -64,7 +67,7 @@ impl Batch {
     /// The batch as `__iron_physics(bodies, contacts, rays, characters)` arguments: flat
     /// number arrays, so a tick crosses the boundary as four arrays rather than objects.
     /// - bodies: `id, px, py, pz, qx, qy, qz, qw, vx, vy, vz` each
-    /// - contacts: `started (1/0), a, b, sensor (1/0)` each
+    /// - contacts: `started (1/0), a, b, sensor (1/0), speed` each
     /// - rays: `query, collider (-1: miss), distance, nx, ny, nz` each
     /// - characters: `id, grounded (1/0)` each
     pub fn to_args(&self) -> Vec<Value> {
@@ -77,9 +80,15 @@ impl Batch {
             bodies.extend(b.rotation.map(num));
             bodies.extend(b.velocity.map(num));
         }
-        let mut contacts = Vec::with_capacity(self.contacts.len() * 4);
+        let mut contacts = Vec::with_capacity(self.contacts.len() * 5);
         for c in &self.contacts {
-            contacts.extend([flag(c.started), c.a.into(), c.b.into(), flag(c.sensor)]);
+            contacts.extend([
+                flag(c.started),
+                c.a.into(),
+                c.b.into(),
+                flag(c.sensor),
+                num(c.speed),
+            ]);
         }
         let mut rays = Vec::with_capacity(self.rays.len() * 6);
         for r in &self.rays {
@@ -106,20 +115,32 @@ impl Batch {
     }
 }
 
-/// Collects rapier's collision events during a step.
+/// Collects rapier's collision events during a step, with the colliders' relative
+/// speed (events fire before the solver, so it's the speed going into the contact).
 #[derive(Default)]
-struct Events(Mutex<Vec<CollisionEvent>>);
+struct Events(Mutex<Vec<(CollisionEvent, f32)>>);
 
 impl EventHandler for Events {
     fn handle_collision_event(
         &self,
-        _bodies: &RigidBodySet,
-        _colliders: &ColliderSet,
+        bodies: &RigidBodySet,
+        colliders: &ColliderSet,
         event: CollisionEvent,
         _pair: Option<&ContactPair>,
     ) {
+        let velocity = |h: ColliderHandle| {
+            colliders
+                .get(h)
+                .and_then(|c| bodies.get(c.parent()?))
+                .map_or(Vector::ZERO, |b| b.linvel())
+        };
+        let speed = if event.started() {
+            (velocity(event.collider1()) - velocity(event.collider2())).length()
+        } else {
+            0.0
+        };
         if let Ok(mut events) = self.0.lock() {
-            events.push(event);
+            events.push((event, speed));
         }
     }
 
@@ -426,7 +447,7 @@ impl Physics {
         self.world.step_with_events(&(), &events);
 
         let script_id = |h: ColliderHandle| self.world.colliders.get(h).map(|c| c.user_data as u32);
-        for event in events.0.into_inner().unwrap_or_default() {
+        for (event, speed) in events.0.into_inner().unwrap_or_default() {
             let (Some(a), Some(b)) = (script_id(event.collider1()), script_id(event.collider2()))
             else {
                 continue;
@@ -436,6 +457,7 @@ impl Physics {
                 a,
                 b,
                 sensor: event.sensor(),
+                speed,
             });
         }
 

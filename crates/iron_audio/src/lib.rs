@@ -523,3 +523,60 @@ impl Args<'_> {
         Ok(out)
     }
 }
+
+/// An [`Audio`] on any backend, so the app can pick a device or offline mixing at run
+/// time.
+pub trait Mixer {
+    fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String>;
+    fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String>;
+    fn poll(&mut self) -> Vec<ScriptId>;
+    /// Lets `seconds` of audio play: a device plays on its own; an offline mixer renders
+    /// (and drops) that much, so sounds still progress and end.
+    fn advance(&mut self, seconds: f64);
+}
+
+impl Mixer for Audio<DefaultBackend> {
+    fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String> {
+        Audio::load(self, id, bytes, stream)
+    }
+    fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
+        Audio::apply(self, name, args)
+    }
+    fn poll(&mut self) -> Vec<ScriptId> {
+        Audio::poll(self)
+    }
+    fn advance(&mut self, _seconds: f64) {}
+}
+
+impl Mixer for Audio<OfflineBackend> {
+    fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String> {
+        Audio::load(self, id, bytes, stream)
+    }
+    fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
+        Audio::apply(self, name, args)
+    }
+    fn poll(&mut self) -> Vec<ScriptId> {
+        Audio::poll(self)
+    }
+    fn advance(&mut self, seconds: f64) {
+        let backend = self.backend_mut();
+        let frames = (seconds.max(0.0) * backend.sample_rate() as f64).round() as usize;
+        backend.render(frames);
+    }
+}
+
+/// Opens the default output device, or (with `offline`, or when there's no device)
+/// mixes offline: sounds play silently but still progress and end.
+pub fn open_mixer(offline: bool) -> Box<dyn Mixer> {
+    if !offline {
+        match Audio::new() {
+            Ok(audio) => return Box::new(audio),
+            Err(e) => tracing::warn!("no audio output ({e}); mixing silently"),
+        }
+    }
+    let settings = AudioManagerSettings {
+        backend_settings: 48_000,
+        ..Default::default()
+    };
+    Box::new(Audio::<OfflineBackend>::with_settings(settings).expect("offline mixing can't fail"))
+}

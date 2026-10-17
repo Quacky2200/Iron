@@ -8,6 +8,7 @@ publish.workspace = true
 anyhow = "1.0.104"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+iron_audio = { path = "../iron_audio" }
 iron_core = { path = "../iron_core" }
 iron_physics = { path = "../iron_physics" }
 iron_platform = { path = "../iron_platform" }
