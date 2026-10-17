@@ -668,7 +668,10 @@ and `@font-face`.
      the tree out in UI pixels and multiplies the factor (clamped to 0.25–8) into rendering, pointer
      and wheel input and the IME area, so text stays sharp — `M3-GAME-02`
 10. **Stylesheet authoring**
-    - [ ] Native CSS nesting (`&`, nested rules, implicit descendant) — covers s&box's SCSS nesting
+    - [x] **10a** Native CSS nesting (`&`, nested rules, implicit descendant, `> + ~` relative
+      rules, selector lists as `:is()`): nested rules are flattened at parse time after their
+      parent; `text:hover { ... }` is told apart from a declaration by its block; nested at-rules
+      are skipped with a warning — `M3-CSS-11`
     - [ ] `@import` (Bun inlines imports when bundling; runtime `addStyleSheet` would need it too)
     - [ ] SCSS (`$variables`, `@mixin`/`@include`) is **not planned** in the engine: custom properties
       and nesting cover most uses, and a Bun plugin can compile `.scss` for those who want it

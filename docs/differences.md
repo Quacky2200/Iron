@@ -4,6 +4,13 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Stylesheet authoring (M3d group 10)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Nested at-rules | `@media`, `@starting-style`, ... inside a rule are skipped with a warning | Allowed | `@media` isn't supported at all yet; top-level `@starting-style` works |
+| Nested rule order | Flattened after the parent rule; declarations written after nested rules still belong to the parent | Same (the spec's "nested declarations" rule) | — |
+
 ## Game extensions (M3d group 9)
 
 | Area | Iron | Browsers / spec | Why |

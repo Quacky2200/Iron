@@ -284,7 +284,8 @@ pub struct Stylesheet {
 }
 
 enum Item {
-    Rule(StyleRule),
+    /// A rule and the rules nested in it (flattened), with warnings from inside.
+    Rules(Vec<StyleRule>, Vec<String>),
     FontFace(FontFace),
     Keyframes(Keyframes),
     Starting(Stylesheet),
@@ -302,7 +303,8 @@ enum AtPrelude {
 struct SheetParser;
 
 impl<'i> QualifiedRuleParser<'i> for SheetParser {
-    type Prelude = SelectorList<IronSelectors>;
+    /// The selectors, and their text (for rules nested inside).
+    type Prelude = (SelectorList<IronSelectors>, String);
     type QualifiedRule = Item;
     type Error = SelectorParseErrorKind;
 
@@ -310,19 +312,206 @@ impl<'i> QualifiedRuleParser<'i> for SheetParser {
         &mut self,
         input: &mut CssParser<'i>,
     ) -> Result<Self::Prelude, ParseError<Self::Error>> {
-        SelectorList::parse(&IronSelectorParser, input, ParseRelative::No)
+        let start = input.position();
+        let selectors = SelectorList::parse(&IronSelectorParser, input, ParseRelative::No)?;
+        Ok((selectors, input.slice_from(start).trim().to_owned()))
     }
 
     fn parse_block(
         &mut self,
-        selectors: Self::Prelude,
+        (selectors, text): Self::Prelude,
         _start: &ParserState,
         input: &mut CssParser<'i>,
     ) -> Result<Item, ParseError<Self::Error>> {
-        Ok(Item::Rule(StyleRule {
+        let mut rules = Vec::new();
+        let mut warnings = Vec::new();
+        parse_rule_body(input, selectors, &text, &mut rules, &mut warnings, 0);
+        Ok(Item::Rules(rules, warnings))
+    }
+}
+
+/// How deep rules may nest (deeper ones are skipped with a warning).
+const MAX_NESTING: usize = 16;
+
+/// Parses a rule's block: its declarations, then the rules nested in it (CSS
+/// Nesting), flattened into `out` after the rule itself.
+fn parse_rule_body(
+    input: &mut CssParser<'_>,
+    selectors: SelectorList<IronSelectors>,
+    selector_text: &str,
+    out: &mut Vec<StyleRule>,
+    warnings: &mut Vec<String>,
+    depth: usize,
+) {
+    let mut parser = BodyParser {
+        parent: selector_text,
+        depth,
+    };
+    let mut declarations = Vec::new();
+    let mut nested = Vec::new();
+    for item in RuleBodyParser::new(input, &mut parser) {
+        match item {
+            Ok(BodyItem::Declaration(d)) => declarations.push(d),
+            Ok(BodyItem::Rules(rules, w)) => {
+                nested.extend(rules);
+                warnings.extend(w);
+            }
+            Ok(BodyItem::Skipped(why)) => warnings.push(why),
+            Err((_, text, _)) => {
+                let text = text.trim();
+                // Bad declarations are dropped silently, as before nesting existed;
+                // a bad nested rule (it has a block) gets a warning.
+                if text.contains('{') {
+                    warnings.push(format!("skipped nested rule `{text}`"));
+                }
+            }
+        }
+    }
+    // A rule that only holds nested rules adds nothing itself.
+    if !declarations.is_empty() || nested.is_empty() {
+        out.push(StyleRule {
             selectors,
-            declarations: parse_declarations(input),
-        }))
+            declarations,
+        });
+    }
+    out.extend(nested);
+}
+
+/// A nested selector made absolute: `&` is the parent (`:is()` around a list);
+/// without `&` it's a descendant of the parent (or `> .x` / `+ .x` / `~ .x` relative
+/// to it).
+pub fn resolve_nested(nested: &str, parent: &str) -> String {
+    let parent = parent.trim();
+    let parent = if crate::paint::split_top_level(parent, ',').len() > 1 {
+        format!(":is({parent})")
+    } else {
+        parent.to_owned()
+    };
+    crate::paint::split_top_level(nested, ',')
+        .iter()
+        .map(|part| {
+            let part = part.trim();
+            if part.contains('&') {
+                part.replace('&', &parent)
+            } else {
+                format!("{parent} {part}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+enum BodyItem {
+    Declaration(Declaration),
+    Rules(Vec<StyleRule>, Vec<String>),
+    Skipped(String),
+}
+
+struct BodyParser<'a> {
+    parent: &'a str,
+    depth: usize,
+}
+
+impl<'i> DeclarationParser<'i> for BodyParser<'_> {
+    type Declaration = BodyItem;
+    type Error = ();
+
+    fn parse_value(
+        &mut self,
+        name: CowRcStr<'i>,
+        input: &mut CssParser<'i>,
+        start: &ParserState,
+    ) -> Result<BodyItem, ParseError<()>> {
+        let d = DeclParser.parse_value(name, input, start)?;
+        // `text:hover { ... }` starts like a declaration; a block in the value means
+        // it's a nested rule, which the body parser then tries (CSS Nesting).
+        if d.value.contains('{') {
+            return Err(input.new_error_for_next_token());
+        }
+        Ok(BodyItem::Declaration(d))
+    }
+}
+
+impl<'i> QualifiedRuleParser<'i> for BodyParser<'_> {
+    /// The nested selector, resolved against the parent.
+    type Prelude = String;
+    type QualifiedRule = BodyItem;
+    type Error = ();
+
+    fn parse_prelude(&mut self, input: &mut CssParser<'i>) -> Result<String, ParseError<()>> {
+        let start = input.position();
+        while input.next().is_ok() {}
+        Ok(resolve_nested(input.slice_from(start), self.parent))
+    }
+
+    fn parse_block(
+        &mut self,
+        text: String,
+        _start: &ParserState,
+        input: &mut CssParser<'i>,
+    ) -> Result<BodyItem, ParseError<()>> {
+        if self.depth >= MAX_NESTING {
+            return Ok(BodyItem::Skipped(format!(
+                "`{text}` is nested too deeply; skipped"
+            )));
+        }
+        let selectors = match parse_selectors(&text) {
+            Ok(s) => s,
+            Err(e) => return Ok(BodyItem::Skipped(format!("{e}; skipped"))),
+        };
+        let (mut rules, mut warnings) = (Vec::new(), Vec::new());
+        parse_rule_body(
+            input,
+            selectors,
+            &text,
+            &mut rules,
+            &mut warnings,
+            self.depth + 1,
+        );
+        Ok(BodyItem::Rules(rules, warnings))
+    }
+}
+
+impl<'i> AtRuleParser<'i> for BodyParser<'_> {
+    type Prelude = String;
+    type AtRule = BodyItem;
+    type Error = ();
+
+    fn parse_prelude(
+        &mut self,
+        name: CowRcStr<'i>,
+        input: &mut CssParser<'i>,
+    ) -> Result<String, ParseError<()>> {
+        while input.next().is_ok() {}
+        Ok(name.to_string())
+    }
+
+    fn rule_without_block(&mut self, name: String, _start: &ParserState) -> Result<BodyItem, ()> {
+        Ok(BodyItem::Skipped(format!(
+            "nested @{name} isn't supported; skipped"
+        )))
+    }
+
+    fn parse_block(
+        &mut self,
+        name: String,
+        _start: &ParserState,
+        input: &mut CssParser<'i>,
+    ) -> Result<BodyItem, ParseError<()>> {
+        while input.next().is_ok() {}
+        Ok(BodyItem::Skipped(format!(
+            "nested @{name} isn't supported; skipped"
+        )))
+    }
+}
+
+impl<'i> RuleBodyItemParser<'i, BodyItem, ()> for BodyParser<'_> {
+    fn parse_declarations(&self) -> bool {
+        true
+    }
+
+    fn parse_qualified(&self) -> bool {
+        true
     }
 }
 
@@ -588,7 +777,10 @@ pub fn parse_stylesheet(css: &str) -> Stylesheet {
     let mut sheet = Stylesheet::default();
     for item in StyleSheetParser::new(&mut input, &mut parser) {
         match item {
-            Ok(Item::Rule(rule)) => sheet.rules.push(rule),
+            Ok(Item::Rules(rules, warnings)) => {
+                sheet.rules.extend(rules);
+                sheet.warnings.extend(warnings);
+            }
             Ok(Item::FontFace(face)) => sheet.font_faces.push(face),
             Ok(Item::Keyframes(k)) => sheet.keyframes.push(k),
             Ok(Item::Starting(inner)) => {
@@ -678,6 +870,62 @@ mod tests {
         // A bad keyframe selector drops just that block.
         assert_eq!(sheet.keyframes.len(), 1);
         assert_eq!(sheet.keyframes[0].frames.len(), 1);
+    }
+
+    // M3-CSS-11
+    #[test]
+    fn nested_rules_flatten_against_their_parent() {
+        let sheet = parse_stylesheet(
+            ".card {
+                color: red;
+                &:hover { color: blue }
+                .title { width: 1px; &.big { width: 2px } }
+                > .icon { height: 1px }
+                text:first-child { opacity: 0.5 }
+                margin: 4px;
+            }
+            .a, .b { & + & { width: 3px } }",
+        );
+        assert!(sheet.warnings.is_empty(), "{:?}", sheet.warnings);
+        let rules: Vec<(String, Vec<&str>)> = sheet
+            .rules
+            .iter()
+            .map(|r| {
+                (
+                    r.selectors.to_css_string(),
+                    r.declarations.iter().map(|d| d.prop.as_str()).collect(),
+                )
+            })
+            .collect();
+        let expect = [
+            (".card", vec!["color", "margin"]),
+            (".card:hover", vec!["color"]),
+            (".card .title", vec!["width"]),
+            (".card .title.big", vec!["width"]),
+            (".card > .icon", vec!["height"]),
+            (".card text:first-child", vec!["opacity"]),
+            (":is(.a, .b) + :is(.a, .b)", vec!["width"]),
+        ];
+        assert_eq!(rules.len(), expect.len(), "{rules:?}");
+        for ((got, props), (want, want_props)) in rules.iter().zip(expect) {
+            assert_eq!(got, want);
+            assert_eq!(props, &want_props, "{got}");
+        }
+    }
+
+    // M3-CSS-11
+    #[test]
+    fn bad_nested_rules_warn() {
+        let sheet = parse_stylesheet(".a { &::nope { width: 1px } @media (x) { } width: 2px }");
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(
+            sheet.rules[0].declarations.len(),
+            1,
+            "the rest still applies"
+        );
+        assert_eq!(sheet.warnings.len(), 2, "{:?}", sheet.warnings);
+        assert_eq!(resolve_nested("& > &", ".x .y"), ".x .y > .x .y");
+        assert_eq!(resolve_nested(".c, &:hover", ".p"), ".p .c, .p:hover");
     }
 
     // M3-ANI-03

@@ -1,5 +1,5 @@
 //! Stylesheets applied to the UI tree: selectors, cascade and restyle
-//! (M3-CSS-02, -03, -04, -08, -09, -10).
+//! (M3-CSS-02, -03, -04, -08, -09, -10, -11).
 
 use iron_core::{Commit, NodeId, Value};
 use iron_ui::opcodes::*;
@@ -670,4 +670,30 @@ fn restyle_reaches_dependent_nodes() {
     tree.layout_if_needed();
     assert_eq!(tree.visual(NodeId(a)).unwrap().opacity, 0.5);
     assert_eq!(tree.visual(NodeId(b)).unwrap().opacity, 1.0);
+}
+
+// M3-CSS-11
+#[test]
+fn nested_rules_apply_and_react_to_state() {
+    let mut d = Dom::new();
+    let card = d.class(0, "card");
+    let title = d.el(card, "text", &[("className", "title".into())]);
+    let mut tree =
+        d.build(".card { opacity: 0.9; .title { opacity: 0.5 } &:hover .title { opacity: 0.25 } }");
+    let opacity = |tree: &UiTree, id: u32| tree.visual(NodeId(id)).unwrap().opacity;
+    assert_eq!(opacity(&tree, card), 0.9);
+    assert_eq!(opacity(&tree, title), 0.5);
+    tree.set_state(
+        NodeId(card),
+        ElementState {
+            hover: true,
+            ..Default::default()
+        },
+    );
+    tree.layout_if_needed();
+    assert_eq!(
+        opacity(&tree, title),
+        0.25,
+        "the nested :hover rule restyles the child"
+    );
 }
