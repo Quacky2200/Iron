@@ -18,7 +18,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 |---|---|
 | [scripting.md](scripting.md) | `iron_script`, `@iron/engine`, ops and commits, `ComponentHost`, bundles and how `iron_app` loads them |
 | [ui-tree.md](ui-tree.md) | `iron_ui` tree, opcodes, styles, Taffy layout, Parley text, text fields (`editor.rs`), draw list |
-| [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`/`::marker`/`::backdrop`/`::selection`/`::placeholder`, `@font-face`, URL rebasing |
+| [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`/`::marker`/`::backdrop`/`::selection`/`::placeholder`, `@font-face` (incl. WOFF/WOFF2), `@media`, URL rebasing |
 | [react.md](react.md) | `@iron/react`: reconciler host config, style/attr diffing, `createRoot`, `Text`/`Span`/`Input`/`TextArea`, events, refs |
 | [input-and-events.md](input-and-events.md) | Platform input, `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, scrolling, text fields (keys, clipboard, IME), custom cursors, dialogs, gamepads, game `input` API, gamepad UI navigation |
 | [animation.md](animation.md) | Transitions, `@keyframes` animations, interpolation, `@starting-style`, `:outro` deferred removal, `transition*`/`animation*` events |

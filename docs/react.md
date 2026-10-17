@@ -134,6 +134,8 @@ without `tabIndex`. Engine side: [ui-tree.md](ui-tree.md#text-fields) and
 |---|---|---|
 | `focus()` | `op("focus", id)` | `App::tick` -> `Input::Focus(id)`; ignored unless the node is focusable |
 | `blur()` | `op("blur", id)` | `Input::Blur(id)`: only if that node has focus |
+| `setPointerCapture()` / `releasePointerCapture()` | `op("setPointerCapture", id)` etc. | `Input::SetPointerCapture/ReleasePointerCapture`; only effective while a button is held, so call it from `onPointerDown` |
+| `hasPointerCapture()` | none (local) | True when `pointerCapture.element` (host.ts) is this element; `dispatchUiEvent` updates it on `gotpointercapture` / `lostpointercapture` |
 | `scrollTo(left, top)` / `scrollBy(dx, dy)` / `scrollIntoView()` | `op("scrollTo", ...)` etc. | `Input::ScrollTo/ScrollBy/ScrollIntoView` |
 
 Ops are drained once per frame, so focus changes apply on the next frame, not synchronously.
@@ -146,7 +148,7 @@ Ops are drained once per frame, so focus changes apply on the next frame, not sy
 - `ElementAttrs`: `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir` (`'ltr' | 'rtl'`), `data-*`. Text fields add
   `FieldProps` (above).
 - `EventProps`: pointer/mouse (`onClick`, `onDoubleClick`, `onContextMenu`, `onPointerDown/Up/Move/Enter/Leave`,
-  `onMouse*`, `onWheel`), keyboard (`onKeyDown/Up`), focus (`onFocus`, `onBlur`), `onChange`/`onInput` on fields, each with a
+  `onMouse*`, `onWheel`), keyboard (`onKeyDown/Up`), focus (`onFocus`, `onBlur`), pointer capture (`onGotPointerCapture`, `onLostPointerCapture`; no `*Capture` variants), `onChange`/`onInput` on fields, each with a
   `*Capture` variant except enter/leave.
 - `IronStyle` ([style.ts](../js/react/src/style.ts)) is a type only. The authoritative list of
   properties is `apply_style` in Rust; add a property in both places.

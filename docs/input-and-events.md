@@ -135,7 +135,17 @@ queues restyle keys, see [css.md](css.md)) and **returns the events to dispatch,
   and the release** (DOM semantics), so dragging off and back still clicks the common ancestor.
 - `wheel(dx, dy)` -> rehover + `wheel` at the hovered path.
 - `refresh` re-hit-tests without movement (the layout changed under a still cursor).
-- `cancel` forgets held buttons.
+- `cancel` forgets held buttons (and any pointer capture).
+- **Pointer capture.** `set_capture(tree, id)` makes `id` the target of moves and releases wherever
+  the pointer is (drag a slider off its track). Like browsers it only works while a button is held
+  and the element exists; capturing again moves the capture. `rehover` uses the capturer as the hit
+  target while `capture` is set, so hover follows it too. Capture ends on `release_capture` for that
+  element, when the last button is released (in `up`, after `pointerup`), when the element is removed
+  or hidden (`refresh`), or on `cancel`. `release` emits `lostpointercapture` (if the element still
+  exists) and `set_capture` emits `gotpointercapture`, both bubbling (`EventKind::GotPointerCapture` /
+  `LostPointerCapture`); hover is re-evaluated after. Scripts reach it through
+  `Input::SetPointerCapture(id)` / `ReleasePointerCapture(id)`, from the `setPointerCapture` /
+  `releasePointerCapture` ops handled in `App::tick`, so they apply next frame. Tests: M3-EVT-06.
 
 `UiEvent` carries the DOM-like fields (position, `button`, `buttons` bitmask 1/2/4/8/16, `detail`
 click count, wheel deltas, modifiers, key/code/repeat, focus `related`, optional `ScrollInfo`).

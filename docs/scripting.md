@@ -70,7 +70,7 @@ between timers because `call_global` drains jobs. The loop is capped at `MAX_TIM
 
 | Channel | JS side | Rust side | Used for |
 |---|---|---|---|
-| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `scrollTo`... |
+| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`... |
 | Commits | `__iron_commit(ops)` | `drain_commits()` -> `Vec<Commit>` | React UI mutations |
 
 Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops.rs)); the doc

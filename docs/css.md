@@ -33,11 +33,13 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   (`Declaration { prop, value, important }`), with `prop` converted by `camel_case` (kebab to
   camelCase; `--custom` names kept). Values are re-parsed later by `apply_style`, which is why
   they can contain `var()`.
-- Failures never abort the sheet: an invalid selector, unsupported at-rule (`@media`, `@keyframes`
-  currently), or unknown pseudo-class yields a message in `Stylesheet.warnings` and the next rule
-  still applies. `@font-face` becomes a `FontFace`; its `src` is the first `url(...)`.
+- Failures never abort the sheet: an invalid selector, unsupported at-rule, or unknown pseudo-class yields a message in `Stylesheet.warnings` and the next rule
+  still applies. `@font-face` becomes a `FontFace`; its `src` is the first `url(...)` entry
+  Iron can load (`first_url`): TrueType, OpenType, WOFF or WOFF2, judged by `format()` or else the
+  file extension. `local()`, EOT and SVG entries are skipped, so a typical
+  `url(a.eot), url(a.woff2) format("woff2"), url(a.ttf)` list picks the WOFF2. Tests: M3-FNT-01.
 - **Nesting** (M3d step 10a, `&` as in CSS Nesting). A rule body is read by `parse_rule_body` with a
-  `BodyParser` (declarations, nested style rules, and at-rules, which are skipped with a warning).
+  `BodyParser` (declarations, nested style rules, and at-rules: `@media` is supported, any other is skipped with a warning).
   Each nested rule's selector is resolved against the parent's text by `resolve_nested`: a part
   containing `&` has it replaced by the parent, any other part (including ones starting with a
   combinator, `> .icon`) becomes `parent part`; a parent selector list is wrapped in `:is(...)` so
@@ -46,8 +48,8 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   index see no nesting. Depth is capped at `MAX_NESTING` (16); a bad nested selector warns and
   drops only that rule. Tests: M3-CSS-11 (`css.rs` unit, `tests/css.rs`).
 - **`@import`** (M3d step 10b). `@import "x.css"` / `@import url(x.css)` is collected in
-  `Stylesheet.imports`; with a media/`supports()`/`layer` condition, or no URL, it warns and is
-  skipped. See `@import` under "URL rebasing" below.
+  `Stylesheet.imports` as `(url, media)`; with a `supports()`/`layer` condition, or no URL, it warns
+  and is skipped. A media query list after the URL is kept (see "`@media`" below). See `@import` under "URL rebasing" below.
 - Supported selector features (all parsed by `selectors`): type, class, id, attribute selectors,
   combinators (descendant, `>`, `+`, `~`), `:first-child`/`:last-child`/`:only-child`,
   `:nth-child(.. of S)`, `:nth-last-child`, `*-of-type`, `:root`, `:empty`, `:not`, `:is`, `:where`,
@@ -55,6 +57,36 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   `:focus`, `:focus-visible`, `:focus-within`, `:enabled`, `:disabled`, `:checked`, `:blank`.
   Pseudo-elements: `::before`, `::after` only.
 - Element type selectors use the Iron element names: `box`, `text`, `span`, `root`.
+
+## `@media` ([media.rs](../crates/iron_ui/src/media.rs))
+
+- **Where it works.** Top-level blocks (`parse_stylesheet` handles `Item::Media` by parsing the
+  block as its own sheet), inside a style rule (`BodyParser`; the block's declarations and nested
+  rules belong to the parent selector), and on `@import` (`@import "x.css" (min-width: 600px)`).
+  An invalid query warns and skips the block.
+- **Storage.** Each `StyleRule` has `media: Vec<Arc<MediaList>>`: the conditions of the enclosing
+  `@media`s, all of which must match. `expand_imports` inserts an import's media list into every
+  rule (and `@starting-style` rule) it brings in. `matched_declarations` skips a rule whose
+  conditions don't all match, so the rule index and dependency tracking stay media-unaware.
+- **Syntax.** `MediaList::parse` reads a comma list (any query matching is enough) of
+  `[not|only] type [and condition]` or a bare condition. Conditions combine with `and`, `or`,
+  `not` and parentheses (`Condition`). Types `screen` and `all` match; `print` and unknown types
+  don't. Range features take `min-`/`max-` prefixes or the range syntax (`400px <= width < 800px`).
+  An unknown feature is `Condition::Unknown` and never matches.
+- **Features.** `width`, `height`, `aspect-ratio` (`w/h`), `resolution` (`dppx`, `x`, `dpi`,
+  `dpcm`), `orientation`, `prefers-color-scheme`, `prefers-reduced-motion`, `pointer`/`any-pointer`,
+  `hover`/`any-hover`. Lengths are px; `em`/`rem` are 16px.
+- **Environment.** `MediaEnv { width, height, resolution, dark, reduced_motion, pointer, hover }`
+  lives on `UiTree` (`media_env`, `set_media_env`). The size follows `set_size` (UI pixels).
+  The app sets `resolution` (DPI times UI scale) and `dark` (from `window.theme()`) every frame in
+  `PlatformApp::frame`; reduced motion stays off and the pointer stays `fine` with hover until the
+  app reports otherwise.
+- **Re-evaluation.** `UiTree.media_results` holds the last result of every rule's conditions.
+  `check_media` (called from `set_size` and `set_media_env`) recomputes them and calls
+  `restyle_everything` only if some result flipped, so resizing within one breakpoint costs
+  nothing. `restyle_everything` also refreshes the cached results.
+- Tests: M3-MQ-01 (`media.rs` unit: parsing and matching), M3-MQ-02 (`tests/css.rs`: `@media`
+  rules applying and un-applying).
 
 ## Matching ([cascade.rs](../crates/iron_ui/src/cascade.rs))
 
@@ -307,6 +339,6 @@ The tree does not know the game folder, so font loading is the app's job:
 
 ## Known limits
 
-- No `@media` (see TODO.md M3d). `@keyframes`, `@starting-style` and `:outro` are parsed here and run as described in [animation.md](animation.md).
+- `@import` with `supports()` or `layer` is skipped. `@keyframes`, `@starting-style` and `:outro` are parsed here and run as described in [animation.md](animation.md).
 - Pseudo-elements: `::before`, `::after`, `::marker`, `::selection`, `::placeholder` and `::backdrop`; `content` is limited to text.
 - Descendant-combinator invalidation is conservative: a changed ancestor key restyles the whole subtree.

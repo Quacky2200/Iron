@@ -200,7 +200,9 @@ overflow), used for clipping, scrollbars and event data.
 `LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth` and `hidden` (`visibility: hidden`); `Brush::of(&ComputedText)`). Fonts: bundled Inter (variable, upright and
 italic) is always registered and put first for the generic sans-serif families; `with_system_fonts`
 adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no system fonts) to stay
-deterministic. `register_font` accepts overrides for family/weight/style (like `@font-face`), then
+deterministic. `register_font` first runs the data through `decode_web_font`, which decompresses WOFF and WOFF2
+(recognised by their `wOFF`/`wOF2` signature, via the `wuff` crate) to plain TTF/OTF and passes
+anything else through; bad web font data is an error. It accepts overrides for family/weight/style (like `@font-face`), then
 replaces the `LayoutContext` because Parley caches family lookups, including misses.
 
 `iron_ui` enables Parley's `complex-scripts` feature, so word and line segmentation use ICU4X's
