@@ -999,7 +999,7 @@ mod tests {
         assert_eq!(sheet.keyframes[0].frames.len(), 1);
     }
 
-    // M3-FNT-01
+    // M3-FNT-03
     #[test]
     fn font_face_src_lists_pick_a_usable_format() {
         let src = |s: &str| first_url(s);

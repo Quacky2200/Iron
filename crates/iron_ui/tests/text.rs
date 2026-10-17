@@ -306,7 +306,7 @@ fn run_data_ids(tree: &UiTree, id: u32) -> Vec<u64> {
     out
 }
 
-// M3-FNT-01
+// M3-FNT-03
 #[test]
 fn woff_and_woff2_fonts_register_and_shape() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/fonts");
@@ -337,4 +337,32 @@ fn woff_and_woff2_fonts_register_and_shape() {
             "{file}"
         );
     }
+}
+
+// M3-FNT-02
+#[test]
+fn a_family_with_only_an_italic_face_uses_it_for_normal_text() {
+    let mut tree = UiTree::new(400.0, 200.0);
+    let mut b = Builder::new();
+    let label = b.element(0, "text", &[("fontFamily", "OnlySlanted".into())]);
+    b.text(label, "normal style");
+    b.apply(&mut tree);
+    tree.layout_if_needed();
+    let fallback_data = run_data_ids(&tree, label);
+    tree.register_font(
+        INTER_ITALIC.to_vec(),
+        Some("OnlySlanted"),
+        Some(400.0),
+        Some(true),
+    )
+    .unwrap();
+    tree.layout_if_needed();
+    let loaded = run_data_ids(&tree, label);
+    // The family's only data is the italic face, so using it at all means CSS font
+    // matching picked the italic face instead of another family. (`font_attrs` reports
+    // the requested style, so it can't tell.)
+    assert!(
+        loaded.iter().all(|id| !fallback_data.contains(id)),
+        "CSS font matching falls back to the family's italic face, not another family"
+    );
 }

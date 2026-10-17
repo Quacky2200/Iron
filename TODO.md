@@ -255,8 +255,9 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      system fallback in the app (`UiTree::with_system_fonts`), bundled-only in tests — `M3-FNT-02`
    - [x] `loadFont({ family, src, weight, style })` → op → loaded from the game folder (shared
      `iron_core::resolve_asset` path rules) → registered; text relayouts — `M3-FNT-01`
-   - [ ] Known gap: a family with only an italic face falls back to another family for normal text
-     (CSS would use the italic face); revisit with fontique
+   - [x] A family with only an italic face uses it for normal text (CSS font matching), instead of
+     falling back to another family: works with Parley 0.12 / fontique; guarded by a test (2026-10-17)
+     — `M3-FNT-02`
 4. **Layout integration**
    - [x] Text blocks are Taffy measured leaves (Taffy 0.15's `compute_leaf_layout` + Parley line
      breaking for min-content / max-content / definite widths) — `M3-TXT-02`
@@ -708,7 +709,7 @@ and `@font-face`.
     - [x] `.woff` and `.woff2` fonts from `@font-face` and `loadFont`: `register_font` recognizes
       their signatures and decompresses them to TTF/OTF with the pure-Rust `wuff` crate before
       Parley sees them; `@font-face` `src` lists take the first entry Iron can load (by
-      `format()`, else extension), skipping `local()`, EOT and SVG fonts — `M3-FNT-01`
+      `format()`, else extension), skipping `local()`, EOT and SVG fonts — `M3-FNT-03`
 13. **`@media` queries**
     - [x] `media.rs`: `width`/`height` (with `min-`/`max-` and range syntax like
       `400px <= width < 800px`; px, em/rem as 16px), `orientation`, `aspect-ratio`, `resolution`

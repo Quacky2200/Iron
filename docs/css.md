@@ -37,7 +37,7 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   still applies. `@font-face` becomes a `FontFace`; its `src` is the first `url(...)` entry
   Iron can load (`first_url`): TrueType, OpenType, WOFF or WOFF2, judged by `format()` or else the
   file extension. `local()`, EOT and SVG entries are skipped, so a typical
-  `url(a.eot), url(a.woff2) format("woff2"), url(a.ttf)` list picks the WOFF2. Tests: M3-FNT-01.
+  `url(a.eot), url(a.woff2) format("woff2"), url(a.ttf)` list picks the WOFF2. Tests: M3-FNT-03.
 - **Nesting** (M3d step 10a, `&` as in CSS Nesting). A rule body is read by `parse_rule_body` with a
   `BodyParser` (declarations, nested style rules, and at-rules: `@media` is supported, any other is skipped with a warning).
   Each nested rule's selector is resolved against the parent's text by `resolve_nested`: a part
