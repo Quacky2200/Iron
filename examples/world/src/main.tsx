@@ -3,7 +3,8 @@
 // orthographic camera draws a top-down minimap in the corner (camera depth and rect),
 // and screen UI is drawn over the world. A menu stands in the world on a WorldPanel:
 // React UI on a plane, with hover and clicks through the camera. Falling primitives thud
-// in 3D (an AudioSource each, heard from the camera's AudioListener).
+// in 3D (an AudioSource each, heard from the camera's AudioListener). Cubes wear a
+// texture made in script; pixel-art coins spin as animated, camera-facing sprites.
 import {
   AudioListener,
   AudioSource,
@@ -29,6 +30,9 @@ import {
   Random,
   Rigidbody,
   Rope,
+  Sprite,
+  SpriteRenderer,
+  Texture,
 } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
@@ -46,6 +50,38 @@ class Thud extends Component {
     if (c.relativeSpeed < 0.8) return;
     this.getComponent(AudioSource)?.playOneShot("assets/thud.wav", Math.min(1, c.relativeSpeed / 6));
   }
+}
+
+/** Cycles a SpriteRenderer through `frames` and keeps it facing the camera. */
+class SpriteAnimation extends Component {
+  frames: Sprite[] = [];
+  framesPerSecond = 8;
+  private t = 0;
+  override onUpdate(dt: number) {
+    if (this.frames.length === 0) return;
+    this.t += dt;
+    const frame = this.frames[Math.floor(this.t * this.framesPerSecond) % this.frames.length]!;
+    const r = this.getComponent(SpriteRenderer)!;
+    if (r.sprite !== frame) r.sprite = frame;
+  }
+  override onLateUpdate() {
+    const cam = Camera.main;
+    if (cam) this.transform.rotation = cam.transform.rotation;
+  }
+}
+
+/** Wooden planks, made in script: 8 × 8 texels, bottom row first. */
+function crateTexture(): Texture {
+  const light = Color.hex("#c08a4e");
+  const dark = Color.hex("#7a5230");
+  const px: Color[] = [];
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const edge = x === 0 || y === 0 || x === 7 || y === 7 || x === y || y % 4 === 3;
+      px.push(edge ? dark : light);
+    }
+  }
+  return Texture.create(8, 8, px, { filterMode: "point" });
 }
 
 class World extends Component {
@@ -78,6 +114,7 @@ class World extends Component {
     // Lit primitives with Rigidbodies, dropped into the ring.
     Random.initState(3);
     const kinds = ["cube", "sphere", "capsule", "cylinder"] as const;
+    const crate = crateTexture();
     for (let i = 0; i < 10; i++) {
       const go = GameObject.createPrimitive(kinds[i % 4]!, {
         position: new Vector3(Random.range(-1.2, 1.2), 2 + i * 0.7, Random.range(-1.2, 1.2)),
@@ -87,8 +124,21 @@ class World extends Component {
       go.addComponent(Rigidbody, { mass: 1 });
       go.addComponent(AudioSource, { spatialBlend: 1, maxDistance: 25, pitch: 0.9 + (i % 4) * 0.1 });
       go.addComponent(Thud);
-      go.getComponent(MeshRenderer)!.material = new Material(Color.hex(["#e85d75", "#5dade8", "#7be07b", "#e8c25d"][i % 4]!), Color.black, 0.7);
+      const material = new Material(Color.hex(["#e85d75", "#5dade8", "#7be07b", "#e8c25d"][i % 4]!), Color.black, 0.7);
+      go.getComponent(MeshRenderer)!.material = kinds[i % 4] === "cube" ? new Material(Color.white, Color.black, 0.3).withTexture(crate) : material;
     }
+
+    // Spinning coins from a 4-frame sprite sheet: 16 px at 40 px per metre, 0.4 m across.
+    const coins = Texture.load("assets/coin.png", { filterMode: "point", mipmaps: false });
+    coins.whenLoaded().then((sheet) => {
+      const frames = Sprite.grid(sheet, 4, 1, undefined, 40);
+      for (let i = 0; i < 5; i++) {
+        const dir = Quaternion.euler(0, i * 72 + 36, 0).rotate(Vector3.forward);
+        const coin = new GameObject(`Coin ${i}`, { position: dir.scale(3.6).add(new Vector3(0, 0.5, 0)) });
+        coin.addComponent(SpriteRenderer, { sprite: frames[0]! });
+        coin.addComponent(SpriteAnimation, { frames, framesPerSecond: 6 + i });
+      }
+    });
 
     // Six panels on a ring, children of one spinning object.
     const ring = new GameObject("Ring", { position: new Vector3(0, 0.9, 0) });

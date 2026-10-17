@@ -1,15 +1,17 @@
 //! What scripts put in the 3D world for the renderer: `Camera`, `PlaneRenderer`,
-//! `MeshRenderer` and `Light` components (`render.*` ops, keyed by component id), read
-//! with their GameObjects' world transforms each frame, plus script meshes
-//! (`render.mesh`) waiting to be uploaded and the ambient light.
+//! `MeshRenderer`, `SpriteRenderer` and `Light` components (`render.*` ops, keyed by
+//! component id), read with their GameObjects' world transforms each frame, plus script
+//! meshes (`render.mesh`) and textures (`render.texture`) waiting to be uploaded and
+//! the ambient light.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    Color, Light, LightKind, MeshData, MeshInstance, Projection, WorldCamera, WorldQuad, WorldView,
-    primitive_id, viewport_size,
+    Color, Light, LightKind, MeshData, MeshInstance, Projection, TextureData, TextureFilter,
+    TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -43,6 +45,21 @@ struct Renderer {
     emission: [f32; 3],
     smoothness: f32,
     unlit: bool,
+    texture: Option<u32>,
+    tiling: [f32; 4],
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Sprite {
+    object: ScriptObject,
+    texture: u32,
+    /// x, y, width, height in pixels from the texture's bottom-left; `None`: all of it.
+    rect: Option<[f32; 4]>,
+    /// 0..1 across the rect from its bottom-left: where the object's origin sits.
+    pivot: [f32; 2],
+    pixels_per_unit: f32,
+    color: [f32; 4],
+    flip: (bool, bool),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -59,9 +76,14 @@ pub struct WorldViews {
     planes: BTreeMap<u32, Plane>,
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
+    sprites: BTreeMap<u32, Sprite>,
     ambient: [f32; 3],
     /// Script meshes to upload (`None`: remove), applied by the app before drawing.
     pub mesh_uploads: Vec<(u32, Option<MeshData>)>,
+    /// Textures to upload (`None`: remove), applied by the app before drawing.
+    pub texture_uploads: Vec<(u32, Option<TextureData>)>,
+    /// Loaded textures' sizes in pixels, for sprites.
+    texture_sizes: HashMap<u32, (u32, u32)>,
 }
 
 impl Default for WorldViews {
@@ -71,8 +93,11 @@ impl Default for WorldViews {
             planes: BTreeMap::new(),
             renderers: BTreeMap::new(),
             lights: BTreeMap::new(),
+            sprites: BTreeMap::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
+            texture_uploads: Vec::new(),
+            texture_sizes: HashMap::new(),
         }
     }
 }
@@ -106,7 +131,108 @@ pub fn lay_flat(size: (f32, f32)) -> Mat4 {
     )
 }
 
+/// Where a sprite's quad goes in its object's space, and the part of the texture it
+/// shows (origin and size in top-down UV space).
+fn sprite_quad(s: &Sprite, (tw, th): (u32, u32)) -> (Mat4, [f32; 4]) {
+    let (tw, th) = (tw as f32, th as f32);
+    let [x, y, w, h] = s.rect.unwrap_or([0.0, 0.0, tw, th]);
+    let ppu = s.pixels_per_unit.max(1e-6);
+    let size = Vec3::new(w / ppu, h / ppu, 1.0);
+    let offset = Vec3::new(
+        (0.5 - s.pivot[0]) * size.x,
+        (0.5 - s.pivot[1]) * size.y,
+        0.0,
+    );
+    let mut uv = [x / tw, 1.0 - (y + h) / th, w / tw, h / th];
+    if s.flip.0 {
+        uv[0] += uv[2];
+        uv[2] = -uv[2];
+    }
+    if s.flip.1 {
+        uv[1] += uv[3];
+        uv[3] = -uv[3];
+    }
+    (
+        Mat4::from_scale_rotation_translation(size, Quat::IDENTITY, offset),
+        uv,
+    )
+}
+
 impl WorldViews {
+    /// `texture id src filter wrap mipmaps [width height [r g b a ...]]`: loads image
+    /// file `src` (relative to the game folder) or, with `src` null, takes the pixels
+    /// given (sRGB bytes, top row first). `textureRemove id` drops one. Returns the
+    /// loaded texture's id and size.
+    pub fn texture_op(
+        &mut self,
+        name: &str,
+        root: &Path,
+        args: &[Value],
+    ) -> Result<Option<(u32, u32, u32)>, String> {
+        let id = args
+            .first()
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .ok_or("a texture needs an id")? as u32;
+        if name == "textureRemove" {
+            self.texture_sizes.remove(&id);
+            self.texture_uploads.push((id, None));
+            return Ok(None);
+        }
+        let filter = match args.get(2).and_then(Value::as_str) {
+            Some(f) => TextureFilter::parse(f).ok_or_else(|| format!("unknown filter `{f}`"))?,
+            None => TextureFilter::default(),
+        };
+        let wrap = match args.get(3).and_then(Value::as_str) {
+            Some(w) => TextureWrap::parse(w).ok_or_else(|| format!("unknown wrap `{w}`"))?,
+            None => TextureWrap::default(),
+        };
+        let mipmaps = !matches!(args.get(4), Some(Value::Bool(false)));
+        let (width, height, rgba) = match args.get(1) {
+            Some(Value::String(src)) => {
+                let bytes = if src.trim_start().starts_with("data:") {
+                    iron_core::decode_data_url(src).ok_or("bad data URL")?
+                } else {
+                    let path = iron_core::resolve_asset(root, src).ok_or_else(|| {
+                        format!("`{src}` must be a relative path inside the game folder")
+                    })?;
+                    std::fs::read(&path).map_err(|e| format!("`{src}`: {e}"))?
+                };
+                let image = image::load_from_memory(&bytes)
+                    .map_err(|e| format!("`{src}`: {e}"))?
+                    .to_rgba8();
+                let (w, h) = image.dimensions();
+                (w, h, image.into_raw())
+            }
+            _ => {
+                let w = args.get(5).and_then(Value::as_f64).unwrap_or(0.0) as u32;
+                let h = args.get(6).and_then(Value::as_f64).unwrap_or(0.0) as u32;
+                let px = flat(args.get(7)).ok_or("a texture needs a file or pixels")?;
+                (
+                    w,
+                    h,
+                    px.into_iter().map(|v| v.clamp(0.0, 255.0) as u8).collect(),
+                )
+            }
+        };
+        let data = TextureData {
+            width,
+            height,
+            rgba,
+            filter,
+            wrap,
+            mipmaps,
+        };
+        if !data.is_valid() {
+            return Err(format!(
+                "texture {id}: {width}x{height} doesn't match its pixels"
+            ));
+        }
+        self.texture_sizes.insert(id, (width, height));
+        self.texture_uploads.push((id, Some(data)));
+        Ok(Some((id, width, height)))
+    }
+
     /// Runs one `render.*` op.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         let num = |i: usize| -> Result<f32, String> {
@@ -184,7 +310,8 @@ impl WorldViews {
                 }
                 self.mesh_uploads.push((id, Some(data)));
             }
-            // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness unlit`
+            // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness
+            // unlit texture|null [scale x y, offset x y]`
             "meshRenderer" => {
                 let mesh = match args.get(2) {
                     Some(Value::String(name)) => {
@@ -199,8 +326,30 @@ impl WorldViews {
                     emission: nums::<3>(args.get(4)).unwrap_or([0.0; 3]),
                     smoothness: num(5).unwrap_or(0.5),
                     unlit: matches!(args.get(6), Some(Value::Bool(true))),
+                    texture: match args.get(7) {
+                        Some(Value::Null) | None => None,
+                        _ => Some(id_at(7)?),
+                    },
+                    tiling: nums::<4>(args.get(8)).unwrap_or([1.0, 1.0, 0.0, 0.0]),
                 };
                 self.renderers.insert(id, renderer);
+            }
+            // `sprite component object texture [x y w h]|null [pivot x y] pixelsPerUnit
+            // [r g b a] flipX flipY`
+            "sprite" => {
+                let sprite = Sprite {
+                    object: id_at(1)?,
+                    texture: id_at(2)?,
+                    rect: nums::<4>(args.get(3)),
+                    pivot: nums::<2>(args.get(4)).unwrap_or([0.5, 0.5]),
+                    pixels_per_unit: num(5).unwrap_or(100.0),
+                    color: nums::<4>(args.get(6)).unwrap_or([1.0; 4]),
+                    flip: (
+                        matches!(args.get(7), Some(Value::Bool(true))),
+                        matches!(args.get(8), Some(Value::Bool(true))),
+                    ),
+                };
+                self.sprites.insert(id, sprite);
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle`
             "light" => {
@@ -232,6 +381,7 @@ impl WorldViews {
                 self.planes.remove(&id);
                 self.renderers.remove(&id);
                 self.lights.remove(&id);
+                self.sprites.remove(&id);
             }
             other => return Err(format!("unknown render op `{other}`")),
         }
@@ -244,6 +394,7 @@ impl WorldViews {
         self.planes.retain(|_, p| !objects.contains(&p.object));
         self.renderers.retain(|_, r| !objects.contains(&r.object));
         self.lights.retain(|_, l| !objects.contains(&l.object));
+        self.sprites.retain(|_, s| !objects.contains(&s.object));
     }
 
     /// Every active camera's view (lowest depth first, then the order they were added),
@@ -266,6 +417,22 @@ impl WorldViews {
                     p.color,
                 ))
             })
+            .chain(
+                self.sprites
+                    .values()
+                    .filter(|s| scene.active(s.object))
+                    .filter_map(|s| {
+                        // Drawn once its texture has loaded.
+                        let size = *self.texture_sizes.get(&s.texture)?;
+                        let (local, uv) = sprite_quad(s, size);
+                        Some(WorldQuad {
+                            model: Mat4::from(world(s.object)?) * local,
+                            color: s.color,
+                            texture: Some(WorldTexture::Asset(s.texture)),
+                            uv,
+                        })
+                    }),
+            )
             .chain(extra.iter().copied())
             .collect();
         let meshes: Vec<MeshInstance> = self
@@ -280,7 +447,8 @@ impl WorldViews {
                     emission: r.emission,
                     smoothness: r.smoothness,
                     unlit: r.unlit,
-                    texture: None,
+                    texture: r.texture.map(WorldTexture::Asset),
+                    tiling: r.tiling,
                 })
             })
             .collect();
@@ -335,5 +503,80 @@ impl WorldViews {
                 })
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sprite(rect: Option<[f32; 4]>, pivot: [f32; 2], flip: (bool, bool)) -> Sprite {
+        Sprite {
+            object: 1,
+            texture: 1,
+            rect,
+            pivot,
+            pixels_per_unit: 16.0,
+            color: [1.0; 4],
+            flip,
+        }
+    }
+
+    // M5-TEX-02
+    #[test]
+    fn sprites_are_sized_by_pixels_per_unit_and_sit_on_their_pivot() {
+        // A 16 × 32 cell from the bottom-right of a 64 × 64 sheet, pivot at its feet.
+        let (m, uv) = sprite_quad(
+            &sprite(Some([48.0, 0.0, 16.0, 32.0]), [0.5, 0.0], (false, false)),
+            (64, 64),
+        );
+        let (scale, _, pos) = m.to_scale_rotation_translation();
+        assert_eq!(scale, Vec3::new(1.0, 2.0, 1.0));
+        // The quad's centre is a metre above the origin, so its bottom edge is on it.
+        assert_eq!(pos, Vec3::new(0.0, 1.0, 0.0));
+        // Bottom-up pixels become top-down UVs: rows 0..32 from the bottom are v 0.5..1.
+        assert_eq!(uv, [0.75, 0.5, 0.25, 0.5]);
+        let (_, flipped) = sprite_quad(&sprite(None, [0.5, 0.5], (true, true)), (64, 64));
+        assert_eq!(flipped, [1.0, 1.0, -1.0, -1.0]);
+    }
+
+    // M5-TEX-01
+    #[test]
+    fn textures_from_pixels_queue_uploads_and_report_their_size() {
+        let mut views = WorldViews::default();
+        let root = Path::new(".");
+        let px = Value::Array((0..8).map(|v| Value::from(f64::from(v))).collect());
+        let args = [
+            Value::from(4.0),
+            Value::Null,
+            Value::String("point".into()),
+            Value::String("clamp".into()),
+            Value::Bool(false),
+            Value::from(1.0),
+            Value::from(2.0),
+            px,
+        ];
+        assert_eq!(
+            views.texture_op("texture", root, &args),
+            Ok(Some((4, 1, 2)))
+        );
+        let (id, data) = views.texture_uploads.pop().unwrap();
+        let data = data.unwrap();
+        assert_eq!(
+            (id, data.filter, data.wrap, data.mipmaps),
+            (4, TextureFilter::Point, TextureWrap::Clamp, false)
+        );
+        // Pixels that don't fill the size are refused, as are paths outside the game.
+        let mut bad = args.clone();
+        bad[6] = Value::from(3.0);
+        assert!(views.texture_op("texture", root, &bad).is_err());
+        let mut outside = args.clone();
+        outside[1] = Value::String("../secret.png".into());
+        assert!(views.texture_op("texture", root, &outside).is_err());
+        assert_eq!(
+            views.texture_op("textureRemove", root, &[Value::from(4.0)]),
+            Ok(None)
+        );
+        assert!(matches!(views.texture_uploads.pop(), Some((4, None))));
     }
 }

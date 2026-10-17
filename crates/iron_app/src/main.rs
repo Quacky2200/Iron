@@ -614,6 +614,8 @@ impl App {
                 tracing::warn!(target: "ui", "{e}");
             }
         }
+        // Textures loaded by these ops, for `__iron_textures` after them.
+        let mut loaded: Vec<(u32, u32, u32)> = Vec::new();
         for op in self.scripts.drain_ops() {
             match op.name.as_str() {
                 "loadFont" => self.load_font_op(&op.args),
@@ -659,6 +661,20 @@ impl App {
                         },
                     );
                 }
+                "render.texture" | "render.textureRemove" => {
+                    let name = &op.name["render.".len()..];
+                    match self.world_view.texture_op(name, &self.asset_root, &op.args) {
+                        Ok(Some((id, w, h))) => loaded.push((id, w, h)),
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!("render.texture: {e}");
+                            // Scripts hear about failures too (a 0 × 0 size).
+                            if let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) {
+                                loaded.push((id as u32, 0, 0));
+                            }
+                        }
+                    }
+                }
                 "render.panel" => {
                     let (root, fonts, sheets) =
                         (&self.asset_root, &self.font_sources, &self.sheet_sources);
@@ -695,6 +711,31 @@ impl App {
                     }
                 }
                 other => tracing::warn!("unknown script op `{other}`"),
+            }
+        }
+        // `__iron_textures([[id, width, height], ...])`: sizes for `Texture`s (0 × 0
+        // failed). Ops it queues run with the next batch.
+        if !loaded.is_empty()
+            && self
+                .scripts
+                .eval("typeof __iron_textures === 'function'")
+                .is_ok_and(|v| v == iron_core::Value::Bool(true))
+        {
+            let list = loaded
+                .into_iter()
+                .map(|(id, w, h)| {
+                    iron_core::Value::Array(vec![
+                        iron_core::Value::from(f64::from(id)),
+                        iron_core::Value::from(f64::from(w)),
+                        iron_core::Value::from(f64::from(h)),
+                    ])
+                })
+                .collect();
+            if let Err(e) = self
+                .scripts
+                .call_global("__iron_textures", &[iron_core::Value::Array(list)])
+            {
+                tracing::error!("script error in __iron_textures: {e}");
             }
         }
     }
@@ -954,6 +995,14 @@ impl App {
                 None => gfx.world.remove_mesh(id),
             }
         }
+        for (id, data) in self.world_view.texture_uploads.drain(..) {
+            match data {
+                Some(data) => {
+                    gfx.world.set_texture(&gfx.gpu, id, &data);
+                }
+                None => gfx.world.remove_texture(id),
+            }
+        }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (quads, textures) = self.panels.render(
             &gfx.gpu,
@@ -1196,6 +1245,14 @@ impl PlatformApp for App {
                     gfx.world.set_mesh(&gfx.gpu, id, &data);
                 }
                 None => gfx.world.remove_mesh(id),
+            }
+        }
+        for (id, data) in self.world_view.texture_uploads.drain(..) {
+            match data {
+                Some(data) => {
+                    gfx.world.set_texture(&gfx.gpu, id, &data);
+                }
+                None => gfx.world.remove_texture(id),
             }
         }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;

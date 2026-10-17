@@ -1307,6 +1307,12 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/audio-components.ts
   var clips = new Map;
+  // ../../js/engine/src/textures.ts
+  var textures = new Map;
+  globalThis.__iron_textures = (loaded) => {
+    for (const [id, w, h] of loaded)
+      textures.get(id)?._loaded(w, h);
+  };
   // ../../js/engine/src/clock.ts
   var time = 0;
   var unscaledTime = 0;
@@ -1950,14 +1956,23 @@ ${err.stack}` : ""}`);
     emission;
     smoothness;
     unlit;
-    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false) {
+    mainTexture;
+    mainTextureScale;
+    mainTextureOffset;
+    constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false, mainTexture = null, mainTextureScale = Vector2.one, mainTextureOffset = Vector2.zero) {
       this.color = color;
       this.emission = emission;
       this.smoothness = smoothness;
       this.unlit = unlit;
+      this.mainTexture = mainTexture;
+      this.mainTextureScale = mainTextureScale;
+      this.mainTextureOffset = mainTextureOffset;
     }
     withColor(color) {
-      return new Material(color, this.emission, this.smoothness, this.unlit);
+      return new Material(color, this.emission, this.smoothness, this.unlit, this.mainTexture, this.mainTextureScale, this.mainTextureOffset);
+    }
+    withTexture(texture, scale = Vector2.one, offset = Vector2.zero) {
+      return new Material(this.color, this.emission, this.smoothness, this.unlit, texture, new Vector2(scale.x, scale.y), new Vector2(offset.x, offset.y));
     }
   }
   class MeshRenderer extends Component {
@@ -1982,7 +1997,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit);
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y]);
     }
     onAwake() {
       this.started = true;

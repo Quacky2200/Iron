@@ -215,7 +215,7 @@ impl Panels {
             quads.push(WorldQuad {
                 model,
                 color: panel.tint,
-                texture: Some(views.len()),
+                texture: Some(iron_render::WorldTexture::Frame(views.len())),
                 uv: [0.0, 0.0, 1.0, 1.0],
             });
             views.push(view.clone());

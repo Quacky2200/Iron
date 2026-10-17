@@ -16,8 +16,9 @@ pub use surface::WindowSurface;
 pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer};
 pub use wgpu;
 pub use world::{
-    Light, LightKind, MeshData, MeshInstance, PRIMITIVE_BASE, PRIMITIVES, Projection, WorldCamera,
-    WorldQuad, WorldRenderer, WorldView, primitive, primitive_id, viewport_size,
+    Light, LightKind, MeshData, MeshInstance, PRIMITIVE_BASE, PRIMITIVES, Projection, TextureData,
+    TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldRenderer, WorldTexture, WorldView,
+    primitive, primitive_id, viewport_size,
 };
 
 /// A linear RGBA colour.

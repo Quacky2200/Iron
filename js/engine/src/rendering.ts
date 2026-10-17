@@ -17,6 +17,7 @@ import {
 } from "./math.ts";
 import { Component, type GameObject } from "./scene.ts";
 import { Screen } from "./screen.ts";
+import type { Texture } from "./textures.ts";
 
 const rgba = (c: Color) => [c.r, c.g, c.b, c.a];
 
@@ -454,11 +455,30 @@ export class Material {
     readonly smoothness = 0.5,
     /** Ignore lights: just the colour plus emission. */
     readonly unlit = false,
+    /** Multiplies the colour (Unity's `mainTexture`); its alpha counts when `color.a` < 1. */
+    readonly mainTexture: Texture | null = null,
+    /** How many times the texture repeats across the mesh's UVs. */
+    readonly mainTextureScale: Vector2 = Vector2.one,
+    /** Where the texture starts (in its 0..1 space). */
+    readonly mainTextureOffset: Vector2 = Vector2.zero,
   ) {}
 
   /** A copy with another colour. */
   withColor(color: Color): Material {
-    return new Material(color, this.emission, this.smoothness, this.unlit);
+    return new Material(color, this.emission, this.smoothness, this.unlit, this.mainTexture, this.mainTextureScale, this.mainTextureOffset);
+  }
+
+  /** A copy with a texture, repeated `scale` times from `offset`. */
+  withTexture(texture: Texture | null, scale: Vector2Like = Vector2.one, offset: Vector2Like = Vector2.zero): Material {
+    return new Material(
+      this.color,
+      this.emission,
+      this.smoothness,
+      this.unlit,
+      texture,
+      new Vector2(scale.x, scale.y),
+      new Vector2(offset.x, offset.y),
+    );
   }
 }
 
@@ -498,7 +518,8 @@ export class Mesh {
       this.id,
       data.vertices.flatMap((v) => [v.x, v.y, v.z]),
       (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]),
-      (data.uv ?? []).flatMap((v) => [v.x, v.y]),
+      // Unity's UVs run bottom-up; the engine's top-down.
+      (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]),
       [...data.triangles],
     );
   }
@@ -549,6 +570,8 @@ export class MeshRenderer extends Component {
       [m.emission.r, m.emission.g, m.emission.b],
       m.smoothness,
       m.unlit,
+      m.mainTexture?.id ?? null,
+      [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y],
     );
   }
 

@@ -5,7 +5,8 @@ use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_core::{Commit, Value};
 use iron_render::testing::{assert_golden, shared_gpu};
 use iron_render::{
-    Color, OffscreenTarget, RenderTarget, UiRenderer, WorldCamera, WorldQuad, WorldRenderer,
+    Color, OffscreenTarget, RenderTarget, TextureData, TextureFilter, TextureWrap, UiRenderer,
+    WorldCamera, WorldQuad, WorldRenderer, WorldTexture,
 };
 use iron_ui::UiTree;
 use iron_ui::opcodes::*;
@@ -115,7 +116,7 @@ fn planes_in_perspective_with_ui_over_them() {
                 (1.0, 1.0),
             ),
             color: [1.0; 4],
-            texture: Some(0),
+            texture: Some(WorldTexture::Frame(0)),
             uv: [0.0, 0.0, 1.0, 1.0],
         },
     ];
@@ -301,6 +302,7 @@ fn lit_primitives_with_lights() {
         smoothness: 0.6,
         unlit: false,
         texture: None,
+        tiling: [1.0, 1.0, 0.0, 0.0],
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -339,4 +341,169 @@ fn lit_primitives_with_lights() {
     WorldRenderer::new(&gpu).render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-07", size.0, size.1, &pixels, 3);
+}
+
+/// An `n` × `n` two-colour checker with a red top-left texel (to see orientation).
+fn checker_data(
+    n: u32,
+    a: [u8; 4],
+    b: [u8; 4],
+    filter: TextureFilter,
+    mipmaps: bool,
+) -> TextureData {
+    let mut rgba = Vec::new();
+    for y in 0..n {
+        for x in 0..n {
+            let c = if x == 0 && y == 0 {
+                [230, 40, 40, 255]
+            } else if (x + y) % 2 == 0 {
+                a
+            } else {
+                b
+            };
+            rgba.extend(c);
+        }
+    }
+    TextureData {
+        width: n,
+        height: n,
+        rgba,
+        filter,
+        wrap: TextureWrap::Repeat,
+        mipmaps,
+    }
+}
+
+// M5-RND-08
+#[test]
+fn textured_meshes_and_sprites() {
+    use iron_render::{Light, LightKind, MeshInstance, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let light = [235, 235, 225, 255];
+    assert!(world.set_texture(
+        &gpu,
+        1,
+        &checker_data(8, light, [60, 90, 160, 255], TextureFilter::Trilinear, true)
+    ));
+    // Pixel art: point-filtered, with a see-through half.
+    assert!(world.set_texture(
+        &gpu,
+        2,
+        &checker_data(
+            4,
+            [250, 200, 60, 255],
+            [0, 0, 0, 0],
+            TextureFilter::Point,
+            false
+        )
+    ));
+    assert!(!world.set_texture(
+        &gpu,
+        3,
+        &TextureData {
+            rgba: vec![0; 3],
+            ..checker_data(1, light, light, TextureFilter::Point, false)
+        }
+    ));
+    assert_eq!(world.texture_size(1), Some((8, 8)));
+    assert_eq!(world.texture_size(3), None);
+
+    let eye = Vec3::new(0.0, 2.5, 6.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
+            .inverse(),
+        50.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.02, 0.02, 0.03),
+    );
+    let mesh = |name: &str, model: Mat4, tiling: [f32; 4]| MeshInstance {
+        mesh: primitive_id(name).unwrap(),
+        model,
+        color: [1.0; 4],
+        emission: [0.0; 3],
+        smoothness: 0.2,
+        unlit: false,
+        texture: Some(WorldTexture::Asset(1)),
+        tiling,
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.meshes = vec![
+        // A floor tiled 6 times: mipmaps keep the distance from shimmering.
+        mesh(
+            "plane",
+            Mat4::from_scale(Vec3::splat(0.8)),
+            [6.0, 6.0, 0.0, 0.0],
+        ),
+        mesh(
+            "cube",
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.6), Vec3::new(-1.5, 0.5, 0.0)),
+            [1.0, 1.0, 0.0, 0.0],
+        ),
+        // Half a texture per face, shifted.
+        mesh(
+            "sphere",
+            Mat4::from_translation(Vec3::new(0.0, 0.6, 0.5)),
+            [2.0, 1.0, 0.25, 0.0],
+        ),
+        // A see-through cube using the pixel art's alpha.
+        MeshInstance {
+            color: [1.0, 1.0, 1.0, 0.99],
+            texture: Some(WorldTexture::Asset(2)),
+            ..mesh(
+                "cube",
+                Mat4::from_rotation_translation(
+                    Quat::from_rotation_y(-0.4),
+                    Vec3::new(1.6, 0.5, -0.5),
+                ),
+                [1.0; 4],
+            )
+        },
+        // A texture that doesn't exist draws white.
+        MeshInstance {
+            texture: Some(WorldTexture::Asset(99)),
+            ..mesh(
+                "cube",
+                Mat4::from_scale_rotation_translation(
+                    Vec3::splat(0.3),
+                    Quat::IDENTITY,
+                    Vec3::new(0.0, 1.8, 0.0),
+                ),
+                [1.0; 4],
+            )
+        },
+    ];
+    // Sprites: the pixel art upright, and flipped horizontally.
+    let sprite = |x: f32, uv: [f32; 4]| WorldQuad {
+        model: place(Vec3::new(x, 1.6, 1.0), Quat::IDENTITY, (0.8, 0.8)),
+        color: [1.0; 4],
+        texture: Some(WorldTexture::Asset(2)),
+        uv,
+    };
+    v.quads = vec![
+        sprite(-0.6, [0.0, 0.0, 1.0, 1.0]),
+        sprite(0.6, [1.0, 0.0, -1.0, 1.0]),
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.0, 0.97, 0.92],
+        position: Vec3::ZERO,
+        direction: Vec3::new(-0.4, -1.0, -0.5).normalize(),
+        range: 0.0,
+    }];
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-08", size.0, size.1, &pixels, 3);
 }

@@ -20,6 +20,14 @@ export {
   Sound,
 } from "./audio.ts";
 export { AudioListener, AudioSource } from "./audio-components.ts";
+export {
+  type FilterMode,
+  Sprite,
+  SpriteRenderer,
+  Texture,
+  type TextureOptions,
+  type TextureWrapMode,
+} from "./textures.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export {
   Bounds,

@@ -48,6 +48,8 @@ declare global {
   var __iron_scene: (moved: number[]) => void;
   // Playing sounds that finished (audio.ts).
   var __iron_audio: (ended: number[]) => void;
+  // Textures the engine loaded: [id, width, height], 0 × 0 when it failed (textures.ts).
+  var __iron_textures: (loaded: [number, number, number][]) => void;
   var __iron_physics: (moved: number[], contacts: number[], rays: number[], characters: number[]) => void;
 
   // Installed by @iron/react, called by Rust: a UI event for the element path

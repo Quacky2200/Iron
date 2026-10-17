@@ -836,8 +836,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       `GameObject.createPrimitive` / `PrimitiveType` (mesh + matching collider);
       `examples/world` drops lit primitives with Rigidbodies — `M5-MSH-02`
     - [ ] Docs for meshes and lights (and the Rigidbody components) at the end of M5.a2
-    - [ ] Shadows (directional shadow map), textures on meshes (with `Texture` assets), model
-      meshes (glTF) usable as mesh colliders
+    - [x] Textures on meshes: `Material.mainTexture` / `mainTextureScale` /
+      `mainTextureOffset` (`withTexture`), texture alpha on see-through meshes; `Mesh.create`
+      takes Unity's bottom-up UVs — `M5-TEX-01`, `M5-RND-08`
+    - [ ] Shadows (directional shadow map), model meshes (glTF) usable as mesh colliders
   - [x] `AudioSource` (clip as a `Sound` or path, `playOnAwake`, volume, pitch, pan, mute,
     loop, `spatialBlend` 0 = flat / above 0 = from an emitter following its GameObject,
     min / max distance, `outputBus`, `play` / `stop` / `pause` / `unPause` / `isPlaying`,
@@ -848,8 +850,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     a source's playback `time`, `onDisable` pausing sources
   - [ ] Particles: a `ParticleSystem` component (emission rate and bursts, lifetime, velocity,
     gravity, size and colour over life, GPU instanced quads)
-  - [ ] Textures and sprites: `Texture` assets (load from the game folder, size, filtering,
-    wrap), `Sprite` (a texture region with a pivot) and a `SpriteRenderer` component
+  - [x] Textures and sprites: `iron_render` keeps textures (`set_texture`: sRGB, point /
+    bilinear / trilinear, repeat / clamp / mirror, CPU mipmaps averaged in linear light);
+    `WorldTexture::Frame` (panels) or `Asset`; `render.texture` / `textureRemove` ops
+    (PNG/JPEG from the game folder or pixels; sizes back through `__iron_textures`); TS
+    `Texture.load` / `Texture.create` / `whenLoaded`, `Sprite.create` / `Sprite.grid`
+    (Unity's bottom-left rects and pivots, pixels per unit) and `SpriteRenderer` (colour,
+    flips; unlit quads); `examples/world` has animated coin sprites — `M5-TEX-01`,
+    `M5-TEX-02`, `M5-RND-08`
+  - [ ] Texture follow-ups: SVG textures, async decoding off the frame, `sortingOrder` /
+    sorting layers for sprites, sprite atlases, `Texture.getPixel` / `setPixels` after
+    creation, render textures (a camera into a texture)
   - [ ] 2D: sprites and 2D physics shapes on the same GameObjects (`Vector2` APIs)
   - [ ] `Cursor` API on every platform: visible, lock / confine to the window, custom images
     and hotspots (Unity's `Cursor.visible` / `lockState` / `SetCursor`), sharing the CSS

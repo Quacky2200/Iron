@@ -28,6 +28,8 @@ struct MeshInstance {
     emission: vec4<f32>,
     // x: 1 when unlit.
     params: vec4<f32>,
+    // Texture tiling: scale (xy), offset (zw), in bottom-up UV space like Unity's.
+    tiling: vec4<f32>,
 };
 
 struct Light {
@@ -115,7 +117,9 @@ fn vs_mesh(
     out.pos = g.view_proj * world;
     out.world = world.xyz;
     out.normal = (m.normal * vec4<f32>(normal, 0.0)).xyz;
-    out.uv = uv;
+    // Mesh UVs here run top-down (v = 0 at the texture's top row); tiling works bottom-up.
+    let t = m.tiling;
+    out.uv = vec2<f32>(uv.x * t.x + t.z, 1.0 - ((1.0 - uv.y) * t.y + t.w));
     out.instance = ii;
     return out;
 }
@@ -123,8 +127,10 @@ fn vs_mesh(
 @fragment
 fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let m = meshes[in.instance];
-    let base = (textureSample(tex, samp, in.uv) * m.color).rgb;
-    let alpha = m.color.a;
+    let texel = textureSample(tex, samp, in.uv) * m.color;
+    let base = texel.rgb;
+    // Opaque meshes (colour alpha 1) ignore the texture's alpha; see-through ones use it.
+    let alpha = select(1.0, texel.a, m.color.a < 1.0);
     if (m.params.x > 0.5) {
         let unlit = base + m.emission.rgb;
         return vec4<f32>(unlit * alpha, alpha);

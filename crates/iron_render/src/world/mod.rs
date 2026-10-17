@@ -6,9 +6,11 @@
 //! views are drawn in order, each first filling its viewport with its background (which
 //! also resets depth there), so later cameras draw over earlier ones, like Unity's camera
 //! depth. Opaque meshes go first, then see-through meshes and quads back to front, so
-//! they blend over what's behind them.
+//! they blend over what's behind them. Textures are either the frame's (UI panels,
+//! passed to each render) or kept by the renderer ([`WorldRenderer::set_texture`]).
 
 pub mod mesh;
+pub mod texture;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -18,6 +20,16 @@ use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
 pub use mesh::{MeshData, primitive};
+pub use texture::{TextureData, TextureFilter, TextureWrap};
+
+/// A texture a quad or mesh is drawn with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum WorldTexture {
+    /// Index into the `textures` given to [`WorldRenderer::render_views`].
+    Frame(usize),
+    /// One set with [`WorldRenderer::set_texture`] (white until it exists).
+    Asset(u32),
+}
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -147,8 +159,11 @@ pub struct MeshInstance {
     pub smoothness: f32,
     /// Ignores lights: just its colour (and emission).
     pub unlit: bool,
-    /// Index into the `textures` given to [`WorldRenderer::render_views`].
-    pub texture: Option<usize>,
+    /// Multiplies the colour; `None` is plain colour.
+    pub texture: Option<WorldTexture>,
+    /// Texture tiling: scale (xy) and offset (zw), Unity's `mainTextureScale` /
+    /// `mainTextureOffset` (in its bottom-up UV space).
+    pub tiling: [f32; 4],
 }
 
 /// One camera's view: where on the target it draws and what it sees.
@@ -185,8 +200,8 @@ pub struct WorldQuad {
     pub model: Mat4,
     /// Linear RGBA, straight alpha (multiplies the texture).
     pub color: [f32; 4],
-    /// Index into the `textures` given to [`WorldRenderer::render`]; `None` is plain colour.
-    pub texture: Option<usize>,
+    /// Multiplies the colour; `None` is plain colour.
+    pub texture: Option<WorldTexture>,
     /// The part of the texture shown: origin and size in UV space.
     pub uv: [f32; 4],
 }
@@ -218,6 +233,7 @@ struct GpuMesh {
     color: [f32; 4],
     emission: [f32; 4],
     params: [f32; 4],
+    tiling: [f32; 4],
 }
 
 #[repr(C)]
@@ -268,7 +284,7 @@ type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>);
 /// A run of instances drawn with one mesh or texture.
 struct Run {
     mesh: Option<u32>,
-    texture: Option<usize>,
+    texture: Option<WorldTexture>,
     range: Range<u32>,
 }
 
@@ -284,9 +300,17 @@ pub struct WorldRenderer {
     quads: wgpu::Buffer,
     mesh_instances: wgpu::Buffer,
     meshes: HashMap<u32, MeshBuffers>,
+    textures: HashMap<u32, AssetTexture>,
+    samplers: HashMap<(TextureFilter, TextureWrap), wgpu::Sampler>,
     sampler: wgpu::Sampler,
     white: wgpu::TextureView,
     depth: Option<(wgpu::TextureView, (u32, u32))>,
+}
+
+/// A texture the renderer keeps, bound with its own sampler.
+struct AssetTexture {
+    group: wgpu::BindGroup,
+    size: (u32, u32),
 }
 
 fn storage_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
@@ -400,6 +424,8 @@ impl WorldRenderer {
             quads: Self::storage::<GpuQuad>(gpu, "world quads", 64),
             mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
             meshes: HashMap::new(),
+            textures: HashMap::new(),
+            samplers: HashMap::new(),
             sampler,
             white: white.create_view(&Default::default()),
             depth: None,
@@ -488,6 +514,103 @@ impl WorldRenderer {
 
     pub fn has_mesh(&self, id: u32) -> bool {
         self.meshes.contains_key(&id)
+    }
+
+    /// Sets (or replaces) texture `id`, drawn with [`WorldTexture::Asset`]. Invalid
+    /// data is refused.
+    pub fn set_texture(&mut self, gpu: &Gpu, id: u32, data: &TextureData) -> bool {
+        if !data.is_valid() {
+            return false;
+        }
+        let max = gpu.device.limits().max_texture_dimension_2d;
+        if data.width > max || data.height > max {
+            tracing::warn!(
+                "texture {id} is {}x{}, over the GPU's {max}",
+                data.width,
+                data.height
+            );
+            return false;
+        }
+        let mut levels = vec![(data.rgba.clone(), data.width, data.height)];
+        if data.mipmaps {
+            while let Some((px, w, h)) = levels.last()
+                && (*w > 1 || *h > 1)
+            {
+                let next = texture::half(px, *w, *h);
+                levels.push(next);
+            }
+        }
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("world texture"),
+            size: wgpu::Extent3d {
+                width: data.width,
+                height: data.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: levels.len() as u32,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (level, (px, w, h)) in levels.iter().enumerate() {
+            gpu.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                px,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: *w,
+                    height: *h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let sampler = self
+            .samplers
+            .entry((data.filter, data.wrap))
+            .or_insert_with(|| texture::sampler(&gpu.device, data.filter, data.wrap));
+        let view = texture.create_view(&Default::default());
+        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("world texture"),
+            layout: &self.texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        self.textures.insert(
+            id,
+            AssetTexture {
+                group,
+                size: (data.width, data.height),
+            },
+        );
+        true
+    }
+
+    pub fn remove_texture(&mut self, id: u32) {
+        self.textures.remove(&id);
+    }
+
+    /// A kept texture's size in pixels.
+    pub fn texture_size(&self, id: u32) -> Option<(u32, u32)> {
+        self.textures.get(&id).map(|t| t.size)
     }
 
     fn pipelines(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Pipelines {
@@ -655,6 +778,7 @@ impl WorldRenderer {
                     color: m.color,
                     emission: [m.emission[0], m.emission[1], m.emission[2], m.smoothness],
                     params: [if m.unlit { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+                    tiling: m.tiling,
                 }
             };
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
@@ -863,8 +987,13 @@ impl WorldRenderer {
             .chain(textures.iter().copied())
             .map(texture_group)
             .collect();
-        let group_for =
-            |texture: Option<usize>| &groups[texture.map_or(0, |t| (t + 1).min(groups.len() - 1))];
+        let group_for = |texture: Option<WorldTexture>| match texture {
+            None => &groups[0],
+            Some(WorldTexture::Frame(t)) => &groups[(t + 1).min(groups.len() - 1)],
+            Some(WorldTexture::Asset(id)) => {
+                self.textures.get(&id).map_or(&groups[0], |t| &t.group)
+            }
+        };
 
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         {
