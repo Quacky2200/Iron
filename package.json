@@ -1,9 +1,9 @@
 {
   "name": "iron",
   "private": true,
-  "workspaces": ["js/*", "examples/*", "tests/fixtures"],
+  "workspaces": ["js/*", "examples/*", "editor", "tests/fixtures"],
   "scripts": {
-    "build": "bun run --filter hello --filter boxes --filter text --filter css --filter form --filter physics --filter world build",
+    "build": "bun run --filter hello --filter boxes --filter text --filter css --filter form --filter physics --filter world --filter iron-editor build",
     "build:fixtures": "bun run --filter iron-fixtures build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",

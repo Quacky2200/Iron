@@ -1244,6 +1244,37 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `dragleave` / `drop` / `dragend` with a data payload, drop targets, a drag image, and files
     dropped onto the window (winit's `DroppedFile`); builds on pointer capture (M3d group 11)
   - [ ] Then the shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
+    - [x] `iron_editor` (`iron_editor.exe` on Windows): a second binary of `iron_app`
+      (`src/bin/iron_editor.rs` includes main.rs as a module; `editor::ENABLED` from
+      `CARGO_BIN_NAME`) that loads `editor/dist` (or `IRON_EDITOR_UI`); the editor UI is a
+      Bun workspace (`editor/`) in the root `bun run build`; `Application.isEditor` — `M5-EDT-17`
+    - [x] `@iron/editor-ui` (`js/editor-ui`): reusable components drawn by Iron's UI, with
+      the logic in plain modules — `M5-EDT-06..14`, `-18..20`
+      - [x] Menubar (non-native): submenus, accelerators shown and working from anywhere,
+        Alt+letter / F10, arrows / Home / End / Enter / Escape, hover switches open menus,
+        a press outside closes
+      - [x] Docking: splits with draggable splitters (pointer capture), tab groups, tabs
+        dragged onto a group's middle or edges (drop preview and a ghost), layout to and
+        from JSON (the editor saves it in PlayerPrefs)
+      - [x] Virtualized list (fixed row height, overscan, scroll-to-index, keys) and a tree
+        view on it (expand/collapse, Ctrl/Shift selection, keyboard, icon and rename slots)
+      - [x] Console: level colours, filter buttons with counts, collapse, search, auto-scroll
+        that pauses when scrolled up, code links opened with `editor.openFile` (`code -g`
+        or `IRON_EDITOR_OPEN`); fed from the log through a capture layer and `__iron_log`
+        — `M5-EDT-15`, `M5-EDT-16`
+      - [x] Demo layout: Hierarchy (a ~20,000-node tree), Project, Scene, Game and Inspector
+        placeholders, Console, status bar — `M5-EDT-21`
+    - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo
+      (`M5-EDT-01..03`); the 10,000-row scroll benchmark (`M5-EDT-04`); the manual docking
+      check in the window (`M5-EDT-05`)
+    - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
+      the tab strip; closing and reopening panels (View > Panels); floating panels in
+      their own windows; accelerators while a text field has focus (keys typed into
+      fields don't reach `input`); a golden image for the editor (needs a fixed font, the
+      editor uses system fonts)
+    - [ ] Later: native menus as a fallback (Win32 menus on Windows, NSMenu on macOS, GTK on
+      Linux): `MenuBar` stops drawing itself and builds the platform menu from the same
+      `Menu` data, running the same actions
   - [ ] Later editor tasks:
     - [ ] UI editor: pick elements in a running game's UI, inspect their computed styles and box
       model, edit styles live (like browser devtools), and edit/arrange React UI visually

@@ -8,6 +8,19 @@
         "typescript": "^5.9.0",
       },
     },
+    "editor": {
+      "name": "iron-editor",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/editor-ui": "workspace:*",
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/animation": {
       "name": "animation",
       "version": "0.1.0",
@@ -207,6 +220,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "js/editor-ui": {
+      "name": "@iron/editor-ui",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "js/engine": {
       "name": "@iron/engine",
       "version": "0.1.0",
@@ -239,6 +264,8 @@
     },
   },
   "packages": {
+    "@iron/editor-ui": ["@iron/editor-ui@workspace:js/editor-ui"],
+
     "@iron/engine": ["@iron/engine@workspace:js/engine"],
 
     "@iron/react": ["@iron/react@workspace:js/react"],
@@ -266,6 +293,8 @@
     "form": ["form@workspace:examples/form"],
 
     "hello": ["hello@workspace:examples/hello"],
+
+    "iron-editor": ["iron-editor@workspace:editor"],
 
     "iron-fixtures": ["iron-fixtures@workspace:tests/fixtures"],
 

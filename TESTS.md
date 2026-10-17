@@ -438,6 +438,22 @@ layout pass):
 | M5-EDT-03 | Integration | Undo/redo reverses and reapplies property edits and entity creation. |
 | M5-EDT-04 | Benchmark | A 10,000-item virtualized list scrolls with layout + draw under **2 ms** per frame. |
 | M5-EDT-05 | Manual | Dock, undock and resize panels; layout persists across restarts. |
+| M5-EDT-06 | JS unit | Virtual list: the mounted range is the rows in view plus overscan (a million rows mount a handful); scroll-to-index moves only as far as needed or aligns start / center / end, clamped. (`js/editor-ui/test/models.test.ts`) |
+| M5-EDT-07 | JS unit | Virtual list keys: arrows, Home / End and Page Up / Down move the selection within bounds; other keys are ignored. |
+| M5-EDT-08 | JS unit | Tree view: flattening walks only expanded nodes (20,000 levels deep without overflowing); click selects, Ctrl toggles, Shift ranges from the anchor, Ctrl+Shift adds a range. |
+| M5-EDT-09 | JS unit | Tree view keys: Up / Down / Home / End / Page keys move, Right expands then enters, Left collapses then goes to the parent, Shift extends, Ctrl moves focus only, Ctrl+Space toggles; revealing a node expands its ancestors. |
+| M5-EDT-10 | JS unit | Docking: a tab dropped on a group's middle joins it; on an edge it splits the group (merging into a parent split the same way); emptied groups and single-child splits collapse; tabs reorder, activate and close; splitting a group by its only tab does nothing. |
+| M5-EDT-11 | JS unit | Docking geometry: splitters resize neighbours within the minimum; computed rects match the flex layout; drops find the group and zone (tab strip and middle: center; outer quarter: that side). |
+| M5-EDT-12 | JS unit | Dock layouts save to JSON and load back equal; unknown tabs (and their empty groups) are dropped; malformed JSON gives null. |
+| M5-EDT-13 | JS unit | Menubar accelerators parse (`Ctrl+Shift+S`, `F5`, `Ctrl++`, `Del`), show normalized and match key presses by code and modifiers, searching submenus. |
+| M5-EDT-14 | JS unit + component | Menubar keys skip separators and disabled items, Right / Left open and close submenus or move between menus, Enter chooses, Escape closes a level at a time; the React `MenuBar` opens on press, switches on hover, runs items, closes on Escape and on a press outside (`menubar.test.tsx`). |
+| M5-EDT-15 | Unit | The log capture layer keeps records (level, target, message plus fields) in order in a ring buffer read by sequence number (`logging.rs`). |
+| M5-EDT-16 | Unit | `editor.openFile`: VS Code's `code -g file:line:col` by default when on PATH, else nothing to run; an `IRON_EDITOR_OPEN` template is split with quotes and fills `{file}` / `{line}` / `{col}`; relative paths resolve against the first root that has them (`editor.rs`). |
+| M5-EDT-17 | Unit | `editor.*` ops are refused outside `iron_editor`. |
+| M5-EDT-18 | JS unit | Console code links: `path/file.ext:line[:col]`, Windows drives and backslashes, absolute Unix paths; URLs with ports and times aren't links. |
+| M5-EDT-19 | JS unit | Console: identical entries collapse with counts at the first one's place; level counts (debug as info); filters by level and by search over message and target. |
+| M5-EDT-20 | JS unit | The log feed asks for history once (`editor.logHistory`), parses `__iron_log` records and skips ones already seen (after a reload); clearing empties it; `openInEditor` is an op. |
+| M5-EDT-21 | Manual | `iron_editor --screenshot out.png` (or `bun run screenshots editor`): menubar, Hierarchy tree with icons and chevrons, Scene / Inspector placeholders, Console with coloured levels, counts and underlined code links, status bar. Checked by eye, also with a menu and submenu open and with tabs docked elsewhere. |
 
 ---
 

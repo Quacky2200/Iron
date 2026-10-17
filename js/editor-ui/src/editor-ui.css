@@ -1,0 +1,430 @@
+/* @iron/editor-ui: a dark editor theme. Colours are custom properties, so an app can
+   restyle the components by overriding them on :root. */
+
+:root {
+  --iron-bg: #1e1f22;
+  --iron-panel: #2b2d31;
+  --iron-panel-alt: #26282c;
+  --iron-raised: #35373c;
+  --iron-line: #191a1c;
+  --iron-text: #d6d8dc;
+  --iron-muted: #8a8f98;
+  --iron-accent: #3d8ef0;
+  --iron-accent-dim: #2c4f7c;
+  --iron-hover: rgba(255, 255, 255, 0.07);
+  --iron-info: #b8bcc4;
+  --iron-warn: #e8b84a;
+  --iron-error: #ef5f5f;
+  --iron-link: #6cb4ff;
+  --iron-font: "Segoe UI", "Inter", system-ui, sans-serif;
+  --iron-mono: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+}
+
+/* A small chevron pointing right (rotated down with .open): two borders of a turned square. */
+.iron-chevron {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  opacity: 0.8;
+}
+
+.iron-chevron.open {
+  transform: rotate(45deg);
+}
+
+/* Menubar */
+.iron-menubar {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  height: 26px;
+  background-color: var(--iron-bg);
+  border-bottom: 1px solid var(--iron-line);
+  font-family: var(--iron-font);
+  font-size: 13px;
+  color: var(--iron-text);
+  user-select: none;
+}
+
+.iron-menubar-items {
+  flex-direction: row;
+  z-index: 1;
+  height: 100%;
+  padding: 0 4px;
+}
+
+.iron-menubar-item {
+  position: relative;
+  align-items: center;
+  padding: 0 9px;
+  height: 100%;
+}
+
+.iron-menubar-item:hover,
+.iron-menubar-item.active {
+  background-color: var(--iron-hover);
+}
+
+/* A press anywhere outside the open menus closes them. */
+.iron-menu-backdrop {
+  position: absolute;
+  left: -10000px;
+  top: -10000px;
+  width: 20000px;
+  height: 20000px;
+  z-index: 0;
+}
+
+.iron-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  flex-direction: column;
+  padding: 4px 0;
+  background-color: var(--iron-raised);
+  border: 1px solid var(--iron-line);
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.iron-submenu {
+  top: -5px;
+  left: 100%;
+}
+
+.iron-menu-item {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px 0 4px;
+  white-space: nowrap;
+}
+
+.iron-menu-item.highlighted {
+  background-color: var(--iron-accent);
+  color: #ffffff;
+}
+
+.iron-menu-item.disabled {
+  color: var(--iron-muted);
+}
+
+.iron-menu-check {
+  width: 20px;
+  text-align: center;
+}
+
+.iron-menu-label {
+  flex-grow: 1;
+  padding-right: 24px;
+}
+
+.iron-menu-accel {
+  color: var(--iron-muted);
+  font-size: 12px;
+}
+
+.iron-menu-item.highlighted .iron-menu-accel {
+  color: #e6efff;
+}
+
+.iron-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background-color: var(--iron-line);
+}
+
+/* Docking */
+.iron-dock {
+  flex-direction: row;
+  background-color: var(--iron-line);
+  font-family: var(--iron-font);
+  font-size: 13px;
+  color: var(--iron-text);
+}
+
+.iron-dock-cell {
+  display: flex;
+}
+
+.iron-dock-split {
+  display: flex;
+}
+
+.iron-dock-group {
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--iron-panel);
+}
+
+.iron-dock-tabs {
+  flex-direction: row;
+  flex-shrink: 0;
+  background-color: var(--iron-bg);
+  overflow: hidden;
+  user-select: none;
+}
+
+.iron-dock-tab {
+  align-items: center;
+  padding: 0 14px;
+  color: var(--iron-muted);
+  border-right: 1px solid var(--iron-line);
+  white-space: nowrap;
+}
+
+.iron-dock-tab:hover {
+  color: var(--iron-text);
+}
+
+.iron-dock-tab.active {
+  background-color: var(--iron-panel);
+  color: var(--iron-text);
+  box-shadow: inset 0 2px 0 var(--iron-accent);
+}
+
+.iron-dock-tab.dragging {
+  opacity: 0.5;
+}
+
+.iron-dock-content {
+  flex-direction: column;
+}
+
+.iron-splitter {
+  flex-shrink: 0;
+  background-color: var(--iron-line);
+}
+
+.iron-splitter:hover,
+.iron-splitter:active {
+  background-color: var(--iron-accent-dim);
+}
+
+.iron-dock-drop {
+  position: absolute;
+  background-color: rgba(61, 142, 240, 0.25);
+  border: 2px solid var(--iron-accent);
+  pointer-events: none;
+}
+
+.iron-dock-ghost {
+  position: absolute;
+  padding: 3px 10px;
+  background-color: var(--iron-raised);
+  border: 1px solid var(--iron-accent);
+  border-radius: 3px;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+/* Virtual list */
+.iron-vlist {
+  flex-direction: column;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.iron-vrow {
+  flex-direction: row;
+  align-items: center;
+}
+
+.iron-vrow.selected {
+  background-color: var(--iron-accent-dim);
+}
+
+.iron-vlist-empty {
+  justify-content: center;
+  padding: 12px;
+  color: var(--iron-muted);
+}
+
+/* Tree view */
+.iron-tree-row {
+  flex-direction: row;
+  align-items: center;
+  flex-grow: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.iron-tree-row:hover {
+  background-color: var(--iron-hover);
+}
+
+.iron-tree-row.selected {
+  background-color: var(--iron-accent-dim);
+}
+
+.iron-tree:focus-within .iron-tree-row.selected {
+  background-color: var(--iron-accent);
+  color: #ffffff;
+}
+
+.iron-tree:focus-within .iron-tree-row.focused {
+  outline: 1px solid rgba(255, 255, 255, 0.35);
+  outline-offset: -1px;
+}
+
+.iron-tree-twisty {
+  width: 16px;
+  justify-content: center;
+  color: var(--iron-muted);
+  flex-shrink: 0;
+}
+
+.iron-tree-icon {
+  width: 18px;
+  margin-right: 4px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.iron-tree-rename {
+  flex-grow: 1;
+  height: 20px;
+  padding: 0 4px;
+  background-color: var(--iron-bg);
+  border: 1px solid var(--iron-accent);
+  color: var(--iron-text);
+}
+
+/* Console */
+.iron-console {
+  flex-direction: column;
+  font-family: var(--iron-font);
+  font-size: 12px;
+  color: var(--iron-info);
+}
+
+.iron-console-toolbar {
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 0 6px;
+  background-color: var(--iron-panel-alt);
+  border-bottom: 1px solid var(--iron-line);
+  user-select: none;
+  overflow: hidden;
+}
+
+.iron-console-button,
+.iron-console-filter {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 3px;
+  color: var(--iron-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.iron-console-button:hover,
+.iron-console-filter:hover {
+  background-color: var(--iron-hover);
+}
+
+.iron-console-filter.on {
+  background-color: var(--iron-raised);
+  color: var(--iron-text);
+}
+
+.iron-console-search {
+  width: 180px;
+  min-width: 60px;
+  flex-shrink: 1;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background-color: var(--iron-bg);
+  border: 1px solid var(--iron-line);
+  color: var(--iron-text);
+}
+
+.iron-console-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background-color: var(--iron-info);
+}
+
+[data-level="warn"] > .iron-console-dot {
+  background-color: var(--iron-warn);
+}
+
+[data-level="error"] > .iron-console-dot {
+  background-color: var(--iron-error);
+}
+
+[data-level="debug"] > .iron-console-dot {
+  background-color: var(--iron-muted);
+}
+
+.iron-console-row {
+  flex-direction: row;
+  align-items: center;
+  flex-grow: 1;
+  gap: 8px;
+  padding: 0 8px;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.iron-vrow:nth-child(even) > .iron-console-row {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.iron-console-row[data-level="warn"] {
+  color: var(--iron-warn);
+}
+
+.iron-console-row[data-level="error"] {
+  color: var(--iron-error);
+}
+
+.iron-console-row[data-level="debug"] {
+  color: var(--iron-muted);
+}
+
+.iron-console-time {
+  color: var(--iron-muted);
+  font-family: var(--iron-mono);
+  font-size: 11px;
+  width: 52px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.iron-console-message {
+  flex-direction: row;
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.iron-console-link {
+  color: var(--iron-link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.iron-console-count {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 8px;
+  background-color: var(--iron-raised);
+  color: var(--iron-text);
+  font-size: 11px;
+}

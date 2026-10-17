@@ -1,0 +1,34 @@
+/**
+ * @iron/editor-ui — the editor's UI components, drawn by Iron's own UI: a menubar,
+ * docking panels, a virtualized list, a tree view and a log console. The models
+ * (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) are plain functions,
+ * usable and testable without React.
+ */
+
+import "./editor-ui.css";
+
+import { Screen } from "@iron/engine";
+import { useSyncExternalStore } from "react";
+
+export * from "./console.ts";
+export { Console, type ConsoleProps } from "./Console.tsx";
+export * from "./dock.ts";
+export { Dock, type DockPanel, type DockProps } from "./Dock.tsx";
+export { clearLog, logEntries, openInEditor, startLog, subscribeLog } from "./log.ts";
+export * from "./menu.ts";
+export { MenuBar, type MenuBarProps } from "./MenuBar.tsx";
+export * from "./tree.ts";
+export { TreeView, type TreeViewProps } from "./TreeView.tsx";
+export * from "./virtual.ts";
+export { VirtualList, type VirtualListHandle, type VirtualListProps } from "./VirtualList.tsx";
+
+let size = { width: Screen.width, height: Screen.height };
+const screenSize = () => {
+  if (size.width !== Screen.width || size.height !== Screen.height) size = { width: Screen.width, height: Screen.height };
+  return size;
+};
+
+/** The window's size in UI pixels, re-rendering when it changes. */
+export function useScreenSize(): { width: number; height: number } {
+  return useSyncExternalStore(Screen.onChange, screenSize);
+}

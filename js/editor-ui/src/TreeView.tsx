@@ -1,0 +1,164 @@
+// A tree view on the virtual list: only the rows in view are mounted, so hierarchies
+// with hundreds of thousands of nodes stay fast. Selection, expansion and focus live
+// in a `TreeState` the parent owns (tree.ts has the logic).
+
+import { Input, type IronElement, type IronKeyboardEvent, type IronPointerEvent, Text } from "@iron/react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+
+import { clickSelect, flatten, type TreeNode, type TreeRow, type TreeState, toggle, treeKey } from "./tree.ts";
+import { VirtualList, type VirtualListHandle } from "./VirtualList.tsx";
+
+export interface TreeViewProps<T> {
+  roots: readonly TreeNode<T>[];
+  state: TreeState;
+  onStateChange: (state: TreeState) => void;
+  /** Visible height in UI pixels. */
+  height: number;
+  rowHeight?: number;
+  /** Pixels per level of depth. */
+  indent?: number;
+  /** The icon slot, drawn before the label. */
+  renderIcon?: (node: TreeNode<T>, row: TreeRow<T>) => ReactNode;
+  /** Replaces the label (the default is the node's `label`). */
+  renderLabel?: (node: TreeNode<T>, row: TreeRow<T>) => ReactNode;
+  /** Double-click or Enter on a row. */
+  onActivate?: (node: TreeNode<T>) => void;
+  /** F2 (or a double-click when `onActivate` isn't set) starts renaming; called with the new name. */
+  onRename?: (node: TreeNode<T>, name: string) => void;
+  /** The rename slot: what to draw while renaming (`done(null)` cancels). Defaults to a text field. */
+  renderRename?: (node: TreeNode<T>, done: (name: string | null) => void) => ReactNode;
+  className?: string;
+}
+
+/** The default rename field: Enter or leaving it renames, Escape cancels. */
+function RenameField({ initial, done }: { initial: string; done: (name: string | null) => void }) {
+  const field = useRef<IronElement>(null);
+  const [value, setValue] = useState(initial);
+  const finished = useRef(false);
+  const finish = (name: string | null) => {
+    if (finished.current) return;
+    finished.current = true;
+    done(name);
+  };
+  useEffect(() => field.current?.focus(), []);
+  return (
+    <Input
+      ref={field}
+      className="iron-tree-rename"
+      value={value}
+      onChange={(e) => setValue(e.value)}
+      onKeyDown={(e: IronKeyboardEvent) => {
+        e.stopPropagation();
+        if (e.key === "Enter") finish(value);
+        else if (e.key === "Escape") finish(null);
+      }}
+      onBlur={() => finish(value)}
+    />
+  );
+}
+
+export function TreeView<T>({
+  roots,
+  state,
+  onStateChange,
+  height,
+  rowHeight = 22,
+  indent = 14,
+  renderIcon,
+  renderLabel,
+  onActivate,
+  onRename,
+  renderRename,
+  className,
+}: TreeViewProps<T>) {
+  const rows = useMemo(() => flatten(roots, state.expanded), [roots, state.expanded]);
+  const list = useRef<VirtualListHandle>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const focusIndex = state.focus === null ? -1 : rows.findIndex((r) => r.node.id === state.focus);
+
+  const set = (next: TreeState) => {
+    onStateChange(next);
+    const at = next.focus === null ? -1 : flatten(roots, next.expanded).findIndex((r) => r.node.id === next.focus);
+    if (at >= 0) list.current?.scrollToIndex(at);
+  };
+  const finishRename = (node: TreeNode<T>) => (name: string | null) => {
+    setRenaming(null);
+    if (name !== null && name !== node.label) onRename?.(node, name);
+    list.current?.focus();
+  };
+
+  const renderRow = (i: number) => {
+    const row = rows[i]!;
+    const { node } = row;
+    const selected = state.selected.has(node.id);
+    const classes = ["iron-tree-row", selected && "selected", state.focus === node.id && "focused"].filter(Boolean).join(" ");
+    return (
+      <box
+        className={classes}
+        style={{ paddingLeft: 4 + row.depth * indent, height: rowHeight }}
+        onPointerDown={(e: IronPointerEvent) => {
+          if (e.button !== 0) return;
+          onStateChange(clickSelect(rows, state, node.id, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }));
+        }}
+        onDoubleClick={() => {
+          if (onActivate) onActivate(node);
+          else if (onRename) setRenaming(node.id);
+          else if (row.hasChildren) onStateChange(toggle(state, node.id));
+        }}
+      >
+        <box
+          className={row.hasChildren ? "iron-tree-twisty" : "iron-tree-twisty leaf"}
+          onPointerDown={(e: IronPointerEvent) => {
+            if (!row.hasChildren) return;
+            e.stopPropagation();
+            onStateChange(toggle(state, node.id));
+          }}
+        >
+          {row.hasChildren ? <box className={row.expanded ? "iron-chevron open" : "iron-chevron"} /> : null}
+        </box>
+        {renderIcon ? <box className="iron-tree-icon">{renderIcon(node, row)}</box> : null}
+        {renaming === node.id ? (
+          renderRename ? (
+            renderRename(node, finishRename(node))
+          ) : (
+            <RenameField initial={node.label} done={finishRename(node)} />
+          )
+        ) : renderLabel ? (
+          renderLabel(node, row)
+        ) : (
+          <Text className="iron-tree-label">{node.label}</Text>
+        )}
+      </box>
+    );
+  };
+
+  return (
+    <VirtualList
+      ref={list}
+      className={className ? `iron-tree ${className}` : "iron-tree"}
+      count={rows.length}
+      rowHeight={rowHeight}
+      height={height}
+      keyboard={false}
+      renderRow={renderRow}
+      onKeyDown={(e: IronKeyboardEvent) => {
+        if (renaming) return;
+        const focused = rows[focusIndex];
+        if (e.key === "F2" && focused && onRename) {
+          e.preventDefault();
+          setRenaming(focused.node.id);
+          return;
+        }
+        if (e.key === "Enter" && focused) {
+          e.preventDefault();
+          onActivate?.(focused.node);
+          return;
+        }
+        const next = treeKey(rows, state, e.key, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }, Math.floor(height / rowHeight));
+        if (!next) return;
+        e.preventDefault();
+        set(next);
+      }}
+    />
+  );
+}
