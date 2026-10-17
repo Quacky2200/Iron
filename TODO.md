@@ -969,7 +969,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     reloads) — `M4-HOT-06`
   - [ ] Reload benchmark — `M4-HOT-07`
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
-  - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style:
+  - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style. Done so far: PBR,
+    the sky and its reflections, planar mirrors, reflection probes, the showroom example and
+    docs (2026-10-17, `8bac39e`). Left: the specular workflow, texture maps, transparency
+    modes.
     - [x] PBR shading: Cook-Torrance (GGX, Smith, Schlick) metallic / roughness replacing
       Blinn-Phong; `smoothness` stays as 1 - roughness (Unity's name); `Material.metallic`,
       `Material.create({...})` / `with({...})`; glTF `metallicFactor`; ambient reflections
@@ -999,24 +1002,28 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       double-sided; glass with refraction later
     - [x] A material test scene (spheres sweeping roughness × metallic, the classic grid):
       `examples/materials`, `M5-RND-11`
-  - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels:
-    - [ ] Anti-aliasing: MSAA (2 / 4 / 8×) for the world pass, FXAA as a cheap post
-      pass, TAA later (needs motion vectors and jitter)
-    - [ ] Shadow quality: off / hard / soft, resolution, distance, cascades (with the
-      cascade work), filter size
-    - [ ] Render scale: draw the world into a render texture at a fraction (or a multiple)
-      of the window's size and scale it up (bilinear, later FSR-style sharpening), with
-      UI kept at native resolution; render textures as a general feature (a camera into
-      a texture, usable on materials)
+  - [ ] Quality settings (asked for 2026-10-17; in progress, in this order), Unity's
+    `QualitySettings` levels:
+    - [ ] Anti-aliasing: MSAA (2 / 4 / 8×, capped by what the GPU supports for the format)
+      for the main world pass (mirrors and probes stay 1×); FXAA as a cheap post pass and
+      TAA (needs motion vectors and jitter) later
+    - [ ] Shadow quality: off / hard only / all (soft allowed), filter size (3 × 3 or
+      5 × 5 PCF), resolution, distance; cascades with the cascade work
+    - [ ] Render scale: draw the world into a texture at a fraction (or a multiple) of the
+      window's size and scale it up (bilinear; FSR-style sharpening later), with UI kept at
+      native resolution
+    - [ ] Render textures as a general feature (a camera into a texture, usable on
+      materials), sharing the render-scale target code
     - [ ] Texture quality (mip bias / max size), anisotropic filtering, bloom and
       particle limits per level
     - [ ] Named levels (Low / Medium / High / Ultra) setting all of the above;
       `QualitySettings.setQualityLevel`
-    - [ ] Project / game settings: the levels and defaults saved in a project settings file
-      (with the manifest), editable through a settings UI menu in games (React) and later
-      the editor (M5.e); players' choices saved per user (M6 file IO)
-    - [ ] An example switching between low and high quality side by side (or with a
-      menu), showing the differences
+    - [ ] Project / game settings: the default level and per-level overrides in the game's
+      manifest (`package.json` `iron.quality`), editable through a settings UI menu in games
+      (React) now and the editor (M5.e) later; players' choices saved per user (M6 file IO)
+    - [ ] `examples/quality`: thin and shiny things that show aliasing, shadows and scaling,
+      with a settings menu (levels and the individual settings) and screenshots of low and
+      high side by side
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
     component with blending; skeletons and skinned meshes from glTF

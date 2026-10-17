@@ -138,7 +138,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   `createPrimitive`), CharacterController, joints/rope, AudioSource/AudioListener, textures/sprites, particles,
   glows (halos, bloom, spot beams), 2D, Cursor, Application/SystemInfo, glTF models,
   the missing-texture checker, directional shadows, colliders following scale, LineRenderer
-  ropes and the Cornell box: **M5.a2 is done**. Next: M5.b, scenes (TODO.md). API names and units follow Unity/s&box
+  ropes and the Cornell box: **M5.a2 is done**. Then M5.c materials (PBR, sky, mirrors,
+  reflection probes). Now: quality settings (AA, shadow quality, render scale, levels); then
+  M5.b, scenes (TODO.md). API names and units follow Unity/s&box
   (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
   morphing; UI and SVG editors (M5.e).
   Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8
