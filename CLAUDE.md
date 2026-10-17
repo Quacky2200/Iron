@@ -133,16 +133,29 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     State-keeping reload and Fast Refresh moved after M5.a/b ("Hot reload, part 2" in TODO.md).
   - M5.a done (2026-10-17): `iron_scene`, GameObjects/components with Unity/s&box-style TS APIs
     (math, DateTime/TimeSpan, Time, Debug/Log, Random, input), lifecycle hooks, 3D world pass,
-    camera system, `WorldPanel` (React UI on planes). M5.a2 step 1: `Rigidbody`/colliders.
-- **Next (M5.a2, see TODO.md for the exact order):** meshes and lights are done (`MeshRenderer`, `Light`,
-  `createPrimitive`), CharacterController, joints/rope, AudioSource/AudioListener, textures/sprites, particles,
-  glows (halos, bloom, spot beams), 2D, Cursor, Application/SystemInfo, glTF models,
-  the missing-texture checker, directional shadows, colliders following scale, LineRenderer
-  ropes and the Cornell box: **M5.a2 is done**. Then M5.c materials (PBR, sky, mirrors,
-  reflection probes). Then quality settings (MSAA, render scale, shadow quality, levels). Now: camera render
-  groups (layers, culling masks, cull distances); then M5.b, scenes (TODO.md). API names and units follow Unity/s&box
-  (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
-  morphing; UI and SVG editors (M5.e).
+    camera system, `WorldPanel` (React UI on planes).
+  - M5.a2 done (2026-10-17): Rigidbody/colliders (3D and 2D), CharacterController, joints and
+    rope (`LineRenderer` tube), colliders following scale; MeshRenderer/Light/primitives;
+    AudioSource/AudioListener; textures, sprites (`sortingOrder`), the missing-texture
+    checker; particles; glows (halos, bloom, spot beams); Cursor and game mouse input;
+    Application/SystemInfo (from the game's `package.json`); glTF models (with mesh
+    colliders); directional shadows (`shadowCastingMode`); examples `platformer`, `classics`
+    (Stanford Bunny, Newell teaset), `cornell` (bounce lights). Docs refreshed.
+  - M5.c materials, first part (2026-10-17): PBR (Cook-Torrance metallic/roughness), a
+    procedural sky with reflections and skybox, planar mirrors (`Mirror`), reflection probes,
+    `examples/materials`. Docs refreshed (`8bac39e`).
+  - Quality settings (2026-10-17, `4f796b8`): MSAA, render scale, shadow quality,
+    `QualitySettings` levels with manifest defaults, `examples/quality`.
+- **Next (in this order, see TODO.md):**
+  1. Camera render groups (designed, not started): layers on GameObjects, `LayerMask`,
+     `Camera.cullingMask`, per-layer cull distances; TODO.md has the plan.
+  2. M5.b: scene serialization and `SceneManager`; then hot reload part 2.
+  - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
+    transparency modes), FXAA/TAA, render textures, players' saved settings (M6), shadow and
+    glow follow-ups, more classic test scenes (downloads need the user's OK first).
+  - API names and units follow Unity/s&box (degrees for Euler angles). Decided: own wgpu
+    renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with
+    SMIL and path morphing; UI and SVG editors (M5.e).
   Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8
   multiplayer; M9.a–c backends, AOT, release packaging; M10 optional (OpenXR, Steam Audio, ray
   tracing). Commit per step; refresh docs once per group (Sonnet subagent, changed code only).

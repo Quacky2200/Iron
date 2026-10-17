@@ -1029,10 +1029,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] `examples/quality`: a fence, a turning fan of thin blades and cables (aliasing,
       shadows, scaling) with a settings menu for levels and each setting; it cycles the
       levels until the menu is used
-  - [ ] Camera render groups and distance (asked for 2026-10-17): Unity's layers
-    (`GameObject.layer`, named layers, `LayerMask`) with `Camera.cullingMask` turning groups on
-    and off per camera, `Camera.farClipPlane` as the render distance, and per-layer cull
-    distances (`Camera.layerCullDistances`)
+  - [ ] Camera render groups and distance (asked for 2026-10-17; next, designed, not
+    started), Unity's layers:
+    - [ ] `GameObject.layer` (0–31, default 0) sent as `render.layer object layer`; named
+      layers (Unity's built-ins: 0 Default, 1 TransparentFX, 2 Ignore Raycast, 4 Water, 5 UI,
+      plus the game's from `package.json` `iron.layers`); `LayerMask.nameToLayer` /
+      `layerToName` / `getMask(...names)`
+    - [ ] `Camera.cullingMask` (bit per layer, default all) turning render groups on and off
+      per camera (a minimap that hides the HUD layer, a first-person camera that hides the
+      player's body); sent with `render.camera`
+    - [ ] Render distance: `Camera.farClipPlane` (exists) plus `Camera.layerCullDistances`
+      (32 distances, 0 = the far plane) hiding things on a layer farther than its distance
+    - [ ] Engine side: `world_view.rs` keeps each object's layer; `views()` builds meshes,
+      quads, sprites, particles and halos with their objects and filters them per camera by
+      mask and distance (lights stay unfiltered; Unity culls lights by their own mask later)
+    - [ ] Later: layers for physics (collision matrix, raycast masks) and light culling masks
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
     component with blending; skeletons and skinned meshes from glTF
