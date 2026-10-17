@@ -26,8 +26,8 @@ const textures = new Map<number, Texture>();
 /**
  * An image the engine draws with: loaded from a file in the game folder
  * (`Texture.load`) or made from pixels (`Texture.create`). Its size is known once it
- * has loaded (`isLoaded`, `whenLoaded()`); until then things using it draw white (meshes)
- * or not at all (sprites).
+ * has loaded (`isLoaded`, `whenLoaded()`). If it fails, meshes and sprites using it draw
+ * the magenta missing checker.
  */
 export class Texture {
   readonly id: number;
@@ -127,7 +127,7 @@ export class Texture {
     });
   }
 
-  /** Frees it; things still using it draw white or nothing. */
+  /** Frees it; things still using it draw the magenta missing checker. */
   destroy(): void {
     textures.delete(this.id);
     __iron_op("render.textureRemove", this.id);

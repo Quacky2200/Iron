@@ -29,7 +29,7 @@ pub use texture::{TextureData, TextureFilter, TextureWrap};
 pub enum WorldTexture {
     /// Index into the `textures` given to [`WorldRenderer::render_views`].
     Frame(usize),
-    /// One set with [`WorldRenderer::set_texture`] (white until it exists).
+    /// One set with [`WorldRenderer::set_texture`] (the missing checker until it exists).
     Asset(u32),
 }
 

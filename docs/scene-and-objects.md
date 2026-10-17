@@ -25,7 +25,8 @@ There is no ECS: parent and child links plus a dirty flag per object are enough 
   ones.
 
 Components do not live in the scene. Script components are in `ComponentHost`, physics bodies in
-`iron_physics`, cameras and panels in the app. They refer to objects by id.
+`iron_physics`, cameras, meshes, lights, sprites, particles and panels in the app. They refer to
+objects by id. Bodies are tied to their objects by `physics.attach` (see below).
 
 ## Script ids and engine ids
 
@@ -80,10 +81,18 @@ records the object, and `take_batch` returns a flat array, 11 numbers per object
 id, px, py, pz, qx, qy, qz, qw, sx, sy, sz      (local transform)
 ```
 
-`App::send_scene_moves` calls `__iron_scene(moved)` once per fixed tick, after physics steps. It
+`App::send_scene_moves` calls `__iron_scene(moved)` once per fixed tick, after physics steps. Physics is
+the usual source: `Attachments::step` ([physics_sync.rs](../crates/iron_app/src/physics_sync.rs)) calls
+`set_world_from_engine` for each attached body that moved. It
 skips the call when the batch is empty or the bundle has no `__iron_scene` (probed at startup and
 after a reload as `scene_events`). Script-made changes are never echoed back. The JS side updates the
 mirror without queueing ops.
+
+The other direction is `ScriptScene::take_script_moved`. Every `scene.local`, `scene.parent` and
+`scene.create` with a transform records the object in `script_moved`. The call returns those objects and
+all their descendants (as script ids, once each) and empties the list. Physics calls it before each step
+so attached bodies follow objects that scripts moved
+([physics-and-audio.md](physics-and-audio.md#components-on-gameobjects-m5a2)).
 
 ## Components and the lifecycle
 
@@ -114,6 +123,11 @@ skipped. A component that throws is logged, disabled and destroyed; the others k
 5. Drawing: `pre_render` runs `onPreRender()`, then `apply_script_output`, then
    `__iron_screen(width, height, scale)` if the size changed, then the world and UI are drawn.
 
+`onAwake` is not called by the host's loop. `GameObject.addComponent` calls it right after creating the
+instance and setting its props, and `__iron_create` does too (for `spawn_on`), both before any `onStart`.
+So components can set up things other components look for right away (a physics component makes its
+body there).
+
 `onDestroy` runs when the component or its object is removed. `onStart` always runs before the first
 other hook, in whichever step reaches the component first.
 
@@ -127,12 +141,14 @@ s&box.
 - `GameObject`: `new GameObject(name, { parent, position, rotation, scale })`, `name`, `parent`,
   `children`, `components`, `setParent(parent, keepWorld = true)`, `addComponent(Class, props)`,
   `getComponent`, `removeComponent`, `destroy`, `findChild`. Statics: `find(name)`, `roots`, `byId`,
-  `findObjectOfType`.
+  `findObjectOfType`, `createPrimitive(type, options)` (an object with the mesh and collider of a built-in
+  primitive; [primitives.ts](../js/engine/src/primitives.ts) registers the factory).
 - `Transform`: `position`, `rotation`, `scale` (world) and local versions, `forward`, `right`, `up`,
   `eulerAngles`, `translate`, `rotate`, `lookAt`, `transformPoint`, `inverseTransformPoint`,
   `transformDirection`.
 - `Component`: `id`, `gameObject`, `transform`, `getComponent`, `destroy`, and the optional hooks
   `onStart`, `onUpdate(dt)`, `onLateUpdate(dt)`, `onFixedUpdate(dt)`, `onPreRender()`, `onDestroy()`.
+- Optional hook `onAwake()` (above) too.
 - `register({ Name: Class })`. Registered classes are the starting components. Engine classes such as
   `Camera` are not registered and go by class name.
 
@@ -166,13 +182,33 @@ stack, other objects as JSON (cycles marked). `Log.trace` is `console.debug`.
 ([input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6)): `getKey`,
 `getKeyDown` and `getKeyUp` (true for one tick; key repeats are not presses), `getAxis("Horizontal" |
 "Vertical")` (keys and left stick, the larger wins), `getButton` and `getButtonDown` (`Jump`, `Fire1`,
-`Fire2`, `Submit`, `Cancel`; `getButtonDown` is keys only for now). Press sets roll over in an
-`onTick` listener, so they follow `Time`.
+`Fire2`, `Submit`, `Cancel`; `getButtonDown` is keys only for now). The mouse: `mousePosition`
+(UI pixels), `mouseDelta`, `mouseScrollDelta`, `getMouseButton`/`Down`/`Up` and the axes `"Mouse X"`,
+`"Mouse Y"` and `"Mouse ScrollWheel"` ([details](input-and-events.md#the-mouse-for-gameplay-m5a2)).
+Press sets roll over in an `onTick` listener, so they follow `Time`.
 
 **Screen** ([screen.ts](../js/engine/src/screen.ts)). `Screen.width`, `height` (UI pixels, what
 pointer events use), `scale` and `aspect`, set by `__iron_screen`.
 
-Camera, plane and panel components are in [world-rendering.md](world-rendering.md).
+**Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
+`version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
+`isMobilePlatform`, `quit()`) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
+and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
+game's `package.json` (`name`, `version`, and an `iron` section with `title`, `company`, `identifier`
+and `icon`, a PNG used for the window icon; the title is the window title) and the machine
+([info.rs](../crates/iron_app/src/info.rs)). It evaluates it **before the bundle's top level runs**
+(and again for a reloaded runtime). GPU and screen fields are added once the window and renderer exist,
+and the script is evaluated again. `quit()` sends `app.quit`, which sets the app's `done` flag.
+
+**Cursor** ([cursor.ts](../js/engine/src/cursor.ts)). `Cursor.visible`, `lockState`
+(`CursorLockMode.None`, `Locked`, `Confined`) and `setCursor(image, hotspot)`; see
+[input-and-events.md](input-and-events.md#script-cursor-m5a2).
+
+**Rendering, physics and audio components** are in [world-rendering.md](world-rendering.md),
+[assets-and-models.md](assets-and-models.md), [particles.md](particles.md) and
+[physics-and-audio.md](physics-and-audio.md#components-on-gameobjects-m5a2): `Camera`, `PlaneRenderer`,
+`MeshRenderer`, `Light`, `SpriteRenderer`, `ParticleSystem`, `WorldPanel`, `Rigidbody`, colliders, joints,
+2D physics, `AudioSource` and `AudioListener`.
 
 ## Limits
 
@@ -182,8 +218,9 @@ Camera, plane and panel components are in [world-rendering.md](world-rendering.m
   (`spawn_starting_components`) instead of spawning plain components. See
   [scripting.md](scripting.md#hot-reload).
 - Only local transforms cross to scripts, one batch per fixed tick.
-- Physics bodies are separate from GameObjects. `set_world_from_engine` and the move batch are the
-  hook for syncing them.
+- Physics bodies are separate from GameObjects; the `Rigidbody` and collider components link them with
+  `physics.attach`, and a body keeps its object's pose only while attached. Scale is not synced to
+  bodies.
 - `Time.timeScale` doesn't scale physics.
 
 ## Tests

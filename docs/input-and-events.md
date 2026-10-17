@@ -38,6 +38,11 @@ flowchart LR
   offsets, `None` hides the caret, empty text ends composing), `Commit(text)`, `Disabled`. winit only
   sends these after the app calls `set_ime_allowed(true)` (see below).
 - `Modifiers`, `Resized`, `Focused`, `CloseRequested`.
+- `MouseMotion { dx, dy }`: raw device movement from winit's `device_event`
+  (`DeviceEvent::MouseMotion`). It is not clamped by the window's edges and keeps coming while the
+  cursor is locked, which is what mouse look needs. `Platform` forwards it to `PlatformApp::input`.
+- `WindowConfig.icon` (RGBA, width, height) becomes the window icon (`with_window_icon`);
+  `CursorGrabMode` and `Icon` are re-exported for the app.
 - `Gamepad { id, event: GamepadEvent }` (see [Gamepads](#gamepads-and-game-input-m3c-step-6)).
 
 [platform.rs](../crates/iron_platform/src/platform.rs): `Platform::run` owns the winit event loop.
@@ -202,6 +207,23 @@ and required). `UiTree::cursor_with_images` (also on `Pointer` and `Interaction`
 keyword plus those images. The app picks the first one that loads and hands it to the platform;
 the keyword is the fallback. Bad lists are rejected like other invalid values.
 
+### Script cursor (M5.a2)
+
+Scripts' `Cursor` ([cursor.ts](../js/engine/src/cursor.ts), Unity's names) sends `cursor.*` ops, handled
+by `App::cursor_op` into a `ScriptCursor { visible, lock, image }`:
+
+- `cursor.visible bool` hides or shows the OS cursor over the window.
+- `cursor.lock none|locked|confined` calls `set_cursor_grab` (`apply_cursor_lock`). `Locked` hides the
+  cursor, and falls back to `Confined` where the platform cannot lock (Windows only confines). The
+  grab is re-applied when the window regains focus.
+- `cursor.image src|null [hotspot x y]` is the default cursor image, in the same formats and limits as
+  CSS cursor images.
+
+`update_cursor` combines them with the UI: `shown = script_cursor.visible && lock != Locked`, and the
+script's image is used only where the UI asks for nothing special (no `cursor: url(...)` images and the
+keyword `default`). A CSS `cursor` on an element always wins; `cursor: none` still hides it. Any
+`cursor.*` op clears the cached cursor so the change shows at once.
+
 ## Dialogs
 
 Tree side: [ui-tree.md](ui-tree.md#dialogs-and-the-top-layer-m3d-step-5j). `Interaction` adds:
@@ -353,6 +375,29 @@ Key events are forwarded after the UI has handled them, **except while a text fi
   `gamepadconnected`, `gamepaddisconnected`, `gamepadbuttondown`, `gamepadbuttonup` (fired when a
   value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run.
 - `blur` clears held keys and zeroes pad buttons, since the releases may never arrive.
+
+### The mouse for gameplay (M5.a2)
+
+`App::input` also sends the mouse to scripts through `__iron_input`, **before** and whatever the UI
+does with it (so game code sees clicks over UI too; check the UI state yourself if that matters):
+
+| Event | `__iron_input` args |
+|---|---|
+| move | `"mousemove", x, y` (UI pixels: window pixels divided by `App::scale()`) |
+| button down / up | `"keydown", "MouseLeft" \| "MouseRight" \| "MouseMiddle" \| "Mouse<n>", "", false` and `"keyup", code, ""` |
+| wheel | `"wheel", dx, dy` in lines (touchpad pixels divided by 40, about a line per 40 px like browsers) |
+| raw motion | `"mousedelta", dx, dy` (only while the window has focus: `App::focused`) |
+
+Raw `MouseMotion` events return after this and never reach the UI. Mouse buttons are ordinary keys in
+the script's key state, so `input.isKeyDown("MouseLeft")` works.
+
+[input.ts](../js/engine/src/input.ts) keeps `mousePosition`, and accumulates `mousedelta` and `wheel`
+into pending sums that roll over once per tick with the key press sets, so `mouseDelta` and
+`mouseScrollDelta` are this tick's totals. `mouseDelta` has y **up** positive (raw device y is down).
+`getMouseButton(n)`, `getMouseButtonDown(n)` and `getMouseButtonUp(n)` use Unity's numbers (0 left,
+1 right, 2 middle). `getAxis("Mouse X")` and `"Mouse Y"` are the delta times `0.1` (Unity's default
+sensitivity), and `"Mouse ScrollWheel"` is the wheel's y times `0.1`. Lock the cursor with
+`Cursor.lockState` for mouse look ([above](#script-cursor-m5a2)).
 
 ### UI navigation
 `GamepadNav::ui_input(id, event)` in `game_input.rs` maps pad events to UI `Input`s: d-pad buttons

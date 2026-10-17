@@ -801,7 +801,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     into a texture each frame; the pointer is raycast from the camera under it into the
     nearest panel (screen UI wins where it has elements), drags stay with the panel, keys go
     to the surface clicked last; stylesheets and fonts reach every tree — `M5-PNL-01`..`M5-PNL-03`
-- [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5):
+- [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5).
+  Left: collider sizes following scale changes, the rope as a tube, the Cornell box.
   - [x] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
     `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, at a point,
     explosions, constraints, continuous detection) and collider components (`BoxCollider`,
@@ -820,7 +821,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `removeJoint` ops; a `Rope` component builds a visible, colliding chain of capsule
     segments on ball joints, holding an optional end body — `M5-JNT-01`, `M5-JNT-02`
   - [ ] Rope rendering as one smooth tube (a line renderer) instead of capsule segments
-  - [ ] Meshes and lights. Order of work (2026-10-17), done so far:
+  - [ ] More classic test scenes (asked for 2026-10-17): the Cornell box (procedural, now
+    that there are shadows), and, with downloads the user approves first, Suzanne, Sponza,
+    the Damaged Helmet (PBR), and the Stanford Dragon / Armadillo / Lucy
+  - [x] Meshes, lights, textures on meshes, glTF models, the missing-texture checker,
+    classic test models and shadows:
     - [x] Renderer: `iron_render::world::mesh` builds Unity's primitives (cube, sphere, capsule,
       cylinder, plane, quad; Unity sizes) and fills in missing normals; `WorldRenderer` has a
       lit mesh pass (instanced by mesh, `set_mesh` / `remove_mesh` for script meshes,
@@ -835,7 +840,9 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       intensity, range, spot angles), `RenderSettings.ambientLight`,
       `GameObject.createPrimitive` / `PrimitiveType` (mesh + matching collider);
       `examples/world` drops lit primitives with Rigidbodies — `M5-MSH-02`
-    - [ ] Docs for meshes and lights (and the Rigidbody components) at the end of M5.a2
+    - [x] Docs refresh for all of M5.a2 (2026-10-17): `docs/world-rendering.md`,
+      `physics-and-audio.md`, `scene-and-objects.md`, `input-and-events.md`, new
+      `assets-and-models.md` and `particles.md`
     - [x] Textures on meshes: `Material.mainTexture` / `mainTextureScale` /
       `mainTextureOffset` (`withTexture`), texture alpha on see-through meshes; `Mesh.create`
       takes Unity's bottom-up UVs — `M5-TEX-01`, `M5-RND-08`
@@ -848,32 +855,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       `M5-GLB-02`
     - [x] Missing textures (never set, failed to load, a model image that can't be read) draw
       a magenta / black checker (`MISSING_TEXTURE`), sprites too — `M5-RND-08`
-    - [ ] glTF follow-ups: normal / metallic-roughness / emissive / occlusion maps (with PBR,
-      M5.d), skins and animations (M5.d), cameras and lights from the file, KTX2 / Draco /
-      meshopt compression, texture transforms
     - [x] Classic test models: `examples/classics` shows the Stanford Bunny and the Newell
       teaset (teapot, teacup, teaspoon) as .glb (converted by `tools/make_models.py` from the
       downloaded originals, which aren't in the repo) on turntables, plus the material sweep
       (spheres from matte to glossy)
-    - [ ] More classic test scenes (asked for 2026-10-17): the Cornell box (procedural; after
-      shadows), and, with downloads the user approves first, Suzanne, Sponza, the Damaged
-      Helmet (PBR), and the Stanford Dragon / Armadillo / Lucy
     - [x] Shadows: the first directional light with `Light.shadows` (`hard` / `soft`,
       `shadowStrength`) casts them from opaque meshes onto meshes: a depth map
       (`QualitySettings.shadowResolution`, default 2048) fitted to the main camera out to
       `QualitySettings.shadowDistance` (default 25 m), snapped to texels, with slope bias and
       a normal offset; soft is 3 × 3 PCF — `M5-RND-10`
-    - [ ] Shadow follow-ups: cascades for long distances, spot and point light shadows (cube
-      maps), shadows on quads / sprites / particles, transparent and alpha-cut casters,
-      contact shadows
   - [x] `AudioSource` (clip as a `Sound` or path, `playOnAwake`, volume, pitch, pan, mute,
     loop, `spatialBlend` 0 = flat / above 0 = from an emitter following its GameObject,
     min / max distance, `outputBus`, `play` / `stop` / `pause` / `unPause` / `isPlaying`,
     `playOneShot`, `playClipAtPoint`) and `AudioListener` (its object's pose, static
     `volume`) components, in TS over the existing `audio.*` ops; `examples/world`'s
     primitives thud in 3D — `M5-AUD-01`, `M5-AUD-02`
-  - [ ] Audio follow-ups: partial `spatialBlend` (kira's spatialization strength), Doppler,
-    a source's playback `time`, `onDisable` pausing sources
   - [x] Particles: a `ParticleSystem` component simulated in Rust (`iron_app/src/particles.rs`):
     duration / loop / delay, ranges for lifetime, speed, size, rotation and spin, two-colour
     start, gravity, drag, local or world space, max particles, rate and bursts, point /
@@ -883,10 +879,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `__iron_particles`; drawn as camera-facing quads (a built-in soft spot texture,
     additive quads without depth writes, straight-alpha textures premultiplied) —
     `M5-PRT-01`, `M5-PRT-02`
-  - [ ] Particle follow-ups: GPU simulation for big systems, collisions, velocity / force
-    over lifetime, stretched billboards, sub-emitters, trails, soft particles (fade near
-    surfaces), `AnimationCurve` / `Gradient` types for the over-lifetime keys
-  - [ ] Glows and spotlights (2026-10-17, asked for with particles):
+  - [x] Glows and spotlights (2026-10-17, asked for with particles):
     - [x] Light halos: `Light.haloSize` draws an additive glow in the light's hue, pulled
       towards the camera so nearby surfaces don't slice it
     - [x] Bloom: with `RenderSettings.bloom` on, the world draws into an `Rgba16Float`
@@ -895,9 +888,6 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Visible spotlight beams: `Light.beamIntensity` draws an open cone (`BEAM_MESH`)
       as an additive `MeshGlow::Beam` mesh, soft at its edges and fading along the range;
       additive meshes (`MeshGlow::Additive`) render without depth writes from both sides
-    - [ ] Glow follow-ups: tonemapping (ACES / neutral) and exposure, per-camera
-      post-processing settings, `Material` blend modes for additive meshes in scripts,
-      lens flares
   - [x] Textures and sprites: `iron_render` keeps textures (`set_texture`: sRGB, point /
     bilinear / trilinear, repeat / clamp / mirror, CPU mipmaps averaged in linear light);
     `WorldTexture::Frame` (panels) or `Asset`; `render.texture` / `textureRemove` ops
@@ -906,9 +896,6 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     (Unity's bottom-left rects and pivots, pixels per unit) and `SpriteRenderer` (colour,
     flips; unlit quads); `examples/world` has animated coin sprites — `M5-TEX-01`,
     `M5-TEX-02`, `M5-RND-08`
-  - [ ] Texture follow-ups: SVG textures, async decoding off the frame, `sortingOrder` /
-    sorting layers for sprites, sprite atlases, `Texture.getPixel` / `setPixels` after
-    creation, render textures (a camera into a texture)
   - [x] 2D: `Rigidbody2D` (body type, mass, drag, gravity scale, freeze rotation, Vector2
     velocity, degrees, `addForce` / `addTorque` with `ForceMode2D`, `movePosition`) and
     `BoxCollider2D` / `CircleCollider2D` / `CapsuleCollider2D` / `PolygonCollider2D` /
@@ -919,9 +906,6 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `sortingOrder`, see-through things sort by order then depth (along the view for
     orthographic cameras), quads depth-test `LessEqual`; `examples/platformer` — `M5-RB2D-01`,
     `M5-RB2D-02`
-  - [ ] 2D follow-ups: a real 2D physics world (rapier2d) if the slabs fall short,
-    concave polygons (decomposition), 2D joints, `Physics2D.overlapCircle` and friends,
-    tilemaps, sorting layers, pixel-perfect camera
   - [x] `Cursor` API: `visible`, `lockState` (`CursorLockMode`: locked falls back to
     confined + hidden where the OS can't pin it, as on Windows; re-applied on focus),
     `setCursor(texture or path, hotspot)` through the CSS cursor code (UI cursors still win
@@ -938,6 +922,27 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     version from the game's `package.json` (`iron` section; the window title and icon use
     them), `platform`, `systemLanguage`, `isMobilePlatform`, `quit()`; installed as
     `globalThis.__iron_info` before the bundle runs (and on reload) — `M5-APP-01`, `M5-APP-02`
+- [ ] **M5.a2 follow-ups** (after M5.a2 or with the milestone that needs them):
+  - [ ] glTF follow-ups: normal / metallic-roughness / emissive / occlusion maps (with PBR,
+    M5.d), skins and animations (M5.d), cameras and lights from the file, KTX2 / Draco /
+    meshopt compression, texture transforms
+  - [ ] Shadow follow-ups: cascades for long distances, spot and point light shadows (cube
+    maps), shadows on quads / sprites / particles, transparent and alpha-cut casters,
+    contact shadows
+  - [ ] Audio follow-ups: partial `spatialBlend` (kira's spatialization strength), Doppler,
+    a source's playback `time`, `onDisable` pausing sources
+  - [ ] Particle follow-ups: GPU simulation for big systems, collisions, velocity / force
+    over lifetime, stretched billboards, sub-emitters, trails, soft particles (fade near
+    surfaces), `AnimationCurve` / `Gradient` types for the over-lifetime keys
+  - [ ] Glow follow-ups: tonemapping (ACES / neutral) and exposure, per-camera
+    post-processing settings, `Material` blend modes for additive meshes in scripts,
+    lens flares
+  - [ ] Texture follow-ups: SVG textures, async decoding off the frame, sorting layers
+    for sprites, sprite atlases, `Texture.getPixel` / `setPixels` after
+    creation, render textures (a camera into a texture)
+  - [ ] 2D follow-ups: a real 2D physics world (rapier2d) if the slabs fall short,
+    concave polygons (decomposition), 2D joints, `Physics2D.overlapCircle` and friends,
+    tilemaps, sorting layers, pixel-perfect camera
   - [ ] App follow-ups: `Application.targetFrameRate`, `runInBackground`, focus events,
     `persistentDataPath` (with M6 file IO), live monitor changes, battery / power state
 - [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,

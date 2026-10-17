@@ -137,7 +137,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **Next (M5.a2, see TODO.md for the exact order):** meshes and lights are done (`MeshRenderer`, `Light`,
   `createPrimitive`), CharacterController, joints/rope, AudioSource/AudioListener, textures/sprites, particles,
   glows (halos, bloom, spot beams), 2D, Cursor, Application/SystemInfo, glTF models,
-  the missing-texture checker and directional shadows too; next the M5.a2 docs refresh. API names and units follow Unity/s&box
+  the missing-texture checker, directional shadows and the M5.a2 docs too. Left in M5.a2:
+  collider scale changes, the rope tube, the Cornell box; then M5.b (TODO.md). API names and units follow Unity/s&box
   (degrees for Euler angles). Decided: own wgpu renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with SMIL and path
   morphing; UI and SVG editors (M5.e).
   Milestones: M5.a–e objects, scene, assets, rendering, editor; M6 Script IO; M7 lighting; M8

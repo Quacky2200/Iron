@@ -17,15 +17,17 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | Page | Covers |
 |---|---|
 | [scripting.md](scripting.md) | `iron_script`, `@iron/engine`, ops and commits, `ComponentHost`, bundles and how `iron_app` loads them, hot reload |
-| [physics-and-audio.md](physics-and-audio.md) | `iron_physics` (rapier) and `iron_audio` (kira): ops and script IDs, per-tick order, batch formats, TS APIs, offline mixer, limits |
+| [physics-and-audio.md](physics-and-audio.md) | `iron_physics` (rapier) and `iron_audio` (kira): ops and script IDs, per-tick order, batch formats, TS handle APIs, GameObject components (`Rigidbody`, colliders, joints, `Rope`, `CharacterController`, 2D physics, `AudioSource`/`AudioListener`), body-object sync, offline mixer, limits |
 | [ui-tree.md](ui-tree.md) | `iron_ui` tree, opcodes, styles, Taffy layout, Parley text, text fields (`editor.rs`), draw list |
 | [css.md](css.md) | Stylesheet parsing, selector matching, cascade, invalidation, variables, `::before`/`::after`/`::marker`/`::backdrop`/`::selection`/`::placeholder`, `@font-face` (incl. WOFF/WOFF2), `@media`, URL rebasing |
 | [react.md](react.md) | `@iron/react`: reconciler host config, style/attr diffing, `createRoot`, `Text`/`Span`/`Input`/`TextArea`, events, refs |
-| [input-and-events.md](input-and-events.md) | Platform input, `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, scrolling, text fields (keys, clipboard, IME), custom cursors, dialogs, gamepads, game `input` API, gamepad UI navigation |
+| [input-and-events.md](input-and-events.md) | Platform input (incl. raw mouse motion), `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, script `Cursor` (hide, lock, image), scrolling, text fields (keys, clipboard, IME), custom cursors, dialogs, gamepads, game `input` API and mouse, gamepad UI navigation |
 | [animation.md](animation.md) | Transitions, `@keyframes` animations, interpolation, `@starting-style`, `:outro` deferred removal, `transition*`/`animation*` events |
 | [svg.md](svg.md) | SVG files as images, inline `<svg>` (serialized and rasterized with resvg), CSS on SVG content, caching and eviction, limits |
-| [scene-and-objects.md](scene-and-objects.md) | `iron_scene` GameObjects, script and engine ids, `scene.*` ops, the move batch, component lifecycle order, the TS API (math, `Transform`, `Time`, dates, logging, `Random`, input), limits |
-| [world-rendering.md](world-rendering.md) | The 3D world pass (cameras in depth order, viewports, background fill), `render_overlay` for screen UI, `Camera`/`PlaneRenderer`, `WorldPanel` (commit targets, panel trees and textures, pointer and key routing), coordinates |
+| [scene-and-objects.md](scene-and-objects.md) | `iron_scene` GameObjects, script and engine ids, `scene.*` ops, the move batch, component lifecycle order (incl. `onAwake`), the TS API (math, `Transform`, `Time`, dates, logging, `Random`, input, `Application`/`SystemInfo`), limits |
+| [world-rendering.md](world-rendering.md) | The 3D world pass (cameras in depth order, viewports, background fill, opaque and see-through sorting, glow), lit meshes and lights, halos and beams, directional shadows, bloom, `render.*` ops, `render_overlay` for screen UI, `WorldPanel` (commit targets, panel trees and textures, pointer and key routing), coordinates |
+| [assets-and-models.md](assets-and-models.md) | `Texture` (load, create, filters, CPU mipmaps), the missing-texture checker, `Material`/`Mesh`, mesh colliders from render meshes, `Sprite`/`SpriteRenderer`, glTF `Model.load`/`instantiate`, engine ids |
+| [particles.md](particles.md) | `ParticleSystem`: settings as key/value pairs, the CPU simulation in `particles.rs`, reports to scripts, drawing as camera-facing quads |
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
@@ -38,11 +40,11 @@ iron_platform  winit window + event loop, InputEvent (keys, pointer, IME, gamepa
 iron_script    ScriptRuntime trait, QuickJS backend, prelude.js, ComponentHost
 iron_scene     GameObject hierarchy (Scene), ScriptScene: scene.* ops and the move batch
 iron_ui        UiTree, styles, CSS, layout, text, draw list, events/interaction
-iron_physics   rapier3d world driven by `physics.*` ops, per-tick batches (no deps on other Iron crates but iron_core)
+iron_physics   rapier3d world driven by `physics.*` ops (bodies, colliders, characters, joints), per-tick batches (no deps on other Iron crates but iron_core)
 iron_audio     kira mixer driven by `audio.*` ops, offline backend
-iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd), WorldRenderer (3D quads)
-iron_app       the `iron` binary that wires everything together
-js/engine      @iron/engine   (GameObject, Component, register, op, loadFont, stylesheets, input, math, Time, cameras, WorldPanel)
+iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd), WorldRenderer (lit meshes, quads, lights, shadows, bloom)
+iron_app       the `iron` binary that wires everything together (world_view, particles, models, physics_sync, info)
+js/engine      @iron/engine   (GameObject, Component, register, op, loadFont, stylesheets, input, math, Time, cameras, meshes, lights, textures, particles, models, physics and audio components, Cursor, Application, WorldPanel)
 js/react       @iron/react    (reconciler, events)
 ```
 
@@ -63,13 +65,14 @@ The window is created hidden and shown after its first frame; a resize also draw
                                                               |  React handlers run, setState
  frame():                                                     v
    1. per fixed 60 Hz tick: ComponentHost::fixed_update -> apply_script_output -> step_physics
-      -> send_scene_moves (onFixedUpdate, then commits and ops, then rapier and __iron_physics,
-      then __iron_scene)
+      -> send_scene_moves (onFixedUpdate, then commits and ops, then bodies follow moved objects,
+      rapier, objects follow bodies, __iron_physics, then __iron_scene)
    2. ScriptRuntime::tick(now_ms)                 -> timers + microtasks (React scheduling)
    2b. apply_script_output, ComponentHost::update_active (__iron_tick, onUpdate, onLateUpdate),
-      apply_script_output, update_audio
+      apply_script_output, update_particles (+ __iron_particles), update_audio
    3. drain_targeted_commits -> UiTree::apply_commit of the screen tree or a world panel's tree
-   4. drain_ops (loadFont, addStyleSheet, focus, scroll...) handled by the app
+   4. drain_ops (loadFont, addStyleSheet, focus, scroll, cursor.*, render.texture/model, app.quit...)
+      handled by the app; __iron_textures / __iron_models report loads
    5. Interaction::handle(Input::Refresh)         -> re-hit-test under a still pointer
    5b. ComponentHost::pre_render (onPreRender) -> apply_script_output; __iron_screen if the size changed
    6. UiTree::set_size(window / scale)
@@ -77,6 +80,7 @@ The window is created hidden and shown after its first frame; a resize also draw
    7. UiTree::draw_list()                         -> layout_if_needed: restyle -> text shaping
                                                      -> Taffy -> absolute rects -> Vec<DrawCmd>
    7b. Panels::render: each world panel's tree is drawn into its own texture
+   7c. mesh, texture, bloom and shadow settings queued by scripts are handed to WorldRenderer
    8. draw_frame: with a camera, WorldRenderer::render_views (cameras in depth order) then
       UiRenderer::render_overlay; without one, UiRenderer::render -> instances, layers, clips
       -> wgpu passes
@@ -107,5 +111,8 @@ Key ideas to keep in mind:
 | Add a script op | [main.rs](../crates/iron_app/src/main.rs) `tick()`, [scripting.md](scripting.md) |
 | Change script hot reload | [reload.rs](../crates/iron_app/src/reload.rs), `App::reload_scripts` in [main.rs](../crates/iron_app/src/main.rs), [scripting.md](scripting.md#hot-reload) |
 | Add a scene op or component hook | [script.rs](../crates/iron_scene/src/script.rs), [components.rs](../crates/iron_script/src/components.rs), [scene-and-objects.md](scene-and-objects.md) |
+| Change meshes, lights, shadows or bloom | [world/mod.rs](../crates/iron_render/src/world/mod.rs), [world.wgsl](../crates/iron_render/src/world/world.wgsl), [world_view.rs](../crates/iron_app/src/world_view.rs), [world-rendering.md](world-rendering.md) |
+| Change textures, sprites or glTF loading | [texture.rs](../crates/iron_render/src/world/texture.rs), [models.rs](../crates/iron_app/src/models.rs), [assets-and-models.md](assets-and-models.md) |
+| Change particles | [particles.rs](../crates/iron_app/src/particles.rs), [particles.ts](../js/engine/src/particles.ts), [particles.md](particles.md) |
 | Change cameras, planes or world panels | [world/mod.rs](../crates/iron_render/src/world/mod.rs), [world_view.rs](../crates/iron_app/src/world_view.rs), [panels.rs](../crates/iron_app/src/panels.rs), [world-rendering.md](world-rendering.md) |
 | Add a draw command | [draw.rs](../crates/iron_ui/src/draw.rs), [ui/mod.rs](../crates/iron_render/src/ui/mod.rs), [rendering.md](rendering.md) |

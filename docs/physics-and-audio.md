@@ -3,8 +3,12 @@
 Crates and packages: [iron_physics](../crates/iron_physics/src/lib.rs) (rapier3d 0.36),
 [iron_audio](../crates/iron_audio/src/lib.rs) (kira 0.12), their TypeScript sides
 [physics.ts](../js/engine/src/physics.ts) and [audio.ts](../js/engine/src/audio.ts) in
-`@iron/engine`, and the wiring in [iron_app/main.rs](../crates/iron_app/src/main.rs).
-Demo: [examples/physics](../examples/physics/src/main.tsx).
+`@iron/engine`, and the wiring in [iron_app/main.rs](../crates/iron_app/src/main.rs). On top of the
+handles there are Unity-style components ([physics-components.ts](../js/engine/src/physics-components.ts),
+[physics2d.ts](../js/engine/src/physics2d.ts), [audio-components.ts](../js/engine/src/audio-components.ts)),
+and [physics_sync.rs](../crates/iron_app/src/physics_sync.rs) ties bodies to GameObjects. Demos:
+[examples/physics](../examples/physics/src/main.tsx) (handles), [examples/world](../examples/world/src/main.tsx)
+and [examples/platformer](../examples/platformer/src/main.tsx) (components).
 
 ## Ops and IDs
 
@@ -19,8 +23,18 @@ like UI node ids), so creating a body or sound needs no round trip, and queue op
 
 Physics ops: `gravity`, `timestep`, `body`, `collider`, `removeBody`, `removeCollider`, `set`
 (`position`, `rotation`, `velocity`, `angularVelocity`, ...), `force` (`force`, `impulse`,
-`torque`, `torqueImpulse`), `clearForces`, `character`, `move`, `raycast`. Colliders are boxes,
-balls, capsules, cylinders, convex hulls and triangle meshes (`mesh`, static geometry).
+`torque`, `torqueImpulse`, `impulseAt`), `clearForces`, `character`, `move`, `raycast`, `colliderSet`
+(`friction`, `restitution`, `sensor`, `offset`), `joint`, `removeJoint` and `attach`.
+`set` also takes `targetRotation`, `enabled`, `kind` (change the body type), `mass`, `gravityScale`,
+`linearDamping`, `angularDamping`, `ccd`, `constraints` (six bools: translations then rotations
+allowed), `sleep` and `wake`. Colliders are boxes, balls, capsules, cylinders, convex hulls and
+triangle meshes (`mesh`, static geometry). A collider whose shape is `renderMesh` is rewritten by the
+app into a `mesh` or `convex` one from a render mesh's data
+([assets-and-models.md](assets-and-models.md#materials-and-meshes)).
+
+`attach` is not a physics op: `App::apply_script_output` gives each `physics.*` op to
+`Attachments::op` first, which handles `attach` and notes `removeBody`, and only the others reach
+`Physics::apply`.
 
 Audio ops: `load`, `play`, `set` (`volume`, `rate`, `pan`), `pause`, `resume`, `stop`, `seek`,
 `unload`, `bus`, `emitter`, `trackVolume`, `trackPause`, `trackResume`, `emitterPosition`,
@@ -31,9 +45,11 @@ Audio ops: `load`, `play`, `set` (`volume`, `rate`, `pan`), `pause`, `resume`, `
 `App::tick` runs fixed 60 Hz ticks (`TICK`, max 5 per frame; see [scripting.md](scripting.md)). Each tick:
 
 ```
-1. ComponentHost::update(TICK)   component onUpdate code queues commits and ops
+1. ComponentHost::fixed_update   component onFixedUpdate code queues commits and ops
 2. apply_script_output()         commits -> UiTree, then ops (physics.*, audio.*, ...) in order
-3. step_physics()                Physics::step, take_batch, __iron_physics(...) if the game has it
+3. step_physics()                Attachments::step: bodies follow objects scripts moved, Physics::step,
+                                 take_batch, objects follow the bodies that moved;
+                                 then __iron_physics(...) if the game has it
 ```
 
 So what a component asks for in a tick is applied before that tick's step. Collision handlers
@@ -53,7 +69,7 @@ four arrays rather than many objects: `__iron_physics(moved, contacts, rays, cha
 
 | Array | Stride | Fields per entry |
 |---|---|---|
-| `moved` | 11 | `id, px, py, pz, qx, qy, qz, qw, vx, vy, vz` |
+| `moved` | 14 | `id, px, py, pz, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz` (`w` is angular velocity, rad/s) |
 | `contacts` | 5 | `started (1/0), a, b, sensor (1/0), speed` |
 | `rays` | 6 | `query, collider (-1 for a miss), distance, nx, ny, nz` |
 | `characters` | 2 | `id, grounded (1/0)` |
@@ -86,13 +102,19 @@ Physics:
 - `physics.createBody({ kind, position, rotation, velocity, gravityScale, linearDamping,
   angularDamping, ccd, lockRotations })`. `kind` is `dynamic`, `fixed` or `kinematic`.
   `physics.addCollider` with no body makes static world geometry.
-- `RigidBody`: `addCollider`, `setPosition`, `setRotation`, `setVelocity`, `setAngularVelocity`,
+- The handle classes are `PhysicsBody` and `PhysicsCollider` (the names `Rigidbody` and `Collider` now
+  belong to the components below). `PhysicsBody`: `addCollider`, `setPosition`, `setRotation`, `setVelocity`, `setAngularVelocity`,
   `moveTo` (kinematic), `applyImpulse`, `applyTorqueImpulse`, `addForce`, `addTorque`,
-  `clearForces`, `setEnabled`, `remove`, plus `position`/`rotation`/`velocity` from the last batch.
+  `clearForces`, `setEnabled`, `remove`, plus `applyImpulseAtPoint`, `setKind`, `setMass`,
+  `setGravityScale`, `setDamping`, `setCcd`, `setAllowedAxes`, `sleep`, `wakeUp`, `attachTo(objectId)`,
+  and `position`/`rotation`/`velocity`/`angularVelocity` from the last batch.
   Callbacks: `onCollisionStart`, `onCollisionEnd` get a `CollisionEvent`
   (`collider`, `other`, `sensor`, `speed`).
-- `Collider` options: `shape`, `position`, `rotation`, `friction` (0.5), `restitution` (0),
-  `density` (1), `sensor`.
+- `PhysicsCollider` options: `shape`, `position`, `rotation`, `friction` (0.5), `restitution` (0),
+  `density` (1), `sensor`. `setFriction`, `setRestitution`, `setSensor` and `setOffset` change it later.
+  A shape can also be `{ renderMesh: { mesh, convex, scale } }`.
+- `physics.createJoint(kind, a, b | null, anchorA, anchorB, params)` returns a `PhysicsJoint`
+  (`remove()`); kinds are `fixed`, `ball`, `hinge`, `spring` and `rope`.
 - `physics.setGravity(v)`, `physics.body(id)`.
 - `physics.raycast(origin, direction, maxDistance = 1000)` returns a `Promise<RayHit | null>`
   (`collider`, `distance`, `point`, `normal`).
@@ -125,6 +147,92 @@ game folder through `resolve_asset` (relative paths, no `..`) or decodes a `data
 hands the bytes to `Mixer::load`. Static sounds are decoded up front; `stream: true` decodes
 while playing.
 
+## Components on GameObjects (M5.a2)
+
+Scripts normally use components rather than the handles above. They are built on the handles and live in
+[physics-components.ts](../js/engine/src/physics-components.ts); nothing in Rust knows about
+components, only about bodies and the `attach` link.
+
+**One body per object.** `physicsFor(go)` makes a `fixed` body at the object's pose the first time any
+physics component needs it and sends `physics.attach body object`. `Rigidbody` switches that body to
+`dynamic` (or `kinematic`); colliders become `PhysicsCollider`s on it, with the object's scale applied
+when added (changing the scale later does not resize them). An object with colliders and no Rigidbody
+is static. `releasePhysics` removes the body when nothing on the object needs it.
+
+**Sync both ways** ([physics_sync.rs](../crates/iron_app/src/physics_sync.rs)). `Attachments` keeps
+`body <-> object` maps. In `Attachments::step`:
+
+1. `ScriptScene::take_script_moved` lists the objects scripts moved or re-parented since the last step
+   (and everything under them). Each attached one gets `Physics::set_pose` from its world transform: a
+   kinematic body travels there over the step (pushing things on the way), others teleport and keep
+   their velocity, like setting a Unity transform.
+2. `Physics::step`, then `take_batch`.
+3. For each moved body in the batch, `ScriptScene::set_world_from_engine` moves its object, which feeds
+   the scene move batch to scripts (see [scene-and-objects.md](scene-and-objects.md#the-move-batch)).
+
+The result is returned so `step_physics` can still call `__iron_physics`.
+
+**Components.**
+
+- `Rigidbody`: `mass`, `drag`, `angularDrag`, `useGravity`, `isKinematic`, `constraints`
+  (`RigidbodyConstraints` flags), `collisionDetection` (`continuous` turns CCD on), `velocity`,
+  `angularVelocity`, `addForce(force, ForceMode)` (`Force`, `Acceleration`, `Impulse`,
+  `VelocityChange`), `addTorque`, `addForceAtPosition`, `addExplosionForce`, `movePosition`,
+  `moveRotation`, `sleep`, `wakeUp`. Setters send `physics.set` ops.
+- `BoxCollider`, `SphereCollider`, `CapsuleCollider` (`size`/`radius`/`height`, `center`), `MeshCollider`
+  (`points` and `indices`, or `sharedMesh` for a render mesh; `convex` makes a hull, which can move
+  with a Rigidbody), all with `isTrigger` and a `PhysicsMaterial` (`friction`, `restitution`). Changes
+  send `physics.colliderSet` or rebuild the collider.
+- `CharacterController`: a capsule on a kinematic body (`radius`, `height`, `slopeLimit`, `stepOffset`)
+  moved with `move(motion)` or `simpleMove(speed)` (which adds gravity). `isGrounded` and `velocity`
+  come from the last step. It is a handle-level character underneath (`makeCharacter`).
+- Joints (`Joint` subclasses): `FixedJoint`, `CharacterJoint` (ball and socket), `HingeJoint` (axis,
+  limits, motor), `SpringJoint` (rest length, stiffness, damping) and `RopeJoint` (max distance). Each
+  joins the object's Rigidbody to `connectedBody`, or to the world when it is null. `anchor` is in the
+  object's space; `connectedAnchor` is worked out from where the bodies are unless
+  `autoConfigureConnectedAnchor` is off. They are made in `onStart` and send `physics.joint`. In Rust
+  `add_joint` builds a rapier impulse joint with `contacts_enabled(false)`, so joined bodies do not
+  collide with each other. A joint to the world hangs from `world_anchor`, a fixed body made when first
+  needed.
+- `Rope`: a chain of capsule segments (each a GameObject with a MeshRenderer, CapsuleCollider and
+  Rigidbody) joined by ball joints, from this object to an optional `end` Rigidbody.
+
+**Callbacks.** The handle layer calls every function in `contactListeners` for each contact. The
+component layer's listener looks both colliders up in `colliderOwners` and calls these on every
+component of both objects: `onCollisionEnter(collision)`/`onCollisionExit` (a `Collision` with
+`gameObject`, `collider`, `rigidbody`, `relativeSpeed`) and, for sensor contacts,
+`onTriggerEnter(other)`/`onTriggerExit`. 2D colliders get the `...2D` versions instead (Unity keeps
+them apart). A throwing listener is logged and the others still run.
+
+### 2D physics
+
+[physics2d.ts](../js/engine/src/physics2d.ts) has `Rigidbody2D` (`bodyType` dynamic, kinematic or
+static; `mass`, `gravityScale`, `drag`, `freezeRotation`, `velocity`, `addForce(ForceMode2D)`),
+`BoxCollider2D`, `CircleCollider2D`, `CapsuleCollider2D`, `PolygonCollider2D` and `EdgeCollider2D`, with
+`Vector2` APIs and angles in degrees about z.
+
+There is no separate 2D world. 2D runs in the **same rapier world**: a Rigidbody2D's body can only move
+in x and y and turn about z (`constraints`), and each 2D collider is its outline extruded into a **slab**
+`Physics2D.depth` (default 10 m) deep, centred on the object, so 2D objects collide whatever their z.
+Box, circle, capsule and polygon colliders become convex hulls of the outline's points at both faces; `EdgeCollider2D` is a triangle mesh strip along its line, so it is for static scenery and kinematic platforms. `Physics2D.gravity` sets the shared
+world gravity (z stays 0). `Physics2D.raycast(origin, direction, distance)` casts in the XY plane
+through `physics.raycast` and resolves one tick later with a `RaycastHit2D` (the component, point,
+normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) and
+`onTriggerEnter2D`/`Exit2D`.
+
+### Audio components
+
+[audio-components.ts](../js/engine/src/audio-components.ts):
+
+- `AudioSource`: `clip` (a `Sound` or a path; paths are loaded once and shared), `playOnAwake`, `volume`,
+  `pitch`, `panStereo`, `loop`, `mute`, `spatialBlend`, `minDistance`, `maxDistance`, `outputBus`, and
+  `play`, `stop`, `pause`, `unPause`, `playOneShot(clip, volumeScale)`. With `spatialBlend` 0 it plays flat
+  on `outputBus`; above 0 (there is no partial blend) it makes an `Emitter` that follows the object and
+  plays from there.
+- `AudioListener`: sends `audio.setListener(position, rotation)` from its object on `onAwake` and every
+  `onPreRender`, only when the pose changed. Put one on the camera's object. With none, the listener
+  stays at the origin facing -z. `AudioListener.volume` is the master volume.
+
 ## The mixer and offline mode
 
 `iron_audio::Mixer` is the trait the app holds (`load`, `apply`, `poll`, `advance`).
@@ -141,10 +249,14 @@ an offline mixer renders and drops that much audio, so sounds still progress and
 
 ## Known limits
 
-- There are no GameObject components yet (M5.a). Bodies and sounds are created by scripts
-  directly, and nothing ties them to scene objects.
-- Physics is reset on hot reload (a new `Physics`), so body IDs are not preserved (M4-PHY-04 waits for hot reload part 2; see [scripting.md](scripting.md#hot-reload)).
+- Collider sizes take the object's scale when added; changing the scale later does not resize them.
+- Physics is reset on hot reload (a new `Physics` and empty `Attachments`), so body IDs are not preserved (M4-PHY-04 waits for hot reload part 2; see [scripting.md](scripting.md#hot-reload)).
 - rapier's character autostep fails if a move pushes down as steeply as it moves forward. A
   strong downward pull can stop a character climbing a step.
 - Collision handlers' ops apply one tick late (see above), and ray hits arrive one tick after the ask.
-- `physics.mesh` colliders are for static geometry.
+- Character moves wait a step after colliders are added or removed (`dirty`): rapier's query structures
+  only learn them in a step, and moving through a floor made this tick would be wrong. Setting a body's
+  properties no longer marks the world dirty.
+- `physics.mesh` colliders are for static geometry; use `convex` for moving ones.
+- `Time.timeScale` does not scale physics.
+- `PolygonCollider2D` is convex: a concave outline becomes the hull of its points.
