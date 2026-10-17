@@ -317,6 +317,60 @@ fn cursor_is_inherited_and_auto_depends_on_the_element() {
     assert_eq!(p.cursor(&tree), "pointer");
 }
 
+// M3-CUR-01
+#[test]
+fn cursor_images_come_with_a_fallback_keyword_and_inherit() {
+    use iron_ui::CursorImage;
+    let mut d = Dom::new();
+    let outer = d.add(
+        0,
+        "box",
+        &[
+            ("width", px(100.0)),
+            ("height", px(100.0)),
+            (
+                "cursor",
+                "url(hand.cur), url('sword.png') 4 6, pointer".into(),
+            ),
+        ],
+    );
+    let inner = d.add(outer, "box", &[("width", px(10.0)), ("height", px(10.0))]);
+    let plain = d.add(0, "box", &[("cursor", "move".into())]);
+    let mut tree = d.build("");
+    let images = [
+        CursorImage {
+            url: "hand.cur".into(),
+            hotspot: None,
+        },
+        CursorImage {
+            url: "sword.png".into(),
+            hotspot: Some((4.0, 6.0)),
+        },
+    ];
+    let (keyword, got) = tree.cursor_with_images(Some(NodeId(inner)));
+    assert_eq!((keyword, got), ("pointer", &images[..]), "inherited");
+    let (keyword, got) = tree.cursor_with_images(Some(NodeId(plain)));
+    assert_eq!((keyword, got.len()), ("move", 0));
+
+    // A keyword is required last, and a hotspot needs both coordinates.
+    for bad in [
+        "url(a.png)",
+        "url(a.png) 1, pointer",
+        "pointer, url(a.png)",
+        "url() , move",
+    ] {
+        let errors = tree.apply_commit(&Commit {
+            ops: vec![op(SET_STYLE, &[n(plain), "cursor".into(), bad.into()])],
+        });
+        assert!(!errors.is_empty(), "{bad} should be rejected");
+        assert_eq!(
+            tree.cursor(Some(NodeId(plain))),
+            "move",
+            "{bad} keeps the old value"
+        );
+    }
+}
+
 #[test]
 fn removed_targets_get_no_click() {
     let (mut tree, [a, b, _]) = tree("");

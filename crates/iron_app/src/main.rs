@@ -5,17 +5,18 @@
 //! `bun run build`) or a `.js` bundle directly. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
+mod cursor;
 mod game_input;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use iron_platform::{
-    CursorIcon, ImeEvent, InputEvent, MouseButton, Platform, PlatformApp, WheelDelta, Window,
-    WindowConfig,
+    CursorIcon, CustomCursorRequest, ImeEvent, InputEvent, MouseButton, Platform, PlatformApp,
+    WheelDelta, Window, WindowConfig,
 };
 use iron_render::wgpu;
 use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface};
@@ -127,7 +128,10 @@ fn main() -> Result<()> {
         ui_events,
         game_input,
         nav: game_input::GamepadNav::default(),
-        cursor: "default",
+        cursor: ("default", Vec::new(), 1.0),
+        custom_cursor: None,
+        cursors_loaded: HashSet::new(),
+        cursors_failed: HashSet::new(),
         clipboard: None,
         ime_allowed: false,
         ime_area: None,
@@ -196,8 +200,13 @@ struct App {
     /// Whether the game reads input (`__iron_input` exists).
     game_input: bool,
     nav: game_input::GamepadNav,
-    /// The CSS cursor currently shown.
-    cursor: &'static str,
+    /// The CSS cursor currently shown: keyword, images, and the scale they were for.
+    cursor: (&'static str, Vec<iron_ui::CursorImage>, f64),
+    /// A custom cursor for the platform to show.
+    custom_cursor: Option<CustomCursorRequest>,
+    /// Cursor images (by `url@scale`) already sent to the platform, or unusable.
+    cursors_loaded: HashSet<String>,
+    cursors_failed: HashSet<String>,
     clipboard: Option<arboard::Clipboard>,
     /// Whether the window currently accepts IME input, and the last candidate area.
     ime_allowed: bool,
@@ -294,14 +303,59 @@ impl App {
             None => {}
         }
         self.update_ime();
-        let cursor = self.interaction.cursor(&self.ui);
-        if cursor != self.cursor
-            && let Some(gfx) = &self.gfx
-        {
-            self.cursor = cursor;
-            gfx.window.set_cursor_visible(cursor != "none");
-            if let Ok(icon) = cursor.parse::<CursorIcon>() {
-                gfx.window.set_cursor(icon);
+        self.update_cursor();
+    }
+
+    /// Shows the hovered element's cursor: its first image that loads, else its keyword.
+    fn update_cursor(&mut self) {
+        let Some(gfx) = &self.gfx else {
+            return;
+        };
+        let (keyword, images) = self.interaction.cursor_with_images(&self.ui);
+        let scale = gfx.window.scale_factor();
+        if (keyword, images, scale) == (self.cursor.0, &self.cursor.1[..], self.cursor.2) {
+            return;
+        }
+        self.cursor = (keyword, images.to_vec(), scale);
+        let custom = self.cursor.1.iter().find_map(|image| {
+            let key = format!("{}@{scale}", image.url);
+            if self.cursors_loaded.contains(&key) {
+                return Some(CustomCursorRequest { key, image: None });
+            }
+            if self.cursors_failed.contains(&key) {
+                return None;
+            }
+            let decoded = cursor::read(&self.asset_root, &image.url)
+                .and_then(|bytes| cursor::decode(&bytes, image.hotspot, scale));
+            match decoded {
+                Some(rgba) => {
+                    self.cursors_loaded.insert(key.clone());
+                    Some(CustomCursorRequest {
+                        key,
+                        image: Some(rgba),
+                    })
+                }
+                None => {
+                    tracing::warn!(
+                        "cursor image `{}` can't be used (missing, undecodable or over {}px)",
+                        image.url.chars().take(80).collect::<String>(),
+                        cursor::MAX_CURSOR_SIZE
+                    );
+                    self.cursors_failed.insert(key);
+                    None
+                }
+            }
+        });
+        match custom {
+            Some(request) => {
+                gfx.window.set_cursor_visible(true);
+                self.custom_cursor = Some(request);
+            }
+            None => {
+                gfx.window.set_cursor_visible(keyword != "none");
+                if let Ok(icon) = keyword.parse::<CursorIcon>() {
+                    gfx.window.set_cursor(icon);
+                }
             }
         }
     }
@@ -430,6 +484,10 @@ impl App {
 }
 
 impl PlatformApp for App {
+    fn take_custom_cursor(&mut self) -> Option<CustomCursorRequest> {
+        self.custom_cursor.take()
+    }
+
     fn window_ready(&mut self, window: Arc<Window>) {
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {

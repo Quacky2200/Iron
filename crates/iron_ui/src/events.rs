@@ -281,6 +281,15 @@ impl Pointer {
         tree.cursor(self.hovered())
     }
 
+    /// The hovered element's cursor with its custom images (see
+    /// [`UiTree::cursor_with_images`]).
+    pub fn cursor_with_images<'t>(
+        &self,
+        tree: &'t UiTree,
+    ) -> (&'static str, &'t [crate::style::CursorImage]) {
+        tree.cursor_with_images(self.hovered())
+    }
+
     /// The pointer moved to (x, y), in logical pixels.
     pub fn move_to(&mut self, tree: &mut UiTree, x: f32, y: f32) -> Vec<UiEvent> {
         self.pos = Some((x, y));

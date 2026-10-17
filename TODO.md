@@ -597,13 +597,14 @@ and `@font-face`.
      fields); `::placeholder` styles placeholders (text properties, colour, opacity); the I-beam
      shows only over selectable text — `M3-SEL-01`, `M3-SEL-02`. Selections stay in one block (see
      docs/differences.md)
-   - [ ] **5i** `cursor` and `pointer-events` gaps (both exist since M3c: `pointerEvents: auto | none`,
-     inherited, children can opt back in; `cursor` keywords → OS cursors). To add: custom cursor
-     images `cursor: url(cursor.png) 4 4, pointer` (hotspot, fallback list, `.cur`/`.png`, scaled for
-     the window's DPI; winit `CustomCursor`), cursors per text field state (`text` over editable,
-     `not-allowed` when disabled via the UA stylesheet), and checking every keyword maps on each
-     platform. SVG's extra `pointer-events` values (`visiblePainted`, `fill`, `stroke`, `bounding-box`,
-     ...) come with 5.1
+   - [x] **5i** Custom cursor images: `cursor: url(a.cur), url(b.png) 4 4, pointer` (any number of
+     images, then the required keyword; hotspot in image pixels, else the `.cur` file's own, else the
+     top-left). The app decodes the first image that loads (PNG, JPEG, `.cur`; over 128px is skipped,
+     as in browsers), scales it for the window's DPI and asks the platform, which creates and caches
+     winit `CustomCursor`s (`PlatformApp::take_custom_cursor`). Fields show `text`, or `not-allowed`
+     when disabled; every CSS keyword is checked to map to a winit cursor (winit picks the nearest
+     per platform) — `M3-CUR-01`. SVG's extra `pointer-events` values (`visiblePainted`, `fill`,
+     `stroke`, `bounding-box`, ...) come with 5.1
    - [ ] **5j** `::backdrop`: a top layer for modal UI (a `dialog` element with `open`/`modal`, or
      `popover`), painted above everything (above `position: fixed` too) and taking the input, with a
      `::backdrop` box behind it covering the window (style it with `background`, `backdrop-filter`,

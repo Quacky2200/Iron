@@ -114,6 +114,8 @@ pub struct Visual {
     pub object_position: BackgroundPosition,
     /// `cursor` (a CSS keyword from [`CURSORS`]); `None` inherits from the parent.
     pub cursor: Option<&'static str>,
+    /// `cursor` images to try before the keyword (`url(x.png) 4 4, pointer`).
+    pub cursor_images: Vec<CursorImage>,
     /// Inherited text properties set on this node (see [`text_style`]).
     pub text: TextProps,
 }
@@ -172,9 +174,51 @@ impl Default for Visual {
                 y: Len::Percent(0.5),
             },
             cursor: None,
+            cursor_images: Vec::new(),
             text: TextProps::default(),
         }
     }
+}
+
+/// A custom cursor image from `cursor: url(...) [x y], ...`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CursorImage {
+    /// The image path (inside the game folder) or `data:` URL.
+    pub url: String,
+    /// The hotspot in image pixels; `None` uses the file's own (`.cur`) or the
+    /// top-left corner.
+    pub hotspot: Option<(f32, f32)>,
+}
+
+/// Parses `cursor`: any number of `url(...) [x y]` images, then a keyword.
+fn parse_cursor(value: &str) -> Option<(&'static str, Vec<CursorImage>)> {
+    let parts = crate::paint::split_top_level(value, ',');
+    let (keyword, images) = parts.split_last()?;
+    let keyword = keyword.trim();
+    let keyword = *CURSORS.iter().find(|c| **c == keyword)?;
+    let images = images
+        .iter()
+        .map(|part| {
+            let part = part.trim();
+            let close = part.find(')')?;
+            let url = part.strip_prefix("url(")?[..close - 4].trim();
+            let url = url.trim_matches(['"', '\'']);
+            let rest: Vec<f32> = part[close + 1..]
+                .split_whitespace()
+                .map(|n| n.parse::<f32>().ok().filter(|n| n.is_finite()))
+                .collect::<Option<_>>()?;
+            let hotspot = match rest[..] {
+                [] => None,
+                [x, y] => Some((x, y)),
+                _ => return None,
+            };
+            (!url.is_empty()).then(|| CursorImage {
+                url: url.to_owned(),
+                hotspot,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((keyword, images))
 }
 
 /// CSS `cursor` keywords. `auto` is the text cursor over text and the arrow elsewhere.
@@ -956,9 +1000,13 @@ pub fn apply_style(
         }
         "cursor" => {
             let kw = kw()?.trim();
-            visual.cursor = match kw {
-                "inherit" => None,
-                _ => Some(*CURSORS.iter().find(|c| **c == kw).ok_or_else(invalid)?),
+            if kw == "inherit" {
+                visual.cursor = None;
+                visual.cursor_images.clear();
+            } else {
+                let (keyword, images) = parse_cursor(kw).ok_or_else(invalid)?;
+                visual.cursor = Some(keyword);
+                visual.cursor_images = images;
             }
         }
 
@@ -1223,7 +1271,10 @@ pub(crate) fn copy_prop(
         "scrollbarWidth" => visual.scrollbar_width = v.scrollbar_width,
         "scrollbarColor" => visual.scrollbar_color = v.scrollbar_color,
         "pointerEvents" => visual.pointer_events = v.pointer_events,
-        "cursor" => visual.cursor = v.cursor,
+        "cursor" => {
+            visual.cursor = v.cursor;
+            visual.cursor_images = v.cursor_images.clone();
+        }
         p if text_style::is_text_prop(p) => {
             let _ = text_style::apply(&mut visual.text, prop, &Value::Null);
         }

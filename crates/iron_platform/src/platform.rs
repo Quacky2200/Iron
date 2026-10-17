@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::{Window, WindowId};
+use winit::window::{CustomCursor, Window, WindowId};
 
 use crate::gamepad::convert_gamepad;
 use crate::input::{InputEvent, convert_window_event};
@@ -34,6 +35,24 @@ impl Default for WindowConfig {
     }
 }
 
+/// A custom cursor for the window (see [`PlatformApp::take_custom_cursor`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CustomCursorRequest {
+    /// Identifies the image; the platform keeps each cursor it creates under it.
+    pub key: String,
+    /// The pixels, needed only the first time a key is used.
+    pub image: Option<CursorRgba>,
+}
+
+/// Straight-alpha RGBA pixels for a cursor, with its hotspot in pixels.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CursorRgba {
+    pub rgba: Vec<u8>,
+    pub width: u16,
+    pub height: u16,
+    pub hotspot: (u16, u16),
+}
+
 /// What the engine implements to be driven by the platform.
 pub trait PlatformApp {
     /// The window exists (called once; on mobile this is where the surface becomes valid).
@@ -44,6 +63,12 @@ pub trait PlatformApp {
     /// Checked after each frame; returning true closes the window and ends `run`.
     fn should_exit(&self) -> bool {
         false
+    }
+    /// A custom cursor to show, checked after input and frames. Custom cursors need
+    /// the event loop, so the platform creates them; keyword cursors the app sets on
+    /// the window itself.
+    fn take_custom_cursor(&mut self) -> Option<CustomCursorRequest> {
+        None
     }
 }
 
@@ -100,6 +125,7 @@ impl Platform {
             app,
             window: None,
             error: None,
+            cursors: HashMap::new(),
         };
         event_loop.run_app(&mut runner)?;
         match runner.error {
@@ -121,6 +147,36 @@ struct Runner<A> {
     app: A,
     window: Option<Arc<Window>>,
     error: Option<PlatformError>,
+    /// Custom cursors created so far, by request key.
+    cursors: HashMap<String, CustomCursor>,
+}
+
+impl<A: PlatformApp> Runner<A> {
+    /// Shows the app's requested custom cursor, creating it the first time.
+    fn update_cursor(&mut self, event_loop: &ActiveEventLoop) {
+        let (Some(request), Some(window)) = (self.app.take_custom_cursor(), &self.window) else {
+            return;
+        };
+        if !self.cursors.contains_key(&request.key) {
+            let Some(image) = request.image else {
+                return;
+            };
+            let (x, y) = image.hotspot;
+            match CustomCursor::from_rgba(image.rgba, image.width, image.height, x, y) {
+                Ok(source) => {
+                    let cursor = event_loop.create_custom_cursor(source);
+                    self.cursors.insert(request.key.clone(), cursor);
+                }
+                Err(e) => {
+                    tracing::warn!("cursor `{}` rejected: {e}", request.key);
+                    return;
+                }
+            }
+        }
+        if let Some(cursor) = self.cursors.get(&request.key) {
+            window.set_cursor(cursor.clone());
+        }
+    }
 }
 
 impl<A: PlatformApp> ApplicationHandler for Runner<A> {
@@ -155,12 +211,14 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if let WindowEvent::RedrawRequested = event {
             self.app.frame();
+            self.update_cursor(event_loop);
             return;
         }
         if let Some(input) = convert_window_event(&event) {
             let close = input == InputEvent::CloseRequested;
             let resized = matches!(input, InputEvent::Resized { .. });
             self.app.input(input);
+            self.update_cursor(event_loop);
             if close {
                 event_loop.exit();
             } else if resized {
@@ -180,6 +238,7 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
         for event in self.platform.poll_gamepads() {
             self.app.input(event);
         }
+        self.update_cursor(event_loop);
         if let Some(window) = &self.window {
             window.request_redraw();
         }

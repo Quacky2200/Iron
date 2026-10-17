@@ -4,6 +4,14 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Cursors (M3d step 5i)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Disabled fields | `not-allowed` | The arrow (`default`) | Clearer in game UI; override with `cursor` |
+| Image formats | PNG, JPEG, `.cur` | Also SVG, `.ani`, `image-set()` | SVG comes with step 5.1; animated cursors aren't planned |
+| Keyword shapes | winit's nearest cursor per platform | Each browser's own set | Some keywords (e.g. `vertical-text`, `alias`) fall back to similar shapes on Windows |
+
 ## Selection (M3d step 5h)
 
 | Area | Iron | Browsers / spec | Why |

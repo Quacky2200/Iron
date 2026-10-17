@@ -11,6 +11,8 @@ pub use gamepad::{GamepadEvent, axis_name, button_name, convert_gamepad};
 pub use input::{
     ImeEvent, InputEvent, Modifiers, MouseButton, WheelDelta, convert_key, convert_window_event,
 };
-pub use platform::{Platform, PlatformApp, PlatformError, WindowConfig};
+pub use platform::{
+    CursorRgba, CustomCursorRequest, Platform, PlatformApp, PlatformError, WindowConfig,
+};
 pub use winit::dpi;
 pub use winit::window::{CursorIcon, Window};

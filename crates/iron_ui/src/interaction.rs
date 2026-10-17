@@ -147,6 +147,14 @@ impl Interaction {
         self.pointer.cursor(tree)
     }
 
+    /// The hovered element's cursor with its custom images to try first.
+    pub fn cursor_with_images<'t>(
+        &self,
+        tree: &'t UiTree,
+    ) -> (&'static str, &'t [crate::style::CursorImage]) {
+        self.pointer.cursor_with_images(tree)
+    }
+
     /// While an editable field has focus, where the IME candidate window should go
     /// (absolute logical pixels); `None` when IME input shouldn't be allowed.
     pub fn ime_area(&self, tree: &UiTree) -> Option<crate::Rect> {

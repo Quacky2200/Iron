@@ -2790,7 +2790,17 @@ impl<L: LayoutEngine> UiTree<L> {
     /// `cursor` set on it or an ancestor, with `auto` meaning `text` over text elements
     /// and `default` elsewhere.
     pub fn cursor(&self, id: Option<NodeId>) -> &'static str {
+        self.cursor_with_images(id).0
+    }
+
+    /// [`Self::cursor`], with the custom images (`cursor: url(...)`) to try first.
+    pub fn cursor_with_images(
+        &self,
+        id: Option<NodeId>,
+    ) -> (&'static str, &[crate::style::CursorImage]) {
         let auto = match id.and_then(|id| self.nodes.get(&id)) {
+            // Disabled fields can't be edited; enabled ones show the I-beam.
+            Some(node) if is_editor_kind(&node.kind) && node.attrs.disabled => "not-allowed",
             Some(node) if is_editor_kind(&node.kind) => "text",
             // Text shows the I-beam unless it can't be selected.
             Some(node)
@@ -2807,11 +2817,11 @@ impl<L: LayoutEngine> UiTree<L> {
         while let Some(node) = at.and_then(|id| self.nodes.get(&id)) {
             match node.visual.cursor {
                 None => at = node.parent,
-                Some("auto") => return auto,
-                Some(cursor) => return cursor,
+                Some("auto") => return (auto, &node.visual.cursor_images),
+                Some(cursor) => return (cursor, &node.visual.cursor_images),
             }
         }
-        auto
+        (auto, &[])
     }
 
     /// The event path of `target`: the target first, then each ancestor up to (not

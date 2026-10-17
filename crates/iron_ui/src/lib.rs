@@ -42,8 +42,8 @@ pub use paint::{
 };
 pub use parley::FontData;
 pub use style::{
-    CURSORS, ScrollbarWidth, StyleError, Visual, WideKeyword, apply_style, apply_wide_keyword,
-    is_inherited,
+    CURSORS, CursorImage, ScrollbarWidth, StyleError, Visual, WideKeyword, apply_style,
+    apply_wide_keyword, is_inherited,
 };
 pub use tree::{AddedStylesheet, ROOT, Scrollbar, TEXT_NODE, UiError, UiTree};
 

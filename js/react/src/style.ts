@@ -99,8 +99,12 @@ export interface IronStyle {
 
   // Interaction
   pointerEvents?: "auto" | "none";
-  /** CSS cursor keyword (`pointer`, `text`, `grab`, `not-allowed`, ...); inherited. */
-  cursor?: Cursor;
+  /**
+   * CSS cursor keyword (`pointer`, `text`, `grab`, `not-allowed`, ...), optionally after
+   * images to try first: `url(sword.png) 4 4, pointer` (PNG, JPEG or `.cur`, up to
+   * 128px; the numbers are the hotspot). Inherited.
+   */
+  cursor?: Cursor | `url(${string}`;
 
   // Flexbox
   flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";

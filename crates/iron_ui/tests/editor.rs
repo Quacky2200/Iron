@@ -556,6 +556,11 @@ fn long_text_scrolls_to_keep_the_caret_visible() {
 fn fields_show_a_text_cursor() {
     let f = Field::new("input", &[], &[]);
     assert_eq!(f.tree.cursor(Some(f.id)), "text");
+    // M3-CUR-01: disabled fields show `not-allowed`; read-only ones still the I-beam.
+    let f = Field::new("input", &[], &[("disabled", true.into())]);
+    assert_eq!(f.tree.cursor(Some(f.id)), "not-allowed");
+    let f = Field::new("input", &[], &[("readOnly", true.into())]);
+    assert_eq!(f.tree.cursor(Some(f.id)), "text");
 }
 
 // M3-IME-01
