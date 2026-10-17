@@ -7,7 +7,7 @@
  * ```
  */
 
-import "@iron/engine";
+import { _loadingGame } from "@iron/engine";
 import { createElement, type ReactElement, type ReactNode, type Ref } from "react";
 import { ConcurrentRoot } from "react-reconciler/constants";
 
@@ -238,6 +238,8 @@ export interface Root {
 }
 
 const rootsCreated = new Set<number>();
+/** Live roots by target, for reloads in place. */
+const roots = new Map<number, Root>();
 
 const reportError = (kind: string) => (error: unknown) => {
   const e = error instanceof Error ? error : new Error(String(error));
@@ -251,12 +253,17 @@ const reportError = (kind: string) => (error: unknown) => {
  */
 export function createRoot(target?: { readonly id: number } | number): Root {
   const id = typeof target === "number" ? target : (target?.id ?? 0);
+  // The game's code running again (a dev reload in place): its root is the old one, so
+  // React keeps the tree and Fast Refresh updates it.
+  const existing = roots.get(id);
+  if (existing && _loadingGame()) return existing;
   if (rootsCreated.has(id)) {
     throw new Error(id === 0 ? "createRoot() can only be called once per game" : `panel ${id} already has a root`);
   }
   rootsCreated.add(id);
 
   const container = id === 0 ? screenContainer : containerFor(id);
+  let rendered = false;
   const root = reconciler.createContainer(
     container,
     ConcurrentRoot,
@@ -271,8 +278,12 @@ export function createRoot(target?: { readonly id: number } | number): Root {
     null,
   );
 
-  return {
+  const handle: Root = {
     render(element) {
+      // The game's code loading again (a reload in place): the tree stays, and Fast
+      // Refresh updates the components whose code changed, keeping their state.
+      if (_loadingGame() && rendered) return;
+      rendered = true;
       reconciler.updateContainerSync(element, root, null, null);
       reconciler.flushSyncWork();
     },
@@ -280,11 +291,15 @@ export function createRoot(target?: { readonly id: number } | number): Root {
       reconciler.updateContainerSync(null, root, null, null);
       reconciler.flushSyncWork();
       rootsCreated.delete(id);
+      roots.delete(id);
     },
   };
+  roots.set(id, handle);
+  return handle;
 }
 
 /** Lets tests create fresh roots. Not part of the game API. */
 export function _resetRootForTests() {
   rootsCreated.clear();
+  roots.clear();
 }

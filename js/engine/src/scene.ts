@@ -112,6 +112,38 @@ export function _classByName(name: string): ComponentClass | undefined {
   return classes.get(name) ?? builtIns.get(name);
 }
 
+/**
+ * @internal After the game's code loads again (dev reloads in place): moves live
+ * components onto the classes now registered under their names, keeping their fields
+ * and adding new fields' defaults. Returns the names of unregistered classes whose
+ * components keep the old code.
+ */
+export function _patchClasses(): string[] {
+  const stale = new Set<string>();
+  const fresh = new Map<ComponentClass, Record<string, unknown>>();
+  for (const instance of instances.values()) {
+    const old = instance.constructor as ComponentClass;
+    const name = names.get(old);
+    if (!name || builtIns.get(name) === old) continue;
+    const cls = classes.get(name);
+    if (!cls) {
+      stale.add(name);
+      continue;
+    }
+    if (cls === old) continue;
+    Object.setPrototypeOf(instance, cls.prototype);
+    // Fields the new code added start at their defaults.
+    let defaults = fresh.get(cls);
+    if (!defaults) {
+      defaults = new cls() as unknown as Record<string, unknown>;
+      fresh.set(cls, defaults);
+    }
+    const own = instance as unknown as Record<string, unknown>;
+    for (const key of Object.keys(defaults)) if (!Object.hasOwn(own, key)) own[key] = defaults[key];
+  }
+  return [...stale];
+}
+
 /** @internal Whether a class is one of the engine's own components. */
 export function _isBuiltIn(cls: ComponentClass): boolean {
   const name = names.get(cls);

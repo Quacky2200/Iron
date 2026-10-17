@@ -1,5 +1,5 @@
 use iron_script::conformance::capture_logs;
-use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
+use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime, Value};
 
 const HELLO: &str = include_str!("../../../tests/fixtures/hello.js");
 const THROWS: &str = include_str!("../../../tests/fixtures/throws.js");
@@ -99,15 +99,14 @@ fn a_reload_runs_the_new_code_on_the_next_tick() {
         &mut rt,
         fresh,
         &mut host,
-        "hello.js",
-        &edited,
+        |rt| rt.load_bundle("hello.js", &edited),
         |rt, host, classes| iron_script::spawn_each(rt, host, classes),
     )
     .unwrap();
     assert_eq!(classes, ["Hello"]);
     host.update(&mut rt, 1.0 / 60.0);
     assert_eq!(messages(&logs), ["hello", "tick"]);
-    // Fresh components start over: onStart runs again (no state carried yet).
+    // Fresh components start over: onStart runs again (the app restores state on top).
     assert_eq!(messages(&new_logs), ["hello", "tock"]);
 }
 
@@ -128,8 +127,7 @@ fn a_broken_reload_keeps_the_old_code_running() {
             &mut rt,
             QuickJsRuntime::new(),
             &mut host,
-            "game.js",
-            broken,
+            |rt| rt.load_bundle("game.js", broken),
             |rt, host, classes| iron_script::spawn_each(rt, host, classes),
         )
         .unwrap_err();
@@ -137,4 +135,57 @@ fn a_broken_reload_keeps_the_old_code_running() {
     }
     host.update(&mut rt, 1.0 / 60.0);
     assert_eq!(messages(&logs), ["hello", "tick"]);
+}
+
+const REFRESH_VENDOR: &str = include_str!("../../../tests/fixtures/refresh-vendor.js");
+const REFRESH_V1: &str = include_str!("../../../tests/fixtures/refresh-v1.js");
+const REFRESH_V2: &str = include_str!("../../../tests/fixtures/refresh-v2.js");
+
+// M4-HOT-06
+#[test]
+fn reloads_in_place_keep_react_state_and_swap_component_classes() {
+    let mut rt = QuickJsRuntime::new();
+    let logs = capture_logs(&mut rt);
+    rt.load_bundle("vendor.js", REFRESH_VENDOR).unwrap();
+    iron_script::load_game(&mut rt, "game.js", REFRESH_V1).unwrap();
+    // React's updates run on the runtime's timers: let them through first.
+    let mut now = 0.0;
+    let mut seen = |rt: &mut QuickJsRuntime| {
+        now += 100.0;
+        assert!(rt.tick(now).is_empty());
+        rt.eval("__refresh_seen").unwrap()
+    };
+    assert_eq!(seen(&mut rt), Value::String("count 0 (v1)".into()));
+    for _ in 0..3 {
+        rt.eval("__refresh_bump()").unwrap();
+    }
+    rt.eval("__refresh_spawn()").unwrap();
+    assert_eq!(seen(&mut rt), Value::String("count 3 (v1)".into()));
+    let sheets = |rt: &mut QuickJsRuntime| {
+        rt.drain_ops()
+            .into_iter()
+            .filter(|op| op.name.ends_with("StyleSheet"))
+            .map(|op| op.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(sheets(&mut rt), ["addStyleSheet"]);
+
+    // The new code runs in the same runtime: the counter keeps 3 but renders with the
+    // new code, the live component answers with its new class, and the top level's
+    // style sheet is swapped rather than added twice.
+    iron_script::load_game(&mut rt, "game.js", REFRESH_V2).unwrap();
+    assert_eq!(seen(&mut rt), Value::String("count 3 (v2)".into()));
+    assert_eq!(
+        rt.eval("__refresh_ticker()").unwrap(),
+        Value::String("v2 ticks=5".into())
+    );
+    assert_eq!(sheets(&mut rt), ["removeStyleSheet", "addStyleSheet"]);
+    rt.eval("__refresh_bump()").unwrap();
+    assert_eq!(seen(&mut rt), Value::String("count 4 (v2)".into()));
+    let logs = logs.borrow();
+    assert!(
+        logs.iter()
+            .all(|(level, _)| *level != iron_script::LogLevel::Error),
+        "{logs:?}"
+    );
 }

@@ -991,8 +991,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Still lost on reload: physics velocities and joints' live state, playing sounds
     (sources with `playOnAwake` start again), particles in flight, module-level variables,
     React state (Fast Refresh below); `M4-PHY-04`
-  - [ ] React Fast Refresh for panels (React and the reconciler in a vendor bundle kept across
-    reloads) — `M4-HOT-06`
+  - [x] React Fast Refresh (2026-10-17): dev builds (`bun run dev` → `scripts/dev.ts`) make
+    `vendor.js` (React, the reconciler, `react-refresh`, `@iron/engine`, `@iron/react`)
+    and a CommonJS `game.js` marked `// @iron-dev`; when only game.js changes the app
+    reloads it in place: React keeps state (Fast Refresh), live components move onto
+    their new classes (fields kept, new fields' defaults added), the top level's style
+    sheets are swapped, and the world, physics and sounds stay. A changed vendor or a
+    production build reloads the old way (state kept through scenes) — `M4-HOT-06`
+  - [ ] In-place reload follow-ups: undo more of the top level (fonts, input and scene
+    listeners, timers); statics on component classes start fresh; objects a top level
+    creates are made again
   - [ ] Reload benchmark — `M4-HOT-07`: the bench exists (`cargo bench -p iron_scene
     --bench reload`) and measures ~146 ms against the 100 ms target (1 MB bundle parse
     ~54 ms, save ~27 ms, restore ~58 ms). To get under it: parse the new bundle on a

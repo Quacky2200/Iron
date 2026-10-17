@@ -69,164 +69,6 @@
     return k || __decoratorMetadata(array, target), desc && __defProp(target, name, desc), p ? k ^ 4 ? extra : desc : target;
   };
 
-  // ../../js/engine/src/audio.ts
-  var nextSound = 1;
-  var nextPlayback = 1;
-  var nextTrack = 1;
-  var playing = new Map;
-
-  class Sound {
-    id;
-    src;
-    constructor(src, options = {}) {
-      this.id = nextSound++;
-      this.src = src;
-      __iron_op("audio.load", this.id, src, !!options.stream);
-    }
-    play(options = {}) {
-      return new Playback(this, options);
-    }
-    unload() {
-      __iron_op("audio.unload", this.id);
-    }
-  }
-
-  class Playback {
-    id;
-    sound;
-    playing = true;
-    onEnded;
-    constructor(sound, o) {
-      this.id = nextPlayback++;
-      this.sound = sound;
-      playing.set(this.id, this);
-      __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
-        o.volume ?? 1,
-        o.rate ?? 1,
-        o.pan ?? 0,
-        !!o.loop,
-        o.fadeIn ?? 0,
-        o.start ?? 0
-      ]);
-    }
-    setVolume(volume, fade = 0) {
-      __iron_op("audio.set", this.id, "volume", volume, fade);
-    }
-    setRate(rate, fade = 0) {
-      __iron_op("audio.set", this.id, "rate", rate, fade);
-    }
-    setPan(pan, fade = 0) {
-      __iron_op("audio.set", this.id, "pan", pan, fade);
-    }
-    pause(fade = 0) {
-      __iron_op("audio.pause", this.id, fade);
-    }
-    resume(fade = 0) {
-      __iron_op("audio.resume", this.id, fade);
-    }
-    stop(fade = 0) {
-      __iron_op("audio.stop", this.id, fade);
-    }
-    seek(seconds) {
-      __iron_op("audio.seek", this.id, seconds);
-    }
-  }
-
-  class Bus {
-    id;
-    constructor(volume, parent) {
-      this.id = nextTrack++;
-      __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
-    }
-    setVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", this.id, volume, fade);
-    }
-    pause(fade = 0) {
-      __iron_op("audio.trackPause", this.id, fade);
-    }
-    resume(fade = 0) {
-      __iron_op("audio.trackResume", this.id, fade);
-    }
-    remove() {
-      __iron_op("audio.removeTrack", this.id);
-    }
-  }
-
-  class Emitter {
-    id;
-    constructor(position, options) {
-      this.id = nextTrack++;
-      __iron_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
-    }
-    setPosition(p, glide = 0) {
-      __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
-    }
-    setVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", this.id, volume, fade);
-    }
-    remove() {
-      __iron_op("audio.removeTrack", this.id);
-    }
-  }
-  var cache = new Map;
-  var audio = {
-    load(src, options) {
-      return new Sound(src, options);
-    },
-    play(src, options) {
-      let sound = cache.get(src);
-      if (!sound) {
-        sound = new Sound(src);
-        cache.set(src, sound);
-      }
-      return sound.play(options);
-    },
-    createBus(options = {}) {
-      return new Bus(options.volume ?? 1, options.parent ?? null);
-    },
-    createEmitter(position, options = {}) {
-      return new Emitter(position, options);
-    },
-    setListener(position, rotation = { x: 0, y: 0, z: 0, w: 1 }) {
-      __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
-    },
-    setMasterVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", null, volume, fade);
-    }
-  };
-  globalThis.__iron_audio = (ended) => {
-    for (const id of ended) {
-      const p = playing.get(id);
-      if (!p)
-        continue;
-      playing.delete(id);
-      p.playing = false;
-      try {
-        p.onEnded?.();
-      } catch (e) {
-        const err = e instanceof Error ? e : new Error(String(e));
-        console.error(`[audio] error in onEnded: ${err.message}${err.stack ? `
-${err.stack}` : ""}`);
-      }
-    }
-  };
-  // ../../js/engine/src/property.ts
-  var PROPERTIES = Symbol("iron.properties");
-  var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
-  function property(_value, context) {
-    const meta = context.metadata;
-    if (!Object.hasOwn(meta, PROPERTIES))
-      meta[PROPERTIES] = [...meta[PROPERTIES] ?? []];
-    const list = meta[PROPERTIES];
-    const name = String(context.name);
-    if (!list.includes(name))
-      list.push(name);
-  }
-  function propertiesOf(cls) {
-    const meta = cls[metadataKey];
-    return meta?.[PROPERTIES] ?? [];
-  }
-
   // ../../js/engine/src/layers.ts
   function checkLayer(layer) {
     if (!Number.isInteger(layer) || layer < 0 || layer > 31)
@@ -1268,6 +1110,34 @@ ${err.stack}` : ""}`);
   function _classByName(name) {
     return classes.get(name) ?? builtIns.get(name);
   }
+  function _patchClasses() {
+    const stale = new Set;
+    const fresh = new Map;
+    for (const instance of instances.values()) {
+      const old = instance.constructor;
+      const name = names.get(old);
+      if (!name || builtIns.get(name) === old)
+        continue;
+      const cls = classes.get(name);
+      if (!cls) {
+        stale.add(name);
+        continue;
+      }
+      if (cls === old)
+        continue;
+      Object.setPrototypeOf(instance, cls.prototype);
+      let defaults = fresh.get(cls);
+      if (!defaults) {
+        defaults = new cls;
+        fresh.set(cls, defaults);
+      }
+      const own = instance;
+      for (const key of Object.keys(defaults))
+        if (!Object.hasOwn(own, key))
+          own[key] = defaults[key];
+    }
+    return [...stale];
+  }
   function _isBuiltIn(cls) {
     const name = names.get(cls);
     return name !== undefined && builtIns.get(name) === cls;
@@ -1667,6 +1537,196 @@ ${err.stack}` : ""}`);
       go.transform._set(new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]), new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]), new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]));
     }
   };
+
+  // ../../js/engine/src/hot.ts
+  var loading = false;
+  var undo = [];
+  var afterLoad = [];
+  globalThis.__iron_hot_begin = () => {
+    const old = undo;
+    undo = [];
+    for (const f of old) {
+      try {
+        f();
+      } catch (e) {
+        console.error(`reload: ${e}`);
+      }
+    }
+    loading = true;
+  };
+  globalThis.__iron_hot_end = () => {
+    loading = false;
+    const stale = _patchClasses();
+    if (stale.length) {
+      console.warn(`reload: ${stale.join(", ")} ${stale.length === 1 ? "isn't" : "aren't"} registered, so ` + `${stale.length === 1 ? "its" : "their"} components keep the old code (register({ ${stale.join(", ")} }, { spawn: false }))`);
+    }
+    for (const f of afterLoad) {
+      try {
+        f();
+      } catch (e) {
+        console.error(`reload: ${e}`);
+      }
+    }
+    return stale;
+  };
+
+  // ../../js/engine/src/audio.ts
+  var nextSound = 1;
+  var nextPlayback = 1;
+  var nextTrack = 1;
+  var playing = new Map;
+
+  class Sound {
+    id;
+    src;
+    constructor(src, options = {}) {
+      this.id = nextSound++;
+      this.src = src;
+      __iron_op("audio.load", this.id, src, !!options.stream);
+    }
+    play(options = {}) {
+      return new Playback(this, options);
+    }
+    unload() {
+      __iron_op("audio.unload", this.id);
+    }
+  }
+
+  class Playback {
+    id;
+    sound;
+    playing = true;
+    onEnded;
+    constructor(sound, o) {
+      this.id = nextPlayback++;
+      this.sound = sound;
+      playing.set(this.id, this);
+      __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
+        o.volume ?? 1,
+        o.rate ?? 1,
+        o.pan ?? 0,
+        !!o.loop,
+        o.fadeIn ?? 0,
+        o.start ?? 0
+      ]);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.set", this.id, "volume", volume, fade);
+    }
+    setRate(rate, fade = 0) {
+      __iron_op("audio.set", this.id, "rate", rate, fade);
+    }
+    setPan(pan, fade = 0) {
+      __iron_op("audio.set", this.id, "pan", pan, fade);
+    }
+    pause(fade = 0) {
+      __iron_op("audio.pause", this.id, fade);
+    }
+    resume(fade = 0) {
+      __iron_op("audio.resume", this.id, fade);
+    }
+    stop(fade = 0) {
+      __iron_op("audio.stop", this.id, fade);
+    }
+    seek(seconds) {
+      __iron_op("audio.seek", this.id, seconds);
+    }
+  }
+
+  class Bus {
+    id;
+    constructor(volume, parent) {
+      this.id = nextTrack++;
+      __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", this.id, volume, fade);
+    }
+    pause(fade = 0) {
+      __iron_op("audio.trackPause", this.id, fade);
+    }
+    resume(fade = 0) {
+      __iron_op("audio.trackResume", this.id, fade);
+    }
+    remove() {
+      __iron_op("audio.removeTrack", this.id);
+    }
+  }
+
+  class Emitter {
+    id;
+    constructor(position, options) {
+      this.id = nextTrack++;
+      __iron_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
+    }
+    setPosition(p, glide = 0) {
+      __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", this.id, volume, fade);
+    }
+    remove() {
+      __iron_op("audio.removeTrack", this.id);
+    }
+  }
+  var cache = new Map;
+  var audio = {
+    load(src, options) {
+      return new Sound(src, options);
+    },
+    play(src, options) {
+      let sound = cache.get(src);
+      if (!sound) {
+        sound = new Sound(src);
+        cache.set(src, sound);
+      }
+      return sound.play(options);
+    },
+    createBus(options = {}) {
+      return new Bus(options.volume ?? 1, options.parent ?? null);
+    },
+    createEmitter(position, options = {}) {
+      return new Emitter(position, options);
+    },
+    setListener(position, rotation = { x: 0, y: 0, z: 0, w: 1 }) {
+      __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
+    },
+    setMasterVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", null, volume, fade);
+    }
+  };
+  globalThis.__iron_audio = (ended) => {
+    for (const id of ended) {
+      const p = playing.get(id);
+      if (!p)
+        continue;
+      playing.delete(id);
+      p.playing = false;
+      try {
+        p.onEnded?.();
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[audio] error in onEnded: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+      }
+    }
+  };
+  // ../../js/engine/src/property.ts
+  var PROPERTIES = Symbol("iron.properties");
+  var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
+  function property(_value, context) {
+    const meta = context.metadata;
+    if (!Object.hasOwn(meta, PROPERTIES))
+      meta[PROPERTIES] = [...meta[PROPERTIES] ?? []];
+    const list = meta[PROPERTIES];
+    const name = String(context.name);
+    if (!list.includes(name))
+      list.push(name);
+  }
+  function propertiesOf(cls) {
+    const meta = cls[metadataKey];
+    return meta?.[PROPERTIES] ?? [];
+  }
 
   // ../../js/engine/src/audio-components.ts
   var clips = new Map;

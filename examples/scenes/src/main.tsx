@@ -47,7 +47,6 @@ let refresh = () => {};
  * `loads` (fields come back with it) but not its listeners: `onReload` re-attaches them.
  */
 class Keeper extends Component {
-  static instance: Keeper | null = null;
   loads = 0;
   override onAwake() {
     GameObject.dontDestroyOnLoad(this.gameObject);
@@ -58,7 +57,6 @@ class Keeper extends Component {
     refresh();
   }
   private listen() {
-    Keeper.instance = this;
     SceneManager.onSceneLoaded(() => {
       this.loads++;
       refresh();
@@ -139,7 +137,7 @@ function Menu() {
       >
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Scenes</text>
         <text style={{ color: "#a9b3c3", fontSize: 12 }}>
-          {`${scenes.map((s) => (s === active ? `${s.name} (active, ${s.rootCount})` : `${s.name} (${s.rootCount})`)).join(", ")} · ${Keeper.instance?.loads ?? 0} loads`}
+          {`${scenes.map((s) => (s === active ? `${s.name} (active, ${s.rootCount})` : `${s.name} (${s.rootCount})`)).join(", ")} · ${GameObject.findObjectOfType(Keeper)?.loads ?? 0} loads`}
         </text>
         <box style={{ flexDirection: "row", gap: 6 }}>
           <Button label="Courtyard" onClick={() => void loadLevel("scenes/level1.scene.json")} />

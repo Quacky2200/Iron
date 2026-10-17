@@ -292,36 +292,62 @@ impl ComponentHost {
         self.components.len()
     }
 
+    /// Forgets which lifecycle methods each component has, so they're asked again (after
+    /// a reload in place swapped their classes).
+    pub fn refresh_hooks(&mut self) {
+        for entry in &mut self.components {
+            entry.hooks = None;
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.components.is_empty()
     }
 }
 
-/// Hot reload, wipe and rebuild (DESIGN.md §6.1): loads `code` into the `fresh`
-/// runtime and runs `bootstrap` on it (which spawns the starting components, given the
-/// registered classes, into a new host); only if all of that works do `rt` and `host`
-/// become the new ones (the old context is dropped). On an error (a syntax error, a
-/// throwing top level or constructor) both are left as they were, so the old code
-/// keeps running.
-///
-/// Component state isn't carried over yet: new components start fresh and run
-/// `onStart` again (property serialization comes with GameObjects, TODO.md M5).
-/// Returns the registered classes.
+/// Hot reload, wipe and rebuild (DESIGN.md §6.1): `load` loads the new code into the
+/// `fresh` runtime (one bundle, or a dev build's vendor and game bundles), then
+/// `bootstrap` runs on it (it spawns the starting components, given the registered
+/// classes, into a new host, or restores saved state); only if all of that works do
+/// `rt` and `host` become the new ones (the old context is dropped). On an error (a
+/// syntax error, a throwing top level or constructor) both are left as they were, so
+/// the old code keeps running. Returns the registered classes.
 pub fn reload<R: ScriptRuntime>(
     rt: &mut R,
     mut fresh: R,
     host: &mut ComponentHost,
-    name: &str,
-    code: &str,
+    load: impl FnOnce(&mut R) -> Result<(), ScriptError>,
     bootstrap: impl FnOnce(&mut R, &mut ComponentHost, &[String]) -> Result<(), ScriptError>,
 ) -> Result<Vec<String>, ScriptError> {
-    fresh.load_bundle(name, code)?;
+    load(&mut fresh)?;
     let classes = ComponentHost::registered_classes(&mut fresh)?;
     let mut new_host = ComponentHost::new();
     bootstrap(&mut fresh, &mut new_host, &classes)?;
     *rt = fresh;
     *host = new_host;
     Ok(classes)
+}
+
+/// Runs a dev build's game code (CommonJS, its imports from the vendor bundle) inside
+/// `__iron_hot_begin` / `__iron_hot_end`, which undo its last top level and move live
+/// components onto the new classes.
+pub fn load_game<R: ScriptRuntime>(rt: &mut R, name: &str, code: &str) -> Result<(), ScriptError> {
+    let has = |rt: &mut R, f: &str| {
+        rt.eval(&format!("typeof {f} === 'function'"))
+            .is_ok_and(|v| v == Value::Bool(true))
+    };
+    if has(rt, "__iron_hot_begin") {
+        rt.call_global("__iron_hot_begin", &[])?;
+    }
+    // The wrapper shares the code's first line, so error line numbers stay right.
+    let wrapped = format!(
+        "(function (require, module, exports) {{ {code}\n}})(globalThis.__iron_require, {{ exports: {{}} }}, {{}});"
+    );
+    let loaded = rt.load_bundle(name, &wrapped);
+    if has(rt, "__iron_hot_end") {
+        rt.call_global("__iron_hot_end", &[])?;
+    }
+    loaded
 }
 
 /// The usual [`reload`] bootstrap without a scene: one component per class.

@@ -96,8 +96,9 @@ fn main() -> Result<()> {
     scripts
         .eval(&info.script())
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    scripts
-        .load_bundle(&name, &code)
+    // A dev build (`scripts/dev.ts`) comes as vendor.js plus the game's own code.
+    let vendor = dev_vendor(&bundle_path, &code);
+    load_bundles(&mut scripts, vendor.as_deref(), &name, &code)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // One GameObject per starting component class (registered without
@@ -137,12 +138,17 @@ fn main() -> Result<()> {
     // Rebuilds by `bun build --watch` reload the scripts (not for screenshot runs).
     let watcher = match args.screenshot {
         Some(_) => None,
-        None => reload::BundleWatcher::new(vec![bundle_path.clone(), css_path.clone()])
-            .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
-            .ok(),
+        None => reload::BundleWatcher::new(vec![
+            bundle_path.clone(),
+            css_path.clone(),
+            bundle_path.with_file_name("vendor.js"),
+        ])
+        .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
+        .ok(),
     };
 
     let app = App {
+        vendor,
         bundle_path,
         bundle_name: name.clone(),
         game_css,
@@ -254,6 +260,9 @@ fn draw_frame(
 }
 
 struct App {
+    /// A dev build's vendor bundle (React, the engine), kept while only the game's code
+    /// changes: then reloads happen in place, with Fast Refresh.
+    vendor: Option<String>,
     /// GameObjects scripts made (and the engine made for them).
     scene: iron_scene::ScriptScene,
     /// Whether the game takes engine moves (`__iron_scene` exists).
@@ -345,6 +354,11 @@ impl App {
                 return;
             }
         };
+        let vendor = dev_vendor(&self.bundle_path, &code);
+        if vendor.is_some() && vendor == self.vendor {
+            self.reload_in_place(&code, started);
+            return;
+        }
         // The old code saves its scenes (objects, components, their fields) as JSON;
         // the new code rebuilds them instead of starting over.
         // (Bundles without @iron/engine's scenes have nothing to save.)
@@ -374,8 +388,7 @@ impl App {
             &mut self.scripts,
             fresh,
             &mut self.components,
-            &self.bundle_name,
-            &code,
+            |rt| load_bundles(rt, vendor.as_deref(), &self.bundle_name, &code),
             |rt, host, classes| {
                 if let Some(json) = saved {
                     let _ = rt.eval("globalThis.__iron_reloading = false");
@@ -398,6 +411,7 @@ impl App {
             }
         };
 
+        self.vendor = vendor;
         // Everything the old scripts built. The new bundle's top level has already
         // queued its UI and ops; they apply after this.
         self.ui.clear_script_nodes();
@@ -407,11 +421,7 @@ impl App {
         if let Some(sheet) = self.game_css.take() {
             self.ui.remove_stylesheet(sheet);
         }
-        let css_path = self.bundle_path.with_extension("css");
-        self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
-        self.sheet_sources = game_css_source(&self.asset_root, &css_path)
-            .into_iter()
-            .collect();
+        self.reload_game_css();
         self.font_sources.clear();
         self.panels = panels::Panels::default();
         (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
@@ -443,6 +453,39 @@ impl App {
             self.bundle_name,
             started.elapsed().as_secs_f64() * 1000.0
         );
+    }
+
+    /// A dev build whose vendor bundle didn't change: the game's new code runs in the
+    /// same runtime. React (Fast Refresh) keeps its state, components move onto their new
+    /// classes, and the world, physics and sounds stay as they are.
+    fn reload_in_place(&mut self, code: &str, started: Instant) {
+        if let Err(e) = iron_script::load_game(&mut self.scripts, &self.bundle_name, code) {
+            // A syntax error stops it before anything ran; a throwing top level may have
+            // run partly.
+            tracing::error!("reload failed: {e}");
+            return;
+        }
+        // New classes may have other lifecycle methods.
+        self.components.refresh_hooks();
+        if let Some(sheet) = self.game_css.take() {
+            self.ui.remove_stylesheet(sheet);
+        }
+        self.reload_game_css();
+        self.handle_ui(Input::Refresh);
+        tracing::info!(
+            "reloaded {} in place in {:.1} ms",
+            self.bundle_name,
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+
+    /// The CSS Bun wrote next to the bundle, applied again.
+    fn reload_game_css(&mut self) {
+        let css_path = self.bundle_path.with_extension("css");
+        self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
+        self.sheet_sources = game_css_source(&self.asset_root, &css_path)
+            .into_iter()
+            .collect();
     }
 
     fn tick(&mut self) {
@@ -1810,6 +1853,34 @@ fn spawn_starting_components(
 }
 
 /// Loads the stylesheet Bun writes next to the bundle (game.js -> game.css), if any.
+/// A dev build's vendor bundle: `game.js` starts with `// @iron-dev` and `vendor.js`
+/// sits next to it (`None` for a normal, self-contained build).
+fn dev_vendor(bundle_path: &Path, code: &str) -> Option<String> {
+    if !code.starts_with("// @iron-dev") {
+        return None;
+    }
+    let path = bundle_path.with_file_name("vendor.js");
+    std::fs::read_to_string(&path)
+        .inspect_err(|e| tracing::error!("dev build without {}: {e}", path.display()))
+        .ok()
+}
+
+/// Loads a game: its one bundle, or a dev build's vendor bundle and then its code.
+fn load_bundles(
+    rt: &mut QuickJsRuntime,
+    vendor: Option<&str>,
+    name: &str,
+    code: &str,
+) -> Result<(), iron_script::ScriptError> {
+    match vendor {
+        Some(vendor) => {
+            rt.load_bundle("vendor.js", vendor)?;
+            iron_script::load_game(rt, name, code)
+        }
+        None => rt.load_bundle(name, code),
+    }
+}
+
 fn load_game_css(ui: &mut UiTree, root: &Path, css_path: &Path) -> Option<u32> {
     let css = std::fs::read_to_string(css_path).ok()?;
     let base = css_path

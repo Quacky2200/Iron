@@ -67,8 +67,9 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 
 - `bun run build` builds all the examples.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
-- `bun run dev` in an example rebuilds on every edit (`bun build --watch`); a running `iron` window
-  reloads the scripts when `dist/` changes (state isn't kept yet; see TODO.md M5).
+- `bun run dev` in an example (`scripts/dev.ts`) makes a dev build (vendor.js + game.js) and rebuilds
+  game.js on every edit; a running `iron` window reloads it in place (React Fast Refresh, components
+  swap classes, the world stays). Other reloads keep state through scene serialization.
 - The `cargo run` line renders a screenshot and exits; check it by eye.
 - `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
   golden tests' renders.
@@ -161,9 +162,11 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     script components get `onReload`; unregistered classes make it start over.
     `IRON_RELOAD_AT_FRAME=N` reloads during screenshot runs. Benchmark `M4-HOT-07` at
     ~146 ms against 100 ms (follow-ups in TODO.md).
+  - React Fast Refresh (2026-10-17): dev builds reload game code in place (`hot.ts`,
+    `js/react/src/vendor.ts` / `refresh.ts`, `scripts/dev.ts`, `react-refresh` 0.19).
 - **Next (in this order, see TODO.md):**
-  1. The rest of hot reload part 2: React Fast Refresh for panels (`M4-HOT-06`), getting
-     the reload benchmark under 100 ms.
+  1. Getting the reload benchmark under 100 ms; then M5.c's remaining rendering items or
+     M5.d (animation, prefabs) per TODO.md.
   - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
     transparency modes), FXAA/TAA, render textures, players' saved settings (M6), shadow and
     glow follow-ups, more classic test scenes (downloads need the user's OK first).

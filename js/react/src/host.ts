@@ -327,6 +327,10 @@ export const reconciler = createReconciler({
   getSuspendedCommitReason: () => null,
 });
 
+// Lets React's devtools hook see this renderer. Fast Refresh (dev builds, refresh.ts)
+// finds the roots to refresh through it; without the hook this does nothing.
+reconciler.injectIntoDevTools();
+
 /** Runs `fn` with React updates at `priority` (an event priority). */
 export function withUpdatePriority(priority: number, fn: () => void) {
   const previous = currentUpdatePriority;

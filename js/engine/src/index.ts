@@ -8,6 +8,7 @@
  */
 
 import "./globals";
+import { _undoOnReload } from "./hot.ts";
 
 export {
   audio,
@@ -48,6 +49,7 @@ export { Cursor, CursorLockMode } from "./cursor.ts";
 export { type QualityLevel, QualitySettings, type ShadowQualityMode } from "./quality.ts";
 export { type InstantiateOptions, Model } from "./models.ts";
 export { LayerMask } from "./layers.ts";
+export { _loadingGame, _onHotEnd } from "./hot.ts";
 export { property } from "./property.ts";
 export {
   type ComponentData,
@@ -188,6 +190,8 @@ let nextStyleSheet = 1;
 export function addStyleSheet(css: string): number {
   const id = nextStyleSheet++;
   op("addStyleSheet", id, css);
+  // Added by the game's top level: taken off before its new code adds it again.
+  _undoOnReload(() => removeStyleSheet(id));
   return id;
 }
 

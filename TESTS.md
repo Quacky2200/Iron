@@ -279,7 +279,7 @@ layout pass):
 | M4-HOT-03 | Integration | Objects, hierarchy and transforms come back where they were after a script reload (rebuilt from the saved scenes). |
 | M4-HOT-04 | Integration | A reload with a syntax error (or a throwing top level) keeps the old code running and reports the error. |
 | M4-HOT-05 | Integration | A renamed or removed property is dropped with a warning; new properties get their defaults; a saved class that isn't registered any more makes the reload start over. |
-| M4-HOT-06 | Integration | React panel state (e.g. a counter) survives a Fast Refresh edit. |
+| M4-HOT-06 | Integration | A dev build reloaded in place: a React counter keeps its count while rendering with the new code (Fast Refresh), a live component answers with its new class and keeps its fields, and the top level's style sheet is swapped, not added twice. |
 | M4-HOT-07 | Benchmark | Reload of a ~1 MB bundle with 1,000 components (each with a child object), keeping their state: **< 100 ms** (`crates/iron_scene/benches/reload.rs`; ~146 ms on 2026-10-17, not met yet). |
 | M4-HOT-08 | Manual | Edit a TS file while the game runs; the change appears without restarting. |
 | M4-HOT-09 | Integration | Clearing the UI tree for a reload removes every script node (attached or not, skipping `:outro`), and the new bundle's reconciler can reuse IDs from 1. |

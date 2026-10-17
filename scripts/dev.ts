@@ -1,0 +1,60 @@
+// Dev builds with React Fast Refresh. Run in a game's folder (its `bun run dev`):
+//
+//   bun ../../scripts/dev.ts          build, then rebuild the game's code on every edit
+//   bun ../../scripts/dev.ts --once   build once
+//
+// It writes two bundles to dist/: `vendor.js` (React, the reconciler, the refresh
+// runtime, @iron/engine and @iron/react; built once) and `game.js` (the game's own code,
+// CommonJS with those left external, with Fast Refresh registrations, marked
+// `// @iron-dev`). A running `iron` window then reloads game.js in place: React keeps
+// its state and the world stays as it is. A production `bun run build` makes one
+// self-contained game.js instead.
+import { existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
+
+const once = process.argv.includes("--once");
+const entry = ["src/main.tsx", "src/main.ts"].find((f) => existsSync(f));
+if (!entry) throw new Error("no src/main.tsx or src/main.ts here");
+const define = { "process.env.NODE_ENV": '"development"' };
+
+const vendor = await Bun.build({
+  entrypoints: [join(import.meta.dir, "../js/react/src/vendor.ts")],
+  outdir: "dist",
+  naming: "vendor.js",
+  format: "iife",
+  target: "browser",
+  define,
+});
+if (!vendor.success) {
+  for (const log of vendor.logs) console.error(log);
+  process.exit(1);
+}
+// A game.css from an older build would otherwise linger.
+if (existsSync("dist/game.css")) rmSync("dist/game.css");
+
+const args = [
+  "build",
+  entry,
+  "--outdir",
+  "dist",
+  "--entry-naming",
+  "game.[ext]",
+  "--format",
+  "cjs",
+  "--target",
+  "browser",
+  "--react-fast-refresh",
+  "--external",
+  "react",
+  "--external",
+  "react/*",
+  "--external",
+  "@iron/*",
+  "--define",
+  `process.env.NODE_ENV=${define["process.env.NODE_ENV"]}`,
+  "--banner",
+  "// @iron-dev",
+  ...(once ? [] : ["--watch", "--no-clear-screen"]),
+];
+const game = Bun.spawn([process.execPath, ...args], { stdout: "inherit", stderr: "inherit" });
+process.exit(await game.exited);
