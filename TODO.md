@@ -1210,7 +1210,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     copies when the prefab changes), nested prefabs and variants (with the editor, M5.e)
   - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering
   - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
-  - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`
+  - [x] Asset hot reload: the game folder is watched (not `dist/`, `node_modules/`,
+    hidden folders); textures, models (same mesh and texture ids) and sounds from a
+    changed file load again in place, then `Assets.onChanged` listeners hear the paths —
+    `M5-AST-01`, `M5-AST-02`. Placed model copies keep their materials and nodes.
+  - [ ] glTF import + cook, platform texture formats — `M5-AST-*`
   - [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
 - [ ] **M5.e** Editor shell. UI requirements first (before the editor work starts):
   - [ ] Accessibility: an AccessKit tree from the UI tree (roles, names, states, focus, actions),

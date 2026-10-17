@@ -1,6 +1,8 @@
-//! Script hot reload: watches the bundle (and its CSS) for rebuilds by `bun build
-//! --watch` and says when to reload.
+//! Hot reload: [`BundleWatcher`] watches the bundle (and its CSS) for rebuilds by `bun
+//! build --watch` and says when to reload the scripts; [`AssetWatcher`] watches the game
+//! folder's other files (textures, models, sounds) and says which changed.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
@@ -66,6 +68,77 @@ impl BundleWatcher {
     }
 }
 
+/// A game-relative asset path the way scripts write them: forward slashes, no leading
+/// `./`.
+pub fn asset_key(path: &str) -> String {
+    let p = path.trim().replace('\\', "/");
+    p.trim_start_matches("./").to_owned()
+}
+
+/// Folders that aren't assets: builds, packages, tools' state.
+fn ignored(relative: &Path) -> bool {
+    relative.components().any(|c| {
+        let name = c.as_os_str().to_string_lossy();
+        name == "dist" || name == "node_modules" || name == "target" || name.starts_with('.')
+    })
+}
+
+/// Watches a game folder for asset files that change (recursively, outside `dist/`,
+/// `node_modules/` and hidden folders).
+pub struct AssetWatcher {
+    _watcher: RecommendedWatcher,
+    events: Receiver<notify::Result<notify::Event>>,
+    root: PathBuf,
+    /// Changed files (game-relative keys) and when they last changed.
+    pending: HashMap<String, Instant>,
+}
+
+impl AssetWatcher {
+    pub fn new(root: &Path) -> notify::Result<Self> {
+        let (tx, events) = channel();
+        let mut watcher = notify::recommended_watcher(tx)?;
+        watcher.watch(root, RecursiveMode::Recursive)?;
+        Ok(Self {
+            _watcher: watcher,
+            events,
+            root: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+            pending: HashMap::new(),
+        })
+    }
+
+    /// Files that changed and have settled for [`SETTLE`], as game-relative keys.
+    pub fn poll(&mut self, now: Instant) -> Vec<String> {
+        while let Ok(event) = self.events.try_recv() {
+            let Ok(event) = event else { continue };
+            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                continue;
+            }
+            for path in event.paths {
+                let path = path.canonicalize().unwrap_or(path);
+                let Ok(relative) = path.strip_prefix(&self.root) else {
+                    continue;
+                };
+                if ignored(relative) || path.is_dir() {
+                    continue;
+                }
+                let key = asset_key(&relative.to_string_lossy());
+                self.pending.insert(key, now);
+            }
+        }
+        let mut ready: Vec<String> = self
+            .pending
+            .iter()
+            .filter(|(_, t)| now.duration_since(**t) >= SETTLE)
+            .map(|(k, _)| k.clone())
+            .collect();
+        ready.sort();
+        for k in &ready {
+            self.pending.remove(k);
+        }
+        ready
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +176,31 @@ mod tests {
         let later = Instant::now() + SETTLE;
         assert!(w.poll(later));
         assert!(!w.poll(later + SETTLE));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M5-AST-01
+    #[test]
+    fn asset_changes_are_reported_by_game_path_once_settled() {
+        let dir = std::env::temp_dir().join(format!("iron-assets-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("assets/sub")).unwrap();
+        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        let mut w = AssetWatcher::new(&dir).unwrap();
+        std::fs::write(dir.join("assets/sub/crate.png"), "x").unwrap();
+        // Builds don't count.
+        std::fs::write(dir.join("dist/game.js"), "x").unwrap();
+        let mut got = Vec::new();
+        for _ in 0..50 {
+            std::thread::sleep(Duration::from_millis(20));
+            got = w.poll(Instant::now() + SETTLE);
+            if !got.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(got, ["assets/sub/crate.png"]);
+        assert!(w.poll(Instant::now() + SETTLE * 2).is_empty());
+        assert_eq!(asset_key(".\\assets\\a.png"), "assets/a.png");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

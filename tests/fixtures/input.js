@@ -1585,6 +1585,17 @@
     return stale;
   };
 
+  // ../../js/engine/src/assets.ts
+  var listeners = new Set;
+  globalThis.__iron_assets_changed = (paths) => {
+    for (const f of [...listeners]) {
+      try {
+        f(paths);
+      } catch (e) {
+        console.error(`Assets.onChanged: ${e}`);
+      }
+    }
+  };
   // ../../js/engine/src/property.ts
   var PROPERTIES = Symbol("iron.properties");
   var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
@@ -6126,9 +6137,9 @@ ${err.stack}` : ""}`);
     Cancel: { keys: ["Escape"], pad: ["East"] }
   };
   var pads = new Map;
-  var listeners = {};
+  var listeners2 = {};
   function emit(type, event) {
-    for (const fn of listeners[type] ?? []) {
+    for (const fn of listeners2[type] ?? []) {
       try {
         fn(event);
       } catch (e) {
@@ -6215,10 +6226,10 @@ ${err.stack}` : ""}`);
       return input.gamepads().some((p) => (p.buttons[button] ?? 0) > 0.5);
     },
     on(type, fn) {
-      let set = listeners[type];
+      let set = listeners2[type];
       if (!set) {
         set = new Set;
-        listeners[type] = set;
+        listeners2[type] = set;
       }
       set.add(fn);
       return () => set.delete(fn);
@@ -6350,7 +6361,7 @@ ${err.stack}` : ""}`);
     _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
   }
   var restoring = false;
-  var listeners2 = new Set;
+  var listeners3 = new Set;
   function _qualityState() {
     return { level: levelIndex, current };
   }

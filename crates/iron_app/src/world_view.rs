@@ -325,6 +325,10 @@ pub struct WorldViews {
     pub mesh_data: HashMap<u32, MeshData>,
     /// Model meshes and textures get engine ids from here.
     model_ids: crate::models::EngineIds,
+    /// Models by file (asset key): the path scripts gave and the engine ids they got.
+    model_files: HashMap<String, (String, Vec<u32>)>,
+    /// Textures loaded from files: their file (asset key) and op arguments, by id.
+    texture_files: HashMap<u32, (String, Vec<Value>)>,
     /// Textures to upload (`None`: remove), applied by the app before drawing.
     pub texture_uploads: Vec<(u32, Option<TextureData>)>,
     /// Render textures to make or resize, with their sizes.
@@ -361,6 +365,8 @@ impl Default for WorldViews {
             mesh_uploads: Vec::new(),
             mesh_data: HashMap::new(),
             model_ids: crate::models::EngineIds::default(),
+            model_files: HashMap::new(),
+            texture_files: HashMap::new(),
             texture_uploads: Vec::new(),
             render_texture_uploads: Vec::new(),
             render_textures: HashMap::new(),
@@ -439,7 +445,22 @@ impl WorldViews {
             .get(1)
             .and_then(Value::as_str)
             .ok_or("a model needs a path")?;
-        let model = crate::models::load(root, src, &mut self.model_ids)?;
+        self.load_model(root, src, &[])
+    }
+
+    /// Loads a model, giving it `reuse`'s ids first, and remembers its file and ids.
+    fn load_model(
+        &mut self,
+        root: &Path,
+        src: &str,
+        reuse: &[u32],
+    ) -> Result<serde_json::Value, String> {
+        self.model_ids.record(reuse);
+        let model = crate::models::load(root, src, &mut self.model_ids);
+        let ids = self.model_ids.take_recorded();
+        let model = model?;
+        self.model_files
+            .insert(crate::reload::asset_key(src), (src.to_owned(), ids));
         for (id, data) in model.meshes {
             self.mesh_data.insert(id, data.clone());
             self.mesh_uploads.push((id, Some(data)));
@@ -449,6 +470,40 @@ impl WorldViews {
             self.texture_uploads.push((id, Some(data)));
         }
         Ok(model.description)
+    }
+
+    /// Loads again what came from a changed file (textures, models). Returns textures'
+    /// new sizes and models' new descriptions for scripts. A model whose parts changed
+    /// in number keeps its old ids for the first ones; placed copies keep their old
+    /// materials and nodes (place it again to see those).
+    #[allow(clippy::type_complexity)]
+    pub fn reload_asset(
+        &mut self,
+        root: &Path,
+        key: &str,
+    ) -> (Vec<(u32, u32, u32)>, Vec<(String, serde_json::Value)>) {
+        let mut sizes = Vec::new();
+        let textures: Vec<(u32, Vec<Value>)> = self
+            .texture_files
+            .iter()
+            .filter(|(_, (k, _))| k == key)
+            .map(|(id, (_, args))| (*id, args.clone()))
+            .collect();
+        for (id, args) in textures {
+            match self.texture_op("texture", root, &args) {
+                Ok(Some(size)) => sizes.push(size),
+                Ok(None) => {}
+                Err(e) => tracing::warn!("reloading texture {id}: {e}"),
+            }
+        }
+        let mut models = Vec::new();
+        if let Some((src, ids)) = self.model_files.get(key).cloned() {
+            match self.load_model(root, &src, &ids) {
+                Ok(description) => models.push((src, description)),
+                Err(e) => tracing::warn!("reloading model `{src}`: {e}"),
+            }
+        }
+        (sizes, models)
     }
 
     /// A texture that failed to load: sprites using it draw the renderer's missing
@@ -514,10 +569,18 @@ impl WorldViews {
             .filter(|v| v.is_finite() && *v >= 0.0)
             .ok_or("a texture needs an id")? as u32;
         if name == "textureRemove" {
+            self.texture_files.remove(&id);
             self.texture_sizes.remove(&id);
             self.render_textures.remove(&id);
             self.texture_uploads.push((id, None));
             return Ok(None);
+        }
+        // Textures from files reload when the file changes.
+        if let Some(Value::String(src)) = args.get(1)
+            && !src.trim_start().starts_with("data:")
+        {
+            self.texture_files
+                .insert(id, (crate::reload::asset_key(src), args.to_vec()));
         }
         let filter = match args.get(2).and_then(Value::as_str) {
             Some(f) => TextureFilter::parse(f).ok_or_else(|| format!("unknown filter `{f}`"))?,
@@ -1363,6 +1426,61 @@ impl WorldViews {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M5-AST-01
+    #[test]
+    fn changed_textures_and_models_reload_under_their_ids() {
+        let dir = std::env::temp_dir().join(format!("iron-reload-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        let png = |w: u32, h: u32| {
+            let mut bytes = Vec::new();
+            image::RgbaImage::new(w, h)
+                .write_to(
+                    &mut std::io::Cursor::new(&mut bytes),
+                    image::ImageFormat::Png,
+                )
+                .unwrap();
+            bytes
+        };
+        std::fs::write(dir.join("assets/crate.png"), png(4, 4)).unwrap();
+        let fixtures =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
+        std::fs::copy(
+            fixtures.join("assets/worm.glb"),
+            dir.join("assets/worm.glb"),
+        )
+        .unwrap();
+        let mut views = WorldViews::default();
+        let args = [Value::from(5.0), Value::String("./assets/crate.png".into())];
+        assert_eq!(
+            views.texture_op("texture", &dir, &args).unwrap(),
+            Some((5, 4, 4))
+        );
+        views
+            .model_op(
+                &dir,
+                &[Value::from(1.0), Value::String("assets/worm.glb".into())],
+            )
+            .unwrap();
+        let mesh_ids: Vec<u32> = views.mesh_uploads.drain(..).map(|(id, _)| id).collect();
+        views.texture_uploads.clear();
+        // The texture file grows: it loads again under id 5 with its new size.
+        std::fs::write(dir.join("assets/crate.png"), png(8, 2)).unwrap();
+        let (sizes, models) = views.reload_asset(&dir, "assets/crate.png");
+        assert_eq!(sizes, [(5, 8, 2)]);
+        assert!(models.is_empty());
+        assert!(matches!(views.texture_uploads.as_slice(), [(5, Some(_))]));
+        // The model loads again with the same mesh ids.
+        let (_, models) = views.reload_asset(&dir, "assets/worm.glb");
+        assert_eq!(models.len(), 1);
+        let again: Vec<u32> = views.mesh_uploads.drain(..).map(|(id, _)| id).collect();
+        assert_eq!(again, mesh_ids);
+        // Unrelated files change nothing.
+        let (sizes, models) = views.reload_asset(&dir, "assets/other.png");
+        assert!(sizes.is_empty() && models.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn sprite(rect: Option<[f32; 4]>, pivot: [f32; 2], flip: (bool, bool)) -> Sprite {
         Sprite {

@@ -204,6 +204,13 @@ fn run() -> Result<()> {
         .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
         .ok(),
     };
+    // Asset files that change (textures, models, sounds) load again in place.
+    let asset_watcher = match args.screenshot {
+        Some(_) => None,
+        None => reload::AssetWatcher::new(&asset_root)
+            .inspect_err(|e| tracing::warn!("not watching for asset changes: {e}"))
+            .ok(),
+    };
 
     let app = App {
         prefs,
@@ -214,6 +221,8 @@ fn run() -> Result<()> {
         bundle_name: name.clone(),
         game_css,
         watcher,
+        asset_watcher,
+        sound_files: HashMap::new(),
         scripts,
         components,
         scene,
@@ -375,6 +384,10 @@ struct App {
     /// The tree's id for the game's bundled stylesheet (`game.css`), if it has one.
     game_css: Option<u32>,
     watcher: Option<reload::BundleWatcher>,
+    asset_watcher: Option<reload::AssetWatcher>,
+    /// Sounds loaded from files (by asset key): their `audio.load` arguments, to load
+    /// again when the file changes.
+    sound_files: HashMap<String, Vec<Vec<iron_core::Value>>>,
     scripts: QuickJsRuntime,
     components: ComponentHost,
     ui: UiTree,
@@ -617,6 +630,14 @@ impl App {
         if self.watcher.as_mut().is_some_and(|w| w.poll(now)) {
             self.reload_scripts();
         }
+        let changed = self
+            .asset_watcher
+            .as_mut()
+            .map(|w| w.poll(now))
+            .unwrap_or_default();
+        if !changed.is_empty() {
+            self.reload_assets(&changed);
+        }
         // Paused in the background: the game's time stands still.
         if self.lifecycle.paused() {
             return;
@@ -826,6 +847,15 @@ impl App {
             .get_or_insert_with(|| iron_audio::open_mixer(offline));
         // A mixer opened during a pause starts silent.
         mixer.set_muted(paused);
+        if name == "load"
+            && let Some(src) = args.get(1).and_then(iron_core::Value::as_str)
+            && !src.trim_start().starts_with("data:")
+        {
+            let list = self.sound_files.entry(reload::asset_key(src)).or_default();
+            let id = args.first();
+            list.retain(|a| a.first() != id);
+            list.push(args.to_vec());
+        }
         let result = if name == "load" {
             load_sound(mixer.as_mut(), &self.asset_root, args)
         } else {
@@ -1049,8 +1079,50 @@ impl App {
                 tracing::error!("script error in __iron_models: {e}");
             }
         }
-        // `__iron_textures([[id, width, height], ...])`: sizes for `Texture`s (0 × 0
-        // failed). Ops it queues run with the next batch.
+        self.report_textures(loaded);
+    }
+
+    /// Asset files changed on disk: textures, models and sounds from them load again
+    /// under their ids, then scripts hear which files (`__iron_assets_changed`).
+    fn reload_assets(&mut self, keys: &[String]) {
+        let mut sizes = Vec::new();
+        for key in keys {
+            let (s, models) = self.world_view.reload_asset(&self.asset_root, key);
+            if !s.is_empty() || !models.is_empty() {
+                tracing::info!("reloaded {key}");
+            }
+            sizes.extend(s);
+            for args in self.sound_files.get(key).cloned().unwrap_or_default() {
+                if let Some(mixer) = self.audio.as_mut()
+                    && let Err(e) = load_sound(mixer.as_mut(), &self.asset_root, &args)
+                {
+                    tracing::warn!("reloading sound `{key}`: {e}");
+                }
+            }
+        }
+        self.report_textures(sizes);
+        if self
+            .scripts
+            .eval("typeof __iron_assets_changed === 'function'")
+            .is_ok_and(|v| v == iron_core::Value::Bool(true))
+        {
+            let list = keys
+                .iter()
+                .map(|k| iron_core::Value::String(k.clone()))
+                .collect();
+            if let Err(e) = self
+                .scripts
+                .call_global("__iron_assets_changed", &[iron_core::Value::Array(list)])
+            {
+                tracing::error!(target: "script", "__iron_assets_changed: {e}");
+            }
+            self.apply_script_output();
+        }
+    }
+
+    /// Tells scripts textures' sizes: `__iron_textures([[id, width, height], ...])` (0 × 0
+    /// failed). Ops it queues run with the next batch.
+    fn report_textures(&mut self, loaded: Vec<(u32, u32, u32)>) {
         if !loaded.is_empty()
             && self
                 .scripts

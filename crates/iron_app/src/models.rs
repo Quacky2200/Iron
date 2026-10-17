@@ -23,20 +23,46 @@ pub struct Model {
     pub description: Value,
 }
 
-/// Hands out engine ids for model meshes and textures.
+/// Hands out engine ids for model meshes and textures. A reload hands out a model's
+/// old ids first (`replay`), so what scripts hold keeps working.
 #[derive(Debug)]
-pub struct EngineIds(u32);
+pub struct EngineIds {
+    last: u32,
+    replay: std::collections::VecDeque<u32>,
+    /// The ids handed out since `record` started.
+    recorded: Vec<u32>,
+}
 
 impl Default for EngineIds {
     fn default() -> Self {
-        Self(ENGINE_IDS)
+        Self {
+            last: ENGINE_IDS,
+            replay: Default::default(),
+            recorded: Vec::new(),
+        }
     }
 }
 
 impl EngineIds {
     fn next(&mut self) -> u32 {
-        self.0 += 1;
-        self.0
+        let id = self.replay.pop_front().unwrap_or_else(|| {
+            self.last += 1;
+            self.last
+        });
+        self.recorded.push(id);
+        id
+    }
+
+    /// Starts recording ids, handing out `replay` first.
+    pub fn record(&mut self, replay: &[u32]) {
+        self.replay = replay.iter().copied().collect();
+        self.recorded.clear();
+    }
+
+    /// The ids handed out since `record`.
+    pub fn take_recorded(&mut self) -> Vec<u32> {
+        self.replay.clear();
+        std::mem::take(&mut self.recorded)
     }
 }
 

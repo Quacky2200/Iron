@@ -42,6 +42,8 @@ declare global {
   var __iron_tick: (dt: number) => number;
   // Each frame after every onUpdate and before onLateUpdate: animation players (animation.ts).
   var __iron_animate: (dt: number) => void;
+  // Asset files that changed on disk, by game path (assets.ts).
+  var __iron_assets_changed: (paths: string[]) => void;
   var __iron_input: (type: string, ...args: unknown[]) => void;
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
   // The screen size in UI pixels and the scale (screen.ts).

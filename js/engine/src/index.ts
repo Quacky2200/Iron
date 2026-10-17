@@ -10,6 +10,7 @@
 import "./globals";
 import { _undoOnReload } from "./hot.ts";
 
+export { Assets } from "./assets.ts";
 export {
   Animation,
   AnimationClip,

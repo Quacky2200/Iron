@@ -9757,6 +9757,17 @@ No matching component was found for:
     return stale;
   };
 
+  // ../../js/engine/src/assets.ts
+  var listeners = new Set;
+  globalThis.__iron_assets_changed = (paths) => {
+    for (const f of [...listeners]) {
+      try {
+        f(paths);
+      } catch (e) {
+        console.error(`Assets.onChanged: ${e}`);
+      }
+    }
+  };
   // ../../js/engine/src/property.ts
   var PROPERTIES = Symbol("iron.properties");
   var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
@@ -14284,9 +14295,9 @@ ${err.stack}` : ""}`);
     wheelPending = { x: 0, y: 0 };
   });
   var pads = new Map;
-  var listeners = {};
+  var listeners2 = {};
   function emit(type, event) {
-    for (const fn of listeners[type] ?? []) {
+    for (const fn of listeners2[type] ?? []) {
       try {
         fn(event);
       } catch (e) {
@@ -14430,7 +14441,7 @@ ${err.stack}` : ""}`);
     _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
   }
   var restoring = false;
-  var listeners2 = new Set;
+  var listeners3 = new Set;
   function _qualityState() {
     return { level: levelIndex, current };
   }
