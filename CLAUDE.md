@@ -78,6 +78,8 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 - **Charm font:** never commit it. It lives in `/Charm/` with local copies under `examples/*/assets/fonts/`. It's excluded via `.git/info/exclude` and `dist/` is ignored. Check `git status` before committing.
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
 - **CSS:** prefer standard CSS over s&box's custom extensions. The CSS parity backlog is TODO.md "M3d".
+- **Known differences from browsers** (filter order, mask modes, linear-light fades, defaults, gaps)
+  are listed in `docs/differences.md`. Check it before touching those areas, and keep it current.
 
 ## Gotchas
 - **Shell edits:** bash heredocs mangle apostrophes and backslashes on this machine. For multi-line edits use the Edit/Write tools, or a Python script written to the scratchpad.

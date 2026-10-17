@@ -23,6 +23,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [input-and-events.md](input-and-events.md) | Platform input, `Pointer`, `Interaction`, hit testing, focus, dispatch to scripts, cursor, scrolling, text fields (keys, clipboard, IME), gamepads, game `input` API, gamepad UI navigation |
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
+| [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
 
 ## Crate map
 
