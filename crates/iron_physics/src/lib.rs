@@ -5,6 +5,8 @@
 //! advances the world one fixed tick, and [`Physics::take_batch`] returns what scripts
 //! need back (moved bodies, collision events, query results) as one batch per tick.
 
+pub mod cloth;
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -227,6 +229,7 @@ impl Physics {
         self.dirty |= matches!(name, "collider" | "removeBody" | "removeCollider");
         match name {
             "gravity" => self.world.gravity = a.vec3(0)?,
+
             "timestep" => self.world.integration_parameters.dt = a.num(0)?.max(1e-4),
             "body" => self.add_body(&a)?,
             "collider" => self.add_collider(&a)?,
@@ -610,6 +613,12 @@ impl Physics {
     /// Moves a body to where a script put its GameObject: a kinematic body travels there
     /// over the next step (pushing things on the way); others teleport (keeping their
     /// velocity, like setting a Unity transform).
+    /// The world's gravity (cloth uses it too).
+    pub fn gravity(&self) -> [f32; 3] {
+        let g = self.world.gravity;
+        [g.x, g.y, g.z]
+    }
+
     /// Arrays rather than vectors: callers may use another glam version than rapier's.
     pub fn set_pose(&mut self, id: ScriptId, position: [f32; 3], rotation: [f32; 4]) {
         let (position, rotation) = (Vector::from_array(position), Rotation::from_array(rotation));

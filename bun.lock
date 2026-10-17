@@ -56,6 +56,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/cloth": {
+      "name": "cloth",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/cornell": {
       "name": "cornell",
       "version": "0.1.0",
@@ -242,6 +254,8 @@
     "boxes": ["boxes@workspace:examples/boxes"],
 
     "classics": ["classics@workspace:examples/classics"],
+
+    "cloth": ["cloth@workspace:examples/cloth"],
 
     "cornell": ["cornell@workspace:examples/cornell"],
 

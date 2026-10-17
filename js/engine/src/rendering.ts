@@ -794,6 +794,11 @@ export class Mesh {
     return new Mesh(id);
   }
 
+  /** @internal A new script mesh id whose data the engine fills in (a cloth's copy). */
+  static _reserve(): Mesh {
+    return new Mesh(nextMesh++);
+  }
+
   static create(data: MeshData): Mesh {
     const mesh = new Mesh(nextMesh++);
     mesh.set(data);

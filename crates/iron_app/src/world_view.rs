@@ -506,6 +506,38 @@ impl WorldViews {
         (sizes, models)
     }
 
+    /// A mesh's data by name (a primitive) or id (a script's or a model's).
+    pub fn mesh_source(&self, mesh: Option<&Value>) -> Option<MeshData> {
+        match mesh? {
+            Value::String(name) => iron_render::primitive(name),
+            v => self.mesh_data.get(&(v.as_f64()? as u32)).cloned(),
+        }
+    }
+
+    /// A cloth's own copy of its mesh (`target`), which it then moves.
+    pub fn set_cloth_mesh(&mut self, target: u32, data: MeshData) {
+        self.mesh_data.insert(target, data.clone());
+        self.mesh_uploads.push((target, Some(data)));
+    }
+
+    /// New vertex positions for a cloth's mesh: normals and tangents follow.
+    pub fn move_cloth_mesh(&mut self, target: u32, positions: Vec<[f32; 3]>) {
+        let Some(data) = self.mesh_data.get_mut(&target) else {
+            return;
+        };
+        if data.positions.len() != positions.len() {
+            return;
+        }
+        data.positions = positions;
+        data.normals.clear();
+        data.tangents.clear();
+        let moved = std::mem::take(data).complete();
+        *data = moved.clone();
+        // Only the latest shape needs uploading.
+        self.mesh_uploads.retain(|(id, _)| *id != target);
+        self.mesh_uploads.push((target, Some(moved)));
+    }
+
     /// A texture that failed to load: sprites using it draw the renderer's missing
     /// checker (an 8 × 8 texel image) in its place.
     pub fn mark_missing(&mut self, id: u32) {

@@ -1585,44 +1585,6 @@
     return stale;
   };
 
-  // ../../js/engine/src/assets.ts
-  var listeners = new Set;
-  var entries = () => globalThis.__iron_info?.assets ?? [];
-  var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
-  var Assets = {
-    get all() {
-      return entries();
-    },
-    guidToPath(guid) {
-      return entries().find((e) => e.guid === guid)?.path;
-    },
-    pathToGuid(path) {
-      const p = clean(path);
-      return entries().find((e) => e.path === p)?.guid;
-    },
-    importer(path) {
-      const p = clean(Assets.resolve(path));
-      return entries().find((e) => e.path === p)?.importer ?? {};
-    },
-    resolve(src) {
-      if (!src.startsWith("guid:"))
-        return src;
-      return Assets.guidToPath(src.slice(5)) ?? src;
-    },
-    onChanged(fn) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    }
-  };
-  globalThis.__iron_assets_changed = (paths) => {
-    for (const f of [...listeners]) {
-      try {
-        f(paths);
-      } catch (e) {
-        console.error(`Assets.onChanged: ${e}`);
-      }
-    }
-  };
   // ../../js/engine/src/property.ts
   var PROPERTIES = Symbol("iron.properties");
   var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
@@ -1640,1132 +1602,6 @@
     return meta?.[PROPERTIES] ?? [];
   }
 
-  // ../../js/engine/src/animation.ts
-  class Keyframe {
-    time;
-    value;
-    inTangent;
-    outTangent;
-    constructor(time, value, inTangent = 0, outTangent = 0) {
-      this.time = time;
-      this.value = value;
-      this.inTangent = inTangent;
-      this.outTangent = outTangent;
-    }
-  }
-  function wrap(t, length, mode) {
-    if (length <= 0)
-      return 0;
-    if (mode === "loop")
-      return (t % length + length) % length;
-    if (mode === "pingPong") {
-      const p = (t % (2 * length) + 2 * length) % (2 * length);
-      return p > length ? 2 * length - p : p;
-    }
-    return Math.min(length, Math.max(0, t));
-  }
-
-  class AnimationCurve {
-    keys;
-    preWrapMode = "clampForever";
-    postWrapMode = "clampForever";
-    constructor(...keys) {
-      this.keys = [...keys].sort((a, b) => a.time - b.time);
-    }
-    static linear(t0, v0, t1, v1) {
-      const slope = t1 === t0 ? 0 : (v1 - v0) / (t1 - t0);
-      return new AnimationCurve(new Keyframe(t0, v0, 0, slope), new Keyframe(t1, v1, slope, 0));
-    }
-    static easeInOut(t0, v0, t1, v1) {
-      return new AnimationCurve(new Keyframe(t0, v0), new Keyframe(t1, v1));
-    }
-    static constant(t0, t1, value) {
-      return new AnimationCurve(new Keyframe(t0, value), new Keyframe(t1, value));
-    }
-    static fromPoints(points, mode = "linear") {
-      const keys = points.map(([t, v]) => new Keyframe(t, v));
-      for (let i = 0;i < keys.length; i++) {
-        const prev = keys[i - 1];
-        const next = keys[i + 1];
-        const k = keys[i];
-        const slope = (a, b) => b.time === a.time ? 0 : (b.value - a.value) / (b.time - a.time);
-        if (mode === "step") {
-          k.inTangent = k.outTangent = Infinity;
-        } else if (mode === "linear") {
-          k.inTangent = prev ? slope(prev, k) : 0;
-          k.outTangent = next ? slope(k, next) : 0;
-        } else {
-          const s = prev && next ? slope(prev, next) : prev ? slope(prev, k) : next ? slope(k, next) : 0;
-          k.inTangent = k.outTangent = s;
-        }
-      }
-      return new AnimationCurve(...keys);
-    }
-    addKey(time, value = 0) {
-      const key = time instanceof Keyframe ? time : new Keyframe(time, value);
-      let i = this.keys.findIndex((k) => k.time > key.time);
-      if (i < 0)
-        i = this.keys.length;
-      this.keys.splice(i, 0, key);
-      return i;
-    }
-    removeKey(index) {
-      this.keys.splice(index, 1);
-    }
-    get length() {
-      return this.keys.length;
-    }
-    evaluate(time) {
-      const keys = this.keys;
-      if (keys.length === 0)
-        return 0;
-      if (keys.length === 1)
-        return keys[0].value;
-      const first = keys[0].time;
-      const last = keys[keys.length - 1].time;
-      const span = last - first;
-      let t = time;
-      if (t < first)
-        t = first + wrap(t - first, span, this.preWrapMode);
-      else if (t > last)
-        t = first + wrap(t - first, span, this.postWrapMode);
-      let lo = 0;
-      let hi = keys.length - 1;
-      while (hi - lo > 1) {
-        const mid = lo + hi >> 1;
-        if (keys[mid].time <= t)
-          lo = mid;
-        else
-          hi = mid;
-      }
-      const a = keys[lo];
-      const b = keys[hi];
-      const dt = b.time - a.time;
-      if (dt <= 0)
-        return b.value;
-      if (!Number.isFinite(a.outTangent) || !Number.isFinite(b.inTangent))
-        return t >= b.time ? b.value : a.value;
-      const s = (t - a.time) / dt;
-      const s2 = s * s;
-      const s3 = s2 * s;
-      return (2 * s3 - 3 * s2 + 1) * a.value + (s3 - 2 * s2 + s) * a.outTangent * dt + (-2 * s3 + 3 * s2) * b.value + (s3 - s2) * b.inTangent * dt;
-    }
-    _toJSON() {
-      const n = (x) => Number.isFinite(x) ? x : "Infinity";
-      return {
-        keys: this.keys.map((k) => [k.time, k.value, n(k.inTangent), n(k.outTangent)]),
-        pre: this.preWrapMode,
-        post: this.postWrapMode
-      };
-    }
-    static _fromJSON(data) {
-      const d = data;
-      const num = (x) => x === "Infinity" ? Infinity : Number(x);
-      const curve = new AnimationCurve(...(d.keys ?? []).map((k) => new Keyframe(num(k[0]), num(k[1]), num(k[2]), num(k[3]))));
-      curve.preWrapMode = d.pre ?? "clampForever";
-      curve.postWrapMode = d.post ?? "clampForever";
-      return curve;
-    }
-  }
-
-  class AnimationClip {
-    name;
-    wrapMode = "once";
-    frameRate = 60;
-    events = [];
-    _bindings = [];
-    constructor(name = "clip") {
-      this.name = name;
-    }
-    setCurve(relativePath, type, propertyName, curve) {
-      const typeName = typeof type === "string" ? type : type.name;
-      const i = this._bindings.findIndex((b) => b.path === relativePath && b.type === typeName && b.property === propertyName);
-      if (i >= 0)
-        this._bindings.splice(i, 1);
-      if (curve)
-        this._bindings.push({ path: relativePath, type: typeName, property: propertyName, curve });
-    }
-    get curves() {
-      return this._bindings;
-    }
-    get length() {
-      let end = 0;
-      for (const b of this._bindings)
-        end = Math.max(end, b.curve.keys.at(-1)?.time ?? 0);
-      for (const e of this.events)
-        end = Math.max(end, e.time);
-      return end;
-    }
-    addEvent(event) {
-      this.events.push({ ...event });
-      this.events.sort((a, b) => a.time - b.time);
-    }
-    sampleAnimation(go, time) {
-      const pose = new Pose;
-      pose.add(go, this, wrap(time, this.length, this.wrapMode), 1);
-      pose.apply();
-    }
-    toJSON() {
-      return {
-        name: this.name,
-        wrapMode: this.wrapMode,
-        frameRate: this.frameRate,
-        curves: this._bindings.map((b) => ({ path: b.path, type: b.type, property: b.property, curve: b.curve._toJSON() })),
-        events: this.events.map((e) => ({ ...e }))
-      };
-    }
-    static fromJSON(data) {
-      const d = data;
-      const clip = new AnimationClip(d.name ?? "clip");
-      clip.wrapMode = d.wrapMode ?? "once";
-      clip.frameRate = d.frameRate ?? 60;
-      for (const c of d.curves ?? [])
-        clip.setCurve(c.path, c.type, c.property, AnimationCurve._fromJSON(c.curve));
-      for (const e of d.events ?? [])
-        clip.addEvent(e);
-      return clip;
-    }
-  }
-  function resolve(root, path) {
-    if (path === "")
-      return root;
-    let go = root;
-    for (const name of path.split("/")) {
-      go = go?.findChild(name);
-      if (!go)
-        return;
-    }
-    return go;
-  }
-  function componentNamed(go, name) {
-    return go.components.find((c) => c.constructor.name === name);
-  }
-
-  class Pose {
-    transforms = new Map;
-    props = new Map;
-    add(root, clip, time, weight) {
-      if (weight <= 0)
-        return;
-      for (const b of clip._bindings) {
-        const go = resolve(root, b.path);
-        if (!go)
-          continue;
-        const value = b.curve.evaluate(time);
-        if (b.type === "Transform") {
-          let t = this.transforms.get(go);
-          if (!t) {
-            t = { p: [0, 0, 0], r: [0, 0, 0, 0], s: [0, 0, 0], e: [0, 0, 0], w: {} };
-            this.transforms.set(go, t);
-          }
-          const [field, axis] = b.property.split(".");
-          const i = "xyzw".indexOf(axis);
-          const list = field === "localPosition" ? t.p : field === "localRotation" ? t.r : field === "localScale" ? t.s : field === "localEulerAngles" ? t.e : null;
-          if (!list || i < 0)
-            continue;
-          list[i] += value * weight;
-          t.w[b.property] = (t.w[b.property] ?? 0) + weight;
-          continue;
-        }
-        const target = b.type === "GameObject" ? go : componentNamed(go, b.type);
-        if (!target)
-          continue;
-        const key = `${go.id}/${b.type}/${b.property}`;
-        const prev = this.props.get(key);
-        if (prev) {
-          prev.value += value * weight;
-          prev.weight += weight;
-        } else {
-          this.props.set(key, { target, property: b.property, value: value * weight, weight });
-        }
-      }
-    }
-    apply() {
-      for (const [go, t] of this.transforms) {
-        if (go.destroyed)
-          continue;
-        const tr = go.transform;
-        const has = (f, n) => [..."xyzw".slice(0, n)].some((a) => t.w[`${f}.${a}`]);
-        const avg = (f, list, current) => current.map((c, i) => {
-          const w = t.w[`${f}.${"xyzw"[i]}`];
-          return w ? list[i] / w : c;
-        });
-        const cur = tr.localPosition;
-        const v3 = (a) => new Vector3(a[0], a[1], a[2]);
-        const position = has("localPosition", 3) ? v3(avg("localPosition", t.p, [cur.x, cur.y, cur.z])) : cur;
-        const sc = tr.localScale;
-        const scale = has("localScale", 3) ? v3(avg("localScale", t.s, [sc.x, sc.y, sc.z])) : sc;
-        let rotation = tr.localRotation;
-        if (has("localRotation", 4)) {
-          const q = avg("localRotation", t.r, [rotation.x, rotation.y, rotation.z, rotation.w]);
-          rotation = new Quaternion(q[0], q[1], q[2], q[3]).normalized;
-        } else if (has("localEulerAngles", 3)) {
-          const e0 = tr.localEulerAngles;
-          const e = avg("localEulerAngles", t.e, [e0.x, e0.y, e0.z]);
-          rotation = Quaternion.euler(e[0], e[1], e[2]);
-        }
-        tr._setLocal(position, rotation, scale);
-      }
-      for (const p of this.props.values()) {
-        const value = p.value / p.weight;
-        if (p.target instanceof GameObject) {
-          if (p.property === "active")
-            p.target.enabled = value > 0.5;
-          continue;
-        }
-        setProperty(p.target, p.property, value);
-      }
-    }
-    addAligned(root, clip, time, weight) {
-      const flips = new Map;
-      for (const b of clip._bindings) {
-        if (b.type !== "Transform" || !b.property.startsWith("localRotation."))
-          continue;
-        const go = resolve(root, b.path);
-        if (!go || flips.has(go))
-          continue;
-        const sum = this.transforms.get(go)?.r;
-        if (!sum || sum.every((v) => v === 0))
-          continue;
-        const q = "xyzw".split("").map((a) => clip._bindings.find((c) => c.path === b.path && c.type === "Transform" && c.property === `localRotation.${a}`)?.curve.evaluate(time) ?? 0);
-        const dot = q.reduce((d, v, i) => d + v * sum[i], 0);
-        flips.set(go, dot < 0 ? -1 : 1);
-      }
-      if ([...flips.values()].every((f) => f > 0)) {
-        this.add(root, clip, time, weight);
-        return;
-      }
-      for (const b of clip._bindings) {
-        const go = resolve(root, b.path);
-        const flip = go && b.type === "Transform" && b.property.startsWith("localRotation.") ? flips.get(go) ?? 1 : 1;
-        const single = new AnimationClip;
-        single._bindings.push(flip < 0 ? { ...b, curve: negated(b.curve) } : b);
-        this.add(root, single, time, weight);
-      }
-    }
-  }
-  var negatedCache = new WeakMap;
-  function negated(c) {
-    let n = negatedCache.get(c);
-    if (!n) {
-      n = new AnimationCurve(...c.keys.map((k) => new Keyframe(k.time, -k.value, -k.inTangent, -k.outTangent)));
-      n.preWrapMode = c.preWrapMode;
-      n.postWrapMode = c.postWrapMode;
-      negatedCache.set(c, n);
-    }
-    return n;
-  }
-  function setProperty(target, property, value) {
-    const record = target;
-    const dot = property.indexOf(".");
-    if (dot < 0) {
-      const current = record[property];
-      record[property] = typeof current === "boolean" ? value > 0.5 : value;
-      return;
-    }
-    const head = property.slice(0, dot);
-    const field = property.slice(dot + 1);
-    const current = record[head];
-    if (current === null || typeof current !== "object")
-      return;
-    const copy = Object.assign(Object.create(Object.getPrototypeOf(current)), current);
-    copy[field] = value;
-    record[head] = copy;
-  }
-  function fireEvents(go, clip, from, to, length, wrapMode) {
-    if (clip.events.length === 0 || to <= from)
-      return;
-    const passes = wrapMode === "loop" && length > 0 ? Math.floor(to / length) - Math.floor(from / length) : 0;
-    const local = (t) => wrapMode === "loop" && length > 0 ? (t % length + length) % length : t;
-    const a = local(from);
-    const b = local(to);
-    for (const e of clip.events) {
-      const hit = passes === 0 ? e.time > a && e.time <= b : e.time > a || e.time <= b || passes > 1;
-      if (!hit)
-        continue;
-      for (const c of [...go.components]) {
-        const fn = c[e.functionName];
-        if (typeof fn === "function")
-          fn.call(c, e.parameter);
-      }
-    }
-  }
-
-  class AnimationState {
-    name;
-    clip;
-    time = 0;
-    speed = 1;
-    weight = 0;
-    enabled = false;
-    wrapMode;
-    _fade = 0;
-    _target = 0;
-    constructor(name, clip) {
-      this.name = name;
-      this.clip = clip;
-      this.wrapMode = clip.wrapMode;
-    }
-    get length() {
-      return this.clip.length;
-    }
-    get normalizedTime() {
-      return this.length > 0 ? this.time / this.length : 0;
-    }
-    set normalizedTime(t) {
-      this.time = t * this.length;
-    }
-  }
-  var _init, _base, _dec, _dec2, _dec3;
-
-  class Animation extends (_base = Component) {
-    static {
-      _init = __decoratorStart(_base);
-      __decorateElement(_init, 5, "clip", _dec, this);
-      __decorateElement(_init, 5, "clips", _dec2, this);
-      __decorateElement(_init, 5, "playAutomatically", _dec3, this);
-      __decoratorMetadata(_init, this);
-    }
-    [(_dec = [
-      property
-    ], "clip")] = __runInitializers(_init, 8, this, null);
-    [(_dec2 = [
-      property
-    ], "clips")] = (__runInitializers(_init, 11, this), __runInitializers(_init, 12, this, []));
-    [(_dec3 = [
-      property
-    ], "playAutomatically")] = (__runInitializers(_init, 15, this), __runInitializers(_init, 16, this, true));
-    states = (__runInitializers(_init, 19, this), new Map);
-    onStart() {
-      if (this.playAutomatically && this.clip)
-        this.play(this.clip.name);
-    }
-    addClip(clip, name = clip.name) {
-      if (!this.clips.includes(clip))
-        this.clips.push(clip);
-      this.states.set(name, new AnimationState(name, clip));
-    }
-    state(name) {
-      if (!this.states.has(name)) {
-        const clip = [...this.clips, ...this.clip ? [this.clip] : []].find((c) => c.name === name);
-        if (clip)
-          this.states.set(name, new AnimationState(name, clip));
-      }
-      return this.states.get(name);
-    }
-    play(name = this.clip?.name ?? "") {
-      const s = this.state(name);
-      if (!s)
-        return false;
-      for (const other of this.states.values()) {
-        if (other !== s) {
-          other.enabled = false;
-          other.weight = 0;
-        }
-      }
-      s.enabled = true;
-      s.time = 0;
-      s.weight = 1;
-      s._fade = 0;
-      s._target = 1;
-      return true;
-    }
-    crossFade(name, fadeLength = 0.3) {
-      const s = this.state(name);
-      if (!s)
-        return;
-      if (!s.enabled) {
-        s.enabled = true;
-        s.time = 0;
-      }
-      const rate = 1 / Math.max(0.0001, fadeLength);
-      s._target = 1;
-      s._fade = rate;
-      for (const other of this.states.values()) {
-        if (other !== s && other.enabled) {
-          other._target = 0;
-          other._fade = rate;
-        }
-      }
-    }
-    stop(name) {
-      for (const s of this.states.values()) {
-        if (name === undefined || s.name === name) {
-          s.enabled = false;
-          s.weight = 0;
-          s.time = 0;
-        }
-      }
-    }
-    isPlaying(name) {
-      return [...this.states.values()].some((s) => s.enabled && (name === undefined || s.name === name));
-    }
-    _animate(dt) {
-      const pose = new Pose;
-      for (const s of this.states.values()) {
-        if (!s.enabled)
-          continue;
-        if (s._fade) {
-          const step = s._fade * dt;
-          s.weight = s.weight < s._target ? Math.min(s._target, s.weight + step) : Math.max(s._target, s.weight - step);
-          if (s.weight === s._target)
-            s._fade = 0;
-          if (s.weight <= 0 && s._target === 0) {
-            s.enabled = false;
-            continue;
-          }
-        }
-        const before = s.time;
-        s.time += dt * s.speed;
-        fireEvents(this.gameObject, s.clip, before, s.time, s.length, s.wrapMode);
-        if (s.wrapMode === "once" && s.time >= s.length) {
-          pose.addAligned(this.gameObject, s.clip, s.length, s.weight);
-          s.enabled = false;
-          continue;
-        }
-        pose.addAligned(this.gameObject, s.clip, wrap(s.time, s.length, s.wrapMode), s.weight);
-      }
-      pose.apply();
-    }
-  }
-
-  class AnimatorController {
-    parameters = [];
-    states = [];
-    transitions = [];
-    defaultState = null;
-    constructor(init = {}) {
-      Object.assign(this, init);
-    }
-    addParameter(name, type, defaultValue) {
-      this.parameters.push({ name, type, defaultValue });
-      return this;
-    }
-    addState(name, motion, options = {}) {
-      this.states.push({ name, motion, ...options });
-      return this;
-    }
-    addTransition(t) {
-      this.transitions.push(t);
-      return this;
-    }
-    toJSON() {
-      const motion = (m) => m instanceof AnimationClip ? { clip: m.toJSON() } : { blendParameter: m.blendParameter, children: m.children.map((c) => ({ ...c, motion: c.motion.toJSON() })) };
-      return {
-        parameters: this.parameters,
-        states: this.states.map((s) => ({ ...s, motion: motion(s.motion) })),
-        transitions: this.transitions,
-        defaultState: this.defaultState
-      };
-    }
-    static fromJSON(data) {
-      const d = data;
-      return new AnimatorController({
-        parameters: d.parameters ?? [],
-        transitions: d.transitions ?? [],
-        defaultState: d.defaultState ?? null,
-        states: (d.states ?? []).map((s) => ({
-          ...s,
-          motion: s.motion.clip ? AnimationClip.fromJSON(s.motion.clip) : {
-            blendParameter: s.motion.blendParameter ?? "",
-            children: (s.motion.children ?? []).map((c) => ({ ...c, motion: AnimationClip.fromJSON(c.motion) }))
-          }
-        }))
-      });
-    }
-  }
-  var _init2, _base2, _dec4, _dec5;
-
-  class Animator extends (_base2 = Component) {
-    static {
-      _init2 = __decoratorStart(_base2);
-      __decorateElement(_init2, 5, "controller", _dec4, this);
-      __decorateElement(_init2, 5, "speed", _dec5, this);
-      __decoratorMetadata(_init2, this);
-    }
-    [(_dec4 = [
-      property
-    ], "controller")] = __runInitializers(_init2, 8, this, null);
-    [(_dec5 = [
-      property
-    ], "speed")] = (__runInitializers(_init2, 11, this), __runInitializers(_init2, 12, this, 1));
-    values = (__runInitializers(_init2, 15, this), new Map);
-    current = null;
-    next = null;
-    ensure() {
-      if (this.current || !this.controller)
-        return;
-      for (const p of this.controller.parameters) {
-        if (!this.values.has(p.name))
-          this.values.set(p.name, p.defaultValue ?? (p.type === "bool" || p.type === "trigger" ? false : 0));
-      }
-      const name = this.controller.defaultState ?? this.controller.states[0]?.name;
-      const state = this.controller.states.find((s) => s.name === name);
-      if (state)
-        this.current = { state, time: 0 };
-    }
-    setFloat(name, value) {
-      this.values.set(name, value);
-    }
-    getFloat(name) {
-      this.ensure();
-      return Number(this.values.get(name) ?? 0);
-    }
-    setInteger(name, value) {
-      this.values.set(name, Math.trunc(value));
-    }
-    getInteger(name) {
-      return Math.trunc(this.getFloat(name));
-    }
-    setBool(name, value) {
-      this.values.set(name, value);
-    }
-    getBool(name) {
-      this.ensure();
-      return this.values.get(name) === true;
-    }
-    setTrigger(name) {
-      this.values.set(name, true);
-    }
-    resetTrigger(name) {
-      this.values.set(name, false);
-    }
-    play(stateName, normalizedTime = 0) {
-      this.ensure();
-      const state = this.controller?.states.find((s) => s.name === stateName);
-      if (!state)
-        return;
-      this.current = { state, time: normalizedTime * this.lengthOf(state) };
-      this.next = null;
-    }
-    crossFade(stateName, duration = 0.25, normalizedTime = 0) {
-      this.ensure();
-      const state = this.controller?.states.find((s) => s.name === stateName);
-      if (!state || !this.current) {
-        if (state)
-          this.play(stateName, normalizedTime);
-        return;
-      }
-      this.next = { state, time: normalizedTime * this.lengthOf(state), progress: 0, duration: Math.max(0.0001, duration) };
-    }
-    get isInTransition() {
-      return this.next !== null;
-    }
-    getCurrentAnimatorStateInfo() {
-      this.ensure();
-      return this.info(this.current);
-    }
-    getNextAnimatorStateInfo() {
-      return this.info(this.next);
-    }
-    info(p) {
-      const length = p ? this.lengthOf(p.state) : 0;
-      const name = p?.state.name ?? "";
-      return { name, length, normalizedTime: p && length > 0 ? p.time / length : 0, isName: (n) => n === name };
-    }
-    clips(state) {
-      const m = state.motion;
-      if (m instanceof AnimationClip)
-        return [{ clip: m, weight: 1, timeScale: 1 }];
-      const children = [...m.children].sort((a, b) => a.threshold - b.threshold);
-      if (children.length === 0)
-        return [];
-      const v = this.getFloat(m.blendParameter);
-      const first = children[0];
-      const last = children[children.length - 1];
-      if (v <= first.threshold)
-        return [{ clip: first.motion, weight: 1, timeScale: first.timeScale ?? 1 }];
-      if (v >= last.threshold)
-        return [{ clip: last.motion, weight: 1, timeScale: last.timeScale ?? 1 }];
-      const i = children.findIndex((c) => c.threshold > v);
-      const a = children[i - 1];
-      const b = children[i];
-      const t = (v - a.threshold) / (b.threshold - a.threshold);
-      return [
-        { clip: a.motion, weight: 1 - t, timeScale: a.timeScale ?? 1 },
-        { clip: b.motion, weight: t, timeScale: b.timeScale ?? 1 }
-      ];
-    }
-    lengthOf(state) {
-      return this.clips(state).reduce((l, c) => l + c.weight * c.clip.length / c.timeScale, 0);
-    }
-    stateSpeed(state) {
-      const factor = state.speedParameter ? this.getFloat(state.speedParameter) : 1;
-      return (state.speed ?? 1) * factor * this.speed;
-    }
-    passes(c) {
-      const v = this.values.get(c.parameter);
-      const n = Number(v ?? 0);
-      const t = c.threshold ?? 0;
-      switch (c.mode) {
-        case "if":
-          return v === true;
-        case "ifNot":
-          return v !== true;
-        case "greater":
-          return n > t;
-        case "less":
-          return n < t;
-        case "equals":
-          return n === t;
-        case "notEqual":
-          return n !== t;
-      }
-    }
-    checkTransitions() {
-      if (!this.controller || !this.current || this.next)
-        return;
-      const from = this.current;
-      const length = this.lengthOf(from.state);
-      const normalized = length > 0 ? from.time / length : 1;
-      for (const t of this.controller.transitions) {
-        if (t.from !== from.state.name && !(t.from === "Any" && t.to !== from.state.name))
-          continue;
-        if (t.hasExitTime && normalized < (t.exitTime ?? 1))
-          continue;
-        const conditions = t.conditions ?? [];
-        if (!t.hasExitTime && conditions.length === 0)
-          continue;
-        if (!conditions.every((c) => this.passes(c)))
-          continue;
-        for (const c of conditions) {
-          if (this.controller.parameters.find((p) => p.name === c.parameter)?.type === "trigger")
-            this.values.set(c.parameter, false);
-        }
-        const state = this.controller.states.find((s) => s.name === t.to);
-        if (!state)
-          continue;
-        const duration = t.duration ?? 0.25;
-        const start = (t.offset ?? 0) * this.lengthOf(state);
-        if (duration <= 0)
-          this.current = { state, time: start };
-        else
-          this.next = { state, time: start, progress: 0, duration };
-        return;
-      }
-    }
-    _animate(dt) {
-      this.ensure();
-      if (!this.current)
-        return;
-      this.checkTransitions();
-      const pose = new Pose;
-      const run = (p, weight) => {
-        const before = p.time;
-        p.time += dt * this.stateSpeed(p.state);
-        const length = this.lengthOf(p.state);
-        for (const c of this.clips(p.state)) {
-          const t = length > 0 ? p.time / length * c.clip.length : 0;
-          const t0 = length > 0 ? before / length * c.clip.length : 0;
-          const mode = c.clip.wrapMode === "once" ? "clampForever" : c.clip.wrapMode;
-          if (c.weight * weight >= 0.5)
-            fireEvents(this.gameObject, c.clip, t0, t, c.clip.length, mode);
-          pose.addAligned(this.gameObject, c.clip, wrap(t, c.clip.length, mode), c.weight * weight);
-        }
-      };
-      if (this.next) {
-        this.next.progress = Math.min(1, this.next.progress + dt / this.next.duration);
-        const w = this.next.progress;
-        run(this.current, 1 - w);
-        run(this.next, w);
-        if (w >= 1) {
-          this.current = { state: this.next.state, time: this.next.time };
-          this.next = null;
-        }
-      } else {
-        run(this.current, 1);
-      }
-      pose.apply();
-    }
-  }
-  globalThis.__iron_animate = (dt) => {
-    const visit = (go) => {
-      if (!go.activeInHierarchy)
-        return;
-      for (const c of go.components) {
-        if (c instanceof Animation || c instanceof Animator) {
-          try {
-            c._animate(dt);
-          } catch (e) {
-            console.error(`animation on ${go.name}: ${e}`);
-          }
-        }
-      }
-      for (const child of go.children)
-        visit(child);
-    };
-    for (const root of GameObject.roots)
-      visit(root);
-  };
-  // ../../js/engine/src/audio.ts
-  var nextSound = 1;
-  var nextPlayback = 1;
-  var nextTrack = 1;
-  var playing = new Map;
-
-  class Sound {
-    id;
-    src;
-    constructor(source, options = {}) {
-      const src = Assets.resolve(source);
-      this.id = nextSound++;
-      this.src = src;
-      if (options.stream === undefined && Assets.importer(src).stream === true)
-        options = { ...options, stream: true };
-      __iron_op("audio.load", this.id, src, !!options.stream);
-    }
-    play(options = {}) {
-      return new Playback(this, options);
-    }
-    unload() {
-      __iron_op("audio.unload", this.id);
-    }
-  }
-
-  class Playback {
-    id;
-    sound;
-    playing = true;
-    onEnded;
-    constructor(sound, o) {
-      this.id = nextPlayback++;
-      this.sound = sound;
-      playing.set(this.id, this);
-      __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
-        o.volume ?? 1,
-        o.rate ?? 1,
-        o.pan ?? 0,
-        !!o.loop,
-        o.fadeIn ?? 0,
-        o.start ?? 0
-      ]);
-    }
-    setVolume(volume, fade = 0) {
-      __iron_op("audio.set", this.id, "volume", volume, fade);
-    }
-    setRate(rate, fade = 0) {
-      __iron_op("audio.set", this.id, "rate", rate, fade);
-    }
-    setPan(pan, fade = 0) {
-      __iron_op("audio.set", this.id, "pan", pan, fade);
-    }
-    pause(fade = 0) {
-      __iron_op("audio.pause", this.id, fade);
-    }
-    resume(fade = 0) {
-      __iron_op("audio.resume", this.id, fade);
-    }
-    stop(fade = 0) {
-      __iron_op("audio.stop", this.id, fade);
-    }
-    seek(seconds) {
-      __iron_op("audio.seek", this.id, seconds);
-    }
-  }
-
-  class Bus {
-    id;
-    constructor(volume, parent) {
-      this.id = nextTrack++;
-      __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
-    }
-    setVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", this.id, volume, fade);
-    }
-    pause(fade = 0) {
-      __iron_op("audio.trackPause", this.id, fade);
-    }
-    resume(fade = 0) {
-      __iron_op("audio.trackResume", this.id, fade);
-    }
-    remove() {
-      __iron_op("audio.removeTrack", this.id);
-    }
-  }
-
-  class Emitter {
-    id;
-    constructor(position, options) {
-      this.id = nextTrack++;
-      __iron_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
-    }
-    setPosition(p, glide = 0) {
-      __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
-    }
-    setVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", this.id, volume, fade);
-    }
-    remove() {
-      __iron_op("audio.removeTrack", this.id);
-    }
-  }
-  var cache = new Map;
-  var audio = {
-    load(src, options) {
-      return new Sound(src, options);
-    },
-    play(src, options) {
-      let sound = cache.get(src);
-      if (!sound) {
-        sound = new Sound(src);
-        cache.set(src, sound);
-      }
-      return sound.play(options);
-    },
-    createBus(options = {}) {
-      return new Bus(options.volume ?? 1, options.parent ?? null);
-    },
-    createEmitter(position, options = {}) {
-      return new Emitter(position, options);
-    },
-    setListener(position, rotation = { x: 0, y: 0, z: 0, w: 1 }) {
-      __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
-    },
-    setMasterVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", null, volume, fade);
-    }
-  };
-  globalThis.__iron_audio = (ended) => {
-    for (const id of ended) {
-      const p = playing.get(id);
-      if (!p)
-        continue;
-      playing.delete(id);
-      p.playing = false;
-      try {
-        p.onEnded?.();
-      } catch (e) {
-        const err = e instanceof Error ? e : new Error(String(e));
-        console.error(`[audio] error in onEnded: ${err.message}${err.stack ? `
-${err.stack}` : ""}`);
-      }
-    }
-  };
-  // ../../js/engine/src/audio-components.ts
-  var clips = new Map;
-  function clipOf(clip) {
-    if (clip instanceof Sound)
-      return clip;
-    let sound = clips.get(clip);
-    if (!sound) {
-      sound = audio.load(clip);
-      clips.set(clip, sound);
-    }
-    return sound;
-  }
-  var _init3, _base3, _dec6, _dec7, _dec8, _dec9, _dec10, _dec11, _dec12, _dec13, _dec14, _dec15;
-
-  class AudioSource extends (_base3 = Component) {
-    static {
-      _init3 = __decoratorStart(_base3);
-      __decorateElement(_init3, 2, "volume", _dec11, this);
-      __decorateElement(_init3, 2, "pitch", _dec12, this);
-      __decorateElement(_init3, 2, "panStereo", _dec13, this);
-      __decorateElement(_init3, 2, "mute", _dec14, this);
-      __decorateElement(_init3, 2, "loop", _dec15, this);
-      __decorateElement(_init3, 5, "clip", _dec6, this);
-      __decorateElement(_init3, 5, "playOnAwake", _dec7, this);
-      __decorateElement(_init3, 5, "spatialBlend", _dec8, this);
-      __decorateElement(_init3, 5, "minDistance", _dec9, this);
-      __decorateElement(_init3, 5, "maxDistance", _dec10, this);
-      __decoratorMetadata(_init3, this);
-    }
-    [(_dec6 = [
-      property
-    ], "clip")] = (__runInitializers(_init3, 5, this), __runInitializers(_init3, 8, this, null));
-    [(_dec7 = [
-      property
-    ], "playOnAwake")] = (__runInitializers(_init3, 11, this), __runInitializers(_init3, 12, this, true));
-    [(_dec8 = [
-      property
-    ], "spatialBlend")] = (__runInitializers(_init3, 15, this), __runInitializers(_init3, 16, this, 0));
-    [(_dec9 = [
-      property
-    ], "minDistance")] = (__runInitializers(_init3, 19, this), __runInitializers(_init3, 20, this, 1));
-    [(_dec10 = [
-      property
-    ], "maxDistance")] = (__runInitializers(_init3, 23, this), __runInitializers(_init3, 24, this, 50));
-    outputBus = (__runInitializers(_init3, 27, this), null);
-    _volume = 1;
-    _pitch = 1;
-    _panStereo = 0;
-    _loop = false;
-    _mute = false;
-    main = null;
-    paused = false;
-    all = new Set;
-    emitter = null;
-    emitterKey = "";
-    sentPosition = null;
-    get [(_dec11 = [
-      property
-    ], "volume")]() {
-      return this._volume;
-    }
-    set volume(v) {
-      this._volume = v;
-      this.eachPlaying((p) => p.setVolume(this.gain()));
-    }
-    get [(_dec12 = [
-      property
-    ], "pitch")]() {
-      return this._pitch;
-    }
-    set pitch(r) {
-      this._pitch = r;
-      this.eachPlaying((p) => p.setRate(r));
-    }
-    get [(_dec13 = [
-      property
-    ], "panStereo")]() {
-      return this._panStereo;
-    }
-    set panStereo(p) {
-      this._panStereo = p;
-      this.eachPlaying((pb) => pb.setPan(p));
-    }
-    get [(_dec14 = [
-      property
-    ], "mute")]() {
-      return this._mute;
-    }
-    set mute(m) {
-      this._mute = m;
-      this.eachPlaying((p) => p.setVolume(this.gain()));
-    }
-    get [(_dec15 = [
-      property
-    ], "loop")]() {
-      return this._loop;
-    }
-    set loop(l) {
-      this._loop = l;
-    }
-    get isPlaying() {
-      return !!this.main?.playing && !this.paused;
-    }
-    gain() {
-      return this._mute ? 0 : this._volume;
-    }
-    eachPlaying(f) {
-      for (const p of this.all)
-        f(p);
-    }
-    output() {
-      if (this.spatialBlend <= 0)
-        return this.outputBus ?? undefined;
-      const key = `${this.minDistance},${this.maxDistance},${this.outputBus?.id ?? ""}`;
-      if (!this.emitter || key !== this.emitterKey) {
-        this.emitter?.remove();
-        this.all.clear();
-        this.main = null;
-        this.sentPosition = this.transform.position;
-        this.emitter = audio.createEmitter(this.sentPosition, {
-          minDistance: this.minDistance,
-          maxDistance: this.maxDistance,
-          bus: this.outputBus ?? undefined
-        });
-        this.emitterKey = key;
-      }
-      return this.emitter;
-    }
-    start(sound, options) {
-      const p = sound.play({ ...options, on: this.output() });
-      this.all.add(p);
-      p.onEnded = () => this.all.delete(p);
-      return p;
-    }
-    play() {
-      if (!this.clip) {
-        console.warn(`AudioSource on ${this.gameObject.name} has no clip`);
-        return;
-      }
-      this.main?.stop();
-      this.paused = false;
-      this.main = this.start(clipOf(this.clip), {
-        volume: this.gain(),
-        rate: this._pitch,
-        pan: this._panStereo,
-        loop: this._loop
-      });
-    }
-    stop() {
-      this.main?.stop();
-      this.main = null;
-      this.paused = false;
-    }
-    pause() {
-      if (!this.main?.playing || this.paused)
-        return;
-      this.main.pause();
-      this.paused = true;
-    }
-    unPause() {
-      if (!this.paused || !this.main)
-        return;
-      this.main.resume();
-      this.paused = false;
-    }
-    playOneShot(clip, volumeScale = 1) {
-      this.start(clipOf(clip), { volume: this.gain() * volumeScale, rate: this._pitch, pan: this._panStereo });
-    }
-    static playClipAtPoint(clip, position, volume = 1) {
-      const emitter = audio.createEmitter(position);
-      const p = clipOf(clip).play({ volume, on: emitter });
-      p.onEnded = () => emitter.remove();
-      return p;
-    }
-    onAwake() {
-      if (this.playOnAwake && this.clip)
-        this.play();
-    }
-    onPreRender() {
-      if (!this.emitter)
-        return;
-      const p = this.transform.position;
-      const s = this.sentPosition;
-      if (s && p.x === s.x && p.y === s.y && p.z === s.z)
-        return;
-      this.emitter.setPosition(p);
-      this.sentPosition = p;
-    }
-    onDestroy() {
-      for (const p of this.all)
-        p.stop();
-      this.all.clear();
-      this.main = null;
-      this.emitter?.remove();
-      this.emitter = null;
-    }
-  }
-  var masterVolume = 1;
-
-  class AudioListener extends Component {
-    sent = null;
-    static get volume() {
-      return masterVolume;
-    }
-    static set volume(v) {
-      masterVolume = v;
-      audio.setMasterVolume(v);
-    }
-    onAwake() {
-      this.send();
-    }
-    onPreRender() {
-      this.send();
-    }
-    send() {
-      const p = this.transform.position;
-      const r = this.transform.rotation;
-      const s = this.sent;
-      if (s && s.x === p.x && s.y === p.y && s.z === p.z && s.rx === r.x && s.ry === r.y && s.rz === r.z && s.rw === r.w) {
-        return;
-      }
-      audio.setListener(p, r);
-      this.sent = { x: p.x, y: p.y, z: p.z, rx: r.x, ry: r.y, rz: r.z, rw: r.w };
-    }
-  }
   // ../../js/engine/src/clock.ts
   var time = 0;
   var unscaledTime = 0;
@@ -3196,28 +2032,28 @@ ${err.stack}` : ""}`);
   // ../../js/engine/src/rendering.ts
   var rgba = (c) => [c.r, c.g, c.b, c.a];
   var cameras = [];
-  var _init4, _base4, _dec16, _dec17, _dec18, _dec19, _dec20, _dec21, _dec22, _dec23, _dec24, _dec25, _dec26, _dec27, _dec28, _dec29;
+  var _init, _base, _dec, _dec2, _dec3, _dec4, _dec5, _dec6, _dec7, _dec8, _dec9, _dec10, _dec11, _dec12, _dec13, _dec14;
 
-  class Camera extends (_base4 = Component) {
+  class Camera extends (_base = Component) {
     static {
-      _init4 = __decoratorStart(_base4);
-      __decorateElement(_init4, 2, "fieldOfView", _dec16, this);
-      __decorateElement(_init4, 2, "nearClipPlane", _dec17, this);
-      __decorateElement(_init4, 2, "farClipPlane", _dec18, this);
-      __decorateElement(_init4, 2, "backgroundColor", _dec19, this);
-      __decorateElement(_init4, 2, "clearFlags", _dec20, this);
-      __decorateElement(_init4, 2, "depth", _dec21, this);
-      __decorateElement(_init4, 2, "orthographic", _dec22, this);
-      __decorateElement(_init4, 2, "orthographicSize", _dec23, this);
-      __decorateElement(_init4, 2, "rect", _dec24, this);
-      __decorateElement(_init4, 2, "cullingMask", _dec25, this);
-      __decorateElement(_init4, 2, "layerCullDistances", _dec26, this);
-      __decorateElement(_init4, 2, "layerCullSpherical", _dec27, this);
-      __decorateElement(_init4, 2, "antialiasing", _dec28, this);
-      __decorateElement(_init4, 2, "targetTexture", _dec29, this);
-      __decoratorMetadata(_init4, this);
+      _init = __decoratorStart(_base);
+      __decorateElement(_init, 2, "fieldOfView", _dec, this);
+      __decorateElement(_init, 2, "nearClipPlane", _dec2, this);
+      __decorateElement(_init, 2, "farClipPlane", _dec3, this);
+      __decorateElement(_init, 2, "backgroundColor", _dec4, this);
+      __decorateElement(_init, 2, "clearFlags", _dec5, this);
+      __decorateElement(_init, 2, "depth", _dec6, this);
+      __decorateElement(_init, 2, "orthographic", _dec7, this);
+      __decorateElement(_init, 2, "orthographicSize", _dec8, this);
+      __decorateElement(_init, 2, "rect", _dec9, this);
+      __decorateElement(_init, 2, "cullingMask", _dec10, this);
+      __decorateElement(_init, 2, "layerCullDistances", _dec11, this);
+      __decorateElement(_init, 2, "layerCullSpherical", _dec12, this);
+      __decorateElement(_init, 2, "antialiasing", _dec13, this);
+      __decorateElement(_init, 2, "targetTexture", _dec14, this);
+      __decoratorMetadata(_init, this);
     }
-    _fov = (__runInitializers(_init4, 5, this), 60);
+    _fov = (__runInitializers(_init, 5, this), 60);
     _near = 0.1;
     _far = 1000;
     _background = new Color(0.05, 0.06, 0.09, 1);
@@ -3231,7 +2067,7 @@ ${err.stack}` : ""}`);
     _antialiasing = "none";
     _targetTexture = null;
     started = false;
-    get [(_dec16 = [
+    get [(_dec = [
       property
     ], "fieldOfView")]() {
       return this._fov;
@@ -3254,7 +2090,7 @@ ${err.stack}` : ""}`);
       const half = horizontal * Math.PI / 360;
       return Math.atan(Math.tan(half) / aspect) * 360 / Math.PI;
     }
-    get [(_dec17 = [
+    get [(_dec2 = [
       property
     ], "nearClipPlane")]() {
       return this._near;
@@ -3263,7 +2099,7 @@ ${err.stack}` : ""}`);
       this._near = v;
       this.send();
     }
-    get [(_dec18 = [
+    get [(_dec3 = [
       property
     ], "farClipPlane")]() {
       return this._far;
@@ -3272,7 +2108,7 @@ ${err.stack}` : ""}`);
       this._far = v;
       this.send();
     }
-    get [(_dec19 = [
+    get [(_dec4 = [
       property
     ], "backgroundColor")]() {
       return this._background;
@@ -3282,7 +2118,7 @@ ${err.stack}` : ""}`);
       this.send();
     }
     _clearFlags = "solidColor";
-    get [(_dec20 = [
+    get [(_dec5 = [
       property
     ], "clearFlags")]() {
       return this._clearFlags;
@@ -3291,7 +2127,7 @@ ${err.stack}` : ""}`);
       this._clearFlags = f;
       this.send();
     }
-    get [(_dec21 = [
+    get [(_dec6 = [
       property
     ], "depth")]() {
       return this._depth;
@@ -3300,7 +2136,7 @@ ${err.stack}` : ""}`);
       this._depth = d;
       this.send();
     }
-    get [(_dec22 = [
+    get [(_dec7 = [
       property
     ], "orthographic")]() {
       return this._orthographic;
@@ -3309,7 +2145,7 @@ ${err.stack}` : ""}`);
       this._orthographic = on;
       this.send();
     }
-    get [(_dec23 = [
+    get [(_dec8 = [
       property
     ], "orthographicSize")]() {
       return this._orthographicSize;
@@ -3318,7 +2154,7 @@ ${err.stack}` : ""}`);
       this._orthographicSize = s;
       this.send();
     }
-    get [(_dec24 = [
+    get [(_dec9 = [
       property
     ], "rect")]() {
       return this._rect;
@@ -3327,7 +2163,7 @@ ${err.stack}` : ""}`);
       this._rect = r;
       this.send();
     }
-    get [(_dec25 = [
+    get [(_dec10 = [
       property
     ], "cullingMask")]() {
       return this._cullingMask;
@@ -3336,7 +2172,7 @@ ${err.stack}` : ""}`);
       this._cullingMask = mask >>> 0;
       this.send();
     }
-    get [(_dec26 = [
+    get [(_dec11 = [
       property
     ], "layerCullDistances")]() {
       return [...this._layerCullDistances];
@@ -3345,7 +2181,7 @@ ${err.stack}` : ""}`);
       this._layerCullDistances = Array.from({ length: 32 }, (_, i) => Math.max(0, distances[i] ?? 0));
       this.send();
     }
-    get [(_dec27 = [
+    get [(_dec12 = [
       property
     ], "layerCullSpherical")]() {
       return this._layerCullSpherical;
@@ -3354,7 +2190,7 @@ ${err.stack}` : ""}`);
       this._layerCullSpherical = on;
       this.send();
     }
-    get [(_dec28 = [
+    get [(_dec13 = [
       property
     ], "antialiasing")]() {
       return this._antialiasing;
@@ -3363,7 +2199,7 @@ ${err.stack}` : ""}`);
       this._antialiasing = mode;
       this.send();
     }
-    get [(_dec29 = [
+    get [(_dec14 = [
       property
     ], "targetTexture")]() {
       return this._targetTexture;
@@ -3454,19 +2290,19 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init5, _base5, _dec30, _dec31;
+  var _init2, _base2, _dec15, _dec16;
 
-  class PlaneRenderer extends (_base5 = Component) {
+  class PlaneRenderer extends (_base2 = Component) {
     static {
-      _init5 = __decoratorStart(_base5);
-      __decorateElement(_init5, 2, "size", _dec30, this);
-      __decorateElement(_init5, 2, "color", _dec31, this);
-      __decoratorMetadata(_init5, this);
+      _init2 = __decoratorStart(_base2);
+      __decorateElement(_init2, 2, "size", _dec15, this);
+      __decorateElement(_init2, 2, "color", _dec16, this);
+      __decoratorMetadata(_init2, this);
     }
-    _size = (__runInitializers(_init5, 5, this), new Vector2(1, 1));
+    _size = (__runInitializers(_init2, 5, this), new Vector2(1, 1));
     _color = Color.white;
     started = false;
-    get [(_dec30 = [
+    get [(_dec15 = [
       property
     ], "size")]() {
       return this._size;
@@ -3475,7 +2311,7 @@ ${err.stack}` : ""}`);
       this._size = Vector2.from(v);
       this.send();
     }
-    get [(_dec31 = [
+    get [(_dec16 = [
       property
     ], "color")]() {
       return this._color;
@@ -3497,34 +2333,34 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init6, _base6, _dec32, _dec33, _dec34, _dec35, _dec36;
+  var _init3, _base3, _dec17, _dec18, _dec19, _dec20, _dec21;
 
-  class CameraFollow extends (_base6 = Component) {
+  class CameraFollow extends (_base3 = Component) {
     static {
-      _init6 = __decoratorStart(_base6);
-      __decorateElement(_init6, 5, "target", _dec32, this);
-      __decorateElement(_init6, 5, "offset", _dec33, this);
-      __decorateElement(_init6, 5, "offsetInTargetSpace", _dec34, this);
-      __decorateElement(_init6, 5, "smoothTime", _dec35, this);
-      __decorateElement(_init6, 5, "lookAtTarget", _dec36, this);
-      __decoratorMetadata(_init6, this);
+      _init3 = __decoratorStart(_base3);
+      __decorateElement(_init3, 5, "target", _dec17, this);
+      __decorateElement(_init3, 5, "offset", _dec18, this);
+      __decorateElement(_init3, 5, "offsetInTargetSpace", _dec19, this);
+      __decorateElement(_init3, 5, "smoothTime", _dec20, this);
+      __decorateElement(_init3, 5, "lookAtTarget", _dec21, this);
+      __decoratorMetadata(_init3, this);
     }
-    [(_dec32 = [
+    [(_dec17 = [
       property
-    ], "target")] = __runInitializers(_init6, 8, this, null);
-    [(_dec33 = [
+    ], "target")] = __runInitializers(_init3, 8, this, null);
+    [(_dec18 = [
       property
-    ], "offset")] = (__runInitializers(_init6, 11, this), __runInitializers(_init6, 12, this, new Vector3(0, 3, 6)));
-    [(_dec34 = [
+    ], "offset")] = (__runInitializers(_init3, 11, this), __runInitializers(_init3, 12, this, new Vector3(0, 3, 6)));
+    [(_dec19 = [
       property
-    ], "offsetInTargetSpace")] = (__runInitializers(_init6, 15, this), __runInitializers(_init6, 16, this, false));
-    [(_dec35 = [
+    ], "offsetInTargetSpace")] = (__runInitializers(_init3, 15, this), __runInitializers(_init3, 16, this, false));
+    [(_dec20 = [
       property
-    ], "smoothTime")] = (__runInitializers(_init6, 19, this), __runInitializers(_init6, 20, this, 0.25));
-    [(_dec36 = [
+    ], "smoothTime")] = (__runInitializers(_init3, 19, this), __runInitializers(_init3, 20, this, 0.25));
+    [(_dec21 = [
       property
-    ], "lookAtTarget")] = (__runInitializers(_init6, 23, this), __runInitializers(_init6, 24, this, true));
-    velocity = (__runInitializers(_init6, 27, this), [0, 0, 0]);
+    ], "lookAtTarget")] = (__runInitializers(_init3, 23, this), __runInitializers(_init3, 24, this, true));
+    velocity = (__runInitializers(_init3, 27, this), [0, 0, 0]);
     onLateUpdate(dt) {
       const t = this.target?.transform;
       if (!t || this.target?.destroyed)
@@ -3546,49 +2382,49 @@ ${err.stack}` : ""}`);
         this.transform.lookAt(t.position);
     }
   }
-  var _init7, _base7, _dec37, _dec38, _dec39, _dec40, _dec41, _dec42, _dec43, _dec44;
+  var _init4, _base4, _dec22, _dec23, _dec24, _dec25, _dec26, _dec27, _dec28, _dec29;
 
-  class CameraOrbit extends (_base7 = Component) {
+  class CameraOrbit extends (_base4 = Component) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init7, 39, this);
+      __runInitializers(_init4, 39, this);
     }
     static {
-      _init7 = __decoratorStart(_base7);
-      __decorateElement(_init7, 5, "target", _dec37, this);
-      __decorateElement(_init7, 5, "center", _dec38, this);
-      __decorateElement(_init7, 5, "distance", _dec39, this);
-      __decorateElement(_init7, 5, "yaw", _dec40, this);
-      __decorateElement(_init7, 5, "pitch", _dec41, this);
-      __decorateElement(_init7, 5, "minPitch", _dec42, this);
-      __decorateElement(_init7, 5, "maxPitch", _dec43, this);
-      __decorateElement(_init7, 5, "autoRotate", _dec44, this);
-      __decoratorMetadata(_init7, this);
+      _init4 = __decoratorStart(_base4);
+      __decorateElement(_init4, 5, "target", _dec22, this);
+      __decorateElement(_init4, 5, "center", _dec23, this);
+      __decorateElement(_init4, 5, "distance", _dec24, this);
+      __decorateElement(_init4, 5, "yaw", _dec25, this);
+      __decorateElement(_init4, 5, "pitch", _dec26, this);
+      __decorateElement(_init4, 5, "minPitch", _dec27, this);
+      __decorateElement(_init4, 5, "maxPitch", _dec28, this);
+      __decorateElement(_init4, 5, "autoRotate", _dec29, this);
+      __decoratorMetadata(_init4, this);
     }
-    [(_dec37 = [
+    [(_dec22 = [
       property
-    ], "target")] = __runInitializers(_init7, 8, this, null);
-    [(_dec38 = [
+    ], "target")] = __runInitializers(_init4, 8, this, null);
+    [(_dec23 = [
       property
-    ], "center")] = (__runInitializers(_init7, 11, this), __runInitializers(_init7, 12, this, Vector3.zero));
-    [(_dec39 = [
+    ], "center")] = (__runInitializers(_init4, 11, this), __runInitializers(_init4, 12, this, Vector3.zero));
+    [(_dec24 = [
       property
-    ], "distance")] = (__runInitializers(_init7, 15, this), __runInitializers(_init7, 16, this, 8));
-    [(_dec40 = [
+    ], "distance")] = (__runInitializers(_init4, 15, this), __runInitializers(_init4, 16, this, 8));
+    [(_dec25 = [
       property
-    ], "yaw")] = (__runInitializers(_init7, 19, this), __runInitializers(_init7, 20, this, 0));
-    [(_dec41 = [
+    ], "yaw")] = (__runInitializers(_init4, 19, this), __runInitializers(_init4, 20, this, 0));
+    [(_dec26 = [
       property
-    ], "pitch")] = (__runInitializers(_init7, 23, this), __runInitializers(_init7, 24, this, 20));
-    [(_dec42 = [
+    ], "pitch")] = (__runInitializers(_init4, 23, this), __runInitializers(_init4, 24, this, 20));
+    [(_dec27 = [
       property
-    ], "minPitch")] = (__runInitializers(_init7, 27, this), __runInitializers(_init7, 28, this, -80));
-    [(_dec43 = [
+    ], "minPitch")] = (__runInitializers(_init4, 27, this), __runInitializers(_init4, 28, this, -80));
+    [(_dec28 = [
       property
-    ], "maxPitch")] = (__runInitializers(_init7, 31, this), __runInitializers(_init7, 32, this, 80));
-    [(_dec44 = [
+    ], "maxPitch")] = (__runInitializers(_init4, 31, this), __runInitializers(_init4, 32, this, 80));
+    [(_dec29 = [
       property
-    ], "autoRotate")] = (__runInitializers(_init7, 35, this), __runInitializers(_init7, 36, this, 0));
+    ], "autoRotate")] = (__runInitializers(_init4, 35, this), __runInitializers(_init4, 36, this, 0));
     onLateUpdate(dt) {
       this.yaw = Mathf.repeat(this.yaw + this.autoRotate * dt, 360);
       this.pitch = Mathf.clamp(this.pitch, this.minPitch, this.maxPitch);
@@ -3598,27 +2434,27 @@ ${err.stack}` : ""}`);
       this.transform.lookAt(center);
     }
   }
-  var _init8, _base8, _dec45, _dec46, _dec47, _dec48, _dec49, _dec50;
+  var _init5, _base5, _dec30, _dec31, _dec32, _dec33, _dec34, _dec35;
 
-  class WorldPanel extends (_base8 = Component) {
+  class WorldPanel extends (_base5 = Component) {
     static {
-      _init8 = __decoratorStart(_base8);
-      __decorateElement(_init8, 2, "width", _dec45, this);
-      __decorateElement(_init8, 2, "height", _dec46, this);
-      __decorateElement(_init8, 2, "pixelsPerMeter", _dec47, this);
-      __decorateElement(_init8, 2, "resolution", _dec48, this);
-      __decorateElement(_init8, 2, "tint", _dec49, this);
-      __decorateElement(_init8, 2, "interactive", _dec50, this);
-      __decoratorMetadata(_init8, this);
+      _init5 = __decoratorStart(_base5);
+      __decorateElement(_init5, 2, "width", _dec30, this);
+      __decorateElement(_init5, 2, "height", _dec31, this);
+      __decorateElement(_init5, 2, "pixelsPerMeter", _dec32, this);
+      __decorateElement(_init5, 2, "resolution", _dec33, this);
+      __decorateElement(_init5, 2, "tint", _dec34, this);
+      __decorateElement(_init5, 2, "interactive", _dec35, this);
+      __decoratorMetadata(_init5, this);
     }
-    _width = (__runInitializers(_init8, 5, this), 800);
+    _width = (__runInitializers(_init5, 5, this), 800);
     _height = 600;
     _pixelsPerMeter = 500;
     _resolution = 2;
     _tint = Color.white;
     _interactive = true;
     started = false;
-    get [(_dec45 = [
+    get [(_dec30 = [
       property
     ], "width")]() {
       return this._width;
@@ -3627,7 +2463,7 @@ ${err.stack}` : ""}`);
       this._width = v;
       this.send();
     }
-    get [(_dec46 = [
+    get [(_dec31 = [
       property
     ], "height")]() {
       return this._height;
@@ -3636,7 +2472,7 @@ ${err.stack}` : ""}`);
       this._height = v;
       this.send();
     }
-    get [(_dec47 = [
+    get [(_dec32 = [
       property
     ], "pixelsPerMeter")]() {
       return this._pixelsPerMeter;
@@ -3645,7 +2481,7 @@ ${err.stack}` : ""}`);
       this._pixelsPerMeter = v;
       this.send();
     }
-    get [(_dec48 = [
+    get [(_dec33 = [
       property
     ], "resolution")]() {
       return this._resolution;
@@ -3654,7 +2490,7 @@ ${err.stack}` : ""}`);
       this._resolution = v;
       this.send();
     }
-    get [(_dec49 = [
+    get [(_dec34 = [
       property
     ], "tint")]() {
       return this._tint;
@@ -3663,7 +2499,7 @@ ${err.stack}` : ""}`);
       this._tint = c;
       this.send();
     }
-    get [(_dec50 = [
+    get [(_dec35 = [
       property
     ], "interactive")]() {
       return this._interactive;
@@ -3790,6 +2626,9 @@ ${err.stack}` : ""}`);
     static _engine(id) {
       return new Mesh(id);
     }
+    static _reserve() {
+      return new Mesh(nextMesh++);
+    }
     static create(data) {
       const mesh = new Mesh(nextMesh++);
       mesh.set(data);
@@ -3816,21 +2655,21 @@ ${err.stack}` : ""}`);
       __iron_op("render.mesh", this.id, null);
     }
   }
-  var _init9, _base9, _dec51, _dec52, _dec53;
+  var _init6, _base6, _dec36, _dec37, _dec38;
 
-  class MeshRenderer extends (_base9 = Component) {
+  class MeshRenderer extends (_base6 = Component) {
     static {
-      _init9 = __decoratorStart(_base9);
-      __decorateElement(_init9, 2, "shadowCastingMode", _dec51, this);
-      __decorateElement(_init9, 2, "mesh", _dec52, this);
-      __decorateElement(_init9, 2, "material", _dec53, this);
-      __decoratorMetadata(_init9, this);
+      _init6 = __decoratorStart(_base6);
+      __decorateElement(_init6, 2, "shadowCastingMode", _dec36, this);
+      __decorateElement(_init6, 2, "mesh", _dec37, this);
+      __decorateElement(_init6, 2, "material", _dec38, this);
+      __decoratorMetadata(_init6, this);
     }
-    _mesh = (__runInitializers(_init9, 5, this), "cube");
+    _mesh = (__runInitializers(_init6, 5, this), "cube");
     _material = new Material;
     _shadowCastingMode = "on";
     started = false;
-    get [(_dec51 = [
+    get [(_dec36 = [
       property
     ], "shadowCastingMode")]() {
       return this._shadowCastingMode;
@@ -3839,7 +2678,7 @@ ${err.stack}` : ""}`);
       this._shadowCastingMode = m;
       this.send();
     }
-    get [(_dec52 = [
+    get [(_dec37 = [
       property
     ], "mesh")]() {
       return this._mesh;
@@ -3848,7 +2687,7 @@ ${err.stack}` : ""}`);
       this._mesh = m;
       this.send();
     }
-    get [(_dec53 = [
+    get [(_dec38 = [
       property
     ], "material")]() {
       return this._material;
@@ -3874,24 +2713,24 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init10, _base10, _dec54, _dec55;
+  var _init7, _base7, _dec39, _dec40;
 
-  class SkinnedMeshRenderer extends (_base10 = MeshRenderer) {
+  class SkinnedMeshRenderer extends (_base7 = MeshRenderer) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init10, 11, this);
+      __runInitializers(_init7, 11, this);
     }
     static {
-      _init10 = __decoratorStart(_base10);
-      __decorateElement(_init10, 2, "bones", _dec55, this);
-      __decorateElement(_init10, 5, "rootBone", _dec54, this);
-      __decoratorMetadata(_init10, this);
+      _init7 = __decoratorStart(_base7);
+      __decorateElement(_init7, 2, "bones", _dec40, this);
+      __decorateElement(_init7, 5, "rootBone", _dec39, this);
+      __decoratorMetadata(_init7, this);
     }
-    _bones = (__runInitializers(_init10, 5, this), []);
-    [(_dec54 = [
+    _bones = (__runInitializers(_init7, 5, this), []);
+    [(_dec39 = [
       property
-    ], "rootBone")] = __runInitializers(_init10, 8, this, null);
-    get [(_dec55 = [
+    ], "rootBone")] = __runInitializers(_init7, 8, this, null);
+    get [(_dec40 = [
       property
     ], "bones")]() {
       return this._bones;
@@ -3907,25 +2746,25 @@ ${err.stack}` : ""}`);
       return [this._bones.slice(0, count).map((b) => b.id), bindposes.slice(0, count).flatMap((m) => [...m.m])];
     }
   }
-  var _init11, _base11, _dec56, _dec57, _dec58, _dec59, _dec60, _dec61, _dec62, _dec63, _dec64, _dec65, _dec66;
+  var _init8, _base8, _dec41, _dec42, _dec43, _dec44, _dec45, _dec46, _dec47, _dec48, _dec49, _dec50, _dec51;
 
-  class Light extends (_base11 = Component) {
+  class Light extends (_base8 = Component) {
     static {
-      _init11 = __decoratorStart(_base11);
-      __decorateElement(_init11, 2, "type", _dec56, this);
-      __decorateElement(_init11, 2, "color", _dec57, this);
-      __decorateElement(_init11, 2, "intensity", _dec58, this);
-      __decorateElement(_init11, 2, "range", _dec59, this);
-      __decorateElement(_init11, 2, "spotAngle", _dec60, this);
-      __decorateElement(_init11, 2, "innerSpotAngle", _dec61, this);
-      __decorateElement(_init11, 2, "haloSize", _dec62, this);
-      __decorateElement(_init11, 2, "beamIntensity", _dec63, this);
-      __decorateElement(_init11, 2, "shadows", _dec64, this);
-      __decorateElement(_init11, 2, "shadowStrength", _dec65, this);
-      __decorateElement(_init11, 2, "cullingMask", _dec66, this);
-      __decoratorMetadata(_init11, this);
+      _init8 = __decoratorStart(_base8);
+      __decorateElement(_init8, 2, "type", _dec41, this);
+      __decorateElement(_init8, 2, "color", _dec42, this);
+      __decorateElement(_init8, 2, "intensity", _dec43, this);
+      __decorateElement(_init8, 2, "range", _dec44, this);
+      __decorateElement(_init8, 2, "spotAngle", _dec45, this);
+      __decorateElement(_init8, 2, "innerSpotAngle", _dec46, this);
+      __decorateElement(_init8, 2, "haloSize", _dec47, this);
+      __decorateElement(_init8, 2, "beamIntensity", _dec48, this);
+      __decorateElement(_init8, 2, "shadows", _dec49, this);
+      __decorateElement(_init8, 2, "shadowStrength", _dec50, this);
+      __decorateElement(_init8, 2, "cullingMask", _dec51, this);
+      __decoratorMetadata(_init8, this);
     }
-    _type = (__runInitializers(_init11, 5, this), "directional");
+    _type = (__runInitializers(_init8, 5, this), "directional");
     _color = Color.white;
     _intensity = 1;
     _range = 10;
@@ -3937,7 +2776,7 @@ ${err.stack}` : ""}`);
     _shadowStrength = 1;
     _cullingMask = 4294967295;
     started = false;
-    get [(_dec56 = [
+    get [(_dec41 = [
       property
     ], "type")]() {
       return this._type;
@@ -3946,7 +2785,7 @@ ${err.stack}` : ""}`);
       this._type = t;
       this.send();
     }
-    get [(_dec57 = [
+    get [(_dec42 = [
       property
     ], "color")]() {
       return this._color;
@@ -3955,7 +2794,7 @@ ${err.stack}` : ""}`);
       this._color = c;
       this.send();
     }
-    get [(_dec58 = [
+    get [(_dec43 = [
       property
     ], "intensity")]() {
       return this._intensity;
@@ -3964,7 +2803,7 @@ ${err.stack}` : ""}`);
       this._intensity = i;
       this.send();
     }
-    get [(_dec59 = [
+    get [(_dec44 = [
       property
     ], "range")]() {
       return this._range;
@@ -3973,7 +2812,7 @@ ${err.stack}` : ""}`);
       this._range = r;
       this.send();
     }
-    get [(_dec60 = [
+    get [(_dec45 = [
       property
     ], "spotAngle")]() {
       return this._spotAngle;
@@ -3982,7 +2821,7 @@ ${err.stack}` : ""}`);
       this._spotAngle = a;
       this.send();
     }
-    get [(_dec61 = [
+    get [(_dec46 = [
       property
     ], "innerSpotAngle")]() {
       return this._innerSpotAngle;
@@ -3991,7 +2830,7 @@ ${err.stack}` : ""}`);
       this._innerSpotAngle = a;
       this.send();
     }
-    get [(_dec62 = [
+    get [(_dec47 = [
       property
     ], "haloSize")]() {
       return this._haloSize;
@@ -4000,7 +2839,7 @@ ${err.stack}` : ""}`);
       this._haloSize = s;
       this.send();
     }
-    get [(_dec63 = [
+    get [(_dec48 = [
       property
     ], "beamIntensity")]() {
       return this._beamIntensity;
@@ -4009,7 +2848,7 @@ ${err.stack}` : ""}`);
       this._beamIntensity = b;
       this.send();
     }
-    get [(_dec64 = [
+    get [(_dec49 = [
       property
     ], "shadows")]() {
       return this._shadows;
@@ -4018,7 +2857,7 @@ ${err.stack}` : ""}`);
       this._shadows = s;
       this.send();
     }
-    get [(_dec65 = [
+    get [(_dec50 = [
       property
     ], "shadowStrength")]() {
       return this._shadowStrength;
@@ -4027,7 +2866,7 @@ ${err.stack}` : ""}`);
       this._shadowStrength = s;
       this.send();
     }
-    get [(_dec66 = [
+    get [(_dec51 = [
       property
     ], "cullingMask")]() {
       return this._cullingMask;
@@ -4124,25 +2963,25 @@ ${err.stack}` : ""}`);
       sendPost();
     }
   };
-  var _init12, _base12, _dec67, _dec68;
+  var _init9, _base9, _dec52, _dec53;
 
-  class Mirror extends (_base12 = Component) {
+  class Mirror extends (_base9 = Component) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init12, 15, this);
+      __runInitializers(_init9, 15, this);
     }
     static {
-      _init12 = __decoratorStart(_base12);
-      __decorateElement(_init12, 5, "normal", _dec67, this);
-      __decorateElement(_init12, 5, "cullingMask", _dec68, this);
-      __decoratorMetadata(_init12, this);
+      _init9 = __decoratorStart(_base9);
+      __decorateElement(_init9, 5, "normal", _dec52, this);
+      __decorateElement(_init9, 5, "cullingMask", _dec53, this);
+      __decoratorMetadata(_init9, this);
     }
-    [(_dec67 = [
+    [(_dec52 = [
       property
-    ], "normal")] = __runInitializers(_init12, 8, this, null);
-    [(_dec68 = [
+    ], "normal")] = __runInitializers(_init9, 8, this, null);
+    [(_dec53 = [
       property
-    ], "cullingMask")] = (__runInitializers(_init12, 11, this), __runInitializers(_init12, 12, this, 4294967295));
+    ], "cullingMask")] = (__runInitializers(_init9, 11, this), __runInitializers(_init9, 12, this, 4294967295));
     send() {
       const mesh = this.getComponent(MeshRenderer)?.mesh;
       const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
@@ -4155,37 +2994,37 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init13, _base13, _dec69, _dec70, _dec71, _dec72, _dec73;
+  var _init10, _base10, _dec54, _dec55, _dec56, _dec57, _dec58;
 
-  class ReflectionProbe extends (_base13 = Component) {
+  class ReflectionProbe extends (_base10 = Component) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init13, 27, this);
+      __runInitializers(_init10, 27, this);
     }
     static {
-      _init13 = __decoratorStart(_base13);
-      __decorateElement(_init13, 5, "size", _dec69, this);
-      __decorateElement(_init13, 5, "resolution", _dec70, this);
-      __decorateElement(_init13, 5, "boxProjection", _dec71, this);
-      __decorateElement(_init13, 5, "cullingMask", _dec72, this);
-      __decorateElement(_init13, 5, "refreshMode", _dec73, this);
-      __decoratorMetadata(_init13, this);
+      _init10 = __decoratorStart(_base10);
+      __decorateElement(_init10, 5, "size", _dec54, this);
+      __decorateElement(_init10, 5, "resolution", _dec55, this);
+      __decorateElement(_init10, 5, "boxProjection", _dec56, this);
+      __decorateElement(_init10, 5, "cullingMask", _dec57, this);
+      __decorateElement(_init10, 5, "refreshMode", _dec58, this);
+      __decoratorMetadata(_init10, this);
     }
-    [(_dec69 = [
+    [(_dec54 = [
       property
-    ], "size")] = __runInitializers(_init13, 8, this, new Vector3(10, 10, 10));
-    [(_dec70 = [
+    ], "size")] = __runInitializers(_init10, 8, this, new Vector3(10, 10, 10));
+    [(_dec55 = [
       property
-    ], "resolution")] = (__runInitializers(_init13, 11, this), __runInitializers(_init13, 12, this, 128));
-    [(_dec71 = [
+    ], "resolution")] = (__runInitializers(_init10, 11, this), __runInitializers(_init10, 12, this, 128));
+    [(_dec56 = [
       property
-    ], "boxProjection")] = (__runInitializers(_init13, 15, this), __runInitializers(_init13, 16, this, false));
-    [(_dec72 = [
+    ], "boxProjection")] = (__runInitializers(_init10, 15, this), __runInitializers(_init10, 16, this, false));
+    [(_dec57 = [
       property
-    ], "cullingMask")] = (__runInitializers(_init13, 19, this), __runInitializers(_init13, 20, this, 4294967295));
-    [(_dec73 = [
+    ], "cullingMask")] = (__runInitializers(_init10, 19, this), __runInitializers(_init10, 20, this, 4294967295));
+    [(_dec58 = [
       property
-    ], "refreshMode")] = (__runInitializers(_init13, 23, this), __runInitializers(_init13, 24, this, "onAwake"));
+    ], "refreshMode")] = (__runInitializers(_init10, 23, this), __runInitializers(_init10, 24, this, "onAwake"));
     send() {
       const s = this.size;
       __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
@@ -4200,20 +3039,20 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
-  var _init14, _base14, _dec74, _dec75;
+  var _init11, _base11, _dec59, _dec60;
 
-  class LODGroup extends (_base14 = Component) {
+  class LODGroup extends (_base11 = Component) {
     static {
-      _init14 = __decoratorStart(_base14);
-      __decorateElement(_init14, 2, "size", _dec74, this);
-      __decorateElement(_init14, 2, "lods", _dec75, this);
-      __decoratorMetadata(_init14, this);
+      _init11 = __decoratorStart(_base11);
+      __decorateElement(_init11, 2, "size", _dec59, this);
+      __decorateElement(_init11, 2, "lods", _dec60, this);
+      __decoratorMetadata(_init11, this);
     }
-    _lods = (__runInitializers(_init14, 5, this), []);
+    _lods = (__runInitializers(_init11, 5, this), []);
     _size = 1;
     _forced = -1;
     started = false;
-    get [(_dec74 = [
+    get [(_dec59 = [
       property
     ], "size")]() {
       return this._size;
@@ -4225,7 +3064,7 @@ ${err.stack}` : ""}`);
     get lodCount() {
       return this._lods.length;
     }
-    get [(_dec75 = [
+    get [(_dec60 = [
       property
     ], "lods")]() {
       return this.getLODs();
@@ -4318,34 +3157,34 @@ ${err.stack}` : ""}`);
     }
     return { vertices, normals, uv, triangles };
   }
-  var _init15, _base15, _dec76, _dec77, _dec78, _dec79, _dec80;
+  var _init12, _base12, _dec61, _dec62, _dec63, _dec64, _dec65;
 
-  class LineRenderer extends (_base15 = Component) {
+  class LineRenderer extends (_base12 = Component) {
     static {
-      _init15 = __decoratorStart(_base15);
-      __decorateElement(_init15, 5, "positions", _dec76, this);
-      __decorateElement(_init15, 5, "width", _dec77, this);
-      __decorateElement(_init15, 5, "sides", _dec78, this);
-      __decorateElement(_init15, 5, "smoothing", _dec79, this);
-      __decorateElement(_init15, 5, "material", _dec80, this);
-      __decoratorMetadata(_init15, this);
+      _init12 = __decoratorStart(_base12);
+      __decorateElement(_init12, 5, "positions", _dec61, this);
+      __decorateElement(_init12, 5, "width", _dec62, this);
+      __decorateElement(_init12, 5, "sides", _dec63, this);
+      __decorateElement(_init12, 5, "smoothing", _dec64, this);
+      __decorateElement(_init12, 5, "material", _dec65, this);
+      __decoratorMetadata(_init12, this);
     }
-    [(_dec76 = [
+    [(_dec61 = [
       property
-    ], "positions")] = __runInitializers(_init15, 8, this, []);
-    [(_dec77 = [
+    ], "positions")] = __runInitializers(_init12, 8, this, []);
+    [(_dec62 = [
       property
-    ], "width")] = (__runInitializers(_init15, 11, this), __runInitializers(_init15, 12, this, 0.05));
-    [(_dec78 = [
+    ], "width")] = (__runInitializers(_init12, 11, this), __runInitializers(_init12, 12, this, 0.05));
+    [(_dec63 = [
       property
-    ], "sides")] = (__runInitializers(_init15, 15, this), __runInitializers(_init15, 16, this, 8));
-    [(_dec79 = [
+    ], "sides")] = (__runInitializers(_init12, 15, this), __runInitializers(_init12, 16, this, 8));
+    [(_dec64 = [
       property
-    ], "smoothing")] = (__runInitializers(_init15, 19, this), __runInitializers(_init15, 20, this, 3));
-    [(_dec80 = [
+    ], "smoothing")] = (__runInitializers(_init12, 19, this), __runInitializers(_init12, 20, this, 3));
+    [(_dec65 = [
       property
-    ], "material")] = (__runInitializers(_init15, 23, this), __runInitializers(_init15, 24, this, new Material(Color.white, Color.black, 0.3)));
-    mesh = (__runInitializers(_init15, 27, this), null);
+    ], "material")] = (__runInitializers(_init12, 23, this), __runInitializers(_init12, 24, this, new Material(Color.white, Color.black, 0.3)));
+    mesh = (__runInitializers(_init12, 27, this), null);
     renderer = null;
     drawn = "";
     onAwake() {
@@ -4425,22 +3264,22 @@ ${err.stack}` : ""}`);
     p.body.remove();
     objectPhysics.delete(go);
   }
-  var _init16, _base16, _dec81, _dec82, _dec83;
+  var _init13, _base13, _dec66, _dec67, _dec68;
 
-  class Collider extends (_base16 = Component) {
+  class Collider extends (_base13 = Component) {
     static {
-      _init16 = __decoratorStart(_base16);
-      __decorateElement(_init16, 2, "center", _dec81, this);
-      __decorateElement(_init16, 2, "isTrigger", _dec82, this);
-      __decorateElement(_init16, 2, "material", _dec83, this);
-      __decoratorMetadata(_init16, this);
+      _init13 = __decoratorStart(_base13);
+      __decorateElement(_init13, 2, "center", _dec66, this);
+      __decorateElement(_init13, 2, "isTrigger", _dec67, this);
+      __decorateElement(_init13, 2, "material", _dec68, this);
+      __decoratorMetadata(_init13, this);
     }
-    _center = (__runInitializers(_init16, 5, this), Vector3.zero);
+    _center = (__runInitializers(_init13, 5, this), Vector3.zero);
     _isTrigger = false;
     _material = new PhysicsMaterial;
     builtScale = null;
     handle = null;
-    get [(_dec81 = [
+    get [(_dec66 = [
       property
     ], "center")]() {
       return this._center;
@@ -4449,7 +3288,7 @@ ${err.stack}` : ""}`);
       this._center = Vector3.from(c);
       this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
     }
-    get [(_dec82 = [
+    get [(_dec67 = [
       property
     ], "isTrigger")]() {
       return this._isTrigger;
@@ -4458,7 +3297,7 @@ ${err.stack}` : ""}`);
       this._isTrigger = on;
       this.handle?.setSensor(on);
     }
-    get [(_dec83 = [
+    get [(_dec68 = [
       property
     ], "material")]() {
       return this._material;
@@ -4521,16 +3360,16 @@ ${err.stack}` : ""}`);
       releasePhysics(this.gameObject);
     }
   }
-  var _init17, _base17, _dec84;
+  var _init14, _base14, _dec69;
 
-  class BoxCollider extends (_base17 = Collider) {
+  class BoxCollider extends (_base14 = Collider) {
     static {
-      _init17 = __decoratorStart(_base17);
-      __decorateElement(_init17, 2, "size", _dec84, this);
-      __decoratorMetadata(_init17, this);
+      _init14 = __decoratorStart(_base14);
+      __decorateElement(_init14, 2, "size", _dec69, this);
+      __decoratorMetadata(_init14, this);
     }
-    _size = (__runInitializers(_init17, 5, this), Vector3.one);
-    get [(_dec84 = [
+    _size = (__runInitializers(_init14, 5, this), Vector3.one);
+    get [(_dec69 = [
       property
     ], "size")]() {
       return this._size;
@@ -4544,16 +3383,16 @@ ${err.stack}` : ""}`);
       return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
     }
   }
-  var _init18, _base18, _dec85;
+  var _init15, _base15, _dec70;
 
-  class SphereCollider extends (_base18 = Collider) {
+  class SphereCollider extends (_base15 = Collider) {
     static {
-      _init18 = __decoratorStart(_base18);
-      __decorateElement(_init18, 2, "radius", _dec85, this);
-      __decoratorMetadata(_init18, this);
+      _init15 = __decoratorStart(_base15);
+      __decorateElement(_init15, 2, "radius", _dec70, this);
+      __decoratorMetadata(_init15, this);
     }
-    _radius = (__runInitializers(_init18, 5, this), 0.5);
-    get [(_dec85 = [
+    _radius = (__runInitializers(_init15, 5, this), 0.5);
+    get [(_dec70 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -4566,18 +3405,18 @@ ${err.stack}` : ""}`);
       return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
     }
   }
-  var _init19, _base19, _dec86, _dec87;
+  var _init16, _base16, _dec71, _dec72;
 
-  class CapsuleCollider extends (_base19 = Collider) {
+  class CapsuleCollider extends (_base16 = Collider) {
     static {
-      _init19 = __decoratorStart(_base19);
-      __decorateElement(_init19, 2, "radius", _dec86, this);
-      __decorateElement(_init19, 2, "height", _dec87, this);
-      __decoratorMetadata(_init19, this);
+      _init16 = __decoratorStart(_base16);
+      __decorateElement(_init16, 2, "radius", _dec71, this);
+      __decorateElement(_init16, 2, "height", _dec72, this);
+      __decoratorMetadata(_init16, this);
     }
-    _radius = (__runInitializers(_init19, 5, this), 0.5);
+    _radius = (__runInitializers(_init16, 5, this), 0.5);
     _height = 2;
-    get [(_dec86 = [
+    get [(_dec71 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -4586,7 +3425,7 @@ ${err.stack}` : ""}`);
       this._radius = r;
       this.rebuild();
     }
-    get [(_dec87 = [
+    get [(_dec72 = [
       property
     ], "height")]() {
       return this._height;
@@ -4601,33 +3440,33 @@ ${err.stack}` : ""}`);
       return { capsule: { halfHeight, radius } };
     }
   }
-  var _init20, _base20, _dec88, _dec89, _dec90, _dec91;
+  var _init17, _base17, _dec73, _dec74, _dec75, _dec76;
 
-  class MeshCollider extends (_base20 = Collider) {
+  class MeshCollider extends (_base17 = Collider) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init20, 23, this);
+      __runInitializers(_init17, 23, this);
     }
     static {
-      _init20 = __decoratorStart(_base20);
-      __decorateElement(_init20, 5, "sharedMesh", _dec88, this);
-      __decorateElement(_init20, 5, "points", _dec89, this);
-      __decorateElement(_init20, 5, "indices", _dec90, this);
-      __decorateElement(_init20, 5, "convex", _dec91, this);
-      __decoratorMetadata(_init20, this);
+      _init17 = __decoratorStart(_base17);
+      __decorateElement(_init17, 5, "sharedMesh", _dec73, this);
+      __decorateElement(_init17, 5, "points", _dec74, this);
+      __decorateElement(_init17, 5, "indices", _dec75, this);
+      __decorateElement(_init17, 5, "convex", _dec76, this);
+      __decoratorMetadata(_init17, this);
     }
-    [(_dec88 = [
+    [(_dec73 = [
       property
-    ], "sharedMesh")] = __runInitializers(_init20, 8, this, null);
-    [(_dec89 = [
+    ], "sharedMesh")] = __runInitializers(_init17, 8, this, null);
+    [(_dec74 = [
       property
-    ], "points")] = (__runInitializers(_init20, 11, this), __runInitializers(_init20, 12, this, []));
-    [(_dec90 = [
+    ], "points")] = (__runInitializers(_init17, 11, this), __runInitializers(_init17, 12, this, []));
+    [(_dec75 = [
       property
-    ], "indices")] = (__runInitializers(_init20, 15, this), __runInitializers(_init20, 16, this, []));
-    [(_dec91 = [
+    ], "indices")] = (__runInitializers(_init17, 15, this), __runInitializers(_init17, 16, this, []));
+    [(_dec76 = [
       property
-    ], "convex")] = (__runInitializers(_init20, 19, this), __runInitializers(_init20, 20, this, false));
+    ], "convex")] = (__runInitializers(_init17, 19, this), __runInitializers(_init17, 20, this, false));
     shape(scale) {
       if (this.sharedMesh) {
         return { renderMesh: { mesh: this.sharedMesh.id, convex: this.convex, scale } };
@@ -4642,21 +3481,21 @@ ${err.stack}` : ""}`);
       this.rebuild();
     }
   }
-  var _init21, _base21, _dec92, _dec93, _dec94, _dec95, _dec96, _dec97, _dec98;
+  var _init18, _base18, _dec77, _dec78, _dec79, _dec80, _dec81, _dec82, _dec83;
 
-  class Rigidbody extends (_base21 = Component) {
+  class Rigidbody extends (_base18 = Component) {
     static {
-      _init21 = __decoratorStart(_base21);
-      __decorateElement(_init21, 2, "mass", _dec92, this);
-      __decorateElement(_init21, 2, "drag", _dec93, this);
-      __decorateElement(_init21, 2, "angularDrag", _dec94, this);
-      __decorateElement(_init21, 2, "useGravity", _dec95, this);
-      __decorateElement(_init21, 2, "isKinematic", _dec96, this);
-      __decorateElement(_init21, 2, "constraints", _dec97, this);
-      __decorateElement(_init21, 2, "collisionDetection", _dec98, this);
-      __decoratorMetadata(_init21, this);
+      _init18 = __decoratorStart(_base18);
+      __decorateElement(_init18, 2, "mass", _dec77, this);
+      __decorateElement(_init18, 2, "drag", _dec78, this);
+      __decorateElement(_init18, 2, "angularDrag", _dec79, this);
+      __decorateElement(_init18, 2, "useGravity", _dec80, this);
+      __decorateElement(_init18, 2, "isKinematic", _dec81, this);
+      __decorateElement(_init18, 2, "constraints", _dec82, this);
+      __decorateElement(_init18, 2, "collisionDetection", _dec83, this);
+      __decoratorMetadata(_init18, this);
     }
-    _mass = (__runInitializers(_init21, 5, this), 1);
+    _mass = (__runInitializers(_init18, 5, this), 1);
     _drag = 0;
     _angularDrag = 0.05;
     _useGravity = true;
@@ -4667,7 +3506,7 @@ ${err.stack}` : ""}`);
     get body() {
       return this.p?.body ?? null;
     }
-    get [(_dec92 = [
+    get [(_dec77 = [
       property
     ], "mass")]() {
       return this._mass;
@@ -4676,7 +3515,7 @@ ${err.stack}` : ""}`);
       this._mass = Math.max(0.000001, kg);
       this._sendMass();
     }
-    get [(_dec93 = [
+    get [(_dec78 = [
       property
     ], "drag")]() {
       return this._drag;
@@ -4685,7 +3524,7 @@ ${err.stack}` : ""}`);
       this._drag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec94 = [
+    get [(_dec79 = [
       property
     ], "angularDrag")]() {
       return this._angularDrag;
@@ -4694,7 +3533,7 @@ ${err.stack}` : ""}`);
       this._angularDrag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec95 = [
+    get [(_dec80 = [
       property
     ], "useGravity")]() {
       return this._useGravity;
@@ -4703,7 +3542,7 @@ ${err.stack}` : ""}`);
       this._useGravity = on;
       this.p?.body.setGravityScale(on ? 1 : 0);
     }
-    get [(_dec96 = [
+    get [(_dec81 = [
       property
     ], "isKinematic")]() {
       return this._isKinematic;
@@ -4712,7 +3551,7 @@ ${err.stack}` : ""}`);
       this._isKinematic = on;
       this.p?.body.setKind(on ? "kinematic" : "dynamic");
     }
-    get [(_dec97 = [
+    get [(_dec82 = [
       property
     ], "constraints")]() {
       return this._constraints;
@@ -4721,7 +3560,7 @@ ${err.stack}` : ""}`);
       this._constraints = flags;
       this.sendConstraints();
     }
-    get [(_dec98 = [
+    get [(_dec83 = [
       property
     ], "collisionDetection")]() {
       return this._continuous ? "continuous" : "discrete";
@@ -4871,25 +3710,25 @@ ${err.stack}` : ""}`);
     visit(go);
   });
   var CollisionFlags = { None: 0, Sides: 1, Above: 2, Below: 4 };
-  var _init22, _base22, _dec99, _dec100, _dec101, _dec102;
+  var _init19, _base19, _dec84, _dec85, _dec86, _dec87;
 
-  class CharacterController extends (_base22 = Collider) {
+  class CharacterController extends (_base19 = Collider) {
     static {
-      _init22 = __decoratorStart(_base22);
-      __decorateElement(_init22, 2, "radius", _dec99, this);
-      __decorateElement(_init22, 2, "height", _dec100, this);
-      __decorateElement(_init22, 2, "slopeLimit", _dec101, this);
-      __decorateElement(_init22, 2, "stepOffset", _dec102, this);
-      __decoratorMetadata(_init22, this);
+      _init19 = __decoratorStart(_base19);
+      __decorateElement(_init19, 2, "radius", _dec84, this);
+      __decorateElement(_init19, 2, "height", _dec85, this);
+      __decorateElement(_init19, 2, "slopeLimit", _dec86, this);
+      __decorateElement(_init19, 2, "stepOffset", _dec87, this);
+      __decoratorMetadata(_init19, this);
     }
-    _radius = (__runInitializers(_init22, 5, this), 0.5);
+    _radius = (__runInitializers(_init19, 5, this), 0.5);
     _height = 2;
     _slopeLimit = 45;
     _stepOffset = 0.3;
     fallSpeed = 0;
     last = Vector3.zero;
     _velocity = Vector3.zero;
-    get [(_dec99 = [
+    get [(_dec84 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -4898,7 +3737,7 @@ ${err.stack}` : ""}`);
       this._radius = r;
       this.rebuild();
     }
-    get [(_dec100 = [
+    get [(_dec85 = [
       property
     ], "height")]() {
       return this._height;
@@ -4907,7 +3746,7 @@ ${err.stack}` : ""}`);
       this._height = h;
       this.rebuild();
     }
-    get [(_dec101 = [
+    get [(_dec86 = [
       property
     ], "slopeLimit")]() {
       return this._slopeLimit;
@@ -4916,7 +3755,7 @@ ${err.stack}` : ""}`);
       this._slopeLimit = d;
       this.configure();
     }
-    get [(_dec102 = [
+    get [(_dec87 = [
       property
     ], "stepOffset")]() {
       return this._stepOffset;
@@ -4962,30 +3801,30 @@ ${err.stack}` : ""}`);
       return this.isGrounded;
     }
   }
-  var _init23, _base23, _dec103, _dec104, _dec105, _dec106;
+  var _init20, _base20, _dec88, _dec89, _dec90, _dec91;
 
-  class Joint extends (_base23 = Component) {
+  class Joint extends (_base20 = Component) {
     static {
-      _init23 = __decoratorStart(_base23);
-      __decorateElement(_init23, 5, "connectedBody", _dec103, this);
-      __decorateElement(_init23, 5, "anchor", _dec104, this);
-      __decorateElement(_init23, 5, "connectedAnchor", _dec105, this);
-      __decorateElement(_init23, 5, "autoConfigureConnectedAnchor", _dec106, this);
-      __decoratorMetadata(_init23, this);
+      _init20 = __decoratorStart(_base20);
+      __decorateElement(_init20, 5, "connectedBody", _dec88, this);
+      __decorateElement(_init20, 5, "anchor", _dec89, this);
+      __decorateElement(_init20, 5, "connectedAnchor", _dec90, this);
+      __decorateElement(_init20, 5, "autoConfigureConnectedAnchor", _dec91, this);
+      __decoratorMetadata(_init20, this);
     }
-    [(_dec103 = [
+    [(_dec88 = [
       property
-    ], "connectedBody")] = __runInitializers(_init23, 8, this, null);
-    [(_dec104 = [
+    ], "connectedBody")] = __runInitializers(_init20, 8, this, null);
+    [(_dec89 = [
       property
-    ], "anchor")] = (__runInitializers(_init23, 11, this), __runInitializers(_init23, 12, this, Vector3.zero));
-    [(_dec105 = [
+    ], "anchor")] = (__runInitializers(_init20, 11, this), __runInitializers(_init20, 12, this, Vector3.zero));
+    [(_dec90 = [
       property
-    ], "connectedAnchor")] = (__runInitializers(_init23, 15, this), __runInitializers(_init23, 16, this, Vector3.zero));
-    [(_dec106 = [
+    ], "connectedAnchor")] = (__runInitializers(_init20, 15, this), __runInitializers(_init20, 16, this, Vector3.zero));
+    [(_dec91 = [
       property
-    ], "autoConfigureConnectedAnchor")] = (__runInitializers(_init23, 19, this), __runInitializers(_init23, 20, this, true));
-    handle = (__runInitializers(_init23, 23, this), null);
+    ], "autoConfigureConnectedAnchor")] = (__runInitializers(_init20, 19, this), __runInitializers(_init20, 20, this, true));
+    handle = (__runInitializers(_init20, 23, this), null);
     params() {
       return [];
     }
@@ -5026,37 +3865,37 @@ ${err.stack}` : ""}`);
       return "ball";
     }
   }
-  var _init24, _base24, _dec107, _dec108, _dec109, _dec110, _dec111;
+  var _init21, _base21, _dec92, _dec93, _dec94, _dec95, _dec96;
 
-  class HingeJoint extends (_base24 = Joint) {
+  class HingeJoint extends (_base21 = Joint) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init24, 27, this);
+      __runInitializers(_init21, 27, this);
     }
     static {
-      _init24 = __decoratorStart(_base24);
-      __decorateElement(_init24, 5, "axis", _dec107, this);
-      __decorateElement(_init24, 5, "useLimits", _dec108, this);
-      __decorateElement(_init24, 5, "limits", _dec109, this);
-      __decorateElement(_init24, 5, "useMotor", _dec110, this);
-      __decorateElement(_init24, 5, "motor", _dec111, this);
-      __decoratorMetadata(_init24, this);
+      _init21 = __decoratorStart(_base21);
+      __decorateElement(_init21, 5, "axis", _dec92, this);
+      __decorateElement(_init21, 5, "useLimits", _dec93, this);
+      __decorateElement(_init21, 5, "limits", _dec94, this);
+      __decorateElement(_init21, 5, "useMotor", _dec95, this);
+      __decorateElement(_init21, 5, "motor", _dec96, this);
+      __decoratorMetadata(_init21, this);
     }
-    [(_dec107 = [
+    [(_dec92 = [
       property
-    ], "axis")] = __runInitializers(_init24, 8, this, new Vector3(1, 0, 0));
-    [(_dec108 = [
+    ], "axis")] = __runInitializers(_init21, 8, this, new Vector3(1, 0, 0));
+    [(_dec93 = [
       property
-    ], "useLimits")] = (__runInitializers(_init24, 11, this), __runInitializers(_init24, 12, this, false));
-    [(_dec109 = [
+    ], "useLimits")] = (__runInitializers(_init21, 11, this), __runInitializers(_init21, 12, this, false));
+    [(_dec94 = [
       property
-    ], "limits")] = (__runInitializers(_init24, 15, this), __runInitializers(_init24, 16, this, { min: -90, max: 90 }));
-    [(_dec110 = [
+    ], "limits")] = (__runInitializers(_init21, 15, this), __runInitializers(_init21, 16, this, { min: -90, max: 90 }));
+    [(_dec95 = [
       property
-    ], "useMotor")] = (__runInitializers(_init24, 19, this), __runInitializers(_init24, 20, this, false));
-    [(_dec111 = [
+    ], "useMotor")] = (__runInitializers(_init21, 19, this), __runInitializers(_init21, 20, this, false));
+    [(_dec96 = [
       property
-    ], "motor")] = (__runInitializers(_init24, 23, this), __runInitializers(_init24, 24, this, { targetVelocity: 0, force: 1 }));
+    ], "motor")] = (__runInitializers(_init21, 23, this), __runInitializers(_init21, 24, this, { targetVelocity: 0, force: 1 }));
     kind() {
       return "hinge";
     }
@@ -5069,29 +3908,29 @@ ${err.stack}` : ""}`);
         this.build();
     }
   }
-  var _init25, _base25, _dec112, _dec113, _dec114;
+  var _init22, _base22, _dec97, _dec98, _dec99;
 
-  class SpringJoint extends (_base25 = Joint) {
+  class SpringJoint extends (_base22 = Joint) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init25, 19, this);
+      __runInitializers(_init22, 19, this);
     }
     static {
-      _init25 = __decoratorStart(_base25);
-      __decorateElement(_init25, 5, "spring", _dec112, this);
-      __decorateElement(_init25, 5, "damper", _dec113, this);
-      __decorateElement(_init25, 5, "restLength", _dec114, this);
-      __decoratorMetadata(_init25, this);
+      _init22 = __decoratorStart(_base22);
+      __decorateElement(_init22, 5, "spring", _dec97, this);
+      __decorateElement(_init22, 5, "damper", _dec98, this);
+      __decorateElement(_init22, 5, "restLength", _dec99, this);
+      __decoratorMetadata(_init22, this);
     }
-    [(_dec112 = [
+    [(_dec97 = [
       property
-    ], "spring")] = __runInitializers(_init25, 8, this, 10);
-    [(_dec113 = [
+    ], "spring")] = __runInitializers(_init22, 8, this, 10);
+    [(_dec98 = [
       property
-    ], "damper")] = (__runInitializers(_init25, 11, this), __runInitializers(_init25, 12, this, 0.2));
-    [(_dec114 = [
+    ], "damper")] = (__runInitializers(_init22, 11, this), __runInitializers(_init22, 12, this, 0.2));
+    [(_dec99 = [
       property
-    ], "restLength")] = (__runInitializers(_init25, 15, this), __runInitializers(_init25, 16, this, null));
+    ], "restLength")] = (__runInitializers(_init22, 15, this), __runInitializers(_init22, 16, this, null));
     kind() {
       return "spring";
     }
@@ -5106,21 +3945,21 @@ ${err.stack}` : ""}`);
       return [rest, this.spring, this.damper];
     }
   }
-  var _init26, _base26, _dec115;
+  var _init23, _base23, _dec100;
 
-  class RopeJoint extends (_base26 = Joint) {
+  class RopeJoint extends (_base23 = Joint) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init26, 11, this);
+      __runInitializers(_init23, 11, this);
     }
     static {
-      _init26 = __decoratorStart(_base26);
-      __decorateElement(_init26, 5, "maxDistance", _dec115, this);
-      __decoratorMetadata(_init26, this);
+      _init23 = __decoratorStart(_base23);
+      __decorateElement(_init23, 5, "maxDistance", _dec100, this);
+      __decoratorMetadata(_init23, this);
     }
-    [(_dec115 = [
+    [(_dec100 = [
       property
-    ], "maxDistance")] = __runInitializers(_init26, 8, this, 2);
+    ], "maxDistance")] = __runInitializers(_init23, 8, this, 2);
     kind() {
       return "rope";
     }
@@ -5128,42 +3967,42 @@ ${err.stack}` : ""}`);
       return [this.maxDistance];
     }
   }
-  var _init27, _base27, _dec116, _dec117, _dec118, _dec119, _dec120, _dec121, _dec122;
+  var _init24, _base24, _dec101, _dec102, _dec103, _dec104, _dec105, _dec106, _dec107;
 
-  class Rope extends (_base27 = Component) {
+  class Rope extends (_base24 = Component) {
     static {
-      _init27 = __decoratorStart(_base27);
-      __decorateElement(_init27, 5, "length", _dec116, this);
-      __decorateElement(_init27, 5, "segments", _dec117, this);
-      __decorateElement(_init27, 5, "radius", _dec118, this);
-      __decorateElement(_init27, 5, "segmentMass", _dec119, this);
-      __decorateElement(_init27, 5, "color", _dec120, this);
-      __decorateElement(_init27, 5, "end", _dec121, this);
-      __decorateElement(_init27, 5, "renderMode", _dec122, this);
-      __decoratorMetadata(_init27, this);
+      _init24 = __decoratorStart(_base24);
+      __decorateElement(_init24, 5, "length", _dec101, this);
+      __decorateElement(_init24, 5, "segments", _dec102, this);
+      __decorateElement(_init24, 5, "radius", _dec103, this);
+      __decorateElement(_init24, 5, "segmentMass", _dec104, this);
+      __decorateElement(_init24, 5, "color", _dec105, this);
+      __decorateElement(_init24, 5, "end", _dec106, this);
+      __decorateElement(_init24, 5, "renderMode", _dec107, this);
+      __decoratorMetadata(_init24, this);
     }
-    [(_dec116 = [
+    [(_dec101 = [
       property
-    ], "length")] = __runInitializers(_init27, 8, this, 3);
-    [(_dec117 = [
+    ], "length")] = __runInitializers(_init24, 8, this, 3);
+    [(_dec102 = [
       property
-    ], "segments")] = (__runInitializers(_init27, 11, this), __runInitializers(_init27, 12, this, 12));
-    [(_dec118 = [
+    ], "segments")] = (__runInitializers(_init24, 11, this), __runInitializers(_init24, 12, this, 12));
+    [(_dec103 = [
       property
-    ], "radius")] = (__runInitializers(_init27, 15, this), __runInitializers(_init27, 16, this, 0.04));
-    [(_dec119 = [
+    ], "radius")] = (__runInitializers(_init24, 15, this), __runInitializers(_init24, 16, this, 0.04));
+    [(_dec104 = [
       property
-    ], "segmentMass")] = (__runInitializers(_init27, 19, this), __runInitializers(_init27, 20, this, 0.05));
-    [(_dec120 = [
+    ], "segmentMass")] = (__runInitializers(_init24, 19, this), __runInitializers(_init24, 20, this, 0.05));
+    [(_dec105 = [
       property
-    ], "color")] = (__runInitializers(_init27, 23, this), __runInitializers(_init27, 24, this, new Color(0.55, 0.42, 0.28, 1)));
-    [(_dec121 = [
+    ], "color")] = (__runInitializers(_init24, 23, this), __runInitializers(_init24, 24, this, new Color(0.55, 0.42, 0.28, 1)));
+    [(_dec106 = [
       property
-    ], "end")] = (__runInitializers(_init27, 27, this), __runInitializers(_init27, 28, this, null));
-    [(_dec122 = [
+    ], "end")] = (__runInitializers(_init24, 27, this), __runInitializers(_init24, 28, this, null));
+    [(_dec107 = [
       property
-    ], "renderMode")] = (__runInitializers(_init27, 31, this), __runInitializers(_init27, 32, this, "tube"));
-    links = (__runInitializers(_init27, 35, this), []);
+    ], "renderMode")] = (__runInitializers(_init24, 31, this), __runInitializers(_init24, 32, this, "tube"));
+    links = (__runInitializers(_init24, 35, this), []);
     joints = [];
     line = null;
     onStart() {
@@ -5229,6 +4068,1271 @@ ${err.stack}` : ""}`);
     }
   }
 
+  // ../../js/engine/src/cloth.ts
+  var _init25, _base25, _dec108, _dec109, _dec110, _dec111, _dec112, _dec113, _dec114, _dec115, _dec116, _dec117, _dec118, _dec119, _dec120;
+
+  class Cloth extends (_base25 = Component) {
+    static {
+      _init25 = __decoratorStart(_base25);
+      __decorateElement(_init25, 5, "stretchingStiffness", _dec108, this);
+      __decorateElement(_init25, 5, "bendingStiffness", _dec109, this);
+      __decorateElement(_init25, 5, "damping", _dec110, this);
+      __decorateElement(_init25, 5, "useGravity", _dec111, this);
+      __decorateElement(_init25, 5, "externalAcceleration", _dec112, this);
+      __decorateElement(_init25, 5, "randomAcceleration", _dec113, this);
+      __decorateElement(_init25, 5, "friction", _dec114, this);
+      __decorateElement(_init25, 5, "solverIterations", _dec115, this);
+      __decorateElement(_init25, 5, "pins", _dec116, this);
+      __decorateElement(_init25, 5, "pinRadius", _dec117, this);
+      __decorateElement(_init25, 5, "pinBox", _dec118, this);
+      __decorateElement(_init25, 5, "sphereColliders", _dec119, this);
+      __decorateElement(_init25, 5, "capsuleColliders", _dec120, this);
+      __decoratorMetadata(_init25, this);
+    }
+    [(_dec108 = [
+      property
+    ], "stretchingStiffness")] = __runInitializers(_init25, 8, this, 1);
+    [(_dec109 = [
+      property
+    ], "bendingStiffness")] = (__runInitializers(_init25, 11, this), __runInitializers(_init25, 12, this, 0.3));
+    [(_dec110 = [
+      property
+    ], "damping")] = (__runInitializers(_init25, 15, this), __runInitializers(_init25, 16, this, 0.1));
+    [(_dec111 = [
+      property
+    ], "useGravity")] = (__runInitializers(_init25, 19, this), __runInitializers(_init25, 20, this, true));
+    [(_dec112 = [
+      property
+    ], "externalAcceleration")] = (__runInitializers(_init25, 23, this), __runInitializers(_init25, 24, this, Vector3.zero));
+    [(_dec113 = [
+      property
+    ], "randomAcceleration")] = (__runInitializers(_init25, 27, this), __runInitializers(_init25, 28, this, Vector3.zero));
+    [(_dec114 = [
+      property
+    ], "friction")] = (__runInitializers(_init25, 31, this), __runInitializers(_init25, 32, this, 0.5));
+    [(_dec115 = [
+      property
+    ], "solverIterations")] = (__runInitializers(_init25, 35, this), __runInitializers(_init25, 36, this, 8));
+    [(_dec116 = [
+      property
+    ], "pins")] = (__runInitializers(_init25, 39, this), __runInitializers(_init25, 40, this, []));
+    [(_dec117 = [
+      property
+    ], "pinRadius")] = (__runInitializers(_init25, 43, this), __runInitializers(_init25, 44, this, 0.05));
+    [(_dec118 = [
+      property
+    ], "pinBox")] = (__runInitializers(_init25, 47, this), __runInitializers(_init25, 48, this, null));
+    [(_dec119 = [
+      property
+    ], "sphereColliders")] = (__runInitializers(_init25, 51, this), __runInitializers(_init25, 52, this, []));
+    [(_dec120 = [
+      property
+    ], "capsuleColliders")] = (__runInitializers(_init25, 55, this), __runInitializers(_init25, 56, this, []));
+    renderer = (__runInitializers(_init25, 59, this), undefined);
+    original;
+    simulated = null;
+    onStart() {
+      this.rebuild();
+    }
+    rebuild() {
+      const renderer = this.gameObject.components.find((c) => c.constructor.name === "MeshRenderer" || c.constructor.name === "SkinnedMeshRenderer");
+      if (!renderer) {
+        console.warn(`${this.gameObject.name}: Cloth needs a MeshRenderer on the same object`);
+        return;
+      }
+      if (!this.simulated) {
+        this.renderer = renderer;
+        this.original = renderer.mesh;
+        this.simulated = Mesh._reserve();
+      }
+      const source = this.original;
+      const v = (x) => [x.x, x.y, x.z];
+      const colliders = [];
+      for (const go of this.sphereColliders) {
+        const c = go.getComponent(SphereCollider);
+        if (c)
+          colliders.push(["sphere", go.id, c.radius, v(c.center)]);
+      }
+      for (const go of this.capsuleColliders) {
+        const c = go.getComponent(CapsuleCollider);
+        if (c)
+          colliders.push(["capsule", go.id, c.radius, c.height, v(c.center)]);
+      }
+      const box = this.pinBox;
+      __iron_op("cloth.cloth", this.id, this.gameObject.id, typeof source === "string" ? source : source.id, this.simulated.id, [this.stretchingStiffness, this.bendingStiffness, this.damping, this.friction, this.solverIterations], v(this.externalAcceleration), v(this.randomAcceleration), this.useGravity, this.pins.flatMap(v), this.pinRadius, box ? [...v(box.min), ...v(box.max)] : null, colliders);
+      renderer.mesh = this.simulated;
+    }
+    onDestroy() {
+      __iron_op("cloth.remove", this.id);
+      if (this.renderer && this.original !== undefined && !this.renderer.gameObject.destroyed)
+        this.renderer.mesh = this.original;
+      this.simulated?.destroy();
+    }
+  }
+  // ../../js/engine/src/assets.ts
+  var listeners = new Set;
+  var entries = () => globalThis.__iron_info?.assets ?? [];
+  var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
+  var Assets = {
+    get all() {
+      return entries();
+    },
+    guidToPath(guid) {
+      return entries().find((e) => e.guid === guid)?.path;
+    },
+    pathToGuid(path) {
+      const p = clean(path);
+      return entries().find((e) => e.path === p)?.guid;
+    },
+    importer(path) {
+      const p = clean(Assets.resolve(path));
+      return entries().find((e) => e.path === p)?.importer ?? {};
+    },
+    resolve(src) {
+      if (!src.startsWith("guid:"))
+        return src;
+      return Assets.guidToPath(src.slice(5)) ?? src;
+    },
+    onChanged(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    }
+  };
+  globalThis.__iron_assets_changed = (paths) => {
+    for (const f of [...listeners]) {
+      try {
+        f(paths);
+      } catch (e) {
+        console.error(`Assets.onChanged: ${e}`);
+      }
+    }
+  };
+  // ../../js/engine/src/animation.ts
+  class Keyframe {
+    time;
+    value;
+    inTangent;
+    outTangent;
+    constructor(time, value, inTangent = 0, outTangent = 0) {
+      this.time = time;
+      this.value = value;
+      this.inTangent = inTangent;
+      this.outTangent = outTangent;
+    }
+  }
+  function wrap(t, length, mode) {
+    if (length <= 0)
+      return 0;
+    if (mode === "loop")
+      return (t % length + length) % length;
+    if (mode === "pingPong") {
+      const p = (t % (2 * length) + 2 * length) % (2 * length);
+      return p > length ? 2 * length - p : p;
+    }
+    return Math.min(length, Math.max(0, t));
+  }
+
+  class AnimationCurve {
+    keys;
+    preWrapMode = "clampForever";
+    postWrapMode = "clampForever";
+    constructor(...keys) {
+      this.keys = [...keys].sort((a, b) => a.time - b.time);
+    }
+    static linear(t0, v0, t1, v1) {
+      const slope = t1 === t0 ? 0 : (v1 - v0) / (t1 - t0);
+      return new AnimationCurve(new Keyframe(t0, v0, 0, slope), new Keyframe(t1, v1, slope, 0));
+    }
+    static easeInOut(t0, v0, t1, v1) {
+      return new AnimationCurve(new Keyframe(t0, v0), new Keyframe(t1, v1));
+    }
+    static constant(t0, t1, value) {
+      return new AnimationCurve(new Keyframe(t0, value), new Keyframe(t1, value));
+    }
+    static fromPoints(points, mode = "linear") {
+      const keys = points.map(([t, v]) => new Keyframe(t, v));
+      for (let i = 0;i < keys.length; i++) {
+        const prev = keys[i - 1];
+        const next = keys[i + 1];
+        const k = keys[i];
+        const slope = (a, b) => b.time === a.time ? 0 : (b.value - a.value) / (b.time - a.time);
+        if (mode === "step") {
+          k.inTangent = k.outTangent = Infinity;
+        } else if (mode === "linear") {
+          k.inTangent = prev ? slope(prev, k) : 0;
+          k.outTangent = next ? slope(k, next) : 0;
+        } else {
+          const s = prev && next ? slope(prev, next) : prev ? slope(prev, k) : next ? slope(k, next) : 0;
+          k.inTangent = k.outTangent = s;
+        }
+      }
+      return new AnimationCurve(...keys);
+    }
+    addKey(time, value = 0) {
+      const key = time instanceof Keyframe ? time : new Keyframe(time, value);
+      let i = this.keys.findIndex((k) => k.time > key.time);
+      if (i < 0)
+        i = this.keys.length;
+      this.keys.splice(i, 0, key);
+      return i;
+    }
+    removeKey(index) {
+      this.keys.splice(index, 1);
+    }
+    get length() {
+      return this.keys.length;
+    }
+    evaluate(time) {
+      const keys = this.keys;
+      if (keys.length === 0)
+        return 0;
+      if (keys.length === 1)
+        return keys[0].value;
+      const first = keys[0].time;
+      const last = keys[keys.length - 1].time;
+      const span = last - first;
+      let t = time;
+      if (t < first)
+        t = first + wrap(t - first, span, this.preWrapMode);
+      else if (t > last)
+        t = first + wrap(t - first, span, this.postWrapMode);
+      let lo = 0;
+      let hi = keys.length - 1;
+      while (hi - lo > 1) {
+        const mid = lo + hi >> 1;
+        if (keys[mid].time <= t)
+          lo = mid;
+        else
+          hi = mid;
+      }
+      const a = keys[lo];
+      const b = keys[hi];
+      const dt = b.time - a.time;
+      if (dt <= 0)
+        return b.value;
+      if (!Number.isFinite(a.outTangent) || !Number.isFinite(b.inTangent))
+        return t >= b.time ? b.value : a.value;
+      const s = (t - a.time) / dt;
+      const s2 = s * s;
+      const s3 = s2 * s;
+      return (2 * s3 - 3 * s2 + 1) * a.value + (s3 - 2 * s2 + s) * a.outTangent * dt + (-2 * s3 + 3 * s2) * b.value + (s3 - s2) * b.inTangent * dt;
+    }
+    _toJSON() {
+      const n = (x) => Number.isFinite(x) ? x : "Infinity";
+      return {
+        keys: this.keys.map((k) => [k.time, k.value, n(k.inTangent), n(k.outTangent)]),
+        pre: this.preWrapMode,
+        post: this.postWrapMode
+      };
+    }
+    static _fromJSON(data) {
+      const d = data;
+      const num = (x) => x === "Infinity" ? Infinity : Number(x);
+      const curve = new AnimationCurve(...(d.keys ?? []).map((k) => new Keyframe(num(k[0]), num(k[1]), num(k[2]), num(k[3]))));
+      curve.preWrapMode = d.pre ?? "clampForever";
+      curve.postWrapMode = d.post ?? "clampForever";
+      return curve;
+    }
+  }
+
+  class AnimationClip {
+    name;
+    wrapMode = "once";
+    frameRate = 60;
+    events = [];
+    _bindings = [];
+    constructor(name = "clip") {
+      this.name = name;
+    }
+    setCurve(relativePath, type, propertyName, curve) {
+      const typeName = typeof type === "string" ? type : type.name;
+      const i = this._bindings.findIndex((b) => b.path === relativePath && b.type === typeName && b.property === propertyName);
+      if (i >= 0)
+        this._bindings.splice(i, 1);
+      if (curve)
+        this._bindings.push({ path: relativePath, type: typeName, property: propertyName, curve });
+    }
+    get curves() {
+      return this._bindings;
+    }
+    get length() {
+      let end = 0;
+      for (const b of this._bindings)
+        end = Math.max(end, b.curve.keys.at(-1)?.time ?? 0);
+      for (const e of this.events)
+        end = Math.max(end, e.time);
+      return end;
+    }
+    addEvent(event) {
+      this.events.push({ ...event });
+      this.events.sort((a, b) => a.time - b.time);
+    }
+    sampleAnimation(go, time) {
+      const pose = new Pose;
+      pose.add(go, this, wrap(time, this.length, this.wrapMode), 1);
+      pose.apply();
+    }
+    toJSON() {
+      return {
+        name: this.name,
+        wrapMode: this.wrapMode,
+        frameRate: this.frameRate,
+        curves: this._bindings.map((b) => ({ path: b.path, type: b.type, property: b.property, curve: b.curve._toJSON() })),
+        events: this.events.map((e) => ({ ...e }))
+      };
+    }
+    static fromJSON(data) {
+      const d = data;
+      const clip = new AnimationClip(d.name ?? "clip");
+      clip.wrapMode = d.wrapMode ?? "once";
+      clip.frameRate = d.frameRate ?? 60;
+      for (const c of d.curves ?? [])
+        clip.setCurve(c.path, c.type, c.property, AnimationCurve._fromJSON(c.curve));
+      for (const e of d.events ?? [])
+        clip.addEvent(e);
+      return clip;
+    }
+  }
+  function resolve(root, path) {
+    if (path === "")
+      return root;
+    let go = root;
+    for (const name of path.split("/")) {
+      go = go?.findChild(name);
+      if (!go)
+        return;
+    }
+    return go;
+  }
+  function componentNamed(go, name) {
+    return go.components.find((c) => c.constructor.name === name);
+  }
+
+  class Pose {
+    transforms = new Map;
+    props = new Map;
+    add(root, clip, time, weight) {
+      if (weight <= 0)
+        return;
+      for (const b of clip._bindings) {
+        const go = resolve(root, b.path);
+        if (!go)
+          continue;
+        const value = b.curve.evaluate(time);
+        if (b.type === "Transform") {
+          let t = this.transforms.get(go);
+          if (!t) {
+            t = { p: [0, 0, 0], r: [0, 0, 0, 0], s: [0, 0, 0], e: [0, 0, 0], w: {} };
+            this.transforms.set(go, t);
+          }
+          const [field, axis] = b.property.split(".");
+          const i = "xyzw".indexOf(axis);
+          const list = field === "localPosition" ? t.p : field === "localRotation" ? t.r : field === "localScale" ? t.s : field === "localEulerAngles" ? t.e : null;
+          if (!list || i < 0)
+            continue;
+          list[i] += value * weight;
+          t.w[b.property] = (t.w[b.property] ?? 0) + weight;
+          continue;
+        }
+        const target = b.type === "GameObject" ? go : componentNamed(go, b.type);
+        if (!target)
+          continue;
+        const key = `${go.id}/${b.type}/${b.property}`;
+        const prev = this.props.get(key);
+        if (prev) {
+          prev.value += value * weight;
+          prev.weight += weight;
+        } else {
+          this.props.set(key, { target, property: b.property, value: value * weight, weight });
+        }
+      }
+    }
+    apply() {
+      for (const [go, t] of this.transforms) {
+        if (go.destroyed)
+          continue;
+        const tr = go.transform;
+        const has = (f, n) => [..."xyzw".slice(0, n)].some((a) => t.w[`${f}.${a}`]);
+        const avg = (f, list, current) => current.map((c, i) => {
+          const w = t.w[`${f}.${"xyzw"[i]}`];
+          return w ? list[i] / w : c;
+        });
+        const cur = tr.localPosition;
+        const v3 = (a) => new Vector3(a[0], a[1], a[2]);
+        const position = has("localPosition", 3) ? v3(avg("localPosition", t.p, [cur.x, cur.y, cur.z])) : cur;
+        const sc = tr.localScale;
+        const scale = has("localScale", 3) ? v3(avg("localScale", t.s, [sc.x, sc.y, sc.z])) : sc;
+        let rotation = tr.localRotation;
+        if (has("localRotation", 4)) {
+          const q = avg("localRotation", t.r, [rotation.x, rotation.y, rotation.z, rotation.w]);
+          rotation = new Quaternion(q[0], q[1], q[2], q[3]).normalized;
+        } else if (has("localEulerAngles", 3)) {
+          const e0 = tr.localEulerAngles;
+          const e = avg("localEulerAngles", t.e, [e0.x, e0.y, e0.z]);
+          rotation = Quaternion.euler(e[0], e[1], e[2]);
+        }
+        tr._setLocal(position, rotation, scale);
+      }
+      for (const p of this.props.values()) {
+        const value = p.value / p.weight;
+        if (p.target instanceof GameObject) {
+          if (p.property === "active")
+            p.target.enabled = value > 0.5;
+          continue;
+        }
+        setProperty(p.target, p.property, value);
+      }
+    }
+    addAligned(root, clip, time, weight) {
+      const flips = new Map;
+      for (const b of clip._bindings) {
+        if (b.type !== "Transform" || !b.property.startsWith("localRotation."))
+          continue;
+        const go = resolve(root, b.path);
+        if (!go || flips.has(go))
+          continue;
+        const sum = this.transforms.get(go)?.r;
+        if (!sum || sum.every((v) => v === 0))
+          continue;
+        const q = "xyzw".split("").map((a) => clip._bindings.find((c) => c.path === b.path && c.type === "Transform" && c.property === `localRotation.${a}`)?.curve.evaluate(time) ?? 0);
+        const dot = q.reduce((d, v, i) => d + v * sum[i], 0);
+        flips.set(go, dot < 0 ? -1 : 1);
+      }
+      if ([...flips.values()].every((f) => f > 0)) {
+        this.add(root, clip, time, weight);
+        return;
+      }
+      for (const b of clip._bindings) {
+        const go = resolve(root, b.path);
+        const flip = go && b.type === "Transform" && b.property.startsWith("localRotation.") ? flips.get(go) ?? 1 : 1;
+        const single = new AnimationClip;
+        single._bindings.push(flip < 0 ? { ...b, curve: negated(b.curve) } : b);
+        this.add(root, single, time, weight);
+      }
+    }
+  }
+  var negatedCache = new WeakMap;
+  function negated(c) {
+    let n = negatedCache.get(c);
+    if (!n) {
+      n = new AnimationCurve(...c.keys.map((k) => new Keyframe(k.time, -k.value, -k.inTangent, -k.outTangent)));
+      n.preWrapMode = c.preWrapMode;
+      n.postWrapMode = c.postWrapMode;
+      negatedCache.set(c, n);
+    }
+    return n;
+  }
+  function setProperty(target, property, value) {
+    const record = target;
+    const dot = property.indexOf(".");
+    if (dot < 0) {
+      const current = record[property];
+      record[property] = typeof current === "boolean" ? value > 0.5 : value;
+      return;
+    }
+    const head = property.slice(0, dot);
+    const field = property.slice(dot + 1);
+    const current = record[head];
+    if (current === null || typeof current !== "object")
+      return;
+    const copy = Object.assign(Object.create(Object.getPrototypeOf(current)), current);
+    copy[field] = value;
+    record[head] = copy;
+  }
+  function fireEvents(go, clip, from, to, length, wrapMode) {
+    if (clip.events.length === 0 || to <= from)
+      return;
+    const passes = wrapMode === "loop" && length > 0 ? Math.floor(to / length) - Math.floor(from / length) : 0;
+    const local = (t) => wrapMode === "loop" && length > 0 ? (t % length + length) % length : t;
+    const a = local(from);
+    const b = local(to);
+    for (const e of clip.events) {
+      const hit = passes === 0 ? e.time > a && e.time <= b : e.time > a || e.time <= b || passes > 1;
+      if (!hit)
+        continue;
+      for (const c of [...go.components]) {
+        const fn = c[e.functionName];
+        if (typeof fn === "function")
+          fn.call(c, e.parameter);
+      }
+    }
+  }
+
+  class AnimationState {
+    name;
+    clip;
+    time = 0;
+    speed = 1;
+    weight = 0;
+    enabled = false;
+    wrapMode;
+    _fade = 0;
+    _target = 0;
+    constructor(name, clip) {
+      this.name = name;
+      this.clip = clip;
+      this.wrapMode = clip.wrapMode;
+    }
+    get length() {
+      return this.clip.length;
+    }
+    get normalizedTime() {
+      return this.length > 0 ? this.time / this.length : 0;
+    }
+    set normalizedTime(t) {
+      this.time = t * this.length;
+    }
+  }
+  var _init26, _base26, _dec121, _dec122, _dec123;
+
+  class Animation extends (_base26 = Component) {
+    static {
+      _init26 = __decoratorStart(_base26);
+      __decorateElement(_init26, 5, "clip", _dec121, this);
+      __decorateElement(_init26, 5, "clips", _dec122, this);
+      __decorateElement(_init26, 5, "playAutomatically", _dec123, this);
+      __decoratorMetadata(_init26, this);
+    }
+    [(_dec121 = [
+      property
+    ], "clip")] = __runInitializers(_init26, 8, this, null);
+    [(_dec122 = [
+      property
+    ], "clips")] = (__runInitializers(_init26, 11, this), __runInitializers(_init26, 12, this, []));
+    [(_dec123 = [
+      property
+    ], "playAutomatically")] = (__runInitializers(_init26, 15, this), __runInitializers(_init26, 16, this, true));
+    states = (__runInitializers(_init26, 19, this), new Map);
+    onStart() {
+      if (this.playAutomatically && this.clip)
+        this.play(this.clip.name);
+    }
+    addClip(clip, name = clip.name) {
+      if (!this.clips.includes(clip))
+        this.clips.push(clip);
+      this.states.set(name, new AnimationState(name, clip));
+    }
+    state(name) {
+      if (!this.states.has(name)) {
+        const clip = [...this.clips, ...this.clip ? [this.clip] : []].find((c) => c.name === name);
+        if (clip)
+          this.states.set(name, new AnimationState(name, clip));
+      }
+      return this.states.get(name);
+    }
+    play(name = this.clip?.name ?? "") {
+      const s = this.state(name);
+      if (!s)
+        return false;
+      for (const other of this.states.values()) {
+        if (other !== s) {
+          other.enabled = false;
+          other.weight = 0;
+        }
+      }
+      s.enabled = true;
+      s.time = 0;
+      s.weight = 1;
+      s._fade = 0;
+      s._target = 1;
+      return true;
+    }
+    crossFade(name, fadeLength = 0.3) {
+      const s = this.state(name);
+      if (!s)
+        return;
+      if (!s.enabled) {
+        s.enabled = true;
+        s.time = 0;
+      }
+      const rate = 1 / Math.max(0.0001, fadeLength);
+      s._target = 1;
+      s._fade = rate;
+      for (const other of this.states.values()) {
+        if (other !== s && other.enabled) {
+          other._target = 0;
+          other._fade = rate;
+        }
+      }
+    }
+    stop(name) {
+      for (const s of this.states.values()) {
+        if (name === undefined || s.name === name) {
+          s.enabled = false;
+          s.weight = 0;
+          s.time = 0;
+        }
+      }
+    }
+    isPlaying(name) {
+      return [...this.states.values()].some((s) => s.enabled && (name === undefined || s.name === name));
+    }
+    _animate(dt) {
+      const pose = new Pose;
+      for (const s of this.states.values()) {
+        if (!s.enabled)
+          continue;
+        if (s._fade) {
+          const step = s._fade * dt;
+          s.weight = s.weight < s._target ? Math.min(s._target, s.weight + step) : Math.max(s._target, s.weight - step);
+          if (s.weight === s._target)
+            s._fade = 0;
+          if (s.weight <= 0 && s._target === 0) {
+            s.enabled = false;
+            continue;
+          }
+        }
+        const before = s.time;
+        s.time += dt * s.speed;
+        fireEvents(this.gameObject, s.clip, before, s.time, s.length, s.wrapMode);
+        if (s.wrapMode === "once" && s.time >= s.length) {
+          pose.addAligned(this.gameObject, s.clip, s.length, s.weight);
+          s.enabled = false;
+          continue;
+        }
+        pose.addAligned(this.gameObject, s.clip, wrap(s.time, s.length, s.wrapMode), s.weight);
+      }
+      pose.apply();
+    }
+  }
+
+  class AnimatorController {
+    parameters = [];
+    states = [];
+    transitions = [];
+    defaultState = null;
+    constructor(init = {}) {
+      Object.assign(this, init);
+    }
+    addParameter(name, type, defaultValue) {
+      this.parameters.push({ name, type, defaultValue });
+      return this;
+    }
+    addState(name, motion, options = {}) {
+      this.states.push({ name, motion, ...options });
+      return this;
+    }
+    addTransition(t) {
+      this.transitions.push(t);
+      return this;
+    }
+    toJSON() {
+      const motion = (m) => m instanceof AnimationClip ? { clip: m.toJSON() } : { blendParameter: m.blendParameter, children: m.children.map((c) => ({ ...c, motion: c.motion.toJSON() })) };
+      return {
+        parameters: this.parameters,
+        states: this.states.map((s) => ({ ...s, motion: motion(s.motion) })),
+        transitions: this.transitions,
+        defaultState: this.defaultState
+      };
+    }
+    static fromJSON(data) {
+      const d = data;
+      return new AnimatorController({
+        parameters: d.parameters ?? [],
+        transitions: d.transitions ?? [],
+        defaultState: d.defaultState ?? null,
+        states: (d.states ?? []).map((s) => ({
+          ...s,
+          motion: s.motion.clip ? AnimationClip.fromJSON(s.motion.clip) : {
+            blendParameter: s.motion.blendParameter ?? "",
+            children: (s.motion.children ?? []).map((c) => ({ ...c, motion: AnimationClip.fromJSON(c.motion) }))
+          }
+        }))
+      });
+    }
+  }
+  var _init27, _base27, _dec124, _dec125;
+
+  class Animator extends (_base27 = Component) {
+    static {
+      _init27 = __decoratorStart(_base27);
+      __decorateElement(_init27, 5, "controller", _dec124, this);
+      __decorateElement(_init27, 5, "speed", _dec125, this);
+      __decoratorMetadata(_init27, this);
+    }
+    [(_dec124 = [
+      property
+    ], "controller")] = __runInitializers(_init27, 8, this, null);
+    [(_dec125 = [
+      property
+    ], "speed")] = (__runInitializers(_init27, 11, this), __runInitializers(_init27, 12, this, 1));
+    values = (__runInitializers(_init27, 15, this), new Map);
+    current = null;
+    next = null;
+    ensure() {
+      if (this.current || !this.controller)
+        return;
+      for (const p of this.controller.parameters) {
+        if (!this.values.has(p.name))
+          this.values.set(p.name, p.defaultValue ?? (p.type === "bool" || p.type === "trigger" ? false : 0));
+      }
+      const name = this.controller.defaultState ?? this.controller.states[0]?.name;
+      const state = this.controller.states.find((s) => s.name === name);
+      if (state)
+        this.current = { state, time: 0 };
+    }
+    setFloat(name, value) {
+      this.values.set(name, value);
+    }
+    getFloat(name) {
+      this.ensure();
+      return Number(this.values.get(name) ?? 0);
+    }
+    setInteger(name, value) {
+      this.values.set(name, Math.trunc(value));
+    }
+    getInteger(name) {
+      return Math.trunc(this.getFloat(name));
+    }
+    setBool(name, value) {
+      this.values.set(name, value);
+    }
+    getBool(name) {
+      this.ensure();
+      return this.values.get(name) === true;
+    }
+    setTrigger(name) {
+      this.values.set(name, true);
+    }
+    resetTrigger(name) {
+      this.values.set(name, false);
+    }
+    play(stateName, normalizedTime = 0) {
+      this.ensure();
+      const state = this.controller?.states.find((s) => s.name === stateName);
+      if (!state)
+        return;
+      this.current = { state, time: normalizedTime * this.lengthOf(state) };
+      this.next = null;
+    }
+    crossFade(stateName, duration = 0.25, normalizedTime = 0) {
+      this.ensure();
+      const state = this.controller?.states.find((s) => s.name === stateName);
+      if (!state || !this.current) {
+        if (state)
+          this.play(stateName, normalizedTime);
+        return;
+      }
+      this.next = { state, time: normalizedTime * this.lengthOf(state), progress: 0, duration: Math.max(0.0001, duration) };
+    }
+    get isInTransition() {
+      return this.next !== null;
+    }
+    getCurrentAnimatorStateInfo() {
+      this.ensure();
+      return this.info(this.current);
+    }
+    getNextAnimatorStateInfo() {
+      return this.info(this.next);
+    }
+    info(p) {
+      const length = p ? this.lengthOf(p.state) : 0;
+      const name = p?.state.name ?? "";
+      return { name, length, normalizedTime: p && length > 0 ? p.time / length : 0, isName: (n) => n === name };
+    }
+    clips(state) {
+      const m = state.motion;
+      if (m instanceof AnimationClip)
+        return [{ clip: m, weight: 1, timeScale: 1 }];
+      const children = [...m.children].sort((a, b) => a.threshold - b.threshold);
+      if (children.length === 0)
+        return [];
+      const v = this.getFloat(m.blendParameter);
+      const first = children[0];
+      const last = children[children.length - 1];
+      if (v <= first.threshold)
+        return [{ clip: first.motion, weight: 1, timeScale: first.timeScale ?? 1 }];
+      if (v >= last.threshold)
+        return [{ clip: last.motion, weight: 1, timeScale: last.timeScale ?? 1 }];
+      const i = children.findIndex((c) => c.threshold > v);
+      const a = children[i - 1];
+      const b = children[i];
+      const t = (v - a.threshold) / (b.threshold - a.threshold);
+      return [
+        { clip: a.motion, weight: 1 - t, timeScale: a.timeScale ?? 1 },
+        { clip: b.motion, weight: t, timeScale: b.timeScale ?? 1 }
+      ];
+    }
+    lengthOf(state) {
+      return this.clips(state).reduce((l, c) => l + c.weight * c.clip.length / c.timeScale, 0);
+    }
+    stateSpeed(state) {
+      const factor = state.speedParameter ? this.getFloat(state.speedParameter) : 1;
+      return (state.speed ?? 1) * factor * this.speed;
+    }
+    passes(c) {
+      const v = this.values.get(c.parameter);
+      const n = Number(v ?? 0);
+      const t = c.threshold ?? 0;
+      switch (c.mode) {
+        case "if":
+          return v === true;
+        case "ifNot":
+          return v !== true;
+        case "greater":
+          return n > t;
+        case "less":
+          return n < t;
+        case "equals":
+          return n === t;
+        case "notEqual":
+          return n !== t;
+      }
+    }
+    checkTransitions() {
+      if (!this.controller || !this.current || this.next)
+        return;
+      const from = this.current;
+      const length = this.lengthOf(from.state);
+      const normalized = length > 0 ? from.time / length : 1;
+      for (const t of this.controller.transitions) {
+        if (t.from !== from.state.name && !(t.from === "Any" && t.to !== from.state.name))
+          continue;
+        if (t.hasExitTime && normalized < (t.exitTime ?? 1))
+          continue;
+        const conditions = t.conditions ?? [];
+        if (!t.hasExitTime && conditions.length === 0)
+          continue;
+        if (!conditions.every((c) => this.passes(c)))
+          continue;
+        for (const c of conditions) {
+          if (this.controller.parameters.find((p) => p.name === c.parameter)?.type === "trigger")
+            this.values.set(c.parameter, false);
+        }
+        const state = this.controller.states.find((s) => s.name === t.to);
+        if (!state)
+          continue;
+        const duration = t.duration ?? 0.25;
+        const start = (t.offset ?? 0) * this.lengthOf(state);
+        if (duration <= 0)
+          this.current = { state, time: start };
+        else
+          this.next = { state, time: start, progress: 0, duration };
+        return;
+      }
+    }
+    _animate(dt) {
+      this.ensure();
+      if (!this.current)
+        return;
+      this.checkTransitions();
+      const pose = new Pose;
+      const run = (p, weight) => {
+        const before = p.time;
+        p.time += dt * this.stateSpeed(p.state);
+        const length = this.lengthOf(p.state);
+        for (const c of this.clips(p.state)) {
+          const t = length > 0 ? p.time / length * c.clip.length : 0;
+          const t0 = length > 0 ? before / length * c.clip.length : 0;
+          const mode = c.clip.wrapMode === "once" ? "clampForever" : c.clip.wrapMode;
+          if (c.weight * weight >= 0.5)
+            fireEvents(this.gameObject, c.clip, t0, t, c.clip.length, mode);
+          pose.addAligned(this.gameObject, c.clip, wrap(t, c.clip.length, mode), c.weight * weight);
+        }
+      };
+      if (this.next) {
+        this.next.progress = Math.min(1, this.next.progress + dt / this.next.duration);
+        const w = this.next.progress;
+        run(this.current, 1 - w);
+        run(this.next, w);
+        if (w >= 1) {
+          this.current = { state: this.next.state, time: this.next.time };
+          this.next = null;
+        }
+      } else {
+        run(this.current, 1);
+      }
+      pose.apply();
+    }
+  }
+  globalThis.__iron_animate = (dt) => {
+    const visit = (go) => {
+      if (!go.activeInHierarchy)
+        return;
+      for (const c of go.components) {
+        if (c instanceof Animation || c instanceof Animator) {
+          try {
+            c._animate(dt);
+          } catch (e) {
+            console.error(`animation on ${go.name}: ${e}`);
+          }
+        }
+      }
+      for (const child of go.children)
+        visit(child);
+    };
+    for (const root of GameObject.roots)
+      visit(root);
+  };
+  // ../../js/engine/src/audio.ts
+  var nextSound = 1;
+  var nextPlayback = 1;
+  var nextTrack = 1;
+  var playing = new Map;
+
+  class Sound {
+    id;
+    src;
+    constructor(source, options = {}) {
+      const src = Assets.resolve(source);
+      this.id = nextSound++;
+      this.src = src;
+      if (options.stream === undefined && Assets.importer(src).stream === true)
+        options = { ...options, stream: true };
+      __iron_op("audio.load", this.id, src, !!options.stream);
+    }
+    play(options = {}) {
+      return new Playback(this, options);
+    }
+    unload() {
+      __iron_op("audio.unload", this.id);
+    }
+  }
+
+  class Playback {
+    id;
+    sound;
+    playing = true;
+    onEnded;
+    constructor(sound, o) {
+      this.id = nextPlayback++;
+      this.sound = sound;
+      playing.set(this.id, this);
+      __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
+        o.volume ?? 1,
+        o.rate ?? 1,
+        o.pan ?? 0,
+        !!o.loop,
+        o.fadeIn ?? 0,
+        o.start ?? 0
+      ]);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.set", this.id, "volume", volume, fade);
+    }
+    setRate(rate, fade = 0) {
+      __iron_op("audio.set", this.id, "rate", rate, fade);
+    }
+    setPan(pan, fade = 0) {
+      __iron_op("audio.set", this.id, "pan", pan, fade);
+    }
+    pause(fade = 0) {
+      __iron_op("audio.pause", this.id, fade);
+    }
+    resume(fade = 0) {
+      __iron_op("audio.resume", this.id, fade);
+    }
+    stop(fade = 0) {
+      __iron_op("audio.stop", this.id, fade);
+    }
+    seek(seconds) {
+      __iron_op("audio.seek", this.id, seconds);
+    }
+  }
+
+  class Bus {
+    id;
+    constructor(volume, parent) {
+      this.id = nextTrack++;
+      __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", this.id, volume, fade);
+    }
+    pause(fade = 0) {
+      __iron_op("audio.trackPause", this.id, fade);
+    }
+    resume(fade = 0) {
+      __iron_op("audio.trackResume", this.id, fade);
+    }
+    remove() {
+      __iron_op("audio.removeTrack", this.id);
+    }
+  }
+
+  class Emitter {
+    id;
+    constructor(position, options) {
+      this.id = nextTrack++;
+      __iron_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
+    }
+    setPosition(p, glide = 0) {
+      __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", this.id, volume, fade);
+    }
+    remove() {
+      __iron_op("audio.removeTrack", this.id);
+    }
+  }
+  var cache = new Map;
+  var audio = {
+    load(src, options) {
+      return new Sound(src, options);
+    },
+    play(src, options) {
+      let sound = cache.get(src);
+      if (!sound) {
+        sound = new Sound(src);
+        cache.set(src, sound);
+      }
+      return sound.play(options);
+    },
+    createBus(options = {}) {
+      return new Bus(options.volume ?? 1, options.parent ?? null);
+    },
+    createEmitter(position, options = {}) {
+      return new Emitter(position, options);
+    },
+    setListener(position, rotation = { x: 0, y: 0, z: 0, w: 1 }) {
+      __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
+    },
+    setMasterVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", null, volume, fade);
+    }
+  };
+  globalThis.__iron_audio = (ended) => {
+    for (const id of ended) {
+      const p = playing.get(id);
+      if (!p)
+        continue;
+      playing.delete(id);
+      p.playing = false;
+      try {
+        p.onEnded?.();
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[audio] error in onEnded: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+      }
+    }
+  };
+  // ../../js/engine/src/audio-components.ts
+  var clips = new Map;
+  function clipOf(clip) {
+    if (clip instanceof Sound)
+      return clip;
+    let sound = clips.get(clip);
+    if (!sound) {
+      sound = audio.load(clip);
+      clips.set(clip, sound);
+    }
+    return sound;
+  }
+  var _init28, _base28, _dec126, _dec127, _dec128, _dec129, _dec130, _dec131, _dec132, _dec133, _dec134, _dec135;
+
+  class AudioSource extends (_base28 = Component) {
+    static {
+      _init28 = __decoratorStart(_base28);
+      __decorateElement(_init28, 2, "volume", _dec131, this);
+      __decorateElement(_init28, 2, "pitch", _dec132, this);
+      __decorateElement(_init28, 2, "panStereo", _dec133, this);
+      __decorateElement(_init28, 2, "mute", _dec134, this);
+      __decorateElement(_init28, 2, "loop", _dec135, this);
+      __decorateElement(_init28, 5, "clip", _dec126, this);
+      __decorateElement(_init28, 5, "playOnAwake", _dec127, this);
+      __decorateElement(_init28, 5, "spatialBlend", _dec128, this);
+      __decorateElement(_init28, 5, "minDistance", _dec129, this);
+      __decorateElement(_init28, 5, "maxDistance", _dec130, this);
+      __decoratorMetadata(_init28, this);
+    }
+    [(_dec126 = [
+      property
+    ], "clip")] = (__runInitializers(_init28, 5, this), __runInitializers(_init28, 8, this, null));
+    [(_dec127 = [
+      property
+    ], "playOnAwake")] = (__runInitializers(_init28, 11, this), __runInitializers(_init28, 12, this, true));
+    [(_dec128 = [
+      property
+    ], "spatialBlend")] = (__runInitializers(_init28, 15, this), __runInitializers(_init28, 16, this, 0));
+    [(_dec129 = [
+      property
+    ], "minDistance")] = (__runInitializers(_init28, 19, this), __runInitializers(_init28, 20, this, 1));
+    [(_dec130 = [
+      property
+    ], "maxDistance")] = (__runInitializers(_init28, 23, this), __runInitializers(_init28, 24, this, 50));
+    outputBus = (__runInitializers(_init28, 27, this), null);
+    _volume = 1;
+    _pitch = 1;
+    _panStereo = 0;
+    _loop = false;
+    _mute = false;
+    main = null;
+    paused = false;
+    all = new Set;
+    emitter = null;
+    emitterKey = "";
+    sentPosition = null;
+    get [(_dec131 = [
+      property
+    ], "volume")]() {
+      return this._volume;
+    }
+    set volume(v) {
+      this._volume = v;
+      this.eachPlaying((p) => p.setVolume(this.gain()));
+    }
+    get [(_dec132 = [
+      property
+    ], "pitch")]() {
+      return this._pitch;
+    }
+    set pitch(r) {
+      this._pitch = r;
+      this.eachPlaying((p) => p.setRate(r));
+    }
+    get [(_dec133 = [
+      property
+    ], "panStereo")]() {
+      return this._panStereo;
+    }
+    set panStereo(p) {
+      this._panStereo = p;
+      this.eachPlaying((pb) => pb.setPan(p));
+    }
+    get [(_dec134 = [
+      property
+    ], "mute")]() {
+      return this._mute;
+    }
+    set mute(m) {
+      this._mute = m;
+      this.eachPlaying((p) => p.setVolume(this.gain()));
+    }
+    get [(_dec135 = [
+      property
+    ], "loop")]() {
+      return this._loop;
+    }
+    set loop(l) {
+      this._loop = l;
+    }
+    get isPlaying() {
+      return !!this.main?.playing && !this.paused;
+    }
+    gain() {
+      return this._mute ? 0 : this._volume;
+    }
+    eachPlaying(f) {
+      for (const p of this.all)
+        f(p);
+    }
+    output() {
+      if (this.spatialBlend <= 0)
+        return this.outputBus ?? undefined;
+      const key = `${this.minDistance},${this.maxDistance},${this.outputBus?.id ?? ""}`;
+      if (!this.emitter || key !== this.emitterKey) {
+        this.emitter?.remove();
+        this.all.clear();
+        this.main = null;
+        this.sentPosition = this.transform.position;
+        this.emitter = audio.createEmitter(this.sentPosition, {
+          minDistance: this.minDistance,
+          maxDistance: this.maxDistance,
+          bus: this.outputBus ?? undefined
+        });
+        this.emitterKey = key;
+      }
+      return this.emitter;
+    }
+    start(sound, options) {
+      const p = sound.play({ ...options, on: this.output() });
+      this.all.add(p);
+      p.onEnded = () => this.all.delete(p);
+      return p;
+    }
+    play() {
+      if (!this.clip) {
+        console.warn(`AudioSource on ${this.gameObject.name} has no clip`);
+        return;
+      }
+      this.main?.stop();
+      this.paused = false;
+      this.main = this.start(clipOf(this.clip), {
+        volume: this.gain(),
+        rate: this._pitch,
+        pan: this._panStereo,
+        loop: this._loop
+      });
+    }
+    stop() {
+      this.main?.stop();
+      this.main = null;
+      this.paused = false;
+    }
+    pause() {
+      if (!this.main?.playing || this.paused)
+        return;
+      this.main.pause();
+      this.paused = true;
+    }
+    unPause() {
+      if (!this.paused || !this.main)
+        return;
+      this.main.resume();
+      this.paused = false;
+    }
+    playOneShot(clip, volumeScale = 1) {
+      this.start(clipOf(clip), { volume: this.gain() * volumeScale, rate: this._pitch, pan: this._panStereo });
+    }
+    static playClipAtPoint(clip, position, volume = 1) {
+      const emitter = audio.createEmitter(position);
+      const p = clipOf(clip).play({ volume, on: emitter });
+      p.onEnded = () => emitter.remove();
+      return p;
+    }
+    onAwake() {
+      if (this.playOnAwake && this.clip)
+        this.play();
+    }
+    onPreRender() {
+      if (!this.emitter)
+        return;
+      const p = this.transform.position;
+      const s = this.sentPosition;
+      if (s && p.x === s.x && p.y === s.y && p.z === s.z)
+        return;
+      this.emitter.setPosition(p);
+      this.sentPosition = p;
+    }
+    onDestroy() {
+      for (const p of this.all)
+        p.stop();
+      this.all.clear();
+      this.main = null;
+      this.emitter?.remove();
+      this.emitter = null;
+    }
+  }
+  var masterVolume = 1;
+
+  class AudioListener extends Component {
+    sent = null;
+    static get volume() {
+      return masterVolume;
+    }
+    static set volume(v) {
+      masterVolume = v;
+      audio.setMasterVolume(v);
+    }
+    onAwake() {
+      this.send();
+    }
+    onPreRender() {
+      this.send();
+    }
+    send() {
+      const p = this.transform.position;
+      const r = this.transform.rotation;
+      const s = this.sent;
+      if (s && s.x === p.x && s.y === p.y && s.z === p.z && s.rx === r.x && s.ry === r.y && s.rz === r.z && s.rw === r.w) {
+        return;
+      }
+      audio.setListener(p, r);
+      this.sent = { x: p.x, y: p.y, z: p.z, rx: r.x, ry: r.y, rz: r.z, rw: r.w };
+    }
+  }
   // ../../js/engine/src/physics2d.ts
   var gravity2D = new Vector2(0, -9.81);
   var Physics2D = {
@@ -5256,19 +5360,19 @@ ${err.stack}` : ""}`);
   function colliderFor(c) {
     return colliders2D.get(c.id) ?? null;
   }
-  var _init28, _base28, _dec123;
+  var _init29, _base29, _dec136;
 
-  class Collider2D extends (_base28 = Collider) {
+  class Collider2D extends (_base29 = Collider) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init28, 5, this);
+      __runInitializers(_init29, 5, this);
     }
     static {
-      _init28 = __decoratorStart(_base28);
-      __decorateElement(_init28, 2, "offset", _dec123, this);
-      __decoratorMetadata(_init28, this);
+      _init29 = __decoratorStart(_base29);
+      __decorateElement(_init29, 2, "offset", _dec136, this);
+      __decoratorMetadata(_init29, this);
     }
-    get [(_dec123 = [
+    get [(_dec136 = [
       property
     ], "offset")]() {
       return new Vector2(this.center.x, this.center.y);
@@ -5307,16 +5411,16 @@ ${err.stack}` : ""}`);
       super.onDestroy();
     }
   }
-  var _init29, _base29, _dec124;
+  var _init30, _base30, _dec137;
 
-  class BoxCollider2D extends (_base29 = Collider2D) {
+  class BoxCollider2D extends (_base30 = Collider2D) {
     static {
-      _init29 = __decoratorStart(_base29);
-      __decorateElement(_init29, 2, "size", _dec124, this);
-      __decoratorMetadata(_init29, this);
+      _init30 = __decoratorStart(_base30);
+      __decorateElement(_init30, 2, "size", _dec137, this);
+      __decoratorMetadata(_init30, this);
     }
-    _size = (__runInitializers(_init29, 5, this), Vector2.one);
-    get [(_dec124 = [
+    _size = (__runInitializers(_init30, 5, this), Vector2.one);
+    get [(_dec137 = [
       property
     ], "size")]() {
       return this._size;
@@ -5335,16 +5439,16 @@ ${err.stack}` : ""}`);
       };
     }
   }
-  var _init30, _base30, _dec125;
+  var _init31, _base31, _dec138;
 
-  class CircleCollider2D extends (_base30 = Collider2D) {
+  class CircleCollider2D extends (_base31 = Collider2D) {
     static {
-      _init30 = __decoratorStart(_base30);
-      __decorateElement(_init30, 2, "radius", _dec125, this);
-      __decoratorMetadata(_init30, this);
+      _init31 = __decoratorStart(_base31);
+      __decorateElement(_init31, 2, "radius", _dec138, this);
+      __decoratorMetadata(_init31, this);
     }
-    _radius = (__runInitializers(_init30, 5, this), 0.5);
-    get [(_dec125 = [
+    _radius = (__runInitializers(_init31, 5, this), 0.5);
+    get [(_dec138 = [
       property
     ], "radius")]() {
       return this._radius;
@@ -5365,18 +5469,18 @@ ${err.stack}` : ""}`);
       return Quaternion.euler(90, 0, 0);
     }
   }
-  var _init31, _base31, _dec126, _dec127;
+  var _init32, _base32, _dec139, _dec140;
 
-  class CapsuleCollider2D extends (_base31 = Collider2D) {
+  class CapsuleCollider2D extends (_base32 = Collider2D) {
     static {
-      _init31 = __decoratorStart(_base31);
-      __decorateElement(_init31, 2, "size", _dec126, this);
-      __decorateElement(_init31, 2, "direction", _dec127, this);
-      __decoratorMetadata(_init31, this);
+      _init32 = __decoratorStart(_base32);
+      __decorateElement(_init32, 2, "size", _dec139, this);
+      __decorateElement(_init32, 2, "direction", _dec140, this);
+      __decoratorMetadata(_init32, this);
     }
-    _size = (__runInitializers(_init31, 5, this), new Vector2(1, 2));
+    _size = (__runInitializers(_init32, 5, this), new Vector2(1, 2));
     _direction = "vertical";
-    get [(_dec126 = [
+    get [(_dec139 = [
       property
     ], "size")]() {
       return this._size;
@@ -5385,7 +5489,7 @@ ${err.stack}` : ""}`);
       this._size = new Vector2(s.x, s.y);
       this.rebuild();
     }
-    get [(_dec127 = [
+    get [(_dec140 = [
       property
     ], "direction")]() {
       return this._direction;
@@ -5410,16 +5514,16 @@ ${err.stack}` : ""}`);
       return this.slab(pts, scale);
     }
   }
-  var _init32, _base32, _dec128;
+  var _init33, _base33, _dec141;
 
-  class PolygonCollider2D extends (_base32 = Collider2D) {
+  class PolygonCollider2D extends (_base33 = Collider2D) {
     static {
-      _init32 = __decoratorStart(_base32);
-      __decorateElement(_init32, 2, "points", _dec128, this);
-      __decoratorMetadata(_init32, this);
+      _init33 = __decoratorStart(_base33);
+      __decorateElement(_init33, 2, "points", _dec141, this);
+      __decoratorMetadata(_init33, this);
     }
-    _points = (__runInitializers(_init32, 5, this), [new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5), new Vector2(0, 0.5)]);
-    get [(_dec128 = [
+    _points = (__runInitializers(_init33, 5, this), [new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5), new Vector2(0, 0.5)]);
+    get [(_dec141 = [
       property
     ], "points")]() {
       return this._points;
@@ -5432,16 +5536,16 @@ ${err.stack}` : ""}`);
       return this.slab(this._points, scale);
     }
   }
-  var _init33, _base33, _dec129;
+  var _init34, _base34, _dec142;
 
-  class EdgeCollider2D extends (_base33 = Collider2D) {
+  class EdgeCollider2D extends (_base34 = Collider2D) {
     static {
-      _init33 = __decoratorStart(_base33);
-      __decorateElement(_init33, 2, "points", _dec129, this);
-      __decoratorMetadata(_init33, this);
+      _init34 = __decoratorStart(_base34);
+      __decorateElement(_init34, 2, "points", _dec142, this);
+      __decoratorMetadata(_init34, this);
     }
-    _points = (__runInitializers(_init33, 5, this), [new Vector2(-0.5, 0), new Vector2(0.5, 0)]);
-    get [(_dec129 = [
+    _points = (__runInitializers(_init34, 5, this), [new Vector2(-0.5, 0), new Vector2(0.5, 0)]);
+    get [(_dec142 = [
       property
     ], "points")]() {
       return this._points;
@@ -5464,21 +5568,21 @@ ${err.stack}` : ""}`);
       return { mesh: { points: pts, indices } };
     }
   }
-  var _init34, _base34, _dec130, _dec131, _dec132, _dec133, _dec134, _dec135, _dec136;
+  var _init35, _base35, _dec143, _dec144, _dec145, _dec146, _dec147, _dec148, _dec149;
 
-  class Rigidbody2D extends (_base34 = Component) {
+  class Rigidbody2D extends (_base35 = Component) {
     static {
-      _init34 = __decoratorStart(_base34);
-      __decorateElement(_init34, 2, "mass", _dec130, this);
-      __decorateElement(_init34, 2, "drag", _dec131, this);
-      __decorateElement(_init34, 2, "angularDrag", _dec132, this);
-      __decorateElement(_init34, 2, "gravityScale", _dec133, this);
-      __decorateElement(_init34, 2, "bodyType", _dec134, this);
-      __decorateElement(_init34, 2, "freezeRotation", _dec135, this);
-      __decorateElement(_init34, 2, "collisionDetectionMode", _dec136, this);
-      __decoratorMetadata(_init34, this);
+      _init35 = __decoratorStart(_base35);
+      __decorateElement(_init35, 2, "mass", _dec143, this);
+      __decorateElement(_init35, 2, "drag", _dec144, this);
+      __decorateElement(_init35, 2, "angularDrag", _dec145, this);
+      __decorateElement(_init35, 2, "gravityScale", _dec146, this);
+      __decorateElement(_init35, 2, "bodyType", _dec147, this);
+      __decorateElement(_init35, 2, "freezeRotation", _dec148, this);
+      __decorateElement(_init35, 2, "collisionDetectionMode", _dec149, this);
+      __decoratorMetadata(_init35, this);
     }
-    _mass = (__runInitializers(_init34, 5, this), 1);
+    _mass = (__runInitializers(_init35, 5, this), 1);
     _drag = 0;
     _angularDrag = 0.05;
     _gravityScale = 1;
@@ -5486,7 +5590,7 @@ ${err.stack}` : ""}`);
     _freezeRotation = false;
     _continuous = false;
     p = null;
-    get [(_dec130 = [
+    get [(_dec143 = [
       property
     ], "mass")]() {
       return this._mass;
@@ -5495,7 +5599,7 @@ ${err.stack}` : ""}`);
       this._mass = Math.max(0.000001, kg);
       this._sendMass();
     }
-    get [(_dec131 = [
+    get [(_dec144 = [
       property
     ], "drag")]() {
       return this._drag;
@@ -5504,7 +5608,7 @@ ${err.stack}` : ""}`);
       this._drag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec132 = [
+    get [(_dec145 = [
       property
     ], "angularDrag")]() {
       return this._angularDrag;
@@ -5513,7 +5617,7 @@ ${err.stack}` : ""}`);
       this._angularDrag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get [(_dec133 = [
+    get [(_dec146 = [
       property
     ], "gravityScale")]() {
       return this._gravityScale;
@@ -5522,7 +5626,7 @@ ${err.stack}` : ""}`);
       this._gravityScale = s;
       this.p?.body.setGravityScale(s);
     }
-    get [(_dec134 = [
+    get [(_dec147 = [
       property
     ], "bodyType")]() {
       return this._bodyType;
@@ -5537,7 +5641,7 @@ ${err.stack}` : ""}`);
     set isKinematic(on) {
       this.bodyType = on ? "kinematic" : "dynamic";
     }
-    get [(_dec135 = [
+    get [(_dec148 = [
       property
     ], "freezeRotation")]() {
       return this._freezeRotation;
@@ -5546,7 +5650,7 @@ ${err.stack}` : ""}`);
       this._freezeRotation = on;
       this.sendAxes();
     }
-    get [(_dec136 = [
+    get [(_dec149 = [
       property
     ], "collisionDetectionMode")]() {
       return this._continuous ? "continuous" : "discrete";
@@ -5635,110 +5739,110 @@ ${err.stack}` : ""}`);
   }
   // ../../js/engine/src/particles.ts
   var systems = new Map;
-  var _init35, _base35, _dec137, _dec138, _dec139, _dec140, _dec141, _dec142, _dec143, _dec144, _dec145, _dec146, _dec147, _dec148, _dec149, _dec150, _dec151, _dec152, _dec153, _dec154, _dec155, _dec156, _dec157, _dec158, _dec159, _dec160;
+  var _init36, _base36, _dec150, _dec151, _dec152, _dec153, _dec154, _dec155, _dec156, _dec157, _dec158, _dec159, _dec160, _dec161, _dec162, _dec163, _dec164, _dec165, _dec166, _dec167, _dec168, _dec169, _dec170, _dec171, _dec172, _dec173;
 
-  class ParticleSystem extends (_base35 = Component) {
+  class ParticleSystem extends (_base36 = Component) {
     static {
-      _init35 = __decoratorStart(_base35);
-      __decorateElement(_init35, 5, "duration", _dec137, this);
-      __decorateElement(_init35, 5, "loop", _dec138, this);
-      __decorateElement(_init35, 5, "playOnAwake", _dec139, this);
-      __decorateElement(_init35, 5, "startDelay", _dec140, this);
-      __decorateElement(_init35, 5, "startLifetime", _dec141, this);
-      __decorateElement(_init35, 5, "startSpeed", _dec142, this);
-      __decorateElement(_init35, 5, "startSize", _dec143, this);
-      __decorateElement(_init35, 5, "startRotation", _dec144, this);
-      __decorateElement(_init35, 5, "angularVelocity", _dec145, this);
-      __decorateElement(_init35, 5, "startColor", _dec146, this);
-      __decorateElement(_init35, 5, "gravityModifier", _dec147, this);
-      __decorateElement(_init35, 5, "drag", _dec148, this);
-      __decorateElement(_init35, 5, "simulationSpace", _dec149, this);
-      __decorateElement(_init35, 5, "maxParticles", _dec150, this);
-      __decorateElement(_init35, 5, "randomSeed", _dec151, this);
-      __decorateElement(_init35, 5, "rateOverTime", _dec152, this);
-      __decorateElement(_init35, 5, "bursts", _dec153, this);
-      __decorateElement(_init35, 5, "shape", _dec154, this);
-      __decorateElement(_init35, 5, "sizeOverLifetime", _dec155, this);
-      __decorateElement(_init35, 5, "colorOverLifetime", _dec156, this);
-      __decorateElement(_init35, 5, "texture", _dec157, this);
-      __decorateElement(_init35, 5, "blendMode", _dec158, this);
-      __decorateElement(_init35, 5, "textureSheet", _dec159, this);
-      __decorateElement(_init35, 5, "stopAction", _dec160, this);
-      __decoratorMetadata(_init35, this);
+      _init36 = __decoratorStart(_base36);
+      __decorateElement(_init36, 5, "duration", _dec150, this);
+      __decorateElement(_init36, 5, "loop", _dec151, this);
+      __decorateElement(_init36, 5, "playOnAwake", _dec152, this);
+      __decorateElement(_init36, 5, "startDelay", _dec153, this);
+      __decorateElement(_init36, 5, "startLifetime", _dec154, this);
+      __decorateElement(_init36, 5, "startSpeed", _dec155, this);
+      __decorateElement(_init36, 5, "startSize", _dec156, this);
+      __decorateElement(_init36, 5, "startRotation", _dec157, this);
+      __decorateElement(_init36, 5, "angularVelocity", _dec158, this);
+      __decorateElement(_init36, 5, "startColor", _dec159, this);
+      __decorateElement(_init36, 5, "gravityModifier", _dec160, this);
+      __decorateElement(_init36, 5, "drag", _dec161, this);
+      __decorateElement(_init36, 5, "simulationSpace", _dec162, this);
+      __decorateElement(_init36, 5, "maxParticles", _dec163, this);
+      __decorateElement(_init36, 5, "randomSeed", _dec164, this);
+      __decorateElement(_init36, 5, "rateOverTime", _dec165, this);
+      __decorateElement(_init36, 5, "bursts", _dec166, this);
+      __decorateElement(_init36, 5, "shape", _dec167, this);
+      __decorateElement(_init36, 5, "sizeOverLifetime", _dec168, this);
+      __decorateElement(_init36, 5, "colorOverLifetime", _dec169, this);
+      __decorateElement(_init36, 5, "texture", _dec170, this);
+      __decorateElement(_init36, 5, "blendMode", _dec171, this);
+      __decorateElement(_init36, 5, "textureSheet", _dec172, this);
+      __decorateElement(_init36, 5, "stopAction", _dec173, this);
+      __decoratorMetadata(_init36, this);
     }
-    [(_dec137 = [
-      property
-    ], "duration")] = __runInitializers(_init35, 8, this, 5);
-    [(_dec138 = [
-      property
-    ], "loop")] = (__runInitializers(_init35, 11, this), __runInitializers(_init35, 12, this, true));
-    [(_dec139 = [
-      property
-    ], "playOnAwake")] = (__runInitializers(_init35, 15, this), __runInitializers(_init35, 16, this, true));
-    [(_dec140 = [
-      property
-    ], "startDelay")] = (__runInitializers(_init35, 19, this), __runInitializers(_init35, 20, this, 0));
-    [(_dec141 = [
-      property
-    ], "startLifetime")] = (__runInitializers(_init35, 23, this), __runInitializers(_init35, 24, this, 5));
-    [(_dec142 = [
-      property
-    ], "startSpeed")] = (__runInitializers(_init35, 27, this), __runInitializers(_init35, 28, this, 5));
-    [(_dec143 = [
-      property
-    ], "startSize")] = (__runInitializers(_init35, 31, this), __runInitializers(_init35, 32, this, 1));
-    [(_dec144 = [
-      property
-    ], "startRotation")] = (__runInitializers(_init35, 35, this), __runInitializers(_init35, 36, this, 0));
-    [(_dec145 = [
-      property
-    ], "angularVelocity")] = (__runInitializers(_init35, 39, this), __runInitializers(_init35, 40, this, 0));
-    [(_dec146 = [
-      property
-    ], "startColor")] = (__runInitializers(_init35, 43, this), __runInitializers(_init35, 44, this, null));
-    [(_dec147 = [
-      property
-    ], "gravityModifier")] = (__runInitializers(_init35, 47, this), __runInitializers(_init35, 48, this, 0));
-    [(_dec148 = [
-      property
-    ], "drag")] = (__runInitializers(_init35, 51, this), __runInitializers(_init35, 52, this, 0));
-    [(_dec149 = [
-      property
-    ], "simulationSpace")] = (__runInitializers(_init35, 55, this), __runInitializers(_init35, 56, this, "local"));
     [(_dec150 = [
       property
-    ], "maxParticles")] = (__runInitializers(_init35, 59, this), __runInitializers(_init35, 60, this, 1000));
+    ], "duration")] = __runInitializers(_init36, 8, this, 5);
     [(_dec151 = [
       property
-    ], "randomSeed")] = (__runInitializers(_init35, 63, this), __runInitializers(_init35, 64, this, 1));
+    ], "loop")] = (__runInitializers(_init36, 11, this), __runInitializers(_init36, 12, this, true));
     [(_dec152 = [
       property
-    ], "rateOverTime")] = (__runInitializers(_init35, 67, this), __runInitializers(_init35, 68, this, 10));
+    ], "playOnAwake")] = (__runInitializers(_init36, 15, this), __runInitializers(_init36, 16, this, true));
     [(_dec153 = [
       property
-    ], "bursts")] = (__runInitializers(_init35, 71, this), __runInitializers(_init35, 72, this, []));
+    ], "startDelay")] = (__runInitializers(_init36, 19, this), __runInitializers(_init36, 20, this, 0));
     [(_dec154 = [
       property
-    ], "shape")] = (__runInitializers(_init35, 75, this), __runInitializers(_init35, 76, this, { type: "cone", angle: 25, radius: 1 }));
+    ], "startLifetime")] = (__runInitializers(_init36, 23, this), __runInitializers(_init36, 24, this, 5));
     [(_dec155 = [
       property
-    ], "sizeOverLifetime")] = (__runInitializers(_init35, 79, this), __runInitializers(_init35, 80, this, null));
+    ], "startSpeed")] = (__runInitializers(_init36, 27, this), __runInitializers(_init36, 28, this, 5));
     [(_dec156 = [
       property
-    ], "colorOverLifetime")] = (__runInitializers(_init35, 83, this), __runInitializers(_init35, 84, this, null));
+    ], "startSize")] = (__runInitializers(_init36, 31, this), __runInitializers(_init36, 32, this, 1));
     [(_dec157 = [
       property
-    ], "texture")] = (__runInitializers(_init35, 87, this), __runInitializers(_init35, 88, this, null));
+    ], "startRotation")] = (__runInitializers(_init36, 35, this), __runInitializers(_init36, 36, this, 0));
     [(_dec158 = [
       property
-    ], "blendMode")] = (__runInitializers(_init35, 91, this), __runInitializers(_init35, 92, this, "alpha"));
+    ], "angularVelocity")] = (__runInitializers(_init36, 39, this), __runInitializers(_init36, 40, this, 0));
     [(_dec159 = [
       property
-    ], "textureSheet")] = (__runInitializers(_init35, 95, this), __runInitializers(_init35, 96, this, null));
+    ], "startColor")] = (__runInitializers(_init36, 43, this), __runInitializers(_init36, 44, this, null));
     [(_dec160 = [
       property
-    ], "stopAction")] = (__runInitializers(_init35, 99, this), __runInitializers(_init35, 100, this, "none"));
-    onStopped = (__runInitializers(_init35, 103, this), undefined);
+    ], "gravityModifier")] = (__runInitializers(_init36, 47, this), __runInitializers(_init36, 48, this, 0));
+    [(_dec161 = [
+      property
+    ], "drag")] = (__runInitializers(_init36, 51, this), __runInitializers(_init36, 52, this, 0));
+    [(_dec162 = [
+      property
+    ], "simulationSpace")] = (__runInitializers(_init36, 55, this), __runInitializers(_init36, 56, this, "local"));
+    [(_dec163 = [
+      property
+    ], "maxParticles")] = (__runInitializers(_init36, 59, this), __runInitializers(_init36, 60, this, 1000));
+    [(_dec164 = [
+      property
+    ], "randomSeed")] = (__runInitializers(_init36, 63, this), __runInitializers(_init36, 64, this, 1));
+    [(_dec165 = [
+      property
+    ], "rateOverTime")] = (__runInitializers(_init36, 67, this), __runInitializers(_init36, 68, this, 10));
+    [(_dec166 = [
+      property
+    ], "bursts")] = (__runInitializers(_init36, 71, this), __runInitializers(_init36, 72, this, []));
+    [(_dec167 = [
+      property
+    ], "shape")] = (__runInitializers(_init36, 75, this), __runInitializers(_init36, 76, this, { type: "cone", angle: 25, radius: 1 }));
+    [(_dec168 = [
+      property
+    ], "sizeOverLifetime")] = (__runInitializers(_init36, 79, this), __runInitializers(_init36, 80, this, null));
+    [(_dec169 = [
+      property
+    ], "colorOverLifetime")] = (__runInitializers(_init36, 83, this), __runInitializers(_init36, 84, this, null));
+    [(_dec170 = [
+      property
+    ], "texture")] = (__runInitializers(_init36, 87, this), __runInitializers(_init36, 88, this, null));
+    [(_dec171 = [
+      property
+    ], "blendMode")] = (__runInitializers(_init36, 91, this), __runInitializers(_init36, 92, this, "alpha"));
+    [(_dec172 = [
+      property
+    ], "textureSheet")] = (__runInitializers(_init36, 95, this), __runInitializers(_init36, 96, this, null));
+    [(_dec173 = [
+      property
+    ], "stopAction")] = (__runInitializers(_init36, 99, this), __runInitializers(_init36, 100, this, "none"));
+    onStopped = (__runInitializers(_init36, 103, this), undefined);
     _particleCount = 0;
     alive = false;
     paused = false;
@@ -6052,26 +6156,26 @@ ${err.stack}` : ""}`);
       return out;
     }
   }
-  var _init36, _base36, _dec161, _dec162, _dec163, _dec164, _dec165;
+  var _init37, _base37, _dec174, _dec175, _dec176, _dec177, _dec178;
 
-  class SpriteRenderer extends (_base36 = Component) {
+  class SpriteRenderer extends (_base37 = Component) {
     static {
-      _init36 = __decoratorStart(_base36);
-      __decorateElement(_init36, 2, "sprite", _dec161, this);
-      __decorateElement(_init36, 2, "color", _dec162, this);
-      __decorateElement(_init36, 2, "flipX", _dec163, this);
-      __decorateElement(_init36, 2, "flipY", _dec164, this);
-      __decorateElement(_init36, 2, "sortingOrder", _dec165, this);
-      __decoratorMetadata(_init36, this);
+      _init37 = __decoratorStart(_base37);
+      __decorateElement(_init37, 2, "sprite", _dec174, this);
+      __decorateElement(_init37, 2, "color", _dec175, this);
+      __decorateElement(_init37, 2, "flipX", _dec176, this);
+      __decorateElement(_init37, 2, "flipY", _dec177, this);
+      __decorateElement(_init37, 2, "sortingOrder", _dec178, this);
+      __decoratorMetadata(_init37, this);
     }
-    _sprite = (__runInitializers(_init36, 5, this), null);
+    _sprite = (__runInitializers(_init37, 5, this), null);
     _color = Color.white;
     _flipX = false;
     _flipY = false;
     _sortingOrder = 0;
     started = false;
     shown = false;
-    get [(_dec161 = [
+    get [(_dec174 = [
       property
     ], "sprite")]() {
       return this._sprite;
@@ -6080,7 +6184,7 @@ ${err.stack}` : ""}`);
       this._sprite = s;
       this.send();
     }
-    get [(_dec162 = [
+    get [(_dec175 = [
       property
     ], "color")]() {
       return this._color;
@@ -6089,7 +6193,7 @@ ${err.stack}` : ""}`);
       this._color = c;
       this.send();
     }
-    get [(_dec163 = [
+    get [(_dec176 = [
       property
     ], "flipX")]() {
       return this._flipX;
@@ -6098,7 +6202,7 @@ ${err.stack}` : ""}`);
       this._flipX = f;
       this.send();
     }
-    get [(_dec164 = [
+    get [(_dec177 = [
       property
     ], "flipY")]() {
       return this._flipY;
@@ -6107,7 +6211,7 @@ ${err.stack}` : ""}`);
       this._flipY = f;
       this.send();
     }
-    get [(_dec165 = [
+    get [(_dec178 = [
       property
     ], "sortingOrder")]() {
       return this._sortingOrder;
@@ -6630,6 +6734,7 @@ ${err.stack}` : ""}`);
     Animator,
     CharacterController,
     CharacterJoint,
+    Cloth,
     CircleCollider2D,
     EdgeCollider2D,
     FixedJoint,

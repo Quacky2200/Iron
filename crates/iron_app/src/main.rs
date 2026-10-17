@@ -9,6 +9,7 @@
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 mod asset_db;
+mod cloth_sync;
 mod cursor;
 mod display;
 mod game_input;
@@ -246,6 +247,7 @@ fn run() -> Result<()> {
         game_input,
         physics: iron_physics::Physics::new(),
         attachments: physics_sync::Attachments::default(),
+        cloth: cloth_sync::ClothSystem::default(),
         audio: None,
         audio_events,
         physics_events,
@@ -415,6 +417,8 @@ struct App {
     physics_events: bool,
     /// Bodies attached to GameObjects (`physics.attach`).
     attachments: physics_sync::Attachments,
+    /// `Cloth` components' simulations.
+    cloth: cloth_sync::ClothSystem,
     /// The sound mixer, opened by the first `audio.*` op.
     audio: Option<Box<dyn iron_audio::Mixer>>,
     /// Whether the game takes finished-sound events (`__iron_audio` exists).
@@ -534,6 +538,7 @@ impl App {
         self.screen = (0.0, 0.0, 0.0);
         self.physics = iron_physics::Physics::new();
         self.attachments = physics_sync::Attachments::default();
+        self.cloth = cloth_sync::ClothSystem::default();
         // Dropping the mixer stops every sound.
         self.audio = None;
         self.handle_ui(Input::Refresh);
@@ -653,6 +658,13 @@ impl App {
             // What the components asked for applies before physics steps.
             self.apply_script_output();
             self.step_physics();
+            if !self.cloth.is_empty() {
+                let gravity = iron_core::glam::Vec3::from(self.physics.gravity());
+                let scene = &self.scene;
+                self.cloth.retain(|o| scene.object(o).is_some());
+                self.cloth
+                    .step(TICK as f32, gravity, &self.scene, &mut self.world_view);
+            }
             self.send_scene_moves();
         }
 
@@ -1031,6 +1043,15 @@ impl App {
                 }
                 name if name.starts_with("audio.") => {
                     self.audio_op(&name["audio.".len()..], &op.args)
+                }
+                name if name.starts_with("cloth.") => {
+                    let name = &name["cloth.".len()..];
+                    if let Err(e) =
+                        self.cloth
+                            .apply(name, &op.args, &self.scene, &mut self.world_view)
+                    {
+                        tracing::warn!("cloth.{name}: {e}");
+                    }
                 }
                 name if name.starts_with("physics.") => {
                     let name = &name["physics.".len()..];

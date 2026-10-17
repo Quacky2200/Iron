@@ -10,6 +10,7 @@
 import "./globals";
 import { _undoOnReload } from "./hot.ts";
 
+export { Cloth, type PinBox } from "./cloth.ts";
 export { type AssetEntry, Assets } from "./assets.ts";
 export {
   Animation,

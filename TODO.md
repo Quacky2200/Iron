@@ -1208,7 +1208,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     when saved in scenes — `M5-PRE-01`
   - [ ] Prefab follow-ups: linked instances with overrides (save only what differs, update
     copies when the prefab changes), nested prefabs and variants (with the editor, M5.e)
-  - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering
+  - [x] Cloth (Unity's `Cloth`; rapier has no soft bodies): position-based dynamics in
+    `iron_physics::cloth` (welded vertices, stretch and bend constraints, damping,
+    gravity, wind and gusts, friction), pins (points or a box) held where the object is,
+    sphere and capsule colliders; a copy of the renderer's mesh updated each fixed tick;
+    `examples/cloth` — `M5-CLO-01`..`03`
+  - [ ] Cloth follow-ups: self-collision, collision with the physics world (floors,
+    boxes), tearing, saving a cloth's object in scenes keeps the source mesh, volumetric
+    soft bodies
   - [x] Scene serialization (M5.b) and GUID `.meta` files: `scripts/assets.ts` (run by
     `bun run dev`) gives every asset a `.meta` (GUID, importer settings), keeps GUIDs
     through moves, reports orphans (`--prune` deletes them); the engine reads them into

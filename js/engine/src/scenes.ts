@@ -9,6 +9,7 @@
 // with `SceneManager.loadScene(level)`; `loadSceneAsync("scenes/level.scene.json")`
 // reads one from the game folder instead.
 
+import { Cloth } from "./cloth.ts";
 import { Assets } from "./assets.ts";
 import { Animation, AnimationClip, AnimationCurve, Animator, AnimatorController } from "./animation.ts";
 import { AudioListener, AudioSource } from "./audio-components.ts";
@@ -79,6 +80,7 @@ _registerBuiltIns({
   Animator,
   CharacterController,
   CharacterJoint,
+  Cloth,
   CircleCollider2D,
   EdgeCollider2D,
   FixedJoint,
