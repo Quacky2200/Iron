@@ -1,0 +1,177 @@
+# The editor
+
+The editor is `iron_editor` (`iron_editor.exe` on Windows): the same program as `iron`, running
+an editor UI written with Iron's own React UI, like a game. Its components live in a shared
+library, `@iron/editor-ui`, so games and tools can use them too.
+
+| Path | Role |
+|---|---|
+| [bin/iron_editor.rs](../crates/iron_app/src/bin/iron_editor.rs) | The second binary: includes main.rs as a module and calls its `main` |
+| [editor.rs](../crates/iron_app/src/editor.rs) | `ENABLED`, where the UI lives, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
+| [logging.rs](../crates/iron_app/src/logging.rs) | The capture layer and ring buffer the console reads |
+| [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/dist`) |
+| [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console` and their models |
+
+## One program, two binaries
+
+`crates/iron_app` has two binary targets. `iron_app` is `src/main.rs`. `iron_editor` is
+`src/bin/iron_editor.rs`, which includes main.rs with `#[path = "../main.rs"] mod app;` and
+re-exports the modules that reach each other through `crate::` (`info`, `models`, `particles`,
+which main.rs declares `pub(crate)`). The `[[bin]]` entry sets `test = false`, so the tests don't
+run twice.
+
+`editor::ENABLED` compares `env!("CARGO_BIN_NAME")` with `iron_editor` at compile time. Where it
+is true:
+
+- `parse_args` replaces the default game (`.`) with `editor::ui_folder()`: `IRON_EDITOR_UI`, else
+  an `editor` folder next to the executable (a packaged editor), else the workspace's `editor/`.
+  The folder is a game folder like any other (`dist/game.js`, `dist/game.css`, `package.json` for
+  the title and window size), so `--screenshot`, hot reload and `bun run dev` work as for games.
+- `main` turns on log capture before anything logs.
+- `__iron_info.app.isEditor` is true (`Application.isEditor`).
+- `editor.*` ops run. In `iron` they log a warning and do nothing, so games can't use them.
+
+## The log feed
+
+`logging::init` adds `CaptureLayer` (filtered like the other layers) to the subscriber. While
+`capture(true)` is on, each event becomes a `LogRecord { seq, level, target, message, time_ms }` in
+a static ring buffer of 5,000 records; the message is the `message` field followed by the other
+fields as ` name=value`. Scripts' `console.*` logs with target `script`, so the buffer has engine
+and script lines in order.
+
+`EditorHost::pump` runs once per frame, right after `tick`. Once the scripts have sent
+`editor.logHistory`, it calls `__iron_log(flat)` with the records it hasn't sent, flat as
+`[seq, level, target, message, timeMs, ...]` (level 0 trace to 4 error). `editor.logHistory`
+resets its position to 0, so a reloaded UI gets the whole history again; `log.ts` keeps the
+newest `seq` it has seen and skips older ones. Errors from `__iron_log` go to stderr, not the log,
+which would feed them back.
+
+## Ops
+
+| Op | Args | Does |
+|---|---|---|
+| `editor.logHistory` | none | Starts the feed from the first kept record |
+| `editor.openFile` | `path, line, col` | Opens the file at that place in the user's code editor |
+
+`editor.openFile` resolves a relative path against the current folder, the UI's folder, then the
+source tree the program was built from, taking the first where it exists. The command comes from
+`IRON_EDITOR_OPEN` if set: split on spaces (double quotes group), with `{file}`, `{line}` and
+`{col}` filled in, e.g. `subl "{file}:{line}:{col}"`. Otherwise it is `code -g file:line:col` when
+`code` is on PATH (`which` tries PATHEXT's extensions on Windows, where it is `code.cmd`, and the
+process gets `CREATE_NO_WINDOW`). With neither, it logs how to set one up.
+
+## `@iron/editor-ui`
+
+Each component has a model module of plain functions (tested with `bun test` without React) and a
+React component that draws it. Styles are in `editor-ui.css` (bundled into the app's `game.css`),
+coloured through `--iron-*` custom properties.
+
+### MenuBar ([menu.ts](../js/editor-ui/src/menu.ts), [MenuBar.tsx](../js/editor-ui/src/MenuBar.tsx))
+
+`menus: Menu[]`, each with `MenuItem`s: `label`, `accelerator`, `action`, `submenu`, `checked`,
+`disabled`, `separator`. The state is a `MenuState { top, open, path }`: the open top menu and the
+highlighted index at each level; a submenu shows while its item is highlighted.
+
+- **Mouse:** pressing a title opens or closes it; while one is open, hovering another title opens
+  that one; hovering an item highlights it; a click runs it. When open, a transparent backdrop
+  (an absolutely positioned child of the bar, far larger than the window, below the titles and
+  menus) catches presses anywhere else and closes the menus.
+- **Keys:** the bar takes focus (`tabIndex={-1}`) when a menu opens. `menuKey` handles
+  arrows (Left/Right also open and close submenus and move between menus), Home/End, Enter/Space
+  and Escape (one level at a time). Separators and disabled items are skipped.
+- **From anywhere:** `input.on("keydown")` (gameplay keys, which arrive whatever has focus, except
+  text fields) runs accelerators (`findAccelerator`, matched by `code` and modifiers), Alt+letter
+  opens the menu starting with that letter, and F10 highlights the bar.
+
+Accelerators are written like `Ctrl+Shift+S`, `F5`, `Delete`, `Ctrl++`; `acceleratorLabel` shows
+them normalized.
+
+### Dock ([dock.ts](../js/editor-ui/src/dock.ts), [Dock.tsx](../js/editor-ui/src/Dock.tsx))
+
+A layout is a tree of `DockSplit { direction: "row" | "column", children, sizes }` (sizes are
+fractions adding to 1) with `DockGroup { tabs, active }` leaves. Every operation returns a new
+layout: `activate`, `removeTab`, `dockTab(layout, tab, group, zone, index?)` and `resize`.
+After each change, empty groups are dropped, single-child splits are replaced by the child, and a
+child split in the same direction as its parent merges into it, so docking left of a group in a
+row adds a column instead of nesting a new row. `serializeLayout` / `parseLayout` save and load
+JSON; `parseLayout` drops unknown tabs and returns null for malformed input.
+
+`Dock` draws splits as flex rows or columns whose children have `flexGrow` = their fraction and
+`flexBasis: 0`, with `SPLITTER`-pixel splitters between them, and groups as a `TAB_BAR`-high tab
+strip over the active panel. Iron has no layout read-back for scripts, so `computeRects` works out
+the same rects in JS from the `rect` prop (the dock's place on screen); panels get their content
+size from it (`render({ width, height })`), and drags use it:
+
+- **Splitters** take pointer capture on press and resize from the layout as it was when the drag
+  started (pixels moved divided by the split's free space).
+- **Tabs** take pointer capture on press. Past 5 pixels the press becomes a drag: `dropTarget`
+  finds the group under the pointer and the zone (tab strip or middle: `center`; within a quarter
+  of an edge: that side), a translucent box previews the zone (`zoneRect`) and a ghost of the tab
+  follows the pointer. Releasing calls `dockTab`. The drag state is kept in a ref too, since
+  pointer moves render a tick later.
+
+### VirtualList ([virtual.ts](../js/editor-ui/src/virtual.ts), [VirtualList.tsx](../js/editor-ui/src/VirtualList.tsx))
+
+Fixed row height. The list is a scrolling box (`overflowY: auto`, `height` from props) with a
+spacer as tall as all rows; only rows in `visibleRange(scrollTop, height, rowHeight, count,
+overscan)` are mounted, absolutely placed at `index * rowHeight`. The engine scrolls the box
+(wheel, scrollbar, keys) and the `scroll` event updates `scrollTop`, so the overscan rows cover the
+frame before React catches up. The handle (`ref`) has `scrollToIndex(index, align)`
+(`scrollForIndex`: only as far as needed, or start / center / end), `scrollToEnd` and `focus`.
+With `keyboard` on (the default), arrows, Page Up/Down and Home/End move `selected` (`keyIndex`)
+and scroll it into view.
+
+### TreeView ([tree.ts](../js/editor-ui/src/tree.ts), [TreeView.tsx](../js/editor-ui/src/TreeView.tsx))
+
+`roots: TreeNode[]` (`id`, `label`, `children`, `data`) and a `TreeState { expanded, selected,
+focus, anchor }` the parent keeps. `flatten` turns the expanded part into rows (iteratively, so
+deep trees are fine), drawn by a `VirtualList`. Clicks go through `clickSelect` (Ctrl toggles,
+Shift ranges from the anchor, both add a range); keys through `treeKey` (Left collapses or goes to
+the parent, Right expands or goes to the first child, Shift extends, Ctrl moves focus only,
+Ctrl+Space toggles). Slots: `renderIcon`, `renderLabel`, and renaming with F2 (or a double-click
+without `onActivate`): `renderRename(node, done)` or a default text field that commits on Enter or
+blur and cancels on Escape, then `onRename(node, name)`. Expanded nodes show a CSS chevron (a
+rotated square with two borders), since system fonts may lack the triangle glyphs.
+
+### Console ([console.ts](../js/editor-ui/src/console.ts), [log.ts](../js/editor-ui/src/log.ts), [Console.tsx](../js/editor-ui/src/Console.tsx))
+
+`log.ts` installs `__iron_log`, keeps up to 10,000 `LogEntry`s and is read through
+`useSyncExternalStore` (subscribing sends `editor.logHistory` once). The panel has Clear,
+Collapse (identical level and message shown once with a count, `collapse`), a search box over
+message and target, and Info / Warn / Error toggles with counts (`countLevels`, debug counts as
+info). Rows show a level dot, the time and the first line of the message, coloured by level. It
+follows new lines while scrolled to the bottom; scrolling up pauses that until the end is in view
+again.
+
+`parseLinks` finds `path/file.ext:line[:col]` (relative, absolute, Windows drives, backslashes),
+skipping hosts right after a URL scheme. Each link is its own `Text` element (spans aren't hit
+targets of their own), and clicking it calls `openInEditor`, the `editor.openFile` op.
+
+`useScreenSize()` gives the window size in UI pixels, re-rendering on `Screen.onChange` (added to
+`@iron/engine` for this).
+
+## The editor UI ([editor/src/main.tsx](../editor/src/main.tsx))
+
+A menubar (File, Edit, View, Window, Help with accelerators and an Open Recent submenu), a dock
+and a status bar. The default layout: Hierarchy and Project on the left, Scene and Game in the
+middle, Inspector on the right, Console along the bottom. The Hierarchy is a demo tree of about
+20,000 nodes with icons and renaming; Project, Scene, Game and Inspector are placeholders (the
+Inspector shows the selection). Window > Save / Load / Reset Layout keeps the layout in
+PlayerPrefs (`editor.layout`), and the saved layout loads at start. Unimplemented menu items log
+what they would do.
+
+## Tests and checks
+
+- `js/editor-ui/test/models.test.ts`: the models (`M5-EDT-06` to `-14`, `-18`, `-19`);
+  `menubar.test.tsx`: the React menubar through the real reconciler with dispatched events
+  (`M5-EDT-14`); `log.test.ts`: the log feed (`M5-EDT-20`).
+- Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`).
+- `bun run screenshots editor` renders `tests/output/editor.png` with `iron_editor` (`M5-EDT-21`,
+  checked by eye). There is no golden: the editor uses system fonts.
+
+## Limits
+
+- Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
+- Panels can't be closed or reopened yet, nor float in windows of their own.
+- Accelerators don't run while a text field has focus (its keys don't reach `input`).
+- No native menus yet (TODO.md M5.e).

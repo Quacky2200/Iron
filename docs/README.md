@@ -31,6 +31,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [particles.md](particles.md) | `ParticleSystem`: settings as key/value pairs, the CPU simulation in `particles.rs`, reports to scripts, drawing as camera-facing quads |
 | [platform.md](platform.md) | Window modes (`FullScreenMode`, platform fallbacks), how display settings flow from manifest and saved prefs, `screen.set`, the log file, vsync and the frame cap, `PlayerPrefs` (file, keys, when written), focus and background pausing (`runInBackground`, `Lifecycle`, `FixedClock`), limits |
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
+| [editor.md](editor.md) | `iron_editor` (the second binary), the log feed and `editor.*` ops, `@iron/editor-ui` (menubar, docking, virtual list, tree view, console) and the editor UI in `editor/` |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
 
@@ -49,6 +50,8 @@ iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd), Worl
 iron_app       the `iron` binary that wires everything together (world_view, particles, models, physics_sync, cloth_sync, lifecycle, asset_db, cook, info)
 js/engine      @iron/engine   (GameObject, Component, register, op, loadFont, stylesheets, input, math, Time, cameras, meshes, lights, textures, particles, models, physics and audio components, Cursor, Application, WorldPanel)
 js/react       @iron/react    (reconciler, events)
+js/editor-ui   @iron/editor-ui (MenuBar, Dock, VirtualList, TreeView, Console; see editor.md)
+editor/        the editor's UI, run by `iron_editor`
 ```
 
 ## The frame pipeline
