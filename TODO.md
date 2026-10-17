@@ -586,7 +586,8 @@ and `@font-face`.
      `lower-greek`, `none`, a string), `list-style-position`, `list-style-image`, `list-style`
      (all inherited); markers are generated `::marker` children (outside: absolutely placed left of
      the item; inside: first child), styled by `::marker` rules, renumbered when items change.
-     Paragraphs and headings stay `text` with classes (no `p`/`h1`). Counters aren't done —
+     A list without markers (`list-style: none`, no image) drops its default indent unless its start
+     padding is set. Paragraphs and headings stay `text` with classes (no `p`/`h1`). Counters aren't done —
      `M3-LST-01`
    - [ ] **5h** `user-select: none | auto | text | all` and selecting static text (drag, double-click
      word, triple-click line, Ctrl+C) on text elements, with a `::selection` colour, sharing Parley's

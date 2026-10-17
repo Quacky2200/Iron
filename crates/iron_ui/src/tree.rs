@@ -230,6 +230,14 @@ fn clip_area(clip: BackgroundClip, rect: Rect, radii: Radii, l: &NodeLayout) -> 
 /// The element type of images.
 const IMAGE: &str = "image";
 
+/// Properties that set the inline-start (left) padding.
+fn is_start_padding(prop: &str) -> bool {
+    matches!(
+        prop,
+        "padding" | "paddingLeft" | "paddingInline" | "paddingInlineStart"
+    )
+}
+
 /// The element type of lists: their element children are list items.
 const LIST: &str = "list";
 
@@ -612,6 +620,9 @@ impl<L: LayoutEngine> UiTree<L> {
         if !self.nodes.contains_key(&id) {
             return;
         }
+        if self.kind(id) == Some(LIST) {
+            self.update_list_indent(id);
+        }
         let existing = self.children(id).iter().copied().find(|c| {
             self.nodes.get(c).and_then(|n| n.generated) == Some(PseudoElement::Marker)
                 && self.kind(*c) != Some(TEXT_NODE)
@@ -736,6 +747,27 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
         self.needs_layout = true;
+    }
+
+    /// A list's default 24px indent makes room for outside markers: without markers
+    /// (`list-style: none`) it starts flush. Padding set by the author always wins.
+    fn update_list_indent(&mut self, id: NodeId) {
+        let text = self.computed_text(id);
+        let Some(node) = self.nodes.get_mut(&id) else {
+            return;
+        };
+        if node.visual.padding_set || node.inline.iter().any(|(p, _)| is_start_padding(p)) {
+            return;
+        }
+        let markers = text.list_style_type != crate::text_style::ListStyleType::None
+            || text.list_image.is_some();
+        let want = taffy::LengthPercentage::length(if markers { 24.0 } else { 0.0 });
+        if node.style.padding.left != want {
+            node.style.padding.left = want;
+            let style = node.style.clone();
+            self.layout.set_style(id, &style);
+            self.needs_layout = true;
+        }
     }
 
     /// Adds an `image` marker as `id`'s first child.
@@ -1179,6 +1211,8 @@ impl<L: LayoutEngine> UiTree<L> {
             // The root is always the size of the window.
             style.size = root_style(self.size.0, self.size.1).size;
         }
+        // Whether a rule sets the start padding (a list's default indent then stays out).
+        visual.padding_set = ordered.iter().any(|(p, _)| is_start_padding(p));
 
         let vars_changed = node.vars != vars;
         let order_changed = node.visual.order != visual.order;
@@ -1739,11 +1773,12 @@ impl<L: LayoutEngine> UiTree<L> {
                     dir_fallback(node);
                 }
                 let changes = |name| pairs.chunks(2).any(|p| p[0].as_str() == Some(name));
-                if pairs
-                    .chunks(2)
-                    .any(|p| p[0].as_str().is_some_and(|n| n.starts_with("listStyle")))
-                {
-                    // Inherited: every marker below may change.
+                if pairs.chunks(2).any(|p| {
+                    p[0].as_str()
+                        .is_some_and(|n| n.starts_with("listStyle") || is_start_padding(n))
+                }) {
+                    // Inherited: every marker below may change, and a list's default
+                    // indent depends on whether it has markers.
                     let mut stack = vec![id];
                     while let Some(n) = stack.pop() {
                         self.markers_dirty.insert(n);

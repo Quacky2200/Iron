@@ -305,3 +305,60 @@ fn marker_rules_style_the_marker() {
     assert_eq!(text.color, iron_ui::Rgba::new(1.0, 0.0, 0.0, 1.0));
     assert_eq!(text.font_size, 30.0);
 }
+
+// M3-LST-01
+#[test]
+fn lists_without_markers_have_no_indent() {
+    let item_x = |list_style: &[(&str, Value)]| {
+        let mut d = Dom::new();
+        let list = d.add(0, "list", list_style);
+        let item = d.add(list, "box", &[("height", px(20.0))]);
+        let mut tree = d.build("");
+        tree.layout_if_needed();
+        (tree, list, item)
+    };
+    let x = |t: &(UiTree, u32, u32)| t.0.rect(iron_core::NodeId(t.2)).unwrap().x;
+    assert_eq!(x(&item_x(&[])), 24.0, "markers: indented");
+    assert_eq!(
+        x(&item_x(&[("listStyle", "none".into())])),
+        0.0,
+        "no markers: flush"
+    );
+    assert_eq!(
+        x(&item_x(&[("listStyleType", "none".into())])),
+        0.0,
+        "the longhand too"
+    );
+    assert_eq!(
+        x(&item_x(&[
+            ("listStyle", "none".into()),
+            ("paddingLeft", px(10.0))
+        ])),
+        10.0,
+        "explicit padding wins"
+    );
+    assert_eq!(
+        x(&item_x(&[("listStyle", "none url(dot.png)".into())])),
+        24.0,
+        "an image marker still needs the room"
+    );
+    // Switching at runtime updates the indent.
+    let (mut tree, list, item) = item_x(&[]);
+    let errors = tree.apply_commit(&iron_core::Commit {
+        ops: vec![common::op(
+            iron_ui::opcodes::SET_STYLE,
+            &[common::n(list), "listStyleType".into(), "none".into()],
+        )],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+    assert_eq!(tree.rect(iron_core::NodeId(item)).unwrap().x, 0.0);
+    // And from a stylesheet.
+    let mut d = Dom::new();
+    let list = d.add(0, "list", &[]);
+    let item = d.add(list, "box", &[("height", px(20.0))]);
+    d.set_class(list, "plain");
+    let mut tree = d.build(".plain { list-style: none }");
+    tree.layout_if_needed();
+    assert_eq!(tree.rect(iron_core::NodeId(item)).unwrap().x, 0.0);
+}

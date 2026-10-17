@@ -104,6 +104,8 @@ pub struct Visual {
     pub contents: bool,
     /// `display: list-item`: a block with a marker, like the children of `list`.
     pub list_item: bool,
+    /// A stylesheet rule set the start padding (lists keep it over their default indent).
+    pub padding_set: bool,
     /// `position: fixed`: laid out (as absolute) against the window and painted above
     /// the normal tree. Taffy has no fixed, so `Style::position` is `Absolute`.
     pub fixed: bool,
@@ -162,6 +164,7 @@ impl Default for Visual {
             scrollbar_color: None,
             contents: false,
             list_item: false,
+            padding_set: false,
             fixed: false,
             object_fit: ObjectFit::Fill,
             object_position: BackgroundPosition {

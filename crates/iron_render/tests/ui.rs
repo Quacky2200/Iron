@@ -1549,7 +1549,8 @@ fn list_markers() {
     };
     assert!(ink(4, 24), "a disc in the padding");
     assert!(ink(114, 134), "a number in the padding");
-    assert!(!ink(554, 574), "`none`: nothing in the padding");
+    // `none`: no marker and no indent, so the text starts at the list's edge.
+    assert!(ink(550, 556), "`none`: flush with the list's left edge");
 }
 
 // M2-DRW-06
