@@ -174,17 +174,14 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
   - `examples/arcade` (2026-10-17): a coin collector with a React HUD, FPS counter and
     settings menu; Classic and Deluxe arenas as separate scenes (Style button), the round
     and positions kept across the switch.
-- **Next (in this order, see TODO.md):**
-  1. Reflection probes re-render the sun's shadow map for each of their six faces (a
-     live probe halved the arcade's uncapped FPS, ~600 to ~290): reuse the frame's
-     shadow map or skip shadows in probe and mirror views.
-  2. Mirrors that keep their material's texture (`Mirror` takes the texture slot today;
-     the arcade works round it with a see-through mirror sheet over the floor).
-  3. Getting the reload benchmark under 100 ms; then M5.c's remaining rendering items or
-     M5.d (animation, prefabs) per TODO.md.
-  - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
-    transparency modes), FXAA/TAA, render textures, the rest of M6 file IO, shadow and
-    glow follow-ups, more classic test scenes (downloads need the user's OK first).
+- **Next (in this order, see TODO.md):** the arcade is parked; back to the milestones.
+  1. M5.c's remaining rendering items (the rest of materials: specular workflow, texture
+     maps, transparency modes; FXAA/TAA; render textures; shadow and glow follow-ups),
+     then M5.d (animation, prefabs) per TODO.md.
+  - "Optimisation fixes" in TODO.md (probe shadow passes, textured mirrors, backdrop blur
+    cost, the reload benchmark) wait until they're picked.
+  - Also open in TODO.md: the rest of M6 file IO, more classic test scenes (downloads
+    need the user's OK first).
   - API names and units follow Unity/s&box (degrees for Euler angles). Decided: own wgpu
     renderer; `iron_scene` without an ECS. Later items in TODO.md: GPU-tessellated SVG with
     SMIL and path morphing; UI and SVG editors (M5.e).

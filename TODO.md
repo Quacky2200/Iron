@@ -1012,17 +1012,22 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   read. Now, when the UI has a backdrop filter or blend mode (`needs_backdrop`), the world is
   drawn into a sampleable texture (`backdrop_target`) and the UI canvas starts as a copy of it
   (`render_over`); other frames are unchanged — `M5-RND-16`; the arcade's frosted HUD
-- [ ] **Next (found 2026-10-17): reflection probes redraw the shadow map six times.**
-  `update_probes` renders each cube face through `render_views_with`, which renders the
-  sun's shadow map for whatever view it's given: a live (`everyFrame`) probe costs six
-  full shadow passes a frame (the arcade went from ~600 to ~290 FPS uncapped). Reuse the
-  frame's shadow map (render it once, before probes and mirrors) or skip shadows in probe
-  faces; mirror views have the same issue once. Measure with the arcade's FPS counter
-  (vsync off) and a test that counts shadow passes.
-- [ ] **Next: mirrors that keep their texture.** `Mirror` puts the reflection in the
-  mesh's texture slot, so a mirrored surface loses its material texture (the arcade uses
-  a see-through mirror sheet over a textured floor instead). Give mirrors their own
-  binding so the reflection mixes with the material's texture, smoothness and metallic.
+- [ ] **Optimisation fixes** (found 2026-10-17 with `examples/arcade`; not scheduled yet):
+  - [ ] Reflection probes redraw the shadow map six times: `update_probes` renders each
+    cube face through `render_views_with`, which renders the sun's shadow map for
+    whatever view it's given, so a live (`everyFrame`) probe costs six full shadow passes
+    a frame (the arcade went from ~600 to ~290 FPS uncapped). Render the shadow map once
+    a frame and reuse it in probe faces and mirror views (or skip shadows there). Measure
+    with the arcade's FPS counter (vsync off) and a test that counts shadow passes.
+  - [ ] Mirrors that keep their texture: `Mirror` puts the reflection in the mesh's
+    texture slot, so a mirrored surface loses its material texture (the arcade draws a
+    see-through mirror sheet over a textured floor instead, an extra plane and pass).
+    Give mirrors their own binding so the reflection mixes with the material's texture,
+    smoothness and metallic.
+  - [ ] Backdrop blur costs a full-screen world copy plus blur passes each frame
+    (10–25% of the arcade's uncapped frame rate): blur only the panels' areas at a lower
+    resolution, and skip the copy when no panel overlaps the world.
+  - [ ] Reload benchmark under 100 ms (`M4-HOT-07`, ~146 ms): see "Hot reload, part 2".
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style. Done so far: PBR,
     the sky and its reflections, planar mirrors, reflection probes, the showroom example and
