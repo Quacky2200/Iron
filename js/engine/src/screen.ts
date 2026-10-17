@@ -110,12 +110,29 @@ export const Screen = {
   get supportedFullScreenModes(): FullScreenMode[] {
     return [...(display().supportedModes ?? ["ExclusiveFullScreen", "FullScreenWindow", "MaximizedWindow", "Windowed"])];
   },
+
+  /** Calls `fn` after the size or scale changes. Returns a function that stops it. */
+  onChange(fn: () => void): () => void {
+    listeners.add(fn);
+    return () => {
+      listeners.delete(fn);
+    };
+  },
 };
+
+const listeners = new Set<() => void>();
 
 globalThis.__iron_screen = (w: number, h: number, s: number) => {
   width = w;
   height = h;
   scale = s;
+  for (const fn of listeners) {
+    try {
+      fn();
+    } catch (e) {
+      console.error(`Screen.onChange listener failed: ${e instanceof Error ? (e.stack ?? e.message) : e}`);
+    }
+  }
 };
 
 /** Sets the screen size. Only for tests. */

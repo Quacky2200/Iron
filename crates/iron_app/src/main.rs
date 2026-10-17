@@ -8,23 +8,26 @@
 //! `bun run build`) or a `.js` bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
-mod asset_db;
+pub(crate) mod asset_db;
 mod cloth_sync;
-mod cook;
+pub(crate) mod cook;
 mod cursor;
 mod display;
+mod editor;
 mod game_input;
-mod info;
+// `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
+// re-exports these at its root, for the `crate::` paths between modules.
+pub(crate) mod info;
 mod lifecycle;
 mod logging;
-mod models;
+pub(crate) mod models;
 mod panels;
-mod particles;
+pub(crate) mod particles;
 mod physics_sync;
 mod prefs;
-mod reload;
+pub(crate) mod reload;
 mod ui_scale;
-mod world_view;
+pub(crate) mod world_view;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -61,7 +64,12 @@ struct Args {
 }
 
 fn parse_args() -> Result<Args> {
-    parse_args_from(std::env::args_os().skip(1))
+    let mut args = parse_args_from(std::env::args_os().skip(1))?;
+    // The editor runs its own UI unless given another one.
+    if editor::ENABLED && args.game == Path::new(".") {
+        args.game = editor::ui_folder();
+    }
+    Ok(args)
 }
 
 /// Parses the arguments after the program name. The game is the first argument that isn't
@@ -98,8 +106,10 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
     Ok(parsed)
 }
 
-fn main() -> Result<()> {
+pub(crate) fn main() -> Result<()> {
     logging::attach_console();
+    // The editor's console shows the log from the start.
+    logging::capture(editor::ENABLED);
     let result = run();
     if let Err(e) = &result {
         // Into the log as well as stderr: a windowed program's stderr may go nowhere.
@@ -296,6 +306,7 @@ fn run() -> Result<()> {
         screenshot: args.screenshot.map(|path| (path, args.frames)),
         done: false,
         info,
+        editor: editor::EditorHost::default(),
     };
     let icon = manifest
         .icon
@@ -468,6 +479,8 @@ struct App {
     /// Whether the window currently accepts IME input, and the last candidate area.
     ime_allowed: bool,
     ime_area: Option<iron_ui::Rect>,
+    /// The editor's log feed and `editor.*` ops (refused outside `iron_editor`).
+    editor: editor::EditorHost,
     done: bool,
 }
 
@@ -1060,6 +1073,10 @@ impl App {
                     self.prefs_op(&name["prefs.".len()..], &op.args)
                 }
                 "screen.set" => self.screen_op(&op.args),
+                name if name.starts_with("editor.") => {
+                    self.editor
+                        .op(&name["editor.".len()..], &op.args, &self.asset_root)
+                }
                 name if name.starts_with("cursor.") => {
                     self.cursor_op(&name["cursor.".len()..], &op.args)
                 }
@@ -1906,6 +1923,8 @@ impl PlatformApp for App {
 
     fn frame(&mut self) {
         self.tick();
+        // New log lines for the editor's console.
+        self.editor.pump(&mut self.scripts);
         // Last-moment changes before drawing (`onPreRender`).
         if !self.lifecycle.paused() {
             let scene = &self.scene;

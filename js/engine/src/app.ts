@@ -25,6 +25,8 @@ interface InfoApp {
   runInBackground?: boolean;
   /** What scripts last set (kept over reloads). */
   targetFrameRate?: number;
+  /** True in `iron_editor`. */
+  isEditor?: boolean;
 }
 
 interface InfoSystem {
@@ -102,9 +104,9 @@ export const Application = {
   get systemLanguage(): string {
     return sys().language ?? "en-US";
   },
-  /** Always false: there's no editor yet. */
+  /** Whether this runs in the editor (`iron_editor`) rather than the player (`iron`). */
   get isEditor(): boolean {
-    return false;
+    return app().isEditor === true;
   },
   get isMobilePlatform(): boolean {
     return sys().deviceType === "Handheld";

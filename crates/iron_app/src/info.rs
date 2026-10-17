@@ -114,6 +114,7 @@ impl Info {
                 "startScene": manifest.start_scene,
                 "runInBackground": manifest.run_in_background,
                 "targetFrameRate": -1,
+                "isEditor": super::editor::ENABLED,
             }),
         );
         map.insert("system".into(), system());

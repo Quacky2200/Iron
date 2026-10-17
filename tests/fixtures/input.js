@@ -2021,12 +2021,26 @@ ${err.stack}` : ""}`);
     },
     get supportedFullScreenModes() {
       return [...display().supportedModes ?? ["ExclusiveFullScreen", "FullScreenWindow", "MaximizedWindow", "Windowed"]];
+    },
+    onChange(fn) {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
     }
   };
+  var listeners = new Set;
   globalThis.__iron_screen = (w, h, s) => {
     width = w;
     height = h;
     scale = s;
+    for (const fn of listeners) {
+      try {
+        fn();
+      } catch (e) {
+        console.error(`Screen.onChange listener failed: ${e instanceof Error ? e.stack ?? e.message : e}`);
+      }
+    }
   };
 
   // ../../js/engine/src/rendering.ts
@@ -4170,7 +4184,7 @@ ${err.stack}` : ""}`);
     }
   }
   // ../../js/engine/src/assets.ts
-  var listeners = new Set;
+  var listeners2 = new Set;
   var entries = () => globalThis.__iron_info?.assets ?? [];
   var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
   var Assets = {
@@ -4194,12 +4208,12 @@ ${err.stack}` : ""}`);
       return Assets.guidToPath(src.slice(5)) ?? src;
     },
     onChanged(fn) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
+      listeners2.add(fn);
+      return () => listeners2.delete(fn);
     }
   };
   globalThis.__iron_assets_changed = (paths) => {
-    for (const f of [...listeners]) {
+    for (const f of [...listeners2]) {
       try {
         f(paths);
       } catch (e) {
@@ -6280,9 +6294,9 @@ ${err.stack}` : ""}`);
     Cancel: { keys: ["Escape"], pad: ["East"] }
   };
   var pads = new Map;
-  var listeners2 = {};
+  var listeners3 = {};
   function emit(type, event) {
-    for (const fn of listeners2[type] ?? []) {
+    for (const fn of listeners3[type] ?? []) {
       try {
         fn(event);
       } catch (e) {
@@ -6369,10 +6383,10 @@ ${err.stack}` : ""}`);
       return input.gamepads().some((p) => (p.buttons[button] ?? 0) > 0.5);
     },
     on(type, fn) {
-      let set = listeners2[type];
+      let set = listeners3[type];
       if (!set) {
         set = new Set;
-        listeners2[type] = set;
+        listeners3[type] = set;
       }
       set.add(fn);
       return () => set.delete(fn);
@@ -6504,7 +6518,7 @@ ${err.stack}` : ""}`);
     _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
   }
   var restoring = false;
-  var listeners3 = new Set;
+  var listeners4 = new Set;
   function _qualityState() {
     return { level: levelIndex, current };
   }
