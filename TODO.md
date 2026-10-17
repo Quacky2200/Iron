@@ -196,7 +196,7 @@ Iron/
 - [x] JS→Rust commit transfer bench (QuickJS) — `M2-BEN-04` (0.40 ms per 1,000 ops; binary encoding not needed yet)
 - [x] Profiled and fixed our overhead: boxed UI nodes and FxHash maps (commit apply 5.1 → 3.1 ms)
 - [x] Results, analysis and revised targets recorded in TESTS.md
-- [x] **Decision: keep Taffy.** Costs fit the frame budget (~0.8 ms worst-case incremental update for 2,246 nodes); Yoga would do the same ancestor relayout. Revisit at M7 with the real editor UI
+- [x] **Decision: keep Taffy.** Costs fit the frame budget (~0.8 ms worst-case incremental update for 2,246 nodes); Yoga would do the same ancestor relayout. Revisit at M5.e with the real editor UI
 
 **M2 status:** steps 1–7 done. Remaining: the manual resize check (`M2-MAN-01`) and a CI run (needs a push).
 
@@ -435,7 +435,7 @@ Where s&box has a custom extension, we prefer the standard CSS form if there is 
 
 **Order agreed for the rest of M3d (2026-10-17):** 5h, 5i, 5j, then groups 7, 8, 9, 10, then
 5.1 (SVG); then stop and check in with the user before M4. All done (2026-10-17) except
-`sound-in`/`sound-out`, which waits for M6 audio. Added afterwards: groups 11 (pointer capture),
+`sound-in`/`sound-out`, which waits for M4 audio. Added afterwards: groups 11 (pointer capture),
 12 (WOFF/WOFF2) and 13 (`@media`). Known deviations from browsers go in
 [docs/differences.md](docs/differences.md).
 
@@ -673,8 +673,8 @@ and `@font-face`.
      `-inline`/`-block`; `contain` and `none` stop wheel and key scrolling from chaining outward;
      there's no bounce to turn off) — `M3-SCR-01`
 9. **Game-specific extensions** (s&box custom properties worth copying)
-   - [ ] (waits for M6 audio) `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
-     `:active`); only the winning rule plays (needs M6 audio)
+   - [ ] (waits for M4 audio) `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
+     `:active`); only the winning rule plays (needs M4 audio)
    - [x] **9a** Tint for images: s&box's `background-image-tint` (background images and an `image`
      element's picture) and `border-image-tint`, a colour (alpha too) multiplied into the image's
      pixels in the image shader; gradients aren't tinted — `M3-GAME-01`
@@ -717,10 +717,42 @@ and `@font-face`.
 
 **Later (not M3):** accessibility (accesskit), drag and drop.
 
-## Script IO — files, fetch, WebSocket (proposed)
+## M4 — Hot reload, physics and audio
+
+Physics and audio come ahead of the scene work (M5), so its object model is designed with them in
+mind.
+
+- [ ] Bun watch → rebuild → engine notified
+- [ ] Wipe-and-rebuild with property serialization — `M4-HOT-01`..`M4-HOT-05`
+- [ ] React Fast Refresh for panels — `M4-HOT-06`
+- [ ] Reload benchmark — `M4-HOT-07`
+- [ ] `rapier` integration + TS components — `M4-PHY-*`
+- [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`; then M3d's `sound-in` /
+  `sound-out` CSS properties
+
+## M5 — Scene, assets, rendering, editor
+
+- [ ] **M5.a** GameObject + Component model first (the s&box way), from TS components.
+  **Decision:** own renderer vs reuse Bevy crates (DESIGN §7.4). **Question:** an ECS as its own
+  crate underneath (or alongside) GameObjects?
+- [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
+  transforms) with skybox support
+- [ ] **M5.c** A basic cube object; model includes with meshes, and meshes as collision shapes
+  (rapier, from M4); basic lighting and shadows
+- [ ] **M5.d** The rest of scene, assets and rendering:
+  - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
+  - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`
+  - [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
+- [ ] **M5.e** Editor shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
+  - [ ] Later editor tasks:
+    - [ ] UI editor: pick elements in a running game's UI, inspect their computed styles and box
+      model, edit styles live (like browser devtools), and edit/arrange React UI visually
+    - [ ] SVG editor: draw and edit shapes and paths (nodes, curves), gradients, strokes and
+      groups; preview CSS styling and animations on them; save `.svg` files
+
+## M6 — Networking and files for scripts (Script IO)
 
 Research and design: [docs/research/networking-and-files.md](docs/research/networking-and-files.md).
-Where this lands among the milestones is still to decide.
 
 - [ ] Bridge: `Value::Bytes`, JS-side promise table (`asyncOp`), one `__iron_io(events)` batch per
   frame with a budget, new `iron_io` crate (`IoHost`, generations for hot reload) — `IO-BRG-*`
@@ -731,36 +763,36 @@ Where this lands among the milestones is still to decide.
   `fetch`/`Headers`/`Request`/`Response`/`AbortController`/`URL` — `IO-NET-*`
 - [ ] WebSocket: tokio-tungstenite on the same policy; text/binary, close codes, backpressure,
   limits — `IO-WS-*`
-- No raw TCP/UDP for scripts: multiplayer stays engine-side (see "Later")
+- No raw TCP/UDP for scripts: multiplayer stays engine-side (M8)
 
-## M4 — Hot reload
+## M7 — Lighting
 
-- [ ] Bun watch → rebuild → engine notified
-- [ ] Wipe-and-rebuild with property serialization — `M4-HOT-01`..`M4-HOT-05`
-- [ ] React Fast Refresh for panels — `M4-HOT-06`
-- [ ] Reload benchmark — `M4-HOT-07`
+- [ ] Baked lighting (lightmaps), light and reflection probes
 
-## M5 — Scene, assets, rendering
+## M8 — Multiplayer
 
-- [ ] **Decision:** own renderer vs reuse Bevy crates (DESIGN §7.4)
-- [ ] **Decision:** ECS vs GameObject + Component
-- [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
-- [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`
-- [ ] PBR, shadows, IBL, post-processing — `M5-RND-*`
+- [ ] QUIC transport, Steam multiplayer (`steamworks`), `@sync` / `@rpc`
 
-## M6 — Physics and audio
+## M9 — Script backends, AOT and release packaging
 
-- [ ] `rapier` integration + TS components — `M6-PHY-*`
-- [ ] `kira` integration — `M6-AUD-*`
+- [ ] **M9.a** `deno_core` and Bun script backends; packaging and distribution (pack files, Steam
+  Workshop?)
+- [ ] **M9.b** Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
+  is built, instead of interpreting it in QuickJS. Native code compiled into the executable is
+  the preferred output; bytecode is the fallback. Candidates to evaluate:
+  - QuickJS bytecode (the cheapest step: skips parsing at startup)
+  - TypeScript → Rust native via Perry or Vercel's scriptc
+  - AssemblyScript → wasm → wasm IR → Rust via `wasm2rs`
+  - Questions: keeping the `__iron_op` / `__iron_commit` boundary unchanged, React's dynamic
+    code under each option, and keeping dev builds on QuickJS for hot reload (M4)
+- [ ] **M9.c** Release packaging for macOS, Linux, Android and iOS (iOS: QuickJS backend, Xcode
+  wrapper)
 
-## M7 — Editor shell
+## M10 — Optional extras
 
-- [ ] Docking, tree view, virtualized list, inspector, undo/redo — `M7-EDT-*`
-- [ ] Later editor tasks:
-  - [ ] UI editor: pick elements in a running game's UI, inspect their computed styles and box
-    model, edit styles live (like browser devtools), and edit/arrange React UI visually
-  - [ ] SVG editor: draw and edit shapes and paths (nodes, curves), gradients, strokes and
-    groups; preview CSS styling and animations on them; save `.svg` files
+- [ ] OpenXR: Quest VR, PC VR
+- [ ] Steam Audio spatial sound
+- [ ] Ray tracing tier
 
 ## Later
 
@@ -771,19 +803,3 @@ Where this lands among the milestones is still to decide.
     ignores
   - [ ] `d` path morphing between paths with different commands (normalize both to cubic curves
     with matching segment counts before interpolating)
-- [ ] Steam multiplayer (`steamworks`), `@sync` / `@rpc`, QUIC transport
-- [ ] Baked lighting, light/reflection probes
-- [ ] Android, Quest VR, PC VR (OpenXR)
-- [ ] Steam Audio spatial sound
-- [ ] Ray tracing tier
-- [ ] iOS (QuickJS backend, Xcode wrapper)
-- [ ] Packaging and distribution (pack files, Steam Workshop?)
-- [ ] `deno_core` and Bun script backends
-- [ ] Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
-  is built, instead of interpreting it in QuickJS. Native code compiled into the executable is
-  the preferred output; bytecode is the fallback. Candidates to evaluate:
-  - QuickJS bytecode (the cheapest step: skips parsing at startup)
-  - TypeScript → Rust native via Perry or Vercel's scriptc
-  - AssemblyScript → wasm → wasm IR → Rust via `wasm2rs`
-  - Questions: keeping the `__iron_op` / `__iron_commit` boundary unchanged, React's dynamic
-    code under each option, and keeping dev builds on QuickJS for hot reload (M4)

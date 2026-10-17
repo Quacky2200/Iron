@@ -121,13 +121,16 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     `input`; d-pad UI navigation (`Input::Navigate`/`Activate`) while UI has focus
   - M3c step 7: `examples/form`. **M3c is done.**
   - M3d (CSS parity) is done: groups 1–10 and step 5.1 (inline SVG and SVG images via resvg),
-    except `sound-in`/`sound-out`, which waits for M6 audio
+    except `sound-in`/`sound-out`, which waits for M4 audio
 - **Next:** M3d groups 11 (pointer capture), 12 (WOFF/WOFF2), 13 (`@media`) were added to
   TODO.md; then check in with the user before M4 (agreed 2026-10-17). Later items noted in TODO.md:
-  GPU-tessellated SVG with SMIL and path morphing; UI and SVG editors (M7).
+  GPU-tessellated SVG with SMIL and path morphing; UI and SVG editors (M5.e).
+  Milestones after M3 (2026-10-17): M4 hot reload + physics + audio; M5.a–e objects, scene,
+  assets, rendering, editor; M6 Script IO; M7 lighting; M8 multiplayer; M9.a–c backends, AOT,
+  release packaging; M10 optional (OpenXR, Steam Audio, ray tracing).
   Commit per step; refresh docs once per group (Sonnet subagent, changed code only).
-- **Also planned:** "Script IO" (files, fetch, WebSocket) in TODO.md, designed in
-  `docs/research/networking-and-files.md`; where it lands is undecided.
+- **Also planned:** "Script IO" (files, fetch, WebSocket) is M6, designed in
+  `docs/research/networking-and-files.md`.
 - **GPU crashes:** the user's PC has hard-reset with the window open (an existing NVIDIA
   instability, also seen before Iron). Warn before launching the interactive window; prefer
   `--screenshot` runs for checks.

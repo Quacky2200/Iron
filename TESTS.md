@@ -158,7 +158,7 @@ bookkeeping is ~0.1 ms. Applying a commit is ~1.8 ms of Taffy node creation plus
 **Decision: keep Taffy.** The initial targets were guesses made before measuring. The measured costs
 fit comfortably in a frame: a worst-case incremental update of this 2,246-node UI (relayout + draw list)
 is ~0.8 ms, about 5% of a 60 Hz frame, and full builds happen once at load. Yoga would do the same
-ancestor relayout work, so a Yoga spike isn't justified now. Revisit at M7 with the real editor UI
+ancestor relayout work, so a Yoga spike isn't justified now. Revisit at M5.e with the real editor UI
 (virtualized lists will keep node counts down); the `M2-LAY-05` fixtures are ready if we do.
 
 ---
@@ -298,28 +298,28 @@ layout pass):
 
 ---
 
-## M6 — Physics and audio
+## M4 — Physics and audio
 
 | ID | Kind | Checks |
 |---|---|---|
-| M6-PHY-01 | Integration | A dropped box lands on a plane and comes to rest at the right height. |
-| M6-PHY-02 | Integration | Collision enter/exit events reach TS components. |
-| M6-PHY-03 | Integration | Character controller walks up a step and stops at a wall. |
-| M6-PHY-04 | Integration | Physics bodies survive a script hot reload. |
-| M6-AUD-01 | Integration | Playing a sound through `kira` with a null/offline backend produces non-silent output. |
-| M6-AUD-02 | Unit | Distance falloff and panning give the expected gains. |
+| M4-PHY-01 | Integration | A dropped box lands on a plane and comes to rest at the right height. |
+| M4-PHY-02 | Integration | Collision enter/exit events reach TS components. |
+| M4-PHY-03 | Integration | Character controller walks up a step and stops at a wall. |
+| M4-PHY-04 | Integration | Physics bodies survive a script hot reload. |
+| M4-AUD-01 | Integration | Playing a sound through `kira` with a null/offline backend produces non-silent output. |
+| M4-AUD-02 | Unit | Distance falloff and panning give the expected gains. |
 
 ---
 
-## M7 — Editor shell
+## M5.e — Editor shell
 
 | ID | Kind | Checks |
 |---|---|---|
-| M7-EDT-01 | Integration | Hierarchy panel shows the scene tree and updates when entities are added or removed. |
-| M7-EDT-02 | Integration | Inspector shows `@property` fields; editing one changes the live component. |
-| M7-EDT-03 | Integration | Undo/redo reverses and reapplies property edits and entity creation. |
-| M7-EDT-04 | Benchmark | A 10,000-item virtualized list scrolls with layout + draw under **2 ms** per frame. |
-| M7-EDT-05 | Manual | Dock, undock and resize panels; layout persists across restarts. |
+| M5-EDT-01 | Integration | Hierarchy panel shows the scene tree and updates when entities are added or removed. |
+| M5-EDT-02 | Integration | Inspector shows `@property` fields; editing one changes the live component. |
+| M5-EDT-03 | Integration | Undo/redo reverses and reapplies property edits and entity creation. |
+| M5-EDT-04 | Benchmark | A 10,000-item virtualized list scrolls with layout + draw under **2 ms** per frame. |
+| M5-EDT-05 | Manual | Dock, undock and resize panels; layout persists across restarts. |
 
 ---
 
