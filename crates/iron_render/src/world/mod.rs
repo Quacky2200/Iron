@@ -33,6 +33,17 @@ pub enum WorldTexture {
     Frame(usize),
     /// One set with [`WorldRenderer::set_texture`] (the missing checker until it exists).
     Asset(u32),
+    /// A mirror's reflection, rendered by the renderer this frame (set internally).
+    Reflection(usize),
+}
+
+/// A flat mirror: the plane a mesh reflects the scene in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mirror {
+    /// The plane's normal, pointing out of the reflecting side (world space).
+    pub normal: Vec3,
+    /// A point on the plane.
+    pub point: Vec3,
 }
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -211,6 +222,8 @@ pub struct MeshInstance {
     pub glow: MeshGlow,
     /// Whether it casts shadows (Unity's `shadowCastingMode` on / off).
     pub cast_shadows: bool,
+    /// Reflects the scene exactly in this plane (a planar mirror) instead of the sky.
+    pub mirror: Option<Mirror>,
 }
 
 /// One camera's view: where on the target it draws and what it sees.
@@ -227,6 +240,9 @@ pub struct WorldView {
     /// Fill the background with the sky ([`WorldRenderer::set_sky`]) instead of the
     /// camera's colour (Unity's skybox clear flag).
     pub skybox: bool,
+    /// Draws only what's on the positive side of this plane (`[nx, ny, nz, d]`: kept where
+    /// `n · p + d >= 0`), for mirror views.
+    pub clip_plane: Option<[f32; 4]>,
 }
 
 impl WorldView {
@@ -240,6 +256,7 @@ impl WorldView {
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
+            clip_plane: None,
         }
     }
 }
@@ -325,8 +342,10 @@ struct GpuGlobals {
     /// x: 1 with an environment map; y: its intensity; z: its last mip; w: 1 when ambient
     /// light comes from it.
     env: [f32; 4],
-    /// x: 1 to draw the sky as the background.
+    /// x: 1 to draw the sky as the background; yz: the target's size in pixels.
     flags: [f32; 4],
+    /// Fragments where `dot(xyz, p) + w < 0` are dropped (zero: none).
+    clip: [f32; 4],
 }
 
 #[repr(C)]
@@ -391,6 +410,8 @@ pub struct WorldRenderer {
     env_map: environment::EnvMap,
     sky: Option<Sky>,
     sky_dirty: bool,
+    /// Mirrors' reflection textures, by mirror, with their sizes.
+    reflection_targets: Vec<Option<(wgpu::TextureView, (u32, u32))>>,
     env_sampler: wgpu::Sampler,
     /// How bright reflections and sky light are (Unity's `reflectionIntensity`).
     pub environment_intensity: f32,
@@ -619,6 +640,7 @@ impl WorldRenderer {
             env_map: environment::EnvMap::new(gpu, 1),
             sky: None,
             sky_dirty: false,
+            reflection_targets: Vec::new(),
             env_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("environment"),
                 mag_filter: wgpu::FilterMode::Linear,
@@ -1079,6 +1101,92 @@ impl WorldRenderer {
         views: &[WorldView],
         textures: &[&wgpu::TextureView],
     ) {
+        if !views
+            .iter()
+            .any(|v| v.meshes.iter().any(|m| m.mirror.is_some()))
+        {
+            self.render_views_with(gpu, target, views, textures, &[]);
+            return;
+        }
+        // Mirrors: each mirror in the main view (the biggest) gets the scene rendered from
+        // its reflected camera first; other views see the sky in them.
+        let main = (0..views.len())
+            .max_by(|&a, &b| {
+                let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
+                area(&views[a]).total_cmp(&area(&views[b]))
+            })
+            .unwrap_or(0);
+        let mut views = views.to_vec();
+        let mut reflections = Vec::new();
+        let bloom = self.bloom.take();
+        for i in 0..views[main].meshes.len() {
+            let Some(mirror) = views[main].meshes[i].mirror else {
+                continue;
+            };
+            let k = reflections.len();
+            let view = reflection_view(&views[main], mirror);
+            let texture = self.reflection_target(gpu, k, target.size);
+            let rt = RenderTarget {
+                view: &texture,
+                format: bloom::HDR_FORMAT,
+                size: target.size,
+                scale: target.scale,
+            };
+            self.render_views_with(gpu, &rt, &[view], textures, &[]);
+            views[main].meshes[i].texture = Some(WorldTexture::Reflection(k));
+            reflections.push(texture);
+        }
+        self.bloom = bloom;
+        for (j, v) in views.iter_mut().enumerate() {
+            if j != main {
+                for m in &mut v.meshes {
+                    m.mirror = None;
+                }
+            }
+        }
+        self.render_views_with(gpu, target, &views, textures, &reflections);
+    }
+
+    /// The texture mirror `k` reflects into, made (or remade) at `size`.
+    fn reflection_target(&mut self, gpu: &Gpu, k: usize, size: (u32, u32)) -> wgpu::TextureView {
+        if self.reflection_targets.len() <= k {
+            self.reflection_targets.resize(k + 1, None);
+        }
+        if let Some((view, s)) = &self.reflection_targets[k]
+            && *s == size
+        {
+            return view.clone();
+        }
+        let view = gpu
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("mirror reflection"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: bloom::HDR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        self.reflection_targets[k] = Some((view.clone(), size));
+        view
+    }
+
+    fn render_views_with(
+        &mut self,
+        gpu: &Gpu,
+        target: &RenderTarget<'_>,
+        views: &[WorldView],
+        textures: &[&wgpu::TextureView],
+        reflections: &[wgpu::TextureView],
+    ) {
         let size = target.size;
         if size.0 == 0 || size.1 == 0 {
             return;
@@ -1138,7 +1246,7 @@ impl WorldRenderer {
                             MeshGlow::Beam => 2.0,
                         },
                         m.metallic,
-                        0.0,
+                        f32::from(u8::from(m.mirror.is_some())),
                     ],
                     tiling: m.tiling,
                 }
@@ -1347,7 +1455,13 @@ impl WorldRenderer {
                 viewport: viewport_px(view.viewport, size)
                     .map_or([0.0, 0.0, 1.0, 1.0], |p| p.map(|v| v as f32)),
                 env,
-                flags: [f32::from(u8::from(view.skybox && has_env)), 0.0, 0.0, 0.0],
+                flags: [
+                    f32::from(u8::from(view.skybox && has_env)),
+                    size.0 as f32,
+                    size.1 as f32,
+                    0.0,
+                ],
+                clip: view.clip_plane.unwrap_or([0.0; 4]),
             };
             gpu.queue.write_buffer(
                 &self.globals,
@@ -1418,6 +1532,8 @@ impl WorldRenderer {
             .chain(textures.iter().copied())
             .map(texture_group)
             .collect();
+        let reflection_groups: Vec<wgpu::BindGroup> =
+            reflections.iter().map(texture_group).collect();
         let group_for = |texture: Option<WorldTexture>| match texture {
             None => &groups[0],
             Some(WorldTexture::Frame(t)) => &groups[(t + 1).min(groups.len() - 1)],
@@ -1425,6 +1541,7 @@ impl WorldRenderer {
                 let missing = &self.textures[&MISSING_TEXTURE].group;
                 self.textures.get(&id).map_or(missing, |t| &t.group)
             }
+            Some(WorldTexture::Reflection(k)) => reflection_groups.get(k).unwrap_or(&groups[0]),
         };
 
         let shadow_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1562,6 +1679,30 @@ impl WorldRenderer {
         }
         gpu.queue.submit([encoder.finish()]);
     }
+}
+
+/// `view` seen in `mirror`: the camera reflected in its plane, and everything behind the
+/// plane clipped away. The projection is flipped left to right so triangles keep their
+/// winding (the reflection flips it once, the flip back); the mirror samples it flipped.
+fn reflection_view(view: &WorldView, mirror: Mirror) -> WorldView {
+    let n = mirror.normal.normalize_or(Vec3::Y);
+    let d = -n.dot(mirror.point);
+    // Reflection in the plane: x - 2 (n · x + d) n.
+    let reflect = Mat4::from_cols(
+        (Vec3::X - 2.0 * n.x * n).extend(0.0),
+        (Vec3::Y - 2.0 * n.y * n).extend(0.0),
+        (Vec3::Z - 2.0 * n.z * n).extend(0.0),
+        (-2.0 * d * n).extend(1.0),
+    );
+    let flip = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
+    let mut v = view.clone();
+    v.meshes.retain(|m| m.mirror.is_none());
+    v.camera.view_proj = flip * view.camera.view_proj * reflect;
+    v.camera.position = reflect.transform_point3(view.camera.position);
+    v.camera.forward = reflect.transform_vector3(view.camera.forward);
+    // Keep only what's in front of the mirror; a hair past the plane hides the seam.
+    v.clip_plane = Some([n.x, n.y, n.z, d + 1e-3]);
+    v
 }
 
 /// A normalized viewport in whole pixels inside the target (`None` when empty).

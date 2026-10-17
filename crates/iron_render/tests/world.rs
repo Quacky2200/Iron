@@ -200,6 +200,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
+            clip_plane: None,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -218,6 +219,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
+            clip_plane: None,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -243,6 +245,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             lights: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
+            clip_plane: None,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -311,6 +314,7 @@ fn lit_primitives_with_lights() {
         tiling: [1.0, 1.0, 0.0, 0.0],
         glow: iron_render::MeshGlow::None,
         cast_shadows: true,
+        mirror: None,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -452,6 +456,7 @@ fn textured_meshes_and_sprites() {
         tiling,
         glow: MeshGlow::None,
         cast_shadows: true,
+        mirror: None,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -565,6 +570,7 @@ fn glows_bloom_and_spot_beams() {
         tiling: [1.0, 1.0, 0.0, 0.0],
         glow: MeshGlow::None,
         cast_shadows: true,
+        mirror: None,
     };
     // A spot light shining down at an angle from the upper left, with its beam.
     let spot_at = Vec3::new(-1.6, 3.0, 0.0);
@@ -615,6 +621,7 @@ fn glows_bloom_and_spot_beams() {
             mesh: BEAM_MESH,
             glow: MeshGlow::Beam,
             cast_shadows: false,
+            mirror: None,
             unlit: true,
             ..mesh(
                 "cube",
@@ -696,6 +703,7 @@ fn directional_shadows() {
         tiling: [1.0, 1.0, 0.0, 0.0],
         glow: MeshGlow::None,
         cast_shadows: true,
+        mirror: None,
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.12, 0.12, 0.14];
@@ -793,6 +801,7 @@ fn pbr_material_grid_under_a_sky() {
             tiling: [1.0, 1.0, 0.0, 0.0],
             glow: MeshGlow::None,
             cast_shadows: true,
+            mirror: None,
         }
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
@@ -823,4 +832,121 @@ fn pbr_material_grid_under_a_sky() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-11", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-12
+#[test]
+fn planar_mirror() {
+    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Mirror, Sky, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // Looking at the mirror wall from an angle, from in front and to the right.
+    let eye = Vec3::new(2.4, 1.9, 6.8);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(-0.2, 1.0, -1.0), Vec3::Y)
+            .inverse(),
+        50.0,
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let mesh = |name: &str, model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id(name).unwrap(),
+        model,
+        color,
+        emission: [0.0; 3],
+        smoothness: 0.4,
+        metallic: 0.0,
+        unlit: false,
+        texture: None,
+        tiling: [1.0, 1.0, 0.0, 0.0],
+        glow: MeshGlow::None,
+        cast_shadows: true,
+        mirror: None,
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.skybox = true;
+    let mirror_at = Vec3::new(0.0, 1.25, -1.5);
+    v.meshes = vec![
+        mesh(
+            "plane",
+            Mat4::from_scale(Vec3::splat(0.6)),
+            [0.35, 0.37, 0.4, 1.0],
+        ),
+        mesh(
+            "cube",
+            Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.7),
+                Quat::from_rotation_y(0.5),
+                Vec3::new(-1.3, 0.35, 0.1),
+            ),
+            [0.85, 0.25, 0.2, 1.0],
+        ),
+        mesh(
+            "sphere",
+            Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.8),
+                Quat::IDENTITY,
+                Vec3::new(0.2, 0.4, -0.5),
+            ),
+            [0.25, 0.45, 0.9, 1.0],
+        ),
+        mesh(
+            "capsule",
+            Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.6),
+                Quat::IDENTITY,
+                Vec3::new(1.4, 0.6, 0.2),
+            ),
+            [0.3, 0.8, 0.35, 1.0],
+        ),
+        // Behind the mirror: it must not show in the reflection.
+        mesh(
+            "cube",
+            Mat4::from_translation(Vec3::new(0.0, 0.5, -2.6)),
+            [1.0, 0.9, 0.1, 1.0],
+        ),
+        // The mirror: a slightly blue-tinted quad facing +z, 4 × 2.5 m.
+        MeshInstance {
+            color: [0.92, 0.95, 1.0, 1.0],
+            smoothness: 1.0,
+            metallic: 1.0,
+            mirror: Some(Mirror {
+                normal: Vec3::Z,
+                point: mirror_at,
+            }),
+            ..mesh(
+                "quad",
+                Mat4::from_scale_rotation_translation(
+                    Vec3::new(4.0, 2.5, 1.0),
+                    Quat::IDENTITY,
+                    mirror_at,
+                ),
+                [1.0; 4],
+            )
+        },
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.6, 1.5, 1.35],
+        position: Vec3::ZERO,
+        direction: Vec3::new(-0.3, -0.8, -0.5).normalize(),
+        range: 0.0,
+        shadows: None,
+    }];
+    let mut world = WorldRenderer::new(&gpu);
+    world.set_sky(Some(Sky::default()));
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-12", size.0, size.1, &pixels, 3);
 }

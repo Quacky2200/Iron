@@ -119,6 +119,7 @@ export {
   type MaterialOptions,
   Mesh,
   MeshRenderer,
+  Mirror,
   PlaneRenderer,
   type PrimitiveMesh,
   type BloomSettings,

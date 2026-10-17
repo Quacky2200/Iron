@@ -8,6 +8,7 @@ import {
   Material,
   Mesh,
   MeshRenderer,
+  Mirror,
   PrimitiveType,
   QualitySettings,
   RenderSettings,
@@ -81,6 +82,11 @@ describe("meshes and lights", () => {
     expect(renderOps().at(-1)!.at(-1)).toBe(false);
     RenderSettings.skybox = null;
     expect(renderOps().at(-1)).toEqual(["render.sky", 0, null]);
+    // Mirrors: quads reflect along +z, planes along +y.
+    const glass = new GameObject("glass");
+    glass.addComponent(MeshRenderer, { mesh: "quad" });
+    const mirror = glass.addComponent(Mirror);
+    expect(renderOps().at(-1)).toEqual(["render.mirror", mirror.id, glass.id, [0, 0, 1]]);
   });
 
   test("createPrimitive adds a mesh and the matching collider", () => {

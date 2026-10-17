@@ -917,3 +917,30 @@ export const RenderSettings = {
     else __iron_op("render.bloom", 0, null);
   },
 };
+
+/**
+ * Makes the object's `MeshRenderer` a flat mirror: it reflects the scene exactly, as seen
+ * by the main camera, in the plane through the object's origin. Give the renderer a
+ * metallic, smooth material for a clear mirror (`Material.create({ metallic: 1,
+ * smoothness: 1 })`); a colour tints the reflection. Each mirror renders the scene once
+ * more per frame. Other cameras see the sky in it.
+ */
+export class Mirror extends Component {
+  /** The plane's normal in the object's space: up (+y) for planes, +z for quads. */
+  normal: Vector3Like | null = null;
+
+  private send(): void {
+    const mesh = this.getComponent(MeshRenderer)?.mesh;
+    // Quads face +z (`Vector3.back`: forward is -z here).
+    const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
+    __iron_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z]);
+  }
+
+  override onAwake(): void {
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}

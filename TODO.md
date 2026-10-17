@@ -979,14 +979,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       rough ones see blurrier mips; sky light for ambient (`ambientMode` `skybox` / `color`),
       `reflectionIntensity`; cameras show it with `clearFlags: "skybox"` — `M5-RND-11`
     - [ ] Shininess / specular colour (the specular workflow)
-    - [ ] Reflective and mirror surfaces: reflection probes (realtime cubemaps of the scene,
-      baked later), planar mirrors (a camera rendering the reflected view), screen-space
+    - [x] Planar mirrors: `Mirror` on a MeshRenderer (plane or quad) reflects the scene
+      exactly: the renderer draws the main view from the camera reflected in the plane
+      (projection flipped left to right to keep winding, a clip plane dropping what's behind
+      it) into an HDR texture, and the mirror samples it at its screen position as its
+      reflection, tinted by the material; other cameras see the sky — `M5-RND-12`
+    - [ ] Reflection probes (realtime cubemaps of the scene, baked later), screen-space
       reflections later; skyboxes from images (cubemap faces, equirectangular HDR)
+    - [x] `examples/materials`: the roughness × metallic sphere grid, a mirror wall, a gold
+      bunny and a chrome teapot under a procedural sky
     - [ ] Maps: normal, metallic-roughness, occlusion, emission (glTF's), detail and tiling
       per map
     - [ ] Transparency modes (fade, transparent with specular kept), alpha cut-off,
       double-sided; glass with refraction later
-    - [ ] A material test scene (spheres sweeping roughness × metallic, the classic grid)
+    - [x] A material test scene (spheres sweeping roughness × metallic, the classic grid):
+      `examples/materials`, `M5-RND-11`
   - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels:
     - [ ] Anti-aliasing: MSAA (2 / 4 / 8×) for the world pass, FXAA as a cheap post
       pass, TAA later (needs motion vectors and jitter)

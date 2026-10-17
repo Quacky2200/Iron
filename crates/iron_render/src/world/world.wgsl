@@ -20,8 +20,10 @@ struct Globals {
     viewport: vec4<f32>,
     // x: 1 with an environment map; y: intensity; z: its last mip; w: 1 for sky ambient.
     env: vec4<f32>,
-    // x: 1 to draw the sky behind everything.
+    // x: 1 to draw the sky behind everything; yz: the target's size in pixels.
     flags: vec4<f32>,
+    // Fragments where dot(xyz, p) + w < 0 are dropped (all zero: none).
+    clip: vec4<f32>,
 };
 
 struct Quad {
@@ -41,7 +43,8 @@ struct MeshInstance {
     color: vec4<f32>,
     // rgb: emission; w: smoothness 0..1.
     emission: vec4<f32>,
-    // x: 1 when unlit; y: 1 additive, 2 a light beam; z: metallic 0..1.
+    // x: 1 when unlit; y: 1 additive, 2 a light beam; z: metallic 0..1; w: 1 for a planar
+    // mirror (its texture is the reflection, sampled at the screen position).
     params: vec4<f32>,
     // Texture tiling: scale (xy), offset (zw), in bottom-up UV space like Unity's.
     tiling: vec4<f32>,
@@ -74,6 +77,7 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) @interpolate(flat) straight: f32,
+    @location(3) world: vec3<f32>,
 };
 
 @vertex
@@ -85,7 +89,9 @@ fn vs_quad(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let c = corners[vi];
     let q = quads[ii];
     var out: VsOut;
-    out.pos = g.view_proj * q.model * vec4<f32>(c.x, c.y, 0.0, 1.0);
+    let world = q.model * vec4<f32>(c.x, c.y, 0.0, 1.0);
+    out.pos = g.view_proj * world;
+    out.world = world.xyz;
     // The texture's top-left sits at the quad's top-left corner (-x, +y).
     let t = vec2<f32>(c.x + 0.5, 0.5 - c.y);
     out.uv = q.uv.xy + t * q.uv.zw;
@@ -97,6 +103,9 @@ fn vs_quad(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 @fragment
 fn fs_quad(in: VsOut) -> @location(0) vec4<f32> {
     var t = textureSample(tex, samp, in.uv);
+    if (clipped(in.world)) {
+        discard;
+    }
     if (in.straight > 0.5) {
         t = vec4<f32>(t.rgb * t.a, t.a);
     }
@@ -159,6 +168,11 @@ fn vs_mesh(
 }
 
 const PI: f32 = 3.14159265;
+
+// Behind the view's clip plane (mirror views).
+fn clipped(p: vec3<f32>) -> bool {
+    return any(g.clip != vec4<f32>(0.0)) && dot(g.clip.xyz, p) + g.clip.w < 0.0;
+}
 
 // GGX / Trowbridge-Reitz normal distribution.
 fn ggx(ndh: f32, roughness: f32) -> f32 {
@@ -244,7 +258,13 @@ fn shadow_at(world: vec3<f32>, n: vec3<f32>) -> f32 {
 @fragment
 fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let m = meshes[in.instance];
-    let texel = textureSample(tex, samp, in.uv) * m.color;
+    let sampled = textureSample(tex, samp, in.uv);
+    if (clipped(in.world)) {
+        discard;
+    }
+    let mirror = m.params.w > 0.5;
+    // A mirror's texture is its reflection, not its colour.
+    let texel = select(sampled, vec4<f32>(1.0), mirror) * m.color;
     let base = texel.rgb;
     // Opaque meshes (colour alpha 1) ignore the texture's alpha; see-through ones use it.
     let alpha = select(1.0, texel.a, m.color.a < 1.0);
@@ -320,7 +340,15 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     // Light from all around: the environment (the ambient colour, for now) seen in the
     // diffuse and reflected by the specular, with the split-sum approximation.
     let env_brdf = env_brdf_approx(f0, roughness, ndv);
-    color += albedo * ambient_light(n) + env_brdf * environment(reflect(-v, n), roughness);
+    var reflected: vec3<f32>;
+    if (mirror) {
+        // The reflection was rendered flipped left to right within this viewport.
+        let px = vec2<f32>(g.viewport.x * 2.0 + g.viewport.z - in.pos.x, in.pos.y);
+        reflected = textureSampleLevel(tex, samp, px / g.flags.yz, 0.0).rgb;
+    } else {
+        reflected = environment(reflect(-v, n), roughness);
+    }
+    color += albedo * ambient_light(n) + env_brdf * reflected;
     let lit = color + m.emission.rgb;
     return vec4<f32>(lit * alpha, alpha);
 }

@@ -10,9 +10,9 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Projection,
-    Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture,
-    WorldView, primitive_id, viewport_size,
+    BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Mirror,
+    Projection, Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad,
+    WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -91,6 +91,8 @@ pub struct WorldViews {
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
     sprites: BTreeMap<u32, Sprite>,
+    /// Planar mirrors: their objects and the local normals of their planes.
+    mirrors: BTreeMap<u32, (ScriptObject, Vec3)>,
     particles: BTreeMap<u32, ParticleSystem>,
     /// Bloom over the world (`render.bloom`), applied by the app before drawing.
     pub bloom: Option<Bloom>,
@@ -123,6 +125,7 @@ impl Default for WorldViews {
             renderers: BTreeMap::new(),
             lights: BTreeMap::new(),
             sprites: BTreeMap::new(),
+            mirrors: BTreeMap::new(),
             particles: BTreeMap::new(),
             bloom: None,
             shadow_settings: (25.0, 2048),
@@ -552,6 +555,12 @@ impl WorldViews {
                     !matches!(args.get(8), Some(Value::Bool(false))),
                 );
             }
+            // `mirror component object [nx ny nz]`: the object's MeshRenderer reflects the
+            // scene in the plane through its origin with this (local) normal.
+            "mirror" => {
+                let normal = nums::<3>(args.get(2)).map_or(Vec3::Y, Vec3::from_array);
+                self.mirrors.insert(id, (id_at(1)?, normal));
+            }
             // `shadowSettings 0 distance resolution` (Unity's quality settings).
             "shadowSettings" => {
                 let resolution = num(2).unwrap_or(2048.0).clamp(256.0, 8192.0) as u32;
@@ -578,6 +587,7 @@ impl WorldViews {
                 self.renderers.remove(&id);
                 self.lights.remove(&id);
                 self.sprites.remove(&id);
+                self.mirrors.remove(&id);
                 self.particles.remove(&id);
             }
             other => return Err(format!("unknown render op `{other}`")),
@@ -592,6 +602,7 @@ impl WorldViews {
         self.renderers.retain(|_, r| !objects.contains(&r.object));
         self.lights.retain(|_, l| !objects.contains(&l.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
+        self.mirrors.retain(|_, m| !objects.contains(&m.0));
         self.particles.retain(|_, p| !objects.contains(&p.object));
     }
 
@@ -664,6 +675,21 @@ impl WorldViews {
             )
             .chain(extra.iter().copied())
             .collect();
+        // Mirrors: their objects' planes in the world.
+        let mirror_planes: HashMap<ScriptObject, Mirror> = self
+            .mirrors
+            .values()
+            .filter_map(|&(object, normal)| {
+                let w = Mat4::from(world(object)?);
+                Some((
+                    object,
+                    Mirror {
+                        normal: w.transform_vector3(normal).normalize_or(Vec3::Y),
+                        point: w.transform_point3(Vec3::ZERO),
+                    },
+                ))
+            })
+            .collect();
         let meshes: Vec<MeshInstance> = self
             .renderers
             .values()
@@ -681,6 +707,7 @@ impl WorldViews {
                     tiling: r.tiling,
                     glow: MeshGlow::None,
                     cast_shadows: r.cast_shadows,
+                    mirror: mirror_planes.get(&r.object).copied(),
                 })
             })
             .collect();
@@ -716,6 +743,7 @@ impl WorldViews {
                             tiling: [1.0, 1.0, 0.0, 0.0],
                             glow: MeshGlow::Beam,
                             cast_shadows: false,
+                            mirror: None,
                         })
                     }),
             )
@@ -798,6 +826,7 @@ impl WorldViews {
                     lights: lights.clone(),
                     ambient: self.ambient,
                     skybox: camera.skybox,
+                    clip_plane: None,
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
