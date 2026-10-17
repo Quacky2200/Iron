@@ -26,7 +26,8 @@ use crate::{Color, Gpu, RenderTarget};
 pub use bloom::Bloom;
 pub use environment::Sky;
 pub use mesh::{MeshData, primitive};
-pub use texture::{TextureData, TextureFilter, TextureWrap};
+use texture::SamplerKey;
+pub use texture::{Anisotropic, TextureData, TextureFilter, TextureWrap};
 
 /// A texture a quad or mesh is drawn with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -81,6 +82,69 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// The open cone light beams are drawn with ([`mesh::beam`]).
 pub const BEAM_MESH: u32 = PRIMITIVE_BASE + 0xFFFE;
+
+/// How a surface covers what's behind it (Unity's Standard shader rendering modes).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum RenderMode {
+    /// Solid. A colour alpha below 1 still draws it as [`RenderMode::Fade`] (scripts'
+    /// see-through colours keep working without picking a mode).
+    #[default]
+    Opaque,
+    /// Solid, with holes where the alpha (texture × colour) is below the cut-off: leaves,
+    /// fences. Casts shadows with the same holes.
+    Cutout,
+    /// Everything fades with the alpha, highlights and reflections too: fading objects out.
+    Fade,
+    /// See-through, but highlights and reflections stay: glass, clear plastic.
+    Transparent,
+}
+
+/// A material's textures besides the main one (Unity's Standard shader maps). Each is
+/// sampled with the main texture's tiling, except the detail map.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MaterialMaps {
+    /// A tangent-space normal map (green up), read as linear data.
+    pub normal: Option<WorldTexture>,
+    /// How strong the normal map's bumps are (Unity's `bumpScale`).
+    pub normal_scale: f32,
+    /// Metallic in red and smoothness in alpha (Unity's `metallicGlossMap`); with it the
+    /// material's metallic is the map's and its smoothness scales the map's. With the
+    /// specular workflow, the specular colour (rgb) and smoothness (a) instead.
+    pub metallic_gloss: Option<WorldTexture>,
+    /// Read `metallic_gloss` the glTF way: roughness in green, metallic in blue, both
+    /// multiplying the material's values; occlusion in red.
+    pub gltf_packing: bool,
+    /// Ambient occlusion (green; red with glTF packing), darkening sky light and
+    /// reflections only.
+    pub occlusion: Option<WorldTexture>,
+    pub occlusion_strength: f32,
+    /// Multiplies the emission colour.
+    pub emission: Option<WorldTexture>,
+    /// Extra detail multiplied over the albedo (x2 in gamma space, Unity's
+    /// `detailAlbedoMap`), tiled on its own.
+    pub detail: Option<WorldTexture>,
+    /// The detail map's tiling: scale (xy) and offset (zw).
+    pub detail_tiling: [f32; 4],
+    /// A mirror's reflection this frame (set by the renderer, not by callers).
+    pub reflection: Option<WorldTexture>,
+}
+
+impl Default for MaterialMaps {
+    fn default() -> Self {
+        Self {
+            normal: None,
+            normal_scale: 1.0,
+            metallic_gloss: None,
+            gltf_packing: false,
+            occlusion: None,
+            occlusion_strength: 1.0,
+            emission: None,
+            detail: None,
+            detail_tiling: [1.0, 1.0, 0.0, 0.0],
+            reflection: None,
+        }
+    }
+}
 
 /// How a mesh adds light instead of covering what's behind it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -272,6 +336,110 @@ pub struct MeshInstance {
     pub mirror: Option<Mirror>,
     /// Its object's layer (0 to 31): lights, probes and mirrors with masks skip it.
     pub layer: u8,
+    /// Normal, metallic, occlusion, emission and detail maps.
+    pub maps: MaterialMaps,
+    /// The specular workflow (Unity's "Standard (Specular setup)"): this colour is the
+    /// reflectance head-on, and `metallic` is ignored.
+    pub specular: Option<[f32; 3]>,
+    pub mode: RenderMode,
+    /// With [`RenderMode::Cutout`]: alpha below this is a hole.
+    pub alpha_cutoff: f32,
+    /// Draws its back faces too (leaves, cloth, open meshes), lit from that side.
+    pub double_sided: bool,
+}
+
+impl Default for MeshInstance {
+    fn default() -> Self {
+        Self {
+            mesh: PRIMITIVE_BASE,
+            model: Mat4::IDENTITY,
+            color: [1.0; 4],
+            emission: [0.0; 3],
+            smoothness: 0.5,
+            metallic: 0.0,
+            unlit: false,
+            texture: None,
+            tiling: [1.0, 1.0, 0.0, 0.0],
+            glow: MeshGlow::None,
+            cast_shadows: true,
+            mirror: None,
+            layer: 0,
+            maps: MaterialMaps::default(),
+            specular: None,
+            mode: RenderMode::Opaque,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+        }
+    }
+}
+
+impl MeshInstance {
+    /// Drawn in the see-through pass (blended back to front) rather than the opaque one.
+    pub fn blended(&self) -> bool {
+        self.glow != MeshGlow::None
+            || match self.mode {
+                RenderMode::Opaque => self.color[3] < 1.0,
+                RenderMode::Cutout => false,
+                RenderMode::Fade | RenderMode::Transparent => true,
+            }
+    }
+
+    /// The textures it's drawn with, as a key for grouping and bind groups.
+    fn material_key(&self) -> MaterialKey {
+        MaterialKey {
+            base: self.texture,
+            normal: self.maps.normal,
+            metallic_gloss: self.maps.metallic_gloss,
+            // The specular colour map holds colours (sRGB); metallic maps hold data.
+            metallic_srgb: self.specular.is_some(),
+            occlusion: self.maps.occlusion,
+            emission: self.maps.emission,
+            detail: self.maps.detail,
+            reflection: self.maps.reflection,
+        }
+    }
+}
+
+/// The textures a draw binds (group 1): the main texture and a material's maps.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct MaterialKey {
+    base: Option<WorldTexture>,
+    normal: Option<WorldTexture>,
+    metallic_gloss: Option<WorldTexture>,
+    metallic_srgb: bool,
+    occlusion: Option<WorldTexture>,
+    emission: Option<WorldTexture>,
+    detail: Option<WorldTexture>,
+    reflection: Option<WorldTexture>,
+}
+
+impl MaterialKey {
+    fn texture(base: Option<WorldTexture>) -> Self {
+        Self {
+            base,
+            ..Default::default()
+        }
+    }
+
+    /// Uses the frame's textures (panels, reflections), so its bind group can't be kept.
+    fn per_frame(&self) -> bool {
+        [
+            self.base,
+            self.normal,
+            self.metallic_gloss,
+            self.occlusion,
+            self.emission,
+            self.detail,
+            self.reflection,
+        ]
+        .iter()
+        .any(|t| {
+            matches!(
+                t,
+                Some(WorldTexture::Frame(_) | WorldTexture::Reflection(_))
+            )
+        })
+    }
 }
 
 /// One camera's view: where on the target it draws and what it sees.
@@ -370,8 +538,25 @@ struct GpuMesh {
     probe: [f32; 4],
     /// The probe's half extents (xyz) and 1 for box projection (w).
     probe_box: [f32; 4],
-    /// x: its layer's bit, for lights' masks.
+    /// x: its layer's bit, for lights' masks; y: which maps it has ([`map_flags`]);
+    /// z: its [`RenderMode`] (0 opaque, 1 cutout, 2 fade, 3 transparent).
     layer: [u32; 4],
+    /// rgb: the specular colour; w: 1 for the specular workflow.
+    specular: [f32; 4],
+    /// x: normal map strength; y: occlusion strength; z: alpha cut-off.
+    maps: [f32; 4],
+    /// The detail map's tiling: scale (xy), offset (zw).
+    detail: [f32; 4],
+}
+
+/// Bits in `GpuMesh::layer.y` for the maps a mesh has.
+mod map_flags {
+    pub const NORMAL: u32 = 1;
+    pub const METALLIC_GLOSS: u32 = 2;
+    pub const GLTF: u32 = 4;
+    pub const OCCLUSION: u32 = 8;
+    pub const EMISSION: u32 = 16;
+    pub const DETAIL: u32 = 32;
 }
 
 #[repr(C)]
@@ -416,7 +601,13 @@ struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
     uv: [f32; 2],
+    tangent: [f32; 4],
 }
+
+/// The mesh vertex layout every mesh pipeline uses.
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+    0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4
+];
 
 /// A mesh's buffers on the GPU.
 struct MeshBuffers {
@@ -450,6 +641,9 @@ struct Pipelines {
     fill: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
+    /// Double-sided materials: both faces drawn.
+    mesh_double: wgpu::RenderPipeline,
+    mesh_blend_double: wgpu::RenderPipeline,
 }
 
 /// A view's opaque runs, its blended runs (`true`: a mesh) and its lights.
@@ -460,7 +654,11 @@ type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>, Vec<usize>);
 /// A run of instances drawn with one mesh or texture.
 struct Run {
     mesh: Option<u32>,
-    texture: Option<WorldTexture>,
+    material: MaterialKey,
+    /// Both faces drawn.
+    double_sided: bool,
+    /// Casts shadows with holes where its alpha is below the cut-off.
+    cutout: bool,
     /// The reflection probe its meshes use (`None`: the sky).
     probe: Option<u32>,
     /// Additive quads (drawn without depth writes).
@@ -491,6 +689,7 @@ pub struct WorldRenderer {
     shadow_layout: wgpu::BindGroupLayout,
     shadow_sampler: wgpu::Sampler,
     shadow_pipeline: wgpu::RenderPipeline,
+    shadow_cutout_pipeline: wgpu::RenderPipeline,
     /// The directional shadow map, made at `shadow_resolution`.
     shadow_map: Option<(wgpu::TextureView, u32)>,
     /// How far from the camera shadows reach (metres; Unity's `shadowDistance`).
@@ -525,7 +724,17 @@ pub struct WorldRenderer {
     /// What the last frame drew and culled.
     stats: WorldStats,
     textures: HashMap<u32, AssetTexture>,
-    samplers: HashMap<(TextureFilter, TextureWrap), wgpu::Sampler>,
+    samplers: HashMap<SamplerKey, wgpu::Sampler>,
+    /// Material bind groups made from kept textures only, reused across frames (cleared
+    /// when a texture or the texture quality changes).
+    material_groups: HashMap<MaterialKey, wgpu::BindGroup>,
+    /// Unity's `QualitySettings.anisotropicFiltering`.
+    pub anisotropic: Anisotropic,
+    /// Top mip levels skipped when sampling kept textures (Unity's
+    /// `globalTextureMipmapLimit`: 0 full size, 1 half, 2 quarter, 3 eighth).
+    pub texture_mip_limit: u32,
+    /// The quality the material groups were made with.
+    texture_quality: (Anisotropic, u32),
     sampler: wgpu::Sampler,
     white: wgpu::TextureView,
     /// Depth buffers by size and sample count (the screen, mirrors and probe faces).
@@ -540,9 +749,14 @@ pub struct WorldRenderer {
     bloom_pass: Option<bloom::BloomPass>,
 }
 
-/// A texture the renderer keeps, bound with its own sampler.
+/// A texture the renderer keeps: views reading it as colour (sRGB) and as data
+/// (linear, for normal and metallic maps), and its sampling settings.
 struct AssetTexture {
-    group: wgpu::BindGroup,
+    srgb: wgpu::TextureView,
+    linear: wgpu::TextureView,
+    filter: TextureFilter,
+    wrap: TextureWrap,
+    anisotropy: u16,
     size: (u32, u32),
 }
 
@@ -583,25 +797,35 @@ impl WorldRenderer {
                 storage_entry(3, wgpu::ShaderStages::FRAGMENT),
             ],
         });
+        // A draw's textures: the main one and its sampler, then the material's maps
+        // (normal, metallic / specular, occlusion, emission, detail) and a mirror's
+        // reflection.
+        let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("world texture"),
+            label: Some("world material"),
             entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+                texture_entry(0),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                texture_entry(2),
+                texture_entry(3),
+                texture_entry(4),
+                texture_entry(5),
+                texture_entry(6),
+                texture_entry(7),
             ],
         });
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -668,7 +892,7 @@ impl WorldRenderer {
                 buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+                    attributes: &VERTEX_ATTRIBUTES,
                 })],
             },
             // Both sides cast: planes and open meshes have no back to cast from.
@@ -690,6 +914,48 @@ impl WorldRenderer {
             multiview_mask: None,
             cache: None,
         });
+        // Cut-out casters test their texture's alpha, so their holes let light through.
+        let cutout_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("world cut-out casters"),
+            bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout)],
+            immediate_size: 0,
+        });
+        let shadow_cutout_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("world cut-out casters"),
+                layout: Some(&cutout_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_shadow_cutout"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &VERTEX_ATTRIBUTES,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs_shadow_cutout"),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                multiview_mask: None,
+                cache: None,
+            });
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("world shadows"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -737,6 +1003,7 @@ impl WorldRenderer {
             shadow_layout,
             shadow_sampler,
             shadow_pipeline,
+            shadow_cutout_pipeline,
             shadow_map: None,
             shadow_distance: 25.0,
             shadow_resolution: 2048,
@@ -770,6 +1037,10 @@ impl WorldRenderer {
             stats: WorldStats::default(),
             textures: HashMap::new(),
             samplers: HashMap::new(),
+            material_groups: HashMap::new(),
+            anisotropic: Anisotropic::Enable,
+            texture_mip_limit: 0,
+            texture_quality: (Anisotropic::Enable, 0),
             sampler,
             white: white.create_view(&Default::default()),
             depth: HashMap::new(),
@@ -835,6 +1106,7 @@ impl WorldRenderer {
                 position: data.positions[i],
                 normal: data.normals[i],
                 uv: data.uvs[i],
+                tangent: data.tangents[i],
             })
             .collect();
         let make = |label: &str, bytes: &[u8], usage: wgpu::BufferUsages| {
@@ -897,10 +1169,17 @@ impl WorldRenderer {
             while let Some((px, w, h)) = levels.last()
                 && (*w > 1 || *h > 1)
             {
-                let next = texture::half(px, *w, *h);
+                let next = texture::half(px, *w, *h, data.srgb);
                 levels.push(next);
             }
         }
+        // sRGB textures can also be read as data (a photo used as a bump map), and data
+        // textures are the same either way.
+        let format = if data.srgb {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        };
         let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("world texture"),
             size: wgpu::Extent3d {
@@ -911,9 +1190,9 @@ impl WorldRenderer {
             mip_level_count: levels.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         });
         for (level, (px, w, h)) in levels.iter().enumerate() {
             gpu.queue.write_texture(
@@ -936,32 +1215,23 @@ impl WorldRenderer {
                 },
             );
         }
-        let sampler = self
-            .samplers
-            .entry((data.filter, data.wrap))
-            .or_insert_with(|| texture::sampler(&gpu.device, data.filter, data.wrap));
-        let view = texture.create_view(&Default::default());
-        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("world texture"),
-            layout: &self.texture_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-            ],
+        let srgb = texture.create_view(&Default::default());
+        let linear = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba8Unorm),
+            ..Default::default()
         });
         self.textures.insert(
             id,
             AssetTexture {
-                group,
+                srgb,
+                linear,
+                filter: data.filter,
+                wrap: data.wrap,
+                anisotropy: data.anisotropy,
                 size: (data.width, data.height),
             },
         );
+        self.material_groups.clear();
         true
     }
 
@@ -970,6 +1240,7 @@ impl WorldRenderer {
             return;
         }
         self.textures.remove(&id);
+        self.material_groups.clear();
     }
 
     /// A kept texture's size in pixels.
@@ -1119,7 +1390,7 @@ impl WorldRenderer {
         let vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+            attributes: &VERTEX_ATTRIBUTES,
         };
         let make = |label: &str,
                     entry: (&str, &str),
@@ -1221,6 +1492,22 @@ impl WorldRenderer {
                     ("vs_mesh", "fs_mesh"),
                     &[Some(vertex_layout.clone())],
                     Some(wgpu::Face::Back),
+                    (less, false),
+                    blend,
+                ),
+                mesh_double: make(
+                    "world double-sided meshes",
+                    ("vs_mesh", "fs_mesh"),
+                    &[Some(vertex_layout.clone())],
+                    None,
+                    (less, true),
+                    blend,
+                ),
+                mesh_blend_double: make(
+                    "world double-sided see-through meshes",
+                    ("vs_mesh", "fs_mesh"),
+                    &[Some(vertex_layout.clone())],
+                    None,
                     (less, false),
                     blend,
                 ),
@@ -1350,7 +1637,7 @@ impl WorldRenderer {
                 scale: target.scale,
             };
             self.render_views_with(gpu, &rt, &[view], textures, &[], 1);
-            views[main].meshes[i].texture = Some(WorldTexture::Reflection(k));
+            views[main].meshes[i].maps.reflection = Some(WorldTexture::Reflection(k));
             reflections.push(texture);
         }
         self.bloom = bloom;
@@ -1469,6 +1756,79 @@ impl WorldRenderer {
                     .create_view(&Default::default())
             })
             .clone()
+    }
+
+    /// The bind group for a material's textures. Its sampler is the main texture's
+    /// (with the quality's anisotropy and mip limit); maps share it.
+    fn material_group(
+        &mut self,
+        gpu: &Gpu,
+        key: MaterialKey,
+        frame: &[&wgpu::TextureView],
+        reflections: &[wgpu::TextureView],
+    ) -> wgpu::BindGroup {
+        let sampler_key = match key.base {
+            Some(WorldTexture::Asset(id)) => {
+                let t = self
+                    .textures
+                    .get(&id)
+                    .unwrap_or(&self.textures[&MISSING_TEXTURE]);
+                Some(SamplerKey {
+                    filter: t.filter,
+                    wrap: t.wrap,
+                    anisotropy: self.anisotropic.level(t.anisotropy),
+                    mip_limit: self.texture_mip_limit,
+                })
+            }
+            _ => None,
+        };
+        let sampler = match sampler_key {
+            Some(k) => self
+                .samplers
+                .entry(k)
+                .or_insert_with(|| texture::sampler(&gpu.device, k))
+                .clone(),
+            None => self.sampler.clone(),
+        };
+        let view = |t: Option<WorldTexture>, linear: bool| -> &wgpu::TextureView {
+            match t {
+                None => &self.white,
+                Some(WorldTexture::Frame(i)) => frame.get(i).copied().unwrap_or(&self.white),
+                Some(WorldTexture::Asset(id)) => {
+                    let a = self
+                        .textures
+                        .get(&id)
+                        .unwrap_or(&self.textures[&MISSING_TEXTURE]);
+                    if linear { &a.linear } else { &a.srgb }
+                }
+                Some(WorldTexture::Reflection(k)) => reflections.get(k).unwrap_or(&self.white),
+            }
+        };
+        let views = [
+            (0, view(key.base, false)),
+            (2, view(key.normal, true)),
+            (3, view(key.metallic_gloss, !key.metallic_srgb)),
+            (4, view(key.occlusion, true)),
+            (5, view(key.emission, false)),
+            (6, view(key.detail, false)),
+            (7, view(key.reflection, false)),
+        ];
+        let mut entries: Vec<wgpu::BindGroupEntry<'_>> = views
+            .iter()
+            .map(|&(binding, v)| wgpu::BindGroupEntry {
+                binding,
+                resource: wgpu::BindingResource::TextureView(v),
+            })
+            .collect();
+        entries.push(wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::Sampler(&sampler),
+        });
+        gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("world material"),
+            layout: &self.texture_layout,
+            entries: &entries,
+        })
     }
 
     /// The texture mirror `k` reflects into, made (or remade) at `size`.
@@ -1599,7 +1959,36 @@ impl WorldRenderer {
                         let h = p.half_extents;
                         [h.x, h.y, h.z, f32::from(u8::from(p.box_projection))]
                     }),
-                    layer: [1 << (m.layer & 31), 0, 0, 0],
+                    layer: [
+                        1 << (m.layer & 31),
+                        [
+                            (m.maps.normal.is_some(), map_flags::NORMAL),
+                            (m.maps.metallic_gloss.is_some(), map_flags::METALLIC_GLOSS),
+                            (m.maps.gltf_packing, map_flags::GLTF),
+                            (m.maps.occlusion.is_some(), map_flags::OCCLUSION),
+                            (m.maps.emission.is_some(), map_flags::EMISSION),
+                            (m.maps.detail.is_some(), map_flags::DETAIL),
+                        ]
+                        .iter()
+                        .filter(|(on, _)| *on)
+                        .fold(0, |bits, (_, bit)| bits | bit),
+                        match m.mode {
+                            RenderMode::Opaque if m.color[3] < 1.0 => 2,
+                            RenderMode::Opaque => 0,
+                            RenderMode::Cutout => 1,
+                            RenderMode::Fade => 2,
+                            RenderMode::Transparent => 3,
+                        },
+                        0,
+                    ],
+                    specular: m.specular.map_or([0.0; 4], |[r, g, b]| [r, g, b, 1.0]),
+                    maps: [
+                        m.maps.normal_scale,
+                        m.maps.occlusion_strength.clamp(0.0, 1.0),
+                        m.alpha_cutoff,
+                        0.0,
+                    ],
+                    detail: m.maps.detail_tiling,
                 }
             };
             // Only layers in the shadowing light's mask cast its shadows.
@@ -1623,14 +2012,17 @@ impl WorldRenderer {
                 .meshes
                 .iter()
                 .filter(known)
-                .filter(|m| m.color[3] >= 1.0 && m.glow == MeshGlow::None)
+                .filter(|m| !m.blended())
                 // Out of view, they may still cast shadows into it.
                 .filter(|m| sees(m) || casts(m))
                 .collect();
+            let cutout = |m: &MeshInstance| m.mode == RenderMode::Cutout;
             opaque.sort_by_key(|m| {
                 (
                     m.mesh,
-                    m.texture,
+                    m.material_key(),
+                    m.double_sided,
+                    cutout(m),
                     casts(m),
                     sees(m),
                     probe_for(m).map(|p| p.id),
@@ -1643,7 +2035,9 @@ impl WorldRenderer {
                 match opaque_runs.last_mut() {
                     Some(r)
                         if r.mesh == Some(m.mesh)
-                            && r.texture == m.texture
+                            && r.material == m.material_key()
+                            && r.double_sided == m.double_sided
+                            && r.cutout == cutout(m)
                             && r.casts == casts(m)
                             && r.visible == sees(m)
                             && r.probe == probe_for(m).map(|p| p.id)
@@ -1653,7 +2047,9 @@ impl WorldRenderer {
                     }
                     _ => opaque_runs.push(Run {
                         mesh: Some(m.mesh),
-                        texture: m.texture,
+                        material: m.material_key(),
+                        double_sided: m.double_sided,
+                        cutout: cutout(m),
                         probe: probe_for(m).map(|p| p.id),
                         glow: false,
                         casts: casts(m),
@@ -1671,7 +2067,7 @@ impl WorldRenderer {
                 .meshes
                 .iter()
                 .filter(known)
-                .filter(|m| m.color[3] < 1.0 || m.glow != MeshGlow::None)
+                .filter(|m| m.blended())
                 .filter(|m| sees(m))
                 .map(|m| (0, depth_of(m.model), Item::Mesh(m)))
                 .chain(
@@ -1693,7 +2089,9 @@ impl WorldRenderer {
                             true,
                             Run {
                                 mesh: Some(m.mesh),
-                                texture: m.texture,
+                                material: m.material_key(),
+                                double_sided: m.double_sided,
+                                cutout: false,
                                 probe: probe_for(m).map(|p| p.id),
                                 glow: m.glow != MeshGlow::None,
                                 casts: false,
@@ -1723,7 +2121,7 @@ impl WorldRenderer {
                         });
                         match blended.last_mut() {
                             Some((false, run))
-                                if run.texture == q.texture
+                                if run.material == MaterialKey::texture(q.texture)
                                     && run.glow == q.additive
                                     && run.range.end == i =>
                             {
@@ -1733,7 +2131,9 @@ impl WorldRenderer {
                                 false,
                                 Run {
                                     mesh: None,
-                                    texture: q.texture,
+                                    material: MaterialKey::texture(q.texture),
+                                    double_sided: true,
+                                    cutout: false,
                                     probe: None,
                                     glow: q.additive,
                                     casts: false,
@@ -1939,37 +2339,39 @@ impl WorldRenderer {
                 })
             })
             .collect();
-        let texture_group = |view: &wgpu::TextureView| {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("world texture"),
-                layout: &self.texture_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                ],
-            })
-        };
-        let groups: Vec<wgpu::BindGroup> = std::iter::once(&self.white)
-            .chain(textures.iter().copied())
-            .map(texture_group)
+        // Material bind groups: those of kept textures only are reused across frames;
+        // ones with the frame's textures (panels, reflections) are made each time.
+        let quality = (self.anisotropic, self.texture_mip_limit);
+        if self.texture_quality != quality {
+            self.texture_quality = quality;
+            self.material_groups.clear();
+        }
+        let keys: std::collections::BTreeSet<MaterialKey> = per_view
+            .iter()
+            .flat_map(|(opaque, blended, ..)| opaque.iter().chain(blended.iter().map(|(_, r)| r)))
+            .map(|r| r.material)
+            .chain(std::iter::once(MaterialKey::default()))
             .collect();
-        let reflection_groups: Vec<wgpu::BindGroup> =
-            reflections.iter().map(texture_group).collect();
-        let group_for = |texture: Option<WorldTexture>| match texture {
-            None => &groups[0],
-            Some(WorldTexture::Frame(t)) => &groups[(t + 1).min(groups.len() - 1)],
-            Some(WorldTexture::Asset(id)) => {
-                let missing = &self.textures[&MISSING_TEXTURE].group;
-                self.textures.get(&id).map_or(missing, |t| &t.group)
+        let mut frame_groups: HashMap<MaterialKey, wgpu::BindGroup> = HashMap::new();
+        for key in keys {
+            let per_frame = key.per_frame();
+            if !per_frame && self.material_groups.contains_key(&key) {
+                continue;
             }
-            Some(WorldTexture::Reflection(k)) => reflection_groups.get(k).unwrap_or(&groups[0]),
+            let group = self.material_group(gpu, key, textures, reflections);
+            if per_frame {
+                frame_groups.insert(key, group);
+            } else {
+                self.material_groups.insert(key, group);
+            }
+        }
+        let group_for = |key: &MaterialKey| {
+            frame_groups
+                .get(key)
+                .or_else(|| self.material_groups.get(key))
+                .expect("made above")
         };
+        let plain = group_for(&MaterialKey::default());
 
         // Shadows and the environment: the sky's, and one per reflection probe.
         let lighting_group = |cube: &wgpu::TextureView| {
@@ -2018,13 +2420,18 @@ impl WorldRenderer {
                 }),
                 ..Default::default()
             });
-            pass.set_pipeline(&self.shadow_pipeline);
             pass.set_bind_group(
                 0,
                 &globals_groups[main],
                 &[(self.stride * main as u64) as u32],
             );
             for run in per_view[main].0.iter().filter(|r| r.casts) {
+                if run.cutout {
+                    pass.set_pipeline(&self.shadow_cutout_pipeline);
+                    pass.set_bind_group(1, group_for(&run.material), &[]);
+                } else {
+                    pass.set_pipeline(&self.shadow_pipeline);
+                }
                 if let Some(mesh) = run.mesh.and_then(|m| self.meshes.get(&m)) {
                     pass.set_vertex_buffer(0, mesh.vertices.slice(..));
                     pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -2073,23 +2480,23 @@ impl WorldRenderer {
                 );
                 pass.set_scissor_rect(px[0], px[1], px[2], px[3]);
                 pass.set_bind_group(0, &globals_groups[i], &[(self.stride * i as u64) as u32]);
-                pass.set_bind_group(1, &groups[0], &[]);
+                pass.set_bind_group(1, plain, &[]);
                 pass.set_bind_group(2, &shadow_group, &[]);
                 pass.set_pipeline(&pipelines.fill);
                 pass.draw(0..3, 0..1);
 
                 let draw = |pass: &mut wgpu::RenderPass<'_>, run: &Run, blend: bool| {
-                    pass.set_bind_group(1, group_for(run.texture), &[]);
+                    pass.set_bind_group(1, group_for(&run.material), &[]);
                     let lighting = run.probe.and_then(|id| probe_groups.get(&id));
                     pass.set_bind_group(2, lighting.unwrap_or(&shadow_group), &[]);
                     match run.mesh.and_then(|m| self.meshes.get(&m)) {
                         Some(mesh) => {
-                            pass.set_pipeline(if run.glow {
-                                &pipelines.mesh_glow
-                            } else if blend {
-                                &pipelines.mesh_blend
-                            } else {
-                                &pipelines.mesh
+                            pass.set_pipeline(match (run.glow, blend, run.double_sided) {
+                                (true, ..) => &pipelines.mesh_glow,
+                                (false, true, false) => &pipelines.mesh_blend,
+                                (false, true, true) => &pipelines.mesh_blend_double,
+                                (false, false, false) => &pipelines.mesh,
+                                (false, false, true) => &pipelines.mesh_double,
                             });
                             pass.set_vertex_buffer(0, mesh.vertices.slice(..));
                             pass.set_index_buffer(

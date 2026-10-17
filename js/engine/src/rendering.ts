@@ -551,7 +551,9 @@ export class WorldPanel extends Component {
   }
 }
 
-/** How a surface looks: Unity's `Material` (the standard shader's main settings). */
+/** How a surface covers what's behind it (Unity's Standard shader rendering modes). */
+export type RenderingMode = "opaque" | "cutout" | "fade" | "transparent";
+
 /** Settings for `Material.create` / `with`; anything left out keeps its default (or value). */
 export interface MaterialOptions {
   color?: Color;
@@ -562,15 +564,84 @@ export interface MaterialOptions {
   mainTexture?: Texture | null;
   mainTextureScale?: Vector2Like;
   mainTextureOffset?: Vector2Like;
+  normalMap?: Texture | null;
+  normalScale?: number;
+  metallicGlossMap?: Texture | null;
+  specularColor?: Color | null;
+  occlusionMap?: Texture | null;
+  occlusionStrength?: number;
+  emissionMap?: Texture | null;
+  detailAlbedoMap?: Texture | null;
+  detailAlbedoMapScale?: Vector2Like;
+  detailAlbedoMapOffset?: Vector2Like;
+  renderingMode?: RenderingMode;
+  alphaCutoff?: number;
+  doubleSided?: boolean;
+  /** @internal glTF's packing of the metallic map (roughness green, metallic blue, occlusion red). */
+  gltfPacking?: boolean;
 }
 
+/** The settings past the constructor's, with their defaults. */
+const EXTRAS = {
+  normalMap: null as Texture | null,
+  normalScale: 1,
+  metallicGlossMap: null as Texture | null,
+  specularColor: null as Color | null,
+  occlusionMap: null as Texture | null,
+  occlusionStrength: 1,
+  emissionMap: null as Texture | null,
+  detailAlbedoMap: null as Texture | null,
+  detailAlbedoMapScale: Vector2.one,
+  detailAlbedoMapOffset: Vector2.zero,
+  renderingMode: "opaque" as RenderingMode,
+  alphaCutoff: 0.5,
+  doubleSided: false,
+  gltfPacking: false,
+};
+type Extras = typeof EXTRAS;
+
 /**
- * How a mesh looks: Unity's Standard material (metallic workflow). Physically based:
- * `smoothness` 0 is rough (matte), 1 a polished mirror; `metallic` 1 makes it a metal
- * (coloured reflections, no diffuse). Reflections show the sky or the nearest
- * reflection probe.
+ * How a mesh looks: Unity's Standard material. Physically based: `smoothness` 0 is rough
+ * (matte), 1 a polished mirror; `metallic` 1 makes it a metal (coloured reflections, no
+ * diffuse), or `specularColor` sets the reflectance directly (the specular workflow).
+ * Reflections show the sky or the nearest reflection probe. Maps (normal, metallic,
+ * occlusion, emission, detail) use the main texture's tiling, except the detail map.
  */
 export class Material {
+  /** Bumps from a tangent-space normal map (load it with `{ linear: true }`). */
+  readonly normalMap: Texture | null = EXTRAS.normalMap;
+  /** How strong the normal map's bumps are (Unity's `bumpScale`). */
+  readonly normalScale: number = EXTRAS.normalScale;
+  /**
+   * Metallic in red and smoothness in alpha (Unity's `_MetallicGlossMap`): with it,
+   * `metallic` comes from the map and `smoothness` scales the map's. With
+   * `specularColor`, it's the specular map instead (colour in rgb, smoothness in alpha).
+   */
+  readonly metallicGlossMap: Texture | null = EXTRAS.metallicGlossMap;
+  /** The specular workflow (Unity's "Standard (Specular setup)"): reflectance head-on; `metallic` is then ignored. */
+  readonly specularColor: Color | null = EXTRAS.specularColor;
+  /** Ambient occlusion (green channel): darkens sky light and reflections in creases. */
+  readonly occlusionMap: Texture | null = EXTRAS.occlusionMap;
+  readonly occlusionStrength: number = EXTRAS.occlusionStrength;
+  /** Multiplies `emission` (set `emission` to white to see the map as it is). */
+  readonly emissionMap: Texture | null = EXTRAS.emissionMap;
+  /** Fine detail multiplied over the colour (x2 in gamma space, so mid grey changes nothing), tiled on its own. */
+  readonly detailAlbedoMap: Texture | null = EXTRAS.detailAlbedoMap;
+  readonly detailAlbedoMapScale: Vector2 = EXTRAS.detailAlbedoMapScale;
+  readonly detailAlbedoMapOffset: Vector2 = EXTRAS.detailAlbedoMapOffset;
+  /**
+   * `opaque` (default; a colour alpha below 1 still fades it), `cutout` (holes where alpha
+   * < `alphaCutoff`, shadows too), `fade` (everything fades) or `transparent` (glass:
+   * highlights and reflections stay).
+   */
+  readonly renderingMode: RenderingMode = EXTRAS.renderingMode;
+  /** With `cutout`: alpha (texture x colour) below this is a hole. */
+  readonly alphaCutoff: number = EXTRAS.alphaCutoff;
+  /** Draws back faces too, lit from that side (leaves, cloth, open meshes). */
+  readonly doubleSided: boolean = EXTRAS.doubleSided;
+  /** @internal */
+  readonly gltfPacking: boolean = EXTRAS.gltfPacking;
+
   constructor(
     /** Base colour (linear; alpha below 1 makes it see-through). For metals, the reflection's tint. */
     readonly color: Color = Color.white,
@@ -598,7 +669,7 @@ export class Material {
   /** A copy with some settings changed. */
   with(o: MaterialOptions): Material {
     const v2 = (v: Vector2Like | undefined, d: Vector2) => (v ? new Vector2(v.x, v.y) : d);
-    return new Material(
+    const m = new Material(
       o.color ?? this.color,
       o.emission ?? this.emission,
       o.smoothness ?? this.smoothness,
@@ -608,6 +679,14 @@ export class Material {
       v2(o.mainTextureOffset, this.mainTextureOffset),
       o.metallic ?? this.metallic,
     );
+    const out = m as unknown as Record<string, unknown>;
+    for (const key of Object.keys(EXTRAS) as (keyof Extras)[]) {
+      const given = (o as Record<string, unknown>)[key];
+      out[key] = given === undefined ? this[key] : given;
+    }
+    out.detailAlbedoMapScale = v2(o.detailAlbedoMapScale, this.detailAlbedoMapScale);
+    out.detailAlbedoMapOffset = v2(o.detailAlbedoMapOffset, this.detailAlbedoMapOffset);
+    return m;
   }
 
   /** A copy with another colour. */
@@ -618,6 +697,26 @@ export class Material {
   /** A copy with a texture, repeated `scale` times from `offset`. */
   withTexture(texture: Texture | null, scale: Vector2Like = Vector2.one, offset: Vector2Like = Vector2.zero): Material {
     return this.with({ mainTexture: texture, mainTextureScale: scale, mainTextureOffset: offset });
+  }
+
+  /** @internal The maps and modes, as `render.meshRenderer`'s last argument. */
+  _extras(): unknown[] {
+    const s = this.specularColor;
+    return [
+      this.normalMap?.id ?? null,
+      this.normalScale,
+      this.metallicGlossMap?.id ?? null,
+      this.gltfPacking,
+      this.occlusionMap?.id ?? null,
+      this.occlusionStrength,
+      this.emissionMap?.id ?? null,
+      this.detailAlbedoMap?.id ?? null,
+      [this.detailAlbedoMapScale.x, this.detailAlbedoMapScale.y, this.detailAlbedoMapOffset.x, this.detailAlbedoMapOffset.y],
+      s ? [s.r, s.g, s.b] : null,
+      this.renderingMode,
+      this.alphaCutoff,
+      this.doubleSided,
+    ];
   }
 }
 
@@ -739,6 +838,7 @@ export class MeshRenderer extends Component {
       [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y],
       this._shadowCastingMode !== "off",
       m.metallic,
+      m._extras(),
     );
   }
 

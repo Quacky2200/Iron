@@ -28,13 +28,20 @@ export interface QualityLevel {
   lodBias: number;
   /** 1: frames wait for the display's refresh (no tearing); 0: they don't (`targetFrameRate` caps them). */
   vSyncCount: number;
+  /** Sharper textures at grazing angles: never, as each texture asks (`anisoLevel`), or at least 9x everywhere. */
+  anisotropicFiltering: AnisotropicFiltering;
+  /** Top mip levels skipped (Unity's texture quality): 0 full size, 1 half, 2 quarter, 3 eighth. */
+  globalTextureMipmapLimit: number;
 }
 
+/** Unity's `AnisotropicFiltering`. */
+export type AnisotropicFiltering = "disable" | "enable" | "forceEnable";
+
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
 ];
 
 interface ManifestQuality {
@@ -59,7 +66,7 @@ let current: QualityLevel = { ...levels[levelIndex]! };
 
 function sendQuality(): void {
   const c = current;
-  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount);
+  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit);
   remember();
 }
 
@@ -168,6 +175,24 @@ export const QualitySettings = {
   },
   set lodBias(b: number) {
     current.lodBias = Math.max(0.01, b);
+    sendQuality();
+  },
+
+  /** Sharper textures at grazing angles (Unity's `anisotropicFiltering`). */
+  get anisotropicFiltering(): AnisotropicFiltering {
+    return current.anisotropicFiltering;
+  },
+  set anisotropicFiltering(a: AnisotropicFiltering) {
+    current.anisotropicFiltering = a;
+    sendQuality();
+  },
+
+  /** Top mip levels skipped, 0 to 3 (Unity's texture quality: full, half, quarter, eighth). */
+  get globalTextureMipmapLimit(): number {
+    return current.globalTextureMipmapLimit;
+  },
+  set globalTextureMipmapLimit(n: number) {
+    current.globalTextureMipmapLimit = Math.min(3, Math.max(0, Math.round(n)));
     sendQuality();
   },
 

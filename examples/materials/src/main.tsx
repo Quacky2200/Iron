@@ -4,6 +4,9 @@
 // - A mirror wall (a `Mirror` on a quad) reflecting the scene exactly.
 // - Models in typical materials: a gold bunny and a chrome teapot (both metallic).
 // - A reflection probe over it all, so shiny things reflect each other, not just the sky.
+// - A front row of maps and modes: a normal-mapped tile, a cut-out leaf (double-sided,
+//   with holes in its shadow), glass (transparent: the highlight stays) next to a faded
+//   sphere, and a specular-workflow sphere.
 import {
   Camera,
   CameraOrbit,
@@ -18,6 +21,8 @@ import {
   ReflectionProbe,
   RenderSettings,
   Component,
+  Texture,
+  Vector2,
   Vector3,
   register,
 } from "@iron/engine";
@@ -50,6 +55,20 @@ class Showroom extends Component {
       }
     }
 
+    // The front row: maps and rendering modes.
+    const row = (x: number, name: string, mesh: "cube" | "sphere" | "quad", material: Material, scale = 0.75) => {
+      const go = new GameObject(name, { position: new Vector3(x, 0.45, 2.7), scale: Vector3.one.scale(scale) });
+      go.addComponent(MeshRenderer, { mesh, material });
+      return go;
+    };
+    row(-2.5, "Bumpy tile", "cube", Material.create({ color: new Color(0.8, 0.78, 0.74, 1), smoothness: 0.55, normalMap: bumps(), normalScale: 1.2 }));
+    const leaf = row(-1.25, "Leaf", "quad", Material.create({ mainTexture: leafTexture(), renderingMode: "cutout", alphaCutoff: 0.5, doubleSided: true }), 0.9);
+    leaf.transform.rotation = Quaternion.euler(0, 30, 0);
+    const glass = new Color(0.75, 0.88, 1, 0.25);
+    row(0, "Glass", "sphere", Material.create({ color: glass, smoothness: 0.97, renderingMode: "transparent" }));
+    row(1.25, "Faded", "sphere", Material.create({ color: glass, smoothness: 0.97, renderingMode: "fade" }));
+    row(2.5, "Specular", "sphere", Material.create({ color: new Color(0.05, 0.05, 0.07, 1), smoothness: 0.85, specularColor: new Color(0.25, 0.85, 0.45, 1) }));
+
     // A mirror wall behind the grid.
     const mirror = new GameObject("Mirror", { position: new Vector3(0, 1.4, -2.2), scale: new Vector3(6, 2.8, 1) });
     mirror.addComponent(MeshRenderer, { mesh: "quad", material: Material.create({ color: new Color(0.95, 0.97, 1, 1), metallic: 1, smoothness: 1 }) });
@@ -79,6 +98,39 @@ class Showroom extends Component {
   }
 }
 
+/** A tangent-space normal map of round bumps, made in code (data: `linear`). */
+function bumps(): Texture {
+  const n = 64;
+  const px: Color[] = [];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const cx = (((x + 0.5) / n) * 4) % 1 - 0.5;
+      const cy = (((y + 0.5) / n) * 4) % 1 - 0.5;
+      const inside = cx * cx + cy * cy < 0.16;
+      const [nx, ny] = inside ? [cx * 2, cy * 2] : [0, 0];
+      const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+      px.push(new Color(nx * 0.5 + 0.5, ny * 0.5 + 0.5, nz * 0.5 + 0.5, 1));
+    }
+  }
+  return Texture.create(n, n, px, { linear: true, filterMode: "trilinear", anisoLevel: 8 });
+}
+
+/** A round green leaf with holes, as an alpha mask. */
+function leafTexture(): Texture {
+  const n = 64;
+  const px: Color[] = [];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const u = (x + 0.5) / n;
+      const v = (y + 0.5) / n;
+      const inside = (u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.2;
+      const hole = Math.hypot(((u * 5) % 1) - 0.5, ((v * 5) % 1) - 0.5) < 0.18;
+      px.push(new Color(0.15, 0.55, 0.12, inside && !hole ? 1 : 0));
+    }
+  }
+  return Texture.create(n, n, px);
+}
+
 /** Every MeshRenderer under `go`. */
 function collect(go: GameObject): MeshRenderer[] {
   const out: MeshRenderer[] = [];
@@ -99,6 +151,7 @@ function Caption() {
       <box style={{ padding: "8px 14px", borderRadius: 8, backgroundColor: "rgba(10,12,18,0.55)", flexDirection: "column", gap: 2, alignSelf: "flex-start" }}>
         <text style={{ color: "#eef0f4", fontSize: 15, fontWeight: 600 }}>Materials</text>
         <text style={{ color: "#b5bcc8", fontSize: 12 }}>Smoothness 0 → 1 across · metallic 0 / 0.5 / 1 front to back · mirror wall</text>
+        <text style={{ color: "#b5bcc8", fontSize: 12 }}>Front: normal map · cut-out leaf · glass (transparent) · faded · specular workflow</text>
       </box>
     </box>
   );

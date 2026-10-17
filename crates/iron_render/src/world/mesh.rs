@@ -6,17 +6,21 @@
 
 use std::f32::consts::{PI, TAU};
 
-/// A mesh's vertices (positions, normals, texture coordinates) and triangles.
+/// A mesh's vertices (positions, normals, texture coordinates, tangents) and triangles.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MeshData {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub uvs: Vec<[f32; 2]>,
+    /// Along increasing u (xyz), and w = 1 or -1: the side the bitangent (towards the
+    /// texture's top, decreasing v) is on, for normal maps. Made from the UVs when missing.
+    pub tangents: Vec<[f32; 4]>,
     /// Three per triangle, counter-clockwise seen from the front.
     pub indices: Vec<u32>,
 }
 
 impl MeshData {
+    /// Adds a vertex (tangents come later, from [`MeshData::complete`]).
     fn push(&mut self, p: [f32; 3], n: [f32; 3], uv: [f32; 2]) -> u32 {
         self.positions.push(p);
         self.normals.push(n);
@@ -24,7 +28,8 @@ impl MeshData {
         self.positions.len() as u32 - 1
     }
 
-    /// Fills in missing normals (smooth, from the triangles) and texture coordinates.
+    /// Fills in missing normals (smooth, from the triangles), texture coordinates and
+    /// tangents.
     pub fn complete(mut self) -> Self {
         if self.uvs.len() != self.positions.len() {
             self.uvs = vec![[0.0, 0.0]; self.positions.len()];
@@ -57,6 +62,9 @@ impl MeshData {
             }
             self.normals = normals;
         }
+        if self.tangents.len() != self.positions.len() {
+            self.tangents = tangents(&self.positions, &self.normals, &self.uvs, &self.indices);
+        }
         self
     }
 
@@ -65,6 +73,7 @@ impl MeshData {
         self.indices.len().is_multiple_of(3)
             && self.positions.len() == self.normals.len()
             && self.positions.len() == self.uvs.len()
+            && self.positions.len() == self.tangents.len()
             && self
                 .indices
                 .iter()
@@ -72,10 +81,69 @@ impl MeshData {
     }
 }
 
+/// Per-vertex tangents from the triangles' UVs (summed per vertex, then made
+/// perpendicular to the normal), with the bitangent's side in w. UVs here run top-down,
+/// so the bitangent points towards decreasing v: up in the image, where normal maps' green
+/// channel points (Unity's and glTF's convention).
+fn tangents(
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+    uvs: &[[f32; 2]],
+    indices: &[u32],
+) -> Vec<[f32; 4]> {
+    use iron_core::glam::Vec3;
+    let n = positions.len();
+    let mut tan = vec![Vec3::ZERO; n];
+    let mut bit = vec![Vec3::ZERO; n];
+    for t in indices.as_chunks::<3>().0 {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| i as usize);
+        if a >= n || b >= n || c >= n {
+            continue;
+        }
+        let (p0, p1, p2) = (
+            Vec3::from(positions[a]),
+            Vec3::from(positions[b]),
+            Vec3::from(positions[c]),
+        );
+        let (e1, e2) = (p1 - p0, p2 - p0);
+        let (du1, dv1) = (uvs[b][0] - uvs[a][0], uvs[b][1] - uvs[a][1]);
+        let (du2, dv2) = (uvs[c][0] - uvs[a][0], uvs[c][1] - uvs[a][1]);
+        let det = du1 * dv2 - du2 * dv1;
+        if det.abs() < 1e-12 {
+            continue;
+        }
+        let r = 1.0 / det;
+        // Directions of increasing u and increasing v.
+        let du = (e1 * dv2 - e2 * dv1) * r;
+        let dv = (e2 * du1 - e1 * du2) * r;
+        for i in [a, b, c] {
+            tan[i] += du;
+            bit[i] -= dv;
+        }
+    }
+    (0..n)
+        .map(|i| {
+            let nm = Vec3::from(normals[i]);
+            // Gram-Schmidt against the normal; any perpendicular when the UVs say nothing.
+            let mut t = tan[i] - nm * nm.dot(tan[i]);
+            if t.length_squared() < 1e-12 {
+                t = nm.any_orthonormal_vector();
+            }
+            let t = t.normalize();
+            let w = if nm.cross(t).dot(bit[i]) < 0.0 {
+                -1.0
+            } else {
+                1.0
+            };
+            [t.x, t.y, t.z, w]
+        })
+        .collect()
+}
+
 /// A built-in mesh by Unity's name: `cube`, `sphere`, `capsule`, `cylinder`, `plane`
 /// (10 m, facing up) or `quad` (1 m, facing +z).
 pub fn primitive(name: &str) -> Option<MeshData> {
-    Some(match name {
+    let mesh = match name {
         "cube" => cube(),
         "sphere" => sphere(0.5, 24, 16),
         "capsule" => capsule(0.5, 2.0, 24, 8),
@@ -83,7 +151,8 @@ pub fn primitive(name: &str) -> Option<MeshData> {
         "plane" => grid_plane(10.0, 10),
         "quad" => quad(),
         _ => return None,
-    })
+    };
+    Some(mesh.complete())
 }
 
 /// An open cone for light beams: the apex at the origin, opening along -z to radius 1
@@ -103,7 +172,7 @@ pub fn beam() -> MeshData {
         }
     }
     grid_indices(&mut m, 0, segments, rings);
-    m
+    m.complete()
 }
 
 fn cube() -> MeshData {
@@ -248,6 +317,7 @@ fn quad() -> MeshData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::PRIMITIVES;
 
     /// Twice the signed volume enclosed (positive when triangles face outwards).
     fn volume(m: &MeshData) -> f32 {
@@ -302,5 +372,41 @@ mod tests {
         tri = tri.complete();
         assert!(tri.is_valid());
         assert_eq!(tri.normals[0], [0.0, 0.0, 1.0]);
+    }
+
+    // M5-MAT-01
+    #[test]
+    fn tangents_follow_u_and_the_bitangent_points_up_the_image() {
+        // The quad faces +z with u to the right and v down (top-down UVs): tangent +x,
+        // bitangent (up the image) +y = cross(n, t), so w = 1.
+        let q = primitive("quad").unwrap();
+        for t in &q.tangents {
+            assert!((t[0] - 1.0).abs() < 1e-5 && t[1].abs() < 1e-5 && t[2].abs() < 1e-5);
+            assert_eq!(t[3], 1.0);
+        }
+        // Mirrored UVs flip the bitangent's side.
+        let mut flipped = quad();
+        for uv in &mut flipped.uvs {
+            uv[0] = 1.0 - uv[0];
+        }
+        let flipped = flipped.complete();
+        assert!(
+            flipped
+                .tangents
+                .iter()
+                .all(|t| t[0] < -0.99 && t[3] == -1.0)
+        );
+        // Every primitive's tangents are unit length and perpendicular to the normals.
+        for name in PRIMITIVES {
+            let m = primitive(name).unwrap();
+            for (t, n) in m.tangents.iter().zip(&m.normals) {
+                let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
+                assert!((len - 1.0).abs() < 1e-3, "{name}");
+                assert!(
+                    (t[0] * n[0] + t[1] * n[1] + t[2] * n[2]).abs() < 1e-3,
+                    "{name}"
+                );
+            }
+        }
     }
 }

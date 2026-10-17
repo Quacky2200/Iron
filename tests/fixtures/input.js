@@ -2842,6 +2842,22 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
+  var EXTRAS = {
+    normalMap: null,
+    normalScale: 1,
+    metallicGlossMap: null,
+    specularColor: null,
+    occlusionMap: null,
+    occlusionStrength: 1,
+    emissionMap: null,
+    detailAlbedoMap: null,
+    detailAlbedoMapScale: Vector2.one,
+    detailAlbedoMapOffset: Vector2.zero,
+    renderingMode: "opaque",
+    alphaCutoff: 0.5,
+    doubleSided: false,
+    gltfPacking: false
+  };
 
   class Material {
     color;
@@ -2852,6 +2868,20 @@ ${err.stack}` : ""}`);
     mainTextureScale;
     mainTextureOffset;
     metallic;
+    normalMap = EXTRAS.normalMap;
+    normalScale = EXTRAS.normalScale;
+    metallicGlossMap = EXTRAS.metallicGlossMap;
+    specularColor = EXTRAS.specularColor;
+    occlusionMap = EXTRAS.occlusionMap;
+    occlusionStrength = EXTRAS.occlusionStrength;
+    emissionMap = EXTRAS.emissionMap;
+    detailAlbedoMap = EXTRAS.detailAlbedoMap;
+    detailAlbedoMapScale = EXTRAS.detailAlbedoMapScale;
+    detailAlbedoMapOffset = EXTRAS.detailAlbedoMapOffset;
+    renderingMode = EXTRAS.renderingMode;
+    alphaCutoff = EXTRAS.alphaCutoff;
+    doubleSided = EXTRAS.doubleSided;
+    gltfPacking = EXTRAS.gltfPacking;
     constructor(color = Color.white, emission = Color.black, smoothness = 0.5, unlit = false, mainTexture = null, mainTextureScale = Vector2.one, mainTextureOffset = Vector2.zero, metallic = 0) {
       this.color = color;
       this.emission = emission;
@@ -2867,13 +2897,39 @@ ${err.stack}` : ""}`);
     }
     with(o) {
       const v2 = (v, d) => v ? new Vector2(v.x, v.y) : d;
-      return new Material(o.color ?? this.color, o.emission ?? this.emission, o.smoothness ?? this.smoothness, o.unlit ?? this.unlit, o.mainTexture === undefined ? this.mainTexture : o.mainTexture, v2(o.mainTextureScale, this.mainTextureScale), v2(o.mainTextureOffset, this.mainTextureOffset), o.metallic ?? this.metallic);
+      const m = new Material(o.color ?? this.color, o.emission ?? this.emission, o.smoothness ?? this.smoothness, o.unlit ?? this.unlit, o.mainTexture === undefined ? this.mainTexture : o.mainTexture, v2(o.mainTextureScale, this.mainTextureScale), v2(o.mainTextureOffset, this.mainTextureOffset), o.metallic ?? this.metallic);
+      const out = m;
+      for (const key of Object.keys(EXTRAS)) {
+        const given = o[key];
+        out[key] = given === undefined ? this[key] : given;
+      }
+      out.detailAlbedoMapScale = v2(o.detailAlbedoMapScale, this.detailAlbedoMapScale);
+      out.detailAlbedoMapOffset = v2(o.detailAlbedoMapOffset, this.detailAlbedoMapOffset);
+      return m;
     }
     withColor(color) {
       return this.with({ color });
     }
     withTexture(texture, scale = Vector2.one, offset = Vector2.zero) {
       return this.with({ mainTexture: texture, mainTextureScale: scale, mainTextureOffset: offset });
+    }
+    _extras() {
+      const s = this.specularColor;
+      return [
+        this.normalMap?.id ?? null,
+        this.normalScale,
+        this.metallicGlossMap?.id ?? null,
+        this.gltfPacking,
+        this.occlusionMap?.id ?? null,
+        this.occlusionStrength,
+        this.emissionMap?.id ?? null,
+        this.detailAlbedoMap?.id ?? null,
+        [this.detailAlbedoMapScale.x, this.detailAlbedoMapScale.y, this.detailAlbedoMapOffset.x, this.detailAlbedoMapOffset.y],
+        s ? [s.r, s.g, s.b] : null,
+        this.renderingMode,
+        this.alphaCutoff,
+        this.doubleSided
+      ];
     }
   }
   var nextMesh = 1;
@@ -2950,7 +3006,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic);
+      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic, m._extras());
     }
     onAwake() {
       this.started = true;
@@ -4920,6 +4976,8 @@ ${err.stack}` : ""}`);
     _filterMode;
     _wrapMode;
     _mipmaps;
+    _anisoLevel;
+    linear;
     pixels = null;
     waiting = [];
     constructor(src, options) {
@@ -4928,6 +4986,8 @@ ${err.stack}` : ""}`);
       this._filterMode = options.filterMode ?? "bilinear";
       this._wrapMode = options.wrapMode ?? "repeat";
       this._mipmaps = options.mipmaps ?? true;
+      this._anisoLevel = options.anisoLevel ?? 1;
+      this.linear = options.linear ?? false;
       textures.set(this.id, this);
     }
     static _engine(id, width, height) {
@@ -4951,7 +5011,7 @@ ${err.stack}` : ""}`);
       }
       const t = new Texture(null, options);
       const px = new Array(width * height * 4);
-      const byte = (v) => Math.round(Mathf.clamp01(Mathf.linearToGammaSpace(Mathf.clamp01(v))) * 255);
+      const byte = options.linear ? (v) => Math.round(Mathf.clamp01(v) * 255) : (v) => Math.round(Mathf.clamp01(Mathf.linearToGammaSpace(Mathf.clamp01(v))) * 255);
       for (let y = 0;y < height; y++) {
         const row = height - 1 - y;
         for (let x = 0;x < width; x++) {
@@ -4983,6 +5043,13 @@ ${err.stack}` : ""}`);
       this._wrapMode = w;
       this.send();
     }
+    get anisoLevel() {
+      return this._anisoLevel;
+    }
+    set anisoLevel(n) {
+      this._anisoLevel = Math.min(16, Math.max(1, Math.round(n)));
+      this.send();
+    }
     whenLoaded() {
       if (this.isLoaded)
         return Promise.resolve(this);
@@ -4997,7 +5064,7 @@ ${err.stack}` : ""}`);
       __iron_op("render.textureRemove", this.id);
     }
     send() {
-      __iron_op("render.texture", this.id, this.src, this._filterMode, this._wrapMode, this._mipmaps, ...this.pixels ? [this.width, this.height, this.pixels] : []);
+      __iron_op("render.texture", this.id, this.src, this._filterMode, this._wrapMode, this._mipmaps, ...this.pixels ? [this.width, this.height, this.pixels] : [null, null, null], this._anisoLevel, this.linear);
     }
     _loaded(width, height) {
       this.failed = width === 0;
@@ -5365,10 +5432,10 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/quality.ts
   var DEFAULT_LEVELS = [
-    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1 },
-    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1 },
-    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1 },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1 }
+    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
+    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 }
   ];
   var manifest = () => {
     const q = globalThis.__iron_info?.app?.quality;
@@ -5383,7 +5450,7 @@ ${err.stack}` : ""}`);
   var current = { ...levels[levelIndex] };
   function sendQuality() {
     const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount);
+    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit);
     remember();
   }
   function sendShadows() {
@@ -5517,7 +5584,19 @@ ${err.stack}` : ""}`);
         this.materials = description.materials.map((m) => {
           const [r, g, b, a] = m.color;
           const texture = m.texture ? Texture._engine(...m.texture) : null;
-          return new Material(new Color(r, g, b, a), new Color(m.emission[0], m.emission[1], m.emission[2], 1), m.smoothness, m.unlit, texture, Vector2.one, Vector2.zero, m.metallic ?? 0);
+          const map = (id) => id == null ? null : Texture._engine(id, 0, 0);
+          return new Material(new Color(r, g, b, a), new Color(m.emission[0], m.emission[1], m.emission[2], 1), m.smoothness, m.unlit, texture, Vector2.one, Vector2.zero, m.metallic ?? 0).with({
+            renderingMode: m.alpha === "mask" ? "cutout" : m.alpha === "blend" ? "fade" : "opaque",
+            alphaCutoff: m.alphaCutoff ?? 0.5,
+            doubleSided: m.doubleSided ?? false,
+            normalMap: map(m.normal?.[0]),
+            normalScale: m.normal?.[1] ?? 1,
+            metallicGlossMap: map(m.metallicRoughness),
+            occlusionMap: map(m.occlusion?.[0]),
+            occlusionStrength: m.occlusion?.[1] ?? 1,
+            emissionMap: map(m.emissive),
+            gltfPacking: true
+          });
         });
         this.meshes = description.nodes.flatMap((n) => n.primitives.map((p) => Mesh._engine(p.mesh)));
         for (const { root, options } of this.pending)
@@ -5578,6 +5657,23 @@ ${err.stack}` : ""}`);
   });
   var warn = (message) => console.warn(`scene: ${message}`);
   var UNSAVED = Symbol("unsaved");
+  var MATERIAL_EXTRAS = [
+    "normalMap",
+    "normalScale",
+    "metallicGlossMap",
+    "specularColor",
+    "occlusionMap",
+    "occlusionStrength",
+    "emissionMap",
+    "detailAlbedoMap",
+    "detailAlbedoMapScale",
+    "detailAlbedoMapOffset",
+    "renderingMode",
+    "alphaCutoff",
+    "doubleSided",
+    "gltfPacking"
+  ];
+  var DEFAULT_MATERIAL = new Material;
 
   class Saver {
     keepExternal;
@@ -5657,14 +5753,27 @@ ${err.stack}` : ""}`);
           unlit: v.unlit,
           mainTexture: this.value(v.mainTexture, where),
           mainTextureScale: this.value(v.mainTextureScale, where),
-          mainTextureOffset: this.value(v.mainTextureOffset, where)
+          mainTextureOffset: this.value(v.mainTextureOffset, where),
+          ...Object.fromEntries(MATERIAL_EXTRAS.filter((k) => {
+            const d = DEFAULT_MATERIAL[k];
+            const x = v[k];
+            return !(x === d || x instanceof Vector2 && d instanceof Vector2 && x.equals(d));
+          }).map((k) => [k, this.value(v[k], where)]))
         };
       }
       if (v instanceof Texture) {
         if (!v.src)
           return this.cannot(`${where}: only textures loaded from files are saved`);
         const t = v;
-        return this.asset(v, "texture", () => ({ type: "Texture", src: v.src, filterMode: v.filterMode, wrapMode: v.wrapMode, mipmaps: t._mipmaps }));
+        return this.asset(v, "texture", () => ({
+          type: "Texture",
+          src: v.src,
+          filterMode: v.filterMode,
+          wrapMode: v.wrapMode,
+          mipmaps: t._mipmaps,
+          ...v.anisoLevel !== 1 ? { anisoLevel: v.anisoLevel } : {},
+          ...v.linear ? { linear: true } : {}
+        }));
       }
       if (v instanceof Sprite) {
         return { $type: "Sprite", texture: this.value(v.texture, where), rect: this.value(v.rect, where), pivot: this.value(v.pivot, where), pixelsPerUnit: v.pixelsPerUnit };
@@ -5713,7 +5822,9 @@ ${err.stack}` : ""}`);
         made = Texture.load(String(a.src), {
           filterMode: a.filterMode,
           wrapMode: a.wrapMode,
-          mipmaps: a.mipmaps
+          mipmaps: a.mipmaps,
+          anisoLevel: a.anisoLevel,
+          linear: a.linear
         });
       } else if (a?.type === "Mesh") {
         const flat = (k) => a[k] ?? [];
@@ -5776,7 +5887,8 @@ ${err.stack}` : ""}`);
               unlit: o.unlit,
               mainTexture: this.value(o.mainTexture),
               mainTextureScale: this.value(o.mainTextureScale),
-              mainTextureOffset: this.value(o.mainTextureOffset)
+              mainTextureOffset: this.value(o.mainTextureOffset),
+              ...Object.fromEntries(MATERIAL_EXTRAS.filter((k) => (k in o)).map((k) => [k, this.value(o[k])]))
             });
           case "Sprite":
             return Sprite.create(this.value(o.texture), this.value(o.rect), this.value(o.pivot), o.pixelsPerUnit);

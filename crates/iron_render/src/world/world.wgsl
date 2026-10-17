@@ -52,9 +52,23 @@ struct MeshInstance {
     probe: vec4<f32>,
     // The probe's half extents, and 1 for box projection.
     probe_box: vec4<f32>,
-    // x: its layer's bit, for lights' masks.
+    // x: its layer's bit, for lights' masks; y: its maps (MAP_* bits); z: its render
+    // mode (0 opaque, 1 cutout, 2 fade, 3 transparent).
     layer: vec4<u32>,
+    // rgb: the specular colour; w: 1 for the specular workflow.
+    specular: vec4<f32>,
+    // x: normal map strength; y: occlusion strength; z: alpha cut-off.
+    maps: vec4<f32>,
+    // The detail map's tiling: scale (xy), offset (zw).
+    detail: vec4<f32>,
 };
+
+const MAP_NORMAL: u32 = 1u;
+const MAP_METALLIC: u32 = 2u;
+const MAP_GLTF: u32 = 4u;
+const MAP_OCCLUSION: u32 = 8u;
+const MAP_EMISSION: u32 = 16u;
+const MAP_DETAIL: u32 = 32u;
 
 struct Light {
     // xyz: position; w: 0 directional, 1 point, 2 spot.
@@ -73,8 +87,17 @@ struct Light {
 @group(0) @binding(1) var<storage, read> quads: array<Quad>;
 @group(0) @binding(2) var<storage, read> meshes: array<MeshInstance>;
 @group(0) @binding(3) var<storage, read> lights: array<Light>;
+// The material: its main texture and sampler (shared by the maps), then its maps.
+// Normal, metallic and occlusion maps are bound as data (linear), the rest as colour.
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+@group(1) @binding(2) var normal_map: texture_2d<f32>;
+@group(1) @binding(3) var metallic_map: texture_2d<f32>;
+@group(1) @binding(4) var occlusion_map: texture_2d<f32>;
+@group(1) @binding(5) var emission_map: texture_2d<f32>;
+@group(1) @binding(6) var detail_map: texture_2d<f32>;
+// A mirror's reflection, rendered this frame.
+@group(1) @binding(7) var reflection_tex: texture_2d<f32>;
 @group(2) @binding(0) var shadow_map: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
 @group(2) @binding(2) var env_map: texture_cube<f32>;
@@ -153,13 +176,22 @@ struct MeshOut {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) @interpolate(flat) instance: u32,
+    // xyz: along increasing u in the world; w: the bitangent's side.
+    @location(4) tangent: vec4<f32>,
+    @location(5) detail_uv: vec2<f32>,
 };
+
+// Tiling (scale xy, offset zw) in Unity's bottom-up UV space, for top-down mesh UVs.
+fn tiled(uv: vec2<f32>, t: vec4<f32>) -> vec2<f32> {
+    return vec2<f32>(uv.x * t.x + t.z, 1.0 - ((1.0 - uv.y) * t.y + t.w));
+}
 
 @vertex
 fn vs_mesh(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
+    @location(3) tangent: vec4<f32>,
     @builtin(instance_index) ii: u32,
 ) -> MeshOut {
     let m = meshes[ii];
@@ -168,11 +200,41 @@ fn vs_mesh(
     out.pos = g.view_proj * world;
     out.world = world.xyz;
     out.normal = (m.normal * vec4<f32>(normal, 0.0)).xyz;
+    out.tangent = vec4<f32>((m.model * vec4<f32>(tangent.xyz, 0.0)).xyz, tangent.w);
     // Mesh UVs here run top-down (v = 0 at the texture's top row); tiling works bottom-up.
-    let t = m.tiling;
-    out.uv = vec2<f32>(uv.x * t.x + t.z, 1.0 - ((1.0 - uv.y) * t.y + t.w));
+    out.uv = tiled(uv, m.tiling);
+    out.detail_uv = tiled(uv, m.detail);
     out.instance = ii;
     return out;
+}
+
+struct CutoutOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) instance: u32,
+};
+
+// Cut-out casters: depth from the light, with the texture's holes.
+@vertex
+fn vs_shadow_cutout(
+    @location(0) position: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @builtin(instance_index) ii: u32,
+) -> CutoutOut {
+    let m = meshes[ii];
+    var out: CutoutOut;
+    out.pos = g.shadow_view_proj * m.model * vec4<f32>(position, 1.0);
+    out.uv = tiled(uv, m.tiling);
+    out.instance = ii;
+    return out;
+}
+
+@fragment
+fn fs_shadow_cutout(in: CutoutOut) {
+    let m = meshes[in.instance];
+    if (textureSample(tex, samp, in.uv).a * m.color.a < m.maps.z) {
+        discard;
+    }
 }
 
 const PI: f32 = 3.14159265;
@@ -286,19 +348,37 @@ fn shadow_at(world: vec3<f32>, n: vec3<f32>) -> f32 {
 @fragment
 fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let m = meshes[in.instance];
+    // Every map is sampled up front: sampling needs uniform control flow.
     let sampled = textureSample(tex, samp, in.uv);
+    let normal_texel = textureSample(normal_map, samp, in.uv);
+    let metallic_texel = textureSample(metallic_map, samp, in.uv);
+    let occlusion_texel = textureSample(occlusion_map, samp, in.uv);
+    let emission_texel = textureSample(emission_map, samp, in.uv);
+    let detail_texel = textureSample(detail_map, samp, in.detail_uv);
     if (clipped(in.world)) {
         discard;
     }
+    let maps = m.layer.y;
+    let mode = m.layer.z;
     let mirror = m.params.w > 0.5;
-    // A mirror's texture is its reflection, not its colour.
-    let texel = select(sampled, vec4<f32>(1.0), mirror) * m.color;
-    let base = texel.rgb;
-    // Opaque meshes (colour alpha 1) ignore the texture's alpha; see-through ones use it.
-    let alpha = select(1.0, texel.a, m.color.a < 1.0);
+    let texel = sampled * m.color;
+    var base = texel.rgb;
+    if ((maps & MAP_DETAIL) != 0u) {
+        // Unity's detail albedo: x2 in gamma space (about 4.59 in linear light).
+        base *= detail_texel.rgb * 4.594794;
+    }
+    // Opaque meshes ignore the alpha; the other modes use texture x colour.
+    let alpha = select(texel.a, 1.0, mode == 0u);
+    if (mode == 1u && alpha < m.maps.z) {
+        discard;
+    }
+    var emission = m.emission.rgb;
+    if ((maps & MAP_EMISSION) != 0u) {
+        emission *= emission_texel.rgb;
+    }
     if (m.params.y > 0.5) {
         // Glowing meshes add light (no coverage, so premultiplied blending adds).
-        var light = (base + m.emission.rgb) * m.color.a;
+        var light = (base + emission) * m.color.a;
         if (m.params.y > 1.5) {
             // A beam: soft where its surface turns away from the eye, bright near the
             // light and fading out towards the open end.
@@ -313,23 +393,66 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         }
         return vec4<f32>(light, 0.0);
     }
+    let out_alpha = select(alpha, 1.0, mode == 1u);
     if (m.params.x > 0.5) {
-        let unlit = base + m.emission.rgb;
-        return vec4<f32>(unlit * alpha, alpha);
+        let unlit = base + emission;
+        return vec4<f32>(unlit * out_alpha, out_alpha);
     }
     var n = normalize(in.normal);
+    var tangent = in.tangent.xyz;
     if (!front) {
         n = -n;
     }
+    if ((maps & MAP_NORMAL) != 0u && dot(tangent, tangent) > 1e-12) {
+        // Tangent space: u along the tangent, up the image along the bitangent.
+        let t = normalize(tangent - n * dot(n, tangent));
+        let b = cross(n, t) * select(in.tangent.w, -in.tangent.w, !front);
+        var tn = normal_texel.xyz * 2.0 - 1.0;
+        tn = vec3<f32>(tn.xy * m.maps.x, max(tn.z, 1e-3));
+        n = normalize(t * tn.x + b * tn.y + n * tn.z);
+    }
     let v = normalize(g.camera.xyz - in.world);
-    // Metallic-roughness PBR (Cook-Torrance: GGX, Smith, Schlick), Unity's Standard
-    // shader's model: smoothness is 1 - roughness.
-    let roughness = clamp(1.0 - m.emission.w, 0.045, 1.0);
-    let metallic = clamp(m.params.z, 0.0, 1.0);
-    let f0 = mix(vec3<f32>(0.04), base, metallic);
-    let albedo = base * (1.0 - metallic);
+    // Smoothness is 1 - roughness (Unity's name).
+    var smoothness = m.emission.w;
+    var metallic = m.params.z;
+    var occlusion = 1.0;
+    if ((maps & MAP_OCCLUSION) != 0u) {
+        let o = select(occlusion_texel.g, occlusion_texel.r, (maps & MAP_GLTF) != 0u);
+        occlusion = mix(1.0, o, m.maps.y);
+    }
+    var f0: vec3<f32>;
+    var albedo: vec3<f32>;
+    if (m.specular.w > 0.5) {
+        // The specular workflow: the reflectance is given; diffuse keeps the rest.
+        var spec = m.specular.rgb;
+        if ((maps & MAP_METALLIC) != 0u) {
+            spec = metallic_texel.rgb;
+            smoothness *= metallic_texel.a;
+        }
+        f0 = spec;
+        albedo = base * (1.0 - max(spec.r, max(spec.g, spec.b)));
+    } else {
+        if ((maps & MAP_METALLIC) != 0u) {
+            if ((maps & MAP_GLTF) != 0u) {
+                // glTF: roughness in green, metallic in blue, scaling the factors.
+                metallic *= metallic_texel.b;
+                smoothness = 1.0 - (1.0 - smoothness) * metallic_texel.g;
+            } else {
+                // Unity: metallic in red, smoothness in alpha scaled by the slider.
+                metallic = metallic_texel.r;
+                smoothness *= metallic_texel.a;
+            }
+        }
+        metallic = clamp(metallic, 0.0, 1.0);
+        // Metallic-roughness PBR (Cook-Torrance: GGX, Smith, Schlick), Unity's Standard
+        // shader's model.
+        f0 = mix(vec3<f32>(0.04), base, metallic);
+        albedo = base * (1.0 - metallic);
+    }
+    let roughness = clamp(1.0 - smoothness, 0.045, 1.0);
     let ndv = max(dot(n, v), 1e-4);
-    var color = vec3<f32>(0.0);
+    var diffuse = vec3<f32>(0.0);
+    var specular = vec3<f32>(0.0);
     let count = u32(g.ambient.w);
     for (var i = 0u; i < count; i++) {
         let light = lights[i];
@@ -367,21 +490,30 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         // Diffuse isn't divided by pi (lights' intensities are as Unity's); specular is
         // scaled up to match.
         let kd = (vec3<f32>(1.0) - f) * albedo;
-        color += (kd + spec * PI) * light.color.rgb * ndl * strength;
+        diffuse += kd * light.color.rgb * ndl * strength;
+        specular += spec * PI * light.color.rgb * ndl * strength;
     }
     // Light from all around: sky light (or the ambient colour) in the diffuse, and the
     // reflection (a mirror's render, a probe, the sky, or the ambient colour) in the
-    // specular, with the split-sum approximation.
+    // specular, with the split-sum approximation. Occlusion darkens only these.
     let env_brdf = env_brdf_approx(f0, roughness, ndv);
     var reflected: vec3<f32>;
     if (mirror) {
         // The reflection was rendered flipped left to right within this viewport.
         let px = vec2<f32>(g.viewport.x * 2.0 + g.viewport.z - in.pos.x, in.pos.y);
-        reflected = textureSampleLevel(tex, samp, px / g.flags.yz, 0.0).rgb;
+        reflected = textureSampleLevel(reflection_tex, samp, px / g.flags.yz, 0.0).rgb;
     } else {
         reflected = environment(reflect(-v, n), roughness, m, in.world);
     }
-    color += albedo * ambient_light(n) + env_brdf * reflected;
-    let lit = color + m.emission.rgb;
-    return vec4<f32>(lit * alpha, alpha);
+    diffuse += albedo * ambient_light(n) * occlusion;
+    specular += env_brdf * reflected * occlusion;
+    if (mode == 3u) {
+        // Transparent: the diffuse fades with the alpha, highlights and reflections
+        // don't, and what's reflected covers what's behind (Unity's Standard).
+        let reflectivity = max(f0.r, max(f0.g, f0.b));
+        let a = 1.0 - (1.0 - alpha) * (1.0 - reflectivity);
+        return vec4<f32>(diffuse * alpha + specular + emission, a);
+    }
+    let lit = diffuse + specular + emission;
+    return vec4<f32>(lit * out_alpha, out_alpha);
 }

@@ -14,6 +14,8 @@ import {
   QualitySettings,
   RenderSettings,
   SphereCollider,
+  Texture,
+  Vector2,
   Vector3,
 } from "../src/index.ts";
 import { _resetPhysicsComponentsForTests } from "../src/physics-components.ts";
@@ -44,9 +46,41 @@ describe("meshes and lights", () => {
       mesh: "sphere",
       material: new Material(new Color(1, 0, 0, 1), Color.black, 0.8),
     });
-    expect(renderOps()).toEqual([["render.meshRenderer", r.id, go.id, "sphere", [1, 0, 0, 1], [0, 0, 0], 0.8, false, null, [1, 1, 0, 0], true, 0]]);
+    expect(renderOps()).toEqual([["render.meshRenderer", r.id, go.id, "sphere", [1, 0, 0, 1], [0, 0, 0], 0.8, false, null, [1, 1, 0, 0], true, 0, [null, 1, null, false, null, 1, null, null, [1, 1, 0, 0], null, "opaque", 0.5, false]]]);
     r.material = r.material.withColor(Color.white);
     expect(renderOps().at(-1)![4]).toEqual([1, 1, 1, 1]);
+  });
+
+  // M5-MAT-02
+  test("materials send their maps, specular colour and rendering mode; with() keeps them", () => {
+    const normal = Texture.load("n.png", { linear: true });
+    const mask = Texture.load("m.png");
+    const go = new GameObject("leaf");
+    const m = Material.create({
+      normalMap: normal,
+      normalScale: 0.5,
+      metallicGlossMap: mask,
+      occlusionMap: mask,
+      occlusionStrength: 0.7,
+      emissionMap: mask,
+      detailAlbedoMap: mask,
+      detailAlbedoMapScale: new Vector2(4, 4),
+      specularColor: new Color(0.2, 0.3, 0.4, 1),
+      renderingMode: "cutout",
+      alphaCutoff: 0.3,
+      doubleSided: true,
+    });
+    const r = go.addComponent(MeshRenderer, { mesh: "quad", material: m });
+    expect(renderOps().at(-1)!.at(-1)).toEqual([normal.id, 0.5, mask.id, false, mask.id, 0.7, mask.id, mask.id, [4, 4, 0, 0], [0.2, 0.3, 0.4], "cutout", 0.3, true]);
+    // Changing one thing keeps the rest.
+    const faded = m.with({ renderingMode: "fade", normalMap: null });
+    expect(faded.renderingMode).toBe("fade");
+    expect(faded.normalMap).toBeNull();
+    expect(faded.occlusionMap).toBe(mask);
+    expect(faded.detailAlbedoMapScale.x).toBe(4);
+    expect(m.renderingMode).toBe("cutout");
+    r.material = faded;
+    expect((renderOps().at(-1)!.at(-1) as unknown[])[10]).toBe("fade");
   });
 
   test("script meshes send flat arrays", () => {

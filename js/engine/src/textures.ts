@@ -19,6 +19,10 @@ export interface TextureOptions {
   wrapMode?: TextureWrapMode;
   /** Smaller copies for distant sampling. Default true. */
   mipmaps?: boolean;
+  /** Sharper at grazing angles, 1 to 16 (Unity's `anisoLevel`; trilinear textures). Default 1. */
+  anisoLevel?: number;
+  /** Data, not colours (Unity's `linear`): normal maps and other masks read as stored. Default false. */
+  linear?: boolean;
 }
 
 let nextTexture = 1;
@@ -42,6 +46,9 @@ export class Texture {
   private _filterMode: FilterMode;
   private _wrapMode: TextureWrapMode;
   private _mipmaps: boolean;
+  private _anisoLevel: number;
+  /** Holds data rather than sRGB colours (normal maps, masks). */
+  readonly linear: boolean;
   private pixels: number[] | null = null;
   private waiting: ((t: Texture) => void)[] = [];
 
@@ -51,6 +58,8 @@ export class Texture {
     this._filterMode = options.filterMode ?? "bilinear";
     this._wrapMode = options.wrapMode ?? "repeat";
     this._mipmaps = options.mipmaps ?? true;
+    this._anisoLevel = options.anisoLevel ?? 1;
+    this.linear = options.linear ?? false;
     textures.set(this.id, this);
   }
 
@@ -83,7 +92,10 @@ export class Texture {
     }
     const t = new Texture(null, options);
     const px: number[] = new Array(width * height * 4);
-    const byte = (v: number) => Math.round(Mathf.clamp01(Mathf.linearToGammaSpace(Mathf.clamp01(v))) * 255);
+    // Colours are stored as sRGB; data (linear textures) as it is.
+    const byte = options.linear
+      ? (v: number) => Math.round(Mathf.clamp01(v) * 255)
+      : (v: number) => Math.round(Mathf.clamp01(Mathf.linearToGammaSpace(Mathf.clamp01(v))) * 255);
     for (let y = 0; y < height; y++) {
       // The engine takes the top row first.
       const row = height - 1 - y;
@@ -119,6 +131,15 @@ export class Texture {
     this.send();
   }
 
+  get anisoLevel(): number {
+    return this._anisoLevel;
+  }
+  /** Changing it uploads the texture again. */
+  set anisoLevel(n: number) {
+    this._anisoLevel = Math.min(16, Math.max(1, Math.round(n)));
+    this.send();
+  }
+
   /** Resolves once the size is known (at once if it already is). Rejects if it failed. */
   whenLoaded(): Promise<Texture> {
     if (this.isLoaded) return Promise.resolve(this);
@@ -142,7 +163,9 @@ export class Texture {
       this._filterMode,
       this._wrapMode,
       this._mipmaps,
-      ...(this.pixels ? [this.width, this.height, this.pixels] : []),
+      ...(this.pixels ? [this.width, this.height, this.pixels] : [null, null, null]),
+      this._anisoLevel,
+      this.linear,
     );
   }
 

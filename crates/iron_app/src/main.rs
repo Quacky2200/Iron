@@ -1386,6 +1386,8 @@ impl App {
         gfx.world.render_scale = q.render_scale;
         gfx.world.shadow_quality = q.shadows;
         gfx.world.soft_shadow_radius = q.soft_radius;
+        gfx.world.anisotropic = q.anisotropic;
+        gfx.world.texture_mip_limit = q.texture_mip_limit;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
@@ -1728,6 +1730,8 @@ impl PlatformApp for App {
         gfx.world.render_scale = q.render_scale;
         gfx.world.shadow_quality = q.shadows;
         gfx.world.soft_shadow_radius = q.soft_radius;
+        gfx.world.anisotropic = q.anisotropic;
+        gfx.world.texture_mip_limit = q.texture_mip_limit;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {

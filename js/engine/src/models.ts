@@ -17,6 +17,16 @@ interface ModelMaterial {
   unlit: boolean;
   /** [id, width, height] of the base colour texture. */
   texture: [number, number, number] | null;
+  alpha: "opaque" | "mask" | "blend";
+  alphaCutoff: number;
+  doubleSided: boolean;
+  /** [texture id, scale]. */
+  normal: [number, number] | null;
+  /** Roughness in green, metallic in blue. */
+  metallicRoughness: number | null;
+  /** [texture id, strength], occlusion in red. */
+  occlusion: [number, number] | null;
+  emissive: number | null;
 }
 
 interface ModelNode {
@@ -149,6 +159,8 @@ export class Model {
       this.materials = description.materials.map((m) => {
         const [r, g, b, a] = m.color;
         const texture = m.texture ? Texture._engine(...m.texture) : null;
+        // The maps' sizes aren't needed (only the base texture's is asked for).
+        const map = (id: number | null | undefined) => (id == null ? null : Texture._engine(id, 0, 0));
         return new Material(
           new Color(r, g, b, a),
           new Color(m.emission[0], m.emission[1], m.emission[2], 1),
@@ -158,7 +170,18 @@ export class Model {
           Vector2.one,
           Vector2.zero,
           m.metallic ?? 0,
-        );
+        ).with({
+          renderingMode: m.alpha === "mask" ? "cutout" : m.alpha === "blend" ? "fade" : "opaque",
+          alphaCutoff: m.alphaCutoff ?? 0.5,
+          doubleSided: m.doubleSided ?? false,
+          normalMap: map(m.normal?.[0]),
+          normalScale: m.normal?.[1] ?? 1,
+          metallicGlossMap: map(m.metallicRoughness),
+          occlusionMap: map(m.occlusion?.[0]),
+          occlusionStrength: m.occlusion?.[1] ?? 1,
+          emissionMap: map(m.emissive),
+          gltfPacking: true,
+        });
       });
       this.meshes = description.nodes.flatMap((n) => n.primitives.map((p) => Mesh._engine(p.mesh)));
       for (const { root, options } of this.pending) if (!root.destroyed) this.build(root, options);

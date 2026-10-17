@@ -27,14 +27,14 @@ const renderOps = () => ops.filter((o) => String(o[0]).startsWith("render."));
 describe("textures", () => {
   test("load sends the file and settings; the engine's answer fills in the size", async () => {
     const t = Texture.load("assets/crate.png", { filterMode: "point" });
-    expect(renderOps()).toEqual([["render.texture", 1, "assets/crate.png", "point", "repeat", true]]);
+    expect(renderOps()).toEqual([["render.texture", 1, "assets/crate.png", "point", "repeat", true, null, null, null, 1, false]]);
     expect(t.isLoaded).toBe(false);
     const ready = t.whenLoaded();
     globalThis.__iron_textures([[1, 64, 32]]);
     expect(await ready).toBe(t);
     expect([t.width, t.height, t.isLoaded]).toEqual([64, 32, true]);
     t.wrapMode = "clamp";
-    expect(renderOps().at(-1)).toEqual(["render.texture", 1, "assets/crate.png", "point", "clamp", true]);
+    expect(renderOps().at(-1)).toEqual(["render.texture", 1, "assets/crate.png", "point", "clamp", true, null, null, null, 1, false]);
     t.destroy();
     expect(renderOps().at(-1)).toEqual(["render.textureRemove", 1]);
   });
@@ -52,14 +52,14 @@ describe("textures", () => {
     const grey = new Color(0.5, 0.5, 0.5, 0.5);
     Texture.create(1, 2, [red, grey], { mipmaps: false });
     // Linear 0.5 is sRGB 188.
-    expect(renderOps()[0]).toEqual(["render.texture", 1, null, "bilinear", "repeat", false, 1, 2, [188, 188, 188, 128, 255, 0, 0, 255]]);
+    expect(renderOps()[0]).toEqual(["render.texture", 1, null, "bilinear", "repeat", false, 1, 2, [188, 188, 188, 128, 255, 0, 0, 255], 1, false]);
   });
 
   test("materials carry a texture and tiling to the MeshRenderer", () => {
     const t = Texture.load("assets/bricks.png");
     const go = new GameObject("wall");
     const r = go.addComponent(MeshRenderer, { mesh: "cube", material: new Material().withTexture(t, new Vector2(2, 3), new Vector2(0.5, 0)) });
-    expect(renderOps().at(-1)).toEqual(["render.meshRenderer", r.id, go.id, "cube", [1, 1, 1, 1], [0, 0, 0], 0.5, false, t.id, [2, 3, 0.5, 0], true, 0]);
+    expect(renderOps().at(-1)).toEqual(["render.meshRenderer", r.id, go.id, "cube", [1, 1, 1, 1], [0, 0, 0], 0.5, false, t.id, [2, 3, 0.5, 0], true, 0, [null, 1, null, false, null, 1, null, null, [1, 1, 0, 0], null, "opaque", 0.5, false]]);
     // withColor keeps the texture.
     r.material = r.material.withColor(Color.white);
     expect(renderOps().at(-1)![8]).toBe(t.id);

@@ -144,6 +144,24 @@ const warn = (message: string) => console.warn(`scene: ${message}`);
 
 /** What `Saver.value` gives for values it can't save, in reload mode (the field is left out). */
 const UNSAVED = Symbol("unsaved");
+/** Material settings saved only when they differ from a new material's. */
+const MATERIAL_EXTRAS = [
+  "normalMap",
+  "normalScale",
+  "metallicGlossMap",
+  "specularColor",
+  "occlusionMap",
+  "occlusionStrength",
+  "emissionMap",
+  "detailAlbedoMap",
+  "detailAlbedoMapScale",
+  "detailAlbedoMapOffset",
+  "renderingMode",
+  "alphaCutoff",
+  "doubleSided",
+  "gltfPacking",
+] as const;
+const DEFAULT_MATERIAL = new Material();
 
 /** Saving: file ids for objects and components, and shared assets. */
 class Saver {
@@ -220,12 +238,28 @@ class Saver {
         mainTexture: this.value(v.mainTexture, where),
         mainTextureScale: this.value(v.mainTextureScale, where),
         mainTextureOffset: this.value(v.mainTextureOffset, where),
+        // The rest only where it differs from the default, keeping files short.
+        ...Object.fromEntries(
+          MATERIAL_EXTRAS.filter((k) => {
+            const d = (DEFAULT_MATERIAL as unknown as Record<string, unknown>)[k];
+            const x = (v as unknown as Record<string, unknown>)[k];
+            return !(x === d || (x instanceof Vector2 && d instanceof Vector2 && x.equals(d)));
+          }).map((k) => [k, this.value((v as unknown as Record<string, unknown>)[k], where)]),
+        ),
       };
     }
     if (v instanceof Texture) {
       if (!v.src) return this.cannot(`${where}: only textures loaded from files are saved`);
       const t = v as unknown as { _mipmaps: boolean };
-      return this.asset(v, "texture", () => ({ type: "Texture", src: v.src, filterMode: v.filterMode, wrapMode: v.wrapMode, mipmaps: t._mipmaps }));
+      return this.asset(v, "texture", () => ({
+        type: "Texture",
+        src: v.src,
+        filterMode: v.filterMode,
+        wrapMode: v.wrapMode,
+        mipmaps: t._mipmaps,
+        ...(v.anisoLevel !== 1 ? { anisoLevel: v.anisoLevel } : {}),
+        ...(v.linear ? { linear: true } : {}),
+      }));
     }
     if (v instanceof Sprite) {
       return { $type: "Sprite", texture: this.value(v.texture, where), rect: this.value(v.rect, where), pivot: this.value(v.pivot, where), pixelsPerUnit: v.pixelsPerUnit };
@@ -270,6 +304,8 @@ class Loader {
         filterMode: a.filterMode as never,
         wrapMode: a.wrapMode as never,
         mipmaps: a.mipmaps as boolean | undefined,
+        anisoLevel: a.anisoLevel as number | undefined,
+        linear: a.linear as boolean | undefined,
       });
     } else if (a?.type === "Mesh") {
       const flat = (k: string) => (a[k] as number[] | undefined) ?? [];
@@ -331,6 +367,7 @@ class Loader {
             mainTexture: this.value(o.mainTexture) as Texture | null,
             mainTextureScale: this.value(o.mainTextureScale) as Vector2,
             mainTextureOffset: this.value(o.mainTextureOffset) as Vector2,
+            ...Object.fromEntries(MATERIAL_EXTRAS.filter((k) => k in o).map((k) => [k, this.value(o[k])])),
           });
         case "Sprite":
           return Sprite.create(this.value(o.texture) as Texture, this.value(o.rect) as Rect | null, this.value(o.pivot) as Vector2, o.pixelsPerUnit as number);

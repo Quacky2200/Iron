@@ -99,12 +99,14 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
         })
         .collect::<Result<_, _>>()?;
 
-    // Images become textures when a material uses them (with that texture's sampler).
+    // Images become textures when a material uses them (with that texture's sampler):
+    // colours (base, emissive) as sRGB, data (normal, metallic-roughness, occlusion) as
+    // linear, each once.
     let mut textures = Vec::new();
-    let mut texture_ids: std::collections::HashMap<usize, (u32, u32, u32)> =
+    let mut texture_ids: std::collections::HashMap<(usize, bool), (u32, u32, u32)> =
         std::collections::HashMap::new();
-    let mut texture_for = |texture: gltf::Texture<'_>| -> Option<(u32, u32, u32)> {
-        let key = texture.index();
+    let mut texture_for = |texture: gltf::Texture<'_>, srgb: bool| -> Option<(u32, u32, u32)> {
+        let key = (texture.index(), srgb);
         if let Some(t) = texture_ids.get(&key) {
             return Some(*t);
         }
@@ -156,6 +158,8 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                     sampler.min_filter(),
                     Some(MinFilter::Nearest | MinFilter::Linear)
                 ),
+                anisotropy: 1,
+                srgb,
             },
         ));
         texture_ids.insert(key, (id, w, h));
@@ -169,10 +173,21 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
             let [r, g, b, a] = pbr.base_color_factor();
             let strength = m.emissive_strength().unwrap_or(1.0);
             let e = m.emissive_factor().map(|c| c * strength);
-            let texture = pbr
-                .base_color_texture()
-                // A texture whose image can't be read draws the missing checker.
-                .map(|t| texture_for(t.texture()).unwrap_or((iron_render::MISSING_TEXTURE, 8, 8)));
+            // A texture whose image can't be read draws the missing checker.
+            let mut map = |t: gltf::Texture<'_>, srgb: bool| {
+                texture_for(t, srgb).unwrap_or((iron_render::MISSING_TEXTURE, 8, 8))
+            };
+            let texture = pbr.base_color_texture().map(|t| map(t.texture(), true));
+            let normal = m
+                .normal_texture()
+                .map(|t| (map(t.texture(), false).0, t.scale()));
+            let metallic = pbr
+                .metallic_roughness_texture()
+                .map(|t| map(t.texture(), false).0);
+            let occlusion = m
+                .occlusion_texture()
+                .map(|t| (map(t.texture(), false).0, t.strength()));
+            let emissive = m.emissive_texture().map(|t| map(t.texture(), true).0);
             let alpha = match m.alpha_mode() {
                 gltf::material::AlphaMode::Opaque => "opaque",
                 gltf::material::AlphaMode::Mask => "mask",
@@ -180,13 +195,20 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
             };
             json!({
                 "name": m.name().unwrap_or(""),
-                "color": [r, g, b, if alpha == "blend" { a.min(0.999) } else { 1.0 }],
+                // Blending comes from the rendering mode, so the alpha can stay as given.
+                "color": [r, g, b, if alpha == "blend" { a } else { 1.0 }],
                 "emission": e,
                 "smoothness": 1.0 - pbr.roughness_factor(),
                 "metallic": pbr.metallic_factor(),
                 "unlit": m.unlit(),
                 "texture": texture.map(|(id, w, h)| json!([id, w, h])),
                 "alpha": alpha,
+                "alphaCutoff": m.alpha_cutoff().unwrap_or(0.5),
+                "doubleSided": m.double_sided(),
+                "normal": normal.map(|(id, scale)| json!([id, scale])),
+                "metallicRoughness": metallic,
+                "occlusion": occlusion.map(|(id, strength)| json!([id, strength])),
+                "emissive": emissive,
             })
         })
         .collect();
@@ -221,10 +243,17 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
                 Some(i) => i.into_u32().collect(),
                 None => (0..positions.len() as u32).collect(),
             };
+            // glTF's tangents follow the same convention as ours (UVs top-down, the
+            // bitangent cross(n, t) * w pointing up the image); made from the UVs if missing.
+            let tangents: Vec<[f32; 4]> = reader
+                .read_tangents()
+                .map(Iterator::collect)
+                .unwrap_or_default();
             let data = MeshData {
                 positions,
                 normals,
                 uvs,
+                tangents,
                 indices,
             }
             .complete();

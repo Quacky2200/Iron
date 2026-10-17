@@ -10,9 +10,10 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance,
-    Mirror, Projection, ReflectionProbe, ShadowQuality, Shadows, Sky, TextureData, TextureFilter,
-    TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, Light, LightKind, MaterialMaps, MeshData,
+    MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode, ShadowQuality,
+    Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture,
+    WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -139,6 +140,69 @@ struct Renderer {
     texture: Option<u32>,
     tiling: [f32; 4],
     cast_shadows: bool,
+    extras: MaterialExtras,
+}
+
+/// A material's settings past the basic ones.
+#[derive(Clone, Copy, Debug, Default)]
+struct MaterialExtras {
+    maps: MaterialMaps,
+    specular: Option<[f32; 3]>,
+    mode: RenderMode,
+    alpha_cutoff: f32,
+    double_sided: bool,
+}
+
+/// A material's maps and modes from `meshRenderer`'s last argument:
+/// `[normal|null normalScale metallicGloss|null gltfPacking occlusion|null
+/// occlusionStrength emission|null detail|null [detail sx sy ox oy] [specular r g b]|null
+/// mode(opaque|cutout|fade|transparent) alphaCutoff doubleSided]`.
+fn material_extras(v: Option<&Value>) -> Result<MaterialExtras, String> {
+    let Some(Value::Array(a)) = v else {
+        return Ok(MaterialExtras {
+            alpha_cutoff: 0.5,
+            ..Default::default()
+        });
+    };
+    let texture = |i: usize| -> Option<WorldTexture> {
+        a.get(i)
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .map(|v| WorldTexture::Asset(v as u32))
+    };
+    let number = |i: usize, default: f32| {
+        a.get(i)
+            .and_then(Value::as_f64)
+            .map(|v| v as f32)
+            .filter(|v| v.is_finite())
+            .unwrap_or(default)
+    };
+    let maps = MaterialMaps {
+        normal: texture(0),
+        normal_scale: number(1, 1.0),
+        metallic_gloss: texture(2),
+        gltf_packing: matches!(a.get(3), Some(Value::Bool(true))),
+        occlusion: texture(4),
+        occlusion_strength: number(5, 1.0),
+        emission: texture(6),
+        detail: texture(7),
+        detail_tiling: nums::<4>(a.get(8)).unwrap_or([1.0, 1.0, 0.0, 0.0]),
+        reflection: None,
+    };
+    let mode = match a.get(10).and_then(Value::as_str) {
+        None | Some("opaque") => RenderMode::Opaque,
+        Some("cutout") => RenderMode::Cutout,
+        Some("fade") => RenderMode::Fade,
+        Some("transparent") => RenderMode::Transparent,
+        Some(other) => return Err(format!("unknown rendering mode `{other}`")),
+    };
+    Ok(MaterialExtras {
+        maps,
+        specular: nums::<3>(a.get(9)),
+        mode,
+        alpha_cutoff: number(11, 0.5),
+        double_sided: matches!(a.get(12), Some(Value::Bool(true))),
+    })
 }
 
 /// Rendering quality scripts chose (`QualitySettings`), applied to the renderer.
@@ -152,6 +216,9 @@ pub struct Quality {
     pub lod_bias: f32,
     /// Frames wait for the display's refresh (`QualitySettings.vSyncCount` > 0).
     pub vsync: bool,
+    pub anisotropic: Anisotropic,
+    /// Top mips skipped (`QualitySettings.globalTextureMipmapLimit`).
+    pub texture_mip_limit: u32,
 }
 
 impl Default for Quality {
@@ -163,6 +230,8 @@ impl Default for Quality {
             soft_radius: 1,
             lod_bias: 1.0,
             vsync: true,
+            anisotropic: Anisotropic::Enable,
+            texture_mip_limit: 0,
         }
     }
 }
@@ -468,6 +537,11 @@ impl WorldViews {
             filter,
             wrap,
             mipmaps,
+            anisotropy: args
+                .get(8)
+                .and_then(Value::as_f64)
+                .map_or(1, |a| a.clamp(0.0, 16.0) as u16),
+            srgb: !matches!(args.get(9), Some(Value::Bool(true))),
         };
         if !data.is_valid() {
             return Err(format!(
@@ -552,6 +626,7 @@ impl WorldViews {
                     positions: positions.as_chunks::<3>().0.to_vec(),
                     normals: normals.as_chunks::<3>().0.to_vec(),
                     uvs: uvs.as_chunks::<2>().0.to_vec(),
+                    tangents: Vec::new(),
                     indices: indices.into_iter().map(|i| i as u32).collect(),
                 }
                 .complete();
@@ -564,8 +639,10 @@ impl WorldViews {
                 self.mesh_uploads.push((id, Some(data)));
             }
             // `meshRenderer component object mesh(name | id) [r g b a] [er eg eb] smoothness
-            // unlit texture|null [scale x y, offset x y] castShadows metallic`
+            // unlit texture|null [scale x y, offset x y] castShadows metallic [maps and
+            // modes]` (see `material_extras`)
             "meshRenderer" => {
+                let extras = material_extras(args.get(11))?;
                 let mesh = match args.get(2) {
                     Some(Value::String(name)) => {
                         primitive_id(name).ok_or_else(|| format!("no primitive `{name}`"))?
@@ -586,6 +663,7 @@ impl WorldViews {
                     },
                     tiling: nums::<4>(args.get(8)).unwrap_or([1.0, 1.0, 0.0, 0.0]),
                     cast_shadows: !matches!(args.get(9), Some(Value::Bool(false))),
+                    extras,
                 };
                 self.renderers.insert(id, renderer);
             }
@@ -758,7 +836,7 @@ impl WorldViews {
                 );
             }
             // `quality 0 antiAliasing renderScale shadows(disable|hardOnly|all) softRadius
-            // lodBias vSyncCount`
+            // lodBias vSyncCount anisotropic(disable|enable|forceEnable) textureMipLimit`
             "quality" => {
                 self.quality = Quality {
                     msaa: num(1).unwrap_or(1.0).clamp(1.0, 8.0) as u32,
@@ -771,6 +849,12 @@ impl WorldViews {
                     soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
                     lod_bias: num(5).unwrap_or(1.0).max(0.01),
                     vsync: num(6).ok().is_none_or(|v| v >= 1.0),
+                    anisotropic: match args.get(7).and_then(Value::as_str) {
+                        Some("disable") => Anisotropic::Disable,
+                        Some("forceEnable") => Anisotropic::ForceEnable,
+                        _ => Anisotropic::Enable,
+                    },
+                    texture_mip_limit: num(8).unwrap_or(0.0).clamp(0.0, 3.0) as u32,
                 };
             }
             // `shadowSettings 0 distance resolution` (Unity's quality settings).
@@ -953,6 +1037,11 @@ impl WorldViews {
                     cast_shadows: r.cast_shadows,
                     mirror: mirror_planes.get(&r.object).copied(),
                     layer: 0,
+                    maps: r.extras.maps,
+                    specular: r.extras.specular,
+                    mode: r.extras.mode,
+                    alpha_cutoff: r.extras.alpha_cutoff,
+                    double_sided: r.extras.double_sided,
                 };
                 Some(Tagged {
                     renderer: Some(id),
@@ -1005,6 +1094,7 @@ impl WorldViews {
                             cast_shadows: false,
                             mirror: None,
                             layer: 0,
+                            ..Default::default()
                         };
                         Tagged::new(scene, l.object, beam)
                     }),

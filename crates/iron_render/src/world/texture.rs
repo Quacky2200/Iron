@@ -44,7 +44,7 @@ impl TextureWrap {
     }
 }
 
-/// A texture to upload: straight-alpha sRGB RGBA8, top row first.
+/// A texture to upload: straight-alpha RGBA8, top row first.
 #[derive(Clone, Debug)]
 pub struct TextureData {
     pub width: u32,
@@ -54,6 +54,12 @@ pub struct TextureData {
     pub wrap: TextureWrap,
     /// Make smaller copies for distant, minified sampling.
     pub mipmaps: bool,
+    /// Sharper at grazing angles (Unity's `anisoLevel`, 1 to 16; trilinear only),
+    /// within what `QualitySettings.anisotropicFiltering` allows.
+    pub anisotropy: u16,
+    /// Colours in sRGB (photos, albedo). False for data such as normal maps, so the
+    /// bytes are read (and mips averaged) as they are.
+    pub srgb: bool,
 }
 
 impl TextureData {
@@ -64,11 +70,46 @@ impl TextureData {
     }
 }
 
-pub(crate) fn sampler(
-    device: &wgpu::Device,
-    filter: TextureFilter,
-    wrap: TextureWrap,
-) -> wgpu::Sampler {
+/// Unity's `QualitySettings.anisotropicFiltering`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Anisotropic {
+    /// Never, whatever textures ask.
+    Disable,
+    /// As each texture's `anisotropy` asks.
+    #[default]
+    Enable,
+    /// At least 9x on every trilinear texture (Unity's `ForceEnable`).
+    ForceEnable,
+}
+
+impl Anisotropic {
+    /// The samples a texture asking for `level` gets.
+    pub fn level(self, level: u16) -> u16 {
+        match self {
+            Self::Disable => 1,
+            Self::Enable => level.clamp(1, 16),
+            Self::ForceEnable => level.clamp(9, 16),
+        }
+    }
+}
+
+/// What a sampler is made from: the texture's settings and the quality's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SamplerKey {
+    pub filter: TextureFilter,
+    pub wrap: TextureWrap,
+    pub anisotropy: u16,
+    /// Mips skipped at the top (Unity's `globalTextureMipmapLimit`).
+    pub mip_limit: u32,
+}
+
+pub(crate) fn sampler(device: &wgpu::Device, key: SamplerKey) -> wgpu::Sampler {
+    let SamplerKey {
+        filter,
+        wrap,
+        anisotropy,
+        mip_limit,
+    } = key;
     let address = match wrap {
         TextureWrap::Repeat => wgpu::AddressMode::Repeat,
         TextureWrap::Clamp => wgpu::AddressMode::ClampToEdge,
@@ -87,11 +128,18 @@ pub(crate) fn sampler(
         mag_filter: texel,
         min_filter: texel,
         mipmap_filter: mip,
+        lod_min_clamp: mip_limit as f32,
+        // Anisotropy needs every filter linear.
+        anisotropy_clamp: if filter == TextureFilter::Trilinear {
+            anisotropy.clamp(1, 16)
+        } else {
+            1
+        },
         ..Default::default()
     })
 }
 
-/// sRGB byte → linear, and back: mip levels average light, not encoded values.
+/// sRGB byte to linear, and back: mip levels average light, not encoded values.
 fn to_linear(c: u8) -> f32 {
     let c = f32::from(c) / 255.0;
     if c <= 0.04045 {
@@ -112,8 +160,12 @@ fn to_srgb(l: f32) -> u8 {
 }
 
 /// The next mip level: each texel averages up to 2×2 of `src` (`w` × `h`), weighted by
-/// alpha so see-through texels don't darken their neighbours' colour.
-pub(crate) fn half(src: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
+/// alpha so see-through texels don't darken their neighbours' colour. `srgb` false
+/// averages the bytes as they are (data textures).
+pub(crate) fn half(src: &[u8], w: u32, h: u32, srgb: bool) -> (Vec<u8>, u32, u32) {
+    if !srgb {
+        return half_linear(src, w, h);
+    }
     let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
     let mut out = Vec::with_capacity(nw as usize * nh as usize * 4);
     for y in 0..nh {
@@ -133,6 +185,25 @@ pub(crate) fn half(src: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
                 out.push(if a > 0.0 { to_srgb(c / a) } else { 0 });
             }
             out.push((a / n * 255.0 + 0.5) as u8);
+        }
+    }
+    (out, nw, nh)
+}
+
+fn half_linear(src: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
+    let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+    let mut out = Vec::with_capacity(nw as usize * nh as usize * 4);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut sum = [0u32; 4];
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let (sx, sy) = ((x * 2 + dx).min(w - 1), (y * 2 + dy).min(h - 1));
+                let i = (sy as usize * w as usize + sx as usize) * 4;
+                for k in 0..4 {
+                    sum[k] += u32::from(src[i + k]);
+                }
+            }
+            out.extend(sum.map(|s| ((s + 2) / 4) as u8));
         }
     }
     (out, nw, nh)
@@ -159,6 +230,8 @@ pub fn missing() -> TextureData {
         filter: TextureFilter::Point,
         wrap: TextureWrap::Repeat,
         mipmaps: false,
+        anisotropy: 1,
+        srgb: true,
     }
 }
 
@@ -182,6 +255,8 @@ pub fn soft_spot(n: u32) -> TextureData {
         filter: TextureFilter::Trilinear,
         wrap: TextureWrap::Clamp,
         mipmaps: true,
+        anisotropy: 1,
+        srgb: true,
     }
 }
 
@@ -195,12 +270,15 @@ mod tests {
         let src = [
             0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255,
         ];
-        let (m, w, h) = half(&src, 2, 2);
+        let (m, w, h) = half(&src, 2, 2, true);
         assert_eq!((w, h), (1, 1));
         assert_eq!(&m[..], &[188, 188, 188, 255]);
         // A fully clear red texel adds no red.
         let src = [0, 0, 255, 255, 255, 0, 0, 0];
-        let (m, _, _) = half(&src, 2, 1);
+        let (m, _, _) = half(&src, 2, 1, true);
         assert_eq!(&m[..], &[0, 0, 255, 128]);
+        // Data textures (normal maps) average their bytes.
+        let (m, _, _) = half(&src, 2, 1, false);
+        assert_eq!(&m[..], &[128, 0, 128, 128]);
     }
 }

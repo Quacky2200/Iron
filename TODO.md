@@ -1019,20 +1019,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     a frame (the arcade went from ~600 to ~290 FPS uncapped). Render the shadow map once
     a frame and reuse it in probe faces and mirror views (or skip shadows there). Measure
     with the arcade's FPS counter (vsync off) and a test that counts shadow passes.
-  - [ ] Mirrors that keep their texture: `Mirror` puts the reflection in the mesh's
-    texture slot, so a mirrored surface loses its material texture (the arcade draws a
-    see-through mirror sheet over a textured floor instead, an extra plane and pass).
-    Give mirrors their own binding so the reflection mixes with the material's texture,
-    smoothness and metallic.
+  - [x] Mirrors that keep their texture: the reflection has its own binding now (with
+    the material maps), so a mirrored surface keeps its texture and maps. The arcade
+    still has its see-through mirror sheet (parked).
   - [ ] Backdrop blur costs a full-screen world copy plus blur passes each frame
     (10–25% of the arcade's uncapped frame rate): blur only the panels' areas at a lower
     resolution, and skip the copy when no panel overlaps the world.
   - [ ] Reload benchmark under 100 ms (`M4-HOT-07`, ~146 ms): see "Hot reload, part 2".
 - [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
-  - [ ] Materials (asked for 2026-10-17), Unity Standard / URP Lit style. Done so far: PBR,
-    the sky and its reflections, planar mirrors, reflection probes, the showroom example and
-    docs (2026-10-17, `8bac39e`). Left: the specular workflow, texture maps, transparency
-    modes.
+  - [x] Materials (asked for 2026-10-17), Unity Standard / URP Lit style: PBR, the sky and
+    its reflections, planar mirrors, reflection probes, the showroom example (`8bac39e`);
+    the specular workflow, maps, rendering modes and texture quality (2026-10-17).
     - [x] PBR shading: Cook-Torrance (GGX, Smith, Schlick) metallic / roughness replacing
       Blinn-Phong; `smoothness` stays as 1 - roughness (Unity's name); `Material.metallic`,
       `Material.create({...})` / `with({...})`; glTF `metallicFactor`; ambient reflections
@@ -1041,7 +1038,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       into an HDR environment cubemap with blurred mips: smooth surfaces reflect it sharply,
       rough ones see blurrier mips; sky light for ambient (`ambientMode` `skybox` / `color`),
       `reflectionIntensity`; cameras show it with `clearFlags: "skybox"` — `M5-RND-11`
-    - [ ] Shininess / specular colour (the specular workflow)
+    - [x] The specular workflow: `Material.specularColor` (reflectance head-on; metallic
+      ignored), with `metallicGlossMap` as the specular map — `M5-RND-17`
     - [x] Planar mirrors: `Mirror` on a MeshRenderer (plane or quad) reflects the scene
       exactly: the renderer draws the main view from the camera reflected in the plane
       (projection flipped left to right to keep winding, a clip plane dropping what's behind
@@ -1056,10 +1054,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       prefiltering of cube mips, mirror resolution scale
     - [x] `examples/materials`: the roughness × metallic sphere grid, a mirror wall, a gold
       bunny and a chrome teapot under a procedural sky
-    - [ ] Maps: normal, metallic-roughness, occlusion, emission (glTF's), detail and tiling
-      per map
-    - [ ] Transparency modes (fade, transparent with specular kept), alpha cut-off,
-      double-sided; glass with refraction later
+    - [x] Maps: `normalMap` / `normalScale` (tangents made from UVs, or glTF's),
+      `metallicGlossMap` (Unity packing; glTF's roughness / metallic packing for models),
+      `occlusionMap` / `occlusionStrength`, `emissionMap`, `detailAlbedoMap` with its own
+      tiling; data maps read through a linear view, `Texture` `{ linear: true }` for data
+      textures; glTF models bring theirs — `M5-MAT-01`, `M5-MAT-02`, `M5-RND-17`
+    - [ ] Map follow-ups: a detail normal map and detail mask, parallax (height) maps,
+      tiling per map beyond the detail map's
+    - [x] Rendering modes: `renderingMode` `opaque` / `cutout` (`alphaCutoff`, holes in
+      shadows too) / `fade` / `transparent` (highlights and reflections kept), and
+      `doubleSided`; glTF alpha modes and double-sidedness map onto them — `M5-RND-17`
+    - [ ] Glass with refraction (screen-space), order-independent transparency
     - [x] A material test scene (spheres sweeping roughness × metallic, the classic grid):
       `examples/materials`, `M5-RND-11`
   - [ ] Quality settings (asked for 2026-10-17), Unity's `QualitySettings` levels. Done:
@@ -1077,8 +1082,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       sharpening later
     - [ ] Render textures as a general feature (a camera into a texture, usable on
       materials), sharing the render-scale target code
-    - [ ] Texture quality (mip bias / max size), anisotropic filtering, bloom and
-      particle limits per level
+    - [x] Texture quality: `QualitySettings.globalTextureMipmapLimit` (top mips skipped),
+      `anisotropicFiltering` (disable / enable / forceEnable) with `Texture.anisoLevel`;
+      per level (Low: half size, no anisotropy; Ultra: forced) — `M5-QUA-02`
+    - [ ] Bloom and particle limits per level
     - [x] Named levels (Low / Medium / High / Ultra) setting all of the above;
       `QualitySettings.setQualityLevel` / `getQualityLevel` / `names` / `levels` /
       `onLevelChanged`; the default level applied when the engine loads

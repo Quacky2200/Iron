@@ -62,7 +62,11 @@ function buildScene() {
   hidden.enabled = false;
   const enemy = new GameObject("Enemy");
   player.addComponent(MeshRenderer, { mesh, material: Material.create({ color: new Color(1, 0, 0, 1), metallic: 1, mainTexture: brick }) });
-  enemy.addComponent(MeshRenderer, { mesh, material: new Material() });
+  const bumps = Texture.load("textures/bumps.png", { linear: true, anisoLevel: 8 });
+  enemy.addComponent(MeshRenderer, {
+    mesh,
+    material: Material.create({ normalMap: bumps, normalScale: 2, renderingMode: "transparent", specularColor: new Color(0.1, 0.2, 0.3, 1) }),
+  });
   player.addComponent(Health, { max: 150, target: enemy, gun: turret, tags: { team: "blue", spawn: new Vector3(4, 5, 6) } });
   const cam = new GameObject("Camera").addComponent(Camera, { fieldOfView: 40, cullingMask: 0xffff });
   new GameObject("Sun").addComponent(Light, { type: "directional", intensity: 2, shadows: "soft" });
@@ -77,7 +81,7 @@ describe("scene serialization", () => {
     const saved = SceneManager.getActiveScene().serialize();
     const json = JSON.parse(JSON.stringify(saved)) as SceneData;
     expect(json.objects.map((o) => o.name)).toEqual(["Player", "Enemy", "Camera", "Sun"]);
-    expect(Object.values(json.assets ?? {}).map((a) => a.type).sort()).toEqual(["Mesh", "Texture"]);
+    expect(Object.values(json.assets ?? {}).map((a) => a.type).sort()).toEqual(["Mesh", "Texture", "Texture"]);
 
     RenderSettings.ambientLight = Color.black;
     const scene = SceneManager.loadScene(json);
@@ -107,6 +111,15 @@ describe("scene serialization", () => {
     expect(material.mainTexture!.src).toBe("textures/brick.png");
     expect(material.mainTexture!.filterMode).toBe("point");
     expect(GameObject.find("Camera")!.getComponent(Camera)!.cullingMask).toBe(0xffff);
+    // Maps and modes come back; defaults aren't written.
+    const glass = GameObject.find("Enemy")!.getComponent(MeshRenderer)!.material;
+    expect(glass.normalMap!.linear).toBe(true);
+    expect(glass.normalMap!.anisoLevel).toBe(8);
+    expect(glass.normalScale).toBe(2);
+    expect(glass.renderingMode).toBe("transparent");
+    expect(glass.specularColor!.b).toBeCloseTo(0.3);
+    const savedMaterial = json.objects[0]!.components!.find((c) => c.type === "MeshRenderer")!.properties!.material as Record<string, unknown>;
+    expect("renderingMode" in savedMaterial).toBe(false);
   });
 
   test("unknown components and values are skipped with a warning", () => {

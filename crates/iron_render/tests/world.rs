@@ -320,6 +320,7 @@ fn lit_primitives_with_lights() {
         cast_shadows: true,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -393,6 +394,8 @@ fn checker_data(
         filter,
         wrap: TextureWrap::Repeat,
         mipmaps,
+        anisotropy: 1,
+        srgb: true,
     }
 }
 
@@ -465,6 +468,7 @@ fn textured_meshes_and_sprites() {
         cast_shadows: true,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
@@ -582,6 +586,7 @@ fn glows_bloom_and_spot_beams() {
         cast_shadows: true,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     // A spot light shining down at an angle from the upper left, with its beam.
     let spot_at = Vec3::new(-1.6, 3.0, 0.0);
@@ -718,6 +723,7 @@ fn directional_shadows() {
         cast_shadows: true,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.12, 0.12, 0.14];
@@ -818,6 +824,7 @@ fn pbr_material_grid_under_a_sky() {
             cast_shadows: true,
             mirror: None,
             layer: 0,
+            ..Default::default()
         }
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
@@ -891,6 +898,7 @@ fn planar_mirror() {
         cast_shadows: true,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.skybox = true;
@@ -1010,6 +1018,7 @@ fn reflection_probe_in_a_room() {
         cast_shadows: false,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.25, 0.25, 0.25];
@@ -1113,6 +1122,7 @@ fn quality_low_and_high() {
             cast_shadows: true,
             mirror: None,
             layer: 0,
+            ..Default::default()
         };
         let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
         v.meshes.push(MeshInstance {
@@ -1224,6 +1234,7 @@ fn light_and_mirror_culling_masks() {
         cast_shadows: true,
         mirror: None,
         layer,
+        ..Default::default()
     };
     let mirror_at = Vec3::new(0.0, 1.2, -1.8);
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
@@ -1347,6 +1358,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
         cast_shadows,
         mirror: None,
         layer: 0,
+        ..Default::default()
     };
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.1, 0.1, 0.1];
@@ -1525,4 +1537,232 @@ fn backdrop_blur_over_the_world_blurs_the_world() {
         inside < 60,
         "stripes behind the panel are blurred: {inside}"
     );
+}
+
+/// A `TextureData` from a function of (x, y) in 0..1 (top row first) to RGBA bytes.
+fn painted(
+    n: u32,
+    srgb: bool,
+    filter: TextureFilter,
+    f: impl Fn(f32, f32) -> [u8; 4],
+) -> TextureData {
+    let mut rgba = Vec::with_capacity((n * n * 4) as usize);
+    for y in 0..n {
+        for x in 0..n {
+            rgba.extend(f((x as f32 + 0.5) / n as f32, (y as f32 + 0.5) / n as f32));
+        }
+    }
+    TextureData {
+        width: n,
+        height: n,
+        rgba,
+        filter,
+        wrap: TextureWrap::Repeat,
+        mipmaps: true,
+        anisotropy: 1,
+        srgb,
+    }
+}
+
+// M5-RND-17
+#[test]
+fn material_maps_and_rendering_modes() {
+    use iron_render::{
+        Light, LightKind, MaterialMaps, MeshInstance, RenderMode, Shadows, Sky, primitive_id,
+    };
+    let gpu = shared_gpu();
+    let size = (480, 270);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    world.set_sky(Some(Sky::default()));
+    // 1: a normal map of round bumps (data, not sRGB).
+    world.set_texture(
+        &gpu,
+        1,
+        &painted(64, false, TextureFilter::Trilinear, |x, y| {
+            let (cx, cy) = ((x * 4.0).fract() - 0.5, (y * 4.0).fract() - 0.5);
+            let r2 = cx * cx + cy * cy;
+            // A dome's slope inside each cell; flat outside. y runs down the image,
+            // so the green (up) slope is -cy.
+            let (nx, ny) = if r2 < 0.16 {
+                (cx * 2.0, -cy * 2.0)
+            } else {
+                (0.0, 0.0)
+            };
+            let nz = (1.0 - nx * nx - ny * ny).max(0.0).sqrt();
+            let b = |v: f32| ((v * 0.5 + 0.5) * 255.0).round() as u8;
+            [b(nx), b(ny), b(nz), 255]
+        }),
+    );
+    // 2: stripes of occlusion (green).
+    world.set_texture(
+        &gpu,
+        2,
+        &painted(32, false, TextureFilter::Bilinear, |_, y| {
+            let o = if (y * 6.0).fract() < 0.5 { 40 } else { 255 };
+            [o, o, o, 255]
+        }),
+    );
+    // 3: a leaf-like cut-out: a round blob with holes, white.
+    world.set_texture(
+        &gpu,
+        3,
+        &painted(64, true, TextureFilter::Bilinear, |x, y| {
+            let (cx, cy) = (x - 0.5, y - 0.5);
+            let inside = cx * cx + cy * cy < 0.2;
+            let hole = ((x * 5.0).fract() - 0.5).hypot((y * 5.0).fract() - 0.5) < 0.18;
+            [90, 200, 80, if inside && !hole { 255 } else { 0 }]
+        }),
+    );
+    // 4: an emission pattern: glowing grid lines.
+    world.set_texture(
+        &gpu,
+        4,
+        &painted(32, true, TextureFilter::Bilinear, |x, y| {
+            let line = (x * 4.0).fract() < 0.15 || (y * 4.0).fract() < 0.15;
+            if line {
+                [255, 200, 80, 255]
+            } else {
+                [0, 0, 0, 255]
+            }
+        }),
+    );
+    // 5: a detail checker, mid grey (no change) and darker squares.
+    world.set_texture(
+        &gpu,
+        5,
+        &painted(16, true, TextureFilter::Point, |x, y| {
+            let on = ((x * 4.0) as u32 + (y * 4.0) as u32).is_multiple_of(2);
+            let v = if on { 188 } else { 120 };
+            [v, v, v, 255]
+        }),
+    );
+    let eye = Vec3::new(0.0, 2.4, 6.2);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.7, 0.0), Vec3::Y)
+            .inverse(),
+        45.0,
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let at = |x: f32, y: f32, z: f32| Mat4::from_translation(Vec3::new(x, y, z));
+    let id = |name: &str| primitive_id(name).unwrap();
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.skybox = true;
+    v.meshes = vec![
+        // The floor, catching the cut-out's shadow with holes.
+        MeshInstance {
+            mesh: id("plane"),
+            color: [0.22, 0.22, 0.24, 1.0],
+            smoothness: 0.2,
+            ..Default::default()
+        },
+        // Back row: a bumpy cube lit across its face, an occlusion-striped sphere and a
+        // specular-workflow sphere (green-tinted reflectance on a dark base).
+        MeshInstance {
+            mesh: id("cube"),
+            model: at(-2.4, 0.7, -1.0) * Mat4::from_scale(Vec3::splat(1.3)),
+            color: [0.8, 0.75, 0.7, 1.0],
+            smoothness: 0.45,
+            maps: MaterialMaps {
+                normal: Some(WorldTexture::Asset(1)),
+                normal_scale: 1.5,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("sphere"),
+            model: at(-0.8, 0.7, -1.0) * Mat4::from_scale(Vec3::splat(1.3)),
+            color: [0.9, 0.9, 0.9, 1.0],
+            smoothness: 0.3,
+            maps: MaterialMaps {
+                occlusion: Some(WorldTexture::Asset(2)),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("sphere"),
+            model: at(0.8, 0.7, -1.0) * Mat4::from_scale(Vec3::splat(1.3)),
+            color: [0.08, 0.08, 0.1, 1.0],
+            smoothness: 0.85,
+            specular: Some([0.3, 0.9, 0.4]),
+            ..Default::default()
+        },
+        // An emission-mapped cube with a detail checker over its albedo.
+        MeshInstance {
+            mesh: id("cube"),
+            model: at(2.4, 0.7, -1.0) * Mat4::from_scale(Vec3::splat(1.2)),
+            color: [0.5, 0.5, 0.6, 1.0],
+            emission: [1.5, 1.5, 1.5],
+            maps: MaterialMaps {
+                emission: Some(WorldTexture::Asset(4)),
+                detail: Some(WorldTexture::Asset(5)),
+                detail_tiling: [2.0, 2.0, 0.0, 0.0],
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        // Front row: a double-sided cut-out leaf, then a red bar behind a faded
+        // sphere and a transparent glass one (the glass keeps its highlight).
+        MeshInstance {
+            mesh: id("quad"),
+            model: at(-1.3, 0.9, 1.6)
+                * Mat4::from_rotation_y(0.9)
+                * Mat4::from_rotation_x(-0.3)
+                * Mat4::from_scale(Vec3::splat(1.1)),
+            texture: Some(WorldTexture::Asset(3)),
+            mode: RenderMode::Cutout,
+            double_sided: true,
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("cube"),
+            model: at(1.3, 0.55, 0.7) * Mat4::from_scale(Vec3::new(2.6, 0.3, 0.3)),
+            color: [0.85, 0.1, 0.1, 1.0],
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("sphere"),
+            model: at(0.6, 0.55, 1.7) * Mat4::from_scale(Vec3::splat(0.9)),
+            color: [0.6, 0.8, 1.0, 0.3],
+            smoothness: 0.95,
+            mode: RenderMode::Fade,
+            ..Default::default()
+        },
+        MeshInstance {
+            mesh: id("sphere"),
+            model: at(1.9, 0.55, 1.7) * Mat4::from_scale(Vec3::splat(0.9)),
+            color: [0.6, 0.8, 1.0, 0.3],
+            smoothness: 0.95,
+            mode: RenderMode::Transparent,
+            ..Default::default()
+        },
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.5, 1.45, 1.35],
+        position: Vec3::ZERO,
+        direction: Vec3::new(0.8, -0.45, -0.35).normalize(),
+        range: 0.0,
+        shadows: Some(Shadows {
+            soft: true,
+            strength: 0.9,
+        }),
+        culling_mask: ALL_LAYERS,
+    }];
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-17", size.0, size.1, &pixels, 3);
 }
