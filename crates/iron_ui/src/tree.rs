@@ -10,7 +10,7 @@ use crate::Rgba;
 use crate::attrs::{Attrs, ElementState};
 use crate::cascade::{Deps, Key, RuleIndex, Target, matched_declarations};
 use crate::css::{FontFace, PseudoElement, Stylesheet, parse_stylesheet, substitute_vars};
-use crate::draw::{ClipShape, DrawCmd, ImageFill, Quad, Radii, Rect, ShadowShape};
+use crate::draw::{ClipShape, DrawCmd, ImageFill, LayerShadow, Quad, Radii, Rect, ShadowShape};
 use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_kind};
 use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
@@ -141,6 +141,8 @@ fn blended_background(quad: Quad, v: &Visual, out: &mut Vec<DrawCmd>) {
         blur: 0.0,
         opacity: 1.0,
         blend,
+        matrix: None,
+        shadows: Vec::new(),
     };
     out.push(layer(BlendMode::Normal));
     out.push(DrawCmd::Quad(Quad {
@@ -2343,6 +2345,8 @@ impl<L: LayoutEngine> UiTree<L> {
                             blur: sigma,
                             opacity: 1.0,
                             blend: BlendMode::Normal,
+                            matrix: None,
+                            shadows: Vec::new(),
                         });
                         own.push(DrawCmd::Text(copy));
                         own.push(DrawCmd::PopLayer);
@@ -2366,24 +2370,44 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         let overflow_clip = overflow_clip(v, rect, &l, radii);
 
-        if v.backdrop_blur > 0.0 {
+        if v.backdrop_blur > 0.0 || v.backdrop_matrix.is_some() {
             out.push(DrawCmd::BackdropBlur {
                 rect,
                 radii,
                 blur: v.backdrop_blur,
+                matrix: v.backdrop_matrix,
             });
         }
 
         let outline = outline(v, rect, radii, text.color);
         let own_count = own.len() + usize::from(outline.is_some());
         let group_opacity = v.opacity < 1.0 && (!node.children.is_empty() || own_count > 1);
-        if v.filter_blur > 0.0 || group_opacity || v.mix_blend != BlendMode::Normal {
+        let shadows: Vec<LayerShadow> = v
+            .drop_shadows
+            .iter()
+            .map(|s| LayerShadow {
+                offset_x: s.offset_x,
+                offset_y: s.offset_y,
+                sigma: s.blur / 2.0,
+                color: if s.current_color { text.color } else { s.color },
+            })
+            .filter(|s| s.color.a > 0.0)
+            .collect();
+        if v.filter_blur > 0.0
+            || group_opacity
+            || v.mix_blend != BlendMode::Normal
+            || v.filter_matrix.is_some()
+            || !shadows.is_empty()
+        {
             let start = out.len();
+            let shadow_reach = shadows.clone();
             out.push(DrawCmd::PushLayer {
                 bounds: rect,
                 blur: v.filter_blur,
                 opacity: v.opacity,
                 blend: v.mix_blend,
+                matrix: v.filter_matrix,
+                shadows,
             });
             out.extend(own);
             self.collect_children(node, &text, overflow_clip, out);
@@ -2394,8 +2418,13 @@ impl<L: LayoutEngine> UiTree<L> {
                 .iter()
                 .filter_map(DrawCmd::bounds)
                 .fold(rect, Rect::union);
+            // Drop shadows reach past it by their offset and blur.
+            let mut reach = content.expand(3.0 * v.filter_blur);
+            for s in &shadow_reach {
+                reach = reach.union(reach.offset(s.offset_x, s.offset_y).expand(3.0 * s.sigma));
+            }
             if let DrawCmd::PushLayer { bounds, .. } = &mut out[start] {
-                *bounds = content.expand(3.0 * v.filter_blur);
+                *bounds = reach;
             }
             out.push(DrawCmd::PopLayer);
         } else {

@@ -182,6 +182,25 @@ struct CompositeParams {
     clip: f32,
     /// Blend mode (`BlendMode::index`); 0 composites normally.
     blend: f32,
+    /// `filter` colour matrix, as WGSL columns, and its offset column.
+    matrix: [[f32; 4]; 4],
+    offset: [f32; 4],
+    /// Drop shadows draw the source's alpha in this colour (linear, premultiplied).
+    tint: [f32; 4],
+    /// xy: shift of the source (physical px); z: 1 to apply the matrix; w: 1 to tint.
+    shift: [f32; 4],
+}
+
+/// A layer that's open in the draw list, until its `PopLayer`.
+struct OpenLayer {
+    parent: usize,
+    bounds: Rect,
+    blur: f32,
+    opacity: f32,
+    blend: u32,
+    matrix: Option<iron_ui::ColorMatrix>,
+    shadows: Vec<iron_ui::LayerShadow>,
+    outer_clips: Vec<u32>,
 }
 
 /// A scissor rectangle in physical pixels.
@@ -223,6 +242,12 @@ enum Step {
         clip: u32,
         /// A blend mode other than normal, with a copy of `dst` to read as the backdrop.
         blend: Option<(u32, usize)>,
+        /// `filter` colour functions.
+        matrix: Option<iron_ui::ColorMatrix>,
+        /// Draw the source's alpha in this colour (a drop shadow), shifted by `shift`
+        /// physical pixels.
+        tint: Option<[f32; 4]>,
+        shift: [f32; 2],
     },
 }
 
@@ -589,7 +614,7 @@ impl UiRenderer {
         let mut current = 0usize;
         let mut batch_start = 0u32;
         // (parent target, bounds, blur, opacity, the clip stack outside the layer)
-        let mut layer_stack: Vec<(usize, Rect, f32, f32, u32, Vec<u32>)> = Vec::new();
+        let mut layer_stack: Vec<OpenLayer> = Vec::new();
         // Clips: a layer's content starts unclipped and the layer is clipped when it
         // is composited, so each layer level has its own stack.
         let mut clips = Clips::default();
@@ -1031,6 +1056,8 @@ impl UiRenderer {
                     blur,
                     opacity,
                     blend,
+                    matrix,
+                    shadows,
                 } => {
                     tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
@@ -1040,20 +1067,30 @@ impl UiRenderer {
                         target: layer,
                         color: wgpu::Color::TRANSPARENT,
                     });
-                    layer_stack.push((
-                        current,
-                        *bounds,
-                        *blur,
-                        *opacity,
-                        blend.index(),
-                        std::mem::take(&mut clip_stack),
-                    ));
+                    layer_stack.push(OpenLayer {
+                        parent: current,
+                        bounds: *bounds,
+                        blur: *blur,
+                        opacity: *opacity,
+                        blend: blend.index(),
+                        matrix: *matrix,
+                        shadows: shadows.clone(),
+                        outer_clips: std::mem::take(&mut clip_stack),
+                    });
                     current = layer;
                     stats.layers += 1;
                 }
                 DrawCmd::PopLayer => {
-                    let Some((parent, bounds, blur, opacity, blend, outer_clips)) =
-                        layer_stack.pop()
+                    let Some(OpenLayer {
+                        parent,
+                        bounds,
+                        blur,
+                        opacity,
+                        blend,
+                        matrix,
+                        shadows,
+                        outer_clips,
+                    }) = layer_stack.pop()
                     else {
                         tracing::warn!("PopLayer without PushLayer; ignored");
                         continue;
@@ -1079,6 +1116,39 @@ impl UiRenderer {
                                 sigma: blur * scale,
                             });
                         }
+                        // Drop shadows: blurred, tinted, shifted copies of the layer,
+                        // beneath it (the first listed ends up on top).
+                        for s in shadows.iter().rev() {
+                            let shadow = frame_textures.len();
+                            frame_textures.push(self.take_texture(gpu, size));
+                            steps.push(Step::Copy {
+                                src: current,
+                                dst: shadow,
+                            });
+                            if s.sigma > 0.0 {
+                                let temp = frame_textures.len();
+                                frame_textures.push(self.take_texture(gpu, size));
+                                steps.push(Step::Blur {
+                                    tex: shadow,
+                                    temp,
+                                    area,
+                                    sigma: s.sigma * scale,
+                                });
+                            }
+                            if let Some(shadow_area) = to_px(visible) {
+                                steps.push(Step::Composite {
+                                    src: shadow,
+                                    dst: parent,
+                                    area: shadow_area,
+                                    opacity,
+                                    clip: layer_clip,
+                                    blend: None,
+                                    matrix: None,
+                                    tint: Some(linear_premultiplied(s.color)),
+                                    shift: [s.offset_x * scale, s.offset_y * scale],
+                                });
+                            }
+                        }
                         let blend = (blend != 0).then(|| {
                             // The shader reads what's beneath from a copy of the parent.
                             let backdrop = frame_textures.len();
@@ -1096,11 +1166,19 @@ impl UiRenderer {
                             opacity,
                             clip: layer_clip,
                             blend,
+                            matrix,
+                            tint: None,
+                            shift: [0.0; 2],
                         });
                     }
                     current = parent;
                 }
-                DrawCmd::BackdropBlur { rect, radii, blur } => {
+                DrawCmd::BackdropBlur {
+                    rect,
+                    radii,
+                    blur,
+                    matrix,
+                } => {
                     tag(&mut instances, &mut clip_from, clip);
                     flush(&mut steps, &instances, &mut batch_start, current);
                     let own_clip = clips.push(&ClipShape::rounded(*rect, *radii), clip);
@@ -1118,12 +1196,14 @@ impl UiRenderer {
                         src: current,
                         dst: copy,
                     });
-                    steps.push(Step::Blur {
-                        tex: copy,
-                        temp,
-                        area: blur_area,
-                        sigma: blur * scale,
-                    });
+                    if *blur > 0.0 {
+                        steps.push(Step::Blur {
+                            tex: copy,
+                            temp,
+                            area: blur_area,
+                            sigma: blur * scale,
+                        });
+                    }
                     steps.push(Step::Composite {
                         src: copy,
                         dst: current,
@@ -1131,6 +1211,9 @@ impl UiRenderer {
                         opacity: 1.0,
                         clip: own_clip,
                         blend: None,
+                        matrix: *matrix,
+                        tint: None,
+                        shift: [0.0; 2],
                     });
                 }
             }
@@ -1139,7 +1222,14 @@ impl UiRenderer {
         tag(&mut instances, &mut clip_from, clip);
         flush(&mut steps, &instances, &mut batch_start, current);
         // Close layers left open by an unbalanced list.
-        while let Some((parent, bounds, _, opacity, _, outer_clips)) = layer_stack.pop() {
+        while let Some(OpenLayer {
+            parent,
+            bounds,
+            opacity,
+            outer_clips,
+            ..
+        }) = layer_stack.pop()
+        {
             tracing::warn!("PushLayer without PopLayer; closing it");
             if let Some(area) = to_px(bounds) {
                 steps.push(Step::Composite {
@@ -1149,6 +1239,9 @@ impl UiRenderer {
                     opacity,
                     clip: outer_clips.last().copied().unwrap_or(0),
                     blend: None,
+                    matrix: None,
+                    tint: None,
+                    shift: [0.0; 2],
                 });
             }
             current = parent;
@@ -1383,6 +1476,9 @@ impl UiRenderer {
                     opacity,
                     clip,
                     blend,
+                    matrix,
+                    tint,
+                    shift,
                 } => {
                     settle(&mut encoder, &mut pending_clear, &mut stats, *src);
                     if let Some((_, backdrop)) = blend {
@@ -1396,6 +1492,22 @@ impl UiRenderer {
                             scale,
                             clip: *clip as f32,
                             blend: blend.map_or(0.0, |(mode, _)| mode as f32),
+                            matrix: {
+                                let m = matrix.unwrap_or_default();
+                                // Row-major 4×5 to WGSL columns.
+                                [0, 1, 2, 3].map(|col| [0, 1, 2, 3].map(|row| m[row * 5 + col]))
+                            },
+                            offset: {
+                                let m = matrix.unwrap_or_default();
+                                [m[4], m[9], m[14], m[19]]
+                            },
+                            tint: tint.unwrap_or_default(),
+                            shift: [
+                                shift[0],
+                                shift[1],
+                                f32::from(u8::from(matrix.is_some())),
+                                f32::from(u8::from(tint.is_some())),
+                            ],
                         }),
                         usage: wgpu::BufferUsages::UNIFORM,
                     });

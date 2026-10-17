@@ -53,6 +53,10 @@ struct CompositeParams {
     scale: f32,
     clip: f32,  // clip table index (1-based, 0 = none)
     blend: f32, // blend mode for fs_composite_blend (BlendMode::index)
+    matrix: mat4x4<f32>, // `filter` colour matrix (sRGB, straight alpha)
+    offset: vec4<f32>,   // its offset column
+    tint: vec4<f32>,     // drop shadows: the source's alpha in this colour
+    shift: vec4<f32>,    // xy: source shift (physical px); z: matrix on; w: tint on
 };
 @group(0) @binding(3) var<uniform> composite: CompositeParams;
 @group(0) @binding(4) var<storage, read> clips: array<Clip>;
@@ -152,9 +156,28 @@ fn clip_coverage_with(p: vec2<f32>, index: u32, scale: f32) -> f32 {
     return cover;
 }
 
+// The layer's pixel under `pos`, after its drop-shadow tint and `filter` colour matrix.
+fn filtered_source(pos: vec4<f32>) -> vec4<f32> {
+    var c = textureSampleLevel(src, samp, uv_at(pos - vec4(composite.shift.xy, 0.0, 0.0)), 0.0);
+    if composite.shift.w > 0.5 {
+        c = composite.tint * c.a;
+    }
+    if composite.shift.z > 0.5 {
+        // CSS filter functions work on straight-alpha sRGB, like browsers.
+        let straight = select(vec3(0.0), c.rgb / c.a, c.a > 0.0);
+        let f = clamp(
+            composite.matrix * vec4(to_srgb(straight), c.a) + composite.offset,
+            vec4(0.0),
+            vec4(1.0),
+        );
+        c = vec4(from_srgb(f.rgb) * f.a, f.a);
+    }
+    return c;
+}
+
 @fragment
 fn fs_composite(in: VsOut) -> @location(0) vec4<f32> {
-    let color = textureSampleLevel(src, samp, uv_at(in.pos), 0.0) * composite.opacity;
+    let color = filtered_source(in.pos) * composite.opacity;
     return color * clip_coverage_with(in.pos.xy / composite.scale, u32(composite.clip), composite.scale);
 }
 
@@ -260,7 +283,7 @@ fn blend(mode: u32, cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_composite_blend(in: VsOut) -> @location(0) vec4<f32> {
-    let s = textureSampleLevel(src, samp, uv_at(in.pos), 0.0) * composite.opacity;
+    let s = filtered_source(in.pos) * composite.opacity;
     let b = textureLoad(backdrop, vec2<i32>(in.pos.xy), 0);
     let cs = to_srgb(s.rgb / max(s.a, 1e-6));
     let cb = to_srgb(b.rgb / max(b.a, 1e-6));

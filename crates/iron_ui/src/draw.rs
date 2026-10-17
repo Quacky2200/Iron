@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, BlendMode, BorderImage,
-    BorderStyle,
+    BorderStyle, ColorMatrix,
 };
 use crate::text_style::DecorationStyle;
 
@@ -288,7 +288,10 @@ pub enum DrawCmd {
     BackdropBlur {
         rect: Rect,
         radii: Radii,
+        /// Gaussian deviation (px); may be 0 with only a colour change.
         blur: f32,
+        /// `backdrop-filter` colour functions.
+        matrix: Option<ColorMatrix>,
     },
     /// An outer `boxShadow`, drawn before its box.
     BoxShadow(ShadowShape),
@@ -306,6 +309,10 @@ pub enum DrawCmd {
         blur: f32,
         opacity: f32,
         blend: BlendMode,
+        /// `filter` colour functions, applied when compositing.
+        matrix: Option<ColorMatrix>,
+        /// `drop-shadow()`s of the layer's content, drawn beneath it.
+        shadows: Vec<LayerShadow>,
     },
     PopLayer,
     /// A border that isn't one solid colour: per-side colours and styles (top, right,
@@ -375,6 +382,16 @@ pub struct PositionedGlyph {
     pub y: f32,
     /// Horizontal advance (px), for cutting lines short (`text-overflow`).
     pub advance: f32,
+}
+
+/// A resolved `drop-shadow()`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayerShadow {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    /// Gaussian standard deviation (px).
+    pub sigma: f32,
+    pub color: Rgba,
 }
 
 /// An underline, overline or line-through: `rect` is one line's area (a `double`

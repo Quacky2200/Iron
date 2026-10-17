@@ -548,9 +548,12 @@ and `@font-face`.
      `never` / `always`) and `-webkit-font-smoothing`: `never` / `none` thresholds glyph coverage
      in the shader for crisp pixel fonts — `M3-TXT-15`
 5. **Effects**
-   - [ ] `filter` / `backdrop-filter` functions beyond `blur()`: `brightness()`, `contrast()`,
+   - [x] `filter` / `backdrop-filter` functions beyond `blur()`: `brightness()`, `contrast()`,
      `saturate()`, `grayscale()`, `sepia()`, `hue-rotate()`, `invert()`, `opacity()`, and
-     `drop-shadow()` (follows the shape, unlike `box-shadow`); chains of several functions
+     `drop-shadow()` (follows the shape); chains. Colour functions fold into one 4×5 matrix
+     applied in sRGB when the layer (or backdrop copy) is composited; drop shadows are blurred,
+     tinted, shifted copies of the layer drawn beneath it. Iron applies blur, then colour, then
+     shadows, whatever the written order — `M3-FX-02`
    - [ ] `image-rendering` (`pixelated`, `crisp-edges`, smooth) for background images
    - [ ] Masks: `mask-image` (images and gradients), `mask-mode`, `mask-size`, `mask-position`,
      `mask-repeat`

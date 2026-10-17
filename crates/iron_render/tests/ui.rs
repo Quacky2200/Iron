@@ -1099,6 +1099,111 @@ fn unsmoothed_text_has_hard_edges() {
     assert_golden("M3-TXT-15", 80, 60, &f.pixels, TOLERANCE);
 }
 
+// M3-FX-02
+#[test]
+fn filter_functions_and_drop_shadows() {
+    let mut s = Scene::new();
+    // Colour functions on solid boxes, one 30px column each.
+    let cols = [
+        ("red", "grayscale(1)"),
+        ("red", "brightness(0.5)"),
+        ("blue", "invert(1)"),
+        ("red", "hue-rotate(180deg)"),
+        ("rgb(128, 128, 128)", "sepia(1)"),
+    ];
+    for (i, (color, filter)) in cols.iter().enumerate() {
+        s.add(
+            0,
+            &at(
+                i as f64 * 30.0,
+                0.0,
+                30.0,
+                30.0,
+                &[
+                    ("backgroundColor", (*color).into()),
+                    ("filter", (*filter).into()),
+                ],
+            ),
+        );
+    }
+    // A drop shadow follows the shape (a circle), unlike a box shadow.
+    s.add(
+        0,
+        &at(
+            10.0,
+            40.0,
+            30.0,
+            30.0,
+            &[
+                ("backgroundColor", "white".into()),
+                ("borderRadius", "50%".into()),
+                ("filter", "drop-shadow(8px 8px 0 lime)".into()),
+            ],
+        ),
+    );
+    // A backdrop filter greys out what's behind its box.
+    s.add(
+        0,
+        &at(
+            70.0,
+            40.0,
+            80.0,
+            40.0,
+            &[(
+                "backgroundImage",
+                "linear-gradient(to right, red, blue)".into(),
+            )],
+        ),
+    );
+    s.add(
+        0,
+        &at(
+            110.0,
+            40.0,
+            40.0,
+            40.0,
+            &[("backdropFilter", "grayscale(1)".into())],
+        ),
+    );
+    let f = render(s, (150, 90), 1.0, BLACK);
+    let near = |p: [u8; 4], want: [u8; 3]| {
+        p[..3]
+            .iter()
+            .zip(want)
+            .all(|(a, b)| (i32::from(*a) - i32::from(b)).abs() <= 3)
+    };
+    let check = |x: u32, y: u32, want: [u8; 3], what: &str| {
+        assert!(
+            near(f.px(x, y), want),
+            "{what}: {:?}, want {want:?}",
+            f.px(x, y)
+        );
+    };
+    check(15, 15, [54, 54, 54], "grayscale red");
+    check(45, 15, [128, 0, 0], "half-bright red");
+    check(75, 15, [255, 255, 0], "inverted blue");
+    let [r, g, b, _] = f.px(105, 15);
+    assert!(
+        g > r && b > r,
+        "hue-rotated red turns cyan-ish: {:?}",
+        f.px(105, 15)
+    );
+    let [r, g, b, _] = f.px(135, 15);
+    assert!(r > g && g > b, "sepia grey is warm: {:?}", f.px(135, 15));
+    check(25, 55, [255, 255, 255], "the circle");
+    check(41, 66, [0, 255, 0], "its shadow, offset");
+    check(12, 42, [0, 0, 0], "no shadow in the circle's empty corner");
+    let [r, g, b, _] = f.px(130, 60);
+    assert!(
+        r == g && g == b,
+        "grey behind the backdrop filter: {:?}",
+        f.px(130, 60)
+    );
+    let [r, _, b, _] = f.px(90, 60);
+    assert!(r > b + 50, "colour outside it: {:?}", f.px(90, 60));
+    assert_golden("M3-FX-02", 150, 90, &f.pixels, TOLERANCE);
+}
+
 // M2-DRW-06
 #[test]
 fn outer_and_inset_shadows() {

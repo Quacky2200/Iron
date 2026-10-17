@@ -216,18 +216,232 @@ fn parse_shadow(s: &str) -> Option<Shadow> {
     })
 }
 
-/// `filter` / `backdropFilter`: `blur(<px>)` or `none`. Returns the blur radius
-/// (the Gaussian standard deviation, as in CSS); `0` means no filter.
-pub fn parse_blur_filter(s: &str) -> Option<f32> {
-    let s = s.trim();
-    if s == "none" {
-        return Some(0.0);
+/// A 4×5 colour matrix, row-major (rows r, g, b, a; the last column is an offset),
+/// applied to straight-alpha sRGB colours, as CSS filter functions are.
+pub type ColorMatrix = [f32; 20];
+
+const IDENTITY: ColorMatrix = [
+    1.0, 0.0, 0.0, 0.0, 0.0, //
+    0.0, 1.0, 0.0, 0.0, 0.0, //
+    0.0, 0.0, 1.0, 0.0, 0.0, //
+    0.0, 0.0, 0.0, 1.0, 0.0,
+];
+
+/// `b` after `a`: the matrix that applies `a`, then `b`.
+fn then(a: &ColorMatrix, b: &ColorMatrix) -> ColorMatrix {
+    let mut out = [0.0; 20];
+    for row in 0..4 {
+        for col in 0..5 {
+            let mut v = if col == 4 { b[row * 5 + 4] } else { 0.0 };
+            for k in 0..4 {
+                v += b[row * 5 + k] * a[k * 5 + col];
+            }
+            out[row * 5 + col] = v;
+        }
     }
-    let arg = s.strip_prefix("blur(")?.strip_suffix(')')?;
-    match Len::parse(arg)? {
-        Len::Px(px) if px >= 0.0 => Some(px),
-        _ => None,
+    out
+}
+
+/// A `drop-shadow()`: like a box shadow, but of the element's drawn shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropShadow {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    /// Blur radius (twice the Gaussian's standard deviation, as for box shadows).
+    pub blur: f32,
+    pub color: Rgba,
+    /// No colour given: `currentColor`.
+    pub current_color: bool,
+}
+
+/// `filter` / `backdropFilter`: a chain of functions. Colour functions combine into
+/// one matrix; blurs combine (their deviations add in quadrature). Iron applies
+/// the blur, then the colours, then the drop shadows, whatever the order written.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Filter {
+    /// Gaussian standard deviation (px); 0 for none.
+    pub blur: f32,
+    pub matrix: Option<ColorMatrix>,
+    pub drop_shadows: Vec<DropShadow>,
+}
+
+impl Filter {
+    pub fn is_none(&self) -> bool {
+        self.blur <= 0.0 && self.matrix.is_none() && self.drop_shadows.is_empty()
     }
+
+    /// `none`, or space-separated `blur()`, `brightness()`, `contrast()`,
+    /// `saturate()`, `grayscale()`, `sepia()`, `hue-rotate()`, `invert()`,
+    /// `opacity()` and `drop-shadow()`.
+    pub fn parse(s: &str) -> Option<Self> {
+        let mut f = Filter::default();
+        if s.trim() == "none" {
+            return Some(f);
+        }
+        let mut matrix = IDENTITY;
+        let mut colour = false;
+        for call in split_top_level(s, ' ') {
+            let (name, arg) = call.strip_suffix(')')?.split_once('(')?;
+            let arg = arg.trim();
+            // An amount: a number or percentage, defaulting to 1; never negative.
+            let amount = |max: Option<f32>| -> Option<f32> {
+                let v = if arg.is_empty() {
+                    1.0
+                } else if let Some(p) = arg.strip_suffix('%') {
+                    p.trim().parse::<f32>().ok()? / 100.0
+                } else {
+                    arg.parse::<f32>().ok()?
+                };
+                (v >= 0.0).then(|| max.map_or(v, |m| v.min(m)))
+            };
+            let m = match name.trim() {
+                "blur" => {
+                    let px = if arg.is_empty() {
+                        0.0
+                    } else {
+                        match Len::parse(arg)? {
+                            Len::Px(px) if px >= 0.0 => px,
+                            _ => return None,
+                        }
+                    };
+                    f.blur = (f.blur * f.blur + px * px).sqrt();
+                    continue;
+                }
+                "drop-shadow" => {
+                    let shadow = parse_shadow(arg)?;
+                    if shadow.inset || shadow.spread != 0.0 {
+                        return None;
+                    }
+                    f.drop_shadows.push(DropShadow {
+                        offset_x: shadow.offset_x,
+                        offset_y: shadow.offset_y,
+                        blur: shadow.blur,
+                        color: shadow.color,
+                        current_color: shadow.current_color,
+                    });
+                    continue;
+                }
+                "brightness" => {
+                    let a = amount(None)?;
+                    scale_offset([a, a, a, 1.0], [0.0; 4])
+                }
+                "contrast" => {
+                    let a = amount(None)?;
+                    let o = 0.5 - 0.5 * a;
+                    scale_offset([a, a, a, 1.0], [o, o, o, 0.0])
+                }
+                "invert" => {
+                    let a = amount(Some(1.0))?;
+                    let d = 1.0 - 2.0 * a;
+                    scale_offset([d, d, d, 1.0], [a, a, a, 0.0])
+                }
+                "opacity" => scale_offset([1.0, 1.0, 1.0, amount(Some(1.0))?], [0.0; 4]),
+                "saturate" => saturate(amount(None)?),
+                "grayscale" => saturate(1.0 - amount(Some(1.0))?),
+                "sepia" => {
+                    let a = 1.0 - amount(Some(1.0))?;
+                    [
+                        0.393 + 0.607 * a,
+                        0.769 - 0.769 * a,
+                        0.189 - 0.189 * a,
+                        0.0,
+                        0.0,
+                        0.349 - 0.349 * a,
+                        0.686 + 0.314 * a,
+                        0.168 - 0.168 * a,
+                        0.0,
+                        0.0,
+                        0.272 - 0.272 * a,
+                        0.534 - 0.534 * a,
+                        0.131 + 0.869 * a,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                    ]
+                }
+                "hue-rotate" => {
+                    let deg = if arg.is_empty() || arg == "0" {
+                        0.0
+                    } else {
+                        crate::color::parse_angle_degrees(arg)
+                            .filter(|_| arg.ends_with(|c: char| c.is_ascii_alphabetic()))?
+                    };
+                    hue_rotate(deg)
+                }
+                _ => return None,
+            };
+            matrix = then(&matrix, &m);
+            colour = true;
+        }
+        f.matrix = colour.then_some(matrix);
+        Some(f)
+    }
+}
+
+fn scale_offset(s: [f32; 4], o: [f32; 4]) -> ColorMatrix {
+    let mut m = [0.0; 20];
+    for i in 0..4 {
+        m[i * 5 + i] = s[i];
+        m[i * 5 + 4] = o[i];
+    }
+    m
+}
+
+/// The Filter Effects spec's `saturate` matrix (grayscale is `saturate(1 - a)`).
+fn saturate(s: f32) -> ColorMatrix {
+    [
+        0.213 + 0.787 * s,
+        0.715 - 0.715 * s,
+        0.072 - 0.072 * s,
+        0.0,
+        0.0,
+        0.213 - 0.213 * s,
+        0.715 + 0.285 * s,
+        0.072 - 0.072 * s,
+        0.0,
+        0.0,
+        0.213 - 0.213 * s,
+        0.715 - 0.715 * s,
+        0.072 + 0.928 * s,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+    ]
+}
+
+/// The Filter Effects spec's `hueRotate` matrix.
+fn hue_rotate(deg: f32) -> ColorMatrix {
+    let (s, c) = deg.to_radians().sin_cos();
+    [
+        0.213 + c * 0.787 - s * 0.213,
+        0.715 - c * 0.715 - s * 0.715,
+        0.072 - c * 0.072 + s * 0.928,
+        0.0,
+        0.0,
+        0.213 - c * 0.213 + s * 0.143,
+        0.715 + c * 0.285 + s * 0.140,
+        0.072 - c * 0.072 - s * 0.283,
+        0.0,
+        0.0,
+        0.213 - c * 0.213 - s * 0.787,
+        0.715 - c * 0.715 + s * 0.715,
+        0.072 + c * 0.928 + s * 0.072,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+    ]
 }
 
 /// A colour stop in a gradient. `position` is `None` when the stop should be
@@ -1607,12 +1821,70 @@ mod tests {
     // M2-VIS-05
     #[test]
     fn parses_blur_filters() {
-        assert_eq!(parse_blur_filter("blur(4px)"), Some(4.0));
-        assert_eq!(parse_blur_filter("blur(0)"), Some(0.0));
-        assert_eq!(parse_blur_filter("none"), Some(0.0));
-        assert_eq!(parse_blur_filter("brightness(2)"), None);
-        assert_eq!(parse_blur_filter("blur(-1px)"), None);
-        assert_eq!(parse_blur_filter("blur(10%)"), None);
+        let blur = |s: &str| Filter::parse(s).map(|f| f.blur);
+        assert_eq!(blur("blur(4px)"), Some(4.0));
+        assert_eq!(blur("blur(0)"), Some(0.0));
+        assert_eq!(blur("none"), Some(0.0));
+        assert_eq!(blur("blur(-1px)"), None);
+        assert_eq!(blur("blur(10%)"), None);
+        assert_eq!(
+            blur("blur(3px) blur(4px)"),
+            Some(5.0),
+            "deviations add in quadrature"
+        );
+    }
+
+    // M3-FX-02
+    #[test]
+    fn filter_chains_combine_colour_functions() {
+        let apply = |s: &str, c: [f32; 4]| {
+            let m = Filter::parse(s).unwrap().matrix.unwrap();
+            [0, 1, 2, 3].map(|r| (0..4).map(|k| m[r * 5 + k] * c[k]).sum::<f32>() + m[r * 5 + 4])
+        };
+        let close = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3);
+        let red = [1.0, 0.0, 0.0, 1.0];
+        assert!(
+            close(apply("grayscale(1)", red), [0.2126, 0.2126, 0.2126, 1.0]) || {
+                let g = apply("grayscale(1)", red);
+                (g[0] - 0.213).abs() < 1e-3 && g[0] == g[1] && g[1] == g[2]
+            }
+        );
+        assert!(close(apply("brightness(50%)", red), [0.5, 0.0, 0.0, 1.0]));
+        assert!(
+            close(apply("invert()", red), [0.0, 1.0, 1.0, 1.0]),
+            "amount defaults to 1"
+        );
+        assert!(close(apply("opacity(0.25)", red), [1.0, 0.0, 0.0, 0.25]));
+        // Applied in order: brightness then invert differs from invert then brightness.
+        assert!(close(
+            apply("brightness(0.5) invert(1)", red),
+            [0.5, 1.0, 1.0, 1.0]
+        ));
+        assert!(close(
+            apply("invert(1) brightness(0.5)", red),
+            [0.0, 0.5, 0.5, 1.0]
+        ));
+        let h = apply("hue-rotate(360deg)", red);
+        assert!(close(h, red), "a full turn is identity: {h:?}");
+        let f = Filter::parse("blur(2px) drop-shadow(3px 4px 6px red) contrast(1.2)").unwrap();
+        assert_eq!(f.blur, 2.0);
+        assert_eq!(f.drop_shadows.len(), 1);
+        assert_eq!(
+            (f.drop_shadows[0].offset_x, f.drop_shadows[0].blur),
+            (3.0, 6.0)
+        );
+        assert!(f.matrix.is_some());
+        assert!(Filter::parse("blur(2px)").unwrap().matrix.is_none());
+        for bad in [
+            "grayscale(-1)",
+            "hue-rotate(10)",
+            "frobnicate(1)",
+            "drop-shadow(1px 1px 2px 3px red)",
+            "drop-shadow(inset 1px 1px red)",
+            "blur(2px",
+        ] {
+            assert_eq!(Filter::parse(bad), None, "{bad}");
+        }
     }
 
     // M3-BRD-04

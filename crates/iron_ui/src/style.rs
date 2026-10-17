@@ -18,9 +18,9 @@ use std::sync::Arc;
 use crate::Rgba;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BlendMode, BorderImage, BorderStyle, ClipPath, CornerRadius, Corners, Len, ObjectFit, Overflow,
-    Shadow, parse_background_image, parse_background_position, parse_background_repeat,
-    parse_background_size, parse_blur_filter, parse_clip_rect, parse_layers, parse_radii,
+    BlendMode, BorderImage, BorderStyle, ClipPath, ColorMatrix, CornerRadius, Corners, DropShadow,
+    Filter, Len, ObjectFit, Overflow, Shadow, parse_background_image, parse_background_position,
+    parse_background_repeat, parse_background_size, parse_clip_rect, parse_layers, parse_radii,
     parse_shadows, split_top_level,
 };
 use crate::text_style::{self, TextProps};
@@ -62,8 +62,12 @@ pub struct Visual {
     pub shadows: Vec<Shadow>,
     /// `filter: blur(..)` radius; 0 means none.
     pub filter_blur: f32,
+    /// `filter` colour functions, combined (`None`: no colour change).
+    pub filter_matrix: Option<ColorMatrix>,
+    pub drop_shadows: Vec<DropShadow>,
     /// `backdropFilter: blur(..)` radius; 0 means none.
     pub backdrop_blur: f32,
+    pub backdrop_matrix: Option<ColorMatrix>,
     pub opacity: f32,
     /// `pointerEvents`: `Some(false)` for `none`; `None` inherits from the parent.
     pub pointer_events: Option<bool>,
@@ -124,7 +128,10 @@ impl Default for Visual {
             border_radius: Corners::all(CornerRadius::ZERO),
             shadows: Vec::new(),
             filter_blur: 0.0,
+            filter_matrix: None,
+            drop_shadows: Vec::new(),
             backdrop_blur: 0.0,
+            backdrop_matrix: None,
             opacity: 1.0,
             pointer_events: None,
             order: 0,
@@ -762,8 +769,21 @@ pub fn apply_style(
             visual.border_radius.bottom_left = radius(value).ok_or_else(invalid)?
         }
         "boxShadow" => visual.shadows = parse_shadows(kw()?).ok_or_else(invalid)?,
-        "filter" => visual.filter_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
-        "backdropFilter" => visual.backdrop_blur = parse_blur_filter(kw()?).ok_or_else(invalid)?,
+        "filter" => {
+            let f = Filter::parse(kw()?).ok_or_else(invalid)?;
+            visual.filter_blur = f.blur;
+            visual.filter_matrix = f.matrix;
+            visual.drop_shadows = f.drop_shadows;
+        }
+        "backdropFilter" => {
+            let f = Filter::parse(kw()?).ok_or_else(invalid)?;
+            // Behind the element there's no shape to shadow.
+            if !f.drop_shadows.is_empty() {
+                return Err(invalid());
+            }
+            visual.backdrop_blur = f.blur;
+            visual.backdrop_matrix = f.matrix;
+        }
         "opacity" => {
             visual.opacity = number_or_percent(value)
                 .ok_or_else(invalid)?
@@ -1056,8 +1076,15 @@ pub(crate) fn copy_prop(
         }
         "borderBottomLeftRadius" => visual.border_radius.bottom_left = v.border_radius.bottom_left,
         "boxShadow" => visual.shadows = v.shadows,
-        "filter" => visual.filter_blur = v.filter_blur,
-        "backdropFilter" => visual.backdrop_blur = v.backdrop_blur,
+        "filter" => {
+            visual.filter_blur = v.filter_blur;
+            visual.filter_matrix = v.filter_matrix;
+            visual.drop_shadows = v.drop_shadows;
+        }
+        "backdropFilter" => {
+            visual.backdrop_blur = v.backdrop_blur;
+            visual.backdrop_matrix = v.backdrop_matrix;
+        }
         "opacity" => visual.opacity = v.opacity,
         "order" => visual.order = v.order,
         "zIndex" => visual.z_index = v.z_index,
@@ -1864,6 +1891,10 @@ mod tests {
 
     #[test]
     fn visual_properties() {
+        // M3-FX-02
+        assert!(apply("backdropFilter", "drop-shadow(1px 1px red)".into()).is_err());
+        let (_, v) = apply("backdropFilter", "blur(4px) saturate(2)".into()).unwrap();
+        assert!(v.backdrop_blur == 4.0 && v.backdrop_matrix.is_some());
         // M3-FX-01
         let (_, v) = apply("opacity", "40%".into()).unwrap();
         assert!((v.opacity - 0.4).abs() < 1e-6);

@@ -201,7 +201,9 @@ export interface IronStyle {
   borderBottomRightRadius?: Length;
   borderBottomLeftRadius?: Length;
   boxShadow?: string;
+  /** Chain of `blur()`, `brightness()`, `contrast()`, `saturate()`, `grayscale()`, `sepia()`, `hue-rotate()`, `invert()`, `opacity()`, `drop-shadow()`. */
   filter?: string;
+  /** Like `filter`, without `drop-shadow()`, applied to what is behind the box. */
   backdropFilter?: string;
   /** 0-1, or a percentage string (`"40%"`). */
   opacity?: number | string;
