@@ -146,12 +146,14 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     `examples/materials`. Docs refreshed (`8bac39e`).
   - Quality settings (2026-10-17, `4f796b8`): MSAA, render scale, shadow quality,
     `QualitySettings` levels with manifest defaults, `examples/quality`.
-  - Camera render groups (2026-10-17): `GameObject.layer`, `LayerMask` (manifest names),
-    `Camera.cullingMask`, `layerCullDistances` / `layerCullSpherical`, `examples/layers`.
+  - Camera render groups and culling (2026-10-17): `GameObject.layer`, `LayerMask`
+    (manifest names), `Camera.cullingMask`, `layerCullDistances` / `layerCullSpherical`,
+    `fieldOfView` / `horizontalFieldOfView`; `Light` / `ReflectionProbe` / `Mirror`
+    culling masks (per instance in the shader); frustum culling of meshes, quads and
+    lights (`world/cull.rs`, `WorldRenderer::stats()`); `LODGroup` with
+    `QualitySettings.lodBias`; `examples/layers`.
 - **Next (in this order, see TODO.md):**
-  1. The rest of TODO.md's "Culling" list: light / probe / mirror culling masks, per-light
-     range culling, frustum culling with bounds, LOD groups (occlusion later).
-  2. M5.b: scene serialization and `SceneManager`; then hot reload part 2.
+  1. M5.b: scene serialization and `SceneManager`; then hot reload part 2.
   - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
     transparency modes), FXAA/TAA, render textures, players' saved settings (M6), shadow and
     glow follow-ups, more classic test scenes (downloads need the user's OK first).
