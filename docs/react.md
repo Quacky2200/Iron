@@ -15,9 +15,9 @@ React handlers. React 19 and `react-reconciler` run unmodified inside QuickJS.
 
 ## Elements
 
-Host element types are `box`, `text`, `span`, `input`, `textarea` and `image` (`ELEMENT_TYPES` in host.ts;
+Host element types are `box`, `text`, `span`, `input`, `textarea`, `image`, `list` and `dialog` (`ELEMENT_TYPES` in host.ts;
 anything else throws at `createInstance`). `Input` and `TextArea` are the components for the last two
-([Text fields](#text-fields)). `Image` (props: `src`, plus the usual `style`/`className`) creates an `image` element ([ui-tree.md](ui-tree.md#images)). `<box>` is a JSX intrinsic (declared in `index.ts` through module
+([Text fields](#text-fields)). `List` creates a `list` (`<list>` is also a JSX intrinsic): its element children are list items ([ui-tree.md](ui-tree.md#lists-m3d-step-5g)). `Dialog` creates a `dialog` and takes `open`, `modal`, `closedBy`, `onCancel` and `onClose` ([ui-tree.md](ui-tree.md#dialogs-and-the-top-layer-m3d-step-5j)). `Image` (props: `src`, plus the usual `style`/`className`) creates an `image` element ([ui-tree.md](ui-tree.md#images)). `<box>` is a JSX intrinsic (declared in `index.ts` through module
 augmentation). React's own JSX types already define `<text>` (SVG) and `<span>` (HTML), so Iron
 exposes **`Text`** and **`Span`** as components that call `createElement("text" | "span", ...)`. CSS
 type selectors still use `text` and `span` ([css.md](css.md)). Strings become `#text` nodes
@@ -86,12 +86,12 @@ global to decide whether to dispatch events at all. Flow and data layout are in
 
 - `HANDLERS` maps an engine event type to prop names. Pointer events also trigger the mouse alias
   (`pointermove` runs `onPointerMove` then `onMouseMove`); `focusin`/`focusout` map to
-  `onFocus`/`onBlur` (which bubble, like React DOM); `input` -> `onChange` then `onInput` (`IronInputEvent`, bubbles); `scroll` -> `onScroll` (`IronScrollEvent`: `scrollLeft/Top/Width/Height`, `clientWidth/Height`, read from `data[10..16]`; does not bubble, continuous priority).
+  `onFocus`/`onBlur` (which bubble, like React DOM); `input` -> `onChange` then `onInput` (`IronInputEvent`, bubbles); `scroll` -> `onScroll` (`IronScrollEvent`: `scrollLeft/Top/Width/Height`, `clientWidth/Height`, read from `data[10..16]`; does not bubble, continuous priority); `cancel` -> `onCancel`, `close` -> `onClose` (dialogs; `cancel` can be prevented, which stops `close`).
 - `dispatchUiEvent(type, path, data, strings)`: `path[0]` is the target and the rest are its ancestors.
   It builds the event object (`IronPointerEvent`, `IronWheelEvent`, `IronKeyboardEvent`,
   `IronFocusEvent`, `IronInputEvent` or `IronScrollEvent`), then runs the **capture phase** from the
   outermost ancestor to the target (`on*Capture`), then the **bubble phase** from the target up.
-  `pointerenter`/`pointerleave` (and `scroll`) do not bubble. `stopPropagation()` lets the current
+  `pointerenter`/`pointerleave`, `scroll`, `cancel` and `close` do not bubble (`NON_BUBBLING`). `stopPropagation()` lets the current
   element's remaining handlers run, as in React.
 - Handler exceptions are logged and dispatch continues (like DOM listeners).
 - The return value is `defaultPrevented`; Rust uses it to skip default actions (focus on press,

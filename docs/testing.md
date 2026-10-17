@@ -43,6 +43,8 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `layout_fixtures.rs` | JSON layout cases through the full commit pipeline, generic over `LayoutEngine` |
 | `text.rs` | Fonts, wrapping, inheritance, shaping counts |
 | `text_props.rs` | M3d group 4 text properties through the tree: transform, ellipsis, white-space/word-break, font shorthand and features, decorations, stroke, smoothing |
+| `selection.rs` | Static text selection (M3-SEL-01/02): drag, click, double and triple click, Ctrl+C, `user-select`, transforms, highlight and `::selection` draw commands, `::placeholder` |
+| `dialog.rs` | Dialogs (M3-DLG-01): hidden, open and modal layout, top-layer paint and hit order, `::backdrop`, focus trap and restore, Escape and backdrop `cancel`/`close`, `closedBy`, `[open]`/`[modal]` selectors |
 | `css.rs` | Selectors, cascade, variables, `::before/::after`, invalidation |
 | `hit.rs` | Hit testing rules |
 | `pointer.rs` | `Pointer`: hover/active/click/dblclick/wheel |
@@ -134,6 +136,10 @@ restyle on a ~2,200 node tree, M3-BEN-01), [layout.rs](../crates/iron_ui/benches
 | `M3-BG`, `M3-BRD`, `M3-CLIP` | Backgrounds (conic and repeating gradients, layers, `background-clip`, round/space, blend modes: `M3-BG-01..03`; gradient size/position/repeat: `M3-BG-04`), borders (styles, per-side colours, elliptical radii, outline, `border-image`: `M3-BRD-01..04`), polygon and path clips (`M3-CLIP-01`) | `iron_render/tests/ui.rs` (pixel asserts and goldens), `iron_ui/tests/{clip,hit}.rs`, unit tests in `paint.rs`, `style.rs`, `svg_path.rs` and `iron_render/src/ui/images.rs` |
 | `M3-FX` | Effects: opacity percentages (`M3-FX-01`, unit), filter chains, drop shadows and backdrop colour filters (`M3-FX-02`, golden plus `paint.rs`/`style.rs` units), `image-rendering` (`M3-FX-03`, golden plus `text_style.rs` unit), masks (`M3-FX-04`, golden plus `style.rs` unit) | `iron_render/tests/ui.rs`, unit tests in `paint.rs`, `style.rs`, `text_style.rs` |
 | `M3-XF`, `M3-VIS` | Transforms (`M3-XF-01` unit tests in `iron_ui/src/transform.rs`: function maths, inversion, backfaces, parsing; `M3-XF-02` integration in `layout_props.rs` plus a golden in `iron_render/tests/ui.rs`: rotated bordered box with text, skewed gradient, perspective card with a clipped child, scaled text); `visibility` (`M3-VIS-01`) | `iron_ui/src/transform.rs`, `iron_ui/tests/layout_props.rs`, `iron_render/tests/ui.rs`, golden `tests/golden/M3-XF-02.png` |
+| `M3-LST` | Lists: markers, numbering, `::marker`, inside/outside | `iron_ui/tests/text_props.rs`, golden `M3-LST-01` in `iron_render/tests/ui.rs` |
+| `M3-SEL` | Static text selection, `::selection`, `::placeholder` | `iron_ui/tests/selection.rs` |
+| `M3-CUR` | `cursor` image lists, field cursors, cursor decoding | `iron_ui/tests/{pointer,editor}.rs`, `iron_app/src/cursor.rs` units |
+| `M3-DLG` | `dialog`, top layer, `::backdrop`, focus and close events | `iron_ui/tests/dialog.rs`, `js/react/test/events.test.tsx`, golden `M3-DLG-02` in `iron_render/tests/ui.rs` |
 | `M3-BEN`, `M2-BEN` | Benchmarks | `benches/` |
 | `*-MAN` | Manual checks (resize, IME, gamepad) | no automated test; listed in TODO.md. Text input and gamepad checks (`M3-MAN-01`) use `examples/form` |
 

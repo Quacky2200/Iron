@@ -244,6 +244,23 @@ sheet exists:
 Generated nodes are excluded from selector matching, from the tab order, and from hit-test results:
 a hit on generated content is reported as the originating element (`hit` returns the parent).
 
+## `::marker`, `::backdrop`, `::selection`, `::placeholder`
+
+Besides `::before`/`::after`, stylesheets can target these pseudo-elements:
+
+- **`::marker`** (lists, M3d step 5g): a generated child like `::before`, but present whenever
+  the item has a marker from `list-style`, not only with `content`. It comes before `::before`.
+  See [ui-tree.md](ui-tree.md#lists-m3d-step-5g).
+- **`::backdrop`**: styles the generated box under a modal `dialog`. See
+  [ui-tree.md](ui-tree.md#dialogs-and-the-top-layer-m3d-step-5j).
+- **`::selection`** and **`::placeholder`** create no node. `pseudo_declarations` collects the
+  matched declarations (with `var()` and relative units resolved) and `update_pseudo_style` stores
+  them as a `PseudoStyle` per element. `::selection` supports colour and background (each from the
+  nearest element with a rule that sets it); `::placeholder` supports text properties and opacity.
+  See [ui-tree.md](ui-tree.md#static-text-selection-and-user-select-m3d-step-5h).
+
+`dialog[open]` and `dialog[modal]` work as ordinary attribute selectors.
+
 ## `@font-face`, loading and URL rebasing
 
 The tree does not know the game folder, so font loading is the app's job:

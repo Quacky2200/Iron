@@ -21,18 +21,18 @@ is large). A `Node` holds:
 
 | Field | Meaning |
 |---|---|
-| `kind` | `"box"`, `"text"`, `"span"`, `"input"`, `"textarea"`, `"image"` (`IMAGE`), `"#text"` (`TEXT_NODE`), or `"root"` |
+| `kind` | `"box"`, `"text"`, `"span"`, `"input"`, `"textarea"`, `"image"` (`IMAGE`), `"list"` (`LIST`), `"dialog"` (`DIALOG`), `"#text"` (`TEXT_NODE`), or `"root"` |
 | `parent`, `children` | Tree links (ordered) |
 | `style: taffy::Style` | Layout properties |
 | `visual: Visual` | Paint-only properties ([style.rs](../crates/iron_ui/src/style.rs)) |
 | `text` | Characters of a `#text` node |
-| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `src` (images), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
+| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `src` (images), `open`/`modal`/`closedBy` (dialogs, `ClosedBy`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
 | `inline` | Inline `style` declarations, in the order set (later wins) |
 | `generated` | `Some(Before/After)` for stylesheet-generated content |
 | `vars` | Computed custom properties (`Rc`, shared with the parent when unchanged) |
 
 Ids: `ROOT` is node 0 (always the window size, see `root_style`). React allocates ids from 1 and
-never reuses them. Generated `::before`/`::after` nodes use ids from `0x8000_0000`
+never reuses them. Generated `::before`/`::after`/`::marker`/`::backdrop` nodes use ids from `0x8000_0000`
 (`FIRST_GENERATED_ID`), so they can never collide with React's.
 
 ## Commits and opcodes
@@ -233,6 +233,30 @@ How inline content works:
   line's baseline (before the glyphs for rtl). `UiTree` keeps one `…` layout per such block in
   `ellipses` and only uses it when `overflow-x` clips.
 
+### Static text selection and `user-select` (M3d step 5h)
+
+- **`userSelect`** (`auto`, `none`, `text`, `all`) is an inherited text property; `auto` keeps the
+  parent's value.
+- **State in the tree:** `UiTree::select_text(target, x, y, PointerSelect)` starts (Shift extends) a
+  selection in the text block holding `target`: one press places a caret, two select a word, three
+  a line, and `user-select: all` takes the whole block. It returns whether one started; otherwise
+  any selection is cleared. `extend_text_selection(x, y)` follows a drag, `text_selection()` returns
+  the block and the selected string, `clear_text_selection()` drops it. Each text block keeps a
+  Parley `Selection` against the text it laid out (`layout_texts`, white space already collapsed).
+  A selection survives restyles but not a change of that text.
+- **`UiTree::to_local(id, x, y)`** maps a window point into the plane `id` is laid out in, undoing
+  the transforms of it and its ancestors (fixed elements ignore ancestor transforms). Static
+  selection, text fields and backdrop clicks use it, so presses work on rotated or scaled text.
+- **Drawing (`selection_cmds`):** highlight quads behind the text (default blue) and, when
+  `::selection` sets a colour, the selected text drawn again in that colour, clipped to the highlight.
+- **`::selection` / `::placeholder`:** `update_pseudo_style` stores what the rules set as a
+  `PseudoStyle` (text props, background, opacity) in `pseudo_styles`, by element. `selection_colors`
+  takes the colour and the background each from the nearest element (itself or an ancestor) with a
+  rule that sets it. A field's `::placeholder` style goes to `Editor::set_placeholder_style`, which
+  rebuilds the placeholder layout (still dimmed by default; `opacity` scales that).
+- The I-beam cursor shows only over selectable text (see
+  [input-and-events.md](input-and-events.md#cursor)).
+
 ### Text properties (M3d group 4)
 
 Parsed in [text_style.rs](../crates/iron_ui/src/text_style.rs) into `TextProps`; all inherited except
@@ -262,6 +286,44 @@ unit tests in `text_style.rs`, goldens `M3-TXT-10..15`.
 - `dirty_text` is the set of roots to reshape; `text_build_count()` lets tests assert how often
   shaping ran (used in [text.rs tests](../crates/iron_ui/tests/text.rs) to check that unrelated
   changes do not reshape text).
+
+## Lists (M3d step 5g)
+
+`list` is an element type whose element children are list items (so is any element with
+`display: list-item`; see `is_list_item`). Its user-agent style (`base_style`) is a column with a
+24px start padding that leaves room for outside markers. `update_list_indent` drops that indent
+when the list has no markers (`list-style: none`), unless a rule or inline style set the start
+padding (`is_start_padding`).
+
+- `listStyleType` (counter styles, strings, `none`), `listStylePosition`, `listStyleImage` and the
+  `listStyle` shorthand are inherited.
+- **Markers are generated children.** `refresh_markers` visits the queued nodes (items added,
+  removed or moved, and inherited style changes) and `update_marker` adds, updates or removes the
+  item's first child. The marker is a `span` for text markers and an `image`
+  (`insert_marker_image`) for `list-style-image`; the kind must match, so a change recreates it.
+  The number comes from the item's position among its siblings, so removals renumber.
+  `::marker` rules style it, and it comes before `::before`.
+- **Outside** markers are absolutely placed to the left of the item; **inside** ones are inline
+  first children (a no-break space keeps the gap). A `text` item cannot hold a box marker, so there
+  an outside marker reads as inside.
+
+## Dialogs and the top layer (M3d step 5j)
+
+`dialog` takes `open`, `modal` and `closedBy` (`any`, `closerequest` (default), `none`)
+attributes. `update_dialog` runs after restyle:
+
+- A dialog without `open` is `display: none`; the authored `display` is kept in
+  `Node.dialog_display` and restored when it opens.
+- UA styles (`base_style` / `base_visual`): centred in its containing block (`translate: -50% -50%`).
+- An open **modal** dialog is `position: fixed` (centred in the window) and joins `top_layer`, in
+  opening order. `fixed_paint_order` paints the top layer after all other fixed nodes, each dialog
+  over its `::backdrop`, whatever the `zIndex`. `top_modal()` is the topmost one,
+  `top_modal_contains(dialog)` checks that a dialog is still an open modal, and
+  `is_inclusive_ancestor(ancestor, id)` tests whether `id` is inside it.
+- **`::backdrop`** is a generated fixed box covering the window under the dialog (`update_backdrop`,
+  `backdrop_of`): browsers' default tint, then `::backdrop` rules. It always covers the window. A hit
+  on it reports the dialog.
+- Events and focus: [input-and-events.md](input-and-events.md#dialogs).
 
 ## Draw list
 

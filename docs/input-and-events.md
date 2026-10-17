@@ -49,6 +49,13 @@ returns `InputEvent::Gamepad`s, which the runner feeds to `PlatformApp::input` l
 event. `iron_platform` re-exports `winit::dpi` so the app can build
 IME area arguments.
 
+Custom cursors need the event loop, so the app asks for them instead of creating them:
+`PlatformApp::take_custom_cursor` (default `None`) returns a `CustomCursorRequest { key, image:
+Option<CursorRgba> }`. The runner calls it after each frame, each input event and `about_to_wait`
+(`Runner::update_cursor`). The first time it sees a `key` it builds a winit `CustomCursor` from the
+RGBA pixels and hotspot (`CursorRgba`) and caches it in `cursors`; later requests with the same key
+need no `image`. A rejected image is logged and skipped.
+
 ## App glue ([main.rs](../crates/iron_app/src/main.rs))
 
 `App::input` maps `InputEvent` to `iron_ui::Input` and calls `handle_ui`:
@@ -59,10 +66,17 @@ IME area arguments.
   `PointerDown` carries `time_ms` (engine clock) for double-click detection.
 - `Focused(false)` becomes `Input::WindowBlur`, so buttons held while the window was unfocused
   are forgotten (their release may never arrive).
-- `handle_ui` calls `Interaction::handle(tree, input, &mut |event| dispatch(...))`, then reads
-  `Interaction::cursor` and updates the OS cursor only when the CSS keyword changed
-  (`set_cursor_visible(false)` for `none`; otherwise it parses the keyword into winit's
-  `CursorIcon`).
+- `handle_ui` calls `Interaction::handle(tree, input, &mut |event| dispatch(...))`, then
+  `update_cursor`, which reads `Interaction::cursor_with_images` and acts only when the keyword,
+  the image list or the window scale changed. It tries the `cursor: url(...)` images in order: the
+  file is read from the game folder or a `data:` URL, decoded and cached by `url@scale`
+  (`cursors_loaded`; `cursors_failed` warns once and moves on to the next image). The first that
+  works becomes `custom_cursor` for the platform (see [Platform layer](#platform-layer)). With none,
+  it falls back to the keyword (`set_cursor_visible(false)` for `none`; otherwise winit's
+  `CursorIcon`). [cursor.rs](../crates/iron_app/src/cursor.rs) decodes PNG, JPEG and `.cur` (an
+  `.ico` of type 2 whose hotspot sits where `.ico` keeps colour planes). The hotspot is the CSS one,
+  else the file's own, else the top-left corner. Images are scaled for the window's DPI and ones
+  over `MAX_CURSOR_SIZE` (128px) are rejected.
 - `dispatch(scripts, enabled, event)` calls `__iron_ui_event(...)` with `UiEvent::script_args()` via
   `call_global`; it returns `true` only if the JS result is `Bool(true)`, i.e. a handler called
   `preventDefault()`. JS errors are logged and treated as "not prevented". If the game has no
@@ -139,10 +153,10 @@ default; **default actions run after the script sees the event**, like a browser
 
 | Input | Events sent | Default action (unless prevented) |
 |---|---|---|
-| `PointerDown` primary | `pointerdown` | Focus the nearest focusable ancestor on the path, else blur (a press on empty space blurs). `:focus-visible` is not set for pointer focus |
-| `PointerUp` | `pointerup`, `click`, ... | none |
+| `PointerDown` primary | `pointerdown` | Focus the nearest focusable ancestor on the path (inside the open modal, if any), else blur (a press on empty space blurs). `:focus-visible` is not set for pointer focus. Outside text fields it starts a static text selection (press, double and triple click) or clears one; dragging extends it |
+| `PointerUp` | `pointerup`, `click`, ... | A click on the top modal's backdrop asks it to close when `closedBy="any"` and the click was not prevented |
 | `Wheel` | `wheel` | Scroll the nearest scrolling ancestor (Shift turns vertical into horizontal) |
-| `KeyDown` | `keydown` to the focused element only | `Tab`/`Shift+Tab`: move focus (sets `:focus-visible`); other keys scroll (arrows, Page, Space, Home/End) |
+| `KeyDown` | `keydown` to the focused element only | `Escape` with an open modal: asks it to close (see [Dialogs](#dialogs)); `Ctrl/Cmd+C` with static text selected: `Clipboard::Copy`; `Tab`/`Shift+Tab`: move focus (sets `:focus-visible`); other keys scroll (arrows, Page, Space, Home/End) |
 | `KeyUp` | `keyup` to the focused element | none |
 | `Focus(id)` / `Blur(id)` (from `ref.focus()`) | `focusout` then `focusin` | `Focus` ignored if not focusable; `:focus-visible` only if the last focus move was by keyboard (browser heuristic) |
 | `Navigate(dir)` | `focusout`/`focusin` (via `set_focus`) | Moves focus to `nearest_in_direction` and scrolls it into view; nothing if no element has focus. Sets `:focus-visible` |
@@ -168,7 +182,31 @@ Focus details:
 
 `CURSORS` in [style.rs](../crates/iron_ui/src/style.rs) lists accepted keywords. `cursor` is
 inherited by walking up from the hovered element (`UiTree::cursor`); `auto` means `text` over
-`text`/`span` and `default` elsewhere. `Pointer::cursor` -> `Interaction::cursor` -> the app (above).
+selectable `text`/`span` (not under `user-select: none`) and `default` elsewhere. Enabled text
+fields show the I-beam and disabled ones `not-allowed`.
+`Pointer::cursor` -> `Interaction::cursor` -> the app (above).
+
+`cursor: url(a.cur), url(b.png) 4 4, pointer` is parsed into `Visual.cursor_images`
+(`Vec<CursorImage { url, hotspot }>`: an optional two-number hotspot per image, the keyword last
+and required). `UiTree::cursor_with_images` (also on `Pointer` and `Interaction`) returns the
+keyword plus those images. The app picks the first one that loads and hands it to the platform;
+the keyword is the fallback. Bad lists are rejected like other invalid values.
+
+## Dialogs
+
+Tree side: [ui-tree.md](ui-tree.md#dialogs-and-the-top-layer-m3d-step-5j). `Interaction` adds:
+
+- **Closing:** `request_close` sends `cancel` (cancelable, does not bubble) to the dialog and, only
+  if `cancel` was not prevented, `close` (does not bubble). Scripts close the dialog by clearing
+  `open`. Escape asks the top modal unless its `closedBy` is `none`. A click whose target is the
+  top modal itself (its backdrop) and that lands outside its box (`to_local` against its rect) asks
+  when `closedBy` is `any`. The default is `closerequest` (Escape only), as in HTML.
+- **Focus** (`track_modals`, run after each input): when a modal opens, the element focused before
+  it is recorded (`modals`) and focus moves to its first focusable descendant, else the dialog.
+  When it closes or is removed, focus returns to the recorded element if that can still take it.
+- **Scope** (`in_modal_scope`): everything outside the top modal is inert for pointer focus,
+  `tab_order` (so Tab and d-pad navigation) and `Navigate`.
+- `EventKind::Cancel` / `Close` reach scripts as `"cancel"` / `"close"`.
 
 ## Scrolling (M3c step 4b)
 
