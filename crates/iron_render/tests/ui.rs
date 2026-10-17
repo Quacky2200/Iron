@@ -16,7 +16,12 @@ struct Scene {
     next: u32,
     /// A stylesheet added after the ops.
     css: &'static str,
+    /// Runs on the laid-out tree before drawing (selections, time, later commits).
+    prepare: Option<Prepare>,
 }
+
+/// A step run on the laid-out tree before drawing.
+type Prepare = Box<dyn Fn(&mut UiTree)>;
 
 impl Scene {
     fn new() -> Self {
@@ -24,6 +29,7 @@ impl Scene {
             ops: Vec::new(),
             next: 1,
             css: "",
+            prepare: None,
         }
     }
 
@@ -160,6 +166,10 @@ fn render_with_assets(
     // Like the app: report the natural sizes of images the tree asked about, so image
     // elements and image markers lay out before drawing.
     tree.layout_if_needed();
+    if let Some(prepare) = &scene.prepare {
+        prepare(&mut tree);
+        tree.layout_if_needed();
+    }
     for src in tree.take_image_requests() {
         let size = ui.image_size(&gpu, &src);
         tree.set_image_size(&src, size);
@@ -1507,6 +1517,149 @@ fn transforms_draw_rotated_skewed_and_in_perspective() {
         text.iter().any(|&(x, y)| f.px(x, y)[0] > 200 && y > 134),
         "scaled text reaches below its layout box"
     );
+}
+
+// M3-SEL-03
+#[test]
+fn text_selection_and_placeholder_styles() {
+    use iron_ui::editor::PointerSelect;
+    use iron_ui::events::Modifiers;
+    let mut s = Scene::new();
+    s.css = ".warm::selection { background: #ffd54a; color: #202020 }
+        input::placeholder { color: #ff8a80; font-style: italic }";
+    let field_style = |y: f64| {
+        at(
+            10.0,
+            y,
+            220.0,
+            28.0,
+            &[
+                ("color", "white".into()),
+                ("fontSize", 16.0.into()),
+                ("padding", 4.0.into()),
+                ("backgroundColor", "#303848".into()),
+                ("borderRadius", 6.0.into()),
+            ],
+        )
+    };
+    // A focused field with all its text selected: the default highlight.
+    let filled = s.element(0, "input", &field_style(6.0));
+    s.attrs(filled, &[("value", "Selected field text".into())]);
+    // Static text dragged across, restyled by an ancestor's ::selection.
+    let warm = s.element(0, "box", &at(0.0, 42.0, 320.0, 30.0, &[]));
+    s.attrs(warm, &[("className", "warm".into())]);
+    let line = s.label(
+        warm,
+        "Dragged across with ::selection",
+        &at(
+            10.0,
+            0.0,
+            300.0,
+            24.0,
+            &[("color", "white".into()), ("fontSize", 18.0.into())],
+        ),
+    );
+    // An empty field shows its ::placeholder style.
+    let empty = s.element(0, "input", &field_style(76.0));
+    s.attrs(empty, &[("placeholder", "Player name".into())]);
+    s.prepare = Some(Box::new(move |tree: &mut UiTree| {
+        let id = iron_core::NodeId;
+        tree.set_state(
+            id(filled),
+            iron_ui::ElementState {
+                focus: true,
+                ..Default::default()
+            },
+        );
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        };
+        tree.editor_key(id(filled), "a", "KeyA", None, ctrl)
+            .unwrap();
+        // Caret blink off, so only the selection shows.
+        tree.set_time(600.0);
+        let press = PointerSelect::Press {
+            clicks: 1,
+            shift: false,
+        };
+        assert!(tree.select_text(id(line), 75.0, 52.0, press));
+        tree.select_text(id(line), 270.0, 52.0, PointerSelect::Drag);
+        let picked = tree.text_selection().unwrap().1;
+        assert!(picked.contains("across"), "{picked:?}");
+    }));
+    let f = render(s, (320, 110), 1.0, BLACK);
+    assert_golden("M3-SEL-03", 320, 110, &f.pixels, TOLERANCE);
+    // The ::selection background is yellow under the dragged words.
+    let [r, g, b, _] = f.px(200, 46);
+    assert!(r > 200 && g > 170 && b < 120, "{:?}", f.px(200, 46));
+}
+
+// M3-ANI-06
+#[test]
+fn animation_filmstrip_and_mid_transition() {
+    let mut s = Scene::new();
+    s.css = "@keyframes morph {
+            from { background-color: #e04040; transform: rotate(0deg); border-radius: 0px }
+            to { background-color: #4060ff; transform: rotate(90deg); border-radius: 20px }
+        }
+        .frame { animation: morph 1s linear paused }";
+    // One animation sampled at 0, 25, 50, 75 and ~100% via negative delays.
+    for (i, delay) in ["0s", "-0.25s", "-0.5s", "-0.75s", "-0.999s"]
+        .iter()
+        .enumerate()
+    {
+        let b = s.add(
+            0,
+            &at(
+                10.0 + i as f64 * 60.0,
+                10.0,
+                40.0,
+                40.0,
+                &[("animationDelay", (*delay).into())],
+            ),
+        );
+        s.attrs(b, &[("className", "frame".into())]);
+    }
+    // A transition caught halfway: width 40 -> 280, green -> white, linear.
+    let bar = s.add(
+        0,
+        &at(
+            10.0,
+            70.0,
+            40.0,
+            24.0,
+            &[
+                ("backgroundColor", "#30c060".into()),
+                (
+                    "transition",
+                    "width 1s linear, background-color 1s linear".into(),
+                ),
+            ],
+        ),
+    );
+    s.prepare = Some(Box::new(move |tree: &mut UiTree| {
+        let n = |v: u32| Value::Number(v.into());
+        tree.set_time(0.0);
+        tree.layout_if_needed();
+        let errors = tree.apply_commit(&Commit {
+            ops: vec![Value::Array(vec![
+                n(SET_STYLE),
+                n(bar),
+                "width".into(),
+                280.0.into(),
+                "backgroundColor".into(),
+                "white".into(),
+            ])],
+        });
+        assert!(errors.is_empty(), "{errors:?}");
+        tree.layout_if_needed();
+        tree.set_time(500.0);
+    }));
+    let f = render(s, (320, 104), 1.0, BLACK);
+    assert_golden("M3-ANI-06", 320, 104, &f.pixels, TOLERANCE);
+    // Halfway: the bar is 160 wide and between green and white.
+    assert!(f.luma(165, 82) > 100.0 && f.luma(175, 82) < 20.0);
 }
 
 // M3-DLG-02
