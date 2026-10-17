@@ -97,6 +97,12 @@ pub struct Visual {
     pub clip_rect: Option<[Option<f32>; 4]>,
     /// `scrollbarWidth`: `auto`, `thin` or `none` (hidden, still scrollable).
     pub scrollbar_width: ScrollbarWidth,
+    /// `scrollbarGutter: stable`: reserve the scrollbar's space even before the content
+    /// overflows (Iron's scrollbars otherwise overlay the content).
+    pub scrollbar_gutter: bool,
+    /// `overscrollBehavior` (x, y): `true` for `contain` / `none`, which stop scrolling
+    /// from passing to the scroll containers outside once this one hits its end.
+    pub overscroll_contain: [bool; 2],
     /// `scrollbarColor` as (thumb, track); `None` inherits, `Some(None)` is `auto`.
     pub scrollbar_color: Option<Option<(Rgba, Rgba)>>,
     /// `display: contents`: no box of its own; children join the parent's layout.
@@ -167,6 +173,8 @@ impl Default for Visual {
             clip_path: None,
             clip_rect: None,
             scrollbar_width: ScrollbarWidth::Auto,
+            scrollbar_gutter: false,
+            overscroll_contain: [false; 2],
             scrollbar_color: None,
             contents: false,
             list_item: false,
@@ -1052,6 +1060,44 @@ pub fn apply_style(
                 "thin" => ScrollbarWidth::Thin,
                 "none" => ScrollbarWidth::None,
                 _ => return Err(invalid()),
+            };
+            set_overflow(style, visual, visual.overflow);
+        }
+        "scrollbarGutter" => {
+            visual.scrollbar_gutter = match kw()?.split_whitespace().collect::<Vec<_>>()[..] {
+                ["auto"] => false,
+                ["stable"] | ["stable", "both-edges"] | ["both-edges", "stable"] => true,
+                _ => return Err(invalid()),
+            };
+            set_overflow(style, visual, visual.overflow);
+        }
+        "overscrollBehavior"
+        | "overscrollBehaviorX"
+        | "overscrollBehaviorY"
+        | "overscrollBehaviorInline"
+        | "overscrollBehaviorBlock" => {
+            let one = |k: &str| match k {
+                "auto" => Some(false),
+                "contain" | "none" => Some(true),
+                _ => None,
+            };
+            let words: Vec<&str> = kw()?.split_whitespace().collect();
+            match (prop, &words[..]) {
+                ("overscrollBehavior", [v]) => {
+                    let v = one(v).ok_or_else(invalid)?;
+                    visual.overscroll_contain = [v, v];
+                }
+                ("overscrollBehavior", [x, y]) => {
+                    visual.overscroll_contain =
+                        [one(x).ok_or_else(invalid)?, one(y).ok_or_else(invalid)?];
+                }
+                ("overscrollBehaviorX" | "overscrollBehaviorInline", [v]) => {
+                    visual.overscroll_contain[0] = one(v).ok_or_else(invalid)?;
+                }
+                ("overscrollBehaviorY" | "overscrollBehaviorBlock", [v]) => {
+                    visual.overscroll_contain[1] = one(v).ok_or_else(invalid)?;
+                }
+                _ => return Err(invalid()),
             }
         }
         "scrollbarColor" => {
@@ -1367,7 +1413,21 @@ pub(crate) fn copy_prop(
         "overflowY" => set_overflow(style, visual, [visual.overflow[0], v.overflow[1]]),
         "clipPath" => visual.clip_path = v.clip_path,
         "clip" => visual.clip_rect = v.clip_rect,
-        "scrollbarWidth" => visual.scrollbar_width = v.scrollbar_width,
+        "scrollbarWidth" => {
+            visual.scrollbar_width = v.scrollbar_width;
+            set_overflow(style, visual, visual.overflow);
+        }
+        "scrollbarGutter" => {
+            visual.scrollbar_gutter = v.scrollbar_gutter;
+            set_overflow(style, visual, visual.overflow);
+        }
+        "overscrollBehavior" => visual.overscroll_contain = v.overscroll_contain,
+        "overscrollBehaviorX" | "overscrollBehaviorInline" => {
+            visual.overscroll_contain[0] = v.overscroll_contain[0]
+        }
+        "overscrollBehaviorY" | "overscrollBehaviorBlock" => {
+            visual.overscroll_contain[1] = v.overscroll_contain[1]
+        }
         "scrollbarColor" => visual.scrollbar_color = v.scrollbar_color,
         "pointerEvents" => visual.pointer_events = v.pointer_events,
         "cursor" => {
@@ -1397,7 +1457,21 @@ fn set_overflow(style: &mut Style, visual: &mut Visual, overflow: [Overflow; 2])
         x: taffy(x),
         y: taffy(y),
     };
+    // `scrollbar-gutter: stable` on a box that clips or scrolls vertically: Taffy keeps
+    // room for the scrollbar (and its margins) at the end, which it only does for
+    // `Scroll` (equivalent to `Hidden` for layout otherwise).
+    let gutter = visual.scrollbar_gutter
+        && matches!(y, Overflow::Hidden | Overflow::Scroll | Overflow::Auto);
+    style.scrollbar_width = if gutter {
+        style.overflow.y = taffy::Overflow::Scroll;
+        visual.scrollbar_width.thickness() + 2.0 * SCROLLBAR_MARGIN
+    } else {
+        0.0
+    };
 }
+
+/// Space between an overlay scrollbar and the padding box's edge.
+pub const SCROLLBAR_MARGIN: f32 = 2.0;
 
 /// A whole number, from a number or a string (`3`, `"-1"`).
 fn integer(v: &Value) -> Option<i32> {

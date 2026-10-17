@@ -545,10 +545,18 @@ impl Interaction {
         dy: f32,
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) -> bool {
-        path.iter().any(|id| {
+        for id in path {
             let (x, y) = tree.scroll_offset(*id);
-            self.scroll(tree, *id, x + dx, y + dy, true, dispatch)
-        })
+            if self.scroll(tree, *id, x + dx, y + dy, true, dispatch) {
+                return true;
+            }
+            // `overscroll-behavior: contain` stops the chain at this container.
+            let axis = usize::from(dy != 0.0);
+            if tree.contains_overscroll(*id, axis) {
+                return false;
+            }
+        }
+        false
     }
 
     /// Arrow keys, Page Up / Down, Space, Home and End scroll the focused element's
@@ -585,6 +593,9 @@ impl Interaction {
             };
             let (x, y) = tree.scroll_offset(*id);
             if self.scroll(tree, *id, x + dx, y + dy, true, dispatch) {
+                return;
+            }
+            if tree.contains_overscroll(*id, usize::from(dy != 0.0)) {
                 return;
             }
         }

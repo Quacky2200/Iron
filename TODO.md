@@ -652,8 +652,11 @@ and `@font-face`.
      animations its exit started finish, then goes; ongoing animations (a spinner) don't hold it.
      Done in the tree, so the reconciler needs no changes — `M3-ANI-05`
 8. **Scrolling** (extends M3c overflow)
-   - [ ] `scrollbar-width`, `scrollbar-color`, `scrollbar-gutter`, `overscroll-behavior`;
-     `overflow: clip`
+   - [x] `scrollbar-width`, `scrollbar-color` and `overflow: clip` (already done in M3c);
+     `scrollbar-gutter: stable` (Taffy keeps the bar's width and margins at the end of a box that
+     clips or scrolls vertically; Iron's bars otherwise overlay), `overscroll-behavior` (+ `-x`/`-y`/
+     `-inline`/`-block`; `contain` and `none` stop wheel and key scrolling from chaining outward;
+     there's no bounce to turn off) — `M3-SCR-01`
 9. **Game-specific extensions** (s&box custom properties worth copying)
    - [ ] `sound-in` / `sound-out`: play a named sound when a rule starts or stops applying (`:hover`,
      `:active`); only the winning rule plays (needs M6 audio)

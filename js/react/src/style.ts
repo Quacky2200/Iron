@@ -271,6 +271,14 @@ export interface IronStyle {
   clip?: string;
   /** `auto`, `thin` or `none` (hidden but still scrollable). */
   scrollbarWidth?: "auto" | "thin" | "none";
+  /** `stable` keeps room for the (otherwise overlaid) scrollbar even before content overflows. */
+  scrollbarGutter?: "auto" | "stable" | "stable both-edges";
+  /** `contain` / `none`: scrolling past this container's end doesn't scroll the ones outside. */
+  overscrollBehavior?: string;
+  overscrollBehaviorX?: "auto" | "contain" | "none";
+  overscrollBehaviorY?: "auto" | "contain" | "none";
+  overscrollBehaviorInline?: "auto" | "contain" | "none";
+  overscrollBehaviorBlock?: "auto" | "contain" | "none";
   /** `auto` or `<thumb colour> <track colour>`; inherited. */
   scrollbarColor?: string;
 

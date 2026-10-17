@@ -547,3 +547,119 @@ fn scrollbar_color_is_inherited() {
     assert_eq!(bar.thumb_color, iron_ui::Rgba::parse("red").unwrap());
     assert_eq!(bar.track_color, iron_ui::Rgba::parse("blue").unwrap());
 }
+
+// M3-SCR-01
+#[test]
+fn scrollbar_gutter_stable_reserves_the_scrollbar_space() {
+    let (tree, scroller, rows) = list("hidden", 1);
+    assert_eq!(tree.rect(rows[0]).unwrap().width, 100.0);
+    let (mut tree, scroller2, rows2) = list("hidden", 1);
+    let _ = scroller;
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_STYLE,
+            &[n(scroller2.0), "scrollbarGutter".into(), "stable".into()],
+        )],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+    // 8px bar + 2px margins on both sides of it.
+    assert_eq!(tree.rect(rows2[0]).unwrap().width, 88.0);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_STYLE,
+            &[n(scroller2.0), "scrollbarWidth".into(), "thin".into()],
+        )],
+    });
+    assert!(errors.is_empty());
+    tree.layout_if_needed();
+    assert_eq!(
+        tree.rect(rows2[0]).unwrap().width,
+        91.0,
+        "a thin bar needs less"
+    );
+    // `overflow: visible` has no scrollbar, so no gutter.
+    let (mut tree, scroller3, rows3) = list("visible", 1);
+    tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_STYLE,
+            &[
+                n(scroller3.0),
+                "scrollbarGutter".into(),
+                "stable both-edges".into(),
+            ],
+        )],
+    });
+    tree.layout_if_needed();
+    assert_eq!(tree.rect(rows3[0]).unwrap().width, 100.0);
+}
+
+// M3-SCR-01
+#[test]
+fn overscroll_contain_stops_scroll_chaining() {
+    // An outer scroller holding an inner one (scrolled to its end) and a tall spacer.
+    let build = |contain: bool| {
+        let mut d = Dom::new();
+        let outer = d.add(
+            0,
+            "box",
+            &[
+                ("width", px(100.0)),
+                ("height", px(100.0)),
+                ("flexDirection", "column".into()),
+                ("overflow", "auto".into()),
+            ],
+        );
+        let mut inner_style = vec![
+            ("height", px(80.0)),
+            ("flexShrink", px(0.0)),
+            ("flexDirection", "column".into()),
+            ("overflow", "auto".into()),
+        ];
+        if contain {
+            inner_style.push(("overscrollBehavior", "contain".into()));
+        }
+        let inner = d.add(outer, "box", &inner_style);
+        d.add(
+            inner,
+            "box",
+            &[("height", px(100.0)), ("flexShrink", px(0.0))],
+        );
+        d.add(
+            outer,
+            "box",
+            &[("height", px(300.0)), ("flexShrink", px(0.0))],
+        );
+        (d.build(""), NodeId(outer), NodeId(inner))
+    };
+    for contain in [false, true] {
+        let (mut tree, outer, inner) = build(contain);
+        let mut ui = Interaction::new();
+        let mut rec = Rec::new();
+        handle(
+            &mut ui,
+            &mut tree,
+            &mut rec,
+            Input::PointerMove { x: 50.0, y: 40.0 },
+        );
+        handle(
+            &mut ui,
+            &mut tree,
+            &mut rec,
+            Input::Wheel { dx: 0.0, dy: 100.0 },
+        );
+        assert_eq!(tree.scroll_offset(inner).1, 20.0, "the inner one first");
+        handle(
+            &mut ui,
+            &mut tree,
+            &mut rec,
+            Input::Wheel { dx: 0.0, dy: 100.0 },
+        );
+        let outer_y = tree.scroll_offset(outer).1;
+        if contain {
+            assert_eq!(outer_y, 0.0, "contained: the page stays put");
+        } else {
+            assert!(outer_y > 0.0, "chains to the outer scroller");
+        }
+    }
+}

@@ -3125,6 +3125,15 @@ impl<L: LayoutEngine> UiTree<L> {
         })
     }
 
+    /// Whether `id` keeps scrolling on `axis` (0 x, 1 y) from passing to outer scroll
+    /// containers (`overscroll-behavior: contain | none` on a scroll container).
+    pub fn contains_overscroll(&self, id: NodeId, axis: usize) -> bool {
+        self.nodes
+            .get(&id)
+            .is_some_and(|n| n.visual.overscroll_contain[axis])
+            && self.scroll_axes(id, true)[axis]
+    }
+
     /// Scrolls `id` to (x, y), clamped to its range on the axes it can scroll (see
     /// [`Self::scroll_axes`]; `by_user` limits it to user-scrollable axes). Lays out
     /// first if needed. Returns whether the offset changed.
@@ -4208,7 +4217,7 @@ pub struct Scrollbar {
 }
 
 /// Space between a scrollbar and the padding box edge.
-const SCROLLBAR_MARGIN: f32 = 2.0;
+use crate::style::SCROLLBAR_MARGIN;
 /// The thumb never gets shorter than this (unless the track is).
 const SCROLLBAR_MIN_THUMB: f32 = 24.0;
 /// Default thumb colour: visible on light and dark backgrounds.

@@ -4,6 +4,14 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Scrolling extras (M3d group 8)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| `scrollbar-gutter: stable both-edges` | Reserves the end edge only | Both edges | Taffy reserves one side |
+| `scrollbar-gutter` on the x axis | Only vertical scrollbars get a gutter | Same (gutters follow the block axis' bar) | — |
+| `overscroll-behavior: none` | Same as `contain` | Also disables bounce / pull-to-refresh | Iron has no overscroll effects |
+
 ## Transitions (M3d step 7a)
 
 | Area | Iron | Browsers / spec | Why |
