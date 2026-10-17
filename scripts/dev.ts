@@ -12,10 +12,15 @@
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
+import { update as updateMetas } from "./assets.ts";
+
 const once = process.argv.includes("--once");
 const entry = ["src/main.tsx", "src/main.ts"].find((f) => existsSync(f));
 if (!entry) throw new Error("no src/main.tsx or src/main.ts here");
 const define = { "process.env.NODE_ENV": '"development"' };
+
+// New assets get their `.meta` (GUID and importer settings).
+for (const created of updateMetas(".").created) console.log(`+ ${created}.meta`);
 
 const vendor = await Bun.build({
   entrypoints: [join(import.meta.dir, "../js/react/src/vendor.ts")],

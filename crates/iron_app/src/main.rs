@@ -8,6 +8,7 @@
 //! `bun run build`) or a `.js` bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
+mod asset_db;
 mod cursor;
 mod display;
 mod game_input;
@@ -149,6 +150,8 @@ fn run() -> Result<()> {
         tracing::info!("player prefs: {}", path.display());
     }
     info.set("prefs", serde_json::Value::Object(prefs.all().clone()));
+    // Assets' GUIDs and importer settings from their `.meta` files.
+    info.set("assets", asset_db::scan(&asset_root));
     info.set("display", display::state(None, &display_settings));
     let mut scripts = QuickJsRuntime::new();
     scripts
@@ -1085,6 +1088,13 @@ impl App {
     /// Asset files changed on disk: textures, models and sounds from them load again
     /// under their ids, then scripts hear which files (`__iron_assets_changed`).
     fn reload_assets(&mut self, keys: &[String]) {
+        // New or changed `.meta` files: the database scripts read.
+        if keys.iter().any(|k| k.ends_with(".meta")) {
+            self.info.set("assets", asset_db::scan(&self.asset_root));
+            if let Err(e) = self.scripts.eval(&self.info.script()) {
+                tracing::error!("asset database: {e}");
+            }
+        }
         let mut sizes = Vec::new();
         for key in keys {
             let (s, models) = self.world_view.reload_asset(&self.asset_root, key);

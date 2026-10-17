@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { Assets } from "../src/index.ts";
+import { Assets, GameObject, Material, MeshRenderer, SceneManager, Texture, audio } from "../src/index.ts";
 
 // M5-AST-02
 test("Assets.onChanged hears changed files until stopped; a throwing listener doesn't stop the others", () => {
@@ -19,4 +19,43 @@ test("Assets.onChanged hears changed files until stopped; a throwing listener do
     console.error = error;
   }
   expect(heard).toEqual([["assets/crate.png"]]);
+});
+
+// M5-AST-05
+test("GUIDs stand in for paths, importers give texture defaults, and scenes find renamed files by GUID", () => {
+  const ops: unknown[][] = [];
+  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  const info = globalThis.__iron_info as Record<string, unknown> | undefined;
+  const setDb = (assets: unknown[]) => {
+    (globalThis as { __iron_info?: unknown }).__iron_info = { ...(info ?? {}), assets };
+  };
+  try {
+    setDb([
+      { path: "assets/crate.png", guid: "c0ffee", importer: { type: "texture", filterMode: "point", wrapMode: "clamp" } },
+      { path: "assets/theme.ogg", guid: "50da", importer: { type: "audio", stream: true } },
+    ]);
+    expect(Assets.guidToPath("c0ffee")).toBe("assets/crate.png");
+    expect(Assets.pathToGuid("./assets/crate.png")).toBe("c0ffee");
+    expect(Assets.pathToGuid("nope.png")).toBeUndefined();
+    // By GUID, with the importer's settings; given options win.
+    const t = Texture.load("guid:c0ffee");
+    expect(t.src).toBe("assets/crate.png");
+    expect([t.filterMode, t.wrapMode]).toEqual(["point", "clamp"]);
+    expect(Texture.load("assets/crate.png", { filterMode: "trilinear" }).filterMode).toBe("trilinear");
+    // The importer can ask for a streamed sound.
+    audio.load("guid:50da");
+    expect(ops.find((o) => o[0] === "audio.load")!.slice(2)).toEqual(["assets/theme.ogg", true]);
+    // Scenes keep the GUID; a renamed file is still found.
+    const go = new GameObject("Crate");
+    go.addComponent(MeshRenderer, { mesh: "cube", material: Material.create({ mainTexture: t }) });
+    const data = JSON.parse(JSON.stringify(SceneManager.getActiveScene().serialize()));
+    expect(Object.values(data.assets).some((a) => (a as { guid?: string }).guid === "c0ffee")).toBe(true);
+    setDb([{ path: "assets/props/crate.png", guid: "c0ffee", importer: {} }]);
+    SceneManager.loadScene(data);
+    const material = GameObject.find("Crate")!.getComponent(MeshRenderer)!.material;
+    expect(material.mainTexture!.src).toBe("assets/props/crate.png");
+  } finally {
+    (globalThis as { __iron_info?: unknown }).__iron_info = info;
+    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  }
 });

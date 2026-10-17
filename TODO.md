@@ -1209,7 +1209,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Prefab follow-ups: linked instances with overrides (save only what differs, update
     copies when the prefab changes), nested prefabs and variants (with the editor, M5.e)
   - [ ] Cloth and soft bodies (rapier's soft bodies), with cloth rendering
-  - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
+  - [x] Scene serialization (M5.b) and GUID `.meta` files: `scripts/assets.ts` (run by
+    `bun run dev`) gives every asset a `.meta` (GUID, importer settings), keeps GUIDs
+    through moves, reports orphans (`--prune` deletes them); the engine reads them into
+    `__iron_info.assets`; `Assets.guidToPath` / `pathToGuid` / `importer`, `"guid:..."`
+    sources for textures, models and sounds, importer defaults for `Texture.load` and
+    streaming; scenes save GUIDs and find renamed files by them — `M5-AST-03`..`05`
   - [x] Asset hot reload: the game folder is watched (not `dist/`, `node_modules/`,
     hidden folders); textures, models (same mesh and texture ids) and sounds from a
     changed file load again in place, then `Assets.onChanged` listeners hear the paths —

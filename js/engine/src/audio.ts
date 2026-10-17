@@ -4,6 +4,7 @@
 //
 // Volumes are linear gains (1 = as recorded, 0 = silent); times are seconds.
 
+import { Assets } from "./assets.ts";
 import type { QuaternionLike as Quat, Vector3Like as Vec3 } from "./math.ts";
 
 export interface PlayOptions {
@@ -38,9 +39,12 @@ export class Sound {
   readonly src: string;
 
   /** @internal Use `audio.load()`. */
-  constructor(src: string, options: LoadOptions = {}) {
+  constructor(source: string, options: LoadOptions = {}) {
+    // A GUID becomes its file's path; the file's `.meta` can ask for streaming.
+    const src = Assets.resolve(source);
     this.id = nextSound++;
     this.src = src;
+    if (options.stream === undefined && Assets.importer(src).stream === true) options = { ...options, stream: true };
     __iron_op("audio.load", this.id, src, !!options.stream);
   }
 

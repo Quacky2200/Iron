@@ -1597,6 +1597,33 @@
 
   // ../../js/engine/src/assets.ts
   var listeners = new Set;
+  var entries = () => globalThis.__iron_info?.assets ?? [];
+  var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
+  var Assets = {
+    get all() {
+      return entries();
+    },
+    guidToPath(guid) {
+      return entries().find((e) => e.guid === guid)?.path;
+    },
+    pathToGuid(path) {
+      const p = clean(path);
+      return entries().find((e) => e.path === p)?.guid;
+    },
+    importer(path) {
+      const p = clean(Assets.resolve(path));
+      return entries().find((e) => e.path === p)?.importer ?? {};
+    },
+    resolve(src) {
+      if (!src.startsWith("guid:"))
+        return src;
+      return Assets.guidToPath(src.slice(5)) ?? src;
+    },
+    onChanged(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    }
+  };
   globalThis.__iron_assets_changed = (paths) => {
     for (const f of [...listeners]) {
       try {
@@ -2389,9 +2416,12 @@
   class Sound {
     id;
     src;
-    constructor(src, options = {}) {
+    constructor(source, options = {}) {
+      const src = Assets.resolve(source);
       this.id = nextSound++;
       this.src = src;
+      if (options.stream === undefined && Assets.importer(src).stream === true)
+        options = { ...options, stream: true };
       __iron_op("audio.load", this.id, src, !!options.stream);
     }
     play(options = {}) {
@@ -5889,7 +5919,16 @@ ${err.stack}` : ""}`);
       return t;
     }
     static load(src, options = {}) {
-      const t = new Texture(src, options);
+      const path = Assets.resolve(src);
+      const imported = Assets.importer(path);
+      const pick = (k) => options[k] ?? imported[k];
+      const t = new Texture(path, {
+        filterMode: pick("filterMode"),
+        wrapMode: pick("wrapMode"),
+        mipmaps: pick("mipmaps"),
+        anisoLevel: pick("anisoLevel"),
+        linear: pick("linear")
+      });
       t.send();
       return t;
     }
@@ -6332,7 +6371,8 @@ ${err.stack}` : ""}`);
       models.set(this.id, this);
       __iron_op("render.model", this.id, src);
     }
-    static load(src) {
+    static load(source) {
+      const src = Assets.resolve(source);
       let m = cache2.get(src);
       if (!m) {
         m = new Model(src);
@@ -6532,6 +6572,9 @@ ${err.stack}` : ""}`);
     SpriteRenderer,
     WorldPanel
   });
+  function fromGuid(guid, src) {
+    return typeof guid === "string" && Assets.guidToPath(guid) || String(src);
+  }
   var warn = (message) => console.warn(`scene: ${message}`);
   var UNSAVED = Symbol("unsaved");
   var MATERIAL_EXTRAS = [
@@ -6651,9 +6694,11 @@ ${err.stack}` : ""}`);
         if (!v.src)
           return this.cannot(`${where}: only textures loaded from files are saved`);
         const t = v;
+        const guid = Assets.pathToGuid(v.src);
         return this.asset(v, "texture", () => ({
           type: "Texture",
           src: v.src,
+          ...guid ? { guid } : {},
           filterMode: v.filterMode,
           wrapMode: v.wrapMode,
           mipmaps: t._mipmaps,
@@ -6674,8 +6719,10 @@ ${err.stack}` : ""}`);
           ...v.bindposes.length ? { bindposes: v.bindposes.flatMap((m) => [...m.m]) } : {}
         }));
       }
-      if (v instanceof Sound)
-        return { $type: "Sound", src: v.src };
+      if (v instanceof Sound) {
+        const guid = Assets.pathToGuid(v.src);
+        return { $type: "Sound", src: v.src, ...guid ? { guid } : {} };
+      }
       const proto = Object.getPrototypeOf(v);
       if (proto === Object.prototype || proto === null) {
         const out = {};
@@ -6711,7 +6758,7 @@ ${err.stack}` : ""}`);
       if (a?.type === "RenderTexture") {
         made = new RenderTexture(Number(a.width), Number(a.height));
       } else if (a?.type === "Texture") {
-        made = Texture.load(String(a.src), {
+        made = Texture.load(fromGuid(a.guid, a.src), {
           filterMode: a.filterMode,
           wrapMode: a.wrapMode,
           mipmaps: a.mipmaps,
@@ -6797,7 +6844,7 @@ ${err.stack}` : ""}`);
           case "Sprite":
             return Sprite.create(this.value(o.texture), this.value(o.rect), this.value(o.pivot), o.pixelsPerUnit);
           case "Sound":
-            return new Sound(String(o.src));
+            return new Sound(fromGuid(o.guid, o.src));
           default:
             warn(`unknown type ${o.$type}`);
             return null;
@@ -6853,8 +6900,10 @@ ${err.stack}` : ""}`);
       data.enabled = false;
     if (go.layer !== 0)
       data.layer = go.layer;
-    if (go._model)
-      data.model = { ...go._model };
+    if (go._model) {
+      const guid = Assets.pathToGuid(go._model.src);
+      data.model = { ...go._model, ...guid ? { guid } : {} };
+    }
     if (go._prefab)
       data.prefab = go._prefab;
     const components = go.components.map((c) => {
@@ -6903,7 +6952,7 @@ ${err.stack}` : ""}`);
       if (d.enabled === false)
         disabled.push(go);
       if (d.model)
-        Model.load(d.model.src)._buildInto(go, { colliders: d.model.colliders });
+        Model.load(fromGuid(d.model.guid, d.model.src))._buildInto(go, { colliders: d.model.colliders });
       if (d.prefab)
         go._prefab = d.prefab;
       for (const c of d.components ?? []) {

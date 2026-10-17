@@ -9,6 +9,7 @@
 // with `SceneManager.loadScene(level)`; `loadSceneAsync("scenes/level.scene.json")`
 // reads one from the game folder instead.
 
+import { Assets } from "./assets.ts";
 import { Animation, AnimationClip, AnimationCurve, Animator, AnimatorController } from "./animation.ts";
 import { AudioListener, AudioSource } from "./audio-components.ts";
 import { Sound } from "./audio.ts";
@@ -130,7 +131,7 @@ export interface GameObjectData {
   rotation?: [number, number, number, number];
   scale?: [number, number, number];
   /** A model's copy: its nodes are rebuilt from the model, not saved. */
-  model?: { src: string; colliders?: string };
+  model?: { src: string; colliders?: string; guid?: string };
   /** The prefab file it was placed from (kept for tools; the object is saved in full). */
   prefab?: string;
   components?: ComponentData[];
@@ -146,6 +147,11 @@ export interface ComponentData {
 }
 
 // ---- Values ----
+
+/** A saved asset's file: its GUID's current path when known, else the saved path. */
+function fromGuid(guid: unknown, src: unknown): string {
+  return (typeof guid === "string" && Assets.guidToPath(guid)) || String(src);
+}
 
 const warn = (message: string) => console.warn(`scene: ${message}`);
 
@@ -264,9 +270,11 @@ class Saver {
     if (v instanceof Texture) {
       if (!v.src) return this.cannot(`${where}: only textures loaded from files are saved`);
       const t = v as unknown as { _mipmaps: boolean };
+      const guid = Assets.pathToGuid(v.src);
       return this.asset(v, "texture", () => ({
         type: "Texture",
         src: v.src,
+        ...(guid ? { guid } : {}),
         filterMode: v.filterMode,
         wrapMode: v.wrapMode,
         mipmaps: t._mipmaps,
@@ -286,7 +294,10 @@ class Saver {
         ...(v.bindposes.length ? { bindposes: v.bindposes.flatMap((m) => [...m.m]) } : {}),
       }));
     }
-    if (v instanceof Sound) return { $type: "Sound", src: v.src };
+    if (v instanceof Sound) {
+      const guid = Assets.pathToGuid(v.src);
+      return { $type: "Sound", src: v.src, ...(guid ? { guid } : {}) };
+    }
     const proto = Object.getPrototypeOf(v);
     if (proto === Object.prototype || proto === null) {
       const out: Record<string, unknown> = {};
@@ -319,7 +330,8 @@ class Loader {
     if (a?.type === "RenderTexture") {
       made = new RenderTexture(Number(a.width), Number(a.height));
     } else if (a?.type === "Texture") {
-      made = Texture.load(String(a.src), {
+      // By GUID when its file is known, so renamed files are still found.
+      made = Texture.load(fromGuid(a.guid, a.src), {
         filterMode: a.filterMode as never,
         wrapMode: a.wrapMode as never,
         mipmaps: a.mipmaps as boolean | undefined,
@@ -403,7 +415,7 @@ class Loader {
         case "Sprite":
           return Sprite.create(this.value(o.texture) as Texture, this.value(o.rect) as Rect | null, this.value(o.pivot) as Vector2, o.pixelsPerUnit as number);
         case "Sound":
-          return new Sound(String(o.src));
+          return new Sound(fromGuid(o.guid, o.src));
         default:
           warn(`unknown type ${o.$type}`);
           return null;
@@ -455,7 +467,10 @@ function saveObject(saver: Saver, go: GameObject): GameObjectData | null {
   if (s.x !== 1 || s.y !== 1 || s.z !== 1) data.scale = [s.x, s.y, s.z];
   if (!go.enabled) data.enabled = false;
   if (go.layer !== 0) data.layer = go.layer;
-  if (go._model) data.model = { ...go._model };
+  if (go._model) {
+    const guid = Assets.pathToGuid(go._model.src);
+    data.model = { ...go._model, ...(guid ? { guid } : {}) };
+  }
   if (go._prefab) data.prefab = go._prefab;
   const components = go.components.map((c): ComponentData => {
     const cls = c.constructor as ComponentClass;
@@ -506,7 +521,7 @@ function loadObjects(
     loader.things.set(d.id, go);
     if (d.layer) go.layer = d.layer;
     if (d.enabled === false) disabled.push(go);
-    if (d.model) Model.load(d.model.src)._buildInto(go, { colliders: d.model.colliders as never });
+    if (d.model) Model.load(fromGuid(d.model.guid, d.model.src))._buildInto(go, { colliders: d.model.colliders as never });
     if (d.prefab) go._prefab = d.prefab;
     for (const c of d.components ?? []) {
       const cls = _classByName(c.type);

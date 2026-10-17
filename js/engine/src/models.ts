@@ -3,6 +3,7 @@
 // GameObjects with MeshRenderers, optionally with mesh colliders.
 
 import { Animation, AnimationClip, AnimationCurve } from "./animation.ts";
+import { Assets } from "./assets.ts";
 import { Color, Matrix4x4, Quaternion, Vector2, Vector3, type QuaternionLike, type Vector3Like } from "./math.ts";
 import { MeshCollider } from "./physics-components.ts";
 import { Material, Mesh, MeshRenderer, SkinnedMeshRenderer } from "./rendering.ts";
@@ -111,8 +112,9 @@ export class Model {
     __iron_op("render.model", this.id, src);
   }
 
-  /** Loads a `.glb` or `.gltf` from the game folder (once per path). */
-  static load(src: string): Model {
+  /** Loads a `.glb` or `.gltf` from the game folder, or `"guid:<guid>"` (once per file). */
+  static load(source: string): Model {
+    const src = Assets.resolve(source);
     let m = cache.get(src);
     if (!m) {
       m = new Model(src);

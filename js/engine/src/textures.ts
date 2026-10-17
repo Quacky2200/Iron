@@ -3,6 +3,7 @@
 // `__iron_textures` once loaded; sprites are drawn as quads facing the object's +z,
 // unlit, sorted with the other see-through things by distance.
 
+import { Assets } from "./assets.ts";
 import { property } from "./property.ts";
 import { Color, Mathf, Rect, Vector2, type Vector2Like } from "./math.ts";
 import { Component } from "./scene.ts";
@@ -75,9 +76,21 @@ export class Texture {
     return t;
   }
 
-  /** Loads a PNG or JPEG relative to the game folder. */
+  /**
+   * Loads a PNG or JPEG relative to the game folder (or `"guid:<guid>"`). Settings not
+   * given come from the file's `.meta` importer, then the defaults.
+   */
   static load(src: string, options: TextureOptions = {}): Texture {
-    const t = new Texture(src, options);
+    const path = Assets.resolve(src);
+    const imported = Assets.importer(path) as TextureOptions;
+    const pick = <K extends keyof TextureOptions>(k: K) => options[k] ?? imported[k];
+    const t = new Texture(path, {
+      filterMode: pick("filterMode"),
+      wrapMode: pick("wrapMode"),
+      mipmaps: pick("mipmaps"),
+      anisoLevel: pick("anisoLevel"),
+      linear: pick("linear"),
+    });
     t.send();
     return t;
   }
