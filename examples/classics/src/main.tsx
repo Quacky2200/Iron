@@ -16,6 +16,7 @@ import {
   Material,
   MeshRenderer,
   Model,
+  QualitySettings,
   Quaternion,
   RenderSettings,
   Vector3,
@@ -41,7 +42,8 @@ class Gallery extends Component {
     floor.addComponent(MeshRenderer, { mesh: "plane", material: new Material(Color.hex("#3a3f4b"), Color.black, 0.5) });
 
     const key = new GameObject("Key light", { rotation: Quaternion.euler(-45, 35, 0) });
-    key.addComponent(Light, { type: "directional", intensity: 0.9, color: Color.hex("#fff2e0") });
+    key.addComponent(Light, { type: "directional", intensity: 0.9, color: Color.hex("#fff2e0"), shadows: "soft" });
+    QualitySettings.shadowDistance = 14;
     const rim = new GameObject("Rim light", { rotation: Quaternion.euler(-20, 200, 0) });
     rim.addComponent(Light, { type: "directional", intensity: 0.35, color: Color.hex("#a8c4ff") });
 

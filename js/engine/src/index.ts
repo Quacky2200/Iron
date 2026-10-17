@@ -121,6 +121,8 @@ export {
   type PrimitiveMesh,
   type BloomSettings,
   RenderSettings,
+  type LightShadows,
+  QualitySettings,
   WorldPanel,
 } from "./rendering.ts";
 export { createPrimitive, PrimitiveType } from "./primitives.ts";

@@ -332,6 +332,7 @@ fn lit_primitives_with_lights() {
             position: Vec3::ZERO,
             direction: Vec3::new(-0.5, -1.0, -0.6).normalize(),
             range: 0.0,
+            shadows: None,
         },
         Light {
             kind: LightKind::Point,
@@ -339,6 +340,7 @@ fn lit_primitives_with_lights() {
             position: Vec3::new(-1.0, 1.2, 1.2),
             direction: Vec3::ZERO,
             range: 4.0,
+            shadows: None,
         },
     ];
     WorldRenderer::new(&gpu).render_views(&gpu, &rt, &[v], &[]);
@@ -508,6 +510,7 @@ fn textured_meshes_and_sprites() {
         position: Vec3::ZERO,
         direction: Vec3::new(-0.4, -1.0, -0.5).normalize(),
         range: 0.0,
+        shadows: None,
     }];
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -632,6 +635,7 @@ fn glows_bloom_and_spot_beams() {
         position: spot_at,
         direction: spot_dir,
         range: 6.0,
+        shadows: None,
     }];
     let mut world = WorldRenderer::new(&gpu);
     world.bloom = Some(Bloom {
@@ -642,4 +646,92 @@ fn glows_bloom_and_spot_beams() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-09", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-10
+#[test]
+fn directional_shadows() {
+    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Shadows, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let eye = Vec3::new(0.0, 3.0, 6.5);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
+            .inverse(),
+        50.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.03, 0.03, 0.05),
+    );
+    let mesh = |name: &str, model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id(name).unwrap(),
+        model,
+        color,
+        emission: [0.0; 3],
+        smoothness: 0.3,
+        unlit: false,
+        texture: None,
+        tiling: [1.0, 1.0, 0.0, 0.0],
+        glow: MeshGlow::None,
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.12, 0.12, 0.14];
+    v.meshes = vec![
+        mesh(
+            "plane",
+            Mat4::from_scale(Vec3::splat(0.8)),
+            [0.7, 0.7, 0.72, 1.0],
+        ),
+        mesh(
+            "cube",
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.5), Vec3::new(-1.6, 0.5, 0.0)),
+            [0.85, 0.35, 0.25, 1.0],
+        ),
+        mesh(
+            "sphere",
+            Mat4::from_translation(Vec3::new(0.0, 0.8, 0.3)),
+            [0.3, 0.55, 0.9, 1.0],
+        ),
+        mesh(
+            "capsule",
+            Mat4::from_translation(Vec3::new(1.6, 1.0, -0.3)),
+            [0.35, 0.8, 0.4, 1.0],
+        ),
+        // A floating plank: its shadow falls apart from it.
+        mesh(
+            "cube",
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(1.4, 0.08, 0.5),
+                Quat::IDENTITY,
+                Vec3::new(0.2, 2.0, 1.4),
+            ),
+            [0.9, 0.85, 0.6, 1.0],
+        ),
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.0, 0.97, 0.9],
+        position: Vec3::ZERO,
+        direction: Vec3::new(-0.5, -1.0, -0.35).normalize(),
+        range: 0.0,
+        shadows: Some(Shadows {
+            soft: true,
+            strength: 0.9,
+        }),
+    }];
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 14.0;
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-10", size.0, size.1, &pixels, 3);
 }

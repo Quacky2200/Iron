@@ -17,9 +17,9 @@ pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer};
 pub use wgpu;
 pub use world::{
     BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Light, LightKind, MISSING_TEXTURE, MeshData,
-    MeshGlow, MeshInstance, PRIMITIVE_BASE, PRIMITIVES, Projection, TextureData, TextureFilter,
-    TextureWrap, WorldCamera, WorldQuad, WorldRenderer, WorldTexture, WorldView, primitive,
-    primitive_id, viewport_size,
+    MeshGlow, MeshInstance, PRIMITIVE_BASE, PRIMITIVES, Projection, Shadows, TextureData,
+    TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldRenderer, WorldTexture, WorldView,
+    primitive, primitive_id, viewport_size,
 };
 
 /// A linear RGBA colour.

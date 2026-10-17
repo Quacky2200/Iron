@@ -592,6 +592,32 @@ export class MeshRenderer extends Component {
 
 export type LightType = "directional" | "point" | "spot";
 
+/** Unity's `LightShadows`. */
+export type LightShadows = "none" | "hard" | "soft";
+
+let shadowDistance = 25;
+let shadowResolution = 2048;
+
+/** Rendering quality (Unity's `QualitySettings`). */
+export const QualitySettings = {
+  /** How far from the camera shadows reach, in metres: shorter is sharper. */
+  get shadowDistance(): number {
+    return shadowDistance;
+  },
+  set shadowDistance(d: number) {
+    shadowDistance = d;
+    __iron_op("render.shadowSettings", 0, shadowDistance, shadowResolution);
+  },
+  /** The shadow map's size in texels (256 to 8192). */
+  get shadowResolution(): number {
+    return shadowResolution;
+  },
+  set shadowResolution(r: number) {
+    shadowResolution = r;
+    __iron_op("render.shadowSettings", 0, shadowDistance, shadowResolution);
+  },
+};
+
 /**
  * Lights meshes (Unity's `Light`). Directional lights shine along the object's forward
  * (-z) everywhere, like the sun; point lights shine from the object out to `range`;
@@ -606,6 +632,8 @@ export class Light extends Component {
   private _innerSpotAngle = 21.8;
   private _haloSize = 0;
   private _beamIntensity = 0;
+  private _shadows: LightShadows = "none";
+  private _shadowStrength = 1;
   private started = false;
 
   get type(): LightType {
@@ -675,6 +703,27 @@ export class Light extends Component {
     this.send();
   }
 
+  /**
+   * Shadows it casts (Unity's `LightShadows`): `hard`, `soft` (filtered edges) or `none`.
+   * Only the first directional light with shadows casts them, for now, within
+   * `QualitySettings.shadowDistance` of the camera.
+   */
+  get shadows(): LightShadows {
+    return this._shadows;
+  }
+  set shadows(s: LightShadows) {
+    this._shadows = s;
+    this.send();
+  }
+  /** How dark its shadows are, 0 to 1. */
+  get shadowStrength(): number {
+    return this._shadowStrength;
+  }
+  set shadowStrength(s: number) {
+    this._shadowStrength = s;
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -690,6 +739,8 @@ export class Light extends Component {
       this._innerSpotAngle,
       this._haloSize,
       this._beamIntensity,
+      this._shadows,
+      this._shadowStrength,
     );
   }
 

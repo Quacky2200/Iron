@@ -172,6 +172,17 @@ pub struct Light {
     pub position: Vec3,
     pub direction: Vec3,
     pub range: f32,
+    /// Shadows it casts (only the first directional light with them does, for now).
+    pub shadows: Option<Shadows>,
+}
+
+/// How a light casts shadows (Unity's `LightShadows`: hard or soft) and how dark they are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadows {
+    /// Filtered edges (3 × 3 PCF) instead of one sample.
+    pub soft: bool,
+    /// 0 (none) to 1 (fully dark where shadowed).
+    pub strength: f32,
 }
 
 /// One mesh drawn in the world.
@@ -292,6 +303,11 @@ struct GpuGlobals {
     background: [f32; 4],
     camera: [f32; 4],
     ambient: [f32; 4],
+    /// The shadow map's view-projection.
+    shadow_view_proj: [[f32; 4]; 4],
+    /// x: index of the shadowed light (-1: none); y: strength; z: a shadow-map texel in
+    /// metres (for the normal offset); w: 1 for soft.
+    shadow: [f32; 4],
 }
 
 #[repr(C)]
@@ -339,6 +355,15 @@ pub struct WorldRenderer {
     module: wgpu::ShaderModule,
     pipelines: HashMap<wgpu::TextureFormat, Pipelines>,
     globals_layout: wgpu::BindGroupLayout,
+    shadow_layout: wgpu::BindGroupLayout,
+    shadow_sampler: wgpu::Sampler,
+    shadow_pipeline: wgpu::RenderPipeline,
+    /// The directional shadow map, made at `shadow_resolution`.
+    shadow_map: Option<(wgpu::TextureView, u32)>,
+    /// How far from the camera shadows reach (metres; Unity's `shadowDistance`).
+    pub shadow_distance: f32,
+    /// The shadow map's size in texels.
+    pub shadow_resolution: u32,
     texture_layout: wgpu::BindGroupLayout,
     /// One `GpuGlobals` per view, `stride` bytes apart (a dynamic offset picks one).
     globals: wgpu::Buffer,
@@ -421,10 +446,81 @@ impl WorldRenderer {
                 },
             ],
         });
+        let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("world shadows"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("world"),
-            bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout)],
+            bind_group_layouts: &[
+                Some(&globals_layout),
+                Some(&texture_layout),
+                Some(&shadow_layout),
+            ],
             immediate_size: 0,
+        });
+        // Casters are drawn into the shadow map with only the globals (meshes, matrix).
+        let shadow_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("world shadow casters"),
+                bind_group_layouts: &[Some(&globals_layout)],
+                immediate_size: 0,
+            });
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("world shadow casters"),
+            layout: Some(&shadow_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_shadow"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+                })],
+            },
+            // Both sides cast: planes and open meshes have no back to cast from.
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                // Slope-scaled bias against shadow acne.
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: Default::default(),
+            fragment: None,
+            multiview_mask: None,
+            cache: None,
+        });
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("world shadows"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
         });
         let align = u64::from(device.limits().min_uniform_buffer_offset_alignment);
         let stride = (std::mem::size_of::<GpuGlobals>() as u64).div_ceil(align) * align;
@@ -463,6 +559,12 @@ impl WorldRenderer {
             module,
             pipelines: HashMap::new(),
             globals_layout,
+            shadow_layout,
+            shadow_sampler,
+            shadow_pipeline,
+            shadow_map: None,
+            shadow_distance: 25.0,
+            shadow_resolution: 2048,
             texture_layout,
             globals: Self::buffer(
                 gpu,
@@ -671,6 +773,59 @@ impl WorldRenderer {
         self.textures.get(&id).map(|t| t.size)
     }
 
+    /// The shadow map, made (or remade) at `shadow_resolution`.
+    fn shadow_view(&mut self, gpu: &Gpu) -> wgpu::TextureView {
+        let res = self
+            .shadow_resolution
+            .clamp(16, gpu.device.limits().max_texture_dimension_2d);
+        if self.shadow_map.as_ref().is_none_or(|m| m.1 != res) {
+            let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("world shadow map"),
+                size: wgpu::Extent3d {
+                    width: res,
+                    height: res,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.shadow_map = Some((texture.create_view(&Default::default()), res));
+        }
+        self.shadow_map.as_ref().expect("just made").0.clone()
+    }
+
+    /// The light's view of a box `shadow_distance` across in front of the camera,
+    /// moved only in whole texels so shadow edges don't crawl as the camera moves.
+    fn shadow_matrix(&self, camera: &WorldCamera, direction: Vec3) -> Mat4 {
+        let radius = (self.shadow_distance / 2.0).max(0.5);
+        let center = camera.position + camera.forward * radius;
+        let dir = direction.normalize_or(Vec3::NEG_Y);
+        let up = if dir.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+        let eye = center - dir * radius * 3.0;
+        let view = iron_core::glam::camera::rh::view::look_at_mat4(eye, center, up);
+        let texel = 2.0 * radius / self.shadow_resolution.max(1) as f32;
+        let at = view.transform_point3(center);
+        let snap = Vec3::new(
+            (at.x / texel).round() * texel - at.x,
+            (at.y / texel).round() * texel - at.y,
+            0.0,
+        );
+        let proj = iron_core::glam::camera::rh::proj::directx::orthographic(
+            -radius,
+            radius,
+            -radius,
+            radius,
+            0.01,
+            radius * 6.0,
+        );
+        proj * Mat4::from_translation(snap) * view
+    }
+
     fn pipelines(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Pipelines {
         let (layout, module) = (&self.layout, &self.module);
         let blend = Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
@@ -849,6 +1004,7 @@ impl WorldRenderer {
         };
         let pipelines = self.pipelines(gpu, color_format);
         let depth = self.depth_view(gpu, size);
+        let shadow_view = self.shadow_view(gpu);
 
         // Everything for every view in shared buffers, with runs per view: opaque meshes
         // (grouped by mesh), then see-through meshes and quads back to front.
@@ -1030,10 +1186,42 @@ impl WorldRenderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
+        // Shadows: the first directional light that casts them, fitted to the camera
+        // with the biggest viewport (the main view), shared by every view.
+        let main_view = (0..views.len()).max_by(|&a, &b| {
+            let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
+            area(&views[a]).total_cmp(&area(&views[b]))
+        });
+        let shadow = main_view.and_then(|m| {
+            let view = &views[m];
+            let (index, light) = view.lights.iter().enumerate().find(|(_, l)| {
+                l.kind == LightKind::Directional && l.shadows.is_some_and(|s| s.strength > 0.0)
+            })?;
+            Some((
+                m,
+                index,
+                light.shadows?,
+                self.shadow_matrix(&view.camera, light.direction),
+            ))
+        });
+        let shadow_texel = 2.0 * self.shadow_distance / 2.0 / self.shadow_resolution.max(1) as f32;
         for (i, view) in views.iter().enumerate() {
             let c = view.camera.clear;
             let p = view.camera.position;
             let count = per_view[i].2.len() as f32;
+            // Light indices are per view; every view has the same lights.
+            let (shadow_view_proj, shadow_params) = match &shadow {
+                Some((_, index, s, matrix)) => (
+                    *matrix,
+                    [
+                        *index as f32,
+                        s.strength.clamp(0.0, 1.0),
+                        shadow_texel,
+                        f32::from(u8::from(s.soft)),
+                    ],
+                ),
+                None => (Mat4::IDENTITY, [-1.0, 0.0, 0.0, 0.0]),
+            };
             let globals = GpuGlobals {
                 view_proj: view.camera.view_proj.to_cols_array_2d(),
                 background: [
@@ -1044,6 +1232,8 @@ impl WorldRenderer {
                 ],
                 camera: [p.x, p.y, p.z, 1.0],
                 ambient: [view.ambient[0], view.ambient[1], view.ambient[2], count],
+                shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
+                shadow: shadow_params,
             };
             gpu.queue.write_buffer(
                 &self.globals,
@@ -1123,7 +1313,50 @@ impl WorldRenderer {
             }
         };
 
+        let shadow_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("world shadows"),
+            layout: &self.shadow_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
+                },
+            ],
+        });
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        if let Some((main, ..)) = shadow {
+            // The casters: the main view's opaque meshes, from the light.
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("world shadow map"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.shadow_pipeline);
+            pass.set_bind_group(
+                0,
+                &globals_groups[main],
+                &[(self.stride * main as u64) as u32],
+            );
+            for run in &per_view[main].0 {
+                if let Some(mesh) = run.mesh.and_then(|m| self.meshes.get(&m)) {
+                    pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                    pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..mesh.count, 0, run.range.clone());
+                }
+            }
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("world"),
@@ -1161,6 +1394,7 @@ impl WorldRenderer {
                 pass.set_scissor_rect(px[0], px[1], px[2], px[3]);
                 pass.set_bind_group(0, &globals_groups[i], &[(self.stride * i as u64) as u32]);
                 pass.set_bind_group(1, &groups[0], &[]);
+                pass.set_bind_group(2, &shadow_group, &[]);
                 pass.set_pipeline(&pipelines.fill);
                 pass.draw(0..3, 0..1);
 

@@ -11,8 +11,8 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Projection,
-    TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture, WorldView,
-    primitive_id, viewport_size,
+    Shadows, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad, WorldTexture,
+    WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -78,6 +78,7 @@ struct LightComponent {
     halo: f32,
     /// How bright a spot light's visible beam is (0: none).
     beam: f32,
+    shadows: Option<Shadows>,
 }
 
 pub struct WorldViews {
@@ -89,6 +90,8 @@ pub struct WorldViews {
     particles: BTreeMap<u32, ParticleSystem>,
     /// Bloom over the world (`render.bloom`), applied by the app before drawing.
     pub bloom: Option<Bloom>,
+    /// Shadow distance (metres) and map size (`render.shadowSettings`).
+    pub shadow_settings: (f32, u32),
     /// `emit` requests waiting for the next particle update (which knows where objects are).
     pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
@@ -114,6 +117,7 @@ impl Default for WorldViews {
             sprites: BTreeMap::new(),
             particles: BTreeMap::new(),
             bloom: None,
+            shadow_settings: (25.0, 2048),
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
@@ -444,7 +448,7 @@ impl WorldViews {
                 self.sprites.insert(id, sprite);
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
-            // haloSize beamIntensity`
+            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
@@ -464,6 +468,13 @@ impl WorldViews {
                     range: num(5).unwrap_or(10.0),
                     halo: num(8).unwrap_or(0.0).max(0.0),
                     beam: num(9).unwrap_or(0.0).max(0.0),
+                    shadows: match args.get(10).and_then(Value::as_str) {
+                        Some(mode @ ("hard" | "soft")) => Some(Shadows {
+                            soft: mode == "soft",
+                            strength: num(11).unwrap_or(1.0).clamp(0.0, 1.0),
+                        }),
+                        _ => None,
+                    },
                 };
                 self.lights.insert(id, light);
             }
@@ -506,6 +517,11 @@ impl WorldViews {
                     }
                     other => return Err(format!("unknown particle action {other:?}")),
                 }
+            }
+            // `shadowSettings 0 distance resolution` (Unity's quality settings).
+            "shadowSettings" => {
+                let resolution = num(2).unwrap_or(2048.0).clamp(256.0, 8192.0) as u32;
+                self.shadow_settings = (num(1)?.max(1.0), resolution);
             }
             // `bloom 0 threshold intensity scatter`; `bloom 0 null` turns it off.
             "bloom" => {
@@ -692,6 +708,7 @@ impl WorldViews {
                     // Lights shine along their object's forward (-z), like Unity's.
                     direction: rotation * Vec3::NEG_Z,
                     range: l.range,
+                    shadows: l.shadows,
                 })
             })
             .collect();

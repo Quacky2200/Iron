@@ -1157,6 +1157,7 @@ impl App {
             }
         }
         gfx.world.bloom = self.world_view.bloom;
+        (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
                 Some(data) => {
@@ -1482,6 +1483,7 @@ impl PlatformApp for App {
             }
         }
         gfx.world.bloom = self.world_view.bloom;
+        (gfx.world.shadow_distance, gfx.world.shadow_resolution) = self.world_view.shadow_settings;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
                 Some(data) => {

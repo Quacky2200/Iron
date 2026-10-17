@@ -858,7 +858,14 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] More classic test scenes (asked for 2026-10-17): the Cornell box (procedural; after
       shadows), and, with downloads the user approves first, Suzanne, Sponza, the Damaged
       Helmet (PBR), and the Stanford Dragon / Armadillo / Lucy
-    - [ ] Shadows (directional shadow map)
+    - [x] Shadows: the first directional light with `Light.shadows` (`hard` / `soft`,
+      `shadowStrength`) casts them from opaque meshes onto meshes: a depth map
+      (`QualitySettings.shadowResolution`, default 2048) fitted to the main camera out to
+      `QualitySettings.shadowDistance` (default 25 m), snapped to texels, with slope bias and
+      a normal offset; soft is 3 × 3 PCF — `M5-RND-10`
+    - [ ] Shadow follow-ups: cascades for long distances, spot and point light shadows (cube
+      maps), shadows on quads / sprites / particles, transparent and alpha-cut casters,
+      contact shadows
   - [x] `AudioSource` (clip as a `Sound` or path, `playOnAwake`, volume, pitch, pan, mute,
     loop, `spatialBlend` 0 = flat / above 0 = from an emitter following its GameObject,
     min / max distance, `outputBus`, `play` / `stop` / `pause` / `unPause` / `isPlaying`,

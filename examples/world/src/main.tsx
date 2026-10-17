@@ -115,7 +115,7 @@ class World extends Component {
 
     // A sun and a warm point light for the meshes.
     const sun = new GameObject("Sun", { rotation: Quaternion.euler(-50, 30, 0) });
-    sun.addComponent(Light, { type: "directional", intensity: 0.55 });
+    sun.addComponent(Light, { type: "directional", intensity: 0.55, shadows: "soft", shadowStrength: 0.85 });
     const lamp = new GameObject("Lamp", { position: new Vector3(0, 1.5, 0) });
     lamp.addComponent(Light, { type: "point", color: Color.hex("#ffb060"), intensity: 6, range: 5, haloSize: 1.2 });
 

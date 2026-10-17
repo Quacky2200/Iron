@@ -9,6 +9,11 @@ struct Globals {
     camera: vec4<f32>,
     // rgb: ambient light; w: how many lights this view has.
     ambient: vec4<f32>,
+    // The shadow map's view-projection.
+    shadow_view_proj: mat4x4<f32>,
+    // x: the shadowed light's index (-1: none); y: strength; z: a shadow texel in
+    // metres; w: 1 for soft (filtered) shadows.
+    shadow: vec4<f32>,
 };
 
 struct Quad {
@@ -51,6 +56,8 @@ struct Light {
 @group(0) @binding(3) var<storage, read> lights: array<Light>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+@group(2) @binding(0) var shadow_map: texture_depth_2d;
+@group(2) @binding(1) var shadow_samp: sampler_comparison;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -133,6 +140,36 @@ fn vs_mesh(
     return out;
 }
 
+// Shadow casters: just depth, from the light.
+@vertex
+fn vs_shadow(@location(0) position: vec3<f32>, @builtin(instance_index) ii: u32) -> @builtin(position) vec4<f32> {
+    return g.shadow_view_proj * meshes[ii].model * vec4<f32>(position, 1.0);
+}
+
+// How much of the shadowed light reaches `world` (1: all), whose normal is `n`.
+fn shadow_at(world: vec3<f32>, n: vec3<f32>) -> f32 {
+    // Pushed off the surface by a texel or two, against acne.
+    let p = g.shadow_view_proj * vec4<f32>(world + n * g.shadow.z * 1.5, 1.0);
+    let ndc = p.xyz / p.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z > 1.0) {
+        return 1.0;
+    }
+    var lit = 0.0;
+    if (g.shadow.w > 0.5) {
+        let ts = 1.0 / f32(textureDimensions(shadow_map).x);
+        for (var y = -1; y <= 1; y++) {
+            for (var x = -1; x <= 1; x++) {
+                lit += textureSampleCompareLevel(shadow_map, shadow_samp, uv + vec2<f32>(f32(x), f32(y)) * ts, ndc.z);
+            }
+        }
+        lit /= 9.0;
+    } else {
+        lit = textureSampleCompareLevel(shadow_map, shadow_samp, uv, ndc.z);
+    }
+    return mix(1.0, lit, g.shadow.y);
+}
+
 @fragment
 fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let m = meshes[in.instance];
@@ -189,6 +226,9 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
                 let c = dot(-l, normalize(light.direction.xyz));
                 strength *= smoothstep(light.spot.y, light.spot.x, c);
             }
+        }
+        if (i32(i) == i32(g.shadow.x)) {
+            strength *= shadow_at(in.world, n);
         }
         let ndl = max(dot(n, l), 0.0);
         diffuse += light.color.rgb * ndl * strength;
