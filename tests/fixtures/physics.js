@@ -1077,7 +1077,7 @@ ${err.stack}` : ""}`);
   var colliders = new Map;
   var queries = new Map;
 
-  class Collider {
+  class PhysicsCollider {
     id;
     body;
     sensor;
@@ -1113,6 +1113,19 @@ ${err.stack}` : ""}`);
         indices
       ]);
     }
+    setFriction(friction) {
+      __iron_op("physics.colliderSet", this.id, "friction", friction);
+    }
+    setRestitution(restitution) {
+      __iron_op("physics.colliderSet", this.id, "restitution", restitution);
+    }
+    setSensor(sensor) {
+      this.sensor = sensor;
+      __iron_op("physics.colliderSet", this.id, "sensor", sensor);
+    }
+    setOffset(position, rotation) {
+      __iron_op("physics.colliderSet", this.id, "offset", vec(position), quat(rotation));
+    }
     remove() {
       if (!colliders.delete(this.id))
         return;
@@ -1120,7 +1133,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class RigidBody {
+  class PhysicsBody {
     id;
     kind;
     position;
@@ -1145,7 +1158,7 @@ ${err.stack}` : ""}`);
       ]);
     }
     addCollider(options) {
-      return new Collider(this, options);
+      return new PhysicsCollider(this, options);
     }
     setPosition(p) {
       this.position = Vector3.from(p);
@@ -1180,6 +1193,38 @@ ${err.stack}` : ""}`);
     clearForces() {
       __iron_op("physics.clearForces", this.id);
     }
+    applyImpulseAtPoint(impulse, point) {
+      __iron_op("physics.force", this.id, "impulseAt", vec(impulse), vec(point));
+    }
+    setKind(kind) {
+      this.kind = kind;
+      __iron_op("physics.set", this.id, "kind", kind);
+    }
+    setMass(kg) {
+      __iron_op("physics.set", this.id, "mass", kg);
+    }
+    setGravityScale(scale) {
+      __iron_op("physics.set", this.id, "gravityScale", scale);
+    }
+    setDamping(linear, angular) {
+      __iron_op("physics.set", this.id, "linearDamping", linear);
+      __iron_op("physics.set", this.id, "angularDamping", angular);
+    }
+    setCcd(on) {
+      __iron_op("physics.set", this.id, "ccd", on);
+    }
+    setAllowedAxes(translation, rotation) {
+      __iron_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
+    }
+    sleep() {
+      __iron_op("physics.set", this.id, "sleep");
+    }
+    wakeUp() {
+      __iron_op("physics.set", this.id, "wake");
+    }
+    attachTo(objectId) {
+      __iron_op("physics.attach", this.id, objectId);
+    }
     setEnabled(enabled) {
       __iron_op("physics.set", this.id, "enabled", enabled);
     }
@@ -1200,10 +1245,10 @@ ${err.stack}` : ""}`);
   }
   var physics = {
     createBody(options) {
-      return new RigidBody(options);
+      return new PhysicsBody(options);
     },
     addCollider(options) {
-      return new Collider(null, options);
+      return new PhysicsCollider(null, options);
     },
     setGravity(g) {
       __iron_op("physics.gravity", vec(g));
@@ -1221,6 +1266,7 @@ ${err.stack}` : ""}`);
       return bodies.get(id);
     }
   };
+  var contactListeners = [];
   function report(fn, event) {
     if (!fn)
       return;
@@ -1254,6 +1300,15 @@ ${err.stack}` : ""}`);
       const started = contacts[i] === 1;
       const sensor = contacts[i + 3] === 1;
       const speed = contacts[i + 4];
+      for (const listener of contactListeners) {
+        try {
+          listener(a, b, started, sensor, speed);
+        } catch (e) {
+          const err = e instanceof Error ? e : new Error(String(e));
+          console.error(`[physics] error in collision callback: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+        }
+      }
       for (const [self, other] of [
         [a, b],
         [b, a]
@@ -1741,6 +1796,7 @@ ${err.stack}` : ""}`);
       if (props)
         Object.assign(instance, props);
       __iron_op("scene.addComponent", this.id, id, name);
+      instance.onAwake?.();
       return instance;
     }
     getComponent(cls) {
@@ -1813,7 +1869,7 @@ ${err.stack}` : ""}`);
     if (!cls)
       throw new Error(`unknown component class '${className}'`);
     const object = objectId === undefined || objectId === null ? GameObject._adopt(-id - 1, className) : objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className);
-    instantiate(cls, id, object);
+    instantiate(cls, id, object).onAwake?.();
   };
   var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
   globalThis.__iron_hooks = (id) => {
@@ -1848,6 +1904,36 @@ ${err.stack}` : ""}`);
     }
   };
 
+  // ../../js/engine/src/physics-components.ts
+  var objectPhysics = new Map;
+  var colliderOwners = new Map;
+  contactListeners.push((a, b, started, sensor, speed) => {
+    const ca = colliderOwners.get(a.id);
+    const cb = colliderOwners.get(b.id);
+    if (!ca || !cb)
+      return;
+    for (const [self, other] of [
+      [ca, cb],
+      [cb, ca]
+    ]) {
+      const go = self.gameObject;
+      if (go.destroyed)
+        continue;
+      for (const component of [...go.components]) {
+        if (sensor) {
+          (started ? component.onTriggerEnter : component.onTriggerExit)?.call(component, other);
+        } else {
+          const collision = {
+            gameObject: other.gameObject,
+            collider: other,
+            rigidbody: other.attachedRigidbody,
+            relativeSpeed: speed
+          };
+          (started ? component.onCollisionEnter : component.onCollisionExit)?.call(component, collision);
+        }
+      }
+    }
+  });
   // ../../js/engine/src/screen.ts
   var width = 1280;
   var height = 720;

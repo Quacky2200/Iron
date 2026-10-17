@@ -1,12 +1,12 @@
 // M4-PHY-02: a component drops a ball onto a floor through @iron/engine's `physics`
 // and counts collisions. The Rust test runs ops, steps and sends the batches back,
 // then reads `__physics_log()`.
-import { Component, physics, type RigidBody, register } from "@iron/engine";
+import { Component, physics, type PhysicsBody, register } from "@iron/engine";
 
 const log: string[] = [];
 
 class Dropper extends Component {
-  ball!: RigidBody;
+  ball!: PhysicsBody;
 
   override onStart() {
     physics.addCollider({ shape: { box: { x: 10, y: 0.5, z: 10 } }, position: { x: 0, y: -0.5, z: 0 } });

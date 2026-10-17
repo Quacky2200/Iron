@@ -2,7 +2,7 @@
 // ramp (rapier in Rust), drawn as UI boxes from each body's last-tick pose. Click to
 // drop another; a sensor zone counts what passes through it. Impacts knock (kira),
 // louder when harder and panned to where they happen.
-import { audio, Component, physics, type RigidBody, register } from "@iron/engine";
+import { audio, Component, physics, type PhysicsBody, register } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
 
@@ -11,7 +11,7 @@ const SCALE = 60;
 const ORIGIN = { x: 640, y: 660 };
 
 interface Thing {
-  body: RigidBody;
+  body: PhysicsBody;
   shape: "box" | "ball";
   half: number;
   color: string;

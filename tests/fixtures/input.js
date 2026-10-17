@@ -1136,6 +1136,7 @@ ${err.stack}` : ""}`);
   var bodies = new Map;
   var colliders = new Map;
   var queries = new Map;
+  var contactListeners = [];
   function report(fn, event) {
     if (!fn)
       return;
@@ -1169,6 +1170,15 @@ ${err.stack}` : ""}`);
       const started = contacts[i] === 1;
       const sensor = contacts[i + 3] === 1;
       const speed = contacts[i + 4];
+      for (const listener of contactListeners) {
+        try {
+          listener(a, b, started, sensor, speed);
+        } catch (e) {
+          const err = e instanceof Error ? e : new Error(String(e));
+          console.error(`[physics] error in collision callback: ${err.message}${err.stack ? `
+${err.stack}` : ""}`);
+        }
+      }
       for (const [self, other] of [
         [a, b],
         [b, a]
@@ -1637,6 +1647,7 @@ ${err.stack}` : ""}`);
       if (props)
         Object.assign(instance, props);
       __iron_op("scene.addComponent", this.id, id, name);
+      instance.onAwake?.();
       return instance;
     }
     getComponent(cls) {
@@ -1709,7 +1720,7 @@ ${err.stack}` : ""}`);
     if (!cls)
       throw new Error(`unknown component class '${className}'`);
     const object = objectId === undefined || objectId === null ? GameObject._adopt(-id - 1, className) : objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className);
-    instantiate(cls, id, object);
+    instantiate(cls, id, object).onAwake?.();
   };
   var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
   globalThis.__iron_hooks = (id) => {
@@ -1744,6 +1755,36 @@ ${err.stack}` : ""}`);
     }
   };
 
+  // ../../js/engine/src/physics-components.ts
+  var objectPhysics = new Map;
+  var colliderOwners = new Map;
+  contactListeners.push((a, b, started, sensor, speed) => {
+    const ca = colliderOwners.get(a.id);
+    const cb = colliderOwners.get(b.id);
+    if (!ca || !cb)
+      return;
+    for (const [self, other] of [
+      [ca, cb],
+      [cb, ca]
+    ]) {
+      const go = self.gameObject;
+      if (go.destroyed)
+        continue;
+      for (const component of [...go.components]) {
+        if (sensor) {
+          (started ? component.onTriggerEnter : component.onTriggerExit)?.call(component, other);
+        } else {
+          const collision = {
+            gameObject: other.gameObject,
+            collider: other,
+            rigidbody: other.attachedRigidbody,
+            relativeSpeed: speed
+          };
+          (started ? component.onCollisionEnter : component.onCollisionExit)?.call(component, collision);
+        }
+      }
+    }
+  });
   // ../../js/engine/src/screen.ts
   var width = 1280;
   var height = 720;

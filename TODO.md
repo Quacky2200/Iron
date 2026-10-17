@@ -748,7 +748,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `raycast` promises, `makeCharacter`/`move`), stepped in the app's fixed tick with results
     sent back through `__iron_physics`; `examples/physics` — `M4-PHY-02`
   - [ ] Bodies survive script hot reload (moved to hot reload part 2, M5) — `M4-PHY-04`
-  - [ ] `Rigidbody` / `Collider` / `CharacterController` components on GameObjects (M5.a)
+  - [x] `Rigidbody` / `Collider` components on GameObjects (M5.a2)
 - [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`
   - [x] `iron_audio` crate: kira mixer driven by `audio.*` ops with script-chosen IDs; decoded
     and streamed sounds, instances (volume, rate, pan, loop, fades, seek, pause/stop), buses,
@@ -802,10 +802,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     nearest panel (screen UI wins where it has elements), drags stay with the panel, keys go
     to the surface clicked last; stylesheets and fonts reach every tree — `M5-PNL-01`..`M5-PNL-03`
 - [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5):
-  - [ ] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
-    `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, constraints) and
-    collider components (`BoxCollider`, `SphereCollider`, `CapsuleCollider`, `MeshCollider`,
-    triggers) driving GameObject transforms (from M4)
+  - [x] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
+    `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, at a point,
+    explosions, constraints, continuous detection) and collider components (`BoxCollider`,
+    `SphereCollider`, `CapsuleCollider`, `MeshCollider`, triggers, `PhysicsMaterial`) driving
+    GameObject transforms both ways (`physics.attach`); `onCollisionEnter/Exit` and
+    `onTriggerEnter/Exit` on the object's components; `onAwake` for components; the low-level
+    handles are now `PhysicsBody` / `PhysicsCollider` — `M5-RB-01`, `M5-RB-02`
+  - [ ] Collider sizes follow later scale changes (they take the scale when added)
+  - [ ] `CharacterController` component (Unity's: `move`, `isGrounded`, slope limit, step
+    offset) on rapier's character controller (M4)
   - [ ] Joints as components: fixed, hinge, spring, and rope (rapier's rope joint), for rope
     mechanics; rope rendering (a line/tube renderer following the joints)
   - [ ] Meshes through a `MeshRenderer`: primitives with matching colliders (cube, ball/sphere,

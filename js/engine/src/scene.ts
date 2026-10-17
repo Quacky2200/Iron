@@ -21,6 +21,12 @@ export abstract class Component {
     return this.gameObject.transform;
   }
 
+  /**
+   * Called as soon as the component is added (its `addComponent` props already set),
+   * before `onStart`: set up things other components may look for right away.
+   */
+  onAwake?(): void;
+
   /** Called once, before any other update. */
   onStart?(): void;
 
@@ -362,6 +368,7 @@ export class GameObject {
     const instance = instantiate(cls, id, this) as T;
     if (props) Object.assign(instance, props);
     __iron_op("scene.addComponent", this.id, id, name);
+    instance.onAwake?.();
     return instance;
   }
 
@@ -465,7 +472,7 @@ globalThis.__iron_create = (className: string, id: number, objectId?: number, ob
   const object = objectId === undefined || objectId === null
     ? GameObject._adopt(-id - 1, className)
     : (objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className));
-  instantiate(cls, id, object);
+  instantiate(cls, id, object).onAwake?.();
 };
 
 const HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"] as const;

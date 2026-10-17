@@ -215,7 +215,7 @@ impl Physics {
         let a = Args(args);
         self.dirty |= matches!(
             name,
-            "body" | "collider" | "removeBody" | "removeCollider" | "set"
+            "body" | "collider" | "removeBody" | "removeCollider" | "set" | "colliderSet"
         );
         match name {
             "gravity" => self.world.gravity = a.vec3(0)?,
@@ -238,6 +238,7 @@ impl Physics {
                 }
             }
             "set" => self.set(&a)?,
+            "colliderSet" => self.collider_set(&a)?,
             "force" => {
                 let (body, v) = (self.body_mut(a.id(0)?)?, a.vec3(2)?);
                 match a.str(1)? {
@@ -245,6 +246,8 @@ impl Physics {
                     "impulse" => body.apply_impulse(v, true),
                     "torque" => body.add_torque(v, true),
                     "torqueImpulse" => body.apply_torque_impulse(v, true),
+                    // `force id impulseAt [impulse] [world point]`
+                    "impulseAt" => body.apply_impulse_at_point(v, a.vec3(3)?, true),
                     other => return Err(format!("unknown force kind `{other}`")),
                 }
             }
@@ -417,19 +420,117 @@ impl Physics {
     }
 
     /// `set id property values`: `position` [x y z], `rotation` [x y z w], `velocity`,
-    /// `angularVelocity`, `target` (a kinematic body's next position), `enabled` (bool).
+    /// `angularVelocity`, `target` (a kinematic body's next position), `targetRotation`,
+    /// `enabled` (bool), `kind` (`dynamic` / `fixed` / `kinematic`), `mass` (kg, shared
+    /// by its colliders), `gravityScale`, `linearDamping`, `angularDamping`, `ccd`
+    /// (bool), `constraints` ([x y z] translations then [x y z] rotations allowed, 6
+    /// bools), `sleep`, `wake`.
     fn set(&mut self, a: &Args) -> Result<(), String> {
-        let body = self.body_mut(a.id(0)?)?;
+        let id = a.id(0)?;
+        let flag = |i: usize| matches!(a.0.get(i), Some(Value::Bool(true)));
+        if a.str(1)? == "mass" {
+            return self.set_mass(id, a.num(2)?.max(0.0));
+        }
+        let body = self.body_mut(id)?;
         match a.str(1)? {
             "position" => body.set_translation(a.vec3(2)?, true),
             "rotation" => body.set_rotation(a.quat(2)?, true),
             "velocity" => body.set_linvel(a.vec3(2)?, true),
             "angularVelocity" => body.set_angvel(a.vec3(2)?, true),
             "target" => body.set_next_kinematic_translation(a.vec3(2)?),
-            "enabled" => body.set_enabled(matches!(a.0.get(2), Some(Value::Bool(true)))),
+            "targetRotation" => body.set_next_kinematic_rotation(a.quat(2)?),
+            "enabled" => body.set_enabled(flag(2)),
+            "kind" => body.set_body_type(
+                match a.str(2)? {
+                    "dynamic" => RigidBodyType::Dynamic,
+                    "fixed" => RigidBodyType::Fixed,
+                    "kinematic" => RigidBodyType::KinematicPositionBased,
+                    other => return Err(format!("unknown body kind `{other}`")),
+                },
+                true,
+            ),
+            "gravityScale" => body.set_gravity_scale(a.num(2)?, true),
+            "linearDamping" => body.set_linear_damping(a.num(2)?.max(0.0)),
+            "angularDamping" => body.set_angular_damping(a.num(2)?.max(0.0)),
+            "ccd" => body.enable_ccd(flag(2)),
+            "constraints" => {
+                let c = a.list(2)?;
+                let allow = |i: usize| !matches!(c.get(i), Some(Value::Bool(false)));
+                body.set_enabled_translations(allow(0), allow(1), allow(2), true);
+                body.set_enabled_rotations(allow(3), allow(4), allow(5), true);
+            }
+            "sleep" => body.sleep(),
+            "wake" => body.wake_up(true),
             other => return Err(format!("unknown body property `{other}`")),
         }
         Ok(())
+    }
+
+    /// Gives a body `mass` kg, split evenly over its colliders (their shapes still set
+    /// how it turns); a body without colliders gets it as extra mass.
+    fn set_mass(&mut self, id: ScriptId, mass: f32) -> Result<(), String> {
+        let handle = *self
+            .bodies
+            .get(&id)
+            .ok_or_else(|| format!("no body {id}"))?;
+        let colliders: Vec<ColliderHandle> = self.world.bodies[handle].colliders().to_vec();
+        if colliders.is_empty() {
+            self.world.bodies[handle].set_additional_mass(mass, true);
+            return Ok(());
+        }
+        let share = mass / colliders.len() as f32;
+        for c in colliders {
+            if let Some(collider) = self.world.colliders.get_mut(c) {
+                collider.set_mass(share);
+            }
+        }
+        self.world.bodies[handle].wake_up(true);
+        Ok(())
+    }
+
+    /// `colliderSet id property value`: `friction`, `restitution`, `sensor` (bool),
+    /// `offset` ([x y z] [x y z w] from its body).
+    fn collider_set(&mut self, a: &Args) -> Result<(), String> {
+        let id = a.id(0)?;
+        let collider = self
+            .colliders
+            .get(&id)
+            .and_then(|h| self.world.colliders.get_mut(*h))
+            .ok_or_else(|| format!("no collider {id}"))?;
+        match a.str(1)? {
+            "friction" => collider.set_friction(a.num(2)?.max(0.0)),
+            "restitution" => collider.set_restitution(a.num(2)?.clamp(0.0, 1.0)),
+            "sensor" => collider.set_sensor(matches!(a.0.get(2), Some(Value::Bool(true)))),
+            "offset" => collider.set_position_wrt_parent(Pose::from_parts(
+                a.vec3(2)?,
+                a.quat(3).unwrap_or(Rotation::IDENTITY),
+            )),
+            other => return Err(format!("unknown collider property `{other}`")),
+        }
+        Ok(())
+    }
+
+    /// Moves a body to where a script put its GameObject: a kinematic body travels there
+    /// over the next step (pushing things on the way); others teleport (keeping their
+    /// velocity, like setting a Unity transform).
+    /// Arrays rather than vectors: callers may use another glam version than rapier's.
+    pub fn set_pose(&mut self, id: ScriptId, position: [f32; 3], rotation: [f32; 4]) {
+        let (position, rotation) = (Vector::from_array(position), Rotation::from_array(rotation));
+        let Ok(body) = self.body_mut(id) else { return };
+        if body.is_kinematic() {
+            body.set_next_kinematic_translation(position);
+            body.set_next_kinematic_rotation(rotation);
+        } else {
+            body.set_translation(position, true);
+            body.set_rotation(rotation, true);
+        }
+        self.dirty = true;
+    }
+
+    /// A body's position and rotation, if it exists.
+    pub fn pose(&self, id: ScriptId) -> Option<([f32; 3], [f32; 4])> {
+        let body = self.world.bodies.get(*self.bodies.get(&id)?)?;
+        Some((body.translation().to_array(), body.rotation().to_array()))
     }
 
     fn body_mut(&mut self, id: ScriptId) -> Result<&mut RigidBody, String> {

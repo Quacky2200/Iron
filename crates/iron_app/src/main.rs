@@ -8,6 +8,7 @@
 mod cursor;
 mod game_input;
 mod panels;
+mod physics_sync;
 mod reload;
 mod ui_scale;
 mod world_view;
@@ -154,6 +155,7 @@ fn main() -> Result<()> {
         ui_events,
         game_input,
         physics: iron_physics::Physics::new(),
+        attachments: physics_sync::Attachments::default(),
         audio: None,
         audio_events,
         physics_events,
@@ -281,6 +283,8 @@ struct App {
     physics: iron_physics::Physics,
     /// Whether the game takes physics results (`__iron_physics` exists).
     physics_events: bool,
+    /// Bodies attached to GameObjects (`physics.attach`).
+    attachments: physics_sync::Attachments,
     /// The sound mixer, opened by the first `audio.*` op.
     audio: Option<Box<dyn iron_audio::Mixer>>,
     /// Whether the game takes finished-sound events (`__iron_audio` exists).
@@ -356,6 +360,7 @@ impl App {
         // Tell the new scripts the screen size on the next frame.
         self.screen = (0.0, 0.0, 0.0);
         self.physics = iron_physics::Physics::new();
+        self.attachments = physics_sync::Attachments::default();
         // Dropping the mixer stops every sound.
         self.audio = None;
         self.handle_ui(Input::Refresh);
@@ -471,8 +476,7 @@ impl App {
 
     /// One physics tick, then its results to scripts (`__iron_physics`).
     fn step_physics(&mut self) {
-        self.physics.step();
-        let batch = self.physics.take_batch();
+        let batch = self.attachments.step(&mut self.physics, &mut self.scene);
         if !self.physics_events || batch.is_empty() {
             return;
         }
@@ -682,8 +686,12 @@ impl App {
                     self.audio_op(&name["audio.".len()..], &op.args)
                 }
                 name if name.starts_with("physics.") => {
-                    if let Err(e) = self.physics.apply(&name["physics.".len()..], &op.args) {
-                        tracing::warn!("{name}: {e}");
+                    let name = &name["physics.".len()..];
+                    // `attach` ties a body to its GameObject (Rigidbody, colliders).
+                    if !self.attachments.op(name, &op.args)
+                        && let Err(e) = self.physics.apply(name, &op.args)
+                    {
+                        tracing::warn!("physics.{name}: {e}");
                     }
                 }
                 other => tracing::warn!("unknown script op `{other}`"),

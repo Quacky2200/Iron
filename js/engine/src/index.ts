@@ -44,18 +44,30 @@ export {
   type BodyKind,
   type BodyOptions,
   type CharacterOptions,
-  Collider,
+  PhysicsCollider,
   type ColliderOptions,
   type CollisionEvent,
   physics,
   type RayHit,
-  RigidBody,
+  PhysicsBody,
   type Shape,
 } from "./physics.ts";
 export { DateTime, type DateTimeKind, TimeSpan } from "./time.ts";
 export { Task, Time, TimeSince, TimeUntil } from "./clock.ts";
 export { Console, Debug, Log } from "./log.ts";
 export { Random, Rng } from "./random.ts";
+export {
+  BoxCollider,
+  CapsuleCollider,
+  Collider,
+  type Collision,
+  ForceMode,
+  MeshCollider,
+  PhysicsMaterial,
+  Rigidbody,
+  RigidbodyConstraints,
+  SphereCollider,
+} from "./physics-components.ts";
 export { Camera, CameraFollow, CameraOrbit, PlaneRenderer, WorldPanel } from "./rendering.ts";
 export { Screen } from "./screen.ts";
 export {

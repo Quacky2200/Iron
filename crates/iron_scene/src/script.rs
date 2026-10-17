@@ -41,6 +41,8 @@ pub struct ScriptScene {
     scripts: HashMap<ObjectId, ScriptObject>,
     /// Objects the engine moved since the last batch.
     engine_moved: Vec<ObjectId>,
+    /// Objects scripts moved (or re-parented) since [`ScriptScene::take_script_moved`].
+    script_moved: Vec<ObjectId>,
     next_engine_id: u32,
 }
 
@@ -112,6 +114,7 @@ impl ScriptScene {
                     self.scene.set_parent(id, Some(p), false);
                 }
                 self.scene.set_local(id, a.transform(3)?);
+                self.script_moved.push(id);
             }
             "destroy" => {
                 let Some(id) = self.object(a.id(0)?) else {
@@ -141,12 +144,14 @@ impl ScriptScene {
                 if !self.scene.set_parent(id, parent, false) {
                     return Err("can't parent an object under itself".into());
                 }
+                self.script_moved.push(id);
             }
             // `local id [p] [q] [s]`
             "local" => {
                 let id = self.require(a.id(0)?)?;
                 let t = a.transform(1)?;
                 self.scene.set_local(id, t);
+                self.script_moved.push(id);
             }
             "enabled" => {
                 let id = self.require(a.id(0)?)?;
@@ -171,6 +176,22 @@ impl ScriptScene {
             other => return Err(format!("unknown scene op `{other}`")),
         }
         Ok(None)
+    }
+
+    /// Objects whose world transform scripts changed since the last call (the ones they
+    /// moved and everything under them), for physics to follow.
+    pub fn take_script_moved(&mut self) -> Vec<ScriptObject> {
+        let mut out = Vec::new();
+        let mut stack = std::mem::take(&mut self.script_moved);
+        while let Some(o) = stack.pop() {
+            if let Some(script) = self.script_id(o)
+                && !out.contains(&script)
+            {
+                out.push(script);
+                stack.extend(self.scene.children(o));
+            }
+        }
+        out
     }
 
     fn require(&self, id: ScriptObject) -> Result<ObjectId, String> {

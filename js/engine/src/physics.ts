@@ -50,9 +50,9 @@ export interface ColliderOptions {
 
 export interface CollisionEvent {
   /** This body's collider that collided. */
-  collider: Collider;
+  collider: PhysicsCollider;
   /** What it collided with. */
-  other: Collider;
+  other: PhysicsCollider;
   /** Whether either collider is a sensor (an overlap, not a contact). */
   sensor: boolean;
   /** How fast they were moving relative to each other going in (m/s); 0 on end. */
@@ -60,7 +60,7 @@ export interface CollisionEvent {
 }
 
 export interface RayHit {
-  collider: Collider;
+  collider: PhysicsCollider;
   distance: number;
   point: Vector3;
   normal: Vector3;
@@ -82,18 +82,18 @@ const quat = (q: Quat | undefined): number[] | null => (q ? [q.x, q.y, q.z, q.w]
 let nextBody = 1;
 let nextCollider = 1;
 let nextQuery = 1;
-const bodies = new Map<number, RigidBody>();
-const colliders = new Map<number, Collider>();
+const bodies = new Map<number, PhysicsBody>();
+const colliders = new Map<number, PhysicsCollider>();
 const queries = new Map<number, { origin: Vec3; dir: Vec3; resolve: (hit: RayHit | null) => void }>();
 
-export class Collider {
+export class PhysicsCollider {
   readonly id: number;
   /** The body it's attached to; `null` for a static collider attached to the world. */
-  readonly body: RigidBody | null;
+  readonly body: PhysicsBody | null;
   readonly sensor: boolean;
 
   /** @internal Use `body.addCollider()` or `physics.addCollider()`. */
-  constructor(body: RigidBody | null, options: ColliderOptions) {
+  constructor(body: PhysicsBody | null, options: ColliderOptions) {
     this.id = nextCollider++;
     this.body = body;
     this.sensor = !!options.sensor;
@@ -122,6 +122,24 @@ export class Collider {
     ]);
   }
 
+  setFriction(friction: number): void {
+    __iron_op("physics.colliderSet", this.id, "friction", friction);
+  }
+
+  setRestitution(restitution: number): void {
+    __iron_op("physics.colliderSet", this.id, "restitution", restitution);
+  }
+
+  setSensor(sensor: boolean): void {
+    (this as { sensor: boolean }).sensor = sensor;
+    __iron_op("physics.colliderSet", this.id, "sensor", sensor);
+  }
+
+  /** Where it sits on its body. */
+  setOffset(position: Vec3, rotation?: Quat): void {
+    __iron_op("physics.colliderSet", this.id, "offset", vec(position), quat(rotation));
+  }
+
   /** Removes the collider from its body (or the world). */
   remove(): void {
     if (!colliders.delete(this.id)) return;
@@ -129,7 +147,7 @@ export class Collider {
   }
 }
 
-export class RigidBody {
+export class PhysicsBody {
   readonly id: number;
   readonly kind: BodyKind;
   /** Where the body was after the last tick (or where it was created / last set). */
@@ -160,8 +178,8 @@ export class RigidBody {
     ]);
   }
 
-  addCollider(options: ColliderOptions): Collider {
-    return new Collider(this, options);
+  addCollider(options: ColliderOptions): PhysicsCollider {
+    return new PhysicsCollider(this, options);
   }
 
   /** Teleports the body. */
@@ -212,6 +230,53 @@ export class RigidBody {
     __iron_op("physics.clearForces", this.id);
   }
 
+  /** An instant impulse at a world point (it also spins the body). */
+  applyImpulseAtPoint(impulse: Vec3, point: Vec3): void {
+    __iron_op("physics.force", this.id, "impulseAt", vec(impulse), vec(point));
+  }
+
+  /** Switches between simulated (`dynamic`), immovable (`fixed`) and script-moved (`kinematic`). */
+  setKind(kind: BodyKind): void {
+    (this as { kind: BodyKind }).kind = kind;
+    __iron_op("physics.set", this.id, "kind", kind);
+  }
+
+  /** Total mass in kg (shared by its colliders). */
+  setMass(kg: number): void {
+    __iron_op("physics.set", this.id, "mass", kg);
+  }
+
+  setGravityScale(scale: number): void {
+    __iron_op("physics.set", this.id, "gravityScale", scale);
+  }
+
+  setDamping(linear: number, angular: number): void {
+    __iron_op("physics.set", this.id, "linearDamping", linear);
+    __iron_op("physics.set", this.id, "angularDamping", angular);
+  }
+
+  setCcd(on: boolean): void {
+    __iron_op("physics.set", this.id, "ccd", on);
+  }
+
+  /** Which axes it may move along and turn about: [x, y, z] translations, then rotations. */
+  setAllowedAxes(translation: [boolean, boolean, boolean], rotation: [boolean, boolean, boolean]): void {
+    __iron_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
+  }
+
+  sleep(): void {
+    __iron_op("physics.set", this.id, "sleep");
+  }
+
+  wakeUp(): void {
+    __iron_op("physics.set", this.id, "wake");
+  }
+
+  /** Makes the body move a GameObject (and follow it when scripts move the object). */
+  attachTo(objectId: number): void {
+    __iron_op("physics.attach", this.id, objectId);
+  }
+
   /** Disabled bodies are left out of the simulation (and keep their state). */
   setEnabled(enabled: boolean): void {
     __iron_op("physics.set", this.id, "enabled", enabled);
@@ -243,13 +308,13 @@ export class RigidBody {
 }
 
 export const physics = {
-  createBody(options?: BodyOptions): RigidBody {
-    return new RigidBody(options);
+  createBody(options?: BodyOptions): PhysicsBody {
+    return new PhysicsBody(options);
   },
 
   /** A collider on the world itself (floors, walls): it never moves. */
-  addCollider(options: ColliderOptions): Collider {
-    return new Collider(null, options);
+  addCollider(options: ColliderOptions): PhysicsCollider {
+    return new PhysicsCollider(null, options);
   },
 
   setGravity(g: Vec3): void {
@@ -271,10 +336,13 @@ export const physics = {
   },
 
   /** A body by id, if it exists. */
-  body(id: number): RigidBody | undefined {
+  body(id: number): PhysicsBody | undefined {
     return bodies.get(id);
   },
 };
+
+/** @internal Called for every contact (the component layer turns them into Unity-style callbacks). */
+export const contactListeners: ((a: PhysicsCollider, b: PhysicsCollider, started: boolean, sensor: boolean, speed: number) => void)[] = [];
 
 function report(fn: ((e: CollisionEvent) => void) | undefined, event: CollisionEvent) {
   if (!fn) return;
@@ -314,6 +382,14 @@ globalThis.__iron_physics = (moved: number[], contacts: number[], rays: number[]
     const started = contacts[i] === 1;
     const sensor = contacts[i + 3] === 1;
     const speed = contacts[i + 4]!;
+    for (const listener of contactListeners) {
+      try {
+        listener(a, b, started, sensor, speed);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`[physics] error in collision callback: ${err.message}${err.stack ? `\n${err.stack}` : ""}`);
+      }
+    }
     for (const [self, other] of [
       [a, b],
       [b, a],
