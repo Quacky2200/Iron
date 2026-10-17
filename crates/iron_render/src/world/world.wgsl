@@ -48,6 +48,10 @@ struct MeshInstance {
     params: vec4<f32>,
     // Texture tiling: scale (xy), offset (zw), in bottom-up UV space like Unity's.
     tiling: vec4<f32>,
+    // The reflection probe it uses (bound in group 2): centre, and mip count (0: none).
+    probe: vec4<f32>,
+    // The probe's half extents, and 1 for box projection.
+    probe_box: vec4<f32>,
 };
 
 struct Light {
@@ -205,9 +209,26 @@ fn env_brdf_approx(f0: vec3<f32>, roughness: f32, ndv: f32) -> vec3<f32> {
     return f0 * ab.x + ab.y;
 }
 
-// The light arriving from direction `dir`, blurred for `roughness`: the sky's map (lower,
-// blurrier mips for rougher surfaces), or the ambient colour without one.
-fn environment(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
+// The light arriving at `p` from direction `dir`, blurred for `roughness`: the mesh's
+// reflection probe, else the sky's map (lower, blurrier mips for rougher surfaces), else
+// the ambient colour.
+fn environment(dir: vec3<f32>, roughness: f32, m: MeshInstance, p: vec3<f32>) -> vec3<f32> {
+    if (m.probe.w > 0.5) {
+        var d = dir;
+        if (m.probe_box.w > 0.5) {
+            // Box projection: where the ray leaves the probe's box, seen from its centre,
+            // so nearby walls line up.
+            let lo = m.probe.xyz - m.probe_box.xyz;
+            let hi = m.probe.xyz + m.probe_box.xyz;
+            let a = (hi - p) / dir;
+            let b = (lo - p) / dir;
+            let far = max(a, b);
+            let t = min(far.x, min(far.y, far.z));
+            d = p + dir * t - m.probe.xyz;
+        }
+        let lod = sqrt(roughness) * (m.probe.w - 1.0);
+        return textureSampleLevel(env_map, env_samp, d, lod).rgb * g.env.y;
+    }
     if (g.env.x < 0.5) {
         return g.ambient.rgb;
     }
@@ -346,7 +367,7 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         let px = vec2<f32>(g.viewport.x * 2.0 + g.viewport.z - in.pos.x, in.pos.y);
         reflected = textureSampleLevel(tex, samp, px / g.flags.yz, 0.0).rgb;
     } else {
-        reflected = environment(reflect(-v, n), roughness);
+        reflected = environment(reflect(-v, n), roughness, m, in.world);
     }
     color += albedo * ambient_light(n) + env_brdf * reflected;
     let lit = color + m.emission.rgb;

@@ -3,6 +3,7 @@
 //   metal (front to back).
 // - A mirror wall (a `Mirror` on a quad) reflecting the scene exactly.
 // - Models in typical materials: a gold bunny and a chrome teapot (both metallic).
+// - A reflection probe over it all, so shiny things reflect each other, not just the sky.
 import {
   Camera,
   CameraOrbit,
@@ -14,6 +15,7 @@ import {
   Mirror,
   Model,
   Quaternion,
+  ReflectionProbe,
   RenderSettings,
   Component,
   Vector3,
@@ -54,6 +56,10 @@ class Showroom extends Component {
     mirror.addComponent(Mirror);
     const frame = new GameObject("Mirror frame", { position: new Vector3(0, 1.4, -2.25), scale: new Vector3(6.2, 3, 0.06) });
     frame.addComponent(MeshRenderer, { mesh: "cube", material: Material.create({ color: new Color(0.1, 0.08, 0.06, 1), smoothness: 0.3 }) });
+
+    // A probe over the showroom, kept live (the models turn).
+    const probe = new GameObject("Probe", { position: new Vector3(0, 1, 0) });
+    probe.addComponent(ReflectionProbe, { size: new Vector3(14, 8, 10), resolution: 128, refreshMode: "everyFrame" });
 
     // Models: gold and chrome.
     const gold = Material.create({ color: new Color(1, 0.77, 0.34, 1), metallic: 1, smoothness: 0.85 });

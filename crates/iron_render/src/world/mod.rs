@@ -37,6 +37,23 @@ pub enum WorldTexture {
     Reflection(usize),
 }
 
+/// A reflection probe (Unity's): a cubemap of the scene seen from `position`, which
+/// meshes inside its box reflect instead of the sky.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReflectionProbe {
+    /// Identifies it across frames (its cubemap is kept between renders).
+    pub id: u32,
+    pub position: Vec3,
+    /// Half the size of its box of influence, which is centred on `position`.
+    pub half_extents: Vec3,
+    /// The cubemap's face size in texels (a power of two).
+    pub resolution: u32,
+    /// Reflections are corrected for the box's walls (rooms), not taken as infinitely far.
+    pub box_projection: bool,
+    /// Render it this frame (it's also rendered when first seen or resized).
+    pub render: bool,
+}
+
 /// A flat mirror: the plane a mesh reflects the scene in.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mirror {
@@ -243,6 +260,8 @@ pub struct WorldView {
     /// Draws only what's on the positive side of this plane (`[nx, ny, nz, d]`: kept where
     /// `n · p + d >= 0`), for mirror views.
     pub clip_plane: Option<[f32; 4]>,
+    /// Reflection probes in this view's world (rendered for the main view).
+    pub probes: Vec<ReflectionProbe>,
 }
 
 impl WorldView {
@@ -257,6 +276,7 @@ impl WorldView {
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
             clip_plane: None,
+            probes: Vec::new(),
         }
     }
 }
@@ -312,6 +332,10 @@ struct GpuMesh {
     emission: [f32; 4],
     params: [f32; 4],
     tiling: [f32; 4],
+    /// The reflection probe it uses: centre (xyz) and mip count (w, 0: none).
+    probe: [f32; 4],
+    /// The probe's half extents (xyz) and 1 for box projection (w).
+    probe_box: [f32; 4],
 }
 
 #[repr(C)]
@@ -383,6 +407,8 @@ type ViewRuns = (Vec<Run>, Vec<(bool, Run)>, Range<u32>);
 struct Run {
     mesh: Option<u32>,
     texture: Option<WorldTexture>,
+    /// The reflection probe its meshes use (`None`: the sky).
+    probe: Option<u32>,
     /// Additive quads (drawn without depth writes).
     glow: bool,
     /// Opaque meshes that cast shadows (drawn into the shadow map).
@@ -429,7 +455,12 @@ pub struct WorldRenderer {
     samplers: HashMap<(TextureFilter, TextureWrap), wgpu::Sampler>,
     sampler: wgpu::Sampler,
     white: wgpu::TextureView,
-    depth: Option<(wgpu::TextureView, (u32, u32))>,
+    /// Depth buffers by size (the screen, mirrors and probe faces).
+    depth: HashMap<(u32, u32), wgpu::TextureView>,
+    /// Reflection probes' cubemaps, by probe id.
+    probe_maps: HashMap<u32, environment::EnvMap>,
+    /// 2D targets probe faces are drawn into before copying, by face size.
+    probe_faces: HashMap<u32, wgpu::TextureView>,
     /// Bloom over every view (`None`: off).
     pub bloom: Option<Bloom>,
     /// Made the first time bloom is on.
@@ -665,7 +696,9 @@ impl WorldRenderer {
             samplers: HashMap::new(),
             sampler,
             white: white.create_view(&Default::default()),
-            depth: None,
+            depth: HashMap::new(),
+            probe_maps: HashMap::new(),
+            probe_faces: HashMap::new(),
             bloom: None,
             bloom_pass: None,
         };
@@ -1053,9 +1086,7 @@ impl WorldRenderer {
     }
 
     fn depth_view(&mut self, gpu: &Gpu, size: (u32, u32)) -> wgpu::TextureView {
-        if let Some((view, s)) = &self.depth
-            && *s == size
-        {
+        if let Some(view) = self.depth.get(&size) {
             return view.clone();
         }
         let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -1073,7 +1104,11 @@ impl WorldRenderer {
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
-        self.depth = Some((view.clone(), size));
+        // A few sizes at most: the screen, its mirrors, probe faces.
+        if self.depth.len() > 8 {
+            self.depth.clear();
+        }
+        self.depth.insert(size, view.clone());
         view
     }
 
@@ -1101,6 +1136,7 @@ impl WorldRenderer {
         views: &[WorldView],
         textures: &[&wgpu::TextureView],
     ) {
+        self.update_probes(gpu, views, textures);
         if !views
             .iter()
             .any(|v| v.meshes.iter().any(|m| m.mirror.is_some()))
@@ -1145,6 +1181,110 @@ impl WorldRenderer {
             }
         }
         self.render_views_with(gpu, target, &views, textures, &reflections);
+    }
+
+    /// Renders the main view's reflection probes that need it: six 90° views from each
+    /// probe into a 2D target, copied into its cubemap's faces, then blurred down.
+    fn update_probes(&mut self, gpu: &Gpu, views: &[WorldView], textures: &[&wgpu::TextureView]) {
+        let main = (0..views.len()).max_by(|&a, &b| {
+            let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
+            area(&views[a]).total_cmp(&area(&views[b]))
+        });
+        let Some(main) = main else {
+            return;
+        };
+        let main_view = &views[main];
+        self.probe_maps
+            .retain(|id, _| main_view.probes.iter().any(|p| p.id == *id));
+        for probe in main_view.probes.clone() {
+            let res = probe.resolution.clamp(16, 1024).next_power_of_two();
+            let current = self
+                .probe_maps
+                .get(&probe.id)
+                .is_some_and(|m| m.size == res);
+            if current && !probe.render {
+                continue;
+            }
+            let map = match self.probe_maps.remove(&probe.id) {
+                Some(m) if m.size == res => m,
+                _ => environment::EnvMap::new(gpu, res),
+            };
+            let face_target = self.probe_face_target(gpu, res);
+            let bloom = self.bloom.take();
+            for face in 0..6u32 {
+                let (forward, up) = environment::face_camera(face);
+                let world = iron_core::glam::camera::rh::view::look_at_mat4(
+                    probe.position,
+                    probe.position + forward,
+                    up,
+                )
+                .inverse();
+                let mut v = main_view.clone();
+                v.camera = WorldCamera::new(
+                    world,
+                    Projection::Perspective {
+                        fov_y_degrees: 90.0,
+                    },
+                    0.05,
+                    1000.0,
+                    (res, res),
+                    main_view.camera.clear,
+                );
+                v.viewport = [0.0, 0.0, 1.0, 1.0];
+                v.clip_plane = None;
+                // Probes don't see probes or mirrors (those reflect the sky here).
+                v.probes.clear();
+                for m in &mut v.meshes {
+                    m.mirror = None;
+                }
+                let rt = RenderTarget {
+                    view: &face_target,
+                    format: bloom::HDR_FORMAT,
+                    size: (res, res),
+                    scale: 1.0,
+                };
+                self.render_views_with(gpu, &rt, &[v], textures, &[]);
+                let pass = self
+                    .env_pass
+                    .get_or_insert_with(|| environment::EnvPass::new(gpu));
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                pass.copy_face(gpu, &mut encoder, &face_target, &map, face);
+                gpu.queue.submit([encoder.finish()]);
+            }
+            let pass = self
+                .env_pass
+                .get_or_insert_with(|| environment::EnvPass::new(gpu));
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            pass.blur_mips(gpu, &mut encoder, &map);
+            gpu.queue.submit([encoder.finish()]);
+            self.bloom = bloom;
+            self.probe_maps.insert(probe.id, map);
+        }
+    }
+
+    fn probe_face_target(&mut self, gpu: &Gpu, res: u32) -> wgpu::TextureView {
+        self.probe_faces
+            .entry(res)
+            .or_insert_with(|| {
+                gpu.device
+                    .create_texture(&wgpu::TextureDescriptor {
+                        label: Some("probe face"),
+                        size: wgpu::Extent3d {
+                            width: res,
+                            height: res,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: bloom::HDR_FORMAT,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    })
+                    .create_view(&Default::default())
+            })
+            .clone()
     }
 
     /// The texture mirror `k` reflects into, made (or remade) at `size`.
@@ -1231,6 +1371,21 @@ impl WorldRenderer {
                     at.distance_squared(eye)
                 }
             };
+            // The probe a mesh reflects: the smallest rendered one whose box holds its
+            // centre.
+            let probe_for = |m: &MeshInstance| -> Option<&ReflectionProbe> {
+                let at = m.model.w_axis.xyz();
+                view.probes
+                    .iter()
+                    .filter(|p| self.probe_maps.contains_key(&p.id))
+                    .filter(|p| ((at - p.position).abs() - p.half_extents).max_element() <= 0.0)
+                    .min_by(|a, b| {
+                        let size = |p: &ReflectionProbe| {
+                            p.half_extents.x * p.half_extents.y * p.half_extents.z
+                        };
+                        size(a).total_cmp(&size(b))
+                    })
+            };
             let gpu_mesh = |m: &MeshInstance| {
                 let normal = Mat3::from_mat4(m.model).inverse().transpose();
                 GpuMesh {
@@ -1249,6 +1404,14 @@ impl WorldRenderer {
                         f32::from(u8::from(m.mirror.is_some())),
                     ],
                     tiling: m.tiling,
+                    probe: probe_for(m).map_or([0.0; 4], |p| {
+                        let mips = self.probe_maps.get(&p.id).map_or(0, |map| map.mips);
+                        [p.position.x, p.position.y, p.position.z, mips as f32]
+                    }),
+                    probe_box: probe_for(m).map_or([0.0; 4], |p| {
+                        let h = p.half_extents;
+                        [h.x, h.y, h.z, f32::from(u8::from(p.box_projection))]
+                    }),
                 }
             };
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
@@ -1259,7 +1422,14 @@ impl WorldRenderer {
                 .filter(known)
                 .filter(|m| m.color[3] >= 1.0 && m.glow == MeshGlow::None)
                 .collect();
-            opaque.sort_by_key(|m| (m.mesh, m.texture, m.cast_shadows));
+            opaque.sort_by_key(|m| {
+                (
+                    m.mesh,
+                    m.texture,
+                    m.cast_shadows,
+                    probe_for(m).map(|p| p.id),
+                )
+            });
             let mut opaque_runs: Vec<Run> = Vec::new();
             for m in opaque {
                 let i = meshes.len() as u32;
@@ -1269,6 +1439,7 @@ impl WorldRenderer {
                         if r.mesh == Some(m.mesh)
                             && r.texture == m.texture
                             && r.casts == m.cast_shadows
+                            && r.probe == probe_for(m).map(|p| p.id)
                             && r.range.end == i =>
                     {
                         r.range.end += 1
@@ -1276,6 +1447,7 @@ impl WorldRenderer {
                     _ => opaque_runs.push(Run {
                         mesh: Some(m.mesh),
                         texture: m.texture,
+                        probe: probe_for(m).map(|p| p.id),
                         glow: false,
                         casts: m.cast_shadows,
                         range: i..i + 1,
@@ -1312,6 +1484,7 @@ impl WorldRenderer {
                             Run {
                                 mesh: Some(m.mesh),
                                 texture: m.texture,
+                                probe: probe_for(m).map(|p| p.id),
                                 glow: m.glow != MeshGlow::None,
                                 casts: false,
                                 range: i..i + 1,
@@ -1350,6 +1523,7 @@ impl WorldRenderer {
                                 Run {
                                     mesh: None,
                                     texture: q.texture,
+                                    probe: None,
                                     glow: q.additive,
                                     casts: false,
                                     range: i..i + 1,
@@ -1544,28 +1718,37 @@ impl WorldRenderer {
             Some(WorldTexture::Reflection(k)) => reflection_groups.get(k).unwrap_or(&groups[0]),
         };
 
-        let shadow_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("world shadows"),
-            layout: &self.shadow_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&self.env_map.cube),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&self.env_sampler),
-                },
-            ],
-        });
+        // Shadows and the environment: the sky's, and one per reflection probe.
+        let lighting_group = |cube: &wgpu::TextureView| {
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("world lighting"),
+                layout: &self.shadow_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(cube),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.env_sampler),
+                    },
+                ],
+            })
+        };
+        let shadow_group = lighting_group(&self.env_map.cube);
+        let probe_groups: HashMap<u32, wgpu::BindGroup> = self
+            .probe_maps
+            .iter()
+            .map(|(id, map)| (*id, lighting_group(&map.cube)))
+            .collect();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         if let Some((main, ..)) = shadow {
             // The casters: the main view's opaque meshes, from the light.
@@ -1639,6 +1822,8 @@ impl WorldRenderer {
 
                 let draw = |pass: &mut wgpu::RenderPass<'_>, run: &Run, blend: bool| {
                     pass.set_bind_group(1, group_for(run.texture), &[]);
+                    let lighting = run.probe.and_then(|id| probe_groups.get(&id));
+                    pass.set_bind_group(2, lighting.unwrap_or(&shadow_group), &[]);
                     match run.mesh.and_then(|m| self.meshes.get(&m)) {
                         Some(mesh) => {
                             pass.set_pipeline(if run.glow {

@@ -120,6 +120,7 @@ export {
   Mesh,
   MeshRenderer,
   Mirror,
+  ReflectionProbe,
   PlaneRenderer,
   type PrimitiveMesh,
   type BloomSettings,

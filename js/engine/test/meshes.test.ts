@@ -9,6 +9,7 @@ import {
   Mesh,
   MeshRenderer,
   Mirror,
+  ReflectionProbe,
   PrimitiveType,
   QualitySettings,
   RenderSettings,
@@ -87,6 +88,11 @@ describe("meshes and lights", () => {
     glass.addComponent(MeshRenderer, { mesh: "quad" });
     const mirror = glass.addComponent(Mirror);
     expect(renderOps().at(-1)).toEqual(["render.mirror", mirror.id, glass.id, [0, 0, 1]]);
+    const room = new GameObject("room");
+    const probe = room.addComponent(ReflectionProbe, { size: new Vector3(4, 3, 6), boxProjection: true });
+    expect(renderOps().at(-1)).toEqual(["render.probe", probe.id, room.id, [4, 3, 6], 128, true, false]);
+    probe.renderProbe();
+    expect(renderOps().at(-1)).toEqual(["render.probeRender", probe.id]);
   });
 
   test("createPrimitive adds a mesh and the matching collider", () => {

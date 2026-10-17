@@ -11,8 +11,8 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     BEAM_MESH, Bloom, Color, Light, LightKind, MeshData, MeshGlow, MeshInstance, Mirror,
-    Projection, Shadows, Sky, TextureData, TextureFilter, TextureWrap, WorldCamera, WorldQuad,
-    WorldTexture, WorldView, primitive_id, viewport_size,
+    Projection, ReflectionProbe, Shadows, Sky, TextureData, TextureFilter, TextureWrap,
+    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -56,6 +56,16 @@ struct Renderer {
     cast_shadows: bool,
 }
 
+/// A `ReflectionProbe` component.
+#[derive(Clone, Copy, Debug)]
+struct Probe {
+    object: ScriptObject,
+    half_extents: Vec3,
+    resolution: u32,
+    box_projection: bool,
+    every_frame: bool,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Sprite {
     object: ScriptObject,
@@ -93,6 +103,10 @@ pub struct WorldViews {
     sprites: BTreeMap<u32, Sprite>,
     /// Planar mirrors: their objects and the local normals of their planes.
     mirrors: BTreeMap<u32, (ScriptObject, Vec3)>,
+    /// Reflection probes by component.
+    probes: BTreeMap<u32, Probe>,
+    /// Probes asked to render on the next frame (`render.probeRender`, or just added).
+    probe_requests: std::collections::HashSet<u32>,
     particles: BTreeMap<u32, ParticleSystem>,
     /// Bloom over the world (`render.bloom`), applied by the app before drawing.
     pub bloom: Option<Bloom>,
@@ -126,6 +140,8 @@ impl Default for WorldViews {
             lights: BTreeMap::new(),
             sprites: BTreeMap::new(),
             mirrors: BTreeMap::new(),
+            probes: BTreeMap::new(),
+            probe_requests: std::collections::HashSet::new(),
             particles: BTreeMap::new(),
             bloom: None,
             shadow_settings: (25.0, 2048),
@@ -555,6 +571,23 @@ impl WorldViews {
                     !matches!(args.get(8), Some(Value::Bool(false))),
                 );
             }
+            // `probe component object [sx sy sz] resolution boxProjection everyFrame`
+            "probe" => {
+                let [x, y, z] = nums::<3>(args.get(2)).unwrap_or([10.0; 3]);
+                let probe = Probe {
+                    object: id_at(1)?,
+                    half_extents: Vec3::new(x, y, z).abs() / 2.0,
+                    resolution: num(3).unwrap_or(128.0).clamp(16.0, 1024.0) as u32,
+                    box_projection: matches!(args.get(4), Some(Value::Bool(true))),
+                    every_frame: matches!(args.get(5), Some(Value::Bool(true))),
+                };
+                self.probes.insert(id, probe);
+                self.probe_requests.insert(id);
+            }
+            // `probeRender component`: render it again on the next frame.
+            "probeRender" => {
+                self.probe_requests.insert(id);
+            }
             // `mirror component object [nx ny nz]`: the object's MeshRenderer reflects the
             // scene in the plane through its origin with this (local) normal.
             "mirror" => {
@@ -588,6 +621,7 @@ impl WorldViews {
                 self.lights.remove(&id);
                 self.sprites.remove(&id);
                 self.mirrors.remove(&id);
+                self.probes.remove(&id);
                 self.particles.remove(&id);
             }
             other => return Err(format!("unknown render op `{other}`")),
@@ -603,7 +637,13 @@ impl WorldViews {
         self.lights.retain(|_, l| !objects.contains(&l.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
         self.mirrors.retain(|_, m| !objects.contains(&m.0));
+        self.probes.retain(|_, p| !objects.contains(&p.object));
         self.particles.retain(|_, p| !objects.contains(&p.object));
+    }
+
+    /// The probes asked for have been rendered (call after drawing a frame).
+    pub fn probes_rendered(&mut self) {
+        self.probe_requests.clear();
     }
 
     /// Advances particle systems on active objects by `dt` (scaled) seconds, emitting
@@ -674,6 +714,22 @@ impl WorldViews {
                     }),
             )
             .chain(extra.iter().copied())
+            .collect();
+        // Reflection probes where their objects are.
+        let probes: Vec<ReflectionProbe> = self
+            .probes
+            .iter()
+            .filter(|(_, p)| scene.active(p.object))
+            .filter_map(|(&id, p)| {
+                Some(ReflectionProbe {
+                    id,
+                    position: world(p.object)?.translation.into(),
+                    half_extents: p.half_extents,
+                    resolution: p.resolution,
+                    box_projection: p.box_projection,
+                    render: p.every_frame || self.probe_requests.contains(&id),
+                })
+            })
             .collect();
         // Mirrors: their objects' planes in the world.
         let mirror_planes: HashMap<ScriptObject, Mirror> = self
@@ -827,6 +883,7 @@ impl WorldViews {
                     ambient: self.ambient,
                     skybox: camera.skybox,
                     clip_plane: None,
+                    probes: probes.clone(),
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

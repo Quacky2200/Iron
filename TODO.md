@@ -984,8 +984,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       (projection flipped left to right to keep winding, a clip plane dropping what's behind
       it) into an HDR texture, and the mirror samples it at its screen position as its
       reflection, tinted by the material; other cameras see the sky — `M5-RND-12`
-    - [ ] Reflection probes (realtime cubemaps of the scene, baked later), screen-space
-      reflections later; skyboxes from images (cubemap faces, equirectangular HDR)
+    - [x] Reflection probes: `ReflectionProbe` (size, resolution, box projection, refresh on
+      awake / every frame / `renderProbe()`): six 90° views of the main view's scene from the
+      probe into an HDR cubemap (copied in mirrored, mips blurred); meshes whose centre is in
+      its box (the smallest box wins) reflect it instead of the sky — `M5-RND-13`
+    - [ ] Reflection follow-ups: baked probes, probe blending at box edges, screen-space
+      reflections, skyboxes from images (cubemap faces, equirectangular HDR), proper GGX
+      prefiltering of cube mips, mirror resolution scale
     - [x] `examples/materials`: the roughness × metallic sphere grid, a mirror wall, a gold
       bunny and a chrome teapot under a procedural sky
     - [ ] Maps: normal, metallic-roughness, occlusion, emission (glTF's), detail and tiling

@@ -201,6 +201,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
             clip_plane: None,
+            probes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -220,6 +221,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
             clip_plane: None,
+            probes: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -246,6 +248,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             ambient: [0.2, 0.2, 0.22],
             skybox: false,
             clip_plane: None,
+            probes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -949,4 +952,110 @@ fn planar_mirror() {
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-12", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-13
+#[test]
+fn reflection_probe_in_a_room() {
+    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, ReflectionProbe, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let eye = Vec3::new(0.0, 1.5, 3.4);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y)
+            .inverse(),
+        60.0,
+        0.05,
+        50.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let block = |at: Vec3, scale: Vec3, color: [f32; 3]| MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model: Mat4::from_scale_rotation_translation(scale, Quat::IDENTITY, at),
+        color: [color[0], color[1], color[2], 1.0],
+        emission: [0.0; 3],
+        smoothness: 0.2,
+        metallic: 0.0,
+        unlit: false,
+        texture: None,
+        tiling: [1.0, 1.0, 0.0, 0.0],
+        glow: MeshGlow::None,
+        cast_shadows: false,
+        mirror: None,
+    };
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.25, 0.25, 0.25];
+    // A 4 m room: red and green side walls, a blue back wall, white floor and ceiling,
+    // open behind the camera; a chrome ball and a rough gold one in the middle.
+    v.meshes = vec![
+        block(
+            Vec3::new(0.0, -0.05, 0.0),
+            Vec3::new(4.0, 0.1, 6.0),
+            [0.8, 0.8, 0.8],
+        ),
+        block(
+            Vec3::new(0.0, 3.05, 0.0),
+            Vec3::new(4.0, 0.1, 6.0),
+            [0.8, 0.8, 0.8],
+        ),
+        block(
+            Vec3::new(-2.05, 1.5, 0.0),
+            Vec3::new(0.1, 3.0, 6.0),
+            [0.8, 0.1, 0.08],
+        ),
+        block(
+            Vec3::new(2.05, 1.5, 0.0),
+            Vec3::new(0.1, 3.0, 6.0),
+            [0.1, 0.6, 0.12],
+        ),
+        block(
+            Vec3::new(0.0, 1.5, -3.05),
+            Vec3::new(4.0, 3.0, 0.1),
+            [0.15, 0.25, 0.8],
+        ),
+        MeshInstance {
+            mesh: primitive_id("sphere").unwrap(),
+            color: [0.95, 0.95, 0.95, 1.0],
+            smoothness: 1.0,
+            metallic: 1.0,
+            ..block(Vec3::new(-0.6, 0.8, 0.0), Vec3::splat(1.1), [1.0; 3])
+        },
+        MeshInstance {
+            mesh: primitive_id("sphere").unwrap(),
+            color: [1.0, 0.77, 0.34, 1.0],
+            smoothness: 0.6,
+            metallic: 1.0,
+            ..block(Vec3::new(0.9, 0.6, 0.6), Vec3::splat(0.8), [1.0; 3])
+        },
+    ];
+    v.lights = vec![Light {
+        kind: LightKind::Point,
+        color: [6.0, 5.6, 5.0],
+        position: Vec3::new(0.0, 2.6, 0.5),
+        direction: Vec3::ZERO,
+        range: 8.0,
+        shadows: None,
+    }];
+    v.probes = vec![ReflectionProbe {
+        id: 1,
+        position: Vec3::new(0.0, 1.2, 0.0),
+        half_extents: Vec3::new(2.0, 1.5, 3.0),
+        resolution: 64,
+        box_projection: true,
+        render: true,
+    }];
+    let mut world = WorldRenderer::new(&gpu);
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    assert_golden("M5-RND-13", size.0, size.1, &pixels, 3);
 }

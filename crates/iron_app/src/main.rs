@@ -1529,6 +1529,7 @@ impl PlatformApp for App {
                 &cmds,
             );
         });
+        self.world_view.probes_rendered();
 
         self.frames += 1;
         if let Some((path, frames)) = self.screenshot.clone()

@@ -944,3 +944,37 @@ export class Mirror extends Component {
     __iron_op("render.remove", this.id);
   }
 }
+
+/**
+ * Captures the scene around its object into a cubemap that shiny things inside its box
+ * reflect instead of the sky (Unity's `ReflectionProbe`). Rendering it costs six views of
+ * the scene, so by default it renders once (`refreshMode: "onAwake"`); `everyFrame` keeps
+ * it live, and `viaScripting` waits for `renderProbe()`.
+ */
+export class ReflectionProbe extends Component {
+  /** The box of influence, centred on the object (metres). */
+  size: Vector3Like = new Vector3(10, 10, 10);
+  /** The cubemap's face size in texels (a power of two, 16 to 1024). */
+  resolution = 128;
+  /** Correct reflections for the box's walls (rooms) instead of treating them as far away. */
+  boxProjection = false;
+  refreshMode: "onAwake" | "everyFrame" | "viaScripting" = "onAwake";
+
+  private send(): void {
+    const s = this.size;
+    __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame");
+  }
+
+  /** Captures the scene again on the next frame (after moving things, say). */
+  renderProbe(): void {
+    __iron_op("render.probeRender", this.id);
+  }
+
+  override onAwake(): void {
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}
