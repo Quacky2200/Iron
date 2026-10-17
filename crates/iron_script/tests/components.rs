@@ -95,7 +95,15 @@ fn a_reload_runs_the_new_code_on_the_next_tick() {
     assert_ne!(edited, HELLO);
     let mut fresh = QuickJsRuntime::new();
     let new_logs = capture_logs(&mut fresh);
-    let classes = iron_script::reload(&mut rt, fresh, &mut host, "hello.js", &edited).unwrap();
+    let classes = iron_script::reload(
+        &mut rt,
+        fresh,
+        &mut host,
+        "hello.js",
+        &edited,
+        |rt, host, classes| iron_script::spawn_each(rt, host, classes),
+    )
+    .unwrap();
     assert_eq!(classes, ["Hello"]);
     host.update(&mut rt, 1.0 / 60.0);
     assert_eq!(messages(&logs), ["hello", "tick"]);
@@ -116,8 +124,15 @@ fn a_broken_reload_keeps_the_old_code_running() {
         ("this is not javascript (", "SyntaxError"),
         ("throw new Error('top level')", "top level"),
     ] {
-        let err = iron_script::reload(&mut rt, QuickJsRuntime::new(), &mut host, "game.js", broken)
-            .unwrap_err();
+        let err = iron_script::reload(
+            &mut rt,
+            QuickJsRuntime::new(),
+            &mut host,
+            "game.js",
+            broken,
+            |rt, host, classes| iron_script::spawn_each(rt, host, classes),
+        )
+        .unwrap_err();
         assert!(err.message.contains(expected), "{err}");
     }
     host.update(&mut rt, 1.0 / 60.0);

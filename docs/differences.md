@@ -4,6 +4,22 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## Script API vs Unity, s&box and C# (M5.a)
+
+The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler degrees,
+`Debug.log`, `DateTime`, ...). Where it can't match:
+
+| Area | Iron | Unity / s&box / C# | Why |
+|---|---|---|---|
+| Handedness | Right-handed, y up, forward is -z; positive pitch (about +x) tips forward **up** | Unity: left-handed, forward +z, positive pitch looks down. s&box: z up, forward +x | glam, rapier and wgpu are right-handed; Euler order matches Unity's (z, then x, then y) |
+| Value types | Immutable classes: `v.add(w)`, `v.scale(s)`; no operator overloading | `v + w`, `v * s`; mutable structs | JS has no operators or structs; immutability stops `transform.position.x = 1` silently doing nothing |
+| Time resolution | Milliseconds everywhere (`DateTime`, `TimeSpan`, `Time`); `f` format digits beyond three print as zeros; `TimeSpan.parse` drops sub-millisecond digits | 100 ns ticks | JS `Date` and engine time are millisecond clocks; no µs/ns timing, so don't profile with them |
+| Months | `DateTime.month` is 1 to 12 | Same in C# (JS `Date` uses 0 to 11) | Follows C# |
+| Formatting | `DateTime.toString` uses the invariant culture (`MM/dd/yyyy`, English names) | Current culture | No culture data in the runtime |
+| `Time.timeScale` | Scales `Time.deltaTime`, `Time.time` and the `dt` components get; physics isn't scaled yet | Scales physics too | Physics time scaling comes with the Rigidbody component (M5.a2) |
+| Updates | Components update on fixed 60 Hz ticks only (`onUpdate(dt)`); no separate per-frame `Update` / `FixedUpdate` | Both | One tick keeps scripts deterministic; a per-frame hook can come with rendering |
+| Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
+
 ## SVG (M3d step 5.1)
 
 | Area | Iron | Browsers / spec | Why |

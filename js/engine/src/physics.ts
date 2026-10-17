@@ -5,20 +5,7 @@
 // what collided and query answers, so `position` and friends are always last tick's
 // values. Units are metres, seconds and kilograms; y is up.
 
-/** A vector in world space. */
-export interface Vec3 {
-  x: number;
-  y: number;
-  z: number;
-}
-
-/** A rotation as a unit quaternion. */
-export interface Quat {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-}
+import { Quaternion, type QuaternionLike as Quat, Vector3, type Vector3Like as Vec3 } from "./math.ts";
 
 export type BodyKind = "dynamic" | "fixed" | "kinematic";
 
@@ -75,8 +62,8 @@ export interface CollisionEvent {
 export interface RayHit {
   collider: Collider;
   distance: number;
-  point: Vec3;
-  normal: Vec3;
+  point: Vector3;
+  normal: Vector3;
 }
 
 export interface CharacterOptions {
@@ -146,9 +133,9 @@ export class RigidBody {
   readonly id: number;
   readonly kind: BodyKind;
   /** Where the body was after the last tick (or where it was created / last set). */
-  readonly position: Vec3;
-  readonly rotation: Quat;
-  readonly velocity: Vec3;
+  position: Vector3;
+  rotation: Quaternion;
+  velocity: Vector3;
   /** A character controller's ground contact after its last `move`. */
   grounded = false;
   /** Called when one of this body's colliders starts touching (or overlapping) another. */
@@ -160,9 +147,9 @@ export class RigidBody {
   constructor(options: BodyOptions = {}) {
     this.id = nextBody++;
     this.kind = options.kind ?? "dynamic";
-    this.position = { x: 0, y: 0, z: 0, ...options.position };
-    this.rotation = { x: 0, y: 0, z: 0, w: 1, ...options.rotation };
-    this.velocity = { x: 0, y: 0, z: 0, ...options.velocity };
+    this.position = Vector3.from(options.position ?? Vector3.zero);
+    this.rotation = Quaternion.from(options.rotation ?? Quaternion.identity);
+    this.velocity = Vector3.from(options.velocity ?? Vector3.zero);
     bodies.set(this.id, this);
     __iron_op("physics.body", this.id, this.kind, vec(this.position), quat(this.rotation), vec(this.velocity), [
       options.gravityScale ?? 1,
@@ -179,17 +166,17 @@ export class RigidBody {
 
   /** Teleports the body. */
   setPosition(p: Vec3): void {
-    Object.assign(this.position, { x: p.x, y: p.y, z: p.z });
+    this.position = Vector3.from(p);
     __iron_op("physics.set", this.id, "position", vec(p));
   }
 
   setRotation(q: Quat): void {
-    Object.assign(this.rotation, { x: q.x, y: q.y, z: q.z, w: q.w });
+    this.rotation = Quaternion.from(q);
     __iron_op("physics.set", this.id, "rotation", quat(q));
   }
 
   setVelocity(v: Vec3): void {
-    Object.assign(this.velocity, { x: v.x, y: v.y, z: v.z });
+    this.velocity = Vector3.from(v);
     __iron_op("physics.set", this.id, "velocity", vec(v));
   }
 
@@ -312,9 +299,9 @@ globalThis.__iron_physics = (moved: number[], contacts: number[], rays: number[]
   for (let i = 0; i + 10 < moved.length; i += 11) {
     const b = bodies.get(moved[i]!);
     if (!b) continue;
-    Object.assign(b.position, { x: moved[i + 1], y: moved[i + 2], z: moved[i + 3] });
-    Object.assign(b.rotation, { x: moved[i + 4], y: moved[i + 5], z: moved[i + 6], w: moved[i + 7] });
-    Object.assign(b.velocity, { x: moved[i + 8], y: moved[i + 9], z: moved[i + 10] });
+    b.position = new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]);
+    b.rotation = new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]);
+    b.velocity = new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]);
   }
   for (let i = 0; i + 1 < characters.length; i += 2) {
     const b = bodies.get(characters[i]!);
@@ -349,12 +336,8 @@ globalThis.__iron_physics = (moved: number[], contacts: number[], rays: number[]
     q.resolve({
       collider,
       distance,
-      point: {
-        x: q.origin.x + q.dir.x * distance,
-        y: q.origin.y + q.dir.y * distance,
-        z: q.origin.z + q.dir.z * distance,
-      },
-      normal: { x: rays[i + 3]!, y: rays[i + 4]!, z: rays[i + 5]! },
+      point: new Vector3(q.origin.x + q.dir.x * distance, q.origin.y + q.dir.y * distance, q.origin.z + q.dir.z * distance),
+      normal: new Vector3(rays[i + 3], rays[i + 4], rays[i + 5]),
     });
   }
 };

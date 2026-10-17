@@ -11,6 +11,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 iron_audio = { path = "../iron_audio" }
 iron_core = { path = "../iron_core" }
 iron_physics = { path = "../iron_physics" }
+iron_scene = { path = "../iron_scene" }
 iron_platform = { path = "../iron_platform" }
 iron_render = { path = "../iron_render" }
 iron_script = { path = "../iron_script" }

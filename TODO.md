@@ -762,19 +762,46 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 
 ## M5 — Scene, assets, rendering, editor
 
-- [ ] **M5.a** GameObject + Component model first (the s&box way), from TS components, for 2D
-  and 3D objects: vectors, quaternions and transforms in the TS API, and planes. The first plane
-  use is UI in 3D space (a menu drawn on a plane in the world).
+- [ ] **M5.a** GameObject + Component core (the s&box way), from TS components, for 2D and 3D
+  objects. The first plane use is UI in 3D space (a menu drawn on a plane in the world).
   **Decided (2026-10-17):** our own wgpu renderer (DESIGN §7.4); an `iron_scene` crate with
   GameObjects in a generational arena, no ECS underneath (§7.5).
+  API style (2026-10-17): Unity / s&box naming and units: `Vector2` (2D), `Vector3`
+  (`forward`, `up`, `right`, ...), `Quaternion` with Euler angles in degrees,
+  `transform.forward` / `eulerAngles` / `lookAt`, components on GameObjects.
   - [x] `iron_scene`: GameObjects (generational ids, names, enabled, parent/children), local and
     world transforms (glam `Vec3`/`Quat`/scale), moved-object tracking — `M5-OBJ-01`..`M5-OBJ-03`
-  - [ ] TS API: `Vec3`, `Quat`, `Transform`, `GameObject`; script components attached to
-    GameObjects (`this.gameObject`, `this.transform`); transforms synced in one batch per tick
-  - [ ] `Rigidbody` / `Collider` components driving GameObject transforms (from M4)
+  - [x] TS API: `Vector2`, `Vector3`, `Quaternion`, `Transform`, `GameObject`; script components
+    attached to GameObjects (`addComponent`, `getComponent`, `this.gameObject`,
+    `this.transform`); engine-side transform changes synced back in one batch per tick
+    (`scene.*` ops, `ScriptScene`, `__iron_scene`); the starting components each get a
+    GameObject; inactive objects' components don't update — `M5-OBJ-04`..`M5-OBJ-07`
+  - [x] Unity / C# value types: `Vector2Int`, `Vector3Int`, `Vector4`, `Rect`, `RectInt`,
+    `Bounds`, `Ray`, `Plane`, `Color`, `Mathf` — `M5-MTH-01`..`M5-MTH-03`
+  - [x] C# `DateTime` / `TimeSpan` on JS `Date` (millisecond resolution, C# formats) —
+    `M5-TIM-01`, `M5-TIM-02`
+  - [x] Everyday helpers: `Debug` / `Log` / `Console` logging, `Time` (fed by `__iron_tick`,
+    with `timeScale`), `TimeSince` / `TimeUntil`, `Task.delay` / `frame`, `Random` and a seedable
+    `Rng`, Unity-style input (`getKey`, `getKeyDown`, `getAxis`, `getButton`) —
+    `M5-HLP-01`..`M5-HLP-04`
   - [ ] 3D view basics: `Camera` component, a perspective pass with depth in `iron_render`
   - [ ] Planes: a `UiPanel` component draws React UI on a plane in the world (UI rendered to a
     texture), with pointer input raycast onto it
+- [ ] **M5.a2** Unity / s&box-style components (its own step, before the rest of M5):
+  - [ ] `Rigidbody` component (mass, drag, gravity, kinematic, velocity, angular velocity,
+    `addForce` with `ForceMode` Force / Acceleration / Impulse / VelocityChange, constraints) and
+    collider components (`BoxCollider`, `SphereCollider`, `CapsuleCollider`, `MeshCollider`,
+    triggers) driving GameObject transforms (from M4)
+  - [ ] Joints as components: fixed, hinge, spring, and rope (rapier's rope joint), for rope
+    mechanics; rope rendering (a line/tube renderer following the joints)
+  - [ ] Meshes through a `MeshRenderer`: primitives with matching colliders (cube, ball/sphere,
+    plane, capsule, cylinder), shape meshes, and model meshes (glTF) usable as mesh colliders
+  - [ ] Lights as components (directional, point, spot), with basic lighting and shadows;
+    emissive materials
+  - [ ] `AudioSource` (an emitter following its GameObject) and `AudioListener` components
+  - [ ] Particles: a `ParticleSystem` component (emission rate and bursts, lifetime, velocity,
+    gravity, size and colour over life, GPU instanced quads)
+  - [ ] 2D: sprites and 2D physics shapes on the same GameObjects (`Vector2` APIs)
 - [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support
 - [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing
@@ -787,8 +814,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] React Fast Refresh for panels (React and the reconciler in a vendor bundle kept across
     reloads) — `M4-HOT-06`
   - [ ] Reload benchmark — `M4-HOT-07`
-- [ ] **M5.c** A basic cube object; model includes with meshes, and meshes as collision shapes
-  (rapier, from M4); basic lighting and shadows
+- [ ] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Scene serialization, GUID `.meta` files — `M5-SCN-*`
   - [ ] glTF import + cook, platform texture formats, asset hot reload — `M5-AST-*`

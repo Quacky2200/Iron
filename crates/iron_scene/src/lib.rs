@@ -6,6 +6,10 @@
 //! `iron_physics`, ...) and refer to objects by [`ObjectId`]. There's no ECS: scenes are
 //! small enough that plain parent/child links and a dirty flag per object do.
 
+mod script;
+
+pub use script::{ENGINE_IDS, SceneEvent, ScriptObject, ScriptScene};
+
 use glam::{Affine3A, Mat4, Quat, Vec3};
 
 /// A GameObject. The generation makes stale ids (of destroyed objects) miss instead

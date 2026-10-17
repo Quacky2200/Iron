@@ -8,7 +8,7 @@ mod quickjs;
 
 use std::rc::Rc;
 
-pub use components::{ComponentHost, reload};
+pub use components::{ComponentHost, reload, spawn_each};
 pub use error::ScriptError;
 pub use iron_core::{Commit, OpBuffer, Value};
 pub use quickjs::QuickJsRuntime;

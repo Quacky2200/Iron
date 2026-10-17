@@ -4,7 +4,7 @@
 //
 // Volumes are linear gains (1 = as recorded, 0 = silent); times are seconds.
 
-import type { Quat, Vec3 } from "./physics.ts";
+import type { QuaternionLike as Quat, Vector3Like as Vec3 } from "./math.ts";
 
 export interface PlayOptions {
   /** Linear gain. Default 1. */

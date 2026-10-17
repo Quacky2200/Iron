@@ -1448,6 +1448,7 @@ dependencies = [
  "iron_physics",
  "iron_platform",
  "iron_render",
+ "iron_scene",
  "iron_script",
  "iron_ui",
  "notify",
@@ -1518,6 +1519,8 @@ name = "iron_scene"
 version = "0.1.0"
 dependencies = [
  "glam 0.34.1",
+ "iron_core",
+ "iron_script",
 ]
 
 [[package]]

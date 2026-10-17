@@ -1,9 +1,10 @@
 /**
  * @iron/engine — the TypeScript side of Iron.
  *
- * Game code extends `Component` and calls `register({ ... })`. The engine (Rust)
- * owns the list of components and calls into them through the `__iron_*` host
- * functions installed below, always by (component id, method name).
+ * Game code extends `Component`, attaches components to `GameObject`s and calls
+ * `register({ ... })`. The engine (Rust) owns the objects and the list of components
+ * and calls into them through `__iron_*` host functions (scene.ts), always by
+ * (component id, method name).
  */
 
 import "./globals";
@@ -20,6 +21,24 @@ export {
 } from "./audio.ts";
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export {
+  Bounds,
+  Color,
+  Mathf,
+  Plane,
+  Quaternion,
+  type QuaternionLike,
+  Ray,
+  Rect,
+  RectInt,
+  Vector2,
+  Vector2Int,
+  type Vector2Like,
+  Vector3,
+  Vector3Int,
+  type Vector3Like,
+  Vector4,
+} from "./math.ts";
+export {
   type BodyKind,
   type BodyOptions,
   type CharacterOptions,
@@ -27,38 +46,22 @@ export {
   type ColliderOptions,
   type CollisionEvent,
   physics,
-  type Quat,
   type RayHit,
   RigidBody,
   type Shape,
-  type Vec3,
 } from "./physics.ts";
-
-export abstract class Component {
-  /** Set by the engine when the component is created. */
-  readonly id!: number;
-
-  /** Called once, before the first `onUpdate`. */
-  onStart?(): void;
-
-  /** Called every fixed tick. `dt` is in seconds. */
-  onUpdate?(dt: number): void;
-}
-
-export type ComponentClass = new () => Component;
-
-const classes = new Map<string, ComponentClass>();
-const instances = new Map<number, Component>();
-
-/**
- * Registers component classes by name. Using an object (`register({ Hello })`)
- * keeps names stable even if the bundle is minified.
- */
-export function register(components: Record<string, ComponentClass>): void {
-  for (const [name, cls] of Object.entries(components)) {
-    classes.set(name, cls);
-  }
-}
+export { DateTime, type DateTimeKind, TimeSpan } from "./time.ts";
+export { Task, Time, TimeSince, TimeUntil } from "./clock.ts";
+export { Console, Debug, Log } from "./log.ts";
+export { Random, Rng } from "./random.ts";
+export {
+  Component,
+  type ComponentClass,
+  GameObject,
+  type GameObjectOptions,
+  register,
+  Transform,
+} from "./scene.ts";
 
 /** Queues an op for the engine. Low level: prefer the typed APIs built on it. */
 export function op(name: string, ...args: unknown[]): void {
@@ -117,27 +120,3 @@ export function setUiScale(scale: { height: number; width?: number } | number | 
 export function removeStyleSheet(id: number): void {
   op("removeStyleSheet", id);
 }
-
-// ---- Host functions called by Rust (crates/iron_script/src/components.rs) ----
-
-globalThis.__iron_registered = () => [...classes.keys()];
-
-globalThis.__iron_create = (className: string, id: number) => {
-  const cls = classes.get(className);
-  if (!cls) throw new Error(`unknown component class '${className}'`);
-  const instance = new cls();
-  (instance as { id: number }).id = id;
-  instances.set(id, instance);
-};
-
-globalThis.__iron_dispatch = (id: number, method: string, ...args: unknown[]) => {
-  const instance = instances.get(id);
-  if (!instance) throw new Error(`no component with id ${id}`);
-  const fn = (instance as unknown as Record<string, unknown>)[method];
-  if (typeof fn === "function") return fn.apply(instance, args);
-  return undefined;
-};
-
-globalThis.__iron_destroy = (id: number) => {
-  instances.delete(id);
-};

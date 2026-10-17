@@ -31,11 +31,15 @@ declare global {
 
   // Installed by @iron/engine, called by Rust.
   var __iron_registered: () => string[];
-  var __iron_create: (className: string, id: number) => void;
+  var __iron_create: (className: string, id: number, objectId?: number, objectName?: string) => void;
   var __iron_dispatch: (id: number, method: string, ...args: unknown[]) => unknown;
   var __iron_destroy: (id: number) => void;
+  // Once per fixed tick, before components update: advances `Time`, returns the scaled dt.
+  var __iron_tick: (dt: number) => number;
   var __iron_input: (type: string, ...args: unknown[]) => void;
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
+  // Objects the engine moved (scene.ts).
+  var __iron_scene: (moved: number[]) => void;
   // Playing sounds that finished (audio.ts).
   var __iron_audio: (ended: number[]) => void;
   var __iron_physics: (moved: number[], contacts: number[], rays: number[], characters: number[]) => void;

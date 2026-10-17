@@ -83,15 +83,14 @@ fn main() -> Result<()> {
         .load_bundle(&name, &code)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // No scene system yet (M5): spawn one instance of every registered component.
+    // No scene files yet (M5.b): one GameObject per registered component class,
+    // each with that component.
     let mut components = ComponentHost::new();
+    let mut scene = iron_scene::ScriptScene::new();
     let classes =
         ComponentHost::registered_classes(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
-    for class in &classes {
-        components
-            .spawn(&mut scripts, class)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
+    spawn_starting_components(&mut scripts, &mut components, &mut scene, &classes)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     tracing::info!(?classes, "loaded {}", bundle_path.display());
     // Set by @iron/react; games without React UI get no UI events.
     let ui_events = scripts
@@ -103,6 +102,9 @@ fn main() -> Result<()> {
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
     let audio_events = scripts
         .eval("typeof __iron_audio === 'function'")
+        .is_ok_and(|v| v == iron_core::Value::Bool(true));
+    let scene_events = scripts
+        .eval("typeof __iron_scene === 'function'")
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
     let physics_events = scripts
         .eval("typeof __iron_physics === 'function'")
@@ -128,6 +130,8 @@ fn main() -> Result<()> {
         watcher,
         scripts,
         components,
+        scene,
+        scene_events,
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
@@ -193,6 +197,10 @@ struct Gfx {
 }
 
 struct App {
+    /// GameObjects scripts made (and the engine made for them).
+    scene: iron_scene::ScriptScene,
+    /// Whether the game takes engine moves (`__iron_scene` exists).
+    scene_events: bool,
     bundle_path: PathBuf,
     bundle_name: String,
     /// The tree's id for the game's bundled stylesheet (`game.css`), if it has one.
@@ -255,12 +263,14 @@ impl App {
             }
         };
         let fresh = QuickJsRuntime::new();
+        let mut scene = iron_scene::ScriptScene::new();
         let classes = match iron_script::reload(
             &mut self.scripts,
             fresh,
             &mut self.components,
             &self.bundle_name,
             &code,
+            |rt, host, classes| spawn_starting_components(rt, host, &mut scene, classes),
         ) {
             Ok(classes) => classes,
             Err(e) => {
@@ -281,6 +291,7 @@ impl App {
         let css_path = self.bundle_path.with_extension("css");
         self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
         self.ui_scale = ui_scale::UiScale::None;
+        self.scene = scene;
         self.physics = iron_physics::Physics::new();
         // Dropping the mixer stops every sound.
         self.audio = None;
@@ -295,6 +306,7 @@ impl App {
         self.game_input = has(&mut self.scripts, "__iron_input");
         self.physics_events = has(&mut self.scripts, "__iron_physics");
         self.audio_events = has(&mut self.scripts, "__iron_audio");
+        self.scene_events = has(&mut self.scripts, "__iron_scene");
         tracing::info!(
             ?classes,
             "reloaded {} in {:.1} ms",
@@ -317,10 +329,13 @@ impl App {
         self.accumulator += elapsed;
         let mut ticks = 0;
         while self.accumulator >= TICK && ticks < MAX_TICKS_PER_FRAME {
-            self.components.update(&mut self.scripts, TICK);
+            let scene = &self.scene;
+            self.components
+                .update_active(&mut self.scripts, TICK, &|o| scene.active(o));
             // What the components asked for applies before physics steps.
             self.apply_script_output();
             self.step_physics();
+            self.send_scene_moves();
             self.accumulator -= TICK;
             ticks += 1;
         }
@@ -339,6 +354,42 @@ impl App {
 
         // The tree may have moved under a still pointer, or the focused element gone.
         self.handle_ui(Input::Refresh);
+    }
+
+    /// Objects the engine moved this tick, to scripts (`__iron_scene`).
+    fn send_scene_moves(&mut self) {
+        let moved = self.scene.take_batch();
+        if moved.is_empty() || !self.scene_events {
+            return;
+        }
+        if let Err(e) = self
+            .scripts
+            .call_global("__iron_scene", &[iron_core::Value::Array(moved)])
+        {
+            tracing::error!(target: "script", "scene moves: {e}");
+        }
+    }
+
+    /// Runs one `scene.*` op and what it asks of components.
+    fn scene_op(&mut self, name: &str, args: &[iron_core::Value]) {
+        use iron_scene::SceneEvent;
+        match self.scene.apply(name, args) {
+            Ok(None) => {}
+            Ok(Some(SceneEvent::ComponentAdded {
+                object,
+                component,
+                class,
+            })) => self
+                .components
+                .adopt(iron_core::ComponentId(component), &class, Some(object)),
+            Ok(Some(SceneEvent::ComponentRemoved(id))) => self
+                .components
+                .remove(&mut self.scripts, iron_core::ComponentId(id)),
+            Ok(Some(SceneEvent::Destroyed(objects))) => self
+                .components
+                .remove_on_objects(&mut self.scripts, &objects),
+            Err(e) => tracing::warn!("scene.{name}: {e}"),
+        }
     }
 
     /// One physics tick, then its results to scripts (`__iron_physics`).
@@ -427,6 +478,9 @@ impl App {
                         "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
                         _ => Input::ScrollIntoView(id),
                     });
+                }
+                name if name.starts_with("scene.") => {
+                    self.scene_op(&name["scene.".len()..], &op.args)
                 }
                 name if name.starts_with("audio.") => {
                     self.audio_op(&name["audio.".len()..], &op.args)
@@ -915,6 +969,21 @@ fn load_sound(
     mixer
         .load(id as u32, bytes, stream)
         .map_err(|e| format!("`{src}`: {e}"))
+}
+
+/// The starting components (until scenes load from files, M5.b): one GameObject per
+/// registered class, named after it, holding that component.
+fn spawn_starting_components(
+    rt: &mut QuickJsRuntime,
+    host: &mut ComponentHost,
+    scene: &mut iron_scene::ScriptScene,
+    classes: &[String],
+) -> Result<(), iron_script::ScriptError> {
+    for class in classes {
+        let object = scene.create_engine_object(class);
+        host.spawn_on(rt, class, Some(object), class)?;
+    }
+    Ok(())
 }
 
 /// Loads the stylesheet Bun writes next to the bundle (game.js -> game.css), if any.

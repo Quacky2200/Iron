@@ -18,8 +18,48 @@ ${err.stack}` : ""}`);
       }
     }
   };
+  // ../../js/engine/src/clock.ts
+  var time = 0;
+  var unscaledTime = 0;
+  var deltaTime = 0;
+  var unscaledDeltaTime = 0;
+  var frameCount = 0;
+  var timeScale = 1;
+  var startedAt = Date.now();
+  var tickListeners = [];
+  function onTick(fn) {
+    tickListeners.push(fn);
+  }
+  globalThis.__iron_tick = (dt) => {
+    unscaledDeltaTime = dt;
+    deltaTime = dt * timeScale;
+    unscaledTime += dt;
+    time += deltaTime;
+    frameCount++;
+    for (const fn of tickListeners)
+      fn();
+    return deltaTime;
+  };
+  var pending = [];
+  onTick(() => {
+    const now = pending;
+    pending = [];
+    for (const fn of now)
+      fn();
+  });
+
   // ../../js/engine/src/input.ts
   var keys = new Set;
+  var pressedPending = new Set;
+  var releasedPending = new Set;
+  var pressedThisTick = new Set;
+  var releasedThisTick = new Set;
+  onTick(() => {
+    pressedThisTick = pressedPending;
+    releasedThisTick = releasedPending;
+    pressedPending = new Set;
+    releasedPending = new Set;
+  });
   var pads = new Map;
   var listeners = {};
   function emit(type, event) {
@@ -45,12 +85,16 @@ ${err.stack}` : ""}`);
     switch (type) {
       case "keydown": {
         const [code, key, repeat] = args;
+        if (!repeat && !keys.has(code))
+          pressedPending.add(code);
         keys.add(code);
         emit("keydown", { code, key, repeat: !!repeat });
         break;
       }
       case "keyup": {
         const [code, key] = args;
+        if (keys.has(code))
+          releasedPending.add(code);
         keys.delete(code);
         emit("keyup", { code, key, repeat: false });
         break;
@@ -95,6 +139,476 @@ ${err.stack}` : ""}`);
       }
     }
   };
+  // ../../js/engine/src/math.ts
+  var DEG = Math.PI / 180;
+  var Mathf = {
+    PI: Math.PI,
+    Deg2Rad: DEG,
+    Rad2Deg: 1 / DEG,
+    Epsilon: 0.000001,
+    clamp: (v, min, max) => Math.min(max, Math.max(min, v)),
+    clamp01: (v) => Math.min(1, Math.max(0, v)),
+    lerp: (a, b, t) => a + (b - a) * Math.min(1, Math.max(0, t)),
+    lerpUnclamped: (a, b, t) => a + (b - a) * t,
+    inverseLerp: (a, b, v) => a === b ? 0 : Math.min(1, Math.max(0, (v - a) / (b - a))),
+    moveTowards: (current, target, maxDelta) => Math.abs(target - current) <= maxDelta ? target : current + Math.sign(target - current) * maxDelta,
+    smoothStep: (from, to, t) => {
+      const x = Math.min(1, Math.max(0, t));
+      return from + (to - from) * x * x * (3 - 2 * x);
+    },
+    deltaAngle: (a, b) => {
+      const d = ((b - a) % 360 + 540) % 360 - 180;
+      return d === -180 ? 180 : d;
+    },
+    repeat: (t, length) => t - Math.floor(t / length) * length,
+    pingPong: (t, length) => {
+      const r = t - Math.floor(t / (length * 2)) * length * 2;
+      return length - Math.abs(r - length);
+    },
+    approximately: (a, b) => Math.abs(a - b) < Math.max(0.000001 * Math.max(Math.abs(a), Math.abs(b)), 0.000001)
+  };
+
+  class Vector2 {
+    x;
+    y;
+    constructor(x = 0, y = 0) {
+      this.x = x;
+      this.y = y;
+    }
+    static zero = new Vector2(0, 0);
+    static one = new Vector2(1, 1);
+    static up = new Vector2(0, 1);
+    static down = new Vector2(0, -1);
+    static left = new Vector2(-1, 0);
+    static right = new Vector2(1, 0);
+    static from(v) {
+      return v instanceof Vector2 ? v : new Vector2(v.x, v.y);
+    }
+    add(v) {
+      return new Vector2(this.x + v.x, this.y + v.y);
+    }
+    sub(v) {
+      return new Vector2(this.x - v.x, this.y - v.y);
+    }
+    scale(s) {
+      return new Vector2(this.x * s, this.y * s);
+    }
+    mul(v) {
+      return new Vector2(this.x * v.x, this.y * v.y);
+    }
+    dot(v) {
+      return this.x * v.x + this.y * v.y;
+    }
+    get magnitude() {
+      return Math.hypot(this.x, this.y);
+    }
+    get sqrMagnitude() {
+      return this.x * this.x + this.y * this.y;
+    }
+    get normalized() {
+      const m = this.magnitude;
+      return m > 0 ? this.scale(1 / m) : Vector2.zero;
+    }
+    distance(v) {
+      return Math.hypot(this.x - v.x, this.y - v.y);
+    }
+    lerp(v, t) {
+      const k = Mathf.clamp01(t);
+      return new Vector2(this.x + (v.x - this.x) * k, this.y + (v.y - this.y) * k);
+    }
+    moveTowards(target, maxDistance) {
+      const d = Vector2.from(target).sub(this);
+      const m = d.magnitude;
+      return m <= maxDistance || m === 0 ? Vector2.from(target) : this.add(d.scale(maxDistance / m));
+    }
+    rotate(degrees) {
+      const c = Math.cos(degrees * DEG);
+      const s = Math.sin(degrees * DEG);
+      return new Vector2(this.x * c - this.y * s, this.x * s + this.y * c);
+    }
+    static angle(a, b) {
+      const d = Vector2.from(a).magnitude * Vector2.from(b).magnitude;
+      return d === 0 ? 0 : Math.acos(Mathf.clamp(Vector2.from(a).dot(b) / d, -1, 1)) / DEG;
+    }
+    static signedAngle(a, b) {
+      return Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y) / DEG;
+    }
+    equals(v, epsilon = 0.000001) {
+      return Math.abs(this.x - v.x) <= epsilon && Math.abs(this.y - v.y) <= epsilon;
+    }
+    toVector3(z = 0) {
+      return new Vector3(this.x, this.y, z);
+    }
+    toArray() {
+      return [this.x, this.y];
+    }
+    toString() {
+      return `(${this.x}, ${this.y})`;
+    }
+  }
+
+  class Vector3 {
+    x;
+    y;
+    z;
+    constructor(x = 0, y = 0, z = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+    static zero = new Vector3(0, 0, 0);
+    static one = new Vector3(1, 1, 1);
+    static up = new Vector3(0, 1, 0);
+    static down = new Vector3(0, -1, 0);
+    static left = new Vector3(-1, 0, 0);
+    static right = new Vector3(1, 0, 0);
+    static forward = new Vector3(0, 0, -1);
+    static back = new Vector3(0, 0, 1);
+    static from(v) {
+      return v instanceof Vector3 ? v : new Vector3(v.x, v.y, v.z);
+    }
+    add(v) {
+      return new Vector3(this.x + v.x, this.y + v.y, this.z + v.z);
+    }
+    sub(v) {
+      return new Vector3(this.x - v.x, this.y - v.y, this.z - v.z);
+    }
+    scale(s) {
+      return new Vector3(this.x * s, this.y * s, this.z * s);
+    }
+    mul(v) {
+      return new Vector3(this.x * v.x, this.y * v.y, this.z * v.z);
+    }
+    div(v) {
+      return new Vector3(this.x / v.x, this.y / v.y, this.z / v.z);
+    }
+    negate() {
+      return new Vector3(-this.x, -this.y, -this.z);
+    }
+    dot(v) {
+      return this.x * v.x + this.y * v.y + this.z * v.z;
+    }
+    cross(v) {
+      return new Vector3(this.y * v.z - this.z * v.y, this.z * v.x - this.x * v.z, this.x * v.y - this.y * v.x);
+    }
+    get magnitude() {
+      return Math.hypot(this.x, this.y, this.z);
+    }
+    get sqrMagnitude() {
+      return this.x * this.x + this.y * this.y + this.z * this.z;
+    }
+    get normalized() {
+      const m = this.magnitude;
+      return m > 0 ? this.scale(1 / m) : Vector3.zero;
+    }
+    distance(v) {
+      return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z);
+    }
+    lerp(v, t) {
+      const k = Mathf.clamp01(t);
+      return new Vector3(this.x + (v.x - this.x) * k, this.y + (v.y - this.y) * k, this.z + (v.z - this.z) * k);
+    }
+    moveTowards(target, maxDistance) {
+      const d = Vector3.from(target).sub(this);
+      const m = d.magnitude;
+      return m <= maxDistance || m === 0 ? Vector3.from(target) : this.add(d.scale(maxDistance / m));
+    }
+    project(onto) {
+      const n = Vector3.from(onto);
+      const sq = n.sqrMagnitude;
+      return sq === 0 ? Vector3.zero : n.scale(this.dot(n) / sq);
+    }
+    projectOnPlane(normal) {
+      return this.sub(this.project(normal));
+    }
+    reflect(normal) {
+      return this.sub(Vector3.from(normal).scale(2 * this.dot(normal)));
+    }
+    clampMagnitude(max) {
+      const m = this.magnitude;
+      return m > max ? this.scale(max / m) : this;
+    }
+    static angle(a, b) {
+      const va = Vector3.from(a);
+      const d = va.magnitude * Vector3.from(b).magnitude;
+      return d === 0 ? 0 : Math.acos(Mathf.clamp(va.dot(b) / d, -1, 1)) / DEG;
+    }
+    equals(v, epsilon = 0.000001) {
+      return Math.abs(this.x - v.x) <= epsilon && Math.abs(this.y - v.y) <= epsilon && Math.abs(this.z - v.z) <= epsilon;
+    }
+    toVector2() {
+      return new Vector2(this.x, this.y);
+    }
+    toArray() {
+      return [this.x, this.y, this.z];
+    }
+    toString() {
+      return `(${this.x}, ${this.y}, ${this.z})`;
+    }
+  }
+
+  class Vector4 {
+    x;
+    y;
+    z;
+    w;
+    constructor(x = 0, y = 0, z = 0, w = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      this.w = w;
+    }
+    static zero = new Vector4;
+    add(v) {
+      return new Vector4(this.x + v.x, this.y + v.y, this.z + v.z, this.w + v.w);
+    }
+    scale(s) {
+      return new Vector4(this.x * s, this.y * s, this.z * s, this.w * s);
+    }
+    dot(v) {
+      return this.x * v.x + this.y * v.y + this.z * v.z + this.w * v.w;
+    }
+    toArray() {
+      return [this.x, this.y, this.z, this.w];
+    }
+  }
+
+  class Vector2Int {
+    x;
+    y;
+    constructor(x = 0, y = 0) {
+      this.x = Math.trunc(x);
+      this.y = Math.trunc(y);
+    }
+    static zero = new Vector2Int(0, 0);
+    static one = new Vector2Int(1, 1);
+    static up = new Vector2Int(0, 1);
+    static down = new Vector2Int(0, -1);
+    static left = new Vector2Int(-1, 0);
+    static right = new Vector2Int(1, 0);
+    static floor(v) {
+      return new Vector2Int(Math.floor(v.x), Math.floor(v.y));
+    }
+    static round(v) {
+      return new Vector2Int(Math.round(v.x), Math.round(v.y));
+    }
+    add(v) {
+      return new Vector2Int(this.x + v.x, this.y + v.y);
+    }
+    sub(v) {
+      return new Vector2Int(this.x - v.x, this.y - v.y);
+    }
+    scale(s) {
+      return new Vector2Int(this.x * s, this.y * s);
+    }
+    manhattan(v) {
+      return Math.abs(this.x - v.x) + Math.abs(this.y - v.y);
+    }
+    equals(v) {
+      return this.x === v.x && this.y === v.y;
+    }
+    toVector2() {
+      return new Vector2(this.x, this.y);
+    }
+    toString() {
+      return `(${this.x}, ${this.y})`;
+    }
+  }
+
+  class Vector3Int {
+    x;
+    y;
+    z;
+    constructor(x = 0, y = 0, z = 0) {
+      this.x = Math.trunc(x);
+      this.y = Math.trunc(y);
+      this.z = Math.trunc(z);
+    }
+    static zero = new Vector3Int(0, 0, 0);
+    static one = new Vector3Int(1, 1, 1);
+    static floor(v) {
+      return new Vector3Int(Math.floor(v.x), Math.floor(v.y), Math.floor(v.z));
+    }
+    static round(v) {
+      return new Vector3Int(Math.round(v.x), Math.round(v.y), Math.round(v.z));
+    }
+    add(v) {
+      return new Vector3Int(this.x + v.x, this.y + v.y, this.z + v.z);
+    }
+    sub(v) {
+      return new Vector3Int(this.x - v.x, this.y - v.y, this.z - v.z);
+    }
+    equals(v) {
+      return this.x === v.x && this.y === v.y && this.z === v.z;
+    }
+    toVector3() {
+      return new Vector3(this.x, this.y, this.z);
+    }
+    toString() {
+      return `(${this.x}, ${this.y}, ${this.z})`;
+    }
+  }
+
+  class Quaternion {
+    x;
+    y;
+    z;
+    w;
+    constructor(x = 0, y = 0, z = 0, w = 1) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      this.w = w;
+    }
+    static identity = new Quaternion(0, 0, 0, 1);
+    static from(q) {
+      return q instanceof Quaternion ? q : new Quaternion(q.x, q.y, q.z, q.w);
+    }
+    static angleAxis(degrees, axis) {
+      const a = Vector3.from(axis).normalized;
+      const half = degrees * DEG / 2;
+      const s = Math.sin(half);
+      return new Quaternion(a.x * s, a.y * s, a.z * s, Math.cos(half));
+    }
+    static euler(x, y = 0, z = 0) {
+      const a = typeof x === "number" ? new Vector3(x, y, z) : x;
+      return Quaternion.angleAxis(a.y, Vector3.up).mul(Quaternion.angleAxis(a.x, Vector3.right)).mul(Quaternion.angleAxis(a.z, new Vector3(0, 0, 1)));
+    }
+    get eulerAngles() {
+      const { x, y, z, w } = this;
+      const m12 = 2 * (y * z - w * x);
+      const sx = Mathf.clamp(-m12, -1, 1);
+      const ax = Math.asin(sx);
+      let ay;
+      let az;
+      if (Math.abs(sx) < 0.9999) {
+        ay = Math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y));
+        az = Math.atan2(2 * (x * y + w * z), 1 - 2 * (x * x + z * z));
+      } else {
+        ay = Math.atan2(-2 * (x * z - w * y), 1 - 2 * (y * y + z * z));
+        az = 0;
+      }
+      const wrap = (r) => Mathf.repeat(r / DEG, 360);
+      return new Vector3(wrap(ax), wrap(ay), wrap(az));
+    }
+    static lookRotation(direction, up = Vector3.up) {
+      const f = Vector3.from(direction).normalized;
+      if (f.sqrMagnitude === 0)
+        return Quaternion.identity;
+      let r = f.cross(up).normalized;
+      if (r.sqrMagnitude === 0)
+        r = f.cross(Math.abs(f.x) < 0.9 ? Vector3.right : Vector3.up).normalized;
+      const u = r.cross(f);
+      const [m00, m01, m02] = [r.x, u.x, -f.x];
+      const [m10, m11, m12] = [r.y, u.y, -f.y];
+      const [m20, m21, m22] = [r.z, u.z, -f.z];
+      const trace = m00 + m11 + m22;
+      if (trace > 0) {
+        const s = Math.sqrt(trace + 1) * 2;
+        return new Quaternion((m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4);
+      }
+      if (m00 > m11 && m00 > m22) {
+        const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+        return new Quaternion(s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s);
+      }
+      if (m11 > m22) {
+        const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+        return new Quaternion((m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s);
+      }
+      const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+      return new Quaternion((m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s);
+    }
+    static fromToRotation(from, to) {
+      const a = Vector3.from(from).normalized;
+      const b = Vector3.from(to).normalized;
+      const d = a.dot(b);
+      if (d < -0.999999) {
+        let axis = Vector3.right.cross(a);
+        if (axis.sqrMagnitude < 0.000001)
+          axis = Vector3.up.cross(a);
+        return Quaternion.angleAxis(180, axis);
+      }
+      const c = a.cross(b);
+      return new Quaternion(c.x, c.y, c.z, 1 + d).normalized;
+    }
+    mul(q) {
+      return new Quaternion(this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y, this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x, this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w, this.w * q.w - this.x * q.x - this.y * q.y - this.z * q.z);
+    }
+    inverse() {
+      return new Quaternion(-this.x, -this.y, -this.z, this.w);
+    }
+    rotate(v) {
+      const q = new Vector3(this.x, this.y, this.z);
+      const t = q.cross(v).scale(2);
+      return Vector3.from(v).add(t.scale(this.w)).add(q.cross(t));
+    }
+    get normalized() {
+      const len = Math.hypot(this.x, this.y, this.z, this.w);
+      return len > 0 ? new Quaternion(this.x / len, this.y / len, this.z / len, this.w / len) : Quaternion.identity;
+    }
+    slerp(q, t) {
+      const k = Mathf.clamp01(t);
+      let { x, y, z, w } = q;
+      let cos = this.x * x + this.y * y + this.z * z + this.w * w;
+      if (cos < 0) {
+        [x, y, z, w, cos] = [-x, -y, -z, -w, -cos];
+      }
+      if (cos > 0.9995) {
+        return new Quaternion(this.x + (x - this.x) * k, this.y + (y - this.y) * k, this.z + (z - this.z) * k, this.w + (w - this.w) * k).normalized;
+      }
+      const angle = Math.acos(cos);
+      const a = Math.sin((1 - k) * angle) / Math.sin(angle);
+      const b = Math.sin(k * angle) / Math.sin(angle);
+      return new Quaternion(this.x * a + x * b, this.y * a + y * b, this.z * a + z * b, this.w * a + w * b);
+    }
+    rotateTowards(target, maxDegrees) {
+      const angle = Quaternion.angle(this, target);
+      return angle === 0 ? Quaternion.from(target) : this.slerp(target, Math.min(1, maxDegrees / angle));
+    }
+    static angle(a, b) {
+      const d = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+      return 2 * Math.acos(Math.min(1, d)) / DEG;
+    }
+    toArray() {
+      return [this.x, this.y, this.z, this.w];
+    }
+  }
+  class Color {
+    r;
+    g;
+    b;
+    a;
+    constructor(r = 0, g = 0, b = 0, a = 1) {
+      this.r = r;
+      this.g = g;
+      this.b = b;
+      this.a = a;
+    }
+    static white = new Color(1, 1, 1);
+    static black = new Color(0, 0, 0);
+    static red = new Color(1, 0, 0);
+    static green = new Color(0, 1, 0);
+    static blue = new Color(0, 0, 1);
+    static yellow = new Color(1, 0.92, 0.016);
+    static clear = new Color(0, 0, 0, 0);
+    static hex(hex) {
+      let h = hex.replace(/^#/, "");
+      if (h.length === 3 || h.length === 4)
+        h = [...h].map((c) => c + c).join("");
+      const n = (i) => Number.parseInt(h.slice(i, i + 2), 16) / 255;
+      return new Color(n(0), n(2), n(4), h.length >= 8 ? n(6) : 1);
+    }
+    lerp(c, t) {
+      const k = Mathf.clamp01(t);
+      return new Color(this.r + (c.r - this.r) * k, this.g + (c.g - this.g) * k, this.b + (c.b - this.b) * k, this.a + (c.a - this.a) * k);
+    }
+    withAlpha(a) {
+      return new Color(this.r, this.g, this.b, a);
+    }
+    toArray() {
+      return [this.r, this.g, this.b, this.a];
+    }
+  }
   // ../../js/engine/src/physics.ts
   var bodies = new Map;
   var colliders = new Map;
@@ -115,9 +629,9 @@ ${err.stack}` : ""}`);
       const b = bodies.get(moved[i]);
       if (!b)
         continue;
-      Object.assign(b.position, { x: moved[i + 1], y: moved[i + 2], z: moved[i + 3] });
-      Object.assign(b.rotation, { x: moved[i + 4], y: moved[i + 5], z: moved[i + 6], w: moved[i + 7] });
-      Object.assign(b.velocity, { x: moved[i + 8], y: moved[i + 9], z: moved[i + 10] });
+      b.position = new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]);
+      b.rotation = new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]);
+      b.velocity = new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]);
     }
     for (let i = 0;i + 1 < characters.length; i += 2) {
       const b = bodies.get(characters[i]);
@@ -156,35 +670,542 @@ ${err.stack}` : ""}`);
       q.resolve({
         collider,
         distance,
-        point: {
-          x: q.origin.x + q.dir.x * distance,
-          y: q.origin.y + q.dir.y * distance,
-          z: q.origin.z + q.dir.z * distance
-        },
-        normal: { x: rays[i + 3], y: rays[i + 4], z: rays[i + 5] }
+        point: new Vector3(q.origin.x + q.dir.x * distance, q.origin.y + q.dir.y * distance, q.origin.z + q.dir.z * distance),
+        normal: new Vector3(rays[i + 3], rays[i + 4], rays[i + 5])
       });
     }
   };
+  // ../../js/engine/src/time.ts
+  var MS_PER_SECOND = 1000;
+  var MS_PER_MINUTE = 60000;
+  var MS_PER_HOUR = 3600000;
+  var MS_PER_DAY = 86400000;
 
-  // ../../js/engine/src/index.ts
+  class TimeSpan {
+    totalMilliseconds;
+    constructor(milliseconds) {
+      this.totalMilliseconds = Math.round(milliseconds);
+    }
+    static zero = new TimeSpan(0);
+    static of(days, hours = 0, minutes = 0, seconds = 0, milliseconds = 0) {
+      return new TimeSpan(days * MS_PER_DAY + hours * MS_PER_HOUR + minutes * MS_PER_MINUTE + seconds * MS_PER_SECOND + milliseconds);
+    }
+    static fromDays(d) {
+      return new TimeSpan(d * MS_PER_DAY);
+    }
+    static fromHours(h) {
+      return new TimeSpan(h * MS_PER_HOUR);
+    }
+    static fromMinutes(m) {
+      return new TimeSpan(m * MS_PER_MINUTE);
+    }
+    static fromSeconds(s) {
+      return new TimeSpan(s * MS_PER_SECOND);
+    }
+    static fromMilliseconds(ms) {
+      return new TimeSpan(ms);
+    }
+    static parse(text) {
+      const m = /^\s*(-)?(?:(\d+)\.)?(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,7}))?)?\s*$/.exec(text);
+      if (!m)
+        throw new Error(`not a TimeSpan: "${text}"`);
+      const [, neg, d, h, min, s, frac] = m;
+      if (Number(h) > 23 || Number(min) > 59 || Number(s ?? 0) > 59)
+        throw new Error(`TimeSpan out of range: "${text}"`);
+      const ms = frac ? Number(frac.padEnd(3, "0").slice(0, 3)) : 0;
+      const span = TimeSpan.of(Number(d ?? 0), Number(h), Number(min), Number(s ?? 0), ms);
+      return neg ? span.negate() : span;
+    }
+    part(unit, mod) {
+      return Math.trunc(this.totalMilliseconds / unit) % mod;
+    }
+    get days() {
+      return Math.trunc(this.totalMilliseconds / MS_PER_DAY);
+    }
+    get hours() {
+      return this.part(MS_PER_HOUR, 24);
+    }
+    get minutes() {
+      return this.part(MS_PER_MINUTE, 60);
+    }
+    get seconds() {
+      return this.part(MS_PER_SECOND, 60);
+    }
+    get milliseconds() {
+      return this.totalMilliseconds % 1000;
+    }
+    get totalDays() {
+      return this.totalMilliseconds / MS_PER_DAY;
+    }
+    get totalHours() {
+      return this.totalMilliseconds / MS_PER_HOUR;
+    }
+    get totalMinutes() {
+      return this.totalMilliseconds / MS_PER_MINUTE;
+    }
+    get totalSeconds() {
+      return this.totalMilliseconds / MS_PER_SECOND;
+    }
+    add(t) {
+      return new TimeSpan(this.totalMilliseconds + t.totalMilliseconds);
+    }
+    subtract(t) {
+      return new TimeSpan(this.totalMilliseconds - t.totalMilliseconds);
+    }
+    multiply(factor) {
+      return new TimeSpan(this.totalMilliseconds * factor);
+    }
+    divide(divisor) {
+      return new TimeSpan(this.totalMilliseconds / divisor);
+    }
+    negate() {
+      return new TimeSpan(-this.totalMilliseconds);
+    }
+    duration() {
+      return new TimeSpan(Math.abs(this.totalMilliseconds));
+    }
+    compareTo(t) {
+      return Math.sign(this.totalMilliseconds - t.totalMilliseconds);
+    }
+    equals(t) {
+      return this.totalMilliseconds === t.totalMilliseconds;
+    }
+    toString(format) {
+      const abs = this.duration();
+      const pad = (n, w = 2) => String(n).padStart(w, "0");
+      if (!format || format === "c") {
+        const sign = this.totalMilliseconds < 0 ? "-" : "";
+        const day = abs.days ? `${abs.days}.` : "";
+        const frac = abs.milliseconds ? `.${pad(abs.milliseconds, 3)}` : "";
+        return `${sign}${day}${pad(abs.hours)}:${pad(abs.minutes)}:${pad(abs.seconds)}${frac}`;
+      }
+      return formatTokens(format, (token) => {
+        const c = token[0];
+        const n = token.length;
+        switch (c) {
+          case "d":
+            return pad(abs.days, n);
+          case "h":
+            return pad(abs.hours, Math.min(n, 2));
+          case "m":
+            return pad(abs.minutes, Math.min(n, 2));
+          case "s":
+            return pad(abs.seconds, Math.min(n, 2));
+          case "f":
+          case "F":
+            return fraction(abs.milliseconds, n, c === "F");
+          default:
+            return;
+        }
+      });
+    }
+  }
+  function fraction(ms, digits, trim) {
+    let s = String(ms).padStart(3, "0").padEnd(digits, "0").slice(0, digits);
+    if (trim)
+      s = s.replace(/0+$/, "");
+    return s;
+  }
+  function formatTokens(format, render) {
+    let out = "";
+    for (let i = 0;i < format.length; ) {
+      const c = format[i];
+      if (c === "\\" && i + 1 < format.length) {
+        out += format[i + 1];
+        i += 2;
+        continue;
+      }
+      if (c === "'" || c === '"') {
+        const end = format.indexOf(c, i + 1);
+        const stop = end < 0 ? format.length : end;
+        out += format.slice(i + 1, stop);
+        i = stop + 1;
+        continue;
+      }
+      let j = i;
+      while (j < format.length && format[j] === c)
+        j++;
+      const token = format.slice(i, j);
+      const rendered = /[a-zA-Z]/.test(c) ? render(token) : undefined;
+      out += rendered ?? token;
+      i = j;
+    }
+    return out;
+  }
+  // ../../js/engine/src/random.ts
+  class Rng {
+    state;
+    constructor(seed = (Date.now() ^ Math.random() * 4294967296) >>> 0) {
+      this.state = seed >>> 0;
+    }
+    nextDouble() {
+      this.state = this.state + 1831565813 >>> 0;
+      let t = this.state;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+    next(minOrMax, max) {
+      const [lo, hi] = max === undefined ? [0, minOrMax ?? 2147483647] : [minOrMax ?? 0, max];
+      if (hi <= lo)
+        return lo;
+      return lo + Math.floor(this.nextDouble() * (hi - lo));
+    }
+    float(min, max) {
+      return min + this.nextDouble() * (max - min);
+    }
+    int(min, max) {
+      return this.next(Math.ceil(min), Math.floor(max));
+    }
+    bool(chance = 0.5) {
+      return this.nextDouble() < chance;
+    }
+    pick(items) {
+      return items.length ? items[this.next(items.length)] : undefined;
+    }
+    shuffle(items) {
+      for (let i = items.length - 1;i > 0; i--) {
+        const j = this.next(i + 1);
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+      return items;
+    }
+    insideUnitCircle() {
+      const angle = this.nextDouble() * Math.PI * 2;
+      const r = Math.sqrt(this.nextDouble());
+      return new Vector2(Math.cos(angle) * r, Math.sin(angle) * r);
+    }
+    onUnitSphere() {
+      const z = this.nextDouble() * 2 - 1;
+      const angle = this.nextDouble() * Math.PI * 2;
+      const r = Math.sqrt(1 - z * z);
+      return new Vector3(Math.cos(angle) * r, Math.sin(angle) * r, z);
+    }
+    insideUnitSphere() {
+      return this.onUnitSphere().scale(Math.cbrt(this.nextDouble()));
+    }
+    rotation() {
+      const [u1, u2, u3] = [this.nextDouble(), this.nextDouble(), this.nextDouble()];
+      const a = Math.sqrt(1 - u1);
+      const b = Math.sqrt(u1);
+      return new Quaternion(a * Math.sin(2 * Math.PI * u2), a * Math.cos(2 * Math.PI * u2), b * Math.sin(2 * Math.PI * u3), b * Math.cos(2 * Math.PI * u3));
+    }
+  }
+  var shared = new Rng;
+  // ../../js/engine/src/scene.ts
   class Component {
     id;
+    gameObject;
+    get transform() {
+      return this.gameObject.transform;
+    }
+    getComponent(cls) {
+      return this.gameObject.getComponent(cls);
+    }
+    destroy() {
+      this.gameObject.removeComponent(this);
+    }
   }
   var classes = new Map;
+  var names = new Map;
   var instances = new Map;
+  var objects = new Map;
+  var roots = [];
+  var nextObject = 1;
+  var nextComponent = 1 << 24;
   function register(components) {
     for (const [name, cls] of Object.entries(components)) {
       classes.set(name, cls);
+      names.set(cls, name);
+    }
+  }
+  function nameOf(cls) {
+    let name = names.get(cls);
+    if (!name) {
+      name = cls.name;
+      if (!name)
+        throw new Error("component classes need a name; register them with register({ ... })");
+      register({ [name]: cls });
+    }
+    return name;
+  }
+  function instantiate(cls, id, object) {
+    const instance = new cls;
+    Object.assign(instance, { id, gameObject: object });
+    instances.set(id, instance);
+    object.components.push(instance);
+    return instance;
+  }
+  var vec = (v) => [v.x, v.y, v.z];
+  var quat = (q) => [q.x, q.y, q.z, q.w];
+
+  class Transform {
+    gameObject;
+    _position = Vector3.zero;
+    _rotation = Quaternion.identity;
+    _scale = Vector3.one;
+    constructor(gameObject) {
+      this.gameObject = gameObject;
+    }
+    send() {
+      __iron_op("scene.local", this.gameObject.id, vec(this._position), quat(this._rotation), vec(this._scale));
+    }
+    _set(position, rotation, scale) {
+      this._position = position;
+      this._rotation = rotation;
+      this._scale = scale;
+    }
+    get localPosition() {
+      return this._position;
+    }
+    set localPosition(v) {
+      this._position = Vector3.from(v);
+      this.send();
+    }
+    get localRotation() {
+      return this._rotation;
+    }
+    set localRotation(q) {
+      this._rotation = Quaternion.from(q).normalized;
+      this.send();
+    }
+    get localScale() {
+      return this._scale;
+    }
+    set localScale(v) {
+      this._scale = Vector3.from(v);
+      this.send();
+    }
+    get localEulerAngles() {
+      return this._rotation.eulerAngles;
+    }
+    set localEulerAngles(v) {
+      this.localRotation = Quaternion.euler(v);
+    }
+    parentWorld() {
+      const p = this.gameObject.parent?.transform;
+      return p ? { position: p.position, rotation: p.rotation, scale: p.lossyScale } : { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one };
+    }
+    get position() {
+      const p = this.parentWorld();
+      return p.position.add(p.rotation.rotate(p.scale.mul(this._position)));
+    }
+    set position(v) {
+      const p = this.parentWorld();
+      this._position = p.rotation.inverse().rotate(Vector3.from(v).sub(p.position)).div(p.scale);
+      this.send();
+    }
+    get rotation() {
+      return this.parentWorld().rotation.mul(this._rotation);
+    }
+    set rotation(q) {
+      this._rotation = this.parentWorld().rotation.inverse().mul(q).normalized;
+      this.send();
+    }
+    get eulerAngles() {
+      return this.rotation.eulerAngles;
+    }
+    set eulerAngles(v) {
+      this.rotation = Quaternion.euler(v);
+    }
+    get lossyScale() {
+      return this.parentWorld().scale.mul(this._scale);
+    }
+    get forward() {
+      return this.rotation.rotate(Vector3.forward);
+    }
+    get right() {
+      return this.rotation.rotate(Vector3.right);
+    }
+    get up() {
+      return this.rotation.rotate(Vector3.up);
+    }
+    translate(delta, space = "world") {
+      const d = space === "self" ? this.rotation.rotate(delta) : Vector3.from(delta);
+      this.position = this.position.add(d);
+    }
+    rotate(euler, space = "self") {
+      const q = Quaternion.euler(euler);
+      this.rotation = space === "self" ? this.rotation.mul(q) : q.mul(this.rotation);
+    }
+    lookAt(target, up = Vector3.up) {
+      this.rotation = Quaternion.lookRotation(Vector3.from(target).sub(this.position), up);
+    }
+    transformPoint(p) {
+      return this.position.add(this.rotation.rotate(this.lossyScale.mul(p)));
+    }
+    inverseTransformPoint(p) {
+      return this.rotation.inverse().rotate(Vector3.from(p).sub(this.position)).div(this.lossyScale);
+    }
+    transformDirection(d) {
+      return this.rotation.rotate(d);
+    }
+    get parent() {
+      return this.gameObject.parent?.transform ?? null;
+    }
+  }
+
+  class GameObject {
+    id;
+    transform;
+    components = [];
+    children = [];
+    _name;
+    _parent = null;
+    _enabled = true;
+    _destroyed = false;
+    constructor(name = "GameObject", options = {}) {
+      this.id = nextObject++;
+      this._name = name;
+      this.transform = new Transform(this);
+      this.transform._set(Vector3.from(options.position ?? Vector3.zero), Quaternion.from(options.rotation ?? Quaternion.identity).normalized, Vector3.from(options.scale ?? Vector3.one));
+      objects.set(this.id, this);
+      const parent = options.parent ?? null;
+      this._parent = parent;
+      (parent ? parent.children : roots).push(this);
+      const t = this.transform;
+      __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
+    }
+    static _adopt(id, name) {
+      const go = Object.create(GameObject.prototype);
+      Object.assign(go, {
+        id,
+        components: [],
+        children: [],
+        _name: name,
+        _parent: null,
+        _enabled: true,
+        _destroyed: false
+      });
+      Object.assign(go, { transform: new Transform(go) });
+      objects.set(id, go);
+      roots.push(go);
+      return go;
+    }
+    get name() {
+      return this._name;
+    }
+    set name(name) {
+      this._name = name;
+      __iron_op("scene.name", this.id, name);
+    }
+    get parent() {
+      return this._parent;
+    }
+    setParent(parent, keepWorld = true) {
+      for (let p = parent;p; p = p._parent) {
+        if (p === this)
+          throw new Error(`can't parent ${this._name} under itself`);
+      }
+      const t = this.transform;
+      const position = t.position;
+      const rotation = t.rotation;
+      const siblings = this._parent ? this._parent.children : roots;
+      siblings.splice(siblings.indexOf(this), 1);
+      this._parent = parent;
+      (parent ? parent.children : roots).push(this);
+      __iron_op("scene.parent", this.id, parent?.id ?? null);
+      if (keepWorld) {
+        t.position = position;
+        t.rotation = rotation;
+      }
+    }
+    get enabled() {
+      return this._enabled;
+    }
+    set enabled(on) {
+      this._enabled = on;
+      __iron_op("scene.enabled", this.id, on);
+    }
+    get activeInHierarchy() {
+      for (let o = this;o; o = o._parent)
+        if (!o._enabled)
+          return false;
+      return true;
+    }
+    get destroyed() {
+      return this._destroyed;
+    }
+    addComponent(cls, props) {
+      const name = nameOf(cls);
+      const id = nextComponent++;
+      const instance = instantiate(cls, id, this);
+      if (props)
+        Object.assign(instance, props);
+      __iron_op("scene.addComponent", this.id, id, name);
+      return instance;
+    }
+    getComponent(cls) {
+      return this.components.find((c) => c instanceof cls);
+    }
+    getComponents(cls) {
+      return this.components.filter((c) => c instanceof cls);
+    }
+    getComponentInChildren(cls) {
+      return this.getComponent(cls) ?? this.children.map((c) => c.getComponentInChildren(cls)).find((c) => c);
+    }
+    removeComponent(component) {
+      const i = this.components.indexOf(component);
+      if (i < 0)
+        return;
+      this.components.splice(i, 1);
+      __iron_op("scene.removeComponent", component.id);
+    }
+    destroy() {
+      if (this._destroyed)
+        return;
+      __iron_op("scene.destroy", this.id);
+      forget(this);
+    }
+    findChild(name) {
+      return this.children.find((c) => c._name === name);
+    }
+    static find(name) {
+      const walk = (list) => {
+        for (const o of list) {
+          if (o._name === name)
+            return o;
+          const found = walk(o.children);
+          if (found)
+            return found;
+        }
+        return;
+      };
+      return walk(roots);
+    }
+    static get roots() {
+      return roots;
+    }
+    static byId(id) {
+      return objects.get(id);
+    }
+    static findObjectOfType(cls) {
+      for (const c of instances.values())
+        if (c instanceof cls)
+          return c;
+      return;
+    }
+  }
+  function forget(go) {
+    const siblings = go.parent ? go.parent.children : roots;
+    const i = siblings.indexOf(go);
+    if (i >= 0)
+      siblings.splice(i, 1);
+    const stack = [go];
+    while (stack.length) {
+      const o = stack.pop();
+      o._destroyed = true;
+      objects.delete(o.id);
+      stack.push(...o.children);
     }
   }
   globalThis.__iron_registered = () => [...classes.keys()];
-  globalThis.__iron_create = (className, id) => {
+  globalThis.__iron_create = (className, id, objectId, objectName) => {
     const cls = classes.get(className);
     if (!cls)
       throw new Error(`unknown component class '${className}'`);
-    const instance = new cls;
-    instance.id = id;
-    instances.set(id, instance);
+    const object = objectId === undefined || objectId === null ? GameObject._adopt(-id - 1, className) : objects.get(objectId) ?? GameObject._adopt(objectId, objectName ?? className);
+    instantiate(cls, id, object);
   };
   globalThis.__iron_dispatch = (id, method, ...args) => {
     const instance = instances.get(id);
@@ -196,9 +1217,23 @@ ${err.stack}` : ""}`);
     return;
   };
   globalThis.__iron_destroy = (id) => {
+    const instance = instances.get(id);
     instances.delete(id);
+    if (!instance)
+      return;
+    const list = instance.gameObject.components;
+    const i = list.indexOf(instance);
+    if (i >= 0)
+      list.splice(i, 1);
   };
-
+  globalThis.__iron_scene = (moved) => {
+    for (let i = 0;i + 10 < moved.length; i += 11) {
+      const go = objects.get(moved[i]);
+      if (!go)
+        continue;
+      go.transform._set(new Vector3(moved[i + 1], moved[i + 2], moved[i + 3]), new Quaternion(moved[i + 4], moved[i + 5], moved[i + 6], moved[i + 7]), new Vector3(moved[i + 8], moved[i + 9], moved[i + 10]));
+    }
+  };
   // src/hello.ts
   class Hello extends Component {
     onStart() {
