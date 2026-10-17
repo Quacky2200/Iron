@@ -354,8 +354,11 @@ layout pass):
 | M5-QUA-01 | JS unit | `QualitySettings`: levels (Low / Medium / High / Ultra) send the quality and shadow ops together; single settings change on their own (anti-aliasing rounded to 1 / 2 / 4 / 8, render scale clamped); unknown levels throw; `lodBias` goes out with the quality op; the manifest picks the default level and overrides levels. |
 | M5-MSH-02 | JS unit | `MeshRenderer` sends its mesh (primitive or script `Mesh`) and material and resends on change; `Mesh.create` sends flat arrays and `destroy` removes it; `Light` and `RenderSettings.ambientLight` ops; `shadowCastingMode` reaches the op; `Mirror` (quads along +z) and `ReflectionProbe` (size, resolution, box projection, `renderProbe`) ops; `createPrimitive` adds the mesh and the matching collider. |
 | M5-RND-07 | Golden | Lit primitives: a plane, cube, sphere and capsule under a directional and a point light, an unlit emissive cube and a see-through cylinder. |
-| M5-SCN-01 | Unit | Scene save → load round-trips entities, components and properties exactly. |
-| M5-SCN-02 | Unit | Asset references survive moving/renaming the file (GUID in `.meta`). |
+| M5-SCN-01 | JS unit | Scene save → load round-trips objects, hierarchy, layers, enabled flags, engine and script components, `@property` values, references, shared meshes and textures and render settings exactly (saving again gives the same data); properties are set before `onAwake`; unknown components and values are skipped with warnings. |
+| M5-SCN-02 | Integration | In QuickJS, a component saves a scene (with `@property` fields and an engine `Light`), loads it back as the single scene and keeps itself with `dontDestroyOnLoad`; Rust's scene ends up with the loaded objects where they were saved. |
+| M5-SCN-03 | JS unit | `SceneManager`: the `Main` scene, additive loads, the active scene taking new objects, moving roots between scenes, unloading (not the last), events in order; single loads replacing all but `DontDestroyOnLoad`; `loadSceneAsync` from a file, failures rejecting; bad data refused. |
+| M5-SCN-04 | JS unit | `GameObject.instantiate` copies objects with children and components; references inside the copy point at the copies, outside ones stay; world placement without a parent, local under one. |
+| M5-SCN-05 | Unit | Asset references survive moving/renaming the file (GUID in `.meta`). |
 | M5-AST-01 | Integration | A fixture glTF cooks into the engine format; vertex/index counts match the source. |
 | M5-AST-02 | Integration | Cooking is deterministic: the same input gives byte-identical output. |
 | M5-AST-03 | Integration | Cooking for `desktop` gives BC7 textures; for `mobile`, ASTC. |

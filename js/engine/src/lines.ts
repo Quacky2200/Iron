@@ -2,6 +2,7 @@
 // laser beams). Unlike Unity's flat, camera-facing ribbon it's real geometry, lit like any
 // mesh and the same from every side. It rebuilds its mesh when its points change.
 
+import { property } from "./property.ts";
 import { Color, type Vector3Like, Vector3 } from "./math.ts";
 import { Material, Mesh, MeshRenderer } from "./rendering.ts";
 import { Component } from "./scene.ts";
@@ -69,13 +70,18 @@ export function tubeMesh(points: readonly Vector3Like[], radius: number, sides: 
 /** Draws a round tube through `positions` (world space), Unity's `LineRenderer` as a tube. */
 export class LineRenderer extends Component {
   /** The points it goes through, in world space. Set a new array to redraw. */
+  @property
   positions: Vector3Like[] = [];
   /** Tube thickness (diameter, metres). */
+  @property
   width = 0.05;
   /** Points around the tube. */
+  @property
   sides = 8;
   /** Extra points between each pair of positions, for curves. */
+  @property
   smoothing = 3;
+  @property
   material = new Material(Color.white, Color.black, 0.3);
   private mesh: Mesh | null = null;
   private renderer: MeshRenderer | null = null;

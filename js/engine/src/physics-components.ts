@@ -10,6 +10,7 @@
 // Built on the lower-level `physics` handles (physics.ts). Collider sizes take the
 // object's scale when the collider is added; changing the scale later doesn't resize it.
 
+import { property } from "./property.ts";
 import { Time } from "./clock.ts";
 import { Color, Mathf, Quaternion, Vector3, type Vector3Like } from "./math.ts";
 import { contactListeners, type PhysicsBody, type PhysicsCollider, type PhysicsJoint, physics, type Shape } from "./physics.ts";
@@ -125,6 +126,7 @@ export abstract class Collider extends Component {
   handle: PhysicsCollider | null = null;
 
   /** The shape's offset from the object, in its local space. */
+  @property
   get center(): Vector3 {
     return this._center;
   }
@@ -134,6 +136,7 @@ export abstract class Collider extends Component {
   }
 
   /** A trigger reports overlaps (`onTriggerEnter`) instead of colliding. */
+  @property
   get isTrigger(): boolean {
     return this._isTrigger;
   }
@@ -142,6 +145,7 @@ export abstract class Collider extends Component {
     this.handle?.setSensor(on);
   }
 
+  @property
   get material(): PhysicsMaterial {
     return this._material;
   }
@@ -223,6 +227,7 @@ export abstract class Collider extends Component {
 /** A box, `size` across (in the object's local units). */
 export class BoxCollider extends Collider {
   private _size = Vector3.one;
+  @property
   get size(): Vector3 {
     return this._size;
   }
@@ -239,6 +244,7 @@ export class BoxCollider extends Collider {
 /** A ball of `radius` (scaled by the object's largest axis). */
 export class SphereCollider extends Collider {
   private _radius = 0.5;
+  @property
   get radius(): number {
     return this._radius;
   }
@@ -255,6 +261,7 @@ export class SphereCollider extends Collider {
 export class CapsuleCollider extends Collider {
   private _radius = 0.5;
   private _height = 2;
+  @property
   get radius(): number {
     return this._radius;
   }
@@ -262,6 +269,7 @@ export class CapsuleCollider extends Collider {
     this._radius = r;
     this.rebuild();
   }
+  @property
   get height(): number {
     return this._height;
   }
@@ -283,10 +291,14 @@ export class CapsuleCollider extends Collider {
  */
 export class MeshCollider extends Collider {
   /** A render mesh to collide as (Unity's `sharedMesh`); used instead of `points`. */
+  @property
   sharedMesh: Mesh | null = null;
+  @property
   points: Vector3Like[] = [];
   /** Three per triangle, into `points`. */
+  @property
   indices: number[] = [];
+  @property
   convex = false;
   protected shape(scale: Vector3): Shape {
     if (this.sharedMesh) {
@@ -324,6 +336,7 @@ export class Rigidbody extends Component {
   }
 
   /** In kg. */
+  @property
   get mass(): number {
     return this._mass;
   }
@@ -333,6 +346,7 @@ export class Rigidbody extends Component {
   }
 
   /** Slows movement through the air (linear damping). */
+  @property
   get drag(): number {
     return this._drag;
   }
@@ -342,6 +356,7 @@ export class Rigidbody extends Component {
   }
 
   /** Slows spinning. */
+  @property
   get angularDrag(): number {
     return this._angularDrag;
   }
@@ -350,6 +365,7 @@ export class Rigidbody extends Component {
     this.p?.body.setDamping(this._drag, this._angularDrag);
   }
 
+  @property
   get useGravity(): boolean {
     return this._useGravity;
   }
@@ -359,6 +375,7 @@ export class Rigidbody extends Component {
   }
 
   /** Moved only by scripts (setting the transform), pushing simulated bodies out of the way. */
+  @property
   get isKinematic(): boolean {
     return this._isKinematic;
   }
@@ -368,6 +385,7 @@ export class Rigidbody extends Component {
   }
 
   /** `RigidbodyConstraints` flags, e.g. `FreezeRotation` for characters. */
+  @property
   get constraints(): number {
     return this._constraints;
   }
@@ -377,6 +395,7 @@ export class Rigidbody extends Component {
   }
 
   /** Continuous collision detection: fast things don't pass through thin walls. */
+  @property
   get collisionDetection(): "discrete" | "continuous" {
     return this._continuous ? "continuous" : "discrete";
   }
@@ -591,6 +610,7 @@ export class CharacterController extends Collider {
   private last = Vector3.zero;
   private _velocity = Vector3.zero;
 
+  @property
   get radius(): number {
     return this._radius;
   }
@@ -598,6 +618,7 @@ export class CharacterController extends Collider {
     this._radius = r;
     this.rebuild();
   }
+  @property
   get height(): number {
     return this._height;
   }
@@ -606,6 +627,7 @@ export class CharacterController extends Collider {
     this.rebuild();
   }
   /** The steepest slope it walks up, in degrees. */
+  @property
   get slopeLimit(): number {
     return this._slopeLimit;
   }
@@ -614,6 +636,7 @@ export class CharacterController extends Collider {
     this.configure();
   }
   /** The highest step it climbs, in metres. */
+  @property
   get stepOffset(): number {
     return this._stepOffset;
   }
@@ -685,9 +708,13 @@ export class CharacterController extends Collider {
  * `autoConfigureConnectedAnchor` is off. Made when the component starts.
  */
 export abstract class Joint extends Component {
+  @property
   connectedBody: Rigidbody | null = null;
+  @property
   anchor = Vector3.zero;
+  @property
   connectedAnchor = Vector3.zero;
+  @property
   autoConfigureConnectedAnchor = true;
   protected handle: PhysicsJoint | null = null;
 
@@ -755,10 +782,15 @@ export interface JointMotor {
 
 /** A hinge about `axis` (doors, wheels, levers), with optional limits and a motor. */
 export class HingeJoint extends Joint {
+  @property
   axis = new Vector3(1, 0, 0);
+  @property
   useLimits = false;
+  @property
   limits: JointLimits = { min: -90, max: 90 };
+  @property
   useMotor = false;
+  @property
   motor: JointMotor = { targetVelocity: 0, force: 1 };
 
   protected kind() {
@@ -777,10 +809,13 @@ export class HingeJoint extends Joint {
 /** Pulls the bodies towards `restLength` apart like a spring (Unity's `SpringJoint`). */
 export class SpringJoint extends Joint {
   /** Stiffness. */
+  @property
   spring = 10;
   /** Damping. */
+  @property
   damper = 0.2;
   /** The length it rests at; by default, the distance when it's made. */
+  @property
   restLength: number | null = null;
 
   protected kind() {
@@ -800,6 +835,7 @@ export class SpringJoint extends Joint {
 
 /** Keeps the bodies at most `maxDistance` apart, slack within it: a rope without segments. */
 export class RopeJoint extends Joint {
+  @property
   maxDistance = 2;
   protected kind() {
     return "rope" as const;
@@ -816,15 +852,22 @@ export class RopeJoint extends Joint {
  */
 export class Rope extends Component {
   /** Total length in metres. */
+  @property
   length = 3;
+  @property
   segments = 12;
+  @property
   radius = 0.04;
   /** Each segment's mass in kg. */
+  @property
   segmentMass = 0.05;
+  @property
   color = new Color(0.55, 0.42, 0.28, 1);
   /** What the far end holds, if anything. */
+  @property
   end: Rigidbody | null = null;
   /** `tube`: one smooth tube through the links (a `LineRenderer`); `segments`: each link drawn as a capsule. */
+  @property
   renderMode: "tube" | "segments" = "tube";
   /** The segment objects (they hang in the world, not under this object). */
   readonly links: GameObject[] = [];

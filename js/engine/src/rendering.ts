@@ -3,6 +3,7 @@
 // the object's transform. Each sends its settings to the engine as `render.*` ops when
 // it starts and whenever a setting changes.
 
+import { property } from "./property.ts";
 import {
   Color,
   Mathf,
@@ -48,6 +49,7 @@ export class Camera extends Component {
   private started = false;
 
   /** Vertical field of view in degrees (perspective), 1 to 179. */
+  @property
   get fieldOfView(): number {
     return this._fov;
   }
@@ -75,6 +77,7 @@ export class Camera extends Component {
     return (Math.atan(Math.tan(half) / aspect) * 360) / Math.PI;
   }
 
+  @property
   get nearClipPlane(): number {
     return this._near;
   }
@@ -83,6 +86,7 @@ export class Camera extends Component {
     this.send();
   }
 
+  @property
   get farClipPlane(): number {
     return this._far;
   }
@@ -92,6 +96,7 @@ export class Camera extends Component {
   }
 
   /** The colour behind everything in this camera's view (linear RGBA). */
+  @property
   get backgroundColor(): Color {
     return this._background;
   }
@@ -106,6 +111,7 @@ export class Camera extends Component {
    * `RenderSettings.skybox` (the background colour without one), `solidColor` the
    * background colour.
    */
+  @property
   get clearFlags(): "skybox" | "solidColor" {
     return this._clearFlags;
   }
@@ -115,6 +121,7 @@ export class Camera extends Component {
   }
 
   /** Draw order: cameras with a higher depth draw over lower ones. */
+  @property
   get depth(): number {
     return this._depth;
   }
@@ -124,6 +131,7 @@ export class Camera extends Component {
   }
 
   /** An orthographic (2D, no perspective) view instead of a perspective one. */
+  @property
   get orthographic(): boolean {
     return this._orthographic;
   }
@@ -133,6 +141,7 @@ export class Camera extends Component {
   }
 
   /** Half the view's height in world units when orthographic (Unity's `orthographicSize`). */
+  @property
   get orthographicSize(): number {
     return this._orthographicSize;
   }
@@ -142,6 +151,7 @@ export class Camera extends Component {
   }
 
   /** The part of the screen it draws into: x, y, width, height from the top-left, 0 to 1. */
+  @property
   get rect(): Rect {
     return this._rect;
   }
@@ -154,6 +164,7 @@ export class Camera extends Component {
    * The layers it draws, a bit per layer (all by default). Signed masks work too:
    * `cam.cullingMask &= ~LayerMask.getMask("UI")`.
    */
+  @property
   get cullingMask(): number {
     return this._cullingMask;
   }
@@ -166,6 +177,7 @@ export class Camera extends Component {
    * Per layer, how far away things on it are still drawn (0: out to `farClipPlane`).
    * Set the whole array: changing an item of the one you got does nothing.
    */
+  @property
   get layerCullDistances(): number[] {
     return [...this._layerCullDistances];
   }
@@ -175,6 +187,7 @@ export class Camera extends Component {
   }
 
   /** Measure cull distances straight from the camera rather than along its view. */
+  @property
   get layerCullSpherical(): boolean {
     return this._layerCullSpherical;
   }
@@ -328,6 +341,7 @@ export class PlaneRenderer extends Component {
   private _color = Color.white;
   private started = false;
 
+  @property
   get size(): Vector2 {
     return this._size;
   }
@@ -336,6 +350,7 @@ export class PlaneRenderer extends Component {
     this.send();
   }
 
+  @property
   get color(): Color {
     return this._color;
   }
@@ -364,12 +379,17 @@ export class PlaneRenderer extends Component {
  * into place, and optionally looks at it. Runs in `onLateUpdate`, after things moved.
  */
 export class CameraFollow extends Component {
+  @property
   target: GameObject | null = null;
+  @property
   offset = new Vector3(0, 3, 6);
   /** Rotate the offset with the target (behind a car), or keep it in world space. */
+  @property
   offsetInTargetSpace = false;
   /** About how long catching up takes, in seconds (0: instantly). */
+  @property
   smoothTime = 0.25;
+  @property
   lookAtTarget = true;
   private velocity = [0, 0, 0];
 
@@ -398,14 +418,22 @@ export class CameraFollow extends Component {
  * or let it turn by itself with `autoRotate` (degrees per second).
  */
 export class CameraOrbit extends Component {
+  @property
   target: GameObject | null = null;
   /** Orbits this point when there's no target. */
+  @property
   center = Vector3.zero;
+  @property
   distance = 8;
+  @property
   yaw = 0;
+  @property
   pitch = 20;
+  @property
   minPitch = -80;
+  @property
   maxPitch = 80;
+  @property
   autoRotate = 0;
 
   override onLateUpdate(dt: number): void {
@@ -435,6 +463,7 @@ export class WorldPanel extends Component {
   private started = false;
 
   /** Width in UI pixels. */
+  @property
   get width(): number {
     return this._width;
   }
@@ -444,6 +473,7 @@ export class WorldPanel extends Component {
   }
 
   /** Height in UI pixels. */
+  @property
   get height(): number {
     return this._height;
   }
@@ -453,6 +483,7 @@ export class WorldPanel extends Component {
   }
 
   /** UI pixels per metre: 500 makes an 800×600 panel 1.6 × 1.2 m. */
+  @property
   get pixelsPerMeter(): number {
     return this._pixelsPerMeter;
   }
@@ -462,6 +493,7 @@ export class WorldPanel extends Component {
   }
 
   /** Texture pixels per UI pixel: higher keeps text sharp up close (costs memory). */
+  @property
   get resolution(): number {
     return this._resolution;
   }
@@ -471,6 +503,7 @@ export class WorldPanel extends Component {
   }
 
   /** A colour multiplied over the panel (alpha fades it). */
+  @property
   get tint(): Color {
     return this._tint;
   }
@@ -480,6 +513,7 @@ export class WorldPanel extends Component {
   }
 
   /** Whether the pointer can use it. */
+  @property
   get interactive(): boolean {
     return this._interactive;
   }
@@ -596,6 +630,8 @@ let nextMesh = 1;
  */
 export class Mesh {
   readonly id: number;
+  /** @internal Its data as flat arrays (script meshes), for saving with scenes. */
+  _data: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[] } | null = null;
   private constructor(id: number) {
     this.id = id;
   }
@@ -623,6 +659,12 @@ export class Mesh {
     normals?: readonly Vector3Like[];
     uv?: readonly Vector2Like[];
   }): void {
+    this._data = {
+      vertices: data.vertices.flatMap((v) => [v.x, v.y, v.z]),
+      triangles: [...data.triangles],
+      normals: (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]),
+      uv: (data.uv ?? []).flatMap((v) => [v.x, v.y]),
+    };
     __iron_op(
       "render.mesh",
       this.id,
@@ -654,6 +696,7 @@ export class MeshRenderer extends Component {
   private started = false;
 
   /** Whether it casts shadows (Unity's `shadowCastingMode`: `on` or `off`). */
+  @property
   get shadowCastingMode(): "on" | "off" {
     return this._shadowCastingMode;
   }
@@ -662,6 +705,7 @@ export class MeshRenderer extends Component {
     this.send();
   }
 
+  @property
   get mesh(): PrimitiveMesh | Mesh {
     return this._mesh;
   }
@@ -670,6 +714,7 @@ export class MeshRenderer extends Component {
     this.send();
   }
 
+  @property
   get material(): Material {
     return this._material;
   }
@@ -731,6 +776,7 @@ export class Light extends Component {
   private _cullingMask = 0xffffffff;
   private started = false;
 
+  @property
   get type(): LightType {
     return this._type;
   }
@@ -738,6 +784,7 @@ export class Light extends Component {
     this._type = t;
     this.send();
   }
+  @property
   get color(): Color {
     return this._color;
   }
@@ -745,6 +792,7 @@ export class Light extends Component {
     this._color = c;
     this.send();
   }
+  @property
   get intensity(): number {
     return this._intensity;
   }
@@ -753,6 +801,7 @@ export class Light extends Component {
     this.send();
   }
   /** How far point and spot lights reach (metres). */
+  @property
   get range(): number {
     return this._range;
   }
@@ -761,6 +810,7 @@ export class Light extends Component {
     this.send();
   }
   /** A spot light's full cone angle in degrees. */
+  @property
   get spotAngle(): number {
     return this._spotAngle;
   }
@@ -769,6 +819,7 @@ export class Light extends Component {
     this.send();
   }
   /** Where a spot light starts fading towards its edge (degrees, full angle). */
+  @property
   get innerSpotAngle(): number {
     return this._innerSpotAngle;
   }
@@ -778,6 +829,7 @@ export class Light extends Component {
   }
 
   /** A glow around the light this many metres across, in its colour (0: none; Unity's halo). */
+  @property
   get haloSize(): number {
     return this._haloSize;
   }
@@ -790,6 +842,7 @@ export class Light extends Component {
    * A spot light's visible beam: a soft cone of light in the air, as long as `range`
    * (0: none; 0.3–1 looks like light through dust or haze).
    */
+  @property
   get beamIntensity(): number {
     return this._beamIntensity;
   }
@@ -803,6 +856,7 @@ export class Light extends Component {
    * Only the first directional light with shadows casts them, for now, within
    * `QualitySettings.shadowDistance` of the camera.
    */
+  @property
   get shadows(): LightShadows {
     return this._shadows;
   }
@@ -811,6 +865,7 @@ export class Light extends Component {
     this.send();
   }
   /** How dark its shadows are, 0 to 1. */
+  @property
   get shadowStrength(): number {
     return this._shadowStrength;
   }
@@ -823,6 +878,7 @@ export class Light extends Component {
    * The layers it lights, a bit each (all by default). Objects on other layers ignore
    * it and don't cast its shadows.
    */
+  @property
   get cullingMask(): number {
     return this._cullingMask;
   }
@@ -976,8 +1032,10 @@ export const RenderSettings = {
  */
 export class Mirror extends Component {
   /** The plane's normal in the object's space: up (+y) for planes, +z for quads. */
+  @property
   normal: Vector3Like | null = null;
   /** The layers it reflects, a bit each (all by default; set before it starts). */
+  @property
   cullingMask = 0xffffffff;
 
   private send(): void {
@@ -1004,13 +1062,18 @@ export class Mirror extends Component {
  */
 export class ReflectionProbe extends Component {
   /** The box of influence, centred on the object (metres). */
+  @property
   size: Vector3Like = new Vector3(10, 10, 10);
   /** The cubemap's face size in texels (a power of two, 16 to 1024). */
+  @property
   resolution = 128;
   /** Correct reflections for the box's walls (rooms) instead of treating them as far away. */
+  @property
   boxProjection = false;
   /** The layers it captures, a bit each (all by default; set before it starts). */
+  @property
   cullingMask = 0xffffffff;
+  @property
   refreshMode: "onAwake" | "everyFrame" | "viaScripting" = "onAwake";
 
   private send(): void {
@@ -1052,6 +1115,7 @@ export class LODGroup extends Component {
   private started = false;
 
   /** The group's size in metres before its object's scale (its height, say). */
+  @property
   get size(): number {
     return this._size;
   }
@@ -1062,6 +1126,15 @@ export class LODGroup extends Component {
 
   get lodCount(): number {
     return this._lods.length;
+  }
+
+  /** The levels, as `getLODs` / `setLODs` (saved with the scene). */
+  @property
+  get lods(): LOD[] {
+    return this.getLODs();
+  }
+  set lods(lods: LOD[]) {
+    this.setLODs(lods);
   }
 
   /** The levels (copies). */

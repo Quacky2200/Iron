@@ -9,6 +9,7 @@
 // the host functions at the end of this file, skipping components on inactive objects.
 
 import { checkLayer } from "./layers.ts";
+import type { Scene } from "./scenes.ts";
 import { Quaternion, type QuaternionLike, Vector3, type Vector3Like } from "./math.ts";
 
 export abstract class Component {
@@ -64,6 +65,10 @@ export type ComponentClass<T extends Component = Component> = new () => T;
 
 const classes = new Map<string, ComponentClass>();
 const names = new Map<ComponentClass, string>();
+/** Registered classes the engine starts one of each (`spawn`, the default). */
+const starting = new Set<string>();
+/** The engine's own component classes, by name (they aren't starting components). */
+const builtIns = new Map<string, ComponentClass>();
 const instances = new Map<number, Component>();
 const objects = new Map<number, GameObject>();
 const roots: GameObject[] = [];
@@ -74,14 +79,58 @@ let nextObject = 1;
 let nextComponent = 1 << 24;
 
 /**
- * Registers component classes by name. Using an object (`register({ Hello })`)
- * keeps names stable even if the bundle is minified.
+ * Registers component classes by name, so scene files can use them. Using an object
+ * (`register({ Hello })`) keeps names stable even if the bundle is minified. The engine
+ * also starts one of each on its own object, unless `spawn` is false (components that
+ * only live in scenes).
  */
-export function register(components: Record<string, ComponentClass>): void {
+export function register(components: Record<string, ComponentClass>, options: { spawn?: boolean } = {}): void {
   for (const [name, cls] of Object.entries(components)) {
     classes.set(name, cls);
     names.set(cls, name);
+    if (options.spawn === false) starting.delete(name);
+    else starting.add(name);
   }
+}
+
+/** @internal Names the engine's own components, so scenes can find them by name. */
+export function _registerBuiltIns(components: Record<string, ComponentClass>): void {
+  for (const [name, cls] of Object.entries(components)) {
+    builtIns.set(name, cls);
+    if (!names.has(cls)) names.set(cls, name);
+  }
+}
+
+/** @internal A component class by its saved name (`undefined`: unknown). */
+export function _classByName(name: string): ComponentClass | undefined {
+  return classes.get(name) ?? builtIns.get(name);
+}
+
+/** @internal A component's saved name. */
+export function _nameOf(cls: ComponentClass): string {
+  return nameOf(cls);
+}
+
+/** @internal How scenes.ts tells new root objects which scene they're in. */
+export interface SceneHooks {
+  /** The scene new objects go into (the active one). */
+  active(): Scene;
+  dontDestroyOnLoad(go: GameObject): void;
+  instantiate(original: GameObject, options: InstantiateObjectOptions): GameObject;
+  reset(): void;
+}
+
+export interface InstantiateObjectOptions {
+  /** Put the copy under this object (keeping the original's local transform). */
+  parent?: GameObject | null;
+  position?: Vector3Like;
+  rotation?: QuaternionLike;
+}
+let sceneHooks: SceneHooks | null = null;
+
+/** @internal */
+export function _setSceneHooks(hooks: SceneHooks): void {
+  sceneHooks = hooks;
 }
 
 /**
@@ -278,6 +327,12 @@ export class GameObject {
   private _enabled = true;
   private _destroyed = false;
   private _layer = 0;
+  /** @internal The scene a root object is in (children are in their root's). */
+  _scene: Scene | null = null;
+  /** @internal On a model's copy (`Model.instantiate`): what to load it from when saved. */
+  _model: { src: string; colliders?: string } | null = null;
+  /** @internal Built from a model's nodes: saved scenes rebuild these from the model. */
+  _modelPart = false;
 
   /**
    * Creates an object in the world (at the origin, or as given). `position` and
@@ -295,6 +350,7 @@ export class GameObject {
     objects.set(this.id, this);
     const parent = options.parent ?? null;
     this._parent = parent;
+    if (!parent) this._scene = sceneHooks?.active() ?? null;
     (parent ? parent.children : roots).push(this);
     const t = this.transform;
     __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
@@ -312,6 +368,9 @@ export class GameObject {
       _enabled: true,
       _destroyed: false,
       _layer: 0,
+      _scene: sceneHooks?.active() ?? null,
+      _model: null,
+      _modelPart: false,
     });
     Object.assign(go, { transform: new Transform(go) });
     objects.set(id, go);
@@ -343,6 +402,20 @@ export class GameObject {
     return this._parent;
   }
 
+  /** The scene it's in (its root's). */
+  get scene(): Scene {
+    let root: GameObject = this;
+    while (root._parent) root = root._parent;
+    return root._scene!;
+  }
+
+  /** The topmost object above it (itself at the root). */
+  get root(): GameObject {
+    let root: GameObject = this;
+    while (root._parent) root = root._parent;
+    return root;
+  }
+
   /**
    * Moves the object under `parent` (`null`: to the world root). It keeps its place in
    * the world unless `keepWorld` is false, in which case it keeps its local transform.
@@ -354,6 +427,8 @@ export class GameObject {
     const t = this.transform;
     const position = t.position;
     const rotation = t.rotation;
+    // A new root stays in the scene it was in.
+    if (!parent) this._scene = this.scene;
     const siblings = this._parent ? this._parent.children : roots;
     siblings.splice(siblings.indexOf(this), 1);
     this._parent = parent;
@@ -388,12 +463,18 @@ export class GameObject {
 
   /** Attaches a new component, with fields set from `props`. It starts on the next tick. */
   addComponent<T extends Component>(cls: ComponentClass<T>, props?: Partial<T>): T {
+    const instance = this._addComponentAsleep(cls, props);
+    instance.onAwake?.();
+    return instance;
+  }
+
+  /** @internal `addComponent` without `onAwake` (scenes wake components once all are loaded). */
+  _addComponentAsleep<T extends Component>(cls: ComponentClass<T>, props?: Partial<T>): T {
     const name = nameOf(cls);
     const id = nextComponent++;
     const instance = instantiate(cls, id, this) as T;
     if (props) Object.assign(instance, props);
     __iron_op("scene.addComponent", this.id, id, name);
-    instance.onAwake?.();
     return instance;
   }
 
@@ -424,6 +505,25 @@ export class GameObject {
     if (this._destroyed) return;
     __iron_op("scene.destroy", this.id);
     forget(this);
+  }
+
+  /**
+   * Keeps a root object (and its children) when `SceneManager.loadScene` replaces the
+   * scenes: it moves to the `DontDestroyOnLoad` scene (Unity's `DontDestroyOnLoad`).
+   */
+  static dontDestroyOnLoad(go: GameObject): void {
+    if (!sceneHooks) throw new Error("dontDestroyOnLoad needs @iron/engine's scenes.ts loaded");
+    sceneHooks.dontDestroyOnLoad(go);
+  }
+
+  /**
+   * A copy of an object with its children and components (Unity's `Instantiate`):
+   * references inside the copy point at the copies, others at what they pointed at.
+   * Without a parent the copy starts where the original is in the world.
+   */
+  static instantiate(original: GameObject, options: InstantiateObjectOptions = {}): GameObject {
+    if (!sceneHooks) throw new Error("instantiate needs @iron/engine's scenes.ts loaded");
+    return sceneHooks.instantiate(original, options);
   }
 
   /** A child by name (direct children only). */
@@ -501,17 +601,20 @@ function forget(go: GameObject): void {
 /** Clears everything. Only for tests. */
 export function _resetSceneForTests() {
   classes.clear();
+  starting.clear();
   names.clear();
+  for (const [name, cls] of builtIns) names.set(cls, name);
   instances.clear();
   objects.clear();
   roots.length = 0;
+  sceneHooks?.reset();
   nextObject = 1;
   nextComponent = 1 << 24;
 }
 
 // ---- Host functions called by Rust (crates/iron_script/src/components.rs) ----
 
-globalThis.__iron_registered = () => [...classes.keys()];
+globalThis.__iron_registered = () => [...starting];
 
 /** Creates an engine-spawned component, on the object the engine made for it. */
 globalThis.__iron_create = (className: string, id: number, objectId?: number, objectName?: string) => {

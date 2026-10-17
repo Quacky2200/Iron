@@ -3,6 +3,7 @@
 // `__iron_textures` once loaded; sprites are drawn as quads facing the object's +z,
 // unlit, sorted with the other see-through things by distance.
 
+import { property } from "./property.ts";
 import { Color, Mathf, Rect, Vector2, type Vector2Like } from "./math.ts";
 import { Component } from "./scene.ts";
 
@@ -214,6 +215,7 @@ export class SpriteRenderer extends Component {
   private started = false;
   private shown = false;
 
+  @property
   get sprite(): Sprite | null {
     return this._sprite;
   }
@@ -221,6 +223,7 @@ export class SpriteRenderer extends Component {
     this._sprite = s;
     this.send();
   }
+  @property
   get color(): Color {
     return this._color;
   }
@@ -228,6 +231,7 @@ export class SpriteRenderer extends Component {
     this._color = c;
     this.send();
   }
+  @property
   get flipX(): boolean {
     return this._flipX;
   }
@@ -235,6 +239,7 @@ export class SpriteRenderer extends Component {
     this._flipX = f;
     this.send();
   }
+  @property
   get flipY(): boolean {
     return this._flipY;
   }
@@ -244,6 +249,7 @@ export class SpriteRenderer extends Component {
   }
 
   /** Draw order: higher draws over lower, whatever the distance (Unity's `sortingOrder`). */
+  @property
   get sortingOrder(): number {
     return this._sortingOrder;
   }

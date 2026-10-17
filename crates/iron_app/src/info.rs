@@ -24,6 +24,8 @@ pub struct Manifest {
     pub quality: Value,
     /// `iron.layers`: layer names by number, passed to scripts' `LayerMask` as is.
     pub layers: Value,
+    /// `iron.startScene`: a scene file scripts load at startup.
+    pub start_scene: Option<String>,
 }
 
 impl Manifest {
@@ -59,6 +61,7 @@ impl Manifest {
             icon: text(&iron["icon"]),
             quality: iron["quality"].clone(),
             layers: iron["layers"].clone(),
+            start_scene: text(&iron["startScene"]),
             name,
         }
     }
@@ -99,6 +102,7 @@ impl Info {
                 "engineVersion": env!("CARGO_PKG_VERSION"),
                 "quality": manifest.quality,
                 "layers": manifest.layers,
+                "startScene": manifest.start_scene,
             }),
         );
         map.insert("system".into(), system());

@@ -1,7 +1,199 @@
 (() => {
+  var __create = Object.create;
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __name = (target, name) => {
+    Object.defineProperty(target, "name", {
+      value: name,
+      enumerable: false,
+      configurable: true
+    });
+    return target;
+  };
+  var __knownSymbol = (name, symbol) => (symbol = Symbol[name]) ? symbol : Symbol.for("Symbol." + name);
+  var __typeError = (msg) => {
+    throw TypeError(msg);
+  };
+  var __defNormalProp = (obj, key, value) => (key in obj) ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __accessCheck = (obj, member, msg) => member.has(obj) || __typeError("Cannot " + msg);
+  var __privateIn = (member, obj) => Object(obj) !== obj ? __typeError('Cannot use the "in" operator on this value') : member.has(obj);
+  var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read from private field"), getter ? getter.call(obj) : member.get(obj));
+  var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
+  var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
+  var __decoratorStart = (base) => [, , , __create(base?.[__knownSymbol("metadata")] ?? null)];
+  var __decoratorStrings = ["class", "method", "getter", "setter", "accessor", "field", "value", "get", "set"];
+  var __expectFn = (fn) => fn !== undefined && typeof fn !== "function" ? __typeError("Function expected") : fn;
+  var __decoratorContext = (kind, name, done, metadata, fns) => ({
+    kind: __decoratorStrings[kind],
+    name,
+    metadata,
+    addInitializer: (fn) => done._ ? __typeError("Already initialized") : fns.push(__expectFn(fn || null))
+  });
+  var __decoratorMetadata = (array, target) => __defNormalProp(target, __knownSymbol("metadata"), array[3]);
+  var __runInitializers = (array, flags, self, value) => {
+    for (var i = 0, fns = array[flags >> 1], n = fns && fns.length;i < n; i++)
+      flags & 1 ? fns[i].call(self) : value = fns[i].call(self, value);
+    return value;
+  };
+  var __decorateElement = (array, flags, name, decorators, target, extra) => {
+    var fn, it, done, ctx, access, k = flags & 7, s = !!(flags & 8), p = !!(flags & 16);
+    var j = k > 3 ? array.length + 1 : k ? s ? 1 : 2 : 0, key = __decoratorStrings[k + 5];
+    var initializers = k > 3 && (array[j - 1] = []), extraInitializers = array[j] || (array[j] = []);
+    var desc = k && (!p && !s && (target = target.prototype), k < 5 && (k > 3 || !p) && __getOwnPropDesc(k < 4 ? target : {
+      get [name]() {
+        return __privateGet(this, extra);
+      },
+      set [name](x) {
+        __privateSet(this, extra, x);
+      }
+    }, name));
+    k ? p && k < 4 && __name(extra, (k > 2 ? "set " : k > 1 ? "get " : "") + name) : __name(target, name);
+    for (var i = decorators.length - 1;i >= 0; i--) {
+      ctx = __decoratorContext(k, name, done = {}, array[3], extraInitializers);
+      if (k) {
+        ctx.static = s, ctx.private = p, access = ctx.access = { has: p ? (x) => __privateIn(target, x) : (x) => (name in x) };
+        if (k ^ 3)
+          access.get = p ? (x) => (k ^ 1 ? __privateGet : __privateMethod)(x, target, k ^ 4 ? extra : desc.get) : (x) => x[name];
+        if (k > 2)
+          access.set = p ? (x, y) => __privateSet(x, target, y, k ^ 4 ? extra : desc.set) : (x, y) => x[name] = y;
+      }
+      it = (0, decorators[i])(k ? k < 4 ? p ? extra : desc[key] : k > 4 ? undefined : { get: desc.get, set: desc.set } : target, ctx);
+      done._ = 1;
+      if (k ^ 4 || it === undefined)
+        __expectFn(it) && (k > 4 ? initializers.unshift(it) : k ? p ? extra = it : desc[key] = it : target = it);
+      else if (typeof it !== "object" || it === null)
+        __typeError("Object expected");
+      else
+        __expectFn(fn = it.get) && (desc.get = fn), __expectFn(fn = it.set) && (desc.set = fn), __expectFn(fn = it.init) && initializers.unshift(fn);
+    }
+    return k || __decoratorMetadata(array, target), desc && __defProp(target, name, desc), p ? k ^ 4 ? extra : desc : target;
+  };
+
   // ../../js/engine/src/audio.ts
+  var nextSound = 1;
+  var nextPlayback = 1;
+  var nextTrack = 1;
   var playing = new Map;
+
+  class Sound {
+    id;
+    src;
+    constructor(src, options = {}) {
+      this.id = nextSound++;
+      this.src = src;
+      __iron_op("audio.load", this.id, src, !!options.stream);
+    }
+    play(options = {}) {
+      return new Playback(this, options);
+    }
+    unload() {
+      __iron_op("audio.unload", this.id);
+    }
+  }
+
+  class Playback {
+    id;
+    sound;
+    playing = true;
+    onEnded;
+    constructor(sound, o) {
+      this.id = nextPlayback++;
+      this.sound = sound;
+      playing.set(this.id, this);
+      __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
+        o.volume ?? 1,
+        o.rate ?? 1,
+        o.pan ?? 0,
+        !!o.loop,
+        o.fadeIn ?? 0,
+        o.start ?? 0
+      ]);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.set", this.id, "volume", volume, fade);
+    }
+    setRate(rate, fade = 0) {
+      __iron_op("audio.set", this.id, "rate", rate, fade);
+    }
+    setPan(pan, fade = 0) {
+      __iron_op("audio.set", this.id, "pan", pan, fade);
+    }
+    pause(fade = 0) {
+      __iron_op("audio.pause", this.id, fade);
+    }
+    resume(fade = 0) {
+      __iron_op("audio.resume", this.id, fade);
+    }
+    stop(fade = 0) {
+      __iron_op("audio.stop", this.id, fade);
+    }
+    seek(seconds) {
+      __iron_op("audio.seek", this.id, seconds);
+    }
+  }
+
+  class Bus {
+    id;
+    constructor(volume, parent) {
+      this.id = nextTrack++;
+      __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", this.id, volume, fade);
+    }
+    pause(fade = 0) {
+      __iron_op("audio.trackPause", this.id, fade);
+    }
+    resume(fade = 0) {
+      __iron_op("audio.trackResume", this.id, fade);
+    }
+    remove() {
+      __iron_op("audio.removeTrack", this.id);
+    }
+  }
+
+  class Emitter {
+    id;
+    constructor(position, options) {
+      this.id = nextTrack++;
+      __iron_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
+    }
+    setPosition(p, glide = 0) {
+      __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
+    }
+    setVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", this.id, volume, fade);
+    }
+    remove() {
+      __iron_op("audio.removeTrack", this.id);
+    }
+  }
   var cache = new Map;
+  var audio = {
+    load(src, options) {
+      return new Sound(src, options);
+    },
+    play(src, options) {
+      let sound = cache.get(src);
+      if (!sound) {
+        sound = new Sound(src);
+        cache.set(src, sound);
+      }
+      return sound.play(options);
+    },
+    createBus(options = {}) {
+      return new Bus(options.volume ?? 1, options.parent ?? null);
+    },
+    createEmitter(position, options = {}) {
+      return new Emitter(position, options);
+    },
+    setListener(position, rotation = { x: 0, y: 0, z: 0, w: 1 }) {
+      __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
+    },
+    setMasterVolume(volume, fade = 0) {
+      __iron_op("audio.trackVolume", null, volume, fade);
+    }
+  };
   globalThis.__iron_audio = (ended) => {
     for (const id of ended) {
       const p = playing.get(id);
@@ -18,6 +210,23 @@ ${err.stack}` : ""}`);
       }
     }
   };
+  // ../../js/engine/src/property.ts
+  var PROPERTIES = Symbol("iron.properties");
+  var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
+  function property(_value, context) {
+    const meta = context.metadata;
+    if (!Object.hasOwn(meta, PROPERTIES))
+      meta[PROPERTIES] = [...meta[PROPERTIES] ?? []];
+    const list = meta[PROPERTIES];
+    const name = String(context.name);
+    if (!list.includes(name))
+      list.push(name);
+  }
+  function propertiesOf(cls) {
+    const meta = cls[metadataKey];
+    return meta?.[PROPERTIES] ?? [];
+  }
+
   // ../../js/engine/src/layers.ts
   function checkLayer(layer) {
     if (!Number.isInteger(layer) || layer < 0 || layer > 31)
@@ -908,6 +1117,68 @@ ${err.stack}` : ""}`);
       return new Matrix4x4(out);
     }
   }
+
+  class Ray {
+    origin;
+    direction;
+    constructor(origin, direction) {
+      this.origin = Vector3.from(origin);
+      this.direction = Vector3.from(direction).normalized;
+    }
+    getPoint(distance) {
+      return this.origin.add(this.direction.scale(distance));
+    }
+  }
+  class Rect {
+    x;
+    y;
+    width;
+    height;
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+    static minMax(min, max) {
+      return new Rect(min.x, min.y, max.x - min.x, max.y - min.y);
+    }
+    get xMin() {
+      return this.x;
+    }
+    get yMin() {
+      return this.y;
+    }
+    get xMax() {
+      return this.x + this.width;
+    }
+    get yMax() {
+      return this.y + this.height;
+    }
+    get center() {
+      return new Vector2(this.x + this.width / 2, this.y + this.height / 2);
+    }
+    get size() {
+      return new Vector2(this.width, this.height);
+    }
+    contains(p) {
+      return p.x >= this.x && p.x < this.xMax && p.y >= this.y && p.y < this.yMax;
+    }
+    overlaps(r) {
+      return r.xMax > this.x && r.x < this.xMax && r.yMax > this.y && r.y < this.yMax;
+    }
+  }
+
+  class RectInt extends Rect {
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      super(Math.trunc(x), Math.trunc(y), Math.trunc(width), Math.trunc(height));
+    }
+    *positions() {
+      for (let y = this.y;y < this.yMax; y++)
+        for (let x = this.x;x < this.xMax; x++)
+          yield new Vector2Int(x, y);
+    }
+  }
   class Color {
     r;
     g;
@@ -970,16 +1241,39 @@ ${err.stack}` : ""}`);
   }
   var classes = new Map;
   var names = new Map;
+  var starting = new Set;
+  var builtIns = new Map;
   var instances = new Map;
   var objects = new Map;
   var roots = [];
   var nextObject = 1;
   var nextComponent = 1 << 24;
-  function register(components) {
+  function register(components, options = {}) {
     for (const [name, cls] of Object.entries(components)) {
       classes.set(name, cls);
       names.set(cls, name);
+      if (options.spawn === false)
+        starting.delete(name);
+      else
+        starting.add(name);
     }
+  }
+  function _registerBuiltIns(components) {
+    for (const [name, cls] of Object.entries(components)) {
+      builtIns.set(name, cls);
+      if (!names.has(cls))
+        names.set(cls, name);
+    }
+  }
+  function _classByName(name) {
+    return classes.get(name) ?? builtIns.get(name);
+  }
+  function _nameOf(cls) {
+    return nameOf(cls);
+  }
+  var sceneHooks = null;
+  function _setSceneHooks(hooks) {
+    sceneHooks = hooks;
   }
   function nameOf(cls) {
     let name = names.get(cls);
@@ -1122,6 +1416,9 @@ ${err.stack}` : ""}`);
     _enabled = true;
     _destroyed = false;
     _layer = 0;
+    _scene = null;
+    _model = null;
+    _modelPart = false;
     constructor(name = "GameObject", options = {}) {
       this.id = nextObject++;
       this._name = name;
@@ -1130,6 +1427,8 @@ ${err.stack}` : ""}`);
       objects.set(this.id, this);
       const parent = options.parent ?? null;
       this._parent = parent;
+      if (!parent)
+        this._scene = sceneHooks?.active() ?? null;
       (parent ? parent.children : roots).push(this);
       const t = this.transform;
       __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
@@ -1144,7 +1443,10 @@ ${err.stack}` : ""}`);
         _parent: null,
         _enabled: true,
         _destroyed: false,
-        _layer: 0
+        _layer: 0,
+        _scene: sceneHooks?.active() ?? null,
+        _model: null,
+        _modelPart: false
       });
       Object.assign(go, { transform: new Transform(go) });
       objects.set(id, go);
@@ -1168,6 +1470,18 @@ ${err.stack}` : ""}`);
     get parent() {
       return this._parent;
     }
+    get scene() {
+      let root = this;
+      while (root._parent)
+        root = root._parent;
+      return root._scene;
+    }
+    get root() {
+      let root = this;
+      while (root._parent)
+        root = root._parent;
+      return root;
+    }
     setParent(parent, keepWorld = true) {
       for (let p = parent;p; p = p._parent) {
         if (p === this)
@@ -1176,6 +1490,8 @@ ${err.stack}` : ""}`);
       const t = this.transform;
       const position = t.position;
       const rotation = t.rotation;
+      if (!parent)
+        this._scene = this.scene;
       const siblings = this._parent ? this._parent.children : roots;
       siblings.splice(siblings.indexOf(this), 1);
       this._parent = parent;
@@ -1205,13 +1521,17 @@ ${err.stack}` : ""}`);
       return this._destroyed;
     }
     addComponent(cls, props) {
+      const instance = this._addComponentAsleep(cls, props);
+      instance.onAwake?.();
+      return instance;
+    }
+    _addComponentAsleep(cls, props) {
       const name = nameOf(cls);
       const id = nextComponent++;
       const instance = instantiate(cls, id, this);
       if (props)
         Object.assign(instance, props);
       __iron_op("scene.addComponent", this.id, id, name);
-      instance.onAwake?.();
       return instance;
     }
     getComponent(cls) {
@@ -1235,6 +1555,16 @@ ${err.stack}` : ""}`);
         return;
       __iron_op("scene.destroy", this.id);
       forget(this);
+    }
+    static dontDestroyOnLoad(go) {
+      if (!sceneHooks)
+        throw new Error("dontDestroyOnLoad needs @iron/engine's scenes.ts loaded");
+      sceneHooks.dontDestroyOnLoad(go);
+    }
+    static instantiate(original, options = {}) {
+      if (!sceneHooks)
+        throw new Error("instantiate needs @iron/engine's scenes.ts loaded");
+      return sceneHooks.instantiate(original, options);
     }
     findChild(name) {
       return this.children.find((c) => c._name === name);
@@ -1287,7 +1617,7 @@ ${err.stack}` : ""}`);
       stack.push(...o.children);
     }
   }
-  globalThis.__iron_registered = () => [...classes.keys()];
+  globalThis.__iron_registered = () => [...starting];
   globalThis.__iron_create = (className, id, objectId, objectName) => {
     const cls = classes.get(className);
     if (!cls)
@@ -1330,6 +1660,229 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/audio-components.ts
   var clips = new Map;
+  function clipOf(clip) {
+    if (clip instanceof Sound)
+      return clip;
+    let sound = clips.get(clip);
+    if (!sound) {
+      sound = audio.load(clip);
+      clips.set(clip, sound);
+    }
+    return sound;
+  }
+  var _init, _base, _dec, _dec2, _dec3, _dec4, _dec5, _dec6, _dec7, _dec8, _dec9, _dec10;
+
+  class AudioSource extends (_base = Component) {
+    static {
+      _init = __decoratorStart(_base);
+      __decorateElement(_init, 2, "volume", _dec6, this);
+      __decorateElement(_init, 2, "pitch", _dec7, this);
+      __decorateElement(_init, 2, "panStereo", _dec8, this);
+      __decorateElement(_init, 2, "mute", _dec9, this);
+      __decorateElement(_init, 2, "loop", _dec10, this);
+      __decorateElement(_init, 5, "clip", _dec, this);
+      __decorateElement(_init, 5, "playOnAwake", _dec2, this);
+      __decorateElement(_init, 5, "spatialBlend", _dec3, this);
+      __decorateElement(_init, 5, "minDistance", _dec4, this);
+      __decorateElement(_init, 5, "maxDistance", _dec5, this);
+      __decoratorMetadata(_init, this);
+    }
+    [(_dec = [
+      property
+    ], "clip")] = (__runInitializers(_init, 5, this), __runInitializers(_init, 8, this, null));
+    [(_dec2 = [
+      property
+    ], "playOnAwake")] = (__runInitializers(_init, 11, this), __runInitializers(_init, 12, this, true));
+    [(_dec3 = [
+      property
+    ], "spatialBlend")] = (__runInitializers(_init, 15, this), __runInitializers(_init, 16, this, 0));
+    [(_dec4 = [
+      property
+    ], "minDistance")] = (__runInitializers(_init, 19, this), __runInitializers(_init, 20, this, 1));
+    [(_dec5 = [
+      property
+    ], "maxDistance")] = (__runInitializers(_init, 23, this), __runInitializers(_init, 24, this, 50));
+    outputBus = (__runInitializers(_init, 27, this), null);
+    _volume = 1;
+    _pitch = 1;
+    _panStereo = 0;
+    _loop = false;
+    _mute = false;
+    main = null;
+    paused = false;
+    all = new Set;
+    emitter = null;
+    emitterKey = "";
+    sentPosition = null;
+    get [(_dec6 = [
+      property
+    ], "volume")]() {
+      return this._volume;
+    }
+    set volume(v) {
+      this._volume = v;
+      this.eachPlaying((p) => p.setVolume(this.gain()));
+    }
+    get [(_dec7 = [
+      property
+    ], "pitch")]() {
+      return this._pitch;
+    }
+    set pitch(r) {
+      this._pitch = r;
+      this.eachPlaying((p) => p.setRate(r));
+    }
+    get [(_dec8 = [
+      property
+    ], "panStereo")]() {
+      return this._panStereo;
+    }
+    set panStereo(p) {
+      this._panStereo = p;
+      this.eachPlaying((pb) => pb.setPan(p));
+    }
+    get [(_dec9 = [
+      property
+    ], "mute")]() {
+      return this._mute;
+    }
+    set mute(m) {
+      this._mute = m;
+      this.eachPlaying((p) => p.setVolume(this.gain()));
+    }
+    get [(_dec10 = [
+      property
+    ], "loop")]() {
+      return this._loop;
+    }
+    set loop(l) {
+      this._loop = l;
+    }
+    get isPlaying() {
+      return !!this.main?.playing && !this.paused;
+    }
+    gain() {
+      return this._mute ? 0 : this._volume;
+    }
+    eachPlaying(f) {
+      for (const p of this.all)
+        f(p);
+    }
+    output() {
+      if (this.spatialBlend <= 0)
+        return this.outputBus ?? undefined;
+      const key = `${this.minDistance},${this.maxDistance},${this.outputBus?.id ?? ""}`;
+      if (!this.emitter || key !== this.emitterKey) {
+        this.emitter?.remove();
+        this.all.clear();
+        this.main = null;
+        this.sentPosition = this.transform.position;
+        this.emitter = audio.createEmitter(this.sentPosition, {
+          minDistance: this.minDistance,
+          maxDistance: this.maxDistance,
+          bus: this.outputBus ?? undefined
+        });
+        this.emitterKey = key;
+      }
+      return this.emitter;
+    }
+    start(sound, options) {
+      const p = sound.play({ ...options, on: this.output() });
+      this.all.add(p);
+      p.onEnded = () => this.all.delete(p);
+      return p;
+    }
+    play() {
+      if (!this.clip) {
+        console.warn(`AudioSource on ${this.gameObject.name} has no clip`);
+        return;
+      }
+      this.main?.stop();
+      this.paused = false;
+      this.main = this.start(clipOf(this.clip), {
+        volume: this.gain(),
+        rate: this._pitch,
+        pan: this._panStereo,
+        loop: this._loop
+      });
+    }
+    stop() {
+      this.main?.stop();
+      this.main = null;
+      this.paused = false;
+    }
+    pause() {
+      if (!this.main?.playing || this.paused)
+        return;
+      this.main.pause();
+      this.paused = true;
+    }
+    unPause() {
+      if (!this.paused || !this.main)
+        return;
+      this.main.resume();
+      this.paused = false;
+    }
+    playOneShot(clip, volumeScale = 1) {
+      this.start(clipOf(clip), { volume: this.gain() * volumeScale, rate: this._pitch, pan: this._panStereo });
+    }
+    static playClipAtPoint(clip, position, volume = 1) {
+      const emitter = audio.createEmitter(position);
+      const p = clipOf(clip).play({ volume, on: emitter });
+      p.onEnded = () => emitter.remove();
+      return p;
+    }
+    onAwake() {
+      if (this.playOnAwake && this.clip)
+        this.play();
+    }
+    onPreRender() {
+      if (!this.emitter)
+        return;
+      const p = this.transform.position;
+      const s = this.sentPosition;
+      if (s && p.x === s.x && p.y === s.y && p.z === s.z)
+        return;
+      this.emitter.setPosition(p);
+      this.sentPosition = p;
+    }
+    onDestroy() {
+      for (const p of this.all)
+        p.stop();
+      this.all.clear();
+      this.main = null;
+      this.emitter?.remove();
+      this.emitter = null;
+    }
+  }
+  var masterVolume = 1;
+
+  class AudioListener extends Component {
+    sent = null;
+    static get volume() {
+      return masterVolume;
+    }
+    static set volume(v) {
+      masterVolume = v;
+      audio.setMasterVolume(v);
+    }
+    onAwake() {
+      this.send();
+    }
+    onPreRender() {
+      this.send();
+    }
+    send() {
+      const p = this.transform.position;
+      const r = this.transform.rotation;
+      const s = this.sent;
+      if (s && s.x === p.x && s.y === p.y && s.z === p.z && s.rx === r.x && s.ry === r.y && s.rz === r.z && s.rw === r.w) {
+        return;
+      }
+      audio.setListener(p, r);
+      this.sent = { x: p.x, y: p.y, z: p.z, rx: r.x, ry: r.y, rz: r.z, rw: r.w };
+    }
+  }
   // ../../js/engine/src/clock.ts
   var time = 0;
   var unscaledTime = 0;
@@ -1687,6 +2240,20 @@ ${err.stack}` : ""}`);
   var width = 1280;
   var height = 720;
   var scale = 1;
+  var Screen = {
+    get width() {
+      return width;
+    },
+    get height() {
+      return height;
+    },
+    get scale() {
+      return scale;
+    },
+    get aspect() {
+      return width / Math.max(1, height);
+    }
+  };
   globalThis.__iron_screen = (w, h, s) => {
     width = w;
     height = h;
@@ -1695,6 +2262,478 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/rendering.ts
   var rgba = (c) => [c.r, c.g, c.b, c.a];
+  var cameras = [];
+  var _init2, _base2, _dec11, _dec12, _dec13, _dec14, _dec15, _dec16, _dec17, _dec18, _dec19, _dec20, _dec21, _dec22;
+
+  class Camera extends (_base2 = Component) {
+    static {
+      _init2 = __decoratorStart(_base2);
+      __decorateElement(_init2, 2, "fieldOfView", _dec11, this);
+      __decorateElement(_init2, 2, "nearClipPlane", _dec12, this);
+      __decorateElement(_init2, 2, "farClipPlane", _dec13, this);
+      __decorateElement(_init2, 2, "backgroundColor", _dec14, this);
+      __decorateElement(_init2, 2, "clearFlags", _dec15, this);
+      __decorateElement(_init2, 2, "depth", _dec16, this);
+      __decorateElement(_init2, 2, "orthographic", _dec17, this);
+      __decorateElement(_init2, 2, "orthographicSize", _dec18, this);
+      __decorateElement(_init2, 2, "rect", _dec19, this);
+      __decorateElement(_init2, 2, "cullingMask", _dec20, this);
+      __decorateElement(_init2, 2, "layerCullDistances", _dec21, this);
+      __decorateElement(_init2, 2, "layerCullSpherical", _dec22, this);
+      __decoratorMetadata(_init2, this);
+    }
+    _fov = (__runInitializers(_init2, 5, this), 60);
+    _near = 0.1;
+    _far = 1000;
+    _background = new Color(0.05, 0.06, 0.09, 1);
+    _depth = 0;
+    _orthographic = false;
+    _orthographicSize = 5;
+    _rect = new Rect(0, 0, 1, 1);
+    _cullingMask = 4294967295;
+    _layerCullDistances = new Array(32).fill(0);
+    _layerCullSpherical = false;
+    started = false;
+    get [(_dec11 = [
+      property
+    ], "fieldOfView")]() {
+      return this._fov;
+    }
+    set fieldOfView(v) {
+      this._fov = Math.min(179, Math.max(1, v));
+      this.send();
+    }
+    get horizontalFieldOfView() {
+      return Camera.verticalToHorizontalFieldOfView(this._fov, this.aspect);
+    }
+    set horizontalFieldOfView(v) {
+      this.fieldOfView = Camera.horizontalToVerticalFieldOfView(v, this.aspect);
+    }
+    static verticalToHorizontalFieldOfView(vertical, aspect) {
+      const half = vertical * Math.PI / 360;
+      return Math.atan(Math.tan(half) * aspect) * 360 / Math.PI;
+    }
+    static horizontalToVerticalFieldOfView(horizontal, aspect) {
+      const half = horizontal * Math.PI / 360;
+      return Math.atan(Math.tan(half) / aspect) * 360 / Math.PI;
+    }
+    get [(_dec12 = [
+      property
+    ], "nearClipPlane")]() {
+      return this._near;
+    }
+    set nearClipPlane(v) {
+      this._near = v;
+      this.send();
+    }
+    get [(_dec13 = [
+      property
+    ], "farClipPlane")]() {
+      return this._far;
+    }
+    set farClipPlane(v) {
+      this._far = v;
+      this.send();
+    }
+    get [(_dec14 = [
+      property
+    ], "backgroundColor")]() {
+      return this._background;
+    }
+    set backgroundColor(c) {
+      this._background = c;
+      this.send();
+    }
+    _clearFlags = "solidColor";
+    get [(_dec15 = [
+      property
+    ], "clearFlags")]() {
+      return this._clearFlags;
+    }
+    set clearFlags(f) {
+      this._clearFlags = f;
+      this.send();
+    }
+    get [(_dec16 = [
+      property
+    ], "depth")]() {
+      return this._depth;
+    }
+    set depth(d) {
+      this._depth = d;
+      this.send();
+    }
+    get [(_dec17 = [
+      property
+    ], "orthographic")]() {
+      return this._orthographic;
+    }
+    set orthographic(on) {
+      this._orthographic = on;
+      this.send();
+    }
+    get [(_dec18 = [
+      property
+    ], "orthographicSize")]() {
+      return this._orthographicSize;
+    }
+    set orthographicSize(s) {
+      this._orthographicSize = s;
+      this.send();
+    }
+    get [(_dec19 = [
+      property
+    ], "rect")]() {
+      return this._rect;
+    }
+    set rect(r) {
+      this._rect = r;
+      this.send();
+    }
+    get [(_dec20 = [
+      property
+    ], "cullingMask")]() {
+      return this._cullingMask;
+    }
+    set cullingMask(mask) {
+      this._cullingMask = mask >>> 0;
+      this.send();
+    }
+    get [(_dec21 = [
+      property
+    ], "layerCullDistances")]() {
+      return [...this._layerCullDistances];
+    }
+    set layerCullDistances(distances) {
+      this._layerCullDistances = Array.from({ length: 32 }, (_, i) => Math.max(0, distances[i] ?? 0));
+      this.send();
+    }
+    get [(_dec22 = [
+      property
+    ], "layerCullSpherical")]() {
+      return this._layerCullSpherical;
+    }
+    set layerCullSpherical(on) {
+      this._layerCullSpherical = on;
+      this.send();
+    }
+    get pixelRect() {
+      return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
+    }
+    get aspect() {
+      const r = this.pixelRect;
+      return r.width / Math.max(0.000001, r.height);
+    }
+    static get main() {
+      return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed);
+    }
+    static get allCameras() {
+      return cameras.filter((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed).sort((a, b) => a._depth - b._depth);
+    }
+    get projectionMatrix() {
+      if (this._orthographic) {
+        const h = this._orthographicSize;
+        const w = h * this.aspect;
+        return Matrix4x4.orthographic(-w, w, -h, h, this._near, this._far);
+      }
+      return Matrix4x4.perspective(this._fov, this.aspect, this._near, this._far);
+    }
+    get worldToCameraMatrix() {
+      return Matrix4x4.trs(this.transform.position, this.transform.rotation).inverse;
+    }
+    get viewProjectionMatrix() {
+      return this.projectionMatrix.mul(this.worldToCameraMatrix);
+    }
+    static ndc(v) {
+      return new Vector2(v.x * 2 - 1, 1 - v.y * 2);
+    }
+    screenToViewportPoint(p) {
+      const r = this.pixelRect;
+      return new Vector3((p.x - r.x) / r.width, (p.y - r.y) / r.height, p.z);
+    }
+    viewportToScreenPoint(v) {
+      const r = this.pixelRect;
+      return new Vector3(r.x + v.x * r.width, r.y + v.y * r.height, v.z);
+    }
+    viewportPointToRay(v) {
+      const inv = this.viewProjectionMatrix.inverse;
+      const n = Camera.ndc(v);
+      const near = inv.multiplyPoint(new Vector3(n.x, n.y, 0));
+      const far = inv.multiplyPoint(new Vector3(n.x, n.y, 1));
+      return new Ray(near, far.sub(near));
+    }
+    screenPointToRay(p) {
+      return this.viewportPointToRay(this.screenToViewportPoint({ x: p.x, y: p.y, z: 0 }));
+    }
+    worldToViewportPoint(p) {
+      const n = this.viewProjectionMatrix.multiplyPoint(p);
+      const depth = Vector3.from(p).sub(this.transform.position).dot(this.transform.forward);
+      return new Vector3((n.x + 1) / 2, (1 - n.y) / 2, depth);
+    }
+    worldToScreenPoint(p) {
+      return this.viewportToScreenPoint(this.worldToViewportPoint(p));
+    }
+    viewportToWorldPoint(v) {
+      const ray = this.viewportPointToRay(v);
+      const forward = this.transform.forward;
+      const along = ray.direction.dot(forward);
+      const start = ray.origin.sub(this.transform.position).dot(forward);
+      return ray.getPoint(along > 0.000001 ? (v.z - start) / along : 0);
+    }
+    screenToWorldPoint(p) {
+      return this.viewportToWorldPoint(this.screenToViewportPoint(p));
+    }
+    send() {
+      if (!this.started)
+        return;
+      const r = this._rect;
+      __iron_op("render.camera", this.id, this.gameObject.id, this._fov, this._near, this._far, rgba(this._background), this._depth, this._orthographic, this._orthographicSize, [r.x, r.y, r.width, r.height], this._clearFlags === "skybox" ? "skybox" : "color", this._cullingMask, this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null, this._layerCullSpherical);
+    }
+    onStart() {
+      this.started = true;
+      cameras.push(this);
+      this.send();
+    }
+    onDestroy() {
+      cameras.splice(cameras.indexOf(this), 1);
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var _init3, _base3, _dec23, _dec24;
+
+  class PlaneRenderer extends (_base3 = Component) {
+    static {
+      _init3 = __decoratorStart(_base3);
+      __decorateElement(_init3, 2, "size", _dec23, this);
+      __decorateElement(_init3, 2, "color", _dec24, this);
+      __decoratorMetadata(_init3, this);
+    }
+    _size = (__runInitializers(_init3, 5, this), new Vector2(1, 1));
+    _color = Color.white;
+    started = false;
+    get [(_dec23 = [
+      property
+    ], "size")]() {
+      return this._size;
+    }
+    set size(v) {
+      this._size = Vector2.from(v);
+      this.send();
+    }
+    get [(_dec24 = [
+      property
+    ], "color")]() {
+      return this._color;
+    }
+    set color(c) {
+      this._color = c;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      __iron_op("render.plane", this.id, this.gameObject.id, this._size.toArray(), rgba(this._color));
+    }
+    onStart() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var _init4, _base4, _dec25, _dec26, _dec27, _dec28, _dec29;
+
+  class CameraFollow extends (_base4 = Component) {
+    static {
+      _init4 = __decoratorStart(_base4);
+      __decorateElement(_init4, 5, "target", _dec25, this);
+      __decorateElement(_init4, 5, "offset", _dec26, this);
+      __decorateElement(_init4, 5, "offsetInTargetSpace", _dec27, this);
+      __decorateElement(_init4, 5, "smoothTime", _dec28, this);
+      __decorateElement(_init4, 5, "lookAtTarget", _dec29, this);
+      __decoratorMetadata(_init4, this);
+    }
+    [(_dec25 = [
+      property
+    ], "target")] = __runInitializers(_init4, 8, this, null);
+    [(_dec26 = [
+      property
+    ], "offset")] = (__runInitializers(_init4, 11, this), __runInitializers(_init4, 12, this, new Vector3(0, 3, 6)));
+    [(_dec27 = [
+      property
+    ], "offsetInTargetSpace")] = (__runInitializers(_init4, 15, this), __runInitializers(_init4, 16, this, false));
+    [(_dec28 = [
+      property
+    ], "smoothTime")] = (__runInitializers(_init4, 19, this), __runInitializers(_init4, 20, this, 0.25));
+    [(_dec29 = [
+      property
+    ], "lookAtTarget")] = (__runInitializers(_init4, 23, this), __runInitializers(_init4, 24, this, true));
+    velocity = (__runInitializers(_init4, 27, this), [0, 0, 0]);
+    onLateUpdate(dt) {
+      const t = this.target?.transform;
+      if (!t || this.target?.destroyed)
+        return;
+      const offset = this.offsetInTargetSpace ? t.rotation.rotate(this.offset) : this.offset;
+      const goal = t.position.add(offset);
+      const at = this.transform.position;
+      if (this.smoothTime <= 0) {
+        this.transform.position = goal;
+      } else {
+        const axis = (i, a, b) => {
+          const [v, vel] = Mathf.smoothDamp(a, b, this.velocity[i], this.smoothTime, Math.max(dt, 0.0001));
+          this.velocity[i] = vel;
+          return v;
+        };
+        this.transform.position = new Vector3(axis(0, at.x, goal.x), axis(1, at.y, goal.y), axis(2, at.z, goal.z));
+      }
+      if (this.lookAtTarget)
+        this.transform.lookAt(t.position);
+    }
+  }
+  var _init5, _base5, _dec30, _dec31, _dec32, _dec33, _dec34, _dec35, _dec36, _dec37;
+
+  class CameraOrbit extends (_base5 = Component) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init5, 39, this);
+    }
+    static {
+      _init5 = __decoratorStart(_base5);
+      __decorateElement(_init5, 5, "target", _dec30, this);
+      __decorateElement(_init5, 5, "center", _dec31, this);
+      __decorateElement(_init5, 5, "distance", _dec32, this);
+      __decorateElement(_init5, 5, "yaw", _dec33, this);
+      __decorateElement(_init5, 5, "pitch", _dec34, this);
+      __decorateElement(_init5, 5, "minPitch", _dec35, this);
+      __decorateElement(_init5, 5, "maxPitch", _dec36, this);
+      __decorateElement(_init5, 5, "autoRotate", _dec37, this);
+      __decoratorMetadata(_init5, this);
+    }
+    [(_dec30 = [
+      property
+    ], "target")] = __runInitializers(_init5, 8, this, null);
+    [(_dec31 = [
+      property
+    ], "center")] = (__runInitializers(_init5, 11, this), __runInitializers(_init5, 12, this, Vector3.zero));
+    [(_dec32 = [
+      property
+    ], "distance")] = (__runInitializers(_init5, 15, this), __runInitializers(_init5, 16, this, 8));
+    [(_dec33 = [
+      property
+    ], "yaw")] = (__runInitializers(_init5, 19, this), __runInitializers(_init5, 20, this, 0));
+    [(_dec34 = [
+      property
+    ], "pitch")] = (__runInitializers(_init5, 23, this), __runInitializers(_init5, 24, this, 20));
+    [(_dec35 = [
+      property
+    ], "minPitch")] = (__runInitializers(_init5, 27, this), __runInitializers(_init5, 28, this, -80));
+    [(_dec36 = [
+      property
+    ], "maxPitch")] = (__runInitializers(_init5, 31, this), __runInitializers(_init5, 32, this, 80));
+    [(_dec37 = [
+      property
+    ], "autoRotate")] = (__runInitializers(_init5, 35, this), __runInitializers(_init5, 36, this, 0));
+    onLateUpdate(dt) {
+      this.yaw = Mathf.repeat(this.yaw + this.autoRotate * dt, 360);
+      this.pitch = Mathf.clamp(this.pitch, this.minPitch, this.maxPitch);
+      const center = this.target && !this.target.destroyed ? this.target.transform.position : this.center;
+      const rotation = Quaternion.euler(-this.pitch, this.yaw, 0);
+      this.transform.position = center.add(rotation.rotate(Vector3.back).scale(this.distance));
+      this.transform.lookAt(center);
+    }
+  }
+  var _init6, _base6, _dec38, _dec39, _dec40, _dec41, _dec42, _dec43;
+
+  class WorldPanel extends (_base6 = Component) {
+    static {
+      _init6 = __decoratorStart(_base6);
+      __decorateElement(_init6, 2, "width", _dec38, this);
+      __decorateElement(_init6, 2, "height", _dec39, this);
+      __decorateElement(_init6, 2, "pixelsPerMeter", _dec40, this);
+      __decorateElement(_init6, 2, "resolution", _dec41, this);
+      __decorateElement(_init6, 2, "tint", _dec42, this);
+      __decorateElement(_init6, 2, "interactive", _dec43, this);
+      __decoratorMetadata(_init6, this);
+    }
+    _width = (__runInitializers(_init6, 5, this), 800);
+    _height = 600;
+    _pixelsPerMeter = 500;
+    _resolution = 2;
+    _tint = Color.white;
+    _interactive = true;
+    started = false;
+    get [(_dec38 = [
+      property
+    ], "width")]() {
+      return this._width;
+    }
+    set width(v) {
+      this._width = v;
+      this.send();
+    }
+    get [(_dec39 = [
+      property
+    ], "height")]() {
+      return this._height;
+    }
+    set height(v) {
+      this._height = v;
+      this.send();
+    }
+    get [(_dec40 = [
+      property
+    ], "pixelsPerMeter")]() {
+      return this._pixelsPerMeter;
+    }
+    set pixelsPerMeter(v) {
+      this._pixelsPerMeter = v;
+      this.send();
+    }
+    get [(_dec41 = [
+      property
+    ], "resolution")]() {
+      return this._resolution;
+    }
+    set resolution(v) {
+      this._resolution = v;
+      this.send();
+    }
+    get [(_dec42 = [
+      property
+    ], "tint")]() {
+      return this._tint;
+    }
+    set tint(c) {
+      this._tint = c;
+      this.send();
+    }
+    get [(_dec43 = [
+      property
+    ], "interactive")]() {
+      return this._interactive;
+    }
+    set interactive(on) {
+      this._interactive = on;
+      this.send();
+    }
+    get worldSize() {
+      return new Vector2(this._width / this._pixelsPerMeter, this._height / this._pixelsPerMeter);
+    }
+    send() {
+      if (!this.started)
+        return;
+      __iron_op("render.panel", this.id, this.gameObject.id, [this._width, this._height], this._pixelsPerMeter, this._resolution, rgba(this._tint), this._interactive);
+    }
+    onStart() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+
   class Material {
     color;
     emission;
@@ -1732,6 +2771,7 @@ ${err.stack}` : ""}`);
 
   class Mesh {
     id;
+    _data = null;
     constructor(id) {
       this.id = id;
     }
@@ -1744,33 +2784,53 @@ ${err.stack}` : ""}`);
       return mesh;
     }
     set(data) {
+      this._data = {
+        vertices: data.vertices.flatMap((v) => [v.x, v.y, v.z]),
+        triangles: [...data.triangles],
+        normals: (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]),
+        uv: (data.uv ?? []).flatMap((v) => [v.x, v.y])
+      };
       __iron_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles]);
     }
     destroy() {
       __iron_op("render.mesh", this.id, null);
     }
   }
+  var _init7, _base7, _dec44, _dec45, _dec46;
 
-  class MeshRenderer extends Component {
-    _mesh = "cube";
+  class MeshRenderer extends (_base7 = Component) {
+    static {
+      _init7 = __decoratorStart(_base7);
+      __decorateElement(_init7, 2, "shadowCastingMode", _dec44, this);
+      __decorateElement(_init7, 2, "mesh", _dec45, this);
+      __decorateElement(_init7, 2, "material", _dec46, this);
+      __decoratorMetadata(_init7, this);
+    }
+    _mesh = (__runInitializers(_init7, 5, this), "cube");
     _material = new Material;
     _shadowCastingMode = "on";
     started = false;
-    get shadowCastingMode() {
+    get [(_dec44 = [
+      property
+    ], "shadowCastingMode")]() {
       return this._shadowCastingMode;
     }
     set shadowCastingMode(m) {
       this._shadowCastingMode = m;
       this.send();
     }
-    get mesh() {
+    get [(_dec45 = [
+      property
+    ], "mesh")]() {
       return this._mesh;
     }
     set mesh(m) {
       this._mesh = m;
       this.send();
     }
-    get material() {
+    get [(_dec46 = [
+      property
+    ], "material")]() {
       return this._material;
     }
     set material(m) {
@@ -1791,7 +2851,344 @@ ${err.stack}` : ""}`);
       __iron_op("render.remove", this.id);
     }
   }
+  var _init8, _base8, _dec47, _dec48, _dec49, _dec50, _dec51, _dec52, _dec53, _dec54, _dec55, _dec56, _dec57;
+
+  class Light extends (_base8 = Component) {
+    static {
+      _init8 = __decoratorStart(_base8);
+      __decorateElement(_init8, 2, "type", _dec47, this);
+      __decorateElement(_init8, 2, "color", _dec48, this);
+      __decorateElement(_init8, 2, "intensity", _dec49, this);
+      __decorateElement(_init8, 2, "range", _dec50, this);
+      __decorateElement(_init8, 2, "spotAngle", _dec51, this);
+      __decorateElement(_init8, 2, "innerSpotAngle", _dec52, this);
+      __decorateElement(_init8, 2, "haloSize", _dec53, this);
+      __decorateElement(_init8, 2, "beamIntensity", _dec54, this);
+      __decorateElement(_init8, 2, "shadows", _dec55, this);
+      __decorateElement(_init8, 2, "shadowStrength", _dec56, this);
+      __decorateElement(_init8, 2, "cullingMask", _dec57, this);
+      __decoratorMetadata(_init8, this);
+    }
+    _type = (__runInitializers(_init8, 5, this), "directional");
+    _color = Color.white;
+    _intensity = 1;
+    _range = 10;
+    _spotAngle = 30;
+    _innerSpotAngle = 21.8;
+    _haloSize = 0;
+    _beamIntensity = 0;
+    _shadows = "none";
+    _shadowStrength = 1;
+    _cullingMask = 4294967295;
+    started = false;
+    get [(_dec47 = [
+      property
+    ], "type")]() {
+      return this._type;
+    }
+    set type(t) {
+      this._type = t;
+      this.send();
+    }
+    get [(_dec48 = [
+      property
+    ], "color")]() {
+      return this._color;
+    }
+    set color(c) {
+      this._color = c;
+      this.send();
+    }
+    get [(_dec49 = [
+      property
+    ], "intensity")]() {
+      return this._intensity;
+    }
+    set intensity(i) {
+      this._intensity = i;
+      this.send();
+    }
+    get [(_dec50 = [
+      property
+    ], "range")]() {
+      return this._range;
+    }
+    set range(r) {
+      this._range = r;
+      this.send();
+    }
+    get [(_dec51 = [
+      property
+    ], "spotAngle")]() {
+      return this._spotAngle;
+    }
+    set spotAngle(a) {
+      this._spotAngle = a;
+      this.send();
+    }
+    get [(_dec52 = [
+      property
+    ], "innerSpotAngle")]() {
+      return this._innerSpotAngle;
+    }
+    set innerSpotAngle(a) {
+      this._innerSpotAngle = a;
+      this.send();
+    }
+    get [(_dec53 = [
+      property
+    ], "haloSize")]() {
+      return this._haloSize;
+    }
+    set haloSize(s) {
+      this._haloSize = s;
+      this.send();
+    }
+    get [(_dec54 = [
+      property
+    ], "beamIntensity")]() {
+      return this._beamIntensity;
+    }
+    set beamIntensity(b) {
+      this._beamIntensity = b;
+      this.send();
+    }
+    get [(_dec55 = [
+      property
+    ], "shadows")]() {
+      return this._shadows;
+    }
+    set shadows(s) {
+      this._shadows = s;
+      this.send();
+    }
+    get [(_dec56 = [
+      property
+    ], "shadowStrength")]() {
+      return this._shadowStrength;
+    }
+    set shadowStrength(s) {
+      this._shadowStrength = s;
+      this.send();
+    }
+    get [(_dec57 = [
+      property
+    ], "cullingMask")]() {
+      return this._cullingMask;
+    }
+    set cullingMask(mask) {
+      this._cullingMask = mask >>> 0;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const c = this._color;
+      __iron_op("render.light", this.id, this.gameObject.id, this._type, [c.r, c.g, c.b], this._intensity, this._range, this._spotAngle, this._innerSpotAngle, this._haloSize, this._beamIntensity, this._shadows, this._shadowStrength, this._cullingMask);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
   var ambient = new Color(0.2, 0.2, 0.22);
+  var bloom = null;
+  var skybox = null;
+  var ambientMode = "skybox";
+  var reflectionIntensity = 1;
+  function sendSky() {
+    if (!skybox) {
+      __iron_op("render.sky", 0, null);
+      return;
+    }
+    const s = skybox;
+    const rgb = (c) => c ? [c.r, c.g, c.b] : null;
+    const sun = s.sunDirection === null ? null : s.sunDirection ? [s.sunDirection.x, s.sunDirection.y, s.sunDirection.z] : [0.4, 0.6, 0.3];
+    __iron_op("render.sky", 0, rgb(s.zenith) ?? [0.16, 0.32, 0.62], rgb(s.horizon) ?? [0.62, 0.72, 0.82], rgb(s.ground) ?? [0.22, 0.2, 0.18], sun, rgb(s.sunColor) ?? [20, 18, 15], s.sunSize ?? 1.5, reflectionIntensity, ambientMode === "skybox");
+  }
+  var RenderSettings = {
+    get ambientLight() {
+      return ambient;
+    },
+    set ambientLight(c) {
+      ambient = c;
+      __iron_op("render.ambient", 0, [c.r, c.g, c.b]);
+    },
+    get skybox() {
+      return skybox;
+    },
+    set skybox(s) {
+      skybox = s ? { ...s } : null;
+      sendSky();
+    },
+    get ambientMode() {
+      return ambientMode;
+    },
+    set ambientMode(m) {
+      ambientMode = m;
+      if (skybox)
+        sendSky();
+    },
+    get reflectionIntensity() {
+      return reflectionIntensity;
+    },
+    set reflectionIntensity(i) {
+      reflectionIntensity = i;
+      if (skybox)
+        sendSky();
+    },
+    get bloom() {
+      return bloom;
+    },
+    set bloom(b) {
+      bloom = b ? { ...b } : null;
+      if (b)
+        __iron_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
+      else
+        __iron_op("render.bloom", 0, null);
+    }
+  };
+  var _init9, _base9, _dec58, _dec59;
+
+  class Mirror extends (_base9 = Component) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init9, 15, this);
+    }
+    static {
+      _init9 = __decoratorStart(_base9);
+      __decorateElement(_init9, 5, "normal", _dec58, this);
+      __decorateElement(_init9, 5, "cullingMask", _dec59, this);
+      __decoratorMetadata(_init9, this);
+    }
+    [(_dec58 = [
+      property
+    ], "normal")] = __runInitializers(_init9, 8, this, null);
+    [(_dec59 = [
+      property
+    ], "cullingMask")] = (__runInitializers(_init9, 11, this), __runInitializers(_init9, 12, this, 4294967295));
+    send() {
+      const mesh = this.getComponent(MeshRenderer)?.mesh;
+      const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
+      __iron_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z], this.cullingMask >>> 0);
+    }
+    onAwake() {
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var _init10, _base10, _dec60, _dec61, _dec62, _dec63, _dec64;
+
+  class ReflectionProbe extends (_base10 = Component) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init10, 27, this);
+    }
+    static {
+      _init10 = __decoratorStart(_base10);
+      __decorateElement(_init10, 5, "size", _dec60, this);
+      __decorateElement(_init10, 5, "resolution", _dec61, this);
+      __decorateElement(_init10, 5, "boxProjection", _dec62, this);
+      __decorateElement(_init10, 5, "cullingMask", _dec63, this);
+      __decorateElement(_init10, 5, "refreshMode", _dec64, this);
+      __decoratorMetadata(_init10, this);
+    }
+    [(_dec60 = [
+      property
+    ], "size")] = __runInitializers(_init10, 8, this, new Vector3(10, 10, 10));
+    [(_dec61 = [
+      property
+    ], "resolution")] = (__runInitializers(_init10, 11, this), __runInitializers(_init10, 12, this, 128));
+    [(_dec62 = [
+      property
+    ], "boxProjection")] = (__runInitializers(_init10, 15, this), __runInitializers(_init10, 16, this, false));
+    [(_dec63 = [
+      property
+    ], "cullingMask")] = (__runInitializers(_init10, 19, this), __runInitializers(_init10, 20, this, 4294967295));
+    [(_dec64 = [
+      property
+    ], "refreshMode")] = (__runInitializers(_init10, 23, this), __runInitializers(_init10, 24, this, "onAwake"));
+    send() {
+      const s = this.size;
+      __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
+    }
+    renderProbe() {
+      __iron_op("render.probeRender", this.id);
+    }
+    onAwake() {
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
+  var _init11, _base11, _dec65, _dec66;
+
+  class LODGroup extends (_base11 = Component) {
+    static {
+      _init11 = __decoratorStart(_base11);
+      __decorateElement(_init11, 2, "size", _dec65, this);
+      __decorateElement(_init11, 2, "lods", _dec66, this);
+      __decoratorMetadata(_init11, this);
+    }
+    _lods = (__runInitializers(_init11, 5, this), []);
+    _size = 1;
+    _forced = -1;
+    started = false;
+    get [(_dec65 = [
+      property
+    ], "size")]() {
+      return this._size;
+    }
+    set size(s) {
+      this._size = s;
+      this.send();
+    }
+    get lodCount() {
+      return this._lods.length;
+    }
+    get [(_dec66 = [
+      property
+    ], "lods")]() {
+      return this.getLODs();
+    }
+    set lods(lods) {
+      this.setLODs(lods);
+    }
+    getLODs() {
+      return this._lods.map((l) => ({ ...l, renderers: [...l.renderers] }));
+    }
+    setLODs(lods) {
+      for (let i = 1;i < lods.length; i++) {
+        if (lods[i].screenRelativeTransitionHeight > lods[i - 1].screenRelativeTransitionHeight) {
+          throw new Error("LOD transition heights must go down from the first level");
+        }
+      }
+      this._lods = lods.map((l) => ({ ...l, renderers: [...l.renderers] }));
+      this.send();
+    }
+    forceLOD(index) {
+      this._forced = index;
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      __iron_op("render.lodGroup", this.id, this.gameObject.id, this._size, this._lods.map((l) => l.screenRelativeTransitionHeight), this._lods.map((l) => l.renderers.map((r) => r.id)), this._forced);
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
 
   // ../../js/engine/src/lines.ts
   function catmullRom(a, b, c, d, t) {
@@ -1848,14 +3245,34 @@ ${err.stack}` : ""}`);
     }
     return { vertices, normals, uv, triangles };
   }
+  var _init12, _base12, _dec67, _dec68, _dec69, _dec70, _dec71;
 
-  class LineRenderer extends Component {
-    positions = [];
-    width = 0.05;
-    sides = 8;
-    smoothing = 3;
-    material = new Material(Color.white, Color.black, 0.3);
-    mesh = null;
+  class LineRenderer extends (_base12 = Component) {
+    static {
+      _init12 = __decoratorStart(_base12);
+      __decorateElement(_init12, 5, "positions", _dec67, this);
+      __decorateElement(_init12, 5, "width", _dec68, this);
+      __decorateElement(_init12, 5, "sides", _dec69, this);
+      __decorateElement(_init12, 5, "smoothing", _dec70, this);
+      __decorateElement(_init12, 5, "material", _dec71, this);
+      __decoratorMetadata(_init12, this);
+    }
+    [(_dec67 = [
+      property
+    ], "positions")] = __runInitializers(_init12, 8, this, []);
+    [(_dec68 = [
+      property
+    ], "width")] = (__runInitializers(_init12, 11, this), __runInitializers(_init12, 12, this, 0.05));
+    [(_dec69 = [
+      property
+    ], "sides")] = (__runInitializers(_init12, 15, this), __runInitializers(_init12, 16, this, 8));
+    [(_dec70 = [
+      property
+    ], "smoothing")] = (__runInitializers(_init12, 19, this), __runInitializers(_init12, 20, this, 3));
+    [(_dec71 = [
+      property
+    ], "material")] = (__runInitializers(_init12, 23, this), __runInitializers(_init12, 24, this, new Material(Color.white, Color.black, 0.3)));
+    mesh = (__runInitializers(_init12, 27, this), null);
     renderer = null;
     drawn = "";
     onAwake() {
@@ -1908,6 +3325,15 @@ ${err.stack}` : ""}`);
   }
   var objectPhysics = new Map;
   var colliderOwners = new Map;
+  function _objectPhysics(go) {
+    return objectPhysics.get(go);
+  }
+  function _physicsFor(go) {
+    return physicsFor(go);
+  }
+  function _releasePhysics(go) {
+    releasePhysics(go);
+  }
   function physicsFor(go) {
     let p = objectPhysics.get(go);
     if (!p) {
@@ -1926,28 +3352,42 @@ ${err.stack}` : ""}`);
     p.body.remove();
     objectPhysics.delete(go);
   }
+  var _init13, _base13, _dec72, _dec73, _dec74;
 
-  class Collider extends Component {
-    _center = Vector3.zero;
+  class Collider extends (_base13 = Component) {
+    static {
+      _init13 = __decoratorStart(_base13);
+      __decorateElement(_init13, 2, "center", _dec72, this);
+      __decorateElement(_init13, 2, "isTrigger", _dec73, this);
+      __decorateElement(_init13, 2, "material", _dec74, this);
+      __decoratorMetadata(_init13, this);
+    }
+    _center = (__runInitializers(_init13, 5, this), Vector3.zero);
     _isTrigger = false;
     _material = new PhysicsMaterial;
     builtScale = null;
     handle = null;
-    get center() {
+    get [(_dec72 = [
+      property
+    ], "center")]() {
       return this._center;
     }
     set center(c) {
       this._center = Vector3.from(c);
       this.handle?.setOffset(this._center.mul(this.gameObject.transform.lossyScale));
     }
-    get isTrigger() {
+    get [(_dec73 = [
+      property
+    ], "isTrigger")]() {
       return this._isTrigger;
     }
     set isTrigger(on) {
       this._isTrigger = on;
       this.handle?.setSensor(on);
     }
-    get material() {
+    get [(_dec74 = [
+      property
+    ], "material")]() {
       return this._material;
     }
     set material(m) {
@@ -2008,10 +3448,18 @@ ${err.stack}` : ""}`);
       releasePhysics(this.gameObject);
     }
   }
+  var _init14, _base14, _dec75;
 
-  class BoxCollider extends Collider {
-    _size = Vector3.one;
-    get size() {
+  class BoxCollider extends (_base14 = Collider) {
+    static {
+      _init14 = __decoratorStart(_base14);
+      __decorateElement(_init14, 2, "size", _dec75, this);
+      __decoratorMetadata(_init14, this);
+    }
+    _size = (__runInitializers(_init14, 5, this), Vector3.one);
+    get [(_dec75 = [
+      property
+    ], "size")]() {
       return this._size;
     }
     set size(s) {
@@ -2023,10 +3471,18 @@ ${err.stack}` : ""}`);
       return { box: { x: Math.abs(h.x), y: Math.abs(h.y), z: Math.abs(h.z) } };
     }
   }
+  var _init15, _base15, _dec76;
 
-  class SphereCollider extends Collider {
-    _radius = 0.5;
-    get radius() {
+  class SphereCollider extends (_base15 = Collider) {
+    static {
+      _init15 = __decoratorStart(_base15);
+      __decorateElement(_init15, 2, "radius", _dec76, this);
+      __decoratorMetadata(_init15, this);
+    }
+    _radius = (__runInitializers(_init15, 5, this), 0.5);
+    get [(_dec76 = [
+      property
+    ], "radius")]() {
       return this._radius;
     }
     set radius(r) {
@@ -2037,18 +3493,29 @@ ${err.stack}` : ""}`);
       return { ball: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) };
     }
   }
+  var _init16, _base16, _dec77, _dec78;
 
-  class CapsuleCollider extends Collider {
-    _radius = 0.5;
+  class CapsuleCollider extends (_base16 = Collider) {
+    static {
+      _init16 = __decoratorStart(_base16);
+      __decorateElement(_init16, 2, "radius", _dec77, this);
+      __decorateElement(_init16, 2, "height", _dec78, this);
+      __decoratorMetadata(_init16, this);
+    }
+    _radius = (__runInitializers(_init16, 5, this), 0.5);
     _height = 2;
-    get radius() {
+    get [(_dec77 = [
+      property
+    ], "radius")]() {
       return this._radius;
     }
     set radius(r) {
       this._radius = r;
       this.rebuild();
     }
-    get height() {
+    get [(_dec78 = [
+      property
+    ], "height")]() {
       return this._height;
     }
     set height(h) {
@@ -2061,12 +3528,33 @@ ${err.stack}` : ""}`);
       return { capsule: { halfHeight, radius } };
     }
   }
+  var _init17, _base17, _dec79, _dec80, _dec81, _dec82;
 
-  class MeshCollider extends Collider {
-    sharedMesh = null;
-    points = [];
-    indices = [];
-    convex = false;
+  class MeshCollider extends (_base17 = Collider) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init17, 23, this);
+    }
+    static {
+      _init17 = __decoratorStart(_base17);
+      __decorateElement(_init17, 5, "sharedMesh", _dec79, this);
+      __decorateElement(_init17, 5, "points", _dec80, this);
+      __decorateElement(_init17, 5, "indices", _dec81, this);
+      __decorateElement(_init17, 5, "convex", _dec82, this);
+      __decoratorMetadata(_init17, this);
+    }
+    [(_dec79 = [
+      property
+    ], "sharedMesh")] = __runInitializers(_init17, 8, this, null);
+    [(_dec80 = [
+      property
+    ], "points")] = (__runInitializers(_init17, 11, this), __runInitializers(_init17, 12, this, []));
+    [(_dec81 = [
+      property
+    ], "indices")] = (__runInitializers(_init17, 15, this), __runInitializers(_init17, 16, this, []));
+    [(_dec82 = [
+      property
+    ], "convex")] = (__runInitializers(_init17, 19, this), __runInitializers(_init17, 20, this, false));
     shape(scale) {
       if (this.sharedMesh) {
         return { renderMesh: { mesh: this.sharedMesh.id, convex: this.convex, scale } };
@@ -2081,9 +3569,21 @@ ${err.stack}` : ""}`);
       this.rebuild();
     }
   }
+  var _init18, _base18, _dec83, _dec84, _dec85, _dec86, _dec87, _dec88, _dec89;
 
-  class Rigidbody extends Component {
-    _mass = 1;
+  class Rigidbody extends (_base18 = Component) {
+    static {
+      _init18 = __decoratorStart(_base18);
+      __decorateElement(_init18, 2, "mass", _dec83, this);
+      __decorateElement(_init18, 2, "drag", _dec84, this);
+      __decorateElement(_init18, 2, "angularDrag", _dec85, this);
+      __decorateElement(_init18, 2, "useGravity", _dec86, this);
+      __decorateElement(_init18, 2, "isKinematic", _dec87, this);
+      __decorateElement(_init18, 2, "constraints", _dec88, this);
+      __decorateElement(_init18, 2, "collisionDetection", _dec89, this);
+      __decoratorMetadata(_init18, this);
+    }
+    _mass = (__runInitializers(_init18, 5, this), 1);
     _drag = 0;
     _angularDrag = 0.05;
     _useGravity = true;
@@ -2094,49 +3594,63 @@ ${err.stack}` : ""}`);
     get body() {
       return this.p?.body ?? null;
     }
-    get mass() {
+    get [(_dec83 = [
+      property
+    ], "mass")]() {
       return this._mass;
     }
     set mass(kg) {
       this._mass = Math.max(0.000001, kg);
       this._sendMass();
     }
-    get drag() {
+    get [(_dec84 = [
+      property
+    ], "drag")]() {
       return this._drag;
     }
     set drag(d) {
       this._drag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get angularDrag() {
+    get [(_dec85 = [
+      property
+    ], "angularDrag")]() {
       return this._angularDrag;
     }
     set angularDrag(d) {
       this._angularDrag = d;
       this.p?.body.setDamping(this._drag, this._angularDrag);
     }
-    get useGravity() {
+    get [(_dec86 = [
+      property
+    ], "useGravity")]() {
       return this._useGravity;
     }
     set useGravity(on) {
       this._useGravity = on;
       this.p?.body.setGravityScale(on ? 1 : 0);
     }
-    get isKinematic() {
+    get [(_dec87 = [
+      property
+    ], "isKinematic")]() {
       return this._isKinematic;
     }
     set isKinematic(on) {
       this._isKinematic = on;
       this.p?.body.setKind(on ? "kinematic" : "dynamic");
     }
-    get constraints() {
+    get [(_dec88 = [
+      property
+    ], "constraints")]() {
       return this._constraints;
     }
     set constraints(flags) {
       this._constraints = flags;
       this.sendConstraints();
     }
-    get collisionDetection() {
+    get [(_dec89 = [
+      property
+    ], "collisionDetection")]() {
       return this._continuous ? "continuous" : "discrete";
     }
     set collisionDetection(mode) {
@@ -2284,37 +3798,54 @@ ${err.stack}` : ""}`);
     visit(go);
   });
   var CollisionFlags = { None: 0, Sides: 1, Above: 2, Below: 4 };
+  var _init19, _base19, _dec90, _dec91, _dec92, _dec93;
 
-  class CharacterController extends Collider {
-    _radius = 0.5;
+  class CharacterController extends (_base19 = Collider) {
+    static {
+      _init19 = __decoratorStart(_base19);
+      __decorateElement(_init19, 2, "radius", _dec90, this);
+      __decorateElement(_init19, 2, "height", _dec91, this);
+      __decorateElement(_init19, 2, "slopeLimit", _dec92, this);
+      __decorateElement(_init19, 2, "stepOffset", _dec93, this);
+      __decoratorMetadata(_init19, this);
+    }
+    _radius = (__runInitializers(_init19, 5, this), 0.5);
     _height = 2;
     _slopeLimit = 45;
     _stepOffset = 0.3;
     fallSpeed = 0;
     last = Vector3.zero;
     _velocity = Vector3.zero;
-    get radius() {
+    get [(_dec90 = [
+      property
+    ], "radius")]() {
       return this._radius;
     }
     set radius(r) {
       this._radius = r;
       this.rebuild();
     }
-    get height() {
+    get [(_dec91 = [
+      property
+    ], "height")]() {
       return this._height;
     }
     set height(h) {
       this._height = h;
       this.rebuild();
     }
-    get slopeLimit() {
+    get [(_dec92 = [
+      property
+    ], "slopeLimit")]() {
       return this._slopeLimit;
     }
     set slopeLimit(d) {
       this._slopeLimit = d;
       this.configure();
     }
-    get stepOffset() {
+    get [(_dec93 = [
+      property
+    ], "stepOffset")]() {
       return this._stepOffset;
     }
     set stepOffset(h) {
@@ -2358,13 +3889,30 @@ ${err.stack}` : ""}`);
       return this.isGrounded;
     }
   }
+  var _init20, _base20, _dec94, _dec95, _dec96, _dec97;
 
-  class Joint extends Component {
-    connectedBody = null;
-    anchor = Vector3.zero;
-    connectedAnchor = Vector3.zero;
-    autoConfigureConnectedAnchor = true;
-    handle = null;
+  class Joint extends (_base20 = Component) {
+    static {
+      _init20 = __decoratorStart(_base20);
+      __decorateElement(_init20, 5, "connectedBody", _dec94, this);
+      __decorateElement(_init20, 5, "anchor", _dec95, this);
+      __decorateElement(_init20, 5, "connectedAnchor", _dec96, this);
+      __decorateElement(_init20, 5, "autoConfigureConnectedAnchor", _dec97, this);
+      __decoratorMetadata(_init20, this);
+    }
+    [(_dec94 = [
+      property
+    ], "connectedBody")] = __runInitializers(_init20, 8, this, null);
+    [(_dec95 = [
+      property
+    ], "anchor")] = (__runInitializers(_init20, 11, this), __runInitializers(_init20, 12, this, Vector3.zero));
+    [(_dec96 = [
+      property
+    ], "connectedAnchor")] = (__runInitializers(_init20, 15, this), __runInitializers(_init20, 16, this, Vector3.zero));
+    [(_dec97 = [
+      property
+    ], "autoConfigureConnectedAnchor")] = (__runInitializers(_init20, 19, this), __runInitializers(_init20, 20, this, true));
+    handle = (__runInitializers(_init20, 23, this), null);
     params() {
       return [];
     }
@@ -2393,12 +3941,49 @@ ${err.stack}` : ""}`);
       this.handle = null;
     }
   }
-  class HingeJoint extends Joint {
-    axis = new Vector3(1, 0, 0);
-    useLimits = false;
-    limits = { min: -90, max: 90 };
-    useMotor = false;
-    motor = { targetVelocity: 0, force: 1 };
+
+  class FixedJoint extends Joint {
+    kind() {
+      return "fixed";
+    }
+  }
+
+  class CharacterJoint extends Joint {
+    kind() {
+      return "ball";
+    }
+  }
+  var _init21, _base21, _dec98, _dec99, _dec100, _dec101, _dec102;
+
+  class HingeJoint extends (_base21 = Joint) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init21, 27, this);
+    }
+    static {
+      _init21 = __decoratorStart(_base21);
+      __decorateElement(_init21, 5, "axis", _dec98, this);
+      __decorateElement(_init21, 5, "useLimits", _dec99, this);
+      __decorateElement(_init21, 5, "limits", _dec100, this);
+      __decorateElement(_init21, 5, "useMotor", _dec101, this);
+      __decorateElement(_init21, 5, "motor", _dec102, this);
+      __decoratorMetadata(_init21, this);
+    }
+    [(_dec98 = [
+      property
+    ], "axis")] = __runInitializers(_init21, 8, this, new Vector3(1, 0, 0));
+    [(_dec99 = [
+      property
+    ], "useLimits")] = (__runInitializers(_init21, 11, this), __runInitializers(_init21, 12, this, false));
+    [(_dec100 = [
+      property
+    ], "limits")] = (__runInitializers(_init21, 15, this), __runInitializers(_init21, 16, this, { min: -90, max: 90 }));
+    [(_dec101 = [
+      property
+    ], "useMotor")] = (__runInitializers(_init21, 19, this), __runInitializers(_init21, 20, this, false));
+    [(_dec102 = [
+      property
+    ], "motor")] = (__runInitializers(_init21, 23, this), __runInitializers(_init21, 24, this, { targetVelocity: 0, force: 1 }));
     kind() {
       return "hinge";
     }
@@ -2411,15 +3996,101 @@ ${err.stack}` : ""}`);
         this.build();
     }
   }
-  class Rope extends Component {
-    length = 3;
-    segments = 12;
-    radius = 0.04;
-    segmentMass = 0.05;
-    color = new Color(0.55, 0.42, 0.28, 1);
-    end = null;
-    renderMode = "tube";
-    links = [];
+  var _init22, _base22, _dec103, _dec104, _dec105;
+
+  class SpringJoint extends (_base22 = Joint) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init22, 19, this);
+    }
+    static {
+      _init22 = __decoratorStart(_base22);
+      __decorateElement(_init22, 5, "spring", _dec103, this);
+      __decorateElement(_init22, 5, "damper", _dec104, this);
+      __decorateElement(_init22, 5, "restLength", _dec105, this);
+      __decoratorMetadata(_init22, this);
+    }
+    [(_dec103 = [
+      property
+    ], "spring")] = __runInitializers(_init22, 8, this, 10);
+    [(_dec104 = [
+      property
+    ], "damper")] = (__runInitializers(_init22, 11, this), __runInitializers(_init22, 12, this, 0.2));
+    [(_dec105 = [
+      property
+    ], "restLength")] = (__runInitializers(_init22, 15, this), __runInitializers(_init22, 16, this, null));
+    kind() {
+      return "spring";
+    }
+    params() {
+      let rest = this.restLength;
+      if (rest === null) {
+        const world = this.transform.transformPoint(this.anchor);
+        const t = this.connectedBody?.transform;
+        const other = t ? t.position.add(t.rotation.rotate(this.connectedAnchor)) : this.connectedAnchor;
+        rest = world.distance(other);
+      }
+      return [rest, this.spring, this.damper];
+    }
+  }
+  var _init23, _base23, _dec106;
+
+  class RopeJoint extends (_base23 = Joint) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init23, 11, this);
+    }
+    static {
+      _init23 = __decoratorStart(_base23);
+      __decorateElement(_init23, 5, "maxDistance", _dec106, this);
+      __decoratorMetadata(_init23, this);
+    }
+    [(_dec106 = [
+      property
+    ], "maxDistance")] = __runInitializers(_init23, 8, this, 2);
+    kind() {
+      return "rope";
+    }
+    params() {
+      return [this.maxDistance];
+    }
+  }
+  var _init24, _base24, _dec107, _dec108, _dec109, _dec110, _dec111, _dec112, _dec113;
+
+  class Rope extends (_base24 = Component) {
+    static {
+      _init24 = __decoratorStart(_base24);
+      __decorateElement(_init24, 5, "length", _dec107, this);
+      __decorateElement(_init24, 5, "segments", _dec108, this);
+      __decorateElement(_init24, 5, "radius", _dec109, this);
+      __decorateElement(_init24, 5, "segmentMass", _dec110, this);
+      __decorateElement(_init24, 5, "color", _dec111, this);
+      __decorateElement(_init24, 5, "end", _dec112, this);
+      __decorateElement(_init24, 5, "renderMode", _dec113, this);
+      __decoratorMetadata(_init24, this);
+    }
+    [(_dec107 = [
+      property
+    ], "length")] = __runInitializers(_init24, 8, this, 3);
+    [(_dec108 = [
+      property
+    ], "segments")] = (__runInitializers(_init24, 11, this), __runInitializers(_init24, 12, this, 12));
+    [(_dec109 = [
+      property
+    ], "radius")] = (__runInitializers(_init24, 15, this), __runInitializers(_init24, 16, this, 0.04));
+    [(_dec110 = [
+      property
+    ], "segmentMass")] = (__runInitializers(_init24, 19, this), __runInitializers(_init24, 20, this, 0.05));
+    [(_dec111 = [
+      property
+    ], "color")] = (__runInitializers(_init24, 23, this), __runInitializers(_init24, 24, this, new Color(0.55, 0.42, 0.28, 1)));
+    [(_dec112 = [
+      property
+    ], "end")] = (__runInitializers(_init24, 27, this), __runInitializers(_init24, 28, this, null));
+    [(_dec113 = [
+      property
+    ], "renderMode")] = (__runInitializers(_init24, 31, this), __runInitializers(_init24, 32, this, "tube"));
+    links = (__runInitializers(_init24, 35, this), []);
     joints = [];
     line = null;
     onStart() {
@@ -2487,20 +4158,874 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/physics2d.ts
   var gravity2D = new Vector2(0, -9.81);
+  var Physics2D = {
+    depth: 10,
+    get gravity() {
+      return gravity2D;
+    },
+    set gravity(g) {
+      gravity2D = new Vector2(g.x, g.y);
+      physics.setGravity({ x: g.x, y: g.y, z: 0 });
+    },
+    async raycast(origin, direction, distance = 1000) {
+      const hit = await physics.raycast({ x: origin.x, y: origin.y, z: 0 }, { x: direction.x, y: direction.y, z: 0 }, distance);
+      if (!hit)
+        return null;
+      return {
+        collider: colliderFor(hit.collider),
+        point: new Vector2(hit.point.x, hit.point.y),
+        normal: new Vector2(hit.normal.x, hit.normal.y),
+        distance: hit.distance
+      };
+    }
+  };
   var colliders2D = new Map;
+  function colliderFor(c) {
+    return colliders2D.get(c.id) ?? null;
+  }
+  var _init25, _base25, _dec114;
+
+  class Collider2D extends (_base25 = Collider) {
+    constructor() {
+      super(...arguments);
+      __runInitializers(_init25, 5, this);
+    }
+    static {
+      _init25 = __decoratorStart(_base25);
+      __decorateElement(_init25, 2, "offset", _dec114, this);
+      __decoratorMetadata(_init25, this);
+    }
+    get [(_dec114 = [
+      property
+    ], "offset")]() {
+      return new Vector2(this.center.x, this.center.y);
+    }
+    set offset(o) {
+      this.center = new Vector3(o.x, o.y, 0);
+    }
+    get _is2D() {
+      return true;
+    }
+    get attachedRigidbody2D() {
+      const rb = _objectPhysics(this.gameObject)?.rigidbody;
+      return rb instanceof Rigidbody2D ? rb : null;
+    }
+    halfDepth() {
+      return Physics2D.depth / 2;
+    }
+    slab(points, scale) {
+      const d = this.halfDepth();
+      const pts = [];
+      for (const p of points) {
+        pts.push(new Vector3(p.x * scale.x, p.y * scale.y, -d), new Vector3(p.x * scale.x, p.y * scale.y, d));
+      }
+      return { convex: pts };
+    }
+    create() {
+      if (this.handle)
+        colliders2D.delete(this.handle.id);
+      super.create();
+      if (this.handle)
+        colliders2D.set(this.handle.id, this);
+    }
+    onDestroy() {
+      if (this.handle)
+        colliders2D.delete(this.handle.id);
+      super.onDestroy();
+    }
+  }
+  var _init26, _base26, _dec115;
+
+  class BoxCollider2D extends (_base26 = Collider2D) {
+    static {
+      _init26 = __decoratorStart(_base26);
+      __decorateElement(_init26, 2, "size", _dec115, this);
+      __decoratorMetadata(_init26, this);
+    }
+    _size = (__runInitializers(_init26, 5, this), Vector2.one);
+    get [(_dec115 = [
+      property
+    ], "size")]() {
+      return this._size;
+    }
+    set size(s) {
+      this._size = new Vector2(s.x, s.y);
+      this.rebuild();
+    }
+    shape(scale) {
+      return {
+        box: {
+          x: Math.abs(this._size.x * scale.x / 2),
+          y: Math.abs(this._size.y * scale.y / 2),
+          z: this.halfDepth()
+        }
+      };
+    }
+  }
+  var _init27, _base27, _dec116;
+
+  class CircleCollider2D extends (_base27 = Collider2D) {
+    static {
+      _init27 = __decoratorStart(_base27);
+      __decorateElement(_init27, 2, "radius", _dec116, this);
+      __decoratorMetadata(_init27, this);
+    }
+    _radius = (__runInitializers(_init27, 5, this), 0.5);
+    get [(_dec116 = [
+      property
+    ], "radius")]() {
+      return this._radius;
+    }
+    set radius(r) {
+      this._radius = r;
+      this.rebuild();
+    }
+    shape(scale) {
+      return {
+        cylinder: {
+          halfHeight: this.halfDepth(),
+          radius: this._radius * Math.max(Math.abs(scale.x), Math.abs(scale.y))
+        }
+      };
+    }
+    shapeRotation() {
+      return Quaternion.euler(90, 0, 0);
+    }
+  }
+  var _init28, _base28, _dec117, _dec118;
+
+  class CapsuleCollider2D extends (_base28 = Collider2D) {
+    static {
+      _init28 = __decoratorStart(_base28);
+      __decorateElement(_init28, 2, "size", _dec117, this);
+      __decorateElement(_init28, 2, "direction", _dec118, this);
+      __decoratorMetadata(_init28, this);
+    }
+    _size = (__runInitializers(_init28, 5, this), new Vector2(1, 2));
+    _direction = "vertical";
+    get [(_dec117 = [
+      property
+    ], "size")]() {
+      return this._size;
+    }
+    set size(s) {
+      this._size = new Vector2(s.x, s.y);
+      this.rebuild();
+    }
+    get [(_dec118 = [
+      property
+    ], "direction")]() {
+      return this._direction;
+    }
+    set direction(d) {
+      this._direction = d;
+      this.rebuild();
+    }
+    shape(scale) {
+      const vertical = this._direction === "vertical";
+      const [w, h] = [this._size.x, this._size.y];
+      const r = (vertical ? w : h) / 2;
+      const half = Math.max(0, (vertical ? h : w) / 2 - r);
+      const pts = [];
+      for (let end = 0;end < 2; end++) {
+        for (let i = 0;i <= 8; i++) {
+          const a = Math.PI * (i / 8) + (end ? Math.PI : 0);
+          const along = end ? -half : half;
+          pts.push(vertical ? new Vector2(Math.cos(a) * r, along + Math.sin(a) * r) : new Vector2(along + Math.sin(a) * r, -Math.cos(a) * r));
+        }
+      }
+      return this.slab(pts, scale);
+    }
+  }
+  var _init29, _base29, _dec119;
+
+  class PolygonCollider2D extends (_base29 = Collider2D) {
+    static {
+      _init29 = __decoratorStart(_base29);
+      __decorateElement(_init29, 2, "points", _dec119, this);
+      __decoratorMetadata(_init29, this);
+    }
+    _points = (__runInitializers(_init29, 5, this), [new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5), new Vector2(0, 0.5)]);
+    get [(_dec119 = [
+      property
+    ], "points")]() {
+      return this._points;
+    }
+    set points(p) {
+      this._points = p.map((v) => new Vector2(v.x, v.y));
+      this.rebuild();
+    }
+    shape(scale) {
+      return this.slab(this._points, scale);
+    }
+  }
+  var _init30, _base30, _dec120;
+
+  class EdgeCollider2D extends (_base30 = Collider2D) {
+    static {
+      _init30 = __decoratorStart(_base30);
+      __decorateElement(_init30, 2, "points", _dec120, this);
+      __decoratorMetadata(_init30, this);
+    }
+    _points = (__runInitializers(_init30, 5, this), [new Vector2(-0.5, 0), new Vector2(0.5, 0)]);
+    get [(_dec120 = [
+      property
+    ], "points")]() {
+      return this._points;
+    }
+    set points(p) {
+      this._points = p.map((v) => new Vector2(v.x, v.y));
+      this.rebuild();
+    }
+    shape(scale) {
+      const d = this.halfDepth();
+      const pts = [];
+      const indices = [];
+      this._points.forEach((p, i) => {
+        pts.push(new Vector3(p.x * scale.x, p.y * scale.y, -d), new Vector3(p.x * scale.x, p.y * scale.y, d));
+        if (i > 0) {
+          const [a, b, c, e] = [(i - 1) * 2, (i - 1) * 2 + 1, i * 2, i * 2 + 1];
+          indices.push(a, c, b, b, c, e);
+        }
+      });
+      return { mesh: { points: pts, indices } };
+    }
+  }
+  var _init31, _base31, _dec121, _dec122, _dec123, _dec124, _dec125, _dec126, _dec127;
+
+  class Rigidbody2D extends (_base31 = Component) {
+    static {
+      _init31 = __decoratorStart(_base31);
+      __decorateElement(_init31, 2, "mass", _dec121, this);
+      __decorateElement(_init31, 2, "drag", _dec122, this);
+      __decorateElement(_init31, 2, "angularDrag", _dec123, this);
+      __decorateElement(_init31, 2, "gravityScale", _dec124, this);
+      __decorateElement(_init31, 2, "bodyType", _dec125, this);
+      __decorateElement(_init31, 2, "freezeRotation", _dec126, this);
+      __decorateElement(_init31, 2, "collisionDetectionMode", _dec127, this);
+      __decoratorMetadata(_init31, this);
+    }
+    _mass = (__runInitializers(_init31, 5, this), 1);
+    _drag = 0;
+    _angularDrag = 0.05;
+    _gravityScale = 1;
+    _bodyType = "dynamic";
+    _freezeRotation = false;
+    _continuous = false;
+    p = null;
+    get [(_dec121 = [
+      property
+    ], "mass")]() {
+      return this._mass;
+    }
+    set mass(kg) {
+      this._mass = Math.max(0.000001, kg);
+      this._sendMass();
+    }
+    get [(_dec122 = [
+      property
+    ], "drag")]() {
+      return this._drag;
+    }
+    set drag(d) {
+      this._drag = d;
+      this.p?.body.setDamping(this._drag, this._angularDrag);
+    }
+    get [(_dec123 = [
+      property
+    ], "angularDrag")]() {
+      return this._angularDrag;
+    }
+    set angularDrag(d) {
+      this._angularDrag = d;
+      this.p?.body.setDamping(this._drag, this._angularDrag);
+    }
+    get [(_dec124 = [
+      property
+    ], "gravityScale")]() {
+      return this._gravityScale;
+    }
+    set gravityScale(s) {
+      this._gravityScale = s;
+      this.p?.body.setGravityScale(s);
+    }
+    get [(_dec125 = [
+      property
+    ], "bodyType")]() {
+      return this._bodyType;
+    }
+    set bodyType(t) {
+      this._bodyType = t;
+      this.p?.body.setKind(t === "static" ? "fixed" : t);
+    }
+    get isKinematic() {
+      return this._bodyType === "kinematic";
+    }
+    set isKinematic(on) {
+      this.bodyType = on ? "kinematic" : "dynamic";
+    }
+    get [(_dec126 = [
+      property
+    ], "freezeRotation")]() {
+      return this._freezeRotation;
+    }
+    set freezeRotation(on) {
+      this._freezeRotation = on;
+      this.sendAxes();
+    }
+    get [(_dec127 = [
+      property
+    ], "collisionDetectionMode")]() {
+      return this._continuous ? "continuous" : "discrete";
+    }
+    set collisionDetectionMode(m) {
+      this._continuous = m === "continuous";
+      this.p?.body.setCcd(this._continuous);
+    }
+    get velocity() {
+      const v = this.p?.body.velocity;
+      return v ? new Vector2(v.x, v.y) : Vector2.zero;
+    }
+    set velocity(v) {
+      this.p?.body.setVelocity({ x: v.x, y: v.y, z: 0 });
+    }
+    get angularVelocity() {
+      return (this.p?.body.angularVelocity.z ?? 0) * 180 / Math.PI;
+    }
+    set angularVelocity(degrees) {
+      this.p?.body.setAngularVelocity({ x: 0, y: 0, z: degrees * Math.PI / 180 });
+    }
+    get position() {
+      const p = this.transform.position;
+      return new Vector2(p.x, p.y);
+    }
+    set position(v) {
+      this.transform.position = new Vector3(v.x, v.y, this.transform.position.z);
+    }
+    get rotation() {
+      return this.transform.eulerAngles.z;
+    }
+    set rotation(degrees) {
+      this.transform.rotation = Quaternion.euler(0, 0, degrees);
+    }
+    addForce(force, mode = 0 /* Force */) {
+      const k = mode === 0 /* Force */ ? 1 / 60 : 1;
+      this.p?.body.applyImpulse({ x: force.x * k, y: force.y * k, z: 0 });
+    }
+    addForceAtPosition(force, position, mode = 0 /* Force */) {
+      const k = mode === 0 /* Force */ ? 1 / 60 : 1;
+      this.p?.body.applyImpulseAtPoint({ x: force.x * k, y: force.y * k, z: 0 }, { x: position.x, y: position.y, z: this.transform.position.z });
+    }
+    addTorque(torque, mode = 0 /* Force */) {
+      const k = mode === 0 /* Force */ ? 1 / 60 : 1;
+      this.p?.body.applyTorqueImpulse({ x: 0, y: 0, z: torque * k });
+    }
+    movePosition(position) {
+      this.position = position;
+    }
+    moveRotation(degrees) {
+      this.rotation = degrees;
+    }
+    sleep() {
+      this.p?.body.sleep();
+    }
+    wakeUp() {
+      this.p?.body.wakeUp();
+    }
+    _sendMass() {
+      this.p?.body.setMass(this._mass);
+    }
+    sendAxes() {
+      this.p?.body.setAllowedAxes([true, true, false], [false, false, !this._freezeRotation]);
+    }
+    onAwake() {
+      const p = _physicsFor(this.gameObject);
+      p.rigidbody = this;
+      this.p = p;
+      p.body.setKind(this._bodyType === "static" ? "fixed" : this._bodyType);
+      this._sendMass();
+      p.body.setDamping(this._drag, this._angularDrag);
+      p.body.setGravityScale(this._gravityScale);
+      if (this._continuous)
+        p.body.setCcd(true);
+      this.sendAxes();
+    }
+    onDestroy() {
+      const p = this.p;
+      if (!p)
+        return;
+      p.rigidbody = null;
+      this.p = null;
+      p.body.setKind("fixed");
+      _releasePhysics(this.gameObject);
+    }
+  }
   // ../../js/engine/src/particles.ts
   var systems = new Map;
+  var _init32, _base32, _dec128, _dec129, _dec130, _dec131, _dec132, _dec133, _dec134, _dec135, _dec136, _dec137, _dec138, _dec139, _dec140, _dec141, _dec142, _dec143, _dec144, _dec145, _dec146, _dec147, _dec148, _dec149, _dec150, _dec151;
+
+  class ParticleSystem extends (_base32 = Component) {
+    static {
+      _init32 = __decoratorStart(_base32);
+      __decorateElement(_init32, 5, "duration", _dec128, this);
+      __decorateElement(_init32, 5, "loop", _dec129, this);
+      __decorateElement(_init32, 5, "playOnAwake", _dec130, this);
+      __decorateElement(_init32, 5, "startDelay", _dec131, this);
+      __decorateElement(_init32, 5, "startLifetime", _dec132, this);
+      __decorateElement(_init32, 5, "startSpeed", _dec133, this);
+      __decorateElement(_init32, 5, "startSize", _dec134, this);
+      __decorateElement(_init32, 5, "startRotation", _dec135, this);
+      __decorateElement(_init32, 5, "angularVelocity", _dec136, this);
+      __decorateElement(_init32, 5, "startColor", _dec137, this);
+      __decorateElement(_init32, 5, "gravityModifier", _dec138, this);
+      __decorateElement(_init32, 5, "drag", _dec139, this);
+      __decorateElement(_init32, 5, "simulationSpace", _dec140, this);
+      __decorateElement(_init32, 5, "maxParticles", _dec141, this);
+      __decorateElement(_init32, 5, "randomSeed", _dec142, this);
+      __decorateElement(_init32, 5, "rateOverTime", _dec143, this);
+      __decorateElement(_init32, 5, "bursts", _dec144, this);
+      __decorateElement(_init32, 5, "shape", _dec145, this);
+      __decorateElement(_init32, 5, "sizeOverLifetime", _dec146, this);
+      __decorateElement(_init32, 5, "colorOverLifetime", _dec147, this);
+      __decorateElement(_init32, 5, "texture", _dec148, this);
+      __decorateElement(_init32, 5, "blendMode", _dec149, this);
+      __decorateElement(_init32, 5, "textureSheet", _dec150, this);
+      __decorateElement(_init32, 5, "stopAction", _dec151, this);
+      __decoratorMetadata(_init32, this);
+    }
+    [(_dec128 = [
+      property
+    ], "duration")] = __runInitializers(_init32, 8, this, 5);
+    [(_dec129 = [
+      property
+    ], "loop")] = (__runInitializers(_init32, 11, this), __runInitializers(_init32, 12, this, true));
+    [(_dec130 = [
+      property
+    ], "playOnAwake")] = (__runInitializers(_init32, 15, this), __runInitializers(_init32, 16, this, true));
+    [(_dec131 = [
+      property
+    ], "startDelay")] = (__runInitializers(_init32, 19, this), __runInitializers(_init32, 20, this, 0));
+    [(_dec132 = [
+      property
+    ], "startLifetime")] = (__runInitializers(_init32, 23, this), __runInitializers(_init32, 24, this, 5));
+    [(_dec133 = [
+      property
+    ], "startSpeed")] = (__runInitializers(_init32, 27, this), __runInitializers(_init32, 28, this, 5));
+    [(_dec134 = [
+      property
+    ], "startSize")] = (__runInitializers(_init32, 31, this), __runInitializers(_init32, 32, this, 1));
+    [(_dec135 = [
+      property
+    ], "startRotation")] = (__runInitializers(_init32, 35, this), __runInitializers(_init32, 36, this, 0));
+    [(_dec136 = [
+      property
+    ], "angularVelocity")] = (__runInitializers(_init32, 39, this), __runInitializers(_init32, 40, this, 0));
+    [(_dec137 = [
+      property
+    ], "startColor")] = (__runInitializers(_init32, 43, this), __runInitializers(_init32, 44, this, null));
+    [(_dec138 = [
+      property
+    ], "gravityModifier")] = (__runInitializers(_init32, 47, this), __runInitializers(_init32, 48, this, 0));
+    [(_dec139 = [
+      property
+    ], "drag")] = (__runInitializers(_init32, 51, this), __runInitializers(_init32, 52, this, 0));
+    [(_dec140 = [
+      property
+    ], "simulationSpace")] = (__runInitializers(_init32, 55, this), __runInitializers(_init32, 56, this, "local"));
+    [(_dec141 = [
+      property
+    ], "maxParticles")] = (__runInitializers(_init32, 59, this), __runInitializers(_init32, 60, this, 1000));
+    [(_dec142 = [
+      property
+    ], "randomSeed")] = (__runInitializers(_init32, 63, this), __runInitializers(_init32, 64, this, 1));
+    [(_dec143 = [
+      property
+    ], "rateOverTime")] = (__runInitializers(_init32, 67, this), __runInitializers(_init32, 68, this, 10));
+    [(_dec144 = [
+      property
+    ], "bursts")] = (__runInitializers(_init32, 71, this), __runInitializers(_init32, 72, this, []));
+    [(_dec145 = [
+      property
+    ], "shape")] = (__runInitializers(_init32, 75, this), __runInitializers(_init32, 76, this, { type: "cone", angle: 25, radius: 1 }));
+    [(_dec146 = [
+      property
+    ], "sizeOverLifetime")] = (__runInitializers(_init32, 79, this), __runInitializers(_init32, 80, this, null));
+    [(_dec147 = [
+      property
+    ], "colorOverLifetime")] = (__runInitializers(_init32, 83, this), __runInitializers(_init32, 84, this, null));
+    [(_dec148 = [
+      property
+    ], "texture")] = (__runInitializers(_init32, 87, this), __runInitializers(_init32, 88, this, null));
+    [(_dec149 = [
+      property
+    ], "blendMode")] = (__runInitializers(_init32, 91, this), __runInitializers(_init32, 92, this, "alpha"));
+    [(_dec150 = [
+      property
+    ], "textureSheet")] = (__runInitializers(_init32, 95, this), __runInitializers(_init32, 96, this, null));
+    [(_dec151 = [
+      property
+    ], "stopAction")] = (__runInitializers(_init32, 99, this), __runInitializers(_init32, 100, this, "none"));
+    onStopped = (__runInitializers(_init32, 103, this), undefined);
+    _particleCount = 0;
+    alive = false;
+    paused = false;
+    sent = "";
+    get particleCount() {
+      return this._particleCount;
+    }
+    get isPlaying() {
+      return this.alive && !this.paused;
+    }
+    get isPaused() {
+      return this.paused;
+    }
+    pairs() {
+      const range = (m) => typeof m === "number" ? m : [m[0], m[1]];
+      const c = this.startColor;
+      const colors = c === null ? [1, 1, 1, 1] : ("r" in c) ? [c.r, c.g, c.b, c.a] : c.flatMap((x) => [x.r, x.g, x.b, x.a]);
+      const s = this.shape;
+      const shape = s.type === "point" ? ["point"] : s.type === "cone" ? ["cone", s.angle, s.radius] : s.type === "box" ? ["box", s.size.x, s.size.y, s.size.z] : [s.type, s.radius];
+      const out = [
+        "duration",
+        this.duration,
+        "looping",
+        this.loop,
+        "startDelay",
+        this.startDelay,
+        "lifetime",
+        range(this.startLifetime),
+        "speed",
+        range(this.startSpeed),
+        "size",
+        range(this.startSize),
+        "rotation",
+        range(this.startRotation),
+        "angularVelocity",
+        range(this.angularVelocity),
+        "color",
+        colors,
+        "gravity",
+        this.gravityModifier,
+        "drag",
+        this.drag,
+        "worldSpace",
+        this.simulationSpace === "world",
+        "maxParticles",
+        this.maxParticles,
+        "rate",
+        this.rateOverTime,
+        "bursts",
+        this.bursts.flatMap((b) => [b.time, b.count, b.cycles ?? 1, b.interval ?? 0.01]),
+        "shape",
+        shape,
+        "texture",
+        this.texture?.id ?? null,
+        "additive",
+        this.blendMode === "additive",
+        "seed",
+        this.randomSeed
+      ];
+      if (this.sizeOverLifetime)
+        out.push("sizeOverLifetime", this.sizeOverLifetime.flatMap((k) => [k.time, k.value]));
+      if (this.colorOverLifetime) {
+        out.push("colorOverLifetime", this.colorOverLifetime.flatMap((k) => [k.time, k.color.r, k.color.g, k.color.b, k.color.a]));
+      }
+      const sheet = this.textureSheet;
+      if (sheet)
+        out.push("sheet", [sheet.tilesX, sheet.tilesY, sheet.cycles ?? 1]);
+      return out;
+    }
+    sync(playOnAwake = false) {
+      const pairs = this.pairs();
+      const key = JSON.stringify(pairs);
+      if (key === this.sent)
+        return;
+      this.sent = key;
+      __iron_op("render.particles", this.id, this.gameObject.id, pairs, playOnAwake);
+    }
+    control(action, count) {
+      this.sync();
+      __iron_op("render.particleControl", this.id, action, ...count === undefined ? [] : [count]);
+    }
+    play() {
+      this.paused = false;
+      this.alive = true;
+      this.control("play");
+    }
+    stop(clear = false) {
+      this.control(clear ? "stopClear" : "stop");
+    }
+    pause() {
+      this.paused = true;
+      this.control("pause");
+    }
+    clear() {
+      this.control("clear");
+    }
+    emit(count) {
+      this.control("emit", count);
+    }
+    onAwake() {
+      systems.set(this.id, this);
+      this.alive = this.playOnAwake;
+      this.sync(this.playOnAwake);
+    }
+    onPreRender() {
+      this.sync();
+    }
+    onDestroy() {
+      systems.delete(this.id);
+      __iron_op("render.remove", this.id);
+    }
+    _report(count, alive) {
+      const wasAlive = this.alive;
+      this._particleCount = count;
+      this.alive = alive;
+      if (wasAlive && !alive) {
+        try {
+          this.onStopped?.();
+        } catch (e) {
+          console.error(`[particles] error in onStopped: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        if (this.stopAction === "destroy")
+          this.gameObject.destroy();
+      }
+    }
+  }
   globalThis.__iron_particles = (changed) => {
     for (let i = 0;i + 2 < changed.length; i += 3) {
       systems.get(changed[i])?._report(changed[i + 1], changed[i + 2] === 1);
     }
   };
   // ../../js/engine/src/textures.ts
+  var nextTexture = 1;
   var textures = new Map;
+
+  class Texture {
+    id;
+    src;
+    width = 0;
+    height = 0;
+    isLoaded = false;
+    failed = false;
+    _filterMode;
+    _wrapMode;
+    _mipmaps;
+    pixels = null;
+    waiting = [];
+    constructor(src, options) {
+      this.id = nextTexture++;
+      this.src = src;
+      this._filterMode = options.filterMode ?? "bilinear";
+      this._wrapMode = options.wrapMode ?? "repeat";
+      this._mipmaps = options.mipmaps ?? true;
+      textures.set(this.id, this);
+    }
+    static _engine(id, width, height) {
+      const t = new Texture(null, {});
+      textures.delete(t.id);
+      nextTexture--;
+      t.id = id;
+      t.width = width;
+      t.height = height;
+      t.isLoaded = true;
+      return t;
+    }
+    static load(src, options = {}) {
+      const t = new Texture(src, options);
+      t.send();
+      return t;
+    }
+    static create(width, height, colors, options = {}) {
+      if (colors.length !== width * height) {
+        throw new Error(`Texture.create: ${colors.length} colours for ${width}x${height}`);
+      }
+      const t = new Texture(null, options);
+      const px = new Array(width * height * 4);
+      const byte = (v) => Math.round(Mathf.clamp01(Mathf.linearToGammaSpace(Mathf.clamp01(v))) * 255);
+      for (let y = 0;y < height; y++) {
+        const row = height - 1 - y;
+        for (let x = 0;x < width; x++) {
+          const c = colors[y * width + x];
+          const i = (row * width + x) * 4;
+          px[i] = byte(c.r);
+          px[i + 1] = byte(c.g);
+          px[i + 2] = byte(c.b);
+          px[i + 3] = Math.round(Mathf.clamp01(c.a) * 255);
+        }
+      }
+      t.pixels = px;
+      t.width = width;
+      t.height = height;
+      t.send();
+      return t;
+    }
+    get filterMode() {
+      return this._filterMode;
+    }
+    set filterMode(f) {
+      this._filterMode = f;
+      this.send();
+    }
+    get wrapMode() {
+      return this._wrapMode;
+    }
+    set wrapMode(w) {
+      this._wrapMode = w;
+      this.send();
+    }
+    whenLoaded() {
+      if (this.isLoaded)
+        return Promise.resolve(this);
+      if (this.failed)
+        return Promise.reject(new Error(`texture ${this.src ?? this.id} failed to load`));
+      return new Promise((resolve, reject) => {
+        this.waiting.push((t) => t.failed ? reject(new Error(`texture ${t.src ?? t.id} failed to load`)) : resolve(t));
+      });
+    }
+    destroy() {
+      textures.delete(this.id);
+      __iron_op("render.textureRemove", this.id);
+    }
+    send() {
+      __iron_op("render.texture", this.id, this.src, this._filterMode, this._wrapMode, this._mipmaps, ...this.pixels ? [this.width, this.height, this.pixels] : []);
+    }
+    _loaded(width, height) {
+      this.failed = width === 0;
+      this.isLoaded = !this.failed;
+      if (!this.failed) {
+        this.width = width;
+        this.height = height;
+      }
+      const waiting = this.waiting;
+      this.waiting = [];
+      for (const f of waiting)
+        f(this);
+    }
+  }
   globalThis.__iron_textures = (loaded) => {
     for (const [id, w, h] of loaded)
       textures.get(id)?._loaded(w, h);
   };
+
+  class Sprite {
+    texture;
+    rect;
+    pivot;
+    pixelsPerUnit;
+    constructor(texture, rect, pivot, pixelsPerUnit) {
+      this.texture = texture;
+      this.rect = rect;
+      this.pivot = pivot;
+      this.pixelsPerUnit = pixelsPerUnit;
+    }
+    static create(texture, rect = null, pivot = new Vector2(0.5, 0.5), pixelsPerUnit = 100) {
+      return new Sprite(texture, rect, new Vector2(pivot.x, pivot.y), pixelsPerUnit);
+    }
+    get size() {
+      const w = this.rect?.width ?? this.texture.width;
+      const h = this.rect?.height ?? this.texture.height;
+      return new Vector2(w / this.pixelsPerUnit, h / this.pixelsPerUnit);
+    }
+    static grid(texture, columns, rows, pivot, pixelsPerUnit) {
+      const w = texture.width / columns;
+      const h = texture.height / rows;
+      const out = [];
+      for (let r = 0;r < rows; r++) {
+        for (let c = 0;c < columns; c++) {
+          out.push(Sprite.create(texture, new Rect(c * w, texture.height - (r + 1) * h, w, h), pivot, pixelsPerUnit));
+        }
+      }
+      return out;
+    }
+  }
+  var _init33, _base33, _dec152, _dec153, _dec154, _dec155, _dec156;
+
+  class SpriteRenderer extends (_base33 = Component) {
+    static {
+      _init33 = __decoratorStart(_base33);
+      __decorateElement(_init33, 2, "sprite", _dec152, this);
+      __decorateElement(_init33, 2, "color", _dec153, this);
+      __decorateElement(_init33, 2, "flipX", _dec154, this);
+      __decorateElement(_init33, 2, "flipY", _dec155, this);
+      __decorateElement(_init33, 2, "sortingOrder", _dec156, this);
+      __decoratorMetadata(_init33, this);
+    }
+    _sprite = (__runInitializers(_init33, 5, this), null);
+    _color = Color.white;
+    _flipX = false;
+    _flipY = false;
+    _sortingOrder = 0;
+    started = false;
+    shown = false;
+    get [(_dec152 = [
+      property
+    ], "sprite")]() {
+      return this._sprite;
+    }
+    set sprite(s) {
+      this._sprite = s;
+      this.send();
+    }
+    get [(_dec153 = [
+      property
+    ], "color")]() {
+      return this._color;
+    }
+    set color(c) {
+      this._color = c;
+      this.send();
+    }
+    get [(_dec154 = [
+      property
+    ], "flipX")]() {
+      return this._flipX;
+    }
+    set flipX(f) {
+      this._flipX = f;
+      this.send();
+    }
+    get [(_dec155 = [
+      property
+    ], "flipY")]() {
+      return this._flipY;
+    }
+    set flipY(f) {
+      this._flipY = f;
+      this.send();
+    }
+    get [(_dec156 = [
+      property
+    ], "sortingOrder")]() {
+      return this._sortingOrder;
+    }
+    set sortingOrder(o) {
+      this._sortingOrder = Math.trunc(o);
+      this.send();
+    }
+    send() {
+      if (!this.started)
+        return;
+      const s = this._sprite;
+      if (!s) {
+        if (this.shown)
+          __iron_op("render.remove", this.id);
+        this.shown = false;
+        return;
+      }
+      const c = this._color;
+      const r = s.rect;
+      __iron_op("render.sprite", this.id, this.gameObject.id, s.texture.id, r ? [r.x, r.y, r.width, r.height] : null, [s.pivot.x, s.pivot.y], s.pixelsPerUnit, [c.r, c.g, c.b, c.a], this._flipX, this._flipY, this._sortingOrder);
+      this.shown = true;
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+  }
   // ../../js/engine/src/input.ts
   var keys = new Set;
   var pressedPending = new Set;
@@ -2650,8 +5175,111 @@ ${err.stack}` : ""}`);
   if (typeof __iron_op === "function")
     _applyDefaultQuality();
   // ../../js/engine/src/models.ts
+  var nextModel = 1;
   var models = new Map;
   var cache2 = new Map;
+
+  class Model {
+    id;
+    src;
+    isLoaded = false;
+    failed = false;
+    materials = [];
+    meshes = [];
+    description = null;
+    waiting = [];
+    pending = [];
+    constructor(src) {
+      this.id = nextModel++;
+      this.src = src;
+      models.set(this.id, this);
+      __iron_op("render.model", this.id, src);
+    }
+    static load(src) {
+      let m = cache2.get(src);
+      if (!m) {
+        m = new Model(src);
+        cache2.set(src, m);
+      }
+      return m;
+    }
+    whenLoaded() {
+      if (this.isLoaded)
+        return Promise.resolve(this);
+      if (this.failed)
+        return Promise.reject(new Error(`model ${this.src} failed to load`));
+      return new Promise((resolve, reject) => {
+        this.waiting.push((m) => m.failed ? reject(new Error(`model ${m.src} failed to load`)) : resolve(m));
+      });
+    }
+    instantiate(options = {}) {
+      const name = this.src.split("/").pop()?.replace(/\.(glb|gltf)$/i, "") ?? "Model";
+      const root = new GameObject(name, {
+        position: options.position,
+        rotation: options.rotation,
+        scale: options.scale,
+        parent: options.parent
+      });
+      this._buildInto(root, options);
+      return root;
+    }
+    _buildInto(root, options = {}) {
+      root._model = options.colliders && options.colliders !== "none" ? { src: this.src, colliders: options.colliders } : { src: this.src };
+      if (this.description)
+        this.build(root, options);
+      else if (!this.failed)
+        this.pending.push({ options, root });
+    }
+    build(root, options) {
+      const d = this.description;
+      const make = (index, parent) => {
+        const n = d.nodes[index];
+        const go = new GameObject(n.name || `Node ${index}`, {
+          parent,
+          position: new Vector3(...n.position),
+          rotation: new Quaternion(...n.rotation),
+          scale: new Vector3(...n.scale)
+        });
+        go._modelPart = true;
+        n.primitives.forEach((p, i) => {
+          const holder = n.primitives.length === 1 ? go : new GameObject(`${go.name} ${i}`, { parent: go });
+          holder._modelPart = true;
+          const mesh = Mesh._engine(p.mesh);
+          const material = p.material === null ? new Material : this.materials[p.material] ?? new Material;
+          holder.addComponent(MeshRenderer, { mesh, material });
+          if (options.colliders === "mesh" || options.colliders === "convex") {
+            holder.addComponent(MeshCollider, { sharedMesh: mesh, convex: options.colliders === "convex" });
+          }
+        });
+        for (const c of n.children)
+          make(c, go);
+      };
+      for (const r of d.roots)
+        make(r, root);
+    }
+    _loaded(description) {
+      if (description) {
+        this.description = description;
+        this.isLoaded = true;
+        this.materials = description.materials.map((m) => {
+          const [r, g, b, a] = m.color;
+          const texture = m.texture ? Texture._engine(...m.texture) : null;
+          return new Material(new Color(r, g, b, a), new Color(m.emission[0], m.emission[1], m.emission[2], 1), m.smoothness, m.unlit, texture, Vector2.one, Vector2.zero, m.metallic ?? 0);
+        });
+        this.meshes = description.nodes.flatMap((n) => n.primitives.map((p) => Mesh._engine(p.mesh)));
+        for (const { root, options } of this.pending)
+          if (!root.destroyed)
+            this.build(root, options);
+      } else {
+        this.failed = true;
+      }
+      this.pending = [];
+      const waiting = this.waiting;
+      this.waiting = [];
+      for (const f of waiting)
+        f(this);
+    }
+  }
   globalThis.__iron_models = (loaded) => {
     for (let i = 0;i + 1 < loaded.length; i += 2) {
       const m = models.get(loaded[i]);
@@ -2659,6 +5287,611 @@ ${err.stack}` : ""}`);
       m?._loaded(typeof json === "string" ? JSON.parse(json) : null);
     }
   };
+  // ../../js/engine/src/scenes.ts
+  _registerBuiltIns({
+    AudioListener,
+    AudioSource,
+    BoxCollider,
+    BoxCollider2D,
+    Camera,
+    CameraFollow,
+    CameraOrbit,
+    CapsuleCollider,
+    CapsuleCollider2D,
+    CharacterController,
+    CharacterJoint,
+    CircleCollider2D,
+    EdgeCollider2D,
+    FixedJoint,
+    HingeJoint,
+    Light,
+    LineRenderer,
+    LODGroup,
+    MeshCollider,
+    MeshRenderer,
+    Mirror,
+    ParticleSystem,
+    PlaneRenderer,
+    PolygonCollider2D,
+    ReflectionProbe,
+    Rigidbody,
+    Rigidbody2D,
+    Rope,
+    RopeJoint,
+    SphereCollider,
+    SpringJoint,
+    SpriteRenderer,
+    WorldPanel
+  });
+  var warn = (message) => console.warn(`scene: ${message}`);
+
+  class Saver {
+    keepExternal;
+    ids = new Map;
+    assets = {};
+    assetIds = new Map;
+    constructor(keepExternal) {
+      this.keepExternal = keepExternal;
+    }
+    id(thing) {
+      let id = this.ids.get(thing);
+      if (id === undefined) {
+        id = this.ids.size + 1;
+        this.ids.set(thing, id);
+      }
+      return id;
+    }
+    asset(key, prefix, make) {
+      let id = this.assetIds.get(key);
+      if (!id) {
+        id = `${prefix}${this.assetIds.size + 1}`;
+        this.assetIds.set(key, id);
+        this.assets[id] = make();
+      }
+      return { $asset: id };
+    }
+    value(v, where) {
+      if (v === null || v === undefined || typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+        return v ?? null;
+      }
+      if (Array.isArray(v))
+        return v.map((x, i) => this.value(x, `${where}[${i}]`));
+      if (v instanceof Vector2Int)
+        return { $type: "Vector2Int", value: [v.x, v.y] };
+      if (v instanceof Vector3Int)
+        return { $type: "Vector3Int", value: [v.x, v.y, v.z] };
+      if (v instanceof Vector2)
+        return { $type: "Vector2", value: [v.x, v.y] };
+      if (v instanceof Vector3)
+        return { $type: "Vector3", value: [v.x, v.y, v.z] };
+      if (v instanceof Vector4)
+        return { $type: "Vector4", value: [v.x, v.y, v.z, v.w] };
+      if (v instanceof Quaternion)
+        return { $type: "Quaternion", value: [v.x, v.y, v.z, v.w] };
+      if (v instanceof Color)
+        return { $type: "Color", value: [v.r, v.g, v.b, v.a] };
+      if (v instanceof RectInt)
+        return { $type: "RectInt", value: [v.x, v.y, v.width, v.height] };
+      if (v instanceof Rect)
+        return { $type: "Rect", value: [v.x, v.y, v.width, v.height] };
+      if (v instanceof GameObject || v instanceof Component) {
+        const id = this.ids.get(v);
+        const kind = v instanceof GameObject ? "GameObject" : "Component";
+        if (id !== undefined)
+          return { $ref: kind, id };
+        if (this.keepExternal)
+          return { $ref: kind, live: v instanceof GameObject ? v.id : v.id };
+        return null;
+      }
+      if (v instanceof Material) {
+        return {
+          $type: "Material",
+          color: this.value(v.color, where),
+          emission: this.value(v.emission, where),
+          smoothness: v.smoothness,
+          metallic: v.metallic,
+          unlit: v.unlit,
+          mainTexture: this.value(v.mainTexture, where),
+          mainTextureScale: this.value(v.mainTextureScale, where),
+          mainTextureOffset: this.value(v.mainTextureOffset, where)
+        };
+      }
+      if (v instanceof Texture) {
+        if (!v.src) {
+          warn(`${where}: only textures loaded from files are saved`);
+          return null;
+        }
+        const t = v;
+        return this.asset(v, "texture", () => ({ type: "Texture", src: v.src, filterMode: v.filterMode, wrapMode: v.wrapMode, mipmaps: t._mipmaps }));
+      }
+      if (v instanceof Sprite) {
+        return { $type: "Sprite", texture: this.value(v.texture, where), rect: this.value(v.rect, where), pivot: this.value(v.pivot, where), pixelsPerUnit: v.pixelsPerUnit };
+      }
+      if (v instanceof Mesh) {
+        const data = v._data;
+        if (!data) {
+          warn(`${where}: only meshes made with Mesh.create are saved (model meshes come with their model)`);
+          return null;
+        }
+        return this.asset(v, "mesh", () => ({ type: "Mesh", ...data }));
+      }
+      if (v instanceof Sound)
+        return { $type: "Sound", src: v.src };
+      const proto = Object.getPrototypeOf(v);
+      if (proto === Object.prototype || proto === null) {
+        const out = {};
+        for (const [k, x] of Object.entries(v)) {
+          if (x !== undefined)
+            out[k] = this.value(x, `${where}.${k}`);
+        }
+        return out;
+      }
+      warn(`${where}: can't save a ${proto?.constructor?.name ?? "value"}`);
+      return null;
+    }
+  }
+
+  class Loader {
+    data;
+    things = new Map;
+    assets = new Map;
+    constructor(data = {}) {
+      this.data = data;
+    }
+    asset(id) {
+      if (this.assets.has(id))
+        return this.assets.get(id);
+      const a = this.data[id];
+      let made = null;
+      if (a?.type === "Texture") {
+        made = Texture.load(String(a.src), {
+          filterMode: a.filterMode,
+          wrapMode: a.wrapMode,
+          mipmaps: a.mipmaps
+        });
+      } else if (a?.type === "Mesh") {
+        const flat = (k) => a[k] ?? [];
+        const v3 = (f) => Array.from({ length: f.length / 3 }, (_, i) => new Vector3(f[i * 3], f[i * 3 + 1], f[i * 3 + 2]));
+        const uv = flat("uv");
+        made = Mesh.create({
+          vertices: v3(flat("vertices")),
+          triangles: flat("triangles"),
+          normals: v3(flat("normals")),
+          uv: Array.from({ length: uv.length / 2 }, (_, i) => new Vector2(uv[i * 2], uv[i * 2 + 1]))
+        });
+      } else {
+        warn(`unknown asset ${id}`);
+      }
+      this.assets.set(id, made);
+      return made;
+    }
+    value(v) {
+      if (v === null || typeof v !== "object")
+        return v;
+      if (Array.isArray(v))
+        return v.map((x) => this.value(x));
+      const o = v;
+      if (typeof o.$asset === "string")
+        return this.asset(o.$asset);
+      if (typeof o.$ref === "string") {
+        if (typeof o.live === "number") {
+          return o.$ref === "GameObject" ? GameObject.byId(o.live) ?? null : liveComponent(o.live) ?? null;
+        }
+        const found = this.things.get(o.id);
+        return found ?? null;
+      }
+      if (typeof o.$type === "string") {
+        const n = o.value ?? [];
+        switch (o.$type) {
+          case "Vector2":
+            return new Vector2(n[0], n[1]);
+          case "Vector2Int":
+            return new Vector2Int(n[0], n[1]);
+          case "Vector3":
+            return new Vector3(n[0], n[1], n[2]);
+          case "Vector3Int":
+            return new Vector3Int(n[0], n[1], n[2]);
+          case "Vector4":
+            return new Vector4(n[0], n[1], n[2], n[3]);
+          case "Quaternion":
+            return new Quaternion(n[0], n[1], n[2], n[3]);
+          case "Color":
+            return new Color(n[0], n[1], n[2], n[3]);
+          case "Rect":
+            return new Rect(n[0], n[1], n[2], n[3]);
+          case "RectInt":
+            return new RectInt(n[0], n[1], n[2], n[3]);
+          case "Material":
+            return Material.create({
+              color: this.value(o.color),
+              emission: this.value(o.emission),
+              smoothness: o.smoothness,
+              metallic: o.metallic,
+              unlit: o.unlit,
+              mainTexture: this.value(o.mainTexture),
+              mainTextureScale: this.value(o.mainTextureScale),
+              mainTextureOffset: this.value(o.mainTextureOffset)
+            });
+          case "Sprite":
+            return Sprite.create(this.value(o.texture), this.value(o.rect), this.value(o.pivot), o.pixelsPerUnit);
+          case "Sound":
+            return new Sound(String(o.src));
+          default:
+            warn(`unknown type ${o.$type}`);
+            return null;
+        }
+      }
+      const out = {};
+      for (const [k, x] of Object.entries(o))
+        out[k] = this.value(x);
+      return out;
+    }
+  }
+  function liveComponent(id) {
+    for (const root of GameObject.roots) {
+      const stack = [root];
+      while (stack.length) {
+        const o = stack.pop();
+        const c = o.components.find((c) => c.id === id);
+        if (c)
+          return c;
+        stack.push(...o.children);
+      }
+    }
+    return;
+  }
+  function number(saver, roots) {
+    const walk = (go) => {
+      if (go._modelPart)
+        return;
+      saver.id(go);
+      for (const c of go.components)
+        saver.id(c);
+      for (const child of go.children)
+        walk(child);
+    };
+    for (const r of roots)
+      walk(r);
+  }
+  function saveObject(saver, go) {
+    if (go._modelPart)
+      return null;
+    const t = go.transform;
+    const p = t.localPosition;
+    const r = t.localRotation;
+    const s = t.localScale;
+    const data = {
+      id: saver.id(go),
+      name: go.name,
+      position: [p.x, p.y, p.z],
+      rotation: [r.x, r.y, r.z, r.w],
+      scale: [s.x, s.y, s.z]
+    };
+    if (!go.enabled)
+      data.enabled = false;
+    if (go.layer !== 0)
+      data.layer = go.layer;
+    if (go._model)
+      data.model = { ...go._model };
+    const components = go.components.map((c) => {
+      const cls = c.constructor;
+      const properties = {};
+      for (const name of propertiesOf(cls)) {
+        const value = c[name];
+        if (value !== undefined)
+          properties[name] = saver.value(value, `${go.name}.${_nameOf(cls)}.${name}`);
+      }
+      return { id: saver.id(c), type: _nameOf(cls), properties };
+    });
+    if (components.length)
+      data.components = components;
+    const children = go.children.map((c) => saveObject(saver, c)).filter((c) => c !== null);
+    if (children.length)
+      data.children = children;
+    return data;
+  }
+  function loadObjects(list, assets, parent) {
+    const loader = new Loader(assets);
+    const pending = [];
+    const disabled = [];
+    const build = (d, under) => {
+      const go = new GameObject(d.name ?? "GameObject", {
+        parent: under,
+        position: d.position ? new Vector3(...d.position) : undefined,
+        rotation: d.rotation ? new Quaternion(...d.rotation) : undefined,
+        scale: d.scale ? new Vector3(...d.scale) : undefined
+      });
+      loader.things.set(d.id, go);
+      if (d.layer)
+        go.layer = d.layer;
+      if (d.enabled === false)
+        disabled.push(go);
+      if (d.model)
+        Model.load(d.model.src)._buildInto(go, { colliders: d.model.colliders });
+      for (const c of d.components ?? []) {
+        const cls = _classByName(c.type);
+        if (!cls) {
+          warn(`${d.name}: unknown component ${c.type} (register it with register({ ${c.type} }))`);
+          continue;
+        }
+        const component = go._addComponentAsleep(cls);
+        loader.things.set(c.id, component);
+        pending.push({ component, properties: c.properties ?? {} });
+      }
+      for (const child of d.children ?? [])
+        build(child, go);
+      return go;
+    };
+    const made = list.map((d) => build(d, parent));
+    for (const { component, properties } of pending) {
+      for (const [name, value] of Object.entries(properties)) {
+        try {
+          component[name] = loader.value(value);
+        } catch (e) {
+          warn(`${component.gameObject.name}: couldn't set ${name}: ${e}`);
+        }
+      }
+    }
+    for (const { component } of pending)
+      component.onAwake?.();
+    for (const go of disabled)
+      go.enabled = false;
+    return made;
+  }
+  var nextHandle = 1;
+
+  class Scene {
+    name;
+    handle;
+    path = null;
+    isLoaded = true;
+    _renderSettings = null;
+    constructor(name) {
+      this.name = name;
+      this.handle = nextHandle++;
+    }
+    getRootGameObjects() {
+      return GameObject.roots.filter((go) => go._scene === this);
+    }
+    get rootCount() {
+      return this.getRootGameObjects().length;
+    }
+    serialize() {
+      const saver = new Saver(false);
+      const roots = this.getRootGameObjects();
+      number(saver, roots);
+      const objects = roots.map((go) => saveObject(saver, go)).filter((d) => d !== null);
+      const data = { format: "iron.scene", version: 1, name: this.name, objects };
+      if (this === active)
+        data.renderSettings = saveRenderSettings(saver);
+      if (Object.keys(saver.assets).length)
+        data.assets = saver.assets;
+      return data;
+    }
+  }
+  function saveRenderSettings(saver) {
+    return saver.value({
+      ambientLight: RenderSettings.ambientLight,
+      ambientMode: RenderSettings.ambientMode,
+      reflectionIntensity: RenderSettings.reflectionIntensity,
+      skybox: RenderSettings.skybox,
+      bloom: RenderSettings.bloom
+    }, "renderSettings");
+  }
+  function applyRenderSettings(saved) {
+    const s = new Loader().value(saved);
+    if (s.ambientLight instanceof Color)
+      RenderSettings.ambientLight = s.ambientLight;
+    if (s.ambientMode === "skybox" || s.ambientMode === "color")
+      RenderSettings.ambientMode = s.ambientMode;
+    if (typeof s.reflectionIntensity === "number")
+      RenderSettings.reflectionIntensity = s.reflectionIntensity;
+    if ("skybox" in s)
+      RenderSettings.skybox = s.skybox ?? null;
+    if ("bloom" in s)
+      RenderSettings.bloom = s.bloom ?? null;
+  }
+  var scenes = [];
+  var active;
+  var keep = null;
+  var loadedListeners = new Set;
+  var unloadedListeners = new Set;
+  var activeListeners = new Set;
+  function reset() {
+    scenes = [new Scene("Main")];
+    active = scenes[0];
+    keep = null;
+    loadedListeners.clear();
+    unloadedListeners.clear();
+    activeListeners.clear();
+  }
+  reset();
+  function setActive(scene) {
+    if (scene === active)
+      return;
+    const previous = active;
+    active = scene;
+    if (scene._renderSettings)
+      applyRenderSettings(scene._renderSettings);
+    for (const f of activeListeners)
+      f(previous, scene);
+  }
+  function unload(scene) {
+    for (const go of scene.getRootGameObjects())
+      go.destroy();
+    scene.isLoaded = false;
+    scenes = scenes.filter((s) => s !== scene);
+    for (const f of unloadedListeners)
+      f(scene);
+  }
+  function fromData(data, mode, path) {
+    if (data?.format !== "iron.scene")
+      throw new Error("not a scene (format isn't iron.scene)");
+    if (data.version !== 1)
+      throw new Error(`scene version ${data.version} isn't supported`);
+    const scene = new Scene(data.name);
+    scene.path = path;
+    scene._renderSettings = data.renderSettings ?? null;
+    const old = mode === "single" ? [...scenes] : [];
+    scenes.push(scene);
+    for (const s of old)
+      unload(s);
+    const previous = active;
+    active = scene;
+    try {
+      loadObjects(data.objects ?? [], data.assets, null);
+    } finally {
+      active = previous;
+    }
+    if (mode === "single")
+      setActive(scene);
+    for (const f of loadedListeners)
+      f(scene, mode);
+    return scene;
+  }
+  var nextRead = 1;
+  var reads = new Map;
+  globalThis.__iron_asset_text = (results) => {
+    for (let i = 0;i + 1 < results.length; i += 2) {
+      const read = reads.get(results[i]);
+      if (!read)
+        continue;
+      reads.delete(results[i]);
+      const text = results[i + 1];
+      if (typeof text === "string")
+        read.resolve(text);
+      else
+        read.reject(new Error(`couldn't read ${read.path}`));
+    }
+  };
+  function readText(path) {
+    const id = nextRead++;
+    return new Promise((resolve, reject) => {
+      reads.set(id, { resolve, reject, path });
+      __iron_op("asset.readText", id, path);
+    });
+  }
+  var SceneManager = {
+    get sceneCount() {
+      return scenes.length;
+    },
+    getSceneAt(index) {
+      const s = scenes[index];
+      if (!s)
+        throw new RangeError(`no scene at ${index}`);
+      return s;
+    },
+    getSceneByName(name) {
+      return scenes.find((s) => s.name === name);
+    },
+    getActiveScene() {
+      return active;
+    },
+    setActiveScene(scene) {
+      if (!scenes.includes(scene))
+        return false;
+      setActive(scene);
+      return true;
+    },
+    createScene(name) {
+      if (scenes.some((s) => s.name === name))
+        throw new Error(`a scene named ${name} is already loaded`);
+      const scene = new Scene(name);
+      scenes.push(scene);
+      return scene;
+    },
+    loadScene(data, mode = "single") {
+      return fromData(data, mode, null);
+    },
+    async loadSceneAsync(source, mode = "single") {
+      if (typeof source !== "string")
+        return fromData(source, mode, null);
+      const data = JSON.parse(await readText(source));
+      return fromData(data, mode, source);
+    },
+    unloadScene(scene) {
+      if (!scenes.includes(scene) || scenes.length === 1)
+        return false;
+      unload(scene);
+      if (active === scene)
+        setActive(scenes[0]);
+      return true;
+    },
+    moveGameObjectToScene(go, scene) {
+      if (go.parent)
+        throw new Error("only root objects move between scenes");
+      if (!scene.isLoaded)
+        throw new Error(`scene ${scene.name} isn't loaded`);
+      go._scene = scene;
+    },
+    mergeScenes(source, destination) {
+      for (const go of source.getRootGameObjects())
+        go._scene = destination;
+      SceneManager.unloadScene(source);
+    },
+    onSceneLoaded(f) {
+      loadedListeners.add(f);
+      return () => loadedListeners.delete(f);
+    },
+    onSceneUnloaded(f) {
+      unloadedListeners.add(f);
+      return () => unloadedListeners.delete(f);
+    },
+    onActiveSceneChanged(f) {
+      activeListeners.add(f);
+      return () => activeListeners.delete(f);
+    }
+  };
+  function instantiate2(original, options = {}) {
+    const saver = new Saver(true);
+    number(saver, [original]);
+    const data = saveObject(saver, original);
+    if (!data)
+      throw new Error("parts of a model can't be copied on their own; copy the model's root");
+    if (!options.parent) {
+      const t = original.transform;
+      const [p, r, s] = [t.position, t.rotation, t.lossyScale];
+      data.position = [p.x, p.y, p.z];
+      data.rotation = [r.x, r.y, r.z, r.w];
+      data.scale = [s.x, s.y, s.z];
+    }
+    if (options.position)
+      data.position = [options.position.x, options.position.y, options.position.z];
+    if (options.rotation)
+      data.rotation = [options.rotation.x, options.rotation.y, options.rotation.z, options.rotation.w];
+    const previous = active;
+    if (!options.parent)
+      active = original.scene;
+    try {
+      return loadObjects([data], saver.assets, options.parent ?? null)[0];
+    } finally {
+      active = previous;
+    }
+  }
+  async function loadStartScene(path) {
+    const main = active;
+    try {
+      const scene = await SceneManager.loadSceneAsync(path, "additive");
+      SceneManager.setActiveScene(scene);
+      if (main.isLoaded && main.rootCount === 0)
+        SceneManager.unloadScene(main);
+    } catch (e) {
+      console.error(`start scene ${path}: ${e}`);
+    }
+  }
+  var startScene = globalThis.__iron_info?.app.startScene;
+  if (startScene && typeof __iron_op === "function")
+    loadStartScene(startScene);
+  _setSceneHooks({
+    active: () => active,
+    dontDestroyOnLoad(go) {
+      const root = go.root;
+      keep ??= new Scene("DontDestroyOnLoad");
+      root._scene = keep;
+    },
+    instantiate: instantiate2,
+    reset
+  });
   // ../../js/engine/src/time.ts
   var MS_PER_SECOND = 1000;
   var MS_PER_MINUTE = 60000;

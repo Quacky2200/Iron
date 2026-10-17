@@ -162,3 +162,30 @@ fn objects_keep_the_layer_scripts_give_them() {
     assert!(s.apply("layer", &[num(9.0), num(1.0)]).is_err());
     assert_eq!(s.layer(9), 0, "unknown objects are on Default");
 }
+
+// M5-SCN-02
+#[test]
+fn scenes_save_and_load_in_quickjs() {
+    let mut rt = QuickJsRuntime::new();
+    rt.load_bundle("scene.js", SCENE).unwrap();
+    let mut host = ComponentHost::new();
+    let mut scene = ScriptScene::new();
+    let trip = scene.create_engine_object("SceneTrip");
+    host.spawn_on(&mut rt, "SceneTrip", Some(trip), "SceneTrip")
+        .unwrap();
+    tick(&mut rt, &mut host, &mut scene);
+    tick(&mut rt, &mut host, &mut scene);
+    assert_eq!(
+        rt.eval("__scene_trip()").unwrap(),
+        Value::String("Room+Lamp 3 true 7 DontDestroyOnLoad".into())
+    );
+    // The first copies went; the loaded ones and the kept trip object are left.
+    assert_eq!(scene.scene.len(), 4);
+    let door = scene.scene.find("Door").unwrap();
+    assert_eq!(
+        scene.scene.world(door).position,
+        glam::Vec3::new(0.0, 0.0, -5.0)
+    );
+    // Door and Light on the loaded objects, and the trip itself.
+    assert_eq!(host.len(), 3);
+}

@@ -954,10 +954,28 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     tilemaps, sorting layers, pixel-perfect camera
   - [ ] App follow-ups: `Application.targetFrameRate`, `runInBackground`, focus events,
     `persistentDataPath` (with M6 file IO), live monitor changes, battery / power state
-- [ ] **M5.b** Scene representation and serialization (objects, components, hierarchy,
-  transforms) with skybox support
-  - [ ] Scene API (`SceneManager`): create, load (single or additive), unload and switch
-    scenes; objects that persist across loads (`dontDestroyOnLoad`)
+- [x] **M5.b** Scene representation and serialization (objects, components, hierarchy,
+  transforms) with skybox support (2026-10-17, `examples/scenes`)
+  - [x] Scene files (`SceneData`, JSON `iron.scene` v1): objects (name, enabled, layer,
+    local transform, children), components by registered or engine name with their
+    `@property` values (standard decorators; every engine component's settings are
+    marked), references to objects and components inside the file, shared meshes
+    (`Mesh.create` data) and textures (by file), materials, sprites, sounds, plain
+    objects; model copies saved as their model (nodes rebuilt on load); the active
+    scene's render settings (ambient, sky, bloom). Loading builds everything, sets the
+    properties, then wakes components (`onAwake`) — `M5-SCN-01`, `M5-SCN-02`
+  - [x] Scene API (`SceneManager`): `createScene`, `loadScene` (single or additive),
+    `loadSceneAsync` (a file in the game folder via `asset.readText`), `unloadScene`,
+    `setActiveScene`, `getSceneAt` / `getSceneByName` / `sceneCount`,
+    `moveGameObjectToScene`, `mergeScenes`, loaded / unloaded / active-changed events;
+    `Scene.getRootGameObjects` / `serialize`; `GameObject.scene` / `root`;
+    `GameObject.dontDestroyOnLoad`; `GameObject.instantiate` (copies with references
+    inside remapped) — `M5-SCN-03`, `M5-SCN-04`
+  - [x] Start scene: `iron.startScene` in `package.json`; `register(..., { spawn: false })`
+    for components that only live in scenes
+  - [ ] Later: writing scene files from the game (M6 file IO, then the editor, M5.e);
+    stable asset GUIDs (`M5-SCN-02` in the old plan, now `M5-SCN-05`); prefabs with
+    overrides; saving user children under model copies
 - [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing
   scene serialization
   - [ ] `@property` (standard decorators, which Bun supports) feeds serialization; wipe and

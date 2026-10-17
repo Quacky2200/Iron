@@ -100,8 +100,9 @@ fn main() -> Result<()> {
         .load_bundle(&name, &code)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // No scene files yet (M5.b): one GameObject per registered component class,
-    // each with that component.
+    // One GameObject per starting component class (registered without
+    // `spawn: false`), each with that component; a start scene (`iron.startScene`)
+    // is loaded by the scripts themselves.
     let mut components = ComponentHost::new();
     let mut scene = iron_scene::ScriptScene::new();
     let classes =
@@ -658,6 +659,8 @@ impl App {
         // `__iron_models` after them.
         let mut loaded: Vec<(u32, u32, u32)> = Vec::new();
         let mut models: Vec<(u32, Option<serde_json::Value>)> = Vec::new();
+        // Text files read for scripts (`asset.readText id path`), for `__iron_asset_text`.
+        let mut texts: Vec<iron_core::Value> = Vec::new();
         for op in self.scripts.drain_ops() {
             match op.name.as_str() {
                 "loadFont" => self.load_font_op(&op.args),
@@ -753,6 +756,25 @@ impl App {
                         tracing::warn!("{name}: {e}");
                     }
                 }
+                "asset.readText" => {
+                    let id = op.args.first().cloned().unwrap_or(iron_core::Value::Null);
+                    let path = op
+                        .args
+                        .get(1)
+                        .and_then(iron_core::Value::as_str)
+                        .unwrap_or("");
+                    let text = iron_core::resolve_asset(&self.asset_root, path)
+                        .ok_or_else(|| "outside the game folder".to_string())
+                        .and_then(|file| std::fs::read_to_string(file).map_err(|e| e.to_string()));
+                    texts.push(id);
+                    texts.push(match text {
+                        Ok(text) => iron_core::Value::String(text),
+                        Err(e) => {
+                            tracing::warn!("asset.readText `{path}`: {e}");
+                            iron_core::Value::Null
+                        }
+                    });
+                }
                 "app.quit" => self.done = true,
                 name if name.starts_with("cursor.") => {
                     self.cursor_op(&name["cursor.".len()..], &op.args)
@@ -783,6 +805,14 @@ impl App {
                 }
                 other => tracing::warn!("unknown script op `{other}`"),
             }
+        }
+        // `__iron_asset_text([id, text | null, ...])`: files scripts asked for.
+        if !texts.is_empty()
+            && let Err(e) = self
+                .scripts
+                .call_global("__iron_asset_text", &[iron_core::Value::Array(texts)])
+        {
+            tracing::error!("script error in __iron_asset_text: {e}");
         }
         // `__iron_models([id, json | null, ...])`: what each model holds, for
         // `Model.instantiate` (null: it failed).
@@ -1720,8 +1750,8 @@ fn new_panel_tree(
     (tree, ids)
 }
 
-/// The starting components (until scenes load from files, M5.b): one GameObject per
-/// registered class, named after it, holding that component.
+/// The starting components: one GameObject per registered class (not `spawn: false`),
+/// named after it, holding that component.
 fn spawn_starting_components(
     rt: &mut QuickJsRuntime,
     host: &mut ComponentHost,

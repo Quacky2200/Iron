@@ -48,6 +48,15 @@ export { Cursor, CursorLockMode } from "./cursor.ts";
 export { type QualityLevel, QualitySettings, type ShadowQualityMode } from "./quality.ts";
 export { type InstantiateOptions, Model } from "./models.ts";
 export { LayerMask } from "./layers.ts";
+export { property } from "./property.ts";
+export {
+  type ComponentData,
+  type GameObjectData,
+  type LoadSceneMode,
+  Scene,
+  type SceneData,
+  SceneManager,
+} from "./scenes.ts";
 export { LineRenderer } from "./lines.ts";
 export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
 export {
@@ -140,6 +149,7 @@ export {
   type ComponentClass,
   GameObject,
   type GameObjectOptions,
+  type InstantiateObjectOptions,
   register,
   Transform,
 } from "./scene.ts";

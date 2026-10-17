@@ -103,9 +103,15 @@ export class Model {
       scale: options.scale,
       parent: options.parent,
     });
+    this._buildInto(root, options);
+    return root;
+  }
+
+  /** @internal Builds the model's nodes under `root` (once loaded), marking it as a copy for saving. */
+  _buildInto(root: GameObject, options: InstantiateOptions = {}): void {
+    root._model = options.colliders && options.colliders !== "none" ? { src: this.src, colliders: options.colliders } : { src: this.src };
     if (this.description) this.build(root, options);
     else if (!this.failed) this.pending.push({ options, root });
-    return root;
   }
 
   private build(root: GameObject, options: InstantiateOptions): void {
@@ -118,9 +124,11 @@ export class Model {
         rotation: new Quaternion(...n.rotation),
         scale: new Vector3(...n.scale),
       });
+      go._modelPart = true;
       // One renderer per part: on the node itself, or on child objects when there are several.
       n.primitives.forEach((p, i) => {
         const holder = n.primitives.length === 1 ? go : new GameObject(`${go.name} ${i}`, { parent: go });
+        holder._modelPart = true;
         const mesh = Mesh._engine(p.mesh);
         const material = p.material === null ? new Material() : (this.materials[p.material] ?? new Material());
         holder.addComponent(MeshRenderer, { mesh, material });

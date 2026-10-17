@@ -14,6 +14,8 @@ interface InfoApp {
   quality?: unknown;
   /** The manifest's `iron.layers`: names by layer number (LayerMask reads it). */
   layers?: unknown;
+  /** The manifest's `iron.startScene`: loaded when the game starts. */
+  startScene?: string | null;
 }
 
 interface InfoSystem {

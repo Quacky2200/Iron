@@ -1,6 +1,6 @@
 // M5-OBJ-06: GameObjects and components through @iron/engine in QuickJS. The Rust
 // test applies the scene ops, drives the host and reads `__scene_log()`.
-import { Component, GameObject, Quaternion, register, Time, Vector3 } from "@iron/engine";
+import { Component, GameObject, Light, property, Quaternion, register, SceneManager, Time, Vector3 } from "@iron/engine";
 
 const log: string[] = [];
 
@@ -55,7 +55,34 @@ class Lifecycle extends Component {
   }
 }
 
-register({ Game, Lifecycle });
+/** M5-SCN-02: saves a scene and loads it back in QuickJS (decorators included). */
+let trip = "";
+class Door extends Component {
+  @property opensTo: GameObject | null = null;
+  @property speed = 1;
+}
+class SceneTrip extends Component {
+  override onStart() {
+    GameObject.dontDestroyOnLoad(this.gameObject);
+    const room = new GameObject("Room", { position: new Vector3(0, 0, -5) });
+    const door = new GameObject("Door", { parent: room });
+    door.addComponent(Door, { opensTo: room, speed: 3 });
+    new GameObject("Lamp").addComponent(Light, { type: "point", range: 7 });
+    const json = JSON.stringify(SceneManager.getActiveScene().serialize());
+    const scene = SceneManager.loadScene(JSON.parse(json));
+    const loaded = GameObject.find("Door")!.getComponent(Door)!;
+    trip = [
+      scene.getRootGameObjects().map((g) => g.name).join("+"),
+      loaded.speed,
+      loaded.opensTo === GameObject.find("Room"),
+      GameObject.find("Lamp")!.getComponent(Light)!.range,
+      this.gameObject.scene.name,
+    ].join(" ");
+  }
+}
+
+register({ Game, Lifecycle, Door, SceneTrip });
+(globalThis as { __scene_trip?: () => string }).__scene_trip = () => trip;
 (globalThis as { __hooks_log?: () => string }).__hooks_log = () => hooks.join(" ");
 
 (globalThis as { __scene_log?: () => string }).__scene_log = () => log.join(", ");

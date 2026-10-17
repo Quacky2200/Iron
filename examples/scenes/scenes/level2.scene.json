@@ -1,0 +1,607 @@
+{
+  "format": "iron.scene",
+  "version": 1,
+  "name": "Night garden",
+  "renderSettings": {
+    "ambientMode": "color",
+    "ambientLight": {
+      "$type": "Color",
+      "value": [
+        0.04,
+        0.05,
+        0.08,
+        1.0
+      ]
+    },
+    "skybox": null,
+    "bloom": {
+      "threshold": 1,
+      "intensity": 0.8,
+      "scatter": 0.6
+    }
+  },
+  "objects": [
+    {
+      "id": 1,
+      "name": "Main Camera",
+      "position": [
+        0,
+        2.5,
+        8
+      ],
+      "rotation": [
+        -0.08715574274765817,
+        0.0,
+        0.0,
+        0.9961946980917455
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "components": [
+        {
+          "id": 2,
+          "type": "Camera",
+          "properties": {
+            "fieldOfView": 60,
+            "backgroundColor": {
+              "$type": "Color",
+              "value": [
+                0.02,
+                0.025,
+                0.05,
+                1.0
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Moon",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        -0.46984631039295416,
+        -0.29619813272602386,
+        -0.17101007166283433,
+        0.8137976813493738
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "components": [
+        {
+          "id": 4,
+          "type": "Light",
+          "properties": {
+            "type": "directional",
+            "intensity": 0.25,
+            "color": {
+              "$type": "Color",
+              "value": [
+                0.6,
+                0.7,
+                1,
+                1.0
+              ]
+            },
+            "shadows": "soft"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Ground",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "components": [
+        {
+          "id": 6,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "plane",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  0.15,
+                  0.2,
+                  0.18,
+                  1.0
+                ]
+              },
+              "smoothness": 0.3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Orb 1",
+      "position": [
+        3.5,
+        1.2,
+        -1.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "components": [
+        {
+          "id": 8,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "sphere",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  1,
+                  0.5,
+                  0.2,
+                  1.0
+                ]
+              },
+              "emission": {
+                "$type": "Color",
+                "value": [
+                  1,
+                  0.5,
+                  0.2,
+                  1.0
+                ]
+              },
+              "unlit": true
+            }
+          }
+        },
+        {
+          "id": 9,
+          "type": "Light",
+          "properties": {
+            "type": "point",
+            "range": 4,
+            "intensity": 1.5,
+            "color": {
+              "$type": "Color",
+              "value": [
+                1,
+                0.5,
+                0.2,
+                1.0
+              ]
+            }
+          }
+        },
+        {
+          "id": 10,
+          "type": "Bobber",
+          "properties": {
+            "height": 0.4,
+            "speed": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Orb 2",
+      "position": [
+        1.7500000000000004,
+        1.2,
+        2.031088913245535
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "components": [
+        {
+          "id": 12,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "sphere",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  0.3,
+                  0.8,
+                  1,
+                  1.0
+                ]
+              },
+              "emission": {
+                "$type": "Color",
+                "value": [
+                  0.3,
+                  0.8,
+                  1,
+                  1.0
+                ]
+              },
+              "unlit": true
+            }
+          }
+        },
+        {
+          "id": 13,
+          "type": "Light",
+          "properties": {
+            "type": "point",
+            "range": 4,
+            "intensity": 1.5,
+            "color": {
+              "$type": "Color",
+              "value": [
+                0.3,
+                0.8,
+                1,
+                1.0
+              ]
+            }
+          }
+        },
+        {
+          "id": 14,
+          "type": "Bobber",
+          "properties": {
+            "height": 0.4,
+            "speed": 1.2
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "Orb 3",
+      "position": [
+        -1.7499999999999991,
+        1.2,
+        2.0310889132455356
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "components": [
+        {
+          "id": 16,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "sphere",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  0.9,
+                  0.3,
+                  0.8,
+                  1.0
+                ]
+              },
+              "emission": {
+                "$type": "Color",
+                "value": [
+                  0.9,
+                  0.3,
+                  0.8,
+                  1.0
+                ]
+              },
+              "unlit": true
+            }
+          }
+        },
+        {
+          "id": 17,
+          "type": "Light",
+          "properties": {
+            "type": "point",
+            "range": 4,
+            "intensity": 1.5,
+            "color": {
+              "$type": "Color",
+              "value": [
+                0.9,
+                0.3,
+                0.8,
+                1.0
+              ]
+            }
+          }
+        },
+        {
+          "id": 18,
+          "type": "Bobber",
+          "properties": {
+            "height": 0.4,
+            "speed": 1.4
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "name": "Orb 4",
+      "position": [
+        -3.5,
+        1.2,
+        -0.9999999999999996
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "components": [
+        {
+          "id": 20,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "sphere",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  1,
+                  0.5,
+                  0.2,
+                  1.0
+                ]
+              },
+              "emission": {
+                "$type": "Color",
+                "value": [
+                  1,
+                  0.5,
+                  0.2,
+                  1.0
+                ]
+              },
+              "unlit": true
+            }
+          }
+        },
+        {
+          "id": 21,
+          "type": "Light",
+          "properties": {
+            "type": "point",
+            "range": 4,
+            "intensity": 1.5,
+            "color": {
+              "$type": "Color",
+              "value": [
+                1,
+                0.5,
+                0.2,
+                1.0
+              ]
+            }
+          }
+        },
+        {
+          "id": 22,
+          "type": "Bobber",
+          "properties": {
+            "height": 0.4,
+            "speed": 1.6
+          }
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "name": "Orb 5",
+      "position": [
+        -1.7500000000000016,
+        1.2,
+        -4.031088913245535
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "components": [
+        {
+          "id": 24,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "sphere",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  0.3,
+                  0.8,
+                  1,
+                  1.0
+                ]
+              },
+              "emission": {
+                "$type": "Color",
+                "value": [
+                  0.3,
+                  0.8,
+                  1,
+                  1.0
+                ]
+              },
+              "unlit": true
+            }
+          }
+        },
+        {
+          "id": 25,
+          "type": "Light",
+          "properties": {
+            "type": "point",
+            "range": 4,
+            "intensity": 1.5,
+            "color": {
+              "$type": "Color",
+              "value": [
+                0.3,
+                0.8,
+                1,
+                1.0
+              ]
+            }
+          }
+        },
+        {
+          "id": 26,
+          "type": "Bobber",
+          "properties": {
+            "height": 0.4,
+            "speed": 1.8
+          }
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "name": "Orb 6",
+      "position": [
+        1.7500000000000004,
+        1.2,
+        -4.031088913245535
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "components": [
+        {
+          "id": 28,
+          "type": "MeshRenderer",
+          "properties": {
+            "mesh": "sphere",
+            "material": {
+              "$type": "Material",
+              "color": {
+                "$type": "Color",
+                "value": [
+                  0.9,
+                  0.3,
+                  0.8,
+                  1.0
+                ]
+              },
+              "emission": {
+                "$type": "Color",
+                "value": [
+                  0.9,
+                  0.3,
+                  0.8,
+                  1.0
+                ]
+              },
+              "unlit": true
+            }
+          }
+        },
+        {
+          "id": 29,
+          "type": "Light",
+          "properties": {
+            "type": "point",
+            "range": 4,
+            "intensity": 1.5,
+            "color": {
+              "$type": "Color",
+              "value": [
+                0.9,
+                0.3,
+                0.8,
+                1.0
+              ]
+            }
+          }
+        },
+        {
+          "id": 30,
+          "type": "Bobber",
+          "properties": {
+            "height": 0.4,
+            "speed": 2.0
+          }
+        }
+      ]
+    }
+  ]
+}

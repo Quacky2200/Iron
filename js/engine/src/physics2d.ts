@@ -7,6 +7,7 @@
 // `Physics2D.depth` deep, centred on the object, so 2D objects collide whatever their z
 // (as in Unity, where z is only for drawing order).
 
+import { property } from "./property.ts";
 import { Collider, type ObjectPhysics, _objectPhysics, _physicsFor, _releasePhysics } from "./physics-components.ts";
 import { Quaternion, Vector2, type Vector2Like, Vector3 } from "./math.ts";
 import { type PhysicsCollider, physics, type Shape } from "./physics.ts";
@@ -78,6 +79,7 @@ export interface Collision2D {
 /** A 2D collider: an outline in the object's XY plane. */
 export abstract class Collider2D extends Collider {
   /** The outline's offset from the object (Unity's `offset`). */
+  @property
   get offset(): Vector2 {
     return new Vector2(this.center.x, this.center.y);
   }
@@ -126,6 +128,7 @@ export abstract class Collider2D extends Collider {
 /** A rectangle `size` across. */
 export class BoxCollider2D extends Collider2D {
   private _size = Vector2.one;
+  @property
   get size(): Vector2 {
     return this._size;
   }
@@ -147,6 +150,7 @@ export class BoxCollider2D extends Collider2D {
 /** A circle of `radius` (scaled by the object's larger of x and y). */
 export class CircleCollider2D extends Collider2D {
   private _radius = 0.5;
+  @property
   get radius(): number {
     return this._radius;
   }
@@ -172,6 +176,7 @@ export class CircleCollider2D extends Collider2D {
 export class CapsuleCollider2D extends Collider2D {
   private _size = new Vector2(1, 2);
   private _direction: "vertical" | "horizontal" = "vertical";
+  @property
   get size(): Vector2 {
     return this._size;
   }
@@ -179,6 +184,7 @@ export class CapsuleCollider2D extends Collider2D {
     this._size = new Vector2(s.x, s.y);
     this.rebuild();
   }
+  @property
   get direction(): "vertical" | "horizontal" {
     return this._direction;
   }
@@ -214,6 +220,7 @@ export class CapsuleCollider2D extends Collider2D {
  */
 export class PolygonCollider2D extends Collider2D {
   private _points: Vector2[] = [new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5), new Vector2(0, 0.5)];
+  @property
   get points(): Vector2[] {
     return this._points;
   }
@@ -232,6 +239,7 @@ export class PolygonCollider2D extends Collider2D {
  */
 export class EdgeCollider2D extends Collider2D {
   private _points: Vector2[] = [new Vector2(-0.5, 0), new Vector2(0.5, 0)];
+  @property
   get points(): Vector2[] {
     return this._points;
   }
@@ -271,6 +279,7 @@ export class Rigidbody2D extends Component {
   private p: ObjectPhysics | null = null;
 
   /** In kg. */
+  @property
   get mass(): number {
     return this._mass;
   }
@@ -280,6 +289,7 @@ export class Rigidbody2D extends Component {
   }
 
   /** Slows movement (linear damping). */
+  @property
   get drag(): number {
     return this._drag;
   }
@@ -288,6 +298,7 @@ export class Rigidbody2D extends Component {
     this.p?.body.setDamping(this._drag, this._angularDrag);
   }
 
+  @property
   get angularDrag(): number {
     return this._angularDrag;
   }
@@ -297,6 +308,7 @@ export class Rigidbody2D extends Component {
   }
 
   /** Multiplies gravity (0: floats). */
+  @property
   get gravityScale(): number {
     return this._gravityScale;
   }
@@ -306,6 +318,7 @@ export class Rigidbody2D extends Component {
   }
 
   /** `dynamic` (simulated), `kinematic` (moved by scripts, pushes others) or `static`. */
+  @property
   get bodyType(): RigidbodyType2D {
     return this._bodyType;
   }
@@ -322,6 +335,7 @@ export class Rigidbody2D extends Component {
   }
 
   /** Keeps it upright: no turning from hits. */
+  @property
   get freezeRotation(): boolean {
     return this._freezeRotation;
   }
@@ -330,6 +344,7 @@ export class Rigidbody2D extends Component {
     this.sendAxes();
   }
 
+  @property
   get collisionDetectionMode(): "discrete" | "continuous" {
     return this._continuous ? "continuous" : "discrete";
   }

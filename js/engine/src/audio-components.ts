@@ -2,6 +2,7 @@
 // sounds from its GameObject (an emitter that follows it) and the `AudioListener` puts
 // the player's ears on its object (usually the camera).
 
+import { property } from "./property.ts";
 import { audio, type Bus, type Emitter, type Playback, type PlayOptions, Sound } from "./audio.ts";
 import type { Vector3Like } from "./math.ts";
 import { Component } from "./scene.ts";
@@ -27,13 +28,18 @@ function clipOf(clip: Sound | string): Sound {
  */
 export class AudioSource extends Component {
   /** The sound `play()` plays: a loaded `Sound` or a path in the game folder. */
+  @property
   clip: Sound | string | null = null;
+  @property
   playOnAwake = true;
   /** 0 plays flat (2D), above 0 plays from the object (3D). */
+  @property
   spatialBlend = 0;
   /** Full volume within this distance (metres, 3D only). */
+  @property
   minDistance = 1;
   /** Silent beyond this distance (metres, 3D only). */
+  @property
   maxDistance = 50;
   /** The bus it plays on (or its emitter mixes into). */
   outputBus: Bus | null = null;
@@ -50,6 +56,7 @@ export class AudioSource extends Component {
   private sentPosition: Vector3Like | null = null;
 
   /** Linear gain (1 = as recorded). */
+  @property
   get volume(): number {
     return this._volume;
   }
@@ -58,6 +65,7 @@ export class AudioSource extends Component {
     this.eachPlaying((p) => p.setVolume(this.gain()));
   }
   /** Speed and pitch together (1 = as recorded). */
+  @property
   get pitch(): number {
     return this._pitch;
   }
@@ -66,6 +74,7 @@ export class AudioSource extends Component {
     this.eachPlaying((p) => p.setRate(r));
   }
   /** -1 left to 1 right, for 2D sounds. */
+  @property
   get panStereo(): number {
     return this._panStereo;
   }
@@ -73,6 +82,7 @@ export class AudioSource extends Component {
     this._panStereo = p;
     this.eachPlaying((pb) => pb.setPan(p));
   }
+  @property
   get mute(): boolean {
     return this._mute;
   }
@@ -81,6 +91,7 @@ export class AudioSource extends Component {
     this.eachPlaying((p) => p.setVolume(this.gain()));
   }
   /** Whether `play()` repeats the clip. Applies from the next `play()`. */
+  @property
   get loop(): boolean {
     return this._loop;
   }

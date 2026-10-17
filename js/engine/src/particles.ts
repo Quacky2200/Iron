@@ -3,6 +3,7 @@
 // particles; settings are sent when the component is added and again before a frame
 // whenever they changed, so nested edits (`ps.shape.radius = 2`) just work.
 
+import { property } from "./property.ts";
 import type { Color } from "./math.ts";
 import { Component } from "./scene.ts";
 import type { Texture } from "./textures.ts";
@@ -39,42 +40,66 @@ const systems = new Map<number, ParticleSystem>();
 export class ParticleSystem extends Component {
   // Main.
   /** Seconds per cycle. */
+  @property
   duration = 5;
+  @property
   loop = true;
+  @property
   playOnAwake = true;
+  @property
   startDelay = 0;
+  @property
   startLifetime: MinMax = 5;
+  @property
   startSpeed: MinMax = 5;
+  @property
   startSize: MinMax = 1;
   /** Degrees. */
+  @property
   startRotation: MinMax = 0;
   /** Degrees per second. */
+  @property
   angularVelocity: MinMax = 0;
   /** One colour, or a random mix of two per particle (linear). */
+  @property
   startColor: Color | readonly [Color, Color] | null = null;
   /** Multiplies gravity (9.81 m/s² down). */
+  @property
   gravityModifier = 0;
   /** Fraction of speed lost per second. */
+  @property
   drag = 0;
   /** `world`: particles stay where they were emitted when the object moves. */
+  @property
   simulationSpace: "local" | "world" = "local";
+  @property
   maxParticles = 1000;
+  @property
   randomSeed = 1;
   // Emission and shape.
+  @property
   rateOverTime = 10;
+  @property
   bursts: ParticleBurst[] = [];
+  @property
   shape: ParticleShape = { type: "cone", angle: 25, radius: 1 };
   // Over lifetime: keys from 0 (birth) to 1 (death), linear between them.
+  @property
   sizeOverLifetime: { time: number; value: number }[] | null = null;
   /** Multiplies the start colour (alpha too: fade out with alpha 0 at time 1). */
+  @property
   colorOverLifetime: { time: number; color: Color }[] | null = null;
   // Renderer.
   /** The particle image (a soft round spot by default). */
+  @property
   texture: Texture | null = null;
+  @property
   blendMode: "alpha" | "additive" = "alpha";
   /** A flipbook: the texture cut into `tilesX × tilesY` frames, played `cycles` times per life. */
+  @property
   textureSheet: { tilesX: number; tilesY: number; cycles?: number } | null = null;
   /** What happens once it has stopped and its particles are gone. */
+  @property
   stopAction: "none" | "destroy" = "none";
   /** Called once it has stopped and its particles are gone. */
   onStopped?: () => void;
