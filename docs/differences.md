@@ -9,6 +9,7 @@ a known gap, not an accident. When you fix one, delete its entry; when you add o
 | Area | Iron | Browsers / spec | Why |
 |---|---|---|---|
 | Nested at-rules | `@media`, `@starting-style`, ... inside a rule are skipped with a warning | Allowed | `@media` isn't supported at all yet; top-level `@starting-style` works |
+| `@import` conditions | Imports with media queries, `supports()` or `layer()` are skipped; `@import` anywhere in a sheet still loads (browsers ignore late ones) | Conditional and layered imports | No `@media` or cascade layers yet |
 | Nested rule order | Flattened after the parent rule; declarations written after nested rules still belong to the parent | Same (the spec's "nested declarations" rule) | — |
 
 ## Game extensions (M3d group 9)

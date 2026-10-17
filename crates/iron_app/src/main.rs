@@ -736,7 +736,12 @@ fn load_font(
 /// Adds a stylesheet, logging its warnings and loading its `@font-face` fonts.
 /// `base` is the stylesheet's folder inside the game folder (for its `url()`s).
 fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &str) -> u32 {
-    let added = ui.add_stylesheet_with_base(css, base);
+    // `@import`s load from the game folder (Bun inlines them when bundling; this is
+    // for stylesheets added at runtime).
+    let added = ui.add_stylesheet_with_imports(css, base, &mut |path| {
+        let file = iron_core::resolve_asset(root, path)?;
+        std::fs::read_to_string(file).ok()
+    });
     for warning in &added.warnings {
         tracing::warn!(target: "css", "{source}: {warning}");
     }

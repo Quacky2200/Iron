@@ -672,7 +672,11 @@ and `@font-face`.
       rules, selector lists as `:is()`): nested rules are flattened at parse time after their
       parent; `text:hover { ... }` is told apart from a declaration by its block; nested at-rules
       are skipped with a warning — `M3-CSS-11`
-    - [ ] `@import` (Bun inlines imports when bundling; runtime `addStyleSheet` would need it too)
+    - [x] **10b** `@import url(x.css)` / `@import "x.css"` for runtime stylesheets (Bun already inlines
+      them when bundling): `UiTree::add_stylesheet_with_imports` loads them through the app (game
+      folder only), relative to the importing sheet, inlined before its rules (fonts, keyframes and
+      `@starting-style` too) with their URLs rebased; cycles, deep chains, missing files and
+      conditional imports (media, `supports()`, `layer`) are skipped with warnings — `M3-CSS-12`
     - [ ] SCSS (`$variables`, `@mixin`/`@include`) is **not planned** in the engine: custom properties
       and nesting cover most uses, and a Bun plugin can compile `.scss` for those who want it
 

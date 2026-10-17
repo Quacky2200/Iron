@@ -278,6 +278,9 @@ pub struct Stylesheet {
     /// Rules inside `@starting-style`: the "before" style of newly shown elements,
     /// which their transitions start from.
     pub starting: Vec<StyleRule>,
+    /// `@import` URLs, in order (the engine loads them; see
+    /// `UiTree::add_stylesheet_with_imports`).
+    pub imports: Vec<String>,
     /// Problems found while parsing (invalid selectors, unsupported at-rules, ...).
     /// The rest of the sheet still applies.
     pub warnings: Vec<String>,
@@ -289,6 +292,7 @@ enum Item {
     FontFace(FontFace),
     Keyframes(Keyframes),
     Starting(Stylesheet),
+    Import(String),
     Skipped(String),
 }
 
@@ -296,6 +300,8 @@ enum AtPrelude {
     FontFace,
     Keyframes(String),
     StartingStyle,
+    /// The URL, and whether conditions (media, `supports()`, `layer`) followed it.
+    Import(Option<String>, bool),
     Media(String),
     Unsupported(String),
 }
@@ -532,12 +538,38 @@ impl<'i> AtRuleParser<'i> for SheetParser {
             "font-face" => AtPrelude::FontFace,
             "keyframes" | "-webkit-keyframes" => AtPrelude::Keyframes(unquote(&rest)),
             "starting-style" => AtPrelude::StartingStyle,
+            "import" => {
+                // `url("x.css")`, `url(x.css)` or `"x.css"`, then optional conditions.
+                let (url, rest) = if let Some(r) = rest.strip_prefix("url(") {
+                    match r.split_once(')') {
+                        Some((u, after)) => (Some(unquote(u)), after.trim().to_owned()),
+                        None => (None, String::new()),
+                    }
+                } else if let Some(q) = rest.chars().next().filter(|c| *c == '"' || *c == '\'') {
+                    match rest[1..].split_once(q) {
+                        Some((u, after)) => (Some(u.to_owned()), after.trim().to_owned()),
+                        None => (None, String::new()),
+                    }
+                } else {
+                    (None, String::new())
+                };
+                AtPrelude::Import(url.filter(|u| !u.is_empty()), !rest.is_empty())
+            },
             "media" => AtPrelude::Media(rest),
             _ => AtPrelude::Unsupported(name.to_string()),
         })
     }
 
     fn rule_without_block(&mut self, prelude: AtPrelude, _start: &ParserState) -> Result<Item, ()> {
+        if let AtPrelude::Import(url, conditions) = prelude {
+            return Ok(match (url, conditions) {
+                (Some(url), false) => Item::Import(url),
+                (Some(url), true) => Item::Skipped(format!(
+                    "@import \"{url}\": media, supports() and layer conditions aren't supported; skipped"
+                )),
+                (None, _) => Item::Skipped("@import needs a URL; skipped".into()),
+            });
+        }
         Ok(Item::Skipped(match prelude {
             AtPrelude::Unsupported(name) => format!("@{name} isn't supported; skipped"),
             _ => "at-rule without a block; skipped".into(),
@@ -596,6 +628,10 @@ impl<'i> AtRuleParser<'i> for SheetParser {
                 Ok(Item::Skipped(format!(
                     "@media ({query}) isn't supported yet; its rules are ignored"
                 )))
+            }
+            AtPrelude::Import(..) => {
+                while input.next().is_ok() {}
+                Ok(Item::Skipped("@import can't have a block; skipped".into()))
             }
             AtPrelude::Unsupported(name) => {
                 while input.next().is_ok() {}
@@ -783,6 +819,7 @@ pub fn parse_stylesheet(css: &str) -> Stylesheet {
             }
             Ok(Item::FontFace(face)) => sheet.font_faces.push(face),
             Ok(Item::Keyframes(k)) => sheet.keyframes.push(k),
+            Ok(Item::Import(url)) => sheet.imports.push(url),
             Ok(Item::Starting(inner)) => {
                 sheet.starting.extend(inner.rules);
                 sheet.warnings.extend(inner.warnings);

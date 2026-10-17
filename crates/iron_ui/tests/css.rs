@@ -697,3 +697,53 @@ fn nested_rules_apply_and_react_to_state() {
         "the nested :hover rule restyles the child"
     );
 }
+
+// M3-CSS-12
+#[test]
+fn imports_load_before_the_importing_sheet() {
+    let mut d = Dom::new();
+    let a = d.class(0, "a");
+    let mut tree = UiTree::new(400.0, 400.0);
+    assert!(tree.apply_commit(&Commit { ops: d.ops }).is_empty());
+    let mut asked = Vec::new();
+    let added = tree.add_stylesheet_with_imports(
+        r#"@import url("theme/base.css");
+           @import "missing.css";
+           @import "print.css" print;
+           .a { opacity: 0.5 }"#,
+        "dist",
+        &mut |path| {
+            asked.push(path.to_owned());
+            match path {
+                // Its own import is relative to its folder; it imports the first file
+                // back (a cycle), which is skipped.
+                "dist/theme/base.css" => Some(
+                    "@import '../colors.css'; @import 'base.css';
+                     .a { opacity: 0.1; width: 10px; background-image: url(img/x.png) }"
+                        .into(),
+                ),
+                "dist/colors.css" => Some(".a { height: 20px }".into()),
+                _ => None,
+            }
+        },
+    );
+    tree.layout_if_needed();
+    assert_eq!(
+        asked,
+        ["dist/theme/base.css", "dist/colors.css", "dist/missing.css"]
+    );
+    let v = tree.visual(NodeId(a)).unwrap();
+    assert_eq!(
+        v.opacity, 0.5,
+        "the importing sheet's rule wins (it comes later)"
+    );
+    let r = tree.rect(NodeId(a)).unwrap();
+    assert_eq!((r.width, r.height), (10.0, 20.0), "imported rules apply");
+    let warnings = added.warnings.join("\n");
+    assert!(warnings.contains("missing.css"), "{warnings}");
+    assert!(warnings.contains("imports itself"), "{warnings}");
+    assert!(warnings.contains("conditions"), "{warnings}");
+    // URLs in an imported sheet are relative to its own folder.
+    let image = format!("{:?}", v.background_images);
+    assert!(image.contains("dist/theme/img/x.png"), "{image}");
+}

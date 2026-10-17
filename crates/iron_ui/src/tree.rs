@@ -564,20 +564,22 @@ impl<L: LayoutEngine> UiTree<L> {
     /// the game folder (e.g. `dist` for the bundler's `game.css`): its relative
     /// `url(...)`s are rewritten to be relative to the game folder.
     pub fn add_stylesheet_with_base(&mut self, css: &str, base: &str) -> AddedStylesheet {
-        let mut sheet = parse_stylesheet(css);
-        if !base.is_empty() {
-            for rule in &mut sheet.rules {
-                for decl in &mut rule.declarations {
-                    decl.value = crate::css::rebase_urls(&decl.value, base);
-                }
-            }
-            for face in &mut sheet.font_faces {
-                if !face.src.contains(':') {
-                    let src = face.src.strip_prefix("./").unwrap_or(&face.src);
-                    face.src = format!("{}/{src}", base.trim_end_matches(['/', '\\']));
-                }
-            }
-        }
+        self.add_stylesheet_with_imports(css, base, &mut |_| None)
+    }
+
+    /// Like [`UiTree::add_stylesheet_with_base`], also loading its `@import`s:
+    /// `load` gets a path inside the game folder (already joined with the importing
+    /// sheet's folder) and returns the CSS text. Imported rules come before the
+    /// importing sheet's, as in CSS. Cycles and imports nested over 16 deep are
+    /// skipped with a warning.
+    pub fn add_stylesheet_with_imports(
+        &mut self,
+        css: &str,
+        base: &str,
+        load: &mut dyn FnMut(&str) -> Option<String>,
+    ) -> AddedStylesheet {
+        let mut chain = Vec::new();
+        let mut sheet = expand_imports(css, base, load, &mut chain);
         // Drop declarations that won't apply, with a warning, so they aren't
         // re-reported on every restyle.
         let mut warnings = std::mem::take(&mut sheet.warnings);
@@ -4263,6 +4265,101 @@ fn overflow_clip(v: &Visual, rect: Rect, l: &NodeLayout, radii: Radii) -> Option
         clip.radii_y = [0.0; 4];
     }
     Some(clip)
+}
+
+/// Parses `css` from folder `base` with its URLs made relative to the game folder,
+/// and its `@import`s (loaded with `load`) inlined in front. `chain` holds the files
+/// being expanded, to catch cycles.
+fn expand_imports(
+    css: &str,
+    base: &str,
+    load: &mut dyn FnMut(&str) -> Option<String>,
+    chain: &mut Vec<String>,
+) -> Stylesheet {
+    let mut sheet = parse_stylesheet(css);
+    rebase_sheet(&mut sheet, base);
+    let imports = std::mem::take(&mut sheet.imports);
+    let mut merged = Stylesheet::default();
+    for url in imports {
+        let path = join_path(base, &url);
+        let Some(path) = path.filter(|_| !url.contains(':')) else {
+            merged.warnings.push(format!(
+                "@import \"{url}\" must be a relative path in the game folder"
+            ));
+            continue;
+        };
+        if chain.contains(&path) || chain.len() >= 16 {
+            merged.warnings.push(format!(
+                "@import \"{path}\" imports itself or nests too deeply; skipped"
+            ));
+            continue;
+        }
+        let Some(text) = load(&path) else {
+            merged
+                .warnings
+                .push(format!("@import \"{path}\" couldn't be loaded"));
+            continue;
+        };
+        let dir = path.rsplit_once('/').map_or("", |(d, _)| d).to_owned();
+        chain.push(path);
+        let imported = expand_imports(&text, &dir, load, chain);
+        chain.pop();
+        merged.rules.extend(imported.rules);
+        merged.font_faces.extend(imported.font_faces);
+        merged.keyframes.extend(imported.keyframes);
+        merged.starting.extend(imported.starting);
+        merged.warnings.extend(imported.warnings);
+    }
+    merged.rules.append(&mut sheet.rules);
+    merged.font_faces.append(&mut sheet.font_faces);
+    merged.keyframes.append(&mut sheet.keyframes);
+    merged.starting.append(&mut sheet.starting);
+    merged.warnings.append(&mut sheet.warnings);
+    merged
+}
+
+/// Makes a stylesheet's relative `url(...)`s (and `@font-face` sources) relative to
+/// the game folder, for a sheet stored in folder `base`.
+fn rebase_sheet(sheet: &mut Stylesheet, base: &str) {
+    if base.is_empty() {
+        return;
+    }
+    let rules = sheet.rules.iter_mut().chain(sheet.starting.iter_mut());
+    let decls = rules.flat_map(|r| r.declarations.iter_mut()).chain(
+        sheet
+            .keyframes
+            .iter_mut()
+            .flat_map(|k| k.frames.iter_mut())
+            .flat_map(|f| f.declarations.iter_mut()),
+    );
+    for decl in decls {
+        decl.value = crate::css::rebase_urls(&decl.value, base);
+    }
+    for face in &mut sheet.font_faces {
+        if !face.src.contains(':') {
+            let src = face.src.strip_prefix("./").unwrap_or(&face.src);
+            face.src = format!("{}/{src}", base.trim_end_matches(['/', '\\']));
+        }
+    }
+}
+
+/// `url` relative to folder `base`, with `.` and `..` resolved; `None` if it leaves
+/// the game folder or is absolute.
+fn join_path(base: &str, url: &str) -> Option<String> {
+    if url.starts_with(['/', '\\']) {
+        return None;
+    }
+    let mut parts: Vec<&str> = base.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
+    for part in url.split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            p => parts.push(p),
+        }
+    }
+    Some(parts.join("/"))
 }
 
 /// A selection of all `len` bytes of a layout's text.
