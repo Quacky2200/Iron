@@ -164,10 +164,10 @@ impl Panels {
         scene: &ScriptScene,
         now_ms: f64,
         mut load_images: impl FnMut(&mut UiTree, &mut UiRenderer),
-    ) -> (Vec<WorldQuad>, Vec<wgpu::TextureView>) {
+    ) -> (Vec<(ScriptObject, WorldQuad)>, Vec<wgpu::TextureView>) {
         let (mut quads, mut views) = (Vec::new(), Vec::new());
         for panel in self.map.values_mut() {
-            let Some(model) = panel.model(scene) else {
+            let (Some(object), Some(model)) = (panel.object, panel.model(scene)) else {
                 continue;
             };
             panel.tree.set_size(panel.size.0, panel.size.1);
@@ -212,14 +212,15 @@ impl Panels {
                 transparent,
                 &cmds,
             );
-            quads.push(WorldQuad {
+            let quad = WorldQuad {
                 model,
                 color: panel.tint,
                 texture: Some(iron_render::WorldTexture::Frame(views.len())),
                 uv: [0.0, 0.0, 1.0, 1.0],
                 additive: false,
                 order: 0,
-            });
+            };
+            quads.push((object, quad));
             views.push(view.clone());
         }
         (quads, views)

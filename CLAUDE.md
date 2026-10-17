@@ -25,7 +25,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_app` | The `iron` binary: `iron <game folder> [--screenshot out.png] [--frames N]`. Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random` |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality` games (each has `bun run build`) |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
@@ -146,9 +146,11 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
     `examples/materials`. Docs refreshed (`8bac39e`).
   - Quality settings (2026-10-17, `4f796b8`): MSAA, render scale, shadow quality,
     `QualitySettings` levels with manifest defaults, `examples/quality`.
+  - Camera render groups (2026-10-17): `GameObject.layer`, `LayerMask` (manifest names),
+    `Camera.cullingMask`, `layerCullDistances` / `layerCullSpherical`, `examples/layers`.
 - **Next (in this order, see TODO.md):**
-  1. Camera render groups (designed, not started): layers on GameObjects, `LayerMask`,
-     `Camera.cullingMask`, per-layer cull distances; TODO.md has the plan.
+  1. The rest of TODO.md's "Culling" list: light / probe / mirror culling masks, per-light
+     range culling, frustum culling with bounds, LOD groups (occlusion later).
   2. M5.b: scene serialization and `SceneManager`; then hot reload part 2.
   - Also open in TODO.md: the rest of materials (specular workflow, texture maps,
     transparency modes), FXAA/TAA, render textures, players' saved settings (M6), shadow and

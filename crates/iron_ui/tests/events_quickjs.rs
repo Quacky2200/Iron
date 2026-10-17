@@ -79,7 +79,11 @@ impl Game {
             prevented
         });
         self.apply_commits();
+        // The engine's own ops (`render.quality` on load) don't concern the UI.
         for op in self.rt.drain_ops() {
+            if op.name.starts_with("render.") {
+                continue;
+            }
             let id = NodeId(op.args[0].as_f64().unwrap() as u32);
             let input = match op.name.as_str() {
                 "focus" => Input::Focus(id),

@@ -67,6 +67,11 @@ impl ScriptScene {
         self.object(id).is_some_and(|o| self.scene.active(o))
     }
 
+    /// A script object's layer (0 for unknown ids).
+    pub fn layer(&self, id: ScriptObject) -> u8 {
+        self.object(id).map_or(0, |o| self.scene.layer(o))
+    }
+
     fn insert(&mut self, script: ScriptObject, name: &str) -> ObjectId {
         if let Some(old) = self.ids.remove(&script) {
             for gone in self.scene.destroy(old) {
@@ -161,6 +166,16 @@ impl ScriptScene {
             "name" => {
                 let id = self.require(a.id(0)?)?;
                 self.scene.set_name(id, a.str(1)?);
+            }
+            // `layer id 0..31`
+            "layer" => {
+                let id = self.require(a.id(0)?)?;
+                let layer = args
+                    .get(1)
+                    .and_then(Value::as_f64)
+                    .filter(|l| (0.0..32.0).contains(l))
+                    .ok_or("layer must be 0 to 31")?;
+                self.scene.set_layer(id, layer as u8);
             }
             // `addComponent object component class`
             "addComponent" => {

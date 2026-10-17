@@ -17,7 +17,10 @@ fn collision_events_and_raycasts_reach_ts_components() {
     for _ in 0..90 {
         assert!(host.update(&mut rt, 1.0 / 60.0).is_empty());
         for op in rt.drain_ops() {
-            let name = op.name.strip_prefix("physics.").expect("only physics ops");
+            // The engine's own ops (`render.quality` on load) aren't physics' business.
+            let Some(name) = op.name.strip_prefix("physics.") else {
+                continue;
+            };
             physics.apply(name, &op.args).unwrap();
         }
         physics.step();

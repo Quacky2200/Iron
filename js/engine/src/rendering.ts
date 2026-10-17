@@ -42,15 +42,37 @@ export class Camera extends Component {
   private _orthographic = false;
   private _orthographicSize = 5;
   private _rect = new Rect(0, 0, 1, 1);
+  private _cullingMask = 0xffffffff;
+  private _layerCullDistances: number[] = new Array(32).fill(0);
+  private _layerCullSpherical = false;
   private started = false;
 
-  /** Vertical field of view in degrees (perspective). */
+  /** Vertical field of view in degrees (perspective), 1 to 179. */
   get fieldOfView(): number {
     return this._fov;
   }
   set fieldOfView(v: number) {
-    this._fov = v;
+    this._fov = Math.min(179, Math.max(1, v));
     this.send();
+  }
+
+  /** The horizontal field of view in degrees, from the vertical one and the aspect. */
+  get horizontalFieldOfView(): number {
+    return Camera.verticalToHorizontalFieldOfView(this._fov, this.aspect);
+  }
+  set horizontalFieldOfView(v: number) {
+    this.fieldOfView = Camera.horizontalToVerticalFieldOfView(v, this.aspect);
+  }
+
+  /** A vertical field of view (degrees) as a horizontal one for a width / height aspect. */
+  static verticalToHorizontalFieldOfView(vertical: number, aspect: number): number {
+    const half = (vertical * Math.PI) / 360;
+    return (Math.atan(Math.tan(half) * aspect) * 360) / Math.PI;
+  }
+
+  static horizontalToVerticalFieldOfView(horizontal: number, aspect: number): number {
+    const half = (horizontal * Math.PI) / 360;
+    return (Math.atan(Math.tan(half) / aspect) * 360) / Math.PI;
   }
 
   get nearClipPlane(): number {
@@ -125,6 +147,39 @@ export class Camera extends Component {
   }
   set rect(r: Rect) {
     this._rect = r;
+    this.send();
+  }
+
+  /**
+   * The layers it draws, a bit per layer (all by default). Signed masks work too:
+   * `cam.cullingMask &= ~LayerMask.getMask("UI")`.
+   */
+  get cullingMask(): number {
+    return this._cullingMask;
+  }
+  set cullingMask(mask: number) {
+    this._cullingMask = mask >>> 0;
+    this.send();
+  }
+
+  /**
+   * Per layer, how far away things on it are still drawn (0: out to `farClipPlane`).
+   * Set the whole array: changing an item of the one you got does nothing.
+   */
+  get layerCullDistances(): number[] {
+    return [...this._layerCullDistances];
+  }
+  set layerCullDistances(distances: number[]) {
+    this._layerCullDistances = Array.from({ length: 32 }, (_, i) => Math.max(0, distances[i] ?? 0));
+    this.send();
+  }
+
+  /** Measure cull distances straight from the camera rather than along its view. */
+  get layerCullSpherical(): boolean {
+    return this._layerCullSpherical;
+  }
+  set layerCullSpherical(on: boolean) {
+    this._layerCullSpherical = on;
     this.send();
   }
 
@@ -241,6 +296,9 @@ export class Camera extends Component {
       this._orthographicSize,
       [r.x, r.y, r.width, r.height],
       this._clearFlags === "skybox" ? "skybox" : "color",
+      this._cullingMask,
+      this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null,
+      this._layerCullSpherical,
     );
   }
 

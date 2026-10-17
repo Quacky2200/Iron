@@ -18,6 +18,13 @@ ${err.stack}` : ""}`);
       }
     }
   };
+  // ../../js/engine/src/layers.ts
+  function checkLayer(layer) {
+    if (!Number.isInteger(layer) || layer < 0 || layer > 31)
+      throw new RangeError(`layer must be 0 to 31, got ${layer}`);
+    return layer;
+  }
+
   // ../../js/engine/src/math.ts
   var DEG = Math.PI / 180;
   var Mathf = {
@@ -1114,6 +1121,7 @@ ${err.stack}` : ""}`);
     _parent = null;
     _enabled = true;
     _destroyed = false;
+    _layer = 0;
     constructor(name = "GameObject", options = {}) {
       this.id = nextObject++;
       this._name = name;
@@ -1135,7 +1143,8 @@ ${err.stack}` : ""}`);
         _name: name,
         _parent: null,
         _enabled: true,
-        _destroyed: false
+        _destroyed: false,
+        _layer: 0
       });
       Object.assign(go, { transform: new Transform(go) });
       objects.set(id, go);
@@ -1148,6 +1157,13 @@ ${err.stack}` : ""}`);
     set name(name) {
       this._name = name;
       __iron_op("scene.name", this.id, name);
+    }
+    get layer() {
+      return this._layer;
+    }
+    set layer(layer) {
+      this._layer = checkLayer(layer);
+      __iron_op("scene.layer", this.id, layer);
     }
     get parent() {
       return this._parent;

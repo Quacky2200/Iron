@@ -8,6 +8,7 @@
 // and calls `onStart`/`onUpdate`/`onDestroy` by (component id, method name) through
 // the host functions at the end of this file, skipping components on inactive objects.
 
+import { checkLayer } from "./layers.ts";
 import { Quaternion, type QuaternionLike, Vector3, type Vector3Like } from "./math.ts";
 
 export abstract class Component {
@@ -276,6 +277,7 @@ export class GameObject {
   private _parent: GameObject | null = null;
   private _enabled = true;
   private _destroyed = false;
+  private _layer = 0;
 
   /**
    * Creates an object in the world (at the origin, or as given). `position` and
@@ -309,6 +311,7 @@ export class GameObject {
       _parent: null,
       _enabled: true,
       _destroyed: false,
+      _layer: 0,
     });
     Object.assign(go, { transform: new Transform(go) });
     objects.set(id, go);
@@ -322,6 +325,18 @@ export class GameObject {
   set name(name: string) {
     this._name = name;
     __iron_op("scene.name", this.id, name);
+  }
+
+  /**
+   * The render group (0 to 31) it's in: cameras draw the layers in their `cullingMask`.
+   * Children keep their own layers, like Unity's.
+   */
+  get layer(): number {
+    return this._layer;
+  }
+  set layer(layer: number) {
+    this._layer = checkLayer(layer);
+    __iron_op("scene.layer", this.id, layer);
   }
 
   get parent(): GameObject | null {

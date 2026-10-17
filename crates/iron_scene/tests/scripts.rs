@@ -11,7 +11,10 @@ fn tick(rt: &mut QuickJsRuntime, host: &mut ComponentHost, scene: &mut ScriptSce
     let errors = host.update_active(rt, 1.0 / 60.0, &|o| scene.active(o));
     assert!(errors.is_empty(), "{errors:?}");
     for op in rt.drain_ops() {
-        let name = op.name.strip_prefix("scene.").expect("only scene ops");
+        // The engine's other ops (`render.quality` on load) aren't the scene's business.
+        let Some(name) = op.name.strip_prefix("scene.") else {
+            continue;
+        };
         match scene
             .apply(name, &op.args)
             .unwrap_or_else(|e| panic!("{name}: {e}"))
@@ -140,4 +143,22 @@ fn engine_moves_reach_scripts_and_bad_ops_fail() {
     let destroyed = s.apply("destroy", &[num(1.0)]).unwrap();
     assert_eq!(destroyed, Some(SceneEvent::Destroyed(vec![1, 2])));
     assert!(s.object(2).is_none());
+}
+
+// M5-LAY-01
+#[test]
+fn objects_keep_the_layer_scripts_give_them() {
+    let mut s = ScriptScene::new();
+    let num = |v: f64| Value::Number(v);
+    s.apply("create", &[num(1.0), "a".into(), Value::Null])
+        .unwrap();
+    assert_eq!(s.layer(1), 0, "Default to start with");
+    s.apply("layer", &[num(1.0), num(5.0)]).unwrap();
+    assert_eq!(s.layer(1), 5);
+    for bad in [num(32.0), num(-1.0), Value::Null] {
+        assert!(s.apply("layer", &[num(1.0), bad]).is_err());
+    }
+    assert_eq!(s.layer(1), 5);
+    assert!(s.apply("layer", &[num(9.0), num(1.0)]).is_err());
+    assert_eq!(s.layer(9), 0, "unknown objects are on Default");
 }

@@ -75,6 +75,18 @@
         "@iron/engine": "workspace:*",
       },
     },
+    "examples/layers": {
+      "name": "layers",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/materials": {
       "name": "materials",
       "version": "0.1.0",
@@ -201,6 +213,8 @@
     "hello": ["hello@workspace:examples/hello"],
 
     "iron-fixtures": ["iron-fixtures@workspace:tests/fixtures"],
+
+    "layers": ["layers@workspace:examples/layers"],
 
     "materials": ["materials@workspace:examples/materials"],
 

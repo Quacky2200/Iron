@@ -67,6 +67,8 @@ impl Default for Transform {
 struct Object {
     name: String,
     enabled: bool,
+    /// Render group 0 to 31 (Unity's `layer`).
+    layer: u8,
     parent: Option<ObjectId>,
     children: Vec<ObjectId>,
     local: Transform,
@@ -127,6 +129,7 @@ impl Scene {
         let object = Object {
             name: name.to_owned(),
             enabled: true,
+            layer: 0,
             parent: None,
             children: Vec::new(),
             local: Transform::IDENTITY,
@@ -199,6 +202,17 @@ impl Scene {
     pub fn set_name(&mut self, id: ObjectId, name: &str) {
         if let Some(o) = self.get_mut(id) {
             o.name = name.to_owned();
+        }
+    }
+
+    /// The object's layer (0 for unknown objects).
+    pub fn layer(&self, id: ObjectId) -> u8 {
+        self.get(id).map_or(0, |o| o.layer)
+    }
+
+    pub fn set_layer(&mut self, id: ObjectId, layer: u8) {
+        if let Some(o) = self.get_mut(id) {
+            o.layer = layer.min(31);
         }
     }
 

@@ -1029,27 +1029,33 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] `examples/quality`: a fence, a turning fan of thin blades and cables (aliasing,
       shadows, scaling) with a settings menu for levels and each setting; it cycles the
       levels until the menu is used
-  - [ ] Camera render groups and distance (asked for 2026-10-17; next, designed, not
-    started), Unity's layers:
-    - [ ] `GameObject.layer` (0–31, default 0) sent as `render.layer object layer`; named
-      layers (Unity's built-ins: 0 Default, 1 TransparentFX, 2 Ignore Raycast, 4 Water, 5 UI,
-      plus the game's from `package.json` `iron.layers`); `LayerMask.nameToLayer` /
-      `layerToName` / `getMask(...names)`
-    - [ ] `Camera.cullingMask` (bit per layer, default all) turning render groups on and off
+  - [x] Camera render groups and distance (asked for 2026-10-17; done, `examples/layers`,
+    `M5-LAY-01`..`03`), Unity's layers:
+    - [x] `GameObject.layer` (0–31, default 0) sent as `scene.layer object layer` (kept on
+      the scene's objects, so physics can use it later); named layers (Unity's built-ins: 0
+      Default, 1 TransparentFX, 2 Ignore Raycast, 4 Water, 5 UI, plus the game's from
+      `package.json` `iron.layers`); `LayerMask.nameToLayer` / `layerToName` /
+      `getMask(...names)` / `contains` / `everything`
+    - [x] `Camera.cullingMask` (bit per layer, default all) turning render groups on and off
       per camera (a minimap that hides the HUD layer, a first-person camera that hides the
       player's body); sent with `render.camera`
-    - [ ] Render distance: `Camera.farClipPlane` (exists) plus `Camera.layerCullDistances`
-      (32 distances, 0 = the far plane) hiding things on a layer farther than its distance
-    - [ ] Engine side: `world_view.rs` keeps each object's layer; `views()` builds meshes,
-      quads, sprites, particles and halos with their objects and filters them per camera by
-      mask and distance (lights stay unfiltered; Unity culls lights by their own mask later)
+    - [x] Render distance: `Camera.farClipPlane` (exists) plus `Camera.layerCullDistances`
+      (32 distances, 0 = the far plane) hiding things on a layer farther than its distance,
+      measured from the object's origin (bounds come with frustum culling)
+    - [x] Field of view: `Camera.fieldOfView` (vertical, clamped 1 to 179),
+      `horizontalFieldOfView`, `verticalToHorizontalFieldOfView` / back (asked for
+      2026-10-17); the example's menu cycles FOV and render distance
+    - [x] Engine side: `views()` tags meshes, quads, sprites, world panels, particles,
+      beams and halos with their object's layer and position and filters them per camera
+      by mask and distance (objects a camera skips don't cast shadows in its view either,
+      like Unity's)
     - [ ] Later: layers for physics (collision matrix, raycast masks) and light culling masks
   - [ ] Culling (asked for 2026-10-17), with the render groups above:
     - [ ] Culling masks: `Camera.cullingMask` (above); `Light.cullingMask` (which layers a
       light lights); `ReflectionProbe.cullingMask` and `Mirror` masks (what they capture);
       `MeshRenderer.shadowCastingMode` exists, plus per-layer shadow caster masks
-    - [ ] Culling distances: `Camera.layerCullDistances` (above) and
-      `layerCullSpherical` (distance from the camera rather than along its view); per-light
+    - [ ] Culling distances: `Camera.layerCullDistances` and `layerCullSpherical` done
+      (above); per-light
       range culling (skip lights whose range doesn't reach the view); shadow distance per
       light; particle systems and sprites culled by distance too
     - [ ] Frustum culling: bounds for every mesh, sprite, particle system and light; skip

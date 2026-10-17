@@ -22,6 +22,8 @@ pub struct Manifest {
     /// `iron.quality`: the default quality level and per-level overrides, passed to
     /// scripts' `QualitySettings` as is.
     pub quality: Value,
+    /// `iron.layers`: layer names by number, passed to scripts' `LayerMask` as is.
+    pub layers: Value,
 }
 
 impl Manifest {
@@ -56,6 +58,7 @@ impl Manifest {
             identifier: text(&iron["identifier"]).unwrap_or_default(),
             icon: text(&iron["icon"]),
             quality: iron["quality"].clone(),
+            layers: iron["layers"].clone(),
             name,
         }
     }
@@ -95,6 +98,7 @@ impl Info {
                 "identifier": manifest.identifier,
                 "engineVersion": env!("CARGO_PKG_VERSION"),
                 "quality": manifest.quality,
+                "layers": manifest.layers,
             }),
         );
         map.insert("system".into(), system());

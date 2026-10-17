@@ -12,6 +12,8 @@ interface InfoApp {
   engineVersion: string;
   /** The manifest's `iron.quality` (QualitySettings reads it). */
   quality?: unknown;
+  /** The manifest's `iron.layers`: names by layer number (LayerMask reads it). */
+  layers?: unknown;
 }
 
 interface InfoSystem {

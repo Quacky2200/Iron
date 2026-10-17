@@ -32,6 +32,50 @@ struct Camera {
     rect: [f32; 4],
     /// Shows the sky behind everything (Unity's skybox clear flag).
     skybox: bool,
+    /// The layers it draws, a bit each (Unity's `cullingMask`).
+    culling_mask: u32,
+    /// Per layer: things farther than this aren't drawn (0: only the far plane).
+    cull_distances: [f32; 32],
+    /// Cull distances measured straight from the camera, not along its view.
+    cull_spherical: bool,
+}
+
+impl Camera {
+    /// Whether this camera at `position` facing `forward` draws something on `layer` at `at`.
+    fn shows(&self, layer: u8, at: Vec3, position: Vec3, forward: Vec3) -> bool {
+        if self.culling_mask & (1 << layer) == 0 {
+            return false;
+        }
+        let limit = self.cull_distances[layer as usize];
+        if limit <= 0.0 {
+            return true;
+        }
+        let distance = if self.cull_spherical {
+            at.distance(position)
+        } else {
+            (at - position).dot(forward)
+        };
+        distance <= limit
+    }
+}
+
+/// Something drawn for an object: its layer and where it is, for cameras to cull.
+struct Tagged<T> {
+    layer: u8,
+    at: Vec3,
+    item: T,
+}
+
+impl<T> Tagged<T> {
+    /// `None` for unknown objects.
+    fn new(scene: &ScriptScene, object: ScriptObject, item: T) -> Option<Self> {
+        let o = scene.object(object)?;
+        Some(Self {
+            layer: scene.layer(object),
+            at: scene.scene.world_matrix(o).translation.into(),
+            item,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -398,7 +442,8 @@ impl WorldViews {
         let id = id_at(0)?;
         match name {
             // `camera component object fov near far [r g b a] depth orthographic
-            // orthographicSize [x y w h] clearFlags(skybox|color)`
+            // orthographicSize [x y w h] clearFlags(skybox|color) cullingMask
+            // [32 cull distances]|null cullSpherical`
             "camera" => {
                 let orthographic = matches!(args.get(7), Some(Value::Bool(true)));
                 let projection = if orthographic {
@@ -419,6 +464,13 @@ impl WorldViews {
                     depth: num(6).unwrap_or(0.0),
                     rect: nums::<4>(args.get(9)).unwrap_or([0.0, 0.0, 1.0, 1.0]),
                     skybox: args.get(10).and_then(Value::as_str) == Some("skybox"),
+                    // Through `f64`: all 32 bits.
+                    culling_mask: args
+                        .get(11)
+                        .and_then(Value::as_f64)
+                        .map_or(u32::MAX, |m| m as u32),
+                    cull_distances: nums::<32>(args.get(12)).unwrap_or([0.0; 32]),
+                    cull_spherical: matches!(args.get(13), Some(Value::Bool(true))),
                 };
                 self.cameras.insert(id, camera);
             }
@@ -712,24 +764,23 @@ impl WorldViews {
     }
 
     /// Every active camera's view (lowest depth first, then the order they were added),
-    /// each seeing the planes and `extra` quads; empty without cameras (then only screen
-    /// UI is drawn).
+    /// each seeing the planes and `extra` quads (with their objects) on the layers it
+    /// draws; empty without cameras (then only screen UI is drawn).
     pub fn views(
         &self,
         scene: &ScriptScene,
         size: (u32, u32),
-        extra: &[WorldQuad],
+        extra: &[(ScriptObject, WorldQuad)],
     ) -> Vec<WorldView> {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
-        let quads: Vec<WorldQuad> = self
+        let quads: Vec<Tagged<WorldQuad>> = self
             .planes
             .values()
             .filter(|p| scene.active(p.object))
             .filter_map(|p| {
-                Some(WorldQuad::colored(
-                    Mat4::from(world(p.object)?) * lay_flat(p.size),
-                    p.color,
-                ))
+                let quad =
+                    WorldQuad::colored(Mat4::from(world(p.object)?) * lay_flat(p.size), p.color);
+                Tagged::new(scene, p.object, quad)
             })
             .chain(
                 self.sprites
@@ -739,17 +790,22 @@ impl WorldViews {
                         // Drawn once its texture has loaded.
                         let size = *self.texture_sizes.get(&s.texture)?;
                         let (local, uv) = sprite_quad(s, size);
-                        Some(WorldQuad {
+                        let quad = WorldQuad {
                             model: Mat4::from(world(s.object)?) * local,
                             color: s.color,
                             texture: Some(WorldTexture::Asset(s.texture)),
                             uv,
                             additive: false,
                             order: s.order,
-                        })
+                        };
+                        Tagged::new(scene, s.object, quad)
                     }),
             )
-            .chain(extra.iter().copied())
+            .chain(
+                extra
+                    .iter()
+                    .filter_map(|&(object, quad)| Tagged::new(scene, object, quad)),
+            )
             .collect();
         // Reflection probes where their objects are.
         let probes: Vec<ReflectionProbe> = self
@@ -782,12 +838,12 @@ impl WorldViews {
                 ))
             })
             .collect();
-        let meshes: Vec<MeshInstance> = self
+        let meshes: Vec<Tagged<MeshInstance>> = self
             .renderers
             .values()
             .filter(|r| scene.active(r.object))
             .filter_map(|r| {
-                Some(MeshInstance {
+                let mesh = MeshInstance {
                     mesh: r.mesh,
                     model: Mat4::from(world(r.object)?),
                     color: r.color,
@@ -800,11 +856,12 @@ impl WorldViews {
                     glow: MeshGlow::None,
                     cast_shadows: r.cast_shadows,
                     mirror: mirror_planes.get(&r.object).copied(),
-                })
+                };
+                Tagged::new(scene, r.object, mesh)
             })
             .collect();
         // Visible spot light beams: cones as long as the light's range.
-        let meshes: Vec<MeshInstance> = meshes
+        let meshes: Vec<Tagged<MeshInstance>> = meshes
             .into_iter()
             .chain(
                 self.lights
@@ -819,7 +876,7 @@ impl WorldViews {
                         let radius = l.range * (outer_degrees.min(170.0).to_radians() / 2.0).tan();
                         let [r, g, b] = l.color;
                         let peak = r.max(g).max(b).max(1e-6) / l.beam;
-                        Some(MeshInstance {
+                        let beam = MeshInstance {
                             mesh: BEAM_MESH,
                             model: Mat4::from_scale_rotation_translation(
                                 Vec3::new(radius, radius, l.range),
@@ -836,12 +893,13 @@ impl WorldViews {
                             glow: MeshGlow::Beam,
                             cast_shadows: false,
                             mirror: None,
-                        })
+                        };
+                        Tagged::new(scene, l.object, beam)
                     }),
             )
             .collect();
         // Light halos: a glow at each light, facing each camera.
-        let halos: Vec<(Vec3, f32, [f32; 4])> = self
+        let halos: Vec<Tagged<(f32, [f32; 4])>> = self
             .lights
             .values()
             .filter(|l| l.halo > 0.0 && scene.active(l.object))
@@ -849,8 +907,11 @@ impl WorldViews {
                 let [r, g, b] = l.color;
                 // The light's hue at a steady brightness, whatever its intensity.
                 let peak = r.max(g).max(b).max(1e-6);
-                let position = world(l.object)?.translation.into();
-                Some((position, l.halo, [r / peak, g / peak, b / peak, 0.8]))
+                Tagged::new(
+                    scene,
+                    l.object,
+                    (l.halo, [r / peak, g / peak, b / peak, 0.8]),
+                )
             })
             .collect();
         let lights: Vec<Light> = self
@@ -881,14 +942,23 @@ impl WorldViews {
             .filter_map(|camera| {
                 // Cameras ignore scale: only where they are and which way they face.
                 let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
+                let forward = rotation * Vec3::NEG_Z;
+                let shows = |layer: u8, at: Vec3| camera.shows(layer, at, position, forward);
+                let mut quads: Vec<WorldQuad> = quads
+                    .iter()
+                    .filter(|q| shows(q.layer, q.at))
+                    .map(|q| q.item)
+                    .collect();
                 // Particles and halos face this camera.
-                let mut quads = quads.clone();
                 for p in self.particles.values().filter(|p| scene.active(p.object)) {
-                    if let Some(w) = world(p.object) {
+                    if let Some(w) = world(p.object)
+                        && shows(scene.layer(p.object), w.translation.into())
+                    {
                         p.quads(&w, rotation, &mut quads);
                     }
                 }
-                for &(at, size, color) in &halos {
+                for halo in halos.iter().filter(|h| shows(h.layer, h.at)) {
+                    let (at, (size, color)) = (halo.at, halo.item);
                     // Pulled half its size towards the camera, so walls and panes near
                     // the light don't slice the glow in two.
                     let towards = (position - at).normalize_or_zero();
@@ -914,7 +984,11 @@ impl WorldViews {
                     a: a as f64,
                 };
                 Some(WorldView {
-                    meshes: meshes.clone(),
+                    meshes: meshes
+                        .iter()
+                        .filter(|m| shows(m.layer, m.at))
+                        .map(|m| m.item)
+                        .collect(),
                     lights: lights.clone(),
                     ambient: self.ambient,
                     skybox: camera.skybox,
@@ -1050,5 +1124,93 @@ mod tests {
             Ok(None)
         );
         assert!(matches!(views.texture_uploads.pop(), Some((4, None))));
+    }
+
+    // M5-LAY-02
+    #[test]
+    fn cameras_draw_only_their_layers_within_each_layers_distance() {
+        let n = Value::from;
+        let at = |x: f64, z: f64| Value::Array(vec![n(x), n(0.0), n(z)]);
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        // A camera at the origin looking down -z; cubes ahead on layers 0, 3 and 5.
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        for (object, x, z, layer) in [
+            (2.0, 0.0, -5.0, 0.0),
+            (3.0, 0.0, -20.0, 3.0),
+            (4.0, 8.0, -5.0, 5.0),
+        ] {
+            scene
+                .apply("create", &[n(object), "cube".into(), Value::Null, at(x, z)])
+                .unwrap();
+            scene.apply("layer", &[n(object), n(layer)]).unwrap();
+            views
+                .apply(
+                    "meshRenderer",
+                    &[n(object + 10.0), n(object), "cube".into()],
+                )
+                .unwrap();
+        }
+        scene.scene.update_world();
+        let camera = |mask: Option<f64>, distances: Option<[f64; 2]>, spherical: bool| {
+            let mut far = vec![n(0.0); 32];
+            if let Some([layer3, layer5]) = distances {
+                far[3] = n(layer3);
+                far[5] = n(layer5);
+            }
+            vec![
+                n(100.0),
+                n(1.0),
+                n(60.0),
+                n(0.1),
+                n(1000.0),
+                Value::Null,
+                n(0.0),
+                Value::Bool(false),
+                n(5.0),
+                Value::Null,
+                "color".into(),
+                mask.map_or(Value::Null, n),
+                Value::Array(far),
+                Value::Bool(spherical),
+            ]
+        };
+        let seen = |views: &WorldViews| -> Vec<Vec<f32>> {
+            views
+                .views(&scene, (64, 64), &[])
+                .iter()
+                .map(|v| {
+                    let mut x: Vec<f32> = v.meshes.iter().map(|m| m.model.w_axis.z).collect();
+                    x.sort_by(f32::total_cmp);
+                    x
+                })
+                .collect()
+        };
+        // Default: every layer, no distances.
+        views.apply("camera", &camera(None, None, false)).unwrap();
+        assert_eq!(seen(&views), vec![vec![-20.0, -5.0, -5.0]]);
+        // Layer 5 off (Unity's ~(1 << 5) as an unsigned mask).
+        let mask = f64::from(!(1u32 << 5));
+        views
+            .apply("camera", &camera(Some(mask), None, false))
+            .unwrap();
+        assert_eq!(seen(&views), vec![vec![-20.0, -5.0]]);
+        // Layer 3 only out to 10 m: the far cube goes.
+        views
+            .apply("camera", &camera(None, Some([10.0, 0.0]), false))
+            .unwrap();
+        assert_eq!(seen(&views), vec![vec![-5.0, -5.0]]);
+        // Layer 5 out to 6 m: its cube is 5 m along the view but 9.4 m away, so only a
+        // spherical distance hides it.
+        views
+            .apply("camera", &camera(None, Some([0.0, 6.0]), false))
+            .unwrap();
+        assert_eq!(seen(&views), vec![vec![-20.0, -5.0, -5.0]]);
+        views
+            .apply("camera", &camera(None, Some([0.0, 6.0]), true))
+            .unwrap();
+        assert_eq!(seen(&views), vec![vec![-20.0, -5.0]]);
     }
 }

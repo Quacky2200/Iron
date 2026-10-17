@@ -70,7 +70,7 @@ describe("Camera conversions", () => {
     const a = cam.screenPointToRay({ x: 450, y: 50 });
     const b = cam.screenPointToRay({ x: 750, y: 550 });
     expect(near(a.direction, b.direction)).toBe(true);
-    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color"]);
+    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false]);
   });
 
   test("main camera and draw order", () => {
