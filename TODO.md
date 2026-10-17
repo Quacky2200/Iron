@@ -1044,6 +1044,20 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       quads, sprites, particles and halos with their objects and filters them per camera by
       mask and distance (lights stay unfiltered; Unity culls lights by their own mask later)
     - [ ] Later: layers for physics (collision matrix, raycast masks) and light culling masks
+  - [ ] Culling (asked for 2026-10-17), with the render groups above:
+    - [ ] Culling masks: `Camera.cullingMask` (above); `Light.cullingMask` (which layers a
+      light lights); `ReflectionProbe.cullingMask` and `Mirror` masks (what they capture);
+      `MeshRenderer.shadowCastingMode` exists, plus per-layer shadow caster masks
+    - [ ] Culling distances: `Camera.layerCullDistances` (above) and
+      `layerCullSpherical` (distance from the camera rather than along its view); per-light
+      range culling (skip lights whose range doesn't reach the view); shadow distance per
+      light; particle systems and sprites culled by distance too
+    - [ ] Frustum culling: bounds for every mesh, sprite, particle system and light; skip
+      what's outside each camera's view (and outside the shadow map's box for casters)
+      before building draw lists
+    - [ ] LOD groups (Unity's `LODGroup`): meshes swapped by screen size with optional
+      cross-fade, and a cull level below the smallest
+    - [ ] Occlusion culling later (GPU depth pyramid / Hi-Z), for big scenes
 - [ ] **M5.d** The rest of scene, assets and rendering:
   - [ ] Animation: clips (transforms and component properties, curves), an `Animator`
     component with blending; skeletons and skinned meshes from glTF
