@@ -128,12 +128,21 @@ function Toggle(props: { layer: string }) {
 }
 
 /** A row whose button steps through `values`. */
+/** A labelled row: every row's controls start at the same x. */
+function Row(props: { label: string; children: React.ReactNode }) {
+  return (
+    <box style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <text style={{ color: "#a9b3c3", fontSize: 13, width: 110, flexShrink: 0 }}>{props.label}</text>
+      <box style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>{props.children}</box>
+    </box>
+  );
+}
+
 function Cycle(props: { label: string; values: number[]; get: () => number; set: (v: number) => void; show: (v: number) => string }) {
   const [, setTick] = useState(0);
   const value = props.get();
   return (
-    <box style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-      <text style={{ color: "#a9b3c3", fontSize: 13, width: 110 }}>{props.label}</text>
+    <Row label={props.label}>
       <box
         onClick={() => {
           const i = props.values.indexOf(value);
@@ -144,7 +153,7 @@ function Cycle(props: { label: string; values: number[]; get: () => number; set:
       >
         <text style={{ color: "#f0f3f8", fontSize: 13 }}>{props.show(value)}</text>
       </box>
-    </box>
+    </Row>
   );
 }
 
@@ -156,11 +165,11 @@ function Menu() {
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 20, 0.78)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Main camera layers</text>
         <text style={{ color: "#a9b3c3", fontSize: 12 }}>Detail is culled past 14 m</text>
-        <box style={{ flexDirection: "row", gap: 6 }}>
+        <Row label="Layers">
           {["Default", "Detail", "Player", "Minimap"].map((name) => (
             <Toggle key={name} layer={name} />
           ))}
-        </box>
+        </Row>
         <Cycle
           label="Field of view"
           values={[55, 30, 75, 100]}
