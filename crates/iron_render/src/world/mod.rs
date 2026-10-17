@@ -486,7 +486,23 @@ pub struct WorldView {
     /// Draws the editor's ground grid on y = 0 after the opaque meshes: 1 m and 10 m
     /// lines fading with distance, the X axis red and the Z axis blue.
     pub grid: bool,
+    /// Gizmo lines (the editor's wire shapes) drawn over everything, a constant width
+    /// on screen, faint where something's in front of them.
+    pub lines: Vec<GizmoLine>,
 }
+
+/// A line segment in the world, for [`WorldView::lines`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
+pub struct GizmoLine {
+    pub a: [f32; 3],
+    pub b: [f32; 3],
+    /// Linear RGBA, straight alpha.
+    pub color: [f32; 4],
+}
+
+const LINE_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4];
 
 impl WorldView {
     /// A view of nothing yet (add quads, meshes and lights).
@@ -505,6 +521,7 @@ impl WorldView {
             target_texture: None,
             bones: Vec::new(),
             grid: false,
+            lines: Vec::new(),
         }
     }
 }
@@ -687,6 +704,9 @@ struct Pipelines {
     fill: wgpu::RenderPipeline,
     /// The editor's ground grid ([`WorldView::grid`]): depth-tested, blended, no writes.
     grid: wgpu::RenderPipeline,
+    /// Gizmo lines where they're in front, and (faint) where they're hidden.
+    lines: wgpu::RenderPipeline,
+    lines_hidden: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
     /// Double-sided materials: both faces drawn.
@@ -782,6 +802,8 @@ pub struct WorldRenderer {
     stride: u64,
     quads: wgpu::Buffer,
     mesh_instances: wgpu::Buffer,
+    /// Every view's gizmo lines (instances of the line pipelines).
+    lines: wgpu::Buffer,
     meshes: HashMap<u32, MeshBuffers>,
     /// What the last frame drew and culled.
     stats: WorldStats,
@@ -1215,6 +1237,7 @@ impl WorldRenderer {
             stride,
             quads: Self::storage::<GpuQuad>(gpu, "world quads", 64),
             mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
+            lines: Self::buffer(gpu, "world gizmo lines", 4096, wgpu::BufferUsages::VERTEX),
             meshes: HashMap::new(),
             stats: WorldStats::default(),
             textures: HashMap::new(),
@@ -1907,6 +1930,11 @@ impl WorldRenderer {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &SKIN_ATTRIBUTES,
         };
+        let line_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<GizmoLine>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &LINE_ATTRIBUTES,
+        };
         let make = |label: &str,
                     entry: (&str, &str),
                     buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
@@ -1991,6 +2019,22 @@ impl WorldRenderer {
                     &[],
                     None,
                     (less, false),
+                    blend,
+                ),
+                lines: make(
+                    "world gizmo lines",
+                    ("vs_line", "fs_line"),
+                    &[Some(line_layout.clone())],
+                    None,
+                    (less_equal, false),
+                    blend,
+                ),
+                lines_hidden: make(
+                    "world hidden gizmo lines",
+                    ("vs_line", "fs_line_hidden"),
+                    &[Some(line_layout.clone())],
+                    None,
+                    (wgpu::CompareFunction::Greater, false),
                     blend,
                 ),
                 mesh: make(
@@ -2318,6 +2362,7 @@ impl WorldRenderer {
                 .inverse();
                 let mut v = main_view.clone();
                 v.grid = false;
+                v.lines.clear();
                 v.camera = WorldCamera::new(
                     world,
                     Projection::Perspective {
@@ -2856,6 +2901,27 @@ impl WorldRenderer {
             per_view.push((opaque_runs, blended, first_light..lights.len() as u32, kept));
         }
         Self::upload(gpu, &mut self.quads, "world quads", &quads);
+        // Gizmo lines, every view's after the one before.
+        let mut line_ranges = Vec::with_capacity(views.len());
+        let mut all_lines: Vec<GizmoLine> = Vec::new();
+        for view in views {
+            let start = all_lines.len() as u32;
+            all_lines.extend_from_slice(&view.lines);
+            line_ranges.push(start..all_lines.len() as u32);
+        }
+        if !all_lines.is_empty() {
+            let bytes = std::mem::size_of_val(all_lines.as_slice()) as u64;
+            if self.lines.size() < bytes {
+                self.lines = Self::buffer(
+                    gpu,
+                    "world gizmo lines",
+                    bytes.next_power_of_two(),
+                    wgpu::BufferUsages::VERTEX,
+                );
+            }
+            gpu.queue
+                .write_buffer(&self.lines, 0, bytemuck::cast_slice(&all_lines));
+        }
         Self::upload(gpu, &mut self.mesh_instances, "world meshes", &meshes);
         Self::upload(gpu, &mut self.bones, "world bones", &bones);
         if self.globals.size() < self.stride * views.len().max(1) as u64 {
@@ -3124,6 +3190,17 @@ impl WorldRenderer {
                 for (_, run) in blended {
                     draw(&mut pass, run, true);
                 }
+                // Gizmo lines last: hidden parts faint first, then the visible ones.
+                let range = line_ranges[i].clone();
+                if !range.is_empty() {
+                    pass.set_bind_group(1, plain, &[]);
+                    pass.set_bind_group(2, &shadow_group, &[]);
+                    pass.set_vertex_buffer(0, self.lines.slice(..));
+                    pass.set_pipeline(&pipelines.lines_hidden);
+                    pass.draw(0..6, range.clone());
+                    pass.set_pipeline(&pipelines.lines);
+                    pass.draw(0..6, range);
+                }
             }
         }
         if post && let Some(pass) = self.bloom_pass.as_mut() {
@@ -3159,6 +3236,7 @@ fn reflection_view(view: &WorldView, mirror: Mirror) -> WorldView {
     let flip = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
     let mut v = view.clone();
     v.grid = false;
+    v.lines.clear();
     v.meshes
         .retain(|m| m.mirror.is_none() && in_mask(mirror.culling_mask, m.layer));
     v.quads.retain(|q| in_mask(mirror.culling_mask, q.layer));

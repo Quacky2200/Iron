@@ -244,6 +244,79 @@ fn fs_grid(@builtin(position) pos: vec4<f32>) -> GridOut {
     return out;
 }
 
+// Gizmo lines: each instance is a segment, drawn as a quad a constant width on screen
+// (two triangles; the end and side come from the vertex index). A segment crossing the
+// near plane is cut there first.
+const LINE_WIDTH: f32 = 1.6;
+
+struct LineOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    // -1 to 1 across the line, for its soft edge.
+    @location(1) side: f32,
+};
+
+@vertex
+fn vs_line(
+    @builtin(vertex_index) vi: u32,
+    @location(0) a: vec3<f32>,
+    @location(1) b: vec3<f32>,
+    @location(2) color: vec4<f32>,
+) -> LineOut {
+    var ca = g.view_proj * vec4<f32>(a, 1.0);
+    var cb = g.view_proj * vec4<f32>(b, 1.0);
+    let near = 1e-4;
+    if (ca.w < near && cb.w >= near) {
+        ca = mix(ca, cb, (near - ca.w) / (cb.w - ca.w));
+    } else if (cb.w < near && ca.w >= near) {
+        cb = mix(cb, ca, (near - cb.w) / (ca.w - cb.w));
+    }
+    var out: LineOut;
+    out.color = vec4<f32>(color.rgb * color.a, color.a);
+    if (ca.w < near && cb.w < near) {
+        // All behind the camera.
+        out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+        out.side = 0.0;
+        return out;
+    }
+    // Corners: (end, side) for the two triangles.
+    let ends = array<f32, 6>(0.0, 0.0, 1.0, 0.0, 1.0, 1.0);
+    let sides = array<f32, 6>(-1.0, 1.0, -1.0, 1.0, 1.0, -1.0);
+    let end = ends[vi];
+    let side = sides[vi];
+    let half = g.viewport.zw * 0.5;
+    let sa = ca.xy / ca.w * half;
+    let sb = cb.xy / cb.w * half;
+    var dir = sb - sa;
+    if (dot(dir, dir) < 1e-8) {
+        dir = vec2<f32>(1.0, 0.0);
+    }
+    let n = normalize(vec2<f32>(-dir.y, dir.x));
+    // Half the width plus a pixel for the soft edge.
+    let reach = LINE_WIDTH * 0.5 + 1.0;
+    var c = select(ca, cb, end > 0.5);
+    c = vec4<f32>(c.xy + n * side * reach / half * c.w, c.zw);
+    out.pos = c;
+    out.side = side;
+    return out;
+}
+
+fn line_alpha(side: f32) -> f32 {
+    let reach = LINE_WIDTH * 0.5 + 1.0;
+    let px = abs(side) * reach;
+    return clamp(LINE_WIDTH * 0.5 + 0.5 - px, 0.0, 1.0);
+}
+
+@fragment
+fn fs_line(in: LineOut) -> @location(0) vec4<f32> {
+    return in.color * line_alpha(in.side);
+}
+
+@fragment
+fn fs_line_hidden(in: LineOut) -> @location(0) vec4<f32> {
+    return in.color * line_alpha(in.side) * 0.25;
+}
+
 struct MeshOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) world: vec3<f32>,

@@ -1,10 +1,27 @@
 // The Scene view: an editor camera drawing the world into the panel's box (the panel
 // is see-through, so the world shows under it), Unity's mouse and key controls
-// (scene-camera.ts), the x/y/z orientation gizmo in the corner, and SceneIcons: an
-// icon at each camera, light, audio source and probe, at a constant size, that selects
-// its object when clicked.
+// (scene-camera.ts), the x/y/z orientation gizmo in the corner, SceneIcons (an icon at
+// each camera, light, audio source and probe, at a constant size, that selects its
+// object when clicked) and wire gizmos on the selection (frustums, light ranges and
+// cones, probe boxes, audio distances) drawn by the renderer as thin lines.
 
-import { AudioSource, Camera, Color, GameObject, HideFlags, input, Light, Rect, ReflectionProbe, Screen, Time, Vector3 } from "@iron/engine";
+import {
+  AudioSource,
+  Camera,
+  Color,
+  GameObject,
+  Gizmos,
+  HideFlags,
+  input,
+  Light,
+  Matrix4x4,
+  Quaternion,
+  Rect,
+  ReflectionProbe,
+  Screen,
+  Time,
+  Vector3,
+} from "@iron/engine";
 import { type IronKeyboardEvent, type IronPointerEvent, type IronWheelEvent, Text } from "@iron/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -36,8 +53,8 @@ export interface SceneViewProps {
   onSelect?: (object: GameObject | null, additive: boolean) => void;
   /** The ground grid (default on). */
   grid?: boolean;
-  /** SceneIcons (default on). */
-  icons?: boolean;
+  /** SceneIcons and the selection's wire gizmos (default on). */
+  gizmos?: boolean;
   /** Where the camera starts. */
   initial?: SceneCameraState;
 }
@@ -138,7 +155,7 @@ export function visibleObjects(): GameObject[] {
   return out;
 }
 
-export function SceneView({ rect, selected, onSelect, grid = true, icons = true, initial }: SceneViewProps) {
+export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial }: SceneViewProps) {
   const [cameraObject] = useState(() => {
     const go = new GameObject("Scene Camera");
     go.hideFlags = HideFlags.HideAndDontSave;
@@ -152,6 +169,8 @@ export function SceneView({ rect, selected, onSelect, grid = true, icons = true,
   const drag = useRef<Drag | null>(null);
   const rectRef = useRef(rect);
   rectRef.current = rect;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const [view, setView] = useState<{ state: SceneCameraState; icons: SceneIcon[] }>(() => ({ state: state.current, icons: [] }));
 
   useEffect(() => () => cameraObject.destroy(), [cameraObject]);
@@ -173,14 +192,16 @@ export function SceneView({ rect, selected, onSelect, grid = true, icons = true,
         }
       }
       place(camera, state.current, r);
-      const found = icons ? sceneIcons(camera, r) : [];
+      if (gizmos) for (const go of selectedRef.current) drawGizmos(go);
+      Gizmos.present(camera);
+      const found = gizmos ? sceneIcons(camera, r) : [];
       const key = JSON.stringify([state.current, found.map((i) => [i.object.id, i.kind, Math.round(i.x), Math.round(i.y)])]);
       if (key !== last) {
         last = key;
         setView({ state: state.current, icons: found });
       }
     });
-  }, [camera, icons]);
+  }, [camera, gizmos]);
 
   const set = (next: SceneCameraState) => {
     state.current = next;
@@ -291,6 +312,68 @@ function sceneIcons(camera: Camera, r: DockRect): SceneIcon[] {
     out.push({ object: go, kind, x, y });
   }
   return out;
+}
+
+const LIGHT_LINE = new Color(1, 0.9, 0.45, 0.9);
+
+/** The wire shapes Unity draws for a selected object's components. */
+export function drawGizmos(go: GameObject): void {
+  if (go.destroyed || !go.activeInHierarchy) return;
+  const t = go.transform;
+  const placed = Matrix4x4.trs(t.position, t.rotation);
+  const camera = go.getComponent(Camera);
+  if (camera && (go.hideFlags & HideFlags.HideInHierarchy) === 0) {
+    Gizmos.color = new Color(0.85, 0.85, 0.85, 0.9);
+    Gizmos.matrix = placed;
+    const r = camera.pixelRect;
+    const aspect = r.width > 0 && r.height > 0 ? r.width / r.height : 16 / 9;
+    const near = camera.nearClipPlane;
+    const far = camera.farClipPlane;
+    if (camera.orthographic) {
+      const h = camera.orthographicSize;
+      Gizmos.drawWireCube(new Vector3(0, 0, -(near + far) / 2), new Vector3(2 * h * aspect, 2 * h, far - near));
+    } else {
+      Gizmos.drawFrustum(Vector3.zero, camera.fieldOfView, far, near, aspect);
+    }
+  }
+  const light = go.getComponent(Light);
+  if (light) {
+    Gizmos.color = LIGHT_LINE;
+    Gizmos.matrix = placed;
+    if (light.type === "point") {
+      Gizmos.drawWireSphere(Vector3.zero, light.range);
+    } else if (light.type === "spot") {
+      const radius = light.range * Math.tan(((light.spotAngle / 2) * Math.PI) / 180);
+      const end = new Vector3(0, 0, -light.range);
+      Gizmos.drawWireDisc(end, Vector3.back, radius);
+      for (const [x, y] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        Gizmos.drawLine(Vector3.zero, end.add(new Vector3(x * radius, y * radius, 0)));
+      }
+    } else {
+      // Rays along the light, round a small disc.
+      Gizmos.drawWireDisc(Vector3.zero, Vector3.back, 0.5);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const p = new Vector3(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 0);
+        Gizmos.drawRay(p, new Vector3(0, 0, -2));
+      }
+    }
+  }
+  const probe = go.getComponent(ReflectionProbe);
+  if (probe) {
+    Gizmos.color = new Color(0.8, 0.6, 1, 0.9);
+    // Probe boxes stay lined up with the world.
+    Gizmos.matrix = Matrix4x4.trs(t.position, Quaternion.identity);
+    Gizmos.drawWireCube(Vector3.zero, probe.size);
+  }
+  const audio = go.getComponent(AudioSource);
+  if (audio) {
+    Gizmos.color = new Color(0.5, 0.8, 1, 0.7);
+    Gizmos.matrix = Matrix4x4.trs(t.position, Quaternion.identity);
+    Gizmos.drawWireSphere(Vector3.zero, audio.minDistance);
+    Gizmos.drawWireSphere(Vector3.zero, audio.maxDistance);
+  }
+  Gizmos.matrix = Matrix4x4.identity;
 }
 
 /** A sphere around the selection to frame: their positions, padded. */

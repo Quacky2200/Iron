@@ -131,7 +131,7 @@ function App() {
   }));
   const [status, setStatus] = useState("Ready");
   const [showGrid, setShowGrid] = useState(true);
-  const [showIcons, setShowIcons] = useState(true);
+  const [showGizmos, setShowGizmos] = useState(true);
 
   const say = (text: string) => {
     setStatus(text);
@@ -206,7 +206,7 @@ function App() {
         },
         { separator: true },
         { label: "Show Grid", checked: showGrid, action: () => setShowGrid((v) => !v) },
-        { label: "Show Gizmos", checked: showIcons, action: () => setShowIcons((v) => !v) },
+        { label: "Show Gizmos", checked: showGizmos, action: () => setShowGizmos((v) => !v) },
       ],
     },
     {
@@ -262,7 +262,7 @@ function App() {
       scene: {
         title: TITLES.scene!,
         seeThrough: true,
-        render: (r) => <SceneView rect={r} selected={selectedObjects} onSelect={select} grid={showGrid} icons={showIcons} />,
+        render: (r) => <SceneView rect={r} selected={selectedObjects} onSelect={select} grid={showGrid} gizmos={showGizmos} />,
       },
       game: { title: TITLES.game!, seeThrough: true, render: (r) => <GameView rect={r} /> },
       inspector: {
@@ -284,7 +284,7 @@ function App() {
       },
       console: { title: TITLES.console!, render: (s) => <Console {...s} /> },
     }),
-    [roots, tree, showGrid, showIcons],
+    [roots, tree, showGrid, showGizmos],
   );
 
   const dockRect = { x: 0, y: MENUBAR, width: screen.width, height: Math.max(0, screen.height - MENUBAR - STATUS) };

@@ -172,6 +172,7 @@ export {
   type LightShadows,
   WorldPanel,
 } from "./rendering.ts";
+export { Gizmos } from "./gizmos.ts";
 export { createPrimitive, PrimitiveType } from "./primitives.ts";
 export { type FullScreenMode, type Resolution, Screen } from "./screen.ts";
 export { PlayerPrefs } from "./prefs.ts";

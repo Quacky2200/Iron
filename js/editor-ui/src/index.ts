@@ -16,7 +16,7 @@ export { Console, type ConsoleProps } from "./Console.tsx";
 export * from "./dock.ts";
 export { onEditorFrame } from "./frame.ts";
 export * from "./scene-camera.ts";
-export { iconKind, type SceneIcon, SceneView, type SceneViewProps, visibleObjects } from "./SceneView.tsx";
+export { drawGizmos, iconKind, type SceneIcon, SceneView, type SceneViewProps, visibleObjects } from "./SceneView.tsx";
 export { Dock, type DockPanel, type DockProps } from "./Dock.tsx";
 export { clearLog, logEntries, openInEditor, startLog, subscribeLog } from "./log.ts";
 export * from "./menu.ts";

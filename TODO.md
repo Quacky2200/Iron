@@ -1305,8 +1305,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         (directional, point, spot), audio sources and probes, at a constant screen size,
         drawn as UI (small SVGs) over the view from projected positions; clicking one
         selects its object.
-      - [ ] Wire gizmos on selected objects (a camera's frustum, a light's range or cone,
-        a probe's box): thin lines drawn by the renderer, faint where hidden.
+      - [x] Wire gizmos on selected objects (a camera's frustum, a light's range, cone or
+        rays, a probe's box, an audio source's distances): thin lines drawn by the
+        renderer (`WorldView.lines`, `render.gizmos`), faint where hidden, from Unity's
+        `Gizmos` API (`gizmos.ts`; `M5-RND-23`).
+      - [ ] Later: components' own `onDrawGizmos` / `onDrawGizmosSelected`; picking
+        meshes by clicking them in the view (a GPU id pass or physics raycasts);
+        outlines on selected meshes; the grid on the view's plane in side views (Unity
+        flips it to XY / YZ when orthographic along an axis); gizmo icons for user
+        components.
       - [ ] Then: move / rotate / scale handles on the selection (W / E / R), and a live
         Hierarchy and Inspector bound to the same scene.
     - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo

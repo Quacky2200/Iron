@@ -15921,6 +15921,85 @@ ${err.stack}` : ""}`);
     }
   }
   var shared = new Rng;
+  // ../../js/engine/src/gizmos.ts
+  var DEG2 = Math.PI / 180;
+  var CIRCLE = 48;
+  var lines = [];
+  function push(a, b) {
+    const m = Gizmos.matrix;
+    const p = m.multiplyPoint3x4(a);
+    const q = m.multiplyPoint3x4(b);
+    const c = Gizmos.color;
+    lines.push(p.x, p.y, p.z, q.x, q.y, q.z, c.r, c.g, c.b, c.a);
+  }
+  function basis(normal) {
+    const n = normal.normalized;
+    const u = n.cross(Math.abs(n.y) < 0.9 ? Vector3.up : Vector3.right).normalized;
+    return [u, n.cross(u)];
+  }
+  var Gizmos = {
+    color: Color.white,
+    matrix: Matrix4x4.identity,
+    drawLine(from, to) {
+      push(Vector3.from(from), Vector3.from(to));
+    },
+    drawRay(from, direction) {
+      const f = Vector3.from(from);
+      push(f, f.add(direction));
+    },
+    drawWireCube(center, size) {
+      const c = Vector3.from(center);
+      const h = Vector3.from(size).scale(0.5);
+      const corner = (i) => c.add(new Vector3(i & 1 ? h.x : -h.x, i & 2 ? h.y : -h.y, i & 4 ? h.z : -h.z));
+      for (let i = 0;i < 8; i++) {
+        for (const bit of [1, 2, 4]) {
+          if ((i & bit) === 0)
+            push(corner(i), corner(i | bit));
+        }
+      }
+    },
+    drawWireDisc(center, normal, radius) {
+      const c = Vector3.from(center);
+      const [u, v] = basis(Vector3.from(normal));
+      let prev = c.add(u.scale(radius));
+      for (let i = 1;i <= CIRCLE; i++) {
+        const a = i / CIRCLE * Math.PI * 2;
+        const p = c.add(u.scale(Math.cos(a) * radius)).add(v.scale(Math.sin(a) * radius));
+        push(prev, p);
+        prev = p;
+      }
+    },
+    drawWireSphere(center, radius) {
+      for (const n of [Vector3.right, Vector3.up, Vector3.back])
+        Gizmos.drawWireDisc(center, n, radius);
+    },
+    drawFrustum(center, fov, maxRange, minRange, aspect) {
+      const c = Vector3.from(center);
+      const t = Math.tan(fov / 2 * DEG2);
+      const rect = (d) => {
+        const h = d * t;
+        const w = h * aspect;
+        return [new Vector3(-w, -h, -d), new Vector3(w, -h, -d), new Vector3(w, h, -d), new Vector3(-w, h, -d)].map((p) => c.add(p));
+      };
+      const near = rect(minRange);
+      const far = rect(maxRange);
+      for (let i = 0;i < 4; i++) {
+        push(near[i], near[(i + 1) % 4]);
+        push(far[i], far[(i + 1) % 4]);
+        push(near[i], far[i]);
+      }
+    },
+    get lineCount() {
+      return lines.length / 10;
+    },
+    clear() {
+      lines = [];
+    },
+    present(camera) {
+      __iron_op("render.gizmos", camera.id, lines);
+      lines = [];
+    }
+  };
   // ../../js/engine/src/primitives.ts
   function createPrimitive(type, options = {}) {
     const name = options.name ?? type[0].toUpperCase() + type.slice(1);

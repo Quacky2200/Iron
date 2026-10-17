@@ -10,16 +10,16 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, Grading, Light, LightKind, MaterialMaps,
-    MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode,
-    ShadowQuality, Shadows, Sky, TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera,
-    WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, GizmoLine, Grading, Light, LightKind,
+    MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe,
+    RenderMode, ShadowQuality, Shadows, Sky, TextureData, TextureFilter, TextureWrap, Tonemapping,
+    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
 use crate::particles::{self, ParticleSystem};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Camera {
     object: ScriptObject,
     projection: Projection,
@@ -45,6 +45,8 @@ struct Camera {
     target: Option<u32>,
     /// Draws the editor's ground grid (`Camera.sceneGrid`).
     grid: bool,
+    /// Gizmo lines only this camera shows (`render.gizmos`, from `Gizmos`).
+    lines: Vec<GizmoLine>,
 }
 
 impl Camera {
@@ -754,8 +756,34 @@ impl WorldViews {
                         _ => Some(id_at(15)?),
                     },
                     grid: matches!(args.get(16), Some(Value::Bool(true))),
+                    // Kept from before: gizmos come separately.
+                    lines: self
+                        .cameras
+                        .remove(&id)
+                        .map(|c| c.lines)
+                        .unwrap_or_default(),
                 };
                 self.cameras.insert(id, camera);
+            }
+            // `gizmos camera [ax ay az bx by bz r g b a ...]`: the lines this camera
+            // shows until the next call.
+            "gizmos" => {
+                let flat = flat(args.get(1)).unwrap_or_default();
+                let lines = flat
+                    .as_chunks::<10>()
+                    .0
+                    .iter()
+                    .map(|l| GizmoLine {
+                        a: [l[0], l[1], l[2]],
+                        b: [l[3], l[4], l[5]],
+                        color: [l[6], l[7], l[8], l[9]],
+                    })
+                    .filter(|l| l.a.iter().chain(&l.b).all(|v| v.is_finite()))
+                    .collect();
+                self.cameras
+                    .get_mut(&id)
+                    .ok_or("gizmos: no such camera")?
+                    .lines = lines;
             }
             // `plane component object [w h] [r g b a]`
             "plane" => {
@@ -1471,6 +1499,7 @@ impl WorldViews {
                     target_texture: target,
                     bones: bones.clone(),
                     grid: camera.grid,
+                    lines: camera.lines.clone(),
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,

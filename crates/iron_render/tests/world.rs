@@ -207,6 +207,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             target_texture: None,
             bones: Vec::new(),
             grid: false,
+            lines: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -231,6 +232,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             target_texture: None,
             bones: Vec::new(),
             grid: false,
+            lines: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -262,6 +264,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             target_texture: None,
             bones: Vec::new(),
             grid: false,
+            lines: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -2285,4 +2288,84 @@ fn editor_grid_lies_on_the_ground_with_coloured_axes_behind_objects() {
         "the cube hides the grid: {cube:?}"
     );
     assert_golden("M5-RND-22", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-23
+#[test]
+fn gizmo_lines_keep_their_width_and_show_faintly_behind_things() {
+    use iron_render::{GizmoLine, MeshInstance, primitive_id};
+    let gpu = shared_gpu();
+    let size = (240, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let eye = Vec3::new(0.0, 0.0, 6.0);
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse(),
+        50.0,
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.meshes = vec![MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        color: [0.2, 0.2, 0.25, 1.0],
+        unlit: true,
+        ..Default::default()
+    }];
+    let white = [1.0, 1.0, 1.0, 1.0];
+    // A wire square in front of the cube, and a line behind it (hidden in the middle),
+    // and one reaching behind the camera.
+    let square = [
+        [-1.5, -1.0, 1.0],
+        [1.5, -1.0, 1.0],
+        [1.5, 1.0, 1.0],
+        [-1.5, 1.0, 1.0],
+    ];
+    for k in 0..4 {
+        v.lines.push(GizmoLine {
+            a: square[k],
+            b: square[(k + 1) % 4],
+            color: white,
+        });
+    }
+    v.lines.push(GizmoLine {
+        a: [-2.0, 0.0, -1.0],
+        b: [2.0, 0.0, -1.0],
+        color: [1.0, 0.8, 0.2, 1.0],
+    });
+    v.lines.push(GizmoLine {
+        a: [2.0, -1.8, 0.0],
+        b: [2.0, -1.8, 20.0],
+        color: [0.3, 0.6, 1.0, 1.0],
+    });
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let at = |p: Vec3| {
+        let c = view_proj.project_point3(p);
+        let x = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let y = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        let i = (y * size.0 as usize + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    let edge = at(Vec3::new(0.0, 1.0, 1.0));
+    assert!(edge.iter().all(|&c| c > 200), "the square's edge: {edge:?}");
+    let shown = at(Vec3::new(-1.8, 0.0, -1.0));
+    assert!(shown[0] > 200, "the line beside the cube: {shown:?}");
+    let hidden = at(Vec3::new(0.0, 0.0, -1.0));
+    assert!(
+        hidden[0] > 70 && hidden[0] < 170,
+        "the line behind the cube is faint: {hidden:?}"
+    );
+    assert_golden("M5-RND-23", size.0, size.1, &pixels, 3);
 }
