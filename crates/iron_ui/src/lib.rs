@@ -18,6 +18,7 @@ pub mod motion;
 pub mod opcodes;
 mod paint;
 mod style;
+pub mod svg;
 mod svg_path;
 pub mod text;
 pub mod text_style;

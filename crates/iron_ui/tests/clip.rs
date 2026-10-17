@@ -183,7 +183,7 @@ fn invalid_clip_values_are_rejected() {
         "polygon(0 0, 10px, 0 10px)",
         "path('L 10 10')",
         "path(M 0 0 L 10 0 L 0 10)",
-        "url(#clip)",
+        // `url(#id)` is accepted: it refers to an SVG `clipPath` (M3-SVG-02).
         "circle(",
         "inset()",
         "banana",

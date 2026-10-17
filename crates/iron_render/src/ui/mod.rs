@@ -651,6 +651,7 @@ impl UiRenderer {
         if size.0 == 0 || size.1 == 0 {
             return stats;
         }
+        self.images.begin_frame();
 
         self.atlas.begin_frame();
 

@@ -271,6 +271,33 @@ export interface IronStyle {
   clip?: string;
   /** `auto`, `thin` or `none` (hidden but still scrollable). */
   scrollbarWidth?: "auto" | "thin" | "none";
+  /** SVG presentation properties, for shapes inside an `<svg>` (inherit as in SVG). */
+  fill?: string;
+  fillOpacity?: number | string;
+  fillRule?: "nonzero" | "evenodd";
+  stroke?: string;
+  strokeWidth?: number | string;
+  strokeOpacity?: number | string;
+  strokeLinecap?: "butt" | "round" | "square";
+  strokeLinejoin?: "miter" | "round" | "bevel";
+  strokeDasharray?: string;
+  strokeDashoffset?: number | string;
+  strokeMiterlimit?: number | string;
+  stopColor?: string;
+  stopOpacity?: number | string;
+  textAnchor?: "start" | "middle" | "end";
+  dominantBaseline?: string;
+  paintOrder?: string;
+  vectorEffect?: string;
+  /** SVG geometry as CSS (`circle { r: 10px }`). */
+  cx?: number | string;
+  cy?: number | string;
+  r?: number | string;
+  rx?: number | string;
+  ry?: number | string;
+  x?: number | string;
+  y?: number | string;
+  d?: string;
   /** s&box's image tint: a colour multiplied into background images and an `Image`'s picture. */
   backgroundImageTint?: string;
   /** A colour multiplied into the `borderImage` source image. */

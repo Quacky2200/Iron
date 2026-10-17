@@ -28,6 +28,9 @@ pub struct Attrs {
     pub open: bool,
     pub modal: bool,
     pub closed_by: Option<ClosedBy>,
+    /// Other attributes of SVG elements (`viewBox`, `cx`, `strokeWidth`, ...), as
+    /// React names them, in the order set.
+    pub svg: Vec<(String, String)>,
     /// `data-*` attributes, by full name (`data-kind`), in insertion order.
     pub data: Vec<(String, String)>,
 }
@@ -114,6 +117,20 @@ impl Attrs {
             other => return Err(format!("unknown attribute `{other}`")),
         }
         Ok(())
+    }
+
+    /// Sets an SVG attribute (any name); `Value::Null` removes it.
+    pub fn set_svg(&mut self, name: &str, value: &Value) {
+        self.svg.retain(|(k, _)| k != name);
+        let text = match value {
+            Value::Null => return,
+            Value::String(s) => s.clone(),
+            Value::Number(n) if n.fract() == 0.0 && n.abs() < 1e15 => format!("{}", *n as i64),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            _ => return,
+        };
+        self.svg.push((name.to_owned(), text));
     }
 
     pub fn has_class(&self, class: &str) -> bool {

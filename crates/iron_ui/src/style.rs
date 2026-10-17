@@ -127,6 +127,9 @@ pub struct Visual {
     pub cursor: Option<&'static str>,
     /// `cursor` images to try before the keyword (`url(x.png) 4 4, pointer`).
     pub cursor_images: Vec<CursorImage>,
+    /// SVG presentation properties (`fill`, `stroke`, ...) and the SVG meaning of some
+    /// ordinary ones (`opacity`, `transform`), as written, for inline SVG output.
+    pub svg_props: Vec<(String, String)>,
     /// `transition` and its longhands.
     pub transitions: crate::motion::TransitionLists,
     /// `animation` and its longhands.
@@ -194,6 +197,7 @@ impl Default for Visual {
             },
             cursor: None,
             cursor_images: Vec::new(),
+            svg_props: Vec::new(),
             transitions: crate::motion::TransitionLists::default(),
             animations: crate::motion::AnimationLists::default(),
             text: TextProps::default(),
@@ -385,6 +389,39 @@ pub enum StyleError {
 
 /// Sets one property. `Value::Null` resets it to its default. On error nothing changes.
 pub fn apply_style(
+    style: &mut Style,
+    visual: &mut Visual,
+    prop: &str,
+    value: &Value,
+) -> Result<(), StyleError> {
+    if !crate::svg::keeps_raw(prop) {
+        return apply_property(style, visual, prop, value);
+    }
+    let text = match value {
+        Value::String(s) => Some(s.trim().to_owned()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    };
+    // `clip-path: url(#id)` and `mask: url(#id)` refer to SVG elements.
+    let svg_only = crate::svg::is_svg_prop(prop)
+        || (matches!(prop, "clipPath" | "mask")
+            && text.as_deref().is_some_and(|t| t.starts_with("url(#")));
+    let result = if svg_only {
+        Ok(())
+    } else {
+        apply_property(style, visual, prop, value)
+    };
+    if result.is_ok() {
+        visual.svg_props.retain(|(p, _)| p != prop);
+        if let Some(text) = text {
+            visual.svg_props.push((prop.to_owned(), text));
+        }
+    }
+    result
+}
+
+/// [`apply_style`] for one property, without the SVG bookkeeping.
+fn apply_property(
     style: &mut Style,
     visual: &mut Visual,
     prop: &str,
@@ -1182,6 +1219,12 @@ pub(crate) fn copy_prop(
     v: Visual,
     prop: &str,
 ) -> Result<(), StyleError> {
+    if crate::svg::keeps_raw(prop) {
+        visual.svg_props.retain(|(p, _)| p != prop);
+        if let Some(raw) = v.svg_props.iter().find(|(p, _)| p == prop) {
+            visual.svg_props.push(raw.clone());
+        }
+    }
     match prop {
         "display" => {
             style.display = d.display;
@@ -1457,6 +1500,8 @@ pub(crate) fn copy_prop(
         p if text_style::is_text_prop(p) => {
             let _ = text_style::apply(&mut visual.text, prop, &Value::Null);
         }
+        // SVG-only: the raw value is all there is (copied below).
+        p if crate::svg::is_svg_prop(p) => {}
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
     }
     Ok(())

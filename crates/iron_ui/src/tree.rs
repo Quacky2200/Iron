@@ -329,6 +329,9 @@ fn is_modal(node: &Node) -> bool {
 /// Element type of dialogs.
 pub const DIALOG: &str = "dialog";
 
+/// Element type of inline SVG roots.
+pub const SVG: &str = "svg";
+
 /// Element types that are inline content when inside a text container.
 fn is_inline(kind: &str) -> bool {
     matches!(kind, "span" | TEXT_NODE)
@@ -2018,9 +2021,119 @@ impl<L: LayoutEngine> UiTree<L> {
             return false;
         };
         if node.kind == "text" {
-            return true;
+            return !self.in_svg(id);
         }
         is_inline(&node.kind) && !self.inside_inline_container(id)
+    }
+
+    /// Whether `id` is inside an `svg` element (SVG content, not laid out by Iron).
+    fn in_svg(&self, id: NodeId) -> bool {
+        let mut at = self.parent(id);
+        while let Some(n) = at {
+            let Some(node) = self.nodes.get(&n) else {
+                return false;
+            };
+            if node.kind == SVG {
+                return true;
+            }
+            at = node.parent;
+        }
+        false
+    }
+
+    /// An `svg` element's content as SVG markup, `size` (logical px) wide and high,
+    /// with each element's attributes and its computed SVG presentation properties.
+    fn svg_markup(&self, id: NodeId, size: (f32, f32)) -> String {
+        use crate::svg::{attr_name, escape};
+        let mut out = String::with_capacity(512);
+        let text = self.computed_text(id);
+        let c = text.color;
+        // `currentColor` and font sizes in the SVG come from the element's CSS.
+        out.push_str(&format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{}" height="{}" color="rgba({},{},{},{})" font-size="{}""#,
+            size.0,
+            size.1,
+            (c.r * 255.0).round(),
+            (c.g * 255.0).round(),
+            (c.b * 255.0).round(),
+            c.a,
+            text.font_size
+        ));
+        let write_attrs = |id: NodeId, out: &mut String, root: bool| {
+            let Some(node) = self.nodes.get(&id) else {
+                return;
+            };
+            if let Some(i) = &node.attrs.id {
+                out.push_str(&format!(r#" id="{}""#, escape(i)));
+            }
+            for (name, value) in &node.attrs.svg {
+                if root && matches!(name.as_str(), "width" | "height" | "xmlns" | "color") {
+                    continue;
+                }
+                out.push_str(&format!(r#" {}="{}""#, attr_name(name), escape(value)));
+            }
+            // CSS sizes on shapes (`rect { width: 10px }`) become attributes.
+            if !root {
+                for (name, dim) in [
+                    ("width", node.style.size.width),
+                    ("height", node.style.size.height),
+                ] {
+                    if dim.tag() == taffy::style::CompactLength::LENGTH_TAG {
+                        out.push_str(&format!(r#" {name}="{}""#, dim.value()));
+                    }
+                }
+            }
+            for (prop, value) in &node.visual.svg_props {
+                if prop == "display" && value != "none" {
+                    continue;
+                }
+                let value = match prop.as_str() {
+                    "transform" => crate::svg::svg_transform(value),
+                    "transformOrigin" => value.replace("px", ""),
+                    _ => value.clone(),
+                };
+                out.push_str(&format!(r#" {}="{}""#, attr_name(prop), escape(&value)));
+            }
+        };
+        write_attrs(id, &mut out, true);
+        out.push('>');
+        // Children, depth first, closing tags on the way back up.
+        enum Step {
+            Open(NodeId),
+            Close(String),
+        }
+        let mut stack: Vec<Step> = self
+            .children(id)
+            .iter()
+            .rev()
+            .map(|c| Step::Open(*c))
+            .collect();
+        while let Some(step) = stack.pop() {
+            match step {
+                Step::Close(tag) => out.push_str(&format!("</{tag}>")),
+                Step::Open(n) => {
+                    let Some(node) = self.nodes.get(&n) else {
+                        continue;
+                    };
+                    if node.generated.is_some() {
+                        continue;
+                    }
+                    if let Some(t) = &node.text {
+                        out.push_str(&escape(t));
+                        continue;
+                    }
+                    let tag = node.kind.clone();
+                    out.push('<');
+                    out.push_str(&tag);
+                    write_attrs(n, &mut out, false);
+                    out.push('>');
+                    stack.push(Step::Close(tag));
+                    stack.extend(node.children.iter().rev().map(|c| Step::Open(*c)));
+                }
+            }
+        }
+        out.push_str("</svg>");
+        out
     }
 
     fn inside_inline_container(&self, id: NodeId) -> bool {
@@ -2195,7 +2308,10 @@ impl<L: LayoutEngine> UiTree<L> {
             // Text blocks, text fields and images are measured leaves.
             let is_root = self.is_text_root(id)
                 || self.editors.contains_key(&id)
-                || self.nodes.get(&id).is_some_and(|n| n.kind == IMAGE);
+                || self
+                    .nodes
+                    .get(&id)
+                    .is_some_and(|n| n.kind == IMAGE || n.kind == SVG);
             self.layout.set_measured(id, is_root);
             if !is_root {
                 self.text_layouts.remove(&id);
@@ -2275,8 +2391,8 @@ impl<L: LayoutEngine> UiTree<L> {
                     // Sized by `measure` from the font, like a replaced element.
                     self.layout.set_measured(id, true);
                 }
-                if kind == IMAGE {
-                    // Sized by `measure` from the image's natural size.
+                if kind == IMAGE || kind == SVG {
+                    // Sized by `measure` from the image's (or SVG's) natural size.
                     self.layout.set_measured(id, true);
                 }
                 self.nodes.insert(
@@ -2340,7 +2456,13 @@ impl<L: LayoutEngine> UiTree<L> {
                         continue;
                     };
                     if let Err(e) = node.attrs.set(name, &pair[1]) {
-                        problems.push(e);
+                        // SVG elements (and `text`, which may be SVG text) take any
+                        // attribute.
+                        if crate::svg::is_svg_kind(&node.kind) || node.kind == "text" {
+                            node.attrs.set_svg(name, &pair[1]);
+                        } else {
+                            problems.push(e);
+                        }
                     }
                 }
                 let keys = attr_keys_changed(&before, &node.attrs);
@@ -2348,7 +2470,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 let kind_is = |k: &str| node.kind == k;
                 let dialog_changed =
                     kind_is(DIALOG) && (before.open, before.modal) != (attrs.open, attrs.modal);
-                let image_changed = kind_is(IMAGE) && before.src != attrs.src;
+                let image_changed = (kind_is(IMAGE) && before.src != attrs.src)
+                    || (kind_is(SVG) && before.svg != attrs.svg);
                 if dialog_changed {
                     self.markers_dirty.insert(id);
                     // Opening restyles it, so `@starting-style` transitions run.
@@ -2704,10 +2827,15 @@ impl<L: LayoutEngine> UiTree<L> {
                 None => match editors.get(&id) {
                     Some(e) => e.intrinsic_size(known.0),
                     None => {
-                        let natural = nodes
-                            .get(&id)
-                            .and_then(|n| n.attrs.src.as_ref())
-                            .and_then(|src| image_sizes.get(src).copied().flatten());
+                        let node = nodes.get(&id);
+                        let natural = match node {
+                            Some(n) if n.kind == SVG => {
+                                Some(crate::svg::natural_size(&n.attrs.svg))
+                            }
+                            _ => node
+                                .and_then(|n| n.attrs.src.as_ref())
+                                .and_then(|src| image_sizes.get(src).copied().flatten()),
+                        };
                         image_size(natural.unwrap_or_default(), known)
                     }
                 },
@@ -2741,6 +2869,7 @@ impl<L: LayoutEngine> UiTree<L> {
             }
             if let Some(node) = self.nodes.get(&id)
                 && !is_inline_container(&node.kind)
+                && node.kind != SVG
             {
                 // Content moves up/left as its container scrolls; the content may have
                 // shrunk since the offset was set, so clamp it first.
@@ -3682,6 +3811,33 @@ impl<L: LayoutEngine> UiTree<L> {
         {
             self.draw_image(src, v, (rect, radii), &l, text.pixelated, &mut own);
         }
+        if node.kind == SVG {
+            // Drawn like an image of its serialized content, filling the content box.
+            let content = self.content_box(id).unwrap_or(rect);
+            let markup = self.svg_markup(id, (content.width, content.height));
+            let src = crate::svg::data_url(&markup);
+            let fill = crate::paint::BackgroundSize::Explicit(
+                Some(crate::paint::Len::Px(content.width)),
+                Some(crate::paint::Len::Px(content.height)),
+            );
+            own.push(DrawCmd::Quad(Quad {
+                rect: content,
+                background: Rgba::TRANSPARENT,
+                images: vec![ImageFill {
+                    image: Arc::new(BackgroundImage::Url(src)),
+                    size: fill,
+                    position: crate::paint::BackgroundPosition::default(),
+                    repeat: BackgroundRepeat::NO_REPEAT,
+                    area: content,
+                    radii: Radii::ZERO,
+                    pixelated: text.pixelated,
+                    tint: None,
+                }],
+                border_color: Rgba::TRANSPARENT,
+                border: [0.0; 4],
+                radii: Radii::ZERO,
+            }));
+        }
         // `visibility: hidden`: nothing of the box itself (its text runs carry their own
         // visibility, so visible spans inside still draw).
         if !text.visible {
@@ -3923,8 +4079,9 @@ impl<L: LayoutEngine> UiTree<L> {
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
-        if is_inline_container(&node.kind) {
-            // Spans and text nodes inside are laid out by the text engine.
+        if is_inline_container(&node.kind) || node.kind == SVG {
+            // Spans and text nodes inside are laid out by the text engine; SVG content
+            // by the SVG renderer.
             self.layout.set_children(id, &[]);
             return;
         }

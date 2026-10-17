@@ -21,11 +21,11 @@ import {
   SET_STYLE,
   SET_TEXT,
 } from "./opcodes.ts";
-import { attrDiff, attrEntries } from "./attrs.ts";
+import { attrDiff, attrEntries, SVG_TYPES } from "./attrs.ts";
 import { type IronStyle, styleDiff, styleEntries } from "./style.ts";
 
 /** Host element types; `text` and `span` are rendered by the `Text` and `Span` components. */
-export type ElementType = "box" | "text" | "span" | "input" | "textarea";
+export type ElementType = string;
 
 export interface Props {
   style?: IronStyle;
@@ -106,7 +106,17 @@ export function flush() {
   __iron_commit(ops);
 }
 
-const ELEMENT_TYPES: ReadonlySet<string> = new Set(["box", "text", "span", "input", "textarea", "image", "list", "dialog"]);
+const ELEMENT_TYPES: ReadonlySet<string> = new Set([
+  "box",
+  "text",
+  "span",
+  "input",
+  "textarea",
+  "image",
+  "list",
+  "dialog",
+  ...SVG_TYPES,
+]);
 
 let currentUpdatePriority: number = NoEventPriority;
 
@@ -140,7 +150,7 @@ export const reconciler = createReconciler({
     pending.push([CREATE, id, type]);
     const entries = styleEntries(props.style);
     if (entries.length > 0) pending.push([SET_STYLE, id, ...entries]);
-    const attrs = attrEntries(props as Record<string, unknown>);
+    const attrs = attrEntries(props as Record<string, unknown>, type);
     if (attrs.length > 0) pending.push([SET_ATTRS, id, ...attrs]);
     const instance = new Instance(id, type as ElementType, props);
     instances.set(id, instance);
@@ -186,12 +196,12 @@ export const reconciler = createReconciler({
     container.children.clear();
   },
 
-  commitUpdate(instance: Instance, _type: string, prevProps: Props, nextProps: Props) {
+  commitUpdate(instance: Instance, type: string, prevProps: Props, nextProps: Props) {
     const value = (nextProps as { value?: unknown }).value;
     if (value !== undefined && value !== null) instance.value = String(value);
     const changes = styleDiff(prevProps.style, nextProps.style);
     if (changes.length > 0) pending.push([SET_STYLE, instance.id, ...changes]);
-    const attrs = attrDiff(prevProps as Record<string, unknown>, nextProps as Record<string, unknown>);
+    const attrs = attrDiff(prevProps as Record<string, unknown>, nextProps as Record<string, unknown>, type);
     if (attrs.length > 0) pending.push([SET_ATTRS, instance.id, ...attrs]);
     instance.props = nextProps;
   },

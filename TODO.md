@@ -627,7 +627,16 @@ and `@font-face`.
      - [x] **5.1a** `.svg` files and `data:image/svg+xml` URLs as images (`url()`, `Image src`): usvg
        parses (with the bundled font for `<text>`), resvg rasterizes at the tile's physical size
        (rounded up to 8px, cached per size), layout uses the SVG's natural size — `M3-SVG-01`
-     - [ ] **5.1b** The inline `svg` element tree with CSS styling
+     - [x] **5.1b** Inline `<svg>`: `svg` is a measured box (width/height/viewBox, like an image);
+       the SVG elements inside are tree nodes React creates (`g`, shapes, `text`/`tspan`, `defs`,
+       `use`, gradients/`stop`, `clipPath`, `mask`, `pattern`, `symbol`) with any attributes. CSS
+       styles them: SVG presentation properties (`fill`, `stroke*`, `stop-color`, geometry like `r`)
+       are stored as written; `opacity`, `transform` (converted to SVG syntax), `clip-path:
+       url(#id)`, `mask: url(#id)` and font properties are kept too. At draw time the tree
+       serializes the subtree with those values (`currentColor` from the `svg`'s colour) into a
+       `data:` SVG, which the renderer rasterizes at the drawn size (stale rasters are evicted). So
+       selectors, `:hover`, transitions and animations work on SVG content — `M3-SVG-02`, `M3-SVG-03`.
+       Hit testing is per `svg` box; GPU paths, SMIL and path morphing are under "Later"
 6. **Transforms**
    - [x] Done as step 5e (2D and 3D); see group 5
 7. **Transitions and animations**
@@ -730,9 +739,21 @@ Where this lands among the milestones is still to decide.
 ## M7 — Editor shell
 
 - [ ] Docking, tree view, virtualized list, inspector, undo/redo — `M7-EDT-*`
+- [ ] Later editor tasks:
+  - [ ] UI editor: pick elements in a running game's UI, inspect their computed styles and box
+    model, edit styles live (like browser devtools), and edit/arrange React UI visually
+  - [ ] SVG editor: draw and edit shapes and paths (nodes, curves), gradients, strokes and
+    groups; preview CSS styling and animations on them; save `.svg` files
 
 ## Later
 
+- [ ] SVG on the GPU ("native" SVG): tessellate fills and strokes (e.g. lyon) into triangles drawn
+  by the UI renderer, instead of rasterizing every change on the CPU with resvg (M3d 5.1), so
+  animated and large SVGs stay cheap; per-shape hit testing (`pointer-events` on shapes). Then:
+  - [ ] SMIL animation (`<animate>`, `<animateTransform>`, `<animateMotion>`, `<set>`), which resvg
+    ignores
+  - [ ] `d` path morphing between paths with different commands (normalize both to cubic curves
+    with matching segment counts before interpolating)
 - [ ] Steam multiplayer (`steamworks`), `@sync` / `@rpc`, QUIC transport
 - [ ] Baked lighting, light/reflection probes
 - [ ] Android, Quest VR, PC VR (OpenXR)

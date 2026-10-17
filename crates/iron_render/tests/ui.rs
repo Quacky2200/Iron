@@ -1751,6 +1751,87 @@ fn svg_images_stay_sharp_at_any_size() {
     );
 }
 
+// M3-SVG-03
+#[test]
+fn inline_svg_with_css_styling() {
+    let mut s = Scene::new();
+    s.css = "svg { color: #7cf09a }
+        .ring { fill: none; stroke: currentColor; stroke-width: 3; stroke-dasharray: 6 3 }
+        .blob { fill: url(#sky); clip-path: url(#half) }
+        .badge { fill: #ffd54a; stroke: #202020; stroke-width: 1.5; transform: rotate(15deg); transform-origin: 75px 25px }
+        text { fill: white; font-size: 11px }";
+    let svg = s.element(0, "svg", &at(10.0, 10.0, 200.0, 100.0, &[]));
+    s.attrs(svg, &[("viewBox", "0 0 100 50".into())]);
+    let defs = s.element(svg, "defs", &[]);
+    let grad = s.element(defs, "linearGradient", &[]);
+    s.attrs(
+        grad,
+        &[("id", "sky".into()), ("x2", "0".into()), ("y2", "1".into())],
+    );
+    for (offset, color) in [("0", "#5ab0ff"), ("1", "#8040e0")] {
+        let stop = s.element(grad, "stop", &[]);
+        s.attrs(
+            stop,
+            &[("offset", offset.into()), ("stopColor", color.into())],
+        );
+    }
+    let clip = s.element(defs, "clipPath", &[]);
+    s.attrs(clip, &[("id", "half".into())]);
+    let r = s.element(clip, "rect", &[]);
+    s.attrs(
+        r,
+        &[
+            ("x", 0.0.into()),
+            ("y", 0.0.into()),
+            ("width", 100.0.into()),
+            ("height", 32.0.into()),
+        ],
+    );
+    let ring = s.element(svg, "circle", &[]);
+    s.attrs(
+        ring,
+        &[
+            ("cx", 25.0.into()),
+            ("cy", 25.0.into()),
+            ("r", 20.0.into()),
+            ("className", "ring".into()),
+        ],
+    );
+    let blob = s.element(svg, "ellipse", &[]);
+    s.attrs(
+        blob,
+        &[
+            ("id", "blob".into()),
+            ("cx", 25.0.into()),
+            ("cy", 25.0.into()),
+            ("rx", 14.0.into()),
+            ("ry", 14.0.into()),
+            ("className", "blob".into()),
+        ],
+    );
+    let badge = s.element(svg, "polygon", &[]);
+    s.attrs(
+        badge,
+        &[
+            ("points", "60,10 90,10 90,40 60,40".into()),
+            ("className", "badge".into()),
+        ],
+    );
+    let label = s.element(svg, "text", &[]);
+    s.attrs(label, &[("x", 62.0.into()), ("y", 29.0.into())]);
+    s.text(label, "SVG");
+    let f = render(s, (220, 120), 2.0, BLACK);
+    assert_golden("M3-SVG-03", 440, 240, &f.pixels, TOLERANCE);
+    // The dashed ring is green (currentColor) and the clip cuts the blob's bottom.
+    let ring = (100..140)
+        .map(|x| f.px(x, 40))
+        .max_by_key(|p| p[1])
+        .unwrap();
+    assert!(ring[1] > 150 && ring[0] < 180, "ring: {ring:?}");
+    assert!(f.luma(120, 165) < 20.0, "clipped: {:?}", f.px(120, 165));
+    assert!(f.px(120, 120)[2] > 150, "the gradient above the clip edge");
+}
+
 // M3-DLG-02
 #[test]
 fn modal_dialog_over_a_blurred_backdrop() {

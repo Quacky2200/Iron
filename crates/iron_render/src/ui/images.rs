@@ -39,7 +39,15 @@ pub struct ImageCache {
     svgs: HashMap<String, Option<Arc<usvg::Tree>>>,
     /// usvg's options, with the bundled font for `<text>` (made on first use).
     svg_options: Option<usvg::Options<'static>>,
+    /// Frames drawn, and when each `data:` SVG entry was last used: inline `<svg>`
+    /// elements become a new data URL whenever they change (an animation makes one per
+    /// frame), so unused ones are dropped.
+    frame: u64,
+    used: HashMap<String, u64>,
 }
+
+/// `data:` SVG entries unused for this many frames are dropped.
+const SVG_DATA_TTL: u64 = 120;
 
 /// Whether `url` names an SVG image.
 pub fn is_svg(url: &str) -> bool {
@@ -63,6 +71,40 @@ impl ImageCache {
         self.root = Some(root);
         self.entries.clear();
         self.svgs.clear();
+        self.used.clear();
+    }
+
+    /// Call once per frame: drops `data:` SVGs (and their rasters) that weren't drawn
+    /// for a while.
+    pub fn begin_frame(&mut self) {
+        self.frame += 1;
+        if !self.frame.is_multiple_of(30) {
+            return;
+        }
+        let cutoff = self.frame.saturating_sub(SVG_DATA_TTL);
+        let stale: Vec<String> = self
+            .used
+            .iter()
+            .filter(|(_, at)| **at < cutoff)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in stale {
+            self.used.remove(&key);
+            self.entries.remove(&key);
+            self.svgs.remove(&key);
+        }
+    }
+
+    /// The cache key for `url`: `data:` SVGs (often long, and new whenever an inline
+    /// `<svg>` changes) go by a hash, and are tracked for eviction.
+    fn key_for(&mut self, url: &str) -> String {
+        if url.starts_with("data:") && is_svg(url) {
+            let key = format!("svg-data:{:016x}", hash(url));
+            self.used.insert(key.clone(), self.frame);
+            key
+        } else {
+            url.to_owned()
+        }
     }
 
     /// An SVG drawn at `px` physical pixels: rasterized at about that size (cached)
@@ -81,12 +123,15 @@ impl ImageCache {
         let id = if inline {
             format!("svg-inline:{:016x}", hash(source))
         } else {
-            source.to_owned()
+            self.key_for(source)
         };
         let tree = self.svg_tree(&id, source, inline)?;
         let natural = svg_natural(&tree);
         let (w, h) = (bucket(px.0), bucket(px.1));
         let key = format!("{id}#{w}x{h}");
+        if self.used.contains_key(&id) {
+            self.used.insert(key.clone(), self.frame);
+        }
         if !self.entries.contains_key(&key) {
             let loaded = rasterize(&tree, (w, h))
                 .and_then(|pixels| upload(gpu, layout, samplers, &key, &pixels, (w, h), natural));
@@ -149,11 +194,12 @@ impl ImageCache {
         samplers: &ImageSamplers,
         url: &str,
     ) -> Option<&LoadedImage> {
-        if !self.entries.contains_key(url) {
+        let key = self.key_for(url);
+        if !self.entries.contains_key(&key) {
             let loaded = self.load(gpu, layout, samplers, url);
-            self.entries.insert(url.to_owned(), loaded);
+            self.entries.insert(key.clone(), loaded);
         }
-        self.entries.get(url)?.as_ref()
+        self.entries.get(&key)?.as_ref()
     }
 
     fn load(
@@ -165,7 +211,8 @@ impl ImageCache {
     ) -> Option<LoadedImage> {
         if is_svg(url) {
             // At its natural size; draws ask for a sharper copy with `svg_at`.
-            let tree = self.svg_tree(url, url, false)?;
+            let id = self.key_for(url);
+            let tree = self.svg_tree(&id, url, false)?;
             let natural = svg_natural(&tree);
             let pixels = rasterize(&tree, natural)?;
             return upload(gpu, layout, samplers, url, &pixels, natural, natural);

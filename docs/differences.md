@@ -4,6 +4,17 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## SVG (M3d step 5.1)
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Rendering | Rasterized on the CPU with resvg at the drawn size (cached; re-rasterized when content, style or size changes) | Native vector rendering | Full SVG support quickly; GPU paths are a TODO ("Later") |
+| Animation | CSS transitions/animations on SVG content work (each frame re-rasterizes); SMIL (`<animate>` ...) is ignored; `d` only morphs between paths with the same commands | SMIL and path morphing | resvg has no SMIL; see TODO "Later" |
+| Hit testing | The whole `svg` box; shapes inside aren't targets and `pointer-events` on shapes is ignored | Per shape | Content isn't laid out by Iron |
+| `<style>` inside SVG, `class` in markup | Ignored; Iron stylesheets style SVG content instead | Supported | Styles are resolved by Iron's cascade |
+| Text | The bundled Inter only | System and web fonts | resvg gets one font database |
+| Images in SVG (`<image>`), filters | `<image>` isn't loaded from the game folder; SVG filters render via resvg | Supported | Not wired yet |
+
 ## Stylesheet authoring (M3d group 10)
 
 | Area | Iron | Browsers / spec | Why |
