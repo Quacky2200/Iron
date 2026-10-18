@@ -214,4 +214,37 @@ mod tests {
         .unwrap();
         assert!(e.contains("pop"), "{e}");
     }
+
+    // M9-TS-119
+    #[test]
+    fn class_features_that_are_not_built_yet_are_errors_that_say_so() {
+        let ext = lower::lower_source(
+            "class A { x = 1; } class B extends A { y = 2; } export function f(): number { return new B().y; }",
+        )
+        .err()
+        .unwrap();
+        assert!(ext.contains("extends"), "{ext}");
+        let dec = lower::lower_source(
+            "class A { @property x = 1; } export function f(): number { return new A().x; }",
+        )
+        .err()
+        .unwrap();
+        assert!(dec.contains("decorators"), "{dec}");
+        let value = lower::lower_source(
+            "class A { m(): number { return 1; } } export function f(): number { const a = new A(); const g = a.m; return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(value.contains("used as a value"), "{value}");
+        let ann = lower::lower_source(
+            "class A { x = [1]; } export function f(): number { return 1 + new A().x.length; }",
+        )
+        .err()
+        .unwrap();
+        assert!(ann.contains("needs a type annotation"), "{ann}");
+        let this = lower::lower_source("export function f(): number { return this.x; }")
+            .err()
+            .unwrap();
+        assert!(this.contains("`this`"), "{this}");
+    }
 }

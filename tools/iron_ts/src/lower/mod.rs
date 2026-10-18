@@ -9,6 +9,7 @@ macro_rules! bail {
 }
 
 mod arrays;
+mod classes;
 mod closure;
 mod enums;
 mod expr;
@@ -31,11 +32,24 @@ pub(crate) enum FnBody<'a> {
     Expr(&'a Expression<'a>),
 }
 
+/// What a declared function is, for the `this` parameter and the constructor's body.
+#[derive(Clone, Copy)]
+pub(crate) enum FnKind {
+    Free,
+    /// A method or accessor of the class with this struct: `this` is the first parameter.
+    Method(StructId),
+    /// A constructor: allocates `this` itself and returns it.
+    Ctor(StructId),
+}
+
 pub(crate) struct FnSrc<'a> {
     pub params: &'a FormalParameters<'a>,
     pub ret: Option<&'a TSType<'a>>,
     pub body: FnBody<'a>,
     pub exported: bool,
+    pub kind: FnKind,
+    /// A return type that is not an annotation (a constructor returns its class).
+    pub ret_ty: Option<Ty>,
 }
 
 /// What a name means inside a function.
@@ -48,7 +62,10 @@ pub(crate) enum Binding {
 }
 
 /// A top-level declarator: (declarator, exported, declared with `const`).
-type TopVar<'a> = (&'a VariableDeclarator<'a>, bool, bool);
+enum TopItem<'a> {
+    Var(&'a VariableDeclarator<'a>, bool, bool),
+    Class(&'a Class<'a>),
+}
 
 #[derive(Clone)]
 pub(crate) enum ConstInfo {
@@ -102,6 +119,8 @@ pub(crate) struct FnCtx {
     pub rets: Vec<RetTarget>,
     /// Open optional chains: (exit label, result variable).
     pub chain: Vec<(LabelId, VarId)>,
+    /// Lowering a constructor: a bare `return` returns `this`.
+    pub in_ctor: bool,
 }
 
 pub struct Lowerer<'a> {
@@ -118,6 +137,12 @@ pub struct Lowerer<'a> {
     /// 0 declared, 1 being lowered, 2 done.
     pub(crate) fstate: Vec<u8>,
     pub(crate) consts: HashMap<String, ConstInfo>,
+    /// Class declarations by name, and what is known about each once its struct exists.
+    pub(crate) class_decls: HashMap<String, &'a Class<'a>>,
+    pub(crate) classes: HashMap<String, classes::ClassInfo>,
+    pub(crate) class_of_sid: HashMap<StructId, String>,
+    /// An empty parameter list and body for classes without a constructor.
+    pub(crate) empty_fn: Option<(&'a FormalParameters<'a>, &'a FunctionBody<'a>)>,
     /// Enum members by enum name (`enums.rs`).
     pub(crate) enums: HashMap<String, HashMap<String, Expr>>,
     pub(crate) cur: FnCtx,
@@ -150,6 +175,10 @@ pub fn lower_source(src: &str) -> R<Module> {
         fsig: Vec::new(),
         fstate: Vec::new(),
         consts: HashMap::new(),
+        class_decls: HashMap::new(),
+        classes: HashMap::new(),
+        class_of_sid: HashMap::new(),
+        empty_fn: None,
         enums: HashMap::new(),
         cur: FnCtx::default(),
         captured: HashSet::new(),
@@ -181,24 +210,31 @@ impl<'a> Lowerer<'a> {
 
     fn lower_program(&mut self, program: &'a Program<'a>) -> R<()> {
         // 1. Types and function signatures, in any order.
-        // 0. Enums first: their names are types that signatures below mention.
+        // 0. Enums, interfaces, aliases and classes first: their names are types that signatures
+        // below mention.
         for stmt in &program.body {
-            match stmt {
-                Statement::TSEnumDeclaration(e) => self.declare_enum(e)?,
-                Statement::ExportDeclaration(x) => {
-                    if let Declaration::TSEnumDeclaration(e) = &x.declaration {
-                        self.declare_enum(e)?;
-                    }
-                }
+            let decl = match stmt {
+                Statement::ExportDeclaration(x) => Some(&x.declaration),
+                _ => None,
+            };
+            match (stmt, decl) {
+                (Statement::TSEnumDeclaration(e), _) => self.declare_enum(e)?,
+                (Statement::ClassDeclaration(c), _) => self.declare_class_name(c)?,
+                (_, Some(Declaration::TSEnumDeclaration(e))) => self.declare_enum(e)?,
+                (_, Some(Declaration::ClassDeclaration(c))) => self.declare_class_name(c)?,
                 _ => {}
             }
         }
-        let mut vars: Vec<TopVar<'a>> = Vec::new();
+        let mut vars: Vec<TopItem<'a>> = Vec::new();
         for stmt in &program.body {
             match stmt {
                 Statement::ExportDeclaration(e) => self.collect(&e.declaration, true, &mut vars)?,
                 Statement::VariableDeclaration(d) => self.collect_vars(d, false, &mut vars)?,
                 Statement::FunctionDeclaration(f) => self.collect_fn(f, false)?,
+                Statement::ClassDeclaration(c) => {
+                    self.collect_class(c)?;
+                    vars.push(TopItem::Class(c));
+                }
                 Statement::TSInterfaceDeclaration(d) => {
                     self.ifaces.insert(d.id.name.to_string(), d);
                 }
@@ -223,8 +259,13 @@ impl<'a> Lowerer<'a> {
         self.cur = FnCtx::default();
         self.cur.scopes.push(HashMap::new());
         let mut init_body = Vec::new();
-        for (decl, _exported, is_const) in vars {
-            self.lower_top_var(decl, is_const, &mut init_body)?;
+        for item in vars {
+            match item {
+                TopItem::Var(decl, _exported, is_const) => {
+                    self.lower_top_var(decl, is_const, &mut init_body)?
+                }
+                TopItem::Class(c) => self.lower_class_statics(c, &mut init_body)?,
+            }
         }
         init_body.push(Stmt::Return(None));
         let ctx = std::mem::take(&mut self.cur);
@@ -244,11 +285,15 @@ impl<'a> Lowerer<'a> {
         &mut self,
         d: &'a Declaration<'a>,
         exported: bool,
-        vars: &mut Vec<TopVar<'a>>,
+        vars: &mut Vec<TopItem<'a>>,
     ) -> R<()> {
         match d {
             Declaration::VariableDeclaration(v) => self.collect_vars(v, exported, vars)?,
             Declaration::FunctionDeclaration(f) => self.collect_fn(f, exported)?,
+            Declaration::ClassDeclaration(c) => {
+                self.collect_class(c)?;
+                vars.push(TopItem::Class(c));
+            }
             Declaration::TSInterfaceDeclaration(d) => {
                 self.ifaces.insert(d.id.name.to_string(), d);
             }
@@ -270,6 +315,8 @@ impl<'a> Lowerer<'a> {
             ret: f.return_type.as_ref().map(|r| &r.type_annotation),
             body: FnBody::Block(body),
             exported,
+            kind: FnKind::Free,
+            ret_ty: None,
         };
         self.declare_fn(id.name.as_str(), src)
     }
@@ -278,7 +325,7 @@ impl<'a> Lowerer<'a> {
         &mut self,
         v: &'a VariableDeclaration<'a>,
         exported: bool,
-        vars: &mut Vec<TopVar<'a>>,
+        vars: &mut Vec<TopItem<'a>>,
     ) -> R<()> {
         let is_const = v.kind == VariableDeclarationKind::Const;
         for d in &v.declarations {
@@ -298,17 +345,22 @@ impl<'a> Lowerer<'a> {
                     ret: a.return_type.as_ref().map(|r| &r.type_annotation),
                     body,
                     exported,
+                    kind: FnKind::Free,
+                    ret_ty: None,
                 };
                 self.declare_fn(id.name.as_str(), src)?;
                 continue;
             }
-            vars.push((d, exported, is_const));
+            vars.push(TopItem::Var(d, exported, is_const));
         }
         Ok(())
     }
 
-    fn declare_fn(&mut self, name: &str, src: FnSrc<'a>) -> R<()> {
+    pub(crate) fn declare_fn(&mut self, name: &str, src: FnSrc<'a>) -> R<()> {
         let mut ptys = Vec::new();
+        if let FnKind::Method(sid) = src.kind {
+            ptys.push(Ty::Obj(sid));
+        }
         for p in &src.params.items {
             let Some(ann) = &p.type_annotation else {
                 bail!("{name}: parameter without a type")
@@ -331,9 +383,10 @@ impl<'a> Lowerer<'a> {
             }
             ptys.push(ty);
         }
-        let ret = match src.ret {
-            Some(r) => Some(self.ty(r, name)?),
-            None => None,
+        let ret = match (&src.ret_ty, src.ret) {
+            (Some(t), _) => Some(t.clone()),
+            (None, Some(r)) => Some(self.ty(r, name)?),
+            (None, None) => None,
         };
         let id = self.m.funcs.len();
         self.m.funcs.push(Func {
@@ -382,13 +435,14 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_fn(&mut self, name: &str, id: FuncId) -> R<()> {
-        let (params, body) = {
+        let (params, body, kind) = {
             let s = &self.fsrc[name];
-            (s.params, s.body)
+            (s.params, s.body, s.kind)
         };
         let exp_ret = self.fsig[id].1.clone();
         self.cur = FnCtx {
             ret: exp_ret,
+            in_ctor: matches!(kind, FnKind::Ctor(_)),
             ..FnCtx::default()
         };
         self.cur.scopes.push(HashMap::new());
@@ -396,6 +450,12 @@ impl<'a> Lowerer<'a> {
         let mut pvars = Vec::new();
         let mut pro = Vec::new();
         let mut ptys = ptys.into_iter();
+        if matches!(kind, FnKind::Method(_)) {
+            let ty = ptys.next().expect("a method has a this type");
+            let v = self.new_local(ty);
+            self.bind_var("this", v, &mut pro);
+            pvars.push(v);
+        }
         for (p, ty) in params.items.iter().zip(ptys.by_ref()) {
             let v = self.new_local(ty);
             self.bind_param(&p.pattern, v, &mut pro)?;
@@ -406,7 +466,17 @@ impl<'a> Lowerer<'a> {
             self.bind_param(&r.rest.argument, v, &mut pro)?;
             pvars.push(v);
         }
-        let (stmts, ret) = self.lower_body_into(body, pro)?;
+        if let FnKind::Ctor(sid) = kind {
+            let class = self.class_of_sid[&sid].clone();
+            self.ctor_prologue(&class, sid, params, &mut pro)?;
+        }
+        let (mut stmts, ret) = self.lower_body_into(body, pro)?;
+        if matches!(kind, FnKind::Ctor(_)) {
+            // Falling off the end of a constructor returns the new object.
+            stmts.pop();
+            let b = self.lookup("this").expect("bound in the prologue");
+            stmts.push(Stmt::Return(Some(self.read_binding(&b))));
+        }
         self.fsig[id].1 = Some(ret.clone());
         let ctx = std::mem::take(&mut self.cur);
         let f = &mut self.m.funcs[id];

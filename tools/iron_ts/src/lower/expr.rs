@@ -53,6 +53,8 @@ pub(crate) enum Place {
     Global(GlobalId, Ty),
     /// `xs.length`: reading is `Len`, writing truncates or grows.
     ArrLen(Expr),
+    /// A property with a getter and/or setter: the receiver, the two functions and the value type.
+    Accessor(Expr, Option<String>, String, Ty),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
 }
@@ -110,6 +112,17 @@ impl<'a> Lowerer<'a> {
             }
             Expression::FunctionExpression(f) => {
                 self.lower_closure(super::closure::ClosureNode::Func(f), exp)
+            }
+            Expression::ThisExpression(_) => match self.lookup("this") {
+                Some(b) => Ok(self.read_binding(&b)),
+                None => bail!(
+                    "{}: `this` outside a method",
+                    self.loc(oxc_span::GetSpan::span(e).start)
+                ),
+            },
+            Expression::PrivateFieldExpression(p) => {
+                let obj = self.lower_expr(&p.object, None)?;
+                self.member_of(obj, &classes::private_name(p.field.name.as_str()))
             }
             Expression::StaticMemberExpression(m) => self.lower_static_member(m),
             Expression::ComputedMemberExpression(m) => self.lower_computed_member(m),
@@ -207,6 +220,17 @@ impl<'a> Lowerer<'a> {
         {
             return v;
         }
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && self.classes.contains_key(id.name.as_str())
+        {
+            return match self.consts.get(&format!("{}.{prop}", id.name)).cloned() {
+                Some(ConstInfo::Inline(e)) => Ok(e),
+                Some(ConstInfo::Global(g, ty, false)) => Ok(mk(ExprKind::Global(g), ty)),
+                Some(ConstInfo::Global(g, ty, true)) => Ok(mk(ExprKind::GlobalVar(g), ty)),
+                None => bail!("class {} has no static value `{prop}`", id.name),
+            };
+        }
         let mut obj = self.lower_expr(&m.object, None)?;
         if m.optional {
             obj = self.chain_guard(obj)?;
@@ -219,6 +243,15 @@ impl<'a> Lowerer<'a> {
         match obj.ty.strip().clone() {
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
+                    if let Some(g) = self.class_accessor(sid, prop, false) {
+                        return self.call_getter(&g, obj);
+                    }
+                    if self.class_method(sid, prop).is_some() {
+                        bail!(
+                            "method `{prop}` of {} used as a value: call it, or wrap it in an arrow function",
+                            self.m.structs[sid].name
+                        )
+                    }
                     bail!("{} has no field `{prop}`", self.m.structs[sid].name)
                 };
                 let ty = self.m.structs[sid].fields[i].ty.clone();
@@ -680,6 +713,10 @@ impl<'a> Lowerer<'a> {
                     Ok(mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty))
                 }
             },
+            other if self.classes.contains_key(other) => {
+                let ctor = self.classes[other].ctor.clone();
+                self.call_declared(&ctor, &n.arguments, None)
+            }
             other => bail!("{}: `new {other}` is not supported", self.loc(n.span.start)),
         }
     }
@@ -706,19 +743,29 @@ impl<'a> Lowerer<'a> {
                 }
             }
             SimpleAssignmentTarget::StaticMemberExpression(m) => {
+                // `Class.count = ...`: a static field.
+                if let Expression::Identifier(id) = &m.object
+                    && self.lookup(id.name.as_str()).is_none()
+                    && self.classes.contains_key(id.name.as_str())
+                {
+                    let key = format!("{}.{}", id.name, m.property.name);
+                    return match self.consts.get(&key) {
+                        Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
+                        Some(_) => bail!("assignment to the readonly static `{key}`"),
+                        None => bail!("no static value `{key}`"),
+                    };
+                }
                 let obj = self.lower_expr(&m.object, None)?;
                 if m.property.name == "length" && matches!(obj.ty.strip(), Ty::Arr(_)) {
                     let tmp = self.new_local(obj.ty.clone());
                     pre.push(Stmt::Assign(tmp, obj));
                     return Ok(Place::ArrLen(self.var_expr(tmp)));
                 }
-                let f = self.member_of(obj, m.property.name.as_str())?;
-                let ExprKind::Field(obj, sid, idx) = f.kind else {
-                    bail!("not a field")
-                };
-                let tmp = self.new_local(obj.ty.clone());
-                pre.push(Stmt::Assign(tmp, *obj));
-                Ok(Place::Field(self.var_expr(tmp), sid, idx, f.ty))
+                self.field_place(obj, m.property.name.as_str(), pre)
+            }
+            SimpleAssignmentTarget::PrivateFieldExpression(p) => {
+                let obj = self.lower_expr(&p.object, None)?;
+                self.field_place(obj, &classes::private_name(p.field.name.as_str()), pre)
             }
             SimpleAssignmentTarget::ComputedMemberExpression(m) => {
                 let arr = self.lower_expr(&m.object, None)?;
@@ -743,10 +790,32 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `obj.prop` as an assignment target: a field, or a property with a setter.
+    fn field_place(&mut self, obj: Expr, prop: &str, pre: &mut Vec<Stmt>) -> R<Place> {
+        if let Ty::Obj(sid) = obj.ty.strip()
+            && self.m.structs[*sid].field(prop).is_none()
+            && let Some(setter) = self.class_accessor(*sid, prop, true)
+        {
+            let getter = self.class_accessor(*sid, prop, false);
+            let ty = self.setter_value_ty(&setter)?;
+            let tmp = self.new_local(obj.ty.clone());
+            pre.push(Stmt::Assign(tmp, obj));
+            return Ok(Place::Accessor(self.var_expr(tmp), getter, setter, ty));
+        }
+        let f = self.member_of(obj, prop)?;
+        let ExprKind::Field(obj, sid, idx) = f.kind else {
+            bail!("`{prop}` is not a field")
+        };
+        let tmp = self.new_local(obj.ty.clone());
+        pre.push(Stmt::Assign(tmp, *obj));
+        Ok(Place::Field(self.var_expr(tmp), sid, idx, f.ty))
+    }
+
     pub(crate) fn place_ty(p: &Place) -> &Ty {
         static NUM: Ty = Ty::Num;
         match p {
             Place::ArrLen(_) => &NUM,
+            Place::Accessor(_, _, _, t) => t,
             Place::Var(_, t)
             | Place::Cell(_, t)
             | Place::Global(_, t)
@@ -761,6 +830,13 @@ impl<'a> Lowerer<'a> {
             Place::Cell(c, t) => mk(ExprKind::CellGet(Box::new(c.clone())), t.clone()),
             Place::Global(g, t) => mk(ExprKind::GlobalVar(*g), t.clone()),
             Place::ArrLen(a) => mk(ExprKind::Len(Box::new(a.clone())), Ty::Num),
+            Place::Accessor(o, g, _, t) => match g {
+                Some(g) => {
+                    let fid = self.fids[g];
+                    mk(ExprKind::Call(fid, vec![o.clone()]), t.clone())
+                }
+                None => mk(ExprKind::Null, t.clone()),
+            },
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
             Place::Index(a, i, t) => mk(
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
@@ -774,6 +850,10 @@ impl<'a> Lowerer<'a> {
             Place::Var(var, _) => Stmt::Assign(*var, v),
             Place::Cell(cell, _) => Stmt::CellSet(cell.clone(), v),
             Place::Global(g, _) => Stmt::StoreGlobal(*g, v),
+            Place::Accessor(o, _, setter, _) => {
+                let fid = self.fids[setter];
+                Stmt::Eval(mk(ExprKind::Call(fid, vec![o.clone(), v]), Ty::Void))
+            }
             Place::ArrLen(a) => Stmt::Eval(mk(
                 ExprKind::Rt(RtFn::ArrSetLen, vec![a.clone(), v]),
                 Ty::Void,
@@ -814,6 +894,7 @@ impl<'a> Lowerer<'a> {
             let value = self.place_read(&place);
             return Ok((pre, value));
         }
+        let is_accessor = matches!(place, Place::Accessor(..));
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;
             self.coerce(v, &pty)?
@@ -841,6 +922,14 @@ impl<'a> Lowerer<'a> {
             let v = self.arith(op, old, r)?;
             self.coerce(v, &pty)?
         };
+        if is_accessor {
+            // The value of `o.x = v` is `v`, whatever the getter says (there may be none).
+            let t = self.new_local(pty.clone());
+            pre.push(Stmt::Assign(t, new));
+            let tv = self.var_expr(t);
+            pre.push(self.place_write(&place, tv.clone()));
+            return Ok((pre, tv));
+        }
         pre.push(self.place_write(&place, new));
         let value = self.place_read(&place);
         Ok((pre, value))
@@ -1000,18 +1089,12 @@ impl<'a> Lowerer<'a> {
                         self.loc(c.span.start)
                     )
                 };
-                self.ensure_lowered(name)?;
-                let (params, ret) = self.fsig[fid].clone();
-                let Some(ret) = ret else {
-                    bail!("{name}: return type unknown")
-                };
-                let (pre, args) = self.lower_fn_args(name, &c.arguments, &params)?;
-                let call = mk(ExprKind::Call(fid, args), ret.clone());
-                Ok(if pre.is_empty() {
-                    call
-                } else {
-                    mk(ExprKind::Seq(pre, Box::new(call)), ret)
-                })
+                let _ = fid;
+                self.call_declared(name, &c.arguments, None)
+            }
+            Expression::PrivateFieldExpression(p) => {
+                let recv = self.lower_expr(&p.object, None)?;
+                self.lower_method(recv, &classes::private_name(p.field.name.as_str()), c)
             }
             Expression::StaticMemberExpression(m) => {
                 let method = m.property.name.as_str();
@@ -1026,6 +1109,15 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Array").is_none()
                 {
                     return self.lower_array_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && self.lookup(id.name.as_str()).is_none()
+                    && let Some(info) = self.classes.get(id.name.as_str())
+                {
+                    let Some(f) = info.statics.get(method).cloned() else {
+                        bail!("class {} has no static method `{method}`", id.name)
+                    };
+                    return self.call_declared(&f, &c.arguments, None);
                 }
                 let mut recv = self.lower_expr(&m.object, None)?;
                 if m.optional {

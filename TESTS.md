@@ -589,6 +589,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-108 | Integration | Array operations on arrays of objects in a loop (sort, splice, slice, concat, reverse, unshift, pop, reduce) survive a collection at every allocation. Runs in all three GC modes (`tests/arraylib.rs`). |
 | M9-TS-109 | Unit | `sort` keeps its merge buffer alive while the comparator collects: with the roots removed the elements come back poisoned (`iron_ts_rt/src/lib.rs`). |
 | M9-TS-110 | Unit | `sort()` without a comparator, `reduce` without an initial value and `pop` over booleans are errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-111 | Integration | A class with a constructor, methods, a getter and statics (`new Vec2(3, 4).add(Vec2.of(1, 2)).scale(2)`, `length`, a static counter, `static readonly zero`) computes like JS. Runs normally, in stress GC mode and with collection off (`tests/classes.rs`). |
+| M9-TS-112 | Integration | Constructor parameters take their defaults (`new Vec2()`, `new Vec2(7)`). Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-113 | Integration | Private fields and methods (`#count`, `#bump`), a getter/setter pair, chaining by returning `this`, `this` captured by an arrow function and used in an inlined callback, an optional field starting undefined. Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-114 | Integration | Objects linked through class fields (a stack of cells) survive collections. Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-115 | Integration | Constructors run parameter properties, then field initialisers in order (`b = this.a + 1`), then the body; a bare `return` returns the object. Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-116 | Integration | A method receiver waiting for its arguments is not freed: `h.item.plus(swap(h))` gets the old `this` (5 + 1). Fails when field reads are trusted as stable. Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-117 | Integration | Two names for one object, and `===` as identity. Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-118 | Integration | Methods, constructors and a stack in a loop survive a collection at every allocation. Runs in all three GC modes (`tests/classes.rs`). |
+| M9-TS-119 | Unit | `extends`, decorators, a method used as a value, a field without a type and `this` outside a method are errors that say what is missing (`iron_ts/src/lib.rs`). |
 
 ---
 

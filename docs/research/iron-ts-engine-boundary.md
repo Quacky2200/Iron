@@ -283,6 +283,9 @@ set against the 0.12 ms crossing above.
    "compile engine modules with `iron_ts` as library source" alternative in question 7 is not taken
    for the engine; it remains how *user* libraries are compiled.
 
+**Question 6 answered later: yes**, generics-as-intrinsics (`getComponent`, `addComponent`,
+`findObjectOfType`) is the working default. The paragraph below describes the state before that.
+
 **Not answered / assumed.** The reply numbered six items for seven questions; "6" matched question 7
 (what stays TypeScript) in content. Question 6, generics (`getComponent`, `addComponent`,
 `findObjectOfType` as compiler intrinsics until generics exist), is therefore **still open**; the

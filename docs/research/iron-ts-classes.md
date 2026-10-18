@@ -245,3 +245,40 @@ What that changes in this note:
 New design notes this creates (all **STOP** items, none started): the engine boundary ("Direct
 engine calls" as declaration files plus native bindings), the UI without React, and the dev loop
 without Bun. They are listed in `TODO.md` M9.b2.
+
+## 13. Plain classes: what was built (2026-10-18)
+
+Sub-tasks 1-3 of section 10 are done and tested (`bench/classes.ts`, `M9-TS-111`..`119`).
+
+| Source | Lowering |
+|---|---|
+| `class C { x = 1; y: T; z?: U }` | a struct `C`; fields in declaration order; optional fields and `T \| null` fields start null, others zero |
+| `constructor(readonly x = 0) {}` | parameter properties are fields too; the constructor is the function `C$new`: allocate, null the nullable fields, store the parameter properties, run the field initialisers in source order, run the body, return the object (a bare `return;` returns it too) |
+| no constructor | an implicit empty one, from a leaked empty function parsed once |
+| `new C(a, b)` | a direct call of `C$new`; defaults and rest parameters work as for functions |
+| `m(a) {}` | the function `C.m(this, a)`; `this` is an ordinary first parameter, so it is a GC root like any other |
+| `obj.m(a)` | a direct call, receiver first; the receiver is evaluated before the arguments (a temporary when a default has to be filled in) |
+| `get x()` / `set x(v)` | functions `C.get x` / `C.set x`; a read of a property that is not a field calls the getter, an assignment calls the setter (and its value is the assigned value); `x += 1` calls both |
+| `static f()` | a plain function, called as `C.f()` |
+| `static x = e` | a module global `C.x`, initialised in `ts_init` in source order with the other top-level values (`static readonly` literals are folded); assignable unless `readonly` |
+| `#x`, `#m()` | an ordinary field `_p_x` / method `C._p_m`; TypeScript has already checked who may use it |
+| `private`, `protected`, `public`, `readonly`, `implements` | accepted and ignored |
+| `this` in an arrow function | captured like a variable (the scan treats `this` as a name), so it lives in a cell |
+
+Field types come from an annotation, or from a literal initialiser (`step = 1`), or from
+`field = new Other()`. Anything else needs an annotation (`b: number = this.a + 1`), and the error
+says so.
+
+**The receiver is a pointer held across the argument list**, the same hazard as `M9-TS-27`:
+`h.item.plus(swap(h))` evaluates `h.item` first, `swap` replaces it and allocates. Method calls go
+through the same operand-spilling rule as every other call, and `M9-TS-116` fails when field reads
+are trusted (checked by hand).
+
+**Not built (each is an error naming the class):** `extends`/`super` and anything virtual
+(sub-task 4-5), abstract classes, generic classes, decorators (`@property`, sub-task 7), static
+accessors and static blocks, `accessor` fields, class expressions, methods used as values
+(`const f = obj.m`; sub-task 6), arrow-function fields, `instanceof`, `typeof`.
+
+Static fields are module variables, so a program that runs `ts_init` again starts them over, and
+two threads running the same module share them (as for any module variable, section 4 of the spike
+doc).

@@ -104,6 +104,11 @@ impl<'a> Lowerer<'a> {
                 };
                 out.push(Stmt::Return(Some(v)));
             }
+            None if self.cur.in_ctor => {
+                // A bare `return` in a constructor returns the new object.
+                let b = self.lookup("this").expect("bound in the prologue");
+                out.push(Stmt::Return(Some(self.read_binding(&b))));
+            }
             None => {
                 if self.cur.ret.is_none() {
                     self.cur.ret = Some(Ty::Void);
@@ -319,6 +324,11 @@ impl<'a> Lowerer<'a> {
         c: &'a CallExpression<'a>,
     ) -> R<Expr> {
         let rty = recv.ty.strip().clone();
+        if let Ty::Obj(sid) = &rty
+            && let Some(f) = self.class_method(*sid, m)
+        {
+            return self.call_declared(&f, &c.arguments, Some(recv));
+        }
         let void = |stmts| {
             mk(
                 ExprKind::Seq(stmts, Box::new(mk(ExprKind::Num(0.0), Ty::Void))),

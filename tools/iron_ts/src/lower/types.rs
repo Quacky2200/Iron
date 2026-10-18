@@ -134,6 +134,9 @@ impl<'a> Lowerer<'a> {
         if let Some(t) = self.named.get(name) {
             return Ok(t.clone());
         }
+        if self.class_decls.contains_key(name) {
+            return self.class_type(name);
+        }
         if let Some(i) = self.ifaces.get(name).copied() {
             if !i.extends.is_empty() {
                 bail!("interface {name}: extends is not supported");

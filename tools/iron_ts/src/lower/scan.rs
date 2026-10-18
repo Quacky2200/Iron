@@ -89,6 +89,15 @@ impl<'a> Visit<'a> for Scan {
             .insert(it.name.to_string());
     }
 
+    /// `this` inside an arrow function is captured like a variable.
+    fn visit_this_expression(&mut self, _it: &ThisExpression) {
+        self.frames
+            .last_mut()
+            .unwrap()
+            .refs
+            .insert("this".to_string());
+    }
+
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
         if let Expression::StaticMemberExpression(m) = &it.callee
             && INLINED_CALLBACKS.contains(&m.property.name.as_str())
