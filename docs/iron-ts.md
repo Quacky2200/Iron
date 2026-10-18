@@ -78,9 +78,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | File | What |
 |---|---|
 | [lib.rs](../tools/iron_ts/src/lib.rs) | `compile_source` / `compile_with_prefix` / `compile_with`, `Output`; unit tests for lowering errors (`M9-TS-14..16`, `55`, `56`, `70`, `84`, `110`, `119`) |
-| [ir.rs](../tools/iron_ts/src/ir.rs) | The IR: `Ty`, `Module`, `Func`, `Stmt`, `Expr`/`ExprKind`, `RtFn` (runtime calls), `field_offset`, `dump` |
+| [ir.rs](../tools/iron_ts/src/ir.rs) | The IR: `Ty`, `Module` (with `vtables` and `itables`), `Func`, `Stmt`, `Expr`/`ExprKind` (including `CallVirtual` and `InstanceOf`), `RtFn` (runtime calls), `field_offset`, `dump` |
 | [frames.rs](../tools/iron_ts/src/frames.rs) | Shadow-stack frame plan and the spill rule (see GC roots below) |
-| [codegen.rs](../tools/iron_ts/src/codegen.rs) | IR to Cranelift object: frames and spills, `eval_args`, `ts_init`, runtime calls |
+| [codegen.rs](../tools/iron_ts/src/codegen.rs) | IR to Cranelift object: frames and spills, `eval_args`, `ts_init`, runtime calls, the method tables and `instanceof` byte tables (local data), indirect calls |
 | [layout.rs](../tools/iron_ts/src/layout.rs) | Rust bindings: `HDR_*` header constants, `#[repr(C)]` structs, `TAG_*`, `NULL_NUM_BITS`, `extern "C"` declarations |
 | [bin/iron_ts.rs](../tools/iron_ts/src/bin/iron_ts.rs) | The CLI above |
 | [lower/mod.rs](../tools/iron_ts/src/lower/mod.rs) | `lower_source`: collecting declarations, `lower_fn` (lowered on demand), bindings (direct or boxed), module-level variables |
@@ -91,7 +91,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/scan.rs](../tools/iron_ts/src/lower/scan.rs) | Which names do closures capture (by name, so it only over-approximates) |
 | [lower/closure.rs](../tools/iron_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
-| [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Plain classes: fields, constructors, methods, accessors, statics, `#private` |
+| [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
 ## Supported language
 
@@ -110,13 +110,25 @@ bytes, bindings text, IR dump and the time of each phase.
 | Spread | Arrays, objects (field by field) and calls into a rest parameter |
 | Module variables | A literal `const` is folded; any other `const`, and every `let`/`var`, is a data slot written by `ts_init` (`Place::Global`) |
 | `Math` and operators | Inline instructions or `ts_rt_*` (libm, JS `pow`, `random`); `**`, `~`, `??=`, `\|\|=`, `&&=`, bit operations with ToInt32 |
-| Classes | A struct plus functions: constructor `C$new`, methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows |
+| Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below) |
 | Optional chaining, `!`, `??`, `?:` | Inline null tests |
 
-Not supported (each is a compile error naming the source line): `extends`/`super`, abstract classes,
-decorators (`@property`), methods used as values, `instanceof`, `typeof`, generics, `try`/`throw`,
-template literals and general string code, `Map`, `for...in`, rest elements in patterns,
-destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything dynamic. Known
+**Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
+`B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
+sees the whole program, so a method call `a.m()` is resolved exactly: if one implementation is
+reachable from the static class of `a` and its subclasses, it is a direct `Call`. Otherwise it is
+`CallVirtual(table, args)`: codegen reads the struct id from the receiver's header and indexes
+`Module::vtables[table]`, a local data table with one 8-byte function address per struct id, and
+makes an indirect call. `super.m()` is always direct. `x instanceof C` is `InstanceOf(x, table)`:
+null is false, otherwise the struct id indexes `Module::itables[table]`, one byte per struct id (1 for
+`C` and its subclasses). A subclass must be declared after its base. Details and limits:
+[iron-ts-classes.md](research/iron-ts-classes.md) section 14.
+
+Not supported (each is a compile error naming the source line): decorators (`@property`), methods
+used as values, `typeof`, class expressions, generics, extending engine classes (`Component`),
+`try`/`throw`, template literals and general string code, `Map`, `for...in`, rest elements in
+patterns, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
+dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
 
@@ -142,7 +154,8 @@ calls into. Its header comment is the long version.
   environment, the sort's merge buffer). Registers and Cranelift's own spill slots are never scanned.
 - **The spill rule** ([frames.rs](../tools/iron_ts/src/frames.rs)). A pointer evaluated early and held
   while a later operand can allocate is copied to a frame slot, unless it is a local no later operand
-  assigns, a global, or null (`spill_flags`, `is_stable`, `may_alloc`). Field reads are never trusted. The
+  assigns, a global, or null (`spill_flags`, `is_stable`, `may_alloc`). Field reads are never trusted.
+`CallVirtual` and `InstanceOf` are counted like calls (`CallVirtual` also allocates, as a call). The
   slot count computed here is the number codegen's `eval_args` consumes, and codegen refuses a
   function whose spills would overrun its frame. A new IR node that evaluates operands must use
   `eval_args` and be counted in `count_expr`/`count_stmts`, `may_alloc` and `children`.
@@ -169,7 +182,7 @@ calls into. Its header comment is the long version.
 | Path | What |
 |---|---|
 | `fixtures/sim.ts`, `sim.test.ts` | The zombie game's simulation (678 lines) and its original bun tests |
-| `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
+| `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
 | `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker |
 | `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state) |
 | `tests/*.rs` | `sim_port` (13 ported cases), `gc`, and one file per language area |
@@ -185,7 +198,7 @@ To add a test module:
 
 1. Write `bench/<name>.ts` (exported functions only get symbols; run it in bun to get the expected numbers).
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
-   0, sine 1000, ... classes 11000); take the next free one.
+   0, sine 1000, ... classes 11000, inherit 12000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.
