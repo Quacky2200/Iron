@@ -70,6 +70,11 @@ bytes, bindings text, IR dump and the time of each phase.
   with the C calling convention; `ts_<prefix>init` runs the top-level initialisers and registers
   the struct pointer masks and global roots with the runtime. Runtime routines are imports
   (`ts_rt_*`).
+- **Property tables.** For each class with `@property` fields the bindings also hold
+  `pub const PROPS_<Class>: &[(&str, usize, &str)]`: name, byte offset in the object, type name
+  (`number`, `boolean`, `string`, `object:<Class>`, ..., `?` appended when nullable), base class
+  first. A host reads and writes properties at those offsets with no script running (a scene loader
+  can set a field before any code does). The IR carries them as `Module::props`.
 - **Linking** is the host's job: the test crate's `build.rs` writes the `.obj`, passes it with
   `cargo:rustc-link-arg`, and includes the bindings.
 
@@ -110,7 +115,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | Spread | Arrays, objects (field by field) and calls into a rest parameter |
 | Module variables | A literal `const` is folded; any other `const`, and every `let`/`var`, is a data slot written by `ts_init` (`Place::Global`) |
 | `Math` and operators | Inline instructions or `ts_rt_*` (libm, JS `pow`, `random`); `**`, `~`, `??=`, `\|\|=`, `&&=`, bit operations with ToInt32 |
-| Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below) |
+| Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below); methods as values (`obj.m` is a closure over the receiver, so unlike JS a detached method keeps its `this`); arrow-function fields (the constructor scan includes field initialisers); `@property` on instance fields as compile-time metadata |
 | Optional chaining, `!`, `??`, `?:` | Inline null tests |
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
@@ -124,7 +129,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 `C` and its subclasses). A subclass must be declared after its base. Details and limits:
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
-Not supported (each is a compile error naming the source line): decorators (`@property`), `typeof`, class expressions, generics, extending engine classes (`Component`),
+Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), `typeof`, class expressions, generics, extending engine classes (`Component`),
 `try`/`throw`, template literals and general string code, `Map`, `for...in`, rest elements in
 patterns, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
@@ -197,7 +202,7 @@ To add a test module:
 
 1. Write `bench/<name>.ts` (exported functions only get symbols; run it in bun to get the expected numbers).
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
-   0, sine 1000, ... classes 11000, inherit 12000); take the next free one.
+   0, sine 1000, ... classes 11000, inherit 12000, props 13000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.
