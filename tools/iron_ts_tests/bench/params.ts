@@ -139,3 +139,15 @@ export function allocating(n: number): number {
   }
   return total;
 }
+
+let sink = 0;
+function bump(by: number = 3): void {
+  sink += by;
+}
+
+/** A call of a function that returns nothing, with a default to fill in, still runs. */
+export function demoVoidDefault(): number {
+  bump();
+  bump(4);
+  return sink;
+}

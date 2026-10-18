@@ -104,11 +104,6 @@ impl<'a> Lowerer<'a> {
                 };
                 out.push(Stmt::Return(Some(v)));
             }
-            None if self.cur.in_ctor => {
-                // A bare `return` in a constructor returns the new object.
-                let b = self.lookup("this").expect("bound in the prologue");
-                out.push(Stmt::Return(Some(self.read_binding(&b))));
-            }
             None => {
                 if self.cur.ret.is_none() {
                     self.cur.ret = Some(Ty::Void);
@@ -324,10 +319,16 @@ impl<'a> Lowerer<'a> {
         c: &'a CallExpression<'a>,
     ) -> R<Expr> {
         let rty = recv.ty.strip().clone();
-        if let Ty::Obj(sid) = &rty
-            && let Some(f) = self.class_method(*sid, m)
-        {
-            return self.call_declared(&f, &c.arguments, Some(recv));
+        if let Ty::Obj(sid) = &rty {
+            let sid = *sid;
+            if let Some((stat, target)) = self.target_for(sid, Which::Method, m) {
+                return self.call_target(&stat, target, &c.arguments, Some(recv));
+            }
+            // A method only a subclass has: tsc narrowed the receiver, so call it as that class.
+            let sub = self.downcast_for(sid, |s, c| s.resolve_in(c, Which::Method, m).is_some());
+            if let Some(sub) = sub {
+                return self.lower_method(Self::downcast(recv, sub), m, c);
+            }
         }
         let void = |stmts| {
             mk(

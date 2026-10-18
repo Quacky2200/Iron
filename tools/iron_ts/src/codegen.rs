@@ -103,6 +103,48 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         gdata.push(id);
     }
 
+    // Method tables: one 8-byte slot per struct id, holding the function address (or 0).
+    let mut vtdata: Vec<DataId> = Vec::new();
+    for (i, vt) in m.vtables.iter().enumerate() {
+        let id = module
+            .declare_data(
+                &format!("ts_vt_{}{}", m.prefix, i),
+                Linkage::Local,
+                false,
+                false,
+            )
+            .map_err(|e| e.to_string())?;
+        let mut d = DataDescription::new();
+        d.define(vec![0u8; m.structs.len() * 8].into_boxed_slice());
+        d.set_align(8);
+        for (sid, fid) in &vt.entries {
+            let fr = module.declare_func_in_data(cfuncs[*fid], &mut d);
+            d.write_function_addr((*sid * 8) as u32, fr);
+        }
+        module.define_data(id, &d).map_err(|e| e.to_string())?;
+        vtdata.push(id);
+    }
+    // `instanceof` tables: one byte per struct id.
+    let mut itdata: Vec<DataId> = Vec::new();
+    for (i, members) in m.itables.iter().enumerate() {
+        let id = module
+            .declare_data(
+                &format!("ts_it_{}{}", m.prefix, i),
+                Linkage::Local,
+                false,
+                false,
+            )
+            .map_err(|e| e.to_string())?;
+        let mut bytes = vec![0u8; m.structs.len()];
+        for s in members {
+            bytes[*s] = 1;
+        }
+        let mut d = DataDescription::new();
+        d.define(bytes.into_boxed_slice());
+        module.define_data(id, &d).map_err(|e| e.to_string())?;
+        itdata.push(id);
+    }
+
     let mut imports: HashMap<&'static str, CFuncId> = HashMap::new();
     let mut fbc = FunctionBuilderContext::new();
     for (fi, f) in m.funcs.iter().enumerate() {
@@ -154,6 +196,8 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 vars,
                 cfuncs: &cfuncs,
                 gdata: &gdata,
+                vtdata: &vtdata,
+                itdata: &itdata,
                 imports: &mut imports,
                 labels: HashMap::new(),
                 call_conv,
@@ -196,6 +240,8 @@ struct Cg<'a, 'b> {
     vars: Vec<Variable>,
     cfuncs: &'a [CFuncId],
     gdata: &'a [DataId],
+    vtdata: &'a [DataId],
+    itdata: &'a [DataId],
     imports: &'a mut HashMap<&'static str, CFuncId>,
     /// label -> (break target, continue target)
     labels: HashMap<LabelId, (ir::Block, ir::Block)>,
@@ -760,6 +806,68 @@ impl Cg<'_, '_> {
                 )
                 .unwrap()
             }
+            ExprKind::CallVirtual(table, args) => {
+                // The signature comes from any entry; they agree up to the receiver's class.
+                let fid = self.m.vtables[*table].entries[0].1;
+                let ptys: Vec<Ty> = self.m.funcs[fid]
+                    .params
+                    .iter()
+                    .map(|p| self.m.funcs[fid].locals[*p as usize].clone())
+                    .collect();
+                let list: Vec<(&Expr, Ty)> = args.iter().zip(ptys.clone()).collect();
+                let vals = self.eval_args(&list)?;
+                // The object's header holds its struct id: index the table with it.
+                let header = self.b.ins().load(types::I64, self.mf_t, vals[0], 0);
+                let kind = self.b.ins().band_imm_s(header, 0xFFFF_FFFF);
+                let idx = self
+                    .b
+                    .ins()
+                    .iadd_imm_s(kind, -(self.m.struct_base as i64 + 1));
+                let off = self.b.ins().imul_imm_s(idx, 8);
+                let gv = self
+                    .module
+                    .declare_data_in_func(self.vtdata[*table], self.b.func);
+                let base = self.b.ins().symbol_value(types::I64, gv);
+                let slot = self.b.ins().iadd(base, off);
+                let target = self.b.ins().load(types::I64, self.mf_t, slot, 0);
+                let sig = sig_of(self.call_conv, &ptys, &self.m.funcs[fid].ret);
+                let sr = self.b.import_signature(sig);
+                let call = self.b.ins().call_indirect(sr, target, &vals);
+                match self.b.inst_results(call).first() {
+                    Some(v) => *v,
+                    None => self.b.ins().iconst(types::I64, 0),
+                }
+            }
+            ExprKind::InstanceOf(a, table) => {
+                let v = self.expr(a)?;
+                let (yes, no, join) = (
+                    self.b.create_block(),
+                    self.b.create_block(),
+                    self.b.create_block(),
+                );
+                self.b.append_block_param(join, types::I8);
+                let isnull = self.b.ins().icmp_imm_s(IntCC::Equal, v, 0);
+                self.b.ins().brif(isnull, no, &[], yes, &[]);
+                self.b.switch_to_block(yes);
+                let header = self.b.ins().load(types::I64, self.mf_t, v, 0);
+                let kind = self.b.ins().band_imm_s(header, 0xFFFF_FFFF);
+                let idx = self
+                    .b
+                    .ins()
+                    .iadd_imm_s(kind, -(self.m.struct_base as i64 + 1));
+                let gv = self
+                    .module
+                    .declare_data_in_func(self.itdata[*table], self.b.func);
+                let base = self.b.ins().symbol_value(types::I64, gv);
+                let addr = self.b.ins().iadd(base, idx);
+                let hit = self.b.ins().load(types::I8, self.mf_t, addr, 0);
+                self.b.ins().jump(join, &[ir::BlockArg::Value(hit)]);
+                self.b.switch_to_block(no);
+                let zero = self.b.ins().iconst(types::I8, 0);
+                self.b.ins().jump(join, &[ir::BlockArg::Value(zero)]);
+                self.b.switch_to_block(join);
+                self.b.block_params(join)[0]
+            }
             ExprKind::Call(fid, args) => {
                 let ptys: Vec<Ty> = self.m.funcs[*fid]
                     .params
@@ -841,6 +949,8 @@ impl Cg<'_, '_> {
             ExprKind::Seq(stmts, v) => {
                 self.stmts(stmts)?;
                 if v.ty == Ty::Void {
+                    // A void call still has to run (`Seq(temporaries, call)`).
+                    self.expr(v)?;
                     self.b.ins().iconst(types::I64, 0)
                 } else {
                     self.expr_as(v, &e.ty)?

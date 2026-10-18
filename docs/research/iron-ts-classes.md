@@ -282,3 +282,43 @@ accessors and static blocks, `accessor` fields, class expressions, methods used 
 Static fields are module variables, so a program that runs `ts_init` again starts them over, and
 two threads running the same module share them (as for any module variable, section 4 of the spike
 doc).
+
+(Section 14 replaces the "not built" list above for `extends`, `super`, abstract classes and
+`instanceof`.)
+
+## 14. Inheritance: what was built (2026-10-18)
+
+Sub-tasks 4 and 5 are done (`bench/inherit.ts`, `M9-TS-120`..`135`). Where this differs from the plan
+in sections 2-4, the differences are listed last.
+
+| Source | Lowering |
+|---|---|
+| `class B extends A` | the struct of `B` starts with the fields of `A` (the prefix layout), so a `B` pointer is an `A` pointer. A field `B` declares again is the same slot, and `B`'s initialiser wins |
+| constructor | a function `B$init(this, ...)`; `new B(x)` allocates the object, nulls the nullable fields and calls it. `super(...)` calls `A$init` and then runs `B`'s parameter properties and field initialisers (TypeScript's order). A derived class with no constructor takes the base class's parameters, passes them on, then runs its own initialisers |
+| `a.m()` | one implementation reachable from the static type of `a` (that class and every subclass): a direct call. Several: `CallVirtual`, a call through a table of function addresses indexed by the receiver's struct id (read from its header). The compiler sees the whole program, so this is exact |
+| `super.m()` | a direct call of the base class's implementation on `this` |
+| getters and setters | dispatched the same way (`Place::Accessor` carries the target) |
+| `abstract` | the class cannot be created (`new` is an error); an abstract method is an empty stub that is never called and is left out of the tables |
+| `x instanceof C` | `InstanceOf`: null is false, otherwise the header's struct id indexes a table of bytes (1 for `C` and its subclasses) |
+| a member only a subclass has | after `if (x instanceof Sub)` or `x as Sub`, tsc has narrowed the type and the lowering has not, so it looks the name up in the subclasses; the topmost class that has it is used (the same pointer, seen as that class). Unrelated candidates are an error |
+| subclass where a base class is expected | the same pointer: assignment, arguments, returns, arrays of them, `a ? new B() : new C()` (the common base class) and `===` between them |
+
+Differences from section 2-4: **`instanceof` uses a byte table indexed by struct id, not a range of
+class ids**, because struct ids are handed out in the order types are first mentioned, so a class
+and its subclasses are not contiguous; tables cost one byte per struct per class that is tested.
+Dispatch tables are indexed by struct id too and hold one 8-byte address per struct.
+
+**Limits.** A subclass must be declared after its base class (an error says so). Parameter defaults
+of an override are ignored at a virtual call: the call is lowered against the statically resolved
+method. A base constructor that calls an overridden method sees the subclass's version with the
+subclass's fields still zero or null (JavaScript sees `undefined`; arithmetic on those differs).
+Extending an engine class (`Component`) needs the manifest work, not this.
+
+**GC.** A virtual call's receiver is the first operand, spilled like any pointer that waits for a
+later operand (`M9-TS-135` fails when field reads are trusted). `CallVirtual` and `InstanceOf` are
+counted in the frame plan like `Call`.
+
+**A bug found on the way** (`M9-TS-136`): codegen did not evaluate the value of a `Seq` whose type
+is `void`, so a call that returns nothing and needed a default argument filled in (it becomes
+`Seq(temporaries, call)`) never ran. Constructors, which used to return the object, hid it until
+they became `void` `$init` functions.

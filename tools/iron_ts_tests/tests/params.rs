@@ -95,3 +95,16 @@ fn defaults_rest_arrays_and_spreads_that_allocate_survive_collections() {
         "stress mode collected nothing"
     );
 }
+
+// M9-TS-136
+//
+// A call that returns nothing and needs a default filled in is wrapped in a block that stores the
+// arguments first; the call itself must still run (it once was skipped because its value was void).
+#[test]
+fn a_void_call_with_a_default_to_fill_in_still_runs() {
+    // `sink` is a module variable: start each run from the initialisers.
+    in_every_gc_mode(|| unsafe {
+        ts_par_init();
+        assert_eq!(ts_par_demoVoidDefault(), 7.0)
+    });
+}

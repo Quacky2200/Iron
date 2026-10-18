@@ -206,6 +206,17 @@ impl<'a> Lowerer<'a> {
 
     // ---- unify and coerce ----
 
+    /// Can a value of type `from` be used as `to` without changing the pointer? A subclass for
+    /// its base class, and arrays of those.
+    pub(crate) fn assignable(&self, from: &Ty, to: &Ty) -> bool {
+        match (from.strip(), to.strip()) {
+            (a, b) if a == b => true,
+            (Ty::Obj(x), Ty::Obj(y)) => self.is_subclass(*x, *y),
+            (Ty::Arr(x), Ty::Arr(y)) => self.assignable(x, y),
+            _ => false,
+        }
+    }
+
     pub(crate) fn unify(&self, a: &Ty, b: &Ty) -> R<Ty> {
         if a == b {
             return Ok(a.clone());
@@ -213,6 +224,19 @@ impl<'a> Lowerer<'a> {
         Ok(match (a, b) {
             (Ty::Null, t) | (t, Ty::Null) => t.clone().nullable(),
             _ if a.strip() == b.strip() => a.strip().clone().nullable(),
+            // Two classes of one family: the base class.
+            _ if self.assignable(a, b) => b.strip().clone().nullable(),
+            _ if self.assignable(b, a) => a.strip().clone().nullable(),
+            // Two classes with a common base class: that base class.
+            (x, y) if self.common_base(x.strip(), y.strip()).is_some() => {
+                let base = self.common_base(x.strip(), y.strip()).expect("checked");
+                let t = Ty::Obj(base);
+                if a.is_nullable() || b.is_nullable() {
+                    t.nullable()
+                } else {
+                    t
+                }
+            }
             _ => bail!("cannot unify {a} and {b}"),
         })
     }
@@ -227,6 +251,11 @@ impl<'a> Lowerer<'a> {
                 ty: to.clone(),
             }),
             (a, b) if a.strip() == b.strip() => Ok(Expr {
+                kind: ExprKind::Cast(Box::new(e)),
+                ty: to.clone(),
+            }),
+            // A subclass object where its base class is expected: the same pointer.
+            (a, b) if self.assignable(a.strip(), b.strip()) => Ok(Expr {
                 kind: ExprKind::Cast(Box::new(e)),
                 ty: to.clone(),
             }),

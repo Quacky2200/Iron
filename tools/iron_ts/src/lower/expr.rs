@@ -54,7 +54,7 @@ pub(crate) enum Place {
     /// `xs.length`: reading is `Len`, writing truncates or grows.
     ArrLen(Expr),
     /// A property with a getter and/or setter: the receiver, the two functions and the value type.
-    Accessor(Expr, Option<String>, String, Ty),
+    Accessor(Expr, Option<classes::Target>, classes::Target, Ty),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
 }
@@ -83,7 +83,22 @@ impl<'a> Lowerer<'a> {
             }
             Expression::Identifier(id) => self.lower_ident(id.name.as_str()),
             Expression::ParenthesizedExpression(p) => self.lower_expr(&p.expression, exp),
-            Expression::TSAsExpression(a) => self.lower_expr(&a.expression, exp),
+            Expression::TSAsExpression(a) => {
+                let v = self.lower_expr(&a.expression, exp)?;
+                // `x as Sub` for classes: the same pointer, seen as the subclass.
+                if let Ok(Ty::Obj(t)) = self.ty(&a.type_annotation, "as")
+                    && self.class_of_sid.contains_key(&t)
+                    && matches!(v.ty.strip(), Ty::Obj(_))
+                {
+                    let ty = if v.ty.is_nullable() {
+                        Ty::Obj(t).nullable()
+                    } else {
+                        Ty::Obj(t)
+                    };
+                    return Ok(mk(ExprKind::Cast(Box::new(v)), ty));
+                }
+                Ok(v)
+            }
             Expression::TSSatisfiesExpression(s) => {
                 // `{...} as const satisfies Record<string, V>`: every property is a V.
                 let mut inner = &s.expression;
@@ -243,14 +258,23 @@ impl<'a> Lowerer<'a> {
         match obj.ty.strip().clone() {
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
-                    if let Some(g) = self.class_accessor(sid, prop, false) {
-                        return self.call_getter(&g, obj);
+                    if let Some((stat, target)) = self.target_for(sid, Which::Getter, prop) {
+                        return self.call_getter(&stat, &target, obj);
                     }
-                    if self.class_method(sid, prop).is_some() {
+                    if self.resolve_in(sid, Which::Method, prop).is_some() {
                         bail!(
                             "method `{prop}` of {} used as a value: call it, or wrap it in an arrow function",
                             self.m.structs[sid].name
                         )
+                    }
+                    // Only a subclass has it: tsc narrowed the object, so use it as that class.
+                    let sub = self.downcast_for(sid, |s, c| {
+                        s.has_field(c, prop)
+                            || s.resolve_in(c, Which::Getter, prop).is_some()
+                            || s.resolve_in(c, Which::Method, prop).is_some()
+                    });
+                    if let Some(sub) = sub {
+                        return self.member_of(Self::downcast(obj, sub), prop);
                     }
                     bail!("{} has no field `{prop}`", self.m.structs[sid].name)
                 };
@@ -351,8 +375,49 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `x instanceof C` for a class `C` of this program: a header test against the table of `C`
+    /// and its subclasses.
+    fn lower_instanceof(&mut self, b: &'a BinaryExpression<'a>) -> R<Expr> {
+        let Expression::Identifier(id) = &b.right else {
+            bail!(
+                "{}: `instanceof` needs a class name",
+                self.loc(b.span.start)
+            )
+        };
+        if !self.classes.contains_key(id.name.as_str()) {
+            bail!(
+                "{}: `instanceof {}` is only supported for classes of this program",
+                self.loc(b.span.start),
+                id.name
+            )
+        }
+        let sid = self.classes_sid(id.name.as_str());
+        let l = self.lower_expr(&b.left, None)?;
+        if !matches!(l.ty.strip(), Ty::Obj(_)) {
+            bail!("{}: `instanceof` on {}", self.loc(b.span.start), l.ty)
+        }
+        let mut members: Vec<StructId> = self
+            .class_of_sid
+            .keys()
+            .copied()
+            .filter(|s| self.is_subclass(*s, sid))
+            .collect();
+        members.sort_unstable();
+        let table = match self.m.itables.iter().position(|t| *t == members) {
+            Some(i) => i,
+            None => {
+                self.m.itables.push(members);
+                self.m.itables.len() - 1
+            }
+        };
+        Ok(mk(ExprKind::InstanceOf(Box::new(l), table), Ty::Bool))
+    }
+
     fn lower_binary(&mut self, b: &'a BinaryExpression<'a>) -> R<Expr> {
         use BinaryOperator as B;
+        if b.operator == B::Instanceof {
+            return self.lower_instanceof(b);
+        }
         let l = self.lower_expr(&b.left, None)?;
         // A bare string literal compares against the other side's literal type.
         let r = self.lower_expr(&b.right, Some(l.ty.strip()))?;
@@ -429,7 +494,7 @@ impl<'a> Lowerer<'a> {
             });
         }
         let (a, b) = (l.ty.strip().clone(), r.ty.strip().clone());
-        if a != b {
+        if a != b && !self.assignable(&a, &b) && !self.assignable(&b, &a) {
             bail!("{}: cannot compare {a} with {b}", self.loc(at));
         }
         if !eq && a != Ty::Num {
@@ -714,8 +779,7 @@ impl<'a> Lowerer<'a> {
                 }
             },
             other if self.classes.contains_key(other) => {
-                let ctor = self.classes[other].ctor.clone();
-                self.call_declared(&ctor, &n.arguments, None)
+                self.new_object(other, &n.arguments, n.span.start)
             }
             other => bail!("{}: `new {other}` is not supported", self.loc(n.span.start)),
         }
@@ -792,15 +856,23 @@ impl<'a> Lowerer<'a> {
 
     /// `obj.prop` as an assignment target: a field, or a property with a setter.
     fn field_place(&mut self, obj: Expr, prop: &str, pre: &mut Vec<Stmt>) -> R<Place> {
-        if let Ty::Obj(sid) = obj.ty.strip()
-            && self.m.structs[*sid].field(prop).is_none()
-            && let Some(setter) = self.class_accessor(*sid, prop, true)
+        if let Ty::Obj(sid) = obj.ty.strip().clone()
+            && !self.has_field(sid, prop)
         {
-            let getter = self.class_accessor(*sid, prop, false);
-            let ty = self.setter_value_ty(&setter)?;
-            let tmp = self.new_local(obj.ty.clone());
-            pre.push(Stmt::Assign(tmp, obj));
-            return Ok(Place::Accessor(self.var_expr(tmp), getter, setter, ty));
+            if let Some((_, setter)) = self.target_for(sid, Which::Setter, prop) {
+                let getter = self.target_for(sid, Which::Getter, prop).map(|g| g.1);
+                let ty = self.setter_value_ty(&setter);
+                let tmp = self.new_local(obj.ty.clone());
+                pre.push(Stmt::Assign(tmp, obj));
+                return Ok(Place::Accessor(self.var_expr(tmp), getter, setter, ty));
+            }
+            // A field or setter only a subclass has: tsc narrowed the object, so use it as that class.
+            let sub = self.downcast_for(sid, |s, c| {
+                s.has_field(c, prop) || s.resolve_in(c, Which::Setter, prop).is_some()
+            });
+            if let Some(sub) = sub {
+                return self.field_place(Self::downcast(obj, sub), prop, pre);
+            }
         }
         let f = self.member_of(obj, prop)?;
         let ExprKind::Field(obj, sid, idx) = f.kind else {
@@ -831,10 +903,7 @@ impl<'a> Lowerer<'a> {
             Place::Global(g, t) => mk(ExprKind::GlobalVar(*g), t.clone()),
             Place::ArrLen(a) => mk(ExprKind::Len(Box::new(a.clone())), Ty::Num),
             Place::Accessor(o, g, _, t) => match g {
-                Some(g) => {
-                    let fid = self.fids[g];
-                    mk(ExprKind::Call(fid, vec![o.clone()]), t.clone())
-                }
+                Some(g) => Self::target_call(g, vec![o.clone()], t.clone()),
                 None => mk(ExprKind::Null, t.clone()),
             },
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
@@ -851,8 +920,7 @@ impl<'a> Lowerer<'a> {
             Place::Cell(cell, _) => Stmt::CellSet(cell.clone(), v),
             Place::Global(g, _) => Stmt::StoreGlobal(*g, v),
             Place::Accessor(o, _, setter, _) => {
-                let fid = self.fids[setter];
-                Stmt::Eval(mk(ExprKind::Call(fid, vec![o.clone(), v]), Ty::Void))
+                Stmt::Eval(Self::target_call(setter, vec![o.clone(), v], Ty::Void))
             }
             Place::ArrLen(a) => Stmt::Eval(mk(
                 ExprKind::Rt(RtFn::ArrSetLen, vec![a.clone(), v]),
@@ -1092,6 +1160,7 @@ impl<'a> Lowerer<'a> {
                 let _ = fid;
                 self.call_declared(name, &c.arguments, None)
             }
+            Expression::Super(_) => self.lower_super_call(c),
             Expression::PrivateFieldExpression(p) => {
                 let recv = self.lower_expr(&p.object, None)?;
                 self.lower_method(recv, &classes::private_name(p.field.name.as_str()), c)
@@ -1109,6 +1178,9 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Array").is_none()
                 {
                     return self.lower_array_static(method, c);
+                }
+                if matches!(m.object, Expression::Super(_)) {
+                    return self.lower_super_method(method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()

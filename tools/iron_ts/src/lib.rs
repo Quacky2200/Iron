@@ -219,11 +219,11 @@ mod tests {
     #[test]
     fn class_features_that_are_not_built_yet_are_errors_that_say_so() {
         let ext = lower::lower_source(
-            "class A { x = 1; } class B extends A { y = 2; } export function f(): number { return new B().y; }",
+            "class B extends Component { y = 2; } export function f(): number { return new B().y; }",
         )
         .err()
         .unwrap();
-        assert!(ext.contains("extends"), "{ext}");
+        assert!(ext.contains("not a class of this program"), "{ext}");
         let dec = lower::lower_source(
             "class A { @property x = 1; } export function f(): number { return new A().x; }",
         )
@@ -246,5 +246,34 @@ mod tests {
             .err()
             .unwrap();
         assert!(this.contains("`this`"), "{this}");
+    }
+
+    // M9-TS-134
+    #[test]
+    fn inheritance_mistakes_are_errors_that_say_what_is_wrong() {
+        let abs = lower::lower_source(
+            "abstract class A { abstract m(): number; } export function f(): number { return new A().m(); }",
+        )
+        .err()
+        .unwrap();
+        assert!(abs.contains("abstract class A"), "{abs}");
+        let order = lower::lower_source(
+            "class B extends A { } class A { x = 1; } export function f(): number { return new B().x; }",
+        )
+        .err()
+        .unwrap();
+        assert!(order.contains("declare the base class"), "{order}");
+        let retype = lower::lower_source(
+            "class A { x = 1; } class B extends A { x = true; } export function f(): number { return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(retype.contains("changes its type"), "{retype}");
+        let inst = lower::lower_source(
+            "export function f(x: number): boolean { return x instanceof Array; }",
+        )
+        .err()
+        .unwrap();
+        assert!(inst.contains("instanceof"), "{inst}");
     }
 }

@@ -1445,9 +1445,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           so `Component`/`Vector3` are extern classes, not compiled TypeScript. Plain classes may start;
           inheritance from an extern class waits for the engine-boundary note
     - [x] Plain classes: fields, constructor, methods, `this` (`M9-TS-111..119`)
-    - [ ] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes
+    - [x] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes (`M9-TS-120..136`; extending an engine class waits for the manifest)
     - [x] Getters/setters, statics, private fields (`#x`, `private`); static accessors are open
-    - [ ] `instanceof`, `typeof`, class expressions
+    - [ ] `instanceof` (done: `M9-TS-124`), `typeof`, class expressions
     - [ ] Decorators: `@property` and friends as compile-time metadata
     - [ ] `Component` and the `register()` / spawn / lifecycle path calling compiled classes
           (joins Direct engine calls)

@@ -598,6 +598,23 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-117 | Integration | Two names for one object, and `===` as identity. Runs in all three GC modes (`tests/classes.rs`). |
 | M9-TS-118 | Integration | Methods, constructors and a stack in a loop survive a collection at every allocation. Runs in all three GC modes (`tests/classes.rs`). |
 | M9-TS-119 | Unit | `extends`, decorators, a method used as a value, a field without a type and `this` outside a method are errors that say what is missing (`iron_ts/src/lib.rs`). |
+| M9-TS-120 | Integration | A call on a base-class variable runs the subclass's method (areas of a Rect, Square, Circle and Tri held as `Shape`). Runs normally, in stress GC mode and with collection off (`tests/inherit.rs`). |
+| M9-TS-121 | Integration | `this` dispatches on the real class inside a base-class method (`describe()` calls `this.area()`). Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-122 | Integration | Getters can be overridden and are dispatched too. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-123 | Integration | `super.area()` calls the base implementation; a base-typed variable still gets the override. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-124 | Integration | `instanceof` is true for the class and its subclasses and false for null. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-125 | Integration | A member only a subclass has is usable after `instanceof` narrowing or `as`. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-126 | Integration | Subclass objects flow through variables, arrays and conditionals as their base class. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-127 | Integration | A subclass constructor assigns after `super(...)` returns. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-128 | Integration | A field a subclass declares again is the same slot and its initialiser wins. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-129 | Integration | A base constructor calling an overridden method reaches the subclass's version. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-130 | Integration | A derived class without a constructor forwards its parameters, then runs its initialisers. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-131 | Integration | An override calls `super` through a recursive structure. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-132 | Integration | A static counter in the base class counts every subclass construction. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-133 | Integration | Virtual calls, `instanceof` and subclass arrays under allocation pressure survive a collection at every allocation (`tests/inherit.rs`). |
+| M9-TS-134 | Unit | Instantiating an abstract class, a subclass declared before its base, a field that changes type in a subclass, and `instanceof` on a non-class are errors that say so (`iron_ts/src/lib.rs`). |
+| M9-TS-135 | Integration | A virtual call's receiver waiting for its arguments is not freed (`h.s.scaled(swapShape(h))` = 3). Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-136 | Integration | A call that returns nothing and needs a default filled in still runs (it was skipped when its value was void). Runs in all three GC modes (`tests/params.rs`). |
 
 ---
 

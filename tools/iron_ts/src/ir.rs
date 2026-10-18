@@ -234,6 +234,12 @@ pub enum ExprKind {
     NewCell(Box<Expr>),
     /// The value in a cell.
     CellGet(Box<Expr>),
+    /// A call through a table of functions indexed by the receiver's struct id; the receiver is
+    /// the first argument. See `Module::vtables`.
+    CallVirtual(usize, Vec<Expr>),
+    /// Is the object (a class instance, or null) an instance of one of the structs in
+    /// `Module::itables[i]`?
+    InstanceOf(Box<Expr>, usize),
     /// A closure over function `FuncId`, whose first parameter is the environment: an array of
     /// cells (or null). The function's other parameters are the closure type's.
     MakeClosure(FuncId, Option<Box<Expr>>),
@@ -275,10 +281,19 @@ pub struct Global {
     pub ty: Ty,
 }
 
+/// The implementations of one method for every concrete class below some class.
+#[derive(Clone, Debug)]
+pub struct VTable {
+    pub entries: Vec<(StructId, FuncId)>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Module {
     pub structs: Vec<StructDef>,
     pub globals: Vec<Global>,
+    pub vtables: Vec<VTable>,
+    /// For `instanceof`: the structs that count as instances.
+    pub itables: Vec<Vec<StructId>>,
     pub funcs: Vec<Func>,
     /// String-literal union members; a `Tag` is an index here.
     pub tags: Vec<String>,
@@ -404,6 +419,11 @@ fn ex(e: &Expr) -> String {
             "call#{f}({})",
             a.iter().map(ex).collect::<Vec<_>>().join(", ")
         ),
+        ExprKind::CallVirtual(t, a) => format!(
+            "callv#{t}({})",
+            a.iter().map(ex).collect::<Vec<_>>().join(", ")
+        ),
+        ExprKind::InstanceOf(a, t) => format!("instanceof#{t}({})", ex(a)),
         ExprKind::CallClosure(c, a) => format!(
             "callc {}({})",
             ex(c),

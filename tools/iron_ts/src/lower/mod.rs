@@ -18,6 +18,7 @@ mod stmt;
 mod types;
 
 use crate::ir::*;
+use classes::Which;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
 use oxc_parser::Parser;
@@ -38,8 +39,9 @@ pub(crate) enum FnKind {
     Free,
     /// A method or accessor of the class with this struct: `this` is the first parameter.
     Method(StructId),
-    /// A constructor: allocates `this` itself and returns it.
-    Ctor(StructId),
+    /// A constructor body (`C$init`): `this` is the first parameter, the object already exists.
+    /// The flag: a derived class with no constructor of its own.
+    Ctor(StructId, bool),
 }
 
 pub(crate) struct FnSrc<'a> {
@@ -119,8 +121,8 @@ pub(crate) struct FnCtx {
     pub rets: Vec<RetTarget>,
     /// Open optional chains: (exit label, result variable).
     pub chain: Vec<(LabelId, VarId)>,
-    /// Lowering a constructor: a bare `return` returns `this`.
-    pub in_ctor: bool,
+    /// Lowering a method or constructor of this class.
+    pub cls: Option<(String, StructId)>,
 }
 
 pub struct Lowerer<'a> {
@@ -244,6 +246,7 @@ impl<'a> Lowerer<'a> {
                 _ => {}
             }
         }
+        self.finalize_classes()?;
         // 2. Top-level values, in source order, into the init function.
         let init_id = self.m.funcs.len();
         self.m.funcs.push(Func {
@@ -358,7 +361,7 @@ impl<'a> Lowerer<'a> {
 
     pub(crate) fn declare_fn(&mut self, name: &str, src: FnSrc<'a>) -> R<()> {
         let mut ptys = Vec::new();
-        if let FnKind::Method(sid) = src.kind {
+        if let FnKind::Method(sid) | FnKind::Ctor(sid, _) = src.kind {
             ptys.push(Ty::Obj(sid));
         }
         for p in &src.params.items {
@@ -442,7 +445,10 @@ impl<'a> Lowerer<'a> {
         let exp_ret = self.fsig[id].1.clone();
         self.cur = FnCtx {
             ret: exp_ret,
-            in_ctor: matches!(kind, FnKind::Ctor(_)),
+            cls: match kind {
+                FnKind::Method(s) | FnKind::Ctor(s, _) => Some((self.class_of_sid[&s].clone(), s)),
+                FnKind::Free => None,
+            },
             ..FnCtx::default()
         };
         self.cur.scopes.push(HashMap::new());
@@ -450,7 +456,7 @@ impl<'a> Lowerer<'a> {
         let mut pvars = Vec::new();
         let mut pro = Vec::new();
         let mut ptys = ptys.into_iter();
-        if matches!(kind, FnKind::Method(_)) {
+        if matches!(kind, FnKind::Method(_) | FnKind::Ctor(..)) {
             let ty = ptys.next().expect("a method has a this type");
             let v = self.new_local(ty);
             self.bind_var("this", v, &mut pro);
@@ -466,17 +472,11 @@ impl<'a> Lowerer<'a> {
             self.bind_param(&r.rest.argument, v, &mut pro)?;
             pvars.push(v);
         }
-        if let FnKind::Ctor(sid) = kind {
+        if let FnKind::Ctor(sid, implicit) = kind {
             let class = self.class_of_sid[&sid].clone();
-            self.ctor_prologue(&class, sid, params, &mut pro)?;
+            self.ctor_prologue(&class, implicit, &pvars, &mut pro)?;
         }
-        let (mut stmts, ret) = self.lower_body_into(body, pro)?;
-        if matches!(kind, FnKind::Ctor(_)) {
-            // Falling off the end of a constructor returns the new object.
-            stmts.pop();
-            let b = self.lookup("this").expect("bound in the prologue");
-            stmts.push(Stmt::Return(Some(self.read_binding(&b))));
-        }
+        let (stmts, ret) = self.lower_body_into(body, pro)?;
         self.fsig[id].1 = Some(ret.clone());
         let ctx = std::mem::take(&mut self.cur);
         let f = &mut self.m.funcs[id];

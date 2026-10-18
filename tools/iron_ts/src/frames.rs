@@ -71,7 +71,12 @@ fn assigns(e: &Expr, v: VarId) -> bool {
 fn replaces_global(e: &Expr, g: GlobalId) -> bool {
     scan_expr(
         e,
-        &|x| matches!(x.kind, ExprKind::Call(..) | ExprKind::CallClosure(..)),
+        &|x| {
+            matches!(
+                x.kind,
+                ExprKind::Call(..) | ExprKind::CallVirtual(..) | ExprKind::CallClosure(..)
+            )
+        },
         &|s| matches!(s, Stmt::StoreGlobal(x, _) if *x == g),
     )
 }
@@ -125,7 +130,10 @@ fn n_spills(args: &[&Expr]) -> u32 {
 /// Can evaluating this expression run a collection?
 pub fn may_alloc(e: &Expr) -> bool {
     match &e.kind {
-        ExprKind::NewObj(_) | ExprKind::Call(..) | ExprKind::CallClosure(..) => true,
+        ExprKind::NewObj(_)
+        | ExprKind::Call(..)
+        | ExprKind::CallVirtual(..)
+        | ExprKind::CallClosure(..) => true,
         ExprKind::NewCell(_) | ExprKind::MakeClosure(..) => true,
         // A sort runs the comparator, which allocates.
         ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew | RtFn::ArrSort, _) => true,
@@ -156,6 +164,7 @@ fn children(e: &Expr) -> Vec<&Expr> {
         | ExprKind::Cast(a)
         | ExprKind::Truthy(a)
         | ExprKind::Field(a, ..)
+        | ExprKind::InstanceOf(a, _)
         | ExprKind::Len(a) => vec![a],
         ExprKind::Bin(_, a, b)
         | ExprKind::Cmp(_, a, b)
@@ -163,7 +172,9 @@ fn children(e: &Expr) -> Vec<&Expr> {
         | ExprKind::Or(a, b)
         | ExprKind::Index(a, b) => vec![a, b],
         ExprKind::Cond(c, a, b) => vec![c, a, b],
-        ExprKind::Call(_, args) | ExprKind::Rt(_, args) => args.iter().collect(),
+        ExprKind::Call(_, args) | ExprKind::CallVirtual(_, args) | ExprKind::Rt(_, args) => {
+            args.iter().collect()
+        }
         ExprKind::CallClosure(c, args) => std::iter::once(&**c).chain(args.iter()).collect(),
         ExprKind::Seq(_, v) => vec![v],
         ExprKind::NewCell(a) | ExprKind::CellGet(a) => vec![a],
@@ -174,7 +185,7 @@ fn children(e: &Expr) -> Vec<&Expr> {
 
 fn count_expr(e: &Expr, n: &mut u32) {
     match &e.kind {
-        ExprKind::Call(_, args) | ExprKind::Rt(_, args) => {
+        ExprKind::Call(_, args) | ExprKind::CallVirtual(_, args) | ExprKind::Rt(_, args) => {
             *n += n_spills(&args.iter().collect::<Vec<_>>());
         }
         ExprKind::CallClosure(c, args) => {

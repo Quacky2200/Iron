@@ -35,6 +35,7 @@ fn main() {
         ("mathlib", "ml_", 9000),
         ("arraylib", "al_", 10000),
         ("classes", "cls_", 11000),
+        ("inherit", "inh_", 12000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
