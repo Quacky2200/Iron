@@ -650,6 +650,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-170 | Differential | Equality, `<` ordering and concatenation (rejoining split pairs) over every pair of strings equal bun's (`tests/strings.rs`). |
 | M9-TS-171 | Differential | `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith` with every position over every pair equal bun's (`tests/strings.rs`). |
 | M9-TS-172 | Unit | A string is one collectable object: an unrooted one is freed, a rooted one survives (`string.rs`). |
+| M9-TS-173 | Differential | `trim`, `trimStart`, `trimEnd`, `toUpperCase`, `toLowerCase` (special casing, final sigma) over a corpus with Unicode white space, accents and lone surrogates equal bun's (`iron_ts_rt/tests/strings_more.rs`). |
+| M9-TS-174 | Differential | `at`, `repeat`, `padStart`, `padEnd` (fillers cut inside a pair) equal bun's (`tests/strings_more.rs`). |
+| M9-TS-175 | Differential | `split` (empty, one-unit, multi-unit and lone-surrogate separators) and `join` (rejoining split pairs) equal bun's (`tests/strings_more.rs`). |
+| M9-TS-176 | Differential | `String(x)`, `toFixed(0..6)` (ties round up on the exact value) and `toString(radix)` equal bun's (`tests/strings_more.rs`). |
+| M9-TS-177 | Differential | `Number(s)`, `parseFloat(s)` and `parseInt(s, radix)` equal bun's over hex/binary/octal, signs, exponents, white space, trailing text and bad radixes (`tests/strings_more.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

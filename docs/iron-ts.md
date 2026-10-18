@@ -202,12 +202,25 @@ calls into. Its header comment is the long version.
   numbers or bools: `eq`, `compare`, `length`, `char_code_at`, `code_point_at`, `index_of`,
   `last_index_of`, `includes`, `starts_with`, `ends_with`. Rust code reads a string through `Str`:
   `as_bytes`, `as_str` (borrowed when well formed), `to_string_lossy` (lone surrogates become U+FFFD),
-  `to_utf16`. Not done yet: compiler support for strings (slice 2), `trim`/`split`/`join`/`repeat`/
-  `pad`/case/number conversion (slice 1b), and the engine boundary (slice 3).
-  Tests: [tools/iron_ts_rt/tests/strings.rs](../tools/iron_ts_rt/tests/strings.rs) (M9-TS-162..172),
-  including a differential harness: `tests/gen_strings.ts` (run with bun) writes
-  `strings_expected.json` from a 24-string corpus and the Rust test repeats the same operations on the
-  runtime and compares.
+  `to_utf16`.
+  Part two ([string_more.rs](../tools/iron_ts_rt/src/string_more.rs), slice 1b), generated code calls
+  the `_gc` ones: `trim_gc`/`trim_start_gc`/`trim_end_gc` (JavaScript's white space set), `repeat_gc`
+  (a negative or infinite count is a fault, a RangeError), `pad_start_gc`/`pad_end_gc`,
+  `to_upper_gc`/`to_lower_gc` (Rust's Unicode tables with special casing and final sigma; lone
+  surrogates pass through), `at_gc` (null for undefined), `concat_n_gc` (template literals: one
+  allocation from an array of parts), `split_gc` (a new array of strings) and `join_gc` (a null element
+  is empty). Number conversion: `ts_rt_num_to_str_gc` (`String(x)`: shortest round-trip digits in
+  JavaScript's layout, exponent form from 1e21 and below 1e-7), `ts_rt_num_to_fixed_gc` (`toFixed`;
+  exact ties round up as in JavaScript, where Rust rounds to even), `ts_rt_num_to_radix_gc` (integers
+  only; a fraction in another radix is a fault for now), and the parsers `ts_rt_str_to_number`
+  (`Number(s)`), `ts_rt_str_parse_float`, `ts_rt_str_parse_int(s, radix)`. Not done yet: `toString(radix)`
+  of fractions, `toPrecision`/`toExponential`, `normalize`, `localeCompare`, RegExp, compiler support
+  for strings (slice 2) and the engine boundary (slice 3).
+  Tests: [tools/iron_ts_rt/tests/strings.rs](../tools/iron_ts_rt/tests/strings.rs) (M9-TS-162..172) and
+  [strings_more.rs](../tools/iron_ts_rt/tests/strings_more.rs) (M9-TS-173..177), both differential:
+  `tests/gen_strings.ts` (run with bun) writes `strings_expected.json` and
+  `strings_more_expected.json` from a 24-string corpus (part two adds number and parse cases) and the
+  Rust tests repeat the same operations on the runtime and compare against bun's output.
 - **Host side.** `link_anchor()` keeps the exports linked into an executable that only reaches them from
   generated code; `gc_stats()` reports collections and live bytes. Several modules in one process each
   need their own `struct_base`; registering a different table under a taken id is refused.

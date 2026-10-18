@@ -39,3 +39,46 @@ for (const s of corpus) {
 }
 await Bun.write(import.meta.dir + "/strings_expected.json", JSON.stringify({ corpus: corpus.map(units), single, pair }));
 console.log("wrote", corpus.length, "strings");
+
+// ---- part two: tests/strings_more_expected.json (trim, case, pad, repeat, at, split/join, numbers) ----
+const enc = (v: number): number | string => (Number.isFinite(v) ? v : String(v));
+const texts: string[] = [
+  " a ", "\t\n a b  ", " x　", "﻿z", "", "   ", "ß", "ǅ", "ΑΣ", "Σ", "ΑΣ Β", "İ", "ﬃ",
+  "ǆ", "Straße", "éÉ", "日本", "😀", "\uD83D ", " \uDE00", "ab", "a,b,,c", "ΑΣ ΑΣ", "İx",
+];
+const pads = ["", " ", "ab", "😀", "\uD83D"];
+const seps = ["", " ", "a", "ab", "😀", "\uD83D", "\uDE00", "ΑΣ", ","];
+const joiners = ["", ",", "😀", "\uD83D"];
+const more: Record<string, unknown> = { texts: texts.map(units), pads: pads.map(units), seps: seps.map(units), joiners: joiners.map(units) };
+more.trim = texts.map((s) => [units(s.trim()), units(s.trimStart()), units(s.trimEnd())]);
+more.case = texts.map((s) => [units(s.toUpperCase()), units(s.toLowerCase())]);
+more.at = texts.map((s) => rng(-3, s.length + 1).map((i) => { const c = s.at(i); return c === undefined ? null : units(c); }));
+more.repeat = texts.map((s) => rng(0, 3).map((n) => units(s.repeat(n))));
+more.pad = texts.map((s) => rng(0, s.length + 4).flatMap((t) => pads.flatMap((p) => [units(s.padStart(t, p)), units(s.padEnd(t, p))])));
+more.split = texts.flatMap((s) => seps.map((p) => s.split(p).map(units)));
+more.join = texts.flatMap((s) => seps.map((p) => joiners.map((j) => units(s.split(p).join(j)))));
+
+const numbers = [
+  0, -0, 1, -1, 0.1, 0.5, 1.5, 2.5, -2.5, 0.125, 1e21, 1e-7, 123456789012345680000, 5e-324,
+  1.7976931348623157e308, NaN, Infinity, -Infinity, 0.000001, 123.456, -1.5e-10, 4.35, 2 ** 53, 1.005,
+  8.345, 10.235, 1e20, 0.3, 100, 1234.5678, 0.00001234, 255, -255, 1e100, 0.1 + 0.2, 1 / 3, -1e-7,
+];
+more.numbers = numbers.map(enc);
+more.numToString = numbers.map((x) => String(x));
+more.numToFixed = numbers.map((x) => rng(0, 6).map((d) => x.toFixed(d)));
+const ints = [0, 1, -1, 5, 255, -255, 1000, 123456789, 2 ** 40, -(2 ** 33)];
+more.ints = ints;
+more.numRadix = ints.map((x) => [2, 8, 16, 36].map((r) => x.toString(r)));
+
+const parseCases = [
+  "", " ", "42", " 42 ", "-42", "+42", "4.2e1", ".5", "5.", "-.5e-2", "1e", "1e+", "0x1F", "0X1f", "0b101",
+  "0o17", "0x", "Infinity", "-Infinity", "+Infinity", "infinity", "12px", "px12", "1_000", "1 2", "٣", "1e1000",
+  "-0", "0.0000001", "00012", "9007199254740993", " 12 ", "0x1F.8", "1.2.3", "--1", "NaN", "12e3abc",
+  "  -7.5e2xyz", "0.1e-2", "e5", "+", "-", ".", "1.e2",
+];
+more.parseCases = parseCases.map(units);
+more.number = parseCases.map((s) => enc(Number(s)));
+more.parseFloat = parseCases.map((s) => enc(parseFloat(s)));
+more.parseInt = parseCases.map((s) => [undefined, 10, 16, 2, 36, 37, 1, 0].map((r) => enc(parseInt(s, r as number))));
+await Bun.write(import.meta.dir + "/strings_more_expected.json", JSON.stringify(more));
+console.log("wrote part two");

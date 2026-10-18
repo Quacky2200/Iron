@@ -62,7 +62,7 @@ fn scan(b: &[u8]) -> (i64, u64) {
 }
 
 /// The code point at `p` (a boundary) and its length in bytes.
-fn decode(b: &[u8], p: usize) -> (u32, usize) {
+pub fn wtf8_decode(b: &[u8], p: usize) -> (u32, usize) {
     let x = b[p] as u32;
     let c = |i: usize| b[p + i] as u32 & 0x3F;
     if x < 0x80 {
@@ -139,7 +139,7 @@ fn units(b: &[u8]) -> impl Iterator<Item = u16> + '_ {
         if p >= b.len() {
             return None;
         }
-        let (cp, n) = decode(b, p);
+        let (cp, n) = wtf8_decode(b, p);
         p += n;
         if cp >= 0x10000 {
             low = Some(low_unit(cp) as u16);
@@ -236,7 +236,7 @@ impl Str {
         let mut out = String::with_capacity(b.len());
         let mut p = 0;
         while p < b.len() {
-            let (cp, n) = decode(b, p);
+            let (cp, n) = wtf8_decode(b, p);
             out.push(char::from_u32(cp).unwrap_or('\u{FFFD}'));
             p += n;
         }
@@ -278,11 +278,11 @@ impl Str {
         if u > i {
             while u > i {
                 p = prev_start(b, p);
-                u -= units_of(decode(b, p).0);
+                u -= units_of(wtf8_decode(b, p).0);
             }
         } else {
             while p < b.len() {
-                let (cp, n) = decode(b, p);
+                let (cp, n) = wtf8_decode(b, p);
                 if u + units_of(cp) > i {
                     break;
                 }
@@ -322,7 +322,7 @@ impl Str {
 
     /// The units `[a, b)` as WTF-8 bytes (`0 <= a, b <= utf16_len`). A cut through a surrogate pair
     /// leaves the lone surrogate, as in JavaScript.
-    fn sub_units(&self, a: i64, b: i64) -> Vec<u8> {
+    pub fn sub_units(&self, a: i64, b: i64) -> Vec<u8> {
         if a >= b {
             return Vec::new();
         }
@@ -335,18 +335,18 @@ impl Str {
         let mut out = Vec::with_capacity(pb - pa);
         if pa == pb {
             // Inside one pair: the high half only.
-            encode(&mut out, high_unit(decode(bytes, pa).0));
+            encode(&mut out, high_unit(wtf8_decode(bytes, pa).0));
             return out;
         }
         let mut start = pa;
         if a > ua {
-            let (cp, n) = decode(bytes, pa);
+            let (cp, n) = wtf8_decode(bytes, pa);
             encode(&mut out, low_unit(cp));
             start = pa + n;
         }
         out.extend_from_slice(&bytes[start..pb]);
         if b > ub {
-            encode(&mut out, high_unit(decode(bytes, pb).0));
+            encode(&mut out, high_unit(wtf8_decode(bytes, pb).0));
         }
         out
     }
@@ -362,7 +362,7 @@ impl Str {
             return Some(self.as_bytes()[i as usize] as u32);
         }
         let (p, u) = self.locate(i);
-        let cp = decode(self.as_bytes(), p).0;
+        let cp = wtf8_decode(self.as_bytes(), p).0;
         Some(if cp < 0x10000 {
             cp
         } else if i == u {
@@ -382,7 +382,7 @@ impl Str {
             return Some(self.as_bytes()[i as usize] as u32);
         }
         let (p, u) = self.locate(i);
-        let cp = decode(self.as_bytes(), p).0;
+        let cp = wtf8_decode(self.as_bytes(), p).0;
         // The low half of a pair is the lone low surrogate.
         Some(if cp >= 0x10000 && i > u {
             low_unit(cp)
@@ -401,7 +401,7 @@ impl Str {
             let (p, u) = self.locate(from);
             let start = if from > u {
                 // `from` is the low half of a pair: a well formed needle cannot start there.
-                p + decode(self.as_bytes(), p).1
+                p + wtf8_decode(self.as_bytes(), p).1
             } else {
                 p
             };
@@ -486,22 +486,29 @@ fn find_bytes(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
-/// `a` and `b` joined; a trailing lone high surrogate and a leading lone low one become one pair.
-fn concat_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(a.len() + b.len());
+/// Appends `b` to `out`; a trailing lone high surrogate of `out` and a leading lone low one of `b`
+/// become one pair (the WTF-8 rule that keeps byte equality equal to JavaScript equality).
+pub fn append_wtf8(out: &mut Vec<u8>, b: &[u8]) {
     let lone_high =
-        a.len() >= 3 && a[a.len() - 3] == 0xED && (0xA0..0xB0).contains(&a[a.len() - 2]);
+        out.len() >= 3 && out[out.len() - 3] == 0xED && (0xA0..0xB0).contains(&out[out.len() - 2]);
     let lone_low = b.len() >= 3 && b[0] == 0xED && (0xB0..0xC0).contains(&b[1]);
     if lone_high && lone_low {
-        out.extend_from_slice(&a[..a.len() - 3]);
-        let hi = decode(a, a.len() - 3).0;
-        let lo = decode(b, 0).0;
-        encode(&mut out, 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00));
+        let at = out.len() - 3;
+        let hi = wtf8_decode(out, at).0;
+        let lo = wtf8_decode(b, 0).0;
+        out.truncate(at);
+        encode(out, 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00));
         out.extend_from_slice(&b[3..]);
     } else {
-        out.extend_from_slice(a);
         out.extend_from_slice(b);
     }
+}
+
+/// `a` and `b` joined.
+fn concat_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    out.extend_from_slice(a);
+    append_wtf8(&mut out, b);
     out
 }
 
@@ -516,7 +523,7 @@ fn compare_bytes(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
     while s > 0 && a[s] & 0xC0 == 0x80 {
         s -= 1;
     }
-    let (ca, cb) = (decode(a, s).0, decode(b, s).0);
+    let (ca, cb) = (wtf8_decode(a, s).0, wtf8_decode(b, s).0);
     let high = |c: u32| (0xD800..0x10000).contains(&c);
     if (ca >= 0x10000 && high(cb)) || (cb >= 0x10000 && high(ca)) {
         return units(&a[s..]).cmp(units(&b[s..]));
@@ -569,6 +576,17 @@ pub unsafe extern "C" fn ts_rt_str_new(data: *const u8, len: i64) -> *mut Str {
     // SAFETY: by contract.
     let bytes = unsafe { std::slice::from_raw_parts(data, len.max(0) as usize) };
     with_heap(|h| alloc_str(h, bytes))
+}
+
+/// Like `ts_rt_str_new`, for generated code: may collect first.
+///
+/// # Safety
+/// `data` must point to `len` readable bytes of valid WTF-8 (not inside a script object).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_str_new_gc(data: *const u8, len: i64) -> *mut Str {
+    // SAFETY: by contract.
+    let bytes = unsafe { std::slice::from_raw_parts(data, len.max(0) as usize) }.to_vec();
+    alloc_gc(bytes)
 }
 
 /// A new string from UTF-16 code units (`String.fromCharCode`). Never collects.

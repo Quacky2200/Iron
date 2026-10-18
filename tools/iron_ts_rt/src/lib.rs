@@ -969,7 +969,9 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 // ---- strings: see string.rs ----
 
 mod string;
+mod string_more;
 pub use string::*;
+pub use string_more::*;
 
 /// A new variable box holding `value` (a number's bits, a tag, or a pointer when `is_ptr`). May
 /// collect first; a pointer value is kept alive meanwhile.
@@ -1106,6 +1108,25 @@ pub fn link_anchor() -> usize {
         ts_rt_str_starts_with as *const () as usize,
         ts_rt_str_ends_with as *const () as usize,
         ts_rt_str_from_code_point_gc as *const () as usize,
+        ts_rt_str_new_gc as *const () as usize,
+        ts_rt_str_trim_gc as *const () as usize,
+        ts_rt_str_trim_start_gc as *const () as usize,
+        ts_rt_str_trim_end_gc as *const () as usize,
+        ts_rt_str_repeat_gc as *const () as usize,
+        ts_rt_str_pad_start_gc as *const () as usize,
+        ts_rt_str_pad_end_gc as *const () as usize,
+        ts_rt_str_to_upper_gc as *const () as usize,
+        ts_rt_str_to_lower_gc as *const () as usize,
+        ts_rt_str_at_gc as *const () as usize,
+        ts_rt_str_concat_n_gc as *const () as usize,
+        ts_rt_str_split_gc as *const () as usize,
+        ts_rt_str_join_gc as *const () as usize,
+        ts_rt_num_to_str_gc as *const () as usize,
+        ts_rt_num_to_fixed_gc as *const () as usize,
+        ts_rt_num_to_radix_gc as *const () as usize,
+        ts_rt_str_to_number as *const () as usize,
+        ts_rt_str_parse_float as *const () as usize,
+        ts_rt_str_parse_int as *const () as usize,
         ts_rt_closure_new as *const () as usize,
         ts_rt_closure_new_gc as *const () as usize,
         ts_rt_cell_new_gc as *const () as usize,
