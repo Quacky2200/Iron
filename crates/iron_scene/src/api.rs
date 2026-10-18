@@ -34,8 +34,28 @@ impl Handle for ObjectId {
     }
 }
 
+/// The `Transform` of a `GameObject`: the same object seen as its transform. Scripts get one with
+/// `go.transform`, and it shares the object's id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransformRef(pub ObjectId);
+
+impl Handle for TransformRef {
+    fn to_raw(self) -> u64 {
+        self.0.to_raw()
+    }
+    fn from_raw(raw: u64) -> Self {
+        TransformRef(ObjectId::from_raw(raw))
+    }
+}
+
 fn with<R>(f: impl FnOnce(&mut Scene) -> R) -> Option<R> {
     context::with(&SCENE, f)
+}
+
+fn world_position(object: ObjectId) -> Vec3 {
+    with(|s| s.contains(object).then(|| s.world(object).position))
+        .flatten()
+        .unwrap_or_default()
 }
 
 fn none() -> ObjectId {
@@ -45,14 +65,134 @@ fn none() -> ObjectId {
 
 #[iron_api(
     namespace = "Scene",
-    handles(GameObject = ObjectId),
+    handles(GameObject = ObjectId, Transform = TransformRef),
     values(
         Vector3 = Vec3 [x: f32, y: f32, z: f32],
         Quaternion = Quat [x: f32, y: f32, z: f32, w: f32]
     )
 )]
 pub mod scene_api {
-    use super::{ObjectId, Quat, Transform, Vec3, none, with};
+    use super::{ObjectId, Quat, Transform, TransformRef, Vec3, none, with};
+
+    // `GameObject`: creating, destroying, flags and the transform.
+    impl ObjectId {
+        /// Creates an enabled root object at the origin.
+        pub fn create() -> ObjectId {
+            with(|s| s.create("GameObject")).unwrap_or_else(none)
+        }
+
+        /// Destroys the object and everything under it.
+        pub fn destroy(self) {
+            with(|s| s.destroy(self));
+        }
+
+        /// Does the object exist (it may have been destroyed)?
+        pub fn exists(self) -> bool {
+            with(|s| s.contains(self)).unwrap_or(false)
+        }
+
+        /// Its transform.
+        #[property]
+        pub fn transform(self) -> TransformRef {
+            TransformRef(self)
+        }
+
+        /// Is it switched on? (Its parents may still be off: see `activeInHierarchy`.)
+        #[property]
+        pub fn enabled(self) -> bool {
+            with(|s| s.enabled(self)).unwrap_or(false)
+        }
+
+        pub fn set_enabled(self, enabled: bool) {
+            with(|s| s.set_enabled(self, enabled));
+        }
+
+        /// Enabled, and so are all its parents.
+        #[property]
+        pub fn active_in_hierarchy(self) -> bool {
+            with(|s| s.active(self)).unwrap_or(false)
+        }
+
+        /// Render group 0 to 31.
+        #[property]
+        pub fn layer(self) -> u32 {
+            with(|s| s.layer(self) as u32).unwrap_or(0)
+        }
+
+        pub fn set_layer(self, layer: u32) {
+            with(|s| s.set_layer(self, layer.min(31) as u8));
+        }
+    }
+
+    // `Transform`: position, rotation and scale, and the hierarchy.
+    impl TransformRef {
+        /// The object this is the transform of.
+        #[property]
+        pub fn game_object(self) -> ObjectId {
+            self.0
+        }
+
+        /// Position in the world.
+        #[property]
+        pub fn position(self) -> Vec3 {
+            super::world_position(self.0)
+        }
+
+        /// Puts the object at a world position, keeping its world rotation.
+        pub fn set_position(self, position: Vec3) {
+            set_position(self.0, position);
+        }
+
+        /// Rotation in the world.
+        #[property]
+        pub fn rotation(self) -> Quat {
+            rotation(self.0)
+        }
+
+        /// Rotates the object in the world, keeping its world position.
+        pub fn set_rotation(self, rotation: Quat) {
+            set_rotation(self.0, rotation);
+        }
+
+        /// Position relative to the parent.
+        #[property]
+        pub fn local_position(self) -> Vec3 {
+            local_position(self.0)
+        }
+
+        pub fn set_local_position(self, position: Vec3) {
+            set_local_position(self.0, position);
+        }
+
+        #[property]
+        pub fn local_rotation(self) -> Quat {
+            local_rotation(self.0)
+        }
+
+        pub fn set_local_rotation(self, rotation: Quat) {
+            set_local_rotation(self.0, rotation);
+        }
+
+        #[property]
+        pub fn local_scale(self) -> Vec3 {
+            local_scale(self.0)
+        }
+
+        pub fn set_local_scale(self, scale: Vec3) {
+            set_local_scale(self.0, scale);
+        }
+
+        /// The parent transform, or no object for a root.
+        #[property]
+        pub fn parent(self) -> TransformRef {
+            TransformRef(parent(self.0))
+        }
+
+        /// Moves the object under a parent (none: to the root), optionally keeping its world pose.
+        pub fn set_parent(self, parent: TransformRef, keep_world: bool) {
+            set_parent(self.0, parent.0, keep_world);
+        }
+    }
 
     /// Creates an enabled root object at the origin.
     pub fn create() -> ObjectId {

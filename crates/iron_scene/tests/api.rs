@@ -111,7 +111,7 @@ fn rotation_is_a_quaternion_value_and_flags_are_booleans() {
 fn the_manifest_declares_the_handle_and_both_value_classes() {
     let m = api::MANIFEST;
     assert_eq!(m.name, "Scene");
-    assert_eq!(m.handles, &["GameObject"]);
+    assert_eq!(m.handles, &["GameObject", "Transform"]);
     let names: Vec<&str> = m.values.iter().map(|v| v.name).collect();
     assert_eq!(names, ["Vector3", "Quaternion"]);
     let d = m.to_dts();
@@ -125,4 +125,40 @@ fn the_manifest_declares_the_handle_and_both_value_classes() {
         "{d}"
     );
     assert!(d.contains("declare class Quaternion {"), "{d}");
+}
+
+// M9-API-19
+//
+// `GameObject` and `Transform` as classes: the shims take the receiver first, a transform shares
+// its object's handle, and the declaration file has accessors and methods.
+#[test]
+fn game_object_and_transform_classes_work_through_their_shims() {
+    let mut scene = Scene::new();
+    let _scope = enter(&mut scene);
+    let go = api::iron_GameObject_create();
+    assert!(api::iron_GameObject_exists(go));
+    let t = api::iron_GameObject_transform(go);
+    assert_eq!(t, go, "a transform is the object's own handle");
+    assert_eq!(api::iron_Transform_gameObject(t), go);
+    api::iron_Transform_setLocalScale(t, 2.0, 2.0, 2.0);
+    api::iron_Transform_setPosition(t, 1.0, 2.0, 3.0);
+    let mut out = [0.0f32; 3];
+    unsafe { api::iron_Transform_position(t, out.as_mut_ptr()) };
+    assert_eq!(out, [1.0, 2.0, 3.0]);
+    api::iron_GameObject_setEnabled(go, false);
+    assert!(!api::iron_GameObject_activeInHierarchy(go));
+    assert_eq!(api::iron_Transform_parent(t), 0, "a root has no parent");
+    api::iron_GameObject_destroy(go);
+    assert!(!api::iron_GameObject_exists(go));
+
+    let d = api::MANIFEST.to_dts();
+    assert!(d.contains("declare class GameObject {"), "{d}");
+    assert!(d.contains("static create(): GameObject;"), "{d}");
+    assert!(d.contains("get transform(): Transform;"), "{d}");
+    assert!(d.contains("get position(): Vector3;"), "{d}");
+    assert!(d.contains("set position(value: Vector3);"), "{d}");
+    assert!(
+        d.contains("setParent(parent: Transform, keepWorld: boolean): void;"),
+        "{d}"
+    );
 }

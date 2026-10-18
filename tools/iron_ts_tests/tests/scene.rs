@@ -85,3 +85,49 @@ fn many_objects_and_their_handles_survive_collections() {
         assert_eq!(iron_ts_tests::scene_anchor(), 0);
     });
 }
+
+// M9-TS-156
+//
+// The hierarchy of M9-TS-151 written with handle classes: `child.transform.setParent(..)`,
+// `transform.localPosition = new Vector3(..)`, `transform.position` read back, `go.destroy()`.
+#[test]
+fn handle_classes_build_and_move_a_hierarchy() {
+    let mut scene = Scene::new();
+    let scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(ts_scn_classHierarchy(), 110_203_100.0);
+    });
+    drop(scope);
+    assert!(scene.is_empty());
+}
+
+// M9-TS-157
+//
+// Boolean, number and handle properties on a `GameObject`, a method (`exists`) and the
+// `transform.gameObject` round trip.
+#[test]
+fn handle_class_properties_methods_and_round_trips() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        // layer 5, off while disabled, was disabled, on again, same object, alive, then gone.
+        assert_eq!(ts_scn_classFlags(), 150_011.0 + 0.0);
+    });
+}
+
+// M9-TS-158
+#[test]
+fn an_update_loop_moves_an_object_through_transform_position() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        let want: f64 = (0..50)
+            .map(|i| {
+                let a = i as f64 * 0.1;
+                a.cos() * 5.0 + a.sin() * 5.0
+            })
+            .sum();
+        let got = ts_scn_classOrbit(50.0);
+        assert!((got - want).abs() < 1e-3, "{got} vs {want}");
+    });
+}

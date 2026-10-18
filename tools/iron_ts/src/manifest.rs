@@ -6,7 +6,10 @@
 //!   "params":[{"name":"a","type":"f64"}],"returns":"f64"}]}
 //! ```
 //!
-//! Types are `void`, `bool`, `f64`, `f32`, `i32`, `u32` and `handle:Name`.
+//! Types are `void`, `bool`, `f64`, `f32`, `i32`, `u32`, `handle:Name` and `value:Name`.
+//!
+//! A namespace may also list handle `classes`: each function has a `kind` (`static`, `method`, `get`,
+//! `set`), and the ones that act on an object take it as their first parameter, named `this`.
 
 use crate::ir::ExtTy;
 use std::collections::{HashMap, HashSet};
@@ -18,6 +21,16 @@ pub struct ExternFn {
     pub ret: ExtTy,
 }
 
+/// The functions of a handle class, by how scripts call them. Methods, getters and setters take
+/// the receiver as their first parameter.
+#[derive(Clone, Debug, Default)]
+pub struct ClassFns {
+    pub statics: HashMap<String, ExternFn>,
+    pub methods: HashMap<String, ExternFn>,
+    pub getters: HashMap<String, ExternFn>,
+    pub setters: HashMap<String, ExternFn>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Manifest {
     /// Namespace -> function name -> function.
@@ -26,6 +39,8 @@ pub struct Manifest {
     pub handles: HashSet<String>,
     /// Value classes (`Vector3`): their fields in order, each a scalar type.
     pub values: HashMap<String, Vec<(String, ExtTy)>>,
+    /// Handle classes (`GameObject`) by name.
+    pub classes: HashMap<String, ClassFns>,
 }
 
 fn ext_ty(s: &str) -> Result<ExtTy, String> {
@@ -77,40 +92,68 @@ impl Manifest {
             .as_array()
             .ok_or("manifest: missing `functions`")?
         {
-            let name = f["name"]
-                .as_str()
-                .ok_or("manifest: a function needs a name")?;
-            let symbol = f["symbol"]
-                .as_str()
-                .ok_or("manifest: a function needs a symbol")?
-                .to_string();
-            let mut params = Vec::new();
-            for p in f["params"].as_array().ok_or("manifest: missing `params`")? {
-                let pn = p["name"].as_str().unwrap_or("arg").to_string();
-                let pt = ext_ty(
-                    p["type"]
-                        .as_str()
-                        .ok_or("manifest: a parameter needs a type")?,
-                )?;
-                if let ExtTy::Handle(h) = &pt {
-                    self.handles.insert(h.clone());
-                }
-                params.push((pn, pt));
+            let (name, _, func) = self.parse_fn(f)?;
+            fns.insert(name, func);
+        }
+        for c in v["classes"].as_array().into_iter().flatten() {
+            let cname = c["name"].as_str().ok_or("manifest: a class needs a name")?;
+            self.handles.insert(cname.to_string());
+            let mut class = ClassFns::default();
+            for f in c["functions"]
+                .as_array()
+                .ok_or("manifest: a class needs `functions`")?
+            {
+                let (name, kind, func) = self.parse_fn(f)?;
+                let table = match kind.as_str() {
+                    "static" => &mut class.statics,
+                    "method" => &mut class.methods,
+                    "get" => &mut class.getters,
+                    "set" => &mut class.setters,
+                    other => return Err(format!("manifest: unknown function kind `{other}`")),
+                };
+                table.insert(name, func);
             }
-            let ret = ext_ty(f["returns"].as_str().ok_or("manifest: missing `returns`")?)?;
-            if let ExtTy::Handle(h) = &ret {
-                self.handles.insert(h.clone());
-            }
-            fns.insert(
-                name.to_string(),
-                ExternFn {
-                    symbol,
-                    params,
-                    ret,
-                },
-            );
+            self.classes.insert(cname.to_string(), class);
         }
         self.namespaces.insert(ns, fns);
         Ok(())
+    }
+
+    /// One function entry: its script name, kind (`static` when absent) and signature.
+    fn parse_fn(&mut self, f: &serde_json::Value) -> Result<(String, String, ExternFn), String> {
+        let name = f["name"]
+            .as_str()
+            .ok_or("manifest: a function needs a name")?;
+        let symbol = f["symbol"]
+            .as_str()
+            .ok_or("manifest: a function needs a symbol")?
+            .to_string();
+        let kind = f["kind"].as_str().unwrap_or("static").to_string();
+        let mut params = Vec::new();
+        for p in f["params"].as_array().ok_or("manifest: missing `params`")? {
+            let pn = p["name"].as_str().unwrap_or("arg").to_string();
+            let pt = ext_ty(
+                p["type"]
+                    .as_str()
+                    .ok_or("manifest: a parameter needs a type")?,
+            )?;
+            if let ExtTy::Handle(h) = &pt {
+                self.handles.insert(h.clone());
+            }
+            params.push((pn, pt));
+        }
+        let ret = ext_ty(f["returns"].as_str().ok_or("manifest: missing `returns`")?)?;
+        if let ExtTy::Handle(h) = &ret {
+            self.handles.insert(h.clone());
+        }
+        Ok((
+            name.to_string(),
+            kind,
+            ExternFn {
+                symbol,
+                params,
+                ret,
+            },
+        ))
     }
 }

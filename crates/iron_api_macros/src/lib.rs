@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    Expr, FnArg, Ident, Item, ItemFn, ItemMod, Lit, Meta, Pat, ReturnType, Token, Type, Visibility,
+    Expr, FnArg, Ident, Item, ItemMod, Lit, Meta, Pat, ReturnType, Token, Type, Visibility,
     bracketed,
     parse::{Parse, ParseStream, Parser},
     punctuated::Punctuated,
@@ -320,9 +320,9 @@ fn camel(s: &str) -> String {
     out
 }
 
-fn doc_of(f: &ItemFn) -> String {
+fn doc_of(attrs: &[syn::Attribute]) -> String {
     let mut lines = Vec::new();
-    for a in &f.attrs {
+    for a in attrs {
         if a.path().is_ident("doc")
             && let Meta::NameValue(nv) = &a.meta
             && let Expr::Lit(l) = &nv.value
@@ -334,43 +334,91 @@ fn doc_of(f: &ItemFn) -> String {
     lines.join("\n")
 }
 
+/// How a function is called from a script.
+#[derive(Clone, Copy, PartialEq)]
+enum Tag {
+    Static,
+    Method,
+    Get,
+    Set,
+}
+
 struct Api {
-    f: ItemFn,
+    /// The Rust function.
+    name: Ident,
+    doc: String,
+    /// The script name (for a property, the property's).
     js_name: String,
+    /// camelCase of the Rust name: the symbol's last part.
+    stem: String,
+    /// The handle class (TypeScript name, Rust type) of an `impl` function.
+    class: Option<(String, Type)>,
+    tag: Tag,
+    /// Not including the receiver.
     params: Vec<(Ident, Kind)>,
     ret: Kind,
 }
 
-fn api_of(f: &ItemFn, args: &Args) -> syn::Result<Api> {
-    if f.sig.asyncness.is_some() || !f.sig.generics.params.is_empty() {
+fn api_of(
+    sig: &syn::Signature,
+    attrs: &[syn::Attribute],
+    args: &Args,
+    class: Option<(String, Type)>,
+) -> syn::Result<Api> {
+    if sig.asyncness.is_some() || !sig.generics.params.is_empty() {
         return Err(syn::Error::new(
-            f.sig.span(),
+            sig.span(),
             "an iron_api function cannot be async or generic",
         ));
     }
+    let mut has_receiver = false;
     let mut params = Vec::new();
-    for a in &f.sig.inputs {
-        let FnArg::Typed(pt) = a else {
-            return Err(syn::Error::new(
-                a.span(),
-                "an iron_api function takes no `self`",
-            ));
-        };
-        let Pat::Ident(id) = &*pt.pat else {
-            return Err(syn::Error::new(
-                pt.pat.span(),
-                "a plain parameter name is expected",
-            ));
-        };
-        params.push((id.ident.clone(), classify(&pt.ty, args)?));
+    for a in &sig.inputs {
+        match a {
+            FnArg::Receiver(r) => {
+                if class.is_none() || r.reference.is_some() || r.mutability.is_some() {
+                    return Err(syn::Error::new(
+                        r.span(),
+                        "a class function takes `self` by value (the handle is Copy)",
+                    ));
+                }
+                has_receiver = true;
+            }
+            FnArg::Typed(pt) => {
+                let Pat::Ident(id) = &*pt.pat else {
+                    return Err(syn::Error::new(
+                        pt.pat.span(),
+                        "a plain parameter name is expected",
+                    ));
+                };
+                params.push((id.ident.clone(), classify(&pt.ty, args)?));
+            }
+        }
     }
-    let ret = match &f.sig.output {
+    let ret = match &sig.output {
         ReturnType::Default => Kind::Unit,
         ReturnType::Type(_, t) => classify(t, args)?,
     };
+    let property = attrs.iter().any(|a| a.path().is_ident("property"));
+    let tag = match (has_receiver, property) {
+        (_, true) if !has_receiver || !params.is_empty() => {
+            return Err(syn::Error::new(
+                sig.span(),
+                "#[property] marks a getter: `fn name(self) -> T`",
+            ));
+        }
+        (true, true) => Tag::Get,
+        (true, false) => Tag::Method,
+        (false, _) => Tag::Static,
+    };
+    let stem = camel(&sig.ident.to_string());
     Ok(Api {
-        js_name: camel(&f.sig.ident.to_string()),
-        f: f.clone(),
+        name: sig.ident.clone(),
+        doc: doc_of(attrs),
+        js_name: stem.clone(),
+        stem,
+        class,
+        tag,
         params,
         ret,
     })
@@ -399,6 +447,15 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
     }
 }
 
+fn kind_tokens(t: Tag) -> TokenStream2 {
+    match t {
+        Tag::Static => quote!(::iron_api::FnKind::Static),
+        Tag::Method => quote!(::iron_api::FnKind::Method),
+        Tag::Get => quote!(::iron_api::FnKind::Get),
+        Tag::Set => quote!(::iron_api::FnKind::Set),
+    }
+}
+
 fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let args = parse_args(attr)?;
     let module: ItemMod = syn::parse2(item)?;
@@ -408,12 +465,62 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             "#[iron_api] needs an inline module: `pub mod name { ... }`",
         ));
     };
-    let mut apis = Vec::new();
-    for it in items {
-        if let Item::Fn(f) = it
-            && matches!(f.vis, Visibility::Public(_))
+    // The module's items as they will be emitted: `#[property]` markers are ours, not Rust's.
+    let mut out_items: Vec<Item> = items.clone();
+    let mut apis: Vec<Api> = Vec::new();
+    for it in out_items.iter_mut() {
+        match it {
+            Item::Fn(f) if matches!(f.vis, Visibility::Public(_)) => {
+                apis.push(api_of(&f.sig, &f.attrs, &args, None)?);
+            }
+            Item::Impl(imp) if imp.trait_.is_none() => {
+                let Some(rust) = rust_name_of(&imp.self_ty) else {
+                    continue;
+                };
+                let Some((ts, _)) = args.handles.iter().find(|(_, r)| *r == rust) else {
+                    continue;
+                };
+                let class = Some((ts.clone(), (*imp.self_ty).clone()));
+                for ii in imp.items.iter_mut() {
+                    if let syn::ImplItem::Fn(f) = ii
+                        && matches!(f.vis, Visibility::Public(_))
+                    {
+                        apis.push(api_of(&f.sig, &f.attrs, &args, class.clone())?);
+                        f.attrs.retain(|a| !a.path().is_ident("property"));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // `set_x(self, v)` next to a `#[property] fn x(self) -> T` is the property's setter.
+    let getters: Vec<(String, String, String)> = apis
+        .iter()
+        .filter(|a| a.tag == Tag::Get)
+        .map(|a| {
+            (
+                a.class.as_ref().expect("a getter is in a class").0.clone(),
+                a.js_name.clone(),
+                manifest_ty(&a.ret, &args).to_string(),
+            )
+        })
+        .collect();
+    for a in apis.iter_mut() {
+        let Some((class, _)) = &a.class else { continue };
+        let rust = a.name.to_string();
+        if a.tag == Tag::Method
+            && let Some(prop) = rust.strip_prefix("set_")
+            && a.params.len() == 1
         {
-            apis.push(api_of(f, &args)?);
+            let prop = camel(prop);
+            let ty = manifest_ty(&a.params[0].1, &args).to_string();
+            if getters
+                .iter()
+                .any(|(c, n, t)| c == class && *n == prop && *t == ty)
+            {
+                a.tag = Tag::Set;
+                a.js_name = prop;
+            }
         }
     }
 
@@ -435,25 +542,43 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             quote!(::iron_api::ValueDef { name: #ts, fields: &[ #( #fields ),* ] })
         })
         .collect();
-    let mut entries = Vec::new();
+
+    let mut ns_entries = Vec::new();
+    let mut class_order: Vec<String> = Vec::new();
+    let mut class_entries: Vec<Vec<TokenStream2>> = Vec::new();
     let mut shims = Vec::new();
     let mut js_sets = Vec::new();
     for a in &apis {
-        let name = &a.f.sig.ident;
+        let name = &a.name;
         let rust_name = name.to_string();
         let js_name = &a.js_name;
-        let symbol = format!("iron_{ns}_{js_name}");
+        let owner = a
+            .class
+            .as_ref()
+            .map(|(ts, _)| ts.clone())
+            .unwrap_or_else(|| ns.clone());
+        let symbol = format!("iron_{owner}_{}", a.stem);
         let symbol_ident = format_ident!("{}", symbol);
-        let doc = doc_of(&a.f);
-        let pnames: Vec<String> = a.params.iter().map(|(n, _)| n.to_string()).collect();
-        let ptys: Vec<TokenStream2> = a
-            .params
-            .iter()
-            .map(|(_, k)| manifest_ty(k, &args))
-            .collect();
+        let doc = &a.doc;
+        let has_receiver = matches!(a.tag, Tag::Method | Tag::Get | Tag::Set);
+
+        // The manifest entry (a receiver is listed first, as `this`).
+        let mut pnames: Vec<String> = Vec::new();
+        let mut ptys: Vec<TokenStream2> = Vec::new();
+        if has_receiver {
+            let ts = &a.class.as_ref().expect("receiver implies a class").0;
+            pnames.push("this".into());
+            ptys.push(quote!(::iron_api::Ty::Handle(#ts)));
+        }
+        for (n, k) in &a.params {
+            pnames.push(camel(&n.to_string()));
+            ptys.push(manifest_ty(k, &args));
+        }
         let ret_m = manifest_ty(&a.ret, &args);
-        entries.push(quote! {
+        let kind = kind_tokens(a.tag);
+        let entry = quote! {
             ::iron_api::Function {
+                kind: #kind,
                 name: #js_name,
                 rust_name: #rust_name,
                 symbol: #symbol,
@@ -461,17 +586,42 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys } ),* ],
                 ret: #ret_m,
             }
-        });
+        };
+        match &a.class {
+            None => ns_entries.push(entry),
+            Some((ts, _)) => {
+                let i = match class_order.iter().position(|c| c == ts) {
+                    Some(i) => i,
+                    None => {
+                        class_order.push(ts.clone());
+                        class_entries.push(Vec::new());
+                        class_order.len() - 1
+                    }
+                };
+                class_entries[i].push(entry);
+            }
+        }
 
         // The extern "C" shim.
         let mut abi_params: Vec<TokenStream2> = Vec::new();
         let mut call_args: Vec<TokenStream2> = Vec::new();
+        let receiver = if has_receiver {
+            abi_params.push(quote!(this: u64));
+            let (_, rust) = a.class.as_ref().expect("receiver implies a class");
+            Some(quote!(<#rust as ::iron_api::Handle>::from_raw(this)))
+        } else {
+            None
+        };
         for (n, k) in &a.params {
             let (ps, arg) = shim_param(n, k, &args);
             abi_params.extend(ps);
             call_args.push(arg);
         }
-        let call = quote!(#name( #( #call_args ),* ));
+        let call = match (&receiver, &a.class) {
+            (Some(r), _) => quote!(#r.#name( #( #call_args ),* )),
+            (None, Some((_, rust))) => quote!(<#rust>::#name( #( #call_args ),* )),
+            (None, None) => quote!(#name( #( #call_args ),* )),
+        };
         if let Kind::Value(i) = &a.ret {
             // A value result is written through a trailing pointer, one scalar per field.
             let v = &args.values[*i];
@@ -499,8 +649,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             });
         }
 
-        // The QuickJS function.
-        if args.quickjs {
+        // The QuickJS function (namespace functions only: a handle is a plain number there).
+        if args.quickjs && a.class.is_none() {
             let js_params: Vec<TokenStream2> = a
                 .params
                 .iter()
@@ -531,7 +681,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let quickjs = if args.quickjs {
         quote! {
             /// Installs the namespace as a QuickJS global, with typed arguments (no `Value` array,
-            /// no op queue).
+            /// no op queue). Handle classes are not available there: a handle is a plain number.
             pub fn register_quickjs<'js>(
                 ctx: &::iron_api::rquickjs::Ctx<'js>,
             ) -> ::iron_api::rquickjs::Result<()> {
@@ -545,20 +695,27 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         quote!()
     };
 
+    let class_defs: Vec<TokenStream2> = class_order
+        .iter()
+        .zip(&class_entries)
+        .map(|(c, fs)| quote!(::iron_api::ClassDef { name: #c, functions: &[ #( #fs ),* ] }))
+        .collect();
+
     let attrs = &module.attrs;
     let vis = &module.vis;
     let ident = &module.ident;
     Ok(quote! {
         #(#attrs)*
         #vis mod #ident {
-            #(#items)*
+            #(#out_items)*
 
             /// What this namespace exports to scripts.
             pub const MANIFEST: ::iron_api::Namespace = ::iron_api::Namespace {
                 name: #ns,
                 handles: &[ #( #handle_names ),* ],
                 values: &[ #( #value_defs ),* ],
-                functions: &[ #( #entries ),* ],
+                classes: &[ #( #class_defs ),* ],
+                functions: &[ #( #ns_entries ),* ],
             };
 
             #( #shims )*

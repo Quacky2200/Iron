@@ -1,6 +1,7 @@
 //! Expression lowering.
 
 use super::*;
+use crate::manifest::ExternFn;
 
 pub(crate) fn mk(kind: ExprKind, ty: Ty) -> Expr {
     Expr { kind, ty }
@@ -57,6 +58,9 @@ pub(crate) enum Place {
     Accessor(Expr, Option<classes::Target>, classes::Target, Ty),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
+    /// A property of an engine handle class: the receiver, its getter (if any), its setter and
+    /// the value type.
+    Ext(Expr, Option<ExternFn>, ExternFn, Ty),
 }
 
 impl<'a> Lowerer<'a> {
@@ -281,6 +285,18 @@ impl<'a> Lowerer<'a> {
             Ty::Arr(_) | Ty::Bytes if prop == "length" => {
                 Ok(mk(ExprKind::Len(Box::new(obj)), Ty::Num))
             }
+            Ty::Handle(class) => {
+                let getter = self
+                    .manifest
+                    .classes
+                    .get(&class)
+                    .and_then(|k| k.getters.get(prop))
+                    .cloned();
+                match getter {
+                    Some(g) => Ok(self.emit_extern(&g, vec![obj])),
+                    None => bail!("{class} has no property `{prop}`"),
+                }
+            }
             t => bail!("no property `{prop}` on {t}"),
         }
     }
@@ -432,29 +448,52 @@ impl<'a> Lowerer<'a> {
         let Some(f) = self.manifest.namespaces[ns].get(name).cloned() else {
             bail!("{}: {ns} has no function `{name}`", self.loc(c.span.start))
         };
-        if c.arguments.len() != f.params.len() {
+        self.call_ext_fn(f, None, &format!("{ns}.{name}"), c)
+    }
+
+    /// A call of a boundary function with the call's arguments, after an optional receiver
+    /// (the first parameter of a class method).
+    pub(crate) fn call_ext_fn(
+        &mut self,
+        f: ExternFn,
+        recv: Option<Expr>,
+        what: &str,
+        c: &'a CallExpression<'a>,
+    ) -> R<Expr> {
+        let skip = usize::from(recv.is_some());
+        if c.arguments.len() + skip != f.params.len() {
             bail!(
-                "{}: {ns}.{name}: {} arguments, {} expected",
+                "{}: {what}: {} arguments, {} expected",
                 self.loc(c.span.start),
                 c.arguments.len(),
-                f.params.len()
+                f.params.len() - skip
             )
         }
+        let mut args: Vec<Expr> = recv.into_iter().collect();
+        for (a, (_, pt)) in c.arguments.iter().zip(&f.params[skip..]) {
+            let Some(e) = a.as_expression() else {
+                bail!("{what}: spread argument")
+            };
+            let want = self.ext_ir(pt);
+            let v = self.lower_expr(e, Some(&want))?;
+            args.push(self.coerce(v, &want)?);
+        }
+        Ok(self.emit_extern(&f, args))
+    }
+
+    /// The call of a boundary function with arguments already lowered to the script types. A
+    /// value class argument is passed as its fields; a value class result is written into a
+    /// new object.
+    pub(crate) fn emit_extern(&mut self, f: &ExternFn, args_in: Vec<Expr>) -> Expr {
         let any_value = f.params.iter().any(|(_, t)| matches!(t, ExtTy::Value(_)));
         let mut pre: Vec<Stmt> = Vec::new();
         let mut args: Vec<Expr> = Vec::new();
         let mut flat: Vec<ExtTy> = Vec::new();
-        for (a, (_, pt)) in c.arguments.iter().zip(&f.params) {
-            let Some(e) = a.as_expression() else {
-                bail!("{ns}.{name}: spread argument")
-            };
-            let want = self.ext_ir(pt);
-            let v = self.lower_expr(e, Some(&want))?;
-            let v = self.coerce(v, &want)?;
+        for (v, (_, pt)) in args_in.into_iter().zip(&f.params) {
             // With a value argument every argument goes into a temporary first, so they are
             // still evaluated in order.
             let v = if any_value {
-                let t = self.new_local(want.clone());
+                let t = self.new_local(v.ty.clone());
                 pre.push(Stmt::Assign(t, v));
                 self.var_expr(t)
             } else {
@@ -503,15 +542,15 @@ impl<'a> Lowerer<'a> {
                 ExprKind::CallExternInto(idx, args, Box::new(self.var_expr(dest))),
                 Ty::Void,
             )));
-            return Ok(mk(ExprKind::Seq(pre, Box::new(self.var_expr(dest))), ty));
+            return mk(ExprKind::Seq(pre, Box::new(self.var_expr(dest))), ty);
         }
         let ret_ty = self.ext_ir(&f.ret);
         let call = mk(ExprKind::CallExtern(idx, args), ret_ty.clone());
-        Ok(if pre.is_empty() {
+        if pre.is_empty() {
             call
         } else {
             mk(ExprKind::Seq(pre, Box::new(call)), ret_ty)
-        })
+        }
     }
 
     /// `x instanceof C` for a class `C` of this program: a header test against the table of `C`
@@ -998,6 +1037,18 @@ impl<'a> Lowerer<'a> {
 
     /// `obj.prop` as an assignment target: a field, or a property with a setter.
     fn field_place(&mut self, obj: Expr, prop: &str, pre: &mut Vec<Stmt>) -> R<Place> {
+        if let Ty::Handle(class) = obj.ty.strip().clone() {
+            let k = self.manifest.classes.get(&class);
+            let getter = k.and_then(|k| k.getters.get(prop)).cloned();
+            let setter = k.and_then(|k| k.setters.get(prop)).cloned();
+            let Some(setter) = setter else {
+                bail!("{class}.{prop} cannot be assigned")
+            };
+            let ty = self.ext_ir(&setter.params[1].1);
+            let tmp = self.new_local(obj.ty.clone());
+            pre.push(Stmt::Assign(tmp, obj));
+            return Ok(Place::Ext(self.var_expr(tmp), getter, setter, ty));
+        }
         if let Ty::Obj(sid) = obj.ty.strip().clone()
             && !self.has_field(sid, prop)
         {
@@ -1029,7 +1080,7 @@ impl<'a> Lowerer<'a> {
         static NUM: Ty = Ty::Num;
         match p {
             Place::ArrLen(_) => &NUM,
-            Place::Accessor(_, _, _, t) => t,
+            Place::Accessor(_, _, _, t) | Place::Ext(_, _, _, t) => t,
             Place::Var(_, t)
             | Place::Cell(_, t)
             | Place::Global(_, t)
@@ -1038,7 +1089,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    pub(crate) fn place_read(&self, p: &Place) -> Expr {
+    pub(crate) fn place_read(&mut self, p: &Place) -> Expr {
         match p {
             Place::Var(v, _) => self.var_expr(*v),
             Place::Cell(c, t) => mk(ExprKind::CellGet(Box::new(c.clone())), t.clone()),
@@ -1046,6 +1097,10 @@ impl<'a> Lowerer<'a> {
             Place::ArrLen(a) => mk(ExprKind::Len(Box::new(a.clone())), Ty::Num),
             Place::Accessor(o, g, _, t) => match g {
                 Some(g) => Self::target_call(g, vec![o.clone()], t.clone()),
+                None => mk(ExprKind::Null, t.clone()),
+            },
+            Place::Ext(o, g, _, t) => match g {
+                Some(g) => self.emit_extern(g, vec![o.clone()]),
                 None => mk(ExprKind::Null, t.clone()),
             },
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
@@ -1056,7 +1111,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    pub(crate) fn place_write(&self, p: &Place, v: Expr) -> Stmt {
+    pub(crate) fn place_write(&mut self, p: &Place, v: Expr) -> Stmt {
         match p {
             Place::Var(var, _) => Stmt::Assign(*var, v),
             Place::Cell(cell, _) => Stmt::CellSet(cell.clone(), v),
@@ -1064,6 +1119,7 @@ impl<'a> Lowerer<'a> {
             Place::Accessor(o, _, setter, _) => {
                 Stmt::Eval(Self::target_call(setter, vec![o.clone(), v], Ty::Void))
             }
+            Place::Ext(o, _, setter, _) => Stmt::Eval(self.emit_extern(setter, vec![o.clone(), v])),
             Place::ArrLen(a) => Stmt::Eval(mk(
                 ExprKind::Rt(RtFn::ArrSetLen, vec![a.clone(), v]),
                 Ty::Void,
@@ -1104,7 +1160,7 @@ impl<'a> Lowerer<'a> {
             let value = self.place_read(&place);
             return Ok((pre, value));
         }
-        let is_accessor = matches!(place, Place::Accessor(..));
+        let is_accessor = matches!(place, Place::Accessor(..) | Place::Ext(..));
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;
             self.coerce(v, &pty)?
@@ -1329,6 +1385,17 @@ impl<'a> Lowerer<'a> {
                     && self.manifest.namespaces.contains_key(id.name.as_str())
                 {
                     return self.lower_extern_call(id.name.as_str(), method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && self.lookup(id.name.as_str()).is_none()
+                    && let Some(f) = self
+                        .manifest
+                        .classes
+                        .get(id.name.as_str())
+                        .and_then(|k| k.statics.get(method))
+                        .cloned()
+                {
+                    return self.call_ext_fn(f, None, &format!("{}.{method}", id.name), c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()

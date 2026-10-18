@@ -418,3 +418,48 @@ compiled TypeScript now drives the real scene (`tools/iron_ts_tests/bench/scene.
 Next for this crate: strings (names, `find`), methods on handles (`transform.position` instead of
 `Scene.position(object)`), component handles, and the same treatment for `iron_physics` and
 `iron_audio`.
+
+## 18. Handle classes (2026-10-18)
+
+Handles now have members: `parent.transform.localPosition = v` instead of
+`Scene.setLocalPosition(parent, v)`. They are declared in ordinary `impl` blocks of the handle's Rust
+type inside the `#[iron_api]` module.
+
+- **Syntax.** `#[property] pub fn x(self) -> T` is a getter; `pub fn set_x(self, v: T)` next to it (same
+  type) is the setter, and a getter alone is read-only. Other `self` functions are methods, functions
+  without `self` are statics of the class (`GameObject.create()`), and plain `pub fn` outside an
+  `impl` stay namespace functions (`Scene.count()`). `self` is by value; handles are `Copy`.
+- **Distinct newtype per class over the same id.** `Transform` is `TransformRef(ObjectId)`, not a
+  second id space: it shares the object's raw handle, so `go.transform` returns the same number and
+  `t.gameObject` returns the object. One Rust type per class keeps the impls apart and the shims
+  typed, without a second table of ids.
+- **Manifest.** `FnKind` (`Static`, `Method`, `Get`, `Set`) per function and a `ClassDef` per class
+  (`Namespace.classes`). In the JSON a class function lists its receiver first, as a parameter named
+  `this`; parameter names are camelCase (`keepWorld`).
+- **Declarations and shims.** `declare class Transform { private constructor(); get position():
+  Vector3; set position(value: Vector3); setParent(parent: Transform, keepWorld: boolean): void; }`;
+  a handle with no class still emits the `number & { __handle }` alias. Shims are
+  `iron_<Class>_<jsName>` with `this: u64` first; value results still use the trailing out pointer.
+- **QuickJS.** Bindings are generated only for namespace functions. A handle is a plain number there,
+  so a class would need a wrapper object; that is left until the QuickJS side needs it.
+- **Compiler.** The manifest parser fills `ClassFns { statics, methods, getters, setters }`. Lowering
+  calls the class symbols through the same `CallExtern` path as namespace functions
+  (`emit_extern`, `call_ext_fn`): a property read is the getter call, `obj.prop = v` is a `Place::Ext`
+  that calls the setter (assigning a read-only or unknown property is a compile error), a method call
+  puts the receiver first, and `Class.f()` is the static. Compound assignment (`+=`) on a value
+  property is not supported yet.
+- **iron_scene.** `GameObject` (`create`, `destroy`, `exists`, `transform`, `enabled`,
+  `activeInHierarchy`, `layer`) and `Transform` (`gameObject`, `position`, `rotation`, `localPosition`,
+  `localRotation`, `localScale`, `parent`, `setParent(parent, keepWorld)`) next to the `Scene`
+  namespace functions. Tests `M9-API-16`..`19`, `M9-TS-156`..`158`.
+
+```ts
+const parent = GameObject.create();
+const child = GameObject.create();
+parent.transform.localPosition = new Vector3(10, 0, 0);
+child.transform.setParent(parent.transform, false);
+const p = child.transform.position; // world position, a new Vector3
+```
+
+Not built yet: methods on value classes as intrinsics (`a.add(b)`), strings (names, `find`), classes
+in the QuickJS bindings, and the same treatment for `iron_physics` and `iron_audio`.

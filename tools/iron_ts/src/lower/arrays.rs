@@ -330,6 +330,18 @@ impl<'a> Lowerer<'a> {
                 return self.lower_method(Self::downcast(recv, sub), m, c);
             }
         }
+        if let Ty::Handle(class) = &rty {
+            let f = self
+                .manifest
+                .classes
+                .get(class)
+                .and_then(|k| k.methods.get(m))
+                .cloned();
+            let Some(f) = f else {
+                bail!("{class} has no method `{m}`")
+            };
+            return self.call_ext_fn(f, Some(recv), &format!("{class}.{m}"), c);
+        }
         let void = |stmts| {
             mk(
                 ExprKind::Seq(stmts, Box::new(mk(ExprKind::Num(0.0), Ty::Void))),

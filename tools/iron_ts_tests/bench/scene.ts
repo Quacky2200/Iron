@@ -68,3 +68,50 @@ export function crowd(n: number): number {
   for (const o of all) Scene.destroy(o);
   return sum * 1000 + made * 1 + (Scene.count() - before) * 100;
 }
+
+/** The same hierarchy through handle classes: `go.transform.position = v` and methods on handles. */
+export function classHierarchy(): number {
+  const before = Scene.count();
+  const parent = GameObject.create();
+  const child = GameObject.create();
+  parent.transform.localPosition = new Vector3(10, 0, 0);
+  child.transform.setParent(parent.transform, false);
+  child.transform.localPosition = new Vector3(1, 2, 3);
+  const p = child.transform.position;
+  const hasParent = child.transform.parent ? 1 : 0;
+  const rootHasParent = parent.transform.parent ? 1 : 0;
+  parent.destroy();
+  const left = Scene.count() - before;
+  return p.x * 10000000 + p.y * 100000 + p.z * 1000 + hasParent * 100 + rootHasParent * 10 + left;
+}
+
+/** Scalar, boolean and handle properties, and a getter that goes back to the object. */
+export function classFlags(): number {
+  const o = GameObject.create();
+  o.layer = 5;
+  o.enabled = false;
+  const off = o.activeInHierarchy ? 1 : 0;
+  const was = o.enabled ? 1 : 0;
+  o.enabled = true;
+  const on = o.activeInHierarchy ? 1 : 0;
+  const same = o.transform.gameObject === o ? 1 : 0;
+  const alive = o.exists() ? 1 : 0;
+  const layer = o.layer;
+  o.destroy();
+  const gone = o.exists() ? 1 : 0;
+  return layer * 10000 + off * 1000 + was * 100 + on * 10 + same + alive * 100000 + gone * 1000000;
+}
+
+/** A per-frame update loop through `transform.position`. */
+export function classOrbit(frames: number): number {
+  const o = GameObject.create();
+  let sum = 0;
+  for (let i = 0; i < frames; i++) {
+    const a = i * 0.1;
+    o.transform.position = new Vector3(Math.cos(a) * 5, 0, Math.sin(a) * 5);
+    const p = o.transform.position;
+    sum += p.x + p.z;
+  }
+  o.destroy();
+  return sum;
+}

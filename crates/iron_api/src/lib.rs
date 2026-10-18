@@ -68,9 +68,35 @@ pub struct Param {
     pub ty: Ty,
 }
 
+/// How a function is called from a script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FnKind {
+    /// `Namespace.f(..)` or, in a class, `Class.f(..)`.
+    Static,
+    /// `object.f(..)`: the first parameter of the C function is the receiver.
+    Method,
+    /// `object.name`: a property read.
+    Get,
+    /// `object.name = value`: a property write.
+    Set,
+}
+
+impl FnKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            FnKind::Static => "static",
+            FnKind::Method => "method",
+            FnKind::Get => "get",
+            FnKind::Set => "set",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Function {
+    pub kind: FnKind,
     /// The name scripts use (`deltaTime`).
+    /// The name scripts use (`deltaTime`; for a property, the property).
     pub name: &'static str,
     /// The Rust function it calls (`delta_time`).
     pub rust_name: &'static str,
@@ -98,6 +124,14 @@ pub struct ValueDef {
     pub fields: &'static [ValueField],
 }
 
+/// A handle class: `GameObject`, `Transform`. Its functions take the receiver as their first
+/// parameter (`this`); scripts see methods, properties and statics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClassDef {
+    pub name: &'static str,
+    pub functions: &'static [Function],
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Namespace {
     pub name: &'static str,
@@ -105,6 +139,8 @@ pub struct Namespace {
     pub handles: &'static [&'static str],
     /// The value classes its functions take and return.
     pub values: &'static [ValueDef],
+    /// The handle classes with methods, properties or statics.
+    pub classes: &'static [ClassDef],
     pub functions: &'static [Function],
 }
 
@@ -161,6 +197,96 @@ pub trait Handle: Copy {
     fn from_raw(raw: u64) -> Self;
 }
 
+fn jsdoc(doc: &str, indent: &str) -> String {
+    if doc.is_empty() {
+        return String::new();
+    }
+    let mut s = format!("{indent}/**\n");
+    for line in doc.lines() {
+        s += &format!("{indent} * {}\n", line.trim());
+    }
+    s += &format!("{indent} */\n");
+    s
+}
+
+/// `declare class` for a handle class: statics, methods and properties.
+fn class_dts(c: &ClassDef) -> String {
+    let mut s = format!("declare class {} {{\n", c.name);
+    s += "  private constructor();\n";
+    s += &format!("  private readonly __handle: \"{}\";\n", c.name);
+    let user_params = |f: &Function, skip: usize| -> String {
+        f.params
+            .iter()
+            .skip(skip)
+            .map(|p| format!("{}: {}", p.name, p.ty.ts()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for f in c.functions {
+        match f.kind {
+            FnKind::Static => {
+                s += &jsdoc(f.doc, "  ");
+                s += &format!(
+                    "  static {}({}): {};\n",
+                    f.name,
+                    user_params(f, 0),
+                    f.ret.ts()
+                );
+            }
+            FnKind::Method => {
+                s += &jsdoc(f.doc, "  ");
+                s += &format!("  {}({}): {};\n", f.name, user_params(f, 1), f.ret.ts());
+            }
+            FnKind::Get => {
+                s += &jsdoc(f.doc, "  ");
+                s += &format!("  get {}(): {};\n", f.name, f.ret.ts());
+                // A setter right after its getter keeps them together in the declaration.
+                if let Some(set) = c
+                    .functions
+                    .iter()
+                    .find(|g| g.kind == FnKind::Set && g.name == f.name)
+                {
+                    s += &format!("  set {}(value: {});\n", f.name, set.params[1].ty.ts());
+                }
+            }
+            FnKind::Set => {
+                // Declared with its getter, unless there is none.
+                let has_getter = c
+                    .functions
+                    .iter()
+                    .any(|g| g.kind == FnKind::Get && g.name == f.name);
+                if !has_getter {
+                    s += &format!("  set {}(value: {});\n", f.name, f.params[1].ty.ts());
+                }
+            }
+        }
+    }
+    s += "}\n";
+    s
+}
+
+fn function_json(f: &Function) -> String {
+    let params: Vec<String> = f
+        .params
+        .iter()
+        .map(|p| {
+            format!(
+                "{{\"name\":{},\"type\":{}}}",
+                json_str(p.name),
+                json_str(&p.ty.name())
+            )
+        })
+        .collect();
+    format!(
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}}}",
+        json_str(f.name),
+        json_str(f.symbol),
+        json_str(f.kind.name()),
+        params.join(","),
+        json_str(&f.ret.name())
+    )
+}
+
 fn json_str(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
@@ -181,9 +307,15 @@ impl Namespace {
     pub fn to_dts(&self) -> String {
         let mut s = String::new();
         for h in self.handles {
+            if self.classes.iter().any(|c| c.name == *h) {
+                continue;
+            }
             s += &format!(
                 "/** An engine object, by id. */\ndeclare type {h} = number & {{ readonly __handle: \"{h}\" }};\n"
             );
+        }
+        for c in self.classes {
+            s += &class_dts(c);
         }
         for v in self.values {
             let ctor: Vec<String> = v
@@ -224,6 +356,8 @@ impl Namespace {
     }
 
     /// The manifest as JSON: what the compiler reads to call each function directly.
+    ///
+    /// Class functions list the receiver first, as a parameter named `this`.
     pub fn to_json(&self) -> String {
         let handles: Vec<String> = self.handles.iter().map(|h| json_str(h)).collect();
         let values: Vec<String> = self
@@ -248,35 +382,27 @@ impl Namespace {
                 )
             })
             .collect();
+        let functions: Vec<String> = self.functions.iter().map(function_json).collect();
+        let classes: Vec<String> = self
+            .classes
+            .iter()
+            .map(|c| {
+                let fs: Vec<String> = c.functions.iter().map(function_json).collect();
+                format!(
+                    "{{\"name\":{},\"functions\":[{}]}}",
+                    json_str(c.name),
+                    fs.join(",")
+                )
+            })
+            .collect();
         let mut s = format!(
-            "{{\"namespace\":{},\"handles\":[{}],\"values\":[{}],\"functions\":[",
+            "{{\"namespace\":{},\"handles\":[{}],\"values\":[{}],\"classes\":[{}],\"functions\":[{}",
             json_str(self.name),
             handles.join(","),
-            values.join(",")
+            values.join(","),
+            classes.join(","),
+            functions.join(",")
         );
-        for (i, f) in self.functions.iter().enumerate() {
-            if i > 0 {
-                s.push(',');
-            }
-            let params: Vec<String> = f
-                .params
-                .iter()
-                .map(|p| {
-                    format!(
-                        "{{\"name\":{},\"type\":{}}}",
-                        json_str(p.name),
-                        json_str(&p.ty.name())
-                    )
-                })
-                .collect();
-            s += &format!(
-                "{{\"name\":{},\"symbol\":{},\"params\":[{}],\"returns\":{}}}",
-                json_str(f.name),
-                json_str(f.symbol),
-                params.join(","),
-                json_str(&f.ret.name())
-            );
-        }
         s += "]}";
         s
     }

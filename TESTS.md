@@ -633,6 +633,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-153 | Integration | Stale object handles miss even when the slot is reused (`tests/scene.rs`). |
 | M9-TS-154 | Integration | A `Quaternion` value goes in and comes back normalised (`tests/scene.rs`). |
 | M9-TS-155 | Integration | Thirty objects and their handles in an array survive a collection at every allocation (`tests/scene.rs`). |
+| M9-TS-156 | Integration | A hierarchy built and moved with handle classes (`child.transform.setParent(..)`, `transform.localPosition = new Vector3(..)`, `go.destroy()`) in the real scene (`tests/scene.rs`). |
+| M9-TS-157 | Integration | Boolean, number and handle properties and a method of `GameObject`, and the `transform.gameObject` round trip (`tests/scene.rs`). |
+| M9-TS-158 | Integration | An update loop moves an object through `transform.position` (`tests/scene.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
@@ -648,6 +651,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-13 | Unit | The `Scene` shims create, parent, move and destroy objects in the current scene, stale ids miss, and with no scene they answer defaults (`crates/iron_scene/tests/api.rs`). |
 | M9-API-14 | Unit | A rotation is a `Quaternion` value; enabled/active flags and layers work through the shims (`crates/iron_scene/tests/api.rs`). |
 | M9-API-15 | Unit | The `Scene` manifest declares the `GameObject` handle and the `Vector3` and `Quaternion` values, and the generated `.d.ts` has the expected signatures (`crates/iron_scene/tests/api.rs`). |
+| M9-API-16 | Unit | Handle class functions are listed per class with the receiver first (`this`); a `set_x` next to `#[property] x` is the property's setter (`crates/iron_api/tests/classes.rs`). |
+| M9-API-17 | Unit | The `.d.ts` has `declare class` with static, method and `get`/`set` members; a getter alone is read-only; a class replaces the plain handle alias (`crates/iron_api/tests/classes.rs`). |
+| M9-API-18 | Unit | The class shims take the receiver first and call the methods, properties and statics (`crates/iron_api/tests/classes.rs`). |
+| M9-API-19 | Unit | `GameObject` and `Transform` of `iron_scene` work through their shims, a transform shares its object's handle, and the declarations have accessors (`crates/iron_scene/tests/api.rs`). |
 
 ---
 

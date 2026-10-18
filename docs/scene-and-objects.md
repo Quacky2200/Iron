@@ -105,14 +105,28 @@ functions: `create`, `destroy`, `exists`, `count`, `parent`, `setParent(object, 
 (`localPosition`, ...) plus `position` and `rotation` in world space, with `Vector3` and `Quaternion`
 value classes (glam's `Vec3` and `Quat`) on `GameObject` handles. There are no strings yet (names, `find`).
 
+Next to those namespace functions there are two handle classes, declared in `impl` blocks inside the
+same module (see [iron-api.md](iron-api.md#handle-classes)):
+
+| Class | Rust type | Members |
+|---|---|---|
+| `GameObject` | `ObjectId` | static `create()`; methods `destroy()`, `exists()`; properties `transform` (read-only), `enabled`, `activeInHierarchy` (read-only), `layer` |
+| `Transform` | `TransformRef(ObjectId)` | `gameObject` (read-only), `position`, `rotation` (world), `localPosition`, `localRotation`, `localScale`, `parent` (read-only, a `Transform`, 0 for a root), method `setParent(parent, keepWorld)` |
+
+`TransformRef` shares the object's raw handle, so `go.transform` is the same number as `go` seen as
+another class and `t.gameObject` gives the object back. Shims are named `iron_GameObject_create`,
+`iron_Transform_setPosition(this, x, y, z)` and so on, with the receiver first. A script writes
+`child.transform.setParent(parent.transform, false)` and `go.transform.position = new Vector3(1, 2, 3)`;
+the old `Scene.setParent(..)` style functions remain.
+
 - **Handles.** `ObjectId`'s raw handle is `((generation + 1) << 32) | index`, so no live object is 0
   (0 is `null` in `GameObject | null`; `from_raw(0)` gets a generation no slot has and misses).
 - **The scene.** `iron_scene::api::enter(&mut scene)` makes a scene current on the thread until the
   returned scope is dropped (the `iron_api::context` thread-local). With none, or for a stale id, the
   functions answer with defaults: no object, `false`, `0`, the origin, the identity rotation, scale one.
 - **Not wired in.** Nothing in `iron_app` calls `enter` yet, and the engine's scripts still use
-  `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/iron_scene/tests/api.rs) (`M9-API-12..15`)
-  and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..155`).
+  `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/iron_scene/tests/api.rs) (`M9-API-12..15`, `19`)
+  and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..158`).
 
 ## Components and the lifecycle
 
