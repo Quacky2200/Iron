@@ -6,7 +6,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{CustomCursor, Window, WindowId};
+use winit::window::{CustomCursor, Window, WindowButtons, WindowId};
 
 use crate::gamepad::convert_gamepad;
 use crate::input::{InputEvent, convert_window_event};
@@ -223,6 +223,12 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             .with_title(self.config.title.clone())
             .with_window_icon(icon)
             .with_resizable(self.config.resizable)
+            // A fixed-size window can't be maximized either.
+            .with_enabled_buttons(if self.config.resizable {
+                WindowButtons::all()
+            } else {
+                WindowButtons::CLOSE | WindowButtons::MINIMIZE
+            })
             .with_inner_size(LogicalSize::new(self.config.width, self.config.height));
         match event_loop.create_window(attrs) {
             Ok(window) => {

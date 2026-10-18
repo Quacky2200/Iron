@@ -181,10 +181,15 @@ fn run() -> Result<()> {
         Some(_) => prefs::Prefs::in_memory(),
         None => prefs::Prefs::load(&manifest),
     };
-    let display_settings = display::from_json(
-        prefs.get("iron.display"),
-        display::from_json(Some(&manifest.display), Default::default()),
-    );
+    // A game that keeps a fixed size (`iron.display.resizable: false`) always gets its own
+    // settings: saved ones would tell its scripts about a window size it never has.
+    let resizable = manifest.display["resizable"].as_bool().unwrap_or(true);
+    let defaults = display::from_json(Some(&manifest.display), Default::default());
+    let display_settings = if resizable {
+        display::from_json(prefs.get("iron.display"), defaults)
+    } else {
+        defaults
+    };
     if let Some(path) = prefs.path() {
         tracing::info!("player prefs: {}", path.display());
     }
@@ -316,18 +321,12 @@ fn run() -> Result<()> {
         .icon
         .as_deref()
         .and_then(|path| info::load_icon(&app.asset_root, path));
-    // A window opens at the saved window size; fullscreen modes are applied once it exists.
-    // One the game keeps a fixed size (`iron.display.resizable: false`) opens at its own size.
-    let resizable = manifest.display["resizable"].as_bool().unwrap_or(true);
-    let fixed = display::from_json(Some(&manifest.display), Default::default());
-    let (width, height) = if resizable {
-        (
-            display_settings.window_width,
-            display_settings.window_height,
-        )
-    } else {
-        (fixed.window_width, fixed.window_height)
-    };
+    // A window opens at the saved window size (a fixed one at its own); fullscreen modes are
+    // applied once it exists.
+    let (width, height) = (
+        display_settings.window_width,
+        display_settings.window_height,
+    );
     Platform::new().run(
         WindowConfig {
             title: manifest.title.clone(),
