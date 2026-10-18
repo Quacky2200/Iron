@@ -14,6 +14,7 @@ mod closure;
 mod date;
 mod enums;
 mod expr;
+mod intl;
 mod json;
 mod maps;
 mod object;
@@ -208,7 +209,11 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     // Programs that use errors get the `Error` classes compiled in front of them.
     let mut head = String::new();
-    if prelude::wanted(src) || prelude::wants_regexp(src) || prelude::wants_date(src) {
+    if prelude::wanted(src)
+        || prelude::wants_regexp(src)
+        || prelude::wants_date(src)
+        || prelude::wants_intl(src)
+    {
         // Regular expressions throw `SyntaxError`s, so they bring the error classes along.
         head += prelude::ERRORS;
     }
@@ -217,6 +222,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if prelude::wants_date(src) {
         head += prelude::DATE;
+    }
+    if src.contains("Intl.Collator") {
+        head += prelude::INTL;
     }
     let prelude_lines = head.matches('\n').count();
     let full = format!("{head}{src}");

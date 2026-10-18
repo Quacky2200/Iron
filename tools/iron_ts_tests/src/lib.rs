@@ -288,6 +288,18 @@ pub mod dat {
     include!(concat!(env!("OUT_DIR"), "/date_bindings.rs"));
 }
 
+/// Intl in compiled code (`bench/intl.ts`), prefix `in_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod itl {
+    include!(concat!(env!("OUT_DIR"), "/intl_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

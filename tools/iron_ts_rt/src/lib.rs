@@ -1019,12 +1019,14 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 // ---- strings: see string.rs ----
 
 mod date;
+mod intl;
 mod json;
 mod map;
 mod regexp;
 mod string;
 mod string_more;
 pub use date::*;
+pub use intl::*;
 pub use json::*;
 pub use map::*;
 pub use regexp::*;
@@ -1205,6 +1207,12 @@ pub fn link_anchor() -> usize {
         ts_rt_date_date_string_gc as *const () as usize,
         ts_rt_date_parse as *const () as usize,
         ts_rt_date_set_zone as *const () as usize,
+        ts_rt_intl_set_locales as *const () as usize,
+        ts_rt_str_normalize_gc as *const () as usize,
+        ts_rt_str_locale_case_gc as *const () as usize,
+        ts_rt_collator_new as *const () as usize,
+        ts_rt_collator_compare as *const () as usize,
+        ts_rt_str_locale_compare as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

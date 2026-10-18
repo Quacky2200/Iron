@@ -128,8 +128,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
 | [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object, and the String methods that take a regex (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`) |
 | [lower/date.rs](../tools/iron_ts/src/lower/date.rs) | `Date`: constructors, `Date.now`/`UTC`/`parse`, getters and setters (local and UTC), the string conversions, and arithmetic and comparison on the time value |
+| [lower/intl.rs](../tools/iron_ts/src/lower/intl.rs) | `Intl`, step I1: `localeCompare`, `normalize`, `toLocaleUpperCase`/`toLocaleLowerCase` and `new Intl.Collator`; locale and options arguments are read at compile time |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
-| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray` and `Date`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them) or `Date` |
+| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date` and `Intl_Collator`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date` or `Intl` |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
@@ -367,6 +368,34 @@ expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked i
   `Date` inside typed JSON.
 - Tests: `bench/date.ts` with `tests/date.rs` (M9-TS-240..253), expected values from
   `bench/gen_date_expected.ts` (bun) into `date_expected.json`.
+
+**Standard library tier 3: `Intl`, step I1** ([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs), runtime in
+[iron_ts_rt/src/intl.rs](../tools/iron_ts_rt/src/intl.rs); hooks in `lower/{strings,expr,types,prelude,mod,arrays}.rs`).
+The runtime uses ICU4X (`icu` 2.x in `iron_ts_rt`) with its compiled CLDR data.
+- **Supported.** `String.prototype.localeCompare(that, locales?, options?)`, `normalize(form?)` (NFC, NFD, NFKC,
+  NFKD; lone surrogates are left alone), `toLocaleUpperCase` / `toLocaleLowerCase(locales?)` (language-sensitive:
+  `tr`, `az`, `lt`, `el`, ...) and `new Intl.Collator(locales?, options?)` with `.compare(a, b)`.
+- **Collator object.** `Intl.Collator` is the prelude class `Intl_Collator` (the type name maps to it, in
+  `types.rs`), added when the source mentions `Intl.`. It holds an id into the runtime's collator table;
+  `compare` is a closure field, so `arr.sort(c.compare)` works. No other `Collator` method is built.
+- **Locales.** A string, or an array literal or array of strings; the first tag wins. A bad tag raises
+  `RangeError: invalid language tag: <tag>`. No argument means the default locale, which the host sets with
+  `ts_rt_intl_set_locales("en-US,de,ja")` (the first is the default; `en-US` if never called). The per-game
+  list from `package.json` is not wired to it yet (that needs `iron_app`).
+- **Options** (collation): `usage`, `sensitivity` (base, accent, case, variant), `numeric`, `caseFirst`,
+  `ignorePunctuation`. The argument must be an object literal with literal values: the compiler turns it into
+  a `key=value;` string, so the runtime never sees an object. Anything else is a compile error. Bad values
+  raise bun's `RangeError` text.
+- **Runtime.** `ts_rt_intl_set_locales`, `ts_rt_str_normalize_gc`, `ts_rt_str_locale_case_gc`,
+  `ts_rt_collator_new`, `ts_rt_collator_compare`, `ts_rt_str_locale_compare`.
+- **Checked against bun** for en, de, sv, tr, ja and zh sorts, special casing and normalization.
+- **Limits** (see [differences.md](differences.md)): all locales' data is linked (no trimming yet); an
+  unsupported locale id falls back to root collation; `resolvedOptions`, `supportedLocalesOf` and the other
+  `Collator` methods are not built; ICU4X's CLDR version can order a few things differently from the engine's.
+- **Still to come:** `NumberFormat`, `DateTimeFormat` (with `Date.toString` zone names and `toLocale*String`),
+  `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`.
+- Tests: `bench/intl.ts` with `tests/intl.rs` (M9-TS-254..263), expected values from
+  `bench/gen_intl_expected.ts` (bun) into `intl_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

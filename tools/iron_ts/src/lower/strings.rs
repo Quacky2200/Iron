@@ -315,6 +315,9 @@ impl<'a> Lowerer<'a> {
         {
             return Ok(r);
         }
+        if let Some(r) = self.lower_intl_str_method(recv.clone(), m, c)? {
+            return Ok(r);
+        }
         match m {
             "toString" | "valueOf" | "toLocaleString" => return Ok(recv),
             "concat" => {
@@ -332,7 +335,7 @@ impl<'a> Lowerer<'a> {
         }
         let Some(sf) = str_method(m) else {
             bail!(
-                "{at}: the string method `{m}` is not supported yet (localeCompare, normalize and the RegExp methods need their own work)"
+                "{at}: the string method `{m}` is not supported yet (the Intl methods are being added)"
             )
         };
         if c.arguments.len() > sf.params.len() {
@@ -548,6 +551,20 @@ impl<'a> Lowerer<'a> {
             }
         };
         Ok(Some(match name {
+            // The prelude's `Intl.Collator.compare`.
+            "__collatorCompare" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, a, b] = args.as_slice() else {
+                    bail!("{at}: __collatorCompare takes three arguments")
+                };
+                let id = self.num_arg(id)?;
+                let (a, b) = (self.str_expr(a)?, self.str_expr(b)?);
+                self.rt_str("ts_rt_collator_compare", vec![id, a, b], Ty::Num)
+            }
             "RegExp" => self.lower_new_regexp(&c.arguments, c.span.start)?,
             "isNaN" | "isFinite" => {
                 let v = first(self)?;

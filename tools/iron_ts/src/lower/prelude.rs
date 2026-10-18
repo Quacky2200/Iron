@@ -89,6 +89,22 @@ pub const DATE: &str = r#"class Date {
 }
 "#;
 
+/// The `Intl` classes (a collator is an id into the runtime's table; see `lower/intl.rs`).
+pub const INTL: &str = r#"class Intl_Collator {
+  id: number = 0;
+  compare: (a: string, b: string) => number = (a: string, b: string): number => __collatorCompare(this.id, a, b);
+}
+"#;
+
+/// Does the program use `Intl` or a locale-aware string method (they raise `RangeError`s)?
+pub fn wants_intl(src: &str) -> bool {
+    src.contains("Intl.")
+        || src.contains(".localeCompare(")
+        || src.contains(".normalize(")
+        || src.contains(".toLocaleUpperCase(")
+        || src.contains(".toLocaleLowerCase(")
+}
+
 /// Does the program mention `Date` (and not define its own)?
 pub fn wants_date(src: &str) -> bool {
     src.contains("Date") && !src.contains("class Date")

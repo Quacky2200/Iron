@@ -87,6 +87,12 @@ impl<'a> Lowerer<'a> {
                 st.fields[i].ty.clone()
             }
             TSType::TSTypeReference(r) => {
+                // `Intl.Collator` is the prelude class `Intl_Collator`.
+                if let TSTypeName::QualifiedName(q) = &r.type_name
+                    && matches!(&q.left, TSTypeName::IdentifierReference(l) if l.name == "Intl")
+                {
+                    return self.named_type(&format!("Intl_{}", q.right.name));
+                }
                 let TSTypeName::IdentifierReference(id) = &r.type_name else {
                     bail!("qualified type name")
                 };

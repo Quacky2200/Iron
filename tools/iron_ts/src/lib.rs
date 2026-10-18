@@ -193,7 +193,7 @@ mod tests {
     // M9-TS-182
     #[test]
     fn string_methods_that_need_more_work_are_errors_with_a_reason() {
-        for call in ["\"a\".localeCompare(\"b\")", "\"a\".normalize()"] {
+        for call in ["\"a\".anchor(\"b\")", "\"a\".big()"] {
             let e = lower::lower_source(&format!(
                 "export function f(): number {{ return {call} ? 1 : 0; }}"
             ))
@@ -386,6 +386,29 @@ mod tests {
         assert!(
             lower::lower_source(
                 "export function f(): number { return new Date(0) - new Date(1); }"
+            )
+            .is_ok()
+        );
+    }
+
+    // M9-TS-263
+    #[test]
+    fn intl_options_must_be_literals() {
+        let e = lower::lower_source(
+            "export function f(o: string): number { return \"a\".localeCompare(\"b\", \"en\", { sensitivity: o }); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("must be a literal"), "{e}");
+        let e = lower::lower_source(
+            "export function f(o: Intl.Collator): number { return o.resolvedOptions().numeric ? 1 : 0; }",
+        )
+        .err()
+        .unwrap_or_default();
+        assert!(!e.is_empty(), "resolvedOptions is not built");
+        assert!(
+            lower::lower_source(
+                "export function f(): number { return new Intl.Collator(\"de\", { numeric: true }).compare(\"a\", \"b\"); }"
             )
             .is_ok()
         );

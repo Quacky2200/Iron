@@ -731,6 +731,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-251 | Integration | `Date.now()` and `new Date()` give the current time (`tests/date.rs`). |
 | M9-TS-252 | Integration | Time clipping at +-8.64e15 and truncation of fractions (`tests/date.rs`). |
 | M9-TS-253 | Unit | `toString`, `toTimeString`, `toLocale*String` and `date + x` are compile errors that point to Intl (`iron_ts/src/lib.rs`). |
+| M9-TS-254 | Integration | `localeCompare` with default and explicit locales (de, sv, tr, a locale list) equals bun's (`iron_ts_tests/tests/intl.rs`, `bench/intl.ts`, expected data from `bench/gen_intl_expected.ts`). |
+| M9-TS-255 | Integration | `localeCompare` options: `sensitivity`, `numeric`, `caseFirst`, `ignorePunctuation`, `usage` (`tests/intl.rs`). |
+| M9-TS-256 | Integration | An invalid language tag or option value is a `RangeError` with JavaScriptCore's text (`tests/intl.rs`). |
+| M9-TS-257 | Integration | `normalize` NFC, NFD, NFKC, NFKD, Hangul, and a lone surrogate left alone (`tests/intl.rs`). |
+| M9-TS-258 | Integration | A bad normalization form is bun's `RangeError` (`tests/intl.rs`). |
+| M9-TS-259 | Integration | `toLocaleUpperCase` / `toLocaleLowerCase` with tr, az, lt, el, de, special casing (`tests/intl.rs`). |
+| M9-TS-260 | Integration | `array.sort(collator.compare)` for en, de numeric, sv, ja, zh and case/sensitivity options gives bun's order (`tests/intl.rs`). |
+| M9-TS-261 | Integration | `new Intl.Collator().compare(a, b)` results (`tests/intl.rs`). |
+| M9-TS-262 | Integration | `new Intl.Collator` with a bad tag or option is bun's `RangeError` (`tests/intl.rs`). |
+| M9-TS-263 | Unit | Intl options that are not literals, and `resolvedOptions`, are compile errors (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

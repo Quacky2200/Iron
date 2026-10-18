@@ -44,6 +44,11 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `Date` constructor arguments | `new Date(y, m, ...)` takes plain arguments, at most seven | Spread allowed | Lowered to a fixed-arity runtime call |
 | `Date` in typed JSON | Not supported in `JSON.stringify` / `JSON.parse` types yet | Stringifies through `toJSON`; parse gives a string | The JSON descriptors have no `Date` kind |
 | `Date` local time | Uses jiff's tz database; years beyond +-9999 are mapped by 400-year Gregorian cycles; a skipped local time uses the offset before the jump | Engines' own zone code | Same results as engines for the zones checked (five, against bun) |
+| `Intl.Collator` options and locales | The options argument must be an object literal with literal values, and locales a string or an array of strings, both read at compile time; anything else is a compile error | Any expression | The options become a `key=value;` string for the runtime |
+| `Intl.Collator` members | Only `new Intl.Collator(...)` and `.compare`; no `resolvedOptions` or `supportedLocalesOf` | The full API | Step I1 of the `Intl` work |
+| Locale data | ICU4X (CLDR) data for every locale is linked in; an unsupported locale id falls back to root collation, not the default locale; the CLDR version can differ from the engine's, so rare orderings may differ | The engine's own ICU, which falls back to the default locale | No data trimming yet; checked against bun for en, de, sv, tr, ja, zh |
+| Default locale | `en-US` until the host calls `ts_rt_intl_set_locales`; the game's `package.json` list is not wired to it yet | The environment's locale | Needs `iron_app` |
+| `Intl` beyond `Collator` | `NumberFormat`, `DateTimeFormat`, `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames` and `Segmenter` are not built; `Date` locale strings stay compile errors | Available | Later steps of the `Intl` work |
 | `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
 
 ## SVG (M3d step 5.1)

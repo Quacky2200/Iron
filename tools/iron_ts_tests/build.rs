@@ -47,6 +47,7 @@ fn main() {
         ("regexp", "re_", 21000),
         ("regexp2", "re2_", 22000),
         ("date", "dt_", 23000),
+        ("intl", "in_", 24000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
