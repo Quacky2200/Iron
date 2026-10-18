@@ -10,6 +10,7 @@ macro_rules! bail {
 
 mod arrays;
 mod closure;
+mod enums;
 mod expr;
 mod scan;
 mod stmt;
@@ -117,6 +118,8 @@ pub struct Lowerer<'a> {
     /// 0 declared, 1 being lowered, 2 done.
     pub(crate) fstate: Vec<u8>,
     pub(crate) consts: HashMap<String, ConstInfo>,
+    /// Enum members by enum name (`enums.rs`).
+    pub(crate) enums: HashMap<String, HashMap<String, Expr>>,
     pub(crate) cur: FnCtx,
     /// Names that closures in the function being lowered capture (`scan.rs`).
     pub(crate) captured: HashSet<String>,
@@ -147,6 +150,7 @@ pub fn lower_source(src: &str) -> R<Module> {
         fsig: Vec::new(),
         fstate: Vec::new(),
         consts: HashMap::new(),
+        enums: HashMap::new(),
         cur: FnCtx::default(),
         captured: HashSet::new(),
         closure_free: HashMap::new(),
@@ -177,6 +181,18 @@ impl<'a> Lowerer<'a> {
 
     fn lower_program(&mut self, program: &'a Program<'a>) -> R<()> {
         // 1. Types and function signatures, in any order.
+        // 0. Enums first: their names are types that signatures below mention.
+        for stmt in &program.body {
+            match stmt {
+                Statement::TSEnumDeclaration(e) => self.declare_enum(e)?,
+                Statement::ExportDeclaration(x) => {
+                    if let Declaration::TSEnumDeclaration(e) = &x.declaration {
+                        self.declare_enum(e)?;
+                    }
+                }
+                _ => {}
+            }
+        }
         let mut vars: Vec<TopVar<'a>> = Vec::new();
         for stmt in &program.body {
             match stmt {

@@ -61,6 +61,18 @@ pub mod lp {
     include!(concat!(env!("OUT_DIR"), "/loops_bindings.rs"));
 }
 
+/// `switch` and enums (`bench/switches.ts`), prefix `sw_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod sw {
+    include!(concat!(env!("OUT_DIR"), "/switches_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

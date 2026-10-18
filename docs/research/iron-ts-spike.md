@@ -489,3 +489,40 @@ destructuring pattern (destructuring is stage 3).
 
 Tests: `tests/loops.rs` against the numbers bun computes from `bench/loops.ts`, in all three GC
 modes (`M9-TS-57`..`63`).
+
+## 13. `switch` and enums (stage 2)
+
+Design, written before the code.
+
+**Enums.** `enum` and `const enum` are the same here and cost nothing at run time. A numeric enum is
+a `number`; its members are constants (`Up = 0`, the next member is the previous plus one, an
+initialiser may be any constant expression over earlier members: `B = A << 1`). A string enum is a
+union of string tags (`Ty::Lit`), so `Mood.Sad` is the tag of `"sad"` and compares with a string
+literal. The enum's name is a type (`d: Dir`), `Dir.Up` folds to its value wherever it appears.
+Constant folding in `arith` learned `%` and the bit operations (`&`, `|`, `^`, `<<`, `>>`, `>>>`
+with JavaScript's ToInt32), because enum initialisers and flag combinations are constants.
+Not done: reverse mapping (`Dir[0]`), computed or non-constant members, enums merged across
+declarations, `declare enum`.
+
+**`switch`.** JavaScript compares with `===` in source order, falls through into the next clause
+unless a `break` leaves the switch, and `default` may sit anywhere (it runs only if nothing
+matches, and falls through into whatever follows it). The IR has no jump table, so:
+
+```text
+tmp = discriminant            (evaluated once)
+idx = index of default, or the clause count
+Block sel { if tmp === c0 { idx = 0; break sel }  if tmp === c1 { idx = 1; break sel }  ... }
+Block brk { if idx <= 0 { body0 }  if idx <= 1 { body1 }  ... }
+```
+
+`idx` picks the clause, then every body from there on runs in source order until a `break`
+(`Break brk`) leaves the block. That gives fall-through and a default in the middle with no special
+cases. Case expressions are evaluated lazily, in order, and may allocate. `continue` inside a switch
+skips the switch's entry (it has no continue target) and reaches the enclosing loop; `break label`
+works on a labelled switch. All clauses share one scope, as in JS.
+
+A linear chain of compares is fine for the switches in gameplay code (a handful of clauses); a
+dense numeric switch could become a Cranelift jump table later (Performance).
+
+Tests: `tests/switches.rs` against bun's numbers from `bench/switches.ts`, in all three GC modes
+(`M9-TS-64`..`69`); error cases are a unit test (`M9-TS-70`).

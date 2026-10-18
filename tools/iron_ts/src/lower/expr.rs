@@ -10,6 +10,25 @@ pub(crate) fn num(n: f64) -> Expr {
     mk(ExprKind::Num(n), Ty::Num)
 }
 
+/// JavaScript's ToInt32, with the same saturating conversion the generated code uses.
+fn to_i32(x: f64) -> i32 {
+    if x.is_finite() { (x as i64) as i32 } else { 0 }
+}
+
+/// A bit operation on two constants.
+fn fold_bits(op: BinOp, a: f64, b: f64) -> f64 {
+    let (x, y) = (to_i32(a), to_i32(b));
+    let n = (y & 31) as u32;
+    match op {
+        BinOp::BitAnd => (x & y) as f64,
+        BinOp::BitOr => (x | y) as f64,
+        BinOp::BitXor => (x ^ y) as f64,
+        BinOp::Shl => x.wrapping_shl(n) as f64,
+        BinOp::Shr => (x >> n) as f64,
+        _ => ((x as u32) >> n) as f64,
+    }
+}
+
 /// A place that can be read and written (assignment targets, `++`, compound assignment).
 pub(crate) enum Place {
     Var(VarId, Ty),
@@ -159,6 +178,12 @@ impl<'a> Lowerer<'a> {
                 "E" => Ok(num(std::f64::consts::E)),
                 _ => bail!("Math.{prop} is not a value"),
             };
+        }
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && let Some(v) = self.enum_member(id.name.as_str(), prop)
+        {
+            return v;
         }
         let mut obj = self.lower_expr(&m.object, None)?;
         if m.optional {
@@ -313,6 +338,13 @@ impl<'a> Lowerer<'a> {
                 BinOp::Sub => Some(a - b),
                 BinOp::Mul => Some(a * b),
                 BinOp::Div => Some(a / b),
+                BinOp::Rem => Some(a % b),
+                BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::UShr => Some(fold_bits(op, *a, *b)),
                 _ => None,
             };
             if let Some(v) = v {
@@ -322,7 +354,7 @@ impl<'a> Lowerer<'a> {
         Ok(mk(ExprKind::Bin(op, Box::new(l), Box::new(r)), Ty::Num))
     }
 
-    fn lower_compare(&mut self, op: CmpOp, l: Expr, r: Expr, at: u32) -> R<Expr> {
+    pub(crate) fn lower_compare(&mut self, op: CmpOp, l: Expr, r: Expr, at: u32) -> R<Expr> {
         let eq = matches!(op, CmpOp::Eq | CmpOp::Ne);
         if eq && (l.ty == Ty::Null || r.ty == Ty::Null) {
             let other = if l.ty == Ty::Null { r } else { l };

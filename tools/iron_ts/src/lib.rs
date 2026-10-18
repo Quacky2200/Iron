@@ -138,4 +138,33 @@ mod tests {
         .unwrap();
         assert!(e.contains("constant"), "{e}");
     }
+
+    // M9-TS-70
+    #[test]
+    fn bad_enums_and_jumps_are_errors_with_a_reason() {
+        let e = lower::lower_source(
+            "export function f(n: number): number { enum E { A = n } return E.A; }",
+        );
+        assert!(e.is_err());
+        let e = lower::lower_source("enum E { A, B } export function f(): number { return E.C; }")
+            .err()
+            .unwrap();
+        assert!(e.contains("no member `C`"), "{e}");
+        let e = lower::lower_source(
+            "enum E { A = \"a\", B } export function f(): number { return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("initialiser"), "{e}");
+        let e = lower::lower_source("export function f(): number { continue; return 1; }")
+            .err()
+            .unwrap();
+        assert!(e.contains("continue outside a loop"), "{e}");
+        let e = lower::lower_source(
+            "export function f(): number { sw: switch (1) { case 1: for (;;) { continue sw; } } return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("not a loop"), "{e}");
+    }
 }

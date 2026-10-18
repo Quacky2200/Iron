@@ -1472,7 +1472,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] `JSON.stringify/parse` for plain data (or declare out of scope)
   - [ ] **Language features** (each small to medium; tick each)
     - [x] `for(;;)` with update clause, `do...while`, labelled `break`/`continue` (`M9-TS-57..63`)
-    - [ ] `switch` (numbers, string-literal unions), enums (`enum`, `const enum`)
+    - [x] `switch` (numbers, string-literal unions), enums (`enum`, `const enum`) (`M9-TS-64..70`)
     - [ ] Destructuring (objects, arrays, parameters, nested, defaults), default and rest parameters
     - [ ] Spread: call arguments, array literals, object literals with overrides
     - [ ] Optional call `f?.()`, `??=`, `||=`, `&&=`, `**`, unary `~`, `in`, `void`, `delete` (limited)

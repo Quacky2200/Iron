@@ -119,6 +119,7 @@ impl<'a> Lowerer<'a> {
                 out.push(Stmt::Loop(top, b));
             }
             Statement::ForStatement(f) => self.lower_for(f, out)?,
+            Statement::SwitchStatement(sw) => self.lower_switch(sw, out)?,
             Statement::LabeledStatement(l) => {
                 let name = l.label.name.to_string();
                 if matches!(
@@ -149,6 +150,73 @@ impl<'a> Lowerer<'a> {
                 self.loc(oxc_span::GetSpan::span(other).start)
             ),
         }
+        Ok(())
+    }
+
+    /// `switch`: find the first matching clause (or `default`), then run the clause bodies from
+    /// there on, in source order, until a `break` leaves the block (that is JS's fall-through).
+    ///
+    /// ```text
+    /// tmp = discriminant; idx = (index of default, or the clause count)
+    /// Block sel { if tmp === c0 { idx = 0; break sel }  if tmp === c1 { idx = 1; break sel } ... }
+    /// Block brk { if idx <= 0 { body0 }  if idx <= 1 { body1 } ... }
+    /// ```
+    fn lower_switch(&mut self, sw: &'a SwitchStatement<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let d = self.lower_expr(&sw.discriminant, None)?;
+        let tmp = self.new_local(d.ty.clone());
+        out.push(Stmt::Assign(tmp, d.clone()));
+        let n = sw.cases.len();
+        let default = sw.cases.iter().position(|c| c.test.is_none()).unwrap_or(n);
+        let idx = self.new_local(Ty::Num);
+        out.push(Stmt::Assign(idx, super::expr::num(default as f64)));
+        let (sel, brk) = (self.new_label(), self.new_label());
+        let mut select = Vec::new();
+        for (k, c) in sw.cases.iter().enumerate() {
+            let Some(test) = &c.test else { continue };
+            let want = d.ty.strip().clone();
+            let t = self.lower_expr(test, Some(&want))?;
+            let eq = self.lower_compare(CmpOp::Eq, self.var_expr(tmp), t, c.span.start)?;
+            select.push(Stmt::If(
+                eq,
+                vec![
+                    Stmt::Assign(idx, super::expr::num(k as f64)),
+                    Stmt::Break(sel),
+                ],
+                vec![],
+            ));
+        }
+        out.push(Stmt::Block(sel, select));
+        self.cur.scopes.push(HashMap::new());
+        self.cur.loops.push(LoopLabels {
+            name: self.cur.pending_label.take(),
+            brk,
+            cont: None,
+            unlabeled_break: true,
+        });
+        let mut bodies = Vec::new();
+        let mut failed = None;
+        for (k, c) in sw.cases.iter().enumerate() {
+            let mut body = Vec::new();
+            if let Err(e) = self.lower_stmts(&c.consequent, &mut body) {
+                failed = Some(e);
+                break;
+            }
+            let le = mk(
+                ExprKind::Cmp(
+                    CmpOp::Le,
+                    Box::new(self.var_expr(idx)),
+                    Box::new(super::expr::num(k as f64)),
+                ),
+                Ty::Bool,
+            );
+            bodies.push(Stmt::If(le, body, vec![]));
+        }
+        self.cur.loops.pop();
+        self.cur.scopes.pop();
+        if let Some(e) = failed {
+            return Err(e);
+        }
+        out.push(Stmt::Block(brk, bodies));
         Ok(())
     }
 

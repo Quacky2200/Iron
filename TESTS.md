@@ -542,6 +542,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-61 | Integration | Labels on a `while`, a `for...of` and a plain block (600100, 100100, 2001, 2, 3). Runs in all three GC modes (`tests/loops.rs`). |
 | M9-TS-62 | Integration | A captured `for` variable is a new binding every iteration (closures see 0, 1, 2) and a closure's change to it carries into the next iteration (12, 3). Runs in all three GC modes (`tests/loops.rs`). |
 | M9-TS-63 | Integration | Objects allocated in the head, body and update of a `for` survive a collection at every allocation (5050). Runs in all three GC modes (`tests/loops.rs`). |
+| M9-TS-64 | Integration | A switch on an enum value picks the case, the shared `case Left: case Right:` body and the default. Runs normally, in stress GC mode and with collection off (`tests/switches.rs`). |
+| M9-TS-65 | Integration | Enum members are numbered (0, 1, 5, 6), refer to earlier members (`B = A << 1`) and fold to constants; functions take and return enum values. Runs in all three GC modes (`tests/switches.rs`). |
+| M9-TS-66 | Integration | A switch falls through into the next clause and a `default` in the middle runs only when nothing matches, then falls into the following case. Runs in all three GC modes (`tests/switches.rs`). |
+| M9-TS-67 | Integration | A switch on a string-literal union and on a string enum compares tags. Runs in all three GC modes (`tests/switches.rs`). |
+| M9-TS-68 | Integration | `continue` in a switch reaches the loop, `break` leaves only the switch, no match and no default does nothing, `break label` leaves a labelled switch from a nested loop. Runs in all three GC modes (`tests/switches.rs`). |
+| M9-TS-69 | Integration | A discriminant and case expressions that allocate are evaluated once and in order and survive a collection at every allocation; case blocks keep their own constants. Runs in all three GC modes (`tests/switches.rs`). |
+| M9-TS-70 | Unit | Non-constant enum members, unknown members, a string member followed by a member without a value, `continue` outside a loop and `continue` to a non-loop label are errors with a reason (`iron_ts/src/lib.rs`). |
 
 ---
 
