@@ -43,3 +43,18 @@ export function localReassigned(): number {
   let a = fresh(5);
   return sum(a, (a = fresh(100), fresh(1).v));
 }
+
+/** Overwrites `h.item`, then allocates: the new object takes the freed old item's memory. */
+function swapAndAlloc(h: Holder): Item {
+  h.item = { v: 9 };
+  const x: Item = { v: 0 };
+  return x;
+}
+
+/**
+ * JS: `h.item` is the old item and `swapAndAlloc` returns a different, new object, so `===` is
+ * false. Natively the old item is freed and the new object may be given the same address.
+ */
+export function sameAsOld(h: Holder): boolean {
+  return h.item === swapAndAlloc(h);
+}

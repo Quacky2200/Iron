@@ -24,21 +24,33 @@ pub fn compile_source(src: &str, opt: &str) -> Result<Output, String> {
 
 /// Like `compile_source`, naming exported symbols `ts_<prefix><name>`.
 pub fn compile_with_prefix(src: &str, opt: &str, prefix: &str) -> Result<Output, String> {
+    compile_with(src, opt, prefix, 0)
+}
+
+/// Like `compile_with_prefix`, with object headers numbered from `struct_base`. Modules that
+/// share a process (and so a GC heap) need disjoint ranges: leave 1000 or more between them.
+pub fn compile_with(
+    src: &str,
+    opt: &str,
+    prefix: &str,
+    struct_base: u32,
+) -> Result<Output, String> {
     // Lowering recurses with the source's nesting; the main thread's 1 MiB is too little on Windows.
     std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(64 << 20)
-            .spawn_scoped(s, || compile_inner(src, opt, prefix))
+            .spawn_scoped(s, || compile_inner(src, opt, prefix, struct_base))
             .map_err(|e| e.to_string())?
             .join()
             .map_err(|_| "compiler panicked".to_string())?
     })
 }
 
-fn compile_inner(src: &str, opt: &str, prefix: &str) -> Result<Output, String> {
+fn compile_inner(src: &str, opt: &str, prefix: &str, struct_base: u32) -> Result<Output, String> {
     let t0 = std::time::Instant::now();
     let mut module = lower::lower_source(src)?;
     module.prefix = prefix.to_string();
+    module.struct_base = struct_base;
     let lower_time = t0.elapsed();
     let t1 = std::time::Instant::now();
     let compiled = codegen::compile(&module, opt)?;

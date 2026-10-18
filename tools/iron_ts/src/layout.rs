@@ -64,7 +64,7 @@ pub fn rust_bindings(m: &Module) -> String {
         s += &format!(
             "/// Struct id {id}: the header word of its objects, for `ts_rt_obj_new`.\npub const HDR_{}: u64 = {};\n#[repr(C)]\n#[derive(Debug)]\npub struct {} {{\n    pub header: u64,\n",
             struct_name(m, id),
-            id + 1,
+            m.struct_base as usize + id + 1,
             struct_name(m, id)
         );
         for f in &st.fields {

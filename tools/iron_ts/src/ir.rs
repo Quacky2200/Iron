@@ -241,6 +241,9 @@ pub struct Module {
     pub init: Option<FuncId>,
     /// Put between `ts_` and an exported name, so several modules can link into one program.
     pub prefix: String,
+    /// Added to struct ids in object headers, so modules linked into one program (sharing one
+    /// heap) never use the same header. Give each module a range of its own.
+    pub struct_base: u32,
 }
 
 // ---- A readable dump (for `iron_ts --dump-ir` and the doc) ----

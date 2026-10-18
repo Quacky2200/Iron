@@ -38,11 +38,25 @@
 
 use std::alloc::{Layout, alloc, alloc_zeroed, dealloc};
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const CHUNK: usize = 1 << 20;
 /// Blocks up to this many 16-byte granules come from chunks and free lists.
 const MAX_CLASS: usize = 32;
 const MARK: u64 = 1 << 63;
+/// A header is `mark(1) | heap id(31) | kind(32)`. The heap id keeps one thread's collector away
+/// from objects of another thread's heap that it finds through a shared global slot.
+const KIND_MASK: u64 = 0xFFFF_FFFF;
+static NEXT_HEAP: AtomicU64 = AtomicU64::new(1);
+
+/// The kind part of an object's header (`HDR_*` or a struct id + 1), without mark and heap id.
+pub fn header_kind(header: u64) -> u64 {
+    header & KIND_MASK
+}
+
+fn header_heap(header: u64) -> u64 {
+    (header >> 32) & 0x7FFF_FFFF
+}
 const MIN_THRESHOLD: usize = 512 << 10;
 
 /// Header words of the non-struct objects. Struct headers are `struct id + 1`, far below these.
@@ -61,6 +75,7 @@ pub struct Frame {
 }
 
 struct Heap {
+    id: u64,
     cur: *mut u8,
     end: *mut u8,
     free: [Vec<*mut u8>; MAX_CLASS + 1],
@@ -82,6 +97,7 @@ struct Heap {
 
 thread_local! {
     static HEAP: UnsafeCell<Heap> = const { UnsafeCell::new(Heap {
+        id: 0,
         cur: std::ptr::null_mut(),
         end: std::ptr::null_mut(),
         free: [const { Vec::new() }; MAX_CLASS + 1],
@@ -103,7 +119,13 @@ thread_local! {
 /// Runs `f` on this thread's heap. `f` must not call back into a `with_heap` function.
 fn with_heap<T>(f: impl FnOnce(&mut Heap) -> T) -> T {
     // SAFETY: thread local; callers do not nest.
-    HEAP.with(|h| f(unsafe { &mut *h.get() }))
+    HEAP.with(|h| {
+        let h = unsafe { &mut *h.get() };
+        if h.id == 0 {
+            h.id = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
+        }
+        f(h)
+    })
 }
 
 // ---- raw blocks ----
@@ -167,7 +189,7 @@ fn raw_free(h: &mut Heap, p: *mut u8, size: usize) {
 fn new_obj(h: &mut Heap, header: u64, size: usize) -> *mut u8 {
     let p = raw_alloc(h, size, true);
     // SAFETY: at least 16 bytes.
-    unsafe { *(p as *mut u64) = header };
+    unsafe { *(p as *mut u64) = header | (h.id << 32) };
     h.objs.push((p, size as u32));
     p
 }
@@ -306,14 +328,15 @@ pub unsafe extern "C" fn ts_rt_bytes_fill(a: *mut Array, value: i64, start: i64,
 
 // ---- collection ----
 
-unsafe fn mark_ptr(p: *mut u8, stack: &mut Vec<*mut u8>) {
+unsafe fn mark_ptr(p: *mut u8, heap: u64, stack: &mut Vec<*mut u8>) {
     if p.is_null() {
         return;
     }
     let hd = p as *mut u64;
     // SAFETY: `p` is a GC object (a root or a traced slot).
     unsafe {
-        if *hd & MARK != 0 {
+        // Another thread's object (reached through a global shared between threads): not ours.
+        if *hd & MARK != 0 || header_heap(*hd) != heap {
             return;
         }
         *hd |= MARK;
@@ -322,30 +345,31 @@ unsafe fn mark_ptr(p: *mut u8, stack: &mut Vec<*mut u8>) {
 }
 
 fn collect(h: &mut Heap) {
+    let heap = h.id;
     let mut stack: Vec<*mut u8> = Vec::new();
     // SAFETY: roots are GC objects or null; slots of live frames are pointers or zero.
     unsafe {
         for &r in &h.host_roots {
-            mark_ptr(r, &mut stack);
+            mark_ptr(r, heap, &mut stack);
         }
         for &g in &h.global_roots {
-            mark_ptr(*g, &mut stack);
+            mark_ptr(*g, heap, &mut stack);
         }
         let mut f = h.top;
         while !f.is_null() {
             let slots = (f as *mut u8).add(std::mem::size_of::<Frame>()) as *mut *mut u8;
             for i in 0..(*f).n as usize {
-                mark_ptr(*slots.add(i), &mut stack);
+                mark_ptr(*slots.add(i), heap, &mut stack);
             }
             f = (*f).prev;
         }
         while let Some(p) = stack.pop() {
-            let hdr = *(p as *const u64) & !MARK;
+            let hdr = header_kind(*(p as *const u64));
             match hdr {
                 HDR_ARRAY_PTR => {
                     let a = &*(p as *const Array);
                     for i in 0..a.len as usize {
-                        mark_ptr(*(a.data as *const *mut u8).add(i), &mut stack);
+                        mark_ptr(*(a.data as *const *mut u8).add(i), heap, &mut stack);
                     }
                 }
                 HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE => {}
@@ -355,7 +379,7 @@ fn collect(h: &mut Heap) {
                     });
                     for i in 0..n as usize {
                         if mask >> i & 1 != 0 {
-                            mark_ptr(*(p.add(8 + 8 * i) as *const *mut u8), &mut stack);
+                            mark_ptr(*(p.add(8 + 8 * i) as *const *mut u8), heap, &mut stack);
                         }
                     }
                 }
@@ -373,10 +397,17 @@ fn collect(h: &mut Heap) {
             if *hd & MARK != 0 {
                 *hd &= !MARK;
                 live += size as usize;
+                match header_kind(*hd) {
+                    HDR_ARRAY | HDR_ARRAY_PTR => {
+                        live += (*(p as *const Array)).cap.max(0) as usize * 8
+                    }
+                    HDR_BYTES => live += (*(p as *const Array)).cap.max(0) as usize,
+                    _ => {}
+                }
                 keep.push((p, size));
                 continue;
             }
-            match *hd {
+            match header_kind(*hd) {
                 HDR_ARRAY | HDR_ARRAY_PTR => {
                     let a = &*(p as *const Array);
                     if a.cap > 0 {
@@ -425,8 +456,10 @@ pub extern "C" fn ts_rt_gc_enable(on: bool) {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GcStats {
     pub collections: u64,
-    /// Bytes of GC objects that survived the last collection (headers and fields, not array data).
+    /// Bytes of GC objects, array data included, that survived the last collection.
     pub live_bytes: usize,
+    /// Bytes that may be handed out before the next automatic collection, from now.
+    pub next_collection_at: usize,
     pub objects: usize,
     /// Bytes handed out in total, reused blocks included.
     pub allocated_bytes: usize,
@@ -436,6 +469,7 @@ pub fn gc_stats() -> GcStats {
     with_heap(|h| GcStats {
         collections: h.collections,
         live_bytes: h.live,
+        next_collection_at: h.threshold.saturating_sub(h.since_gc),
         objects: h.objs.len(),
         allocated_bytes: h.total,
     })
@@ -450,15 +484,32 @@ pub extern "C" fn ts_rt_allocated() -> usize {
 
 /// Registers which of a struct's `nfields` slots hold pointers (bit i of `mask`). `header` is the
 /// struct id + 1.
-#[unsafe(no_mangle)]
-pub extern "C" fn ts_rt_register_struct(header: u64, nfields: u32, mask: u64) {
+/// `ts_rt_register_struct` with the collision reported instead of aborting.
+pub fn register_struct(header: u64, nfields: u32, mask: u64) -> Result<(), String> {
     with_heap(|h| {
         let i = header as usize - 1;
         if h.structs.len() <= i {
             h.structs.resize(i + 1, (0, 0));
         }
-        h.structs[i] = (nfields, mask);
-    });
+        let new = (nfields, mask);
+        if h.structs[i] != (0, 0) && h.structs[i] != new {
+            return Err(format!(
+                "struct id {header} collides: registered as {:?}, now {new:?} (give each module its own struct base)",
+                h.structs[i]
+            ));
+        }
+        h.structs[i] = new;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_register_struct(header: u64, nfields: u32, mask: u64) {
+    // A collision means two modules would trace each other's objects wrongly: stop.
+    if let Err(e) = register_struct(header, nfields, mask) {
+        eprintln!("{e}");
+        std::process::abort();
+    }
 }
 
 /// Registers the address of a global's pointer slot as a root.
@@ -724,7 +775,7 @@ mod tests {
         ts_rt_gc_collect();
         let objs = gc_stats().objects;
         assert!(objs >= 2);
-        assert_eq!(unsafe { (*inner).header }, HDR_ARRAY);
+        assert_eq!(unsafe { header_kind((*inner).header) }, HDR_ARRAY);
         ts_rt_root_remove(h);
         ts_rt_gc_collect();
         assert_eq!(gc_stats().objects, objs - 2);
@@ -747,7 +798,7 @@ mod tests {
         ts_rt_gc_stress(true);
         ts_rt_gc_collect();
         assert_eq!(
-            unsafe { (*item).header },
+            unsafe { header_kind((*item).header) },
             HDR_ARRAY,
             "reached through the array"
         );
@@ -760,5 +811,69 @@ mod tests {
             "the frame is gone, so are its objects"
         );
         ts_rt_gc_stress(false);
+    }
+
+    // M9-TS-31
+    //
+    // Heaps are per thread but a module's globals are shared, so one thread's collector can find
+    // a pointer into another thread's heap in a global slot. It must not touch such an object:
+    // setting the other heap's mark bit would make that heap skip the object (and so its children)
+    // at its next collection.
+    #[test]
+    fn a_collector_leaves_objects_of_another_threads_heap_alone() {
+        ts_rt_register_struct(1, 1, 1);
+        let outer = ts_rt_obj_new(1, 16) as *mut *mut u8;
+        let first = ts_rt_arr_new(1, 0);
+        unsafe { *outer.add(1) = first as *mut u8 };
+        let h = ts_rt_root_add(outer as *mut u8);
+        let addr = outer as usize;
+        std::thread::spawn(move || {
+            ts_rt_register_struct(1, 1, 1);
+            let mut slot = addr as *mut u8;
+            ts_rt_add_global_root(&mut slot);
+            ts_rt_gc_collect();
+        })
+        .join()
+        .unwrap();
+        // Give `outer` a new child; if the other thread left a stale mark, we skip it.
+        let second = ts_rt_arr_new(1, 0);
+        unsafe { *outer.add(1) = second as *mut u8 };
+        ts_rt_gc_stress(true);
+        ts_rt_gc_collect();
+        assert_eq!(
+            unsafe { header_kind((*second).header) },
+            HDR_ARRAY,
+            "the new child was freed"
+        );
+        ts_rt_gc_stress(false);
+        ts_rt_root_remove(h);
+    }
+
+    // M9-TS-32
+    #[test]
+    fn array_data_counts_toward_the_next_collection_threshold() {
+        let big = ts_rt_arr_new(200_000, 0);
+        unsafe { (*big).len = 200_000 };
+        let h = ts_rt_root_add(big as *mut u8);
+        ts_rt_gc_collect();
+        // 1.6 MB of numbers are alive; collecting again after only 512 KiB would be thrashing.
+        assert!(
+            gc_stats().next_collection_at >= 1_600_000,
+            "{:?}",
+            gc_stats()
+        );
+        ts_rt_root_remove(h);
+    }
+
+    // M9-TS-33
+    #[test]
+    fn two_different_structs_with_one_id_are_refused() {
+        assert!(register_struct(7, 2, 0b10).is_ok());
+        assert!(
+            register_struct(7, 2, 0b10).is_ok(),
+            "the same table again is fine"
+        );
+        let e = register_struct(7, 3, 0b01).unwrap_err();
+        assert!(e.contains("collides"), "{e}");
     }
 }

@@ -225,15 +225,29 @@ two runtime calls (frame push and pop) per call.
 
 Known gaps:
 
-- The root analysis is a conservative approximation, not a proof. The first version trusted a
-  pointer read from a field of a rooted object (`f(h.item, replace(h))`) and a local that a later
-  operand reassigns (`f(a, (a = g(), h()))`), and both lost the object: JavaScript keeps an
-  evaluated argument alive, the native code freed it (`M9-TS-27`, `M9-TS-28`, programs in
-  `bench/gap.ts`, found by writing them and running in stress mode). Now only a local that no later
-  operand assigns, a global and null are trusted; every other pointer held while a later operand
-  can allocate is spilled to a frame slot. No measurable cost on the benchmarks. What the analysis
-  still assumes: no pointer lives only in a register or Cranelift spill slot across a call other
-  than as an operand of the node being evaluated, which holds for the IR the lowering produces.
+- The root analysis is a conservative approximation, not a proof. Writing tests against it found
+  holes, all now fixed and covered (stress mode, `bench/gap.ts`, `tests/gc.rs`):
+  a pointer read from a field and held as an argument while a later argument overwrites the field
+  and allocates (`f(h.item, replace(h))`, `M9-TS-27`); a local reassigned while its old value waits
+  as an argument (`f(a, (a = g(), h()))`, `M9-TS-28`); a pointer waiting to be *compared* with
+  `===`, which could come out equal to a new object that took the freed block (`M9-TS-29`).
+  JavaScript keeps an evaluated operand alive, so the native code must. Now only a local that no
+  later operand assigns, a global and null are trusted; every other pointer held while a later
+  operand can allocate is spilled to a frame slot. The code generator also refuses to compile a
+  function whose spills would overrun its frame (the plan and the walk must agree).
+  What it still assumes: no pointer lives only in a register or Cranelift spill slot across a
+  call, other than as an operand of the node being evaluated. That holds for the IR the lowering
+  produces; it is not checked.
+- Several modules in one program: struct ids in object headers must not overlap, or the second
+  module's `ts_init` overwrites the first's table of pointer slots (`M9-TS-30`). Each module is
+  compiled with its own `struct_base` (`compile_with`, `--struct-base`); registering a different
+  table under a taken id is refused (`M9-TS-33`).
+- Module globals are shared between threads but heaps are per thread. A header carries its heap's
+  id, and a collector ignores objects of other heaps, so one thread cannot set mark bits in
+  another's objects and make it skip them (`M9-TS-31`). Script objects still must not be used
+  across threads.
+- The collection threshold counts array data, not only object headers; a script holding 8 MB of
+  numbers would otherwise collect every 512 KiB (`M9-TS-32`).
 - No incremental or generational collection; a collection walks the whole live heap. Fine for
   100 KiB of state; a game with 100 MB of script state would want generations.
 - Closure `env` pointers are host memory. Closures created in script (not yet supported) will need

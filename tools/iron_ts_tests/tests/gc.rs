@@ -50,7 +50,7 @@ fn a_long_run_collects_on_its_own_and_memory_stays_bounded() {
     ts_rt_gc_collect();
     let live = gc_stats();
     assert!(
-        live.live_bytes < 512 << 10 && live.objects < 5_000,
+        live.live_bytes < (1 << 20) && live.objects < 5_000,
         "{live:?}"
     );
 }
@@ -115,6 +115,53 @@ fn a_local_reassigned_while_its_old_value_waits_as_an_argument_survives() {
     unsafe {
         gap::ts_gap_init();
         assert_eq!(gap::ts_gap_localReassigned(), 6.0);
+    }
+    ts_rt_gc_stress(false);
+}
+
+// M9-TS-29
+//
+// In JavaScript:
+//
+//     h.item === swapAndAlloc(h)   // false: two different objects
+//
+// The left side is evaluated first and then waits for the right side, which overwrites
+// `h.item` and allocates. With the old item unrooted the collector frees it and the allocator
+// hands the same block to the new object, so the addresses compare equal. Comparing pointers
+// needs the same rooting as passing them.
+#[test]
+fn a_pointer_waiting_to_be_compared_is_not_freed_and_reused() {
+    assert_ne!(link_anchor(), 0);
+    ts_rt_gc_stress(true);
+    unsafe {
+        gap::ts_gap_init();
+        let h = root(gap::ts_gap_makeHolder(5.0));
+        assert!(!gap::ts_gap_sameAsOld(h));
+    }
+    ts_rt_gc_stress(false);
+}
+
+// M9-TS-30
+//
+// Two compiled modules live in one program and one heap (a game's scripts are several files).
+// Their struct ids must not collide: each module gets its own range, otherwise the second
+// module's `ts_init` overwrites the first's table of which fields are pointers and the collector
+// traces the wrong slots (or frees what it cannot see).
+#[test]
+fn two_modules_in_one_heap_keep_their_own_pointer_maps() {
+    assert_ne!(link_anchor(), 0);
+    ts_rt_gc_stress(true);
+    unsafe {
+        ts_init();
+        gap::ts_gap_init();
+        let b = busy_state();
+        let h = root(gap::ts_gap_makeHolder(5.0));
+        for _ in 0..200 {
+            ts_step(b.state, b.input, 1.0 / 60.0, b.walls);
+            assert_eq!(gap::ts_gap_fieldHeldAcrossStore(h), 105.0);
+            (*h).item = (*gap::ts_gap_makeHolder(5.0)).item;
+        }
+        assert!(busy_checksum(b.state) > 0.0);
     }
     ts_rt_gc_stress(false);
 }

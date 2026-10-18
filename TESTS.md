@@ -507,6 +507,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-26 | Manual | `IRON_TS_GC=stress cargo test -p iron_ts_tests --test sim_port`, and `IRON_TS_GC=stress cargo run --release -p iron_ts_tests --bin bench 1500` / `--bin sine_bench 100`: the 13 ported tests pass and the checksums agree with QuickJS and bun with a collection at every allocation. |
 | M9-TS-27 | Integration | A pointer read from a field and held as an argument while a later argument overwrites that field and allocates is not freed (`sum(h.item, replaceItem(h, 100))` = 105 as in JS; `bench/gap.ts`). Failed before the root analysis was tightened. |
 | M9-TS-28 | Integration | A local reassigned while its old value waits as an argument is not freed (`sum(a, (a = fresh(100), fresh(1).v))` = 6 as in JS). Failed before the fix. |
+| M9-TS-29 | Integration | A pointer waiting to be compared with `===` while the right side frees and reuses its object is not equal to the new object (`h.item === swapAndAlloc(h)` is false as in JS). Failed before comparisons rooted their operands. |
+| M9-TS-30 | Integration | The zombie sim and `gap.ts` run interleaved in one heap with a collection at every allocation: their struct ids do not collide (`struct_base`). Crashed before. |
+| M9-TS-31 | Unit | A collector does not mark objects of another thread's heap found through a shared global slot; the owner's next collection still traces them. Failed before headers carried a heap id. |
+| M9-TS-32 | Unit | Array data counts toward the live size, so a heap with a large live array collects less often. |
+| M9-TS-33 | Unit | Registering a different pointer map under a struct id already taken is refused; the same one again is fine. |
 
 ---
 

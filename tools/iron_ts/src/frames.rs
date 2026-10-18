@@ -153,7 +153,7 @@ fn count_expr(e: &Expr, n: &mut u32) {
             let v: Vec<&Expr> = std::iter::once(&**c).chain(args.iter()).collect();
             *n += n_spills(&v);
         }
-        ExprKind::Index(a, i) => *n += n_spills(&[a, i]),
+        ExprKind::Index(a, i) | ExprKind::Cmp(_, a, i) => *n += n_spills(&[a, i]),
         ExprKind::Seq(stmts, _) => count_stmts(stmts, n),
         _ => {}
     }

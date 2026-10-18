@@ -1,4 +1,5 @@
-//! `iron_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]`:
+//! `iron_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]
+//! [--prefix p_] [--struct-base N]`:
 //! compile a TypeScript module to an object file. `--time N` repeats the compile N times and
 //! prints the best time of each phase.
 fn main() {
@@ -17,7 +18,11 @@ fn main() {
     };
     let opt = flag("--opt").unwrap_or_else(|| "speed".into());
     let src = std::fs::read_to_string(file).expect("read source");
-    let compile = || match iron_ts::compile_source(&src, &opt) {
+    let prefix = flag("--prefix").unwrap_or_default();
+    let base = flag("--struct-base")
+        .and_then(|b| b.parse().ok())
+        .unwrap_or(0);
+    let compile = || match iron_ts::compile_with(&src, &opt, &prefix, base) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("error: {e}");

@@ -302,7 +302,10 @@ impl Cg<'_, '_> {
                         mask |= 1 << i;
                     }
                 }
-                let h = self.b.ins().iconst(types::I64, sid as i64 + 1);
+                let h = self
+                    .b
+                    .ins()
+                    .iconst(types::I64, self.m.struct_base as i64 + sid as i64 + 1);
                 let n = self.b.ins().iconst(types::I32, st.fields.len() as i64);
                 let mk = self.b.ins().iconst(types::I64, mask as i64);
                 self.rt(
@@ -334,6 +337,13 @@ impl Cg<'_, '_> {
             if spill {
                 let idx = self.next_spill;
                 self.next_spill += 1;
+                if idx >= self.n_slots {
+                    // The plan in frames.rs and this walk disagree; writing on would corrupt the stack.
+                    return Err(format!(
+                        "{}: frame plan too small ({} slots)",
+                        self.f.name, self.n_slots
+                    ));
+                }
                 self.root_store(idx, v);
             }
             vals.push(v);
@@ -572,8 +582,10 @@ impl Cg<'_, '_> {
                 }
             }
             ExprKind::Cmp(op, a, c) => {
-                let x = self.expr(a)?;
-                let y = self.expr(c)?;
+                // Pointer operands wait for each other like arguments do (an address compared
+                // after being freed and reused would be wrong).
+                let vals = self.eval_args(&[(a, a.ty.clone()), (c, c.ty.clone())])?;
+                let (x, y) = (vals[0], vals[1]);
                 if matches!(a.ty.strip(), Ty::Num) {
                     let cc = match op {
                         CmpOp::Eq => FloatCC::Equal,
@@ -697,7 +709,10 @@ impl Cg<'_, '_> {
             ExprKind::NewObj(sid) => {
                 let n = self.m.structs[*sid].fields.len();
                 let size = self.b.ins().iconst(types::I64, 8 + 8 * n as i64);
-                let h = self.b.ins().iconst(types::I64, *sid as i64 + 1);
+                let h = self
+                    .b
+                    .ins()
+                    .iconst(types::I64, self.m.struct_base as i64 + *sid as i64 + 1);
                 self.rt(
                     "ts_rt_obj_new_gc",
                     &[types::I64, types::I64],
