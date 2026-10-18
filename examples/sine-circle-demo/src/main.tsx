@@ -96,7 +96,7 @@ class SineCircle extends Component {
   override onAwake(): void {
     this.line = this.gameObject.addComponent(LineRenderer, {
       width: 0.035,
-      sides: 6,
+      sides: 4,
       smoothing: 0,
       material: new Material(Color.white, Color.black, 0, true),
     });
@@ -131,7 +131,8 @@ class SineCircle extends Component {
   /** Redraws the curve and colour (only when they changed). */
   redraw(): void {
     this.points = [];
-    for (let d = 0; d <= this.maxDegrees; d++) {
+    // Every 2 degrees: the curve is smooth enough, and the tube is rebuilt every frame.
+    for (let d = 0; d <= this.maxDegrees; d += 2) {
       const p = this.at(d);
       this.points.push(new Vector3((p.x - CENTER.x) * UNITS_PER_PX, (CENTER.y - p.y) * UNITS_PER_PX, 0));
     }
