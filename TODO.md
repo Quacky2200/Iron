@@ -1438,11 +1438,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Functions in generic positions (after Generics)
   - [ ] **Classes**: **STOP, design first.** Gameplay code is classes: `extends Component`, `@property`,
         `this`, `override`, getters/setters, statics, `instanceof`
-    - [ ] Design note: object layout (fields as a struct, base-class prefix), method calls (direct when the
-          target is known, per-class vtable otherwise), `super`, constructors and field initialisers,
-          `instanceof` (class id ranges), how `Component` and its lifecycle hooks work natively, what
-          `@property` becomes (metadata for scenes/editor; reflection table), hot-reload/scene
-          serialisation in release builds
+    - [x] Design note written: `docs/research/iron-ts-classes.md` (layout, calls, constructors, members,
+          engine boundary, `@property`, sub-tasks). **Waiting for the user's answers to its section 11
+          before any class code**
     - [ ] Plain classes: fields, constructor, methods, `this`
     - [ ] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes
     - [ ] Getters/setters, statics, private fields (`#x`, `private`)

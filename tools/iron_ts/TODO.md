@@ -83,25 +83,16 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**First task: the Classes design note** (`TODO.md` M9.b2 "Classes", marked **STOP**: a written design
-and the user's review come before any code). Gameplay is classes: `extends Component`,
-`@property`, `this`, getters/setters, `override`, statics, `instanceof`. The note is a document in
-`docs/research/` (suggested: `iron-ts-classes.md`), no compiler changes. It must decide, with the
-measured counts in the spike doc section 11:
+**Classes: design note written (`docs/research/iron-ts-classes.md`), waiting for the user's answers to its
+section 11.** No class code until then (STOP item). Meanwhile the non-STOP stages go ahead, each with its
+design paragraph written first (spike doc, one section per stage) and its own commit:
 
-- object layout (fields as a struct, base-class prefix, class id in the header for `instanceof`);
-- method calls: direct when the target is known, a per-class vtable otherwise; `super`;
-- constructors and field initialisers; getters/setters; statics; private fields;
-- how `Component` and its lifecycle hooks (`onUpdate`, ...) are called natively, and how that joins
-  "Direct engine calls" (`Component`, `Vector3` are TypeScript classes in `js/engine` today);
-- what `@property` becomes (metadata for scenes and the editor) and what release builds do about
-  scene serialisation and hot reload;
-- the order of sub-tasks and a size for each.
+1. `for(;;)` with an update clause, `do...while`, labelled `break`/`continue`
+2. `switch` and enums
+3. default and rest parameters, destructuring, spread
+4. library surface: `Math`, array methods
 
-Then wait for the user's review. After it, in order (ask before starting a **STOP** item): the cheap
-language features (`for(;;)` with an update clause, `switch`, enums, destructuring, default/rest
-parameters, spread; `for(;;)` is the next thing tests keep hitting), then the library surface
-(`Math`, array methods).
+Mark the stage you are on here and tick it in `TODO.md` M9.b2 only when the whole sub-item is done.
 
 ## Backlog
 
@@ -114,6 +105,7 @@ performance, cross targets and CI.
 
 Newest first. One line per finished step: what, test IDs, numbers if measured.
 
+- 2026-10-18 Classes design note written (`docs/research/iron-ts-classes.md`); awaiting review.
 - 2026-10-18 Mutable module-level variables (`M9-TS-47..56`): `let`/`var` are data slots (never folded),
   `Place::Global`, `GlobalVar` read node, `let x: T | undefined;`, closures stored in and called
   through globals; a `let` global is a stable GC operand only when no later operand calls or stores
