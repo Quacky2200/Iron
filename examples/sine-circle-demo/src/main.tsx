@@ -1,5 +1,5 @@
 // Sine Circle: a closed curve whose radius wobbles like a sine wave around a circle, ported
-// from MiniGameEngine's SineDemo. The engine draws it as gizmo lines and moves,
+// from MiniGameEngine's SineDemo. The engine draws it with a LineRenderer2D (thick strokes drawn by Rust) and moves,
 // sizes, rotates and recolours it with transitions (`tween.ts`). Keys 1-4 pick a sine formula
 // (left click cycles them), right click flips the background, Space pauses, F5 shows the
 // centre point, F11 toggles fullscreen. The HUD is text only, as the original was. The music
@@ -13,7 +13,7 @@ import {
   Color,
   Component,
   GameObject,
-  Gizmos,
+  LineRenderer2D,
   input,
   property,
   QualitySettings,
@@ -36,6 +36,9 @@ const FORM_H = 729;
 const CENTER = { x: FORM_W / 2, y: FORM_H / 2 };
 /** The whole form height spans 10 world units (the camera's orthographic size is 5). */
 const UNITS_PER_PX = 10 / FORM_H;
+
+/** The pen, in form pixels (the original's was 1; a little more reads better on big screens). */
+const PEN_WIDTH = 2;
 
 /** Spline samples between each pair of the 361 points (about 1,100 segments in all). */
 const SPLINE_STEPS = 3;
@@ -123,11 +126,11 @@ class SineCircle {
    * 360), joined by a smooth closed curve. GDI+'s `DrawClosedCurve` is a cardinal spline at
    * tension 0.5, which is a Catmull-Rom spline; each segment is sampled `SPLINE_STEPS` times.
    */
-  points(): Vector3[] {
+  points(): { x: number; y: number }[] {
     const raw: { x: number; y: number }[] = [];
     for (let d = 0; d <= this.maxDegrees; d++) raw.push(this.at(d));
     const n = raw.length;
-    const out: Vector3[] = [];
+    const out: { x: number; y: number }[] = [];
     for (let i = 0; i < n; i++) {
       const p0 = raw[(i - 1 + n) % n]!;
       const p1 = raw[i]!;
@@ -139,30 +142,11 @@ class SineCircle {
         const t3 = t2 * t;
         const x = 0.5 * (2 * p1.x + (p2.x - p0.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (3 * p1.x - p0.x - 3 * p2.x + p3.x) * t3);
         const y = 0.5 * (2 * p1.y + (p2.y - p0.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (3 * p1.y - p0.y - 3 * p2.y + p3.y) * t3);
-        out.push(new Vector3((x - CENTER.x) * UNITS_PER_PX, (CENTER.y - y) * UNITS_PER_PX, 0));
+        out.push({ x: (x - CENTER.x) * UNITS_PER_PX, y: (CENTER.y - y) * UNITS_PER_PX });
       }
     }
-    out.push(out[0]!);
     return out;
   }
-}
-
-/**
- * Draws the curve, and the centre ring (F5), as gizmo lines: a flat list of segments that
- * Rust draws as thin lines, so no mesh is built in script each frame.
- */
-function drawCurve(camera: Camera, sine: SineCircle, showCentre: boolean): void {
-  Gizmos.clear();
-  Gizmos.color = sine.color;
-  const pts = sine.points();
-  for (let i = 1; i < pts.length; i++) Gizmos.drawLine(pts[i - 1]!, pts[i]!);
-  if (showCentre) {
-    Gizmos.color = Color.hex("#ff0000");
-    const c = new Vector3((sine.center.x - CENTER.x) * UNITS_PER_PX, (CENTER.y - sine.center.y) * UNITS_PER_PX, 0);
-    const ring = (i: number) => c.add(new Vector3(Math.cos((i / 24) * Math.PI * 2) * 0.08, Math.sin((i / 24) * Math.PI * 2) * 0.08, 0));
-    for (let i = 0; i < 24; i++) Gizmos.drawLine(ring(i), ring(i + 1));
-  }
-  Gizmos.present(camera);
 }
 
 // ---- The demo ----
@@ -172,6 +156,8 @@ class SineDemo extends Component {
   private camera!: Camera;
   private sine!: SineCircle;
   private showCentre = false;
+  private curve!: LineRenderer2D;
+  private centre!: LineRenderer2D;
   private music: Sound | null = null;
   private playback: Playback | null = null;
   private typeIndex = -1;
@@ -195,6 +181,12 @@ class SineDemo extends Component {
     this.camera = cam.addComponent(Camera, { orthographic: true, orthographicSize: 5, backgroundColor: Color.white });
 
     this.sine = new SineCircle();
+    this.curve = new GameObject("Sine Circle").addComponent(LineRenderer2D, { width: PEN_WIDTH * UNITS_PER_PX, loop: true });
+    this.centre = new GameObject("Centre").addComponent(LineRenderer2D, {
+      width: PEN_WIDTH * UNITS_PER_PX,
+      color: Color.hex("#ff0000"),
+      loop: true,
+    });
     this.music = audio.load("assets/dancin.mp3", { stream: true });
 
     this.radius = new Tween<number>({
@@ -302,7 +294,7 @@ class SineDemo extends Component {
     if (input.getKeyDown("Space")) this.togglePaused();
     if (input.getKeyDown("F5")) {
       this.showCentre = !this.showCentre;
-      drawCurve(this.camera, this.sine, this.showCentre);
+      this.draw();
     }
     if (input.getKeyDown("F11")) Screen.fullScreen = !Screen.fullScreen;
     if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
@@ -328,7 +320,21 @@ class SineDemo extends Component {
     s.rotation = this.rotation.value % 360;
     s.center = { x: this.position.value.x, y: this.position.value.y };
     s.color = this.colour.value;
-    drawCurve(this.camera, s, this.showCentre);
+    this.draw();
+  }
+
+  /** Hands the curve (and the centre ring, F5) to their line renderers. */
+  private draw(): void {
+    this.curve.points = this.sine.points();
+    this.curve.color = this.sine.color;
+    const c = this.sine.center;
+    const r = 6;
+    this.centre.points = this.showCentre
+      ? Array.from({ length: 24 }, (_, i) => ({
+          x: (c.x + Math.cos((i / 24) * Math.PI * 2) * r - CENTER.x) * UNITS_PER_PX,
+          y: (CENTER.y - c.y - Math.sin((i / 24) * Math.PI * 2) * r) * UNITS_PER_PX,
+        }))
+      : [];
   }
 
   /** What the HUD shows. */
