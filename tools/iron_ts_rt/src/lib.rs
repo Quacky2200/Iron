@@ -71,6 +71,8 @@ pub const HDR_CELL: u64 = 0xA11A_0006;
 pub const HDR_CELL_PTR: u64 = 0xA11A_0007;
 /// A closure made by generated code: like `HDR_CLOSURE`, but `env` is a GC object and is traced.
 pub const HDR_CLOSURE_ENV: u64 = 0xA11A_0008;
+/// A `Map` or `Set` (`map.rs`): entries and an index in raw blocks; keys and values are traced.
+pub const HDR_MAP: u64 = 0xA11A_0009;
 
 /// One function activation's pointer slots; `n` slots follow in memory.
 #[repr(C)]
@@ -389,6 +391,13 @@ fn collect(h: &mut Heap) {
                     }
                 }
                 HDR_CELL_PTR => mark_ptr(*(p.add(8) as *const *mut u8), heap, &mut stack),
+                HDR_MAP => {
+                    let mut found = Vec::new();
+                    (*(p as *const MapObj)).for_each_pointer(|q| found.push(q));
+                    for q in found {
+                        mark_ptr(q, heap, &mut stack);
+                    }
+                }
                 HDR_CLOSURE_ENV => mark_ptr(*(p.add(16) as *const *mut u8), heap, &mut stack),
                 HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE | HDR_CELL => {}
                 id => {
@@ -420,6 +429,10 @@ fn collect(h: &mut Heap) {
                         live += (*(p as *const Array)).cap.max(0) as usize * 8
                     }
                     HDR_BYTES => live += (*(p as *const Array)).cap.max(0) as usize,
+                    HDR_MAP => {
+                        let (e, i) = (*(p as *const MapObj)).blocks();
+                        live += e + i;
+                    }
                     _ => {}
                 }
                 keep.push((p, size));
@@ -436,6 +449,7 @@ fn collect(h: &mut Heap) {
                     let a = &*(p as *const Array);
                     raw_free(h, a.data, a.cap.max(1) as usize);
                 }
+                HDR_MAP => (*(p as *mut MapObj)).free_blocks(h),
                 _ => {}
             }
         }
@@ -1004,8 +1018,10 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 
 // ---- strings: see string.rs ----
 
+mod map;
 mod string;
 mod string_more;
+pub use map::*;
 pub use string::*;
 pub use string_more::*;
 
@@ -1169,6 +1185,18 @@ pub fn link_anchor() -> usize {
         ts_rt_str_concat_n_gc as *const () as usize,
         ts_rt_str_split_gc as *const () as usize,
         ts_rt_str_join_gc as *const () as usize,
+        ts_rt_map_new_gc as *const () as usize,
+        ts_rt_map_find as *const () as usize,
+        ts_rt_map_set as *const () as usize,
+        ts_rt_map_delete as *const () as usize,
+        ts_rt_map_clear as *const () as usize,
+        ts_rt_map_size as *const () as usize,
+        ts_rt_map_key_at as *const () as usize,
+        ts_rt_map_value_at as *const () as usize,
+        ts_rt_map_seq_at as *const () as usize,
+        ts_rt_map_next as *const () as usize,
+        ts_rt_map_keys_gc as *const () as usize,
+        ts_rt_map_values_gc as *const () as usize,
         ts_rt_console as *const () as usize,
         ts_rt_set_console as *const () as usize,
         ts_rt_arr_sort_default as *const () as usize,

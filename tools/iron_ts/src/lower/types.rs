@@ -97,7 +97,22 @@ impl<'a> Lowerer<'a> {
                     .unwrap_or_default();
                 match id.name.as_str() {
                     "Uint8Array" => Ty::Bytes,
-                    "Array" | "ReadonlyArray" | "Set" => {
+                    "Map" | "WeakMap" | "ReadonlyMap" => {
+                        let (Some(k), Some(v)) = (args.first(), args.get(1)) else {
+                            bail!("{} needs two type arguments", id.name)
+                        };
+                        Ty::Map(
+                            Box::new(maps::map_key_ty(self.ty(k, hint)?)),
+                            Box::new(self.ty(v, hint)?),
+                        )
+                    }
+                    "Set" | "WeakSet" | "ReadonlySet" => {
+                        let Some(k) = args.first() else {
+                            bail!("{} needs a type argument", id.name)
+                        };
+                        Ty::Set(Box::new(maps::map_key_ty(self.ty(k, hint)?)))
+                    }
+                    "Array" | "ReadonlyArray" => {
                         let Some(e) = args.first() else {
                             bail!("generic collection without a type")
                         };

@@ -124,6 +124,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/scan.rs](../tools/iron_ts/src/lower/scan.rs) | Which names do closures capture (by name, so it only over-approximates) |
 | [lower/closure.rs](../tools/iron_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
 | [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
+| [lower/maps.rs](../tools/iron_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
 | [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes as TypeScript source, compiled in front of programs that mention errors |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
@@ -133,7 +134,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | Feature | Lowering |
 |---|---|
-| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Set<T>` (an array), `Record<string, V>` after `satisfies`, function types |
+| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `Record<string, V>` after `satisfies`, function types |
 | Functions | `function` and arrow declarations; return types inferred; calls are direct |
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
@@ -237,6 +238,28 @@ JavaScript's answer exactly; anything not built is a compile error.
 - Tests: `bench/stdlib.ts` with `tests/stdlib.rs` (M9-TS-199..205); expected values come from
   `bench/gen_stdlib_expected.ts` (bun) into `stdlib_expected.json`.
 
+**Standard library tier 2: `Map`, `Set`, `WeakMap`, `WeakSet`** ([lower/maps.rs](../tools/iron_ts/src/lower/maps.rs),
+runtime in [iron_ts_rt/src/map.rs](../tools/iron_ts_rt/src/map.rs); design in
+[iron-ts-stdlib.md](research/iron-ts-stdlib.md)).
+- **Types.** `Ty::Map(K, V)` and `Ty::Set(K)`. Keys are numbers, strings, booleans, handles or objects
+  (by identity); a string-literal union key is stored as a string. The old stub that treated `Set<T>` as
+  an array is gone. A collection needs its types from a `new Map<K, V>()` argument, an annotation, or
+  `new Map([[k, v], ...])` / `new Set(array)` (element type inferred); otherwise it is a compile error.
+- **Raw words.** Keys and values cross into the runtime as 64-bit words: new IR nodes `ExprKind::Bits`
+  (typed value to word) and `Unbits` (word back to the type). The map's key kind (0 numbers, 1 strings,
+  2 objects, 3 plain words) tells equality, hashing and the collector which words are pointers.
+- **Methods.** `get` (a nullable result for pointer and number values; a compile error for boolean or
+  literal-union values, where null cannot be told from a value), `set`/`add` (chained), `has`, `delete`,
+  `clear`, `size`, `forEach`, `keys()`/`values()` as snapshot arrays, spread and `Array.from` of a Set or
+  of `map.keys()`, and live `for (const [k, v] of map)`, `for (const x of set)` and
+  `.entries()/.keys()/.values()` in `for...of`. A `for...of` and `forEach` keep a cursor (below), so
+  deleting and adding during the loop behave as in JavaScript.
+- **Weak collections** are the strong versions: a script cannot tell the difference except by memory.
+- Not built: `new Map(otherMap)`, map spread, `Map.groupBy`, `entries()` outside `for...of`.
+- Tests: `bench/collections.ts` with `tests/collections.rs` (M9-TS-209..213), expected values from
+  `bench/gen_collections_expected.ts` (bun) into `collections_expected.json`; runtime unit tests
+  M9-TS-206..208 in `map.rs`; compile errors M9-TS-214.
+
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
 sees the whole program, so a method call `a.m()` is resolved exactly: if one implementation is
@@ -249,7 +272,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
 Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes (`Component`),
-throwing anything but an `Error` object, unsupported string methods (see above), `Map`, `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
+throwing anything but an `Error` object, unsupported string methods (see above), `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
@@ -264,10 +287,22 @@ calls into. Its header comment is the long version.
   the object is reachable. Every object is tracked with its size.
 - **Headers.** A header is `mark (top bit) | heap id | kind`. The kind is the struct id + 1 for
   structs, or one of `HDR_ARRAY`, `HDR_ARRAY_PTR`, `HDR_BYTES`, `HDR_STR`, `HDR_CLOSURE`,
-  `HDR_CLOSURE_ENV`, `HDR_CELL`, `HDR_CELL_PTR`. The heap id keeps a collector away from other
+  `HDR_CLOSURE_ENV`, `HDR_CELL`, `HDR_CELL_PTR`, `HDR_MAP`. The heap id keeps a collector away from other
   threads' objects reached through a shared global slot.
 - **Tracing.** Which slots of a struct are pointers is a mask the generated `ts_init` registers
   (`ts_rt_register_struct`). Pointer arrays, cells and script closure environments are traced.
+- **Maps** ([map.rs](../tools/iron_ts_rt/src/map.rs)). `Map` and `Set` are one object kind, `HDR_MAP`
+  (`MapObj`: key kind, whether values are pointers, counts, next sequence number), with two raw blocks
+  outside the object: the entries in insertion order (`key`, `value`, `seq`, `hash`, `deleted`; deleted
+  ones stay as tombstones) and an open-addressing index of entry numbers. A rebuild keeps the order and
+  drops tombstones. A Set is a map with unused values. Equality is SameValueZero: `NaN` is a key, `-0` is
+  `0`, strings by content (hash cached in the string's spare header word), objects, handles and booleans
+  by identity. The collector traces the live entries' keys and values (by key kind and `val_ptr`) and
+  frees the blocks with the object. **Iteration is live and exact:** every entry gets an increasing
+  sequence number, and an iterator is the last number it gave out plus a position hint;
+  `ts_rt_map_next(map, seq, hint)` finds the first entry with a larger number, so deleting, adding and
+  rebuilding under a loop need no fix-up. Entry points: `ts_rt_map_new_gc`, `find`, `set`, `delete`,
+  `clear`, `size`, `key_at`/`value_at`/`seq_at`, `next`, `keys_gc`/`values_gc` (snapshot arrays).
 - **Roots.** (1) The shadow stack: a generated function with pointer locals links a `Frame` with one
   slot per pointer local plus spill slots (`ts_rt_frame_push` / `ts_rt_frame_pop`) and mirrors every
   pointer assignment into it. (2) Globals, registered by address (`ts_rt_add_global_root`). (3) Host

@@ -176,6 +176,8 @@ fn children(e: &Expr) -> Vec<&Expr> {
         | ExprKind::Cast(a)
         | ExprKind::Truthy(a)
         | ExprKind::TagStr(a)
+        | ExprKind::Bits(a)
+        | ExprKind::Unbits(a)
         | ExprKind::Field(a, ..)
         | ExprKind::InstanceOf(a, _)
         | ExprKind::Len(a) => vec![a],

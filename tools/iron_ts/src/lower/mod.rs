@@ -13,6 +13,7 @@ mod classes;
 mod closure;
 mod enums;
 mod expr;
+mod maps;
 mod object;
 mod prelude;
 mod scan;

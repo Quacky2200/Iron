@@ -683,6 +683,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-203 | Integration | `console.log/warn/error` join their arguments with spaces and reach the host's console hook with the level (`tests/stdlib.rs`). |
 | M9-TS-204 | Integration | `Object.keys/values/entries/assign/freeze/hasOwn`, `in`, object spread (new fields, source order) and rest, and array rest equal bun's (`tests/stdlib.rs`). |
 | M9-TS-205 | Unit | `Object.entries` outside `for...of`, `Object.values` over mixed types, `in` with a computed key and `console.log` of an object are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-206 | Unit | `Map` numbers follow SameValueZero (`NaN` is a key, `-0` is `0`) and keep insertion order (`iron_ts_rt/src/map.rs`). |
+| M9-TS-207 | Unit | A map iterator (sequence-number cursor) survives deletes, adds and table rebuilds (`map.rs`). |
+| M9-TS-208 | Unit | A map is one collectable object that keeps its keys and values alive; string keys compare by content (`map.rs`). |
+| M9-TS-209 | Integration | `Map<string, number>`: `set` chained, `get`, `has`, `delete`, `size`, `clear`, `keys()`/`values()`, `for...of`, `forEach`, equal to bun (`iron_ts_tests/tests/collections.rs`, `bench/collections.ts`, expected data from `bench/gen_collections_expected.ts`). |
+| M9-TS-210 | Integration | Number keys (SameValueZero) and object keys (identity) equal bun's (`tests/collections.rs`). |
+| M9-TS-211 | Integration | `Set`: from an array, `add`, `has`, `delete`, spread, `Array.from`, `for...of`, `forEach`, element type inferred, equal to bun's (`tests/collections.rs`). |
+| M9-TS-212 | Integration | Iteration is live: deleted-before-reached entries are skipped, added entries are visited, the table rebuilds under the loop (`tests/collections.rs`). |
+| M9-TS-213 | Integration | Two thousand string keys with deletes and adds under a collection at every allocation, and `WeakMap`/`WeakSet` (`tests/collections.rs`). |
+| M9-TS-214 | Unit | Collections without a type, `entries()` outside `for...of`, `Map.get` over booleans and a `Map` as a key are compile errors with a reason (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

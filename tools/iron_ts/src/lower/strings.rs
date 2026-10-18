@@ -136,7 +136,7 @@ impl<'a> Lowerer<'a> {
         mk(ExprKind::Str(i as u32), Ty::Str)
     }
 
-    fn rt_str(&self, sym: &'static str, args: Vec<Expr>, ty: Ty) -> Expr {
+    pub(crate) fn rt_str(&self, sym: &'static str, args: Vec<Expr>, ty: Ty) -> Expr {
         mk(ExprKind::Rt(RtFn::Str(sym), args), ty)
     }
 

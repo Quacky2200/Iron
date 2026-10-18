@@ -328,6 +328,7 @@ impl<'a> Lowerer<'a> {
                 Ok(mk(ExprKind::Len(Box::new(obj)), Ty::Num))
             }
             Ty::Str if prop == "length" => Ok(self.str_length(obj)),
+            Ty::Map(..) | Ty::Set(_) if prop == "size" => Ok(self.collection_size(obj)),
             Ty::Handle(class) => {
                 let getter = self
                     .manifest
@@ -937,7 +938,11 @@ impl<'a> Lowerer<'a> {
         for item in &a.elements {
             if let ArrayExpressionElement::SpreadElement(sp) = item {
                 let hint = el.clone().map(|e| Ty::Arr(Box::new(e)));
-                let v = self.lower_expr(&sp.argument, hint.as_ref())?;
+                let mut v = self.lower_expr(&sp.argument, hint.as_ref())?;
+                // `[...set]`: the set's elements now.
+                if let Some(snapshot) = self.collection_snapshot(v.clone()) {
+                    v = snapshot;
+                }
                 let vt = match v.ty.strip() {
                     Ty::Arr(e) => (**e).clone(),
                     Ty::Bytes => Ty::Num,
@@ -1050,19 +1055,7 @@ impl<'a> Lowerer<'a> {
                 let len = self.as_num(len)?;
                 Ok(mk(ExprKind::Rt(RtFn::BytesNew, vec![len]), Ty::Bytes))
             }
-            // A set is an array here: `new Set(xs)` shares `xs`, `has` is a linear search. The sets in
-            // gameplay code are tiny; a hash set would need hashing of strings and objects.
-            "Set" => match n.arguments.first().and_then(|a| a.as_expression()) {
-                Some(e) => self.lower_expr(e, exp),
-                None => {
-                    let el = match exp.map(|t| t.strip()) {
-                        Some(Ty::Arr(e)) => (**e).clone(),
-                        _ => Ty::Num,
-                    };
-                    let ty = Ty::Arr(Box::new(el));
-                    Ok(mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty))
-                }
-            },
+            "Map" | "Set" | "WeakMap" | "WeakSet" => self.lower_new_collection(&id.name, n, exp),
             other if self.manifest.values.contains_key(other) => {
                 self.new_value(other, &n.arguments, n.span.start)
             }

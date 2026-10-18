@@ -11,7 +11,7 @@ impl<'a> Lowerer<'a> {
         Ok(())
     }
 
-    fn scoped(&mut self, s: &'a Statement<'a>) -> R<Vec<Stmt>> {
+    pub(crate) fn scoped(&mut self, s: &'a Statement<'a>) -> R<Vec<Stmt>> {
         self.cur.scopes.push(HashMap::new());
         let mut out = Vec::new();
         let r = self.lower_stmt(s, &mut out);
@@ -81,6 +81,9 @@ impl<'a> Lowerer<'a> {
                     return self.lower_for_object_entries(f, call, pat, out);
                 }
                 let arr = self.lower_expr(source, None)?;
+                if matches!(arr.ty.strip(), Ty::Map(..) | Ty::Set(_)) {
+                    return self.lower_for_of_collection(f, pat, arr, mode, out);
+                }
                 let arr = if matches!(arr.ty.strip(), Ty::Arr(_) | Ty::Bytes) || mode.is_empty() {
                     arr
                 } else {

@@ -276,6 +276,34 @@ mod tests {
         }
     }
 
+    // M9-TS-214
+    #[test]
+    fn collection_mistakes_are_errors_with_a_reason() {
+        for (body, want) in [
+            ("const m = new Map(); return m.size;", "needs a type"),
+            (
+                "const m = new Map<string, number>(); for (const e of m.entries()) { return 1; } return 0;",
+                "[key, value]",
+            ),
+            (
+                "const m = new Map<string, boolean>(); return m.get(\"a\") ? 1 : 0;",
+                "Map.get over bool",
+            ),
+            (
+                "const s = new Set<number[]>(); const m = new Map<Map<string, number>, number>(); return m.size + s.size;",
+                "",
+            ),
+        ] {
+            let e = lower::lower_source(&format!("export function f(): number {{ {body} }}"));
+            if want.is_empty() {
+                assert!(e.is_ok(), "{body}: {e:?}");
+            } else {
+                let e = e.err().unwrap_or_default();
+                assert!(e.contains(want), "{body}: {e}");
+            }
+        }
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {

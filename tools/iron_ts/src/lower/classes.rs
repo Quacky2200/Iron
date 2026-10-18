@@ -91,6 +91,18 @@ impl<'a> Lowerer<'a> {
                 {
                     Ty::Num
                 }
+                // `field = new Map<K, V>()`, `new Set<K>()`.
+                Some(Expression::NewExpression(n))
+                    if matches!(&n.callee, Expression::Identifier(id)
+                        if matches!(id.name.as_str(), "Map" | "Set" | "WeakMap" | "WeakSet"))
+                        && n.type_arguments.is_some() =>
+                {
+                    let Expression::Identifier(id) = &n.callee else {
+                        unreachable!("matched above")
+                    };
+                    let e = self.lower_new_collection(&id.name, n, None)?;
+                    e.ty.clone()
+                }
                 // `field = new Other()` is an `Other`.
                 Some(Expression::NewExpression(n))
                     if matches!(&n.callee, Expression::Identifier(id)

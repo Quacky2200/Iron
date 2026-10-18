@@ -42,6 +42,7 @@ fn main() {
         ("strings", "str_", 16000),
         ("errors", "err_", 17000),
         ("stdlib", "std_", 18000),
+        ("collections", "col_", 19000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

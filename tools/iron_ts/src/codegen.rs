@@ -735,6 +735,18 @@ impl Cg<'_, '_> {
                     .declare_data_in_func(self.sdata[*i as usize], self.b.func);
                 self.b.ins().symbol_value(types::I64, gv)
             }
+            ExprKind::Bits(a) => {
+                let v = self.expr(a)?;
+                self.slot_of(v, &a.ty)
+            }
+            ExprKind::Unbits(a) => {
+                let v = self.expr(a)?;
+                match clif_ty(&e.ty) {
+                    types::F64 => self.b.ins().bitcast(types::F64, self.mf_p, v),
+                    t @ (types::I8 | types::I32) => self.b.ins().ireduce(t, v),
+                    _ => v,
+                }
+            }
             ExprKind::TagStr(a) => {
                 let tag = self.expr(a)?;
                 let table = self.tagtab.ok_or("a tag was used before any tag exists")?;

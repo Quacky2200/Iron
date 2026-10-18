@@ -228,6 +228,18 @@ pub mod stdl {
     include!(concat!(env!("OUT_DIR"), "/stdlib_bindings.rs"));
 }
 
+/// `Map` and `Set` in compiled code (`bench/collections.ts`), prefix `col_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod cols {
+    include!(concat!(env!("OUT_DIR"), "/collections_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

@@ -40,6 +40,10 @@ pub enum Ty {
     Nullable(Box<Ty>),
     /// An engine object named by a 64-bit id (`Entity`): a plain integer, never a GC pointer.
     Handle(String),
+    /// A `Map<K, V>` (and `WeakMap`): a runtime hash table.
+    Map(Box<Ty>, Box<Ty>),
+    /// A `Set<K>` (and `WeakSet`).
+    Set(Box<Ty>),
     /// Reserved: any dynamic value (not produced by the spike's lowering yet).
     JsValue,
 }
@@ -70,7 +74,15 @@ impl Ty {
     pub fn is_ptr(&self) -> bool {
         matches!(
             self.strip(),
-            Ty::Str | Ty::Obj(_) | Ty::Arr(_) | Ty::Bytes | Ty::Fn(_) | Ty::Cell(_) | Ty::JsValue
+            Ty::Str
+                | Ty::Obj(_)
+                | Ty::Arr(_)
+                | Ty::Bytes
+                | Ty::Fn(_)
+                | Ty::Cell(_)
+                | Ty::Map(..)
+                | Ty::Set(_)
+                | Ty::JsValue
         )
     }
     pub fn is_num(&self) -> bool {
@@ -206,6 +218,10 @@ pub enum ExprKind {
     Tag(u32),
     /// A string literal as a `string`: the address of a static string (index into `Module::strs`).
     Str(u32),
+    /// A value as the raw 64-bit word the runtime's collections store (a number's bits, a pointer, a
+    /// boolean); `Unbits` takes it back, typed by the expression's type.
+    Bits(Box<Expr>),
+    Unbits(Box<Expr>),
     /// A union member (a `Tag`) as a `string`: a lookup in the table of the tags' texts.
     TagStr(Box<Expr>),
     /// `null`: a zero pointer or the null NaN, depending on `ty`.
@@ -409,6 +425,8 @@ impl fmt::Display for Ty {
             Ty::Cell(t) => write!(f, "cell<{t}>"),
             Ty::Nullable(t) => write!(f, "{t}?"),
             Ty::Handle(n) => write!(f, "handle:{n}"),
+            Ty::Map(k, v) => write!(f, "map<{k}, {v}>"),
+            Ty::Set(k) => write!(f, "set<{k}>"),
             Ty::JsValue => write!(f, "js"),
         }
     }
@@ -496,6 +514,8 @@ fn ex(e: &Expr) -> String {
         ExprKind::Bool(b) => format!("{b}"),
         ExprKind::Tag(t) => format!("tag{t}"),
         ExprKind::Str(i) => format!("str#{i}"),
+        ExprKind::Bits(a) => format!("bits({})", ex(a)),
+        ExprKind::Unbits(a) => format!("unbits({})", ex(a)),
         ExprKind::TagStr(a) => format!("tagstr({})", ex(a)),
         ExprKind::Null => "null".into(),
         ExprKind::Var(v) => format!("v{v}"),

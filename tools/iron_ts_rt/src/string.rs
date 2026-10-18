@@ -247,6 +247,24 @@ impl Str {
         units(self.as_bytes()).collect()
     }
 
+    /// A hash of the content (cached in the spare header word), for `Map` and `Set` keys.
+    pub fn content_hash(&self) -> u32 {
+        let w = unsafe {
+            std::sync::atomic::AtomicU64::from_ptr(&self.cursor_byte as *const i64 as *mut u64)
+        };
+        let cached = w.load(std::sync::atomic::Ordering::Relaxed);
+        if cached != 0 {
+            return cached as u32;
+        }
+        let mut h: u32 = 0x811c9dc5;
+        for b in self.as_bytes() {
+            h = (h ^ *b as u32).wrapping_mul(0x01000193);
+        }
+        let h = h | 1; // never 0: 0 means "not computed"
+        w.store(h as u64, std::sync::atomic::Ordering::Relaxed);
+        h
+    }
+
     /// The cursor is one word (`unit << 32 | byte`), read and written atomically: a static string
     /// (a literal) may be used from several threads.
     fn cursor_word(&self) -> &std::sync::atomic::AtomicU64 {

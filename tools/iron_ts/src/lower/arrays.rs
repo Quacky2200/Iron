@@ -142,7 +142,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// Inlines an arrow function as a block; `params` are the locals its parameters bind to.
-    fn inline_cb(
+    pub(crate) fn inline_cb(
         &mut self,
         cb: &'a Expression<'a>,
         params: &[VarId],
@@ -309,6 +309,10 @@ impl<'a> Lowerer<'a> {
                     bail!("Array.from(xs, fn): use xs.map(fn)")
                 }
                 let v = self.lower_expr(a0, None)?;
+                // A set, or the keys or values of a map, as an array now.
+                if let Some(snapshot) = self.collection_snapshot(v.clone()) {
+                    return Ok(snapshot);
+                }
                 if !matches!(v.ty.strip(), Ty::Arr(_)) {
                     bail!("Array.from of {} is not supported", v.ty)
                 }
@@ -365,6 +369,9 @@ impl<'a> Lowerer<'a> {
         }
         if rty == Ty::Str {
             return self.lower_str_method(recv, m, c);
+        }
+        if matches!(rty, Ty::Map(..) | Ty::Set(_)) {
+            return self.lower_collection_method(recv, m, c);
         }
         if rty == Ty::Num {
             return self.lower_num_method(recv, m, c);
