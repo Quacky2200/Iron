@@ -850,8 +850,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       (`evaluate`), tangents, length, `sample`, `nearest`, editing; `SplineAnimate` moves an
       object along one (loop, ping-pong, once; facing along it; in a container's space) —
       `M5-SPL-01`. `examples/splines`: splines that move and one to edit with the mouse
-    - [x] `examples/clock`: six faces built on these (analog rings and spline hands, turning
-      dials, a rolling meter, Material-style morphing digits, a flip clock in Iron's UI, a
+    - [x] `examples/clock`: twelve faces built on these (analog rings and spline hands, turning
+      dials, a glowing rolling meter, a 3D sundial whose shadow tells the time under a sun
+      placed for the date, a sand timer, a reactive lava lamp, an underwater porthole clock, a
+      chandelier, a rainbow, Material-style morphing digits, a flip clock in Iron's UI, a
       seven-segment alarm clock with bloom), switched with side arrows and dots
     - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
       texture brushes, smooth fill edges without MSAA, clipping
@@ -1428,6 +1430,18 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 
 ## Later
 
+- [ ] A canvas UI element that embeds the 3D engine (a `<canvas>` / 3D view element for React UI):
+  a box that shows a camera's view of a world (or its own world) and passes the pointer and keys
+  through, so window apps written mostly in React can put live 3D anywhere in the layout — Iron as
+  an Electron replacement for desktop apps (one native binary, no browser, the same React UI).
+  - [ ] The element: a camera (by id) rendered into a texture sized to the box at the device
+    scale, drawn by the UI renderer in place, resized with layout, hidden views not rendered
+  - [ ] Input: pointer and wheel in the box go to that view (camera rays, panel hits, the editor's
+    Scene view uses the same idea), focus and keys while it's focused
+  - [ ] Several views at once, each its own scene or a shared one; a 2D canvas mode for
+    `LineRenderer2D` / `Shapes` / `TextMesh` drawing without a scene of your own
+  - [ ] App shell for UI-first apps: no scene needed, window chrome and menus, file dialogs and
+    tray (with M6 Script IO), packaging (M9)
 - [ ] SVG on the GPU ("native" SVG): tessellate fills and strokes (e.g. lyon) into triangles drawn
   by the UI renderer, instead of rasterizing every change on the CPU with resvg (M3d 5.1), so
   animated and large SVGs stay cheap; per-shape hit testing (`pointer-events` on shapes). Then:

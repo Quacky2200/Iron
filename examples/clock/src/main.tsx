@@ -1,9 +1,15 @@
-// Clocks: six faces, switched with the arrows at the sides, the dots at the bottom, the arrow
+// Clocks: twelve faces, switched with the arrows at the sides, the dots at the bottom, the arrow
 // keys or , and . —
 //
 // - Analog: rings that sweep and unwind, spline hands, a ticking second hand (`analog.ts`).
 // - Dials: rings of numbers that turn the time under a window, leaning in 3D (`dials.ts`).
 // - Meter: drums that roll like a water meter or a mileage counter (`meter.ts`).
+// - Sundial: a garden sundial whose shadow tells the time under a moving sun (`sundial.ts`).
+// - Sand timer: an hourglass that runs out each minute and turns over (`hourglass.ts`).
+// - Lava lamp: glowing wax blobs that rise, sink, merge and shy from the mouse (`lava.ts`).
+// - Underwater: a porthole clock on the sea bed with kelp, bubbles and fish (`underwater.ts`).
+// - Chandelier: a classic clock before turning rosettes, candles and crystals (`chandelier.ts`).
+// - Rainbow: lots of colour: chasing bands, hue-wheel ticks, confetti (`rainbow.ts`).
 // - Morphing: Material-style digits that morph into each other (`morph.ts`).
 // - Flip: cards that flip over like an old alarm clock, in Iron's UI (`flip.tsx`).
 // - Alarm clock: red seven-segment digits glowing through bloom (`segments.ts`).
@@ -15,12 +21,18 @@ import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
 
 import { AnalogFace } from "./analog.ts";
+import { ChandelierFace } from "./chandelier.ts";
 import { BG, DIM, type Face, label, two } from "./common.ts";
 import { DialsFace } from "./dials.ts";
 import { FlipClock } from "./flip.tsx";
+import { HourglassFace } from "./hourglass.ts";
+import { LavaFace } from "./lava.ts";
 import { MeterFace } from "./meter.ts";
 import { MorphFace } from "./morph.ts";
 import { SegmentFace } from "./segments.ts";
+import { RainbowFace } from "./rainbow.ts";
+import { SundialFace } from "./sundial.ts";
+import { UnderwaterFace } from "./underwater.ts";
 
 /** The flip face has no objects: Iron's UI draws it (see `Hud`). */
 class FlipFace implements Face {
@@ -47,7 +59,7 @@ class Clocks extends Component {
       backgroundColor: BG,
     });
     this.fpsLabel = label("FPS", { fontSize: 16, color: DIM }, new Vector3(7.5, 4.75, 0));
-    this.faces = [new AnalogFace(), new DialsFace(), new MeterFace(), new MorphFace(), new FlipFace(), new SegmentFace()];
+    this.faces = [new AnalogFace(), new DialsFace(), new MeterFace(), new SundialFace(), new HourglassFace(), new LavaFace(), new UnderwaterFace(), new ChandelierFace(), new RainbowFace(), new MorphFace(), new FlipFace(), new SegmentFace()];
     this.faces.forEach((f, i) => {
       f.root.enabled = i === this.current;
     });
