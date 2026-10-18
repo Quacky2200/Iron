@@ -855,6 +855,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       placed for the date, a sand timer, a reactive lava lamp, an underwater porthole clock, a
       chandelier, a rainbow, Material-style morphing digits, a flip clock in Iron's UI, a
       seven-segment alarm clock with bloom), switched with side arrows and dots
+    - [x] `examples/fishtank`: an aquarium of four species that school with their own kind,
+      swim level, keep off the glass and flee the pointer; click to feed (the nearest fish race
+      for the pellets and grow), right-click to add a fish, Space to tap the glass; plants, rocks,
+      a chest and an air stone
     - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
       texture brushes, smooth fill edges without MSAA, clipping
     - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)
