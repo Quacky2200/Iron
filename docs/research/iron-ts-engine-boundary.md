@@ -262,3 +262,35 @@ Out of scope here, but they constrain this note:
 A useful first milestone is sub-task 3: one example component, compiled, moving a `Transform` every
 frame with no JS engine in the loop. It shows the whole boundary working, and it gives a number to
 set against the 0.12 ms crossing above.
+
+## 13. Answers (from the user, 2026-10-18)
+
+1. **Source of truth: Rust annotated with `#[iron_api]`**, generating the manifest, the shims and the
+   QuickJS bindings, *instead of* `__iron_op`. The user's point, which this note had only half said:
+   this speeds up QuickJS as well. The QuickJS bindings become ordinary native functions registered
+   with typed arguments (numbers as `f64`, handles as integers), not strings plus a `Value` array in an
+   op queue. A consequence to design for: ops are queued and applied once per frame today, so a script
+   never sees its own write until the engine has applied it (hence the TypeScript mirror); a direct
+   call applies immediately, so reads see writes at once and the mirror can go in QuickJS too.
+2. **Value classes: phase 1 ordinary structs with scalarised engine calls**, scalar replacement later.
+3. **f32 readback accepted**, as in Unity.
+4. **String-taking engine functions wait for the strings item**; the first engine calls from compiled
+   code are the numeric ones. ("For now, until implemented": recorded as a limit that lifts when
+   strings land.)
+5. **Native faults take the process down for now**; the dev loop's checks are the later answer.
+6. **Everything in `js/engine` is ported to Rust.** Anything left in TypeScript is user-made, and may
+   be ported if it is portable (a Bun library written in TypeScript is the example given). So the
+   "compile engine modules with `iron_ts` as library source" alternative in question 7 is not taken
+   for the engine; it remains how *user* libraries are compiled.
+
+**Not answered / assumed.** The reply numbered six items for seven questions; "6" matched question 7
+(what stays TypeScript) in content. Question 6, generics (`getComponent`, `addComponent`,
+`findObjectOfType` as compiler intrinsics until generics exist), is therefore **still open**; the
+recommendation stands as the working default and is easy to change, because it is three functions.
+
+**What this makes next.** Sub-task 1 of section 12: the manifest format and `#[iron_api]`, generating
+the `.d.ts`, the `extern "C"` shims and the QuickJS bindings. It lives in the engine workspace (a
+proc-macro crate and a generator), not in `tools/`, and the engine crates that carry ops today
+(`iron_scene`, `iron_physics`, `iron_audio`, `iron_script`) are where the first annotated functions
+go. `iron_render` and `iron_app` carry the `render.*`, `app.*`, `cursor.*` and `screen.*` ops and
+belong to another session's area, so they are left for last, and for whoever owns them.

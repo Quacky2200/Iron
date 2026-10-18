@@ -83,20 +83,19 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Two design notes wait for the user's review:** `docs/research/iron-ts-classes.md` (answered, section 12) and
-`docs/research/iron-ts-engine-boundary.md` (section 11 has seven questions). No code for classes that extend
-an engine type, or for engine calls, until the engine-boundary answers are in.
+**Both design notes are answered** (`iron-ts-classes.md` section 12, `iron-ts-engine-boundary.md` section 13). Open: the
+generics-as-intrinsics default (boundary note, question 6). The next code, in the order the notes give:
 
-What needs no decision, in the order I would take it:
+1. **Plain classes** (Classes sub-tasks 1-3: fields, constructor, methods, `this`, getters/setters, statics, private).
+   Independent of the engine work.
+2. **`#[iron_api]` and the manifest** (boundary note sub-task 1): a proc-macro crate in the engine workspace plus a
+   generator for `.d.ts`, `extern "C"` shims and QuickJS bindings. Start in `iron_scene`/`iron_physics`/`iron_audio`/
+   `iron_script`; **not** `iron_render`/`iron_app` (another session's area).
+3. Then the compiler's extern table and `Handle` type, and the first vertical slice (a compiled `Component` moving a
+   `Transform`).
 
-1. **Plain classes** (Classes sub-tasks 1-3: fields, constructor, methods, `this`, getters/setters, statics,
-   private). Independent of the engine note (answers recorded in the classes note).
-2. **IR verifier for the GC root rule** (debug builds), then the **differential harness** against bun.
-3. Small leftovers: rest elements and assignment patterns, `in`/`void`/`f?.()`, `flat`/`entries`, named function
-   expressions, capture by value.
-
-Design notes still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun,
-strings (UTF-16 or UTF-8; the engine boundary needs it for names and paths).
+Still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun, strings.
+Non-STOP fillers: IR verifier for the GC root rule, differential harness against bun, small language leftovers.
 
 ## Backlog
 
@@ -120,6 +119,7 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
   defaults via `Cond(IsNull)` (spike doc section 14.1). Rest elements and assignment patterns are open.
 - 2026-10-18 `switch` and enums (`M9-TS-64..70`): clause index then ordered bodies (fall-through, default
   anywhere), enums folded to constants, bit-operation constant folding (spike doc section 13).
+- 2026-10-18 Engine-boundary answers recorded (section 13): #[iron_api] replaces __iron_op, whole engine ported to Rust.
 - 2026-10-18 Engine-boundary design note written (`docs/research/iron-ts-engine-boundary.md`); awaiting review.
 - 2026-10-18 Loops (`M9-TS-57..63`): `for(;;)`, `do...while`, labelled `break`/`continue`, labelled blocks,
   per-iteration `let` cells in `for` heads (spike doc section 12).
