@@ -855,10 +855,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       placed for the date, a sand timer, a reactive lava lamp, an underwater porthole clock, a
       chandelier, a rainbow, Material-style morphing digits, a flip clock in Iron's UI, a
       seven-segment alarm clock with bloom), switched with side arrows and dots
-    - [x] `examples/fishtank`: an aquarium of four species that school with their own kind,
-      swim level, keep off the glass and flee the pointer; click to feed (the nearest fish race
-      for the pellets and grow), right-click to add a fish, Space to tap the glass; plants, rocks,
-      a chest and an air stone
+    - [x] `examples/fishtank`: an aquarium-channel view into deep water: a slowly drifting
+      perspective camera, a hazy back wall, rocks and kelp at several depths, a sand floor
+      fading into the blue, light shafts, caustics, marine snow, a vignette; four species
+      school in 3D, swim level, keep inside and flee the pointer; click to feed (the nearest fish
+      race for the food and grow), right-click adds a fish, Space taps the glass; the readout
+      shows only while the mouse moves
     - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
       texture brushes, smooth fill edges without MSAA, clipping
     - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)
@@ -1405,6 +1407,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   lights (`Light.bounceIntensity`, Unity's): baked with the lightmaps first, then a realtime
   approximation (virtual point lights from shadow-map hits, or probe volumes); the Cornell
   box is the test scene (asked for 2026-10-17)
+- [ ] Fog (Unity's `RenderSettings.fog`, asked for 2026-10-18): linear, exponential and
+  exponential-squared distance fog in a colour, in the world shader for meshes, quads, sprites,
+  2D shapes and text panels alike (the sky / background untouched or fogged to match), per camera
+  on or off; then height fog and volumetric light shafts. `examples/fishtank` fakes it today by
+  mixing every shape toward the water's colour by depth.
 
 ## M8 — Multiplayer
 
