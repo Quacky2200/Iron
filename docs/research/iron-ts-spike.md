@@ -557,3 +557,40 @@ variables (`[a, b] = [b, a]`), computed keys, tuple types.
 
 Tests: `tests/destructure.rs` against bun's numbers from `bench/destructure.ts`, in all three GC
 modes (`M9-TS-71`..`76`).
+
+### 14.2 Default, optional and rest parameters (done)
+
+JavaScript evaluates a default when the call happens, in the callee's scope (it can see earlier
+parameters). The compiler sees every direct call of a declared function, so the **caller** fills
+the missing arguments in:
+
+- `p = d`: the default `d` is lowered at the call site. The given arguments are first stored in
+  temporaries, and `d` is lowered in a scope that holds only the parameters before it (by name,
+  bound to those temporaries) plus the module's names, so `hi = lo + 10` works and the caller's own
+  locals cannot leak in. The result is `Seq([tmp = arg..., tmp = default...], Call(f, tmps))`.
+  When every argument is given, nothing changes (no temporaries).
+- `x?: T`: the parameter is `T | null` (a zero pointer or the null NaN); a missing argument is null.
+- `...xs: T[]`: the function takes one more parameter, an array. The call site builds it from the
+  remaining arguments, including `f(a, ...b)`, always as a **new** array (JS makes a fresh array for
+  a rest parameter, so writes to it must not reach the caller's array).
+
+The callee therefore never sees a missing argument, and the compiled function is an ordinary
+function with all its parameters. The cost is one rule: a function with defaults, optional or rest
+parameters that is used **as a value** (`xs.map(f)`, stored in a variable) has to be called with
+all its parameters, because the function type lists them all. That is a compile error with the
+function's name, not a silent difference.
+
+Not done: closures with defaults called with fewer arguments (arrow functions in variables; the
+call goes through the function type), spreads into fixed parameters (`f(...[1, 2])`), parameter
+properties.
+
+### 14.3 Spread (arrays and calls, done; objects were done earlier)
+
+`[...a, x, ...b]` builds a new array (`build_array`): a push for each value and, for a spread, a
+loop over the source (`begin_iter`, the same loop `for...of` uses). The element type comes from the
+expected type or the first element. Object spread (`{ ...a, x: 1 }`) was already lowered field by
+field. Spread in a call only feeds a rest parameter (14.2). Not done: spreading a `Set`/`Map`/string
+(sets are arrays here, so `[...set]` works; maps and strings wait for the strings item).
+
+Tests: `tests/params.rs` against bun's numbers from `bench/params.ts`, in all three GC modes
+(`M9-TS-77`..`83`); argument-count errors are a unit test (`M9-TS-84`).

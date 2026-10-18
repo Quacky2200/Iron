@@ -69,6 +69,24 @@ impl<'a> Lowerer<'a> {
                     ),
                 },
             };
+            ptys.push(if p.optional && p.initializer.is_none() {
+                ty.nullable()
+            } else {
+                ty
+            });
+        }
+        if let Some(r) = &params.rest {
+            let i = params.items.len();
+            let ty = match &r.type_annotation {
+                Some(a) => self.ty(&a.type_annotation, "closure")?,
+                None => match exp_fn.as_ref().and_then(|f| f.params.get(i)) {
+                    Some(t) => t.clone(),
+                    None => bail!(
+                        "{}: closure rest parameter needs a type annotation",
+                        self.loc(start)
+                    ),
+                },
+            };
             ptys.push(ty);
         }
         let ret_exp = match ret_ann {
@@ -177,10 +195,16 @@ impl<'a> Lowerer<'a> {
                 .insert(name.clone(), Binding::Boxed(cell, ty.clone()));
         }
         let mut pvars = Vec::new();
-        for (p, ty) in params.items.iter().zip(ptys) {
+        let mut ptys = ptys.iter();
+        for (p, ty) in params.items.iter().zip(ptys.by_ref()) {
             let v = self.new_local(ty.clone());
             pvars.push(v);
             self.bind_param(&p.pattern, v, &mut pro)?;
+        }
+        if let (Some(r), Some(ty)) = (&params.rest, ptys.next()) {
+            let v = self.new_local(ty.clone());
+            pvars.push(v);
+            self.bind_param(&r.rest.argument, v, &mut pro)?;
         }
         let (stmts, ret) = self.lower_body_into(body, pro)?;
         Ok((pvars, envv, stmts, ret))

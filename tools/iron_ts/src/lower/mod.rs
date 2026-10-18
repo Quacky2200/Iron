@@ -313,7 +313,23 @@ impl<'a> Lowerer<'a> {
             let Some(ann) = &p.type_annotation else {
                 bail!("{name}: parameter without a type")
             };
-            ptys.push(self.ty(&ann.type_annotation, name)?);
+            let ty = self.ty(&ann.type_annotation, name)?;
+            // `x?: T` without a default is `T | undefined` inside.
+            ptys.push(if p.optional && p.initializer.is_none() {
+                ty.nullable()
+            } else {
+                ty
+            });
+        }
+        if let Some(r) = &src.params.rest {
+            let Some(ann) = &r.type_annotation else {
+                bail!("{name}: rest parameter without a type")
+            };
+            let ty = self.ty(&ann.type_annotation, name)?;
+            if !matches!(ty, Ty::Arr(_)) {
+                bail!("{name}: a rest parameter must be an array type")
+            }
+            ptys.push(ty);
         }
         let ret = match src.ret {
             Some(r) => Some(self.ty(r, name)?),
@@ -379,9 +395,15 @@ impl<'a> Lowerer<'a> {
         let ptys = self.fsig[id].0.clone();
         let mut pvars = Vec::new();
         let mut pro = Vec::new();
-        for (p, ty) in params.items.iter().zip(ptys) {
+        let mut ptys = ptys.into_iter();
+        for (p, ty) in params.items.iter().zip(ptys.by_ref()) {
             let v = self.new_local(ty);
             self.bind_param(&p.pattern, v, &mut pro)?;
+            pvars.push(v);
+        }
+        if let (Some(r), Some(ty)) = (&params.rest, ptys.next()) {
+            let v = self.new_local(ty);
+            self.bind_param(&r.rest.argument, v, &mut pro)?;
             pvars.push(v);
         }
         let (stmts, ret) = self.lower_body_into(body, pro)?;

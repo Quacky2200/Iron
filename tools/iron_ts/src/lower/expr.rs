@@ -29,6 +29,12 @@ fn fold_bits(op: BinOp, a: f64, b: f64) -> f64 {
     }
 }
 
+/// One piece of an array being built: a value, or an array whose elements are spread in.
+pub(crate) enum Elem {
+    One(Expr),
+    Spread(Expr),
+}
+
 /// A place that can be read and written (assignment targets, `++`, compound assignment).
 pub(crate) enum Place {
     Var(VarId, Ty),
@@ -526,37 +532,67 @@ impl<'a> Lowerer<'a> {
             Some(Ty::Arr(e)) => Some((**e).clone()),
             _ => None,
         };
-        let mut vals = Vec::new();
+        let mut elems = Vec::new();
         for item in &a.elements {
+            if let ArrayExpressionElement::SpreadElement(sp) = item {
+                let hint = el.clone().map(|e| Ty::Arr(Box::new(e)));
+                let v = self.lower_expr(&sp.argument, hint.as_ref())?;
+                let vt = match v.ty.strip() {
+                    Ty::Arr(e) => (**e).clone(),
+                    Ty::Bytes => Ty::Num,
+                    t => bail!("{}: cannot spread {t}", self.loc(sp.span.start)),
+                };
+                if el.is_none() {
+                    el = Some(vt);
+                }
+                elems.push(Elem::Spread(v));
+                continue;
+            }
             let Some(e) = item.as_expression() else {
-                bail!(
-                    "{}: spread or hole in an array literal",
-                    self.loc(a.span.start)
-                )
+                bail!("{}: hole in an array literal", self.loc(a.span.start))
             };
             let v = self.lower_expr(e, el.as_ref())?;
             if el.is_none() {
                 el = Some(v.ty.clone());
             }
-            vals.push(v);
+            elems.push(Elem::One(v));
         }
-        let el = el.unwrap_or(Ty::Num);
+        self.build_array(elems, el.unwrap_or(Ty::Num))
+    }
+
+    /// A new array of `el` from values and spread arrays, in order:
+    /// `t = new []; t.push(v); for (x of src) t.push(x); ...`.
+    pub(crate) fn build_array(&mut self, elems: Vec<Elem>, el: Ty) -> R<Expr> {
         let ty = Ty::Arr(Box::new(el.clone()));
         let tmp = self.new_local(ty.clone());
         let t = self.var_expr(tmp);
+        let n = elems.iter().filter(|e| matches!(e, Elem::One(_))).count();
         let mut stmts = vec![Stmt::Assign(
             tmp,
-            mk(
-                ExprKind::Rt(RtFn::ArrNew, vec![num(vals.len() as f64)]),
-                ty.clone(),
-            ),
+            mk(ExprKind::Rt(RtFn::ArrNew, vec![num(n as f64)]), ty.clone()),
         )];
-        for v in vals {
-            let v = self.coerce(v, &el)?;
-            stmts.push(Stmt::Eval(mk(
+        let push = |t: &Expr, v: Expr| {
+            Stmt::Eval(mk(
                 ExprKind::Rt(RtFn::ArrPush, vec![t.clone(), v]),
                 Ty::Void,
-            )));
+            ))
+        };
+        for e in elems {
+            match e {
+                Elem::One(v) => {
+                    let v = self.coerce(v, &el)?;
+                    stmts.push(push(&t, v));
+                }
+                Elem::Spread(src) => {
+                    let it = self.begin_iter(src)?;
+                    stmts.extend(it.pre);
+                    let x = self.var_expr(it.elem);
+                    let x = self.coerce(x, &el)?;
+                    let mut body = it.head;
+                    body.push(push(&t, x));
+                    stmts.push(Stmt::Loop(it.label, body));
+                }
+            }
         }
         Ok(mk(ExprKind::Seq(stmts, Box::new(t)), ty))
     }
@@ -772,6 +808,87 @@ impl<'a> Lowerer<'a> {
         Ok(out)
     }
 
+    /// Arguments for a call of a declared function. A missing argument takes the parameter's
+    /// default (lowered here, in a scope that has only the earlier parameters) or null for `x?: T`;
+    /// the arguments after the fixed ones become the rest parameter's array.
+    ///
+    /// Defaults are filled in by the caller, which is why such a function must be called directly:
+    /// as a value (`xs.map(f)`) every parameter has to be passed.
+    pub(crate) fn lower_fn_args(
+        &mut self,
+        name: &str,
+        args: &'a [Argument<'a>],
+        ptys: &[Ty],
+    ) -> R<(Vec<Stmt>, Vec<Expr>)> {
+        let fp: &'a FormalParameters<'a> = self.fsrc[name].params;
+        let n_fixed = fp.items.len();
+        let rest_ty = fp.rest.as_ref().map(|_| ptys[n_fixed].clone());
+        if rest_ty.is_none() && args.len() > n_fixed {
+            bail!(
+                "{name}: {} arguments, at most {n_fixed} expected",
+                args.len()
+            );
+        }
+        let given = args.len().min(n_fixed);
+        let mut vals: Vec<Expr> = Vec::new();
+        for (a, p) in args[..given].iter().zip(ptys) {
+            let Some(e) = a.as_expression() else {
+                bail!("{name}: a spread argument can only feed a rest parameter")
+            };
+            let v = self.lower_expr(e, Some(p))?;
+            vals.push(self.coerce(v, p)?);
+        }
+        let mut pre = Vec::new();
+        if given < n_fixed {
+            // The defaults may use earlier parameters: give those names to temporaries.
+            let mut names: HashMap<String, Binding> = HashMap::new();
+            for i in 0..given {
+                let tmp = self.new_local(ptys[i].clone());
+                pre.push(Stmt::Assign(tmp, vals[i].clone()));
+                vals[i] = self.var_expr(tmp);
+                if let BindingPattern::BindingIdentifier(b) = &fp.items[i].pattern {
+                    names.insert(b.name.to_string(), Binding::Direct(tmp));
+                }
+            }
+            for (p, pty) in fp.items.iter().zip(ptys).skip(given) {
+                let v = if let Some(init) = &p.initializer {
+                    let saved = std::mem::replace(&mut self.cur.scopes, vec![names.clone()]);
+                    let r = self.lower_expr(init, Some(pty));
+                    self.cur.scopes = saved;
+                    self.coerce(r?, pty)?
+                } else if p.optional {
+                    self.coerce(mk(ExprKind::Null, Ty::Null), pty)?
+                } else {
+                    bail!("{name}: {} arguments, {n_fixed} expected", args.len())
+                };
+                let tmp = self.new_local(pty.clone());
+                pre.push(Stmt::Assign(tmp, v));
+                vals.push(self.var_expr(tmp));
+                if let BindingPattern::BindingIdentifier(b) = &p.pattern {
+                    names.insert(b.name.to_string(), Binding::Direct(tmp));
+                }
+            }
+        }
+        if let Some(rt) = rest_ty {
+            let Ty::Arr(el) = &rt else {
+                bail!("{name}: a rest parameter must be an array")
+            };
+            let el = (**el).clone();
+            let mut elems = Vec::new();
+            for a in &args[given..] {
+                if let Argument::SpreadElement(sp) = a {
+                    let v = self.lower_expr(&sp.argument, Some(&rt))?;
+                    elems.push(Elem::Spread(v));
+                } else if let Some(e) = a.as_expression() {
+                    let v = self.lower_expr(e, Some(&el))?;
+                    elems.push(Elem::One(self.coerce(v, &el)?));
+                }
+            }
+            vals.push(self.build_array(elems, el)?);
+        }
+        Ok((pre, vals))
+    }
+
     fn lower_call(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
         match &c.callee {
             Expression::Identifier(id) => {
@@ -800,8 +917,13 @@ impl<'a> Lowerer<'a> {
                 let Some(ret) = ret else {
                     bail!("{name}: return type unknown")
                 };
-                let args = self.lower_args(&c.arguments, &params, name)?;
-                Ok(mk(ExprKind::Call(fid, args), ret))
+                let (pre, args) = self.lower_fn_args(name, &c.arguments, &params)?;
+                let call = mk(ExprKind::Call(fid, args), ret.clone());
+                Ok(if pre.is_empty() {
+                    call
+                } else {
+                    mk(ExprKind::Seq(pre, Box::new(call)), ret)
+                })
             }
             Expression::StaticMemberExpression(m) => {
                 let method = m.property.name.as_str();

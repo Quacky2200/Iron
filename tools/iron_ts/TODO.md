@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **77**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **85**).
 
 ## How to pick this up
 
@@ -62,10 +62,10 @@ cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 | `iron_ts/src/codegen.rs` | IR to Cranelift object (frames, spills, `eval_args`, registration in `ts_init`) |
 | `iron_ts/src/layout.rs` | generated Rust bindings (`HDR_*`, `TAG_*`, structs, `extern "C"`) |
 | `iron_ts_rt/src/lib.rs` | GC heap, roots, arrays/strings/closures/cells, libm calls |
-| `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals,loops,switches,destructure}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals,loops,switches,destructure}.rs`; `src/bin/{bench,sine_bench}.rs` |
+| `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals,loops,switches,destructure,params}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals,loops,switches,destructure,params}.rs`; `src/bin/{bench,sine_bench}.rs` |
 
 Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name, prefix, struct_base)`
-(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, next 8000), a `pub mod` in
+(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, next 9000), a `pub mod` in
 `src/lib.rs`, a test file. Expected numbers come from running the same TS in bun.
 
 ## Rules we decided (do not undo without asking)
@@ -89,7 +89,7 @@ design paragraph written first (spike doc, one section per stage) and its own co
 
 1. ~~`for(;;)`, `do...while`, labels~~ done
 2. ~~`switch` and enums~~ done (spike doc section 13)
-3. default and rest parameters, destructuring, spread
+3. ~~default and rest parameters, destructuring, spread~~ done (spike doc section 14; rest elements and assignment patterns are open)
 4. library surface: `Math`, array methods
 
 Mark the stage you are on here and tick it in `TODO.md` M9.b2 only when the whole sub-item is done.
@@ -105,6 +105,8 @@ performance, cross targets and CI.
 
 Newest first. One line per finished step: what, test IDs, numbers if measured.
 
+- 2026-10-18 Default, optional and rest parameters and spread (`M9-TS-77..84`): the caller fills in defaults (lowered in a
+  scope of the earlier parameters) and builds the rest array; array/call spread copies (spike doc 14.2, 14.3).
 - 2026-10-18 Destructuring (`M9-TS-71..76`): `bind_pattern` for declarations, parameters, `for...of`, callbacks;
   defaults via `Cond(IsNull)` (spike doc section 14.1). Rest elements and assignment patterns are open.
 - 2026-10-18 `switch` and enums (`M9-TS-64..70`): clause index then ordered bodies (fall-through, default

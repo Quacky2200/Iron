@@ -31,6 +31,7 @@ fn main() {
         ("loops", "loop_", 5000),
         ("switches", "sw_", 6000),
         ("destructure", "des_", 7000),
+        ("params", "par_", 8000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

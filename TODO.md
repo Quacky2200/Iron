@@ -1476,8 +1476,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Destructuring
       - [x] Objects and arrays in declarations, parameters, `for...of` and callback parameters; nested; defaults (`M9-TS-71..76`)
       - [ ] Rest elements (`{ a, ...r }`, `[a, ...r]`), assignment to existing variables (`[a, b] = [b, a]`), computed keys
-    - [ ] Default, optional and rest parameters
-    - [ ] Spread: call arguments, array literals, object literals with overrides
+    - [x] Default, optional and rest parameters (`M9-TS-77..84`; a function with them used as a value needs all its arguments)
+    - [ ] Spread
+      - [x] Array literals, call arguments into a rest parameter, object literals with overrides
+      - [ ] Into fixed parameters (`f(...xs)`), of maps and strings
     - [ ] Optional call `f?.()`, `??=`, `||=`, `&&=`, `**`, unary `~`, `in`, `void`, `delete` (limited)
     - [ ] `try`/`catch`/`finally`/`throw`: **STOP, design first** (unwinding vs error returns; frame pops
           and GC frames on unwind; script errors reaching the host)

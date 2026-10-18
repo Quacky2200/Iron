@@ -555,6 +555,14 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-74 | Integration | `for (const { x, y } of items)`, `for (const [a, b] of rows)` and patterns as inlined callback parameters. Runs in all three GC modes (`tests/destructure.rs`). |
 | M9-TS-75 | Integration | A closure takes a pattern parameter, and a closure captures a destructured variable (a cell: it sees later writes). Runs in all three GC modes (`tests/destructure.rs`). |
 | M9-TS-76 | Integration | Patterns over freshly allocated objects and arrays inside a loop survive a collection at every allocation. Runs in all three GC modes (`tests/destructure.rs`). |
+| M9-TS-77 | Integration | A missing argument takes the parameter's default, which may use earlier parameters (`hi = lo + 10`); several defaults can be left out together. Runs normally, in stress GC mode and with collection off (`tests/params.rs`). |
+| M9-TS-78 | Integration | An optional parameter `y?: number` and `it?: Item` is null when left out. Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-79 | Integration | Defaults that are object literals or calls that allocate (`n = make(3).v, m = n * 2`) are evaluated per call. Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-80 | Integration | A rest parameter collects the remaining arguments, alone or after fixed and default parameters. Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-81 | Integration | Spread in a call (into a rest parameter) and in array literals (`[...a, 3, ...a]`, arrays of objects). Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-82 | Integration | `f(...a)` and `[...a]` give new arrays; writing to them leaves `a` alone. Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-83 | Integration | Defaults, rest arrays and spreads that allocate, in a loop, survive a collection at every allocation. Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-84 | Unit | Too few or too many arguments, and a spread into a fixed parameter, are errors (`iron_ts/src/lib.rs`). |
 
 ---
 

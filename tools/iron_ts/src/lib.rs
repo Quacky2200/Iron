@@ -167,4 +167,29 @@ mod tests {
         .unwrap();
         assert!(e.contains("not a loop"), "{e}");
     }
+
+    // M9-TS-84
+    #[test]
+    fn calls_with_the_wrong_number_of_arguments_are_errors() {
+        let src = "function f(a: number, b: number): number { return a + b; }";
+        let e = lower::lower_source(&format!(
+            "{src} export function g(): number {{ return f(1); }}"
+        ))
+        .err()
+        .unwrap();
+        assert!(e.contains("arguments"), "{e}");
+        let e = lower::lower_source(&format!(
+            "{src} export function g(): number {{ return f(1, 2, 3); }}"
+        ))
+        .err()
+        .unwrap();
+        assert!(e.contains("at most 2"), "{e}");
+        let e = lower::lower_source(
+            "function f(a: number, b: number): number { return a + b; } \
+             export function g(xs: number[]): number { return f(...xs); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("rest parameter"), "{e}");
+    }
 }
