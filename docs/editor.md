@@ -241,6 +241,17 @@ distance spheres. `Gizmos.present(camera)` then sends them to the Scene camera, 
 view (faint where hidden) and are replaced next frame. The lines belong to that camera, so the Game view
 never shows them. See [world-rendering.md](world-rendering.md#editor-grid-and-gizmo-lines).
 
+**Transform handles** ([handles.ts](../js/editor-ui/src/handles.ts)). Like Unity: Q is the view tool, W move,
+E rotate and R scale (keys, or the toolbar in the panel). The handles sit on the last selected object and
+keep a constant size on screen (`HANDLE_PIXELS`). `handles.ts` is plain math over an abstract `HandleView`
+(world to panel pixels, rays, units per pixel), so it is tested without a camera (`M5-EDT-24`). It lays out
+the parts, finds the one under the pointer (the centre, an axis, or a ring's front arc, within
+`GRAB_PIXELS`) and turns a drag into the object's new pose: move along a local axis or in the view plane,
+rotate about an axis through the ring's plane, scale by the ratio along an axis or uniformly from the
+centre. Ctrl snaps (1 m, 15 degrees, 0.1). `SceneView` draws the parts as SVG in a box just around them,
+lights up the hovered part, and reports each finished drag with `onTransformed(object, before, after)`
+so the editor can undo it.
+
 ## The editor UI ([editor/src/main.tsx](../editor/src/main.tsx))
 
 A menubar (File, Edit, View, Window, Help with accelerators and an Open Recent submenu), a dock
@@ -271,6 +282,7 @@ see-through panels show the world.
   `menubar.test.tsx`: the React menubar through the real reconciler with dispatched events
   (`M5-EDT-14`); `log.test.ts`: the log feed (`M5-EDT-20`).
 - `js/editor-ui/test/scene-camera.test.ts`: the Scene camera's controls and axis gizmo (`M5-EDT-22`);
+  `handles.test.ts`: the transform handles' math (`M5-EDT-24`);
   `js/engine/test/gizmos.test.ts` (`Gizmos`, `M5-RND-23`) and the `HideFlags` cases in `scenes.test.ts` (`M5-SCN-06`).
   The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes have goldens (`M5-RND-22`, `-23`).
 - Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`); `project.rs`
@@ -281,8 +293,8 @@ see-through panels show the world.
 ## Limits
 
 - Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
-- The Scene view has no picking in the 3D view (only icons select), no move / rotate / scale
-  handles and no snapping; gizmos are drawn for the selection only.
+- The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;
+  gizmos and handles are drawn for the selection only.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
 - Accelerators don't run while a text field has focus (its keys don't reach `input`).
 - No native menus yet (TODO.md M5.e).
