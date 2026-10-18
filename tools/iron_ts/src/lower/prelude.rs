@@ -52,6 +52,8 @@ class URIError extends Error {
 }
 function __rtThrow(kind: number, message: string): void {
   if (kind === 1) throw new RangeError(message);
+  if (kind === 2) throw new TypeError(message);
+  if (kind === 3) throw new SyntaxError(message);
   throw new Error(message);
 }
 "#;
@@ -68,6 +70,7 @@ pub fn wanted(src: &str) -> bool {
         || src.contains(".padEnd(")
         || src.contains(".toFixed(")
         || src.contains("fromCodePoint")
-        || src.contains(".toString("))
+        || src.contains(".toString(")
+        || src.contains("JSON."))
         && !src.contains("class Error")
 }

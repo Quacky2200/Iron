@@ -566,6 +566,11 @@ pub(crate) fn compare_bytes(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
 // ---- allocating ----
 
 /// A string object holding `bytes` (valid WTF-8).
+pub(crate) fn alloc_str_pub(h: &mut Heap, bytes: &[u8]) -> *mut Str {
+    alloc_str(h, bytes)
+}
+
+/// A string object holding `bytes` (valid WTF-8).
 fn alloc_str(h: &mut Heap, bytes: &[u8]) -> *mut Str {
     let (utf16_len, flags) = scan(bytes);
     let p = new_obj(h, HDR_STR, DATA + bytes.len()) as *mut Str;

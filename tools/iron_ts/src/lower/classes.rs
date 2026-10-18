@@ -177,7 +177,11 @@ impl<'a> Lowerer<'a> {
                         p.value.as_ref(),
                         &what,
                     )?;
-                    fields.push(Field { name: key, ty });
+                    fields.push(Field {
+                        name: key,
+                        ty,
+                        optional: p.optional,
+                    });
                 }
                 ClassElement::MethodDefinition(m)
                     if m.kind == MethodDefinitionKind::Constructor =>
@@ -199,6 +203,7 @@ impl<'a> Lowerer<'a> {
                         fields.push(Field {
                             name: b.name.to_string(),
                             ty,
+                            optional: p.optional,
                         });
                     }
                 }

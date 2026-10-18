@@ -125,6 +125,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/closure.rs](../tools/iron_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
 | [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
 | [lower/maps.rs](../tools/iron_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
+| [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
 | [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes as TypeScript source, compiled in front of programs that mention errors |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
@@ -163,8 +164,9 @@ bytes, bindings text, IR dump and the time of each phase.
   Number methods `toString` and `toFixed`; globals `String`, `Number`, `parseInt`, `parseFloat`;
   `String.fromCharCode` (`ts_rt_str_from_char_code_gc`) and `String.fromCodePoint`; `join` of a
   `string[]`.
-- Compile errors: unsupported string methods (`localeCompare`, `normalize`, `replace`, `match`, ...) and
-  string literals with lone surrogates.
+- Compile errors: unsupported string methods (`localeCompare`, `normalize`, `replace`, `match`, ...).
+  String literals with lone surrogates work (oxc encodes them as U+FFFD plus hex; `Module::strs` is
+  WTF-8 bytes).
 - `join` of a `number[]` is `ts_rt_str_join_nums_gc`; a top-level `let s = "x"` widens to `string`.
   Runtime functions that JavaScript makes throw raise a runtime error (see "Exceptions").
 - Not done: `codePointAt` past the end (gives plain NaN, not undefined), optional chaining on
@@ -259,6 +261,32 @@ runtime in [iron_ts_rt/src/map.rs](../tools/iron_ts_rt/src/map.rs); design in
 - Tests: `bench/collections.ts` with `tests/collections.rs` (M9-TS-209..213), expected values from
   `bench/gen_collections_expected.ts` (bun) into `collections_expected.json`; runtime unit tests
   M9-TS-206..208 in `map.rs`; compile errors M9-TS-214.
+
+**Standard library tier 2: `JSON`** ([lower/json.rs](../tools/iron_ts/src/lower/json.rs), runtime in
+[iron_ts_rt/src/json.rs](../tools/iron_ts_rt/src/json.rs)). Driven by the program's static types.
+- **Descriptors.** For each type the compiler writes a byte blob (`Module::blobs`, `ExprKind::Blob`):
+  a kind byte per type (number, boolean, string, literal union, array, nullable, object) and, for an
+  object, a header word and its fields. Struct header words are written as id + 1; the module's
+  `struct_base` is added at code generation. The runtime (`ts_rt_json_stringify_gc`,
+  `ts_rt_json_parse_gc`) walks the blob.
+- **`JSON.stringify(v, null, indent)`.** Numbers (non-finite becomes `null`, `-0` becomes `0`), booleans,
+  strings with JSON escapes (lone surrogates as `\udXXX`), literal unions, arrays, nullable values
+  (`null`), objects in key order (array-index keys first), `Map`/`Set` as `{}`. A field declared with
+  `?` (`Field.optional`) is left out when null. A subclass instance prints its own fields: the
+  descriptor lists the class and its subclasses and the object's header picks one. Indentation by a
+  number (clamped to 10) or a string.
+- **`JSON.parse`.** Needs its type from the context: `const x: T = JSON.parse(s)` or `JSON.parse(s) as
+  T`. Objects, arrays and strings are built without collecting mid-parse (one collection check
+  before). Fields the type lacks are skipped. Syntax errors follow JavaScriptCore's parser and
+  messages exactly (`SyntaxError: JSON Parse error: ...`; 67 malformed texts checked against bun). A
+  shape mismatch (wrong kind, missing property, string outside a literal union) is a `TypeError`, raised
+  only after the whole text proved to be valid JSON, so a syntax error anywhere wins.
+- **Errors.** Runtime errors reach the program through `__rtThrow(kind, message)` (1 `RangeError`,
+  2 `TypeError`, 3 `SyntaxError`).
+- Also in this step: `join` of boolean arrays.
+- Not built: reviver, replacer, `toJSON`. See [differences.md](differences.md).
+- Tests: `bench/json.ts` with `tests/json.rs` (M9-TS-215..221), expected values from
+  `bench/gen_json_expected.ts` (bun) into `json_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

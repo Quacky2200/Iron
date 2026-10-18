@@ -342,6 +342,30 @@ pub unsafe extern "C" fn ts_rt_str_join_gc(
     new_gc(out)
 }
 
+/// `booleans.join(sep)` for an array of booleans.
+///
+/// # Safety
+/// `parts` must be an array of booleans and `sep` a live string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_str_join_bools_gc(
+    parts: *const super::Array,
+    sep: *const Str,
+) -> *mut Str {
+    // SAFETY: by contract.
+    let a = unsafe { &*parts };
+    let sep = st(sep).as_bytes();
+    let mut out = Vec::new();
+    for i in 0..a.len() {
+        if i > 0 {
+            append_wtf8(&mut out, sep);
+        }
+        // SAFETY: slots of a boolean array hold 0 or 1.
+        let x: u64 = unsafe { a.get::<u64>(i) };
+        out.extend_from_slice(if x != 0 { b"true" } else { b"false" });
+    }
+    new_gc(out)
+}
+
 /// `numbers.join(sep)` for an array of numbers.
 ///
 /// # Safety

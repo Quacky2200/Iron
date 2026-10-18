@@ -204,10 +204,11 @@ mod tests {
             .unwrap();
             assert!(e.contains("not supported yet"), "{call}: {e}");
         }
-        let e = lower::lower_source("export function f(): string { return \"\\uD800\"; }")
-            .err()
-            .unwrap();
-        assert!(e.contains("lone surrogate"), "{e}");
+        // A literal with a lone surrogate is a string (WTF-8), not an error; as a union member it is one.
+        assert!(lower::lower_source("export function f(): string { return \"\\uD800\"; }").is_ok());
+        let m =
+            lower::lower_source("export function f(): string { return \"a\\uD800b\"; }").unwrap();
+        assert_eq!(m.strs, [b"a\xED\xA0\x80b".to_vec()]);
     }
 
     // M9-TS-191
@@ -301,6 +302,31 @@ mod tests {
                 let e = e.err().unwrap_or_default();
                 assert!(e.contains(want), "{body}: {e}");
             }
+        }
+    }
+
+    // M9-TS-221
+    #[test]
+    fn json_without_a_type_or_with_unsupported_arguments_is_an_error_with_a_reason() {
+        for (body, want) in [
+            ("const x = JSON.parse(\"1\"); return 1;", "needs a type"),
+            (
+                "const x: number = JSON.parse(\"1\", (k, v) => v); return x;",
+                "reviver",
+            ),
+            (
+                "return JSON.stringify([1], (k, v) => v).length;",
+                "replacer",
+            ),
+            (
+                "const f = () => 1; return JSON.stringify(f).length;",
+                "not supported",
+            ),
+        ] {
+            let e = lower::lower_source(&format!("export function f(): number {{ {body} }}"))
+                .err()
+                .unwrap_or_default();
+            assert!(e.contains(want), "{body}: {e}");
         }
     }
 

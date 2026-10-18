@@ -31,6 +31,8 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 |---|---|---|---|
 | `Object.freeze` | Returns the object; later writes are not rejected | Writes fail silently (or throw in strict mode) | Structs have no frozen flag |
 | `typeof` of a nullable | A null value reports `"undefined"`; only the literal `typeof null` is `"object"` | `"object"` for null | The compiler does not tell null from undefined |
+| `JSON.parse` | Parses into the static type: fields the type lacks are dropped; a shape mismatch (wrong kind, missing property, string outside a literal union) throws a `TypeError` after the text proved to be valid JSON | Builds whatever the text holds | Values are typed structs, not dictionaries |
+| `JSON.stringify` | Fields in declaration order (array-index keys first), not source order; only `?` fields are omitted when null (a `T \| undefined` field prints `null`); no replacer, reviver or `toJSON` | Own properties in insertion order; `undefined` properties omitted | Keys are fixed at compile time |
 | `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
 
 ## SVG (M3d step 5.1)

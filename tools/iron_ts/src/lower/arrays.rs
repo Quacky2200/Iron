@@ -377,7 +377,7 @@ impl<'a> Lowerer<'a> {
             return self.lower_num_method(recv, m, c);
         }
         if let Ty::Arr(el) = &rty
-            && (**el == Ty::Str || **el == Ty::Num)
+            && (**el == Ty::Str || **el == Ty::Num || **el == Ty::Bool)
             && m == "join"
         {
             return self.lower_join(recv, c);

@@ -76,20 +76,23 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Is this call `JSON.parse(..)`? (It needs the expected type.)
+    pub(crate) fn is_json_parse(c: &CallExpression<'_>) -> bool {
+        matches!(&c.callee, Expression::StaticMemberExpression(m)
+            if m.property.name == "parse"
+                && matches!(&m.object, Expression::Identifier(id) if id.name == "JSON"))
+    }
+
     pub(crate) fn lower_expr(&mut self, e: &'a Expression<'a>, exp: Option<&Ty>) -> R<Expr> {
         match e {
             Expression::NumericLiteral(n) => Ok(num(n.value)),
             Expression::BooleanLiteral(b) => Ok(mk(ExprKind::Bool(b.value), Ty::Bool)),
             Expression::NullLiteral(_) => Ok(mk(ExprKind::Null, Ty::Null)),
             Expression::StringLiteral(s) => {
-                if s.lone_surrogates {
-                    bail!(
-                        "{}: a string literal with a lone surrogate is not supported yet",
-                        self.loc(s.span.start)
-                    )
-                }
-                if matches!(exp.map(|t| t.strip()), Some(Ty::Str)) {
-                    return Ok(self.str_lit(s.value.as_str()));
+                // A literal with a lone surrogate cannot be a union member (tags are UTF-8 text).
+                if s.lone_surrogates || matches!(exp.map(|t| t.strip()), Some(Ty::Str)) {
+                    let bytes = strings::literal_bytes(s.value.as_str(), s.lone_surrogates);
+                    return Ok(self.str_bytes(bytes));
                 }
                 let t = self.tag(s.value.as_str());
                 Ok(mk(ExprKind::Tag(t), Ty::Lit))
@@ -98,6 +101,17 @@ impl<'a> Lowerer<'a> {
             Expression::Identifier(id) => self.lower_ident(id.name.as_str()),
             Expression::ParenthesizedExpression(p) => self.lower_expr(&p.expression, exp),
             Expression::TSAsExpression(a) => {
+                // `JSON.parse(text) as T`: the cast gives the type to build.
+                let mut inner = &a.expression;
+                while let Expression::ParenthesizedExpression(p) = inner {
+                    inner = &p.expression;
+                }
+                if let Expression::CallExpression(c) = inner
+                    && Self::is_json_parse(c)
+                {
+                    let ty = self.ty(&a.type_annotation, "JSON")?;
+                    return self.lower_json_parse(c, Some(&ty));
+                }
                 let v = self.lower_expr(&a.expression, exp)?;
                 // `x as Sub` for classes: the same pointer, seen as the subclass.
                 if let Ok(Ty::Obj(t)) = self.ty(&a.type_annotation, "as")
@@ -156,6 +170,9 @@ impl<'a> Lowerer<'a> {
             Expression::StaticMemberExpression(m) => self.lower_static_member(m),
             Expression::ComputedMemberExpression(m) => self.lower_computed_member(m),
             Expression::ChainExpression(c) => self.lower_chain(c),
+            Expression::CallExpression(c) if Self::is_json_parse(c) => {
+                self.lower_json_parse(c, exp)
+            }
             Expression::CallExpression(c) => self.lower_call(c),
             Expression::NewExpression(n) => self.lower_new(n, exp),
             Expression::ObjectExpression(o) => self.lower_object(o, exp, None),
@@ -447,6 +464,7 @@ impl<'a> Lowerer<'a> {
             .map(|(n, _)| Field {
                 name: n.clone(),
                 ty: Ty::Num,
+                optional: false,
             })
             .collect();
         let sid = self.new_struct(name, fields);
@@ -845,11 +863,16 @@ impl<'a> Lowerer<'a> {
             None => {
                 // The fields in order of first appearance; a later value takes the type.
                 let mut fields: Vec<Field> = Vec::new();
-                let mut upsert =
-                    |name: String, ty: Ty| match fields.iter_mut().find(|f| f.name == name) {
-                        Some(f) => f.ty = ty,
-                        None => fields.push(Field { name, ty }),
-                    };
+                let mut upsert = |name: String, ty: Ty, optional: bool| match fields
+                    .iter_mut()
+                    .find(|f| f.name == name)
+                {
+                    Some(f) => {
+                        f.ty = ty;
+                        f.optional = optional;
+                    }
+                    None => fields.push(Field { name, ty, optional }),
+                };
                 let mut only_spread = None;
                 for it in &items {
                     match it {
@@ -859,12 +882,14 @@ impl<'a> Lowerer<'a> {
                             };
                             only_spread = Some(*s);
                             for f in &self.m.structs[*s].fields {
-                                upsert(f.name.clone(), f.ty.clone());
+                                upsert(f.name.clone(), f.ty.clone(), f.optional);
                             }
                         }
-                        Item::Prop(n, v) => {
-                            upsert(n.clone(), record.cloned().unwrap_or_else(|| v.ty.clone()))
-                        }
+                        Item::Prop(n, v) => upsert(
+                            n.clone(),
+                            record.cloned().unwrap_or_else(|| v.ty.clone()),
+                            false,
+                        ),
                     }
                 }
                 let single_spread = items.len() == 1 && matches!(items[0], Item::Spread(_));
@@ -1492,6 +1517,16 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Number").is_none()
                 {
                     return self.lower_number_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "JSON"
+                    && self.lookup("JSON").is_none()
+                {
+                    return match method {
+                        "stringify" => self.lower_json_stringify(c),
+                        "parse" => self.lower_json_parse(c, None),
+                        m => bail!("{}: JSON.{m} is not supported", self.loc(c.span.start)),
+                    };
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Object"

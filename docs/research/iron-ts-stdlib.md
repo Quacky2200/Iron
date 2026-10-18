@@ -7,9 +7,10 @@ Object and anything other common JS you can think of, perhaps RegExp / `.match`"
 Status (2026-10-18): tier 1 is done, steps A-H: `throw`, `try`/`catch`/`finally` and the Error classes
 (section 4.1; see "Exceptions" in [../iron-ts.md](../iron-ts.md)), `join` of number arrays, `typeof`, the
 `Number`/`Math`/`Array` gaps, `console`, and `Object.*` with object spread and rest (see "Standard library
-tier 1, steps E-H" there; tests M9-TS-199..205). Tier 2 is half done: `Map`/`Set`/`WeakMap`/`WeakSet` are built (an insertion-ordered
-hash table with live, exact iteration; see "Standard library tier 2" in [../iron-ts.md](../iron-ts.md);
-tests M9-TS-206..214). Next: `JSON`.
+tier 1, steps E-H" there; tests M9-TS-199..205). Tier 2 is done: `Map`/`Set`/`WeakMap`/`WeakSet` (an insertion-ordered
+hash table with live, exact iteration; tests M9-TS-206..214) and `JSON.stringify`/`JSON.parse` driven
+by the static types, with JavaScriptCore's parse errors (tests M9-TS-215..221); see "Standard library
+tier 2" in [../iron-ts.md](../iron-ts.md). Next: tier 3 (`RegExp`, `Date`, `Intl`).
 The tables below describe the state before this work.
 
 ## 1. The rule

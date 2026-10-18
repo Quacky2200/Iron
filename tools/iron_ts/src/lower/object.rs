@@ -196,16 +196,15 @@ impl<'a> Lowerer<'a> {
             .into_iter()
             .filter(|(n, _, _)| !taken.contains(n))
             .collect();
-        let rsid = self.anon_struct(
-            "Anon",
-            fields
-                .iter()
-                .map(|(n, t, _)| Field {
-                    name: n.clone(),
-                    ty: t.clone(),
-                })
-                .collect(),
-        );
+        let rest_fields: Vec<Field> = fields
+            .iter()
+            .map(|(n, t, i)| Field {
+                name: n.clone(),
+                ty: t.clone(),
+                optional: self.m.structs[sid].fields[*i].optional,
+            })
+            .collect();
+        let rsid = self.anon_struct("Anon", rest_fields);
         let rty = Ty::Obj(rsid);
         let r = self.new_local(rty.clone());
         let mut stmts = vec![Stmt::Assign(r, mk(ExprKind::NewObj(rsid), rty.clone()))];

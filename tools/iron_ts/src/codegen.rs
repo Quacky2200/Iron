@@ -43,18 +43,28 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
 }
 
 /// Defines a static string object: header (a string, no heap), lengths, flags, cursor, bytes.
-fn define_static_str(module: &mut ObjectModule, name: &str, text: &str) -> R<DataId> {
+fn define_static_str(module: &mut ObjectModule, name: &str, bytes: &[u8]) -> R<DataId> {
     let id = module
         .declare_data(name, Linkage::Local, true, false)
         .map_err(|e| e.to_string())?;
-    let bytes = text.as_bytes();
     let ascii = bytes.is_ascii();
-    let units = if ascii {
-        bytes.len()
+    // UTF-16 units: a continuation byte counts none, a four-byte lead two.
+    let units: usize = bytes
+        .iter()
+        .map(|&x| match x {
+            0x80..=0xBF => 0,
+            0xF0.. => 2,
+            _ => 1,
+        })
+        .sum();
+    let lone_surrogate = bytes.windows(2).any(|w| w[0] == 0xED && w[1] >= 0xA0);
+    let flags: u64 = if ascii {
+        3
+    } else if lone_surrogate {
+        0
     } else {
-        text.encode_utf16().count()
+        2
     };
-    let flags: u64 = if ascii { 3 } else { 2 };
     let mut b: Vec<u8> = Vec::with_capacity(48 + bytes.len());
     b.extend_from_slice(&0xA11A_0003u64.to_le_bytes());
     b.extend_from_slice(&(bytes.len() as i64).to_le_bytes());
@@ -213,6 +223,29 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
             text,
         )?);
     }
+    // Blobs (JSON type descriptors): read-only bytes.
+    let mut bdata: Vec<DataId> = Vec::new();
+    for (i, blob) in m.blobs.iter().enumerate() {
+        let id = module
+            .declare_data(
+                &format!("ts_b_{}{}", m.prefix, i),
+                Linkage::Local,
+                false,
+                false,
+            )
+            .map_err(|e| e.to_string())?;
+        let mut d = DataDescription::new();
+        let mut bytes = blob.bytes.clone();
+        for at in &blob.headers {
+            let v =
+                u64::from_le_bytes(bytes[*at..*at + 8].try_into().unwrap()) + m.struct_base as u64;
+            bytes[*at..*at + 8].copy_from_slice(&v.to_le_bytes());
+        }
+        d.define(bytes.into_boxed_slice());
+        d.set_align(8);
+        module.define_data(id, &d).map_err(|e| e.to_string())?;
+        bdata.push(id);
+    }
     // The text of every tag, for `TagStr`.
     let mut tagtab = None;
     if !m.tags.is_empty() {
@@ -221,7 +254,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
             tag_strs.push(define_static_str(
                 &mut module,
                 &format!("ts_t_{}{}", m.prefix, i),
-                text,
+                text.as_bytes(),
             )?);
         }
         let id = module
@@ -293,6 +326,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 vtdata: &vtdata,
                 itdata: &itdata,
                 sdata: &sdata,
+                bdata: &bdata,
                 tagtab,
                 imports: &mut imports,
                 exc_stack: Vec::new(),
@@ -344,6 +378,7 @@ struct Cg<'a, 'b> {
     itdata: &'a [DataId],
     /// Static strings (`ExprKind::Str`) and the table of the tags' strings.
     sdata: &'a [DataId],
+    bdata: &'a [DataId],
     tagtab: Option<DataId>,
     imports: &'a mut HashMap<&'static str, CFuncId>,
     /// The handlers of the `try` blocks being generated, innermost last.
@@ -733,6 +768,12 @@ impl Cg<'_, '_> {
                 let gv = self
                     .module
                     .declare_data_in_func(self.sdata[*i as usize], self.b.func);
+                self.b.ins().symbol_value(types::I64, gv)
+            }
+            ExprKind::Blob(i) => {
+                let gv = self
+                    .module
+                    .declare_data_in_func(self.bdata[*i as usize], self.b.func);
                 self.b.ins().symbol_value(types::I64, gv)
             }
             ExprKind::Bits(a) => {

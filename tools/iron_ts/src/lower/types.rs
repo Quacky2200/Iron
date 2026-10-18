@@ -23,7 +23,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn anon_struct(&mut self, name: &str, fields: Vec<Field>) -> StructId {
         let key = fields
             .iter()
-            .map(|f| format!("{}:{}", f.name, f.ty))
+            .map(|f| format!("{}:{}{}", f.name, f.ty, if f.optional { "?" } else { "" }))
             .collect::<Vec<_>>()
             .join(",");
         if let Some(id) = self.shapes.get(&key) {
@@ -139,7 +139,11 @@ impl<'a> Lowerer<'a> {
             if p.optional {
                 ty = ty.nullable();
             }
-            fields.push(Field { name, ty });
+            fields.push(Field {
+                name,
+                ty,
+                optional: p.optional,
+            });
         }
         Ok(fields)
     }

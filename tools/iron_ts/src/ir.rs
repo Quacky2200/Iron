@@ -94,6 +94,8 @@ impl Ty {
 pub struct Field {
     pub name: String,
     pub ty: Ty,
+    /// Declared with `?`: `JSON.stringify` leaves it out when it is null.
+    pub optional: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -222,6 +224,8 @@ pub enum ExprKind {
     /// boolean); `Unbits` takes it back, typed by the expression's type.
     Bits(Box<Expr>),
     Unbits(Box<Expr>),
+    /// The address of a blob (index into `Module::blobs`).
+    Blob(u32),
     /// A union member (a `Tag`) as a `string`: a lookup in the table of the tags' texts.
     TagStr(Box<Expr>),
     /// `null`: a zero pointer or the null NaN, depending on `ty`.
@@ -380,6 +384,15 @@ pub struct PropTable {
     pub entries: Vec<PropEntry>,
 }
 
+/// Bytes in the object file. `headers` are the offsets of 8-byte struct header words that were
+/// written as struct id + 1: the module's `struct_base` is added at code generation, when it is
+/// known.
+#[derive(Clone, Debug, Default)]
+pub struct Blob {
+    pub bytes: Vec<u8>,
+    pub headers: Vec<usize>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Module {
     pub structs: Vec<StructDef>,
@@ -392,8 +405,10 @@ pub struct Module {
     pub funcs: Vec<Func>,
     /// String-literal union members; a `Tag` is an index here.
     pub tags: Vec<String>,
-    /// String literals used as `string` values (static data in the object file).
-    pub strs: Vec<String>,
+    /// String literals used as `string` values (static data in the object file), as WTF-8 bytes.
+    pub strs: Vec<Vec<u8>>,
+    /// Byte strings in the object file (JSON type descriptors).
+    pub blobs: Vec<Blob>,
     /// Per function: can it throw (see `throws.rs`)? Calls to those are followed by a check.
     pub may_throw: Vec<bool>,
     /// Does any function throw? Closure and virtual calls are checked only if so.
@@ -514,6 +529,7 @@ fn ex(e: &Expr) -> String {
         ExprKind::Bool(b) => format!("{b}"),
         ExprKind::Tag(t) => format!("tag{t}"),
         ExprKind::Str(i) => format!("str#{i}"),
+        ExprKind::Blob(i) => format!("blob#{i}"),
         ExprKind::Bits(a) => format!("bits({})", ex(a)),
         ExprKind::Unbits(a) => format!("unbits({})", ex(a)),
         ExprKind::TagStr(a) => format!("tagstr({})", ex(a)),

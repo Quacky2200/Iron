@@ -1018,9 +1018,11 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 
 // ---- strings: see string.rs ----
 
+mod json;
 mod map;
 mod string;
 mod string_more;
+pub use json::*;
 pub use map::*;
 pub use string::*;
 pub use string_more::*;
@@ -1186,6 +1188,8 @@ pub fn link_anchor() -> usize {
         ts_rt_str_split_gc as *const () as usize,
         ts_rt_str_join_gc as *const () as usize,
         ts_rt_map_new_gc as *const () as usize,
+        ts_rt_json_stringify_gc as *const () as usize,
+        ts_rt_json_parse_gc as *const () as usize,
         ts_rt_map_find as *const () as usize,
         ts_rt_map_set as *const () as usize,
         ts_rt_map_delete as *const () as usize,
@@ -1203,6 +1207,7 @@ pub fn link_anchor() -> usize {
         ts_rt_error_kind as *const () as usize,
         ts_rt_error_message_gc as *const () as usize,
         ts_rt_str_join_nums_gc as *const () as usize,
+        ts_rt_str_join_bools_gc as *const () as usize,
         ts_rt_num_to_str_gc as *const () as usize,
         ts_rt_num_to_fixed_gc as *const () as usize,
         ts_rt_num_to_radix_gc as *const () as usize,

@@ -692,6 +692,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-212 | Integration | Iteration is live: deleted-before-reached entries are skipped, added entries are visited, the table rebuilds under the loop (`tests/collections.rs`). |
 | M9-TS-213 | Integration | Two thousand string keys with deletes and adds under a collection at every allocation, and `WeakMap`/`WeakSet` (`tests/collections.rs`). |
 | M9-TS-214 | Unit | Collections without a type, `entries()` outside `for...of`, `Map.get` over booleans and a `Map` as a key are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-215 | Integration | `JSON.stringify` of objects, arrays, escapes, lone surrogates, `NaN`/`-0`/exponents, booleans, empty collections, with and without indentation equals bun's (`iron_ts_tests/tests/json.rs`, `bench/json.ts`, expected data from `bench/gen_json_expected.ts`). |
+| M9-TS-216 | Integration | Optional fields are left out when absent, `T \| null` prints `null`, a subclass instance prints its own fields (`tests/json.rs`). |
+| M9-TS-217 | Integration | `JSON.parse` into typed objects (unknown fields skipped, surrogate pairs from escapes, optional fields), arrays, nullable numbers and literal unions, and back through `stringify`, equals bun's (`tests/json.rs`). |
+| M9-TS-218 | Integration | Sixty-seven malformed texts raise a `SyntaxError` with bun's text (`tests/json.rs`). |
+| M9-TS-219 | Integration | Three hundred objects stringified, parsed and stringified again under a collection at every allocation (`tests/json.rs`). |
+| M9-TS-220 | Integration | A shape mismatch is a `TypeError`, and a syntax error anywhere wins over it (`tests/json.rs`). |
+| M9-TS-221 | Unit | `JSON.parse` without a type, with a reviver, `stringify` with a replacer and of a function are compile errors with a reason (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

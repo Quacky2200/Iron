@@ -126,10 +126,15 @@ fn str_method(name: &str) -> Option<StrFn> {
 impl<'a> Lowerer<'a> {
     /// A string literal as a `string`: a static object.
     pub(crate) fn str_lit(&mut self, text: &str) -> Expr {
-        let i = match self.m.strs.iter().position(|s| s == text) {
+        self.str_bytes(text.as_bytes().to_vec())
+    }
+
+    /// A string literal from WTF-8 bytes (a literal with lone surrogates is not valid UTF-8).
+    pub(crate) fn str_bytes(&mut self, bytes: Vec<u8>) -> Expr {
+        let i = match self.m.strs.iter().position(|s| *s == bytes) {
             Some(i) => i,
             None => {
-                self.m.strs.push(text.to_string());
+                self.m.strs.push(bytes);
                 self.m.strs.len() - 1
             }
         };
@@ -144,6 +149,11 @@ impl<'a> Lowerer<'a> {
     /// call, then a check of the recorded error that throws it as an exception.
     fn rt_str_checked(&mut self, sym: &'static str, args: Vec<Expr>, ty: Ty) -> Expr {
         let call = self.rt_str(sym, args, ty.clone());
+        self.checked(call, ty)
+    }
+
+    /// `call`, then a check of the runtime error it may have recorded, thrown as an exception.
+    pub(crate) fn checked(&mut self, call: Expr, ty: Ty) -> Expr {
         let Some(&fid) = self.fids.get("__rtThrow") else {
             return call;
         };
@@ -383,6 +393,8 @@ impl<'a> Lowerer<'a> {
         };
         let sym = if matches!(recv.ty.strip(), Ty::Arr(el) if **el == Ty::Num) {
             "ts_rt_str_join_nums_gc"
+        } else if matches!(recv.ty.strip(), Ty::Arr(el) if **el == Ty::Bool) {
+            "ts_rt_str_join_bools_gc"
         } else {
             "ts_rt_str_join_gc"
         };
@@ -676,4 +688,59 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn str_length(&self, s: Expr) -> Expr {
         self.rt_str("ts_rt_str_length", vec![s], Ty::Num)
     }
+}
+
+/// The WTF-8 bytes of a string literal. oxc writes a lone surrogate as U+FFFD followed by its
+/// code unit in four hex digits (and a real U+FFFD as U+FFFD `fffd`) when `lone` is set.
+pub(crate) fn literal_bytes(value: &str, lone: bool) -> Vec<u8> {
+    if !lone {
+        return value.as_bytes().to_vec();
+    }
+    let mut units: Vec<u16> = Vec::new();
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{FFFD}' {
+            let hex: String = (0..4).filter_map(|_| chars.next()).collect();
+            units.push(u16::from_str_radix(&hex, 16).unwrap_or(0xFFFD));
+        } else {
+            let mut buf = [0u16; 2];
+            units.extend_from_slice(c.encode_utf16(&mut buf));
+        }
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < units.len() {
+        let x = units[i] as u32;
+        let cp = if (0xD800..0xDC00).contains(&x)
+            && units
+                .get(i + 1)
+                .is_some_and(|y| (0xDC00..0xE000).contains(&(*y as u32)))
+        {
+            i += 1;
+            0x10000 + ((x - 0xD800) << 10) + (units[i] as u32 - 0xDC00)
+        } else {
+            x
+        };
+        i += 1;
+        // WTF-8: like UTF-8, but a surrogate code point gets its three-byte form.
+        if cp < 0x80 {
+            out.push(cp as u8);
+        } else if cp < 0x800 {
+            out.extend_from_slice(&[0xC0 | (cp >> 6) as u8, 0x80 | (cp & 0x3F) as u8]);
+        } else if cp < 0x10000 {
+            out.extend_from_slice(&[
+                0xE0 | (cp >> 12) as u8,
+                0x80 | ((cp >> 6) & 0x3F) as u8,
+                0x80 | (cp & 0x3F) as u8,
+            ]);
+        } else {
+            out.extend_from_slice(&[
+                0xF0 | (cp >> 18) as u8,
+                0x80 | ((cp >> 12) & 0x3F) as u8,
+                0x80 | ((cp >> 6) & 0x3F) as u8,
+                0x80 | (cp & 0x3F) as u8,
+            ]);
+        }
+    }
+    out
 }
