@@ -139,6 +139,8 @@ pub struct Lowerer<'a> {
     /// 0 declared, 1 being lowered, 2 done.
     pub(crate) fstate: Vec<u8>,
     pub(crate) consts: HashMap<String, ConstInfo>,
+    /// The engine API scripts may call (`Namespace.fn(..)`) and its handle types.
+    pub(crate) manifest: crate::manifest::Manifest,
     /// Class declarations by name, and what is known about each once its struct exists.
     pub(crate) class_decls: HashMap<String, &'a Class<'a>>,
     pub(crate) classes: HashMap<String, classes::ClassInfo>,
@@ -158,6 +160,15 @@ pub struct Lowerer<'a> {
 
 /// Parses and lowers one TypeScript module.
 pub fn lower_source(src: &str) -> R<Module> {
+    lower_source_with(src, &[])
+}
+
+/// Like `lower_source`, with engine API manifests (JSON, one per namespace).
+pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
+    let mut manifest = crate::manifest::Manifest::default();
+    for m in manifests {
+        manifest.add_json(m)?;
+    }
     let alloc = Allocator::default();
     let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
     if !ret.diagnostics.is_empty() {
@@ -177,6 +188,7 @@ pub fn lower_source(src: &str) -> R<Module> {
         fsig: Vec::new(),
         fstate: Vec::new(),
         consts: HashMap::new(),
+        manifest,
         class_decls: HashMap::new(),
         classes: HashMap::new(),
         class_of_sid: HashMap::new(),

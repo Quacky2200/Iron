@@ -1,5 +1,5 @@
 //! `iron_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]
-//! [--prefix p_] [--struct-base N]`:
+//! [--prefix p_] [--struct-base N] [--manifest api.json]...`:
 //! compile a TypeScript module to an object file. `--time N` repeats the compile N times and
 //! prints the best time of each phase.
 fn main() {
@@ -22,7 +22,13 @@ fn main() {
     let base = flag("--struct-base")
         .and_then(|b| b.parse().ok())
         .unwrap_or(0);
-    let compile = || match iron_ts::compile_with(&src, &opt, &prefix, base) {
+    // `--manifest file.json` (repeatable): the engine API the source may call.
+    let manifests: Vec<String> = args
+        .windows(2)
+        .filter(|w| w[0] == "--manifest")
+        .map(|w| std::fs::read_to_string(&w[1]).expect("read manifest"))
+        .collect();
+    let compile = || match iron_ts::compile_with_manifests(&src, &opt, &prefix, base, &manifests) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("error: {e}");

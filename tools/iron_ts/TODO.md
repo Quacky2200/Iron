@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **141**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **147**).
 
 ## How to pick this up
 
@@ -62,10 +62,10 @@ cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 | `iron_ts/src/codegen.rs` | IR to Cranelift object (frames, spills, `eval_args`, registration in `ts_init`) |
 | `iron_ts/src/layout.rs` | generated Rust bindings (`HDR_*`, `TAG_*`, structs, `extern "C"`) |
 | `iron_ts_rt/src/lib.rs` | GC heap, roots, arrays/strings/closures/cells, libm calls |
-| `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props}.rs`; `src/bin/{bench,sine_bench}.rs` |
+| `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props,engine}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props,engine}.rs`; `src/bin/{bench,sine_bench}.rs` |
 
 Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name, prefix, struct_base)`
-(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, mathlib 9000, arraylib 10000, classes 11000, inherit 12000, props 13000, next 14000), a `pub mod` in
+(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, mathlib 9000, arraylib 10000, classes 11000, inherit 12000, engine 14000, next 15000), a `pub mod` in
 `src/lib.rs`, a test file. Expected numbers come from running the same TS in bun.
 
 ## Rules we decided (do not undo without asking)
@@ -83,16 +83,17 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Done:** plain classes, inheritance, bound methods, `@property` tables (`M9-TS-111..140`); the first slice of
-`#[iron_api]` in the engine workspace (`crates/iron_api`, `M9-API-01..06`).
+**Done:** the compiler calls an `#[iron_api]` namespace directly (`M9-TS-142..146`, boundary note section 15), on top
+of the first `iron_api` slice (`M9-API-01..06`).
 
 Next, in order:
 
-1. **The compiler reads the manifest** (engine-boundary note sub-task 2): `--manifest file.json`, a `Demo.add(1, 2)`
-   call becomes an extern call to `iron_Demo_add`, a `Handle` IR type (`i64`, not a GC pointer), f32/i32/u32/bool
-   conversions at the call. Test it end to end by linking `iron_api` (without the `quickjs` feature) into `iron_ts_tests`.
-2. Value classes across the boundary, then the engine context and annotating the real crates (boundary note section 14).
-3. `typeof`, class expressions; extending an engine class (`Component`) once 1-2 exist.
+1. **Value classes across the boundary** (`Vector3` scalarised: parameters expand to scalars, results written through an
+   out-pointer into a caller-allocated object), then **strings** (needs the strings decision) and **methods on handles**
+   (`transform.position` as a call with the receiver).
+2. **The engine context and the real crates:** design how shims reach the world (a thread-local current world is the
+   simplest), annotate `iron_scene`/`iron_physics`/`iron_audio`/`iron_script`, retire their ops (not `iron_render`/`iron_app`).
+3. Extending an engine class (`Component`) and the compiled-component vertical slice; `typeof`, class expressions.
 
 Still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun, strings. Fillers: IR
 verifier for the GC root rule, differential harness against bun.
@@ -119,6 +120,8 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
   defaults via `Cond(IsNull)` (spike doc section 14.1). Rest elements and assignment patterns are open.
 - 2026-10-18 `switch` and enums (`M9-TS-64..70`): clause index then ordered bodies (fall-through, default
   anywhere), enums folded to constants, bit-operation constant folding (spike doc section 13).
+- 2026-10-18 The compiler calls the engine API (`M9-TS-142..146`): `--manifest`, `CallExtern`, `Ty::Handle`, number conversions at the call;
+  `tools/iron_demo_api` proves it end to end. Rule found: a live handle is never 0.
 - 2026-10-18 `#[iron_api]` first slice in the engine workspace (`crates/iron_api`, `iron_api_macros`; `M9-API-01..06`): manifest,
   `.d.ts`, JSON, `extern "C"` shims, typed QuickJS bindings (150 ns a call against 245 ns for a simplified op).
 - 2026-10-18 `@property` reflection tables (`M9-TS-139, 140`): compile-time metadata, a generated `PROPS_<Class>` constant per class.

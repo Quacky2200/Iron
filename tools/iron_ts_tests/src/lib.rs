@@ -157,6 +157,24 @@ pub mod prop {
     include!(concat!(env!("OUT_DIR"), "/props_bindings.rs"));
 }
 
+/// Scripts calling an engine API (`bench/engine.ts`), prefix `eng_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod eng {
+    include!(concat!(env!("OUT_DIR"), "/engine_bindings.rs"));
+}
+
+/// Uses the demo engine API, so that every binary linking this crate also links its shims (the
+/// `engine` module's object calls them, and the linker only takes a crate that something uses).
+pub fn demo_api_anchor() -> usize {
+    iron_demo_api::link_anchor()
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

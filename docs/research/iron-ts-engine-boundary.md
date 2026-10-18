@@ -329,3 +329,31 @@ sets up, for example a thread-local current world; that design is open), and ann
 engine crates. The crates that carry ops today are `iron_scene`, `iron_physics`, `iron_audio` and
 `iron_script`; `render.*`, `app.*`, `cursor.*` and `screen.*` live in `iron_render` and `iron_app`
 and are left for their owner.
+
+## 15. The compiler calls the engine API: built (2026-10-18)
+
+Sub-task 2 of section 12, in its first form (`M9-TS-142`..`146`). A TypeScript module compiled with
+the manifest of an `#[iron_api]` namespace calls it directly.
+
+- `iron_ts --manifest api.json` (or `compile_with_manifests`) reads the JSON `Namespace::to_json`
+  writes (`tools/iron_ts/src/manifest.rs`). `Demo.scale(3, 4)` becomes `CallExtern`, an import of the
+  symbol `iron_Demo_scale` with the manifest's C signature: no op, no `Value`, no name lookup.
+- Numbers stay `f64` in scripts and are converted **at the call**: `f32` demotes on the way in and
+  promotes on the way out; `i32`/`u32` take a saturating, truncating conversion (`-5.7` becomes `-5`,
+  as `as i32` does in Rust); `bool` is a byte.
+- **`Ty::Handle(name)`** is the new IR type for an engine object id: a 64-bit integer, never a GC
+  pointer (not traced, not rooted, `===` compares ids). It works in locals, parameters, object
+  fields, arrays, `T | null` and closure cells. In a `T | null` slot, **0 is null, so no live
+  handle may ever be 0** (the first version of the demo API handed out id 0 for its first entity and
+  `if (target === null)` caught it; generations now start at 1). This is a rule for every engine
+  handle type.
+- An engine function is assumed not to call back into scripts and so not to allocate in the script
+  heap: `CallExtern` is not an allocation point in the frame plan. The first engine function that runs
+  a script hook changes that (closures to Rust, section 6).
+- The end-to-end proof is `tools/iron_demo_api` (a small world of entities written with
+  `#[iron_api]`) linked into `iron_ts_tests`, whose `build.rs` compiles `bench/engine.ts` with that
+  crate's manifest. Every test runs normally, in stress GC mode and with collection off.
+
+Not built yet: value classes across the boundary, strings, methods on handles (`transform.position`),
+the engine context the real shims will reach the world through, and annotating `iron_scene` and the
+other engine crates.

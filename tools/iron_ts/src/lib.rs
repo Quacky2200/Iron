@@ -6,6 +6,7 @@ pub mod frames;
 pub mod ir;
 pub mod layout;
 pub mod lower;
+pub mod manifest;
 
 /// What a compile produced.
 pub struct Output {
@@ -35,20 +36,40 @@ pub fn compile_with(
     prefix: &str,
     struct_base: u32,
 ) -> Result<Output, String> {
+    compile_with_manifests(src, opt, prefix, struct_base, &[])
+}
+
+/// Like `compile_with`, with engine API manifests (the JSON `iron_api` generates): the TypeScript
+/// can call `Namespace.function(...)` and the call is a direct call of the function's symbol.
+pub fn compile_with_manifests(
+    src: &str,
+    opt: &str,
+    prefix: &str,
+    struct_base: u32,
+    manifests: &[String],
+) -> Result<Output, String> {
     // Lowering recurses with the source's nesting; the main thread's 1 MiB is too little on Windows.
     std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(64 << 20)
-            .spawn_scoped(s, || compile_inner(src, opt, prefix, struct_base))
+            .spawn_scoped(s, || {
+                compile_inner(src, opt, prefix, struct_base, manifests)
+            })
             .map_err(|e| e.to_string())?
             .join()
             .map_err(|_| "compiler panicked".to_string())?
     })
 }
 
-fn compile_inner(src: &str, opt: &str, prefix: &str, struct_base: u32) -> Result<Output, String> {
+fn compile_inner(
+    src: &str,
+    opt: &str,
+    prefix: &str,
+    struct_base: u32,
+    manifests: &[String],
+) -> Result<Output, String> {
     let t0 = std::time::Instant::now();
-    let mut module = lower::lower_source(src)?;
+    let mut module = lower::lower_source_with(src, manifests)?;
     module.prefix = prefix.to_string();
     module.struct_base = struct_base;
     let lower_time = t0.elapsed();
@@ -281,5 +302,42 @@ mod tests {
         .err()
         .unwrap();
         assert!(inst.contains("instanceof"), "{inst}");
+    }
+
+    // M9-TS-146
+    #[test]
+    fn calls_of_the_engine_api_are_checked_against_the_manifest() {
+        let manifest = r#"{"namespace":"Eng","handles":["Thing"],"functions":[
+            {"name":"add","symbol":"iron_Eng_add","params":[{"name":"a","type":"f64"},{"name":"b","type":"f64"}],"returns":"f64"},
+            {"name":"make","symbol":"iron_Eng_make","params":[],"returns":"handle:Thing"}]}"#
+            .to_string();
+        let ok = lower::lower_source_with(
+            "export function f(): number { const t: Thing = Eng.make(); return Eng.add(1, 2) + (t === Eng.make() ? 1 : 0); }",
+            std::slice::from_ref(&manifest),
+        )
+        .unwrap();
+        // `make` is used twice but declared once.
+        let mut symbols: Vec<&str> = ok.externs.iter().map(|d| d.symbol.as_str()).collect();
+        symbols.sort();
+        assert_eq!(symbols, ["iron_Eng_add", "iron_Eng_make"]);
+        let missing = lower::lower_source_with(
+            "export function f(): number { return Eng.nope(1); }",
+            std::slice::from_ref(&manifest),
+        )
+        .err()
+        .unwrap();
+        assert!(missing.contains("no function `nope`"), "{missing}");
+        let count = lower::lower_source_with(
+            "export function f(): number { return Eng.add(1); }",
+            std::slice::from_ref(&manifest),
+        )
+        .err()
+        .unwrap();
+        assert!(count.contains("1 arguments, 2 expected"), "{count}");
+        let bad =
+            lower::lower_source_with("export function f(): number { return 1; }", &["{".into()])
+                .err()
+                .unwrap();
+        assert!(bad.contains("manifest"), "{bad}");
     }
 }

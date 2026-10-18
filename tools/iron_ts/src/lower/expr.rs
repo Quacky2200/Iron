@@ -372,6 +372,44 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `Namespace.fn(args)` for a function of the engine API: a direct call of its symbol, with
+    /// the arguments checked against the manifest and numbers converted at the call.
+    fn lower_extern_call(&mut self, ns: &str, name: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        let Some(f) = self.manifest.namespaces[ns].get(name).cloned() else {
+            bail!("{}: {ns} has no function `{name}`", self.loc(c.span.start))
+        };
+        if c.arguments.len() != f.params.len() {
+            bail!(
+                "{}: {ns}.{name}: {} arguments, {} expected",
+                self.loc(c.span.start),
+                c.arguments.len(),
+                f.params.len()
+            )
+        }
+        let mut args = Vec::new();
+        for (a, (_, pt)) in c.arguments.iter().zip(&f.params) {
+            let Some(e) = a.as_expression() else {
+                bail!("{ns}.{name}: spread argument")
+            };
+            let want = pt.to_ir();
+            let v = self.lower_expr(e, Some(&want))?;
+            args.push(self.coerce(v, &want)?);
+        }
+        let decl = ExternDecl {
+            symbol: f.symbol.clone(),
+            params: f.params.iter().map(|(_, t)| t.clone()).collect(),
+            ret: f.ret.clone(),
+        };
+        let idx = match self.m.externs.iter().position(|d| d.symbol == decl.symbol) {
+            Some(i) => i,
+            None => {
+                self.m.externs.push(decl);
+                self.m.externs.len() - 1
+            }
+        };
+        Ok(mk(ExprKind::CallExtern(idx, args), f.ret.to_ir()))
+    }
+
     /// `x instanceof C` for a class `C` of this program: a header test against the table of `C`
     /// and its subclasses.
     fn lower_instanceof(&mut self, b: &'a BinaryExpression<'a>) -> R<Expr> {
@@ -1178,6 +1216,12 @@ impl<'a> Lowerer<'a> {
                 }
                 if matches!(m.object, Expression::Super(_)) {
                     return self.lower_super_method(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && self.lookup(id.name.as_str()).is_none()
+                    && self.manifest.namespaces.contains_key(id.name.as_str())
+                {
+                    return self.lower_extern_call(id.name.as_str(), method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()

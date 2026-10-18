@@ -38,6 +38,8 @@ pub enum Ty {
     /// A variable shared by closures: a heap box holding one value of the inner type.
     Cell(Box<Ty>),
     Nullable(Box<Ty>),
+    /// An engine object named by a 64-bit id (`Entity`): a plain integer, never a GC pointer.
+    Handle(String),
     /// Reserved: any dynamic value (not produced by the spike's lowering yet).
     JsValue,
 }
@@ -237,6 +239,8 @@ pub enum ExprKind {
     /// A call through a table of functions indexed by the receiver's struct id; the receiver is
     /// the first argument. See `Module::vtables`.
     CallVirtual(usize, Vec<Expr>),
+    /// A call of an engine function (`Module::externs[i]`) through its `extern "C"` symbol.
+    CallExtern(usize, Vec<Expr>),
     /// Is the object (a class instance, or null) an instance of one of the structs in
     /// `Module::itables[i]`?
     InstanceOf(Box<Expr>, usize),
@@ -287,6 +291,38 @@ pub struct VTable {
     pub entries: Vec<(StructId, FuncId)>,
 }
 
+/// A type at the engine boundary (the C ABI of an `iron_api` function).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExtTy {
+    Void,
+    Bool,
+    F64,
+    F32,
+    I32,
+    U32,
+    Handle(String),
+}
+
+impl ExtTy {
+    /// The IR type scripts see: every number is an `f64`.
+    pub fn to_ir(&self) -> Ty {
+        match self {
+            ExtTy::Void => Ty::Void,
+            ExtTy::Bool => Ty::Bool,
+            ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => Ty::Num,
+            ExtTy::Handle(n) => Ty::Handle(n.clone()),
+        }
+    }
+}
+
+/// An engine function the module calls.
+#[derive(Clone, Debug)]
+pub struct ExternDecl {
+    pub symbol: String,
+    pub params: Vec<ExtTy>,
+    pub ret: ExtTy,
+}
+
 /// One `@property` field of a class.
 #[derive(Clone, Debug)]
 pub struct PropEntry {
@@ -308,6 +344,7 @@ pub struct Module {
     pub structs: Vec<StructDef>,
     pub globals: Vec<Global>,
     pub vtables: Vec<VTable>,
+    pub externs: Vec<ExternDecl>,
     pub props: Vec<PropTable>,
     /// For `instanceof`: the structs that count as instances.
     pub itables: Vec<Vec<StructId>>,
@@ -340,6 +377,7 @@ impl fmt::Display for Ty {
             Ty::Fn(t) => write!(f, "fn({} params)->{}", t.params.len(), t.ret),
             Ty::Cell(t) => write!(f, "cell<{t}>"),
             Ty::Nullable(t) => write!(f, "{t}?"),
+            Ty::Handle(n) => write!(f, "handle:{n}"),
             Ty::JsValue => write!(f, "js"),
         }
     }
@@ -434,6 +472,10 @@ fn ex(e: &Expr) -> String {
         ExprKind::NewObj(s) => format!("new#{s}"),
         ExprKind::Call(f, a) => format!(
             "call#{f}({})",
+            a.iter().map(ex).collect::<Vec<_>>().join(", ")
+        ),
+        ExprKind::CallExtern(i, a) => format!(
+            "calle#{i}({})",
             a.iter().map(ex).collect::<Vec<_>>().join(", ")
         ),
         ExprKind::CallVirtual(t, a) => format!(

@@ -144,7 +144,12 @@ impl Namespace {
 
     /// The manifest as JSON: what the compiler reads to call each function directly.
     pub fn to_json(&self) -> String {
-        let mut s = format!("{{\"namespace\":{},\"functions\":[", json_str(self.name));
+        let handles: Vec<String> = self.handles.iter().map(|h| json_str(h)).collect();
+        let mut s = format!(
+            "{{\"namespace\":{},\"handles\":[{}],\"functions\":[",
+            json_str(self.name),
+            handles.join(",")
+        );
         for (i, f) in self.functions.iter().enumerate() {
             if i > 0 {
                 s.push(',');

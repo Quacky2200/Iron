@@ -172,9 +172,10 @@ fn children(e: &Expr) -> Vec<&Expr> {
         | ExprKind::Or(a, b)
         | ExprKind::Index(a, b) => vec![a, b],
         ExprKind::Cond(c, a, b) => vec![c, a, b],
-        ExprKind::Call(_, args) | ExprKind::CallVirtual(_, args) | ExprKind::Rt(_, args) => {
-            args.iter().collect()
-        }
+        ExprKind::Call(_, args)
+        | ExprKind::CallVirtual(_, args)
+        | ExprKind::CallExtern(_, args)
+        | ExprKind::Rt(_, args) => args.iter().collect(),
         ExprKind::CallClosure(c, args) => std::iter::once(&**c).chain(args.iter()).collect(),
         ExprKind::Seq(_, v) => vec![v],
         ExprKind::NewCell(a) | ExprKind::CellGet(a) => vec![a],
@@ -185,7 +186,10 @@ fn children(e: &Expr) -> Vec<&Expr> {
 
 fn count_expr(e: &Expr, n: &mut u32) {
     match &e.kind {
-        ExprKind::Call(_, args) | ExprKind::CallVirtual(_, args) | ExprKind::Rt(_, args) => {
+        ExprKind::Call(_, args)
+        | ExprKind::CallVirtual(_, args)
+        | ExprKind::CallExtern(_, args)
+        | ExprKind::Rt(_, args) => {
             *n += n_spills(&args.iter().collect::<Vec<_>>());
         }
         ExprKind::CallClosure(c, args) => {

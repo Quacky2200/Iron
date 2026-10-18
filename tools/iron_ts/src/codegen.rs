@@ -31,6 +31,17 @@ pub fn clif_ty(t: &Ty) -> ir::Type {
     }
 }
 
+/// The machine type of a value at the engine boundary.
+fn ext_clif(t: &ExtTy) -> ir::Type {
+    match t {
+        ExtTy::F64 => types::F64,
+        ExtTy::F32 => types::F32,
+        ExtTy::I32 | ExtTy::U32 => types::I32,
+        ExtTy::Bool => types::I8,
+        ExtTy::Handle(_) | ExtTy::Void => types::I64,
+    }
+}
+
 fn sig_of(call_conv: CallConv, params: &[Ty], ret: &Ty) -> Signature {
     let mut s = Signature::new(call_conv);
     for p in params {
@@ -81,6 +92,22 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         cfuncs.push(
             module
                 .declare_function(&name, linkage, &sig)
+                .map_err(|e| e.to_string())?,
+        );
+    }
+    // Engine functions the module calls: imports, with the C ABI of the manifest.
+    let mut ext_funcs: Vec<CFuncId> = Vec::new();
+    for d in &m.externs {
+        let mut sig = Signature::new(call_conv);
+        for p in &d.params {
+            sig.params.push(AbiParam::new(ext_clif(p)));
+        }
+        if d.ret != ExtTy::Void {
+            sig.returns.push(AbiParam::new(ext_clif(&d.ret)));
+        }
+        ext_funcs.push(
+            module
+                .declare_function(&d.symbol, Linkage::Import, &sig)
                 .map_err(|e| e.to_string())?,
         );
     }
@@ -195,6 +222,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 f,
                 vars,
                 cfuncs: &cfuncs,
+                ext_funcs: &ext_funcs,
                 gdata: &gdata,
                 vtdata: &vtdata,
                 itdata: &itdata,
@@ -239,6 +267,7 @@ struct Cg<'a, 'b> {
     f: &'a Func,
     vars: Vec<Variable>,
     cfuncs: &'a [CFuncId],
+    ext_funcs: &'a [CFuncId],
     gdata: &'a [DataId],
     vtdata: &'a [DataId],
     itdata: &'a [DataId],
@@ -805,6 +834,37 @@ impl Cg<'_, '_> {
                     &[h, size],
                 )
                 .unwrap()
+            }
+            ExprKind::CallExtern(i, args) => {
+                let decl = &self.m.externs[*i];
+                let list: Vec<(&Expr, Ty)> = args
+                    .iter()
+                    .zip(&decl.params)
+                    .map(|(a, p)| (a, p.to_ir()))
+                    .collect();
+                let vals = self.eval_args(&list)?;
+                // Scripts hold every number as an f64; the engine takes its own width.
+                let mut conv = Vec::new();
+                for (v, p) in vals.iter().zip(&decl.params) {
+                    conv.push(match p {
+                        ExtTy::F32 => self.b.ins().fdemote(types::F32, *v),
+                        ExtTy::I32 => self.b.ins().fcvt_to_sint_sat(types::I32, *v),
+                        ExtTy::U32 => self.b.ins().fcvt_to_uint_sat(types::I32, *v),
+                        _ => *v,
+                    });
+                }
+                let fr = self
+                    .module
+                    .declare_func_in_func(self.ext_funcs[*i], self.b.func);
+                let call = self.b.ins().call(fr, &conv);
+                let ret = decl.ret.clone();
+                match (self.b.inst_results(call).first().copied(), ret) {
+                    (Some(r), ExtTy::F32) => self.b.ins().fpromote(types::F64, r),
+                    (Some(r), ExtTy::I32) => self.b.ins().fcvt_from_sint(types::F64, r),
+                    (Some(r), ExtTy::U32) => self.b.ins().fcvt_from_uint(types::F64, r),
+                    (Some(r), _) => r,
+                    (None, _) => self.b.ins().iconst(types::I64, 0),
+                }
             }
             ExprKind::CallVirtual(table, args) => {
                 // The signature comes from any entry; they agree up to the receiver's class.

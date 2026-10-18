@@ -1523,7 +1523,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
             JSON, `extern "C"` shims, typed QuickJS bindings (`M9-API-01..06`); additive
       - [ ] Value classes (`Vector3`) scalarised, strings, methods on handles, the engine context shims reach the world through
       - [ ] Annotate the real engine crates (`iron_scene`, `iron_physics`, `iron_audio`, `iron_script`) and retire their ops
-    - [ ] Compiler: extern table, `Handle` type, singleton calls, direct calls with scalar arguments
+    - [x] Compiler: extern table from the JSON manifest, `Handle` type, namespace calls with scalar arguments and f32/i32/u32/bool conversions (`M9-TS-142..146`)
     - [ ] First slice: `Time`, `Mathf`, `Vector3`, `Transform`, `Input` axes and a compiled `Component`
           with `onUpdate`, driven by `ComponentHost` with no JS engine in the loop
     - [ ] Inventory the `__iron_op` names and shapes (`js/engine/src`) and what each passes

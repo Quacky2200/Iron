@@ -134,6 +134,9 @@ impl<'a> Lowerer<'a> {
         if let Some(t) = self.named.get(name) {
             return Ok(t.clone());
         }
+        if self.manifest.handles.contains(name) {
+            return Ok(Ty::Handle(name.to_string()));
+        }
         if self.class_decls.contains_key(name) {
             return self.class_type(name);
         }
@@ -280,6 +283,14 @@ impl<'a> Lowerer<'a> {
                 ))
             }
             Ty::Num => ex(ExprKind::Truthy(Box::new(e))),
+            // A handle is an id; zero is no object.
+            Ty::Handle(_) => {
+                let zero = Expr {
+                    kind: ExprKind::Null,
+                    ty: e.ty.clone(),
+                };
+                ex(ExprKind::Cmp(CmpOp::Ne, Box::new(e), Box::new(zero)))
+            }
             t if t.is_nullable() => {
                 let null = ex(ExprKind::IsNull(Box::new(e)));
                 ex(ExprKind::Un(UnOp::Not, Box::new(null)))

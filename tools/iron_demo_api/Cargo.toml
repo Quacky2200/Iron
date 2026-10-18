@@ -1,0 +1,8 @@
+[package]
+name = "iron_demo_api"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+iron_api = { path = "../../crates/iron_api", default-features = false }

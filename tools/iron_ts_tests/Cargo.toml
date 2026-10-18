@@ -7,8 +7,10 @@ build = "build.rs"
 
 [dependencies]
 iron_ts_rt = { path = "../iron_ts_rt" }
+iron_demo_api = { path = "../iron_demo_api" }
 iron_core = { path = "../../crates/iron_core" }
 iron_script = { path = "../../crates/iron_script" }
 
 [build-dependencies]
 iron_ts = { path = "../iron_ts" }
+iron_demo_api = { path = "../iron_demo_api" }

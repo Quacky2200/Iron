@@ -43,6 +43,7 @@ fn rust_ty(m: &Module, t: &Ty, in_struct: bool) -> String {
         Ty::Void => "()".into(),
         other => match other.strip() {
             Ty::Obj(s) => format!("*mut {}", struct_name(m, *s)),
+            Ty::Handle(_) => "u64".into(),
             Ty::Arr(_) | Ty::Bytes => "*mut Array".into(),
             Ty::Fn(_) => "*mut Closure".into(),
             _ => "*mut u8".into(),
