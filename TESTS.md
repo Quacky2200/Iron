@@ -699,6 +699,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-219 | Integration | Three hundred objects stringified, parsed and stringified again under a collection at every allocation (`tests/json.rs`). |
 | M9-TS-220 | Integration | A shape mismatch is a `TypeError`, and a syntax error anywhere wins over it (`tests/json.rs`). |
 | M9-TS-221 | Unit | `JSON.parse` without a type, with a reviver, `stringify` with a replacer and of a function are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-222 | Integration | `exec` and `test`: the match object (`m[0]`, groups, `index`, `length`, `input`), a miss, `source`, `flags`, `global` equal bun's (`iron_ts_tests/tests/regexp.rs`, `bench/regexp.ts`, expected data from `bench/gen_regexp_expected.ts`). |
+| M9-TS-223 | Integration | A `g` regex steps through a string with `lastIndex`; a miss resets it (`tests/regexp.rs`). |
+| M9-TS-224 | Integration | Named groups (`m.groups.year`), a missing name, no `groups` without named groups (`tests/regexp.rs`). |
+| M9-TS-225 | Integration | The flags `m s i y` change matching as in JavaScript (`tests/regexp.rs`). |
+| M9-TS-226 | Integration | Unicode: `u` matches a surrogate pair as one character, indices count UTF-16 units, property escapes and code point escapes (`tests/regexp.rs`). |
+| M9-TS-227 | Integration | Lookbehind, backreferences, alternation, lazy quantifiers, negated classes, word boundaries (`tests/regexp.rs`). |
+| M9-TS-228 | Integration | `new RegExp(str, flags)`, `RegExp(..)`, copying with new flags, canonical flag order, `source` escaping `/`, `String(re)` (`tests/regexp.rs`). |
+| M9-TS-229 | Integration | Bad patterns and flags are `SyntaxError`s with JavaScriptCore's text (`tests/regexp.rs`). |
+| M9-TS-230 | Integration | A match object works as an array: destructuring, spread, `for...of`, `map` (`tests/regexp.rs`). |
+| M9-TS-231 | Unit | An invalid regex literal is a compile error with the engine's message (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

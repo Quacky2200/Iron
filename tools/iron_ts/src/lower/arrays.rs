@@ -355,6 +355,14 @@ impl<'a> Lowerer<'a> {
         let rty = recv.ty.strip().clone();
         if let Ty::Obj(sid) = &rty {
             let sid = *sid;
+            if Some(sid) == self.regexp_sid() {
+                return self.lower_regexp_method(recv, m, c);
+            }
+            // A match object is also an array of strings.
+            if Some(sid) == self.match_sid() && !matches!(m, "toString") {
+                let view = self.match_view(recv);
+                return self.lower_method(view, m, c);
+            }
             if let Some(f) = self.value_member(sid, m, false) {
                 return self.call_ext_fn(f, Some(recv), m, c);
             }

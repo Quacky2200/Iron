@@ -98,6 +98,7 @@ impl<'a> Lowerer<'a> {
                 Ok(mk(ExprKind::Tag(t), Ty::Lit))
             }
             Expression::TemplateLiteral(t) => self.lower_template(t),
+            Expression::RegExpLiteral(r) => self.lower_regexp_literal(r),
             Expression::Identifier(id) => self.lower_ident(id.name.as_str()),
             Expression::ParenthesizedExpression(p) => self.lower_expr(&p.expression, exp),
             Expression::TSAsExpression(a) => {
@@ -318,6 +319,10 @@ impl<'a> Lowerer<'a> {
         match obj.ty.strip().clone() {
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
+                    if Some(sid) == self.match_sid() && prop == "length" {
+                        let view = self.match_view(obj);
+                        return Ok(mk(ExprKind::Len(Box::new(view)), Ty::Num));
+                    }
                     if let Some(g) = self.value_member(sid, prop, true) {
                         return Ok(self.emit_extern(&g, vec![obj]));
                     }
@@ -346,6 +351,8 @@ impl<'a> Lowerer<'a> {
             }
             Ty::Str if prop == "length" => Ok(self.str_length(obj)),
             Ty::Map(..) | Ty::Set(_) if prop == "size" => Ok(self.collection_size(obj)),
+            // `m.groups.year`: a regular expression's named groups are read by name.
+            Ty::Map(k, v) if *k == Ty::Str && v.is_ptr() => self.map_prop(obj, prop),
             Ty::Handle(class) => {
                 let getter = self
                     .manifest
@@ -364,6 +371,7 @@ impl<'a> Lowerer<'a> {
 
     fn lower_computed_member(&mut self, m: &'a ComputedMemberExpression<'a>) -> R<Expr> {
         let mut arr = self.lower_expr(&m.object, None)?;
+        arr = self.match_view(arr);
         if m.optional {
             arr = self.chain_guard(arr)?;
         }
@@ -964,6 +972,7 @@ impl<'a> Lowerer<'a> {
             if let ArrayExpressionElement::SpreadElement(sp) = item {
                 let hint = el.clone().map(|e| Ty::Arr(Box::new(e)));
                 let mut v = self.lower_expr(&sp.argument, hint.as_ref())?;
+                v = self.match_view(v);
                 // `[...set]`: the set's elements now.
                 if let Some(snapshot) = self.collection_snapshot(v.clone()) {
                     v = snapshot;
@@ -1081,6 +1090,7 @@ impl<'a> Lowerer<'a> {
                 Ok(mk(ExprKind::Rt(RtFn::BytesNew, vec![len]), Ty::Bytes))
             }
             "Map" | "Set" | "WeakMap" | "WeakSet" => self.lower_new_collection(&id.name, n, exp),
+            "RegExp" => self.lower_new_regexp(&n.arguments, n.span.start),
             other if self.manifest.values.contains_key(other) => {
                 self.new_value(other, &n.arguments, n.span.start)
             }

@@ -81,6 +81,7 @@ impl<'a> Lowerer<'a> {
                     return self.lower_for_object_entries(f, call, pat, out);
                 }
                 let arr = self.lower_expr(source, None)?;
+                let arr = self.match_view(arr);
                 if matches!(arr.ty.strip(), Ty::Map(..) | Ty::Set(_)) {
                     return self.lower_for_of_collection(f, pat, arr, mode, out);
                 }
@@ -719,6 +720,7 @@ impl<'a> Lowerer<'a> {
                 }
             }
             BindingPattern::ArrayPattern(a) => {
+                let value = self.match_view(value);
                 let Ty::Arr(el) = value.ty.strip().clone() else {
                     bail!("cannot destructure {} as an array", value.ty)
                 };

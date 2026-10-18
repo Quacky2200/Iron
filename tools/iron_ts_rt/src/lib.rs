@@ -1020,10 +1020,12 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 
 mod json;
 mod map;
+mod regexp;
 mod string;
 mod string_more;
 pub use json::*;
 pub use map::*;
+pub use regexp::*;
 pub use string::*;
 pub use string_more::*;
 
@@ -1190,6 +1192,14 @@ pub fn link_anchor() -> usize {
         ts_rt_map_new_gc as *const () as usize,
         ts_rt_json_stringify_gc as *const () as usize,
         ts_rt_json_parse_gc as *const () as usize,
+        ts_rt_regex_new as *const () as usize,
+        ts_rt_regex_flags_gc as *const () as usize,
+        ts_rt_regex_source_gc as *const () as usize,
+        ts_rt_regex_group_count as *const () as usize,
+        ts_rt_regex_exec_gc as *const () as usize,
+        ts_rt_regex_match_index as *const () as usize,
+        ts_rt_regex_match_end as *const () as usize,
+        ts_rt_regex_groups_gc as *const () as usize,
         ts_rt_map_find as *const () as usize,
         ts_rt_map_set as *const () as usize,
         ts_rt_map_delete as *const () as usize,

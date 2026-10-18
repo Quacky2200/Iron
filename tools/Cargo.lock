@@ -506,6 +506,7 @@ dependencies = [
  "cranelift-frontend",
  "cranelift-module",
  "cranelift-object",
+ "iron_ts_rt",
  "oxc_allocator",
  "oxc_ast",
  "oxc_ast_visit",
@@ -520,6 +521,7 @@ dependencies = [
 name = "iron_ts_rt"
 version = "0.1.0"
 dependencies = [
+ "regress",
  "serde_json",
 ]
 
@@ -912,6 +914,15 @@ dependencies = [
  "log",
  "rustc-hash",
  "smallvec",
+]
+
+[[package]]
+name = "regress"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32eef8b209c3c1c15dbad02c1f30f9539f00dc7253e0cbcdaae442a50a09d7c1"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

@@ -10,7 +10,10 @@ Status (2026-10-18): tier 1 is done, steps A-H: `throw`, `try`/`catch`/`finally`
 tier 1, steps E-H" there; tests M9-TS-199..205). Tier 2 is done: `Map`/`Set`/`WeakMap`/`WeakSet` (an insertion-ordered
 hash table with live, exact iteration; tests M9-TS-206..214) and `JSON.stringify`/`JSON.parse` driven
 by the static types, with JavaScriptCore's parse errors (tests M9-TS-215..221); see "Standard library
-tier 2" in [../iron-ts.md](../iron-ts.md). Next: tier 3 (`RegExp`, `Date`, `Intl`).
+tier 2" in [../iron-ts.md](../iron-ts.md). Tier 3 has started: `RegExp` step R1 is done (the `regress`
+engine, literals, `new RegExp`, `test`/`exec`, the match object; tests M9-TS-222..231; see "Standard
+library tier 3" there). Next: R2 (the String methods `match`/`matchAll`/`search`/`replace`/`replaceAll`/
+`split` with a regex), then `Date` and `Intl`.
 The tables below describe the state before this work.
 
 ## 1. The rule

@@ -17,6 +17,7 @@ mod json;
 mod maps;
 mod object;
 mod prelude;
+mod regexp;
 mod scan;
 mod stmt;
 mod strings;
@@ -203,20 +204,17 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         manifest.add_json(m)?;
     }
     // Programs that use errors get the `Error` classes compiled in front of them.
-    let with_errors = prelude::wanted(src);
-    let full = if with_errors {
-        format!("{}{src}", prelude::ERRORS)
-    } else {
-        src.to_string()
-    };
-    let (src, prelude_lines) = (
-        full.as_str(),
-        if with_errors {
-            prelude::ERRORS.matches('\n').count()
-        } else {
-            0
-        },
-    );
+    let mut head = String::new();
+    if prelude::wanted(src) || prelude::wants_regexp(src) {
+        // Regular expressions throw `SyntaxError`s, so they bring the error classes along.
+        head += prelude::ERRORS;
+    }
+    if prelude::wants_regexp(src) {
+        head += prelude::REGEXP;
+    }
+    let prelude_lines = head.matches('\n').count();
+    let full = format!("{head}{src}");
+    let src = full.as_str();
     let alloc = Allocator::default();
     let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
     if !ret.diagnostics.is_empty() {

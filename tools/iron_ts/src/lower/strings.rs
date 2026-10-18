@@ -224,7 +224,19 @@ impl<'a> Lowerer<'a> {
                     Ty::Str,
                 ))
             }
-            t => bail!("cannot convert {t} to a string (objects have no toString yet)"),
+            // An object converts through its `toString()` (a user class's, an error's, a regex's).
+            Ty::Obj(sid) => {
+                if Some(sid) == self.regexp_sid() {
+                    return self.regexp_to_string(e);
+                }
+                if let Some((stat, target)) =
+                    self.target_for(sid, classes::Which::Method, "toString")
+                {
+                    return self.call_target(&stat, target, &[], Some(e));
+                }
+                bail!("cannot convert an object to a string: its class has no toString()")
+            }
+            t => bail!("cannot convert {t} to a string"),
         }
     }
 
@@ -528,6 +540,7 @@ impl<'a> Lowerer<'a> {
             }
         };
         Ok(Some(match name {
+            "RegExp" => self.lower_new_regexp(&c.arguments, c.span.start)?,
             "isNaN" | "isFinite" => {
                 let v = first(self)?;
                 let n = match v.ty.strip() {

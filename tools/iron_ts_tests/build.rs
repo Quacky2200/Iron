@@ -44,6 +44,7 @@ fn main() {
         ("stdlib", "std_", 18000),
         ("collections", "col_", 19000),
         ("json", "json_", 20000),
+        ("regexp", "re_", 21000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

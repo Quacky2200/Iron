@@ -126,8 +126,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
 | [lower/maps.rs](../tools/iron_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
 | [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
+| [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
-| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes as TypeScript source, compiled in front of programs that mention errors |
+| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, and `RegExp` / `RegExpMatchArray`, as TypeScript source, compiled in front of programs that mention errors or regexes (or the string methods that take them) |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
@@ -135,7 +136,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | Feature | Lowering |
 |---|---|
-| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `Record<string, V>` after `satisfies`, function types |
+| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
 | Functions | `function` and arrow declarations; return types inferred; calls are direct |
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
@@ -287,6 +288,33 @@ runtime in [iron_ts_rt/src/map.rs](../tools/iron_ts_rt/src/map.rs); design in
 - Not built: reviver, replacer, `toJSON`. See [differences.md](differences.md).
 - Tests: `bench/json.ts` with `tests/json.rs` (M9-TS-215..221), expected values from
   `bench/gen_json_expected.ts` (bun) into `json_expected.json`.
+
+**Standard library tier 3: `RegExp`, step R1** ([lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), runtime in
+[iron_ts_rt/src/regexp.rs](../tools/iron_ts_rt/src/regexp.rs)). The engine is the `regress` crate (an
+ECMAScript regex engine; `iron_ts_rt` uses it with the `utf16` feature). `iron_ts` depends on `iron_ts_rt`
+only to validate regex literals at compile time (`regex_validate`).
+- **Runtime.** A per-thread registry of compiled regexes, each named by a number; equal (pattern, flags)
+  share one entry. Positions are UTF-16 units: an ASCII string is matched as bytes, any other as UTF-16
+  text; `u`/`v` regexes match by code point pairs. Sticky `y` checks that the match starts at `lastIndex`.
+  Capture group names are scanned from the pattern. Functions: `ts_rt_regex_new`, `_flags_gc`,
+  `_source_gc`, `_exec_gc`, `_match_index`, `_match_end`, `_groups_gc`. Syntax errors use JavaScriptCore's
+  wording (mapped from regress's messages); bad flags say `Invalid flags supplied to RegExp constructor.`
+- **Objects.** A regex is an ordinary object of the prelude class `RegExp` with the fields `source`,
+  `flags`, `global`, `ignoreCase`, `multiline`, `dotAll`, `unicode`, `unicodeSets`, `sticky`, `hasIndices`,
+  `lastIndex` and `id`. `/re/flags` literals (validated at compile time), `new RegExp(p, f)`, `RegExp(p, f)`
+  and the copy `new RegExp(re, f)` build it.
+- **`test` and `exec`.** Both follow `lastIndex` for `g`/`y` regexes and reset it on a miss. `exec` returns
+  a `RegExpMatchArray` (`matches: (string | null)[]`, `index`, `input`, `groups: Map<string, string | null>
+  | null`). The match object is also seen as its array (`match_view`): `m[i]`, `m.length`, destructuring,
+  spread, `for...of` and the array methods. `m.groups.name` reads the groups map by name (a property read on
+  a `Map<string, V>`). `String(re)` and objects with `toString()` convert to strings.
+- **Limits** (see [differences.md](differences.md)): a group that did not take part is null where JavaScript
+  has undefined, so `m[1].length` dereferences null instead of throwing a `TypeError`; `groups === null`
+  is true where JavaScript has undefined; tuple types are not supported.
+- Not built yet (R2): the String methods `match`, `matchAll`, `search`, `replace`, `replaceAll`, `split` with a
+  regex.
+- Tests: `bench/regexp.ts` with `tests/regexp.rs` (M9-TS-222..231), expected values from
+  `bench/gen_regexp_expected.ts` (bun) into `regexp_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

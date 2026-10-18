@@ -252,6 +252,18 @@ pub mod jsn {
     include!(concat!(env!("OUT_DIR"), "/json_bindings.rs"));
 }
 
+/// Regular expressions in compiled code (`bench/regexp.ts`), prefix `re_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod rex {
+    include!(concat!(env!("OUT_DIR"), "/regexp_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

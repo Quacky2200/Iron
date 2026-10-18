@@ -58,6 +58,49 @@ function __rtThrow(kind: number, message: string): void {
 }
 "#;
 
+/// The regular expression classes: the object of a `RegExp` (a plain object with `lastIndex`) and
+/// the result of a match (see `lower/regexp.rs`). The compiler fills them in; there is no
+/// constructor here.
+pub const REGEXP: &str = r#"class RegExp {
+  source: string = "";
+  flags: string = "";
+  global: boolean = false;
+  ignoreCase: boolean = false;
+  multiline: boolean = false;
+  dotAll: boolean = false;
+  unicode: boolean = false;
+  unicodeSets: boolean = false;
+  sticky: boolean = false;
+  hasIndices: boolean = false;
+  lastIndex: number = 0;
+  id: number = 0;
+}
+class RegExpMatchArray {
+  matches: (string | null)[] = [];
+  index: number = 0;
+  input: string = "";
+  groups: Map<string, string | null> | null = null;
+}
+"#;
+
+/// Does the program use regular expressions (a literal, `RegExp`, or a string method that takes
+/// one)? A guess is fine: the classes are small.
+pub fn wants_regexp(src: &str) -> bool {
+    src.contains("RegExp")
+        || [
+            ".test(",
+            ".exec(",
+            ".match(",
+            ".matchAll(",
+            ".replace(",
+            ".replaceAll(",
+            ".search(",
+            ".split(",
+        ]
+        .iter()
+        .any(|m| src.contains(m))
+}
+
 /// Does the program use errors (and not define its own `Error`)?
 pub fn wanted(src: &str) -> bool {
     (src.contains("Error")

@@ -188,6 +188,43 @@ impl<'a> Lowerer<'a> {
         Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(m))), ty))
     }
 
+    /// `groups.name` on a `Map<string, V>`: the entry for that name, or null.
+    pub(crate) fn map_prop(&mut self, map: Expr, prop: &str) -> R<Expr> {
+        let (k, v, _) = Self::parts(&map.ty).expect("a map");
+        let t = self.new_local(map.ty.clone());
+        let tv = self.var_expr(t);
+        let key = self.str_lit(prop);
+        let kw = self.key_word(key, &k)?;
+        let idx = self.new_local(Ty::Num);
+        let iv = self.var_expr(idx);
+        let found = self.rt_map("ts_rt_map_find", vec![tv.clone(), kw], Ty::Num);
+        let raw = self.rt_map(
+            "ts_rt_map_value_at",
+            vec![tv, iv.clone()],
+            Ty::Handle("bits".into()),
+        );
+        let rty = v.clone().nullable();
+        let hit = mk(
+            ExprKind::Cast(Box::new(self.unbits(raw, v.strip().clone()))),
+            rty.clone(),
+        );
+        let miss = mk(ExprKind::Null, rty.clone());
+        let missing = mk(
+            ExprKind::Cmp(CmpOp::Lt, Box::new(iv), Box::new(num(0.0))),
+            Ty::Bool,
+        );
+        Ok(mk(
+            ExprKind::Seq(
+                vec![Stmt::Assign(t, map), Stmt::Assign(idx, found)],
+                Box::new(mk(
+                    ExprKind::Cond(Box::new(missing), Box::new(miss), Box::new(hit)),
+                    rty.clone(),
+                )),
+            ),
+            rty,
+        ))
+    }
+
     /// `map.size` / `set.size`.
     pub(crate) fn collection_size(&self, c: Expr) -> Expr {
         self.rt_map("ts_rt_map_size", vec![c], Ty::Num)

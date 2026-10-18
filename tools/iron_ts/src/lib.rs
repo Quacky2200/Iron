@@ -330,6 +330,19 @@ mod tests {
         }
     }
 
+    // M9-TS-231
+    #[test]
+    fn an_invalid_regex_literal_is_a_compile_error_with_the_engines_message() {
+        let e = lower::lower_source("export function f(): boolean { return /(/.test(\"a\"); }")
+            .err()
+            .unwrap();
+        assert!(e.contains("Invalid regular expression: missing )"), "{e}");
+        let e = lower::lower_source("export function f(): boolean { return /a/gg.test(\"a\"); }")
+            .err()
+            .unwrap_or_default();
+        assert!(!e.is_empty(), "duplicate flags are rejected");
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {
