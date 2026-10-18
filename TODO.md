@@ -1375,7 +1375,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 
 - [ ] **M9.a** `deno_core` and Bun script backends; packaging and distribution (pack files, Steam
   Workshop?)
-- [ ] **M9.b** (spike done, see `docs/research/iron-ts-spike.md`: `tools/iron_ts` compiles the zombie game's `sim.ts` with oxc + Cranelift, 13/13 ported tests pass, ~50x QuickJS) Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
+- [ ] **M9.b** Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
   is built, instead of interpreting it in QuickJS. Native code compiled into the executable is
   the preferred output; bytecode is the fallback. Candidates to evaluate:
   - QuickJS bytecode (the cheapest step: skips parsing at startup)
@@ -1383,6 +1383,18 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - AssemblyScript → wasm → wasm IR → Rust via `wasm2rs`
   - Questions: keeping the `__iron_op` / `__iron_commit` boundary unchanged, React's dynamic
     code under each option, and keeping dev builds on QuickJS for hot reload (M4)
+- [ ] **M9.b2** `iron_ts`: ahead-of-time TypeScript compiler (oxc → typed Iron IR → Cranelift → object
+  linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
+  game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS. Next, in order:
+  - [ ] Type sidecar: Bun script dumping the TypeScript checker's per-expression types as JSON
+  - [ ] Language coverage: closures with capture cells, classes/`this`, generics, destructuring,
+        strings, `Map`, `switch`
+  - [ ] Direct engine calls: `extern "C"` with shared layouts (`Vector3` = glam `Vec3`), `Mathf` and
+        vector maths as inline intrinsics, component lifecycle through a function table
+  - [ ] GC: shadow stack + non-moving mark-sweep, frame arena for temporaries
+  - [ ] Hybrid release builds: typed gameplay modules native, React/UI stays on QuickJS
+        (`JsValue` fallback later)
+  - [ ] Cross targets (Linux, macOS, Android, iOS), wire into the game build, CI
 - [ ] **M9.c** Release packaging for macOS, Linux, Android and iOS (iOS: QuickJS backend, Xcode
   wrapper)
 
