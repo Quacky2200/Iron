@@ -354,6 +354,8 @@ struct Api {
     /// The handle class (TypeScript name, Rust type) of an `impl` function.
     class: Option<(String, Type)>,
     tag: Tag,
+    /// A method of a value class: the receiver (first parameter) travels as the value's fields.
+    value_recv: Option<(Ident, Kind)>,
     /// Not including the receiver.
     params: Vec<(Ident, Kind)>,
     ret: Kind,
@@ -419,9 +421,52 @@ fn api_of(
         stem,
         class,
         tag,
+        value_recv: None,
         params,
         ret,
     })
+}
+
+/// `#[method(Vector3)] pub fn add(a: Vec3, b: Vec3) -> Vec3` and `#[getter(Vector3)]`: a free
+/// function whose first parameter is the value, seen by scripts as a method or a getter of the
+/// value class (`a.add(b)`, `a.magnitude`).
+fn value_method(
+    sig: &syn::Signature,
+    attrs: &[syn::Attribute],
+    args: &Args,
+) -> syn::Result<Option<Api>> {
+    let Some(at) = attrs
+        .iter()
+        .find(|a| a.path().is_ident("method") || a.path().is_ident("getter"))
+    else {
+        return Ok(None);
+    };
+    let getter = at.path().is_ident("getter");
+    let ts: Ident = at.parse_args()?;
+    let ts = ts.to_string();
+    let Some(vi) = args.values.iter().position(|v| v.ts == ts) else {
+        return Err(syn::Error::new(
+            at.span(),
+            format!("`{ts}` is not declared in `values(..)`"),
+        ));
+    };
+    let mut a = api_of(sig, attrs, args, None)?;
+    if a.params.is_empty() || !matches!(a.params[0].1, Kind::Value(i) if i == vi) {
+        return Err(syn::Error::new(
+            sig.span(),
+            format!("the first parameter of a `{ts}` method is the `{ts}` itself"),
+        ));
+    }
+    if getter && a.params.len() != 1 {
+        return Err(syn::Error::new(
+            sig.span(),
+            "#[getter(..)] takes only the value: `fn name(v: Vec3) -> T`",
+        ));
+    }
+    a.value_recv = Some(a.params.remove(0));
+    a.class = Some((ts, args.values[vi].rust.clone()));
+    a.tag = if getter { Tag::Get } else { Tag::Method };
+    Ok(Some(a))
 }
 
 /// The shim's parameters, and the Rust argument built from them, for one API parameter. A value
@@ -471,7 +516,15 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     for it in out_items.iter_mut() {
         match it {
             Item::Fn(f) if matches!(f.vis, Visibility::Public(_)) => {
-                apis.push(api_of(&f.sig, &f.attrs, &args, None)?);
+                match value_method(&f.sig, &f.attrs, &args)? {
+                    Some(a) => {
+                        apis.push(a);
+                        f.attrs.retain(|a| {
+                            !a.path().is_ident("method") && !a.path().is_ident("getter")
+                        });
+                    }
+                    None => apis.push(api_of(&f.sig, &f.attrs, &args, None)?),
+                }
             }
             Item::Impl(imp) if imp.trait_.is_none() => {
                 let Some(rust) = rust_name_of(&imp.self_ty) else {
@@ -509,6 +562,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let Some((class, _)) = &a.class else { continue };
         let rust = a.name.to_string();
         if a.tag == Tag::Method
+            && a.value_recv.is_none()
             && let Some(prop) = rust.strip_prefix("set_")
             && a.params.len() == 1
         {
@@ -560,7 +614,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let symbol = format!("iron_{owner}_{}", a.stem);
         let symbol_ident = format_ident!("{}", symbol);
         let doc = &a.doc;
-        let has_receiver = matches!(a.tag, Tag::Method | Tag::Get | Tag::Set);
+        let has_receiver =
+            matches!(a.tag, Tag::Method | Tag::Get | Tag::Set) && a.value_recv.is_none();
 
         // The manifest entry (a receiver is listed first, as `this`).
         let mut pnames: Vec<String> = Vec::new();
@@ -569,6 +624,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let ts = &a.class.as_ref().expect("receiver implies a class").0;
             pnames.push("this".into());
             ptys.push(quote!(::iron_api::Ty::Handle(#ts)));
+        }
+        if let Some((_, k)) = &a.value_recv {
+            pnames.push("this".into());
+            ptys.push(manifest_ty(k, &args));
         }
         for (n, k) in &a.params {
             pnames.push(camel(&n.to_string()));
@@ -612,12 +671,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         } else {
             None
         };
-        for (n, k) in &a.params {
+        for (n, k) in a.value_recv.iter().chain(&a.params) {
             let (ps, arg) = shim_param(n, k, &args);
             abi_params.extend(ps);
             call_args.push(arg);
         }
         let call = match (&receiver, &a.class) {
+            (None, Some(_)) if a.value_recv.is_some() => quote!(#name( #( #call_args ),* )),
             (Some(r), _) => quote!(#r.#name( #( #call_args ),* )),
             (None, Some((_, rust))) => quote!(<#rust>::#name( #( #call_args ),* )),
             (None, None) => quote!(#name( #( #call_args ),* )),

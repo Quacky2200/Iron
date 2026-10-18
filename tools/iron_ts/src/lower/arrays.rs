@@ -321,6 +321,9 @@ impl<'a> Lowerer<'a> {
         let rty = recv.ty.strip().clone();
         if let Ty::Obj(sid) = &rty {
             let sid = *sid;
+            if let Some(f) = self.value_member(sid, m, false) {
+                return self.call_ext_fn(f, Some(recv), m, c);
+            }
             if let Some((stat, target)) = self.target_for(sid, Which::Method, m) {
                 return self.call_target(&stat, target, &c.arguments, Some(recv));
             }

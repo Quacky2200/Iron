@@ -119,6 +119,19 @@ another class and `t.gameObject` gives the object back. Shims are named `iron_Ga
 `child.transform.setParent(parent.transform, false)` and `go.transform.position = new Vector3(1, 2, 3)`;
 the old `Scene.setParent(..)` style functions remain.
 
+The value classes have math methods too, declared as free functions marked `#[method(Vector3)]` /
+`#[getter(Vector3)]` / `#[method(Quaternion)]` (see [iron-api.md](iron-api.md#value-classes)):
+
+| Class | Members |
+|---|---|
+| `Vector3` | methods `add`, `sub`, `scale(s)`, `dot`, `cross`, `distance`, `lerp(b, t)`; getters `magnitude`, `normalized` (the zero vector stays zero) |
+| `Quaternion` | methods `mul(b)` (`b` applied first, like Unity's `a * b`), `rotate(v)`; getter `inverse` |
+
+Scripts write `a.add(b).scale(2)`, `v.magnitude` and `q.rotate(v)`. Shims are `iron_Vector3_add` and so
+on, with the receiver's fields first. They live in the `Scene` namespace module for now (a second
+crate sharing `Vector3` will move them to a math namespace). No operators (`a + b`) and no static
+functions (`Vector3.zero`) yet.
+
 - **Handles.** `ObjectId`'s raw handle is `((generation + 1) << 32) | index`, so no live object is 0
   (0 is `null` in `GameObject | null`; `from_raw(0)` gets a generation no slot has and misses).
 - **The scene.** `iron_scene::api::enter(&mut scene)` makes a scene current on the thread until the
@@ -126,7 +139,8 @@ the old `Scene.setParent(..)` style functions remain.
   functions answer with defaults: no object, `false`, `0`, the origin, the identity rotation, scale one.
 - **Not wired in.** Nothing in `iron_app` calls `enter` yet, and the engine's scripts still use
   `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/iron_scene/tests/api.rs) (`M9-API-12..15`, `19`)
-  and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..158`).
+  and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..161`; the math methods are
+  `M9-TS-159..161`, the macro side `M9-API-20` in `iron_api`).
 
 ## Components and the lifecycle
 

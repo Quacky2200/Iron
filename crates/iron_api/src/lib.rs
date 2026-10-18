@@ -214,6 +214,14 @@ fn class_dts(c: &ClassDef) -> String {
     let mut s = format!("declare class {} {{\n", c.name);
     s += "  private constructor();\n";
     s += &format!("  private readonly __handle: \"{}\";\n", c.name);
+    s += &class_members(c);
+    s += "}\n";
+    s
+}
+
+/// The statics, methods and accessors of a class (a handle class or a value class).
+fn class_members(c: &ClassDef) -> String {
+    let mut s = String::new();
     let user_params = |f: &Function, skip: usize| -> String {
         f.params
             .iter()
@@ -261,7 +269,6 @@ fn class_dts(c: &ClassDef) -> String {
             }
         }
     }
-    s += "}\n";
     s
 }
 
@@ -315,7 +322,10 @@ impl Namespace {
             );
         }
         for c in self.classes {
-            s += &class_dts(c);
+            // A value class's methods are declared inside the value class below.
+            if !self.values.iter().any(|v| v.name == c.name) {
+                s += &class_dts(c);
+            }
         }
         for v in self.values {
             let ctor: Vec<String> = v
@@ -327,6 +337,9 @@ impl Namespace {
             s += &format!("  constructor({});\n", ctor.join(", "));
             for f in v.fields {
                 s += &format!("  {}: number;\n", f.name);
+            }
+            if let Some(c) = self.classes.iter().find(|c| c.name == v.name) {
+                s += &class_members(c);
             }
             s += "}\n";
         }

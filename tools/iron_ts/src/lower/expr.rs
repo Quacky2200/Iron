@@ -257,11 +257,25 @@ impl<'a> Lowerer<'a> {
         self.member_of(obj, prop)
     }
 
+    /// A method (or getter) a value class got from the engine API: `a.add(b)`, `v.magnitude`.
+    pub(crate) fn value_member(&self, sid: StructId, name: &str, getter: bool) -> Option<ExternFn> {
+        let class = self
+            .value_structs
+            .iter()
+            .find_map(|(n, s)| (*s == sid).then_some(n))?;
+        let k = self.manifest.classes.get(class)?;
+        let table = if getter { &k.getters } else { &k.methods };
+        table.get(name).cloned()
+    }
+
     /// `obj.prop` on an already-lowered object.
     pub(crate) fn member_of(&mut self, obj: Expr, prop: &str) -> R<Expr> {
         match obj.ty.strip().clone() {
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
+                    if let Some(g) = self.value_member(sid, prop, true) {
+                        return Ok(self.emit_extern(&g, vec![obj]));
+                    }
                     if let Some((stat, target)) = self.target_for(sid, Which::Getter, prop) {
                         return self.call_getter(&stat, &target, obj);
                     }

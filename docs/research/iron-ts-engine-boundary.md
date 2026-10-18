@@ -461,5 +461,39 @@ child.transform.setParent(parent.transform, false);
 const p = child.transform.position; // world position, a new Vector3
 ```
 
-Not built yet: methods on value classes as intrinsics (`a.add(b)`), strings (names, `find`), classes
-in the QuickJS bindings, and the same treatment for `iron_physics` and `iron_audio`.
+Not built yet: methods on value classes as intrinsics (`a.add(b)`; built in section 19), strings
+(names, `find`), classes in the QuickJS bindings, and the same treatment for `iron_physics` and
+`iron_audio`.
+
+## 19. Value-class methods (2026-10-18)
+
+Value classes have members: `a.add(b).scale(2)`, `v.magnitude`, `q.rotate(v)`.
+
+- **Syntax.** A free function in the `#[iron_api]` module marked `#[method(Vector3)]` or
+  `#[getter(Vector3)]`, where `Vector3` is declared in `values(..)` and the first parameter is that
+  value. A getter takes only the value. Anything else is a compile error.
+- **Why free functions with an attribute.** The value type is a foreign glam type (`Vec3`), so an
+  inherent `impl` is not possible in `iron_scene`. An extension trait per value would work but is
+  heavier: a trait, an impl and an import for each function, and the macro would have to find them.
+  The attribute keeps the function a plain `pub fn` that Rust code can call too.
+- **Manifest and declarations.** The functions go into `Namespace.classes` under the value's name, the
+  receiver first as `this` (`value:Vector3`). `to_dts` declares them inside `declare class Vector3`,
+  not as a second class and without a handle alias. Shims are `iron_Vector3_add` and so on; the
+  receiver travels as the value's fields like any value parameter, and results come back through the
+  out pointer.
+- **Compiler.** The manifest parser adds them to `ClassFns` of that name without registering a handle
+  type. `value_member` (lower/expr.rs), `lower_method` (lower/arrays.rs) and `member_of` call them as
+  direct extern calls. A field of the same name wins over a getter.
+- **iron_scene.** `Vector3`: `add`, `sub`, `scale`, `dot`, `cross`, `distance`, `lerp`, `magnitude`,
+  `normalized`; `Quaternion`: `mul`, `rotate`, `inverse`. Tests `M9-API-20`, `M9-TS-159`..`161`.
+- **Not built.** Static functions on value classes (`Vector3.zero`), operators (`a + b`), and
+  compound assignment on value properties.
+
+```ts
+const a = new Vector3(1, 2, 3);
+const b = new Vector3(4, 5, 6);
+const s = a.add(b).scale(2);           // (10, 14, 18)
+const m = new Vector3(3, 4, 0).magnitude; // 5
+const q = new Quaternion(0, 0.7071068, 0, 0.7071068); // 90 degrees round y
+const v = q.rotate(new Vector3(1, 0, 0)); // (0, 0, -1)
+```

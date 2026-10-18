@@ -74,6 +74,78 @@ fn none() -> ObjectId {
 pub mod scene_api {
     use super::{ObjectId, Quat, Transform, TransformRef, Vec3, none, with};
 
+    // Math on the value classes, so scripts write `a.add(b)` and `v.magnitude` (compiled as direct
+    // calls; a second crate that shares `Vector3` will move these to a math namespace).
+
+    /// Component-wise sum.
+    #[method(Vector3)]
+    pub fn add(a: Vec3, b: Vec3) -> Vec3 {
+        a + b
+    }
+
+    /// Component-wise difference.
+    #[method(Vector3)]
+    pub fn sub(a: Vec3, b: Vec3) -> Vec3 {
+        a - b
+    }
+
+    /// Multiplies every component by a number.
+    #[method(Vector3)]
+    pub fn scale(a: Vec3, s: f32) -> Vec3 {
+        a * s
+    }
+
+    #[method(Vector3)]
+    pub fn dot(a: Vec3, b: Vec3) -> f32 {
+        a.dot(b)
+    }
+
+    #[method(Vector3)]
+    pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
+        a.cross(b)
+    }
+
+    #[method(Vector3)]
+    pub fn distance(a: Vec3, b: Vec3) -> f32 {
+        a.distance(b)
+    }
+
+    /// Linear interpolation: `a` at 0, `b` at 1.
+    #[method(Vector3)]
+    pub fn lerp(a: Vec3, b: Vec3, t: f32) -> Vec3 {
+        a.lerp(b, t)
+    }
+
+    /// Its length.
+    #[getter(Vector3)]
+    pub fn magnitude(a: Vec3) -> f32 {
+        a.length()
+    }
+
+    /// The same direction with length 1 (the zero vector stays zero).
+    #[getter(Vector3)]
+    pub fn normalized(a: Vec3) -> Vec3 {
+        a.normalize_or_zero()
+    }
+
+    /// Combines two rotations: `b` is applied first, then `a` (`a * b`, like Unity).
+    #[method(Quaternion)]
+    pub fn mul(a: Quat, b: Quat) -> Quat {
+        a * b
+    }
+
+    /// Rotates a vector.
+    #[method(Quaternion)]
+    pub fn rotate(q: Quat, v: Vec3) -> Vec3 {
+        q * v
+    }
+
+    /// The opposite rotation.
+    #[getter(Quaternion)]
+    pub fn inverse(q: Quat) -> Quat {
+        q.inverse()
+    }
+
     // `GameObject`: creating, destroying, flags and the transform.
     impl ObjectId {
         /// Creates an enabled root object at the origin.

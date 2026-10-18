@@ -79,6 +79,13 @@ bytes, bindings text, IR dump and the time of each phase.
 - **Engine calls.** `Module::externs` holds one `ExternDecl` per called symbol: a flattened scalar
   parameter list (a value class is already split into its fields) and, for a value result, an
   optional out pointer `(scalar type, count)` that codegen appends as the last parameter.
+- **Value-class members.** The manifest parser adds a class named like a value class (`Vector3`) to
+  `ClassFns` of that name without registering a handle type. `value_member` in
+  [lower/expr.rs](../tools/iron_ts/src/lower/expr.rs) finds the method or getter of the struct behind
+  a value class; `lower_method` (lower/arrays.rs) and `member_of` call it as a direct extern call with
+  the receiver first (`a.add(b)`, `v.magnitude`), before any user-defined target is tried. Fields
+  still win over getters. Not supported: static functions on value classes, operators, compound
+  assignment on value properties.
 - **Linking** is the host's job: the test crate's `build.rs` writes the `.obj`, passes it with
   `cargo:rustc-link-arg`, and includes the bindings.
 

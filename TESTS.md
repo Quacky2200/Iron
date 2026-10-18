@@ -636,6 +636,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-156 | Integration | A hierarchy built and moved with handle classes (`child.transform.setParent(..)`, `transform.localPosition = new Vector3(..)`, `go.destroy()`) in the real scene (`tests/scene.rs`). |
 | M9-TS-157 | Integration | Boolean, number and handle properties and a method of `GameObject`, and the `transform.gameObject` round trip (`tests/scene.rs`). |
 | M9-TS-158 | Integration | An update loop moves an object through `transform.position` (`tests/scene.rs`). |
+| M9-TS-159 | Integration | `Vector3` methods and getters (`add`, `scale`, `dot`, `cross`, `lerp`, `distance`, `magnitude`, `normalized`) compile to direct calls, chained on call results (`tests/scene.rs`). |
+| M9-TS-160 | Integration | `Quaternion` `rotate`, `mul` and `inverse` (`tests/scene.rs`). |
+| M9-TS-161 | Integration | A vector kept across the allocations of a loop of method calls survives collection at every allocation (`tests/scene.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
@@ -655,6 +658,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-17 | Unit | The `.d.ts` has `declare class` with static, method and `get`/`set` members; a getter alone is read-only; a class replaces the plain handle alias (`crates/iron_api/tests/classes.rs`). |
 | M9-API-18 | Unit | The class shims take the receiver first and call the methods, properties and statics (`crates/iron_api/tests/classes.rs`). |
 | M9-API-19 | Unit | `GameObject` and `Transform` of `iron_scene` work through their shims, a transform shares its object's handle, and the declarations have accessors (`crates/iron_scene/tests/api.rs`). |
+| M9-API-20 | Unit | Value class methods and getters (`#[method(Vector3)]`, `#[getter(Vector3)]` on free functions whose first parameter is the value) are declared inside the value class, with the receiver as `this` and passed as its fields (`crates/iron_api/tests/values.rs`). |
 
 ---
 

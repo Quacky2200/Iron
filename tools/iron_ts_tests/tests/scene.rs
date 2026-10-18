@@ -131,3 +131,45 @@ fn an_update_loop_moves_an_object_through_transform_position() {
         assert!((got - want).abs() < 1e-3, "{got} vs {want}");
     });
 }
+
+// M9-TS-159
+//
+// Methods and getters of the `Vector3` value class (`add`, `scale`, `dot`, `cross`, `lerp`,
+// `distance`, `magnitude`, `normalized`), including a chained call on a call's result.
+#[test]
+fn vector3_methods_and_getters_are_direct_calls() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(ts_scn_vectorMath(), 14_110_532_042.0);
+    });
+}
+
+// M9-TS-160
+#[test]
+fn quaternion_methods_rotate_combine_and_invert() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        let got = ts_scn_quatMath();
+        assert!((got - 99_000.0).abs() < 0.5, "{got}");
+    });
+}
+
+// M9-TS-161
+//
+// A vector held across the allocations of a loop (a new argument and a new result per step), at
+// every allocation in stress mode.
+#[test]
+fn a_vector_survives_allocations_between_method_calls() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        let mut acc = glam::Vec3::ZERO;
+        for i in 0..200 {
+            acc = (acc + glam::Vec3::new(i as f32, 1.0, 0.0)) * 0.5;
+        }
+        let want = acc.x as f64 * 1000.0 + acc.y as f64;
+        assert_eq!(ts_scn_vectorLoop(200.0), want);
+    });
+}

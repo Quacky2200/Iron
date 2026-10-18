@@ -97,7 +97,10 @@ impl Manifest {
         }
         for c in v["classes"].as_array().into_iter().flatten() {
             let cname = c["name"].as_str().ok_or("manifest: a class needs a name")?;
-            self.handles.insert(cname.to_string());
+            // A class named like a value class adds methods to the value, not a handle type.
+            if !self.values.contains_key(cname) {
+                self.handles.insert(cname.to_string());
+            }
             let mut class = ClassFns::default();
             for f in c["functions"]
                 .as_array()

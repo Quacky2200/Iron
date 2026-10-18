@@ -68,6 +68,28 @@ declares `declare class Vector3 { constructor(x: number, ..); x: number; .. }` a
 the class under `values` (fields with their types), with `value:Vector3` as the parameter and result
 type.
 
+**Methods and getters.** A free function marked `#[method(Vector3)]` or `#[getter(Vector3)]` becomes a
+member of the value class. `Vector3` must be declared in `values(..)` and the function's first
+parameter must be that value (else a compile error); a getter takes only the value. Free functions
+are used because the value type is a foreign type (glam's `Vec3`), so it cannot get an inherent
+`impl`.
+
+```rust
+#[method(Vector3)]
+pub fn scale(a: Vec3, s: f32) -> Vec3 { a * s }    // a.scale(2)
+#[getter(Vector3)]
+pub fn magnitude(a: Vec3) -> f32 { a.length() }    // v.magnitude
+```
+
+- **Manifest and `.d.ts`.** The functions go to `Namespace.classes` under the value's name, with the
+  receiver first as `this` (type `value:Vector3`). `to_dts` declares them inside `declare class
+  Vector3` (not as a second class, and no handle alias): `scale(s: number): Vector3; get magnitude():
+  number;`. Without the attribute the function stays a namespace function.
+- **Shims.** `iron_Vector3_scale(this_0, this_1, this_2, s, out)`: the receiver travels as the value's
+  fields like any value parameter, and a value result goes through the trailing out pointer.
+- **Not built.** Static functions on a value class (`Vector3.zero`), operators (`a + b`) and compound
+  assignment on value properties.
+
 ### Handle classes
 
 The methods, properties and statics of a handle type are ordinary `impl` blocks of its Rust type
@@ -185,9 +207,9 @@ first engine crate using `#[iron_api]` (`Scene`, in `iron_scene::api`; see
 [scene-and-objects.md](scene-and-objects.md#the-typed-script-api-iron_sceneapi)), but nothing in the
 app calls it yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
 (`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value
-classes (`Vector3`), handle classes (`GameObject`, `Transform`) and the engine context exist; strings,
-methods on value classes (`a.add(b)`), classes and values in the QuickJS bindings and annotating the
-other engine crates (physics, audio) are not built.
+classes (`Vector3`) with methods and getters (`a.add(b)`), handle classes (`GameObject`, `Transform`)
+and the engine context exist; strings, static functions and operators on value classes, classes and
+values in the QuickJS bindings and annotating the other engine crates (physics, audio) are not built.
 
 Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
 150 ns per call through the typed function and about 245 ns through a simplified `__iron_op` (a name,

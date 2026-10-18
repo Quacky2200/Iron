@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **159**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **162**).
 
 ## How to pick this up
 
@@ -85,11 +85,11 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 **Done:** `iron_scene`'s `Scene` API on `#[iron_api]`, driven end to end by compiled TypeScript (boundary note section 17).
 
-**Done:** handle classes (`go.transform.position = v`, methods and statics on handles; `M9-API-16..19`, `M9-TS-156..158`), for `GameObject` and `Transform` of `iron_scene` (boundary note section 18).
+**Done:** value-class methods and getters (`a.add(b)`, `v.magnitude`; `#[method(Vector3)]` / `#[getter(Vector3)]` on free functions, `M9-API-20`, `M9-TS-159..161`); handle classes (`go.transform.position = v`, methods and statics on handles; `M9-API-16..19`, `M9-TS-156..158`), for `GameObject` and `Transform` of `iron_scene` (boundary note section 18).
 
 Next, in order:
 
-1. **Value-class methods as intrinsics** (`a.add(b)`); **strings** across the boundary once the strings
+1. **Strings** across the boundary once the strings
    decision is made (names, `find`).
 2. **Annotate `iron_physics`, `iron_audio`, `iron_script`**; wire `iron_scene::api::enter` into `iron_app` (needs its owner:
    another session works there); retire the ops the new API replaces.

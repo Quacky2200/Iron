@@ -115,3 +115,34 @@ export function classOrbit(frames: number): number {
   o.destroy();
   return sum;
 }
+
+/** Methods and getters on Vector3, compiled as direct calls (`a.add(b)`, `v.magnitude`). */
+export function vectorMath(): number {
+  const a = new Vector3(1, 2, 3);
+  const b = new Vector3(4, 5, 6);
+  const s = a.add(b).scale(2); // (10, 14, 18)
+  const d = a.dot(b); // 32
+  const c = a.cross(b); // (-3, 6, -3)
+  const m = new Vector3(3, 4, 0).magnitude; // 5
+  const n = new Vector3(0, 0, 9).normalized; // (0, 0, 1)
+  const l = a.lerp(b, 0.5); // (2.5, 3.5, 4.5)
+  const near = Math.abs(a.distance(b) - Math.sqrt(27)) < 0.00001 ? 1 : 0;
+  return s.x + s.y + s.z + d * 1000 + m * 100000 + n.z * 10000000 + c.y * 100000000 + l.y * 1000000000 + near * 10000000000;
+}
+
+/** Quaternion methods: rotating a vector, combining and inverting. */
+export function quatMath(): number {
+  const q = new Quaternion(0, 0.7071068, 0, 0.7071068); // 90 degrees round y
+  const v = q.rotate(new Vector3(1, 0, 0)); // (0, 0, -1)
+  const r = q.mul(q.inverse); // identity
+  return v.z * 1000 + r.w * 100000;
+}
+
+/** A vector kept across allocations in a loop: each step makes a Vector3 argument and results. */
+export function vectorLoop(n: number): number {
+  let acc = new Vector3(0, 0, 0);
+  for (let i = 0; i < n; i++) {
+    acc = acc.add(new Vector3(i, 1, 0)).scale(0.5);
+  }
+  return acc.x * 1000 + acc.y;
+}

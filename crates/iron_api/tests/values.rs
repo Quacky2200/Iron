@@ -95,3 +95,63 @@ fn the_shims_pass_a_value_as_scalars_and_return_one_through_a_pointer() {
     unsafe { vec_api::iron_Vec_cross(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, out.as_mut_ptr()) };
     assert_eq!(out, [0.0, 0.0, 1.0]);
 }
+
+#[iron_api(namespace = "VecMath", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+pub mod vec_methods {
+    use super::Vec3;
+
+    /// Its length.
+    #[getter(Vector3)]
+    pub fn magnitude(v: Vec3) -> f32 {
+        (v.x * v.x + v.y * v.y + v.z * v.z).sqrt()
+    }
+
+    /// `v * k`.
+    #[method(Vector3)]
+    pub fn scale(v: Vec3, k: f32) -> Vec3 {
+        Vec3 {
+            x: v.x * k,
+            y: v.y * k,
+            z: v.z * k,
+        }
+    }
+
+    pub fn origin() -> Vec3 {
+        Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
+    }
+}
+
+// M9-API-20
+#[test]
+fn value_class_methods_and_getters_are_declared_inside_the_value_class() {
+    let m = vec_methods::MANIFEST;
+    assert_eq!(
+        m.functions.len(),
+        1,
+        "only `origin` is a namespace function"
+    );
+    assert_eq!(m.classes.len(), 1);
+    assert_eq!(m.classes[0].name, "Vector3");
+    let scale = m.classes[0]
+        .functions
+        .iter()
+        .find(|f| f.name == "scale")
+        .unwrap();
+    assert_eq!(scale.symbol, "iron_Vector3_scale");
+    assert_eq!(scale.params[0].name, "this");
+    assert_eq!(scale.params[0].ty, Ty::Value("Vector3"));
+    let d = m.to_dts();
+    assert_eq!(d.matches("declare class Vector3 {").count(), 1, "{d}");
+    assert!(d.contains("scale(k: number): Vector3;"), "{d}");
+    assert!(d.contains("get magnitude(): number;"), "{d}");
+    assert!(!d.contains("declare type Vector3"), "{d}");
+    // The shims take the value as its fields first.
+    assert_eq!(vec_methods::iron_Vector3_magnitude(3.0, 4.0, 0.0), 5.0);
+    let mut out = [0.0f32; 3];
+    unsafe { vec_methods::iron_Vector3_scale(1.0, 2.0, 3.0, 2.0, out.as_mut_ptr()) };
+    assert_eq!(out, [2.0, 4.0, 6.0]);
+}
