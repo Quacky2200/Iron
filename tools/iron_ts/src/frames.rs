@@ -137,6 +137,8 @@ pub fn may_alloc(e: &Expr) -> bool {
         ExprKind::NewCell(_) | ExprKind::MakeClosure(..) => true,
         // A sort runs the comparator, which allocates.
         ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew | RtFn::ArrSort, _) => true,
+        // The runtime's string functions that make a string can collect first.
+        ExprKind::Rt(RtFn::Str(name), _) if name.ends_with("_gc") => true,
         ExprKind::Seq(stmts, v) => stmts.iter().any(stmt_may_alloc) || may_alloc(v),
         _ => children(e).iter().any(|c| may_alloc(c)),
     }
@@ -163,6 +165,7 @@ fn children(e: &Expr) -> Vec<&Expr> {
         | ExprKind::IsNull(a)
         | ExprKind::Cast(a)
         | ExprKind::Truthy(a)
+        | ExprKind::TagStr(a)
         | ExprKind::Field(a, ..)
         | ExprKind::InstanceOf(a, _)
         | ExprKind::Len(a) => vec![a],

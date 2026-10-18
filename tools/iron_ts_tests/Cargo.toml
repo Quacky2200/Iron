@@ -13,6 +13,9 @@ glam = "0.34.1"
 iron_core = { path = "../../crates/iron_core" }
 iron_script = { path = "../../crates/iron_script" }
 
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
 [build-dependencies]
 iron_ts = { path = "../iron_ts" }
 iron_demo_api = { path = "../iron_demo_api" }

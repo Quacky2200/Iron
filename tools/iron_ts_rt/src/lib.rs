@@ -1108,6 +1108,7 @@ pub fn link_anchor() -> usize {
         ts_rt_str_starts_with as *const () as usize,
         ts_rt_str_ends_with as *const () as usize,
         ts_rt_str_from_code_point_gc as *const () as usize,
+        ts_rt_str_from_char_code_gc as *const () as usize,
         ts_rt_str_new_gc as *const () as usize,
         ts_rt_str_trim_gc as *const () as usize,
         ts_rt_str_trim_start_gc as *const () as usize,

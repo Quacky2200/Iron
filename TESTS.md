@@ -655,6 +655,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-175 | Differential | `split` (empty, one-unit, multi-unit and lone-surrogate separators) and `join` (rejoining split pairs) equal bun's (`tests/strings_more.rs`). |
 | M9-TS-176 | Differential | `String(x)`, `toFixed(0..6)` (ties round up on the exact value) and `toString(radix)` equal bun's (`tests/strings_more.rs`). |
 | M9-TS-177 | Differential | `Number(s)`, `parseFloat(s)` and `parseInt(s, radix)` equal bun's over hex/binary/octal, signs, exponents, white space, trailing text and bad radixes (`tests/strings_more.rs`). |
+| M9-TS-178 | Integration | Compiled string code (`length`, comparison by code unit, search, `switch`, truthiness, parsing, a loop over `charCodeAt`) returns what bun returns, in the normal, stress and collection-off modes (`iron_ts_tests/tests/strings.rs`, `bench/strings.ts`, expected data from `bench/gen_strings_expected.ts`). |
+| M9-TS-179 | Integration | `+`, `+=` with numbers/booleans/null, template literals, method chains, padding, `fromCharCode`, `toFixed`, `toString(16)`, `split`/`join` and nested temporaries equal bun's (`tests/strings.rs`). |
+| M9-TS-180 | Integration | Strings in arrays (`includes`, `indexOf`, `sort` with a comparator), object fields, `string \| null` and string-literal unions mixed with `string` equal bun's (`tests/strings.rs`). |
+| M9-TS-181 | Integration | Three hundred strings made in a loop survive a collection at every allocation (`tests/strings.rs`). |
+| M9-TS-182 | Unit | Unsupported string methods (`localeCompare`, `normalize`, `replace`) and a literal with a lone surrogate are compile errors with a reason (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

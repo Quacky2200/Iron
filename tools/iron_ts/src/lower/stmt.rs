@@ -447,6 +447,7 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_var_decl(&mut self, v: &'a VariableDeclaration<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let v_kind = v.kind;
         for d in &v.declarations {
             let BindingPattern::BindingIdentifier(id) = &d.id else {
                 self.lower_destructuring(d, out)?;
@@ -478,6 +479,10 @@ impl<'a> Lowerer<'a> {
                     let v = self.lower_expr(e, ann.as_ref())?;
                     Some(match &ann {
                         Some(t) => self.coerce(v, t)?,
+                        // `let s = "x"` is a `string` (a `const` keeps its literal type).
+                        None if v.ty == Ty::Lit && v_kind != VariableDeclarationKind::Const => {
+                            self.widen_lit(v)
+                        }
                         None => v,
                     })
                 }

@@ -620,13 +620,16 @@ pub unsafe extern "C" fn ts_rt_str_concat_gc(a: *const Str, b: *const Str) -> *m
     alloc_gc(concat_bytes(st(a).as_bytes(), st(b).as_bytes()))
 }
 
-/// `a === b`.
+/// `a === b`; a null string (`string | null`) equals only null.
 ///
 /// # Safety
-/// Both must be live strings.
+/// Both must be live strings or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ts_rt_str_eq(a: *const Str, b: *const Str) -> bool {
-    st(a).as_bytes() == st(b).as_bytes()
+    if a.is_null() || b.is_null() {
+        return a == b;
+    }
+    a == b || st(a).as_bytes() == st(b).as_bytes()
 }
 
 /// -1, 0 or 1: the order JavaScript's `<` gives (UTF-16 code units).
@@ -634,8 +637,8 @@ pub unsafe extern "C" fn ts_rt_str_eq(a: *const Str, b: *const Str) -> bool {
 /// # Safety
 /// Both must be live strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ts_rt_str_compare(a: *const Str, b: *const Str) -> i32 {
-    compare_bytes(st(a).as_bytes(), st(b).as_bytes()) as i32
+pub unsafe extern "C" fn ts_rt_str_compare(a: *const Str, b: *const Str) -> f64 {
+    compare_bytes(st(a).as_bytes(), st(b).as_bytes()) as i32 as f64
 }
 
 /// `s.length`.
@@ -760,6 +763,17 @@ pub unsafe extern "C" fn ts_rt_str_ends_with(s: *const Str, suffix: *const Str, 
     st(s).ends_with(st(suffix), end)
 }
 
+/// `String.fromCharCode(unit)` for one unit (ToUint16: modulo 65536, non-finite is 0).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_str_from_char_code_gc(unit: f64) -> *mut Str {
+    let u = if unit.is_finite() {
+        unit.trunc().rem_euclid(65536.0) as u16
+    } else {
+        0
+    };
+    alloc_gc(wtf8_from_utf16(&[u]))
+}
+
 /// `String.fromCodePoint(cp)`. A value that is not a code point is a fault (a `RangeError`).
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_str_from_code_point_gc(cp: f64) -> *mut Str {
@@ -837,10 +851,10 @@ mod tests {
     fn order_is_by_utf16_unit_not_code_point() {
         // U+1F600 is D83D DE00 in UTF-16, so it sorts before U+FF21 (a BMP code point above U+D800).
         let (emoji, wide) = (s("\u{1F600}"), s("\u{FF21}"));
-        assert_eq!(unsafe { ts_rt_str_compare(emoji, wide) }, -1);
-        assert_eq!(unsafe { ts_rt_str_compare(wide, emoji) }, 1);
-        assert_eq!(unsafe { ts_rt_str_compare(s("abc"), s("abd")) }, -1);
-        assert_eq!(unsafe { ts_rt_str_compare(s("ab"), s("abc")) }, -1);
+        assert_eq!(unsafe { ts_rt_str_compare(emoji, wide) }, -1.0);
+        assert_eq!(unsafe { ts_rt_str_compare(wide, emoji) }, 1.0);
+        assert_eq!(unsafe { ts_rt_str_compare(s("abc"), s("abd")) }, -1.0);
+        assert_eq!(unsafe { ts_rt_str_compare(s("ab"), s("abc")) }, -1.0);
     }
 
     // M9-TS-166

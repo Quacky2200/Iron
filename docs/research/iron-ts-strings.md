@@ -1,13 +1,17 @@
 # iron_ts: strings (design note, for review)
 
-Status: **slices 1a and 1b are implemented** (2026-10-18): the runtime side in
+Status: **slices 1a, 1b and 2 are implemented** (2026-10-18). Slice 2 is compiler support
+(`lower/strings.rs`, `RtFn::Str`, static literals, `+`/templates/compare/methods; tests M9-TS-178..182);
+known gaps: `typeof`, `codePointAt` past the end, optional chaining on strings, object-literal fields
+without a declared type, `join` of non-string arrays, one allocation per `+` in a chain. **Slice 3, the
+engine boundary, is next** (a `string` manifest type, borrowed `&str` in, out pointer out,
+`GameObject.name`/`find`). Slices 1a and 1b: the runtime side in
 `tools/iron_ts_rt/src/string.rs` (WTF-8 `Str` with inline bytes, flags, one-entry cursor; concat, eq,
 compare, length, charCodeAt/codePointAt, charAt, slice, substring, indexOf/lastIndexOf/includes/
 startsWith/endsWith, fromCodePoint) with tests M9-TS-162..172, and `string_more.rs` (trim, repeat, pad,
 case mapping, at, template concat, split/join, Number to string/toFixed/integer radix, Number/parseFloat/
 parseInt) with tests M9-TS-173..177, all differential against bun. Not yet: toString(radix) of
-fractions, toPrecision/toExponential, normalize, localeCompare, RegExp, compiler support (slice 2), the
-engine boundary (slice 3). The rest of this note is the design as proposed. Written 2026-10-18, revised
+fractions, toPrecision/toExponential, normalize, localeCompare, RegExp, the engine boundary (slice 3). The rest of this note is the design as proposed. Written 2026-10-18, revised
 the same day after review. The engine-boundary note (section 7) made string-taking engine functions
 wait for this.
 

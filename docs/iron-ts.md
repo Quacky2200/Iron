@@ -65,6 +65,14 @@ bytes, bindings text, IR dump and the time of each phase.
   carries its type. Numbers are `f64`, bools `i8`, string-literal union members `i32` (`Ty::Lit`),
   everything else a 64-bit pointer. `T | null` is the pointer with 0 as null; `number | null` is an
   `f64` with one reserved NaN payload (`NULL_NUM_BITS`).
+- **Strings.** `string` is a pointer to the runtime's `Str` (`Ty::Str`). A literal is a `Ty::Lit` tag
+  in a string-literal-union context and a `Ty::Str` static object when the context is `string`
+  (`ExprKind::Str(i)`: bytes in the object file's writable data, header `HDR_STR` with no heap id, so
+  the collector ignores it; `Module.strs`). A tag used as a string converts (`ExprKind::TagStr`: a table
+  of the tags' texts, or a static string when the tag is constant). `let` initialisers and array
+  literals widen a literal to `string`; `const` keeps the literal type. Runtime calls are
+  `RtFn::Str(symbol)`: a generic call to a `ts_rt_str_*` function; names ending `_gc` may collect and
+  count as allocating in the root analysis (`frames.rs`). See "Strings in the compiler" below.
 - **Objects** are `[header][8-byte slot per field]`; every field is one 8-byte slot, so offsets are
   trivial and the generated Rust structs match exactly.
 - **Codegen** targets the host triple (no PIC, no unwind info). Exported functions are `ts_<prefix><name>`
@@ -107,6 +115,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/arrays.rs](../tools/iron_ts/src/lower/arrays.rs) | Array methods; callbacks are inlined into loops, `Iter` for `for...of` and spread |
 | [lower/scan.rs](../tools/iron_ts/src/lower/scan.rs) | Which names do closures capture (by name, so it only over-approximates) |
 | [lower/closure.rs](../tools/iron_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
+| [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
@@ -114,7 +123,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | Feature | Lowering |
 |---|---|
-| Types | `number`, `boolean`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Set<T>` (an array), `Record<string, V>` after `satisfies`, function types |
+| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Set<T>` (an array), `Record<string, V>` after `satisfies`, function types |
 | Functions | `function` and arrow declarations; return types inferred; calls are direct |
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
@@ -131,6 +140,26 @@ bytes, bindings text, IR dump and the time of each phase.
 | Optional chaining, `!`, `??`, `?:` | Inline null tests |
 | Engine API calls | With a manifest, `Namespace.fn(args)` is `CallExtern`: a direct call of the manifest's symbol (`iron_<Namespace>_<fn>`) with the manifest's C signature, arguments checked by count and type. Numbers stay `f64` in scripts and convert at the call: `f32` demotes in and promotes out, `i32`/`u32` use a saturating truncation, `bool` is a byte. Handles are `Ty::Handle(name)`: a 64-bit id, not a GC pointer (not traced or rooted, `===` compares ids). In a `T \| null` slot 0 is null, so a live handle is never 0. An engine function must not call back into scripts or allocate in the script heap. Handle classes (the manifest's `classes`, see [iron-api.md](iron-api.md#handle-classes)) are called through the same path: `emit_extern` makes the call from already-lowered arguments and `call_ext_fn` adds the receiver in front of the call's own arguments (counts are checked without it). `obj.prop` on a handle is the getter's call (`member_of`); `obj.prop = v` is a `Place::Ext` whose write calls the setter (a property with no setter, or an unknown one, is a compile error; compound assignment on a value property is not supported); `obj.method(..)` (`lower_method`) calls the method; `Class.f(..)` on a class name that is not a local is the static. Value classes (`new Vector3(1, 2, 3)`) are ordinary structs with one `number` field per manifest field; as an argument one is passed as its flattened field reads (every argument goes through a temporary first, to keep evaluation order), and a result is a new object filled through a trailing out pointer by `CallExternInto` (a stack slot, then the scalars widened into the fields) |
 
+**Strings in the compiler** ([lower/strings.rs](../tools/iron_ts/src/lower/strings.rs), slice 2).
+- `+` and `+=` convert numbers, booleans and null by JavaScript's rules (`ts_rt_num_to_str_gc` and
+  static texts); two constants fold at compile time. Template literals are one `concat_n_gc` over an
+  array of parts. A chain `a + b + c` still allocates once per `+`.
+- `===`/`!==` call `ts_rt_str_eq` (null-safe; codegen emits it for `Str` operands); `<`, `<=`, `>`, `>=`
+  call `ts_rt_str_compare` (returns `f64`, code unit order). `s.length` is `ts_rt_str_length`.
+  Truthiness is "non-empty" (and non-null).
+- String methods map to runtime functions by a table, with default arguments filled in by the
+  compiler (`slice`, `substring`, `indexOf`, `padStart`, `split`, `trim`, `toUpperCase`, `at`, ...).
+  Number methods `toString` and `toFixed`; globals `String`, `Number`, `parseInt`, `parseFloat`;
+  `String.fromCharCode` (`ts_rt_str_from_char_code_gc`) and `String.fromCodePoint`; `join` of a
+  `string[]`.
+- Compile errors: unsupported string methods (`localeCompare`, `normalize`, `replace`, `match`, ...) and
+  string literals with lone surrogates.
+- Not done: `typeof`, `codePointAt` past the end (gives plain NaN, not undefined), optional chaining on
+  strings, object-literal fields with no declared type, `join` of non-string arrays.
+- The binding generator emits `TAG_*` constants only for texts that are valid, distinct identifiers.
+- Tests: `bench/strings.ts` with `tests/strings.rs` (M9-TS-178..182, prefix `str_`, base 16000);
+  expected values come from `bench/gen_strings_expected.ts` (bun) into `strings_expected.json`.
+
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
 sees the whole program, so a method call `a.m()` is resolved exactly: if one implementation is
@@ -143,7 +172,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
 Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), `typeof`, class expressions, generics, extending engine classes (`Component`),
-`try`/`throw`, template literals and general string code, `Map`, `for...in`, rest elements in
+`try`/`throw`, unsupported string methods (see above), `Map`, `for...in`, rest elements in
 patterns, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
@@ -214,8 +243,9 @@ calls into. Its header comment is the long version.
   exact ties round up as in JavaScript, where Rust rounds to even), `ts_rt_num_to_radix_gc` (integers
   only; a fraction in another radix is a fault for now), and the parsers `ts_rt_str_to_number`
   (`Number(s)`), `ts_rt_str_parse_float`, `ts_rt_str_parse_int(s, radix)`. Not done yet: `toString(radix)`
-  of fractions, `toPrecision`/`toExponential`, `normalize`, `localeCompare`, RegExp, compiler support
-  for strings (slice 2) and the engine boundary (slice 3).
+  of fractions, `toPrecision`/`toExponential`, `normalize`, `localeCompare`, RegExp and the engine boundary
+  (slice 3). Slice 2 changed `ts_rt_str_eq` to be null-safe, `ts_rt_str_compare` to return `f64`, and
+  added `ts_rt_str_from_char_code_gc`.
   Tests: [tools/iron_ts_rt/tests/strings.rs](../tools/iron_ts_rt/tests/strings.rs) (M9-TS-162..172) and
   [strings_more.rs](../tools/iron_ts_rt/tests/strings_more.rs) (M9-TS-173..177), both differential:
   `tests/gen_strings.ts` (run with bun) writes `strings_expected.json` and
@@ -250,7 +280,7 @@ To add a test module:
 
 1. Write `bench/<name>.ts` (exported functions only get symbols; run it in bun to get the expected numbers).
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
-   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000, scene 15000); take the next free one.
+   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000, scene 15000, strings 16000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.

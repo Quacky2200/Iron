@@ -39,6 +39,7 @@ fn main() {
         ("props", "prop_", 13000),
         ("engine", "eng_", 14000),
         ("scene", "scn_", 15000),
+        ("strings", "str_", 16000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

@@ -533,6 +533,7 @@ dependencies = [
  "iron_script",
  "iron_ts",
  "iron_ts_rt",
+ "serde_json",
 ]
 
 [[package]]

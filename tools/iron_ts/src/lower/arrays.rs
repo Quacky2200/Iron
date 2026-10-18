@@ -333,6 +333,18 @@ impl<'a> Lowerer<'a> {
                 return self.lower_method(Self::downcast(recv, sub), m, c);
             }
         }
+        if rty == Ty::Str {
+            return self.lower_str_method(recv, m, c);
+        }
+        if rty == Ty::Num {
+            return self.lower_num_method(recv, m, c);
+        }
+        if let Ty::Arr(el) = &rty
+            && **el == Ty::Str
+            && m == "join"
+        {
+            return self.lower_join(recv, c);
+        }
         if let Ty::Handle(class) = &rty {
             let f = self
                 .manifest

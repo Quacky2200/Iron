@@ -76,8 +76,14 @@ pub fn rust_bindings(m: &Module) -> String {
     s += &format!("pub const NULL_NUM_BITS: u64 = {NULL_NUM_BITS:#x};\n");
     s += "/// A `number | null` slot is null when its bits equal this.\npub fn is_null_num(v: f64) -> bool { v.to_bits() == NULL_NUM_BITS }\n";
     s += "pub fn null_num() -> f64 { f64::from_bits(NULL_NUM_BITS) }\n\n";
+    // A tag is only a constant if its text makes a distinct identifier (string literals used as
+    // `string` values also become tags: `","` and `")"` would both be `TAG__`).
+    let mut seen = std::collections::HashSet::new();
     for (i, t) in m.tags.iter().enumerate() {
-        s += &format!("pub const TAG_{}: u32 = {i};\n", ident(t));
+        let id = ident(t);
+        if t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && seen.insert(id.clone()) {
+            s += &format!("pub const TAG_{id}: u32 = {i};\n");
+        }
     }
     s += "\n";
     for (id, st) in m.structs.iter().enumerate() {

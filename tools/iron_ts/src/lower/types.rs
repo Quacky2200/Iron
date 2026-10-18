@@ -229,6 +229,7 @@ impl<'a> Lowerer<'a> {
         }
         Ok(match (a, b) {
             (Ty::Null, t) | (t, Ty::Null) => t.clone().nullable(),
+            (Ty::Lit, Ty::Str) | (Ty::Str, Ty::Lit) => Ty::Str,
             _ if a.strip() == b.strip() => a.strip().clone().nullable(),
             // Two classes of one family: the base class.
             _ if self.assignable(a, b) => b.strip().clone().nullable(),
@@ -265,6 +266,21 @@ impl<'a> Lowerer<'a> {
                 kind: ExprKind::Cast(Box::new(e)),
                 ty: to.clone(),
             }),
+            // A union member where a `string` is expected.
+            (Ty::Lit, t) if t.strip() == &Ty::Str => {
+                let s = Expr {
+                    kind: ExprKind::TagStr(Box::new(e)),
+                    ty: Ty::Str,
+                };
+                if t.is_nullable() {
+                    Ok(Expr {
+                        kind: ExprKind::Cast(Box::new(s)),
+                        ty: to.clone(),
+                    })
+                } else {
+                    Ok(s)
+                }
+            }
             (a, Ty::Void) => bail!("cannot use {a} as void"),
             (a, b) => bail!("type mismatch: {a} where {b} is expected"),
         }
@@ -286,6 +302,26 @@ impl<'a> Lowerer<'a> {
                 ))
             }
             Ty::Num => ex(ExprKind::Truthy(Box::new(e))),
+            // A union member is true unless its text is empty.
+            Ty::Lit => match e.kind {
+                ExprKind::Tag(t) => ex(ExprKind::Bool(!self.m.tags[t as usize].is_empty())),
+                _ => self.to_bool(Expr {
+                    kind: ExprKind::TagStr(Box::new(e)),
+                    ty: Ty::Str,
+                }),
+            },
+            // A string is true when it is not empty.
+            Ty::Str => ex(ExprKind::Cmp(
+                CmpOp::Ne,
+                Box::new(Expr {
+                    kind: ExprKind::Rt(RtFn::Str("ts_rt_str_length"), vec![e]),
+                    ty: Ty::Num,
+                }),
+                Box::new(Expr {
+                    kind: ExprKind::Num(0.0),
+                    ty: Ty::Num,
+                }),
+            )),
             // A handle is an id; zero is no object.
             Ty::Handle(_) => {
                 let zero = Expr {

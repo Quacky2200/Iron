@@ -192,6 +192,18 @@ pub fn scene_anchor() -> usize {
     iron_scene::Scene::new().len()
 }
 
+/// Strings in compiled code (`bench/strings.ts`), prefix `str_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod strs {
+    include!(concat!(env!("OUT_DIR"), "/strings_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

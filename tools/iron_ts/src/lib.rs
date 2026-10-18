@@ -189,6 +189,27 @@ mod tests {
         assert!(e.contains("not a loop"), "{e}");
     }
 
+    // M9-TS-182
+    #[test]
+    fn string_methods_that_need_more_work_are_errors_with_a_reason() {
+        for call in [
+            "\"a\".localeCompare(\"b\")",
+            "\"a\".normalize()",
+            "\"a\".replace(\"a\", \"b\")",
+        ] {
+            let e = lower::lower_source(&format!(
+                "export function f(): number {{ return {call} ? 1 : 0; }}"
+            ))
+            .err()
+            .unwrap();
+            assert!(e.contains("not supported yet"), "{call}: {e}");
+        }
+        let e = lower::lower_source("export function f(): string { return \"\\uD800\"; }")
+            .err()
+            .unwrap();
+        assert!(e.contains("lone surrogate"), "{e}");
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {

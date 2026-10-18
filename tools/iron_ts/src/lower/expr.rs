@@ -82,9 +82,19 @@ impl<'a> Lowerer<'a> {
             Expression::BooleanLiteral(b) => Ok(mk(ExprKind::Bool(b.value), Ty::Bool)),
             Expression::NullLiteral(_) => Ok(mk(ExprKind::Null, Ty::Null)),
             Expression::StringLiteral(s) => {
+                if s.lone_surrogates {
+                    bail!(
+                        "{}: a string literal with a lone surrogate is not supported yet",
+                        self.loc(s.span.start)
+                    )
+                }
+                if matches!(exp.map(|t| t.strip()), Some(Ty::Str)) {
+                    return Ok(self.str_lit(s.value.as_str()));
+                }
                 let t = self.tag(s.value.as_str());
                 Ok(mk(ExprKind::Tag(t), Ty::Lit))
             }
+            Expression::TemplateLiteral(t) => self.lower_template(t),
             Expression::Identifier(id) => self.lower_ident(id.name.as_str()),
             Expression::ParenthesizedExpression(p) => self.lower_expr(&p.expression, exp),
             Expression::TSAsExpression(a) => {
@@ -270,6 +280,8 @@ impl<'a> Lowerer<'a> {
 
     /// `obj.prop` on an already-lowered object.
     pub(crate) fn member_of(&mut self, obj: Expr, prop: &str) -> R<Expr> {
+        // A string literal (or a constant of one) used as a `string`: `"abc".length`.
+        let obj = self.widen_lit(obj);
         match obj.ty.strip().clone() {
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
@@ -299,6 +311,7 @@ impl<'a> Lowerer<'a> {
             Ty::Arr(_) | Ty::Bytes if prop == "length" => {
                 Ok(mk(ExprKind::Len(Box::new(obj)), Ty::Num))
             }
+            Ty::Str if prop == "length" => Ok(self.str_length(obj)),
             Ty::Handle(class) => {
                 let getter = self
                     .manifest
@@ -626,6 +639,9 @@ impl<'a> Lowerer<'a> {
         if let Some(op) = cop {
             return self.lower_compare(op, l, r, b.span.start);
         }
+        if b.operator == B::Addition && (Self::is_stringy(&l.ty) || Self::is_stringy(&r.ty)) {
+            return self.str_concat(l, r);
+        }
         let op = match b.operator {
             B::Addition => BinOp::Add,
             B::Subtraction => BinOp::Sub,
@@ -685,7 +701,21 @@ impl<'a> Lowerer<'a> {
                 mk(ExprKind::Un(UnOp::Not, Box::new(is_null)), Ty::Bool)
             });
         }
+        // A union member against a `string` is compared as a string.
+        let (lt, rt) = (l.ty.strip(), r.ty.strip());
+        let (l, r) = if (lt == &Ty::Lit && rt == &Ty::Str)
+            || (lt == &Ty::Str && rt == &Ty::Lit)
+            || (!eq && lt == &Ty::Lit && rt == &Ty::Lit)
+        {
+            let (l, r) = (self.widen_lit(l), self.widen_lit(r));
+            (l, r)
+        } else {
+            (l, r)
+        };
         let (a, b) = (l.ty.strip().clone(), r.ty.strip().clone());
+        if !eq && a == Ty::Str && b == Ty::Str {
+            return Ok(self.str_order(op, l, r));
+        }
         if a != b && !self.assignable(&a, &b) && !self.assignable(&b, &a) {
             bail!("{}: cannot compare {a} with {b}", self.loc(at));
         }
@@ -862,6 +892,8 @@ impl<'a> Lowerer<'a> {
                 bail!("{}: hole in an array literal", self.loc(a.span.start))
             };
             let v = self.lower_expr(e, el.as_ref())?;
+            // `["a", "b"]` is a `string[]` unless the context says otherwise.
+            let v = if el.is_none() { self.widen_lit(v) } else { v };
             if el.is_none() {
                 el = Some(v.ty.clone());
             }
@@ -1178,6 +1210,11 @@ impl<'a> Lowerer<'a> {
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;
             self.coerce(v, &pty)?
+        } else if a.operator == A::Addition && Self::is_stringy(&pty) {
+            let r = self.lower_expr(&a.right, None)?;
+            let old = self.place_read(&place);
+            let v = self.str_concat(old, r)?;
+            self.coerce(v, &pty)?
         } else {
             let op = match a.operator {
                 A::Addition => BinOp::Add,
@@ -1363,6 +1400,11 @@ impl<'a> Lowerer<'a> {
                         sig.ret.clone(),
                     ));
                 }
+                if !self.fids.contains_key(name)
+                    && let Some(e) = self.lower_string_global(name, c)?
+                {
+                    return Ok(e);
+                }
                 let Some(&fid) = self.fids.get(name) else {
                     bail!(
                         "{}: call to unknown function `{name}`",
@@ -1384,6 +1426,12 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Math").is_none()
                 {
                     return self.lower_math(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "String"
+                    && self.lookup("String").is_none()
+                {
+                    return self.lower_string_static(method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Array"
@@ -1424,6 +1472,8 @@ impl<'a> Lowerer<'a> {
                 if m.optional {
                     recv = self.chain_guard(recv)?;
                 }
+                // A literal (or a constant of one) as the receiver of a string method.
+                let recv = self.widen_lit(recv);
                 // A function-typed field (`handlers.onHit(x)`) is called, not looked up as a method.
                 if let Ty::Obj(sid) = recv.ty.strip()
                     && let Some(i) = self.m.structs[*sid].field(method)

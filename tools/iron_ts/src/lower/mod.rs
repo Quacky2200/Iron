@@ -15,6 +15,7 @@ mod enums;
 mod expr;
 mod scan;
 mod stmt;
+mod strings;
 mod types;
 
 use crate::ir::*;

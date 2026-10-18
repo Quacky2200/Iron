@@ -163,6 +163,9 @@ pub enum CmpOp {
 /// Calls into `iron_ts_rt` that are not inlined.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RtFn {
+    /// A string function of the runtime by symbol (`ts_rt_str_slice_gc`): arguments and result
+    /// are typed by the call. A name ending in `_gc` may collect.
+    Str(&'static str),
     Alloc,
     ArrNew,
     ArrPush,
@@ -201,6 +204,10 @@ pub enum ExprKind {
     Bool(bool),
     /// A string-literal union member (index into `Module::tags`).
     Tag(u32),
+    /// A string literal as a `string`: the address of a static string (index into `Module::strs`).
+    Str(u32),
+    /// A union member (a `Tag`) as a `string`: a lookup in the table of the tags' texts.
+    TagStr(Box<Expr>),
     /// `null`: a zero pointer or the null NaN, depending on `ty`.
     Null,
     Var(VarId),
@@ -361,6 +368,8 @@ pub struct Module {
     pub funcs: Vec<Func>,
     /// String-literal union members; a `Tag` is an index here.
     pub tags: Vec<String>,
+    /// String literals used as `string` values (static data in the object file).
+    pub strs: Vec<String>,
     /// Runs the top-level initialisers; exported as `ts_init`.
     pub init: Option<FuncId>,
     /// Put between `ts_` and an exported name, so several modules can link into one program.
@@ -463,6 +472,8 @@ fn ex(e: &Expr) -> String {
         ExprKind::Num(n) => format!("{n}"),
         ExprKind::Bool(b) => format!("{b}"),
         ExprKind::Tag(t) => format!("tag{t}"),
+        ExprKind::Str(i) => format!("str#{i}"),
+        ExprKind::TagStr(a) => format!("tagstr({})", ex(a)),
         ExprKind::Null => "null".into(),
         ExprKind::Var(v) => format!("v{v}"),
         ExprKind::Global(g) => format!("g{g}"),
