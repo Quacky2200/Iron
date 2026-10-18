@@ -134,6 +134,9 @@ impl<'a> Lowerer<'a> {
         if let Some(t) = self.named.get(name) {
             return Ok(t.clone());
         }
+        if self.manifest.values.contains_key(name) {
+            return Ok(Ty::Obj(self.value_struct(name)));
+        }
         if self.manifest.handles.contains(name) {
             return Ok(Ty::Handle(name.to_string()));
         }

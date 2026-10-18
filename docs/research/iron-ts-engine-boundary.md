@@ -357,3 +357,37 @@ the manifest of an `#[iron_api]` namespace calls it directly.
 Not built yet: value classes across the boundary, strings, methods on handles (`transform.position`),
 the engine context the real shims will reach the world through, and annotating `iron_scene` and the
 other engine crates.
+
+## 16. The engine context and value classes: built (2026-10-18)
+
+**Decision: a thread-local current world.** Taken as the recommended default when the question in
+section 12's follow-up went unanswered and the work was told to continue. A shim has no world argument
+(scripts have none), so the host makes the world current on the scripting thread and API functions
+reach it through `iron_api::context`: `enter(&SLOT, &mut world)` returns a scope guard that restores
+the previous world when dropped, and `with(&SLOT, |w| ..)` runs a closure on it or answers `None` when
+there is none (so a function called outside a frame returns its default instead of crashing). While
+the closure runs the world is *not* current, so an API function called from inside it gets `None`
+instead of a second `&mut` to the same world (`M9-API-07`..`09`). The alternative (an explicit
+context pointer as every shim's first argument) costs an argument on every call and a parameter in
+every signature; it is still possible later because the shims are generated.
+
+**Value classes** (`M9-API-10`, `11`; `M9-TS-147`..`150`): `values(Vector3 = Vec3 [x: f32, y: f32,
+z: f32])` declares a Rust type that implements `ValueType<N>` as a class scripts can construct and
+read.
+
+- Scripts: `new Vector3(1, 2, 3)` is an object with those fields (`v.x`), a struct in the script heap
+  like any other; the generated `.d.ts` declares the class.
+- Across the C ABI a value parameter is passed as one scalar per field (`v_0, v_1, v_2`); a value result
+  is written through a trailing pointer to room for the fields. Scalars rather than a struct avoid the
+  Win64/SysV disagreement about small structs, as the design said.
+- The compiler flattens the parameter into `Field` reads of a temporary and gives the extern a
+  trailing out-pointer; `CallExternInto` calls it with a stack slot, then widens the scalars into the
+  fields of a freshly allocated object (allocated before the call, held in a rooted local). Every
+  argument goes into a temporary first when a value is among them, so evaluation order is kept.
+- All fields of one value class have the same scalar type. QuickJS bindings do not support value
+  classes yet (the macro refuses `quickjs` together with `values(..)`).
+- This is "phase 1" of the design: each vector is a heap object; scalar replacement later removes the
+  allocation without changing the contract.
+
+Not built yet: methods on value classes as inline intrinsics (`a.add(b)`), strings, methods on
+handles (`transform.position`), annotating the real engine crates, and QuickJS support for values.

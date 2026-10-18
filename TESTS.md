@@ -624,12 +624,21 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-144 | Integration | Handles are plain ids: `===` compares them, a destroyed entity's id misses even when its slot is reused, and an engine function can answer for a stale id. Runs in all three GC modes (`tests/engine.rs`). |
 | M9-TS-145 | Integration | A handle lives in objects, arrays, nullable variables and closure cells without being traced, between allocations that collect at every step (`handle !== 0` is the null test). Runs in all three GC modes (`tests/engine.rs`). |
 | M9-TS-146 | Unit | Calls of the engine API are checked against the manifest: an unknown function, a wrong argument count and a malformed manifest are errors; each symbol is declared once (`iron_ts/src/lib.rs`). |
+| M9-TS-147 | Integration | A value class is an object in the script, passed to the engine as scalars and coming back as a new object; its fields are f32-rounded. Runs normally, in stress GC mode and with collection off (`tests/engine.rs`). |
+| M9-TS-148 | Integration | A value stored in the engine next to a handle reads back (`tests/engine.rs`). |
+| M9-TS-149 | Integration | Dozens of short-lived vectors survive a collection at every allocation (`tests/engine.rs`). |
+| M9-TS-150 | Unit | Value classes of the manifest are checked: flattened parameters, an out pointer for a result, wrong constructor arity, a number where a value is expected (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
 | M9-API-04 | Unit | The generated `extern "C"` shims call the functions with the C ABI, including `f32`, `i32`, `bool` and handles as raw ids (`crates/iron_api/tests/api.rs`). |
 | M9-API-05 | Unit | The generated QuickJS bindings install the namespace as a global with typed arguments and results (`crates/iron_api/tests/api.rs`). |
 | M9-API-06 | Benchmark (ignored) | 1,000,000 typed QuickJS calls against the same through an `__iron_op`-style queue; prints the time per call (`crates/iron_api/tests/api.rs`). |
+| M9-API-07 | Unit | Shims reach the world the host made current; with none they answer their defaults (`crates/iron_api/tests/context.rs`). |
+| M9-API-08 | Unit | A nested call inside `context::with` finds no world instead of a second `&mut` (`crates/iron_api/tests/context.rs`). |
+| M9-API-09 | Unit | Context scopes nest and restore the previous world (`crates/iron_api/tests/context.rs`). |
+| M9-API-10 | Unit | The manifest, `.d.ts` class and JSON describe a value class (`crates/iron_api/tests/values.rs`). |
+| M9-API-11 | Unit | The shims pass a value as scalars and return one through a pointer (`crates/iron_api/tests/values.rs`). |
 
 ---
 

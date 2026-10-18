@@ -241,6 +241,9 @@ pub enum ExprKind {
     CallVirtual(usize, Vec<Expr>),
     /// A call of an engine function (`Module::externs[i]`) through its `extern "C"` symbol.
     CallExtern(usize, Vec<Expr>),
+    /// Like `CallExtern` for a function with a value result: the result's scalars are written
+    /// into the fields of the object the last operand evaluates to (a fresh struct).
+    CallExternInto(usize, Vec<Expr>, Box<Expr>),
     /// Is the object (a class instance, or null) an instance of one of the structs in
     /// `Module::itables[i]`?
     InstanceOf(Box<Expr>, usize),
@@ -301,6 +304,8 @@ pub enum ExtTy {
     I32,
     U32,
     Handle(String),
+    /// A value class (`Vector3`): passed as one scalar per field.
+    Value(String),
 }
 
 impl ExtTy {
@@ -311,6 +316,8 @@ impl ExtTy {
             ExtTy::Bool => Ty::Bool,
             ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => Ty::Num,
             ExtTy::Handle(n) => Ty::Handle(n.clone()),
+            // The struct is made by the lowering (it knows the struct ids).
+            ExtTy::Value(_) => Ty::Void,
         }
     }
 }
@@ -319,8 +326,11 @@ impl ExtTy {
 #[derive(Clone, Debug)]
 pub struct ExternDecl {
     pub symbol: String,
+    /// The scalars of the C signature (a value class is already flattened into its fields).
     pub params: Vec<ExtTy>,
     pub ret: ExtTy,
+    /// A value result comes back through a trailing pointer to this many scalars of this type.
+    pub out: Option<(ExtTy, usize)>,
 }
 
 /// One `@property` field of a class.
@@ -477,6 +487,11 @@ fn ex(e: &Expr) -> String {
         ExprKind::CallExtern(i, a) => format!(
             "calle#{i}({})",
             a.iter().map(ex).collect::<Vec<_>>().join(", ")
+        ),
+        ExprKind::CallExternInto(i, a, d) => format!(
+            "calle#{i}({}) -> {}",
+            a.iter().map(ex).collect::<Vec<_>>().join(", "),
+            ex(d)
         ),
         ExprKind::CallVirtual(t, a) => format!(
             "callv#{t}({})",

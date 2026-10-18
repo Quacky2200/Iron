@@ -1521,7 +1521,8 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           annotated Rust (replaces `__iron_op`; speeds up QuickJS too)
       - [x] First slice: `crates/iron_api` + `iron_api_macros`: scalars, bools and handles, manifest, `.d.ts`,
             JSON, `extern "C"` shims, typed QuickJS bindings (`M9-API-01..06`); additive
-      - [ ] Value classes (`Vector3`) scalarised, strings, methods on handles, the engine context shims reach the world through
+      - [x] Value classes (`Vector3`) scalarised across the boundary (`M9-API-10..11`, `M9-TS-147..150`) and the engine context: a thread-local current world (`M9-API-07..09`)
+      - [ ] Strings, methods on handles (`transform.position`), value-class methods as intrinsics, QuickJS bindings for values
       - [ ] Annotate the real engine crates (`iron_scene`, `iron_physics`, `iron_audio`, `iron_script`) and retire their ops
     - [x] Compiler: extern table from the JSON manifest, `Handle` type, namespace calls with scalar arguments and f32/i32/u32/bool conversions (`M9-TS-142..146`)
     - [ ] First slice: `Time`, `Mathf`, `Vector3`, `Transform`, `Input` axes and a compiled `Component`

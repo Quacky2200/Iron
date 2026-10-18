@@ -141,6 +141,8 @@ pub struct Lowerer<'a> {
     pub(crate) consts: HashMap<String, ConstInfo>,
     /// The engine API scripts may call (`Namespace.fn(..)`) and its handle types.
     pub(crate) manifest: crate::manifest::Manifest,
+    /// The structs of the manifest's value classes, made when first named.
+    pub(crate) value_structs: HashMap<String, StructId>,
     /// Class declarations by name, and what is known about each once its struct exists.
     pub(crate) class_decls: HashMap<String, &'a Class<'a>>,
     pub(crate) classes: HashMap<String, classes::ClassInfo>,
@@ -189,6 +191,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         fstate: Vec::new(),
         consts: HashMap::new(),
         manifest,
+        value_structs: HashMap::new(),
         class_decls: HashMap::new(),
         classes: HashMap::new(),
         class_of_sid: HashMap::new(),

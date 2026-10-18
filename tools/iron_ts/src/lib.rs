@@ -340,4 +340,36 @@ mod tests {
                 .unwrap();
         assert!(bad.contains("manifest"), "{bad}");
     }
+
+    // M9-TS-150
+    #[test]
+    fn value_classes_of_the_manifest_are_checked() {
+        let manifest = r#"{"namespace":"V","handles":[],"values":[
+            {"name":"Pair","fields":[{"name":"a","type":"f32"},{"name":"b","type":"f32"}]}],
+            "functions":[
+            {"name":"swap","symbol":"iron_V_swap","params":[{"name":"p","type":"value:Pair"}],"returns":"value:Pair"}]}"#
+            .to_string();
+        let ok = lower::lower_source_with(
+            "export function f(): number { const q = V.swap(new Pair(1, 2)); return q.a * 10 + q.b; }",
+            std::slice::from_ref(&manifest),
+        )
+        .unwrap();
+        // The parameter is flattened to its two fields, and the result comes back through a pointer.
+        assert_eq!(ok.externs[0].params.len(), 2);
+        assert_eq!(ok.externs[0].out.as_ref().map(|o| o.1), Some(2));
+        let few = lower::lower_source_with(
+            "export function f(): number { return new Pair(1).a; }",
+            std::slice::from_ref(&manifest),
+        )
+        .err()
+        .unwrap();
+        assert!(few.contains("1 arguments, 2 expected"), "{few}");
+        let wrong = lower::lower_source_with(
+            "export function f(): number { return V.swap(3).a; }",
+            std::slice::from_ref(&manifest),
+        )
+        .err()
+        .unwrap();
+        assert!(wrong.contains("type mismatch"), "{wrong}");
+    }
 }

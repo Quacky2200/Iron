@@ -30,6 +30,10 @@ pub enum Ty {
     /// An engine object named by a 64-bit id (a generational index): `GameObject`, `Rigidbody`...
     /// The name is the TypeScript type.
     Handle(&'static str),
+    /// A small value class (`Vector3`): scripts see an object with the fields declared in
+    /// [`Namespace::values`]; across the C ABI it travels as one scalar per field (a result comes
+    /// back through a trailing pointer).
+    Value(&'static str),
 }
 
 impl Ty {
@@ -39,7 +43,7 @@ impl Ty {
             Ty::Void => "void",
             Ty::Bool => "boolean",
             Ty::F64 | Ty::F32 | Ty::I32 | Ty::U32 => "number",
-            Ty::Handle(name) => name,
+            Ty::Handle(name) | Ty::Value(name) => name,
         }
     }
 
@@ -53,6 +57,7 @@ impl Ty {
             Ty::I32 => "i32".into(),
             Ty::U32 => "u32".into(),
             Ty::Handle(n) => format!("handle:{n}"),
+            Ty::Value(n) => format!("value:{n}"),
         }
     }
 }
@@ -78,16 +83,40 @@ pub struct Function {
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
 /// namespace` in TypeScript.
+/// One field of a value class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueField {
+    pub name: &'static str,
+    /// `F32`, `F64`, `I32` or `U32`; every field of a value class has the same one.
+    pub ty: Ty,
+}
+
+/// A value class: a few numbers that scripts handle as an object (`new Vector3(1, 2, 3)`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueDef {
+    pub name: &'static str,
+    pub fields: &'static [ValueField],
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Namespace {
     pub name: &'static str,
     /// The handle types it mentions: `(TypeScript name)`.
     pub handles: &'static [&'static str],
+    /// The value classes its functions take and return.
+    pub values: &'static [ValueDef],
     pub functions: &'static [Function],
 }
 
 /// An engine object id. The Rust type that implements this is what API functions take and return;
 /// scripts see the raw 64-bit value.
+/// A Rust type that scripts see as a value class of `N` numbers (`glam::Vec3` as `Vector3`).
+/// The parts travel as `f64`; the manifest says how wide each is on the wire.
+pub trait ValueType<const N: usize>: Copy {
+    fn from_parts(parts: [f64; N]) -> Self;
+    fn to_parts(self) -> [f64; N];
+}
+
 pub trait Handle: Copy {
     fn to_raw(self) -> u64;
     fn from_raw(raw: u64) -> Self;
@@ -117,6 +146,19 @@ impl Namespace {
                 "/** An engine object, by id. */\ndeclare type {h} = number & {{ readonly __handle: \"{h}\" }};\n"
             );
         }
+        for v in self.values {
+            let ctor: Vec<String> = v
+                .fields
+                .iter()
+                .map(|f| format!("{}: number", f.name))
+                .collect();
+            s += &format!("declare class {} {{\n", v.name);
+            s += &format!("  constructor({});\n", ctor.join(", "));
+            for f in v.fields {
+                s += &format!("  {}: number;\n", f.name);
+            }
+            s += "}\n";
+        }
         s += &format!("declare namespace {} {{\n", self.name);
         for f in self.functions {
             if !f.doc.is_empty() {
@@ -145,10 +187,33 @@ impl Namespace {
     /// The manifest as JSON: what the compiler reads to call each function directly.
     pub fn to_json(&self) -> String {
         let handles: Vec<String> = self.handles.iter().map(|h| json_str(h)).collect();
+        let values: Vec<String> = self
+            .values
+            .iter()
+            .map(|v| {
+                let fields: Vec<String> = v
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{{\"name\":{},\"type\":{}}}",
+                            json_str(f.name),
+                            json_str(&f.ty.name())
+                        )
+                    })
+                    .collect();
+                format!(
+                    "{{\"name\":{},\"fields\":[{}]}}",
+                    json_str(v.name),
+                    fields.join(",")
+                )
+            })
+            .collect();
         let mut s = format!(
-            "{{\"namespace\":{},\"handles\":[{}],\"functions\":[",
+            "{{\"namespace\":{},\"handles\":[{}],\"values\":[{}],\"functions\":[",
             json_str(self.name),
-            handles.join(",")
+            handles.join(","),
+            values.join(",")
         );
         for (i, f) in self.functions.iter().enumerate() {
             if i > 0 {
@@ -175,6 +240,73 @@ impl Namespace {
         }
         s += "]}";
         s
+    }
+}
+
+/// The engine's current world, for API functions that need it.
+///
+/// An `extern "C"` shim cannot take the world as an argument (scripts do not have one), so the
+/// host makes it current on the thread that runs scripts and API functions reach it with
+/// [`with`]. Declare the slot as a `thread_local!` of `Cell<*mut World>`:
+///
+/// ```ignore
+/// thread_local! { static WORLD: Cell<*mut World> = const { Cell::new(std::ptr::null_mut()) }; }
+/// let _scope = iron_api::context::enter(&WORLD, &mut world); // while scripts run
+/// // inside an API function:
+/// iron_api::context::with(&WORLD, |w| w.transform(id)).unwrap_or_default()
+/// ```
+pub mod context {
+    use std::cell::Cell;
+    use std::marker::PhantomData;
+    use std::thread::LocalKey;
+
+    /// Restores the previous current world when dropped.
+    pub struct Scope<'a, T: 'static> {
+        slot: &'static LocalKey<Cell<*mut T>>,
+        previous: *mut T,
+        _borrow: PhantomData<&'a mut T>,
+    }
+
+    /// Makes `value` the current world on this thread until the returned scope is dropped.
+    pub fn enter<'a, T: 'static>(
+        slot: &'static LocalKey<Cell<*mut T>>,
+        value: &'a mut T,
+    ) -> Scope<'a, T> {
+        let previous = slot.with(|c| c.replace(value as *mut T));
+        Scope {
+            slot,
+            previous,
+            _borrow: PhantomData,
+        }
+    }
+
+    impl<T: 'static> Drop for Scope<'_, T> {
+        fn drop(&mut self) {
+            self.slot.with(|c| c.set(self.previous));
+        }
+    }
+
+    /// Runs `f` on the current world, or returns `None` when there is none. While `f` runs the
+    /// world is not current, so an API function called from inside `f` gets `None` instead of a
+    /// second `&mut` to the same value.
+    pub fn with<T: 'static, R>(
+        slot: &'static LocalKey<Cell<*mut T>>,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> Option<R> {
+        let ptr = slot.with(|c| c.replace(std::ptr::null_mut()));
+        if ptr.is_null() {
+            return None;
+        }
+        struct Restore<T: 'static>(&'static LocalKey<Cell<*mut T>>, *mut T);
+        impl<T: 'static> Drop for Restore<T> {
+            fn drop(&mut self) {
+                self.0.with(|c| c.set(self.1));
+            }
+        }
+        let _restore = Restore(slot, ptr);
+        // SAFETY: `ptr` came from a live `&mut T` held by a `Scope`, which outlives this call; the
+        // slot is null while `f` runs, so no other `&mut` to it can be made through the slot.
+        Some(f(unsafe { &mut *ptr }))
     }
 }
 

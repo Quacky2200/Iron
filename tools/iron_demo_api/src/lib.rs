@@ -2,7 +2,7 @@
 //! generated manifest, and TypeScript compiled by `iron_ts` calling the generated `extern "C"`
 //! shims directly. It keeps a tiny "world" of entities behind handles, like the real engine will.
 
-use iron_api::{Handle, iron_api};
+use iron_api::{Handle, ValueType, iron_api};
 use std::cell::RefCell;
 
 /// An entity id: slot index in the low 32 bits, generation in the high 32 (so a stale id misses).
@@ -18,8 +18,30 @@ impl Handle for EntityId {
     }
 }
 
+/// Three 32-bit floats: what scripts see as `Vector3`.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Vec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl ValueType<3> for Vec3 {
+    fn from_parts(p: [f64; 3]) -> Self {
+        Vec3 {
+            x: p[0] as f32,
+            y: p[1] as f32,
+            z: p[2] as f32,
+        }
+    }
+    fn to_parts(self) -> [f64; 3] {
+        [self.x as f64, self.y as f64, self.z as f64]
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Slot {
+    pos: Vec3,
     generation: u32,
     alive: bool,
     kind: u32,
@@ -42,9 +64,9 @@ fn with_slot<R>(e: EntityId, f: impl FnOnce(&mut Slot) -> R) -> Option<R> {
     })
 }
 
-#[iron_api(namespace = "Demo", handles(Entity = EntityId))]
+#[iron_api(namespace = "Demo", handles(Entity = EntityId), values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 pub mod demo {
-    use super::{EntityId, Slot, WORLD, id, with_slot};
+    use super::{EntityId, Slot, Vec3, WORLD, id, with_slot};
 
     /// `x * k`.
     pub fn scale(x: f64, k: f64) -> f64 {
@@ -77,6 +99,7 @@ pub mod demo {
             if let Some(i) = w.iter().position(|s| !s.alive) {
                 w[i].generation += 1;
                 w[i] = Slot {
+                    pos: Vec3::default(),
                     generation: w[i].generation,
                     alive: true,
                     kind,
@@ -86,6 +109,7 @@ pub mod demo {
             } else {
                 // Generations start at 1: a handle of 0 means "no object", so no live id is 0.
                 w.push(Slot {
+                    pos: Vec3::default(),
                     generation: 1,
                     alive: true,
                     kind,
@@ -119,6 +143,37 @@ pub mod demo {
         with_slot(e, |s| s.hp).unwrap_or(-1.0)
     }
 
+    /// The length of a vector, in 32-bit floating point.
+    pub fn length(v: Vec3) -> f32 {
+        (v.x * v.x + v.y * v.y + v.z * v.z).sqrt()
+    }
+
+    /// `v * k`.
+    pub fn scaled(v: Vec3, k: f32) -> Vec3 {
+        Vec3 {
+            x: v.x * k,
+            y: v.y * k,
+            z: v.z * k,
+        }
+    }
+
+    pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
+        Vec3 {
+            x: a.y * b.z - a.z * b.y,
+            y: a.z * b.x - a.x * b.z,
+            z: a.x * b.y - a.y * b.x,
+        }
+    }
+
+    pub fn set_position(e: EntityId, p: Vec3) {
+        with_slot(e, |s| s.pos = p);
+    }
+
+    /// Where an entity is (the origin for a stale id).
+    pub fn position(e: EntityId) -> Vec3 {
+        with_slot(e, |s| s.pos).unwrap_or_default()
+    }
+
     /// How many entities are alive.
     pub fn count() -> u32 {
         WORLD.with(|w| w.borrow().iter().filter(|s| s.alive).count() as u32)
@@ -138,7 +193,7 @@ pub fn declarations() -> String {
 /// Keeps the generated shims linked into an executable that only reaches them from compiled
 /// script code.
 pub fn link_anchor() -> usize {
-    let fns: [usize; 12] = [
+    let fns: [usize; 17] = [
         demo::iron_Demo_scale as *const () as usize,
         demo::iron_Demo_clampI as *const () as usize,
         demo::iron_Demo_half as *const () as usize,
@@ -151,6 +206,11 @@ pub fn link_anchor() -> usize {
         demo::iron_Demo_setHp as *const () as usize,
         demo::iron_Demo_hp as *const () as usize,
         demo::iron_Demo_count as *const () as usize,
+        demo::iron_Demo_length as *const () as usize,
+        demo::iron_Demo_scaled as *const () as usize,
+        demo::iron_Demo_cross as *const () as usize,
+        demo::iron_Demo_setPosition as *const () as usize,
+        demo::iron_Demo_position as *const () as usize,
     ];
     fns.iter().sum()
 }

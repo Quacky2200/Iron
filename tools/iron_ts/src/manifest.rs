@@ -24,6 +24,8 @@ pub struct Manifest {
     pub namespaces: HashMap<String, HashMap<String, ExternFn>>,
     /// Handle type names (`Entity`): types scripts can name.
     pub handles: HashSet<String>,
+    /// Value classes (`Vector3`): their fields in order, each a scalar type.
+    pub values: HashMap<String, Vec<(String, ExtTy)>>,
 }
 
 fn ext_ty(s: &str) -> Result<ExtTy, String> {
@@ -34,10 +36,15 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
         "f32" => ExtTy::F32,
         "i32" => ExtTy::I32,
         "u32" => ExtTy::U32,
-        other => match other.strip_prefix("handle:") {
-            Some(name) => ExtTy::Handle(name.to_string()),
-            None => return Err(format!("manifest: unknown type `{other}`")),
-        },
+        other => {
+            if let Some(name) = other.strip_prefix("handle:") {
+                ExtTy::Handle(name.to_string())
+            } else if let Some(name) = other.strip_prefix("value:") {
+                ExtTy::Value(name.to_string())
+            } else {
+                return Err(format!("manifest: unknown type `{other}`"));
+            }
+        }
     })
 }
 
@@ -50,6 +57,21 @@ impl Manifest {
             .as_str()
             .ok_or("manifest: missing `namespace`")?
             .to_string();
+        for val in v["values"].as_array().into_iter().flatten() {
+            let vname = val["name"]
+                .as_str()
+                .ok_or("manifest: a value needs a name")?;
+            let mut fields = Vec::new();
+            for f in val["fields"]
+                .as_array()
+                .ok_or("manifest: a value needs fields")?
+            {
+                let fname = f["name"].as_str().ok_or("manifest: a field needs a name")?;
+                let fty = ext_ty(f["type"].as_str().ok_or("manifest: a field needs a type")?)?;
+                fields.push((fname.to_string(), fty));
+            }
+            self.values.insert(vname.to_string(), fields);
+        }
         let mut fns = HashMap::new();
         for f in v["functions"]
             .as_array()

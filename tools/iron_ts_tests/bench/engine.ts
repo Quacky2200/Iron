@@ -90,3 +90,39 @@ export function closureOverHandle(): number {
   Demo.setHp(e, 41);
   return add(1);
 }
+
+/** A value class: `new Vector3(..)` is an object with x, y, z; the engine takes and returns it as 32-bit floats. */
+export function vectors(): number {
+  const a = new Vector3(3, 0, 4);
+  const len = Demo.length(a);
+  const b = Demo.scaled(a, 2);
+  const c = Demo.cross(new Vector3(1, 0, 0), new Vector3(0, 1, 0));
+  return len * 1000 + b.x * 100 + b.z + c.z * 10000;
+}
+
+/** Results are fresh objects and rounded to f32 on the way: 0.1 is not 0.1 afterwards. */
+export function vectorRounding(): number {
+  return Demo.scaled(new Vector3(0.1, 0, 0), 1).x;
+}
+
+/** A vector stored in the engine, next to a handle. */
+export function positions(): number {
+  Demo.reset();
+  const e = Demo.spawn(1);
+  Demo.setPosition(e, new Vector3(1.5, 2.5, 3.5));
+  const p = Demo.position(e);
+  const origin = Demo.position(Demo.spawn(2));
+  return p.x * 100 + p.y * 10 + p.z + origin.x;
+}
+
+/** Many short-lived vectors between collections. */
+export function manyVectors(n: number): number {
+  let total = 0;
+  let v = new Vector3(1, 0, 0);
+  for (let i = 0; i < n; i++) {
+    v = Demo.scaled(v, 1.5);
+    const w = Demo.cross(v, new Vector3(0, 1, 0));
+    total += Demo.length(w) + w.z * 0;
+  }
+  return total;
+}

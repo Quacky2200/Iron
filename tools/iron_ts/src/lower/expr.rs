@@ -374,6 +374,60 @@ impl<'a> Lowerer<'a> {
 
     /// `Namespace.fn(args)` for a function of the engine API: a direct call of its symbol, with
     /// the arguments checked against the manifest and numbers converted at the call.
+    /// The struct of a manifest value class (`Vector3`): one `number` field per field, in order.
+    pub(crate) fn value_struct(&mut self, name: &str) -> StructId {
+        if let Some(s) = self.value_structs.get(name) {
+            return *s;
+        }
+        let fields: Vec<Field> = self.manifest.values[name]
+            .iter()
+            .map(|(n, _)| Field {
+                name: n.clone(),
+                ty: Ty::Num,
+            })
+            .collect();
+        let sid = self.new_struct(name, fields);
+        self.value_structs.insert(name.to_string(), sid);
+        self.named.insert(name.to_string(), Ty::Obj(sid));
+        sid
+    }
+
+    /// The IR type scripts see for a boundary type.
+    fn ext_ir(&mut self, t: &ExtTy) -> Ty {
+        match t {
+            ExtTy::Value(n) => Ty::Obj(self.value_struct(n)),
+            other => other.to_ir(),
+        }
+    }
+
+    /// `new Vector3(x, y, z)`: the fields in order.
+    pub(crate) fn new_value(&mut self, name: &str, args: &'a [Argument<'a>], at: u32) -> R<Expr> {
+        let sid = self.value_struct(name);
+        let n = self.m.structs[sid].fields.len();
+        if args.len() != n {
+            bail!(
+                "{}: new {name}: {} arguments, {n} expected",
+                self.loc(at),
+                args.len()
+            )
+        }
+        let ty = Ty::Obj(sid);
+        let tmp = self.new_local(ty.clone());
+        let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), ty.clone()))];
+        for (i, a) in args.iter().enumerate() {
+            let Some(e) = a.as_expression() else {
+                bail!("new {name}: spread argument")
+            };
+            let v = self.lower_expr(e, Some(&Ty::Num))?;
+            let v = self.as_num(v)?;
+            stmts.push(Stmt::StoreField(self.var_expr(tmp), sid, i, v));
+        }
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty))
+    }
+
+    /// `Namespace.fn(args)` for a function of the engine API: a direct call of its symbol, with
+    /// the arguments checked against the manifest and numbers converted at the call. A value
+    /// class argument is passed as its fields; a value class result is written into a new object.
     fn lower_extern_call(&mut self, ns: &str, name: &str, c: &'a CallExpression<'a>) -> R<Expr> {
         let Some(f) = self.manifest.namespaces[ns].get(name).cloned() else {
             bail!("{}: {ns} has no function `{name}`", self.loc(c.span.start))
@@ -386,19 +440,52 @@ impl<'a> Lowerer<'a> {
                 f.params.len()
             )
         }
-        let mut args = Vec::new();
+        let any_value = f.params.iter().any(|(_, t)| matches!(t, ExtTy::Value(_)));
+        let mut pre: Vec<Stmt> = Vec::new();
+        let mut args: Vec<Expr> = Vec::new();
+        let mut flat: Vec<ExtTy> = Vec::new();
         for (a, (_, pt)) in c.arguments.iter().zip(&f.params) {
             let Some(e) = a.as_expression() else {
                 bail!("{ns}.{name}: spread argument")
             };
-            let want = pt.to_ir();
+            let want = self.ext_ir(pt);
             let v = self.lower_expr(e, Some(&want))?;
-            args.push(self.coerce(v, &want)?);
+            let v = self.coerce(v, &want)?;
+            // With a value argument every argument goes into a temporary first, so they are
+            // still evaluated in order.
+            let v = if any_value {
+                let t = self.new_local(want.clone());
+                pre.push(Stmt::Assign(t, v));
+                self.var_expr(t)
+            } else {
+                v
+            };
+            match pt {
+                ExtTy::Value(vn) => {
+                    let sid = self.value_struct(vn);
+                    for (i, (_, ft)) in self.manifest.values[vn].clone().iter().enumerate() {
+                        args.push(mk(ExprKind::Field(Box::new(v.clone()), sid, i), Ty::Num));
+                        flat.push(ft.clone());
+                    }
+                }
+                other => {
+                    args.push(v);
+                    flat.push(other.clone());
+                }
+            }
         }
+        let (ret_ext, out) = match &f.ret {
+            ExtTy::Value(vn) => {
+                let fields = &self.manifest.values[vn];
+                (ExtTy::Void, Some((fields[0].1.clone(), fields.len())))
+            }
+            other => (other.clone(), None),
+        };
         let decl = ExternDecl {
             symbol: f.symbol.clone(),
-            params: f.params.iter().map(|(_, t)| t.clone()).collect(),
-            ret: f.ret.clone(),
+            params: flat,
+            ret: ret_ext,
+            out,
         };
         let idx = match self.m.externs.iter().position(|d| d.symbol == decl.symbol) {
             Some(i) => i,
@@ -407,7 +494,24 @@ impl<'a> Lowerer<'a> {
                 self.m.externs.len() - 1
             }
         };
-        Ok(mk(ExprKind::CallExtern(idx, args), f.ret.to_ir()))
+        if let ExtTy::Value(vn) = &f.ret {
+            let sid = self.value_struct(vn);
+            let ty = Ty::Obj(sid);
+            let dest = self.new_local(ty.clone());
+            pre.push(Stmt::Assign(dest, mk(ExprKind::NewObj(sid), ty.clone())));
+            pre.push(Stmt::Eval(mk(
+                ExprKind::CallExternInto(idx, args, Box::new(self.var_expr(dest))),
+                Ty::Void,
+            )));
+            return Ok(mk(ExprKind::Seq(pre, Box::new(self.var_expr(dest))), ty));
+        }
+        let ret_ty = self.ext_ir(&f.ret);
+        let call = mk(ExprKind::CallExtern(idx, args), ret_ty.clone());
+        Ok(if pre.is_empty() {
+            call
+        } else {
+            mk(ExprKind::Seq(pre, Box::new(call)), ret_ty)
+        })
     }
 
     /// `x instanceof C` for a class `C` of this program: a header test against the table of `C`
@@ -813,6 +917,9 @@ impl<'a> Lowerer<'a> {
                     Ok(mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty))
                 }
             },
+            other if self.manifest.values.contains_key(other) => {
+                self.new_value(other, &n.arguments, n.span.start)
+            }
             other if self.classes.contains_key(other) => {
                 self.new_object(other, &n.arguments, n.span.start)
             }

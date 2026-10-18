@@ -38,7 +38,7 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
         ExtTy::F32 => types::F32,
         ExtTy::I32 | ExtTy::U32 => types::I32,
         ExtTy::Bool => types::I8,
-        ExtTy::Handle(_) | ExtTy::Void => types::I64,
+        ExtTy::Handle(_) | ExtTy::Value(_) | ExtTy::Void => types::I64,
     }
 }
 
@@ -101,6 +101,9 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         let mut sig = Signature::new(call_conv);
         for p in &d.params {
             sig.params.push(AbiParam::new(ext_clif(p)));
+        }
+        if d.out.is_some() {
+            sig.params.push(AbiParam::new(types::I64));
         }
         if d.ret != ExtTy::Void {
             sig.returns.push(AbiParam::new(ext_clif(&d.ret)));
@@ -865,6 +868,57 @@ impl Cg<'_, '_> {
                     (Some(r), _) => r,
                     (None, _) => self.b.ins().iconst(types::I64, 0),
                 }
+            }
+            ExprKind::CallExternInto(i, args, dest) => {
+                let decl = &self.m.externs[*i];
+                let (part, n) = decl.out.clone().expect("a value result has an out pointer");
+                let list: Vec<(&Expr, Ty)> = args
+                    .iter()
+                    .zip(&decl.params)
+                    .map(|(a, p)| (a, p.to_ir()))
+                    .collect();
+                let vals = self.eval_args(&list)?;
+                let mut conv = Vec::new();
+                for (v, p) in vals.iter().zip(&decl.params) {
+                    conv.push(match p {
+                        ExtTy::F32 => self.b.ins().fdemote(types::F32, *v),
+                        ExtTy::I32 => self.b.ins().fcvt_to_sint_sat(types::I32, *v),
+                        ExtTy::U32 => self.b.ins().fcvt_to_uint_sat(types::I32, *v),
+                        _ => *v,
+                    });
+                }
+                // Room for the result's scalars on the stack; the engine writes them there.
+                let width = match ext_clif(&part) {
+                    types::F64 => 8,
+                    _ => 4,
+                };
+                let slot = self.b.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    (width * n) as u32,
+                    3,
+                ));
+                let addr = self.b.ins().stack_addr(types::I64, slot, 0);
+                conv.push(addr);
+                let fr = self
+                    .module
+                    .declare_func_in_func(self.ext_funcs[*i], self.b.func);
+                self.b.ins().call(fr, &conv);
+                // Copy the scalars into the fields of the destination object, as f64.
+                let obj = self.expr(dest)?;
+                for k in 0..n {
+                    let raw =
+                        self.b
+                            .ins()
+                            .load(ext_clif(&part), self.mf_t, addr, (width * k) as i32);
+                    let num = match part {
+                        ExtTy::F32 => self.b.ins().fpromote(types::F64, raw),
+                        ExtTy::I32 => self.b.ins().fcvt_from_sint(types::F64, raw),
+                        ExtTy::U32 => self.b.ins().fcvt_from_uint(types::F64, raw),
+                        _ => raw,
+                    };
+                    self.b.ins().store(self.mf_t, num, obj, field_offset(k));
+                }
+                self.b.ins().iconst(types::I64, 0)
             }
             ExprKind::CallVirtual(table, args) => {
                 // The signature comes from any entry; they agree up to the receiver's class.

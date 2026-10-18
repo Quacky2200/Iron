@@ -71,3 +71,45 @@ fn handles_live_in_objects_arrays_nullable_variables_and_closures() {
         assert_eq!(ts_eng_closureOverHandle(), 42.0);
     });
 }
+
+// M9-TS-147
+//
+// A value class is an object in the script (`new Vector3(3, 0, 4)`, `b.x`). Passed to the engine it
+// becomes one scalar per field; a result comes back through a pointer into a new object.
+#[test]
+fn a_value_class_is_passed_as_scalars_and_comes_back_as_a_new_object() {
+    in_every_gc_mode(|| unsafe {
+        // length 5, scaled (6, 0, 8), cross z 1.
+        assert_eq!(ts_eng_vectors(), 5.0 * 1000.0 + 600.0 + 8.0 + 10000.0);
+        // 0.1 narrowed to f32 on the way in and back out.
+        assert_eq!(ts_eng_vectorRounding(), 0.1f32 as f64);
+        assert_ne!(ts_eng_vectorRounding(), 0.1);
+    });
+}
+
+// M9-TS-148
+#[test]
+fn a_value_stored_in_the_engine_next_to_a_handle_reads_back() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(ts_eng_positions(), 150.0 + 25.0 + 3.5);
+    });
+}
+
+// M9-TS-149
+//
+// Dozens of short-lived vectors, each a new object, with a collection at every allocation: the
+// destination object of a result is rooted while the engine writes into it.
+#[test]
+fn many_short_lived_vectors_survive_collections() {
+    in_every_gc_mode(|| unsafe {
+        let mut want = 0.0f64;
+        let mut v = [1.0f32, 0.0, 0.0];
+        for _ in 0..40 {
+            v = [v[0] * 1.5, v[1] * 1.5, v[2] * 1.5];
+            // cross(v, (0, 1, 0)) = (-v.z, 0, v.x); its length in f32.
+            let w = [-v[2], 0.0f32, v[0]];
+            want += (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt() as f64;
+        }
+        assert_eq!(ts_eng_manyVectors(40.0), want);
+    });
+}
