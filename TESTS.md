@@ -495,10 +495,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-14 | Unit | `iron_ts` lowers a discriminated union of object types to one struct holding every variant's fields, with string-literal tags interned. |
 | M9-TS-15 | Unit | Unsupported code is a compile error naming the line (`typeof`, `any`). |
 | M9-TS-16 | Unit | Array-method callbacks are inlined (no closure call) and exported functions get `ts_` symbols in the object. |
-| M9-TS-17 | Unit | `iron_ts_rt`: arrays grow and keep values (M9-TS-17a), strings concat and compare (17b), `Uint8Array.fill` clamps (17c). |
+| M9-TS-17 | Unit | `iron_ts_rt`: arrays grow and keep values (17a), strings concat and compare (17b), `Uint8Array.fill` clamps (17c). |
 | M9-TS-18 | Manual | `cargo run --release -p iron_ts_tests --bin bench` (from `tools/`): QuickJS, bun and the native code run 10,000 steps of a busy state and print the same checksum; timings in `docs/research/iron-ts-spike.md`. |
 | M9-TS-19 | Manual | `cargo run --release -p iron_ts_tests --bin sine_bench` (from `tools/`): the sine-circle curve (`bench/sine.ts`) in QuickJS with and without the `__iron_op` crossing, bun and native code; one checksum for all.
-| M9-TS-20 | Unit | `iron_ts_rt`: `ts_rt_reset` keeps and zeroes its first chunk, so a per-frame arena reuses memory (M9-TS-17d).
+| M9-TS-20 | Unit | `iron_ts_rt` GC: unreachable objects are freed and their blocks handed out again. |
+| M9-TS-21 | Unit | `iron_ts_rt` GC: host roots and what they reach survive, also in stress mode; unrooted ones go. |
+| M9-TS-22 | Unit | `iron_ts_rt` GC: pointer arrays are traced and shadow-stack frame slots are roots; popping the frame frees what only it held. |
+| M9-TS-23 | Integration | Collecting at every allocation (stress mode, freed memory poisoned) gives the same sim result as normal collection (`tools/iron_ts_tests/tests/gc.rs`). |
+| M9-TS-24 | Integration | A long run (8,000 steps) collects on its own, hands out far more than is alive, and live bytes and objects stay small afterwards. |
+| M9-TS-25 | Integration | After 300 steps and a stress collection, the host-rooted state and what it reaches are still readable (no poison). |
+| M9-TS-26 | Manual | `IRON_TS_GC=stress cargo test -p iron_ts_tests --test sim_port`, and `IRON_TS_GC=stress cargo run --release -p iron_ts_tests --bin bench 1500` / `--bin sine_bench 100`: the 13 ported tests pass and the checksums agree with QuickJS and bun with a collection at every allocation. |
 
 ---
 

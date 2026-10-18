@@ -5,7 +5,7 @@
 //! the array in place).
 use iron_core::Value;
 use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ts_rt::{Array, link_anchor, ts_rt_reset};
+use iron_ts_rt::{Array, link_anchor};
 use iron_ts_tests::sine::*;
 use std::process::Command;
 use std::time::Instant;
@@ -72,14 +72,13 @@ fn native(frames: usize, read_in_place: bool) -> (f64, f64) {
             engine_side.extend(slice.iter().map(|v| *v as f32));
         }
         sum += slice[n - 2] + slice[n - 1] + n as f64;
-        // A frame arena: everything the frame allocated is garbage once Rust has copied the points.
-        ts_rt_reset();
     }
     (t.elapsed().as_secs_f64() * 1000.0, sum)
 }
 
 fn main() {
     assert_ne!(link_anchor(), 0);
+    iron_ts_tests::gc_mode_from_env();
     unsafe { ts_sine_init() };
     let frames: usize = std::env::args()
         .nth(1)

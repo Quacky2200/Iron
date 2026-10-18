@@ -1,6 +1,6 @@
 # Spike: `iron_ts`, TypeScript gameplay code compiled ahead of time
 
-Status: spike done (2026-10-18). It proves the pipeline on one real file,
+Status: spike done (2026-10-18), then a garbage collector (same day). It proves the pipeline on one real file,
 `examples/topdown-zombie-game/src/sim.ts` (678 lines of pure game rules). It is not wired into
 `iron` or the build scripts, and it lives outside the engine workspace in `tools/`.
 
@@ -20,16 +20,18 @@ with hot reload. See TODO.md M9.b.
 
 | Engine | 10,000 steps | per step | vs QuickJS |
 |---|---|---|---|
-| QuickJS (`iron_script`, rquickjs 0.14) | 204 ms | 20.4 µs | 1x |
-| bun (JavaScriptCore JIT) | 24.0 ms | 2.40 µs | 8.5x |
-| `iron_ts` native (Cranelift `speed`) | 4.10 ms | 0.41 µs | **50x** |
+| QuickJS (`iron_script`, rquickjs 0.14) | 406 ms | 40.6 µs | 1x |
+| bun (JavaScriptCore JIT) | 43.8 ms | 4.38 µs | 9x |
+| `iron_ts` native (Cranelift `speed`, with the GC of section 6) | 8.8 ms | 0.88 µs | **46x** |
 
-Scenario (`tools/iron_ts_tests/bench/bench.ts`, mirrored in `bench.rs`): 1 player standing still,
-MP5 on auto-fire with unlimited ammo and health, zombies respawning to keep ~10 alive, bullets
-in flight (~33: the gun fires every 0.12 s and a bullet lives 4 s, so 50 is not reachable
-without changing the rules), 1/60 s steps. Best of three runs on the dev machine (Windows 11, release
-build). bun's number includes JIT warm-up inside the 10,000 steps; QuickJS and native have none.
-The step call itself comes from the host in each case (JS loop, Rust loop).
+Scenario (`tools/iron_ts_tests/bench/bench.ts`, mirrored in `busy_state()`): 1 player standing
+still, MP5 on auto-fire with unlimited ammo and health, zombies respawning to keep 10 alive, **50
+parked bullets** (never move, never expire) next to the MP5's own (2 or 3 in flight: they hit a
+zombie within a few frames), 1/60 s steps. Best of three runs on the dev machine (Windows 11,
+release build). bun's number includes JIT warm-up inside the 10,000 steps; QuickJS and native have
+none. The step call itself comes from the host in each case (JS loop, Rust loop). (An earlier
+version of this document claimed about 33 bullets in flight; that was wrong, only the parked ones
+make a crowd.)
 
 ## 2. How types flow in
 
@@ -165,37 +167,74 @@ Linking: the test crate's `build.rs` calls `iron_ts::compile_source`, writes the
 with `cargo:rustc-link-arg`; the platform linker (MSVC `link.exe` here) does the rest, with
 `iron_ts_rt` as an ordinary Rust dependency. A game build would do the same for the `iron` binary.
 
-## 6. Memory model
+## 6. Memory model: a precise, non-moving mark-sweep GC
 
-`tools/iron_ts_rt`: a **bump arena, never freed**. Allocations come from zeroed 4 MiB chunks (large
-ones get their own), thread local so parallel tests have separate heaps. `reset()` frees everything.
+`tools/iron_ts_rt` (`src/lib.rs` has the long version). Per-thread heap; objects are individually
+tracked, so a sweep can free them.
 
-- Object: `[header = struct id + 1][8-byte slot per field]`. Every slot is 8 bytes (bool and tag
-  are zero-extended), which keeps field offsets trivial and Rust layouts exact.
-- Array: `{header, len, cap, data}`; growth doubles into a new block and leaves the old one
-  (garbage). `Uint8Array`: the same header with a byte per element.
-- Closure: `{header, fnptr, env}`, called as `fnptr(env, args...)`.
-- String: `{header, len, utf8 ptr}` with concat and compare in the runtime, not yet used by lowering.
+- **Object**: `[header][8-byte slot per field]`. The header is the struct id + 1 (so
+  `HDR_<Name>` constants are in the generated bindings); arrays, bytes, strings and closures have
+  fixed kind words above 0xA11A0000. The top bit is the mark. Every slot is 8 bytes (bool and tag
+  zero-extended), which keeps field offsets trivial and the Rust layouts exact.
+- **Array**: `{header, len, cap, data}` with `data` a separate block owned by the array (doubling
+  growth frees the old block at once). A pointer-element array has its own header kind and is
+  traced; number, bool and tag arrays are not. `Uint8Array`: the same header with a byte per
+  element.
+- **Closure**: `{header, fnptr, env}`, called as `fnptr(env, args...)`; `env` is host memory and is
+  not traced. **String**: `{header, len, utf8 ptr}`.
+- **Blocks**: up to 512 bytes from 1 MiB chunks with size-class free lists (16-byte granules);
+  larger ones from the system allocator. Nothing moves, so a pointer Rust holds stays valid while
+  the object is reachable.
+- **Tracing**: which slots of a struct are pointers is a mask per struct that the generated
+  `ts_init` registers (`ts_rt_register_struct`). `T | null` pointers are traced (zero is skipped);
+  numbers, `number | null` and tags are not.
 
-Cost: the zombie sim allocates **2.8 KB per step** (28 MiB for 10,000 steps): a fresh `events`
-array every step, `filter` results, `p.aim = {...}`, `{...GUN}`. An hour of play at 60 Hz is ~600
-MB. Enough for a spike and for short sessions; not enough to ship.
+Roots:
 
-What a real collector needs, and what is already there:
+1. **Shadow stack** in generated code. A function that has pointer locals (or needs temporaries)
+   reserves a Cranelift stack slot `{prev, n, slots[n]}`, links it with `ts_rt_frame_push` and
+   unlinks it with `ts_rt_frame_pop` before each return. Every assignment to a pointer local also
+   stores the pointer into its frame slot, and pointer parameters are stored in the prologue. A
+   pointer value computed early and held while a *later* operand allocates (an argument list, an
+   index) is spilled into an extra slot; `frames.rs` decides this once, for both the slot count and
+   the code, with a conservative "can this expression allocate" test. Registers and Cranelift's own
+   spill slots are never scanned.
+2. **Globals**: `ts_init` registers the address of every pointer global.
+3. **Host handles**: Rust keeps script pointers across calls into generated code by rooting them
+   (`ts_rt_root_add` / `ts_rt_root_remove`). The bindings' `HDR_*` and `ts_rt_obj_new` let the host
+   build script objects.
 
-1. A header on every object: present (struct id), arrays have one (kind), so a tracer can walk
-   the heap. Pointer slots are known per struct from the IR (`Obj`, `Arr`, `Fn`, `Str`, nullable
-   forms), so a precise tracer needs no conservative scanning of the heap.
-2. **Roots on the native stack.** Two options: Cranelift stack maps (`declare_value_needs_stack_map`,
-   safepoints at calls; precise, needs per-call-site maps and a stack walker per platform) or a
-   **shadow stack / handle scope** in generated code (push pointer locals to a side stack around
-   calls that can allocate; simple, portable to iOS and Android, a few percent slower). Recommend the
-   shadow stack first.
-3. Collector: a non-moving mark-sweep over size-classed blocks is enough (no moving means host
-   pointers into script state stay valid between calls). A cheaper first step that fits games:
-   **a frame arena** for temporaries (reset each step) plus the persistent arena for state; escape
-   analysis marks `filter` results and `events` as frame-scoped.
-4. Write barriers are not needed for a non-incremental, non-generational mark-sweep.
+When it runs: only inside allocations made by generated code (`ts_rt_obj_new_gc`,
+`ts_rt_arr_new_gc`, `ts_rt_bytes_new_gc`), once 512 KiB (or as much as survived the last
+collection) has been handed out since the previous one; or when the host calls `ts_rt_gc_collect`.
+The host-side constructors and `ts_rt_arr_push` never collect, so Rust can build a graph out of
+unrooted pieces and root it afterwards, and a pointer being pushed is never freed mid-push.
+
+**Stress mode** (`ts_rt_gc_stress`, or `IRON_TS_GC=stress` for the tests and benchmarks) collects at
+every allocation of generated code and fills freed memory with 0xDD. A missing root then crashes
+loudly instead of corrupting memory rarely. All of the following pass in it with the same results
+as QuickJS and bun: the 13 ported tests, 1,500 steps of the busy scenario (37,000 collections), and
+100 frames of the sine curve. That is the evidence for the root analysis; there is no proof.
+
+Cost, on the busy scenario (10,000 steps, 65 MiB handed out in all, 124 collections, about 117 KiB
+alive after each): 0.88 µs a step with the collector, 1.03 µs with automatic collection switched off
+(shadow stack still on; the free lists keep memory warm, which is why collecting is not slower).
+The sine curve went from 0.030 ms to 0.043 ms a frame against the bump arena it replaced: each
+frame makes about 1,450 small objects and the collector sweeps them. Pointer-heavy functions pay
+two runtime calls (frame push and pop) per call.
+
+Known gaps:
+
+- Roots are only as exact as the spill rule: a pointer loaded from a field and held across an
+  allocation in the same expression is treated as reachable through its parent. A store into that
+  parent between the load and the use would break it (not seen in `sim.ts` or in stress mode).
+- No incremental or generational collection; a collection walks the whole live heap. Fine for
+  100 KiB of state; a game with 100 MB of script state would want generations.
+- Closure `env` pointers are host memory. Closures created in script (not yet supported) will need
+  captured cells that are GC objects.
+- The frame push/pop could be cheaper: the top-of-stack pointer is thread local behind a call; a
+  global (single script thread) or a register would make it a store.
+- Memory is never returned to the OS (chunks stay), only reused.
 
 ## 7. Build times
 
@@ -225,11 +264,11 @@ best of three; all engines print the same checksum).
 
 | Engine | per frame | vs QuickJS |
 |---|---|---|
-| QuickJS, compute only | 1.14 ms | 1x |
+| QuickJS, compute only | 1.13 ms | 1x |
 | QuickJS, compute + `__iron_op` + draining the op into Rust | 1.26 ms | (0.12 ms is the crossing) |
-| bun (JIT) | 0.054 ms | 21x |
-| native, compute | 0.033 ms | **35x** |
-| native, compute + Rust copying the points out of script memory into its own `Vec<f32>` | 0.030 ms | **38x** |
+| bun (JIT) | 0.048 ms | 24x |
+| native, compute (with the GC) | 0.045 ms | **25x** |
+| native, compute + Rust copying the points out of script memory into its own `Vec<f32>` | 0.043 ms | **26x** |
 
 What it says:
 
@@ -241,10 +280,10 @@ What it says:
   row includes narrowing to f32 and costs nothing measurable. A direct engine call
   (`render.stroke(points: *const f64, n)`) would remove even that copy.
 - The frame is allocation heavy (361 + 1,083 small objects and a growing array), so it exercises
-  the allocator: with a **frame arena** (`ts_rt_reset()` once Rust has the points) a frame costs
-  30 µs. Before the reset kept its first chunk the same code took 80 µs, slower than bun,
-  because every reset handed 4 MiB back to the OS and faulted it in again. Escape analysis (or the
-  GC) is what would make that reset automatic.
+  the allocator. With the first version's bump arena reset after every frame it cost 30 µs a frame
+  (80 µs before the reset kept its first chunk instead of handing 4 MiB back to the OS each time).
+  With the GC of section 6 (nothing to call: it collects itself) it costs 43 µs, about the same as
+  bun. Escape analysis would let frame temporaries skip the heap again.
 - Two compiler fixes came from this benchmark: constant expressions such as
   `const UNITS_PER_PX = 10 / 729` are now folded to constants instead of becoming globals set by
   `ts_init` (forgetting to call `ts_init` gave all-zero coordinates, which the checksum caught), and
@@ -262,7 +301,7 @@ modules of a typical game as native code; React UI code stays on QuickJS (see ne
 | 1. Language coverage | Closures with capture cells, classes + methods + `this`, destructuring, defaults, `switch`, template literals and strings, `Map`, generics by monomorphisation, enums | 6-8 weeks |
 | 2. Real types | Bun sidecar that dumps the TypeScript checker's per-expression types as JSON; map to IR types; drop the in-compiler inference | 3-4 weeks |
 | 3. Direct engine calls | Expose engine functions as `extern "C"` with shared layouts instead of `__iron_op` value conversion. `Vector3` = glam `Vec3` (a value type in the IR: 3 x f32 in registers or `f32x4`), `Quaternion`, `Color`; `Mathf` and vector arithmetic as intrinsics emitted inline; component lifecycle (`onUpdate`) entered through a function table; physics/scene/audio ops as direct calls | 4-5 weeks |
-| 4. GC | Shadow stack + non-moving mark-sweep, frame arena for temporaries | 3-4 weeks |
+| 4. GC | **Spike done** (section 6: shadow stack, non-moving mark-sweep, stress mode). Left: generations or incrementality if heaps get big, escape analysis for frame temporaries, cheaper frames, GC-allocated closure cells | 1-2 weeks |
 | 5. `JsValue` fallback | NaN-boxed dynamic value, a small dynamic object model, calls between native and QuickJS for code that cannot be typed (`any`, React-style code) | 6+ weeks, the largest unknown |
 | 6. Packaging and targets | Cross-targets (Linux, macOS, Android, iOS), linking into the `iron` binary from the game build, Windows unwind info, source maps / debug info for crashes, CI | 3 weeks |
 | 7. Hot loop intrinsics and tuning | Integer loop counters (range analysis instead of f64 indexes), inline allocation fast path, bounds-check elision, scalar replacement of small objects | 2 weeks |
@@ -293,11 +332,11 @@ Recommended order and decisions:
 | `tools/Cargo.toml` | Own workspace (not a member of the engine workspace; engine builds never see it) |
 | `tools/iron_ts/src/lower/` | oxc AST to IR: `types.rs` (annotations, structs, coercions), `expr.rs`, `stmt.rs`, `arrays.rs` (methods and inlined callbacks), `mod.rs` (declarations, init) |
 | `tools/iron_ts/src/ir.rs` | the IR and its dump (`iron_ts file.ts --dump-ir`) |
-| `tools/iron_ts/src/codegen.rs` | IR to Cranelift object |
+| `tools/iron_ts/src/codegen.rs`, `frames.rs` | IR to Cranelift object; shadow-stack frame planning |
 | `tools/iron_ts/src/layout.rs` | generated Rust bindings |
 | `tools/iron_ts/src/bin/iron_ts.rs` | CLI: `iron_ts file.ts -o out.obj --bindings out.rs [--opt none\|speed] [--time N] [--dump-ir]` |
-| `tools/iron_ts_rt/` | runtime (arena, arrays, strings, closures, libm calls) |
-| `tools/iron_ts_tests/` | build script (compile + link `sim.ts`), `tests/sim_port.rs` (13 ports), `bench/bench.ts` and `src/bin/bench.rs` (the benchmark) |
+| `tools/iron_ts_rt/` | runtime (GC heap, roots, arrays, strings, closures, libm calls) |
+| `tools/iron_ts_tests/` | build script (compile + link `sim.ts`), `tests/sim_port.rs` (13 ports), `tests/gc.rs` (collector under the sim), `bench/bench.ts` and `src/bin/bench.rs` (the benchmark) |
 
 Run (from `tools/`, with `PATH` including cargo and bun):
 

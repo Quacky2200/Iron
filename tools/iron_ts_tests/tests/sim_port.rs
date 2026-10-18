@@ -17,6 +17,7 @@ struct World {
 
 fn world() -> World {
     assert_ne!(link_anchor(), 0);
+    gc_mode_from_env();
     unsafe { ts_init() };
     let open = build_walls(W, H, &vec![vec![W as f64]; H]);
     let solid = build_walls(W, H, &vec![vec![0.0, W as f64]; H]);
@@ -30,7 +31,7 @@ fn world() -> World {
 
 fn solo_state(w: &World) -> (*mut SimState, *mut Player) {
     unsafe {
-        let state = ts_createState(7.0, 6.0);
+        let state = root(ts_createState(7.0, 6.0));
         let p = ts_addPlayer(state);
         ts_startLevel(state, w.open);
         (state, p)
@@ -196,7 +197,7 @@ fn the_next_level_starts_when_the_last_zombie_of_this_one_dies() {
     let z = new_zombie(999.0, 600.0, 300.0, 10.0, None, unsafe { (*p).id });
     unsafe {
         (*state).zombiesLeft = 0.0;
-        (*state).zombies = ts_rt_arr_new(0);
+        (*state).zombies = ts_rt_arr_new(0, 1);
         push_ptr((*state).zombies, z);
         (*state).levelEnding = 0;
         ts_damageZombie(state, z, 10.0, p);
@@ -212,7 +213,7 @@ fn touching_an_ammo_powerup_adds_320_rounds() {
     let (state, p) = solo_state(&w);
     let before = unsafe { (*(*p).gun).rounds };
     unsafe {
-        let pw = alloc::<Powerup>();
+        let pw = alloc::<Powerup>(HDR_Powerup);
         (*pw).id = 1000.0;
         (*pw).r#type = TAG_ammo as u64;
         (*pw).x = (*p).x;

@@ -25,13 +25,32 @@ pub mod sine {
     include!(concat!(env!("OUT_DIR"), "/sine_bindings.rs"));
 }
 
-use iron_ts_rt::{Array, Closure, ts_rt_alloc, ts_rt_arr_new, ts_rt_arr_push, ts_rt_closure_new};
+use iron_ts_rt::{
+    Array, Closure, ts_rt_arr_new, ts_rt_arr_push, ts_rt_closure_new, ts_rt_gc_stress,
+    ts_rt_obj_new, ts_rt_root_add,
+};
 use sim::*;
 
-/// Allocates a zeroed object of type `T` from the runtime arena (headers are not needed by the
-/// generated code, only by a future collector).
-pub fn alloc<T>() -> *mut T {
-    ts_rt_alloc(std::mem::size_of::<T>()) as *mut T
+/// Allocates a zeroed script object of type `T` whose bindings header is `hdr` (`HDR_<Name>`).
+/// Host allocations never collect.
+pub fn alloc<T>(hdr: u64) -> *mut T {
+    ts_rt_obj_new(hdr, std::mem::size_of::<T>()) as *mut T
+}
+
+/// Keeps a script object (and what it reaches) alive across calls into generated code.
+pub fn root<T>(p: *mut T) -> *mut T {
+    ts_rt_root_add(p as *mut u8);
+    p
+}
+
+/// `IRON_TS_GC=stress` collects at every allocation of generated code and poisons freed memory
+/// (a missing root then crashes loudly); `off` never collects on its own.
+pub fn gc_mode_from_env() {
+    match std::env::var("IRON_TS_GC").as_deref() {
+        Ok("stress") => ts_rt_gc_stress(true),
+        Ok("off") => iron_ts_rt::ts_rt_gc_enable(false),
+        _ => {}
+    }
 }
 
 pub fn push_ptr<T>(arr: *mut Array, p: *mut T) {
@@ -41,15 +60,15 @@ pub fn push_ptr<T>(arr: *mut Array, p: *mut T) {
 
 /// `buildWalls(w, h, rows)` from run-length rows.
 pub fn build_walls(w: usize, h: usize, rows: &[Vec<f64>]) -> *mut Walls {
-    let outer = ts_rt_arr_new(rows.len() as i64);
+    let outer = ts_rt_arr_new(rows.len() as i64, 1);
     for r in rows {
-        let inner = ts_rt_arr_new(r.len() as i64);
+        let inner = ts_rt_arr_new(r.len() as i64, 0);
         for v in r {
             unsafe { ts_rt_arr_push(inner, v.to_bits()) };
         }
         push_ptr(outer, inner);
     }
-    unsafe { ts_buildWalls(w as f64, h as f64, outer) }
+    root(unsafe { ts_buildWalls(w as f64, h as f64, root(outer)) })
 }
 
 /// A `(map: number) => Walls` closure that always returns `walls`.
@@ -57,11 +76,11 @@ pub fn walls_closure(walls: *mut Walls) -> *mut Closure {
     extern "C" fn same(env: *mut u8, _map: f64) -> *mut Walls {
         env as *mut Walls
     }
-    ts_rt_closure_new(same as *const u8, walls as *mut u8)
+    root(ts_rt_closure_new(same as *const u8, walls as *mut u8))
 }
 
 pub fn new_input(move_x: f64, move_y: f64, aim_x: f64, aim_y: f64, fire: bool) -> *mut PlayerInput {
-    let p = alloc::<PlayerInput>();
+    let p = root(alloc::<PlayerInput>(HDR_PlayerInput));
     unsafe {
         (*p).moveX = move_x;
         (*p).moveY = move_y;
@@ -73,7 +92,7 @@ pub fn new_input(move_x: f64, move_y: f64, aim_x: f64, aim_y: f64, fire: bool) -
 }
 
 pub fn inputs(list: &[*mut PlayerInput]) -> *mut Array {
-    let a = ts_rt_arr_new(list.len() as i64);
+    let a = root(ts_rt_arr_new(list.len() as i64, 1));
     for p in list {
         push_ptr(a, *p);
     }
@@ -88,7 +107,7 @@ pub fn new_zombie(
     attack_timer: Option<f64>,
     target_id: f64,
 ) -> *mut Zombie {
-    let z = alloc::<Zombie>();
+    let z = alloc::<Zombie>(HDR_Zombie);
     unsafe {
         (*z).id = id;
         (*z).x = x;
@@ -110,5 +129,72 @@ pub fn run(state: *mut SimState, seconds: f64, input: *mut Array, walls: *mut Cl
     let frames = (seconds * 60.0).round() as usize;
     for _ in 0..frames {
         unsafe { ts_step(state, input, 1.0 / 60.0, walls) };
+    }
+}
+
+const W: usize = 1022;
+const H: usize = 750;
+
+/// The benchmark scenario (the same as `bench/bench.ts`): one player auto-firing an MP5 that
+/// never runs dry or dies, zombies respawning, and the root handles Rust needs.
+pub struct Busy {
+    pub state: *mut SimState,
+    pub walls: *mut Closure,
+    pub input: *mut Array,
+}
+
+pub fn busy_state() -> Busy {
+    unsafe {
+        ts_init();
+        let open = build_walls(W, H, &vec![vec![W as f64]; H]);
+        let walls = walls_closure(open);
+        let state = root(ts_createState(7.0, 6.0));
+        let p = ts_addPlayer(state);
+        ts_startLevel(state, walls);
+        let gun = alloc::<Gun>(HDR_Gun);
+        (*gun).name = TAG_MP5 as u64;
+        (*gun).rounds = 1e9;
+        (*gun).clip = 1e9;
+        (*gun).damage = 40.0;
+        (*gun).auto = 1;
+        (*p).gun = gun;
+        (*p).health = 1e9;
+        (*state).zombiesLeft = 1e9;
+        // 50 bullets that stay where they are (the MP5's own last a fraction of a second).
+        for i in 0..50 {
+            let b = alloc::<Bullet>(HDR_Bullet);
+            (*b).id = 5000.0 + i as f64;
+            (*b).x = 100.0 + i as f64 * 10.0;
+            (*b).y = 100.0;
+            (*b).targetId = null_num();
+            (*b).ownerId = 1.0;
+            (*b).life = 1e9;
+            push_ptr((*state).bullets, b);
+        }
+        let input = inputs(&[new_input(0.0, 0.0, 900.0, 375.0, true)]);
+        Busy {
+            state,
+            walls,
+            input,
+        }
+    }
+}
+
+/// The same fingerprint of a state as `checksum` in `bench/bench.ts`.
+pub fn busy_checksum(s: *mut SimState) -> f64 {
+    unsafe {
+        let st = &*s;
+        let p = &*(*st.players).get::<*mut Player>(0);
+        let mut sum = st.level * 1000.0
+            + p.score
+            + p.kills * 7.0
+            + arr_len(st.bullets) as f64 * 13.0
+            + arr_len(st.zombies) as f64 * 17.0
+            + st.seed;
+        for i in 0..arr_len(st.zombies) {
+            let z = &*(*st.zombies).get::<*mut Zombie>(i);
+            sum += z.x + z.y;
+        }
+        sum
     }
 }

@@ -3,10 +3,12 @@
 //! Machine types: `Num` f64, `Bool` i8, `Lit` i32, pointers i64. Object and array slots are
 //! 8 bytes wide whatever the value (small values are zero-extended on store).
 
+use crate::frames;
 use crate::ir::*;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-    self, AbiParam, InstBuilder, MemFlagsData, Signature, TrapCode, Value, types,
+    self, AbiParam, InstBuilder, MemFlagsData, Signature, StackSlot, StackSlotData, StackSlotKind,
+    TrapCode, Value, types,
 };
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::{self, Configurable};
@@ -128,7 +130,19 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 }
             }
             let (mf_t, mf_p) = (MemFlagsData::trusted(), MemFlagsData::new());
+            let plan = frames::plan(f);
+            let frame_slot = (plan.total() > 0).then(|| {
+                b.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    16 + 8 * plan.total(),
+                    4,
+                ))
+            });
             let mut cg = Cg {
+                frame_slot,
+                ptr_slot: plan.ptr_slot.clone(),
+                next_spill: plan.n_locals,
+                n_slots: plan.total(),
                 b,
                 mf_t,
                 mf_p,
@@ -142,6 +156,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 labels: HashMap::new(),
                 call_conv,
             };
+            cg.prologue(m.init == Some(fi))?;
             cg.stmts(&f.body)?;
             cg.b.ins().trap(TrapCode::unwrap_user(1));
             cg.b.seal_all_blocks();
@@ -166,6 +181,11 @@ fn zero(b: &mut FunctionBuilder, t: ir::Type) -> Value {
 
 struct Cg<'a, 'b> {
     b: FunctionBuilder<'b>,
+    /// The shadow-stack frame (see `frames.rs`): pointer locals are mirrored here.
+    frame_slot: Option<StackSlot>,
+    ptr_slot: Vec<Option<u32>>,
+    next_spill: u32,
+    n_slots: u32,
     mf_t: MemFlagsData,
     mf_p: MemFlagsData,
     module: &'a mut ObjectModule,
@@ -244,6 +264,89 @@ impl Cg<'_, '_> {
         }
     }
 
+    /// Stores a pointer in frame slot `idx` (a GC root).
+    fn root_store(&mut self, idx: u32, v: Value) {
+        let slot = self.frame_slot.expect("frame");
+        let base = self.b.ins().stack_addr(types::I64, slot, 0);
+        self.b.ins().store(self.mf_t, v, base, 16 + 8 * idx as i32);
+    }
+
+    /// Links this function's frame onto the shadow stack and roots its pointer parameters. The
+    /// init function also tells the collector which struct slots are pointers and which globals
+    /// are roots.
+    fn prologue(&mut self, is_init: bool) -> R<()> {
+        if let Some(slot) = self.frame_slot {
+            let base = self.b.ins().stack_addr(types::I64, slot, 0);
+            let n = self.b.ins().iconst(types::I64, self.n_slots as i64);
+            self.rt(
+                "ts_rt_frame_push",
+                &[types::I64, types::I64],
+                None,
+                &[base, n],
+            );
+            for p in self.f.params.clone() {
+                if let Some(i) = self.ptr_slot[p as usize] {
+                    let v = self.b.use_var(self.vars[p as usize]);
+                    self.root_store(i, v);
+                }
+            }
+        }
+        if is_init {
+            for (sid, st) in self.m.structs.iter().enumerate() {
+                if st.fields.len() > 64 {
+                    return Err(format!("struct {} has more than 64 fields", st.name));
+                }
+                let mut mask = 0u64;
+                for (i, f) in st.fields.iter().enumerate() {
+                    if f.ty.is_ptr() {
+                        mask |= 1 << i;
+                    }
+                }
+                let h = self.b.ins().iconst(types::I64, sid as i64 + 1);
+                let n = self.b.ins().iconst(types::I32, st.fields.len() as i64);
+                let mk = self.b.ins().iconst(types::I64, mask as i64);
+                self.rt(
+                    "ts_rt_register_struct",
+                    &[types::I64, types::I32, types::I64],
+                    None,
+                    &[h, n, mk],
+                );
+            }
+            for (g, gl) in self.m.globals.iter().enumerate() {
+                if gl.ty.is_ptr() {
+                    let gv = self.module.declare_data_in_func(self.gdata[g], self.b.func);
+                    let addr = self.b.ins().symbol_value(types::I64, gv);
+                    self.rt("ts_rt_add_global_root", &[types::I64], None, &[addr]);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Evaluates operands in order, spilling pointer values that a later operand's allocation
+    /// could otherwise leave unrooted.
+    fn eval_args(&mut self, args: &[(&Expr, Ty)]) -> R<Vec<Value>> {
+        let refs: Vec<&Expr> = args.iter().map(|(e, _)| *e).collect();
+        let flags = frames::spill_flags(&refs);
+        let mut vals = Vec::new();
+        for ((e, t), spill) in args.iter().zip(flags) {
+            let v = self.expr_as(e, t)?;
+            if spill {
+                let idx = self.next_spill;
+                self.next_spill += 1;
+                self.root_store(idx, v);
+            }
+            vals.push(v);
+        }
+        Ok(vals)
+    }
+
+    fn pop_frame(&mut self) {
+        if self.frame_slot.is_some() {
+            self.rt("ts_rt_frame_pop", &[], None, &[]);
+        }
+    }
+
     fn dead_block(&mut self) {
         let d = self.b.create_block();
         self.b.switch_to_block(d);
@@ -269,17 +372,20 @@ impl Cg<'_, '_> {
                 let val = self.expr_as(e, &self.f.locals[*v as usize].clone())?;
                 let var = self.vars[*v as usize];
                 self.b.def_var(var, val);
+                if let Some(i) = self.ptr_slot[*v as usize] {
+                    self.root_store(i, val);
+                }
             }
             Stmt::StoreField(o, _sid, i, v) => {
-                let ptr = self.expr(o)?;
-                let val = self.expr_as(v, &v.ty)?;
+                let vals = self.eval_args(&[(o, o.ty.clone()), (v, v.ty.clone())])?;
+                let (ptr, val) = (vals[0], vals[1]);
                 let slot = self.slot_of(val, &v.ty);
                 self.b.ins().store(self.mf_t, slot, ptr, field_offset(*i));
             }
             Stmt::StoreIndex(a, i, v) => {
-                let arr = self.expr(a)?;
-                let idx = self.expr(i)?;
-                let val = self.expr(v)?;
+                let vals =
+                    self.eval_args(&[(a, a.ty.clone()), (i, i.ty.clone()), (v, v.ty.clone())])?;
+                let (arr, idx, val) = (vals[0], vals[1], vals[2]);
                 let idx = self.cvt_i64(idx);
                 let len = self.b.ins().load(types::I64, self.mf_t, arr, 8);
                 let ok = self.b.ins().icmp(IntCC::UnsignedLessThan, idx, len);
@@ -356,9 +462,11 @@ impl Cg<'_, '_> {
                 match v {
                     Some(e) => {
                         let val = self.expr_as(e, &self.f.ret.clone())?;
+                        self.pop_frame();
                         self.b.ins().return_(&[val]);
                     }
                     None => {
+                        self.pop_frame();
                         self.b.ins().return_(&[]);
                     }
                 }
@@ -546,8 +654,8 @@ impl Cg<'_, '_> {
                 self.load_slot(ptr, field_offset(*i), &e.ty)
             }
             ExprKind::Index(a, i) => {
-                let arr = self.expr(a)?;
-                let idx = self.expr(i)?;
+                let vals = self.eval_args(&[(a, a.ty.clone()), (i, i.ty.clone())])?;
+                let (arr, idx) = (vals[0], vals[1]);
                 let idx = self.cvt_i64(idx);
                 let len = self.b.ins().load(types::I64, self.mf_t, arr, 8);
                 let ok = self.b.ins().icmp(IntCC::UnsignedLessThan, idx, len);
@@ -589,23 +697,23 @@ impl Cg<'_, '_> {
             ExprKind::NewObj(sid) => {
                 let n = self.m.structs[*sid].fields.len();
                 let size = self.b.ins().iconst(types::I64, 8 + 8 * n as i64);
-                let p = self
-                    .rt("ts_rt_alloc", &[types::I64], Some(types::I64), &[size])
-                    .unwrap();
                 let h = self.b.ins().iconst(types::I64, *sid as i64 + 1);
-                self.b.ins().store(self.mf_t, h, p, 0);
-                p
+                self.rt(
+                    "ts_rt_obj_new_gc",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    &[h, size],
+                )
+                .unwrap()
             }
             ExprKind::Call(fid, args) => {
-                let mut vals = Vec::new();
                 let ptys: Vec<Ty> = self.m.funcs[*fid]
                     .params
                     .iter()
                     .map(|p| self.m.funcs[*fid].locals[*p as usize].clone())
                     .collect();
-                for (a, t) in args.iter().zip(&ptys) {
-                    vals.push(self.expr_as(a, t)?);
-                }
+                let list: Vec<(&Expr, Ty)> = args.iter().zip(ptys).collect();
+                let vals = self.eval_args(&list)?;
                 let fr = self
                     .module
                     .declare_func_in_func(self.cfuncs[*fid], self.b.func);
@@ -616,16 +724,17 @@ impl Cg<'_, '_> {
                 }
             }
             ExprKind::CallClosure(c, args) => {
-                let clo = self.expr(c)?;
                 let Ty::Fn(sig) = c.ty.strip() else {
                     return Err("call of a non-function".into());
                 };
+                let mut list: Vec<(&Expr, Ty)> = vec![(&**c, c.ty.clone())];
+                list.extend(args.iter().zip(sig.params.iter().cloned()));
+                let evaled = self.eval_args(&list)?;
+                let clo = evaled[0];
                 let fp = self.b.ins().load(types::I64, self.mf_t, clo, 8);
                 let env = self.b.ins().load(types::I64, self.mf_t, clo, 16);
                 let mut vals = vec![env];
-                for (a, t) in args.iter().zip(&sig.params) {
-                    vals.push(self.expr_as(a, t)?);
-                }
+                vals.extend(&evaled[1..]);
                 let mut s = Signature::new(self.call_conv);
                 s.params.push(AbiParam::new(types::I64));
                 for p in &sig.params {
@@ -641,7 +750,7 @@ impl Cg<'_, '_> {
                     None => self.b.ins().iconst(types::I64, 0),
                 }
             }
-            ExprKind::Rt(r, args) => self.rt_call(*r, args)?,
+            ExprKind::Rt(r, args) => self.rt_call(*r, args, &e.ty)?,
             ExprKind::Seq(stmts, v) => {
                 self.stmts(stmts)?;
                 if v.ty == Ty::Void {
@@ -694,20 +803,23 @@ impl Cg<'_, '_> {
         self.b.block_params(join)[0]
     }
 
-    fn rt_call(&mut self, r: RtFn, args: &[Expr]) -> R<Value> {
-        let mut vals = Vec::new();
-        for a in args {
-            vals.push(self.expr(a)?);
-        }
+    fn rt_call(&mut self, r: RtFn, args: &[Expr], ty: &Ty) -> R<Value> {
+        let list: Vec<(&Expr, Ty)> = args.iter().map(|a| (a, a.ty.clone())).collect();
+        let vals = self.eval_args(&list)?;
         let dummy = |s: &mut Self| s.b.ins().iconst(types::I64, 0);
         Ok(match r {
-            RtFn::Alloc => self
-                .rt("ts_rt_alloc", &[types::I64], Some(types::I64), &vals)
-                .unwrap(),
+            RtFn::Alloc => return Err("RtFn::Alloc is unused".into()),
             RtFn::ArrNew => {
                 let cap = self.cvt_i64(vals[0]);
-                self.rt("ts_rt_arr_new", &[types::I64], Some(types::I64), &[cap])
-                    .unwrap()
+                let ptrs = matches!(ty.strip(), Ty::Arr(el) if el.is_ptr()) as i64;
+                let ptrs = self.b.ins().iconst(types::I64, ptrs);
+                self.rt(
+                    "ts_rt_arr_new_gc",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    &[cap, ptrs],
+                )
+                .unwrap()
             }
             RtFn::ArrPush => {
                 let slot = self.slot_of(vals[1], &args[1].ty);
@@ -721,7 +833,7 @@ impl Cg<'_, '_> {
             }
             RtFn::BytesNew => {
                 let n = self.cvt_i64(vals[0]);
-                self.rt("ts_rt_bytes_new", &[types::I64], Some(types::I64), &[n])
+                self.rt("ts_rt_bytes_new_gc", &[types::I64], Some(types::I64), &[n])
                     .unwrap()
             }
             RtFn::BytesFill => {

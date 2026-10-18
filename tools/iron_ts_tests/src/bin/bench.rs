@@ -8,52 +8,15 @@ use iron_ts_tests::*;
 use std::process::Command;
 use std::time::Instant;
 
-const W: usize = 1022;
-const H: usize = 750;
-
-fn checksum(s: *mut SimState) -> f64 {
-    unsafe {
-        let st = &*s;
-        let p = &*(*st.players).get::<*mut Player>(0);
-        let mut sum = st.level * 1000.0
-            + p.score
-            + p.kills * 7.0
-            + arr_len(st.bullets) as f64 * 13.0
-            + arr_len(st.zombies) as f64 * 17.0
-            + st.seed;
-        for i in 0..arr_len(st.zombies) {
-            let z = &*(*st.zombies).get::<*mut Zombie>(i);
-            sum += z.x + z.y;
-        }
-        sum
-    }
-}
-
 fn native(steps: usize) -> (f64, f64, usize) {
-    unsafe {
-        ts_init();
-        let open = build_walls(W, H, &vec![vec![W as f64]; H]);
-        let walls = walls_closure(open);
-        let state = ts_createState(7.0, 6.0);
-        let p = ts_addPlayer(state);
-        ts_startLevel(state, walls);
-        let gun = alloc::<Gun>();
-        (*gun).name = TAG_MP5 as u64;
-        (*gun).rounds = 1e9;
-        (*gun).clip = 1e9;
-        (*gun).damage = 40.0;
-        (*gun).auto = 1;
-        (*p).gun = gun;
-        (*p).health = 1e9;
-        (*state).zombiesLeft = 1e9;
-        let input = inputs(&[new_input(0.0, 0.0, 900.0, 375.0, true)]);
-        let t = Instant::now();
-        for _ in 0..steps {
-            ts_step(state, input, 1.0 / 60.0, walls);
-        }
-        let ms = t.elapsed().as_secs_f64() * 1000.0;
-        (ms, checksum(state), iron_ts_rt::ts_rt_allocated())
+    gc_mode_from_env();
+    let b = busy_state();
+    let t = Instant::now();
+    for _ in 0..steps {
+        unsafe { ts_step(b.state, b.input, 1.0 / 60.0, b.walls) };
     }
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    (ms, busy_checksum(b.state), iron_ts_rt::ts_rt_allocated())
 }
 
 fn quickjs(steps: usize, bundle: &str) -> (f64, f64) {
@@ -119,7 +82,7 @@ fn main() {
     assert!(st.success());
     let bundle = std::fs::read_to_string(&bundle_path).unwrap();
 
-    println!("step() x {steps}, 1 player (MP5 auto-fire), ~10 zombies, bullets in flight");
+    println!("step() x {steps}, 1 player (MP5 auto-fire), 10 zombies, 50 parked bullets");
     // Best of three: the first run pays for page faults and (for bun) JIT warm-up.
     let best = |name: &str, f: &mut dyn FnMut() -> Option<(f64, f64)>| {
         let mut runs = Vec::new();
@@ -147,9 +110,13 @@ fn main() {
         let (ms, sum, _) = native(steps);
         Some((ms, sum))
     });
-    let (_, _, bytes) = native(steps);
+    let _ = native(steps);
+    let g = iron_ts_rt::gc_stats();
     println!(
-        "arena used by one native run: {:.1} MiB",
-        bytes as f64 / (1 << 20) as f64
+        "native GC over its last runs on this thread: {} collections, {:.1} MiB handed out in all, {} objects and {:.0} KiB live after the last one",
+        g.collections,
+        g.allocated_bytes as f64 / (1 << 20) as f64,
+        g.objects,
+        g.live_bytes as f64 / 1024.0
     );
 }

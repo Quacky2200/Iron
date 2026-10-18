@@ -2,6 +2,7 @@
 //! TypeScript (oxc) -> typed Iron IR -> Cranelift object file. See `docs/research/iron-ts-spike.md`.
 
 pub mod codegen;
+pub mod frames;
 pub mod ir;
 pub mod layout;
 pub mod lower;

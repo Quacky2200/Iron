@@ -1387,8 +1387,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS. Next, in order:
   - [ ] Type sidecar: Bun script dumping the TypeScript checker's per-expression types as JSON
-  - [ ] GC: precise, non-moving mark-sweep; roots from a shadow stack in generated code, globals and
-        host handles; frame arena for temporaries (in progress, see `docs/research/iron-ts-spike.md`)
+  - [x] GC (spike): precise, non-moving mark-sweep; roots from a shadow stack in generated code,
+        globals and host handles; stress mode (`IRON_TS_GC=stress`); see `docs/research/iron-ts-spike.md` §6
+  - [ ] GC, later: escape analysis for frame temporaries, cheaper frames (no call per push/pop),
+        generations if script heaps get large, GC-allocated closure cells
   - [ ] Closures: functions created in script, capturing variables through shared cells
         (array callbacks are already inlined; `Fn` values can be called)
   - [ ] Classes: fields, methods, `this`, constructors, inheritance, `override`, getters/setters

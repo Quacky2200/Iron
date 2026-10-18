@@ -62,7 +62,8 @@ pub fn rust_bindings(m: &Module) -> String {
     s += "\n";
     for (id, st) in m.structs.iter().enumerate() {
         s += &format!(
-            "/// Struct id {id}; the header word holds {}.\n#[repr(C)]\n#[derive(Debug)]\npub struct {} {{\n    pub header: u64,\n",
+            "/// Struct id {id}: the header word of its objects, for `ts_rt_obj_new`.\npub const HDR_{}: u64 = {};\n#[repr(C)]\n#[derive(Debug)]\npub struct {} {{\n    pub header: u64,\n",
+            struct_name(m, id),
             id + 1,
             struct_name(m, id)
         );
