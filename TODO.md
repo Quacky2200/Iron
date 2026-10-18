@@ -840,7 +840,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       out by a one-element UI tree that `render.text` builds in Rust (any `loadFont` font, line
       breaks, `maxWidth` wrapping, alignment), sized to fit and tinted like a sprite;
       `examples/shapes` shows every shape, both fill rules and labels — `M5-TXT-01`
-      - [ ] Later: redraw a text's texture only when it changes (panels draw every frame)
+      - [x] A text's texture is redrawn only when its text or look changes; a new colour is just
+        the quad's tint (other panels still draw every frame) — `M5-TXT-01`
     - [x] Draw order: each shape's fill, then its outline, by `sortingOrder` and then the order
       they were made (`WorldView.shapes`); 2D shapes draw before the see-through things, so
       sprites and text show over them — `M5-RND-25`

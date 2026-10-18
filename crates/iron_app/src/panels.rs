@@ -36,6 +36,10 @@ pub struct Panel {
     /// Stylesheets added to this tree, by the app's sheet key.
     pub sheets: HashMap<u32, u32>,
     texture: Option<(wgpu::Texture, wgpu::TextureView, (u32, u32))>,
+    /// A `TextMesh`'s text and look as last laid out (a colour change alone keeps it).
+    text_key: Option<String>,
+    /// Its texture shows that layout (TextMeshes only redraw when it changes).
+    drawn: bool,
 }
 
 impl Panel {
@@ -51,6 +55,8 @@ impl Panel {
             interactive: true,
             sheets,
             texture: None,
+            text_key: None,
+            drawn: false,
         }
     }
 
@@ -205,6 +211,15 @@ impl Panels {
         panel.resolution = num(10).unwrap_or(2.0);
         panel.tint = tint;
         panel.interactive = false;
+        // A new colour (or scale) alone keeps the laid-out text: nothing more to do.
+        let key = format!(
+            "{text}\u{1}{font_size}\u{1}{family:?}\u{1}{weight}\u{1}{align}\u{1}{max_width}"
+        );
+        if panel.text_key.as_deref() == Some(key.as_str()) {
+            return Ok(());
+        }
+        panel.text_key = Some(key);
+        panel.drawn = false;
 
         let n = |v: f32| Value::from(f64::from(v));
         let mut ops = Vec::new();
@@ -286,11 +301,22 @@ impl Panels {
             let (Some(object), Some(model)) = (panel.object, panel.model(scene)) else {
                 continue;
             };
-            panel.tree.set_size(panel.size.0, panel.size.1);
-            panel.tree.set_time(now_ms);
-            load_images(&mut panel.tree, renderer);
-            let cmds = panel.tree.draw_list();
             let size = panel.texture_size();
+            // A TextMesh's texture stays good until its text is laid out again: a new colour
+            // is only the quad's tint.
+            let kept = panel.text_key.is_some()
+                && panel.drawn
+                && panel.texture.as_ref().is_some_and(|t| t.2 == size);
+            if !kept {
+                panel.tree.set_size(panel.size.0, panel.size.1);
+                panel.tree.set_time(now_ms);
+                load_images(&mut panel.tree, renderer);
+            }
+            let cmds = if kept {
+                Vec::new()
+            } else {
+                panel.tree.draw_list()
+            };
             if panel.texture.as_ref().is_none_or(|t| t.2 != size) {
                 let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("world panel"),
@@ -317,17 +343,20 @@ impl Panels {
                 b: 0.0,
                 a: 0.0,
             };
-            renderer.render(
-                gpu,
-                &RenderTarget {
-                    view,
-                    format: FORMAT,
-                    size,
-                    scale: size.0 as f32 / panel.size.0,
-                },
-                transparent,
-                &cmds,
-            );
+            if !kept {
+                renderer.render(
+                    gpu,
+                    &RenderTarget {
+                        view,
+                        format: FORMAT,
+                        size,
+                        scale: size.0 as f32 / panel.size.0,
+                    },
+                    transparent,
+                    &cmds,
+                );
+                panel.drawn = true;
+            }
             let quad = WorldQuad {
                 model,
                 color: panel.tint,
@@ -507,5 +536,15 @@ mod tests {
             .unwrap();
         let (w, h) = panels.map[&7].size;
         assert!(w <= 60.0 && h > line * 1.8, "{w} x {h}");
+        // Once drawn, a new colour alone keeps the texture; new text needs a redraw.
+        panels.map.get_mut(&7).unwrap().drawn = true;
+        let mut recoloured = text("Hello there, world", 60.0);
+        recoloured[3] = Value::Array(vec![0.0.into(), 1.0.into(), 0.0.into(), 0.5.into()]);
+        panels.apply_text(&recoloured, tree).unwrap();
+        let p = &panels.map[&7];
+        assert!(p.drawn);
+        assert_eq!((p.tint, p.size), ([0.0, 1.0, 0.0, 0.5], (w, h)));
+        panels.apply_text(&text("Bye", 60.0), tree).unwrap();
+        assert!(!panels.map[&7].drawn);
     }
 }
