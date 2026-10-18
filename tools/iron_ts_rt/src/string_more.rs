@@ -10,6 +10,9 @@ fn st<'a>(p: *const Str) -> &'a Str {
     unsafe { &*p }
 }
 
+/// The longest string JavaScriptCore makes (2^31 - 1 units).
+const MAX_STRING: f64 = 2147483647.0;
+
 /// JavaScript's WhiteSpace and LineTerminator code points.
 fn is_space(cp: u32) -> bool {
     matches!(
@@ -77,6 +80,35 @@ fn map_text(b: &[u8], f: impl Fn(&str) -> String) -> Vec<u8> {
     out
 }
 
+/// The kind of error a runtime function failed with, for `__rtThrow` in the prelude to raise.
+pub const ERR_RANGE: f64 = 1.0;
+
+thread_local! {
+    static RT_ERROR: std::cell::RefCell<Option<(f64, String)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// A runtime function failed the way JavaScript's would throw: record it (the function returns a
+/// harmless value and the compiled code throws right after the call).
+pub(crate) fn raise(kind: f64, message: &str) {
+    RT_ERROR.with(|e| *e.borrow_mut() = Some((kind, message.to_string())));
+}
+
+/// 0, or the kind of the runtime error recorded by the last call (1 `RangeError`).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_error_kind() -> f64 {
+    RT_ERROR.with(|e| e.borrow().as_ref().map_or(0.0, |(k, _)| *k))
+}
+
+/// The recorded runtime error's message; clears the error.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_error_message_gc() -> *mut Str {
+    let m = RT_ERROR
+        .with(|e| e.borrow_mut().take())
+        .map(|(_, m)| m)
+        .unwrap_or_default();
+    new_gc(m.into_bytes())
+}
+
 fn new_gc(bytes: Vec<u8>) -> *mut Str {
     // SAFETY: `bytes` is valid WTF-8.
     unsafe { ts_rt_str_new_gc(bytes.as_ptr(), bytes.len() as i64) }
@@ -107,15 +139,18 @@ trimmer!(ts_rt_str_trim_end_gc, false, true);
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ts_rt_str_repeat_gc(s: *const Str, n: f64) -> *mut Str {
     let n = if n.is_nan() { 0.0 } else { n.trunc() };
-    assert!(
-        n >= 0.0 && n.is_finite(),
-        "RangeError: Invalid count value: {n}"
-    );
+    if !(n >= 0.0 && n.is_finite()) {
+        raise(
+            ERR_RANGE,
+            "String.prototype.repeat argument must be greater than or equal to 0 and not be Infinity",
+        );
+        return new_gc(Vec::new());
+    }
     let s = st(s);
-    assert!(
-        n * (s.byte_len as f64) < 1.0e9,
-        "RangeError: Invalid string length"
-    );
+    if n * (s.byte_len as f64) >= MAX_STRING {
+        raise(ERR_RANGE, "Out of memory");
+        return new_gc(Vec::new());
+    }
     let mut out = Vec::with_capacity(s.byte_len as usize * n as usize);
     for _ in 0..n as usize {
         append_wtf8(&mut out, s.as_bytes());
@@ -129,7 +164,10 @@ fn pad(s: &Str, target: f64, filler: &Str, at_start: bool) -> *mut Str {
     if target <= have || filler.byte_len == 0 {
         return new_gc(s.as_bytes().to_vec());
     }
-    assert!(target < 1.0e9, "RangeError: Invalid string length");
+    if target >= MAX_STRING {
+        raise(ERR_RANGE, "Out of memory");
+        return new_gc(Vec::new());
+    }
     let fill = (target - have) as usize;
     let pad_units: Vec<u16> = filler.to_utf16().into_iter().cycle().take(fill).collect();
     let pad_bytes = wtf8_from_utf16(&pad_units);
@@ -303,6 +341,30 @@ pub unsafe extern "C" fn ts_rt_str_join_gc(
     new_gc(out)
 }
 
+/// `numbers.join(sep)` for an array of numbers.
+///
+/// # Safety
+/// `parts` must be an array of numbers and `sep` a live string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_str_join_nums_gc(
+    parts: *const super::Array,
+    sep: *const Str,
+) -> *mut Str {
+    // SAFETY: by contract.
+    let a = unsafe { &*parts };
+    let sep = st(sep).as_bytes();
+    let mut out = Vec::new();
+    for i in 0..a.len() {
+        if i > 0 {
+            append_wtf8(&mut out, sep);
+        }
+        // SAFETY: slots of a number array hold f64s.
+        let x: f64 = unsafe { a.get::<f64>(i) };
+        out.extend_from_slice(number_to_string(x).as_bytes());
+    }
+    new_gc(out)
+}
+
 // ---- numbers and strings ----
 
 /// `String(x)` for a number: the shortest digits that round-trip, in JavaScript's layout.
@@ -394,10 +456,10 @@ pub extern "C" fn ts_rt_num_to_str_gc(x: f64) -> *mut Str {
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_num_to_fixed_gc(x: f64, digits: f64) -> *mut Str {
     let d = if digits.is_nan() { 0.0 } else { digits.trunc() };
-    assert!(
-        (0.0..=100.0).contains(&d),
-        "RangeError: toFixed() digits argument must be between 0 and 100"
-    );
+    if !(0.0..=100.0).contains(&d) {
+        raise(ERR_RANGE, "toFixed() argument must be between 0 and 100");
+        return new_gc(Vec::new());
+    }
     new_gc(number_to_fixed(x, d as usize).into_bytes())
 }
 
@@ -405,10 +467,13 @@ pub extern "C" fn ts_rt_num_to_fixed_gc(x: f64, digits: f64) -> *mut Str {
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_num_to_radix_gc(x: f64, radix: f64) -> *mut Str {
     let r = if radix.is_nan() { 10.0 } else { radix.trunc() };
-    assert!(
-        (2.0..=36.0).contains(&r),
-        "RangeError: toString() radix must be between 2 and 36"
-    );
+    if !(2.0..=36.0).contains(&r) {
+        raise(
+            ERR_RANGE,
+            "toString() radix argument must be between 2 and 36",
+        );
+        return new_gc(Vec::new());
+    }
     if r == 10.0 || !x.is_finite() || x == 0.0 {
         return ts_rt_num_to_str_gc(x);
     }

@@ -72,6 +72,9 @@ impl<'a> Lowerer<'a> {
 
     /// Emits a `return` for the innermost function or inlined callback.
     pub(crate) fn emit_return(&mut self, val: Option<Expr>, out: &mut Vec<Stmt>) -> R<()> {
+        if self.fin_applies(&Exit::Return) {
+            return self.leave_through_finally(Exit::Return, val, out);
+        }
         if let Some(rt) = self.cur.rets.last().cloned() {
             match (rt.kind, val) {
                 (RetKind::Pred, Some(v)) => {
@@ -340,7 +343,7 @@ impl<'a> Lowerer<'a> {
             return self.lower_num_method(recv, m, c);
         }
         if let Ty::Arr(el) = &rty
-            && **el == Ty::Str
+            && (**el == Ty::Str || **el == Ty::Num)
             && m == "join"
         {
             return self.lower_join(recv, c);

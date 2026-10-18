@@ -100,6 +100,8 @@ struct Heap {
     collections: u64,
     stress: bool,
     enabled: bool,
+    /// The exception being thrown (an object), or null. A root.
+    exc: *mut u8,
 }
 
 thread_local! {
@@ -121,6 +123,7 @@ thread_local! {
         collections: 0,
         stress: false,
         enabled: true,
+        exc: std::ptr::null_mut(),
     }) };
 }
 
@@ -357,7 +360,12 @@ fn collect(h: &mut Heap) {
     let mut stack: Vec<*mut u8> = Vec::new();
     // SAFETY: roots are GC objects or null; slots of live frames are pointers or zero.
     unsafe {
-        for &r in h.host_roots.iter().chain(h.temps.iter()) {
+        for &r in h
+            .host_roots
+            .iter()
+            .chain(h.temps.iter())
+            .chain(std::iter::once(&h.exc))
+        {
             mark_ptr(r, heap, &mut stack);
         }
         for &g in &h.global_roots {
@@ -438,6 +446,26 @@ fn collect(h: &mut Heap) {
     h.since_gc = 0;
     h.threshold = MIN_THRESHOLD.max(live);
     h.collections += 1;
+}
+
+/// `throw`: records the exception (an object) and returns; the compiled code finds it with
+/// `ts_rt_exc_pending` after each call that can throw and unwinds by returning.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_throw(p: *mut u8) {
+    with_heap(|h| h.exc = p);
+}
+
+/// Is an exception being thrown on this thread?
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_exc_pending() -> bool {
+    with_heap(|h| !h.exc.is_null())
+}
+
+/// Takes the exception (a `catch`), clearing it. A host calls this after a call into compiled
+/// code that left one pending.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_exc_take() -> *mut u8 {
+    with_heap(|h| std::mem::replace(&mut h.exc, std::ptr::null_mut()))
 }
 
 /// Collects now. Every script pointer the host still needs must be rooted.
@@ -1091,6 +1119,9 @@ pub fn link_anchor() -> usize {
         ts_rt_arr_fill as *const () as usize,
         ts_rt_arr_sort as *const () as usize,
         ts_rt_str_new as *const () as usize,
+        ts_rt_throw as *const () as usize,
+        ts_rt_exc_pending as *const () as usize,
+        ts_rt_exc_take as *const () as usize,
         ts_rt_str_from_utf16 as *const () as usize,
         ts_rt_str_concat as *const () as usize,
         ts_rt_str_concat_gc as *const () as usize,
@@ -1122,6 +1153,9 @@ pub fn link_anchor() -> usize {
         ts_rt_str_concat_n_gc as *const () as usize,
         ts_rt_str_split_gc as *const () as usize,
         ts_rt_str_join_gc as *const () as usize,
+        ts_rt_error_kind as *const () as usize,
+        ts_rt_error_message_gc as *const () as usize,
+        ts_rt_str_join_nums_gc as *const () as usize,
         ts_rt_num_to_str_gc as *const () as usize,
         ts_rt_num_to_fixed_gc as *const () as usize,
         ts_rt_num_to_radix_gc as *const () as usize,

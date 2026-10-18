@@ -7,6 +7,7 @@ pub mod ir;
 pub mod layout;
 pub mod lower;
 pub mod manifest;
+pub mod throws;
 
 /// What a compile produced.
 pub struct Output {
@@ -208,6 +209,49 @@ mod tests {
             .err()
             .unwrap();
         assert!(e.contains("lone surrogate"), "{e}");
+    }
+
+    // M9-TS-191
+    #[test]
+    fn only_functions_that_can_throw_are_checked_after_a_call() {
+        let m = lower::lower_source(
+            "function a(): number { return 1; }              function b(x: number): number { if (x > 0) { throw new Error(\"x\"); } return 1; }              function c(): number { return b(1); }              function d(): number { return a(); }              export function e(): number { return d() + c(); }",
+        )
+        .unwrap();
+        let may = |name: &str| m.may_throw[m.funcs.iter().position(|f| f.name == name).unwrap()];
+        assert!(
+            !may("a") && !may("d"),
+            "callers of non-throwing code pay nothing"
+        );
+        assert!(may("b") && may("c") && may("e"));
+        assert!(m.any_throw);
+        let m = lower::lower_source("export function f(): number { return 1; }").unwrap();
+        assert!(!m.any_throw && m.may_throw.iter().all(|t| !t));
+    }
+
+    // M9-TS-197
+    #[test]
+    fn a_throwing_function_nothing_reaches_does_not_make_calls_checked() {
+        let m = lower::lower_source(
+            "function unused(): void { throw new Error(\"never\"); }              export function f(): number { const g = (x: number): number => x + 1; return g(1); }",
+        )
+        .unwrap();
+        assert!(!m.any_throw, "closure calls stay unchecked");
+        let m = lower::lower_source(
+            "export function f(): number { const g = (x: number): number => { if (x > 5) { throw new Error(\"x\"); } return x; }; return g(1); }",
+        )
+        .unwrap();
+        assert!(m.any_throw);
+    }
+
+    // M9-TS-192
+    #[test]
+    fn throw_and_try_mistakes_are_errors_with_a_reason() {
+        let e = lower::lower_source("export function f(): number { throw \"x\"; }")
+            .err()
+            .unwrap();
+        assert!(e.contains("Error objects only"), "{e}");
+        // A `try` needs a `catch` or a `finally` (the parser rejects the rest).
     }
 
     // M9-TS-84

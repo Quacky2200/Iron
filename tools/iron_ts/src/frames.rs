@@ -82,7 +82,11 @@ fn replaces_global(e: &Expr, g: GlobalId) -> bool {
 }
 
 /// Does `hit_e` match an expression, or `hit_s` a statement, anywhere inside `e`?
-fn scan_expr(e: &Expr, hit_e: &dyn Fn(&Expr) -> bool, hit_s: &dyn Fn(&Stmt) -> bool) -> bool {
+pub(crate) fn scan_expr(
+    e: &Expr,
+    hit_e: &dyn Fn(&Expr) -> bool,
+    hit_s: &dyn Fn(&Stmt) -> bool,
+) -> bool {
     if hit_e(e) {
         return true;
     }
@@ -94,14 +98,15 @@ fn scan_expr(e: &Expr, hit_e: &dyn Fn(&Expr) -> bool, hit_s: &dyn Fn(&Stmt) -> b
     children(e).iter().any(|c| scan_expr(c, hit_e, hit_s))
 }
 
-fn scan_stmt(s: &Stmt, he: &dyn Fn(&Expr) -> bool, hs: &dyn Fn(&Stmt) -> bool) -> bool {
+pub(crate) fn scan_stmt(s: &Stmt, he: &dyn Fn(&Expr) -> bool, hs: &dyn Fn(&Stmt) -> bool) -> bool {
     if hs(s) {
         return true;
     }
     let e = |x: &Expr| scan_expr(x, he, hs);
     let st = |b: &[Stmt]| b.iter().any(|s| scan_stmt(s, he, hs));
     match s {
-        Stmt::Assign(_, x) | Stmt::StoreGlobal(_, x) | Stmt::Eval(x) => e(x),
+        Stmt::Assign(_, x) | Stmt::StoreGlobal(_, x) | Stmt::Eval(x) | Stmt::Throw(x) => e(x),
+        Stmt::Try(b, _, h) => st(b) || st(h),
         Stmt::Return(x) => x.as_ref().is_some_and(e),
         Stmt::StoreField(o, _, _, x) | Stmt::CellSet(o, x) => e(o) || e(x),
         Stmt::StoreIndex(a, i, x) => e(a) || e(i) || e(x),
@@ -148,7 +153,10 @@ pub fn may_alloc(e: &Expr) -> bool {
 
 fn stmt_may_alloc(s: &Stmt) -> bool {
     match s {
-        Stmt::Assign(_, e) | Stmt::StoreGlobal(_, e) | Stmt::Eval(e) => may_alloc(e),
+        Stmt::Assign(_, e) | Stmt::StoreGlobal(_, e) | Stmt::Eval(e) | Stmt::Throw(e) => {
+            may_alloc(e)
+        }
+        Stmt::Try(b, _, h) => b.iter().chain(h).any(stmt_may_alloc),
         Stmt::Return(e) => e.as_ref().is_some_and(may_alloc),
         Stmt::StoreField(o, _, _, v) | Stmt::CellSet(o, v) => may_alloc(o) || may_alloc(v),
         Stmt::StoreIndex(a, i, v) => may_alloc(a) || may_alloc(i) || may_alloc(v),
@@ -217,7 +225,13 @@ fn count_expr(e: &Expr, n: &mut u32) {
 fn count_stmts(stmts: &[Stmt], n: &mut u32) {
     for s in stmts {
         match s {
-            Stmt::Assign(_, e) | Stmt::StoreGlobal(_, e) | Stmt::Eval(e) => count_expr(e, n),
+            Stmt::Assign(_, e) | Stmt::StoreGlobal(_, e) | Stmt::Eval(e) | Stmt::Throw(e) => {
+                count_expr(e, n)
+            }
+            Stmt::Try(b, _, h) => {
+                count_stmts(b, n);
+                count_stmts(h, n);
+            }
             Stmt::Return(e) => {
                 if let Some(e) = e {
                     count_expr(e, n)

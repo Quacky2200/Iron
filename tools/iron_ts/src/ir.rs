@@ -276,6 +276,11 @@ pub enum Stmt {
     Continue(LabelId),
     Return(Option<Expr>),
     Eval(Expr),
+    /// `throw e`: records the exception and leaves for the innermost handler (or the caller).
+    Throw(Expr),
+    /// `try { body } catch (v) { handler }`: an exception thrown in `body`, by it or by a call it
+    /// makes, runs the handler with the exception in `v`.
+    Try(Vec<Stmt>, Option<VarId>, Vec<Stmt>),
 }
 
 #[derive(Clone, Debug)]
@@ -373,6 +378,10 @@ pub struct Module {
     pub tags: Vec<String>,
     /// String literals used as `string` values (static data in the object file).
     pub strs: Vec<String>,
+    /// Per function: can it throw (see `throws.rs`)? Calls to those are followed by a check.
+    pub may_throw: Vec<bool>,
+    /// Does any function throw? Closure and virtual calls are checked only if so.
+    pub any_throw: bool,
     /// Runs the top-level initialisers; exported as `ts_init`.
     pub init: Option<FuncId>,
     /// Put between `ts_` and an exported name, so several modules can link into one program.
@@ -460,6 +469,17 @@ fn dump_stmts(s: &mut String, body: &[Stmt], depth: usize) {
             Stmt::StoreIndex(a, i, e) => *s += &format!("{pad}{}[{}] = {}\n", ex(a), ex(i), ex(e)),
             Stmt::StoreGlobal(g, e) => *s += &format!("{pad}g{g} = {}\n", ex(e)),
             Stmt::CellSet(c, e) => *s += &format!("{pad}{}.cell = {}\n", ex(c), ex(e)),
+            Stmt::Throw(e) => *s += &format!("{pad}throw {}\n", ex(e)),
+            Stmt::Try(b, v, h) => {
+                *s += &format!("{pad}try {{\n");
+                dump_stmts(s, b, depth + 1);
+                *s += &format!(
+                    "{pad}}} catch {} {{\n",
+                    v.map(|v| format!("v{v}")).unwrap_or_default()
+                );
+                dump_stmts(s, h, depth + 1);
+                *s += &format!("{pad}}}\n");
+            }
             Stmt::Break(l) => *s += &format!("{pad}break L{l}\n"),
             Stmt::Continue(l) => *s += &format!("{pad}continue L{l}\n"),
             Stmt::Return(e) => {

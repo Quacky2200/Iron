@@ -295,12 +295,15 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 sdata: &sdata,
                 tagtab,
                 imports: &mut imports,
+                exc_stack: Vec::new(),
+                exc_exit: None,
                 labels: HashMap::new(),
                 call_conv,
             };
             cg.prologue(m.init == Some(fi))?;
             cg.stmts(&f.body)?;
             cg.b.ins().trap(TrapCode::unwrap_user(1));
+            cg.finish_exceptions();
             cg.b.seal_all_blocks();
             cg.b.finalize(fcfg);
         }
@@ -343,6 +346,10 @@ struct Cg<'a, 'b> {
     sdata: &'a [DataId],
     tagtab: Option<DataId>,
     imports: &'a mut HashMap<&'static str, CFuncId>,
+    /// The handlers of the `try` blocks being generated, innermost last.
+    exc_stack: Vec<ir::Block>,
+    /// Where an exception leaves the function (made when first needed).
+    exc_exit: Option<ir::Block>,
     /// label -> (break target, continue target)
     labels: HashMap<LabelId, (ir::Block, ir::Block)>,
     call_conv: CallConv,
@@ -499,6 +506,49 @@ impl Cg<'_, '_> {
         Ok(vals)
     }
 
+    /// The block an exception goes to from here: the innermost `try`'s handler, or the exit.
+    fn exc_target(&mut self) -> ir::Block {
+        if let Some(b) = self.exc_stack.last() {
+            return *b;
+        }
+        match self.exc_exit {
+            Some(b) => b,
+            None => {
+                let b = self.b.create_block();
+                self.exc_exit = Some(b);
+                b
+            }
+        }
+    }
+
+    /// After a call that can throw: leave for the handler if an exception is pending.
+    fn check_exception(&mut self) {
+        let pending = self
+            .rt("ts_rt_exc_pending", &[], Some(types::I8), &[])
+            .unwrap();
+        let target = self.exc_target();
+        let cont = self.b.create_block();
+        self.b.ins().brif(pending, target, &[], cont, &[]);
+        self.b.switch_to_block(cont);
+    }
+
+    /// The exit for exceptions no `try` in this function handles: pop the frame, return nothing
+    /// (the caller sees the pending exception).
+    fn finish_exceptions(&mut self) {
+        let Some(b) = self.exc_exit else { return };
+        self.b.switch_to_block(b);
+        self.pop_frame();
+        match self.f.ret.clone() {
+            Ty::Void => {
+                self.b.ins().return_(&[]);
+            }
+            t => {
+                let z = zero(&mut self.b, clif_ty(&t));
+                self.b.ins().return_(&[z]);
+            }
+        }
+    }
+
     fn pop_frame(&mut self) {
         if self.frame_slot.is_some() {
             self.rt("ts_rt_frame_pop", &[], None, &[]);
@@ -637,6 +687,33 @@ impl Cg<'_, '_> {
             }
             Stmt::Eval(e) => {
                 self.expr(e)?;
+            }
+            Stmt::Throw(e) => {
+                let v = self.expr(e)?;
+                self.rt("ts_rt_throw", &[types::I64], None, &[v]);
+                let t = self.exc_target();
+                self.b.ins().jump(t, &[]);
+                self.dead_block();
+            }
+            Stmt::Try(body, var, handler) => {
+                let (hb, join) = (self.b.create_block(), self.b.create_block());
+                self.exc_stack.push(hb);
+                self.stmts(body)?;
+                self.exc_stack.pop();
+                self.b.ins().jump(join, &[]);
+                self.b.switch_to_block(hb);
+                let exc = self
+                    .rt("ts_rt_exc_take", &[], Some(types::I64), &[])
+                    .unwrap();
+                if let Some(v) = var {
+                    self.b.def_var(self.vars[*v as usize], exc);
+                    if let Some(i) = self.ptr_slot[*v as usize] {
+                        self.root_store(i, exc);
+                    }
+                }
+                self.stmts(handler)?;
+                self.b.ins().jump(join, &[]);
+                self.b.switch_to_block(join);
             }
         }
         Ok(())
@@ -1068,10 +1145,14 @@ impl Cg<'_, '_> {
                 let sig = sig_of(self.call_conv, &ptys, &self.m.funcs[fid].ret);
                 let sr = self.b.import_signature(sig);
                 let call = self.b.ins().call_indirect(sr, target, &vals);
-                match self.b.inst_results(call).first() {
+                let res = match self.b.inst_results(call).first() {
                     Some(v) => *v,
                     None => self.b.ins().iconst(types::I64, 0),
+                };
+                if self.m.any_throw {
+                    self.check_exception();
                 }
+                res
             }
             ExprKind::InstanceOf(a, table) => {
                 let v = self.expr(a)?;
@@ -1115,10 +1196,14 @@ impl Cg<'_, '_> {
                     .module
                     .declare_func_in_func(self.cfuncs[*fid], self.b.func);
                 let call = self.b.ins().call(fr, &vals);
-                match self.b.inst_results(call).first() {
+                let res = match self.b.inst_results(call).first() {
                     Some(v) => *v,
                     None => self.b.ins().iconst(types::I64, 0),
+                };
+                if self.m.may_throw[*fid] {
+                    self.check_exception();
                 }
+                res
             }
             ExprKind::CallClosure(c, args) => {
                 let Ty::Fn(sig) = c.ty.strip() else {
@@ -1142,10 +1227,14 @@ impl Cg<'_, '_> {
                 }
                 let sr = self.b.import_signature(s);
                 let call = self.b.ins().call_indirect(sr, fp, &vals);
-                match self.b.inst_results(call).first() {
+                let res = match self.b.inst_results(call).first() {
                     Some(v) => *v,
                     None => self.b.ins().iconst(types::I64, 0),
+                };
+                if self.m.any_throw {
+                    self.check_exception();
                 }
+                res
             }
             ExprKind::NewCell(v) => {
                 let val = self.expr(v)?;

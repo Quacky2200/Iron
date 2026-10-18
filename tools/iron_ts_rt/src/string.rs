@@ -777,10 +777,13 @@ pub extern "C" fn ts_rt_str_from_char_code_gc(unit: f64) -> *mut Str {
 /// `String.fromCodePoint(cp)`. A value that is not a code point is a fault (a `RangeError`).
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_str_from_code_point_gc(cp: f64) -> *mut Str {
-    assert!(
-        cp.fract() == 0.0 && (0.0..=1114111.0).contains(&cp),
-        "RangeError: Invalid code point {cp}"
-    );
+    if !(cp.fract() == 0.0 && (0.0..=1114111.0).contains(&cp)) {
+        crate::string_more::raise(
+            1.0,
+            "Arguments contain a value that is out of range of code points",
+        );
+        return alloc_gc(Vec::new());
+    }
     let mut bytes = Vec::with_capacity(4);
     encode(&mut bytes, cp as u32);
     alloc_gc(bytes)

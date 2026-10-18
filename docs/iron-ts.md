@@ -124,6 +124,8 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/scan.rs](../tools/iron_ts/src/lower/scan.rs) | Which names do closures capture (by name, so it only over-approximates) |
 | [lower/closure.rs](../tools/iron_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
 | [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
+| [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
+| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes as TypeScript source, compiled in front of programs that mention errors |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
@@ -162,11 +164,50 @@ bytes, bindings text, IR dump and the time of each phase.
   `string[]`.
 - Compile errors: unsupported string methods (`localeCompare`, `normalize`, `replace`, `match`, ...) and
   string literals with lone surrogates.
+- `join` of a `number[]` is `ts_rt_str_join_nums_gc`; a top-level `let s = "x"` widens to `string`.
+  Runtime functions that JavaScript makes throw raise a runtime error (see "Exceptions").
 - Not done: `typeof`, `codePointAt` past the end (gives plain NaN, not undefined), optional chaining on
-  strings, object-literal fields with no declared type, `join` of non-string arrays.
+  strings, object-literal fields with no declared type, `join` of other non-string arrays.
 - The binding generator emits `TAG_*` constants only for texts that are valid, distinct identifiers.
 - Tests: `bench/strings.ts` with `tests/strings.rs` (M9-TS-178..182, prefix `str_`, base 16000);
   expected values come from `bench/gen_strings_expected.ts` (bun) into `strings_expected.json`.
+
+**Exceptions** ([throws.rs](../tools/iron_ts/src/throws.rs), [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs),
+the `Try` handling in [lower/stmt.rs](../tools/iron_ts/src/lower/stmt.rs); design in
+[iron-ts-stdlib.md](research/iron-ts-stdlib.md) section 4.1). `throw`, `try`/`catch`/`finally` and the
+Error classes. Exceptions are checked returns, not unwinding, and only in functions that can throw.
+- **Throw.** `Stmt::Throw(e)` stores the exception object in a per-thread slot of the runtime
+  (`ts_rt_throw`; the slot is a GC root) and jumps to the innermost handler, or, with none, to the
+  function's exception exit: pop the shadow-stack frame and return a zero value. `Stmt::Try(body,
+  catch_var, handler)` sets the handler for its body.
+- **Checks.** `throws.rs` computes `Module.may_throw` by a fixpoint over the call graph, counting
+  only functions reachable from the exported functions and `ts_init` (closures through `MakeClosure`,
+  virtual calls through every method-table entry). A closure or virtual call may throw if anything
+  reachable throws (`Module.any_throw`). After such a call codegen calls `ts_rt_exc_pending()` and
+  branches to the handler or the exit. **Cost model: a function that cannot throw, and a program with
+  no `throw` at all, pay nothing** (no check, no extra code); a call to a function that can throw costs
+  one load and a branch.
+- **Catch.** `ts_rt_exc_take()` moves the exception into the catch local, typed `Error` (the base
+  class); `e instanceof RangeError` narrows like any class. Only Error objects can be thrown (a
+  compile error otherwise).
+- **Host.** An uncaught exception is `ts_rt_exc_pending()` after an exported function returns; the host
+  takes the error object with `ts_rt_exc_take()`.
+- **`finally`.** Each `try ... finally` has a completion record: a `kind` variable and a `done`
+  label. A `return`/`break`/`continue` in the try or catch stores its exit (and return value) and
+  leaves to `done`; the finalizer then runs once and the recorded exit is taken through any enclosing
+  finalizers (`FinCtx`, `Exit`, `fin_applies`, `leave_through_finally`, `emit_jump`). An exception
+  takes a catch-all handler that runs the finalizer and rethrows.
+- **Error classes.** A TypeScript prelude (`lower/prelude.rs`) is compiled in front of programs that
+  mention errors: `Error` (`name`, `message`, `toString`), `EvalError`, `RangeError`, `ReferenceError`,
+  `SyntaxError`, `TypeError`, `URIError`, and `__rtThrow`. Line numbers in compile messages skip the
+  prelude.
+- **Runtime errors.** Runtime functions that JavaScript makes throw (`repeat(-1)`, `toFixed(101)`,
+  `toString(37)`, `fromCodePoint(-1)`, absurd padding) record a pending runtime error
+  (`ts_rt_error_kind`, `ts_rt_error_message_gc`; messages equal bun's) and return a harmless value.
+  The compiled call is followed by a check that calls `__rtThrow(kind, message)`.
+- Not built: `error.stack`, `cause`, `Error(...)` without `new`, throwing non-Error values.
+- Tests: `bench/errors.ts` with `tests/errors.rs` (M9-TS-187..197, prefix `err_`, base 17000);
+  expected values come from `bench/gen_errors_expected.ts` (bun) into `errors_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
@@ -180,7 +221,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
 Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), `typeof`, class expressions, generics, extending engine classes (`Component`),
-`try`/`throw`, unsupported string methods (see above), `Map`, `for...in`, rest elements in
+throwing anything but an `Error` object, unsupported string methods (see above), `Map`, `for...in`, rest elements in
 patterns, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
@@ -288,7 +329,7 @@ To add a test module:
 
 1. Write `bench/<name>.ts` (exported functions only get symbols; run it in bun to get the expected numbers).
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
-   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000, scene 15000, strings 16000); take the next free one.
+   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000, scene 15000, strings 16000, errors 17000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.

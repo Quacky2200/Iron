@@ -664,6 +664,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-184 | Integration | A name with accents and an emoji round-trips; a lone surrogate reaches the engine as U+FFFD (`tests/scene.rs`). |
 | M9-TS-185 | Integration | Thirty names made, read back and found survive a collection at every allocation (`tests/scene.rs`). |
 | M9-TS-186 | Integration | `iron_api::ScriptStr` has the layout of the runtime's `Str` (`tests/scene.rs`). |
+| M9-TS-187 | Integration | `throw` in a callee and `catch` in the caller: message, name, `toString`, a subclass with its own field, `instanceof` to tell the classes apart, equal to bun (`iron_ts_tests/tests/errors.rs`, `bench/errors.ts`, expected data from `bench/gen_errors_expected.ts`). |
+| M9-TS-188 | Integration | An exception unwinds through six frames holding strings, is rethrown wrapped, and leaves an inlined array callback and a closure (`tests/errors.rs`). |
+| M9-TS-189 | Integration | `continue` and `break` inside `catch`, and two hundred throws and catches with a collection at every allocation (`tests/errors.rs`). |
+| M9-TS-190 | Integration | An uncaught exception leaves the exported function with the exception pending; the host takes the error object (`tests/errors.rs`). |
+| M9-TS-191 | Unit | Only functions that can throw are checked after a call; callers of non-throwing code pay nothing (`iron_ts/src/lib.rs`). |
+| M9-TS-192 | Unit | `throw` of a non-Error is a compile error with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-193 | Integration | `finally` runs once on a normal exit, after `catch`, and on `return`, in nested order, and while an exception propagates (`tests/errors.rs`). |
+| M9-TS-194 | Integration | `break`, `continue`, `continue label` and `return` pass through `finally`; a `return` in `finally` replaces the one in `try` (`tests/errors.rs`). |
+| M9-TS-195 | Integration | Runtime errors (`repeat(-1)`, `toFixed(101)`, `toString(37)`, `fromCodePoint(-1)`) are catchable `RangeError`s with bun's messages (`tests/errors.rs`). |
+| M9-TS-196 | Integration | An uncaught runtime error reaches the host as a pending `RangeError` (`tests/errors.rs`). |
+| M9-TS-197 | Unit | A throwing function nothing reaches does not make closure calls checked (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

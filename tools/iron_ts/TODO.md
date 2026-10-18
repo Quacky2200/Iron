@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **187**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **198**).
 
 ## How to pick this up
 
@@ -109,17 +109,16 @@ Next, in order:
 2. **Annotate `iron_physics`, `iron_audio`, `iron_script`**; wire `iron_scene::api::enter` into `iron_app` (needs its owner:
    another session works there); retire the ops the new API replaces.
 3. Extending an engine class (`Component`) and the compiled-component vertical slice; `typeof`, class expressions.
-4. **A bare-minimum JavaScript standard library, native** (asked 2026-10-18; rule: JavaScript's exact results, no runtime differences, so
-   what is not built is a compile error): `String` (done, slices 1-2, minus `replace`/`match`/`localeCompare`/`normalize`), `Number`/`Math` (partly),
-   `Array` (partly: the gaps), `Object` (`keys`/`values`/`entries`/`assign`/`freeze`, spread), `JSON` (`stringify`/`parse`), `Map`/`Set`/`WeakMap`,
-   `Date` (UTC and local time, `Date.now`, formatting), `Intl` (`NumberFormat`, `DateTimeFormat`, `Collator`/`localeCompare`, `PluralRules`: the ICU data size
-   is a decision), `RegExp` (`test`/`exec`/`match`/`matchAll`/`replace`/`split`, JS syntax and `u`/`v` flags: an engine of our own or a Rust crate with JS
-   semantics is a decision), `Error` types with `try`/`catch`/`throw`, `console`, `Symbol.iterator`/generators, `Promise`/`async` (the event-loop item),
-   `structuredClone`, typed arrays. Needs a design note first (**STOP**): `docs/research/iron-ts-stdlib.md` (written 2026-10-18, waiting for review: exceptions, RegExp engine, ICU, JSON) with the inventory, the order,
-   and the decisions (RegExp engine, ICU data, Date time zones). Differential tests against bun for each, as for strings.
-
-Still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun, strings. Fillers: IR
-verifier for the GC root rule, differential harness against bun.
+4. **A bare-minimum JavaScript standard library, native** (`docs/research/iron-ts-stdlib.md`; **decisions approved 2026-10-18**: exceptions as checked returns in
+   may-throw functions only, `regress` for RegExp, ICU4X with a per-game locale list for Intl, typed JSON plus a dynamic `JsonValue`, tiers 1-3 in order;
+   rule: JavaScript's exact results, what is not built is a compile error). Progress, in order:
+   - Tier 1: [x] A. Error classes from a TS prelude (`lower/prelude.rs`). [x] B. `throw` / `try` / `catch` (checked returns, pending exception in the runtime, `throws.rs`). [x] C. `finally` with
+     `return`/`break`/`continue` through it (a completion record per `try`). [x] D. runtime errors (`RangeError` from `repeat`/`toFixed`/`toString(radix)`/`fromCodePoint`/padding) catchable (`__rtThrow`); `M9-TS-187..197`.
+     Not done: `error.stack`/`cause`, `Error(...)` without `new`, throwing non-Error values, catch variable typed `unknown`. [ ] E. `typeof`. [ ] F. `Object.*`, object
+     spread/rest, `in`. [ ] G. `Array` / `Number` / `Math` gaps. [ ] H. `console.*`.
+   - Tier 2: [ ] `Map`/`Set`/`WeakMap`/`WeakSet`. [ ] `JSON`.
+   - Tier 3: [ ] `RegExp` (regress). [ ] `Date` (jiff). [ ] `Intl`, `localeCompare`, `normalize`, `toLocale*` (ICU4X).
+   - Tier 4 (with other items): iterators / generators, `Promise`/`async`/timers, typed arrays, `structuredClone`, `globalThis`.
 
 ## Backlog
 

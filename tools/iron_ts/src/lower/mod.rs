@@ -13,6 +13,7 @@ mod classes;
 mod closure;
 mod enums;
 mod expr;
+mod prelude;
 mod scan;
 mod stmt;
 mod strings;
@@ -108,8 +109,32 @@ pub(crate) struct LoopLabels {
     pub unlabeled_break: bool,
 }
 
+/// How control leaves a `try` ... `finally` early.
+#[derive(Clone, PartialEq)]
+pub(crate) enum Exit {
+    Return,
+    Break(LabelId),
+    /// `continue`: the label, and whether it is a loop top (`Continue`) or a block end (`Break`).
+    Continue(LabelId, bool),
+}
+
+/// An open `try ... finally`. A `return`, `break` or `continue` inside it records which exit it
+/// wanted in `kind`, stores a return value in `ret_var`, and leaves through the label `done`; the
+/// finalizer runs after that label, and then the recorded exit is taken (through the finalizers
+/// of the enclosing `try`s too).
+pub(crate) struct FinCtx {
+    pub done: LabelId,
+    pub kind: VarId,
+    pub loops_depth: usize,
+    pub rets_depth: usize,
+    pub ret_var: Option<VarId>,
+    pub exits: Vec<Exit>,
+}
+
 #[derive(Default)]
 pub(crate) struct FnCtx {
+    /// Open `try ... finally`s, innermost last.
+    pub fins: Vec<FinCtx>,
     pub locals: Vec<Ty>,
     pub scopes: Vec<HashMap<String, Binding>>,
     /// Declared or inferred return type.
@@ -159,6 +184,8 @@ pub struct Lowerer<'a> {
     pub(crate) lambdas: usize,
     /// Wrapper functions that let a top-level function be used as a value.
     pub(crate) wrappers: HashMap<String, FuncId>,
+    /// Lines of prelude source in front of the program (skipped in messages).
+    pub(crate) prelude_lines: usize,
 }
 
 /// Parses and lowers one TypeScript module.
@@ -172,6 +199,21 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     for m in manifests {
         manifest.add_json(m)?;
     }
+    // Programs that use errors get the `Error` classes compiled in front of them.
+    let with_errors = prelude::wanted(src);
+    let full = if with_errors {
+        format!("{}{src}", prelude::ERRORS)
+    } else {
+        src.to_string()
+    };
+    let (src, prelude_lines) = (
+        full.as_str(),
+        if with_errors {
+            prelude::ERRORS.matches('\n').count()
+        } else {
+            0
+        },
+    );
     let alloc = Allocator::default();
     let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
     if !ret.diagnostics.is_empty() {
@@ -203,17 +245,22 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         closure_free: HashMap::new(),
         lambdas: 0,
         wrappers: HashMap::new(),
+        prelude_lines,
     };
     l.lower_program(&program)?;
-    Ok(l.m)
+    let mut m = l.m;
+    crate::throws::analyze(&mut m);
+    Ok(m)
 }
 
 impl<'a> Lowerer<'a> {
     pub(crate) fn line(&self, offset: u32) -> usize {
-        self.src[..(offset as usize).min(self.src.len())]
+        (self.src[..(offset as usize).min(self.src.len())]
             .matches('\n')
             .count()
-            + 1
+            + 1)
+        .saturating_sub(self.prelude_lines)
+        .max(1)
     }
 
     pub(crate) fn tag(&mut self, name: &str) -> u32 {
@@ -642,6 +689,9 @@ impl<'a> Lowerer<'a> {
                 let mut e = self.lower_expr(init, exp.as_ref())?;
                 if let Some(t) = &exp {
                     e = self.coerce(e, t)?;
+                } else if !is_const {
+                    // `let s = "x"` is a `string`.
+                    e = self.widen_lit(e);
                 }
                 e
             }

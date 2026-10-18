@@ -140,6 +140,31 @@ impl<'a> Lowerer<'a> {
         mk(ExprKind::Rt(RtFn::Str(sym), args), ty)
     }
 
+    /// A runtime string function that can fail like JavaScript's throws (`repeat(-1)`): the
+    /// call, then a check of the recorded error that throws it as an exception.
+    fn rt_str_checked(&mut self, sym: &'static str, args: Vec<Expr>, ty: Ty) -> Expr {
+        let call = self.rt_str(sym, args, ty.clone());
+        let Some(&fid) = self.fids.get("__rtThrow") else {
+            return call;
+        };
+        let t = self.new_local(ty.clone());
+        let kind = self.rt_str("ts_rt_error_kind", vec![], Ty::Num);
+        let msg = self.rt_str("ts_rt_error_message_gc", vec![], Ty::Str);
+        let failed = mk(
+            ExprKind::Cmp(CmpOp::Ne, Box::new(kind.clone()), Box::new(num(0.0))),
+            Ty::Bool,
+        );
+        let throw = Stmt::Eval(mk(ExprKind::Call(fid, vec![kind, msg]), Ty::Void));
+        let result = self.var_expr(t);
+        mk(
+            ExprKind::Seq(
+                vec![Stmt::Assign(t, call), Stmt::If(failed, vec![throw], vec![])],
+                Box::new(result),
+            ),
+            ty,
+        )
+    }
+
     /// A tag (string-literal union member) as a `string`.
     pub(crate) fn tag_to_str(&mut self, e: Expr) -> Expr {
         if let ExprKind::Tag(t) = e.kind {
@@ -313,6 +338,12 @@ impl<'a> Lowerer<'a> {
             Ret::StrOrNull => Ty::Str.nullable(),
             Ret::StrArr => Ty::Arr(Box::new(Ty::Str)),
         };
+        if matches!(
+            sf.sym,
+            "ts_rt_str_repeat_gc" | "ts_rt_str_pad_start_gc" | "ts_rt_str_pad_end_gc"
+        ) {
+            return Ok(self.rt_str_checked(sf.sym, args, ty));
+        }
         Ok(self.rt_str(sf.sym, args, ty))
     }
 
@@ -333,11 +364,11 @@ impl<'a> Lowerer<'a> {
         match m {
             "toString" => match arg(self, 0)? {
                 None => Ok(self.rt_str("ts_rt_num_to_str_gc", vec![recv], Ty::Str)),
-                Some(r) => Ok(self.rt_str("ts_rt_num_to_radix_gc", vec![recv, r], Ty::Str)),
+                Some(r) => Ok(self.rt_str_checked("ts_rt_num_to_radix_gc", vec![recv, r], Ty::Str)),
             },
             "toFixed" => {
                 let d = arg(self, 0)?.unwrap_or_else(|| num(0.0));
-                Ok(self.rt_str("ts_rt_num_to_fixed_gc", vec![recv, d], Ty::Str))
+                Ok(self.rt_str_checked("ts_rt_num_to_fixed_gc", vec![recv, d], Ty::Str))
             }
             "valueOf" => Ok(recv),
             _ => bail!("{at}: the number method `{m}` is not supported yet"),
@@ -350,7 +381,12 @@ impl<'a> Lowerer<'a> {
             Some(e) => self.str_arg(e)?,
             None => self.str_lit(","),
         };
-        Ok(self.rt_str("ts_rt_str_join_gc", vec![recv, sep], Ty::Str))
+        let sym = if matches!(recv.ty.strip(), Ty::Arr(el) if **el == Ty::Num) {
+            "ts_rt_str_join_nums_gc"
+        } else {
+            "ts_rt_str_join_gc"
+        };
+        Ok(self.rt_str(sym, vec![recv, sep], Ty::Str))
     }
 
     /// `String(x)`, `Number(x)`, `parseInt(s, radix)`, `parseFloat(s)`.
@@ -434,7 +470,7 @@ impl<'a> Lowerer<'a> {
                 bail!("String.{method}: spread argument")
             };
             let n = self.num_arg(e)?;
-            let one = self.rt_str(sym, vec![n], Ty::Str);
+            let one = self.rt_str_checked(sym, vec![n], Ty::Str);
             acc = self.str_concat(acc, one)?;
         }
         Ok(acc)

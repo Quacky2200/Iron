@@ -88,16 +88,12 @@ impl<'a> Lowerer<'a> {
             }
             Statement::BreakStatement(b) => {
                 let l = self.jump_target(b.label.as_ref().map(|l| l.name.as_str()))?;
-                out.push(Stmt::Break(l));
+                self.emit_jump(Exit::Break(l), out)?;
             }
             Statement::ContinueStatement(c) => {
                 let name = c.label.as_ref().map(|l| l.name.as_str());
                 let (l, is_loop) = self.continue_target(name)?;
-                out.push(if is_loop {
-                    Stmt::Continue(l)
-                } else {
-                    Stmt::Break(l)
-                });
+                self.emit_jump(Exit::Continue(l, is_loop), out)?;
             }
             Statement::DoWhileStatement(d) => {
                 // Loop { Block(cont) { body }; if !test break }: `continue` leaves the block and
@@ -143,11 +139,204 @@ impl<'a> Lowerer<'a> {
                     out.push(Stmt::Block(b, body?));
                 }
             }
+            Statement::ThrowStatement(t) => {
+                let v = self.lower_expr(&t.argument, None)?;
+                let at = self.loc(t.span.start);
+                let Ty::Obj(sid) = v.ty.strip().clone() else {
+                    bail!("{at}: `throw` supports Error objects only, found {}", v.ty)
+                };
+                let Some(error) = self
+                    .classes
+                    .contains_key("Error")
+                    .then(|| self.classes_sid("Error"))
+                else {
+                    bail!("{at}: `throw` needs the Error classes")
+                };
+                if !self.is_subclass(sid, error) {
+                    bail!("{at}: `throw` supports Error objects only (a class extending Error)")
+                }
+                out.push(Stmt::Throw(v));
+            }
+            Statement::TryStatement(t) => self.lower_try(t, out)?,
             other => bail!(
                 "{}: unsupported statement",
                 self.loc(oxc_span::GetSpan::span(other).start)
             ),
         }
+        Ok(())
+    }
+
+    /// `try { .. } catch (e) { .. }`. The catch variable is an `Error`; `e instanceof RangeError`
+    /// narrows it as for any class.
+    fn lower_try(&mut self, t: &'a TryStatement<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let Some(fin) = &t.finalizer else {
+            return self.lower_try_catch(t, out);
+        };
+        // try { B } catch (e) { H } finally { F }
+        //   kind = 0
+        //   Block done { try { <B and H; a return/break/continue sets kind and leaves to done>
+        //                      break done } catch (x) { F; throw x } }
+        //   F
+        //   if kind == 1 { <the first recorded exit> } if kind == 2 { ... }
+        let done = self.new_label();
+        let kind = self.new_local(Ty::Num);
+        out.push(Stmt::Assign(kind, super::expr::num(0.0)));
+        self.cur.fins.push(FinCtx {
+            done,
+            kind,
+            loops_depth: self.cur.loops.len(),
+            rets_depth: self.cur.rets.len(),
+            ret_var: None,
+            exits: Vec::new(),
+        });
+        let mut inner = Vec::new();
+        let r = self.lower_try_catch(t, &mut inner);
+        let fc = self.cur.fins.pop().expect("pushed above");
+        r?;
+        inner.push(Stmt::Break(done));
+        let error = self.classes_sid("Error");
+        let x = self.new_local(Ty::Obj(error));
+        let mut on_throw = Vec::new();
+        self.lower_block(&fin.body, &mut on_throw)?;
+        on_throw.push(Stmt::Throw(self.var_expr(x)));
+        out.push(Stmt::Block(done, vec![Stmt::Try(inner, Some(x), on_throw)]));
+        self.lower_block(&fin.body, out)?;
+        for (i, exit) in fc.exits.iter().enumerate() {
+            let is_it = mk(
+                ExprKind::Cmp(
+                    CmpOp::Eq,
+                    Box::new(self.var_expr(kind)),
+                    Box::new(super::expr::num((i + 1) as f64)),
+                ),
+                Ty::Bool,
+            );
+            let mut take = Vec::new();
+            match exit {
+                Exit::Return => {
+                    let v = fc.ret_var.map(|v| self.var_expr(v));
+                    self.emit_return(v, &mut take)?;
+                }
+                other => self.emit_jump(other.clone(), &mut take)?,
+            }
+            out.push(Stmt::If(is_it, take, vec![]));
+        }
+        Ok(())
+    }
+
+    /// A block's statements in their own scope.
+    fn lower_block(&mut self, b: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
+        self.cur.scopes.push(HashMap::new());
+        let r = self.lower_stmts(b, out);
+        self.cur.scopes.pop();
+        r
+    }
+
+    /// Does leaving by `exit` pass through the innermost open `finally`?
+    pub(crate) fn fin_applies(&self, exit: &Exit) -> bool {
+        let Some(fin) = self.cur.fins.last() else {
+            return false;
+        };
+        match exit {
+            Exit::Return => fin.rets_depth == self.cur.rets.len(),
+            Exit::Break(l) | Exit::Continue(l, _) => {
+                let target = self
+                    .cur
+                    .loops
+                    .iter()
+                    .rposition(|e| e.brk == *l || e.cont == Some(*l));
+                matches!(target, Some(ti) if fin.loops_depth > ti)
+            }
+        }
+    }
+
+    /// Records the exit and leaves the `try` for its `finally`.
+    pub(crate) fn leave_through_finally(
+        &mut self,
+        exit: Exit,
+        val: Option<Expr>,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        let fi = self.cur.fins.len() - 1;
+        if let (Exit::Return, Some(v)) = (&exit, val) {
+            let v = match (self.cur.fins[fi].ret_var, self.cur.ret.clone()) {
+                (Some(rv), _) => {
+                    let t = self.cur.locals[rv as usize].clone();
+                    self.coerce(v, &t)?
+                }
+                (None, Some(t)) => self.coerce(v, &t)?,
+                (None, None) => v,
+            };
+            let rv = match self.cur.fins[fi].ret_var {
+                Some(rv) => rv,
+                None => {
+                    let rv = self.new_local(v.ty.clone());
+                    self.cur.fins[fi].ret_var = Some(rv);
+                    rv
+                }
+            };
+            out.push(Stmt::Assign(rv, v));
+        }
+        let fin = &mut self.cur.fins[fi];
+        let code = match fin.exits.iter().position(|e| *e == exit) {
+            Some(i) => i + 1,
+            None => {
+                fin.exits.push(exit);
+                fin.exits.len()
+            }
+        };
+        let (kind, done) = (fin.kind, fin.done);
+        out.push(Stmt::Assign(kind, super::expr::num(code as f64)));
+        out.push(Stmt::Break(done));
+        Ok(())
+    }
+
+    /// `break` / `continue`, through the `finally`s it leaves.
+    pub(crate) fn emit_jump(&mut self, exit: Exit, out: &mut Vec<Stmt>) -> R<()> {
+        if self.fin_applies(&exit) {
+            return self.leave_through_finally(exit, None, out);
+        }
+        out.push(match exit {
+            Exit::Break(l) => Stmt::Break(l),
+            Exit::Continue(l, true) => Stmt::Continue(l),
+            Exit::Continue(l, false) => Stmt::Break(l),
+            Exit::Return => unreachable!("returns go through emit_return"),
+        });
+        Ok(())
+    }
+
+    /// `try { .. } catch (e) { .. }` (or a plain `try { .. }` block when only a `finally` follows).
+    fn lower_try_catch(&mut self, t: &'a TryStatement<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let Some(h) = &t.handler else {
+            self.cur.scopes.push(HashMap::new());
+            let r = self.lower_stmts(&t.block.body, out);
+            self.cur.scopes.pop();
+            return r;
+        };
+        self.cur.scopes.push(HashMap::new());
+        let mut body = Vec::new();
+        let r = self.lower_stmts(&t.block.body, &mut body);
+        self.cur.scopes.pop();
+        r?;
+        let error = self.classes_sid("Error");
+        self.cur.scopes.push(HashMap::new());
+        let mut handler = Vec::new();
+        let r = (|| -> R<Option<VarId>> {
+            let var = match &h.param {
+                Some(p) => match &p.pattern {
+                    BindingPattern::BindingIdentifier(id) => {
+                        let v = self.new_local(Ty::Obj(error));
+                        self.bind_var(id.name.as_str(), v, &mut handler);
+                        Some(v)
+                    }
+                    _ => bail!("{}: destructuring in `catch`", self.loc(h.span.start)),
+                },
+                None => None,
+            };
+            self.lower_stmts(&h.body.body, &mut handler)?;
+            Ok(var)
+        })();
+        self.cur.scopes.pop();
+        out.push(Stmt::Try(body, r?, handler));
         Ok(())
     }
 
