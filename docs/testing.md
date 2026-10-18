@@ -125,6 +125,14 @@ with a 1 MB bundle, M4-HOT-07). It measured about 146 ms on 2026-10-17 against t
 the target is not met yet: ~54 ms parsing the bundle, ~27 ms saving, ~58 ms restoring.
 Run it with `cargo bench -p iron_scene --bench reload`.
 
+## The `tools/` workspace
+
+The experimental TypeScript compiler (`tools/iron_ts`, `iron_ts_rt`, `iron_ts_tests`) is a separate
+cargo workspace, so `cargo test --workspace` at the repo root does not run it. Run
+`cargo test --workspace` from `tools/` instead; `IRON_TS_GC=stress cargo test -p iron_ts_tests` repeats
+the tests with a garbage collection at every allocation. Its tests are `M9-TS-*`. See
+[iron-ts.md](iron-ts.md) for how they are organised and how to add one.
+
 ## Mapping to TESTS.md
 
 | ID prefix | Area | Main files |

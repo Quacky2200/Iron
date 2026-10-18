@@ -217,6 +217,9 @@ logged as an error and the code loads as a plain bundle).
 Test bundles are built the same way into `tests/fixtures/*.js` (`bun run build:fixtures`) and
 embedded in Rust tests with `include_str!`; see [testing.md](testing.md).
 
+An experimental ahead-of-time compiler for a TypeScript subset exists in `tools/`; see
+[iron-ts.md](iron-ts.md). The engine does not use it yet.
+
 ## Hot reload
 
 Flow, from an edit to the new code running:
