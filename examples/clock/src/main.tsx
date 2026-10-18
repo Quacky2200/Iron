@@ -2,7 +2,7 @@
 // keys or , and . —
 //
 // - Analog: rings that sweep and unwind, spline hands, a ticking second hand (`analog.ts`).
-// - Dials: rings of numbers that turn the time under a window, leaning in 3D (`dials.ts`).
+// - Dials: rings of numbers that turn the time under a window (`dials.ts`).
 // - Meter: drums that roll like a water meter or a mileage counter (`meter.ts`).
 // - Sundial: a garden sundial whose shadow tells the time under a moving sun (`sundial.ts`).
 // - Sand timer: an hourglass that runs out each minute and turns over (`hourglass.ts`).
@@ -120,36 +120,31 @@ function useClocks() {
   return clocks;
 }
 
-// Unpicked dots brighten under the pointer (the picked one is white inline).
+// Unpicked dots brighten under the pointer (the picked one is white inline). The arrows fade
+// to white quickly (100 ms) under the pointer: a white copy over the faint one fades in.
 addStyleSheet(`
   .dot { background-color: rgba(255, 255, 255, 0.28); }
   .dot:hover { background-color: rgba(255, 255, 255, 0.65); }
+  .arrow-lit { opacity: 0; transition: opacity 0.1s; }
+  .arrow:hover .arrow-lit { opacity: 1; }
 `);
 
-/** A chevron at one side of the window, faint until the pointer is over it. */
+/** A chevron at one side of the window, faint until the pointer is over it, then white. */
 function Arrow(props: { side: "left" | "right"; onClick: () => void }) {
-  const [hover, setHover] = useState(false);
   const left = props.side === "left";
+  const chevron = (stroke: string, className?: string, extra: object = {}) => (
+    <svg className={className} viewBox="0 0 24 48" style={{ width: 26, height: 52, ...extra }}>
+      <polyline points={left ? "18,4 6,24 18,44" : "6,4 18,24 6,44"} fill="none" stroke={stroke} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
   return (
     <box
       style={{ position: "absolute", top: 0, bottom: 0, [props.side]: 8, width: 72, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
     >
-      <box
-        style={{ width: 64, height: 140, alignItems: "center", justifyContent: "center", pointerEvents: "auto", cursor: "pointer" }}
-        onPointerEnter={() => setHover(true)}
-        onPointerLeave={() => setHover(false)}
-        onClick={props.onClick}
-      >
-        <svg viewBox="0 0 24 48" style={{ width: 26, height: 52 }}>
-          <polyline
-            points={left ? "18,4 6,24 18,44" : "6,4 18,24 6,44"}
-            fill="none"
-            stroke={hover ? "#ffffff" : "rgba(255, 255, 255, 0.4)"}
-            strokeWidth={2.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+      <box className="arrow" style={{ width: 64, height: 140, alignItems: "center", justifyContent: "center", pointerEvents: "auto", cursor: "pointer" }} onClick={props.onClick}>
+        {chevron("rgba(255, 255, 255, 0.4)")}
+        {/* The white copy on top, centred over the faint one. */}
+        {chevron("#ffffff", "arrow-lit", { position: "absolute", left: 19, top: 44 })}
       </box>
     </box>
   );

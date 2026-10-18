@@ -1,11 +1,9 @@
 // The dials face: three rings (hours, minutes, seconds) carry their numbers round and turn to
-// bring the time under a window at twelve o'clock, like a car's odometer laid flat. Each ring
-// also leans on the Y axis by a few degrees, swaying slowly, seen through a perspective camera,
-// so the dials sit at slightly different depths and stay easy to read. Seconds step with a
-// small overshoot, minutes ease round when they change, hours glide.
-import { type Camera, Color, type DateTime, GameObject, Quaternion, Shapes, type TextMesh, Vector2, Vector3 } from "@iron/engine";
+// bring the time under a window at twelve o'clock, like a car's odometer laid flat. Seconds
+// step with a small overshoot, minutes ease round when they change, hours glide.
+import { Color, type DateTime, GameObject, Quaternion, Shapes, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { DIM, easeInOutCubic, easeOutBack, type Face, label, mix, obj, perspective, shape, two, under } from "./common.ts";
+import { DIM, easeInOutCubic, easeOutBack, type Face, label, mix, obj, shape, two, under } from "./common.ts";
 
 const CENTRE = new Vector3(0, -0.35, 0);
 const ACCENT = Color.hex("#ffc04d");
@@ -19,15 +17,12 @@ interface DialSpec {
   ticks: number;
   every: number;
   text: (i: number) => string;
-  /** Lean on the Y axis (degrees), and how far it sways either side. */
-  lean: number;
-  sway: number;
 }
 
 const DIALS: DialSpec[] = [
-  { name: "hours", radius: 1.5, colour: Color.hex("#4fd1c5"), ticks: 12, every: 1, text: (i) => String(i === 0 ? 12 : i), lean: 0, sway: 1.5 },
-  { name: "minutes", radius: 2.4, colour: Color.hex("#ffc04d"), ticks: 60, every: 5, text: (i) => two(i), lean: 3, sway: 2 },
-  { name: "seconds", radius: 3.3, colour: Color.hex("#ff6b6b"), ticks: 60, every: 5, text: (i) => two(i), lean: -5, sway: 2.5 },
+  { name: "hours", radius: 1.5, colour: Color.hex("#4fd1c5"), ticks: 12, every: 1, text: (i) => String(i === 0 ? 12 : i) },
+  { name: "minutes", radius: 2.4, colour: Color.hex("#ffc04d"), ticks: 60, every: 5, text: (i) => two(i) },
+  { name: "seconds", radius: 3.3, colour: Color.hex("#ff6b6b"), ticks: 60, every: 5, text: (i) => two(i) },
 ];
 
 /** A dial's turn: continuous degrees, eased from where it was to where it's going. */
@@ -64,10 +59,11 @@ export class DialsFace implements Face {
   private turns = DIALS.map(() => new Turn());
   private readout!: TextMesh;
   private shown = "";
-  private restore: (() => void) | null = null;
 
   constructor() {
     under(this.root, () => this.build());
+    // Seen flat, the rings fill the view: a little smaller leaves room for the readout.
+    this.root.transform.localScale = new Vector3(0.84, 0.84, 1);
   }
 
   private build(): void {
@@ -105,16 +101,7 @@ export class DialsFace implements Face {
       { points: Shapes.triangle({ x: -0.22, y: top + 0.36 }, { x: 0.22, y: top + 0.36 }, { x: 0, y: top + 0.06 }), loop: true, width: 0.03, color: ACCENT, fillColor: ACCENT, sortingOrder: 10 },
       CENTRE,
     );
-    this.readout = label("readout", { fontSize: 26, color: DIM }, new Vector3(0, -4.05, 0));
-  }
-
-  show(camera: Camera): void {
-    this.restore = perspective(camera);
-  }
-
-  hide(): void {
-    this.restore?.();
-    this.restore = null;
+    this.readout = label("readout", { fontSize: 26, color: DIM }, new Vector3(0, -4.55, 0));
   }
 
   update(now: DateTime, t: number): void {
@@ -124,10 +111,9 @@ export class DialsFace implements Face {
       this.turns[1]!.step(now.minute * 6, t, 0.9, easeInOutCubic),
       this.turns[2]!.step(now.second * 6, t, 0.4, easeOutBack),
     ];
-    DIALS.forEach((spec, i) => {
-      // Turn it in its own plane to bring the time to the top, then lean it a little.
-      const lean = spec.lean + Math.sin(t * 0.35 + i * 2.1) * spec.sway;
-      this.pivots[i]!.transform.rotation = Quaternion.euler(0, lean, angles[i]!);
+    // Each turns in its own plane to bring the time to the top.
+    angles.forEach((a, i) => {
+      this.pivots[i]!.transform.rotation = Quaternion.euler(0, 0, a);
     });
     const text = now.toString("HH:mm:ss");
     if (text !== this.shown) {

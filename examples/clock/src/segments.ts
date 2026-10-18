@@ -76,7 +76,6 @@ export class SegmentFace implements Face {
     // Small seconds, bottom right.
     for (let i = 0; i < 2; i++) this.seconds.push(new Digit(`second ${i}`, new Vector3(total / 2 + 0.65 + i * 0.75, y, 0), 0.55));
     this.pm = label("pm", { text: "PM", fontSize: 26, fontWeight: 700, color: LIT }, new Vector3(total / 2 + 0.95, y + 2.85, 0));
-    label("alarm", { text: "ALARM  07:00", fontSize: 22, color: new Color(1.4, 0.06, 0.03, 1) }, new Vector3(0, -3.6, 0));
   }
 
   show(camera: Camera): void {

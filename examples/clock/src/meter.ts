@@ -122,9 +122,13 @@ export class MeterFace implements Face {
   }
 
   update(now: DateTime, t: number): void {
-    const hh = two(now.hour);
-    const mm = two(now.minute);
-    const ss = two(now.second);
+    // The last drum creeps, so it reads its next digit half a second early (from x.5). The
+    // others carry with it, as if geared: their roll is timed so it's halfway at that moment,
+    // and 19 rolls to 20 together rather than showing 10 first.
+    const carry = now.addMilliseconds((0.5 + ROLL / 2) * 1000);
+    const hh = two(carry.hour);
+    const mm = two(carry.minute);
+    const ss = two(carry.second);
     this.drums[0]!.set(Number(hh[0]), t);
     this.drums[1]!.set(Number(hh[1]), t);
     this.drums[2]!.set(Number(mm[0]), t);

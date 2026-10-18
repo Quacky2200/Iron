@@ -1,7 +1,8 @@
 // The sand timer: an hourglass that empties over each minute and turns over when the minute
 // changes. The sand in each bulb is a filled shape cut to the glass at its level (the top one
 // dips in the middle as it drains, the bottom one heaps into a mound), a thin stream falls
-// through the neck with a few grains tumbling in it, and the whole timer turns over with an
+// through the neck with grains in it (they speed up as they fall, then roll off the mound;
+// a few slide down the top's funnel into the neck), and the whole timer turns over with an
 // ease. Turning a full bottom over gives a full top, so the swap is seamless.
 import { Color, type DateTime, GameObject, type LineRenderer2D, Quaternion, Shapes, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
@@ -16,6 +17,10 @@ const GLASS = Color.hex("#a9c3d6");
 const WOOD = Color.hex("#6b4527");
 const WOOD_LIGHT = Color.hex("#8a5c35");
 const FLIP = 1.1;
+const GRAINS = 14;
+const FUNNEL = 5;
+/** Each grain's outline (set only while it shows, so hidden grains draw nothing). */
+const grainShapes = new Map<LineRenderer2D, Vector2[]>();
 
 /** The glass's half-width at height `y` (0 at the neck). */
 const width = (y: number) => {
@@ -60,7 +65,10 @@ export class HourglassFace implements Face {
   private topSand!: LineRenderer2D;
   private bottomSand!: LineRenderer2D;
   private stream!: LineRenderer2D;
-  private grains: GameObject[] = [];
+  /** Grains in the stream (they fall, then roll off the mound) and in the top's funnel. */
+  private grains: LineRenderer2D[] = [];
+  private funnel: LineRenderer2D[] = [];
+  private grainShown: boolean[] = [];
   private time!: TextMesh;
   private left!: TextMesh;
   private lastMinute = -1;
@@ -77,8 +85,13 @@ export class HourglassFace implements Face {
     this.topSand = shape("top sand", { loop: true, width: 0, fillColor: SAND, sortingOrder: 1 }, Vector3.zero, inside);
     this.bottomSand = shape("bottom sand", { loop: true, width: 0, fillColor: SAND, sortingOrder: 1 }, Vector3.zero, inside);
     this.stream = shape("stream", { width: 0.035, color: SAND_DARK, sortingOrder: 2 }, Vector3.zero, inside);
-    for (let i = 0; i < 5; i++) {
-      this.grains.push(shape(`grain ${i}`, { points: Shapes.circle(Vector2.zero, 0.028, 8), loop: true, width: 0.01, color: SAND_DARK, fillColor: SAND, sortingOrder: 2 }, Vector3.zero, inside).gameObject);
+    for (let i = 0; i < GRAINS + FUNNEL; i++) {
+      const size = 0.022 + (i % 3) * 0.006;
+      const g = shape(`grain ${i}`, { loop: true, width: 0.008, color: SAND_DARK, fillColor: i % 2 ? SAND : SAND_DARK, sortingOrder: 2 }, Vector3.zero, inside);
+      g.points = [];
+      grainShapes.set(g, Shapes.circle(Vector2.zero, size, 7));
+      (i < GRAINS ? this.grains : this.funnel).push(g);
+      this.grainShown.push(false);
     }
     shape("glass", { points: glassOutline(), loop: true, width: 0.06, color: GLASS, sortingOrder: 3 }, Vector3.zero, inside);
     // A glint down the glass.
@@ -117,10 +130,41 @@ export class HourglassFace implements Face {
     const landing = pile + 0.32 * Math.min(1, fallen * 3);
     this.stream.points = falling ? [new Vector2(0, 0.02), new Vector2(0, landing)] : [];
     this.stream.width = 0.03 + 0.012 * Math.sin(t * 40);
+    const show = (g: LineRenderer2D, i: number, on: boolean, x: number, y: number) => {
+      if (on !== this.grainShown[i]) {
+        this.grainShown[i] = on;
+        g.points = on ? grainShapes.get(g)! : [];
+      }
+      if (on) g.transform.localPosition = new Vector3(x, y, 0);
+    };
+    // Falling: from the neck to the mound's top, speeding up (u²); then rolling down its side.
+    const drop = 0.02 - landing;
+    const edge = width(pile) - 0.05;
+    const mound = 0.32 * Math.min(1, fallen * 3);
     this.grains.forEach((g, i) => {
-      const phase = (t * 1.7 + i / this.grains.length) % 1;
-      const y = -phase * (0.02 - landing) + 0.02;
-      g.transform.localPosition = falling ? new Vector3(Math.sin(t * 13 + i * 2) * 0.05, y, 0) : new Vector3(0, 9, 0);
+      const p = (t * 0.9 + (i * 0.618) % 1) % 1;
+      const side = i % 2 ? 1 : -1;
+      const jitter = Math.sin(i * 12.9898) * 0.5;
+      if (p < 0.7) {
+        const u = p / 0.7;
+        show(g, i, falling, jitter * 0.05 * u + Math.sin(t * 11 + i) * 0.008, 0.02 - drop * u * u);
+      } else {
+        // Rolling off: out along the mound, slowing, then settled (hidden in the pile).
+        const r = (p - 0.7) / 0.3;
+        const x = side * edge * (0.15 + 0.6 * (1 - (1 - r) ** 2)) * (0.6 + 0.4 * Math.abs(jitter));
+        const k = 1 - (x / edge) ** 2;
+        show(g, i, falling && r < 0.9, x, pile + mound * k + 0.015);
+      }
+    });
+    // The top's funnel: grains slide down the dip toward the neck.
+    const topEdge = width(top) - 0.05;
+    const dip = 0.18 * (1 - left) * Math.min(1, left * 8);
+    this.funnel.forEach((g, i) => {
+      const p = (t * 0.45 + i / FUNNEL) % 1;
+      const side = i % 2 ? 1 : -1;
+      const x = side * topEdge * 0.55 * (1 - p) ** 1.5;
+      const k = 1 - (x / topEdge) ** 2;
+      show(g, GRAINS + i, falling && left > 0.03, x, Math.max(0.06, top - dip * k + 0.012 - p * p * 0.1));
     });
 
     const text = `${two(now.hour)}:${two(now.minute)}`;

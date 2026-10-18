@@ -4,8 +4,8 @@
 // tan θ = sin(latitude) · tan(hour angle). Its soft shadow (a directional light) falls on the
 // hour. The sun is placed so noon is 12:00 on the clock; a real dial shows solar time, which
 // the time zone, summer time and the equation of time move a little. The sky follows the sun's
-// height, from day through dusk to night. At night there's no shadow to read: press D to watch
-// a day pass (D again to stop).
+// height, from day through dusk to night. At night there's no shadow to read, so it shows a day
+// passing instead; D does that by day too (D again to stop).
 import {
   type Camera,
   Color,
@@ -30,6 +30,8 @@ const TOP = 1.0;
 const RADIUS = 1.25;
 const STONE = Material.create({ color: Color.hex("#a49c8e"), smoothness: 0.2 });
 const BRONZE = Material.create({ color: Color.hex("#c49a5c"), smoothness: 0.45, metallic: 0.25 });
+// The face isn't metallic: a metal mostly mirrors the sky, which no shadow darkens.
+const DIAL = Material.create({ color: Color.hex("#c9a368"), smoothness: 0.25 });
 const ENGRAVED = Material.create({ color: Color.hex("#3a2c18"), smoothness: 0.3 });
 const GRASS = Material.create({ color: Color.hex("#4d7a3a"), smoothness: 0.1 });
 const LEAVES = Material.create({ color: Color.hex("#2f5e2c"), smoothness: 0.15 });
@@ -106,6 +108,7 @@ export class SundialFace implements Face {
   private plaque!: TextMesh;
   private lapse = false;
   private lapseStart = 0;
+  private wasNight = false;
   private shownPlaque = "";
   private saved: (() => void) | null = null;
 
@@ -120,7 +123,7 @@ export class SundialFace implements Face {
     solid("lawn", "plane", GRASS, Vector3.zero, new Vector3(30, 1, 30));
     solid("pedestal", "cylinder", STONE, new Vector3(0, TOP / 2 - 0.05, 0), new Vector3(0.7, TOP / 2 - 0.05, 0.7));
     solid("pedestal cap", "cylinder", STONE, new Vector3(0, TOP - 0.04, 0), new Vector3(RADIUS * 2 + 0.12, 0.04, RADIUS * 2 + 0.12));
-    solid("dial", "cylinder", BRONZE, new Vector3(0, TOP + 0.02, 0), new Vector3(RADIUS * 2, 0.02, RADIUS * 2));
+    solid("dial", "cylinder", DIAL, new Vector3(0, TOP + 0.02, 0), new Vector3(RADIUS * 2, 0.02, RADIUS * 2));
     const face = TOP + 0.045;
 
     // Hour lines and numerals, six in the morning round to six at night.
@@ -151,7 +154,17 @@ export class SundialFace implements Face {
 
   show(camera: Camera): void {
     const t = camera.transform;
-    const before = { ortho: camera.orthographic, fov: camera.fieldOfView, pos: t.position, rot: t.rotation, clear: camera.clearFlags };
+    const before = {
+      ortho: camera.orthographic,
+      fov: camera.fieldOfView,
+      pos: t.position,
+      rot: t.rotation,
+      clear: camera.clearFlags,
+      ambientMode: RenderSettings.ambientMode,
+      ambient: RenderSettings.ambientLight,
+    };
+    // Ambient light from a dimmed sky colour (set each frame), so shadows keep their contrast.
+    RenderSettings.ambientMode = "color";
     camera.orthographic = false;
     camera.fieldOfView = 42;
     camera.clearFlags = "skybox";
@@ -165,6 +178,8 @@ export class SundialFace implements Face {
       t.position = before.pos;
       t.rotation = before.rot;
       RenderSettings.skybox = null;
+      RenderSettings.ambientMode = before.ambientMode;
+      RenderSettings.ambientLight = before.ambient;
     };
   }
 
@@ -179,8 +194,12 @@ export class SundialFace implements Face {
       this.lapse = !this.lapse;
       this.lapseStart = t;
     }
-    let hours = now.hour + now.minute / 60 + now.second / 3600;
-    if (this.lapse) {
+    const real = now.hour + now.minute / 60 + now.second / 3600;
+    let hours = real;
+    const night = Math.sin(sunPosition(day, real).altitude) <= 0;
+    if (night && !this.wasNight) this.lapseStart = t;
+    this.wasNight = night;
+    if (this.lapse || night) {
       // Sunrise to sunset in about 24 seconds, over and over.
       const phi = LATITUDE * DEG;
       const decl = -23.44 * DEG * Math.cos(((2 * Math.PI) / 365) * (day + 10));
@@ -191,29 +210,33 @@ export class SundialFace implements Face {
     const up = Math.sin(altitude);
     const dir = towardSun(altitude, azimuth);
 
-    // The light shines from the sun; low suns are warmer and dimmer.
+    // The light shines from the sun; low suns are warmer. A low sun barely lights a flat dial,
+    // so it's turned up there to keep the shadow readable until it sets.
     this.sun.transform.rotation = Quaternion.lookRotation(dir.scale(-1));
-    const day01 = Math.max(0, Math.min(1, up * 4));
+    const day01 = Math.max(0, Math.min(1, up * 12));
     const warm = Math.max(0, Math.min(1, 1 - up * 2.5));
-    this.sun.intensity = 1.7 * day01;
+    this.sun.intensity = day01 * (1.6 + 2.2 * (1 - Math.min(1, up * 2)));
     this.sun.color = new Color(1, 0.95 - warm * 0.35, 0.88 - warm * 0.55, 1);
 
     // The sky: blue by day, orange low down, deep blue at night.
-    const night = Math.max(0, Math.min(1, -up * 6));
+    const dark = Math.max(0, Math.min(1, -up * 6));
     const mixc = (a: Color, b: Color, k: number) => new Color(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, 1);
     const dayZenith = Color.hex("#3a78c9");
     const dayHorizon = Color.hex("#a9cdee");
     const duskHorizon = Color.hex("#f0a35e");
     const nightSky = Color.hex("#0b1428");
-    const horizon = mixc(mixc(dayHorizon, duskHorizon, warm * day01 + (1 - day01) * (1 - night)), nightSky, night);
-    const zenith = mixc(dayZenith, nightSky, Math.max(night, 1 - day01) * 0.85);
+    const horizon = mixc(mixc(dayHorizon, duskHorizon, warm * day01 + (1 - day01) * (1 - dark)), nightSky, dark);
+    const zenith = mixc(dayZenith, nightSky, Math.max(dark, 1 - day01) * 0.85);
     RenderSettings.skybox = { sunDirection: up > -0.05 ? dir : null, zenith, horizon, ground: Color.hex("#2b3a26"), sunColor: this.sun.color };
+    const sky = mixc(zenith, horizon, 0.5);
+    RenderSettings.ambientLight = new Color(sky.r * 0.32 + 0.03, sky.g * 0.32 + 0.03, sky.b * 0.32 + 0.04, 1);
 
-    const clock = `${two(Math.floor(hours) % 24)}:${two(Math.floor((hours % 1) * 60))}`;
-    const plaque =
-      up > 0
-        ? `${this.lapse ? "DAY-LAPSE " : ""}${clock} · SUN ${Math.round(altitude / DEG)}° UP`
-        : `NIGHT ${clock} · PRESS D`;
+    const hhmm = (h: number) => `${two(Math.floor(h) % 24)}:${two(Math.floor((h % 1) * 60))}`;
+    const plaque = night
+      ? `NIGHT ${hhmm(real)} · SHOWING ${hhmm(hours)}`
+      : up > 0
+        ? `${this.lapse ? "DAY-LAPSE " : ""}${hhmm(hours)} · SUN ${Math.round(altitude / DEG)}° UP`
+        : `${this.lapse ? "DAY-LAPSE " : ""}${hhmm(hours)} · SUN DOWN`;
     if (plaque !== this.shownPlaque) {
       this.shownPlaque = plaque;
       this.plaque.text = plaque;
