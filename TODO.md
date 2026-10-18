@@ -830,7 +830,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     width in world units, a colour, `loop`) sends one `render.stroke` op per change; Rust
     draws one instanced SDF capsule per segment (`WorldView.strokes`, `vs_stroke` /
     `fs_stroke`): smooth edges without MSAA, round joins and caps — `M5-RND-24`
-    - [ ] Later: fills (`FillClosedCurve`), e.g. stencil-then-cover for self-crossing shapes
+    - [x] Fills (`FillPolygon` / `FillClosedCurve`): `LineRenderer2D.fillColor` and `fillRule`
+      (`evenodd`, GDI's default `Alternate`, or `nonzero`), tessellated with lyon when the
+      points change (`tessellate_fill`, `WorldView.fills`), drawn under the outline; a
+      `width` of 0 leaves just the fill — `M5-RND-25`
+    - [x] `Shapes` (GDI's outlines): rectangle, rounded rectangle, ellipse, circle, arc, pie,
+      regular polygon, polygon, triangle, Bézier, cardinal `curve` / `closedCurve` — `M5-RND-25`
+    - [ ] TextMesh: text in the world without a UI panel (GDI's `DrawString`)
+    - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
+      texture brushes, smooth fill edges without MSAA, clipping
     - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)
     - [ ] Later: points as one `Float32Array` if the op's number conversion shows up
   - [x] The Cornell box (`examples/cornell`): built from primitives with the original's
@@ -1035,6 +1043,15 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   read. Now, when the UI has a backdrop filter or blend mode (`needs_backdrop`), the world is
   drawn into a sampleable texture (`backdrop_target`) and the UI canvas starts as a copy of it
   (`render_over`); other frames are unchanged — `M5-RND-16`; the arcade's frosted HUD
+- [x] **Ported examples (2026-10-18)**: `examples/sine-circle-demo` and `examples/raindrop-demo`
+  (MiniGameEngine's SineDemo and RaindropDemo: the original's transitions, all four sine
+  formulas drawn every degree with `LineRenderer2D`, the weather's ripples, the music, an FPS
+  readout with a vsync toggle) and `examples/topdown-zombie-game` (the 2014 VB.NET Zombie
+  Horders: the rules in `sim.ts`, tested with `bun test`; the original's menu, pause and death
+  screens with a backdrop blur; zombies a little faster up to level 3; the single-player spawn
+  bug fixed)
+  - [ ] The zombie game's multiplayer: the sim already takes a list of players and inputs;
+    it waits on networking (M6 Script IO, M8)
 - [ ] **Optimisation fixes** (found 2026-10-17 with `examples/arcade`; not scheduled yet):
   - [x] Reflection probes redrew the shadow map six times: shadow maps are now drawn once
     a frame from the main view and shared by probe faces, mirrors and render textures

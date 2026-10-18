@@ -17,6 +17,7 @@ swash = "0.2.10"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 wgpu = "30.0.1"
+lyon_tessellation = "1.0.22"
 
 [dev-dependencies]
 iron_core = { path = "../iron_core" }

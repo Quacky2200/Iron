@@ -10,10 +10,11 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, GizmoLine, Grading, Light, LightKind,
-    MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe,
-    RenderMode, ShadowQuality, Shadows, Sky, Stroke, TextureData, TextureFilter, TextureWrap,
-    Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, GizmoLine, Grading,
+    Light, LightKind, MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection,
+    ReflectionProbe, RenderMode, ShadowQuality, Shadows, Sky, Stroke, TextureData, TextureFilter,
+    TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id,
+    viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -289,6 +290,9 @@ struct Stroke2d {
     color: [f32; 4],
     /// Joins the last point back to the first.
     closed: bool,
+    /// The fill's colour and its triangles (in the object's space, tessellated when the
+    /// points change), if it's filled.
+    fill: Option<([f32; 4], Vec<[f32; 2]>)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -924,15 +928,23 @@ impl WorldViews {
                 self.sprites.insert(id, sprite);
             }
             // `stroke component object width [r g b a] closed [x0 y0 x1 y1 ...]`
+            // `... [fill r g b a]|null evenodd|nonzero`: the points as a closed, filled shape.
             "stroke" => {
                 let points = flat(args.get(5))
                     .ok_or("stroke needs [x, y, ...]")?
                     .as_chunks::<2>()
                     .0
                     .to_vec();
+                let rule = match args.get(7).and_then(Value::as_str) {
+                    Some("nonzero") => FillRule::NonZero,
+                    _ => FillRule::EvenOdd,
+                };
+                let fill = nums::<4>(args.get(6))
+                    .map(|color| (color, iron_render::tessellate_fill(&points, rule)));
                 let stroke = Stroke2d {
                     object: id_at(1)?,
                     points,
+                    fill,
                     width: num(2)?.max(0.0),
                     color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
                     closed: matches!(args.get(4), Some(Value::Bool(true))),
@@ -1232,8 +1244,9 @@ impl WorldViews {
         extra: &[(ScriptObject, WorldQuad)],
     ) -> Vec<WorldView> {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
-        // Each `LineRenderer2D`'s points through its object, as world segments.
-        let strokes: Vec<Tagged<Vec<Stroke>>> = self
+        // Each `LineRenderer2D`'s points through its object, as world segments, and its
+        // fill's triangles.
+        let strokes: Vec<Tagged<(Vec<Stroke>, Vec<FillVertex>)>> = self
             .strokes
             .values()
             .filter(|s| scene.active(s.object) && s.points.len() >= 2)
@@ -1245,7 +1258,12 @@ impl WorldViews {
                     .map(|&[x, y]| m.transform_point3(Vec3::new(x, y, 0.0)).into())
                     .collect();
                 let n = p.len();
-                let count = if s.closed { n } else { n - 1 };
+                // A zero width draws no outline (a fill on its own).
+                let count = match (s.width > 0.0, s.closed) {
+                    (false, _) => 0,
+                    (true, true) => n,
+                    (true, false) => n - 1,
+                };
                 let segments = (0..count)
                     .map(|i| Stroke {
                         a: p[i],
@@ -1254,7 +1272,16 @@ impl WorldViews {
                         color: s.color,
                     })
                     .collect();
-                Tagged::new(scene, s.object, segments)
+                let fill = s.fill.as_ref().map_or_else(Vec::new, |(color, triangles)| {
+                    triangles
+                        .iter()
+                        .map(|&[x, y]| FillVertex {
+                            position: m.transform_point3(Vec3::new(x, y, 0.0)).into(),
+                            color: *color,
+                        })
+                        .collect()
+                });
+                Tagged::new(scene, s.object, (segments, fill))
             })
             .collect();
         let quads: Vec<Tagged<WorldQuad>> = self
@@ -1561,7 +1588,12 @@ impl WorldViews {
                     strokes: strokes
                         .iter()
                         .filter(|t| shows(t.layer, t.at))
-                        .flat_map(|t| t.item.iter().copied())
+                        .flat_map(|t| t.item.0.iter().copied())
+                        .collect(),
+                    fills: strokes
+                        .iter()
+                        .filter(|t| shows(t.layer, t.at))
+                        .flat_map(|t| t.item.1.iter().copied())
                         .collect(),
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
@@ -1900,6 +1932,50 @@ mod tests {
         views.apply("camera", &camera(None)).unwrap();
         views.apply("remove", &[n(20.0)]).unwrap();
         assert!(strokes(&views).is_empty());
+    }
+
+    // M5-RND-25
+    #[test]
+    fn filled_shapes_send_their_triangles_through_their_object() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        let at = Value::Array(vec![n(10.0), n(0.0), n(-5.0)]);
+        scene
+            .apply("create", &[n(2.0), "square".into(), Value::Null, at])
+            .unwrap();
+        scene.scene.update_world();
+        let mut camera = vec![n(100.0), n(1.0), n(60.0), n(0.1), n(1000.0)];
+        camera.extend([Value::Null, n(0.0), Value::Bool(false), n(5.0)]);
+        views.apply("camera", &camera).unwrap();
+        let square = |width: f64, fill: Value| {
+            vec![
+                n(20.0),
+                n(2.0),
+                n(width),
+                Value::Array(vec![n(1.0); 4]),
+                Value::Bool(true),
+                Value::Array([0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0].map(n).to_vec()),
+                fill,
+                "evenodd".into(),
+            ]
+        };
+        let view = |views: &WorldViews| views.views(&scene, (64, 64), &[]).remove(0);
+        // Filled with no outline: two triangles, moved with the object, in the fill colour.
+        let green = Value::Array(vec![n(0.0), n(1.0), n(0.0), n(1.0)]);
+        views.apply("stroke", &square(0.0, green)).unwrap();
+        let v = view(&views);
+        assert!(v.strokes.is_empty());
+        assert_eq!(v.fills.len(), 6);
+        assert!(v.fills.iter().all(|f| f.color == [0.0, 1.0, 0.0, 1.0]));
+        assert!(v.fills.iter().any(|f| f.position == [11.0, 1.0, -5.0]));
+        // An outline and no fill.
+        views.apply("stroke", &square(0.1, Value::Null)).unwrap();
+        let v = view(&views);
+        assert_eq!((v.strokes.len(), v.fills.len()), (4, 0));
     }
 
     // M5-LOD-01

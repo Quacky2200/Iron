@@ -209,6 +209,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
+            fills: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -235,6 +236,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
+            fills: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -268,6 +270,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
+            fills: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -2495,4 +2498,115 @@ fn strokes_are_smooth_capsules_with_round_joins_and_hide_behind_things() {
         "the cube hides the blue line: {behind:?}"
     );
     assert_golden("M5-RND-24", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-25
+#[test]
+fn fills_follow_their_rule_and_sit_under_their_outlines() {
+    use iron_render::{FillRule, FillVertex, Projection, Stroke, tessellate_fill};
+    let gpu = shared_gpu();
+    let size = (240, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let camera = WorldCamera::new(
+        Mat4::from_translation(Vec3::new(0.0, 0.0, 10.0)),
+        Projection::Orthographic { half_height: 2.0 },
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut fill = |points: &[[f32; 2]], rule: FillRule, color: [f32; 4]| {
+        for p in tessellate_fill(points, rule) {
+            v.fills.push(FillVertex {
+                position: [p[0], p[1], 0.0],
+                color,
+            });
+        }
+    };
+    // A five-pointed star drawn in one stroke, so its outline crosses itself.
+    let star = |cx: f32, cy: f32, r: f32| -> Vec<[f32; 2]> {
+        (0..5)
+            .map(|i| {
+                let a = (90.0 + 144.0 * i as f32).to_radians();
+                [cx + r * a.cos(), cy + r * a.sin()]
+            })
+            .collect()
+    };
+    let square = [[-2.6, -1.5], [-1.0, -1.5], [-1.0, 0.1], [-2.6, 0.1]];
+    fill(&square, FillRule::EvenOdd, [1.0, 0.5, 0.1, 1.0]);
+    fill(
+        &star(0.0, -0.5, 1.0),
+        FillRule::EvenOdd,
+        [0.2, 0.4, 1.0, 1.0],
+    );
+    fill(
+        &star(2.0, -0.5, 0.9),
+        FillRule::NonZero,
+        [0.2, 1.0, 0.3, 1.0],
+    );
+    let circle: Vec<[f32; 2]> = (0..48)
+        .map(|i| {
+            let a = (i as f32 * 7.5).to_radians();
+            [-1.8 + 0.5 * a.cos(), 1.2 + 0.5 * a.sin()]
+        })
+        .collect();
+    fill(&circle, FillRule::EvenOdd, [1.0, 0.0, 0.0, 0.5]);
+    // The square's outline, over its fill.
+    for k in 0..4 {
+        let [a, b] = [square[k], square[(k + 1) % 4]];
+        v.strokes.push(Stroke {
+            a: [a[0], a[1], 0.0],
+            b: [b[0], b[1], 0.0],
+            width: 0.08,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    }
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let at = |x: f32, y: f32| {
+        let c = view_proj.project_point3(Vec3::new(x, y, 0.0));
+        let px = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let py = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        let i = (py * size.0 as usize + px) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    let inside = at(-1.8, -0.7);
+    assert!(
+        inside[0] > 200 && inside[1] > 150 && inside[2] < 120,
+        "the square's orange fill (linear 1, 0.5, 0.1): {inside:?}"
+    );
+    let edge = at(-1.0, -0.7);
+    assert!(
+        edge.iter().all(|&c| c > 200),
+        "the outline over the fill: {edge:?}"
+    );
+    let hole = at(0.0, -0.5);
+    assert!(
+        hole.iter().all(|&c| c < 30),
+        "even-odd leaves the star's middle empty: {hole:?}"
+    );
+    let arm = at(0.0, 0.25);
+    assert!(arm[2] > 150, "a point of the even-odd star: {arm:?}");
+    let solid = at(2.0, -0.5);
+    assert!(
+        solid[1] > 150,
+        "non-zero fills the star's middle: {solid:?}"
+    );
+    let glass = at(-1.8, 1.2);
+    assert!(
+        glass[0] > 120 && glass[0] < 230 && glass[1] < 30,
+        "the see-through circle: {glass:?}"
+    );
+    assert_golden("M5-RND-25", size.0, size.1, &pixels, 3);
 }

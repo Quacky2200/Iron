@@ -122,12 +122,17 @@ export class LineRenderer extends Component {
  * caps, optionally `loop`ed back to the start. Rust draws one capsule per segment, so a curve
  * of thousands of points costs one op per change and no mesh. Assign a new `points` array to
  * redraw. A see-through colour shows darker where segments overlap.
+ *
+ * `fillColor` fills the points as a closed shape (GDI's `FillPolygon`), by `fillRule`; a
+ * `width` of 0 leaves just the fill. `Shapes` makes the points for common shapes.
  */
 export class LineRenderer2D extends Component {
   private _points: Vector2Like[] = [];
   private _width = 0.05;
   private _color = Color.white;
   private _loop = false;
+  private _fillColor: Color | null = null;
+  private _fillRule: "evenodd" | "nonzero" = "evenodd";
   private started = false;
   private dirty = true;
 
@@ -167,6 +172,28 @@ export class LineRenderer2D extends Component {
     this.dirty = true;
   }
 
+  /** Fills the shape in this colour (null: no fill). */
+  @property
+  get fillColor(): Color | null {
+    return this._fillColor;
+  }
+  set fillColor(c: Color | null) {
+    this._fillColor = c;
+    this.dirty = true;
+  }
+  /**
+   * Where a self-crossing outline is inside: `evenodd` leaves a star's middle empty (GDI's
+   * default `Alternate`), `nonzero` fills it (`Winding`).
+   */
+  @property
+  get fillRule(): "evenodd" | "nonzero" {
+    return this._fillRule;
+  }
+  set fillRule(r: "evenodd" | "nonzero") {
+    this._fillRule = r;
+    this.dirty = true;
+  }
+
   override onAwake(): void {
     this.started = true;
     this.send();
@@ -192,6 +219,17 @@ export class LineRenderer2D extends Component {
       flat[i * 2 + 1] = p.y;
     }
     const c = this._color;
-    __iron_op("render.stroke", this.id, this.gameObject.id, this._width, [c.r, c.g, c.b, c.a], this._loop, flat);
+    const f = this._fillColor;
+    __iron_op(
+      "render.stroke",
+      this.id,
+      this.gameObject.id,
+      this._width,
+      [c.r, c.g, c.b, c.a],
+      this._loop,
+      flat,
+      f ? [f.r, f.g, f.b, f.a] : null,
+      this._fillRule,
+    );
   }
 }

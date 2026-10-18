@@ -317,6 +317,25 @@ fn fs_line_hidden(in: LineOut) -> @location(0) vec4<f32> {
     return in.color * line_alpha(in.side) * 0.25;
 }
 
+// Fills (`LineRenderer2D.fillColor`): the tessellated shape's triangles, one colour.
+struct ShapeOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_shape(@location(0) position: vec3<f32>, @location(1) color: vec4<f32>) -> ShapeOut {
+    var out: ShapeOut;
+    out.pos = g.view_proj * vec4<f32>(position, 1.0);
+    out.color = vec4<f32>(color.rgb * color.a, color.a);
+    return out;
+}
+
+@fragment
+fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
+    return in.color;
+}
+
 // Strokes (`LineRenderer2D`): each instance is a segment `width` world units wide, drawn as a
 // capsule. The quad lies in the world along the segment and across it (square to the
 // camera's forward axis), a pixel wider all round. The fragment shader cuts the capsule out

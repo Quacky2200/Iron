@@ -12,6 +12,7 @@
 pub mod bloom;
 pub mod cull;
 pub mod environment;
+mod fill;
 mod fxaa;
 pub mod mesh;
 mod shadows;
@@ -27,6 +28,7 @@ use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 use crate::{Color, Gpu, RenderTarget};
 pub use bloom::{Bloom, Grading, Tonemapping};
 pub use environment::Sky;
+pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
 use texture::SamplerKey;
 pub use texture::{
@@ -492,6 +494,9 @@ pub struct WorldView {
     /// Thick lines (`LineRenderer2D`), depth-tested and blended after the see-through
     /// things. A see-through stroke shows darker where its segments overlap.
     pub strokes: Vec<Stroke>,
+    /// Filled shapes as a triangle list ([`tessellate_fill`]), drawn just before the
+    /// strokes so outlines sit on top. Their edges are only as smooth as MSAA makes them.
+    pub fills: Vec<FillVertex>,
 }
 
 /// A line segment in the world, for [`WorldView::lines`].
@@ -520,6 +525,18 @@ pub struct Stroke {
     pub color: [f32; 4],
 }
 
+/// A corner of a filled shape's triangle, for [`WorldView::fills`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
+pub struct FillVertex {
+    pub position: [f32; 3],
+    /// Linear RGBA, straight alpha.
+    pub color: [f32; 4],
+}
+
+const FILL_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
+
 const STROKE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32, 3 => Float32x4];
 
@@ -542,6 +559,7 @@ impl WorldView {
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
+            fills: Vec::new(),
         }
     }
 }
@@ -729,6 +747,8 @@ struct Pipelines {
     lines_hidden: wgpu::RenderPipeline,
     /// Thick world lines ([`WorldView::strokes`]).
     strokes: wgpu::RenderPipeline,
+    /// Filled shapes ([`WorldView::fills`]).
+    fills: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
     /// Double-sided materials: both faces drawn.
@@ -828,6 +848,8 @@ pub struct WorldRenderer {
     lines: wgpu::Buffer,
     /// Every view's strokes (instances of the stroke pipeline).
     strokes: wgpu::Buffer,
+    /// Every view's fill triangles.
+    fills: wgpu::Buffer,
     meshes: HashMap<u32, MeshBuffers>,
     /// What the last frame drew and culled.
     stats: WorldStats,
@@ -1263,6 +1285,7 @@ impl WorldRenderer {
             mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
             lines: Self::buffer(gpu, "world gizmo lines", 4096, wgpu::BufferUsages::VERTEX),
             strokes: Self::buffer(gpu, "world strokes", 4096, wgpu::BufferUsages::VERTEX),
+            fills: Self::buffer(gpu, "world fills", 4096, wgpu::BufferUsages::VERTEX),
             meshes: HashMap::new(),
             stats: WorldStats::default(),
             textures: HashMap::new(),
@@ -1960,6 +1983,11 @@ impl WorldRenderer {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &LINE_ATTRIBUTES,
         };
+        let fill_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<FillVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &FILL_ATTRIBUTES,
+        };
         let stroke_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Stroke>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
@@ -2065,6 +2093,14 @@ impl WorldRenderer {
                     &[Some(line_layout.clone())],
                     None,
                     (wgpu::CompareFunction::Greater, false),
+                    blend,
+                ),
+                fills: make(
+                    "world fills",
+                    ("vs_shape", "fs_shape"),
+                    &[Some(fill_layout.clone())],
+                    None,
+                    (less_equal, false),
                     blend,
                 ),
                 strokes: make(
@@ -2960,6 +2996,27 @@ impl WorldRenderer {
             gpu.queue
                 .write_buffer(&self.lines, 0, bytemuck::cast_slice(&all_lines));
         }
+        // Fill triangles, the same way.
+        let mut fill_ranges = Vec::with_capacity(views.len());
+        let mut all_fills: Vec<FillVertex> = Vec::new();
+        for view in views {
+            let start = all_fills.len() as u32;
+            all_fills.extend_from_slice(&view.fills);
+            fill_ranges.push(start..all_fills.len() as u32);
+        }
+        if !all_fills.is_empty() {
+            let bytes = std::mem::size_of_val(all_fills.as_slice()) as u64;
+            if self.fills.size() < bytes {
+                self.fills = Self::buffer(
+                    gpu,
+                    "world fills",
+                    bytes.next_power_of_two(),
+                    wgpu::BufferUsages::VERTEX,
+                );
+            }
+            gpu.queue
+                .write_buffer(&self.fills, 0, bytemuck::cast_slice(&all_fills));
+        }
         // Strokes, the same way.
         let mut stroke_ranges = Vec::with_capacity(views.len());
         let mut all_strokes: Vec<Stroke> = Vec::new();
@@ -3248,6 +3305,15 @@ impl WorldRenderer {
                 }
                 for (_, run) in blended {
                     draw(&mut pass, run, true);
+                }
+                // Fills, then strokes over them, after the see-through things.
+                let range = fill_ranges[i].clone();
+                if !range.is_empty() {
+                    pass.set_bind_group(1, plain, &[]);
+                    pass.set_bind_group(2, &shadow_group, &[]);
+                    pass.set_vertex_buffer(0, self.fills.slice(..));
+                    pass.set_pipeline(&pipelines.fills);
+                    pass.draw(range, 0..1);
                 }
                 // Strokes after the see-through things, before the gizmo lines.
                 let range = stroke_ranges[i].clone();
