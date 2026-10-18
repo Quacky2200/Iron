@@ -512,6 +512,19 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-31 | Unit | A collector does not mark objects of another thread's heap found through a shared global slot; the owner's next collection still traces them. Failed before headers carried a heap id. |
 | M9-TS-32 | Unit | Array data counts toward the live size, so a heap with a large live array collects less often. |
 | M9-TS-33 | Unit | Registering a different pointer map under a struct id already taken is refused; the same one again is fine. |
+| M9-TS-34 | Integration | A closure and the function that made it share one variable (`counterDemo`, 33). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-35 | Integration | Closures from one function keep separate captured values (101011). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-36 | Integration | Two closures over one variable (`inc`, `get` fields of a counter object) see each other's writes; another counter is independent (7101). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-37 | Integration | A `for...of` variable is a new variable every iteration for closures (10409). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-38 | Integration | A `const` declared in a `while` body is new every iteration (211101). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-39 | Integration | Top-level functions work as values: passed, and as `xs.map(double)` next to an inlined arrow callback (42060608). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-40 | Integration | A closure can call itself through an annotated variable (720). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-41 | Integration | A closure over an object changes the object everyone holds (34). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-42 | Integration | A closure made in an inlined array callback captures the callback's parameter (332211). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-43 | Integration | An immediately called arrow works (42). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-44 | Integration | Closures held by the host keep their captured state, including an object, through collections and garbage churn, with a collection at every allocation. Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-45 | Integration | 20,000 short-lived arrays, cells and closures are collected. Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-46 | Integration | Closures are passed, returned and called through a call result while two fresh ones wait for each other (`compose(makeAdder(1), makeAdder(2))(10)` = 13). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
 
 ---
 

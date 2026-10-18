@@ -70,7 +70,7 @@ fn stmt_assigns(s: &Stmt, v: VarId) -> bool {
         Stmt::Assign(x, e) => *x == v || assigns(e, v),
         Stmt::StoreGlobal(_, e) | Stmt::Eval(e) => assigns(e, v),
         Stmt::Return(e) => e.as_ref().is_some_and(|e| assigns(e, v)),
-        Stmt::StoreField(o, _, _, x) => assigns(o, v) || assigns(x, v),
+        Stmt::StoreField(o, _, _, x) | Stmt::CellSet(o, x) => assigns(o, v) || assigns(x, v),
         Stmt::StoreIndex(a, i, x) => assigns(a, v) || assigns(i, v) || assigns(x, v),
         Stmt::If(c, a, b) => {
             assigns(c, v)
@@ -102,6 +102,7 @@ fn n_spills(args: &[&Expr]) -> u32 {
 pub fn may_alloc(e: &Expr) -> bool {
     match &e.kind {
         ExprKind::NewObj(_) | ExprKind::Call(..) | ExprKind::CallClosure(..) => true,
+        ExprKind::NewCell(_) | ExprKind::MakeClosure(..) => true,
         ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew, _) => true,
         ExprKind::Seq(stmts, v) => stmts.iter().any(stmt_may_alloc) || may_alloc(v),
         _ => children(e).iter().any(|c| may_alloc(c)),
@@ -112,7 +113,7 @@ fn stmt_may_alloc(s: &Stmt) -> bool {
     match s {
         Stmt::Assign(_, e) | Stmt::StoreGlobal(_, e) | Stmt::Eval(e) => may_alloc(e),
         Stmt::Return(e) => e.as_ref().is_some_and(may_alloc),
-        Stmt::StoreField(o, _, _, v) => may_alloc(o) || may_alloc(v),
+        Stmt::StoreField(o, _, _, v) | Stmt::CellSet(o, v) => may_alloc(o) || may_alloc(v),
         Stmt::StoreIndex(a, i, v) => may_alloc(a) || may_alloc(i) || may_alloc(v),
         Stmt::If(c, a, b) => {
             may_alloc(c) || a.iter().any(stmt_may_alloc) || b.iter().any(stmt_may_alloc)
@@ -140,6 +141,8 @@ fn children(e: &Expr) -> Vec<&Expr> {
         ExprKind::Call(_, args) | ExprKind::Rt(_, args) => args.iter().collect(),
         ExprKind::CallClosure(c, args) => std::iter::once(&**c).chain(args.iter()).collect(),
         ExprKind::Seq(_, v) => vec![v],
+        ExprKind::NewCell(a) | ExprKind::CellGet(a) => vec![a],
+        ExprKind::MakeClosure(_, Some(env)) => vec![env],
         _ => vec![],
     }
 }
@@ -171,7 +174,7 @@ fn count_stmts(stmts: &[Stmt], n: &mut u32) {
                     count_expr(e, n)
                 }
             }
-            Stmt::StoreField(o, _, _, v) => {
+            Stmt::StoreField(o, _, _, v) | Stmt::CellSet(o, v) => {
                 *n += n_spills(&[o, v]);
                 count_expr(o, n);
                 count_expr(v, n);

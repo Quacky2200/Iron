@@ -78,6 +78,7 @@ Types (`Ty`):
 | `Obj(StructId)` | interface / type alias / inline type / object literal, a struct with a fixed layout | pointer |
 | `Arr(T)`, `Bytes` | `T[]`, `Set<T>`, `Uint8Array` | pointer to an array header |
 | `Fn(sig)` | function-typed value | pointer to a closure `{fnptr, env}` |
+| `Cell(T)` | a variable shared with closures: a heap box holding one `T` | pointer |
 | `Nullable(T)` | `T \| null \| undefined` | same as `T`; null is a zero pointer, or for numbers a reserved NaN payload (`0x7FF8DEADBEEF0001`) |
 | `Null`, `Void` | the `null` literal before coercion; no value | none |
 | `JsValue` | **reserved** for dynamic values, never produced yet | (NaN-boxed) |
@@ -135,9 +136,6 @@ callbacks passed in (`walls: (map: number) => Walls`, called through a closure),
 
 Not supported (each is a compile error naming the source line, `M9-TS-15`):
 
-- Closures **created** in script and capturing variables (the IR has the closure value and the
-  call; there are no capture cells yet). Callbacks to array methods are inlined, which covers the
-  common case.
 - Classes, `this`, methods, generics, destructuring, default/rest parameters, `switch`, `try` /
   `throw`, template literals, general string code (`+`, `.length`, `===` on `string`), `Map`,
   `typeof`, `for(;;)` with an update clause, `for...in`, `Array.from`, array/object spread, getters.
@@ -146,6 +144,43 @@ Not supported (each is a compile error naming the source line, `M9-TS-15`):
   (compare with the literal `null`, which is exact); numbers beyond ±2^63 in bit operations; `==`
   is `===`; `undefined` and `null` are one value; using a `number | null` as a condition (`if (z.attackTimer)`)
   evaluates its operand twice, which only matters if the operand has side effects.
+
+### Closures
+
+Closures that are values (stored, passed, returned, called later) work: arrow functions and
+function expressions, capturing variables of the functions around them, nested to any depth.
+Array-method callbacks that are written inline as arrows are still compiled into the loop and
+never become objects.
+
+- **Which variables are shared** (`lower/scan.rs`): before a function is lowered it is scanned
+  with oxc's visitor for closures that are not inlined callbacks. A closure's free names (what it
+  uses and does not declare) are variables of the code around it, and every local with such a name
+  lives in a cell instead of a register (`Binding::Boxed`). The scan is by name, so it can only
+  over-box, never miss. Parameters, `let`/`const`, `for...of` variables and inlined-callback
+  parameters are all boxed this way; a `let`/`const` inside a loop body gets a new cell every
+  iteration, which is JavaScript's per-iteration binding.
+- **Lifting**: the closure body becomes an ordinary IR function `lambda(env, params...)`. Its
+  captured variables are locals bound to the cells it pulls out of `env` at entry, so reads and
+  writes go through the cell and every closure over a variable, and the function that owns it,
+  agree. `MakeClosure(fn, env)` builds the object; the env is an array of cells.
+- **Calls**: `CallClosure` loads `func` and `env` and calls `func(env, args...)`. Callees can be a
+  local, a field (`counter.inc()`), a call result (`compose(f, g)(10)`), an element (`fs[0]!()`)
+  or a parenthesised arrow (an immediately called one).
+- **Function values**: a top-level function used as a value gets a small wrapper that adds the
+  environment parameter (`xs.map(double)`, `apply(double, 21)`). A non-arrow callback to an array
+  method is called as a closure per element.
+- **Types**: parameters of a closure take their types from the context (the parameter type of
+  the function it is passed to, a declared `(n: number) => number`, a return type) or their own
+  annotations. A closure that calls itself needs its variable annotated with a function type.
+- **Collector**: `ts_rt_cell_new_gc` and `ts_rt_closure_new_gc` keep their argument alive while
+  they collect (a value being boxed and an environment are in no frame yet), cells and
+  environments are traced, and `MakeClosure`/`NewCell` count as allocations in the frame plan.
+- Tests: `tests/closures.rs` runs every demo in `bench/closures.ts` normally, with a collection at
+  every allocation and with collection off, against the numbers bun computes from the same file
+  (`M9-TS-34`..`46`).
+- Not done: closures that use `this` or `arguments`, getters, closures created at module level
+  (top-level `const f = () => ...` is a function), named function expressions referring to their
+  own name, and capturing variables from a generator/async function (neither exists).
 
 ## 5. Backend and linking
 
@@ -180,8 +215,10 @@ tracked, so a sweep can free them.
   growth frees the old block at once). A pointer-element array has its own header kind and is
   traced; number, bool and tag arrays are not. `Uint8Array`: the same header with a byte per
   element.
-- **Closure**: `{header, fnptr, env}`, called as `fnptr(env, args...)`; `env` is host memory and is
-  not traced. **String**: `{header, len, utf8 ptr}`.
+- **Closure**: `{header, fnptr, env}`, called as `fnptr(env, args...)`. A closure made by script
+  (`HDR_CLOSURE_ENV`) has an `env` that is a GC array of cells and is traced; one the host makes
+  (`HDR_CLOSURE`) has host memory in `env`, untraced. **Cell**: `{header, value}`
+  (`HDR_CELL_PTR` when the value is a pointer). **String**: `{header, len, utf8 ptr}`.
 - **Blocks**: up to 512 bytes from 1 MiB chunks with size-class free lists (16-byte granules);
   larger ones from the system allocator. Nothing moves, so a pointer Rust holds stays valid while
   the object is reachable.
@@ -318,7 +355,7 @@ modules of a typical game as native code; React UI code stays on QuickJS (see ne
 
 | Step | What | Estimate |
 |---|---|---|
-| 1. Language coverage | Closures with capture cells, classes + methods + `this`, destructuring, defaults, `switch`, template literals and strings, `Map`, generics by monomorphisation, enums | 6-8 weeks |
+| 1. Language coverage | ~~Closures with capture cells~~ (done, section 4), classes + methods + `this`, destructuring, defaults, `switch`, template literals and strings, `Map`, generics by monomorphisation, enums | 6-8 weeks |
 | 2. Real types | Bun sidecar that dumps the TypeScript checker's per-expression types as JSON; map to IR types; drop the in-compiler inference | 3-4 weeks |
 | 3. Direct engine calls | Expose engine functions as `extern "C"` with shared layouts instead of `__iron_op` value conversion. `Vector3` = glam `Vec3` (a value type in the IR: 3 x f32 in registers or `f32x4`), `Quaternion`, `Color`; `Mathf` and vector arithmetic as intrinsics emitted inline; component lifecycle (`onUpdate`) entered through a function table; physics/scene/audio ops as direct calls | 4-5 weeks |
 | 4. GC | **Spike done** (section 6: shadow stack, non-moving mark-sweep, stress mode). Left: generations or incrementality if heaps get big, escape analysis for frame temporaries, cheaper frames, GC-allocated closure cells | 1-2 weeks |

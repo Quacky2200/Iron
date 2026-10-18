@@ -9,7 +9,9 @@ macro_rules! bail {
 }
 
 mod arrays;
+mod closure;
 mod expr;
+mod scan;
 mod stmt;
 mod types;
 
@@ -18,7 +20,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub type R<T> = Result<T, String>;
 
@@ -33,6 +35,15 @@ pub(crate) struct FnSrc<'a> {
     pub ret: Option<&'a TSType<'a>>,
     pub body: FnBody<'a>,
     pub exported: bool,
+}
+
+/// What a name means inside a function.
+#[derive(Clone)]
+pub(crate) enum Binding {
+    /// A local variable holding the value.
+    Direct(VarId),
+    /// A captured variable: a local holding the cell, with the value's type.
+    Boxed(VarId, Ty),
 }
 
 #[derive(Clone)]
@@ -62,7 +73,7 @@ pub(crate) struct RetTarget {
 #[derive(Default)]
 pub(crate) struct FnCtx {
     pub locals: Vec<Ty>,
-    pub scopes: Vec<HashMap<String, VarId>>,
+    pub scopes: Vec<HashMap<String, Binding>>,
     /// Declared or inferred return type.
     pub ret: Option<Ty>,
     pub next_label: u32,
@@ -87,6 +98,12 @@ pub struct Lowerer<'a> {
     pub(crate) fstate: Vec<u8>,
     pub(crate) consts: HashMap<String, ConstInfo>,
     pub(crate) cur: FnCtx,
+    /// Names that closures in the function being lowered capture (`scan.rs`).
+    pub(crate) captured: HashSet<String>,
+    pub(crate) closure_free: HashMap<u32, Vec<String>>,
+    pub(crate) lambdas: usize,
+    /// Wrapper functions that let a top-level function be used as a value.
+    pub(crate) wrappers: HashMap<String, FuncId>,
 }
 
 /// Parses and lowers one TypeScript module.
@@ -111,6 +128,10 @@ pub fn lower_source(src: &str) -> R<Module> {
         fstate: Vec::new(),
         consts: HashMap::new(),
         cur: FnCtx::default(),
+        captured: HashSet::new(),
+        closure_free: HashMap::new(),
+        lambdas: 0,
+        wrappers: HashMap::new(),
     };
     l.lower_program(&program)?;
     Ok(l.m)
@@ -292,7 +313,15 @@ impl<'a> Lowerer<'a> {
         }
         self.fstate[id] = 1;
         let saved = std::mem::take(&mut self.cur);
+        // Closures inside this function decide which of its variables live in cells.
+        let scan = match self.fsrc[name].body {
+            FnBody::Block(b) => scan::Scan::of_statements(&b.statements),
+            FnBody::Expr(e) => scan::Scan::of_expression(e),
+        };
+        let saved_captured = std::mem::replace(&mut self.captured, scan.captured);
+        self.closure_free.extend(scan.free);
         let r = self.lower_fn(name, id);
+        self.captured = saved_captured;
         self.cur = saved;
         r?;
         self.fstate[id] = 2;
@@ -312,35 +341,16 @@ impl<'a> Lowerer<'a> {
         self.cur.scopes.push(HashMap::new());
         let ptys = self.fsig[id].0.clone();
         let mut pvars = Vec::new();
+        let mut pro = Vec::new();
         for (p, ty) in params.items.iter().zip(ptys) {
             let BindingPattern::BindingIdentifier(b) = &p.pattern else {
                 bail!("{name}: destructured parameter")
             };
             let v = self.new_local(ty);
-            self.cur.scopes[0].insert(b.name.to_string(), v);
+            self.bind_var(b.name.as_str(), v, &mut pro);
             pvars.push(v);
         }
-        let mut stmts = Vec::new();
-        match body {
-            FnBody::Block(b) => self.lower_stmts(&b.statements, &mut stmts)?,
-            FnBody::Expr(e) => {
-                let ex = self.lower_expr(e, self.cur.ret.clone().as_ref())?;
-                let ex = match self.cur.ret.clone() {
-                    Some(t) => self.coerce(ex, &t)?,
-                    None => ex,
-                };
-                self.cur.ret = Some(ex.ty.clone());
-                stmts.push(Stmt::Return(Some(ex)));
-            }
-        }
-        let ret = self.cur.ret.clone().unwrap_or(Ty::Void);
-        if ret == Ty::Void || matches!(ret, Ty::Void) {
-            stmts.push(Stmt::Return(None));
-        } else {
-            // Falling off the end of a non-void function: unreachable under tsc, keep codegen total.
-            let z = self.default_value(&ret);
-            stmts.push(Stmt::Return(Some(z)));
-        }
+        let (stmts, ret) = self.lower_body_into(body, pro)?;
         self.fsig[id].1 = Some(ret.clone());
         let ctx = std::mem::take(&mut self.cur);
         let f = &mut self.m.funcs[id];
@@ -363,22 +373,78 @@ impl<'a> Lowerer<'a> {
         self.cur.next_label
     }
 
-    pub(crate) fn lookup(&self, name: &str) -> Option<VarId> {
+    pub(crate) fn lookup(&self, name: &str) -> Option<Binding> {
         self.cur
             .scopes
             .iter()
             .rev()
-            .find_map(|s| s.get(name).copied())
+            .find_map(|s| s.get(name).cloned())
     }
 
-    pub(crate) fn declare(&mut self, name: &str, ty: Ty) -> VarId {
-        let v = self.new_local(ty);
-        self.cur
-            .scopes
-            .last_mut()
-            .unwrap()
-            .insert(name.to_string(), v);
-        v
+    /// Names the local `var` (which already holds the value). A variable that closures capture
+    /// moves into a new cell first, in `out`.
+    pub(crate) fn bind_var(&mut self, name: &str, var: VarId, out: &mut Vec<Stmt>) {
+        let scope = self.cur.scopes.len() - 1;
+        if self.captured.contains(name) {
+            let ty = self.cur.locals[var as usize].clone();
+            let cell = self.new_local(Ty::Cell(Box::new(ty.clone())));
+            let cell_ty = self.cur.locals[cell as usize].clone();
+            let init = Expr {
+                kind: ExprKind::NewCell(Box::new(self.var_expr(var))),
+                ty: cell_ty,
+            };
+            out.push(Stmt::Assign(cell, init));
+            self.cur.scopes[scope].insert(name.to_string(), Binding::Boxed(cell, ty));
+        } else {
+            self.cur.scopes[scope].insert(name.to_string(), Binding::Direct(var));
+        }
+    }
+
+    /// The current value of a name.
+    pub(crate) fn read_binding(&self, b: &Binding) -> Expr {
+        match b {
+            Binding::Direct(v) => self.var_expr(*v),
+            Binding::Boxed(cell, ty) => Expr {
+                kind: ExprKind::CellGet(Box::new(self.var_expr(*cell))),
+                ty: ty.clone(),
+            },
+        }
+    }
+
+    /// Lowers a function body in the current context (parameters already bound; `pro` holds the
+    /// statements that set them up). Returns the statements and the return type.
+    pub(crate) fn lower_body_into(
+        &mut self,
+        body: FnBody<'a>,
+        pro: Vec<Stmt>,
+    ) -> R<(Vec<Stmt>, Ty)> {
+        let mut stmts = pro;
+        match body {
+            FnBody::Block(b) => self.lower_stmts(&b.statements, &mut stmts)?,
+            FnBody::Expr(e) => {
+                let exp = self.cur.ret.clone();
+                let ex = self.lower_expr(e, exp.as_ref())?;
+                if exp == Some(Ty::Void) {
+                    stmts.push(Stmt::Eval(ex));
+                } else {
+                    let ex = match exp {
+                        Some(t) => self.coerce(ex, &t)?,
+                        None => ex,
+                    };
+                    self.cur.ret = Some(ex.ty.clone());
+                    stmts.push(Stmt::Return(Some(ex)));
+                }
+            }
+        }
+        let ret = self.cur.ret.clone().unwrap_or(Ty::Void);
+        if ret == Ty::Void {
+            stmts.push(Stmt::Return(None));
+        } else {
+            // Falling off the end of a non-void function: unreachable under tsc, keep codegen total.
+            let z = self.default_value(&ret);
+            stmts.push(Stmt::Return(Some(z)));
+        }
+        Ok((stmts, ret))
     }
 
     pub(crate) fn var_expr(&self, v: VarId) -> Expr {

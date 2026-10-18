@@ -1391,8 +1391,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
         globals and host handles; stress mode (`IRON_TS_GC=stress`); see `docs/research/iron-ts-spike.md` §6
   - [ ] GC, later: escape analysis for frame temporaries, cheaper frames (no call per push/pop),
         generations if script heaps get large, GC-allocated closure cells
-  - [ ] Closures: functions created in script, capturing variables through shared cells
-        (array callbacks are already inlined; `Fn` values can be called)
+  - [x] Closures: arrow and function expressions as values, capturing variables through shared
+        cells (per-iteration bindings, nested, recursive, as arguments and results, host-held);
+        top-level functions as values (`docs/research/iron-ts-spike.md` section 4)
   - [ ] Classes: fields, methods, `this`, constructors, inheritance, `override`, getters/setters
         (the engine's `Component` subclasses are the first target)
   - [ ] Generics: monomorphise generic functions and types per instantiation

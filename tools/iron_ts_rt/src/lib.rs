@@ -66,6 +66,11 @@ pub const HDR_STR: u64 = 0xA11A_0003;
 pub const HDR_CLOSURE: u64 = 0xA11A_0004;
 /// An array whose elements are pointers (traced).
 pub const HDR_ARRAY_PTR: u64 = 0xA11A_0005;
+/// A captured variable's box: `{header, value}`; `HDR_CELL_PTR` when the value is a pointer.
+pub const HDR_CELL: u64 = 0xA11A_0006;
+pub const HDR_CELL_PTR: u64 = 0xA11A_0007;
+/// A closure made by generated code: like `HDR_CLOSURE`, but `env` is a GC object and is traced.
+pub const HDR_CLOSURE_ENV: u64 = 0xA11A_0008;
 
 /// One function activation's pointer slots; `n` slots follow in memory.
 #[repr(C)]
@@ -84,6 +89,8 @@ struct Heap {
     /// `(field count, pointer-slot mask)` per struct, indexed by header - 1.
     structs: Vec<(u32, u64)>,
     host_roots: Vec<*mut u8>,
+    /// Values a runtime call holds while it collects (a closure's environment, a new cell's value).
+    temps: Vec<*mut u8>,
     global_roots: Vec<*mut *mut u8>,
     top: *mut Frame,
     since_gc: usize,
@@ -104,6 +111,7 @@ thread_local! {
         objs: Vec::new(),
         structs: Vec::new(),
         host_roots: Vec::new(),
+        temps: Vec::new(),
         global_roots: Vec::new(),
         top: std::ptr::null_mut(),
         since_gc: 0,
@@ -349,7 +357,7 @@ fn collect(h: &mut Heap) {
     let mut stack: Vec<*mut u8> = Vec::new();
     // SAFETY: roots are GC objects or null; slots of live frames are pointers or zero.
     unsafe {
-        for &r in &h.host_roots {
+        for &r in h.host_roots.iter().chain(h.temps.iter()) {
             mark_ptr(r, heap, &mut stack);
         }
         for &g in &h.global_roots {
@@ -372,7 +380,9 @@ fn collect(h: &mut Heap) {
                         mark_ptr(*(a.data as *const *mut u8).add(i), heap, &mut stack);
                     }
                 }
-                HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE => {}
+                HDR_CELL_PTR => mark_ptr(*(p.add(8) as *const *mut u8), heap, &mut stack),
+                HDR_CLOSURE_ENV => mark_ptr(*(p.add(16) as *const *mut u8), heap, &mut stack),
+                HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE | HDR_CELL => {}
                 id => {
                     let (n, mask) = *h.structs.get(id as usize - 1).unwrap_or_else(|| {
                         panic!("struct header {id} was never registered (call ts_init)")
@@ -645,6 +655,43 @@ pub unsafe extern "C" fn ts_rt_str_eq(a: *const Str, b: *const Str) -> bool {
     }
 }
 
+/// A new variable box holding `value` (a number's bits, a tag, or a pointer when `is_ptr`). May
+/// collect first; a pointer value is kept alive meanwhile.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_cell_new_gc(value: u64, is_ptr: i64) -> *mut u8 {
+    with_heap(|h| {
+        if is_ptr != 0 {
+            h.temps.push(value as *mut u8);
+        }
+        maybe_collect(h);
+        if is_ptr != 0 {
+            h.temps.pop();
+        }
+        let c = new_obj(h, if is_ptr != 0 { HDR_CELL_PTR } else { HDR_CELL }, 16);
+        // SAFETY: 16 bytes.
+        unsafe { *(c.add(8) as *mut u64) = value };
+        c
+    })
+}
+
+/// A closure object for generated code: `func` takes `env` first, then the arguments. `env` (an
+/// array of cells, or null) is traced. May collect first; `env` is kept alive meanwhile.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_closure_new_gc(func: *const u8, env: *mut u8) -> *mut Closure {
+    with_heap(|h| {
+        h.temps.push(env);
+        maybe_collect(h);
+        h.temps.pop();
+        let c = new_obj(h, HDR_CLOSURE_ENV, std::mem::size_of::<Closure>()) as *mut Closure;
+        // SAFETY: freshly allocated.
+        unsafe {
+            (*c).func = func;
+            (*c).env = env;
+        }
+        c
+    })
+}
+
 /// A function pointer plus environment, the representation of a function-typed value.
 #[repr(C)]
 pub struct Closure {
@@ -706,6 +753,8 @@ pub fn link_anchor() -> usize {
         ts_rt_hypot as *const () as usize,
         ts_rt_str_new as *const () as usize,
         ts_rt_closure_new as *const () as usize,
+        ts_rt_closure_new_gc as *const () as usize,
+        ts_rt_cell_new_gc as *const () as usize,
     ]
     .iter()
     .sum()

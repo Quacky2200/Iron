@@ -13,6 +13,8 @@ pub(crate) fn num(n: f64) -> Expr {
 /// A place that can be read and written (assignment targets, `++`, compound assignment).
 pub(crate) enum Place {
     Var(VarId, Ty),
+    /// A captured variable: the cell and the value's type.
+    Cell(Expr, Ty),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
 }
@@ -64,6 +66,12 @@ impl<'a> Lowerer<'a> {
                 let e = self.lower_expr(&n.expression, exp)?;
                 let t = e.ty.strip().clone();
                 Ok(mk(ExprKind::Cast(Box::new(e)), t))
+            }
+            Expression::ArrowFunctionExpression(a) => {
+                self.lower_closure(super::closure::ClosureNode::Arrow(a), exp)
+            }
+            Expression::FunctionExpression(f) => {
+                self.lower_closure(super::closure::ClosureNode::Func(f), exp)
             }
             Expression::StaticMemberExpression(m) => self.lower_static_member(m),
             Expression::ComputedMemberExpression(m) => self.lower_computed_member(m),
@@ -119,8 +127,8 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_ident(&mut self, name: &str) -> R<Expr> {
-        if let Some(v) = self.lookup(name) {
-            return Ok(self.var_expr(v));
+        if let Some(b) = self.lookup(name) {
+            return Ok(self.read_binding(&b));
         }
         match self.consts.get(name).cloned() {
             Some(ConstInfo::Inline(e)) => return Ok(e),
@@ -131,6 +139,7 @@ impl<'a> Lowerer<'a> {
             "Infinity" => Ok(num(f64::INFINITY)),
             "NaN" => Ok(num(f64::NAN)),
             "undefined" => Ok(mk(ExprKind::Null, Ty::Null)),
+            _ if self.fids.contains_key(name) => self.function_value(name),
             _ => bail!("unknown name `{name}`"),
         }
     }
@@ -556,10 +565,13 @@ impl<'a> Lowerer<'a> {
     ) -> R<Place> {
         match t {
             SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
-                let Some(v) = self.lookup(id.name.as_str()) else {
-                    bail!("assignment to `{}`: only locals are assignable", id.name)
-                };
-                Ok(Place::Var(v, self.cur.locals[v as usize].clone()))
+                match self.lookup(id.name.as_str()) {
+                    Some(Binding::Direct(v)) => {
+                        Ok(Place::Var(v, self.cur.locals[v as usize].clone()))
+                    }
+                    Some(Binding::Boxed(cell, ty)) => Ok(Place::Cell(self.var_expr(cell), ty)),
+                    None => bail!("assignment to `{}`: only locals are assignable", id.name),
+                }
             }
             SimpleAssignmentTarget::StaticMemberExpression(m) => {
                 let obj = self.lower_expr(&m.object, None)?;
@@ -596,13 +608,17 @@ impl<'a> Lowerer<'a> {
 
     pub(crate) fn place_ty(p: &Place) -> &Ty {
         match p {
-            Place::Var(_, t) | Place::Field(_, _, _, t) | Place::Index(_, _, t) => t,
+            Place::Var(_, t)
+            | Place::Cell(_, t)
+            | Place::Field(_, _, _, t)
+            | Place::Index(_, _, t) => t,
         }
     }
 
     pub(crate) fn place_read(&self, p: &Place) -> Expr {
         match p {
             Place::Var(v, _) => self.var_expr(*v),
+            Place::Cell(c, t) => mk(ExprKind::CellGet(Box::new(c.clone())), t.clone()),
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
             Place::Index(a, i, t) => mk(
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
@@ -614,6 +630,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn place_write(&self, p: &Place, v: Expr) -> Stmt {
         match p {
             Place::Var(var, _) => Stmt::Assign(*var, v),
+            Place::Cell(cell, _) => Stmt::CellSet(cell.clone(), v),
             Place::Field(o, s, i, _) => Stmt::StoreField(o.clone(), *s, *i, v),
             Place::Index(a, i, _) => Stmt::StoreIndex(a.clone(), i.clone(), v),
         }
@@ -717,8 +734,8 @@ impl<'a> Lowerer<'a> {
         match &c.callee {
             Expression::Identifier(id) => {
                 let name = id.name.as_str();
-                if let Some(v) = self.lookup(name) {
-                    let callee = self.var_expr(v);
+                if self.lookup(name).is_some() {
+                    let callee = self.lower_ident(name)?;
                     let Ty::Fn(sig) = callee.ty.clone() else {
                         bail!("`{name}` is not callable")
                     };
@@ -754,10 +771,41 @@ impl<'a> Lowerer<'a> {
                 if m.optional {
                     recv = self.chain_guard(recv)?;
                 }
+                // A function-typed field (`handlers.onHit(x)`) is called, not looked up as a method.
+                if let Ty::Obj(sid) = recv.ty.strip()
+                    && let Some(i) = self.m.structs[*sid].field(method)
+                    && matches!(self.m.structs[*sid].fields[i].ty.strip(), Ty::Fn(_))
+                {
+                    let callee = self.member_of(recv, method)?;
+                    return self.call_closure_value(callee, c);
+                }
                 self.lower_method(recv, method, c)
             }
-            _ => bail!("{}: unsupported call", self.loc(c.span.start)),
+            // Anything else that is a function value: `f()()`, `(() => 1)()`, `fs[0](x)`.
+            callee => {
+                let callee = self.lower_expr(callee, None)?;
+                self.call_closure_value(callee, c)
+            }
         }
+    }
+
+    /// Calls a function-typed value with the call's arguments.
+    pub(crate) fn call_closure_value(
+        &mut self,
+        callee: Expr,
+        c: &'a CallExpression<'a>,
+    ) -> R<Expr> {
+        let Ty::Fn(sig) = callee.ty.strip().clone() else {
+            bail!(
+                "{}: call of a value that is not a function",
+                self.loc(c.span.start)
+            )
+        };
+        let args = self.lower_args(&c.arguments, &sig.params, "closure")?;
+        Ok(mk(
+            ExprKind::CallClosure(Box::new(callee), args),
+            sig.ret.clone(),
+        ))
     }
 
     fn lower_math(&mut self, f: &str, c: &'a CallExpression<'a>) -> R<Expr> {

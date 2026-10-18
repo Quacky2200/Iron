@@ -123,18 +123,15 @@ impl<'a> Lowerer<'a> {
         res: Option<VarId>,
     ) -> R<Stmt> {
         let Expression::ArrowFunctionExpression(f) = cb else {
-            bail!("array method callbacks must be arrow functions")
+            return self.closure_callback(cb, params, kind, res);
         };
         self.cur.scopes.push(HashMap::new());
+        let mut body = Vec::new();
         for (p, var) in f.params.items.iter().zip(params) {
             let BindingPattern::BindingIdentifier(b) = &p.pattern else {
                 bail!("destructured callback parameter")
             };
-            self.cur
-                .scopes
-                .last_mut()
-                .unwrap()
-                .insert(b.name.to_string(), *var);
+            self.bind_var(b.name.as_str(), *var, &mut body);
         }
         let label = self.new_label();
         let saved_loops = std::mem::take(&mut self.cur.loops);
@@ -143,7 +140,6 @@ impl<'a> Lowerer<'a> {
             var: res,
             kind,
         });
-        let mut body = Vec::new();
         let r = match &f.body {
             ArrowFunctionBody::FunctionBody(b) => self.lower_stmts(&b.statements, &mut body),
             other => match other.as_expression() {
@@ -156,6 +152,45 @@ impl<'a> Lowerer<'a> {
         self.cur.rets.pop();
         self.cur.loops = saved_loops;
         self.cur.scopes.pop();
+        r?;
+        Ok(Stmt::Block(label, body))
+    }
+
+    /// A callback that is not an arrow function in the call (`xs.map(f)`): called as a closure.
+    fn closure_callback(
+        &mut self,
+        cb: &'a Expression<'a>,
+        params: &[VarId],
+        kind: RetKind,
+        res: Option<VarId>,
+    ) -> R<Stmt> {
+        let callee = self.lower_expr(cb, None)?;
+        let Ty::Fn(sig) = callee.ty.strip().clone() else {
+            bail!("an array method callback must be a function")
+        };
+        let mut args = Vec::new();
+        for (p, t) in params.iter().zip(&sig.params) {
+            let a = self.var_expr(*p);
+            args.push(self.coerce(a, t)?);
+        }
+        let call = mk(
+            ExprKind::CallClosure(Box::new(callee), args),
+            sig.ret.clone(),
+        );
+        let label = self.new_label();
+        self.cur.rets.push(RetTarget {
+            label,
+            var: res,
+            kind,
+        });
+        let mut body = Vec::new();
+        let r = if sig.ret == Ty::Void {
+            body.push(Stmt::Eval(call));
+            self.emit_return(None, &mut body)
+        } else {
+            self.emit_return(Some(call), &mut body)
+        };
+        self.cur.rets.pop();
         r?;
         Ok(Stmt::Block(label, body))
     }

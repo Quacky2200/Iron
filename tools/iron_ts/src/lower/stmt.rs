@@ -39,6 +39,24 @@ impl<'a> Lowerer<'a> {
                         Some(a) => Some(self.ty(&a.type_annotation, id.name.as_str())?),
                         None => None,
                     };
+                    // A closure that refers to its own name: the cell exists before the closure.
+                    let mut prebound = None;
+                    if self.captured.contains(id.name.as_str())
+                        && let Some(t @ Ty::Fn(_)) = &ann
+                    {
+                        let cell = self.new_local(Ty::Cell(Box::new(t.clone())));
+                        let cell_ty = self.cur.locals[cell as usize].clone();
+                        let zero = self.default_value(t);
+                        let new = Expr {
+                            kind: ExprKind::NewCell(Box::new(zero)),
+                            ty: cell_ty,
+                        };
+                        out.push(Stmt::Assign(cell, new));
+                        let scope = self.cur.scopes.len() - 1;
+                        self.cur.scopes[scope]
+                            .insert(id.name.to_string(), Binding::Boxed(cell, t.clone()));
+                        prebound = Some(cell);
+                    }
                     let init = match &d.init {
                         Some(e) => {
                             let v = self.lower_expr(e, ann.as_ref())?;
@@ -58,12 +76,18 @@ impl<'a> Lowerer<'a> {
                             id.name
                         ),
                     };
-                    let var = self.declare(id.name.as_str(), ty.clone());
                     let v = match init {
                         Some(v) => v,
                         None => self.default_value(&ty),
                     };
+                    if let Some(cell) = prebound {
+                        let c = self.var_expr(cell);
+                        out.push(Stmt::CellSet(c, v));
+                        continue;
+                    }
+                    let var = self.new_local(ty.clone());
                     out.push(Stmt::Assign(var, v));
+                    self.bind_var(id.name.as_str(), var, out);
                 }
             }
             Statement::IfStatement(i) => {
@@ -98,17 +122,16 @@ impl<'a> Lowerer<'a> {
                 let arr = self.lower_expr(&f.right, None)?;
                 let it = self.begin_iter(arr)?;
                 self.cur.scopes.push(HashMap::new());
-                self.cur
-                    .scopes
-                    .last_mut()
-                    .unwrap()
-                    .insert(id.name.to_string(), it.elem);
+                // A captured loop variable gets a fresh cell every iteration.
+                let mut bind = Vec::new();
+                self.bind_var(id.name.as_str(), it.elem, &mut bind);
                 self.cur.loops.push(it.label);
                 let body = self.scoped(&f.body);
                 self.cur.loops.pop();
                 self.cur.scopes.pop();
                 out.extend(it.pre);
                 let mut b = it.head;
+                b.extend(bind);
                 b.extend(body?);
                 out.push(Stmt::Loop(it.label, b));
             }

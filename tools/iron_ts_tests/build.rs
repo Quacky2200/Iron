@@ -23,7 +23,11 @@ fn main() {
     println!("cargo:rustc-link-arg={}", obj.display());
 
     // Other modules linked next to it (symbols `ts_<prefix>*`, bindings `<name>_bindings.rs`).
-    for (name, prefix, base) in [("sine", "sine_", 1000), ("gap", "gap_", 2000)] {
+    for (name, prefix, base) in [
+        ("sine", "sine_", 1000),
+        ("gap", "gap_", 2000),
+        ("closures", "clo_", 3000),
+    ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
         let out = iron_ts::compile_with(

@@ -35,6 +35,8 @@ pub enum Ty {
     /// `Uint8Array`: the array header with one byte per element.
     Bytes,
     Fn(Box<FnTy>),
+    /// A variable shared by closures: a heap box holding one value of the inner type.
+    Cell(Box<Ty>),
     Nullable(Box<Ty>),
     /// Reserved: any dynamic value (not produced by the spike's lowering yet).
     JsValue,
@@ -66,7 +68,7 @@ impl Ty {
     pub fn is_ptr(&self) -> bool {
         matches!(
             self.strip(),
-            Ty::Str | Ty::Obj(_) | Ty::Arr(_) | Ty::Bytes | Ty::Fn(_) | Ty::JsValue
+            Ty::Str | Ty::Obj(_) | Ty::Arr(_) | Ty::Bytes | Ty::Fn(_) | Ty::Cell(_) | Ty::JsValue
         )
     }
     pub fn is_num(&self) -> bool {
@@ -194,6 +196,13 @@ pub enum ExprKind {
     Rt(RtFn, Vec<Expr>),
     /// Statements, then a value.
     Seq(Vec<Stmt>, Box<Expr>),
+    /// A new cell holding the value.
+    NewCell(Box<Expr>),
+    /// The value in a cell.
+    CellGet(Box<Expr>),
+    /// A closure over function `FuncId`, whose first parameter is the environment: an array of
+    /// cells (or null). The function's other parameters are the closure type's.
+    MakeClosure(FuncId, Option<Box<Expr>>),
 }
 
 #[derive(Clone, Debug)]
@@ -202,6 +211,8 @@ pub enum Stmt {
     StoreField(Expr, StructId, usize, Expr),
     StoreIndex(Expr, Expr, Expr),
     StoreGlobal(GlobalId, Expr),
+    /// `cell = value`.
+    CellSet(Expr, Expr),
     If(Expr, Vec<Stmt>, Vec<Stmt>),
     /// `break(label)` leaves the block; falls out at its end.
     Block(LabelId, Vec<Stmt>),
@@ -261,6 +272,7 @@ impl fmt::Display for Ty {
             Ty::Arr(t) => write!(f, "[{t}]"),
             Ty::Bytes => write!(f, "bytes"),
             Ty::Fn(t) => write!(f, "fn({} params)->{}", t.params.len(), t.ret),
+            Ty::Cell(t) => write!(f, "cell<{t}>"),
             Ty::Nullable(t) => write!(f, "{t}?"),
             Ty::JsValue => write!(f, "js"),
         }
@@ -321,6 +333,7 @@ fn dump_stmts(s: &mut String, body: &[Stmt], depth: usize) {
             Stmt::StoreField(o, _, i, e) => *s += &format!("{pad}{}.#{i} = {}\n", ex(o), ex(e)),
             Stmt::StoreIndex(a, i, e) => *s += &format!("{pad}{}[{}] = {}\n", ex(a), ex(i), ex(e)),
             Stmt::StoreGlobal(g, e) => *s += &format!("{pad}g{g} = {}\n", ex(e)),
+            Stmt::CellSet(c, e) => *s += &format!("{pad}{}.cell = {}\n", ex(c), ex(e)),
             Stmt::Break(l) => *s += &format!("{pad}break L{l}\n"),
             Stmt::Continue(l) => *s += &format!("{pad}continue L{l}\n"),
             Stmt::Return(e) => {
@@ -364,6 +377,12 @@ fn ex(e: &Expr) -> String {
         ExprKind::Rt(r, a) => format!(
             "rt.{r:?}({})",
             a.iter().map(ex).collect::<Vec<_>>().join(", ")
+        ),
+        ExprKind::NewCell(a) => format!("newcell({})", ex(a)),
+        ExprKind::CellGet(a) => format!("{}.cell", ex(a)),
+        ExprKind::MakeClosure(f, env) => format!(
+            "closure#{f}[{}]",
+            env.as_ref().map(|e| ex(e)).unwrap_or_default()
         ),
         ExprKind::Seq(stmts, v) => {
             let mut s = String::new();

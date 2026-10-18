@@ -392,6 +392,11 @@ impl Cg<'_, '_> {
                 let slot = self.slot_of(val, &v.ty);
                 self.b.ins().store(self.mf_t, slot, ptr, field_offset(*i));
             }
+            Stmt::CellSet(c, v) => {
+                let vals = self.eval_args(&[(c, c.ty.clone()), (v, v.ty.clone())])?;
+                let slot = self.slot_of(vals[1], &v.ty);
+                self.b.ins().store(self.mf_t, slot, vals[0], 8);
+            }
             Stmt::StoreIndex(a, i, v) => {
                 let vals =
                     self.eval_args(&[(a, a.ty.clone()), (i, i.ty.clone()), (v, v.ty.clone())])?;
@@ -764,6 +769,39 @@ impl Cg<'_, '_> {
                     Some(v) => *v,
                     None => self.b.ins().iconst(types::I64, 0),
                 }
+            }
+            ExprKind::NewCell(v) => {
+                let val = self.expr(v)?;
+                let slot = self.slot_of(val, &v.ty);
+                let is_ptr = self.b.ins().iconst(types::I64, v.ty.is_ptr() as i64);
+                self.rt(
+                    "ts_rt_cell_new_gc",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    &[slot, is_ptr],
+                )
+                .unwrap()
+            }
+            ExprKind::CellGet(c) => {
+                let ptr = self.expr(c)?;
+                self.load_slot(ptr, 8, &e.ty)
+            }
+            ExprKind::MakeClosure(fid, env) => {
+                let env = match env {
+                    Some(env) => self.expr(env)?,
+                    None => self.b.ins().iconst(types::I64, 0),
+                };
+                let fr = self
+                    .module
+                    .declare_func_in_func(self.cfuncs[*fid], self.b.func);
+                let addr = self.b.ins().func_addr(types::I64, fr);
+                self.rt(
+                    "ts_rt_closure_new_gc",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    &[addr, env],
+                )
+                .unwrap()
             }
             ExprKind::Rt(r, args) => self.rt_call(*r, args, &e.ty)?,
             ExprKind::Seq(stmts, v) => {
