@@ -32,7 +32,7 @@ The CLI (`cargo build --release -p iron_ts`, binary `tools/target/release/iron_t
 
 ```
 iron_ts file.ts [--dump-ir] [--prefix p_] [--struct-base N] [-o out.obj] [--bindings out.rs]
-                [--opt none|speed|speed_and_size] [--time N]
+                [--opt none|speed|speed_and_size] [--time N] [--manifest api.json]...
 ```
 
 | Flag | Effect |
@@ -44,6 +44,7 @@ iron_ts file.ts [--dump-ir] [--prefix p_] [--struct-base N] [-o out.obj] [--bind
 | `--bindings out.rs` | Write the generated Rust bindings |
 | `--opt` | Cranelift `opt_level`, default `speed` |
 | `--time N` | Compile `N` times and print the best time of each phase |
+| `--manifest api.json` | Repeatable. An `#[iron_api]` namespace the source may call (the JSON from `Namespace::to_json`, see [iron-api.md](iron-api.md)); the library entry point is `compile_with_manifests(src, opt, prefix, struct_base, &manifests)` |
 
 ## Pipeline
 
@@ -82,7 +83,8 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | File | What |
 |---|---|
-| [lib.rs](../tools/iron_ts/src/lib.rs) | `compile_source` / `compile_with_prefix` / `compile_with`, `Output`; unit tests for lowering errors (`M9-TS-14..16`, `55`, `56`, `70`, `84`, `110`, `119`) |
+| [manifest.rs](../tools/iron_ts/src/manifest.rs) | Reads the `iron_api` JSON manifests into a table of callable functions (`Manifest`, `ExternFn`) and the handle type names |
+| [lib.rs](../tools/iron_ts/src/lib.rs) | `compile_source` / `compile_with_prefix` / `compile_with` / `compile_with_manifests`, `Output`; unit tests for lowering errors (`M9-TS-14..16`, `55`, `56`, `70`, `84`, `110`, `119`) |
 | [ir.rs](../tools/iron_ts/src/ir.rs) | The IR: `Ty`, `Module` (with `vtables` and `itables`), `Func`, `Stmt`, `Expr`/`ExprKind` (including `CallVirtual` and `InstanceOf`), `RtFn` (runtime calls), `field_offset`, `dump` |
 | [frames.rs](../tools/iron_ts/src/frames.rs) | Shadow-stack frame plan and the spill rule (see GC roots below) |
 | [codegen.rs](../tools/iron_ts/src/codegen.rs) | IR to Cranelift object: frames and spills, `eval_args`, `ts_init`, runtime calls, the method tables and `instanceof` byte tables (local data), indirect calls |
@@ -117,6 +119,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | `Math` and operators | Inline instructions or `ts_rt_*` (libm, JS `pow`, `random`); `**`, `~`, `??=`, `\|\|=`, `&&=`, bit operations with ToInt32 |
 | Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below); methods as values (`obj.m` is a closure over the receiver, so unlike JS a detached method keeps its `this`); arrow-function fields (the constructor scan includes field initialisers); `@property` on instance fields as compile-time metadata |
 | Optional chaining, `!`, `??`, `?:` | Inline null tests |
+| Engine API calls | With a manifest, `Namespace.fn(args)` is `CallExtern`: a direct call of the manifest's symbol (`iron_<Namespace>_<fn>`) with the manifest's C signature, arguments checked by count and type. Numbers stay `f64` in scripts and convert at the call: `f32` demotes in and promotes out, `i32`/`u32` use a saturating truncation, `bool` is a byte. Handles are `Ty::Handle(name)`: a 64-bit id, not a GC pointer (not traced or rooted, `===` compares ids). In a `T \| null` slot 0 is null, so a live handle is never 0. An engine function must not call back into scripts or allocate in the script heap |
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
@@ -187,8 +190,9 @@ calls into. Its header comment is the long version.
 |---|---|
 | `fixtures/sim.ts`, `sim.test.ts` | The zombie game's simulation (678 lines) and its original bun tests |
 | `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
+| `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/iron_demo_api](../tools/iron_demo_api/src/lib.rs) (a small world of entities written with `#[iron_api]`), whose shims the test binaries link |
 | `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker |
-| `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state) |
+| `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state); `demo_api_anchor()` uses `iron_demo_api` so the linker keeps its shims |
 | `tests/*.rs` | `sim_port` (13 ported cases), `gc`, and one file per language area |
 | `src/bin/{bench,sine_bench}.rs` | The benchmarks: the same work in QuickJS, bun and native code, one checksum for all |
 
@@ -202,7 +206,7 @@ To add a test module:
 
 1. Write `bench/<name>.ts` (exported functions only get symbols; run it in bun to get the expected numbers).
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
-   0, sine 1000, ... classes 11000, inherit 12000, props 13000); take the next free one.
+   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.

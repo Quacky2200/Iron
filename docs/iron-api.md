@@ -72,14 +72,19 @@ let json = demo::MANIFEST.to_json(); // {"namespace":"Demo","functions":[{"name"
 ```
 
 `to_dts` writes a `declare type` per handle plus a `declare namespace` with the JSDoc. `to_json` is
-the table a compiler reads to call each symbol directly: per function the name, symbol, parameter
-names and types (`f64`, `bool`, `handle:GameObject`, ...) and the result type.
+the table a compiler reads to call each symbol directly: the `handles` list (handle type names) and
+per function the name, symbol, parameter names and types (`f64`, `bool`, `handle:GameObject`, ...)
+and the result type.
+
+**Handle rule.** Compiled scripts store a handle as a raw `u64` and use 0 as null in `T | null`, so
+the id 0 means "no object": a handle type must never produce a live id 0 (start generations or
+indices at 1).
 
 ## Status
 
 Additive. `__iron_op` and the ops in [scripting.md](scripting.md) are untouched, no engine crate uses
-`#[iron_api]` yet, and the `iron_ts` compiler ([iron-ts.md](iron-ts.md)) does not read the JSON
-manifest yet. Value classes (`Vector3`), strings, methods on handles and an engine context for the
+`#[iron_api]` yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
+(`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value classes (`Vector3`), strings, methods on handles and an engine context for the
 shims are not built.
 
 Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
