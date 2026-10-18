@@ -484,7 +484,7 @@ across the knot, so 0.5 is Catmull-Rom like GDI's curves), `bezier` (its own han
 knot to the first. `addKnot`, `insertKnot`, `removeKnot`, `setPosition`, `setTangents` (makes the knot
 `bezier`) and `setMode` edit it; `version` goes up on every change. `evaluate(t)` and `tangent(t)` take `t` 0 to 1
 by distance, through a length table (32 samples per segment, rebuilt after a change), so speed is steady.
-`segmentPoint(i, u)` uses a segment's own parameter. `length`, `sample(perSegment)` (points for
+The control points are cached in a `Float64Array` (12 numbers per segment, cleared on change) and evaluated with plain numbers (`pointInto`), for lengths and `nearest` too. `segmentPoint(i, u)` uses a segment's own parameter. `length`, `sample(perSegment)` (points for
 `LineRenderer2D`) and `nearest(p)` (`t`, point, distance) read it. `SplineAnimate` moves its object along
 `spline` (set from code, not saved) over `duration` seconds: `loopMode` is `loop`, `pingPong` or `once`,
 `alignment` `path` turns the object to face along the spline (z rotation on a flat one, else a look rotation),

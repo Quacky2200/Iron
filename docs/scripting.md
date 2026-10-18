@@ -50,7 +50,7 @@ backend must pass via `runtime_conformance_tests!`.
     `drain_targeted_commits()` returns `(target, Commit)` pairs.
   - `__iron_report_error(e)` -> pushes onto `Shared.errors` (used by the prelude).
 - **Microtasks**: every entry point (`load_bundle`, `eval`, `call_global`) ends with `run_jobs()`,
-  draining pending promise jobs. React 19 relies on microtasks, so "jobs run before returning to
+  draining pending promise jobs, then calling the global `__iron_flush` if defined (it sends queued transforms, see [scene-and-objects.md](scene-and-objects.md#transform-batching)); an error from it goes to `Shared.errors`. React 19 relies on microtasks, so "jobs run before returning to
   Rust" is part of the contract. A job that throws is kept in `Shared.errors` and returned by the
   next `tick`.
 - Bundles are evaluated non-strict with the bundle name as the filename, so stack traces point at
@@ -102,10 +102,16 @@ Rust side: [components.rs](../crates/iron_script/src/components.rs). `ComponentH
 | `spawn_on(class, object, name)` (`spawn` has no object) | `__iron_create(class, id, object, name)` |
 | first run of a component | `__iron_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
 | `update_active(dt, active)` | `__iron_tick(dt)` (script `Time`; returns the scaled `dt`), then `__iron_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
-| `fixed_update(dt, active)` | `__iron_dispatch(id, "onFixedUpdate", dt)` |
-| `pre_render(active)` | `__iron_dispatch(id, "onPreRender")` |
+| `fixed_update(dt, active)` | `onFixedUpdate`, batched the same way |
+| `pre_render(active)` | `onPreRender`, batched the same way |
 | `remove`, `remove_on_objects`, and on error | `onDestroy` (not after an error), then `__iron_destroy(id)` |
 | `adopt(id, class, object)` | none: takes over a component a script made with `addComponent` |
+
+`run` batches a hook: one `__iron_run(method, ids, ...args)` call covers each run of consecutive components,
+instead of one `__iron_dispatch` per component. A new component's `onStart` flushes the batch first, so the
+order is unchanged. If a call throws, JS has set `__iron_run_at` to the index that failed; the host disables
+that component (`fail`) and goes on with the rest. A bundle without `__iron_run` falls back to `run_each`
+(one `__iron_dispatch(id, method, ...args)` per component).
 
 `onStart` runs once before any other hook. Each hook only runs on components that define it and whose
 GameObject is active (the `active` closure). A component that throws is
@@ -137,7 +143,7 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
   `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio`, and the scene hooks below). It is hand-written for now (a generated `.d.ts` is planned).
 
 The scene globals, installed by `@iron/engine` and called by Rust: `__iron_registered`,
-`__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_destroy`,
+`__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_run(method, ids, ...args)`, `__iron_flush()`, `__iron_destroy`,
 `__iron_tick(dt)` (script `Time`, once per frame), `__iron_scene(moved)` (engine moves of objects, see
 [scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__iron_screen(width, height, scale)`
 (the screen size in UI pixels, when it changes). `__iron_animate(dt)` poses animated objects between `onUpdate`
