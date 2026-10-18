@@ -19,10 +19,10 @@ the app builds a flat `WorldView` per camera.
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
-  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines, strokes, fills }`.
+  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines, strokes, fills, shapes }`.
   The viewport is normalized, from the top-left of the target. `target_texture` names a render texture
   to draw into instead of the screen (see Render textures). `grid` and `lines` are the editor's ground grid
-  and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines and `fills` their filled shapes (see Thick 2D lines).
+  and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines and `fills` their filled shapes, and `shapes` the per-shape ranges of both (see Thick 2D lines).
 - `WorldCamera { view_proj, position, forward, orthographic, clear }`. `WorldCamera::new(world,
   projection, near, far, size, clear)` builds it from the camera's world matrix and a viewport `size`
   in pixels (for the aspect). `Projection` is `Perspective { fov_y_degrees }` or `Orthographic {
@@ -74,8 +74,8 @@ Consecutive items with the same mesh or texture and kind draw in one call.
 world units. They come from `LineRenderer2D` through `render.stroke`. One instance per segment: `vs_stroke`
 lays a quad along the segment, square to the camera's forward axis, a pixel wider than the line (the pixel
 size comes from unprojecting at each end). `fs_stroke` cuts a capsule by signed distance, so edges are
-smooth without MSAA and joins and caps are round. Strokes are depth-tested and blended after the
-see-through things and before the gizmo lines (`M5-RND-24`). Known limits: where see-through segments
+smooth without MSAA and joins and caps are round. Strokes are depth-tested and blended before the
+see-through things (so sprites, text and panels show over them) and before the gizmo lines (`M5-RND-24`). Known limits: where see-through segments
 overlap they look darker; the width is not scaled by the object.
 
 **Fills.** `WorldView.fills: Vec<FillVertex { position, color }>` holds triangles (three vertices each) in
@@ -84,9 +84,16 @@ closed outline into triangles with lyon. Points that are not finite are skipped,
 leave nothing. `FillRule` is `EvenOdd` (the default, GDI's `Alternate`: a crossing star's middle is a hole)
 or `NonZero` (GDI's `Winding`: the star is solid). `WorldViews` tessellates when the `render.stroke` op
 arrives (in the object's local space) and moves the triangles through the object's matrix each frame. The
-fills are drawn by `vs_shape` / `fs_shape` just before the strokes, so an outline sits on its fill. Fill
+fills are drawn by `vs_shape` / `fs_shape` with the strokes, each fill just before its outline, so an outline sits on its fill. Fill
 edges are only as smooth as MSAA makes them (an outline hides them). A stroke `width` of 0 draws no
 outline, only the fill (`M5-RND-25`).
+
+**Draw order.** `WorldView.shapes: Vec<ShapeRun { fills, strokes }>` gives each shape's range of `fills`
+(vertices) and `strokes` (segments). Shapes draw one at a time in that order, each fill then its outline, so a
+later shape covers an earlier one whole. Empty `shapes` draws every fill, then every stroke. All of it comes
+before the see-through things and after the opaque meshes (still depth-tested). `render.stroke` takes a
+final `sortingOrder`; `WorldViews::views` sorts shapes by it, then by component id (creation order), and
+builds one run per shape for each camera (`M5-RND-25`).
 
 ### Editor grid and gizmo lines
 
@@ -403,7 +410,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 |---|---|
 | `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical antialiasing targetTexture\|null grid` (`grid` is `Camera.sceneGrid`) |
 | `render.gizmos` | `camera [ax ay az bx by bz r g b a ...]` (10 floats per line segment, world space; the camera shows them until replaced, and a later `render.camera` keeps them; non-finite lines are dropped) |
-| `render.stroke` | `component object width [r g b a] closed [x0 y0 x1 y1 ...] [fill r g b a]\|null evenodd\|nonzero` (the last two are optional: a fill colour and rule make the points a closed, filled shape; width 0 draws the fill alone; points on the object's local XY plane; `views()` turns them into world segments through the object's matrix, skips them by the camera's culling mask, and `render.remove` or destroying the object drops them) |
+| `render.stroke` | `component object width [r g b a] closed [x0 y0 x1 y1 ...] [fill r g b a]\|null evenodd\|nonzero sortingOrder` (the last three are optional: a fill colour and rule make the points a closed, filled shape; `sortingOrder` is the draw order among shapes; width 0 draws the fill alone; points on the object's local XY plane; `views()` turns them into world segments through the object's matrix, skips them by the camera's culling mask, and `render.remove` or destroying the object drops them) |
 | `render.plane` | `component object [w h] [r g b a]` |
 | `render.mesh` | `id [positions] [normals] [uvs] [indices] [joints, 4 per vertex] [weights, 4 per vertex]` (a script mesh; `id null` removes it) |
 | `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic ... [bone objects]\|null [bind poses, 16 each]` (the last two for `SkinnedMeshRenderer`) |
@@ -459,8 +466,8 @@ and presents it each frame (see [editor.md](editor.md#the-scene-view)). `Camera.
 object has `HideFlags.HideInHierarchy`.
 
 `LineRenderer2D` ([lines.ts](../js/engine/src/lines.ts)) draws thick lines on the object's local XY plane:
-`points`, `width`, `color` and `loop`, plus `fillColor` (null: no fill) and `fillRule` (`evenodd` by default,
-or `nonzero`). A fill always closes the shape, and a `width` of 0 leaves just the fill. It sends the points
+`points`, `width`, `color` and `loop`, plus `fillColor` (null: no fill), `fillRule` (`evenodd` by default,
+or `nonzero`) and `sortingOrder` (higher draws over lower, equal ones in creation order; sprites and text show over shapes). A fill always closes the shape, and a `width` of 0 leaves just the fill. It sends the points
 flat at most once per frame (in `onPreRender`) and sends `render.remove` when destroyed.
 
 `Shapes` ([shapes.ts](../js/engine/src/shapes.ts)) makes points for `LineRenderer2D`, after GDI's drawing calls:
@@ -468,6 +475,21 @@ flat at most once per frame (in `onPreRender`) and sends `render.remove` when de
 `bezier`, and the cardinal splines `curve` and `closedCurve` (tension 0.5 is Catmull-Rom). They lie on the XY
 plane with y up, and angles are in degrees counter-clockwise from +x. Closed shapes do not repeat the first
 point: set `loop`, or add a `fillColor`.
+
+`Spline` and `SplineAnimate` ([spline.ts](../js/engine/src/spline.ts)) are the core of Unity's Splines (`M5-SPL-01`). A
+`Spline` is a list of knots (`position`, `tangentIn`, `tangentOut`, `mode`); every segment is a cubic Bezier.
+A knot's `TangentMode` is `auto` (a cardinal spline through its neighbours: a third of `tension` times the chord
+across the knot, so 0.5 is Catmull-Rom like GDI's curves), `bezier` (its own handles, relative to the knot) or
+`linear` (a third of the way to each neighbour, so straight runs keep an even speed). `closed` joins the last
+knot to the first. `addKnot`, `insertKnot`, `removeKnot`, `setPosition`, `setTangents` (makes the knot
+`bezier`) and `setMode` edit it; `version` goes up on every change. `evaluate(t)` and `tangent(t)` take `t` 0 to 1
+by distance, through a length table (32 samples per segment, rebuilt after a change), so speed is steady.
+`segmentPoint(i, u)` uses a segment's own parameter. `length`, `sample(perSegment)` (points for
+`LineRenderer2D`) and `nearest(p)` (`t`, point, distance) read it. `SplineAnimate` moves its object along
+`spline` (set from code, not saved) over `duration` seconds: `loopMode` is `loop`, `pingPong` or `once`,
+`alignment` `path` turns the object to face along the spline (z rotation on a flat one, else a look rotation),
+`container` puts the spline in another object's space, `playing` pauses it, and `elapsed` jumps. `place()`
+moves it now.
 
 `CameraFollow` and `CameraOrbit` are script components that move a camera object in `onLateUpdate`.
 They have no Rust side.
@@ -519,10 +541,13 @@ and `resolution`. It sends `render.text` at most once per frame and `render.remo
 positioned `text` element, so it shrink-wraps its text. The text is white and the colour is the panel's
 tint, like a sprite. `whiteSpace` is `pre`, or `pre-wrap` when `maxWidth` is above 0, with `maxWidth` set as
 the element's max width. The tree is laid out with room to spare, then the panel is fitted to the text's
-content box (at least 1 pixel) and drawn centred on its object (`M5-TXT-01`). Panels, text meshes
-included, are redrawn every frame (a TODO in TODO.md).
+content box (at least 1 pixel) and drawn centred on its object (`M5-TXT-01`). The panel remembers what it
+laid out (`text_key`: text, font size, family, weight, alignment, max width). A new colour or scale alone only
+changes the quad's tint and skips layout, and the texture is redrawn only after a new layout (`drawn`). Other
+panels are redrawn every frame (a TODO in TODO.md).
 
-**Textures.** `Panels::render` runs every frame before the world pass. For each active panel it sets
+**Textures.** `Panels::render` runs every frame before the world pass. For each active panel (a TextMesh whose
+layout is already drawn at the same size keeps its texture and skips the rest) it sets
 the tree size and clock, loads images, builds the draw list and draws it with
 `UiRenderer::render` into the panel's own `Rgba8UnormSrgb` texture (cleared transparent). The texture
 is `size * resolution` pixels, capped at 4096, and is recreated when that changes. It returns one
@@ -666,7 +691,7 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
   renderer's bones are rebuilt every frame for each view.
 - Frustum culling is conservative: meshes are tested by the bounding box of their mesh, quads by the unit
   quad, and nothing is occlusion culled. Cull distances are per layer, not per object.
-- Panels re-render every frame while visible, with no dirty tracking.
+- Panels re-render every frame while visible, with no dirty tracking; only TextMesh panels skip it until their text changes.
 - Panels are not occluded by other world quads for hit testing: the nearest interactive panel wins.
 - Plane quads are not hit tested.
 - Pointer events on a panel use UI pixels of the panel, not the screen scale.

@@ -48,7 +48,7 @@ iron_physics   rapier3d world driven by `physics.*` ops (bodies, colliders, char
 iron_audio     kira mixer driven by `audio.*` ops, offline backend
 iron_render    wgpu: Gpu, surfaces, UiRenderer (consumes iron_ui::DrawCmd), WorldRenderer (lit meshes, quads, lights, shadows, bloom)
 iron_app       the `iron` binary that wires everything together (world_view, particles, models, physics_sync, cloth_sync, lifecycle, asset_db, cook, info)
-js/engine      @iron/engine   (GameObject, Component, register, op, loadFont, stylesheets, input, math, Time, cameras, meshes, lights, textures, particles, models, physics and audio components, Cursor, Application, WorldPanel, TextMesh, LineRenderer2D, Shapes)
+js/engine      @iron/engine   (GameObject, Component, register, op, loadFont, stylesheets, input, math, Time, cameras, meshes, lights, textures, particles, models, physics and audio components, Cursor, Application, WorldPanel, TextMesh, LineRenderer2D, Shapes, Spline, SplineAnimate)
 js/react       @iron/react    (reconciler, events)
 js/editor-ui   @iron/editor-ui (MenuBar, Dock, VirtualList, TreeView, Console, SceneView; see editor.md)
 editor/        the editor's UI, run by `iron_editor`
