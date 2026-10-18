@@ -33,6 +33,7 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [editor.md](editor.md) | `iron_editor` (the second binary), the project folder, the log feed and `editor.*` ops (code links, project files), `@iron/editor-ui` (menubar, docking, virtual list, tree view, console, project browser), the Scene view (editor camera, orientation gizmo, SceneIcons, wire gizmos, transform handles, `onEditorFrame`) and the editor UI in `editor/` (demo scene, live Hierarchy, Game tab) |
 | [iron-ts.md](iron-ts.md) | `tools/iron_ts`, the experimental ahead-of-time TypeScript compiler (oxc to typed IR to Cranelift object): how to run it and its tests (incl. GC stress mode), the pipeline, source files, the supported language, `iron_ts_rt` (mark-sweep GC, shadow-stack roots, `ts_rt_*`), adding a test module |
+| [iron-api.md](iron-api.md) | `iron_api` and `iron_api_macros`: `#[iron_api]` on a Rust module generates the manifest, the TypeScript `.d.ts` and JSON, `extern "C"` shims and typed QuickJS bindings; supported types, naming, status (not yet used by engine crates), measured call cost |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
 

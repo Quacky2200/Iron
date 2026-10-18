@@ -78,6 +78,7 @@ between timers because `call_global` drains jobs. The loop is capped at `MAX_TIM
 
 Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops.rs)); the doc
 comment notes a binary encoding is planned once the op set settles (TESTS.md `M2-BEN-04`).
+A typed alternative to string-named ops is being built as `iron_api` (see [iron-api.md](iron-api.md)).
 There is no registry: the **app** matches on `op.name` in `App::tick`
 ([main.rs](../crates/iron_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
 forwarded to `Physics::apply` and the mixer; `cloth.*` goes to `ClothSystem`
