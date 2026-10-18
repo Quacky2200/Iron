@@ -505,6 +505,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-24 | Integration | A long run (8,000 steps) collects on its own, hands out far more than is alive, and live bytes and objects stay small afterwards. |
 | M9-TS-25 | Integration | After 300 steps and a stress collection, the host-rooted state and what it reaches are still readable (no poison). |
 | M9-TS-26 | Manual | `IRON_TS_GC=stress cargo test -p iron_ts_tests --test sim_port`, and `IRON_TS_GC=stress cargo run --release -p iron_ts_tests --bin bench 1500` / `--bin sine_bench 100`: the 13 ported tests pass and the checksums agree with QuickJS and bun with a collection at every allocation. |
+| M9-TS-27 | Integration | A pointer read from a field and held as an argument while a later argument overwrites that field and allocates is not freed (`sum(h.item, replaceItem(h, 100))` = 105 as in JS; `bench/gap.ts`). Failed before the root analysis was tightened. |
+| M9-TS-28 | Integration | A local reassigned while its old value waits as an argument is not freed (`sum(a, (a = fresh(100), fresh(1).v))` = 6 as in JS). Failed before the fix. |
 
 ---
 

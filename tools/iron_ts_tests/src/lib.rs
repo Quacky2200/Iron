@@ -25,6 +25,18 @@ pub mod sine {
     include!(concat!(env!("OUT_DIR"), "/sine_bindings.rs"));
 }
 
+/// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod gap {
+    include!(concat!(env!("OUT_DIR"), "/gap_bindings.rs"));
+}
+
 use iron_ts_rt::{
     Array, Closure, ts_rt_arr_new, ts_rt_arr_push, ts_rt_closure_new, ts_rt_gc_stress,
     ts_rt_obj_new, ts_rt_root_add,

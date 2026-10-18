@@ -74,3 +74,47 @@ fn what_the_host_roots_survives_and_the_rest_is_freed() {
     }
     ts_rt_gc_stress(false);
 }
+
+// M9-TS-27
+//
+// In JavaScript:
+//
+//     sum(h.item, replaceItem(h, 100))   // h.item = {v: 5} beforehand
+//
+// evaluates `h.item` (the old item) first. `replaceItem` then overwrites `h.item` and allocates
+// again, so the old item is reachable only from the half-evaluated argument list. JS keeps it
+// alive and the result is 5 + 100. The native code used to treat a field read of a rooted object
+// as "still reachable through its parent" and not root it: the collector freed the old item
+// and `sum` read poisoned memory.
+#[test]
+fn a_field_value_held_as_an_argument_survives_the_object_being_overwritten() {
+    assert_ne!(link_anchor(), 0);
+    ts_rt_gc_stress(true);
+    unsafe {
+        gap::ts_gap_init();
+        let h = root(gap::ts_gap_makeHolder(5.0));
+        assert_eq!(gap::ts_gap_fieldHeldAcrossStore(h), 105.0);
+    }
+    ts_rt_gc_stress(false);
+}
+
+// M9-TS-28
+//
+// In JavaScript:
+//
+//     let a = fresh(5);
+//     sum(a, (a = fresh(100), fresh(1).v))
+//
+// passes the *old* `a` (v = 5) to `sum`: arguments are evaluated left to right and `a` was read
+// before it was reassigned. Only the argument list holds that old item once `a` points to the new
+// one, and `fresh(1)` allocates after the reassignment. Result: 5 + 1.
+#[test]
+fn a_local_reassigned_while_its_old_value_waits_as_an_argument_survives() {
+    assert_ne!(link_anchor(), 0);
+    ts_rt_gc_stress(true);
+    unsafe {
+        gap::ts_gap_init();
+        assert_eq!(gap::ts_gap_localReassigned(), 6.0);
+    }
+    ts_rt_gc_stress(false);
+}

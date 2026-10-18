@@ -40,14 +40,45 @@ pub fn plan(f: &Func) -> FramePlan {
     }
 }
 
-/// A pointer that stays reachable through a root while the other operands are evaluated.
-fn is_stable(e: &Expr) -> bool {
+/// A pointer that stays reachable through a root while the `later` operands are evaluated: a
+/// local whose slot no later operand overwrites, a global, null.
+///
+/// A field read is not stable. The object it came from is rooted, but a later operand can
+/// overwrite that field and allocate, leaving the value only in the half-evaluated argument list
+/// (`f(h.item, replace(h))`; see `M9-TS-27`).
+fn is_stable(e: &Expr, later: &[&Expr]) -> bool {
     match &e.kind {
-        ExprKind::Var(_) | ExprKind::Global(_) | ExprKind::Null => true,
-        ExprKind::Cast(a) => is_stable(a),
-        // Reachable from a stable object; only a store during the other operands could drop it.
-        ExprKind::Field(o, ..) => is_stable(o),
+        ExprKind::Var(v) => !later.iter().any(|l| assigns(l, *v)),
+        ExprKind::Global(_) | ExprKind::Null => true,
+        ExprKind::Cast(a) => is_stable(a, later),
         _ => false,
+    }
+}
+
+/// Does evaluating `e` assign local `v` (so its frame slot stops holding the old value)?
+fn assigns(e: &Expr, v: VarId) -> bool {
+    if let ExprKind::Seq(stmts, _) = &e.kind
+        && stmts.iter().any(|s| stmt_assigns(s, v))
+    {
+        return true;
+    }
+    children(e).iter().any(|c| assigns(c, v))
+}
+
+fn stmt_assigns(s: &Stmt, v: VarId) -> bool {
+    match s {
+        Stmt::Assign(x, e) => *x == v || assigns(e, v),
+        Stmt::StoreGlobal(_, e) | Stmt::Eval(e) => assigns(e, v),
+        Stmt::Return(e) => e.as_ref().is_some_and(|e| assigns(e, v)),
+        Stmt::StoreField(o, _, _, x) => assigns(o, v) || assigns(x, v),
+        Stmt::StoreIndex(a, i, x) => assigns(a, v) || assigns(i, v) || assigns(x, v),
+        Stmt::If(c, a, b) => {
+            assigns(c, v)
+                || a.iter().any(|s| stmt_assigns(s, v))
+                || b.iter().any(|s| stmt_assigns(s, v))
+        }
+        Stmt::Block(_, b) | Stmt::Loop(_, b) => b.iter().any(|s| stmt_assigns(s, v)),
+        Stmt::Break(_) | Stmt::Continue(_) => false,
     }
 }
 
@@ -56,7 +87,9 @@ fn is_stable(e: &Expr) -> bool {
 pub fn spill_flags(args: &[&Expr]) -> Vec<bool> {
     (0..args.len())
         .map(|i| {
-            args[i].ty.is_ptr() && !is_stable(args[i]) && args[i + 1..].iter().any(|a| may_alloc(a))
+            args[i].ty.is_ptr()
+                && !is_stable(args[i], &args[i + 1..])
+                && args[i + 1..].iter().any(|a| may_alloc(a))
         })
         .collect()
 }

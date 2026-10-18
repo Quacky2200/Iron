@@ -22,17 +22,16 @@ fn main() {
     std::fs::write(dir.join("sim.ir.txt"), &out.ir).unwrap();
     println!("cargo:rustc-link-arg={}", obj.display());
 
-    // The sine-circle curve maths, linked next to it (symbols `ts_sine_*`).
-    let sine_path = manifest.join("bench/sine.ts");
-    println!("cargo:rerun-if-changed={}", sine_path.display());
-    let sine = iron_ts::compile_with_prefix(
-        &std::fs::read_to_string(&sine_path).unwrap(),
-        "speed",
-        "sine_",
-    )
-    .unwrap_or_else(|e| panic!("iron_ts sine: {e}"));
-    let obj = dir.join("sine.obj");
-    std::fs::write(&obj, &sine.object).unwrap();
-    std::fs::write(dir.join("sine_bindings.rs"), &sine.bindings).unwrap();
-    println!("cargo:rustc-link-arg={}", obj.display());
+    // Other modules linked next to it (symbols `ts_<prefix>*`, bindings `<name>_bindings.rs`).
+    for (name, prefix) in [("sine", "sine_"), ("gap", "gap_")] {
+        let path = manifest.join(format!("bench/{name}.ts"));
+        println!("cargo:rerun-if-changed={}", path.display());
+        let out =
+            iron_ts::compile_with_prefix(&std::fs::read_to_string(&path).unwrap(), "speed", prefix)
+                .unwrap_or_else(|e| panic!("iron_ts {name}: {e}"));
+        let obj = dir.join(format!("{name}.obj"));
+        std::fs::write(&obj, &out.object).unwrap();
+        std::fs::write(dir.join(format!("{name}_bindings.rs")), &out.bindings).unwrap();
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }

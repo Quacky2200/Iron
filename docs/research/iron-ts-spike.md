@@ -225,9 +225,15 @@ two runtime calls (frame push and pop) per call.
 
 Known gaps:
 
-- Roots are only as exact as the spill rule: a pointer loaded from a field and held across an
-  allocation in the same expression is treated as reachable through its parent. A store into that
-  parent between the load and the use would break it (not seen in `sim.ts` or in stress mode).
+- The root analysis is a conservative approximation, not a proof. The first version trusted a
+  pointer read from a field of a rooted object (`f(h.item, replace(h))`) and a local that a later
+  operand reassigns (`f(a, (a = g(), h()))`), and both lost the object: JavaScript keeps an
+  evaluated argument alive, the native code freed it (`M9-TS-27`, `M9-TS-28`, programs in
+  `bench/gap.ts`, found by writing them and running in stress mode). Now only a local that no later
+  operand assigns, a global and null are trusted; every other pointer held while a later operand
+  can allocate is spilled to a frame slot. No measurable cost on the benchmarks. What the analysis
+  still assumes: no pointer lives only in a register or Cranelift spill slot across a call other
+  than as an operand of the node being evaluated, which holds for the IR the lowering produces.
 - No incremental or generational collection; a collection walks the whole live heap. Fine for
   100 KiB of state; a game with 100 MB of script state would want generations.
 - Closure `env` pointers are host memory. Closures created in script (not yet supported) will need
