@@ -49,6 +49,8 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
 1. At startup `main` reads the manifest's `iron.display` (`{ mode, width, height }`) as the defaults,
    then lets the saved `iron.display` pref override them field by field (`display::from_json`;
    unknown mode names and sizes below 1 are ignored). The window is created at the resulting size.
+   With `resizable: false` in the manifest's `iron.display`, the window opens at the manifest's
+   own size (saved sizes are ignored) and can't be resized (`WindowConfig::resizable`).
 2. `__iron_info.display` is set before the bundle runs (`display::state`). It holds the settings
    plus `supportedModes`, `resolutions` and `currentResolution`; before the window exists the last
    two are empty/null and all four modes are listed. It is rebuilt and re-evaluated once the window

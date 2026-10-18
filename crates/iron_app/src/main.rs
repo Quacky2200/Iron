@@ -317,16 +317,24 @@ fn run() -> Result<()> {
         .as_deref()
         .and_then(|path| info::load_icon(&app.asset_root, path));
     // A window opens at the saved window size; fullscreen modes are applied once it exists.
-    let (width, height) = (
-        display_settings.window_width,
-        display_settings.window_height,
-    );
+    // One the game keeps a fixed size (`iron.display.resizable: false`) opens at its own size.
+    let resizable = manifest.display["resizable"].as_bool().unwrap_or(true);
+    let fixed = display::from_json(Some(&manifest.display), Default::default());
+    let (width, height) = if resizable {
+        (
+            display_settings.window_width,
+            display_settings.window_height,
+        )
+    } else {
+        (fixed.window_width, fixed.window_height)
+    };
     Platform::new().run(
         WindowConfig {
             title: manifest.title.clone(),
             icon,
             width,
             height,
+            resizable,
         },
         app,
     )?;

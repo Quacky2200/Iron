@@ -26,6 +26,8 @@ pub struct WindowConfig {
     pub height: u32,
     /// The window and taskbar icon: RGBA pixels, width, height.
     pub icon: Option<(Vec<u8>, u32, u32)>,
+    /// Whether the player can resize the window (games drawn for one size turn it off).
+    pub resizable: bool,
 }
 
 impl Default for WindowConfig {
@@ -35,6 +37,7 @@ impl Default for WindowConfig {
             width: 1280,
             height: 720,
             icon: None,
+            resizable: true,
         }
     }
 }
@@ -219,6 +222,7 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             .with_visible(false)
             .with_title(self.config.title.clone())
             .with_window_icon(icon)
+            .with_resizable(self.config.resizable)
             .with_inner_size(LogicalSize::new(self.config.width, self.config.height));
         match event_loop.create_window(attrs) {
             Ok(window) => {

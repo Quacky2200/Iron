@@ -26,7 +26,8 @@ pub struct Manifest {
     pub layers: Value,
     /// `iron.startScene`: a scene file scripts load at startup.
     pub start_scene: Option<String>,
-    /// `iron.display`: the window's default mode and size (`{ mode, width, height }`).
+    /// `iron.display`: the window's default mode and size (`{ mode, width, height }`);
+    /// `resizable: false` keeps the window at that size.
     pub display: Value,
     /// `iron.runInBackground`: keep running while the window is in the background
     /// (Unity's `Application.runInBackground`, off by default).
