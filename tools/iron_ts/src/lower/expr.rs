@@ -262,10 +262,7 @@ impl<'a> Lowerer<'a> {
                         return self.call_getter(&stat, &target, obj);
                     }
                     if self.resolve_in(sid, Which::Method, prop).is_some() {
-                        bail!(
-                            "method `{prop}` of {} used as a value: call it, or wrap it in an arrow function",
-                            self.m.structs[sid].name
-                        )
+                        return self.bound_method(obj, sid, prop);
                     }
                     // Only a subclass has it: tsc narrowed the object, so use it as that class.
                     let sub = self.downcast_for(sid, |s, c| {

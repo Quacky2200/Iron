@@ -133,6 +133,14 @@ demo!(
     "h.s.scaled(swapShape(h)): the old Circle is the receiver"
 );
 
+demo!(
+    a_method_taken_as_a_value_still_dispatches_on_the_real_class,
+    "M9-TS-138",
+    ts_inh_demoBoundVirtual,
+    21.0,
+    "a.sound as a value, a: Animal holding a Dog"
+);
+
 // M9-TS-133
 #[test]
 fn virtual_calls_instanceof_and_subclass_arrays_survive_collections() {

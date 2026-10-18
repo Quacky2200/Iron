@@ -615,6 +615,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-134 | Unit | Instantiating an abstract class, a subclass declared before its base, a field that changes type in a subclass, and `instanceof` on a non-class are errors that say so (`iron_ts/src/lib.rs`). |
 | M9-TS-135 | Integration | A virtual call's receiver waiting for its arguments is not freed (`h.s.scaled(swapShape(h))` = 3). Runs in all three GC modes (`tests/inherit.rs`). |
 | M9-TS-136 | Integration | A call that returns nothing and needs a default filled in still runs (it was skipped when its value was void). Runs in all three GC modes (`tests/params.rs`). |
+| M9-TS-137 | Integration | Methods as values (`g.twice`, `xs.map(this.twice)`) and an arrow-function field that captures `this`. Runs normally, in stress GC mode and with collection off (`tests/classes.rs`). |
+| M9-TS-138 | Integration | A method taken as a value from a base-typed variable still dispatches on the real class. Runs in all three GC modes (`tests/inherit.rs`). |
 
 ---
 

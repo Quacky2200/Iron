@@ -423,10 +423,24 @@ impl<'a> Lowerer<'a> {
         self.fstate[id] = 1;
         let saved = std::mem::take(&mut self.cur);
         // Closures inside this function decide which of its variables live in cells.
-        let scan = match self.fsrc[name].body {
+        let mut scan = match self.fsrc[name].body {
             FnBody::Block(b) => scan::Scan::of_statements(&b.statements),
             FnBody::Expr(e) => scan::Scan::of_expression(e),
         };
+        // A constructor also runs the field initialisers (`handler = () => this.n`).
+        if let FnKind::Ctor(sid, _) = self.fsrc[name].kind {
+            let class = self.class_decls[&self.class_of_sid[&sid]];
+            for el in &class.body.body {
+                if let ClassElement::PropertyDefinition(p) = el
+                    && !p.r#static
+                    && let Some(v) = &p.value
+                {
+                    let extra = scan::Scan::of_expression(v);
+                    scan.captured.extend(extra.captured);
+                    scan.free.extend(extra.free);
+                }
+            }
+        }
         let saved_captured = std::mem::replace(&mut self.captured, scan.captured);
         self.closure_free.extend(scan.free);
         let r = self.lower_fn(name, id);

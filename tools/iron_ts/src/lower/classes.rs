@@ -780,6 +780,83 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    /// `obj.m` used as a value: a closure that remembers `obj` and calls the method on it (so,
+    /// unlike JavaScript, a detached method keeps its `this`). The environment is a one-element
+    /// array holding the receiver; the wrapper function reads it back and calls the target.
+    pub(crate) fn bound_method(&mut self, recv: Expr, sid: StructId, name: &str) -> R<Expr> {
+        let Some((stat, target)) = self.target_for(sid, Which::Method, name) else {
+            bail!("{} has no method `{name}`", self.m.structs[sid].name)
+        };
+        self.ensure_lowered(&stat)?;
+        let sfid = self.fids[&stat];
+        let (all_ptys, ret) = self.fsig[sfid].clone();
+        let ret = ret.ok_or_else(|| format!("{stat}: return type unknown"))?;
+        let ptys: Vec<Ty> = all_ptys[1..].to_vec();
+        let key = match &target {
+            Target::Direct(f) => format!("{stat}$bound#d{f}"),
+            Target::Virtual(t, _) => format!("{stat}$bound#v{t}"),
+        };
+        let env_ty = Ty::Arr(Box::new(Ty::Cell(Box::new(Ty::Void))));
+        let wid = match self.wrappers.get(&key) {
+            Some(w) => *w,
+            None => {
+                let mut locals = vec![env_ty.clone()];
+                locals.extend(ptys.iter().cloned());
+                let params: Vec<VarId> = (0..locals.len() as u32).collect();
+                let slot0 = mk(
+                    ExprKind::Index(
+                        Box::new(mk(ExprKind::Var(0), env_ty.clone())),
+                        Box::new(mk(ExprKind::Num(0.0), Ty::Num)),
+                    ),
+                    Ty::Cell(Box::new(Ty::Void)).nullable(),
+                );
+                let this = mk(ExprKind::Cast(Box::new(slot0)), Ty::Obj(sid));
+                let mut args = vec![this];
+                for (i, t) in locals.iter().enumerate().skip(1) {
+                    args.push(mk(ExprKind::Var(i as u32), t.clone()));
+                }
+                let call = Self::target_call(&target, args, ret.clone());
+                let body = if ret == Ty::Void {
+                    vec![Stmt::Eval(call), Stmt::Return(None)]
+                } else {
+                    vec![Stmt::Return(Some(call))]
+                };
+                let wid = self.m.funcs.len();
+                self.m.funcs.push(Func {
+                    name: key.clone(),
+                    exported: false,
+                    params,
+                    ret: ret.clone(),
+                    locals,
+                    body,
+                });
+                self.fsig.push((ptys.clone(), Some(ret.clone())));
+                self.fstate.push(2);
+                self.wrappers.insert(key, wid);
+                wid
+            }
+        };
+        let env = self.new_local(env_ty.clone());
+        let stmts = vec![
+            Stmt::Assign(
+                env,
+                mk(
+                    ExprKind::Rt(RtFn::ArrNew, vec![mk(ExprKind::Num(1.0), Ty::Num)]),
+                    env_ty.clone(),
+                ),
+            ),
+            Stmt::Eval(mk(
+                ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(env), recv]),
+                Ty::Void,
+            )),
+        ];
+        let env_expr = mk(ExprKind::Seq(stmts, Box::new(self.var_expr(env))), env_ty);
+        Ok(mk(
+            ExprKind::MakeClosure(wid, Some(Box::new(env_expr))),
+            Ty::Fn(Box::new(FnTy { params: ptys, ret })),
+        ))
+    }
+
     /// A call of a getter (`obj.x`).
     pub(crate) fn call_getter(&mut self, stat: &str, target: &Target, obj: Expr) -> R<Expr> {
         let fid = self.fids[stat];

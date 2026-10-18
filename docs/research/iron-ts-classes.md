@@ -322,3 +322,19 @@ counted in the frame plan like `Call`.
 is `void`, so a call that returns nothing and needed a default argument filled in (it becomes
 `Seq(temporaries, call)`) never ran. Constructors, which used to return the object, hid it until
 they became `void` `$init` functions.
+
+## 15. Methods as values and arrow-function fields (2026-10-18)
+
+Sub-task 6 is done (`M9-TS-137`, `138`).
+
+- `obj.m` without a call is a **bound method**: a closure whose environment is a one-element array
+  holding `obj`, over a small wrapper function that reads it back and calls the method (through the
+  same table as a call would, so `a.sound` on a base-typed variable still reaches the subclass). The
+  wrapper is made once per target. `xs.map(this.twice)` works through this.
+- **Unlike JavaScript, a detached method keeps its `this`.** In JS `const f = obj.m; f()` loses the
+  receiver; here it does not. A program that works in JS cannot depend on the difference (it would be
+  using a lost `this`), so the tests only use methods that do not use `this` when comparing with bun.
+- `handler: (k: number) => number = (k) => { this.n += k; ... }`: a field initialised with an arrow
+  function that uses `this`. The constructor's scan of captured names now includes the field
+  initialisers, so `this` is boxed in a cell and the closure captures it. The field needs an
+  annotation (a function type is not inferred from the initialiser).

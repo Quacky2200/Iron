@@ -1431,9 +1431,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           the spill rule extended (`M9-TS-47..56`). Still open: a global read by an initialiser that
           runs before a later declaration, and sharing a module's variables between threads
     - [ ] Named function expressions that refer to their own name
-    - [ ] Closures that use `this` / `arguments` (after Classes)
+    - [ ] Closures that use `this` (done for arrows and bound methods, `M9-TS-137`) / `arguments`
     - [ ] Destructured, default and rest parameters of closures (after those features)
-    - [ ] Arrow functions as class fields / object-literal methods
+    - [ ] Arrow functions as class fields (done, `M9-TS-137`) / object-literal methods
     - [ ] Capture by value when a variable is never reassigned after the closure is made (no cell)
     - [ ] Functions in generic positions (after Generics)
   - [ ] **Classes**: **STOP, design first.** Gameplay code is classes: `extends Component`, `@property`,

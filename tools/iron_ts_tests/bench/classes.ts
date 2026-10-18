@@ -212,3 +212,34 @@ export function allocating(n: number): number {
   }
   return total + s.sum() * 1000 + s.size;
 }
+
+export class Greeter {
+  n = 0;
+  add: (k: number) => number = (k) => {
+    this.n += k;
+    return this.n;
+  };
+  twice(k: number): number {
+    return k * 2;
+  }
+  triple(k: number): number {
+    return k * 3;
+  }
+  bindTwice(): (k: number) => number {
+    return this.twice;
+  }
+  apply(xs: number[]): number[] {
+    return xs.map(this.twice);
+  }
+}
+
+/** Methods as values (they do not use `this`, so plain JavaScript agrees), and an arrow function field. */
+export function demoBound(): number {
+  const g = new Greeter();
+  const f = g.bindTwice();
+  const t = g.triple;
+  g.add(3);
+  const add = g.add;
+  add(4);
+  return f(5) * 1000 + t(2) * 100 + g.n * 10 + g.apply([1, 2, 3]).length;
+}

@@ -231,11 +231,11 @@ mod tests {
         .unwrap();
         assert!(dec.contains("decorators"), "{dec}");
         let value = lower::lower_source(
-            "class A { m(): number { return 1; } } export function f(): number { const a = new A(); const g = a.m; return 1; }",
+            "class A { m(): number { return 1; } } export function f(): number { return new A().nope; }",
         )
         .err()
         .unwrap();
-        assert!(value.contains("used as a value"), "{value}");
+        assert!(value.contains("no field `nope`"), "{value}");
         let ann = lower::lower_source(
             "class A { x = [1]; } export function f(): number { return 1 + new A().x.length; }",
         )

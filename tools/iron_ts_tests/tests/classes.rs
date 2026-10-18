@@ -104,3 +104,13 @@ fn methods_constructors_and_a_stack_in_a_loop_survive_collections() {
         "stress mode collected nothing"
     );
 }
+
+// M9-TS-137
+//
+// JS: `g.twice` taken as a value (it does not use `this`), `xs.map(this.twice)`, and an arrow
+// function field that captures `this`. (Unlike JS, a detached method that does use `this` keeps
+// its receiver here; JS would lose it, so no program that works in JS depends on the difference.)
+#[test]
+fn methods_as_values_and_arrow_function_fields_work() {
+    in_every_gc_mode(|| unsafe { assert_eq!(ts_cls_demoBound(), 10673.0) });
+}

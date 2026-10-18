@@ -124,8 +124,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 `C` and its subclasses). A subclass must be declared after its base. Details and limits:
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
-Not supported (each is a compile error naming the source line): decorators (`@property`), methods
-used as values, `typeof`, class expressions, generics, extending engine classes (`Component`),
+Not supported (each is a compile error naming the source line): decorators (`@property`), `typeof`, class expressions, generics, extending engine classes (`Component`),
 `try`/`throw`, template literals and general string code, `Map`, `for...in`, rest elements in
 patterns, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known

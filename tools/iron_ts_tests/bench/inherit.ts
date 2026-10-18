@@ -237,3 +237,23 @@ export function demoVirtualReceiverHeld(): number {
   const h = new ShapeHolder();
   return h.s.scaled(swapShape(h));
 }
+
+class Animal {
+  sound(): number {
+    return 1;
+  }
+}
+class Dog extends Animal {
+  override sound(): number {
+    return 2;
+  }
+}
+
+/** A method taken as a value from a base-typed variable still dispatches on the real class. */
+export function demoBoundVirtual(): number {
+  const a: Animal = new Dog();
+  const b: Animal = new Animal();
+  const fa = a.sound;
+  const fb = b.sound;
+  return fa() * 10 + fb();
+}
