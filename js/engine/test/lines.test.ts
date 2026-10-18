@@ -63,7 +63,7 @@ describe("LineRenderer2D", () => {
       loop: true,
     });
     const strokes = () => ops.filter((o) => o[0] === "render.stroke");
-    expect(strokes().at(-1)).toEqual(["render.stroke", line.id, go.id, 0.25, [1, 0.5, 0, 1], true, [0, 0, 1, 2, 3, 4], null, "evenodd"]);
+    expect(strokes().at(-1)).toEqual(["render.stroke", line.id, go.id, 0.25, [1, 0.5, 0, 1], true, [0, 0, 1, 2, 3, 4], null, "evenodd", 0]);
     // Nothing changed: nothing sent before drawing.
     const sent = strokes().length;
     line.onPreRender();
@@ -75,7 +75,7 @@ describe("LineRenderer2D", () => {
     expect(strokes().length).toBe(sent);
     line.onPreRender();
     expect(strokes().length).toBe(sent + 1);
-    expect(strokes().at(-1)).toEqual(["render.stroke", line.id, go.id, 0.5, [1, 0.5, 0, 1], false, [5, 6, 7, 8], null, "evenodd"]);
+    expect(strokes().at(-1)).toEqual(["render.stroke", line.id, go.id, 0.5, [1, 0.5, 0, 1], false, [5, 6, 7, 8], null, "evenodd", 0]);
     // The engine runs onDestroy when the object goes.
     line.onDestroy();
     expect(ops.at(-1)).toEqual(["render.remove", line.id]);
@@ -93,9 +93,12 @@ describe("LineRenderer2D fills", () => {
       fillRule: "nonzero",
     });
     const op = ops.filter((o) => o[0] === "render.stroke").at(-1)!;
-    expect(op.slice(3)).toEqual([0, [1, 1, 1, 1], false, [0, 0, 1, 0, 0, 1], [0, 1, 0, 1], "nonzero"]);
+    expect(op.slice(3)).toEqual([0, [1, 1, 1, 1], false, [0, 0, 1, 0, 0, 1], [0, 1, 0, 1], "nonzero", 0]);
     line.fillColor = null;
     line.onPreRender();
-    expect(ops.filter((o) => o[0] === "render.stroke").at(-1)!.at(-2)).toBe(null);
+    expect(ops.filter((o) => o[0] === "render.stroke").at(-1)!.at(-3)).toBe(null);
+    line.sortingOrder = 3.7;
+    line.onPreRender();
+    expect(ops.filter((o) => o[0] === "render.stroke").at(-1)!.at(-1)).toBe(3);
   });
 });

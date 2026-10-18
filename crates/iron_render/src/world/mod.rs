@@ -491,12 +491,16 @@ pub struct WorldView {
     /// Gizmo lines (the editor's wire shapes) drawn over everything, a constant width
     /// on screen, faint where something's in front of them.
     pub lines: Vec<GizmoLine>,
-    /// Thick lines (`LineRenderer2D`), depth-tested and blended after the see-through
-    /// things. A see-through stroke shows darker where its segments overlap.
+    /// Thick lines (`LineRenderer2D`), depth-tested and blended before the see-through
+    /// things (so sprites and text show over them). A see-through stroke shows darker where
+    /// its segments overlap.
     pub strokes: Vec<Stroke>,
     /// Filled shapes as a triangle list ([`tessellate_fill`]), drawn just before the
     /// strokes so outlines sit on top. Their edges are only as smooth as MSAA makes them.
     pub fills: Vec<FillVertex>,
+    /// The shapes those fills and strokes belong to, in drawing order. Empty: all the
+    /// fills, then all the strokes.
+    pub shapes: Vec<ShapeRun>,
 }
 
 /// A line segment in the world, for [`WorldView::lines`].
@@ -537,6 +541,15 @@ pub struct FillVertex {
 const FILL_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
 
+/// One 2D shape's part of a view's [`WorldView::fills`] and [`WorldView::strokes`]: its fill
+/// triangles' vertices and its outline's segments. Shapes draw in order, each fill then its
+/// outline, so a later shape covers an earlier one whole.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShapeRun {
+    pub fills: Range<u32>,
+    pub strokes: Range<u32>,
+}
+
 const STROKE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32, 3 => Float32x4];
 
@@ -560,6 +573,7 @@ impl WorldView {
             lines: Vec::new(),
             strokes: Vec::new(),
             fills: Vec::new(),
+            shapes: Vec::new(),
         }
     }
 }
@@ -3017,6 +3031,7 @@ impl WorldRenderer {
             gpu.queue
                 .write_buffer(&self.fills, 0, bytemuck::cast_slice(&all_fills));
         }
+        let shape_runs: Vec<Vec<ShapeRun>> = views.iter().map(|v| v.shapes.clone()).collect();
         // Strokes, the same way.
         let mut stroke_ranges = Vec::with_capacity(views.len());
         let mut all_strokes: Vec<Stroke> = Vec::new();
@@ -3303,26 +3318,43 @@ impl WorldRenderer {
                     pass.set_pipeline(&pipelines.grid);
                     pass.draw(0..3, 0..1);
                 }
+                // 2D shapes before the see-through things (sprites and text show over them):
+                // each shape's fill then its outline, in order; without runs, every fill then
+                // every outline.
+                let (fills, strokes) = (fill_ranges[i].clone(), stroke_ranges[i].clone());
+                if !fills.is_empty() || !strokes.is_empty() {
+                    pass.set_bind_group(1, plain, &[]);
+                    pass.set_bind_group(2, &shadow_group, &[]);
+                    let whole = [ShapeRun {
+                        fills: 0..fills.len() as u32,
+                        strokes: 0..strokes.len() as u32,
+                    }];
+                    let runs = if shape_runs[i].is_empty() {
+                        &whole[..]
+                    } else {
+                        &shape_runs[i][..]
+                    };
+                    for run in runs {
+                        if !run.fills.is_empty() {
+                            pass.set_vertex_buffer(0, self.fills.slice(..));
+                            pass.set_pipeline(&pipelines.fills);
+                            pass.draw(
+                                fills.start + run.fills.start..fills.start + run.fills.end,
+                                0..1,
+                            );
+                        }
+                        if !run.strokes.is_empty() {
+                            pass.set_vertex_buffer(0, self.strokes.slice(..));
+                            pass.set_pipeline(&pipelines.strokes);
+                            pass.draw(
+                                0..6,
+                                strokes.start + run.strokes.start..strokes.start + run.strokes.end,
+                            );
+                        }
+                    }
+                }
                 for (_, run) in blended {
                     draw(&mut pass, run, true);
-                }
-                // Fills, then strokes over them, after the see-through things.
-                let range = fill_ranges[i].clone();
-                if !range.is_empty() {
-                    pass.set_bind_group(1, plain, &[]);
-                    pass.set_bind_group(2, &shadow_group, &[]);
-                    pass.set_vertex_buffer(0, self.fills.slice(..));
-                    pass.set_pipeline(&pipelines.fills);
-                    pass.draw(range, 0..1);
-                }
-                // Strokes after the see-through things, before the gizmo lines.
-                let range = stroke_ranges[i].clone();
-                if !range.is_empty() {
-                    pass.set_bind_group(1, plain, &[]);
-                    pass.set_bind_group(2, &shadow_group, &[]);
-                    pass.set_vertex_buffer(0, self.strokes.slice(..));
-                    pass.set_pipeline(&pipelines.strokes);
-                    pass.draw(0..6, range);
                 }
                 // Gizmo lines last: hidden parts faint first, then the visible ones.
                 let range = line_ranges[i].clone();

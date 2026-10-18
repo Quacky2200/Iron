@@ -210,6 +210,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             lines: Vec::new(),
             strokes: Vec::new(),
             fills: Vec::new(),
+            shapes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -237,6 +238,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             lines: Vec::new(),
             strokes: Vec::new(),
             fills: Vec::new(),
+            shapes: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -271,6 +273,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             lines: Vec::new(),
             strokes: Vec::new(),
             fills: Vec::new(),
+            shapes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {

@@ -841,6 +841,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       breaks, `maxWidth` wrapping, alignment), sized to fit and tinted like a sprite;
       `examples/shapes` shows every shape, both fill rules and labels — `M5-TXT-01`
       - [ ] Later: redraw a text's texture only when it changes (panels draw every frame)
+    - [x] Draw order: each shape's fill, then its outline, by `sortingOrder` and then the order
+      they were made (`WorldView.shapes`); 2D shapes draw before the see-through things, so
+      sprites and text show over them — `M5-RND-25`
+    - [x] `Spline` (Unity's Splines, the core): knots with auto (cardinal; 0.5 is
+      Catmull-Rom), Bézier or linear tangents, open or closed, positions by distance
+      (`evaluate`), tangents, length, `sample`, `nearest`, editing; `SplineAnimate` moves an
+      object along one (loop, ping-pong, once; facing along it; in a container's space) —
+      `M5-SPL-01`. `examples/splines`: splines that move and one to edit with the mouse
+    - [x] `examples/clock`: six faces built on these (analog rings and spline hands, turning
+      dials, a rolling meter, Material-style morphing digits, a flip clock in Iron's UI, a
+      seven-segment alarm clock with bloom), switched with side arrows and dots
     - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
       texture brushes, smooth fill edges without MSAA, clipping
     - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)

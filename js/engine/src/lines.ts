@@ -133,6 +133,7 @@ export class LineRenderer2D extends Component {
   private _loop = false;
   private _fillColor: Color | null = null;
   private _fillRule: "evenodd" | "nonzero" = "evenodd";
+  private _sortingOrder = 0;
   private started = false;
   private dirty = true;
 
@@ -194,6 +195,19 @@ export class LineRenderer2D extends Component {
     this.dirty = true;
   }
 
+  /**
+   * Draw order among 2D shapes: higher draws over lower, equal ones in the order they were
+   * made. Each shape draws its fill, then its outline. Sprites and text show over shapes.
+   */
+  @property
+  get sortingOrder(): number {
+    return this._sortingOrder;
+  }
+  set sortingOrder(o: number) {
+    this._sortingOrder = Math.trunc(o);
+    this.dirty = true;
+  }
+
   override onAwake(): void {
     this.started = true;
     this.send();
@@ -230,6 +244,7 @@ export class LineRenderer2D extends Component {
       flat,
       f ? [f.r, f.g, f.b, f.a] : null,
       this._fillRule,
+      this._sortingOrder,
     );
   }
 }

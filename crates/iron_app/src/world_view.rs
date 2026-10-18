@@ -12,9 +12,9 @@ use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, GizmoLine, Grading,
     Light, LightKind, MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection,
-    ReflectionProbe, RenderMode, ShadowQuality, Shadows, Sky, Stroke, TextureData, TextureFilter,
-    TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id,
-    viewport_size,
+    ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData,
+    TextureFilter, TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView,
+    primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -293,6 +293,8 @@ struct Stroke2d {
     /// The fill's colour and its triangles (in the object's space, tessellated when the
     /// points change), if it's filled.
     fill: Option<([f32; 4], Vec<[f32; 2]>)>,
+    /// Higher draws over lower; equal ones in the order they were made.
+    order: i32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -928,7 +930,8 @@ impl WorldViews {
                 self.sprites.insert(id, sprite);
             }
             // `stroke component object width [r g b a] closed [x0 y0 x1 y1 ...]`
-            // `... [fill r g b a]|null evenodd|nonzero`: the points as a closed, filled shape.
+            // `... [fill r g b a]|null evenodd|nonzero sortingOrder`: the points as a closed,
+            // filled shape; higher orders draw over lower.
             "stroke" => {
                 let points = flat(args.get(5))
                     .ok_or("stroke needs [x, y, ...]")?
@@ -945,6 +948,7 @@ impl WorldViews {
                     object: id_at(1)?,
                     points,
                     fill,
+                    order: num(8).unwrap_or(0.0) as i32,
                     width: num(2)?.max(0.0),
                     color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
                     closed: matches!(args.get(4), Some(Value::Bool(true))),
@@ -1246,9 +1250,10 @@ impl WorldViews {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
         // Each `LineRenderer2D`'s points through its object, as world segments, and its
         // fill's triangles.
-        let strokes: Vec<Tagged<(Vec<Stroke>, Vec<FillVertex>)>> = self
-            .strokes
-            .values()
+        let mut shapes: Vec<&Stroke2d> = self.strokes.values().collect();
+        shapes.sort_by_key(|s| s.order);
+        let strokes: Vec<Tagged<(Vec<Stroke>, Vec<FillVertex>)>> = shapes
+            .into_iter()
             .filter(|s| scene.active(s.object) && s.points.len() >= 2)
             .filter_map(|s| {
                 let m = Mat4::from(world(s.object)?);
@@ -1565,6 +1570,18 @@ impl WorldViews {
                     b: b as f64,
                     a: a as f64,
                 };
+                // This camera's shapes, in order, each one's fill and outline together.
+                let (mut shown_strokes, mut shown_fills, mut shown_shapes) =
+                    (Vec::new(), Vec::new(), Vec::new());
+                for t in strokes.iter().filter(|t| shows(t.layer, t.at)) {
+                    let (f, s) = (shown_fills.len() as u32, shown_strokes.len() as u32);
+                    shown_strokes.extend_from_slice(&t.item.0);
+                    shown_fills.extend_from_slice(&t.item.1);
+                    shown_shapes.push(ShapeRun {
+                        fills: f..shown_fills.len() as u32,
+                        strokes: s..shown_strokes.len() as u32,
+                    });
+                }
                 Some(WorldView {
                     meshes: meshes
                         .iter()
@@ -1585,16 +1602,9 @@ impl WorldViews {
                     bones: bones.clone(),
                     grid: camera.grid,
                     lines: camera.lines.clone(),
-                    strokes: strokes
-                        .iter()
-                        .filter(|t| shows(t.layer, t.at))
-                        .flat_map(|t| t.item.0.iter().copied())
-                        .collect(),
-                    fills: strokes
-                        .iter()
-                        .filter(|t| shows(t.layer, t.at))
-                        .flat_map(|t| t.item.1.iter().copied())
-                        .collect(),
+                    strokes: shown_strokes,
+                    fills: shown_fills,
+                    shapes: shown_shapes,
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
@@ -1976,6 +1986,67 @@ mod tests {
         views.apply("stroke", &square(0.1, Value::Null)).unwrap();
         let v = view(&views);
         assert_eq!((v.strokes.len(), v.fills.len()), (4, 0));
+    }
+
+    // M5-RND-25
+    #[test]
+    fn shapes_draw_by_sorting_order_each_fill_with_its_outline() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene
+            .apply("create", &[n(2.0), "shapes".into(), Value::Null])
+            .unwrap();
+        scene.scene.update_world();
+        let mut camera = vec![n(100.0), n(1.0), n(60.0), n(0.1), n(1000.0)];
+        camera.extend([Value::Null, n(0.0), Value::Bool(false), n(5.0)]);
+        views.apply("camera", &camera).unwrap();
+        // Made first but ordered on top: a filled, outlined triangle; then a plain line.
+        let shape = |id: f64, order: f64, fill: bool, points: &[f64]| {
+            vec![
+                n(id),
+                n(2.0),
+                n(0.1),
+                Value::Array(vec![n(1.0); 4]),
+                Value::Bool(fill),
+                Value::Array(points.iter().map(|&p| n(p)).collect()),
+                if fill {
+                    Value::Array(vec![n(1.0); 4])
+                } else {
+                    Value::Null
+                },
+                "evenodd".into(),
+                n(order),
+            ]
+        };
+        views
+            .apply(
+                "stroke",
+                &shape(20.0, 5.0, true, &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]),
+            )
+            .unwrap();
+        views
+            .apply("stroke", &shape(21.0, 0.0, false, &[0.0, 0.0, 2.0, 2.0]))
+            .unwrap();
+        let v = views.views(&scene, (64, 64), &[]).remove(0);
+        // The line (order 0) first, then the triangle's fill and its three sides.
+        assert_eq!(
+            v.shapes,
+            vec![
+                ShapeRun {
+                    fills: 0..0,
+                    strokes: 0..1
+                },
+                ShapeRun {
+                    fills: 0..3,
+                    strokes: 1..4
+                },
+            ]
+        );
+        assert_eq!(v.strokes[0].b, [2.0, 2.0, 0.0]);
     }
 
     // M5-LOD-01

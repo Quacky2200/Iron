@@ -86,6 +86,7 @@ export {
 } from "./scenes.ts";
 export { LineRenderer, LineRenderer2D } from "./lines.ts";
 export { Shapes } from "./shapes.ts";
+export { Spline, SplineAnimate, type SplineKnot, type TangentMode } from "./spline.ts";
 export { type TextAlignment, TextMesh } from "./text-mesh.ts";
 export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
 export {
