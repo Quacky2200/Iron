@@ -89,8 +89,8 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 Next, in order:
 
-1. **Strings** across the boundary once the strings
-   decision is made (names, `find`).
+1. **Strings** (STOP, waiting for review): design note `docs/research/iron-ts-strings.md` written 2026-10-18 with the decision "UTF-8 inside Iron";
+   answer its section 6 questions (length/index units, ordering, lone surrogates, borrowed vs owned across the boundary, RegExp), then implement slices 1-3 (runtime `Str`, compiler, boundary: `GameObject.name`, `find`).
 2. **Annotate `iron_physics`, `iron_audio`, `iron_script`**; wire `iron_scene::api::enter` into `iron_app` (needs its owner:
    another session works there); retire the ops the new API replaces.
 3. Extending an engine class (`Component`) and the compiled-component vertical slice; `typeof`, class expressions.
