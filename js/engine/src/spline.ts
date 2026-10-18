@@ -26,12 +26,17 @@ export interface SplineKnot {
 /** Length-table samples per segment (more: closer to true distances). */
 const STEPS = 32;
 
+/** Scratch for one point, reused by every spline (scripts run on one thread). */
+const scratch = new Float64Array(3);
+
 export class Spline {
   private _knots: SplineKnot[] = [];
   private _closed: boolean;
   private _tension: number;
   /** Distance along the spline at each table sample (`STEPS` per segment, plus the end). */
   private table: number[] | null = null;
+  /** Every segment's four Bézier points as plain numbers (12 each), so evaluating allocates nothing. */
+  private ctrl: Float64Array | null = null;
   /** Goes up on every change, so anything drawing the spline can tell it moved. */
   version = 0;
 
@@ -154,39 +159,62 @@ export class Spline {
     return (this._closed ? this._knots[((i % n) + n) % n]! : this._knots[Math.max(0, Math.min(n - 1, i))]!).position;
   }
 
-  /** Segment `i`'s four Bézier points: from knot `i` to the next. */
-  private controls(i: number): [Vector3, Vector3, Vector3, Vector3] {
+  /** Segment `i`'s four Bézier points (from knot `i` to the next), cached until a change. */
+  private controls(): Float64Array {
+    if (this.ctrl) return this.ctrl;
     const n = this._knots.length;
-    const j = (i + 1) % n;
-    const p0 = this._knots[i]!.position;
-    const p3 = this._knots[j]!.position;
-    return [p0, p0.add(this.handleOut(i)), p3.add(this.handleIn(j)), p3];
+    const segments = this.segmentCount;
+    const c = new Float64Array(segments * 12);
+    for (let i = 0; i < segments; i++) {
+      const j = (i + 1) % n;
+      const p0 = this._knots[i]!.position;
+      const p3 = this._knots[j]!.position;
+      const h1 = this.handleOut(i);
+      const h2 = this.handleIn(j);
+      c.set([p0.x, p0.y, p0.z, p0.x + h1.x, p0.y + h1.y, p0.z + h1.z, p3.x + h2.x, p3.y + h2.y, p3.z + h2.z, p3.x, p3.y, p3.z], i * 12);
+    }
+    this.ctrl = c;
+    return c;
+  }
+
+  /** Segment `i`'s point at `u` into `out` (x, y, z); no allocation. */
+  private pointInto(i: number, u: number, out: Float64Array): void {
+    const c = this.controls();
+    const o = Math.max(0, Math.min(this.segmentCount - 1, i)) * 12;
+    const v = 1 - u;
+    const a = v * v * v;
+    const b = 3 * v * v * u;
+    const d = 3 * v * u * u;
+    const e = u * u * u;
+    out[0] = a * c[o]! + b * c[o + 3]! + d * c[o + 6]! + e * c[o + 9]!;
+    out[1] = a * c[o + 1]! + b * c[o + 4]! + d * c[o + 7]! + e * c[o + 10]!;
+    out[2] = a * c[o + 2]! + b * c[o + 5]! + d * c[o + 8]! + e * c[o + 11]!;
   }
 
   /** A point on segment `i` (0 to `segmentCount` - 1), `u` 0 to 1 by the segment's own parameter. */
   segmentPoint(i: number, u: number): Vector3 {
     if (this.segmentCount === 0) return this._knots[0]?.position ?? Vector3.zero;
-    const [p0, p1, p2, p3] = this.controls(Math.max(0, Math.min(this.segmentCount - 1, i)));
-    const v = 1 - u;
-    return p0
-      .scale(v * v * v)
-      .add(p1.scale(3 * v * v * u))
-      .add(p2.scale(3 * v * u * u))
-      .add(p3.scale(u * u * u));
+    this.pointInto(i, u, scratch);
+    return new Vector3(scratch[0]!, scratch[1]!, scratch[2]!);
   }
 
   /** The direction (not normalized) segment `i` is going at `u`. */
   segmentDerivative(i: number, u: number): Vector3 {
     if (this.segmentCount === 0) return Vector3.zero;
-    const [p0, p1, p2, p3] = this.controls(Math.max(0, Math.min(this.segmentCount - 1, i)));
+    const c = this.controls();
+    const o = Math.max(0, Math.min(this.segmentCount - 1, i)) * 12;
     const v = 1 - u;
-    const d = p1
-      .sub(p0)
-      .scale(3 * v * v)
-      .add(p2.sub(p1).scale(6 * v * u))
-      .add(p3.sub(p2).scale(3 * u * u));
+    const a = 3 * v * v;
+    const b = 6 * v * u;
+    const e = 3 * u * u;
+    const k = (axis: number) =>
+      a * (c[o + 3 + axis]! - c[o + axis]!) + b * (c[o + 6 + axis]! - c[o + 3 + axis]!) + e * (c[o + 9 + axis]! - c[o + 6 + axis]!);
+    const x = k(0);
+    const y = k(1);
+    const z = k(2);
     // Where the handles sit on the knots, the direction comes from the chord.
-    return d.magnitude > 1e-9 ? d : p3.sub(p0);
+    if (x * x + y * y + z * z > 1e-18) return new Vector3(x, y, z);
+    return new Vector3(c[o + 9]! - c[o]!, c[o + 10]! - c[o + 1]!, c[o + 11]! - c[o + 2]!);
   }
 
   private lengths(): number[] {
@@ -194,12 +222,20 @@ export class Spline {
     const table = [0];
     let total = 0;
     for (let i = 0; i < this.segmentCount; i++) {
-      let prev = this.segmentPoint(i, 0);
+      this.pointInto(i, 0, scratch);
+      let px = scratch[0]!;
+      let py = scratch[1]!;
+      let pz = scratch[2]!;
       for (let s = 1; s <= STEPS; s++) {
-        const p = this.segmentPoint(i, s / STEPS);
-        total += p.distance(prev);
+        this.pointInto(i, s / STEPS, scratch);
+        const dx = scratch[0]! - px;
+        const dy = scratch[1]! - py;
+        const dz = scratch[2]! - pz;
+        total += Math.sqrt(dx * dx + dy * dy + dz * dz);
         table.push(total);
-        prev = p;
+        px = scratch[0]!;
+        py = scratch[1]!;
+        pz = scratch[2]!;
       }
     }
     this.table = table;
@@ -270,10 +306,18 @@ export class Spline {
     }
     // Coarse: every table sample; then narrow down around the best.
     const samples = this.segmentCount * STEPS;
+    const far = (t: number): number => {
+      const { segment, u } = this.locate(t);
+      this.pointInto(segment, u, scratch);
+      const dx = scratch[0]! - target.x;
+      const dy = scratch[1]! - target.y;
+      const dz = scratch[2]! - target.z;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    };
     let best = 0;
     let bestD = Infinity;
     for (let s = 0; s <= samples; s++) {
-      const d = this.evaluate(s / samples).distance(target);
+      const d = far(s / samples);
       if (d < bestD) {
         bestD = d;
         best = s / samples;
@@ -284,7 +328,7 @@ export class Spline {
       step /= 2;
       for (const t of [best - step, best + step]) {
         const c = this._closed ? ((t % 1) + 1) % 1 : Math.max(0, Math.min(1, t));
-        const d = this.evaluate(c).distance(target);
+        const d = far(c);
         if (d < bestD) {
           bestD = d;
           best = c;
@@ -297,6 +341,7 @@ export class Spline {
 
   private changed(): void {
     this.table = null;
+    this.ctrl = null;
     this.version++;
   }
 }

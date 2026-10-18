@@ -57,6 +57,16 @@ impl QuickJsRuntime {
                 }),
             }
         }
+        // The script's turn is over: what it queued to send in one op (its objects'
+        // transforms, `__iron_flush` from @iron/engine) goes out before Rust reads anything.
+        self.context.with(|ctx| {
+            if let Ok(flush) = ctx.globals().get::<_, Function>("__iron_flush")
+                && let Err(e) = flush.call::<_, ()>(())
+            {
+                let error = to_script_error(&ctx, e);
+                self.shared.borrow_mut().errors.push(error);
+            }
+        });
     }
 }
 

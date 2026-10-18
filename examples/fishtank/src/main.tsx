@@ -134,27 +134,56 @@ class Fish {
     this.place(0);
   }
 
-  step(dt: number, tank: Tank): void {
+  step(dt: number, tank: Tank, me: number): void {
     const k = this.kind;
-    let steer = Vector3.zero;
-    let ahead = Vector3.zero;
-    let centre = Vector3.zero;
+    // Neighbours from the flock's grid, in plain numbers (vectors would allocate per pair).
+    const f = tank.flock;
+    const x = this.pos.x;
+    const y = this.pos.y;
+    const z = this.pos.z;
+    let sx = 0, sy = 0, sz = 0;
+    let ax = 0, ay = 0, az = 0;
+    let cx = 0, cy = 0, cz = 0;
     let mates = 0;
-    for (const o of tank.fish) {
-      if (o === this) continue;
-      const d = this.pos.sub(o.pos);
-      const dist = d.magnitude;
-      if (dist < 0.55 * (k.size + o.kind.size) && dist > 1e-4) steer = steer.add(d.scale(1.8 / (dist * dist + 0.05)));
-      if (o.kind === k && dist < 2.6) {
-        ahead = ahead.add(o.vel);
-        centre = centre.add(o.pos);
-        mates++;
-      }
-    }
+    const gx = Math.floor(x / CELL);
+    const gy = Math.floor(y / CELL);
+    const gz = Math.floor(z / CELL);
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++)
+        for (let l = -1; l <= 1; l++) {
+          const cell = f.cells.get(cellKey(gx + i, gy + j, gz + l));
+          if (!cell) continue;
+          for (const o of cell) {
+            if (o === me) continue;
+            const b = o * 7;
+            const dx = x - f.data[b]!;
+            const dy = y - f.data[b + 1]!;
+            const dz = z - f.data[b + 2]!;
+            const d2 = dx * dx + dy * dy + dz * dz;
+            const near = 0.55 * (k.size + f.data[b + 6]!);
+            if (d2 < near * near && d2 > 1e-8) {
+              const push = 1.8 / (d2 + 0.05);
+              sx += dx * push;
+              sy += dy * push;
+              sz += dz * push;
+            }
+            if (f.kinds[o] === k && d2 < 2.6 * 2.6) {
+              ax += f.data[b + 3]!;
+              ay += f.data[b + 4]!;
+              az += f.data[b + 5]!;
+              cx += f.data[b]!;
+              cy += f.data[b + 1]!;
+              cz += f.data[b + 2]!;
+              mates++;
+            }
+          }
+        }
     if (mates > 0) {
-      steer = steer.add(ahead.scale(1 / mates).sub(this.vel).scale(0.6));
-      steer = steer.add(centre.scale(1 / mates).sub(this.pos).scale(0.3));
+      sx += (ax / mates - this.vel.x) * 0.6 + (cx / mates - x) * 0.3;
+      sy += (ay / mates - this.vel.y) * 0.6 + (cy / mates - y) * 0.3;
+      sz += (az / mates - this.vel.z) * 0.6 + (cz / mates - z) * 0.3;
     }
+    let steer = new Vector3(sx, sy, sz);
     this.wander += (Math.random() - 0.5) * dt * 3;
     steer = steer.add(new Vector3(Math.cos(this.wander), Math.sin(this.wander) * 0.35, Math.sin(this.wander * 0.7) * 0.4).scale(0.5));
     // Inside the tank: the sides, the floor, the surface, the front and the back.
@@ -215,6 +244,10 @@ class Fish {
 
 // ---- The tank ----
 
+/** The flock's grid: as wide as the farthest a fish looks for its school. */
+const CELL = 2.6;
+const cellKey = (x: number, y: number, z: number) => ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512);
+
 interface Pellet {
   go: GameObject;
   pos: Vector3;
@@ -224,10 +257,12 @@ interface Pellet {
 
 class Tank extends Component {
   fish: Fish[] = [];
+  /** This frame's fish, by grid cell: positions, velocities and sizes (7 numbers each). */
+  flock = { cells: new Map<number, number[]>(), data: new Float64Array(0), kinds: [] as Species[] };
   private food: Pellet[] = [];
   private camera!: Camera;
   private plants: { line: LineRenderer2D; base: Vector3; height: number; phase: number }[] = [];
-  private caustics: { line: LineRenderer2D; spline: Spline; centre: Vector2; size: number; phase: number }[] = [];
+  private caustics: { line: LineRenderer2D; centre: Vector2; size: number; phase: number }[] = [];
   private snow: { go: GameObject; pos: Vector3; phase: number }[] = [];
   private bubbles: { go: GameObject; pos: Vector3; speed: number; phase: number }[] = [];
   private shafts: GameObject[] = [];
@@ -272,11 +307,9 @@ class Tank extends Component {
     // Caustics: wobbling loops of light on the sand.
     for (let i = 0; i < 18; i++) {
       const centre = new Vector2(-10 + ((i * 7.3) % 20), -(((i * 3.7) % 11) - 2.5));
-      const knots = Array.from({ length: 7 }, () => Vector3.zero);
       const z = centre.y;
       this.caustics.push({
         line: flat(`caustic ${i}`, { loop: true, width: 0.035, color: mix(mix(SAND, Color.white, 0.3), HAZE, haze(z) * 1.05), sortingOrder: -899 }, new Vector3(0, FLOOR + 0.01, 0), root),
-        spline: new Spline(knots, { closed: true }),
         centre,
         size: 0.3 + (i % 4) * 0.12,
         phase: i * 1.3,
@@ -295,7 +328,7 @@ class Tank extends Component {
       const z = [-6.5, -4, -1.5, 1.5][i % 4]!;
       const x = -11 + ((i * 5.3) % 22);
       this.plants.push({
-        line: shape(`kelp ${i}`, { width: 0.16 + (i % 3) * 0.05, color: mix(greens[i % 5]!, HAZE, haze(z)), sortingOrder: Math.round(z * 100) + 5 }, Vector3.zero, root),
+        line: shape(`kelp ${i}`, { width: 0.16 + (i % 3) * 0.05, color: mix(greens[i % 5]!, HAZE, haze(z)), sortingOrder: Math.round(z * 100) + 5 }, new Vector3(0, 0, z), root),
         base: new Vector3(x, FLOOR, z),
         height: 2.2 + (i % 5) * 0.8,
         phase: i * 1.4,
@@ -325,6 +358,28 @@ class Tank extends Component {
 
   addFish(kind: Species, at: Vector3): void {
     this.fish.push(new Fish(kind, at, this.gameObject));
+  }
+
+  private buildFlock(): void {
+    const f = this.flock;
+    f.cells.clear();
+    if (f.data.length < this.fish.length * 7) f.data = new Float64Array(this.fish.length * 14);
+    f.kinds.length = this.fish.length;
+    this.fish.forEach((fish, i) => {
+      const b = i * 7;
+      f.data[b] = fish.pos.x;
+      f.data[b + 1] = fish.pos.y;
+      f.data[b + 2] = fish.pos.z;
+      f.data[b + 3] = fish.vel.x;
+      f.data[b + 4] = fish.vel.y;
+      f.data[b + 5] = fish.vel.z;
+      f.data[b + 6] = fish.kind.size;
+      f.kinds[i] = fish.kind;
+      const key = cellKey(Math.floor(fish.pos.x / CELL), Math.floor(fish.pos.y / CELL), Math.floor(fish.pos.z / CELL));
+      const cell = f.cells.get(key);
+      if (cell) cell.push(i);
+      else f.cells.set(key, [i]);
+    });
   }
 
   nearestFood(p: Vector3): Pellet | null {
@@ -397,7 +452,8 @@ class Tank extends Component {
       this.tapFrom = new Vector3(0, 0, NEAR + 3);
     }
 
-    for (const f of this.fish) f.step(step, this);
+    this.buildFlock();
+    this.fish.forEach((f, i) => f.step(step, this, i));
 
     for (const p of this.food) {
       p.age += dt;
@@ -415,15 +471,16 @@ class Tank extends Component {
         pts.push(new Vector2(pl.base.x + Math.sin(this.t * 0.7 + pl.phase + f * 2) * 0.45 * f * f, pl.base.y + f * pl.height));
       }
       pl.line.points = pts;
-      pl.line.transform.position = new Vector3(0, 0, pl.base.z);
     }
     for (const c of this.caustics) {
-      for (let k = 0; k < c.spline.count; k++) {
-        const a = (k / c.spline.count) * Math.PI * 2;
-        const r = c.size * (1 + 0.2 * Math.sin(this.t * 1.1 + c.phase + k * 1.7));
-        c.spline.setPosition(k, new Vector3(c.centre.x + Math.cos(a) * r + Math.sin(this.t * 0.4 + c.phase) * 0.4, c.centre.y + Math.sin(a) * r * 0.6, 0));
+      const ox = c.centre.x + Math.sin(this.t * 0.4 + c.phase) * 0.4;
+      const pts: Vector2[] = [];
+      for (let k = 0; k < 32; k++) {
+        const a = (k / 32) * Math.PI * 2;
+        const r = c.size * (1 + 0.13 * Math.sin(this.t * 1.1 + c.phase + a * 3) + 0.08 * Math.sin(this.t * 0.8 - c.phase + a * 5));
+        pts.push(new Vector2(ox + Math.cos(a) * r, c.centre.y + Math.sin(a) * r * 0.6));
       }
-      c.line.points = c.spline.sample(5);
+      c.line.points = pts;
     }
     for (const s of this.snow) {
       s.pos = new Vector3(s.pos.x + Math.sin(this.t * 0.3 + s.phase) * 0.05 * dt, s.pos.y - 0.08 * dt, s.pos.z);

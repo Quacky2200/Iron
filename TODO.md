@@ -1088,6 +1088,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     (10–25% of the arcade's uncapped frame rate): blur only the panels' areas at a lower
     resolution, and skip the copy when no panel overlaps the world.
   - [ ] Reload benchmark under 100 ms (`M4-HOT-07`, ~146 ms): see "Hot reload, part 2".
+  - [x] Script overhead with many objects (found 2026-10-18 with `examples/fishtank`: 123
+    fish ran at ~40 ms a frame in release, ~32 ms of it QuickJS; now ~16 ms):
+    - [x] Transforms go to the engine in one `scene.locals` op per script turn
+      (`flushTransforms`, `__iron_flush` after every call into JS), not one op per setter
+    - [x] Lifecycle hooks run in one `__iron_run(method, ids)` call per hook, not one call
+      per component (every `LineRenderer2D` has `onPreRender`)
+    - [x] World setters and getters under an identity parent skip the parent maths, and
+      the parent's world transform is one walk up, not three per level
+    - [x] `Spline` evaluates from cached control points in plain numbers
+    - [x] The fish tank flocks over a spatial grid in plain numbers
+  - [ ] QuickJS allocation: every `Vector3` / `Quaternion` op allocates. Scalar or
+    in-place variants for hot paths (`addInPlace`, `set`), or a faster engine later (M9.a)
+  - [ ] 2D shapes: check draw calls and re-tessellation with hundreds of shapes, and batch
+    them where it helps
+  - [ ] Profile the rest of the frame (~6 ms engine and render with 123 fish, ~800 shapes)
 - [x] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   (done 2026-10-17; the unticked items below are follow-ups for later)
   - [x] Materials (asked for 2026-10-17), Unity Standard / URP Lit style: PBR, the sky and

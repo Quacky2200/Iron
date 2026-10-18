@@ -158,6 +158,35 @@ impl ScriptScene {
                 self.scene.set_local(id, t);
                 self.script_moved.push(id);
             }
+            // `locals [id px py pz qx qy qz qw sx sy sz ...]`: many `local`s in one op (what
+            // scripts send each turn); objects already gone are skipped.
+            "locals" => {
+                let Some(Value::Array(flat)) = args.first() else {
+                    return Err("locals needs [id, position, rotation, scale, ...]".into());
+                };
+                for chunk in flat.as_chunks::<11>().0 {
+                    let n = chunk.each_ref().map(|v| v.as_f64().unwrap_or(0.0));
+                    if !(n[0].is_finite() && n[0] >= 0.0) {
+                        continue;
+                    }
+                    let Some(id) = self.object(n[0] as u32) else {
+                        continue;
+                    };
+                    let f = |i: usize| n[i] as f32;
+                    let q = Quat::from_xyzw(f(4), f(5), f(6), f(7));
+                    let t = Transform {
+                        position: Vec3::new(f(1), f(2), f(3)),
+                        rotation: if q.length_squared() < 1e-12 {
+                            Quat::IDENTITY
+                        } else {
+                            q.normalize()
+                        },
+                        scale: Vec3::new(f(8), f(9), f(10)),
+                    };
+                    self.scene.set_local(id, t);
+                    self.script_moved.push(id);
+                }
+            }
             "enabled" => {
                 let id = self.require(a.id(0)?)?;
                 self.scene

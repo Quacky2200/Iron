@@ -227,6 +227,21 @@ const quat = (q: QuaternionLike) => [q.x, q.y, q.z, q.w];
 export const scaleListeners: ((go: GameObject) => void)[] = [];
 
 /** Position, rotation and scale of a GameObject, like Unity's `Transform`. */
+interface WorldParts {
+  position: Vector3;
+  rotation: Quaternion;
+  scale: Vector3;
+  /** Known to be the identity (no parent), so the maths can be skipped. */
+  identity: boolean;
+}
+
+const WORLD: WorldParts = { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one, identity: true };
+
+function isIdentity(w: WorldParts): boolean {
+  const { position: p, rotation: q, scale: s } = w;
+  return p.x === 0 && p.y === 0 && p.z === 0 && q.x === 0 && q.y === 0 && q.z === 0 && q.w === 1 && s.x === 1 && s.y === 1 && s.z === 1;
+}
+
 export class Transform {
   /** @internal */
   _position = Vector3.zero;
@@ -238,7 +253,8 @@ export class Transform {
   constructor(readonly gameObject: GameObject) {}
 
   private send(): void {
-    __iron_op("scene.local", this.gameObject.id, vec(this._position), quat(this._rotation), vec(this._scale));
+    // Queued: every change this script turn goes to the engine in one op (`flushTransforms`).
+    pendingTransforms.set(this.gameObject.id, this);
   }
 
   /** @internal Sets the whole local transform with one op (animation). */
@@ -293,30 +309,54 @@ export class Transform {
     this.localRotation = Quaternion.euler(v);
   }
 
-  private parentWorld(): { position: Vector3; rotation: Quaternion; scale: Vector3 } {
-    const p = this.gameObject.parent?.transform;
-    return p
-      ? { position: p.position, rotation: p.rotation, scale: p.lossyScale }
-      : { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one };
+  /** World position, rotation and scale in one walk up the parents. */
+  private world(): WorldParts {
+    const parent = this.gameObject.parent?.transform;
+    if (!parent) return { position: this._position, rotation: this._rotation, scale: this._scale, identity: false };
+    const p = parent.world();
+    if (p.identity || isIdentity(p)) return { position: this._position, rotation: this._rotation, scale: this._scale, identity: false };
+    return {
+      position: p.position.add(p.rotation.rotate(p.scale.mul(this._position))),
+      rotation: p.rotation.mul(this._rotation),
+      scale: p.scale.mul(this._scale),
+      identity: false,
+    };
+  }
+
+  private parentWorld(): WorldParts {
+    return this.gameObject.parent?.transform.world() ?? WORLD;
   }
 
   /** World position. */
   get position(): Vector3 {
     const p = this.parentWorld();
+    if (p.identity) return this._position;
     return p.position.add(p.rotation.rotate(p.scale.mul(this._position)));
   }
   set position(v: Vector3Like) {
     const p = this.parentWorld();
+    if (p.identity || isIdentity(p)) {
+      this._position = Vector3.from(v);
+      this.send();
+      return;
+    }
     this._position = p.rotation.inverse().rotate(Vector3.from(v).sub(p.position)).div(p.scale);
     this.send();
   }
 
   /** World rotation. */
   get rotation(): Quaternion {
-    return this.parentWorld().rotation.mul(this._rotation);
+    const p = this.parentWorld();
+    return p.identity ? this._rotation : p.rotation.mul(this._rotation);
   }
   set rotation(q: QuaternionLike) {
-    this._rotation = this.parentWorld().rotation.inverse().mul(q).normalized;
+    const p = this.parentWorld();
+    if (p.identity || isIdentity(p)) {
+      this._rotation = Quaternion.from(q).normalized;
+      this.send();
+      return;
+    }
+    this._rotation = p.rotation.inverse().mul(q).normalized;
     this.send();
   }
 
@@ -452,6 +492,7 @@ export class GameObject {
     if (!parent) this._scene = sceneHooks?.active() ?? null;
     (parent ? parent.children : roots).push(this);
     const t = this.transform;
+    flushTransforms();
     __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
   }
 
@@ -484,6 +525,7 @@ export class GameObject {
   }
   set name(name: string) {
     this._name = name;
+    flushTransforms();
     __iron_op("scene.name", this.id, name);
   }
 
@@ -496,6 +538,7 @@ export class GameObject {
   }
   set layer(layer: number) {
     this._layer = checkLayer(layer);
+    flushTransforms();
     __iron_op("scene.layer", this.id, layer);
   }
 
@@ -534,6 +577,7 @@ export class GameObject {
     siblings.splice(siblings.indexOf(this), 1);
     this._parent = parent;
     (parent ? parent.children : roots).push(this);
+    flushTransforms();
     __iron_op("scene.parent", this.id, parent?.id ?? null);
     if (keepWorld) {
       t.position = position;
@@ -549,6 +593,7 @@ export class GameObject {
   }
   set enabled(on: boolean) {
     this._enabled = on;
+    flushTransforms();
     __iron_op("scene.enabled", this.id, on);
   }
 
@@ -575,6 +620,7 @@ export class GameObject {
     const id = nextComponent++;
     const instance = instantiate(cls, id, this) as T;
     if (props) Object.assign(instance, props);
+    flushTransforms();
     __iron_op("scene.addComponent", this.id, id, name);
     return instance;
   }
@@ -598,12 +644,14 @@ export class GameObject {
     const i = this.components.indexOf(component);
     if (i < 0) return;
     this.components.splice(i, 1);
+    flushTransforms();
     __iron_op("scene.removeComponent", component.id);
   }
 
   /** Destroys the object, its children and all their components. */
   destroy(): void {
     if (this._destroyed) return;
+    flushTransforms();
     __iron_op("scene.destroy", this.id);
     forget(this);
   }
@@ -762,6 +810,25 @@ globalThis.__iron_dispatch = (id: number, method: string, ...args: unknown[]) =>
   return undefined;
 };
 
+/**
+ * Calls `method` on many components in one go (the engine's per-frame hooks), in order. On a
+ * throw, `__iron_run_at` says which one it was, so the engine can disable it and carry on.
+ */
+globalThis.__iron_run = (method: string, ids: number[], ...args: unknown[]) => {
+  globalThis.__iron_run_at = -1;
+  for (let i = 0; i < ids.length; i++) {
+    const instance = instances.get(ids[i]!) as unknown as Record<string, unknown> | undefined;
+    try {
+      if (!instance) throw new Error(`no component with id ${ids[i]}`);
+      const fn = instance[method];
+      if (typeof fn === "function") fn.apply(instance, args);
+    } catch (e) {
+      globalThis.__iron_run_at = i;
+      throw e;
+    }
+  }
+};
+
 globalThis.__iron_destroy = (id: number) => {
   const instance = instances.get(id);
   instances.delete(id);
@@ -770,6 +837,30 @@ globalThis.__iron_destroy = (id: number) => {
   const i = list.indexOf(instance);
   if (i >= 0) list.splice(i, 1);
 };
+
+/** Transforms changed since the engine last heard, by object id. */
+const pendingTransforms = new Map<number, Transform>();
+
+/**
+ * Sends every queued transform in one `scene.locals` op (`id, px, py, pz, qx, qy, qz, qw,
+ * sx, sy, sz` each, local). The engine calls it when a script turn ends (`__iron_flush`);
+ * other scene ops call it first, so ops keep their order.
+ */
+export function flushTransforms(): void {
+  if (pendingTransforms.size === 0) return;
+  const flat: number[] = [];
+  for (const [id, t] of pendingTransforms) {
+    if (t.gameObject.destroyed) continue;
+    const p = t.localPosition;
+    const q = t.localRotation;
+    const sc = t.localScale;
+    flat.push(id, p.x, p.y, p.z, q.x, q.y, q.z, q.w, sc.x, sc.y, sc.z);
+  }
+  pendingTransforms.clear();
+  if (flat.length) __iron_op("scene.locals", flat);
+}
+
+globalThis.__iron_flush = flushTransforms;
 
 /** Objects the engine moved: `id, px, py, pz, qx, qy, qz, qw, sx, sy, sz` each (local). */
 globalThis.__iron_scene = (moved: number[]) => {

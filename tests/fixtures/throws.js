@@ -1173,6 +1173,11 @@
   var vec = (v) => [v.x, v.y, v.z];
   var quat = (q) => [q.x, q.y, q.z, q.w];
   var scaleListeners = [];
+  var WORLD = { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one, identity: true };
+  function isIdentity(w) {
+    const { position: p, rotation: q, scale: s } = w;
+    return p.x === 0 && p.y === 0 && p.z === 0 && q.x === 0 && q.y === 0 && q.z === 0 && q.w === 1 && s.x === 1 && s.y === 1 && s.z === 1;
+  }
 
   class Transform {
     gameObject;
@@ -1183,7 +1188,7 @@
       this.gameObject = gameObject;
     }
     send() {
-      __iron_op("scene.local", this.gameObject.id, vec(this._position), quat(this._rotation), vec(this._scale));
+      pendingTransforms.set(this.gameObject.id, this);
     }
     _setLocal(position, rotation, scale) {
       const old = this._scale;
@@ -1231,24 +1236,51 @@
     set localEulerAngles(v) {
       this.localRotation = Quaternion.euler(v);
     }
+    world() {
+      const parent = this.gameObject.parent?.transform;
+      if (!parent)
+        return { position: this._position, rotation: this._rotation, scale: this._scale, identity: false };
+      const p = parent.world();
+      if (p.identity || isIdentity(p))
+        return { position: this._position, rotation: this._rotation, scale: this._scale, identity: false };
+      return {
+        position: p.position.add(p.rotation.rotate(p.scale.mul(this._position))),
+        rotation: p.rotation.mul(this._rotation),
+        scale: p.scale.mul(this._scale),
+        identity: false
+      };
+    }
     parentWorld() {
-      const p = this.gameObject.parent?.transform;
-      return p ? { position: p.position, rotation: p.rotation, scale: p.lossyScale } : { position: Vector3.zero, rotation: Quaternion.identity, scale: Vector3.one };
+      return this.gameObject.parent?.transform.world() ?? WORLD;
     }
     get position() {
       const p = this.parentWorld();
+      if (p.identity)
+        return this._position;
       return p.position.add(p.rotation.rotate(p.scale.mul(this._position)));
     }
     set position(v) {
       const p = this.parentWorld();
+      if (p.identity || isIdentity(p)) {
+        this._position = Vector3.from(v);
+        this.send();
+        return;
+      }
       this._position = p.rotation.inverse().rotate(Vector3.from(v).sub(p.position)).div(p.scale);
       this.send();
     }
     get rotation() {
-      return this.parentWorld().rotation.mul(this._rotation);
+      const p = this.parentWorld();
+      return p.identity ? this._rotation : p.rotation.mul(this._rotation);
     }
     set rotation(q) {
-      this._rotation = this.parentWorld().rotation.inverse().mul(q).normalized;
+      const p = this.parentWorld();
+      if (p.identity || isIdentity(p)) {
+        this._rotation = Quaternion.from(q).normalized;
+        this.send();
+        return;
+      }
+      this._rotation = p.rotation.inverse().mul(q).normalized;
       this.send();
     }
     get eulerAngles() {
@@ -1332,6 +1364,7 @@
         this._scene = sceneHooks?.active() ?? null;
       (parent ? parent.children : roots).push(this);
       const t = this.transform;
+      flushTransforms();
       __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
     }
     static _adopt(id, name) {
@@ -1361,6 +1394,7 @@
     }
     set name(name) {
       this._name = name;
+      flushTransforms();
       __iron_op("scene.name", this.id, name);
     }
     get layer() {
@@ -1368,6 +1402,7 @@
     }
     set layer(layer) {
       this._layer = checkLayer(layer);
+      flushTransforms();
       __iron_op("scene.layer", this.id, layer);
     }
     get parent() {
@@ -1399,6 +1434,7 @@
       siblings.splice(siblings.indexOf(this), 1);
       this._parent = parent;
       (parent ? parent.children : roots).push(this);
+      flushTransforms();
       __iron_op("scene.parent", this.id, parent?.id ?? null);
       if (keepWorld) {
         t.position = position;
@@ -1412,6 +1448,7 @@
     }
     set enabled(on) {
       this._enabled = on;
+      flushTransforms();
       __iron_op("scene.enabled", this.id, on);
     }
     get activeInHierarchy() {
@@ -1434,6 +1471,7 @@
       const instance = instantiate(cls, id, this);
       if (props)
         Object.assign(instance, props);
+      flushTransforms();
       __iron_op("scene.addComponent", this.id, id, name);
       return instance;
     }
@@ -1451,11 +1489,13 @@
       if (i < 0)
         return;
       this.components.splice(i, 1);
+      flushTransforms();
       __iron_op("scene.removeComponent", component.id);
     }
     destroy() {
       if (this._destroyed)
         return;
+      flushTransforms();
       __iron_op("scene.destroy", this.id);
       forget(this);
     }
@@ -1557,6 +1597,22 @@
       return fn.apply(instance, args);
     return;
   };
+  globalThis.__iron_run = (method, ids, ...args) => {
+    globalThis.__iron_run_at = -1;
+    for (let i = 0;i < ids.length; i++) {
+      const instance = instances.get(ids[i]);
+      try {
+        if (!instance)
+          throw new Error(`no component with id ${ids[i]}`);
+        const fn = instance[method];
+        if (typeof fn === "function")
+          fn.apply(instance, args);
+      } catch (e) {
+        globalThis.__iron_run_at = i;
+        throw e;
+      }
+    }
+  };
   globalThis.__iron_destroy = (id) => {
     const instance = instances.get(id);
     instances.delete(id);
@@ -1567,6 +1623,24 @@
     if (i >= 0)
       list.splice(i, 1);
   };
+  var pendingTransforms = new Map;
+  function flushTransforms() {
+    if (pendingTransforms.size === 0)
+      return;
+    const flat = [];
+    for (const [id, t] of pendingTransforms) {
+      if (t.gameObject.destroyed)
+        continue;
+      const p = t.localPosition;
+      const q = t.localRotation;
+      const sc = t.localScale;
+      flat.push(id, p.x, p.y, p.z, q.x, q.y, q.z, q.w, sc.x, sc.y, sc.z);
+    }
+    pendingTransforms.clear();
+    if (flat.length)
+      __iron_op("scene.locals", flat);
+  }
+  globalThis.__iron_flush = flushTransforms;
   globalThis.__iron_scene = (moved) => {
     for (let i = 0;i + 10 < moved.length; i += 11) {
       const go = objects.get(moved[i]);
@@ -7635,6 +7709,7 @@ ${err.stack}` : ""}`);
   // ../../js/engine/src/shapes.ts
   var DEG2 = Math.PI / 180;
   // ../../js/engine/src/spline.ts
+  var scratch = new Float64Array(3);
   var _init39, _base39, _dec186, _dec187, _dec188, _dec189, _dec190, _dec191;
 
   class SplineAnimate extends (_base39 = Component) {
