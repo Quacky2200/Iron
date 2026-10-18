@@ -1386,6 +1386,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 - [ ] **M9.b2** `iron_ts`: ahead-of-time TypeScript compiler (oxc → typed Iron IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.
+  **Progress and the next task are tracked in `tools/iron_ts/TODO.md`** (update it every step).
   Rule for this list: a box is ticked only when the whole item is done. Finished parts of an open item
   are ticked sub-items. **STOP** marks an item big or risky enough that we write down the design and
   review it with the user before starting, not after.
