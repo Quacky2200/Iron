@@ -59,12 +59,55 @@ impl<'a> Lowerer<'a> {
                     bail!("for-of over an existing variable")
                 };
                 let pat = &d.declarations[0].id;
-                let arr = self.lower_expr(&f.right, None)?;
+                // `xs.entries()`, `xs.keys()`, `xs.values()` iterate the array directly.
+                let mut mode = "";
+                let mut source = &f.right;
+                if let Expression::CallExpression(call) = &f.right
+                    && call.arguments.is_empty()
+                    && let Expression::StaticMemberExpression(m) = &call.callee
+                    && matches!(m.property.name.as_str(), "entries" | "keys" | "values")
+                {
+                    mode = m.property.name.as_str();
+                    source = &m.object;
+                }
+                // `Object.entries(o)`, `Object.keys(o)`, `Object.values(o)`: the object's fields.
+                if let Expression::CallExpression(call) = &f.right
+                    && call.arguments.len() == 1
+                    && let Expression::StaticMemberExpression(m) = &call.callee
+                    && matches!(&m.object, Expression::Identifier(id) if id.name == "Object")
+                    && self.lookup("Object").is_none()
+                    && m.property.name == "entries"
+                {
+                    return self.lower_for_object_entries(f, call, pat, out);
+                }
+                let arr = self.lower_expr(source, None)?;
+                let arr = if matches!(arr.ty.strip(), Ty::Arr(_) | Ty::Bytes) || mode.is_empty() {
+                    arr
+                } else {
+                    // Not an array (say, a user class with an `entries` method): iterate as written.
+                    mode = "";
+                    self.lower_expr(&f.right, None)?
+                };
                 let it = self.begin_iter(arr)?;
                 self.cur.scopes.push(HashMap::new());
                 // A captured loop variable gets a fresh cell every iteration.
                 let mut bind = Vec::new();
-                self.bind_param(pat, it.elem, &mut bind)?;
+                match (mode, pat) {
+                    ("entries", BindingPattern::ArrayPattern(ap)) if ap.elements.len() == 2 => {
+                        if let Some(p) = &ap.elements[0] {
+                            self.bind_param(p, it.idx, &mut bind)?;
+                        }
+                        if let Some(p) = &ap.elements[1] {
+                            self.bind_param(p, it.elem, &mut bind)?;
+                        }
+                    }
+                    ("entries", _) => bail!(
+                        "{}: `for (const [i, x] of xs.entries())` is the supported form",
+                        self.loc(f.span.start)
+                    ),
+                    ("keys", p) => self.bind_param(p, it.idx, &mut bind)?,
+                    (_, p) => self.bind_param(p, it.elem, &mut bind)?,
+                }
                 let entry = self.loop_entry(it.label, Some(it.label));
                 self.cur.loops.push(entry);
                 let body = self.scoped(&f.body);
@@ -220,6 +263,77 @@ impl<'a> Lowerer<'a> {
             }
             out.push(Stmt::If(is_it, take, vec![]));
         }
+        Ok(())
+    }
+
+    /// `for (const [k, v] of Object.entries(o)) body`: a loop over the keys with the value read
+    /// from the array of values.
+    fn lower_for_object_entries(
+        &mut self,
+        f: &'a ForOfStatement<'a>,
+        call: &'a CallExpression<'a>,
+        pat: &'a BindingPattern<'a>,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        let BindingPattern::ArrayPattern(ap) = pat else {
+            bail!(
+                "{}: `for (const [k, v] of Object.entries(o))` is the supported form",
+                self.loc(f.span.start)
+            )
+        };
+        let Some(arg) = call.arguments.first().and_then(|a| a.as_expression()) else {
+            bail!("Object.entries: missing argument")
+        };
+        let obj = self.lower_expr(arg, None)?;
+        let (keys, vals, pre) = self.object_parts(obj, "Object.entries", true)?;
+        let vty = match vals.ty.strip() {
+            Ty::Arr(e) => (**e).clone(),
+            _ => Ty::Num,
+        };
+        let vals_var = self.new_local(vals.ty.clone());
+        let it = self.begin_iter(keys)?;
+        self.cur.scopes.push(HashMap::new());
+        let mut bind = Vec::new();
+        if ap.elements.len() > 2 || ap.rest.is_some() {
+            bail!("an Object.entries pattern has two parts: [key, value]")
+        }
+        if let Some(Some(p)) = ap.elements.first() {
+            self.bind_param(p, it.elem, &mut bind)?;
+        }
+        if let Some(Some(p)) = ap.elements.get(1) {
+            let raw_ty = if vty.is_ptr() || vty == Ty::Num {
+                vty.clone().nullable()
+            } else {
+                vty.clone()
+            };
+            let raw = mk(
+                ExprKind::Index(
+                    Box::new(self.var_expr(vals_var)),
+                    Box::new(self.var_expr(it.idx)),
+                ),
+                raw_ty.clone(),
+            );
+            let got = if raw_ty == vty {
+                raw
+            } else {
+                mk(ExprKind::Cast(Box::new(raw)), vty.clone())
+            };
+            let v = self.new_local(vty.clone());
+            bind.push(Stmt::Assign(v, got));
+            self.bind_param(p, v, &mut bind)?;
+        }
+        let entry = self.loop_entry(it.label, Some(it.label));
+        self.cur.loops.push(entry);
+        let body = self.scoped(&f.body);
+        self.cur.loops.pop();
+        self.cur.scopes.pop();
+        out.extend(pre);
+        out.push(Stmt::Assign(vals_var, vals));
+        out.extend(it.pre);
+        let mut b = it.head;
+        b.extend(bind);
+        b.extend(body?);
+        out.push(Stmt::Loop(it.label, b));
         Ok(())
     }
 
@@ -583,24 +697,25 @@ impl<'a> Lowerer<'a> {
                 self.bind_pattern(&a.left, picked, out)?;
             }
             BindingPattern::ObjectPattern(o) => {
-                if o.rest.is_some() {
-                    bail!("a rest element in an object pattern is not supported")
-                }
                 let tmp = self.new_local(value.ty.clone());
                 out.push(Stmt::Assign(tmp, value));
+                let mut taken = Vec::new();
                 for p in &o.properties {
                     if p.computed {
                         bail!("computed key in an object pattern")
                     }
                     let key = self.key_name(&p.key)?;
                     let part = self.member_of(self.var_expr(tmp), &key)?;
+                    taken.push(key);
                     self.bind_pattern(&p.value, part, out)?;
+                }
+                // `{ a, ...rest }`: the other fields, as a new object.
+                if let Some(r) = &o.rest {
+                    let rest = self.object_rest(&self.var_expr(tmp), &taken)?;
+                    self.bind_pattern(&r.argument, rest, out)?;
                 }
             }
             BindingPattern::ArrayPattern(a) => {
-                if a.rest.is_some() {
-                    bail!("a rest element in an array pattern is not supported")
-                }
                 let Ty::Arr(el) = value.ty.strip().clone() else {
                     bail!("cannot destructure {} as an array", value.ty)
                 };
@@ -629,6 +744,21 @@ impl<'a> Lowerer<'a> {
                         mk(ExprKind::Cast(Box::new(read)), el.clone())
                     };
                     self.bind_pattern(p, part, out)?;
+                }
+                // `[a, ...rest]`: the others, as a new array.
+                if let Some(r) = &a.rest {
+                    let rest = mk(
+                        ExprKind::Rt(
+                            RtFn::ArrSlice,
+                            vec![
+                                self.var_expr(tmp),
+                                super::expr::num(a.elements.len() as f64),
+                                super::expr::num(f64::INFINITY),
+                            ],
+                        ),
+                        self.var_expr(tmp).ty,
+                    );
+                    self.bind_pattern(&r.argument, rest, out)?;
                 }
             }
         }

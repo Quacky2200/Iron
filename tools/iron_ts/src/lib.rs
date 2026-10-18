@@ -107,11 +107,10 @@ mod tests {
     // M9-TS-15
     #[test]
     fn unsupported_code_is_an_error_with_a_line_number() {
-        let e = lower::lower_source(
-            "export function f(x: number): number {\n  return typeof x === 'number' ? 1 : 0;\n}",
-        )
-        .err()
-        .unwrap();
+        let e =
+            lower::lower_source("export function f(x: number): number {\n  return +new Date();\n}")
+                .err()
+                .unwrap();
         assert!(e.contains("line 2"), "{e}");
         let e = lower::lower_source("export function g(x: any): number { return 1; }")
             .err()
@@ -254,6 +253,29 @@ mod tests {
         // A `try` needs a `catch` or a `finally` (the parser rejects the rest).
     }
 
+    // M9-TS-205
+    #[test]
+    fn object_and_console_helpers_without_a_static_answer_are_errors_with_a_reason() {
+        let pre = "interface P { a: number; b: string } const p: P = { a: 1, b: \"x\" };";
+        for (body, want) in [
+            (
+                "return Object.entries(p).length;",
+                "Object.entries is supported as",
+            ),
+            ("return Object.values(p).length;", "different types"),
+            (
+                "const k = \"a\" + \"b\"; return k in p ? 1 : 0;",
+                "string literal key",
+            ),
+            ("console.log(p); return 1;", "console.log of an object"),
+        ] {
+            let e = lower::lower_source(&format!("{pre} export function f(): number {{ {body} }}"))
+                .err()
+                .unwrap_or_default();
+            assert!(e.contains(want), "{body}: {e}");
+        }
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {
@@ -282,11 +304,12 @@ mod tests {
     // M9-TS-110
     #[test]
     fn array_calls_that_cannot_match_javascript_are_errors_that_say_why() {
-        let e =
-            lower::lower_source("export function f(xs: number[]): number[] { return xs.sort(); }")
-                .err()
-                .unwrap();
-        assert!(e.contains("comparator"), "{e}");
+        let e = lower::lower_source(
+            "export function f(xs: boolean[]): boolean[] { return xs.sort(); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("sort over"), "{e}");
         let e = lower::lower_source(
             "export function f(xs: number[]): number { return xs.reduce((a, x) => a + x); }",
         )

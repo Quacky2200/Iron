@@ -676,6 +676,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-196 | Integration | An uncaught runtime error reaches the host as a pending `RangeError` (`tests/errors.rs`). |
 | M9-TS-197 | Unit | A throwing function nothing reaches does not make closure calls checked (`iron_ts/src/lib.rs`). |
 | M9-TS-198 | Integration | A `break` inside an array callback inlined into a `try ... finally` stays inside the callback (`iron_ts_tests/tests/errors.rs`). |
+| M9-TS-199 | Integration | `typeof` of numbers, strings, booleans, functions, objects, arrays, a missing value and an undeclared name, and `typeof x === "..."` comparisons equal bun's (`iron_ts_tests/tests/stdlib.rs`, `bench/stdlib.ts`, expected data from `bench/gen_stdlib_expected.ts`). |
+| M9-TS-200 | Integration | `Number.isInteger/isNaN/isFinite/isSafeInteger`, global `isNaN`/`isFinite`, the number constants, `Number.parseFloat/parseInt` equal bun's (`tests/stdlib.rs`). |
+| M9-TS-201 | Integration | `Math.sinh cosh tanh asinh acosh atanh expm1 log1p` equal bun's to ten decimals (`tests/stdlib.rs`). |
+| M9-TS-202 | Integration | `toSorted`, `toReversed`, `findLast`, `findLastIndex`, `reduceRight`, `flat`, `flatMap`, the default `sort()` of numbers and strings, and `entries()`/`keys()`/`values()` in `for...of` equal bun's (`tests/stdlib.rs`). |
+| M9-TS-203 | Integration | `console.log/warn/error` join their arguments with spaces and reach the host's console hook with the level (`tests/stdlib.rs`). |
+| M9-TS-204 | Integration | `Object.keys/values/entries/assign/freeze/hasOwn`, `in`, object spread (new fields, source order) and rest, and array rest equal bun's (`tests/stdlib.rs`). |
+| M9-TS-205 | Unit | `Object.entries` outside `for...of`, `Object.values` over mixed types, `in` with a computed key and `console.log` of an object are compile errors with a reason (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

@@ -528,7 +528,7 @@ fn concat_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
 
 /// Ordering by UTF-16 code unit, as JavaScript's `<`: byte order is the order of code points,
 /// which is the same except for a code point above U+FFFF against one in U+D800..U+FFFF.
-fn compare_bytes(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+pub(crate) fn compare_bytes(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
     let n = a.len().min(b.len());
     let Some(k) = (0..n).find(|&k| a[k] != b[k]) else {
         return a.len().cmp(&b.len());

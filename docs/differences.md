@@ -22,6 +22,17 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Iron | The CSS way, no extra flags |
 | Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
 
+## Compiled TypeScript (iron_ts)
+
+The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
+[iron-ts.md](iron-ts.md)):
+
+| Area | Iron | JavaScript | Why |
+|---|---|---|---|
+| `Object.freeze` | Returns the object; later writes are not rejected | Writes fail silently (or throw in strict mode) | Structs have no frozen flag |
+| `typeof` of a nullable | A null value reports `"undefined"`; only the literal `typeof null` is `"object"` | `"object"` for null | The compiler does not tell null from undefined |
+| `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
+
 ## SVG (M3d step 5.1)
 
 | Area | Iron | Browsers / spec | Why |

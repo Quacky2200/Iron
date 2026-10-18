@@ -2,6 +2,7 @@
 //! conversions between strings and numbers. Same rules as `string.rs`: JavaScript's results,
 //! WTF-8 storage, `_gc` functions for generated code.
 
+use super::string::compare_bytes;
 use super::string::*;
 use super::{ts_rt_arr_new_gc, ts_rt_arr_push};
 
@@ -363,6 +364,78 @@ pub unsafe extern "C" fn ts_rt_str_join_nums_gc(
         out.extend_from_slice(number_to_string(x).as_bytes());
     }
     new_gc(out)
+}
+
+/// `xs.sort()` with no comparator: by the string form of each element (UTF-16 code unit order),
+/// stable. `kind` 0 is an array of numbers, 1 an array of strings.
+///
+/// # Safety
+/// `a` must be an array of numbers (kind 0) or of strings (kind 1).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_sort_default(a: *mut super::Array, kind: f64) {
+    // SAFETY: by contract.
+    let a = unsafe { &mut *a };
+    let n = a.len();
+    if n < 2 {
+        return;
+    }
+    if kind == 0.0 {
+        // SAFETY: slots of a number array hold f64s.
+        let mut items: Vec<(String, f64)> = (0..n)
+            .map(|i| {
+                let x = unsafe { a.get::<f64>(i) };
+                (number_to_string(x), x)
+            })
+            .collect();
+        items.sort_by(|p, q| p.0.as_bytes().cmp(q.0.as_bytes()));
+        for (i, (_, x)) in items.into_iter().enumerate() {
+            // SAFETY: in range.
+            unsafe { *(a.data as *mut f64).add(i) = x };
+        }
+    } else {
+        // SAFETY: slots of a string array hold string pointers (or null: sorted last).
+        let mut items: Vec<*const Str> =
+            (0..n).map(|i| unsafe { a.get::<*const Str>(i) }).collect();
+        items.sort_by(|p, q| match (p.is_null(), q.is_null()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (false, false) => compare_bytes(st(*p).as_bytes(), st(*q).as_bytes()),
+        });
+        for (i, p) in items.into_iter().enumerate() {
+            // SAFETY: in range.
+            unsafe { *(a.data as *mut *const Str).add(i) = p };
+        }
+    }
+}
+
+// ---- console ----
+
+/// Where `console.log` and friends go: the level (0 log, 1 info, 2 debug, 3 warn, 4 error) and the
+/// text (UTF-8, valid for the call only).
+pub type ConsoleHook = extern "C" fn(level: i32, text: *const u8, len: usize);
+
+thread_local! {
+    static CONSOLE: std::cell::Cell<Option<ConsoleHook>> = const { std::cell::Cell::new(None) };
+}
+
+/// Sets this thread's console (None: standard error). The engine points it at its log.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_set_console(hook: Option<ConsoleHook>) {
+    CONSOLE.with(|c| c.set(hook));
+}
+
+/// `console.log(..)` and the other levels, with the arguments already joined by spaces.
+///
+/// # Safety
+/// `msg` must be a live string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_console(level: f64, msg: *const Str) {
+    let text = st(msg).to_string_lossy();
+    match CONSOLE.with(|c| c.get()) {
+        Some(hook) => hook(level as i32, text.as_ptr(), text.len()),
+        None => eprintln!("{text}"),
+    }
 }
 
 // ---- numbers and strings ----

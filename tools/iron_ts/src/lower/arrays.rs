@@ -20,6 +20,11 @@ pub(crate) struct Iter {
 
 impl<'a> Lowerer<'a> {
     pub(crate) fn begin_iter(&mut self, arr: Expr) -> R<Iter> {
+        self.begin_iter_dir(arr, false)
+    }
+
+    /// Like `begin_iter`; `rev` walks from the last element to the first (`findLast`).
+    pub(crate) fn begin_iter_dir(&mut self, arr: Expr, rev: bool) -> R<Iter> {
         let el_ty = match arr.ty.strip() {
             Ty::Arr(e) => (**e).clone(),
             Ty::Bytes => Ty::Num,
@@ -32,10 +37,17 @@ impl<'a> Lowerer<'a> {
         let label = self.new_label();
         let (va, vi) = (self.var_expr(a), self.var_expr(i));
         let len = mk(ExprKind::Len(Box::new(va.clone())), Ty::Num);
-        let done = mk(
-            ExprKind::Cmp(CmpOp::Ge, Box::new(vi.clone()), Box::new(len)),
-            Ty::Bool,
-        );
+        let done = if rev {
+            mk(
+                ExprKind::Cmp(CmpOp::Lt, Box::new(vi.clone()), Box::new(num(0.0))),
+                Ty::Bool,
+            )
+        } else {
+            mk(
+                ExprKind::Cmp(CmpOp::Ge, Box::new(vi.clone()), Box::new(len.clone())),
+                Ty::Bool,
+            )
+        };
         let raw_ty = match &el_ty {
             e if arr.ty.strip() != &Ty::Bytes && (e.is_ptr() || *e == Ty::Num) => {
                 e.clone().nullable()
@@ -49,7 +61,11 @@ impl<'a> Lowerer<'a> {
             mk(ExprKind::Cast(Box::new(raw)), el_ty.clone())
         };
         let step = mk(
-            ExprKind::Bin(BinOp::Add, Box::new(vi.clone()), Box::new(num(1.0))),
+            ExprKind::Bin(
+                if rev { BinOp::Sub } else { BinOp::Add },
+                Box::new(vi.clone()),
+                Box::new(num(1.0)),
+            ),
             Ty::Num,
         );
         let head = vec![
@@ -58,7 +74,15 @@ impl<'a> Lowerer<'a> {
             Stmt::Assign(idx, vi),
             Stmt::Assign(i, step),
         ];
-        let pre = vec![Stmt::Assign(a, arr), Stmt::Assign(i, num(0.0))];
+        let first = if rev {
+            mk(
+                ExprKind::Bin(BinOp::Sub, Box::new(len), Box::new(num(1.0))),
+                Ty::Num,
+            )
+        } else {
+            num(0.0)
+        };
+        let pre = vec![Stmt::Assign(a, arr), Stmt::Assign(i, first)];
         Ok(Iter {
             pre,
             label,
@@ -392,9 +416,12 @@ impl<'a> Lowerer<'a> {
                 }
                 Ok(void(stmts))
             }
-            (Ty::Arr(_) | Ty::Bytes, "forEach" | "filter" | "find" | "some" | "every" | "map") => {
+            (
+                Ty::Arr(_) | Ty::Bytes,
+                "forEach" | "filter" | "find" | "findLast" | "some" | "every" | "map",
+            ) => {
                 let cb = cb_arg(0)?;
-                let it = self.begin_iter(recv)?;
+                let it = self.begin_iter_dir(recv, m == "findLast")?;
                 let el = it.el_ty.clone();
                 let (ev, iv) = (it.elem, it.idx);
                 let mut stmts = it.pre.clone();
@@ -407,7 +434,7 @@ impl<'a> Lowerer<'a> {
                         stmts.push(Stmt::Loop(label, body));
                         void(stmts)
                     }
-                    "filter" | "find" | "some" | "every" => {
+                    "filter" | "find" | "findLast" | "some" | "every" => {
                         let r = self.new_local(Ty::Bool);
                         body.push(self.inline_cb(cb, &params, RetKind::Pred, Some(r))?);
                         let rv = self.var_expr(r);
@@ -432,7 +459,7 @@ impl<'a> Lowerer<'a> {
                                 stmts.push(Stmt::Loop(label, body));
                                 mk(ExprKind::Seq(stmts, Box::new(ov)), ty)
                             }
-                            "find" => {
+                            "find" | "findLast" => {
                                 if !(el.is_ptr() || el == Ty::Num) {
                                     bail!("find over {el} elements");
                                 }
@@ -623,19 +650,32 @@ impl<'a> Lowerer<'a> {
                         if !(el.is_ptr() || **el == Ty::Num) {
                             bail!("sort over {el} elements")
                         }
-                        let Some(cmp) = c.arguments.first().and_then(|a| a.as_expression()) else {
-                            bail!(
-                                "{}: sort() without a comparator orders by string value; pass (a, b) => ...",
-                                self.loc(c.span.start)
-                            )
-                        };
-                        let fty = Ty::Fn(Box::new(FnTy {
-                            params: vec![(**el).clone(), (**el).clone()],
-                            ret: Ty::Num,
-                        }));
-                        let cmp = self.lower_expr(cmp, Some(&fty))?;
-                        let cmp = self.coerce(cmp, &fty)?;
-                        ExprKind::Rt(RtFn::ArrSort, vec![av.clone(), cmp])
+                        match c.arguments.first().and_then(|a| a.as_expression()) {
+                            // No comparator: by the string form of each element.
+                            None => {
+                                let kind = match **el {
+                                    Ty::Num => 0.0,
+                                    Ty::Str => 1.0,
+                                    _ => bail!(
+                                        "{}: sort() without a comparator over {el} elements is not supported; pass (a, b) => ...",
+                                        self.loc(c.span.start)
+                                    ),
+                                };
+                                ExprKind::Rt(
+                                    RtFn::Str("ts_rt_arr_sort_default"),
+                                    vec![av.clone(), num(kind)],
+                                )
+                            }
+                            Some(cmp) => {
+                                let fty = Ty::Fn(Box::new(FnTy {
+                                    params: vec![(**el).clone(), (**el).clone()],
+                                    ret: Ty::Num,
+                                }));
+                                let cmp = self.lower_expr(cmp, Some(&fty))?;
+                                let cmp = self.coerce(cmp, &fty)?;
+                                ExprKind::Rt(RtFn::ArrSort, vec![av.clone(), cmp])
+                            }
+                        }
                     }
                     _ => {
                         let v = c
@@ -652,6 +692,71 @@ impl<'a> Lowerer<'a> {
                 };
                 stmts.push(Stmt::Eval(mk(call, Ty::Void)));
                 Ok(mk(ExprKind::Seq(stmts, Box::new(av)), ty))
+            }
+            // The copying forms: a copy, then the in-place method on it.
+            (Ty::Arr(_), "toReversed" | "toSorted") => {
+                let copy = mk(
+                    ExprKind::Rt(
+                        RtFn::ArrSlice,
+                        vec![recv.clone(), num(0.0), num(f64::INFINITY)],
+                    ),
+                    recv.ty.clone(),
+                );
+                self.lower_method(copy, if m == "toSorted" { "sort" } else { "reverse" }, c)
+            }
+            // `xss.flat()`: one level, the arrays' elements in order.
+            (Ty::Arr(el), "flat") => {
+                let Ty::Arr(_) = el.strip() else {
+                    bail!("flat: the elements are {el}, not arrays")
+                };
+                if let Some(d) = c.arguments.first() {
+                    let ok = matches!(d.as_expression(), Some(Expression::NumericLiteral(n)) if n.value == 1.0);
+                    if !ok {
+                        bail!("flat: only the default depth (1) is supported")
+                    }
+                }
+                let ty = (**el).clone();
+                let it = self.begin_iter(recv)?;
+                let out = self.new_local(ty.clone());
+                let ov = self.var_expr(out);
+                let mut stmts = it.pre.clone();
+                stmts.push(Stmt::Assign(
+                    out,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty.clone()),
+                ));
+                let mut body = it.head.clone();
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrAppend, vec![ov.clone(), self.var_expr(it.elem)]),
+                    Ty::Void,
+                )));
+                stmts.push(Stmt::Loop(it.label, body));
+                Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty))
+            }
+            // `xs.flatMap(f)`: `f` returns an array for each element.
+            (Ty::Arr(_), "flatMap") => {
+                let cb = cb_arg(0)?;
+                let it = self.begin_iter(recv)?;
+                let r = self.new_local(Ty::Void);
+                let params = [it.elem, it.idx, it.arr];
+                let mut body = it.head.clone();
+                body.push(self.inline_cb(cb, &params, RetKind::Val, Some(r))?);
+                let ty = self.cur.locals[r as usize].clone();
+                if !matches!(ty, Ty::Arr(_)) {
+                    bail!("flatMap: the callback must return an array, found {ty}")
+                }
+                let out = self.new_local(ty.clone());
+                let ov = self.var_expr(out);
+                let mut stmts = it.pre.clone();
+                stmts.push(Stmt::Assign(
+                    out,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty.clone()),
+                ));
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrAppend, vec![ov.clone(), self.var_expr(r)]),
+                    Ty::Void,
+                )));
+                stmts.push(Stmt::Loop(it.label, body));
+                Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty))
             }
             (Ty::Arr(el), "at") => {
                 let rty = self.nullable_elem(el, m)?;
@@ -716,9 +821,9 @@ impl<'a> Lowerer<'a> {
                     Ty::Num,
                 ))
             }
-            (Ty::Arr(_), "findIndex") => {
+            (Ty::Arr(_), "findIndex" | "findLastIndex") => {
                 let cb = cb_arg(0)?;
-                let it = self.begin_iter(recv)?;
+                let it = self.begin_iter_dir(recv, m == "findLastIndex")?;
                 let (ev, iv) = (it.elem, it.idx);
                 let out = self.new_local(Ty::Num);
                 let r = self.new_local(Ty::Bool);
@@ -737,7 +842,7 @@ impl<'a> Lowerer<'a> {
                     Ty::Num,
                 ))
             }
-            (Ty::Arr(_) | Ty::Bytes, "reduce") => {
+            (Ty::Arr(_) | Ty::Bytes, "reduce" | "reduceRight") => {
                 let cb = cb_arg(0)?;
                 let Some(init) = c.arguments.get(1).and_then(|a| a.as_expression()) else {
                     bail!("reduce needs an initial value")
@@ -747,7 +852,7 @@ impl<'a> Lowerer<'a> {
                     bail!("reduce: the initial value cannot be null")
                 }
                 let acc = self.new_local(init.ty.clone());
-                let it = self.begin_iter(recv)?;
+                let it = self.begin_iter_dir(recv, m == "reduceRight")?;
                 let mut stmts = it.pre.clone();
                 stmts.push(Stmt::Assign(acc, init));
                 let mut body = it.head.clone();

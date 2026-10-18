@@ -216,6 +216,18 @@ pub mod errs {
     include!(concat!(env!("OUT_DIR"), "/errors_bindings.rs"));
 }
 
+/// The standard library in compiled code (`bench/stdlib.ts`), prefix `std_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod stdl {
+    include!(concat!(env!("OUT_DIR"), "/stdlib_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

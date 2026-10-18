@@ -4,10 +4,11 @@ Status: **proposal, no code yet** (a STOP item of `tools/iron_ts/TODO.md`, item 
 2026-10-18 after the request: "add a bare minimum JS framework such as Intl / Date / String / Array /
 Object and anything other common JS you can think of, perhaps RegExp / `.match`".
 
-Status (2026-10-18): tier 1 steps A-D are implemented: `throw`, `try`/`catch`/`finally` and the Error
-classes (section 4.1; see "Exceptions" in [../iron-ts.md](../iron-ts.md)), and `join` of number arrays.
-Still open in tier 1: `typeof`, `Object.*`, the `Array`/`Number`/`Math` gaps and `console`. The tables
-below describe the state before this work.
+Status (2026-10-18): tier 1 is done, steps A-H: `throw`, `try`/`catch`/`finally` and the Error classes
+(section 4.1; see "Exceptions" in [../iron-ts.md](../iron-ts.md)), `join` of number arrays, `typeof`, the
+`Number`/`Math`/`Array` gaps, `console`, and `Object.*` with object spread and rest (see "Standard library
+tier 1, steps E-H" there; tests M9-TS-199..205). Next: tier 2, `Map`/`Set`/`WeakMap`/`WeakSet` and `JSON`.
+The tables below describe the state before this work.
 
 ## 1. The rule
 

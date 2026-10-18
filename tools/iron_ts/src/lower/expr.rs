@@ -244,6 +244,22 @@ impl<'a> Lowerer<'a> {
             };
         }
         if let Expression::Identifier(id) = &m.object
+            && id.name == "Number"
+            && self.lookup("Number").is_none()
+        {
+            return match prop {
+                "EPSILON" => Ok(num(f64::EPSILON)),
+                "MAX_SAFE_INTEGER" => Ok(num(9007199254740991.0)),
+                "MIN_SAFE_INTEGER" => Ok(num(-9007199254740991.0)),
+                "MAX_VALUE" => Ok(num(f64::MAX)),
+                "MIN_VALUE" => Ok(num(f64::from_bits(1))),
+                "POSITIVE_INFINITY" => Ok(num(f64::INFINITY)),
+                "NEGATIVE_INFINITY" => Ok(num(f64::NEG_INFINITY)),
+                "NaN" => Ok(num(f64::NAN)),
+                _ => bail!("Number.{prop} is not a value"),
+            };
+        }
+        if let Expression::Identifier(id) = &m.object
             && self.lookup(id.name.as_str()).is_none()
             && let Some(v) = self.enum_member(id.name.as_str(), prop)
         {
@@ -395,6 +411,9 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_unary(&mut self, u: &'a UnaryExpression<'a>) -> R<Expr> {
+        if u.operator == UnaryOperator::Typeof {
+            return self.lower_typeof(&u.argument);
+        }
         let a = self.lower_expr(&u.argument, None)?;
         match u.operator {
             UnaryOperator::LogicalNot => {
@@ -623,6 +642,10 @@ impl<'a> Lowerer<'a> {
         if b.operator == B::Instanceof {
             return self.lower_instanceof(b);
         }
+        if b.operator == B::In {
+            let obj = self.lower_expr(&b.right, None)?;
+            return self.lower_in(&b.left, obj, b.span.start);
+        }
         let l = self.lower_expr(&b.left, None)?;
         // A bare string literal compares against the other side's literal type.
         let r = self.lower_expr(&b.right, Some(l.ty.strip()))?;
@@ -780,14 +803,25 @@ impl<'a> Lowerer<'a> {
             Some(Ty::Obj(s)) => Some(*s),
             _ => None,
         };
-        // Lower every value first (with the field type as context when the struct is known).
-        let mut spreads: Vec<Expr> = Vec::new();
-        let mut props: Vec<(String, Expr)> = Vec::new();
+        // Lower every value first (with the field type as context when the struct is known), in
+        // source order: a later spread or property wins.
+        enum Item {
+            Spread(Expr),
+            Prop(String, Expr),
+        }
+        let mut items: Vec<Item> = Vec::new();
         for p in &o.properties {
             match p {
                 ObjectPropertyKind::SpreadProperty(s) => {
                     let e = self.lower_expr(&s.argument, exp)?;
-                    spreads.push(e);
+                    if !matches!(e.ty.strip(), Ty::Obj(_)) {
+                        bail!(
+                            "{}: spread of {}, not an object",
+                            self.loc(s.span.start),
+                            e.ty
+                        )
+                    }
+                    items.push(Item::Spread(e));
                 }
                 ObjectPropertyKind::ObjectProperty(p) => {
                     if p.computed || p.method {
@@ -801,52 +835,79 @@ impl<'a> Lowerer<'a> {
                         None => record.cloned(),
                     };
                     let v = self.lower_expr(&p.value, want.as_ref())?;
-                    props.push((name, v));
+                    items.push(Item::Prop(name, v));
                 }
             }
         }
         let sid = match exp_sid {
             Some(s) => s,
             None => {
-                if let Some(first) = spreads.first() {
-                    let Ty::Obj(s) = first.ty.strip() else {
-                        bail!("spread of a non-object")
+                // The fields in order of first appearance; a later value takes the type.
+                let mut fields: Vec<Field> = Vec::new();
+                let mut upsert =
+                    |name: String, ty: Ty| match fields.iter_mut().find(|f| f.name == name) {
+                        Some(f) => f.ty = ty,
+                        None => fields.push(Field { name, ty }),
                     };
-                    *s
-                } else {
-                    let fields = props
-                        .iter()
-                        .map(|(n, v)| Field {
-                            name: n.clone(),
-                            ty: record.cloned().unwrap_or_else(|| v.ty.clone()),
-                        })
-                        .collect();
-                    self.anon_struct("Anon", fields)
+                let mut only_spread = None;
+                for it in &items {
+                    match it {
+                        Item::Spread(e) => {
+                            let Ty::Obj(s) = e.ty.strip() else {
+                                unreachable!("checked")
+                            };
+                            only_spread = Some(*s);
+                            for f in &self.m.structs[*s].fields {
+                                upsert(f.name.clone(), f.ty.clone());
+                            }
+                        }
+                        Item::Prop(n, v) => {
+                            upsert(n.clone(), record.cloned().unwrap_or_else(|| v.ty.clone()))
+                        }
+                    }
+                }
+                let single_spread = items.len() == 1 && matches!(items[0], Item::Spread(_));
+                match only_spread {
+                    // `{ ...a }` is a copy with the type of `a`.
+                    Some(s) if single_spread => s,
+                    _ => self.anon_struct("Anon", fields),
                 }
             }
         };
         let tmp = self.new_local(Ty::Obj(sid));
         let t = self.var_expr(tmp);
         let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), Ty::Obj(sid)))];
-        // JS order: spreads and properties in source order. Spreads first is equal here because the
-        // source puts them before the overrides.
-        for s in spreads {
-            let src = self.new_local(s.ty.clone());
-            stmts.push(Stmt::Assign(src, s));
-            let n = self.m.structs[sid].fields.len();
-            for i in 0..n {
-                let fty = self.m.structs[sid].fields[i].ty.clone();
-                let read = mk(ExprKind::Field(Box::new(self.var_expr(src)), sid, i), fty);
-                stmts.push(Stmt::StoreField(t.clone(), sid, i, read));
+        for it in items {
+            match it {
+                Item::Spread(s) => {
+                    let Ty::Obj(ssid) = s.ty.strip().clone() else {
+                        unreachable!("checked")
+                    };
+                    let src = self.new_local(s.ty.clone());
+                    stmts.push(Stmt::Assign(src, s));
+                    for fi in 0..self.m.structs[ssid].fields.len() {
+                        let (name, fty) = {
+                            let f = &self.m.structs[ssid].fields[fi];
+                            (f.name.clone(), f.ty.clone())
+                        };
+                        let Some(i) = self.m.structs[sid].field(&name) else {
+                            continue;
+                        };
+                        let want = self.m.structs[sid].fields[i].ty.clone();
+                        let read = mk(ExprKind::Field(Box::new(self.var_expr(src)), ssid, fi), fty);
+                        let read = self.coerce(read, &want)?;
+                        stmts.push(Stmt::StoreField(t.clone(), sid, i, read));
+                    }
+                }
+                Item::Prop(name, v) => {
+                    let Some(i) = self.m.structs[sid].field(&name) else {
+                        bail!("{} has no field `{name}`", self.m.structs[sid].name)
+                    };
+                    let fty = self.m.structs[sid].fields[i].ty.clone();
+                    let v = self.coerce(v, &fty)?;
+                    stmts.push(Stmt::StoreField(t.clone(), sid, i, v));
+                }
             }
-        }
-        for (name, v) in props {
-            let Some(i) = self.m.structs[sid].field(&name) else {
-                bail!("{} has no field `{name}`", self.m.structs[sid].name)
-            };
-            let fty = self.m.structs[sid].fields[i].ty.clone();
-            let v = self.coerce(v, &fty)?;
-            stmts.push(Stmt::StoreField(t.clone(), sid, i, v));
         }
         // Fields that are nullable and not given start as null, not as a zero number.
         let given: Vec<String> = Vec::new();
@@ -1434,6 +1495,24 @@ impl<'a> Lowerer<'a> {
                     return self.lower_string_static(method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
+                    && id.name == "Number"
+                    && self.lookup("Number").is_none()
+                {
+                    return self.lower_number_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "Object"
+                    && self.lookup("Object").is_none()
+                {
+                    return self.lower_object_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "console"
+                    && self.lookup("console").is_none()
+                {
+                    return self.lower_console(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
                     && id.name == "Array"
                     && self.lookup("Array").is_none()
                 {
@@ -1545,6 +1624,14 @@ impl<'a> Lowerer<'a> {
             ("log2", 1) => un(UnOp::Libm("ts_rt_log2"), it.next().unwrap()),
             ("log10", 1) => un(UnOp::Libm("ts_rt_log10"), it.next().unwrap()),
             ("cbrt", 1) => un(UnOp::Libm("ts_rt_cbrt"), it.next().unwrap()),
+            ("sinh", 1) => un(UnOp::Libm("ts_rt_sinh"), it.next().unwrap()),
+            ("cosh", 1) => un(UnOp::Libm("ts_rt_cosh"), it.next().unwrap()),
+            ("tanh", 1) => un(UnOp::Libm("ts_rt_tanh"), it.next().unwrap()),
+            ("asinh", 1) => un(UnOp::Libm("ts_rt_asinh"), it.next().unwrap()),
+            ("acosh", 1) => un(UnOp::Libm("ts_rt_acosh"), it.next().unwrap()),
+            ("atanh", 1) => un(UnOp::Libm("ts_rt_atanh"), it.next().unwrap()),
+            ("expm1", 1) => un(UnOp::Libm("ts_rt_expm1"), it.next().unwrap()),
+            ("log1p", 1) => un(UnOp::Libm("ts_rt_log1p"), it.next().unwrap()),
             ("pow", 2) => bin(BinOp::Pow, it.next().unwrap(), it.next().unwrap()),
             ("random", 0) => mk(ExprKind::Rt(RtFn::Random, vec![]), Ty::Num),
             ("hypot", 2) => bin(BinOp::Hypot, it.next().unwrap(), it.next().unwrap()),

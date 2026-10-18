@@ -389,7 +389,120 @@ impl<'a> Lowerer<'a> {
         Ok(self.rt_str(sym, vec![recv, sep], Ty::Str))
     }
 
-    /// `String(x)`, `Number(x)`, `parseInt(s, radix)`, `parseFloat(s)`.
+    /// `typeof x`: its type's name, known statically (the program is typed); a nullable value is
+    /// `"undefined"` while it is null (the compiler does not tell `null` from `undefined`).
+    pub(crate) fn lower_typeof(&mut self, arg: &'a Expression<'a>) -> R<Expr> {
+        let tag = |this: &mut Self, name: &str| {
+            let t = this.tag(name);
+            mk(ExprKind::Tag(t), Ty::Lit)
+        };
+        let a = match self.lower_expr(arg, None) {
+            Ok(a) => a,
+            // `typeof notDeclared` is "undefined", not an error.
+            Err(_) if matches!(arg, Expression::Identifier(_)) => {
+                return Ok(tag(self, "undefined"));
+            }
+            Err(e) => return Err(e),
+        };
+        let name_of = |t: &Ty| match t.strip() {
+            Ty::Num => "number",
+            Ty::Bool => "boolean",
+            Ty::Str | Ty::Lit => "string",
+            Ty::Fn(_) => "function",
+            Ty::Void => "undefined",
+            Ty::Null => {
+                if matches!(arg, Expression::NullLiteral(_)) {
+                    "object"
+                } else {
+                    "undefined"
+                }
+            }
+            _ => "object",
+        };
+        let plain = !matches!(
+            a.kind,
+            ExprKind::Var(_)
+                | ExprKind::Num(_)
+                | ExprKind::Bool(_)
+                | ExprKind::Tag(_)
+                | ExprKind::Str(_)
+                | ExprKind::Null
+                | ExprKind::Global(_)
+                | ExprKind::GlobalVar(_)
+        );
+        if a.ty.is_nullable() && a.ty != Ty::Null {
+            let inner = name_of(&a.ty);
+            let tmp = self.new_local(a.ty.clone());
+            let is_null = mk(ExprKind::IsNull(Box::new(self.var_expr(tmp))), Ty::Bool);
+            let (u, t) = (tag(self, "undefined"), tag(self, inner));
+            let cond = mk(
+                ExprKind::Cond(Box::new(is_null), Box::new(u), Box::new(t)),
+                Ty::Lit,
+            );
+            return Ok(mk(
+                ExprKind::Seq(vec![Stmt::Assign(tmp, a)], Box::new(cond)),
+                Ty::Lit,
+            ));
+        }
+        let t = tag(self, name_of(&a.ty));
+        Ok(if plain {
+            mk(ExprKind::Seq(vec![Stmt::Eval(a)], Box::new(t)), Ty::Lit)
+        } else {
+            t
+        })
+    }
+
+    /// `Number.isNaN(x)`, `isFinite`, `isInteger`, `isSafeInteger`, `parseFloat`, `parseInt`.
+    pub(crate) fn lower_number_static(
+        &mut self,
+        method: &str,
+        c: &'a CallExpression<'a>,
+    ) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        if matches!(method, "parseFloat" | "parseInt") {
+            return match self.lower_string_global(method, c)? {
+                Some(e) => Ok(e),
+                None => bail!("{at}: Number.{method} is not supported"),
+            };
+        }
+        let Some(e) = c.arguments.first().and_then(|a| a.as_expression()) else {
+            bail!("{at}: Number.{method}: missing argument")
+        };
+        let x = self.lower_expr(e, Some(&Ty::Num))?;
+        // Anything that is not a number is false (no coercion), and a type error otherwise.
+        if x.ty.strip() != &Ty::Num {
+            return Ok(mk(ExprKind::Bool(false), Ty::Bool));
+        }
+        let x = self.as_num(x)?;
+        let t = self.new_local(Ty::Num);
+        let v = self.var_expr(t);
+        let cmp = |op, a: Expr, b: Expr| mk(ExprKind::Cmp(op, Box::new(a), Box::new(b)), Ty::Bool);
+        let sub =
+            |a: Expr, b: Expr| mk(ExprKind::Bin(BinOp::Sub, Box::new(a), Box::new(b)), Ty::Num);
+        let un = |op, a: Expr| mk(ExprKind::Un(op, Box::new(a)), Ty::Num);
+        let finite = cmp(CmpOp::Eq, sub(v.clone(), v.clone()), num(0.0));
+        let body = match method {
+            "isNaN" => cmp(CmpOp::Ne, v.clone(), v.clone()),
+            "isFinite" => finite,
+            "isInteger" | "isSafeInteger" => {
+                let whole = cmp(CmpOp::Eq, un(UnOp::Trunc, v.clone()), v.clone());
+                let both = mk(ExprKind::And(Box::new(finite), Box::new(whole)), Ty::Bool);
+                if method == "isInteger" {
+                    both
+                } else {
+                    let small = cmp(CmpOp::Le, un(UnOp::Abs, v.clone()), num(9007199254740991.0));
+                    mk(ExprKind::And(Box::new(both), Box::new(small)), Ty::Bool)
+                }
+            }
+            m => bail!("{at}: Number.{m} is not supported yet"),
+        };
+        Ok(mk(
+            ExprKind::Seq(vec![Stmt::Assign(t, x)], Box::new(body)),
+            Ty::Bool,
+        ))
+    }
+
+    /// `String(x)`, `Number(x)`, `parseInt(s, radix)`, `parseFloat(s)`, `isNaN(x)`, `isFinite(x)`.
     pub(crate) fn lower_string_global(
         &mut self,
         name: &str,
@@ -403,6 +516,38 @@ impl<'a> Lowerer<'a> {
             }
         };
         Ok(Some(match name {
+            "isNaN" | "isFinite" => {
+                let v = first(self)?;
+                let n = match v.ty.strip() {
+                    Ty::Num => v,
+                    Ty::Str | Ty::Lit => {
+                        let s = self.widen_lit(v);
+                        self.rt_str("ts_rt_str_to_number", vec![s], Ty::Num)
+                    }
+                    t => bail!("{at}: {name}({t}) is not supported"),
+                };
+                let t = self.new_local(Ty::Num);
+                let x = self.var_expr(t);
+                let body = if name == "isNaN" {
+                    mk(
+                        ExprKind::Cmp(CmpOp::Ne, Box::new(x.clone()), Box::new(x)),
+                        Ty::Bool,
+                    )
+                } else {
+                    let d = mk(
+                        ExprKind::Bin(BinOp::Sub, Box::new(x.clone()), Box::new(x)),
+                        Ty::Num,
+                    );
+                    mk(
+                        ExprKind::Cmp(CmpOp::Eq, Box::new(d), Box::new(num(0.0))),
+                        Ty::Bool,
+                    )
+                };
+                mk(
+                    ExprKind::Seq(vec![Stmt::Assign(t, n)], Box::new(body)),
+                    Ty::Bool,
+                )
+            }
             "String" => {
                 if c.arguments.is_empty() {
                     return Ok(Some(self.str_lit("")));
@@ -451,6 +596,48 @@ impl<'a> Lowerer<'a> {
             ExprKind::Cond(Box::new(b), Box::new(num(1.0)), Box::new(num(0.0))),
             Ty::Num,
         )
+    }
+
+    /// `console.log(a, b, ..)` (and `info`, `debug`, `warn`, `error`): the arguments as strings
+    /// joined by spaces, handed to the host's console. Strings, numbers, booleans and null only.
+    pub(crate) fn lower_console(&mut self, method: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let level = match method {
+            "log" => 0.0,
+            "info" => 1.0,
+            "debug" => 2.0,
+            "warn" => 3.0,
+            "error" => 4.0,
+            m => bail!("{at}: console.{m} is not supported yet"),
+        };
+        let mut acc: Option<Expr> = None;
+        for a in &c.arguments {
+            let Some(e) = a.as_expression() else {
+                bail!("{at}: console.{method}: spread argument")
+            };
+            let v = self.lower_expr(e, None)?;
+            if matches!(
+                v.ty.strip(),
+                Ty::Obj(_) | Ty::Arr(_) | Ty::Bytes | Ty::Fn(_)
+            ) {
+                bail!(
+                    "{at}: console.{method} of an object or array is not supported yet; log its fields"
+                )
+            }
+            let sep = self.str_lit(" ");
+            acc = Some(match acc {
+                None => self.stringify(v)?,
+                Some(a) => {
+                    let a = self.str_concat(a, sep)?;
+                    self.str_concat(a, v)?
+                }
+            });
+        }
+        let msg = match acc {
+            Some(m) => m,
+            None => self.str_lit(""),
+        };
+        Ok(self.rt_str("ts_rt_console", vec![num(level), msg], Ty::Void))
     }
 
     /// `String.fromCharCode(a, b, ...)` and `String.fromCodePoint(a, b, ...)`.

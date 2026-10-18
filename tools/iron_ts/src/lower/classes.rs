@@ -83,6 +83,8 @@ impl<'a> Lowerer<'a> {
             None => match init {
                 Some(Expression::NumericLiteral(_)) => Ty::Num,
                 Some(Expression::BooleanLiteral(_)) => Ty::Bool,
+                // `name = "x"` and `` name = `x${y}` `` are strings.
+                Some(Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) => Ty::Str,
                 Some(Expression::UnaryExpression(u))
                     if u.operator == UnaryOperator::UnaryNegation
                         && matches!(u.argument, Expression::NumericLiteral(_)) =>

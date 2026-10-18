@@ -138,12 +138,12 @@ bytes, bindings text, IR dump and the time of each phase.
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
 | Array callbacks | `map`, `filter`, `forEach`, `find`, `some`, `every` (and `reduce`, `findIndex`, `includes`) are index loops with an arrow callback's body inlined; no closure object. A non-arrow callback is called as a closure per element |
-| Array library | `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `reverse`, `fill`, `sort(cmp)` (stable merge sort in the runtime), `indexOf`, `at`, `length = n`, `Array.from/of/isArray`, `new Array(n)` |
+| Array library | `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `reverse`, `fill`, `sort(cmp)` and default `sort()` (stable merge sort in the runtime), `indexOf`, `at`, `length = n`, `Array.from/of/isArray`, `new Array(n)`; see "Standard library tier 1" for the rest |
 | Loops and labels | `while`, `for(;;)`, `do...while`, `for...of`, labelled `break`/`continue` and blocks; per-iteration `let` cells when a closure captures the variable |
 | `switch` | The clause index is chosen by `===` compares, then the bodies run in order (fall-through, `default` anywhere) |
 | Enums | Numeric and string enums fold to constants, no run-time cost |
 | Destructuring | Declarations, parameters, `for...of` variables and callbacks; defaults via `IsNull` |
-| Spread | Arrays, objects (field by field) and calls into a rest parameter |
+| Spread | Arrays, objects (field by field, in source order, new shapes allowed) and calls into a rest parameter |
 | Module variables | A literal `const` is folded; any other `const`, and every `let`/`var`, is a data slot written by `ts_init` (`Place::Global`) |
 | `Math` and operators | Inline instructions or `ts_rt_*` (libm, JS `pow`, `random`); `**`, `~`, `??=`, `\|\|=`, `&&=`, bit operations with ToInt32 |
 | Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below); methods as values (`obj.m` is a closure over the receiver, so unlike JS a detached method keeps its `this`); arrow-function fields (the constructor scan includes field initialisers); `@property` on instance fields as compile-time metadata |
@@ -166,7 +166,7 @@ bytes, bindings text, IR dump and the time of each phase.
   string literals with lone surrogates.
 - `join` of a `number[]` is `ts_rt_str_join_nums_gc`; a top-level `let s = "x"` widens to `string`.
   Runtime functions that JavaScript makes throw raise a runtime error (see "Exceptions").
-- Not done: `typeof`, `codePointAt` past the end (gives plain NaN, not undefined), optional chaining on
+- Not done: `codePointAt` past the end (gives plain NaN, not undefined), optional chaining on
   strings, object-literal fields with no declared type, `join` of other non-string arrays.
 - The binding generator emits `TAG_*` constants only for texts that are valid, distinct identifiers.
 - Tests: `bench/strings.ts` with `tests/strings.rs` (M9-TS-178..182, prefix `str_`, base 16000);
@@ -209,6 +209,34 @@ Error classes. Exceptions are checked returns, not unwinding, and only in functi
 - Tests: `bench/errors.ts` with `tests/errors.rs` (M9-TS-187..197, prefix `err_`, base 17000);
   expected values come from `bench/gen_errors_expected.ts` (bun) into `errors_expected.json`.
 
+**Standard library tier 1, steps E-H** ([lower/object.rs](../tools/iron_ts/src/lower/object.rs), the expression and
+call lowering in `lower/expr.rs`, `arrays.rs`, `strings.rs`; design in [iron-ts-stdlib.md](research/iron-ts-stdlib.md)).
+JavaScript's answer exactly; anything not built is a compile error.
+- **`typeof`.** Static, from the type; the result is a string-literal tag, so comparisons fold to
+  constants. `typeof undeclared` is `"undefined"`. The compiler does not tell null from undefined: a
+  nullable value that is null reports `"undefined"`, and only the literal `typeof null` is `"object"`.
+- **`Number` and `Math`.** `Number.isInteger/isNaN/isFinite/isSafeInteger/parseFloat/parseInt`, the
+  constants (`EPSILON`, `MAX_SAFE_INTEGER`, `MIN_SAFE_INTEGER`, `MAX_VALUE`, `MIN_VALUE`,
+  `POSITIVE_INFINITY`, `NEGATIVE_INFINITY`, `NaN`), global `isNaN`/`isFinite`; `Math.sinh cosh tanh
+  asinh acosh atanh expm1 log1p` (runtime libm functions).
+- **`Array`.** `toSorted toReversed findLast findLastIndex reduceRight flat flatMap`; `sort()` with no
+  comparator (numbers and strings, compared as strings in code unit order, stable:
+  `ts_rt_arr_sort_default`); `for (const [i, x] of xs.entries())` and `keys()`/`values()` in `for...of`;
+  array rest in patterns (`[first, ...others]`).
+- **`console`.** `log info debug warn error` of strings, numbers, booleans and null, joined by spaces and
+  sent to a host hook (`ts_rt_set_console`; stderr by default; levels 0 to 4). Objects are a compile error.
+- **`Object`.** Keys are the struct's fields, fixed at compile time. `Object.keys/values/assign/freeze/
+  hasOwn`, `for (const [k, v] of Object.entries(o))`; `values` and `entries` need one common value type;
+  `hasOwn` and `in` need a string literal key. Object spread in source order with new shapes
+  (`{ ...a, z: 3 }`) and object rest (`const { x, ...rest } = o`). `freeze` does not reject later writes.
+  Class fields initialised with a string literal are `string`.
+- **Fixed.** A `break` inside a callback inlined into a `try`/`finally`; the string scan cursor is one
+  atomic word.
+- Not built: Array `with`, `toSpliced`, `copyWithin`, `Array.from({length})`, `Object.fromEntries`,
+  `console` of objects.
+- Tests: `bench/stdlib.ts` with `tests/stdlib.rs` (M9-TS-199..205); expected values come from
+  `bench/gen_stdlib_expected.ts` (bun) into `stdlib_expected.json`.
+
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
 sees the whole program, so a method call `a.m()` is resolved exactly: if one implementation is
@@ -220,9 +248,8 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 `C` and its subclasses). A subclass must be declared after its base. Details and limits:
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
-Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), `typeof`, class expressions, generics, extending engine classes (`Component`),
-throwing anything but an `Error` object, unsupported string methods (see above), `Map`, `for...in`, rest elements in
-patterns, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
+Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes (`Component`),
+throwing anything but an `Error` object, unsupported string methods (see above), `Map`, `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
