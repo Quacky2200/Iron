@@ -1512,8 +1512,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] **Direct engine calls**: **STOP, design first.** Biggest payoff, biggest surface. Direction set by
         the user: the engine is native and TypeScript sees it only as declaration files (`.d.ts`); scripts
         call native functions directly (maths, `Date`, scene, physics, audio); QuickJS stays as an option
-    - [ ] Design note: extern classes (`declare class`), opaque handles versus laid-out structs, hooks
-          entered through a function table, `f32` value types, what `.d.ts` is generated from
+    - [x] Design note written: `docs/research/iron-ts-engine-boundary.md` (declared handle / value / singleton /
+          extern-base classes, manifest generated from Rust, class table and hooks, f32, what `js/engine`
+          becomes module by module, QuickJS bindings from the same manifest). **Waiting for the user's
+          answers to its section 11**
     - [ ] Inventory the `__iron_op` names and shapes (`js/engine/src`) and what each passes
     - [ ] Value types with shared layouts: `Vector2/3/4`, `Quaternion`, `Color`, `Matrix` are TS classes in
           `math.ts` today; decide: compile `math.ts` natively, or intrinsics over glam types (f32 fields:

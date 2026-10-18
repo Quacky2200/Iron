@@ -71,14 +71,15 @@ The compiler needs to know, per declared type, how its values are represented. F
 ### 4.1 Handle classes (identity objects owned by the engine)
 
 `GameObject`, `Transform`, `Rigidbody`, `Collider`, `AudioSource`, `Camera`, `Light`, `MeshRenderer`,
-`Animator`, ... A value is the engine's **generational id**, a 64-bit integer (`ObjectId` already is
-one). Proposal: a new IR type `Handle(class)`, an `i64` in a register. It is not a heap object, so it
+`Animator`, ... A value is the engine's **generational id**, a 64-bit integer (`ObjectId` in `iron_scene` is an index plus a
+generation already; today scripts use their own numeric ids that the engine maps to it, and a handle
+would be the engine id itself, which removes that map). Proposal: a new IR type `Handle(class)`, an `i64` in a register. It is not a heap object, so it
 costs no allocation and no GC root; `===` compares ids; zero is `null`/`undefined`.
 
 Methods and accessors become direct calls: `t.position` is `ts_eng_Transform_position(h, &out)`,
 `t.position = v` is `ts_eng_Transform_set_position(h, x, y, z)`. A stale handle (the object was
 destroyed) must not crash: the engine checks the generation and the call does nothing / returns the
-default. That matches today's behaviour, where ops on a destroyed object are ignored.
+default. The arena already behaves like this: a stale id misses.
 
 Because the engine owns the data, the TypeScript mirror goes away: there is one copy of a transform,
 in Rust, and `transform.position` reads it. (The `moved` batch exists only to keep the mirror true.)

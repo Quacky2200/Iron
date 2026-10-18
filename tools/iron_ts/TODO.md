@@ -83,21 +83,20 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Answers to the Classes note are recorded** (`docs/research/iron-ts-classes.md` section 12): as recommended,
-except that the engine becomes native with `.d.ts` declarations, so `Component`/`Vector3` are extern classes
-and the **engine-boundary design note comes before inheritance from them**. Next, in this order:
+**Two design notes wait for the user's review:** `docs/research/iron-ts-classes.md` (answered, section 12) and
+`docs/research/iron-ts-engine-boundary.md` (section 11 has seven questions). No code for classes that extend
+an engine type, or for engine calls, until the engine-boundary answers are in.
 
-1. **Engine-boundary design note** (`TODO.md` "Direct engine calls", **STOP**): a document in `docs/research/`,
-   no compiler changes. Extern classes, handles, `f32` value types, hooks through a function table, what the
-   `.d.ts` files are generated from, the `__iron_op` inventory.
-2. **Plain classes** (Classes sub-task 1-3: fields, constructor, methods, `this`, getters/setters, statics,
-   private): independent of the engine note, so it can run first if the note needs the user's time.
-3. Then the other design notes the direction creates: structural typing, UI without React, dev loop without
-   Bun. Each is a **STOP**: document, user review, then code.
+What needs no decision, in the order I would take it:
 
-Non-STOP candidates while a review is pending: the IR verifier for the GC root rule, the differential
-harness against bun, small language leftovers (rest elements, `in`/`void`/`f?.()`, `flat`/`entries`),
-closures leftovers (named function expressions, capture by value).
+1. **Plain classes** (Classes sub-tasks 1-3: fields, constructor, methods, `this`, getters/setters, statics,
+   private). Independent of the engine note (answers recorded in the classes note).
+2. **IR verifier for the GC root rule** (debug builds), then the **differential harness** against bun.
+3. Small leftovers: rest elements and assignment patterns, `in`/`void`/`f?.()`, `flat`/`entries`, named function
+   expressions, capture by value.
+
+Design notes still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun,
+strings (UTF-16 or UTF-8; the engine boundary needs it for names and paths).
 
 ## Backlog
 
@@ -121,6 +120,7 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
   defaults via `Cond(IsNull)` (spike doc section 14.1). Rest elements and assignment patterns are open.
 - 2026-10-18 `switch` and enums (`M9-TS-64..70`): clause index then ordered bodies (fall-through, default
   anywhere), enums folded to constants, bit-operation constant folding (spike doc section 13).
+- 2026-10-18 Engine-boundary design note written (`docs/research/iron-ts-engine-boundary.md`); awaiting review.
 - 2026-10-18 Loops (`M9-TS-57..63`): `for(;;)`, `do...while`, labelled `break`/`continue`, labelled blocks,
   per-iteration `let` cells in `for` heads (spike doc section 12).
 - 2026-10-18 Classes design note written (`docs/research/iron-ts-classes.md`); awaiting review.
