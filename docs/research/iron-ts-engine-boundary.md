@@ -297,3 +297,35 @@ proc-macro crate and a generator), not in `tools/`, and the engine crates that c
 (`iron_scene`, `iron_physics`, `iron_audio`, `iron_script`) are where the first annotated functions
 go. `iron_render` and `iron_app` carry the `render.*`, `app.*`, `cursor.*` and `screen.*` ops and
 belong to another session's area, so they are left for last, and for whoever owns them.
+
+## 14. First slice of `#[iron_api]`: built (2026-10-18)
+
+Sub-task 1 of section 12, in its smallest useful form: two new crates in the engine workspace,
+additive (nothing else depends on them, `__iron_op` is untouched).
+
+- `crates/iron_api_macros`: `#[iron_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]`
+  on an inline `pub mod`. It keeps the module's code and adds `MANIFEST`, one `extern "C"` shim per
+  `pub fn` (`iron_Demo_add`), and with `quickjs` a `register_quickjs(ctx)`.
+- `crates/iron_api`: the manifest types (`Namespace`, `Function`, `Param`, `Ty`), the `Handle` trait
+  (the Rust id type implements `to_raw`/`from_raw`), and the generators `to_dts()` (the TypeScript
+  declaration, doc comments as JSDoc) and `to_json()` (the table the compiler will read).
+- Supported so far: functions over `f64`, `f32`, `i32`, `u32`, `bool`, `()` and declared handle
+  types. Handles are `number & { __handle }` in TypeScript, a `u64` through the C ABI and a plain
+  number in QuickJS. No registry or linker trick: everything the macro needs is in the one module it
+  is attached to.
+- **QuickJS gets typed functions**, not `__iron_op(name, ...args)`: `Demo.add(1, 2)` is a native
+  closure taking `f64`s. Measured with `cargo test -p iron_api --release -- --ignored --nocapture`:
+  1,000,000 calls take about 150 ns each through the typed function and about 245 ns through a
+  simplified `__iron_op` (a name string, a rest array of numbers, a queue push; the real op also
+  converts each argument to a `Value`, so the real gap is larger). Most of the remaining 150 ns is
+  QuickJS's own call overhead; the large win is for compiled code, which calls the shim directly.
+- Tests: `crates/iron_api/tests/api.rs` (`M9-API-01`..`06`).
+
+**Not built yet** (next, in order): the compiler reading the JSON manifest (an extern call node, the
+`Handle` type, f32/i32/u32/bool conversions at the call), value classes (`Vector3`) scalarised across
+the boundary, strings, methods on handles (`transform.position`) and the engine context those need (the
+shims are free functions, so anything that touches the world must reach it through state the host
+sets up, for example a thread-local current world; that design is open), and annotating the real
+engine crates. The crates that carry ops today are `iron_scene`, `iron_physics`, `iron_audio` and
+`iron_script`; `render.*`, `app.*`, `cursor.*` and `screen.*` live in `iron_render` and `iron_app`
+and are left for their owner.

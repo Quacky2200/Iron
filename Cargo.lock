@@ -1479,6 +1479,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_api"
+version = "0.1.0"
+dependencies = [
+ "iron_api_macros",
+ "rquickjs",
+]
+
+[[package]]
+name = "iron_api_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "iron_app"
 version = "0.1.0"
 dependencies = [

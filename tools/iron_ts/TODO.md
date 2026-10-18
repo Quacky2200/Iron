@@ -83,19 +83,19 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Plain classes and inheritance are done** (`M9-TS-111..136`; classes note sections 13 and 14). Both design notes are
-answered. Next, in the order the notes give:
+**Done:** plain classes, inheritance, bound methods, `@property` tables (`M9-TS-111..140`); the first slice of
+`#[iron_api]` in the engine workspace (`crates/iron_api`, `M9-API-01..06`).
 
-1. `typeof` and class expressions (the rest of Classes sub-task 3/4), then Classes is down to `Component` itself, which
-   waits for the manifest. (Done: methods as values `M9-TS-137`, `@property` tables `M9-TS-139`.)
-2. **`#[iron_api]` and the manifest** (engine-boundary note, sub-task 1), in `iron_scene`/`iron_physics`/`iron_audio`/
-   `iron_script`; not `iron_render`/`iron_app`.
-3. Then the compiler's extern table and `Handle` type, extending an engine class (`Component`), and the first vertical
-   slice (a compiled `Component` moving a `Transform`).
+Next, in order:
 
-Still to write (each a **STOP**): structural typing (needed before passing a class where an interface is expected),
-UI without React, dev loop without Bun, strings. Fillers: IR verifier for the GC root rule, differential harness
-against bun, small language leftovers.
+1. **The compiler reads the manifest** (engine-boundary note sub-task 2): `--manifest file.json`, a `Demo.add(1, 2)`
+   call becomes an extern call to `iron_Demo_add`, a `Handle` IR type (`i64`, not a GC pointer), f32/i32/u32/bool
+   conversions at the call. Test it end to end by linking `iron_api` (without the `quickjs` feature) into `iron_ts_tests`.
+2. Value classes across the boundary, then the engine context and annotating the real crates (boundary note section 14).
+3. `typeof`, class expressions; extending an engine class (`Component`) once 1-2 exist.
+
+Still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun, strings. Fillers: IR
+verifier for the GC root rule, differential harness against bun.
 
 ## Backlog
 
@@ -119,6 +119,8 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
   defaults via `Cond(IsNull)` (spike doc section 14.1). Rest elements and assignment patterns are open.
 - 2026-10-18 `switch` and enums (`M9-TS-64..70`): clause index then ordered bodies (fall-through, default
   anywhere), enums folded to constants, bit-operation constant folding (spike doc section 13).
+- 2026-10-18 `#[iron_api]` first slice in the engine workspace (`crates/iron_api`, `iron_api_macros`; `M9-API-01..06`): manifest,
+  `.d.ts`, JSON, `extern "C"` shims, typed QuickJS bindings (150 ns a call against 245 ns for a simplified op).
 - 2026-10-18 `@property` reflection tables (`M9-TS-139, 140`): compile-time metadata, a generated `PROPS_<Class>` constant per class.
 - 2026-10-18 Methods as values (bound closures over the receiver) and arrow-function fields (`M9-TS-137, 138`).
 - 2026-10-18 Inheritance (`M9-TS-120..136`): prefix layout, `$init` constructors with `super(...)`, direct calls by whole-program

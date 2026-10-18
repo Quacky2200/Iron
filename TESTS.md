@@ -619,6 +619,12 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-138 | Integration | A method taken as a value from a base-typed variable still dispatches on the real class. Runs in all three GC modes (`tests/inherit.rs`). |
 | M9-TS-139 | Integration | The `@property` table lists only the marked fields, in declaration order with the base class's first, with byte offsets and type names (`PROPS_Player`, `PROPS_Hero`). Not GC-dependent (`tests/props.rs`). |
 | M9-TS-140 | Integration | A host writes properties through the table (a number, a boolean, a subclass's own through its table and a base property through the base table) and the compiled code sees the new values; run with a collection at every allocation (`tests/props.rs`). |
+| M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
+| M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
+| M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
+| M9-API-04 | Unit | The generated `extern "C"` shims call the functions with the C ABI, including `f32`, `i32`, `bool` and handles as raw ids (`crates/iron_api/tests/api.rs`). |
+| M9-API-05 | Unit | The generated QuickJS bindings install the namespace as a global with typed arguments and results (`crates/iron_api/tests/api.rs`). |
+| M9-API-06 | Benchmark (ignored) | 1,000,000 typed QuickJS calls against the same through an `__iron_op`-style queue; prints the time per call (`crates/iron_api/tests/api.rs`). |
 
 ---
 
