@@ -1,106 +1,116 @@
 # iron_ts: strings (design note, for review)
 
-Status: **proposal, no code yet** (a STOP item of `tools/iron_ts/TODO.md`). Written 2026-10-18 after
-the decision in the engine-boundary note (section 7) that string-taking engine functions wait for it.
+Status: **proposal, no code yet** (a STOP item of `tools/iron_ts/TODO.md`). Written 2026-10-18, revised
+the same day after review. The engine-boundary note (section 7) made string-taking engine functions
+wait for this.
 
-## 1. Decision from the review
+## 1. Decisions from the review
 
-Strings are **UTF-8 inside Iron**. The TypeScript source is read as it is (oxc gives UTF-8 text with
-JavaScript's own escapes already decoded), and the compiled program and the engine both hold strings
-as UTF-8 bytes. UTF-16 exists in JavaScript for historical reasons, and nothing in Iron needs it:
-Rust, the OS file APIs, the renderer's text shaper (Parley) and the asset paths are all UTF-8. The cost
-is bytes: a CJK character is 3 bytes in UTF-8 and 2 in UTF-16, which is fine.
+1. **Strings are stored as UTF-8 bytes** (the Rust-native encoding: `&str`, `String`, file paths,
+   Parley, wgpu labels). UTF-16 is only how JavaScript *describes* strings, so it is never stored.
+2. **Observable behaviour is JavaScript's, exactly, with no runtime differences.** A script gives
+   the answer a JavaScript developer expects: `"héllo".length`, `"😀".length === 2`, `s[i]`,
+   `charCodeAt`, `slice` by UTF-16 index, `<` ordering by code unit, lone surrogates allowed. If
+   compiled code and bun disagree, that is a bug, not a documented difference. The overhead is paid
+   inside the string type, not by the developer (section 3).
 
-What changes is not the storage but a handful of JavaScript behaviours that are defined in UTF-16
-code units. Section 3 lists them and proposes what compiled code does instead. Please check section 3
-and the questions in section 6; the rest is mechanics.
+The two decisions are compatible because of one storage rule: **WTF-8**. WTF-8 is UTF-8 plus the
+three-byte encodings of lone surrogates, so every JavaScript string (any sequence of UTF-16 code
+units) has exactly one byte form, and a string without lone surrogates (almost all of them) *is*
+valid UTF-8, byte for byte. SpiderMonkey and Servo use the same idea.
 
 ## 2. Representation
 
-The runtime already has `Str { header, len, data }` (`iron_ts_rt`), a GC object that points at a
-separate byte buffer. Proposal:
+The runtime has `Str { header, len, data }` (`iron_ts_rt`), a GC object pointing at a separate
+buffer. Proposal:
 
-- **Always valid UTF-8.** Every string the program can make is valid UTF-8: literals are checked by
-  the compiler, engine strings are `&str` (Rust guarantees it), and string operations keep it valid.
-  The one JavaScript value that cannot be represented, a lone surrogate (`"\uD800"`), is a compile
-  error in a literal and impossible at run time (section 3).
-- **One allocation, not two.** `Str { header, len, hash_or_flags, bytes... }` with the bytes inline
-  after the header, so a string is a single GC object (cheaper to allocate, no second raw buffer to
-  free). The collector already treats `HDR_STR` as a leaf (no pointers inside).
-- **Literals** live in the data section as static `Str` objects (header marked static), so using a
-  literal allocates nothing and comparing a literal is a pointer or length-and-bytes compare.
-- **Immutable.** Concatenation allocates a new string. A template literal `` `a${x}b` `` is lowered
-  to one runtime call that measures, allocates once and writes the pieces (not a chain of `+`).
-  Repeated `s += x` in a loop is quadratic, as in a naive engine; ropes are a later optimisation and
-  the representation leaves room (a flags word).
-- **Equality** is length then bytes. **Hashing** (for `Map<string, T>` and object keys later) is
-  computed lazily and cached in the spare word.
-- `string | null`: the null pointer, like every other pointer type.
-- **String-literal unions** (`"idle" | "run"`) stay small integers as today (`Ty::Lit`); converting a
-  union member to a `string` (to print it or pass it to the engine) uses the compiler's table of tags,
-  which already exists.
+```
+Str { header, byte_len, flags, utf16_len, cursor_utf16, cursor_byte, bytes... }
+```
 
-## 3. Where JavaScript semantics differ, and what we do
+- **One allocation** with the bytes inline (no second raw buffer). `HDR_STR` is already a leaf for
+  the collector. Literals are static `Str` objects in the data section (no allocation to use one).
+- **flags**: `ASCII` (every byte < 0x80), `WELL_FORMED` (no lone surrogates, so valid UTF-8).
+  Both are computed once when the string is made, in the same pass that measures `utf16_len`
+  (vectorised for the ASCII check).
+- **`utf16_len`** is stored, so `s.length` is a load, always.
+- **A one-entry cursor** (`cursor_utf16` <-> `cursor_byte`) remembers the last index converted.
+  `for (let i = 0; i < s.length; i++) s.charCodeAt(i)` and every forward scan is then O(1) per step
+  even for non-ASCII text; a random access into a non-ASCII string costs one scan from the nearest of
+  start, cursor and end. ASCII strings (identifiers, paths, tags: nearly everything) are always O(1).
+- **Immutable.** `a + b` allocates a new string; a template literal `` `a${x}b` `` is one runtime call
+  that measures, allocates once and writes the pieces. Concatenation that joins a trailing lone high
+  surrogate to a leading lone low surrogate must re-encode the pair as one four-byte sequence (the
+  WTF-8 rule), which keeps byte equality equal to JavaScript equality; that check is two byte tests
+  at the seam. `s += x` in a loop is quadratic as in a naive engine; ropes are a later
+  optimisation the flags word leaves room for.
+- **Equality** is length then bytes (valid because WTF-8 is canonical). **Hash** is computed lazily
+  and cached for `Map<string, T>` and string-keyed records.
+- `string | null` is the null pointer; string-literal unions (`"idle" | "run"`) stay small integers
+  (`Ty::Lit`) and convert to a `Str` through the compiler's tag table when a `string` is needed.
 
-JavaScript counts, indexes and orders strings in UTF-16 code units. In UTF-8 the same operations
-need a choice. For text that is entirely ASCII (almost all game identifiers, paths and tags) every
-choice below gives the same answer as JavaScript.
+## 3. JavaScript semantics, operation by operation
 
-| Operation | JavaScript | Proposal |
+All of these are as JavaScript, on UTF-16 code units. The implementation notes say how, without
+storing UTF-16.
+
+| Operation | Behaviour | How |
 |---|---|---|
-| `s.length` | UTF-16 code units | **Code units are what scripts expect, so compute them:** the length in UTF-16 units, cached after the first call for non-ASCII strings. ASCII-only strings (flag set at creation) answer in O(1). |
-| `s[i]`, `s.charAt(i)`, `s.charCodeAt(i)`, `s.slice(a, b)`, `s.substring`, `s.indexOf` results | by code unit index | Same units as `length`, so a program that works on ASCII works identically. For a non-ASCII string an index is converted to a byte offset by scanning (O(n)), unless the string is flagged ASCII (O(1)). An index that falls between the two halves of a surrogate pair (an emoji) is **a runtime fault**, never a lone surrogate. |
-| `s.codePointAt(i)`, `for (const ch of s)`, `[...s]` | code points | Direct on UTF-8 (the natural unit). Recommended in the docs for non-ASCII text. |
-| `<`, `>`, `localeCompare`-free sorting | UTF-16 code unit order | **UTF-8 byte order (code point order)**. It differs from JavaScript only when comparing an astral character (emoji) with a BMP character at U+E000 and above. We accept this difference and list it in `docs/differences.md`. |
-| lone surrogates (`"\uD800"`, `String.fromCharCode(0xD800)`) | allowed | Not representable. A literal is a compile error; `fromCharCode` of a surrogate is a runtime fault; a lone surrogate from JSON or `JSON.parse` input is replaced with U+FFFD. |
-| `toUpperCase`, `toLowerCase`, `normalize`, `localeCompare`, `Intl` | full Unicode, locale | Not in the first slice; ASCII-only case mapping first, full Unicode from Rust's tables later. |
-| `number.toString()`, `parseFloat` | shortest round-trip | Same algorithm as the runtime's number printer (Rust's `ryu`-style shortest output); tested against bun for a table of values. |
+| `s.length` | UTF-16 units | the stored `utf16_len` |
+| `s[i]`, `charAt`, `charCodeAt`, `at` | the unit at `i`, including half of a surrogate pair | convert `i` to a byte offset (O(1) ASCII, cursor otherwise); decode the code point there and return the high or low half as asked. No lone surrogate is created to answer. |
+| `codePointAt`, `for...of`, `[...s]`, `Array.from(s)` | code points, a lone surrogate as itself | decode directly |
+| `slice`, `substring`, `substr`, `split("")`, `padStart`... | by unit index, **may cut a pair in half** | convert both ends to byte offsets; a cut inside a four-byte sequence produces the WTF-8 three-byte form of the lone surrogate(s). Exactly JavaScript's result. |
+| `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith` | byte search (memchr/two-way) | results converted back to unit indices (O(1) ASCII; scan from the cursor otherwise) |
+| `<`, `>`, `<=`, `>=`, `sort()` default | **UTF-16 code unit order** | byte comparison is wrong only when comparing a four-byte sequence (lead byte F0..F4) against a three-byte sequence of U+E000..U+FFFF (lead byte EE/EF). The comparison runs memcmp and, at the first differing byte, applies the one-line correction when either lead byte is F0..F4 and the other EE/EF. Exact, and free for ASCII. |
+| `"\uD800"`, `String.fromCharCode(0xD800)`, `fromCodePoint` | lone surrogates are values | stored as the WTF-8 three-byte form |
+| `toUpperCase`, `toLowerCase` | full Unicode, special casing | Rust's tables (`char::to_uppercase`, handles `ß` -> `SS`, final sigma rule needs care); lone surrogates pass through |
+| `localeCompare`, `normalize`, `Intl.*` | locale / Unicode | `normalize` via a Rust normalisation crate; `localeCompare` and `Intl` are their own later item (needs a decision on ICU data size); until they exist, calling them is a compile error, never a silently different answer |
+| `number.toString()`, `String(x)`, `parseFloat`, `Number(s)` | shortest round-trip decimal, exponent rules | the runtime's number printer; tested against bun on a table of edge values (`1e21`, `-0`, `0.1+0.2`, `5e-324`) |
+| `JSON.stringify` / `parse` | escapes lone surrogates as `\udXXX` | follows the spec, later item |
+| `RegExp` | JS syntax, UTF-16 index semantics, `u` and `v` flags | later item, own design note |
 
-Fault policy follows the engine-boundary note: native faults crash for now, with a message.
+Tests: every row has a differential test that runs the same TypeScript in bun and in compiled code
+over a corpus of ASCII, Latin-1, BMP, CJK, astral (emoji) and lone-surrogate strings, in the normal,
+GC-stress and collection-off modes, like the language-area tests today.
 
 ## 4. Across the engine boundary
 
-- **Into the engine** (`GameObject.find(name: string)`, `PlayerPrefs.getInt(key)`): the shim takes a
-  pointer and a length (`name_ptr: *const u8, name_len: usize`) and the macro builds a `&str`
-  (checked once with `from_utf8_unchecked` because the compiler guarantees validity; a debug build
-  checks). The `&str` is **borrowed for the call only**: the engine must copy it if it keeps it. The
-  script string cannot move (the collector is non-moving) and cannot be collected during the call (it
-  is rooted by the caller's frame), so no copy is needed to make the call.
-- **Out of the engine** (`go.name`): the shim returns through an out pointer to a freshly allocated
-  script string, using a non-collecting constructor (as the value-class results do). The Rust side
-  returns `String` or `&str`; the macro copies it into the script heap.
-- **Manifest and `.d.ts`:** a new type `string` (`"string"` in the JSON). It maps to TypeScript's
-  `string` unchanged, and to one more pair of ABI parameters (pointer, length) or an out pointer.
-- **QuickJS:** the generated bindings use rquickjs `String`, converted to and from `&str`. QuickJS
-  strings are UTF-16 internally and convert on the way; this is the existing, unchanged cost of the
-  optional QuickJS path.
+The engine speaks Rust: `&str` and `String` (valid UTF-8).
 
-## 5. What this unlocks, and slices
+- **Into the engine** (`GameObject.find(name)`, `PlayerPrefs.getInt(key)`): the shim takes pointer and
+  length. For a `WELL_FORMED` string (the normal case) the macro builds a **borrowed `&str` over the
+  script's bytes, no copy**. The collector is non-moving and the caller's frame roots the string, so
+  it stays valid for the call. The engine copies what it keeps. A string with a lone surrogate (not
+  valid UTF-8) is converted to a temporary `String` with U+FFFD replacing the lone surrogates (what
+  every JavaScript host does when it hands a string to a UTF-8 API); the common path stays free.
+- **Out of the engine** (`go.name`): the Rust side returns `String` or `&str` (valid UTF-8, hence
+  `WELL_FORMED`); the shim copies it into a new script string through the non-collecting constructor,
+  measuring its UTF-16 length in the same pass.
+- **Manifest and `.d.ts`:** a new type `string`; TypeScript sees `string`. The compiler passes the
+  (pointer, length) pair or an out pointer, like value classes.
+- **QuickJS:** unchanged cost, rquickjs `String` converted to and from `&str` (QuickJS stores
+  Latin-1 or UTF-16 internally).
 
-1. **Runtime:** inline-bytes `Str`, flags (ASCII), `length` in UTF-16 units, concat, template
-   literals, equality, comparison, `indexOf`, `slice`, `charCodeAt`, `startsWith`/`endsWith`/
-   `includes`, `trim`, `split`/`join` on arrays of strings, `toString` of numbers, `String(x)`.
-   Differential tests against bun on a corpus of ASCII, BMP and astral strings.
-2. **Compiler:** `string` locals, fields, arrays and parameters (the pointer type already exists);
-   literals in the data section; the operations above lowered to runtime calls; `string | null`.
-3. **Boundary:** the `string` manifest type, the macro and the compiler's argument and result
-   conversion; then annotate the first string-taking engine functions (`GameObject.name`,
-   `GameObject.find`) in `iron_scene`.
-4. **Later:** `Map<string, T>` and string-keyed object records (hash cache), ropes, full Unicode case
-   mapping, `RegExp` (a Rust regex engine behind a small API, the syntax subset to be decided).
+## 5. Slices
 
-Estimated size: slice 1 and 2 are the bulk (a few hundred lines of runtime and a day of tests);
-slice 3 is small because the value-class and handle plumbing is already there.
+1. **Runtime:** the new `Str`, flags and length in one pass, cursor, `+`/template literals, equality,
+   ordering, `charCodeAt`/`codePointAt`/`at`/index, `slice`/`substring`, `indexOf`/`includes`/
+   `startsWith`/`endsWith`, `trim`, `split`/`join`, `repeat`, `padStart/End`, case mapping,
+   `String(number)`, `parseInt/parseFloat/Number`, `fromCharCode/fromCodePoint`; differential tests.
+2. **Compiler:** `string` locals, fields, arrays, parameters and returns; literals in the data
+   section (a literal with a lone surrogate escape is fine now); the operations as runtime calls;
+   `string | null`; `typeof`.
+3. **Boundary:** the `string` manifest type, macro and compiler conversion; then `GameObject.name`
+   and `GameObject.find` in `iron_scene` (the first string-taking engine functions).
+4. **Later, each its own item:** `Map<string, T>` and string-keyed records, ropes, `RegExp`,
+   `JSON`, `normalize`, `localeCompare`/`Intl`.
 
-## 6. Questions for you
+## 6. What I still need from you
 
-1. **`length` and indices in UTF-16 units (proposed) or in code points / bytes?** Units keep ported
-   JavaScript (bun libraries) working unchanged and match what TypeScript programmers expect; it
-   costs an O(n) scan for non-ASCII strings. Code points or bytes would be simpler and faster but
-   `"héllo".length` would differ from JavaScript.
-2. **Ordering by code point (proposed) instead of UTF-16 code units.** One documented difference
-   that only shows with emoji against U+E000..U+FFFF. OK?
-3. **Lone surrogates are not representable** (compile error or fault, U+FFFD from JSON). OK?
-4. **Engine strings are borrowed for the call** and the engine copies what it keeps. OK, or should the
-   engine side receive an owned `String` always (simpler to use, one copy per call)?
-5. Do you want **`RegExp`** in the first set of slices, or only after the language-features backlog?
+1. **OK with WTF-8 as the storage** (UTF-8 for everything except lone surrogates, which have the
+   three-byte form)? It is the only way to keep JavaScript's exact results *and* hand Rust `&str`
+   without copying.
+2. **Calling `localeCompare` / `Intl` / `RegExp` before they exist is a compile error** (never a
+   different answer). OK? Or should the first slices include a minimal `localeCompare` (code point
+   order, which differs from real locale rules and would break "no differences")?
+3. **Lone surrogates at the engine boundary become U+FFFD** (as every JS host does). OK?
