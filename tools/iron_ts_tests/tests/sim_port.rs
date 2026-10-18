@@ -1,4 +1,5 @@
-//! The 13 cases of `examples/topdown-zombie-game/src/sim.test.ts`, run against native code that
+//! The 13 cases of `fixtures/sim.test.ts` (the zombie game's, kept here since the game moved
+//! to its own repository), run against native code that
 //! `iron_ts` compiled from `sim.ts`. Test IDs are in TESTS.md (M9-TS-*).
 #![allow(non_snake_case)]
 

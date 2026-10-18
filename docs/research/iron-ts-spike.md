@@ -1,7 +1,8 @@
 # Spike: `iron_ts`, TypeScript gameplay code compiled ahead of time
 
 Status: spike done (2026-10-18), then a garbage collector (same day). It proves the pipeline on one real file,
-`examples/topdown-zombie-game/src/sim.ts` (678 lines of pure game rules). It is not wired into
+the zombie game's `sim.ts` (678 lines of pure game rules, kept as `tools/iron_ts_tests/fixtures/sim.ts`
+since the game moved to the zombie-horders repository's `iron` branch). It is not wired into
 `iron` or the build scripts, and it lives outside the engine workspace in `tools/`.
 
 Context: QuickJS is an interpreter (no JIT, which iOS requires). A sine demo that built meshes in

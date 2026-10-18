@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let src_path = manifest.join("../../examples/topdown-zombie-game/src/sim.ts");
+    let src_path = manifest.join("fixtures/sim.ts");
     println!("cargo:rerun-if-changed={}", src_path.display());
     println!("cargo:rerun-if-changed=build.rs");
     let src = std::fs::read_to_string(&src_path).expect("read sim.ts");

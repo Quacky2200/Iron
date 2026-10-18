@@ -2,7 +2,7 @@
 // ten zombies alive, 50 parked bullets (plus the MP5's own). `bench(n)` steps n times at 1/60 s and returns a checksum
 // so every engine can be checked against the others. Run with `bun bench.ts` or bundled into
 // QuickJS (`__bench`).
-import { addPlayer, buildWalls, createState, startLevel, step, type PlayerInput, type SimState } from "../../../examples/topdown-zombie-game/src/sim.ts";
+import { addPlayer, buildWalls, createState, startLevel, step, type PlayerInput, type SimState } from "../fixtures/sim.ts";
 
 const W = 1022;
 const H = 750;
