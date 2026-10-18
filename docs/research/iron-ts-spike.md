@@ -134,13 +134,15 @@ unions and `Set` over them, nullable numbers and objects, nested inline types, t
 constants (numbers inlined; objects, `as const satisfies Record<string, Gun>` and arrays built by
 a generated `ts_init`), arrow-function and `function` declarations with inferred return types,
 callbacks passed in (`walls: (map: number) => Walls`, called through a closure), `for...of`,
-`while`, `break` / `continue`, optional chaining, `!`, spread of objects, the array methods above.
+`while`, `break` / `continue`, optional chaining, `!`, spread of objects, the array methods above. Since
+then (sections 12-15): `for(;;)`, `do...while`, labels, `switch`, enums, destructuring, default/optional/rest
+parameters, spread of arrays, module-level `let`, the `Math` and array libraries, `**` `~` `??=` `||=` `&&=`.
 
 Not supported (each is a compile error naming the source line, `M9-TS-15`):
 
-- Classes, `this`, methods, generics, destructuring, default/rest parameters, `switch`, `try` /
-  `throw`, template literals, general string code (`+`, `.length`, `===` on `string`), `Map`,
-  `typeof`, `for(;;)` with an update clause, `for...in`, `Array.from`, array/object spread, getters.
+- Classes, `this`, methods, getters (design note: `iron-ts-classes.md`), generics, `try` / `throw`,
+  template literals, general string code (`+`, `.length`, `===` on `string`), `Map`, `typeof`,
+  `for...in`, rest elements in patterns, assignment patterns (`[a, b] = [b, a]`), `async`.
 - `JsValue` (anything dynamic: `any`, unions of unrelated types, property access by computed name).
 - Known deviations: `NaN` payload for `null` means `null === null` of two nullable numbers is false
   (compare with the literal `null`, which is exact); numbers beyond ±2^63 in bit operations; `==`
@@ -369,7 +371,7 @@ modules of a typical game as native code; React UI code stays on QuickJS (see ne
 
 | Step | What | Estimate |
 |---|---|---|
-| 1. Language coverage | ~~Closures with capture cells~~ (done, section 4), classes + methods + `this`, destructuring, defaults, `switch`, template literals and strings, `Map`, generics by monomorphisation, enums | 6-8 weeks |
+| 1. Language coverage | ~~Closures with capture cells~~ (done, section 4), classes + methods + `this`, template literals and strings, `Map`, generics by monomorphisation; ~~destructuring, defaults, `switch`, enums, loops, `Math`, arrays~~ (done, sections 12-15) | 6-8 weeks |
 | 2. Real types | Bun sidecar that dumps the TypeScript checker's per-expression types as JSON; map to IR types; drop the in-compiler inference | 3-4 weeks |
 | 3. Direct engine calls | Expose engine functions as `extern "C"` with shared layouts instead of `__iron_op` value conversion. `Vector3` = glam `Vec3` (a value type in the IR: 3 x f32 in registers or `f32x4`), `Quaternion`, `Color`; `Mathf` and vector arithmetic as intrinsics emitted inline; component lifecycle (`onUpdate`) entered through a function table; physics/scene/audio ops as direct calls | 4-5 weeks |
 | 4. GC | **Spike done** (section 6: shadow stack, non-moving mark-sweep, stress mode). Left: generations or incrementality if heaps get big, escape analysis for frame temporaries, cheaper frames, GC-allocated closure cells | 1-2 weeks |

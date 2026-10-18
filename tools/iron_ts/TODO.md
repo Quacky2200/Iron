@@ -83,16 +83,24 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Classes: design note written (`docs/research/iron-ts-classes.md`), waiting for the user's answers to its
-section 11.** No class code until then (STOP item). Meanwhile the non-STOP stages go ahead, each with its
-design paragraph written first (spike doc, one section per stage) and its own commit:
+**Waiting for the user's answers to section 11 of `docs/research/iron-ts-classes.md`** (closed world,
+vtable choice, order of classes versus the engine boundary, value classes, structural typing first,
+scope cut). No class code before that: Classes is a **STOP** item.
 
-1. ~~`for(;;)`, `do...while`, labels~~ done
-2. ~~`switch` and enums~~ done (spike doc section 13)
-3. ~~default and rest parameters, destructuring, spread~~ done (spike doc section 14; rest elements and assignment patterns are open)
-4. ~~library surface: `Math`, array methods~~ done (spike doc section 15; strings, `Map`/`Set` and typed arrays wait for their own items)
+The non-STOP stages are done (loops, switch/enums, destructuring, parameters, spread, `Math`, arrays; see
+the log). While waiting, the next candidates that need no decision, in the order I would take them:
 
-Mark the stage you are on here and tick it in `TODO.md` M9.b2 only when the whole sub-item is done.
+1. **IR verifier for the GC root rule** (`TODO.md` GC item 4): a debug-build pass over every function
+   that checks no pointer-typed SSA value is live across an allocating operation without a frame slot.
+   It turns "the lowering produces safe IR" from an argument into a check, and the next four features
+   (classes, strings, maps, generics) will each add new ways to hold a pointer.
+2. **Differential harness** (`TODO.md` conformance item): run every `bench/*.ts` module in bun and
+   natively and compare automatically, instead of pasting bun's numbers into the tests by hand.
+3. Remaining small language items: rest elements and assignment patterns, `in`/`void`/`delete`/`f?.()`,
+   `findLast`/`flat`/`flatMap`/`entries`/`keys`, `for...of` over `Map`/`Set`.
+4. Closures leftovers: named function expressions, capture by value when a variable is never reassigned.
+
+Then strings (a **STOP**: UTF-16 or UTF-8 first).
 
 ## Backlog
 
