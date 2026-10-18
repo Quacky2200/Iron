@@ -294,7 +294,7 @@ impl<'a> Lowerer<'a> {
         self.coerce(v, &Ty::Str)
     }
 
-    fn num_arg(&mut self, e: &'a Expression<'a>) -> R<Expr> {
+    pub(crate) fn num_arg(&mut self, e: &'a Expression<'a>) -> R<Expr> {
         let v = self.lower_expr(e, Some(&Ty::Num))?;
         self.as_num(v)
     }
@@ -593,6 +593,7 @@ impl<'a> Lowerer<'a> {
                     return Ok(Some(num(0.0)));
                 }
                 let v = first(self)?;
+                let v = self.date_value(v);
                 match v.ty.strip() {
                     Ty::Num => v,
                     Ty::Bool => self.bool_as_num(v),

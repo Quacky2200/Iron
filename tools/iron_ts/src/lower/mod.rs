@@ -11,6 +11,7 @@ macro_rules! bail {
 mod arrays;
 mod classes;
 mod closure;
+mod date;
 mod enums;
 mod expr;
 mod json;
@@ -207,12 +208,15 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     // Programs that use errors get the `Error` classes compiled in front of them.
     let mut head = String::new();
-    if prelude::wanted(src) || prelude::wants_regexp(src) {
+    if prelude::wanted(src) || prelude::wants_regexp(src) || prelude::wants_date(src) {
         // Regular expressions throw `SyntaxError`s, so they bring the error classes along.
         head += prelude::ERRORS;
     }
     if prelude::wants_regexp(src) {
         head += prelude::REGEXP;
+    }
+    if prelude::wants_date(src) {
+        head += prelude::DATE;
     }
     let prelude_lines = head.matches('\n').count();
     let full = format!("{head}{src}");

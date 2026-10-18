@@ -1018,11 +1018,13 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 
 // ---- strings: see string.rs ----
 
+mod date;
 mod json;
 mod map;
 mod regexp;
 mod string;
 mod string_more;
+pub use date::*;
 pub use json::*;
 pub use map::*;
 pub use regexp::*;
@@ -1192,6 +1194,17 @@ pub fn link_anchor() -> usize {
         ts_rt_map_new_gc as *const () as usize,
         ts_rt_json_stringify_gc as *const () as usize,
         ts_rt_json_parse_gc as *const () as usize,
+        ts_rt_date_now as *const () as usize,
+        ts_rt_date_field as *const () as usize,
+        ts_rt_date_offset as *const () as usize,
+        ts_rt_date_from_parts as *const () as usize,
+        ts_rt_date_set as *const () as usize,
+        ts_rt_date_clip as *const () as usize,
+        ts_rt_date_iso_gc as *const () as usize,
+        ts_rt_date_utc_string_gc as *const () as usize,
+        ts_rt_date_date_string_gc as *const () as usize,
+        ts_rt_date_parse as *const () as usize,
+        ts_rt_date_set_zone as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

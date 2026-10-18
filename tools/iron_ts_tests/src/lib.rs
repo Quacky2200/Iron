@@ -276,6 +276,18 @@ pub mod rex2 {
     include!(concat!(env!("OUT_DIR"), "/regexp2_bindings.rs"));
 }
 
+/// `Date` in compiled code (`bench/date.ts`), prefix `dt_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod dat {
+    include!(concat!(env!("OUT_DIR"), "/date_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

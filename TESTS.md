@@ -717,6 +717,20 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-237 | Integration | `replace` with a function: match, groups, offset, string and the named-groups object; a `const` regex keeps its `lastIndex` (`tests/regexp2.rs`). |
 | M9-TS-238 | Integration | `split` with a regex (captures included, limit, empty input, empty pattern, `u` flag) and a string with a limit (`tests/regexp2.rs`). |
 | M9-TS-239 | Unit | A replacement function with more than the match as a parameter needs a regex whose groups are known; too many parameters is a compile error (`iron_ts/src/lib.rs`). |
+| M9-TS-240 | Integration | Local and UTC fields of nine instants (epoch, DST, year -1, the extremes) equal bun's in five time zones (`iron_ts_tests/tests/date.rs`, `bench/date.ts`, expected data from `bench/gen_date_expected.ts`). |
+| M9-TS-241 | Integration | `Date.UTC` with overflowing and fractional parts, two-digit years and the range edges (`tests/date.rs`). |
+| M9-TS-242 | Integration | `new Date(y, m, ...)` in local time, including a clock set forward or back and years far from now (`tests/date.rs`). |
+| M9-TS-243 | Integration | `new Date(ms)`, `(string)`, `(date)`, NaN and out-of-range values (`tests/date.rs`). |
+| M9-TS-244 | Integration | Every `set*` method in local time and UTC: overflow, optional extra arguments, an invalid date, `setTime` (`tests/date.rs`). |
+| M9-TS-245 | Integration | `toISOString` (expanded years) and `toJSON`, and the `RangeError` text for an invalid date (`tests/date.rs`). |
+| M9-TS-246 | Integration | `toUTCString`, `toGMTString` and `toDateString` including negative and five-digit years and an invalid date (`tests/date.rs`). |
+| M9-TS-247 | Integration | `Date.parse` of 34 ISO-form strings: date only is UTC, date-time is local, offsets, `24:00`, expanded years, bad input (`tests/date.rs`). |
+| M9-TS-248 | Integration | `Date.parse` of 42 other forms: month names, slashes, AM/PM, zone names and offsets, two-digit years, bad input (`tests/date.rs`). |
+| M9-TS-249 | Integration | A date in arithmetic and comparison: `b - a`, `+a`, `Number(a)`, `<`, `===` is identity (`tests/date.rs`). |
+| M9-TS-250 | Integration | `getTimezoneOffset` over DST changes, old local mean time and the range edges (`tests/date.rs`). |
+| M9-TS-251 | Integration | `Date.now()` and `new Date()` give the current time (`tests/date.rs`). |
+| M9-TS-252 | Integration | Time clipping at +-8.64e15 and truncation of fractions (`tests/date.rs`). |
+| M9-TS-253 | Unit | `toString`, `toTimeString`, `toLocale*String` and `date + x` are compile errors that point to Intl (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

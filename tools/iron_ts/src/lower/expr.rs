@@ -70,6 +70,8 @@ impl<'a> Lowerer<'a> {
 
     /// A value used as a number (`number | null` narrowed away).
     pub(crate) fn as_num(&self, e: Expr) -> R<Expr> {
+        // A Date is its time value (`end - start`, `+date`).
+        let e = self.date_value(e);
         match e.ty.strip() {
             Ty::Num => self.coerce(e, &Ty::Num),
             t => bail!("expected a number, found {t}"),
@@ -687,10 +689,22 @@ impl<'a> Lowerer<'a> {
             _ => None,
         };
         if let Some(op) = cop {
+            // `<` and friends compare time values; `===` compares the objects.
+            let (l, r) = if matches!(op, CmpOp::Eq | CmpOp::Ne) {
+                (l, r)
+            } else {
+                (self.date_value(l), self.date_value(r))
+            };
             return self.lower_compare(op, l, r, b.span.start);
         }
         if b.operator == B::Addition && (Self::is_stringy(&l.ty) || Self::is_stringy(&r.ty)) {
             return self.str_concat(l, r);
+        }
+        if b.operator == B::Addition && (self.is_date(&l) || self.is_date(&r)) {
+            bail!(
+                "{}: `date + x` concatenates the date's string, which needs Intl (not built yet); use date.getTime() + x",
+                self.loc(b.span.start)
+            )
         }
         let op = match b.operator {
             B::Addition => BinOp::Add,
@@ -1091,6 +1105,7 @@ impl<'a> Lowerer<'a> {
             }
             "Map" | "Set" | "WeakMap" | "WeakSet" => self.lower_new_collection(&id.name, n, exp),
             "RegExp" => self.lower_new_regexp(&n.arguments, n.span.start),
+            "Date" if self.date_sid().is_some() => self.lower_new_date(&n.arguments, n.span.start),
             other if self.manifest.values.contains_key(other) => {
                 self.new_value(other, &n.arguments, n.span.start)
             }
@@ -1515,6 +1530,13 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Math").is_none()
                 {
                     return self.lower_math(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "Date"
+                    && self.lookup("Date").is_none()
+                    && self.date_sid().is_some()
+                {
+                    return self.lower_date_static(method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "String"

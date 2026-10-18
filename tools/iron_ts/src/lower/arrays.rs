@@ -358,6 +358,9 @@ impl<'a> Lowerer<'a> {
             if Some(sid) == self.regexp_sid() {
                 return self.lower_regexp_method(recv, m, c);
             }
+            if Some(sid) == self.date_sid() {
+                return self.lower_date_method(recv, m, c);
+            }
             // A match object is also an array of strings.
             if Some(sid) == self.match_sid() && !matches!(m, "toString") {
                 let view = self.match_view(recv);

@@ -83,6 +83,17 @@ class RegExpMatchArray {
 }
 "#;
 
+/// The `Date` class: its one field is the time value (see `lower/date.rs`).
+pub const DATE: &str = r#"class Date {
+  t: number = NaN;
+}
+"#;
+
+/// Does the program mention `Date` (and not define its own)?
+pub fn wants_date(src: &str) -> bool {
+    src.contains("Date") && !src.contains("class Date")
+}
+
 /// Does the program use regular expressions (a literal, `RegExp`, or a string method that takes
 /// one)? A guess is fine: the classes are small.
 pub fn wants_regexp(src: &str) -> bool {

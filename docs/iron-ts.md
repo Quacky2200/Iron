@@ -127,8 +127,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/maps.rs](../tools/iron_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
 | [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
 | [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object, and the String methods that take a regex (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`) |
+| [lower/date.rs](../tools/iron_ts/src/lower/date.rs) | `Date`: constructors, `Date.now`/`UTC`/`parse`, getters and setters (local and UTC), the string conversions, and arithmetic and comparison on the time value |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
-| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, and `RegExp` / `RegExpMatchArray`, as TypeScript source, compiled in front of programs that mention errors or regexes (or the string methods that take them) |
+| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray` and `Date`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them) or `Date` |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
@@ -136,7 +137,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | Feature | Lowering |
 |---|---|
-| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
+| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` and `Date` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
 | Functions | `function` and arrow declarations; return types inferred; calls are direct |
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
@@ -337,6 +338,35 @@ expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked i
   information for replacement functions (see [differences.md](differences.md)).
 - Tests: `bench/regexp2.ts` with `tests/regexp2.rs` (M9-TS-232..239), expected values from
   `bench/gen_regexp2_expected.ts` (bun) into `regexp2_expected.json`.
+
+**Standard library tier 3: `Date`** ([lower/date.rs](../tools/iron_ts/src/lower/date.rs), runtime in
+[iron_ts_rt/src/date.rs](../tools/iron_ts_rt/src/date.rs); small hooks in `lower/{expr,arrays,strings,prelude,mod}.rs`).
+- **Object.** `Date` is a prelude class with one field, `t`: the time value in ms (NaN is an invalid date). It
+  is added when the source mentions `Date`. `===` is identity; `-`, `+d`, `Number(d)`, `<` and `>` use `t`.
+- **Supported.** `new Date()`, `(ms)`, `(string)`, `(date)` and `(y, m, d?, h?, mi?, s?, ms?)` (plain
+  arguments, at most seven); `Date.now`, `Date.UTC`, `Date.parse`; every getter and setter, local and UTC;
+  `getTime`, `valueOf`, `setTime`, `getTimezoneOffset`; `toISOString` (RangeError `Invalid Date` for an invalid
+  date, as JavaScriptCore), `toJSON`, `toUTCString` / `toGMTString`, `toDateString`.
+- **Calendar.** MakeDay, MakeTime and TimeClip follow the spec. Local time uses jiff's tz database (jiff 0.2
+  in `iron_ts_rt`): the OS zone, or the IANA name given to `ts_rt_date_set_zone` (the tests use it; a host can
+  too). A repeated local time (clock set back) reads as the earlier instant; a skipped one (clock set forward)
+  is read with the offset from before the jump, as engines do. Times beyond jiff's range (years +-9999) are
+  mapped by whole 400-year Gregorian cycles. `getTimezoneOffset` truncates to whole minutes toward zero (old
+  local mean time), like engines.
+- **Parsing** (`ts_rt_date_parse`). ISO forms first: a date alone is UTC, a date-time without an offset is
+  local; expanded years, `24:00`, lowercase `t`/`z`, a space separator, offsets with or without a colon, a
+  fraction truncated to ms. Then a legacy tokenizer: month names by their first three letters, weekdays
+  ignored, `M/D/Y`, `Y/M/D`, `Y-M-D`, AM/PM, `GMT`/`UTC`/`Z`/`EST`/`EDT`/`CST`/`CDT`/`MST`/`MDT`/`PST`/`PDT`,
+  `+hhmm`, parenthesised comments, and two-digit years (0-49 are 20xx, 50-99 are 19xx). Checked against bun
+  for about 76 strings in five zones.
+- **Runtime.** `ts_rt_date_now`, `_field`, `_offset`, `_from_parts`, `_set`, `_clip`, `_iso_gc`,
+  `_utc_string_gc`, `_date_string_gc`, `_parse`, `_set_zone`.
+- **Compile errors until `Intl` lands** (Intl date formatting is wanted then): `toString` and `toTimeString`
+  (they need zone names), `toLocale*String`, and `date + x` (JavaScript concatenates the string).
+- **Limits** (see [differences.md](differences.md)): `Date()` without `new`; a few exotic legacy strings;
+  `Date` inside typed JSON.
+- Tests: `bench/date.ts` with `tests/date.rs` (M9-TS-240..253), expected values from
+  `bench/gen_date_expected.ts` (bun) into `date_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

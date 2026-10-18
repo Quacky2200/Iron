@@ -107,10 +107,11 @@ mod tests {
     // M9-TS-15
     #[test]
     fn unsupported_code_is_an_error_with_a_line_number() {
-        let e =
-            lower::lower_source("export function f(x: number): number {\n  return +new Date();\n}")
-                .err()
-                .unwrap();
+        let e = lower::lower_source(
+            "export function f(x: number): number {\n  return +new Proxy({}, {});\n}",
+        )
+        .err()
+        .unwrap();
         assert!(e.contains("line 2"), "{e}");
         let e = lower::lower_source("export function g(x: any): number { return 1; }")
             .err()
@@ -365,6 +366,29 @@ mod tests {
             "export function f(): string { const re = /(a)/g; return \"a\".replace(re, (m, g) => g ?? \"\"); }"
         )
         .is_ok());
+    }
+
+    // M9-TS-253
+    #[test]
+    fn date_features_that_need_intl_are_compile_errors_with_a_reason() {
+        for body in [
+            "new Date(0).toString()",
+            "new Date(0).toLocaleDateString()",
+            "new Date(0).toTimeString()",
+            "String(new Date(0) + 1)",
+        ] {
+            let e =
+                lower::lower_source(&format!("export function f(): string {{ return {body}; }}"))
+                    .err()
+                    .unwrap_or_default();
+            assert!(e.contains("Intl"), "{body}: {e}");
+        }
+        assert!(
+            lower::lower_source(
+                "export function f(): number { return new Date(0) - new Date(1); }"
+            )
+            .is_ok()
+        );
     }
 
     // M9-TS-84

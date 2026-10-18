@@ -20,13 +20,13 @@ impl<'a> Lowerer<'a> {
             .then(|| self.classes_sid("RegExpMatchArray"))
     }
 
-    fn field_ix(&self, sid: StructId, name: &str) -> usize {
+    pub(crate) fn field_ix(&self, sid: StructId, name: &str) -> usize {
         self.m.structs[sid]
             .field(name)
             .unwrap_or_else(|| panic!("prelude class lost its field `{name}`"))
     }
 
-    fn field_of(&self, obj: Expr, sid: StructId, name: &str) -> Expr {
+    pub(crate) fn field_of(&self, obj: Expr, sid: StructId, name: &str) -> Expr {
         let i = self.field_ix(sid, name);
         let ty = self.m.structs[sid].fields[i].ty.clone();
         mk(ExprKind::Field(Box::new(obj), sid, i), ty)
@@ -40,7 +40,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn store_field(&self, obj: &Expr, sid: StructId, name: &str, v: Expr) -> Stmt {
+    pub(crate) fn store_field(&self, obj: &Expr, sid: StructId, name: &str, v: Expr) -> Stmt {
         Stmt::StoreField(obj.clone(), sid, self.field_ix(sid, name), v)
     }
 

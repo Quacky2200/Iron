@@ -38,6 +38,12 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `RegExp` match as a tuple | Tuple types are not supported; a match is a `RegExpMatchArray` object seen as its string array | An array with extra properties | No tuples in the type system |
 | `RegExp` replacement functions | The parameters after the match (groups, named groups) need the regex's groups known at compile time (a regex literal, `new RegExp("literal")`, or a function-local `const` from one); module-level `const` regexes do not carry them; rest parameters are a compile error | Any function, any regex | The function is inlined and its arity is checked against the groups |
 | `matchAll` | Eager: an array of match objects, from a copy of the regex | A lazy iterator | No iterator objects; `for...of`, spread and `map` still work |
+| `Date()` without `new` | Not supported | Returns the current time as a string | The string form needs zone names (waits for `Intl`) |
+| `Date` strings | `toString`, `toTimeString`, `toLocale*String` and `date + x` are compile errors | Zone-named and locale strings; `+` concatenates | They need `Intl` and zone names |
+| `Date.parse` of exotic legacy strings | A few return NaN (a bare number such as `"0"`, `"Oct 19"` without a year) | Engines guess a year or a value | The legacy tokenizer is strict where engines are lax; ISO and the common legacy forms match bun |
+| `Date` constructor arguments | `new Date(y, m, ...)` takes plain arguments, at most seven | Spread allowed | Lowered to a fixed-arity runtime call |
+| `Date` in typed JSON | Not supported in `JSON.stringify` / `JSON.parse` types yet | Stringifies through `toJSON`; parse gives a string | The JSON descriptors have no `Date` kind |
+| `Date` local time | Uses jiff's tz database; years beyond +-9999 are mapped by 400-year Gregorian cycles; a skipped local time uses the offset before the jump | Engines' own zone code | Same results as engines for the zones checked (five, against bun) |
 | `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
 
 ## SVG (M3d step 5.1)
