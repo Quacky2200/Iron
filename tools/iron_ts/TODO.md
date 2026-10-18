@@ -83,24 +83,21 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Waiting for the user's answers to section 11 of `docs/research/iron-ts-classes.md`** (closed world,
-vtable choice, order of classes versus the engine boundary, value classes, structural typing first,
-scope cut). No class code before that: Classes is a **STOP** item.
+**Answers to the Classes note are recorded** (`docs/research/iron-ts-classes.md` section 12): as recommended,
+except that the engine becomes native with `.d.ts` declarations, so `Component`/`Vector3` are extern classes
+and the **engine-boundary design note comes before inheritance from them**. Next, in this order:
 
-The non-STOP stages are done (loops, switch/enums, destructuring, parameters, spread, `Math`, arrays; see
-the log). While waiting, the next candidates that need no decision, in the order I would take them:
+1. **Engine-boundary design note** (`TODO.md` "Direct engine calls", **STOP**): a document in `docs/research/`,
+   no compiler changes. Extern classes, handles, `f32` value types, hooks through a function table, what the
+   `.d.ts` files are generated from, the `__iron_op` inventory.
+2. **Plain classes** (Classes sub-task 1-3: fields, constructor, methods, `this`, getters/setters, statics,
+   private): independent of the engine note, so it can run first if the note needs the user's time.
+3. Then the other design notes the direction creates: structural typing, UI without React, dev loop without
+   Bun. Each is a **STOP**: document, user review, then code.
 
-1. **IR verifier for the GC root rule** (`TODO.md` GC item 4): a debug-build pass over every function
-   that checks no pointer-typed SSA value is live across an allocating operation without a frame slot.
-   It turns "the lowering produces safe IR" from an argument into a check, and the next four features
-   (classes, strings, maps, generics) will each add new ways to hold a pointer.
-2. **Differential harness** (`TODO.md` conformance item): run every `bench/*.ts` module in bun and
-   natively and compare automatically, instead of pasting bun's numbers into the tests by hand.
-3. Remaining small language items: rest elements and assignment patterns, `in`/`void`/`delete`/`f?.()`,
-   `findLast`/`flat`/`flatMap`/`entries`/`keys`, `for...of` over `Map`/`Set`.
-4. Closures leftovers: named function expressions, capture by value when a variable is never reassigned.
-
-Then strings (a **STOP**: UTF-16 or UTF-8 first).
+Non-STOP candidates while a review is pending: the IR verifier for the GC root rule, the differential
+harness against bun, small language leftovers (rest elements, `in`/`void`/`f?.()`, `flat`/`entries`),
+closures leftovers (named function expressions, capture by value).
 
 ## Backlog
 

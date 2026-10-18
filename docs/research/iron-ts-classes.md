@@ -196,3 +196,52 @@ that allocates; a method called on a field that the method itself overwrites).
    `Vector3Like` parameters are decided once? (Recommended: yes.)
 6. **Scope cut**: the unsupported list in section 5 (mixins, class expressions, computed members,
    prototype tricks) stays unsupported for good?
+
+## 12. Answers and the direction they set (from the user, 2026-10-18)
+
+**Answers to section 11.** 1 (closed world), 2 (per-method tables), 5 (structural typing note first)
+and 6 (scope cut): as recommended. 3 and 4 are changed by the direction below.
+
+**Direction.** The aim is that most of the engine's TypeScript disappears: the engine is native
+(Rust), and what TypeScript sees of it is **declaration files** (`.d.ts`: interfaces and `declare
+class`es) plus the type files for tooling. Scripts call native functions directly, including maths
+and `Date`. QuickJS stays available when needed (untyped code, mods, a dev fallback) but is not the
+path the common case takes. The UI is not React: a small component/effect library (Preact, or our
+own remake of components and effects) over a native UI tree, written in TypeScript the same way as
+gameplay code, with no JS engine involved in the common case. The Bun watcher and the React
+fast-refresh machinery go away; what stays is something that type-checks (a code server or the
+TypeScript language service) and the type files.
+
+What that changes in this note:
+
+- **Section 8 (`Component` and the engine) is reversed.** `Component`, `GameObject`, `Transform`,
+  `Vector3`, `Quaternion` and the rest are *not* compiled from TypeScript. They are declared in
+  `.d.ts` and implemented in Rust. The compiler treats a `declare class` as an **extern class**:
+  a known native layout (or an opaque handle id), methods and accessors that become direct calls
+  or inline intrinsics, and a base class a user class can `extends` (`class Player extends
+  Component`). User classes get the prefix layout of section 2 *after* the native base's fields.
+  `@property` still compiles to the reflection table, and Rust reads it directly.
+- **Answer 3 (order).** The engine boundary comes first as a design note ("Direct engine calls",
+  rewritten around declaration files), because it fixes how an extern base class is laid out and
+  how hooks are entered. Plain classes (sub-tasks 1-3) do not depend on it and can start in
+  parallel; inheritance from an extern class (sub-task 9) waits for it.
+- **Answer 4 (value classes).** `Vector3`, `Quaternion`, `Color` become native value types
+  (glam), declared in `.d.ts` and lowered to intrinsics, not heap objects compiled from `math.ts`.
+  This needs `f32` fields in the IR (today every number is f64) and a decision on value versus
+  reference semantics for these types in the IR (JS gives them reference semantics; a value type
+  that is copied on assignment is only safe when scripts cannot observe identity or mutate through
+  two names, which `readonly` fields and the engine's own API largely guarantee). That decision
+  goes in the engine-boundary note.
+- **The dev loop.** Hot reload without Bun would be: the compiler is the watcher. In development
+  the same IR could be compiled with Cranelift's JIT in-process and swapped in function by
+  function, with state kept through the reflection table (which is also what scene save/restore
+  needs); release stays ahead-of-time. That is a proposal for the hybrid/dev-loop note, not a
+  result: nothing here has been tried.
+- **Type checking still needs a checker.** The compiler trusts annotations today and the type
+  sidecar item would use the TypeScript compiler API, which needs a JS runtime or the native port
+  at build time. Dropping Bun from the *game's* run time is possible; dropping a type checker from
+  the *dev* loop is not.
+
+New design notes this creates (all **STOP** items, none started): the engine boundary ("Direct
+engine calls" as declaration files plus native bindings), the UI without React, and the dev loop
+without Bun. They are listed in `TODO.md` M9.b2.

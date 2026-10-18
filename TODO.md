@@ -1439,8 +1439,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] **Classes**: **STOP, design first.** Gameplay code is classes: `extends Component`, `@property`,
         `this`, `override`, getters/setters, statics, `instanceof`
     - [x] Design note written: `docs/research/iron-ts-classes.md` (layout, calls, constructors, members,
-          engine boundary, `@property`, sub-tasks). **Waiting for the user's answers to its section 11
-          before any class code**
+          engine boundary, `@property`, sub-tasks)
+    - [x] Answers recorded (section 12 of the note): closed world, per-method tables, structural-typing
+          note first, scope cut as recommended; the engine becomes native with `.d.ts` declarations,
+          so `Component`/`Vector3` are extern classes, not compiled TypeScript. Plain classes may start;
+          inheritance from an extern class waits for the engine-boundary note
     - [ ] Plain classes: fields, constructor, methods, `this`
     - [ ] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes
     - [ ] Getters/setters, statics, private fields (`#x`, `private`)
@@ -1506,7 +1509,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           what simply stays in QuickJS
     - [ ] If needed: NaN-boxed value, dynamic object model (shapes or hash maps), property get/set by name,
           calls between native and QuickJS, GC handles across the two heaps
-  - [ ] **Direct engine calls**: **STOP, design first.** Biggest payoff, biggest surface
+  - [ ] **Direct engine calls**: **STOP, design first.** Biggest payoff, biggest surface. Direction set by
+        the user: the engine is native and TypeScript sees it only as declaration files (`.d.ts`); scripts
+        call native functions directly (maths, `Date`, scene, physics, audio); QuickJS stays as an option
+    - [ ] Design note: extern classes (`declare class`), opaque handles versus laid-out structs, hooks
+          entered through a function table, `f32` value types, what `.d.ts` is generated from
     - [ ] Inventory the `__iron_op` names and shapes (`js/engine/src`) and what each passes
     - [ ] Value types with shared layouts: `Vector2/3/4`, `Quaternion`, `Color`, `Matrix` are TS classes in
           `math.ts` today; decide: compile `math.ts` natively, or intrinsics over glam types (f32 fields:
@@ -1516,6 +1523,16 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Callbacks from Rust into native script (`__iron_*` hooks) through a function table
     - [ ] `Mathf`/vector arithmetic as inline intrinsics
     - [ ] Component lifecycle without QuickJS (joins Classes)
+  - [ ] **UI without React**: **STOP, design first.** A small component/effect library (Preact or our own
+        remake) over a native UI tree, written in the compiled TypeScript subset; no React reconciler, no
+        OneJS-style embedded engine for the common case
+    - [ ] Design note: what of React is used (components, state, effects, events, refs), signals-style
+          effects versus a vdom diff, how the library compiles under `iron_ts` (it must stay inside the
+          typed subset), the native UI tree API (`iron_ui` opcodes today), styles and CSS
+  - [ ] **Dev loop without Bun**: **STOP, design first.** Hot reload with the compiler as the watcher
+    - [ ] Design note: Cranelift JIT in-process for development and AOT for release from the same IR,
+          function-level swap, state kept through the `@property` reflection table, type checking via
+          a code server or the language service, the type files
   - [ ] **Hybrid release builds**: **STOP, design first**
     - [ ] Module partition: which files compile natively (manifest list or a directive), fallback to QuickJS
           per module when the compiler rejects a file, with the reason printed
