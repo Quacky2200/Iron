@@ -3,7 +3,8 @@
 // sizes, rotates and recolours it with transitions (`tween.ts`). Keys 1-4 pick a sine formula
 // (left click cycles them), right click flips the background, Space pauses, F5 shows the
 // centre point, F11 toggles fullscreen. The HUD is text only, as the original was. The music
-// loops and plays while it runs.
+// ("Oldskool" by Of Far Different Nature, CC0; see assets/CREDITS.md) loops and plays while
+// it runs.
 //
 // The original worked in form pixels (1008 x 729); the same numbers are kept here and
 // converted to world units, so the curve looks the same at any window size.
@@ -187,7 +188,7 @@ class SineDemo extends Component {
       color: Color.hex("#ff0000"),
       loop: true,
     });
-    this.music = audio.load("assets/dancin.mp3", { stream: true });
+    this.music = audio.load("assets/oldskool.mp3", { stream: true });
 
     this.radius = new Tween<number>({
       start: 50,
