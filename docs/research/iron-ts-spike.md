@@ -594,3 +594,38 @@ field. Spread in a call only feeds a rest parameter (14.2). Not done: spreading 
 
 Tests: `tests/params.rs` against bun's numbers from `bench/params.ts`, in all three GC modes
 (`M9-TS-77`..`83`); argument-count errors are a unit test (`M9-TS-84`).
+
+## 15. Library surface (stage 4)
+
+### 15.1 `Math` and numeric operators (done)
+
+Every `Math` function the compiler knows becomes either an inline machine operation or a call to a
+small runtime function (`ts_rt_*`, in `iron_ts_rt`), never a call into JavaScript.
+
+| Function | Lowering | Notes |
+|---|---|---|
+| `sqrt abs floor ceil trunc` | one Cranelift instruction | `ceil(-0.5)` is `-0`, as in JS |
+| `round` | `floor(x)`, plus 1 when `x - floor(x) >= 0.5`, then `copysign(_, x)` | JS rounds halves toward +Infinity (`round(-2.5)` is `-2`), keeps `-0`, and `round(0.49999999999999994)` is `0` (`floor(x + 0.5)` gets that one wrong) |
+| `fround` | demote to f32 and promote | |
+| `clz32` | ToInt32 then `clz` | |
+| `sign min max hypot imul atan2 sin cos` | as before | |
+| `tan asin acos atan exp log log2 log10 cbrt` | a runtime function over the C library | |
+| `pow`, `**`, `**=` | `ts_rt_pow` | C's `pow` except where JS differs: `1 ** NaN` and `(+-1) ** Infinity` are NaN |
+| `random` | `ts_rt_random`: xorshift128+, per thread | seeded from the clock on first use; `ts_rt_random_seed(n)` makes a run repeatable |
+| `PI E SQRT2 LN2 LN10 LOG2E LOG10E SQRT1_2` | constants | |
+
+Operators added with them: `**`, `**=`, unary `~` (`ToInt32(x) ^ -1`), and the logical assignments
+`??=`, `||=`, `&&=`. A logical assignment is `if (cond(target)) target = value`: the target is
+evaluated once (`xs[i++] ??= 10` bumps `i` once) and the right side only when it is needed.
+Constants fold: `2 ** 10` and `1 << 3` are numbers at compile time (needed by enum members).
+
+**Known difference.** V8 computes `sin cos tan asin acos atan exp log ...` with its own port of
+fdlibm; we call the platform's C library. Both are within an ulp of the true value but can differ in
+the last bit, so a program that prints these to 17 digits or hashes them can differ. The tests
+compare these functions after scaling to nine decimals. This belongs to the conformance item.
+
+Not done: `sinh cosh tanh asinh acosh atanh log1p expm1`, `Math.max()`/`Math.min()` with no
+arguments or an array spread, `in`, `void`, `delete`, optional call `f?.()`.
+
+Tests: `tests/mathlib.rs` compares bit for bit with bun's values from `bench/mathlib.ts`
+(`M9-TS-85`..`91`).

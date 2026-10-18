@@ -602,6 +602,80 @@ pub extern "C" fn ts_rt_hypot(a: f64, b: f64) -> f64 {
     a.hypot(b)
 }
 
+macro_rules! libm1 {
+    ($($name:ident => $f:ident),* $(,)?) => {
+        $(
+            #[unsafe(no_mangle)]
+            pub extern "C" fn $name(a: f64) -> f64 {
+                a.$f()
+            }
+        )*
+    };
+}
+
+libm1!(
+    ts_rt_tan => tan,
+    ts_rt_asin => asin,
+    ts_rt_acos => acos,
+    ts_rt_atan => atan,
+    ts_rt_exp => exp,
+    ts_rt_log => ln,
+    ts_rt_log2 => log2,
+    ts_rt_log10 => log10,
+    ts_rt_cbrt => cbrt,
+);
+
+/// `Math.pow` / `**`: C's `pow` except where JavaScript differs (`1 ** NaN` and `1 ** Infinity`
+/// are NaN there).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_pow(x: f64, y: f64) -> f64 {
+    if y.is_nan() || (x.abs() == 1.0 && y.is_infinite()) {
+        f64::NAN
+    } else {
+        x.powf(y)
+    }
+}
+
+thread_local! {
+    static RANDOM: std::cell::Cell<[u64; 2]> = const { std::cell::Cell::new([0, 0]) };
+}
+
+fn splitmix(x: &mut u64) -> u64 {
+    *x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *x;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// Seeds this thread's `Math.random()` (a host that wants repeatable runs calls this).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_random_seed(seed: u64) {
+    let mut x = seed;
+    RANDOM.with(|r| r.set([splitmix(&mut x), splitmix(&mut x)]));
+}
+
+/// `Math.random()`: xorshift128+, a number in [0, 1). Seeded from the clock on first use.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_random() -> f64 {
+    RANDOM.with(|r| {
+        let mut s = r.get();
+        if s == [0, 0] {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(1, |d| d.as_nanos() as u64);
+            let mut x = t ^ (&s as *const _ as u64);
+            s = [splitmix(&mut x), splitmix(&mut x)];
+        }
+        let (mut a, b) = (s[0], s[1]);
+        s[0] = b;
+        a ^= a << 23;
+        s[1] = a ^ b ^ (a >> 18) ^ (b >> 5);
+        r.set(s);
+        ((s[1].wrapping_add(b)) >> 11) as f64 / (1u64 << 53) as f64
+    })
+}
+
 // ---- strings (the runtime side; lowering of general string code is future work) ----
 
 #[repr(C)]
@@ -751,6 +825,18 @@ pub fn link_anchor() -> usize {
         ts_rt_cos as *const () as usize,
         ts_rt_atan2 as *const () as usize,
         ts_rt_hypot as *const () as usize,
+        ts_rt_tan as *const () as usize,
+        ts_rt_asin as *const () as usize,
+        ts_rt_acos as *const () as usize,
+        ts_rt_atan as *const () as usize,
+        ts_rt_exp as *const () as usize,
+        ts_rt_log as *const () as usize,
+        ts_rt_log2 as *const () as usize,
+        ts_rt_log10 as *const () as usize,
+        ts_rt_cbrt as *const () as usize,
+        ts_rt_pow as *const () as usize,
+        ts_rt_random as *const () as usize,
+        ts_rt_random_seed as *const () as usize,
         ts_rt_str_new as *const () as usize,
         ts_rt_closure_new as *const () as usize,
         ts_rt_closure_new_gc as *const () as usize,

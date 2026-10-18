@@ -15,6 +15,15 @@ fn to_i32(x: f64) -> i32 {
     if x.is_finite() { (x as i64) as i32 } else { 0 }
 }
 
+/// `**` with JavaScript's special cases (the runtime's `ts_rt_pow` does the same).
+fn js_pow(x: f64, y: f64) -> f64 {
+    if y.is_nan() || (x.abs() == 1.0 && y.is_infinite()) {
+        f64::NAN
+    } else {
+        x.powf(y)
+    }
+}
+
 /// A bit operation on two constants.
 fn fold_bits(op: BinOp, a: f64, b: f64) -> f64 {
     let (x, y) = (to_i32(a), to_i32(b));
@@ -182,6 +191,11 @@ impl<'a> Lowerer<'a> {
                 "PI" => Ok(num(std::f64::consts::PI)),
                 "SQRT2" => Ok(num(std::f64::consts::SQRT_2)),
                 "E" => Ok(num(std::f64::consts::E)),
+                "LN2" => Ok(num(std::f64::consts::LN_2)),
+                "LN10" => Ok(num(std::f64::consts::LN_10)),
+                "LOG2E" => Ok(num(std::f64::consts::LOG2_E)),
+                "LOG10E" => Ok(num(std::f64::consts::LOG10_E)),
+                "SQRT1_2" => Ok(num(std::f64::consts::FRAC_1_SQRT_2)),
                 _ => bail!("Math.{prop} is not a value"),
             };
         }
@@ -296,6 +310,8 @@ impl<'a> Lowerer<'a> {
                 })
             }
             UnaryOperator::UnaryPlus => self.as_num(a),
+            // ~x is ToInt32(x) ^ -1.
+            UnaryOperator::BitwiseNot => self.arith(BinOp::BitXor, a, num(-1.0)),
             _ => bail!("{}: unsupported unary operator", self.loc(u.span.start)),
         }
     }
@@ -330,6 +346,7 @@ impl<'a> Lowerer<'a> {
             B::ShiftLeft => BinOp::Shl,
             B::ShiftRight => BinOp::Shr,
             B::ShiftRightZeroFill => BinOp::UShr,
+            B::Exponential => BinOp::Pow,
             _ => bail!("{}: unsupported operator", self.loc(b.span.start)),
         };
         self.arith(op, l, r)
@@ -345,6 +362,7 @@ impl<'a> Lowerer<'a> {
                 BinOp::Mul => Some(a * b),
                 BinOp::Div => Some(a / b),
                 BinOp::Rem => Some(a % b),
+                BinOp::Pow => Some(js_pow(*a, *b)),
                 BinOp::BitAnd
                 | BinOp::BitOr
                 | BinOp::BitXor
@@ -727,6 +745,24 @@ impl<'a> Lowerer<'a> {
         let mut pre = Vec::new();
         let place = self.assign_target(&a.left, &mut pre)?;
         let pty = Self::place_ty(&place).clone();
+        if matches!(a.operator, A::LogicalAnd | A::LogicalOr | A::LogicalNullish) {
+            // `p ||= v` is `if (!p) p = v`: the target is evaluated once and v only when needed.
+            let old = self.place_read(&place);
+            let cond = match a.operator {
+                A::LogicalAnd => self.to_bool(old),
+                A::LogicalOr => {
+                    let t = self.to_bool(old);
+                    mk(ExprKind::Un(UnOp::Not, Box::new(t)), Ty::Bool)
+                }
+                _ if old.ty.is_nullable() => mk(ExprKind::IsNull(Box::new(old)), Ty::Bool),
+                _ => mk(ExprKind::Bool(false), Ty::Bool),
+            };
+            let v = self.lower_expr(&a.right, Some(&pty))?;
+            let v = self.coerce(v, &pty)?;
+            pre.push(Stmt::If(cond, vec![self.place_write(&place, v)], vec![]));
+            let value = self.place_read(&place);
+            return Ok((pre, value));
+        }
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;
             self.coerce(v, &pty)?
@@ -743,6 +779,7 @@ impl<'a> Lowerer<'a> {
                 A::ShiftLeft => BinOp::Shl,
                 A::ShiftRight => BinOp::Shr,
                 A::ShiftRightZeroFill => BinOp::UShr,
+                A::Exponential => BinOp::Pow,
                 _ => bail!(
                     "{}: unsupported compound assignment",
                     self.loc(a.span.start)
@@ -994,6 +1031,22 @@ impl<'a> Lowerer<'a> {
             ("sin", 1) => un(UnOp::Sin, it.next().unwrap()),
             ("cos", 1) => un(UnOp::Cos, it.next().unwrap()),
             ("sign", 1) => un(UnOp::Sign, it.next().unwrap()),
+            ("ceil", 1) => un(UnOp::Ceil, it.next().unwrap()),
+            ("trunc", 1) => un(UnOp::Trunc, it.next().unwrap()),
+            ("round", 1) => un(UnOp::Round, it.next().unwrap()),
+            ("fround", 1) => un(UnOp::Fround, it.next().unwrap()),
+            ("clz32", 1) => un(UnOp::Clz32, it.next().unwrap()),
+            ("tan", 1) => un(UnOp::Libm("ts_rt_tan"), it.next().unwrap()),
+            ("asin", 1) => un(UnOp::Libm("ts_rt_asin"), it.next().unwrap()),
+            ("acos", 1) => un(UnOp::Libm("ts_rt_acos"), it.next().unwrap()),
+            ("atan", 1) => un(UnOp::Libm("ts_rt_atan"), it.next().unwrap()),
+            ("exp", 1) => un(UnOp::Libm("ts_rt_exp"), it.next().unwrap()),
+            ("log", 1) => un(UnOp::Libm("ts_rt_log"), it.next().unwrap()),
+            ("log2", 1) => un(UnOp::Libm("ts_rt_log2"), it.next().unwrap()),
+            ("log10", 1) => un(UnOp::Libm("ts_rt_log10"), it.next().unwrap()),
+            ("cbrt", 1) => un(UnOp::Libm("ts_rt_cbrt"), it.next().unwrap()),
+            ("pow", 2) => bin(BinOp::Pow, it.next().unwrap(), it.next().unwrap()),
+            ("random", 0) => mk(ExprKind::Rt(RtFn::Random, vec![]), Ty::Num),
             ("hypot", 2) => bin(BinOp::Hypot, it.next().unwrap(), it.next().unwrap()),
             ("atan2", 2) => bin(BinOp::Atan2, it.next().unwrap(), it.next().unwrap()),
             ("imul", 2) => bin(BinOp::Imul, it.next().unwrap(), it.next().unwrap()),

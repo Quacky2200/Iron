@@ -32,6 +32,7 @@ fn main() {
         ("switches", "sw_", 6000),
         ("destructure", "des_", 7000),
         ("params", "par_", 8000),
+        ("mathlib", "ml_", 9000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

@@ -1480,13 +1480,15 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Spread
       - [x] Array literals, call arguments into a rest parameter, object literals with overrides
       - [ ] Into fixed parameters (`f(...xs)`), of maps and strings
-    - [ ] Optional call `f?.()`, `??=`, `||=`, `&&=`, `**`, unary `~`, `in`, `void`, `delete` (limited)
+    - [ ] Operators
+      - [x] `??=`, `||=`, `&&=`, `**`, `**=`, unary `~` (`M9-TS-85..91`)
+      - [ ] Optional call `f?.()`, `in`, `void`, `delete` (limited)
     - [ ] `try`/`catch`/`finally`/`throw`: **STOP, design first** (unwinding vs error returns; frame pops
           and GC frames on unwind; script errors reaching the host)
     - [ ] `async`/`await`/Promises and timers (`Task`, `setTimeout`): **STOP, design first** (needs an
           event-loop contract with the host)
   - [ ] **Library surface** the compiler knows
-    - [ ] `Math`: `ceil round trunc pow exp log log2 log10 tan asin acos atan cbrt fround clz32 random`
+    - [x] `Math`: `ceil round trunc pow exp log log2 log10 tan asin acos atan cbrt fround clz32 random` (`M9-TS-85..91`); still open: `sinh cosh tanh log1p expm1`
     - [ ] Arrays: `pop shift unshift slice splice concat reverse sort indexOf lastIndexOf join reduce flat
           fill at entries keys`, `Array.from/isArray`, `new Array(n)`, destructuring, `for...of` over
           `Map`/`Set`/strings

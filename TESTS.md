@@ -563,6 +563,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-82 | Integration | `f(...a)` and `[...a]` give new arrays; writing to them leaves `a` alone. Runs in all three GC modes (`tests/params.rs`). |
 | M9-TS-83 | Integration | Defaults, rest arrays and spreads that allocate, in a loop, survive a collection at every allocation. Runs in all three GC modes (`tests/params.rs`). |
 | M9-TS-84 | Unit | Too few or too many arguments, and a spread into a fixed parameter, are errors (`iron_ts/src/lib.rs`). |
+| M9-TS-85 | Integration | `Math.ceil` and `Math.trunc` agree with JS bit for bit, including `-0` (`ceil(-0.5)`, `trunc(-0.2)`). Runs normally, in stress GC mode and with collection off (`tests/mathlib.rs`). |
+| M9-TS-86 | Integration | `Math.round` sends halves toward +Infinity, keeps `-0`, and `round(0.49999999999999994)` is 0. Runs in all three GC modes (`tests/mathlib.rs`). |
+| M9-TS-87 | Integration | `Math.pow` and `**` follow JS for NaN, `1 ** Infinity`, `0 ** 0`, negative bases, right associativity. Runs in all three GC modes (`tests/mathlib.rs`). |
+| M9-TS-88 | Integration | `Math.clz32`, `Math.fround` and unary `~` agree with JS. Runs in all three GC modes (`tests/mathlib.rs`). |
+| M9-TS-89 | Integration | `tan asin acos atan exp log log2 log10 cbrt` and the `LN2`.. constants agree with JS to nine decimals. Runs in all three GC modes (`tests/mathlib.rs`). |
+| M9-TS-90 | Integration | `??=`, `\|\|=`, `&&=`, `**=` assign only when needed, and an indexed target with a side effect is evaluated once. Runs in all three GC modes (`tests/mathlib.rs`). |
+| M9-TS-91 | Integration | `Math.random()` stays in [0, 1) over 10,000 draws and repeats after the same seed. Runs in all three GC modes (`tests/mathlib.rs`). |
 
 ---
 

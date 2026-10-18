@@ -529,6 +529,30 @@ impl Cg<'_, '_> {
                     UnOp::Cos => self
                         .rt("ts_rt_cos", &[types::F64], Some(types::F64), &[v])
                         .unwrap(),
+                    UnOp::Ceil => self.b.ins().ceil(v),
+                    UnOp::Trunc => self.b.ins().trunc(v),
+                    // floor(x), plus one when the fraction is at least a half; copysign keeps -0.
+                    UnOp::Round => {
+                        let r = self.b.ins().floor(v);
+                        let frac = self.b.ins().fsub(v, r);
+                        let (half, one) = (b_f64(self, 0.5), b_f64(self, 1.0));
+                        let up = self.b.ins().fcmp(FloatCC::GreaterThanOrEqual, frac, half);
+                        let r1 = self.b.ins().fadd(r, one);
+                        let pick = self.b.ins().select(up, r1, r);
+                        self.b.ins().fcopysign(pick, v)
+                    }
+                    UnOp::Fround => {
+                        let s = self.b.ins().fdemote(types::F32, v);
+                        self.b.ins().fpromote(types::F64, s)
+                    }
+                    UnOp::Clz32 => {
+                        let i = self.cvt_i32(v);
+                        let c = self.b.ins().clz(i);
+                        self.b.ins().fcvt_from_uint(types::F64, c)
+                    }
+                    UnOp::Libm(name) => self
+                        .rt(name, &[types::F64], Some(types::F64), &[v])
+                        .unwrap(),
                     UnOp::Sign => {
                         let z = b_f64(self, 0.0);
                         let (one, neg) = (b_f64(self, 1.0), b_f64(self, -1.0));
@@ -553,6 +577,14 @@ impl Cg<'_, '_> {
                     BinOp::Atan2 => self
                         .rt(
                             "ts_rt_atan2",
+                            &[types::F64, types::F64],
+                            Some(types::F64),
+                            &[x, y],
+                        )
+                        .unwrap(),
+                    BinOp::Pow => self
+                        .rt(
+                            "ts_rt_pow",
                             &[types::F64, types::F64],
                             Some(types::F64),
                             &[x, y],
@@ -891,6 +923,7 @@ impl Cg<'_, '_> {
                 self.rt("ts_rt_bytes_new_gc", &[types::I64], Some(types::I64), &[n])
                     .unwrap()
             }
+            RtFn::Random => self.rt("ts_rt_random", &[], Some(types::F64), &[]).unwrap(),
             RtFn::BytesFill => {
                 let (v, s, e) = (
                     self.cvt_i64(vals[1]),

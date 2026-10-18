@@ -121,6 +121,8 @@ pub enum BinOp {
     Max,
     Atan2,
     Hypot,
+    /// `**` and `Math.pow`, with JavaScript's special cases.
+    Pow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -134,6 +136,16 @@ pub enum UnOp {
     Cos,
     /// `Math.sign`.
     Sign,
+    Ceil,
+    Trunc,
+    /// `Math.round`: halves go toward +Infinity, and the sign of zero is kept.
+    Round,
+    /// `Math.fround`: through a 32-bit float.
+    Fround,
+    /// `Math.clz32`.
+    Clz32,
+    /// A C-library function of one number, by runtime symbol (`ts_rt_tan`, ...).
+    Libm(&'static str),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -154,6 +166,8 @@ pub enum RtFn {
     ArrPush,
     BytesNew,
     BytesFill,
+    /// `Math.random()`: no arguments, a number in [0, 1).
+    Random,
 }
 
 #[derive(Clone, Debug)]
