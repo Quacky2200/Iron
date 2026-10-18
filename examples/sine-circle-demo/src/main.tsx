@@ -37,6 +37,9 @@ const CENTER = { x: FORM_W / 2, y: FORM_H / 2 };
 /** The whole form height spans 10 world units (the camera's orthographic size is 5). */
 const UNITS_PER_PX = 10 / FORM_H;
 
+/** Spline samples between each pair of the 361 points (about 1,100 segments in all). */
+const SPLINE_STEPS = 3;
+
 type SineType = "pi" | "normal" | "doubleSine" | "doubleCos";
 
 /** The four formulas, in the order left click cycles them; fast or slow transitions. */
@@ -115,12 +118,29 @@ class SineCircle {
     return { x: this.center.x + tr * Math.cos(rad + rot), y: this.center.y + tr * Math.sin(rad + rot) };
   }
 
-  /** The closed curve in world units, a point every 2 degrees. */
+  /**
+   * The closed curve in world units, built as the original did: a point every degree (0 to
+   * 360), joined by a smooth closed curve. GDI+'s `DrawClosedCurve` is a cardinal spline at
+   * tension 0.5, which is a Catmull-Rom spline; each segment is sampled `SPLINE_STEPS` times.
+   */
   points(): Vector3[] {
+    const raw: { x: number; y: number }[] = [];
+    for (let d = 0; d <= this.maxDegrees; d++) raw.push(this.at(d));
+    const n = raw.length;
     const out: Vector3[] = [];
-    for (let d = 0; d <= this.maxDegrees; d += 2) {
-      const p = this.at(d);
-      out.push(new Vector3((p.x - CENTER.x) * UNITS_PER_PX, (CENTER.y - p.y) * UNITS_PER_PX, 0));
+    for (let i = 0; i < n; i++) {
+      const p0 = raw[(i - 1 + n) % n]!;
+      const p1 = raw[i]!;
+      const p2 = raw[(i + 1) % n]!;
+      const p3 = raw[(i + 2) % n]!;
+      for (let k = 0; k < SPLINE_STEPS; k++) {
+        const t = k / SPLINE_STEPS;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const x = 0.5 * (2 * p1.x + (p2.x - p0.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (3 * p1.x - p0.x - 3 * p2.x + p3.x) * t3);
+        const y = 0.5 * (2 * p1.y + (p2.y - p0.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (3 * p1.y - p0.y - 3 * p2.y + p3.y) * t3);
+        out.push(new Vector3((x - CENTER.x) * UNITS_PER_PX, (CENTER.y - y) * UNITS_PER_PX, 0));
+      }
     }
     out.push(out[0]!);
     return out;
