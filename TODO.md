@@ -1387,13 +1387,21 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS. Next, in order:
   - [ ] Type sidecar: Bun script dumping the TypeScript checker's per-expression types as JSON
-  - [ ] Language coverage: closures with capture cells, classes/`this`, generics, destructuring,
-        strings, `Map`, `switch`
+  - [ ] GC: precise, non-moving mark-sweep; roots from a shadow stack in generated code, globals and
+        host handles; frame arena for temporaries (in progress, see `docs/research/iron-ts-spike.md`)
+  - [ ] Closures: functions created in script, capturing variables through shared cells
+        (array callbacks are already inlined; `Fn` values can be called)
+  - [ ] Classes: fields, methods, `this`, constructors, inheritance, `override`, getters/setters
+        (the engine's `Component` subclasses are the first target)
+  - [ ] Generics: monomorphise generic functions and types per instantiation
+  - [ ] General string code: `string` values, `+`, template literals, `.length`, comparison, the
+        common methods (`split`, `slice`, `indexOf`, `includes`, ...); `Map` and `Set` proper
+  - [ ] Destructuring, default and rest parameters, spread, `switch`, enums, `for(;;)`, `try`/`throw`
+  - [ ] `JsValue` fallback: NaN-boxed dynamic value and object model for `any` and untyped code,
+        with calls between native code and QuickJS
   - [ ] Direct engine calls: `extern "C"` with shared layouts (`Vector3` = glam `Vec3`), `Mathf` and
         vector maths as inline intrinsics, component lifecycle through a function table
-  - [ ] GC: shadow stack + non-moving mark-sweep, frame arena for temporaries
   - [ ] Hybrid release builds: typed gameplay modules native, React/UI stays on QuickJS
-        (`JsValue` fallback later)
   - [ ] Cross targets (Linux, macOS, Android, iOS), wire into the game build, CI
 - [ ] **M9.c** Release packaging for macOS, Linux, Android and iOS (iOS: QuickJS backend, Xcode
   wrapper)
