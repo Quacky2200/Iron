@@ -570,6 +570,25 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-89 | Integration | `tan asin acos atan exp log log2 log10 cbrt` and the `LN2`.. constants agree with JS to nine decimals. Runs in all three GC modes (`tests/mathlib.rs`). |
 | M9-TS-90 | Integration | `??=`, `\|\|=`, `&&=`, `**=` assign only when needed, and an indexed target with a side effect is evaluated once. Runs in all three GC modes (`tests/mathlib.rs`). |
 | M9-TS-91 | Integration | `Math.random()` stays in [0, 1) over 10,000 draws and repeats after the same seed. Runs in all three GC modes (`tests/mathlib.rs`). |
+| M9-TS-92 | Integration | `pop` and `shift` return the element, or null on an empty array. Runs normally, in stress GC mode and with collection off (`tests/arraylib.rs`). |
+| M9-TS-93 | Integration | `unshift` puts values in front and returns the new length. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-94 | Integration | `slice` with negative and out-of-range indexes, and `slice()` as a copy. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-95 | Integration | `splice` removes, inserts and replaces, with negative start and no count. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-96 | Integration | `concat` joins arrays and single values into a new array. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-97 | Integration | `reverse` is in place and returns the same array. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-98 | Integration | `sort` with a comparator orders numbers ascending and descending. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-99 | Integration | `sort` is stable for objects, and the comparator may allocate (found a merge buffer that was traced before it was initialised). Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-100 | Integration | 200 pseudo-random items sort into a stable order. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-101 | Integration | Sorting with a collection at every allocation, including a comparator that captures variables, loses nothing (`tests/arraylib.rs`). |
+| M9-TS-102 | Integration | `fill` over a range and `new Array(5).fill(2)`. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-103 | Integration | `indexOf`, `lastIndexOf`, `findIndex` and `includes`, found and not found. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-104 | Integration | `at` counts negative indexes from the end. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-105 | Integration | `reduce` over numbers and objects, with index and initial value. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-106 | Integration | `xs.length = n` truncates. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-107 | Integration | `Array.from({ length }, fn)`, `Array.from(xs)` (a copy), `Array.of`, `Array.isArray`. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-108 | Integration | Array operations on arrays of objects in a loop (sort, splice, slice, concat, reverse, unshift, pop, reduce) survive a collection at every allocation. Runs in all three GC modes (`tests/arraylib.rs`). |
+| M9-TS-109 | Unit | `sort` keeps its merge buffer alive while the comparator collects: with the roots removed the elements come back poisoned (`iron_ts_rt/src/lib.rs`). |
+| M9-TS-110 | Unit | `sort()` without a comparator, `reduce` without an initial value and `pop` over booleans are errors with a reason (`iron_ts/src/lib.rs`). |
 
 ---
 

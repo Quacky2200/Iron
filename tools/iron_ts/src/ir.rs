@@ -168,6 +168,23 @@ pub enum RtFn {
     BytesFill,
     /// `Math.random()`: no arguments, a number in [0, 1).
     Random,
+    /// `(array, length)`: `xs.length = n`, `pop`.
+    ArrSetLen,
+    /// `(array, index, value)`: insert one element (`unshift`).
+    ArrInsert,
+    /// `(array, start, count)`: remove elements (`shift`).
+    ArrDrop,
+    /// `(array, start, count, items or null)`: returns the removed elements as a new array.
+    ArrSplice,
+    /// `(array, start, end)`: a new array.
+    ArrSlice,
+    /// `(dst, src)`: append all of src.
+    ArrAppend,
+    ArrReverse,
+    /// `(array, comparator closure)`: stable, in place. Runs script code, so it can collect.
+    ArrSort,
+    /// `(array, value, start, end)`.
+    ArrFill,
 }
 
 #[derive(Clone, Debug)]

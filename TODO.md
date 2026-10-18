@@ -1489,9 +1489,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           event-loop contract with the host)
   - [ ] **Library surface** the compiler knows
     - [x] `Math`: `ceil round trunc pow exp log log2 log10 tan asin acos atan cbrt fround clz32 random` (`M9-TS-85..91`); still open: `sinh cosh tanh log1p expm1`
-    - [ ] Arrays: `pop shift unshift slice splice concat reverse sort indexOf lastIndexOf join reduce flat
-          fill at entries keys`, `Array.from/isArray`, `new Array(n)`, destructuring, `for...of` over
-          `Map`/`Set`/strings
+    - [ ] Arrays
+      - [x] `pop shift unshift slice splice concat reverse sort indexOf lastIndexOf findIndex reduce fill at`, `length = n`, `Array.from/of/isArray`, `new Array(n)` (`M9-TS-92..110`)
+      - [ ] `join` (needs strings), `flat`, `flatMap`, `entries`, `keys`, `findLast`, `reduceRight`, `sort()` without a comparator (string order)
+      - [ ] `for...of` over `Map`/`Set`/strings
     - [ ] Typed arrays beyond `Uint8Array`: `Float32Array Float64Array Int32Array Uint16Array ...`
     - [ ] `Object.keys/entries/values/assign`, `Number.isFinite/isInteger/EPSILON`, `Date`/`performance`
   - [ ] **JS semantics conformance**: differential tests against bun on generated and real code

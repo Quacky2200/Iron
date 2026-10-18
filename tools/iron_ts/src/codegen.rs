@@ -923,6 +923,84 @@ impl Cg<'_, '_> {
                 self.rt("ts_rt_bytes_new_gc", &[types::I64], Some(types::I64), &[n])
                     .unwrap()
             }
+            RtFn::ArrSetLen => {
+                self.rt(
+                    "ts_rt_arr_set_len",
+                    &[types::I64, types::F64],
+                    None,
+                    &[vals[0], vals[1]],
+                );
+                dummy(self)
+            }
+            RtFn::ArrInsert => {
+                let v = self.slot_of(vals[2], &args[2].ty);
+                self.rt(
+                    "ts_rt_arr_insert",
+                    &[types::I64, types::F64, types::I64],
+                    None,
+                    &[vals[0], vals[1], v],
+                );
+                dummy(self)
+            }
+            RtFn::ArrDrop => {
+                self.rt(
+                    "ts_rt_arr_drop",
+                    &[types::I64, types::F64, types::F64],
+                    None,
+                    &[vals[0], vals[1], vals[2]],
+                );
+                dummy(self)
+            }
+            RtFn::ArrSplice => self
+                .rt(
+                    "ts_rt_arr_splice",
+                    &[types::I64, types::F64, types::F64, types::I64],
+                    Some(types::I64),
+                    &[vals[0], vals[1], vals[2], vals[3]],
+                )
+                .unwrap(),
+            RtFn::ArrSlice => self
+                .rt(
+                    "ts_rt_arr_slice",
+                    &[types::I64, types::F64, types::F64],
+                    Some(types::I64),
+                    &[vals[0], vals[1], vals[2]],
+                )
+                .unwrap(),
+            RtFn::ArrAppend => {
+                self.rt(
+                    "ts_rt_arr_append",
+                    &[types::I64, types::I64],
+                    None,
+                    &[vals[0], vals[1]],
+                );
+                dummy(self)
+            }
+            RtFn::ArrReverse => {
+                self.rt("ts_rt_arr_reverse", &[types::I64], None, &[vals[0]]);
+                dummy(self)
+            }
+            RtFn::ArrSort => {
+                let ptrs = matches!(args[0].ty.strip(), Ty::Arr(el) if el.is_ptr()) as i64;
+                let mode = self.b.ins().iconst(types::I64, ptrs);
+                self.rt(
+                    "ts_rt_arr_sort",
+                    &[types::I64, types::I64, types::I64],
+                    None,
+                    &[vals[0], vals[1], mode],
+                );
+                dummy(self)
+            }
+            RtFn::ArrFill => {
+                let v = self.slot_of(vals[1], &args[1].ty);
+                self.rt(
+                    "ts_rt_arr_fill",
+                    &[types::I64, types::I64, types::F64, types::F64],
+                    None,
+                    &[vals[0], v, vals[2], vals[3]],
+                );
+                dummy(self)
+            }
             RtFn::Random => self.rt("ts_rt_random", &[], Some(types::F64), &[]).unwrap(),
             RtFn::BytesFill => {
                 let (v, s, e) = (

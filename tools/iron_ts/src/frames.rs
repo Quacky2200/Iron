@@ -127,7 +127,8 @@ pub fn may_alloc(e: &Expr) -> bool {
     match &e.kind {
         ExprKind::NewObj(_) | ExprKind::Call(..) | ExprKind::CallClosure(..) => true,
         ExprKind::NewCell(_) | ExprKind::MakeClosure(..) => true,
-        ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew, _) => true,
+        // A sort runs the comparator, which allocates.
+        ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew | RtFn::ArrSort, _) => true,
         ExprKind::Seq(stmts, v) => stmts.iter().any(stmt_may_alloc) || may_alloc(v),
         _ => children(e).iter().any(|c| may_alloc(c)),
     }

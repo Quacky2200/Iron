@@ -629,3 +629,42 @@ arguments or an array spread, `in`, `void`, `delete`, optional call `f?.()`.
 
 Tests: `tests/mathlib.rs` compares bit for bit with bun's values from `bench/mathlib.ts`
 (`M9-TS-85`..`91`).
+
+### 15.2 Array methods (done)
+
+Methods that move elements are small runtime functions over raw 8-byte slots (so one routine serves
+numbers and pointers); methods that run script code per element are loops with the callback
+inlined, as `map`/`filter` already were.
+
+| Method | Lowering |
+|---|---|
+| `pop`, `shift` | `Index` (null past the end) plus `ts_rt_arr_set_len` / `ts_rt_arr_drop` when non-empty; the result is `T \| null` |
+| `unshift(...v)` | `ts_rt_arr_insert` per value, returns the new length |
+| `slice(s, e)`, `concat(...)`, `splice(s, n, ...items)` | `ts_rt_arr_slice`, `ts_rt_arr_append`, `ts_rt_arr_splice` (returns the removed elements as a new array); negative indexes count from the end, as in JS |
+| `reverse`, `fill(v, s, e)` | in place, return the same array |
+| `sort(cmp)` | `ts_rt_arr_sort`: a stable merge sort in place, calling the comparator closure |
+| `indexOf`, `lastIndexOf`, `findIndex`, `at`, `reduce` | inline loops (`reduce` binds the accumulator to the callback's first parameter) |
+| `xs.length = n` | `ts_rt_arr_set_len`: truncates, or grows with zero slots |
+| `Array.from({ length: n }, (_, i) => v)`, `Array.from(xs)`, `Array.of(...)`, `Array.isArray(x)`, `new Array(n)` | a loop, a copy, a literal, a constant, `ArrNew` + `set_len` |
+
+**The GC and `sort`.** The comparator is script code: it allocates, so it can collect, while the
+runtime holds the array, the closure and a merge buffer that no frame knows about. The sort
+registers all three as temporary roots, zeroes the merge buffer first (a collection traces every
+slot of an array, and a fresh buffer holds stale data), and the frame plan treats `ArrSort` as an
+allocating operation. A stress-mode test in the runtime (`M9-TS-109`) fails when the roots are
+left out: the elements that only the buffer holds come back poisoned. A zero-filled buffer was a
+real bug found by the first stress run of the TypeScript test (`M9-TS-99`).
+
+**Differences from JS, on purpose.**
+- `sort()` without a comparator compares by string value in JS (`[10, 9].sort()` is `[10, 9]`).
+  That needs number-to-string conversion, so it is a compile error that asks for a comparator.
+- `reduce` without an initial value is an error (JS throws on an empty array).
+- `new Array(n)` has no holes: slots are 0 or null, where JS reads `undefined`.
+- `pop`/`shift`/`at` are only available over numbers and pointers (a `boolean[]` has no null).
+- `splice` always builds the removed-elements array, even in a statement that ignores it.
+
+Not done: `flat`, `flatMap`, `entries`, `keys`, `join` (strings), `findLast`, `reduceRight`,
+`copyWithin`, `Array.from(xs, fn)` (use `xs.map(fn)`), typed arrays other than `Uint8Array`.
+
+Tests: `tests/arraylib.rs` against bun's numbers from `bench/arraylib.ts` in all three GC modes
+(`M9-TS-92`..`108`), the runtime test `M9-TS-109`, the error cases `M9-TS-110`.

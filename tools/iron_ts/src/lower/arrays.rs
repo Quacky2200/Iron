@@ -192,6 +192,126 @@ impl<'a> Lowerer<'a> {
         Ok(Stmt::Block(label, body))
     }
 
+    /// `Array.isArray`, `Array.from` and `Array.of`.
+    pub(crate) fn lower_array_static(&mut self, f: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        let arg = |i: usize| c.arguments.get(i).and_then(|a| a.as_expression());
+        match f {
+            "isArray" => {
+                let e = arg(0).ok_or("Array.isArray needs an argument")?;
+                let v = self.lower_expr(e, None)?;
+                let is = matches!(v.ty.strip(), Ty::Arr(_) | Ty::Bytes);
+                Ok(mk(
+                    ExprKind::Seq(
+                        vec![Stmt::Eval(v)],
+                        Box::new(mk(ExprKind::Bool(is), Ty::Bool)),
+                    ),
+                    Ty::Bool,
+                ))
+            }
+            "of" => {
+                let mut elems = Vec::new();
+                let mut el = None;
+                for a in &c.arguments {
+                    let e = a.as_expression().ok_or("Array.of: spread")?;
+                    let v = self.lower_expr(e, el.as_ref())?;
+                    el.get_or_insert_with(|| v.ty.clone());
+                    elems.push(super::expr::Elem::One(v));
+                }
+                self.build_array(elems, el.unwrap_or(Ty::Num))
+            }
+            "from" => {
+                let a0 = arg(0).ok_or("Array.from needs an argument")?;
+                // Array.from({ length: n }, (_, i) => value)
+                if let Expression::ObjectExpression(o) = a0 {
+                    let n_expr = o
+                        .properties
+                        .iter()
+                        .find_map(|p| match p {
+                            ObjectPropertyKind::ObjectProperty(p)
+                                if matches!(&p.key, PropertyKey::StaticIdentifier(k) if k.name == "length") =>
+                            {
+                                Some(&p.value)
+                            }
+                            _ => None,
+                        })
+                        .ok_or("Array.from needs { length }")?;
+                    let cb = arg(1).ok_or("Array.from({ length }) needs a function")?;
+                    let n = self.lower_expr(n_expr, Some(&Ty::Num))?;
+                    let n = self.as_num(n)?;
+                    let (nv, iv, unused) = (
+                        self.new_local(Ty::Num),
+                        self.new_local(Ty::Num),
+                        self.new_local(Ty::Num),
+                    );
+                    let r = self.new_local(Ty::Void);
+                    let label = self.new_label();
+                    let cbs = self.inline_cb(cb, &[unused, iv], RetKind::Val, Some(r))?;
+                    let rty = self.cur.locals[r as usize].clone();
+                    let ty = Ty::Arr(Box::new(rty));
+                    let out = self.new_local(ty.clone());
+                    let (nvv, ivv, ov) = (self.var_expr(nv), self.var_expr(iv), self.var_expr(out));
+                    let done = mk(
+                        ExprKind::Cmp(CmpOp::Ge, Box::new(ivv.clone()), Box::new(nvv.clone())),
+                        Ty::Bool,
+                    );
+                    let next = mk(
+                        ExprKind::Bin(BinOp::Add, Box::new(ivv), Box::new(num(1.0))),
+                        Ty::Num,
+                    );
+                    let body = vec![
+                        Stmt::If(done, vec![Stmt::Break(label)], vec![]),
+                        cbs,
+                        Stmt::Eval(mk(
+                            ExprKind::Rt(RtFn::ArrPush, vec![ov.clone(), self.var_expr(r)]),
+                            Ty::Void,
+                        )),
+                        Stmt::Assign(iv, next),
+                    ];
+                    let stmts = vec![
+                        Stmt::Assign(nv, n),
+                        Stmt::Assign(iv, num(0.0)),
+                        Stmt::Assign(out, mk(ExprKind::Rt(RtFn::ArrNew, vec![nvv]), ty.clone())),
+                        Stmt::Loop(label, body),
+                    ];
+                    return Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty));
+                }
+                if c.arguments.len() > 1 {
+                    bail!("Array.from(xs, fn): use xs.map(fn)")
+                }
+                let v = self.lower_expr(a0, None)?;
+                if !matches!(v.ty.strip(), Ty::Arr(_)) {
+                    bail!("Array.from of {} is not supported", v.ty)
+                }
+                let ty = v.ty.clone();
+                Ok(mk(
+                    ExprKind::Rt(RtFn::ArrSlice, vec![v, num(0.0), num(f64::INFINITY)]),
+                    ty,
+                ))
+            }
+            _ => bail!("Array.{f} is not supported"),
+        }
+    }
+
+    /// An optional number argument of a call, or `default` when it is missing.
+    fn num_arg_or(&mut self, c: &'a CallExpression<'a>, i: usize, default: f64) -> R<Expr> {
+        match c.arguments.get(i).and_then(|a| a.as_expression()) {
+            Some(e) => {
+                let v = self.lower_expr(e, Some(&Ty::Num))?;
+                self.as_num(v)
+            }
+            None => Ok(num(default)),
+        }
+    }
+
+    /// The type of an element read that may be past the end: null for pointers and numbers.
+    fn nullable_elem(&self, el: &Ty, method: &str) -> R<Ty> {
+        if el.is_ptr() || *el == Ty::Num {
+            Ok(el.clone().nullable())
+        } else {
+            bail!("`{method}` over {el} elements is not supported")
+        }
+    }
+
     pub(crate) fn lower_method(
         &mut self,
         recv: Expr,
@@ -327,6 +447,275 @@ impl<'a> Lowerer<'a> {
                     }
                 };
                 Ok(result)
+            }
+            (Ty::Arr(el), "pop" | "shift") => {
+                let rty = self.nullable_elem(el, m)?;
+                let a = self.new_local(recv.ty.clone());
+                let r = self.new_local(rty.clone());
+                let av = self.var_expr(a);
+                let len = mk(ExprKind::Len(Box::new(av.clone())), Ty::Num);
+                let at = if m == "pop" {
+                    mk(
+                        ExprKind::Bin(BinOp::Sub, Box::new(len.clone()), Box::new(num(1.0))),
+                        Ty::Num,
+                    )
+                } else {
+                    num(0.0)
+                };
+                let get = mk(
+                    ExprKind::Index(Box::new(av.clone()), Box::new(at.clone())),
+                    rty.clone(),
+                );
+                let shrink = if m == "pop" {
+                    ExprKind::Rt(RtFn::ArrSetLen, vec![av, at])
+                } else {
+                    ExprKind::Rt(RtFn::ArrDrop, vec![av, num(0.0), num(1.0)])
+                };
+                let nonempty = mk(
+                    ExprKind::Cmp(CmpOp::Gt, Box::new(len), Box::new(num(0.0))),
+                    Ty::Bool,
+                );
+                let stmts = vec![
+                    Stmt::Assign(a, recv),
+                    Stmt::Assign(r, get),
+                    Stmt::If(nonempty, vec![Stmt::Eval(mk(shrink, Ty::Void))], vec![]),
+                ];
+                Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(r))), rty))
+            }
+            (Ty::Arr(el), "unshift") => {
+                let a = self.new_local(recv.ty.clone());
+                let mut stmts = vec![Stmt::Assign(a, recv)];
+                for (k, arg) in c.arguments.iter().enumerate() {
+                    let Some(e) = arg.as_expression() else {
+                        bail!("unshift: spread")
+                    };
+                    let v = self.lower_expr(e, Some(el))?;
+                    let v = self.coerce(v, el)?;
+                    stmts.push(Stmt::Eval(mk(
+                        ExprKind::Rt(RtFn::ArrInsert, vec![self.var_expr(a), num(k as f64), v]),
+                        Ty::Void,
+                    )));
+                }
+                let len = mk(ExprKind::Len(Box::new(self.var_expr(a))), Ty::Num);
+                Ok(mk(ExprKind::Seq(stmts, Box::new(len)), Ty::Num))
+            }
+            (Ty::Arr(_), "slice") => {
+                let start = self.num_arg_or(c, 0, 0.0)?;
+                let end = self.num_arg_or(c, 1, f64::INFINITY)?;
+                Ok(mk(
+                    ExprKind::Rt(RtFn::ArrSlice, vec![recv.clone(), start, end]),
+                    recv.ty.clone(),
+                ))
+            }
+            (Ty::Arr(el), "splice") => {
+                if c.arguments.is_empty() {
+                    bail!("splice needs a start index")
+                }
+                let ty = recv.ty.clone();
+                let start = self.num_arg_or(c, 0, 0.0)?;
+                let count = self.num_arg_or(c, 1, f64::INFINITY)?;
+                let mut elems = Vec::new();
+                for arg in c.arguments.iter().skip(2) {
+                    let Some(e) = arg.as_expression() else {
+                        bail!("splice: spread")
+                    };
+                    let v = self.lower_expr(e, Some(el))?;
+                    elems.push(super::expr::Elem::One(v));
+                }
+                let items = if elems.is_empty() {
+                    mk(ExprKind::Null, ty.clone().nullable())
+                } else {
+                    self.build_array(elems, (**el).clone())?
+                };
+                Ok(mk(
+                    ExprKind::Rt(RtFn::ArrSplice, vec![recv, start, count, items]),
+                    ty,
+                ))
+            }
+            (Ty::Arr(el), "concat") => {
+                let ty = recv.ty.clone();
+                let out = self.new_local(ty.clone());
+                let ov = self.var_expr(out);
+                let mut stmts = vec![Stmt::Assign(
+                    out,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty.clone()),
+                )];
+                let first = self.new_local(ty.clone());
+                stmts.push(Stmt::Assign(first, recv));
+                stmts.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrAppend, vec![ov.clone(), self.var_expr(first)]),
+                    Ty::Void,
+                )));
+                for arg in &c.arguments {
+                    let Some(e) = arg.as_expression() else {
+                        bail!("concat: spread")
+                    };
+                    let v = self.lower_expr(e, Some(&ty))?;
+                    if matches!(v.ty.strip(), Ty::Arr(_)) {
+                        let t = self.new_local(v.ty.clone());
+                        stmts.push(Stmt::Assign(t, v));
+                        stmts.push(Stmt::Eval(mk(
+                            ExprKind::Rt(RtFn::ArrAppend, vec![ov.clone(), self.var_expr(t)]),
+                            Ty::Void,
+                        )));
+                    } else {
+                        let v = self.coerce(v, el)?;
+                        stmts.push(Stmt::Eval(mk(
+                            ExprKind::Rt(RtFn::ArrPush, vec![ov.clone(), v]),
+                            Ty::Void,
+                        )));
+                    }
+                }
+                Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty))
+            }
+            (Ty::Arr(el), "reverse" | "sort" | "fill") => {
+                let ty = recv.ty.clone();
+                let a = self.new_local(ty.clone());
+                let av = self.var_expr(a);
+                let mut stmts = vec![Stmt::Assign(a, recv)];
+                let call = match m {
+                    "reverse" => ExprKind::Rt(RtFn::ArrReverse, vec![av.clone()]),
+                    "sort" => {
+                        if !(el.is_ptr() || **el == Ty::Num) {
+                            bail!("sort over {el} elements")
+                        }
+                        let Some(cmp) = c.arguments.first().and_then(|a| a.as_expression()) else {
+                            bail!(
+                                "{}: sort() without a comparator orders by string value; pass (a, b) => ...",
+                                self.loc(c.span.start)
+                            )
+                        };
+                        let fty = Ty::Fn(Box::new(FnTy {
+                            params: vec![(**el).clone(), (**el).clone()],
+                            ret: Ty::Num,
+                        }));
+                        let cmp = self.lower_expr(cmp, Some(&fty))?;
+                        let cmp = self.coerce(cmp, &fty)?;
+                        ExprKind::Rt(RtFn::ArrSort, vec![av.clone(), cmp])
+                    }
+                    _ => {
+                        let v = c
+                            .arguments
+                            .first()
+                            .and_then(|a| a.as_expression())
+                            .ok_or("fill needs a value")?;
+                        let v = self.lower_expr(v, Some(el))?;
+                        let v = self.coerce(v, el)?;
+                        let start = self.num_arg_or(c, 1, 0.0)?;
+                        let end = self.num_arg_or(c, 2, f64::INFINITY)?;
+                        ExprKind::Rt(RtFn::ArrFill, vec![av.clone(), v, start, end])
+                    }
+                };
+                stmts.push(Stmt::Eval(mk(call, Ty::Void)));
+                Ok(mk(ExprKind::Seq(stmts, Box::new(av)), ty))
+            }
+            (Ty::Arr(el), "at") => {
+                let rty = self.nullable_elem(el, m)?;
+                let i = self.num_arg_or(c, 0, 0.0)?;
+                let a = self.new_local(recv.ty.clone());
+                let iv = self.new_local(Ty::Num);
+                let (av, ivv) = (self.var_expr(a), self.var_expr(iv));
+                let neg = mk(
+                    ExprKind::Cmp(CmpOp::Lt, Box::new(ivv.clone()), Box::new(num(0.0))),
+                    Ty::Bool,
+                );
+                let wrapped = mk(
+                    ExprKind::Bin(
+                        BinOp::Add,
+                        Box::new(mk(ExprKind::Len(Box::new(av.clone())), Ty::Num)),
+                        Box::new(ivv.clone()),
+                    ),
+                    Ty::Num,
+                );
+                let at = mk(
+                    ExprKind::Cond(Box::new(neg), Box::new(wrapped), Box::new(ivv)),
+                    Ty::Num,
+                );
+                let get = mk(ExprKind::Index(Box::new(av), Box::new(at)), rty.clone());
+                Ok(mk(
+                    ExprKind::Seq(
+                        vec![Stmt::Assign(a, recv), Stmt::Assign(iv, i)],
+                        Box::new(get),
+                    ),
+                    rty,
+                ))
+            }
+            (Ty::Arr(el), "indexOf" | "lastIndexOf") => {
+                let Some(x) = c.arguments.first().and_then(|a| a.as_expression()) else {
+                    bail!("{m}: missing argument")
+                };
+                let x = self.lower_expr(x, Some(el))?;
+                let x = self.coerce(x, el)?;
+                let xv = self.new_local(el.as_ref().clone());
+                let it = self.begin_iter(recv)?;
+                let out = self.new_local(Ty::Num);
+                let mut stmts = it.pre.clone();
+                stmts.push(Stmt::Assign(xv, x));
+                stmts.push(Stmt::Assign(out, num(-1.0)));
+                let mut body = it.head.clone();
+                let eq = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Eq,
+                        Box::new(self.var_expr(it.elem)),
+                        Box::new(self.var_expr(xv)),
+                    ),
+                    Ty::Bool,
+                );
+                let mut hit = vec![Stmt::Assign(out, self.var_expr(it.idx))];
+                if m == "indexOf" {
+                    hit.push(Stmt::Break(it.label));
+                }
+                body.push(Stmt::If(eq, hit, vec![]));
+                stmts.push(Stmt::Loop(it.label, body));
+                Ok(mk(
+                    ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
+                    Ty::Num,
+                ))
+            }
+            (Ty::Arr(_), "findIndex") => {
+                let cb = cb_arg(0)?;
+                let it = self.begin_iter(recv)?;
+                let (ev, iv) = (it.elem, it.idx);
+                let out = self.new_local(Ty::Num);
+                let r = self.new_local(Ty::Bool);
+                let mut stmts = it.pre.clone();
+                stmts.push(Stmt::Assign(out, num(-1.0)));
+                let mut body = it.head.clone();
+                body.push(self.inline_cb(cb, &[ev, iv, it.arr], RetKind::Pred, Some(r))?);
+                body.push(Stmt::If(
+                    self.var_expr(r),
+                    vec![Stmt::Assign(out, self.var_expr(iv)), Stmt::Break(it.label)],
+                    vec![],
+                ));
+                stmts.push(Stmt::Loop(it.label, body));
+                Ok(mk(
+                    ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
+                    Ty::Num,
+                ))
+            }
+            (Ty::Arr(_) | Ty::Bytes, "reduce") => {
+                let cb = cb_arg(0)?;
+                let Some(init) = c.arguments.get(1).and_then(|a| a.as_expression()) else {
+                    bail!("reduce needs an initial value")
+                };
+                let init = self.lower_expr(init, None)?;
+                if init.ty == Ty::Null {
+                    bail!("reduce: the initial value cannot be null")
+                }
+                let acc = self.new_local(init.ty.clone());
+                let it = self.begin_iter(recv)?;
+                let mut stmts = it.pre.clone();
+                stmts.push(Stmt::Assign(acc, init));
+                let mut body = it.head.clone();
+                body.push(self.inline_cb(
+                    cb,
+                    &[acc, it.elem, it.idx, it.arr],
+                    RetKind::Val,
+                    Some(acc),
+                )?);
+                stmts.push(Stmt::Loop(it.label, body));
+                let ty = self.cur.locals[acc as usize].clone();
+                Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(acc))), ty))
             }
             (Ty::Arr(el), "includes" | "has") => {
                 let Some(x) = c.arguments.first().and_then(|a| a.as_expression()) else {

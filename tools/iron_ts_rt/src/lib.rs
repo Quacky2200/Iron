@@ -676,6 +676,300 @@ pub extern "C" fn ts_rt_random() -> f64 {
     })
 }
 
+// ---- array operations the generated code calls (all slots are 8 bytes) ----
+
+/// JS's relative index (`slice`, `splice`): negative counts from the end; the result is in 0..=len.
+fn clamp_rel(x: f64, len: i64) -> i64 {
+    let t = if x.is_nan() { 0.0 } else { x.trunc() };
+    if t < 0.0 {
+        (len as f64 + t).max(0.0) as i64
+    } else {
+        t.min(len as f64) as i64
+    }
+}
+
+/// Makes room for `n` elements (never collects).
+///
+/// # Safety
+/// `a` is a runtime array.
+unsafe fn arr_reserve(a: *mut Array, n: i64) {
+    // SAFETY: `a` is an array; the new block is a plain allocation.
+    unsafe {
+        let arr = &mut *a;
+        if n <= arr.cap {
+            return;
+        }
+        let ncap = n.max(arr.cap * 2).max(4);
+        with_heap(|h| {
+            let nd = raw_alloc(h, ncap as usize * 8, false);
+            if arr.len > 0 {
+                std::ptr::copy_nonoverlapping(arr.data, nd, arr.len as usize * 8);
+            }
+            if arr.cap > 0 {
+                raw_free(h, arr.data, arr.cap as usize * 8);
+            }
+            arr.data = nd;
+        });
+        arr.cap = ncap;
+    }
+}
+
+unsafe fn slots(a: *mut Array) -> *mut u64 {
+    // SAFETY: `a` is an array.
+    unsafe { (*a).data as *mut u64 }
+}
+
+unsafe fn is_ptr_array(a: *mut Array) -> bool {
+    // SAFETY: `a` is an array.
+    unsafe { header_kind((*a).header) == HDR_ARRAY_PTR }
+}
+
+/// `xs.length = n`: truncates, or grows with zero slots.
+///
+/// # Safety
+/// `a` is a runtime array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_set_len(a: *mut Array, n: f64) {
+    // SAFETY: slots below `cap` belong to the array.
+    unsafe {
+        let n = if n.is_nan() { 0 } else { n.max(0.0) as i64 };
+        arr_reserve(a, n);
+        let len = (*a).len;
+        if n > len {
+            std::ptr::write_bytes(slots(a).add(len as usize), 0, (n - len) as usize);
+        } else if n < len {
+            std::ptr::write_bytes(slots(a).add(n as usize), 0, (len - n) as usize);
+        }
+        (*a).len = n;
+    }
+}
+
+/// Inserts one slot at `at` (0..=len), moving the rest up (`unshift`).
+///
+/// # Safety
+/// `a` is a runtime array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_insert(a: *mut Array, at: f64, v: u64) {
+    // SAFETY: room for one more slot is reserved first.
+    unsafe {
+        let len = (*a).len;
+        let at = clamp_rel(at, len);
+        arr_reserve(a, len + 1);
+        let d = slots(a);
+        std::ptr::copy(
+            d.add(at as usize),
+            d.add(at as usize + 1),
+            (len - at) as usize,
+        );
+        *d.add(at as usize) = v;
+        (*a).len = len + 1;
+    }
+}
+
+/// Removes `count` slots from `start` (`shift`).
+///
+/// # Safety
+/// `a` is a runtime array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_drop(a: *mut Array, start: f64, count: f64) {
+    // SAFETY: indices are clamped to the array.
+    unsafe {
+        let len = (*a).len;
+        let s = clamp_rel(start, len);
+        let c =
+            (if count.is_nan() { 0.0 } else { count.trunc() }).clamp(0.0, (len - s) as f64) as i64;
+        let d = slots(a);
+        std::ptr::copy(
+            d.add((s + c) as usize),
+            d.add(s as usize),
+            (len - s - c) as usize,
+        );
+        std::ptr::write_bytes(d.add((len - c) as usize), 0, c as usize);
+        (*a).len = len - c;
+    }
+}
+
+/// `xs.splice(start, count, ...items)`: returns the removed elements as a new array. `items` is
+/// null or an array of the same element kind.
+///
+/// # Safety
+/// `a` is a runtime array, `items` null or a runtime array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_splice(
+    a: *mut Array,
+    start: f64,
+    count: f64,
+    items: *mut Array,
+) -> *mut Array {
+    // SAFETY: indices are clamped; the removed array is a fresh allocation.
+    unsafe {
+        let len = (*a).len;
+        let s = clamp_rel(start, len);
+        let c =
+            (if count.is_nan() { 0.0 } else { count.trunc() }).clamp(0.0, (len - s) as f64) as i64;
+        let removed = with_heap(|h| new_array(h, c, is_ptr_array(a)));
+        std::ptr::copy_nonoverlapping(slots(a).add(s as usize), slots(removed), c as usize);
+        (*removed).len = c;
+        let m = if items.is_null() { 0 } else { (*items).len };
+        arr_reserve(a, len - c + m);
+        let d = slots(a);
+        std::ptr::copy(
+            d.add((s + c) as usize),
+            d.add((s + m) as usize),
+            (len - s - c) as usize,
+        );
+        if m > 0 {
+            std::ptr::copy(slots(items), d.add(s as usize), m as usize);
+        }
+        let new_len = len - c + m;
+        if new_len < len {
+            std::ptr::write_bytes(d.add(new_len as usize), 0, (len - new_len) as usize);
+        }
+        (*a).len = new_len;
+        removed
+    }
+}
+
+/// `xs.slice(start, end)`: a new array.
+///
+/// # Safety
+/// `a` is a runtime array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_slice(a: *mut Array, start: f64, end: f64) -> *mut Array {
+    // SAFETY: indices are clamped.
+    unsafe {
+        let len = (*a).len;
+        let s = clamp_rel(start, len);
+        let e = clamp_rel(end, len);
+        let n = (e - s).max(0);
+        let out = with_heap(|h| new_array(h, n, is_ptr_array(a)));
+        std::ptr::copy_nonoverlapping(slots(a).add(s as usize), slots(out), n as usize);
+        (*out).len = n;
+        out
+    }
+}
+
+/// Appends all of `src` to `dst` (`concat`, spread).
+///
+/// # Safety
+/// Both are runtime arrays of the same element kind.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_append(dst: *mut Array, src: *mut Array) {
+    // SAFETY: room is reserved first.
+    unsafe {
+        let (len, n) = ((*dst).len, (*src).len);
+        arr_reserve(dst, len + n);
+        std::ptr::copy(slots(src), slots(dst).add(len as usize), n as usize);
+        (*dst).len = len + n;
+    }
+}
+
+/// # Safety
+/// `a` is a runtime array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_reverse(a: *mut Array) {
+    // SAFETY: indices stay inside the array.
+    unsafe {
+        let n = (*a).len as usize;
+        std::slice::from_raw_parts_mut(slots(a), n).reverse();
+    }
+}
+
+/// `xs.fill(v, start, end)`.
+///
+/// # Safety
+/// `a` is a runtime array; `v` is a slot of its element type.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_fill(a: *mut Array, v: u64, start: f64, end: f64) {
+    // SAFETY: indices are clamped.
+    unsafe {
+        let len = (*a).len;
+        let (s, e) = (clamp_rel(start, len), clamp_rel(end, len));
+        for i in s..e {
+            *slots(a).add(i as usize) = v;
+        }
+    }
+}
+
+/// `xs.sort(cmp)`: a stable merge sort in place. `mode` 0: the elements are numbers, 1: pointers.
+///
+/// The comparator is script code and may allocate and collect, so the array, the closure and the
+/// merge buffer are temporary roots while it runs (both buffers are traced; each element is in at
+/// least one of them at every moment).
+///
+/// # Safety
+/// `a` is a runtime array, `cmp` a closure of two elements returning a number.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: i64) {
+    // SAFETY: both buffers have `n` slots; the heap borrow is never held across the comparator.
+    unsafe {
+        let n = (*a).len as usize;
+        if n < 2 {
+            return;
+        }
+        let tmp = with_heap(|h| {
+            let t = new_array(h, n as i64, mode == 1);
+            // The collector traces all `n` slots, so they must not hold stale data.
+            std::ptr::write_bytes((*t).data, 0, n * 8);
+            (*t).len = n as i64;
+            h.temps.extend([a as *mut u8, cmp as *mut u8, t as *mut u8]);
+            t
+        });
+        let (func, env) = ((*cmp).func, (*cmp).env);
+        let le = |x: u64, y: u64| -> bool {
+            let r = if mode == 1 {
+                let f: unsafe extern "C" fn(*mut u8, u64, u64) -> f64 = std::mem::transmute(func);
+                f(env, x, y)
+            } else {
+                let f: unsafe extern "C" fn(*mut u8, f64, f64) -> f64 = std::mem::transmute(func);
+                f(env, f64::from_bits(x), f64::from_bits(y))
+            };
+            // Equal, smaller or NaN keeps the order (stable).
+            r <= 0.0 || r.is_nan()
+        };
+        let (mut src, mut dst) = (slots(a), slots(tmp));
+        let mut width = 1;
+        while width < n {
+            let mut lo = 0;
+            while lo < n {
+                let mid = (lo + width).min(n);
+                let hi = (lo + 2 * width).min(n);
+                let (mut i, mut j, mut k) = (lo, mid, lo);
+                while i < mid && j < hi {
+                    if le(*src.add(i), *src.add(j)) {
+                        *dst.add(k) = *src.add(i);
+                        i += 1;
+                    } else {
+                        *dst.add(k) = *src.add(j);
+                        j += 1;
+                    }
+                    k += 1;
+                }
+                while i < mid {
+                    *dst.add(k) = *src.add(i);
+                    i += 1;
+                    k += 1;
+                }
+                while j < hi {
+                    *dst.add(k) = *src.add(j);
+                    j += 1;
+                    k += 1;
+                }
+                lo += 2 * width;
+            }
+            std::mem::swap(&mut src, &mut dst);
+            width *= 2;
+        }
+        if src != slots(a) {
+            std::ptr::copy_nonoverlapping(src, slots(a), n);
+        }
+        with_heap(|h| {
+            let keep = h.temps.len() - 3;
+            h.temps.truncate(keep);
+        });
+    }
+}
+
 // ---- strings (the runtime side; lowering of general string code is future work) ----
 
 #[repr(C)]
@@ -837,6 +1131,15 @@ pub fn link_anchor() -> usize {
         ts_rt_pow as *const () as usize,
         ts_rt_random as *const () as usize,
         ts_rt_random_seed as *const () as usize,
+        ts_rt_arr_set_len as *const () as usize,
+        ts_rt_arr_insert as *const () as usize,
+        ts_rt_arr_drop as *const () as usize,
+        ts_rt_arr_splice as *const () as usize,
+        ts_rt_arr_slice as *const () as usize,
+        ts_rt_arr_append as *const () as usize,
+        ts_rt_arr_reverse as *const () as usize,
+        ts_rt_arr_fill as *const () as usize,
+        ts_rt_arr_sort as *const () as usize,
         ts_rt_str_new as *const () as usize,
         ts_rt_closure_new as *const () as usize,
         ts_rt_closure_new_gc as *const () as usize,
@@ -1010,5 +1313,42 @@ mod tests {
         );
         let e = register_struct(7, 3, 0b01).unwrap_err();
         assert!(e.contains("collides"), "{e}");
+    }
+
+    // M9-TS-109
+    //
+    // The comparator of `sort` is script code that can collect. The merge buffer and the closure
+    // are held by the sort alone; poisoned (freed) elements show up as wrong lengths.
+    #[test]
+    fn sort_keeps_its_merge_buffer_alive_while_the_comparator_collects() {
+        extern "C" fn by_len(_env: *mut u8, a: u64, b: u64) -> f64 {
+            ts_rt_gc_collect();
+            // SAFETY: both are arrays.
+            unsafe { (*(a as *mut Array)).len as f64 - (*(b as *mut Array)).len as f64 }
+        }
+        ts_rt_gc_stress(true);
+        let list = ts_rt_arr_new(0, 1);
+        ts_rt_root_add(list as *mut u8);
+        let lens = [5u32, 3, 8, 1, 9, 2, 7, 4, 6, 0, 5, 3];
+        for n in lens {
+            let e = ts_rt_arr_new(0, 0);
+            for k in 0..n {
+                // SAFETY: `e` is an array.
+                unsafe { ts_rt_arr_push(e, k as u64) };
+            }
+            // SAFETY: `list` is an array.
+            unsafe { ts_rt_arr_push(list, e as u64) };
+        }
+        let cmp = ts_rt_closure_new(by_len as *const u8, std::ptr::null_mut());
+        // SAFETY: a pointer array and a comparator of two pointers.
+        unsafe { ts_rt_arr_sort(list, cmp, 1) };
+        ts_rt_gc_stress(false);
+        let got: Vec<i64> = (0..lens.len())
+            // SAFETY: elements are arrays kept alive by the sort.
+            .map(|i| unsafe { (*(*list).get::<*mut Array>(i)).len })
+            .collect();
+        let mut want: Vec<i64> = lens.iter().map(|n| *n as i64).collect();
+        want.sort();
+        assert_eq!(got, want);
     }
 }

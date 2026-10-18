@@ -192,4 +192,26 @@ mod tests {
         .unwrap();
         assert!(e.contains("rest parameter"), "{e}");
     }
+
+    // M9-TS-110
+    #[test]
+    fn array_calls_that_cannot_match_javascript_are_errors_that_say_why() {
+        let e =
+            lower::lower_source("export function f(xs: number[]): number[] { return xs.sort(); }")
+                .err()
+                .unwrap();
+        assert!(e.contains("comparator"), "{e}");
+        let e = lower::lower_source(
+            "export function f(xs: number[]): number { return xs.reduce((a, x) => a + x); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("initial value"), "{e}");
+        let e = lower::lower_source(
+            "export function f(xs: boolean[]): boolean | undefined { return xs.pop(); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("pop"), "{e}");
+    }
 }

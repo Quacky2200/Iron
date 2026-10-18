@@ -51,6 +51,8 @@ pub(crate) enum Place {
     Cell(Expr, Ty),
     /// A module-level `let`/`var`.
     Global(GlobalId, Ty),
+    /// `xs.length`: reading is `Len`, writing truncates or grows.
+    ArrLen(Expr),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
 }
@@ -620,6 +622,43 @@ impl<'a> Lowerer<'a> {
             bail!("{}: unsupported `new`", self.loc(n.span.start))
         };
         match id.name.as_str() {
+            // `new Array(n)`: n zeroed slots (a hole reads as undefined in JS; here it is 0 or null).
+            "Array" => {
+                let el = match exp.map(|t| t.strip()) {
+                    Some(Ty::Arr(e)) => (**e).clone(),
+                    _ => Ty::Num,
+                };
+                let ty = Ty::Arr(Box::new(el));
+                let len = match n.arguments.first().and_then(|a| a.as_expression()) {
+                    Some(e) => {
+                        let v = self.lower_expr(e, Some(&Ty::Num))?;
+                        self.as_num(v)?
+                    }
+                    None => num(0.0),
+                };
+                if n.arguments.len() > 1 {
+                    bail!(
+                        "{}: `new Array(a, b, ...)`: use an array literal",
+                        self.loc(n.span.start)
+                    )
+                }
+                let (nv, tmp) = (self.new_local(Ty::Num), self.new_local(ty.clone()));
+                let stmts = vec![
+                    Stmt::Assign(nv, len),
+                    Stmt::Assign(
+                        tmp,
+                        mk(
+                            ExprKind::Rt(RtFn::ArrNew, vec![self.var_expr(nv)]),
+                            ty.clone(),
+                        ),
+                    ),
+                    Stmt::Eval(mk(
+                        ExprKind::Rt(RtFn::ArrSetLen, vec![self.var_expr(tmp), self.var_expr(nv)]),
+                        Ty::Void,
+                    )),
+                ];
+                Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty))
+            }
             "Uint8Array" => {
                 let len = match n.arguments.first().and_then(|a| a.as_expression()) {
                     Some(e) => self.lower_expr(e, Some(&Ty::Num))?,
@@ -668,6 +707,11 @@ impl<'a> Lowerer<'a> {
             }
             SimpleAssignmentTarget::StaticMemberExpression(m) => {
                 let obj = self.lower_expr(&m.object, None)?;
+                if m.property.name == "length" && matches!(obj.ty.strip(), Ty::Arr(_)) {
+                    let tmp = self.new_local(obj.ty.clone());
+                    pre.push(Stmt::Assign(tmp, obj));
+                    return Ok(Place::ArrLen(self.var_expr(tmp)));
+                }
                 let f = self.member_of(obj, m.property.name.as_str())?;
                 let ExprKind::Field(obj, sid, idx) = f.kind else {
                     bail!("not a field")
@@ -700,7 +744,9 @@ impl<'a> Lowerer<'a> {
     }
 
     pub(crate) fn place_ty(p: &Place) -> &Ty {
+        static NUM: Ty = Ty::Num;
         match p {
+            Place::ArrLen(_) => &NUM,
             Place::Var(_, t)
             | Place::Cell(_, t)
             | Place::Global(_, t)
@@ -714,6 +760,7 @@ impl<'a> Lowerer<'a> {
             Place::Var(v, _) => self.var_expr(*v),
             Place::Cell(c, t) => mk(ExprKind::CellGet(Box::new(c.clone())), t.clone()),
             Place::Global(g, t) => mk(ExprKind::GlobalVar(*g), t.clone()),
+            Place::ArrLen(a) => mk(ExprKind::Len(Box::new(a.clone())), Ty::Num),
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
             Place::Index(a, i, t) => mk(
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
@@ -727,6 +774,10 @@ impl<'a> Lowerer<'a> {
             Place::Var(var, _) => Stmt::Assign(*var, v),
             Place::Cell(cell, _) => Stmt::CellSet(cell.clone(), v),
             Place::Global(g, _) => Stmt::StoreGlobal(*g, v),
+            Place::ArrLen(a) => Stmt::Eval(mk(
+                ExprKind::Rt(RtFn::ArrSetLen, vec![a.clone(), v]),
+                Ty::Void,
+            )),
             Place::Field(o, s, i, _) => Stmt::StoreField(o.clone(), *s, *i, v),
             Place::Index(a, i, _) => Stmt::StoreIndex(a.clone(), i.clone(), v),
         }
@@ -969,6 +1020,12 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Math").is_none()
                 {
                     return self.lower_math(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "Array"
+                    && self.lookup("Array").is_none()
+                {
+                    return self.lower_array_static(method, c);
                 }
                 let mut recv = self.lower_expr(&m.object, None)?;
                 if m.optional {
