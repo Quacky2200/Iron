@@ -360,6 +360,14 @@ fn ex(e: &Expr) -> String {
             "rt.{r:?}({})",
             a.iter().map(ex).collect::<Vec<_>>().join(", ")
         ),
-        ExprKind::Seq(_, v) => format!("{{..; {}}}", ex(v)),
+        ExprKind::Seq(stmts, v) => {
+            let mut s = String::new();
+            dump_stmts(&mut s, stmts, 3);
+            format!(
+                "{{
+{s}      => {}}}",
+                ex(v)
+            )
+        }
     }
 }
