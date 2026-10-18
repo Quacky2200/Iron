@@ -2,9 +2,27 @@
 //! (layouts, tags, extern functions) plus helpers to build state from Rust.
 #![allow(non_snake_case, clippy::not_unsafe_ptr_arg_deref)] // a test harness: every pointer comes from the generated code
 
-#[allow(dead_code, non_camel_case_types, non_upper_case_globals, clippy::all)]
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
 pub mod sim {
     include!(concat!(env!("OUT_DIR"), "/sim_bindings.rs"));
+}
+
+/// The sine-circle curve maths (`bench/sine.ts`), prefix `sine_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod sine {
+    include!(concat!(env!("OUT_DIR"), "/sine_bindings.rs"));
 }
 
 use iron_ts_rt::{Array, Closure, ts_rt_alloc, ts_rt_arr_new, ts_rt_arr_push, ts_rt_closure_new};

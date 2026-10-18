@@ -294,6 +294,19 @@ impl<'a> Lowerer<'a> {
 
     pub(crate) fn arith(&mut self, op: BinOp, l: Expr, r: Expr) -> R<Expr> {
         let (l, r) = (self.as_num(l)?, self.as_num(r)?);
+        // Constant folding, so `const UNITS = 10 / 729` is a constant rather than a global.
+        if let (ExprKind::Num(a), ExprKind::Num(b)) = (&l.kind, &r.kind) {
+            let v = match op {
+                BinOp::Add => Some(a + b),
+                BinOp::Sub => Some(a - b),
+                BinOp::Mul => Some(a * b),
+                BinOp::Div => Some(a / b),
+                _ => None,
+            };
+            if let Some(v) = v {
+                return Ok(num(v));
+            }
+        }
         Ok(mk(ExprKind::Bin(op, Box::new(l), Box::new(r)), Ty::Num))
     }
 

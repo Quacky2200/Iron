@@ -159,7 +159,7 @@ x86_64 and aarch64 Linux, macOS and Android, and aarch64 iOS (pure AOT, no JIT),
 layout, `TAG_*` constants for string literals, `NULL_NUM_BITS`, and `extern "C"` declarations of
 the exported functions. The tests include that file, so the host reads and writes fields of
 script state directly (`(*player).score`). This is the shape of the future engine boundary
-(section 8).
+(section 9).
 
 Linking: the test crate's `build.rs` calls `iron_ts::compile_source`, writes the `.obj` and passes it
 with `cargo:rustc-link-arg`; the platform linker (MSVC `link.exe` here) does the rest, with
@@ -213,7 +213,46 @@ The compiler is not the cost; the platform link is. Compile time scales with the
 of half a second plus the link. The first `cargo` build of the tool itself takes ~1 minute (Cranelift
 and oxc), once.
 
-## 8. Effort and next steps
+## 8. Second benchmark: the sine circle
+
+`tools/iron_ts_tests/bench/sine.ts` is the sine-circle demo's curve maths
+(`examples/sine-circle-demo`: `at()` per degree, Catmull-Rom spline, 3 samples per segment) as free
+functions, flattened to the 2,166-number list that `LineRenderer2D.send` hands to `render.stroke`.
+It compiles with `iron_ts` unchanged (0.2 ms lower, 1.8 ms Cranelift, 4.6 KB object). One frame
+= 361 points, 1,083 after the spline, with the formula, radius, frequency, depth, rotation and
+centre changing each frame (`cargo run --release -p iron_ts_tests --bin sine_bench`, 2,000 frames,
+best of three; all engines print the same checksum).
+
+| Engine | per frame | vs QuickJS |
+|---|---|---|
+| QuickJS, compute only | 1.14 ms | 1x |
+| QuickJS, compute + `__iron_op` + draining the op into Rust | 1.26 ms | (0.12 ms is the crossing) |
+| bun (JIT) | 0.054 ms | 21x |
+| native, compute | 0.033 ms | **35x** |
+| native, compute + Rust copying the points out of script memory into its own `Vec<f32>` | 0.030 ms | **38x** |
+
+What it says:
+
+- Most of the old cost was the **calculation in the interpreter** (1.14 ms of 1.26), not the
+  boundary; but the boundary is not free: ~0.12 ms here to move 2,166 numbers as `Value`s, and the
+  real app adds its own conversion (the demo's commit message measured ~0.2 ms).
+- With native code there is no `Value` conversion. The array lives in script memory with a known
+  layout (`{header, len, cap, data}` of f64); Rust reads the `data` slice in place. The "copy"
+  row includes narrowing to f32 and costs nothing measurable. A direct engine call
+  (`render.stroke(points: *const f64, n)`) would remove even that copy.
+- The frame is allocation heavy (361 + 1,083 small objects and a growing array), so it exercises
+  the allocator: with a **frame arena** (`ts_rt_reset()` once Rust has the points) a frame costs
+  30 µs. Before the reset kept its first chunk the same code took 80 µs, slower than bun,
+  because every reset handed 4 MiB back to the OS and faulted it in again. Escape analysis (or the
+  GC) is what would make that reset automatic.
+- Two compiler fixes came from this benchmark: constant expressions such as
+  `const UNITS_PER_PX = 10 / 729` are now folded to constants instead of becoming globals set by
+  `ts_init` (forgetting to call `ts_init` gave all-zero coordinates, which the checksum caught), and
+  `%` on whole numbers is an integer `srem` instead of a libm `fmod` call (the fast path is
+  correct for the spline's wrap-around indexes; it did not change this benchmark's time).
+- Several modules link into one program: exported symbols take a prefix (`ts_sine_curveFlat`).
+
+## 9. Effort and next steps
 
 Estimates for one engineer who knows the codebase. "Useful" means shipping the gameplay
 modules of a typical game as native code; React UI code stays on QuickJS (see next).
@@ -247,7 +286,7 @@ Recommended order and decisions:
    and can fall back to QuickJS per module when a file uses unsupported features (the compiler
    already rejects with line numbers).
 
-## 9. Layout of the code
+## 10. Layout of the code
 
 | Path | What |
 |---|---|

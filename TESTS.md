@@ -497,6 +497,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-16 | Unit | Array-method callbacks are inlined (no closure call) and exported functions get `ts_` symbols in the object. |
 | M9-TS-17 | Unit | `iron_ts_rt`: arrays grow and keep values (M9-TS-17a), strings concat and compare (17b), `Uint8Array.fill` clamps (17c). |
 | M9-TS-18 | Manual | `cargo run --release -p iron_ts_tests --bin bench` (from `tools/`): QuickJS, bun and the native code run 10,000 steps of a busy state and print the same checksum; timings in `docs/research/iron-ts-spike.md`. |
+| M9-TS-19 | Manual | `cargo run --release -p iron_ts_tests --bin sine_bench` (from `tools/`): the sine-circle curve (`bench/sine.ts`) in QuickJS with and without the `__iron_op` crossing, bun and native code; one checksum for all.
+| M9-TS-20 | Unit | `iron_ts_rt`: `ts_rt_reset` keeps and zeroes its first chunk, so a per-frame arena reuses memory (M9-TS-17d).
 
 ---
 

@@ -72,7 +72,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
             .collect();
         let sig = sig_of(call_conv, &ptys, &f.ret);
         let (name, linkage) = if f.exported {
-            (format!("ts_{}", f.name), Linkage::Export)
+            (format!("ts_{}{}", m.prefix, f.name), Linkage::Export)
         } else {
             (format!("iron_ts_local_{}", f.name), Linkage::Local)
         };
@@ -86,7 +86,12 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
     let mut gdata: Vec<DataId> = Vec::new();
     for g in &m.globals {
         let id = module
-            .declare_data(&format!("ts_g_{}", g.name), Linkage::Local, true, false)
+            .declare_data(
+                &format!("ts_g_{}{}", m.prefix, g.name),
+                Linkage::Local,
+                true,
+                false,
+            )
             .map_err(|e| e.to_string())?;
         let mut d = DataDescription::new();
         d.define_zeroinit(8);
@@ -417,14 +422,7 @@ impl Cg<'_, '_> {
                     BinOp::Sub => self.b.ins().fsub(x, y),
                     BinOp::Mul => self.b.ins().fmul(x, y),
                     BinOp::Div => self.b.ins().fdiv(x, y),
-                    BinOp::Rem => self
-                        .rt(
-                            "ts_rt_fmod",
-                            &[types::F64, types::F64],
-                            Some(types::F64),
-                            &[x, y],
-                        )
-                        .unwrap(),
+                    BinOp::Rem => self.rem(x, y),
                     BinOp::Min => self.b.ins().fmin(x, y),
                     BinOp::Max => self.b.ins().fmax(x, y),
                     BinOp::Atan2 => self
@@ -653,6 +651,47 @@ impl Cg<'_, '_> {
                 }
             }
         })
+    }
+
+    /// JS `%`. Whole numbers with a positive divisor (loop indexes, wrap-around) take an
+    /// integer `srem`; anything else calls libm's fmod. (A negative dividend that leaves 0 gives
+    /// +0 instead of JS's -0.)
+    fn rem(&mut self, x: Value, y: Value) -> Value {
+        let (xi, yi) = (self.cvt_i64(x), self.cvt_i64(y));
+        let (xb, yb) = (
+            self.b.ins().fcvt_from_sint(types::F64, xi),
+            self.b.ins().fcvt_from_sint(types::F64, yi),
+        );
+        let (xe, ye) = (
+            self.b.ins().fcmp(FloatCC::Equal, xb, x),
+            self.b.ins().fcmp(FloatCC::Equal, yb, y),
+        );
+        let pos = self.b.ins().icmp_imm_s(IntCC::SignedGreaterThan, yi, 0);
+        let both = self.b.ins().band(xe, ye);
+        let ok = self.b.ins().band(both, pos);
+        let (fast, slow, join) = (
+            self.b.create_block(),
+            self.b.create_block(),
+            self.b.create_block(),
+        );
+        self.b.append_block_param(join, types::F64);
+        self.b.ins().brif(ok, fast, &[], slow, &[]);
+        self.b.switch_to_block(fast);
+        let r = self.b.ins().srem(xi, yi);
+        let rf = self.b.ins().fcvt_from_sint(types::F64, r);
+        self.b.ins().jump(join, &[ir::BlockArg::Value(rf)]);
+        self.b.switch_to_block(slow);
+        let m = self
+            .rt(
+                "ts_rt_fmod",
+                &[types::F64, types::F64],
+                Some(types::F64),
+                &[x, y],
+            )
+            .unwrap();
+        self.b.ins().jump(join, &[ir::BlockArg::Value(m)]);
+        self.b.switch_to_block(join);
+        self.b.block_params(join)[0]
     }
 
     fn rt_call(&mut self, r: RtFn, args: &[Expr]) -> R<Value> {

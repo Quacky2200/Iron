@@ -18,20 +18,26 @@ pub struct Output {
 
 /// TypeScript source -> object file bytes, Rust bindings and an IR dump.
 pub fn compile_source(src: &str, opt: &str) -> Result<Output, String> {
+    compile_with_prefix(src, opt, "")
+}
+
+/// Like `compile_source`, naming exported symbols `ts_<prefix><name>`.
+pub fn compile_with_prefix(src: &str, opt: &str, prefix: &str) -> Result<Output, String> {
     // Lowering recurses with the source's nesting; the main thread's 1 MiB is too little on Windows.
     std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(64 << 20)
-            .spawn_scoped(s, || compile_inner(src, opt))
+            .spawn_scoped(s, || compile_inner(src, opt, prefix))
             .map_err(|e| e.to_string())?
             .join()
             .map_err(|_| "compiler panicked".to_string())?
     })
 }
 
-fn compile_inner(src: &str, opt: &str) -> Result<Output, String> {
+fn compile_inner(src: &str, opt: &str, prefix: &str) -> Result<Output, String> {
     let t0 = std::time::Instant::now();
-    let module = lower::lower_source(src)?;
+    let mut module = lower::lower_source(src)?;
+    module.prefix = prefix.to_string();
     let lower_time = t0.elapsed();
     let t1 = std::time::Instant::now();
     let compiled = codegen::compile(&module, opt)?;

@@ -86,7 +86,13 @@ pub fn rust_bindings(m: &Module) -> String {
         } else {
             format!(" -> {}", rust_ty(m, &f.ret, false))
         };
-        s += &format!("    pub fn ts_{}({}){};\n", f.name, params.join(", "), ret);
+        s += &format!(
+            "    pub fn ts_{}{}({}){};\n",
+            m.prefix,
+            f.name,
+            params.join(", "),
+            ret
+        );
     }
     s += "}\n";
     s

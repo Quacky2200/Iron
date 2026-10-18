@@ -50,30 +50,32 @@ fn new_chunk(size: usize) -> *mut u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_alloc(size: usize) -> *mut u8 {
     let size = (size + 15) & !15;
-    let (big, full) = with_arena(|a| {
+    // Fast path: one thread-local access, a bump.
+    let fast = with_arena(|a| {
         a.allocated += size;
-        (
-            size > CHUNK / 4,
-            (a.end as usize) - (a.cur as usize) < size || a.cur.is_null(),
-        )
+        let left = (a.end as usize) - (a.cur as usize);
+        if size <= CHUNK / 4 && !a.cur.is_null() && left >= size {
+            let p = a.cur;
+            // SAFETY: checked above that `size` fits in the chunk.
+            a.cur = unsafe { p.add(size) };
+            p
+        } else {
+            std::ptr::null_mut()
+        }
     });
-    if big {
+    if !fast.is_null() {
+        return fast;
+    }
+    if size > CHUNK / 4 {
         return new_chunk(size);
     }
-    if full {
-        let p = new_chunk(CHUNK);
-        // SAFETY: `p` points to `CHUNK` bytes.
-        with_arena(|a| {
-            a.cur = p;
-            a.end = unsafe { p.add(CHUNK) };
-        });
-    }
+    let p = new_chunk(CHUNK);
     with_arena(|a| {
-        let p = a.cur;
-        // SAFETY: checked above that `size` fits.
+        // SAFETY: `p` points to `CHUNK` bytes and `size` <= CHUNK.
         a.cur = unsafe { p.add(size) };
-        p
-    })
+        a.end = unsafe { p.add(CHUNK) };
+    });
+    p
 }
 
 /// Bytes handed out since the last reset.
@@ -82,16 +84,37 @@ pub extern "C" fn ts_rt_allocated() -> usize {
     with_arena(|a| a.allocated)
 }
 
-/// Frees everything. Every pointer previously returned is dangling afterwards.
+/// Frees everything but the first chunk, which is zeroed and reused (a per-frame arena should
+/// not hand 4 MiB back to the OS and fault it in again every frame). Every pointer previously
+/// returned is dangling afterwards.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_reset() {
     with_arena(|a| {
-        for (p, size) in a.chunks.drain(..) {
-            // SAFETY: allocated with this layout in `new_chunk`.
-            unsafe { std::alloc::dealloc(p, Layout::from_size_align(size, 16).unwrap()) };
+        let keep = a.chunks.iter().position(|(_, size)| *size == CHUNK);
+        for (i, (p, size)) in std::mem::take(&mut a.chunks).into_iter().enumerate() {
+            if Some(i) == keep {
+                let used = if (a.cur as usize) >= (p as usize)
+                    && (a.cur as usize) <= (p as usize) + CHUNK
+                {
+                    a.cur as usize - p as usize
+                } else {
+                    CHUNK
+                };
+                // SAFETY: `p` points to `CHUNK` bytes, `used` of them were handed out.
+                unsafe { std::ptr::write_bytes(p, 0, used) };
+                a.chunks.push((p, size));
+                a.cur = p;
+                // SAFETY: within the chunk.
+                a.end = unsafe { p.add(CHUNK) };
+            } else {
+                // SAFETY: allocated with this layout in `new_chunk`.
+                unsafe { std::alloc::dealloc(p, Layout::from_size_align(size, 16).unwrap()) };
+            }
         }
-        a.cur = std::ptr::null_mut();
-        a.end = std::ptr::null_mut();
+        if keep.is_none() {
+            a.cur = std::ptr::null_mut();
+            a.end = std::ptr::null_mut();
+        }
         a.allocated = 0;
     })
 }
@@ -344,5 +367,21 @@ mod tests {
         let a = ts_rt_bytes_new(8);
         unsafe { ts_rt_bytes_fill(a, 1, 6, 100) };
         assert_eq!(unsafe { (*a).bytes() }, &[0, 0, 0, 0, 0, 0, 1, 1]);
+    }
+
+    // M9-TS-20
+    #[test]
+    fn reset_reuses_the_first_chunk_and_hands_out_zeroed_memory() {
+        let a = ts_rt_alloc(64);
+        unsafe { std::ptr::write_bytes(a, 0xAB, 64) };
+        ts_rt_reset();
+        let b = ts_rt_alloc(64);
+        assert_eq!(a, b);
+        assert!(
+            unsafe { std::slice::from_raw_parts(b, 64) }
+                .iter()
+                .all(|x| *x == 0)
+        );
+        assert_eq!(ts_rt_allocated(), 64);
     }
 }

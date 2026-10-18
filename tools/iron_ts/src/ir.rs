@@ -239,6 +239,8 @@ pub struct Module {
     pub tags: Vec<String>,
     /// Runs the top-level initialisers; exported as `ts_init`.
     pub init: Option<FuncId>,
+    /// Put between `ts_` and an exported name, so several modules can link into one program.
+    pub prefix: String,
 }
 
 // ---- A readable dump (for `iron_ts --dump-ir` and the doc) ----
