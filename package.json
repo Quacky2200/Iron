@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": ["js/*", "examples/*", "editor", "tests/fixtures"],
   "scripts": {
-    "build": "bun run --filter hello --filter boxes --filter text --filter css --filter form --filter physics --filter world --filter sine-circle-demo --filter raindrop-demo --filter topdown-zombie-game --filter shapes --filter splines --filter clock --filter fishtank --filter iron-editor build",
+    "build": "bun run --filter hello --filter boxes --filter text --filter css --filter form --filter physics --filter world --filter sine-circle-demo --filter raindrop-demo --filter shapes --filter splines --filter clock --filter fishtank --filter iron-editor build",
     "build:fixtures": "bun run --filter iron-fixtures build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
