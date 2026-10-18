@@ -128,10 +128,7 @@ impl<'a> Lowerer<'a> {
         self.cur.scopes.push(HashMap::new());
         let mut body = Vec::new();
         for (p, var) in f.params.items.iter().zip(params) {
-            let BindingPattern::BindingIdentifier(b) = &p.pattern else {
-                bail!("destructured callback parameter")
-            };
-            self.bind_var(b.name.as_str(), *var, &mut body);
+            self.bind_param(&p.pattern, *var, &mut body)?;
         }
         let label = self.new_label();
         let saved_loops = std::mem::take(&mut self.cur.loops);

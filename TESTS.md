@@ -549,6 +549,12 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-68 | Integration | `continue` in a switch reaches the loop, `break` leaves only the switch, no match and no default does nothing, `break label` leaves a labelled switch from a nested loop. Runs in all three GC modes (`tests/switches.rs`). |
 | M9-TS-69 | Integration | A discriminant and case expressions that allocate are evaluated once and in order and survive a collection at every allocation; case blocks keep their own constants. Runs in all three GC modes (`tests/switches.rs`). |
 | M9-TS-70 | Unit | Non-constant enum members, unknown members, a string member followed by a member without a value, `continue` outside a loop and `continue` to a non-loop label are errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-71 | Integration | Object patterns rename (`{ x: ax }`), nest (`min: { x, y }`) and work as function parameters. Runs normally, in stress GC mode and with collection off (`tests/destructure.rs`). |
+| M9-TS-72 | Integration | A pattern default replaces a missing (null) property and the value wins when present; the default may allocate (a call). Runs in all three GC modes (`tests/destructure.rs`). |
+| M9-TS-73 | Integration | Array patterns skip holes and give a missing element its default (`[a, b, c = 5] = [1, 2]`). Runs in all three GC modes (`tests/destructure.rs`). |
+| M9-TS-74 | Integration | `for (const { x, y } of items)`, `for (const [a, b] of rows)` and patterns as inlined callback parameters. Runs in all three GC modes (`tests/destructure.rs`). |
+| M9-TS-75 | Integration | A closure takes a pattern parameter, and a closure captures a destructured variable (a cell: it sees later writes). Runs in all three GC modes (`tests/destructure.rs`). |
+| M9-TS-76 | Integration | Patterns over freshly allocated objects and arrays inside a loop survive a collection at every allocation. Runs in all three GC modes (`tests/destructure.rs`). |
 
 ---
 

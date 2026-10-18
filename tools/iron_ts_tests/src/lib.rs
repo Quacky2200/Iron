@@ -73,6 +73,18 @@ pub mod sw {
     include!(concat!(env!("OUT_DIR"), "/switches_bindings.rs"));
 }
 
+/// Destructuring (`bench/destructure.ts`), prefix `des_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod des {
+    include!(concat!(env!("OUT_DIR"), "/destructure_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

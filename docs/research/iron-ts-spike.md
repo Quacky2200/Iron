@@ -526,3 +526,34 @@ dense numeric switch could become a Cranelift jump table later (Performance).
 
 Tests: `tests/switches.rs` against bun's numbers from `bench/switches.ts`, in all three GC modes
 (`M9-TS-64`..`69`); error cases are a unit test (`M9-TS-70`).
+
+## 14. Destructuring, default and rest parameters, spread (stage 3)
+
+Three features that share one idea: take a value apart, or fill in what is missing, at the
+boundary of a declaration or a call. Each is its own commit.
+
+### 14.1 Destructuring (done)
+
+`bind_pattern(pattern, value, out)` binds the names of a pattern to parts of an already lowered
+value, recursively:
+
+| Pattern | Lowering |
+|---|---|
+| `x` | a new local (a cell when a closure captures it) |
+| `{ a, b: p }` | the value in a temporary; `a` is a field read; `p` is bound to the field `b` |
+| `[p, , q]` | the value in a temporary; element `i` is an `Index`; holes are skipped |
+| `p = d` | `Cond(IsNull(v), d, v)` when `v` can be null (a missing property or a short array); a value that cannot be null ignores the default |
+
+It is used by variable declarations (`const { x, y } = p`), parameters of functions, closures and
+inlined array callbacks (`({ x }) => x`), and `for...of` variables (`for (const [a, b] of rows)`).
+An array element reads as null past the end (a zero pointer, or the null NaN for numbers), which is
+what lets `[a, b, c = 5]` give `c` its default. The default expression is lowered where the
+pattern is, so it may allocate or call; the temporaries are ordinary locals, rooted by the frame
+plan like any other.
+
+Not done: rest elements (`{ a, ...rest }`, `[a, ...rest]`; the object case needs an anonymous
+struct for the remainder, the array case needs `slice`), destructuring assignment to existing
+variables (`[a, b] = [b, a]`), computed keys, tuple types.
+
+Tests: `tests/destructure.rs` against bun's numbers from `bench/destructure.ts`, in all three GC
+modes (`M9-TS-71`..`76`).

@@ -380,11 +380,8 @@ impl<'a> Lowerer<'a> {
         let mut pvars = Vec::new();
         let mut pro = Vec::new();
         for (p, ty) in params.items.iter().zip(ptys) {
-            let BindingPattern::BindingIdentifier(b) = &p.pattern else {
-                bail!("{name}: destructured parameter")
-            };
             let v = self.new_local(ty);
-            self.bind_var(b.name.as_str(), v, &mut pro);
+            self.bind_param(&p.pattern, v, &mut pro)?;
             pvars.push(v);
         }
         let (stmts, ret) = self.lower_body_into(body, pro)?;

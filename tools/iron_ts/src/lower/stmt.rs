@@ -58,15 +58,13 @@ impl<'a> Lowerer<'a> {
                 let ForStatementLeft::VariableDeclaration(d) = &f.left else {
                     bail!("for-of over an existing variable")
                 };
-                let BindingPattern::BindingIdentifier(id) = &d.declarations[0].id else {
-                    bail!("destructured for-of variable")
-                };
+                let pat = &d.declarations[0].id;
                 let arr = self.lower_expr(&f.right, None)?;
                 let it = self.begin_iter(arr)?;
                 self.cur.scopes.push(HashMap::new());
                 // A captured loop variable gets a fresh cell every iteration.
                 let mut bind = Vec::new();
-                self.bind_var(id.name.as_str(), it.elem, &mut bind);
+                self.bind_param(pat, it.elem, &mut bind)?;
                 let entry = self.loop_entry(it.label, Some(it.label));
                 self.cur.loops.push(entry);
                 let body = self.scoped(&f.body);
@@ -323,10 +321,136 @@ impl<'a> Lowerer<'a> {
         Ok(())
     }
 
+    /// `const { a, b: [c] } = value;`
+    fn lower_destructuring(&mut self, d: &'a VariableDeclarator<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let Some(init) = &d.init else {
+            bail!("{}: destructuring needs a value", self.loc(d.span.start))
+        };
+        let ann = match &d.type_annotation {
+            Some(a) => Some(self.ty(&a.type_annotation, "pattern")?),
+            None => None,
+        };
+        let mut v = self.lower_expr(init, ann.as_ref())?;
+        if let Some(t) = &ann {
+            v = self.coerce(v, t)?;
+        }
+        self.bind_pattern(&d.id, v, out)
+    }
+
+    /// Names a parameter (or loop variable) that is already in local `var`: a plain name, or a
+    /// pattern taken apart in `out`.
+    pub(crate) fn bind_param(
+        &mut self,
+        pat: &'a BindingPattern<'a>,
+        var: VarId,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        match pat {
+            BindingPattern::BindingIdentifier(b) => {
+                self.bind_var(b.name.as_str(), var, out);
+                Ok(())
+            }
+            p => {
+                let v = self.var_expr(var);
+                self.bind_pattern(p, v, out)
+            }
+        }
+    }
+
+    /// Binds the names of a pattern to the parts of `value`: `{ a, b: { c } }`, `[x, y]`, and
+    /// `name = default` anywhere (the default replaces a null).
+    pub(crate) fn bind_pattern(
+        &mut self,
+        pat: &'a BindingPattern<'a>,
+        value: Expr,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        match pat {
+            BindingPattern::BindingIdentifier(id) => {
+                let var = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(var, value));
+                self.bind_var(id.name.as_str(), var, out);
+            }
+            BindingPattern::AssignmentPattern(a) => {
+                if !value.ty.is_nullable() {
+                    // Never null: the default cannot be used.
+                    return self.bind_pattern(&a.left, value, out);
+                }
+                let base = value.ty.strip().clone();
+                let tmp = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(tmp, value));
+                let t = self.var_expr(tmp);
+                let d = self.lower_expr(&a.right, Some(&base))?;
+                let d = self.coerce(d, &base)?;
+                let have = mk(ExprKind::Cast(Box::new(t.clone())), base.clone());
+                let picked = mk(
+                    ExprKind::Cond(
+                        Box::new(mk(ExprKind::IsNull(Box::new(t)), Ty::Bool)),
+                        Box::new(d),
+                        Box::new(have),
+                    ),
+                    base,
+                );
+                self.bind_pattern(&a.left, picked, out)?;
+            }
+            BindingPattern::ObjectPattern(o) => {
+                if o.rest.is_some() {
+                    bail!("a rest element in an object pattern is not supported")
+                }
+                let tmp = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(tmp, value));
+                for p in &o.properties {
+                    if p.computed {
+                        bail!("computed key in an object pattern")
+                    }
+                    let key = self.key_name(&p.key)?;
+                    let part = self.member_of(self.var_expr(tmp), &key)?;
+                    self.bind_pattern(&p.value, part, out)?;
+                }
+            }
+            BindingPattern::ArrayPattern(a) => {
+                if a.rest.is_some() {
+                    bail!("a rest element in an array pattern is not supported")
+                }
+                let Ty::Arr(el) = value.ty.strip().clone() else {
+                    bail!("cannot destructure {} as an array", value.ty)
+                };
+                let el = *el;
+                let tmp = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(tmp, value));
+                for (i, p) in a.elements.iter().enumerate() {
+                    let Some(p) = p else { continue };
+                    // Past the end an element reads as null (a zero pointer, or the null NaN).
+                    let read_ty = if el.is_ptr() || el == Ty::Num {
+                        el.clone().nullable()
+                    } else {
+                        el.clone()
+                    };
+                    let read = mk(
+                        ExprKind::Index(
+                            Box::new(self.var_expr(tmp)),
+                            Box::new(super::expr::num(i as f64)),
+                        ),
+                        read_ty.clone(),
+                    );
+                    let part = if matches!(p, BindingPattern::AssignmentPattern(_)) || read_ty == el
+                    {
+                        read
+                    } else {
+                        mk(ExprKind::Cast(Box::new(read)), el.clone())
+                    };
+                    self.bind_pattern(p, part, out)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn lower_var_decl(&mut self, v: &'a VariableDeclaration<'a>, out: &mut Vec<Stmt>) -> R<()> {
         for d in &v.declarations {
             let BindingPattern::BindingIdentifier(id) = &d.id else {
-                bail!("{}: destructuring declaration", self.loc(d.span.start))
+                self.lower_destructuring(d, out)?;
+                continue;
             };
             let ann = match &d.type_annotation {
                 Some(a) => Some(self.ty(&a.type_annotation, id.name.as_str())?),
