@@ -108,6 +108,45 @@ pub struct Namespace {
     pub functions: &'static [Function],
 }
 
+#[cfg(feature = "glam")]
+mod glam_values {
+    use super::ValueType;
+    use glam::{Quat, Vec2, Vec3, Vec4};
+
+    impl ValueType<2> for Vec2 {
+        fn from_parts(p: [f64; 2]) -> Self {
+            Vec2::new(p[0] as f32, p[1] as f32)
+        }
+        fn to_parts(self) -> [f64; 2] {
+            [self.x as f64, self.y as f64]
+        }
+    }
+    impl ValueType<3> for Vec3 {
+        fn from_parts(p: [f64; 3]) -> Self {
+            Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32)
+        }
+        fn to_parts(self) -> [f64; 3] {
+            [self.x as f64, self.y as f64, self.z as f64]
+        }
+    }
+    impl ValueType<4> for Vec4 {
+        fn from_parts(p: [f64; 4]) -> Self {
+            Vec4::new(p[0] as f32, p[1] as f32, p[2] as f32, p[3] as f32)
+        }
+        fn to_parts(self) -> [f64; 4] {
+            [self.x as f64, self.y as f64, self.z as f64, self.w as f64]
+        }
+    }
+    impl ValueType<4> for Quat {
+        fn from_parts(p: [f64; 4]) -> Self {
+            Quat::from_xyzw(p[0] as f32, p[1] as f32, p[2] as f32, p[3] as f32)
+        }
+        fn to_parts(self) -> [f64; 4] {
+            [self.x as f64, self.y as f64, self.z as f64, self.w as f64]
+        }
+    }
+}
+
 /// An engine object id. The Rust type that implements this is what API functions take and return;
 /// scripts see the raw 64-bit value.
 /// A Rust type that scripts see as a value class of `N` numbers (`glam::Vec3` as `Vector3`).

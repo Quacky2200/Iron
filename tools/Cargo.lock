@@ -449,6 +449,7 @@ dependencies = [
 name = "iron_api"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "iron_api_macros",
 ]
 
@@ -475,6 +476,15 @@ name = "iron_demo_api"
 version = "0.1.0"
 dependencies = [
  "iron_api",
+]
+
+[[package]]
+name = "iron_scene"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "iron_api",
+ "iron_core",
 ]
 
 [[package]]
@@ -513,8 +523,10 @@ version = "0.1.0"
 name = "iron_ts_tests"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "iron_core",
  "iron_demo_api",
+ "iron_scene",
  "iron_script",
  "iron_ts",
  "iron_ts_rt",

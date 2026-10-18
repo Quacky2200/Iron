@@ -175,6 +175,23 @@ pub fn demo_api_anchor() -> usize {
     iron_demo_api::link_anchor()
 }
 
+/// Compiled scripts driving the real scene (`bench/scene.ts`), prefix `scn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod scn {
+    include!(concat!(env!("OUT_DIR"), "/scene_bindings.rs"));
+}
+
+/// Uses `iron_scene`, so that binaries linking this crate also link its `Scene` API shims.
+pub fn scene_anchor() -> usize {
+    iron_scene::Scene::new().len()
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

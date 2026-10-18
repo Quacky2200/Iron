@@ -391,3 +391,30 @@ read.
 
 Not built yet: methods on value classes as inline intrinsics (`a.add(b)`), strings, methods on
 handles (`transform.position`), annotating the real engine crates, and QuickJS support for values.
+
+## 17. The first real engine crate: `iron_scene` (2026-10-18)
+
+`crates/iron_scene/src/api.rs` declares the `Scene` namespace with `#[iron_api]`, next to the
+op-based `ScriptScene`, which is untouched. It is the first engine crate on the new path, and
+compiled TypeScript now drives the real scene (`tools/iron_ts_tests/bench/scene.ts`).
+
+- Functions (no strings yet): `create`, `destroy`, `exists`, `count`, `parent`, `setParent`,
+  `enabled`/`setEnabled`, `active`, `layer`/`setLayer`, and position, rotation and scale in local
+  space plus position and rotation in world space, as `Vector3` and `Quaternion` values on
+  `GameObject` handles (glam's `Vec3` and `Quat`, through the new `iron_api` `glam` feature).
+- **The handle encoding.** `ObjectId` is an index and a generation; its raw handle is
+  `((generation + 1) << 32) | index`, so **no live object is 0** (generation 0 and index 0 is a real
+  object, and 0 must mean "no object" in `GameObject | null`). `from_raw(0)` decodes to a generation
+  no slot has, so it misses everywhere.
+- **The world.** `iron_scene::api::enter(&mut scene)` makes a scene current on the thread (the
+  `iron_api::context` thread-local); the functions answer with defaults (no object, the origin, the
+  identity rotation) when there is none or the id is stale.
+- **Not wired into the running engine.** `iron_app` is another session's area and was not touched:
+  nothing calls `enter` yet, and the engine's scripts still use `__iron_op`. Wiring it is one line
+  around script execution (`let _scope = iron_scene::api::enter(&mut scene);`) plus linking the shims
+  into the game executable.
+- Adding the dependency changed nothing else: `cargo check --workspace --all-targets` passes.
+
+Next for this crate: strings (names, `find`), methods on handles (`transform.position` instead of
+`Scene.position(object)`), component handles, and the same treatment for `iron_physics` and
+`iron_audio`.

@@ -6,6 +6,7 @@
 //! `iron_physics`, ...) and refer to objects by [`ObjectId`]. There's no ECS: scenes are
 //! small enough that plain parent/child links and a dirty flag per object do.
 
+pub mod api;
 mod script;
 
 pub use script::{ENGINE_IDS, SceneEvent, ScriptObject, ScriptScene};

@@ -628,6 +628,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-148 | Integration | A value stored in the engine next to a handle reads back (`tests/engine.rs`). |
 | M9-TS-149 | Integration | Dozens of short-lived vectors survive a collection at every allocation (`tests/engine.rs`). |
 | M9-TS-150 | Unit | Value classes of the manifest are checked: flattened parameters, an out pointer for a result, wrong constructor arity, a number where a value is expected (`iron_ts/src/lib.rs`). |
+| M9-TS-151 | Integration | Compiled code builds, parents, moves and destroys a hierarchy in the real `iron_scene::Scene`. Runs normally, in stress GC mode and with collection off (`tests/scene.rs`). |
+| M9-TS-152 | Integration | A per-frame update loop moves an object round a circle through the `Scene` API (`tests/scene.rs`). |
+| M9-TS-153 | Integration | Stale object handles miss even when the slot is reused (`tests/scene.rs`). |
+| M9-TS-154 | Integration | A `Quaternion` value goes in and comes back normalised (`tests/scene.rs`). |
+| M9-TS-155 | Integration | Thirty objects and their handles in an array survive a collection at every allocation (`tests/scene.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
@@ -639,6 +644,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-09 | Unit | Context scopes nest and restore the previous world (`crates/iron_api/tests/context.rs`). |
 | M9-API-10 | Unit | The manifest, `.d.ts` class and JSON describe a value class (`crates/iron_api/tests/values.rs`). |
 | M9-API-11 | Unit | The shims pass a value as scalars and return one through a pointer (`crates/iron_api/tests/values.rs`). |
+| M9-API-12 | Unit | An `ObjectId` handle is never 0 (even index 0, generation 0) and converts back exactly (`crates/iron_scene/tests/api.rs`). |
+| M9-API-13 | Unit | The `Scene` shims create, parent, move and destroy objects in the current scene, stale ids miss, and with no scene they answer defaults (`crates/iron_scene/tests/api.rs`). |
+| M9-API-14 | Unit | A rotation is a `Quaternion` value; enabled/active flags and layers work through the shims (`crates/iron_scene/tests/api.rs`). |
+| M9-API-15 | Unit | The `Scene` manifest declares the `GameObject` handle and the `Vector3` and `Quaternion` values, and the generated `.d.ts` has the expected signatures (`crates/iron_scene/tests/api.rs`). |
 
 ---
 

@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **151**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **156**).
 
 ## How to pick this up
 
@@ -65,7 +65,7 @@ cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 | `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props,engine}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props,engine}.rs`; `src/bin/{bench,sine_bench}.rs` |
 
 Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name, prefix, struct_base)`
-(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, mathlib 9000, arraylib 10000, classes 11000, inherit 12000, engine 14000, next 15000), a `pub mod` in
+(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, mathlib 9000, arraylib 10000, classes 11000, inherit 12000, engine 14000, scene 15000, next 16000), a `pub mod` in
 `src/lib.rs`, a test file. Expected numbers come from running the same TS in bun.
 
 ## Rules we decided (do not undo without asking)
@@ -83,17 +83,16 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**Done:** the compiler calls an `#[iron_api]` namespace (scalars, handles, value classes); the engine context is a thread-local
-current world (boundary note sections 15 and 16).
+**Done:** `iron_scene`'s `Scene` API on `#[iron_api]`, driven end to end by compiled TypeScript (boundary note section 17).
 
 Next, in order:
 
-1. **Annotate the real engine crates** with `#[iron_api]` (`iron_scene` first: transforms as `Vector3`/`Quaternion` values on
-   `GameObject` handles; then `iron_physics`, `iron_audio`, `iron_script`), keeping `__iron_op` working in parallel; not
-   `iron_render`/`iron_app`. Needs the handle design for `ObjectId` (never 0) and the value types for glam.
-2. **Methods on handles** (`transform.position` as a call with the receiver) and **value-class methods as intrinsics**
-   (`a.add(b)`), then extending an engine class (`Component`).
-3. `typeof`, class expressions; strings once the strings decision is made.
+1. **Methods on handles** (`transform.position` as a call with the receiver) and **value-class methods as intrinsics**
+   (`a.add(b)`), so the TypeScript reads like the engine's own API; **strings** across the boundary once the strings
+   decision is made (names, `find`).
+2. **Annotate `iron_physics`, `iron_audio`, `iron_script`**; wire `iron_scene::api::enter` into `iron_app` (needs its owner:
+   another session works there); retire the ops the new API replaces.
+3. Extending an engine class (`Component`) and the compiled-component vertical slice; `typeof`, class expressions.
 
 Still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun, strings. Fillers: IR
 verifier for the GC root rule, differential harness against bun.
@@ -120,6 +119,8 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
   defaults via `Cond(IsNull)` (spike doc section 14.1). Rest elements and assignment patterns are open.
 - 2026-10-18 `switch` and enums (`M9-TS-64..70`): clause index then ordered bodies (fall-through, default
   anywhere), enums folded to constants, bit-operation constant folding (spike doc section 13).
+- 2026-10-18 `iron_scene` on `#[iron_api]` (`M9-API-12..15`, `M9-TS-151..155`): the `Scene` namespace, handle encoding that is never 0,
+  `iron_api` `glam` feature; compiled TypeScript drives the real scene. Not wired into `iron_app`.
 - 2026-10-18 Value classes across the boundary and the engine context (`M9-TS-147..150`, `M9-API-07..11`): `values(..)` in
   `#[iron_api]`, fields as scalars, results through a pointer (`CallExternInto`), `iron_api::context` (thread-local world).
 - 2026-10-18 The compiler calls the engine API (`M9-TS-142..146`): `--manifest`, `CallExtern`, `Ty::Handle`, number conversions at the call;
