@@ -69,6 +69,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/clock": {
+      "name": "clock",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/cloth": {
       "name": "cloth",
       "version": "0.1.0",
@@ -227,6 +239,13 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/splines": {
+      "name": "splines",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+      },
+    },
     "examples/text": {
       "name": "text",
       "version": "0.1.0",
@@ -325,6 +344,8 @@
 
     "classics": ["classics@workspace:examples/classics"],
 
+    "clock": ["clock@workspace:examples/clock"],
+
     "cloth": ["cloth@workspace:examples/cloth"],
 
     "cornell": ["cornell@workspace:examples/cornell"],
@@ -366,6 +387,8 @@
     "shapes": ["shapes@workspace:examples/shapes"],
 
     "sine-circle-demo": ["sine-circle-demo@workspace:examples/sine-circle-demo"],
+
+    "splines": ["splines@workspace:examples/splines"],
 
     "text": ["text@workspace:examples/text"],
 
