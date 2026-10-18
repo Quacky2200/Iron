@@ -1,5 +1,5 @@
 // Sine Circle: a closed curve whose radius wobbles like a sine wave around a circle, ported
-// from MiniGameEngine's SineDemo. The engine draws it as a LineRenderer tube and moves,
+// from MiniGameEngine's SineDemo. The engine draws it as gizmo lines and moves,
 // sizes, rotates and recolours it with transitions (`tween.ts`). Keys 1-4 pick a sine formula
 // (left click cycles them), right click flips the background, Space pauses, F5 shows the
 // centre point, F11 toggles fullscreen. The HUD is text only, as the original was. The music
@@ -13,9 +13,8 @@ import {
   Color,
   Component,
   GameObject,
+  Gizmos,
   input,
-  LineRenderer,
-  Material,
   property,
   QualitySettings,
   Screen,
@@ -79,28 +78,16 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
 // ---- The curve ----
 
 /** A sine circle in form pixels: its radius wobbles by `depth` at `frequency` around `center`. */
-class SineCircle extends Component {
-  @property radius = FORM_H / 3;
-  @property frequency = 40;
-  @property depth = 40;
+class SineCircle {
+  radius = FORM_H / 3;
+  frequency = 40;
+  depth = 40;
   /** Degrees. */
-  @property rotation = 0;
+  rotation = 0;
   center = { x: CENTER.x, y: CENTER.y };
   type: SineType = "normal";
   maxDegrees = 360;
   color = Color.white;
-  private line!: LineRenderer;
-  private lastColorKey = "";
-  private points: Vector3[] = [];
-
-  override onAwake(): void {
-    this.line = this.gameObject.addComponent(LineRenderer, {
-      width: 0.035,
-      sides: 4,
-      smoothing: 0,
-      material: new Material(Color.white, Color.black, 0, true),
-    });
-  }
 
   /** The point for one degree, in form pixels (y down, as the original's WinForms space). */
   private at(d: number): { x: number; y: number } {
@@ -128,53 +115,34 @@ class SineCircle extends Component {
     return { x: this.center.x + tr * Math.cos(rad + rot), y: this.center.y + tr * Math.sin(rad + rot) };
   }
 
-  /** Redraws the curve and colour (only when they changed). */
-  redraw(): void {
-    this.points = [];
-    // Every 2 degrees: the curve is smooth enough, and the tube is rebuilt every frame.
+  /** The closed curve in world units, a point every 2 degrees. */
+  points(): Vector3[] {
+    const out: Vector3[] = [];
     for (let d = 0; d <= this.maxDegrees; d += 2) {
       const p = this.at(d);
-      this.points.push(new Vector3((p.x - CENTER.x) * UNITS_PER_PX, (CENTER.y - p.y) * UNITS_PER_PX, 0));
+      out.push(new Vector3((p.x - CENTER.x) * UNITS_PER_PX, (CENTER.y - p.y) * UNITS_PER_PX, 0));
     }
-    this.points.push(this.points[0]!);
-    this.line.positions = this.points;
-
-    // Colours change smoothly; swap the material only on a visible step.
-    const key = [this.color.r, this.color.g, this.color.b].map((c) => Math.round(c * 48)).join(",");
-    if (key !== this.lastColorKey) {
-      this.lastColorKey = key;
-      this.line.material = new Material(this.color, Color.black, 0, true);
-    }
+    out.push(out[0]!);
+    return out;
   }
 }
 
-/** A centre marker (F5), a small ring at the curve's centre. */
-class MidPoint extends Component {
-  visible = false;
-  private line!: LineRenderer;
-
-  override onAwake(): void {
-    for (let i = 0; i <= 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      this.ring.push(new Vector3(Math.cos(a) * 0.08, Math.sin(a) * 0.08, 0));
-    }
-    this.line = this.gameObject.addComponent(LineRenderer, {
-      positions: [],
-      width: 0.02,
-      sides: 4,
-      smoothing: 0,
-      material: new Material(Color.red, Color.black, 0, true),
-    });
+/**
+ * Draws the curve, and the centre ring (F5), as gizmo lines: a flat list of segments that
+ * Rust draws as thin lines, so no mesh is built in script each frame.
+ */
+function drawCurve(camera: Camera, sine: SineCircle, showCentre: boolean): void {
+  Gizmos.clear();
+  Gizmos.color = sine.color;
+  const pts = sine.points();
+  for (let i = 1; i < pts.length; i++) Gizmos.drawLine(pts[i - 1]!, pts[i]!);
+  if (showCentre) {
+    Gizmos.color = Color.hex("#ff0000");
+    const c = new Vector3((sine.center.x - CENTER.x) * UNITS_PER_PX, (CENTER.y - sine.center.y) * UNITS_PER_PX, 0);
+    const ring = (i: number) => c.add(new Vector3(Math.cos((i / 24) * Math.PI * 2) * 0.08, Math.sin((i / 24) * Math.PI * 2) * 0.08, 0));
+    for (let i = 0; i < 24; i++) Gizmos.drawLine(ring(i), ring(i + 1));
   }
-
-  private shown = false;
-  private ring: Vector3[] = [];
-
-  override onUpdate(): void {
-    if (this.shown === this.visible) return;
-    this.shown = this.visible;
-    this.line.positions = this.visible ? this.ring : [];
-  }
+  Gizmos.present(camera);
 }
 
 // ---- The demo ----
@@ -183,7 +151,7 @@ class MidPoint extends Component {
 class SineDemo extends Component {
   private camera!: Camera;
   private sine!: SineCircle;
-  private midPoint!: MidPoint;
+  private showCentre = false;
   private music: Sound | null = null;
   private playback: Playback | null = null;
   private typeIndex = -1;
@@ -206,8 +174,7 @@ class SineDemo extends Component {
     const cam = new GameObject("Main Camera", { position: new Vector3(0, 0, 10) });
     this.camera = cam.addComponent(Camera, { orthographic: true, orthographicSize: 5, backgroundColor: Color.white });
 
-    this.sine = new GameObject("Sine Circle").addComponent(SineCircle);
-    this.midPoint = new GameObject("Centre").addComponent(MidPoint);
+    this.sine = new SineCircle();
     this.music = audio.load("assets/dancin.mp3", { stream: true });
 
     this.radius = new Tween<number>({
@@ -313,7 +280,10 @@ class SineDemo extends Component {
     this.blink.update(dt);
 
     if (input.getKeyDown("Space")) this.togglePaused();
-    if (input.getKeyDown("F5")) this.midPoint.visible = !this.midPoint.visible;
+    if (input.getKeyDown("F5")) {
+      this.showCentre = !this.showCentre;
+      drawCurve(this.camera, this.sine, this.showCentre);
+    }
     if (input.getKeyDown("F11")) Screen.fullScreen = !Screen.fullScreen;
     if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
     for (let i = 0; i < SINE_TYPES.length; i++) {
@@ -338,7 +308,7 @@ class SineDemo extends Component {
     s.rotation = this.rotation.value % 360;
     s.center = { x: this.position.value.x, y: this.position.value.y };
     s.color = this.colour.value;
-    s.redraw();
+    drawCurve(this.camera, s, this.showCentre);
   }
 
   /** What the HUD shows. */
@@ -408,6 +378,6 @@ function Hud() {
   );
 }
 
-register({ SineDemo, SineCircle, MidPoint });
+register({ SineDemo });
 createRoot().render(<Hud />);
 
