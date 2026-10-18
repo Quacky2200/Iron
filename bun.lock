@@ -208,6 +208,13 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/shapes": {
+      "name": "shapes",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+      },
+    },
     "examples/sine-circle-demo": {
       "name": "sine-circle-demo",
       "version": "0.1.0",
@@ -355,6 +362,8 @@
     "scenes": ["scenes@workspace:examples/scenes"],
 
     "scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "shapes": ["shapes@workspace:examples/shapes"],
 
     "sine-circle-demo": ["sine-circle-demo@workspace:examples/sine-circle-demo"],
 

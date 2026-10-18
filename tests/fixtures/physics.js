@@ -7623,6 +7623,134 @@ ${err.stack}` : ""}`);
   });
   // ../../js/engine/src/shapes.ts
   var DEG2 = Math.PI / 180;
+  // ../../js/engine/src/text-mesh.ts
+  var _init39, _base39, _dec185, _dec186, _dec187, _dec188, _dec189, _dec190, _dec191, _dec192, _dec193;
+
+  class TextMesh extends (_base39 = Component) {
+    static {
+      _init39 = __decoratorStart(_base39);
+      __decorateElement(_init39, 2, "text", _dec185, this);
+      __decorateElement(_init39, 2, "fontSize", _dec186, this);
+      __decorateElement(_init39, 2, "color", _dec187, this);
+      __decorateElement(_init39, 2, "font", _dec188, this);
+      __decorateElement(_init39, 2, "fontWeight", _dec189, this);
+      __decorateElement(_init39, 2, "alignment", _dec190, this);
+      __decorateElement(_init39, 2, "maxWidth", _dec191, this);
+      __decorateElement(_init39, 2, "pixelsPerUnit", _dec192, this);
+      __decorateElement(_init39, 2, "resolution", _dec193, this);
+      __decoratorMetadata(_init39, this);
+    }
+    _text = (__runInitializers(_init39, 5, this), "");
+    _fontSize = 32;
+    _color = Color.white;
+    _font = null;
+    _fontWeight = 400;
+    _alignment = "center";
+    _maxWidth = 0;
+    _pixelsPerUnit = 100;
+    _resolution = 2;
+    started = false;
+    dirty = true;
+    get [(_dec185 = [
+      property
+    ], "text")]() {
+      return this._text;
+    }
+    set text(t) {
+      this._text = String(t);
+      this.dirty = true;
+    }
+    get [(_dec186 = [
+      property
+    ], "fontSize")]() {
+      return this._fontSize;
+    }
+    set fontSize(s) {
+      this._fontSize = Math.max(1, s);
+      this.dirty = true;
+    }
+    get [(_dec187 = [
+      property
+    ], "color")]() {
+      return this._color;
+    }
+    set color(c) {
+      this._color = c;
+      this.dirty = true;
+    }
+    get [(_dec188 = [
+      property
+    ], "font")]() {
+      return this._font;
+    }
+    set font(f) {
+      this._font = f;
+      this.dirty = true;
+    }
+    get [(_dec189 = [
+      property
+    ], "fontWeight")]() {
+      return this._fontWeight;
+    }
+    set fontWeight(w) {
+      this._fontWeight = w;
+      this.dirty = true;
+    }
+    get [(_dec190 = [
+      property
+    ], "alignment")]() {
+      return this._alignment;
+    }
+    set alignment(a) {
+      this._alignment = a;
+      this.dirty = true;
+    }
+    get [(_dec191 = [
+      property
+    ], "maxWidth")]() {
+      return this._maxWidth;
+    }
+    set maxWidth(w) {
+      this._maxWidth = Math.max(0, w);
+      this.dirty = true;
+    }
+    get [(_dec192 = [
+      property
+    ], "pixelsPerUnit")]() {
+      return this._pixelsPerUnit;
+    }
+    set pixelsPerUnit(p) {
+      this._pixelsPerUnit = p;
+      this.dirty = true;
+    }
+    get [(_dec193 = [
+      property
+    ], "resolution")]() {
+      return this._resolution;
+    }
+    set resolution(r) {
+      this._resolution = r;
+      this.dirty = true;
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onPreRender() {
+      if (this.dirty)
+        this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+    send() {
+      if (!this.started)
+        return;
+      this.dirty = false;
+      const c = this._color;
+      __iron_op("render.text", this.id, this.gameObject.id, this._text, [c.r, c.g, c.b, c.a], this._fontSize, this._font, this._fontWeight, this._alignment, this._maxWidth, this._pixelsPerUnit, this._resolution);
+    }
+  }
   // ../../js/engine/src/app.ts
   var focused = true;
   var paused = false;

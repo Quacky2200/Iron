@@ -836,7 +836,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       `width` of 0 leaves just the fill — `M5-RND-25`
     - [x] `Shapes` (GDI's outlines): rectangle, rounded rectangle, ellipse, circle, arc, pie,
       regular polygon, polygon, triangle, Bézier, cardinal `curve` / `closedCurve` — `M5-RND-25`
-    - [ ] TextMesh: text in the world without a UI panel (GDI's `DrawString`)
+    - [x] `TextMesh` (GDI's `DrawString`, Unity's `TextMesh`): text on its object's XY plane, laid
+      out by a one-element UI tree that `render.text` builds in Rust (any `loadFont` font, line
+      breaks, `maxWidth` wrapping, alignment), sized to fit and tinted like a sprite;
+      `examples/shapes` shows every shape, both fill rules and labels — `M5-TXT-01`
+      - [ ] Later: redraw a text's texture only when it changes (panels draw every frame)
     - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
       texture brushes, smooth fill edges without MSAA, clipping
     - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)

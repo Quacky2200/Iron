@@ -7623,6 +7623,134 @@ ${err.stack}` : ""}`);
   });
   // ../../js/engine/src/shapes.ts
   var DEG2 = Math.PI / 180;
+  // ../../js/engine/src/text-mesh.ts
+  var _init39, _base39, _dec185, _dec186, _dec187, _dec188, _dec189, _dec190, _dec191, _dec192, _dec193;
+
+  class TextMesh extends (_base39 = Component) {
+    static {
+      _init39 = __decoratorStart(_base39);
+      __decorateElement(_init39, 2, "text", _dec185, this);
+      __decorateElement(_init39, 2, "fontSize", _dec186, this);
+      __decorateElement(_init39, 2, "color", _dec187, this);
+      __decorateElement(_init39, 2, "font", _dec188, this);
+      __decorateElement(_init39, 2, "fontWeight", _dec189, this);
+      __decorateElement(_init39, 2, "alignment", _dec190, this);
+      __decorateElement(_init39, 2, "maxWidth", _dec191, this);
+      __decorateElement(_init39, 2, "pixelsPerUnit", _dec192, this);
+      __decorateElement(_init39, 2, "resolution", _dec193, this);
+      __decoratorMetadata(_init39, this);
+    }
+    _text = (__runInitializers(_init39, 5, this), "");
+    _fontSize = 32;
+    _color = Color.white;
+    _font = null;
+    _fontWeight = 400;
+    _alignment = "center";
+    _maxWidth = 0;
+    _pixelsPerUnit = 100;
+    _resolution = 2;
+    started = false;
+    dirty = true;
+    get [(_dec185 = [
+      property
+    ], "text")]() {
+      return this._text;
+    }
+    set text(t) {
+      this._text = String(t);
+      this.dirty = true;
+    }
+    get [(_dec186 = [
+      property
+    ], "fontSize")]() {
+      return this._fontSize;
+    }
+    set fontSize(s) {
+      this._fontSize = Math.max(1, s);
+      this.dirty = true;
+    }
+    get [(_dec187 = [
+      property
+    ], "color")]() {
+      return this._color;
+    }
+    set color(c) {
+      this._color = c;
+      this.dirty = true;
+    }
+    get [(_dec188 = [
+      property
+    ], "font")]() {
+      return this._font;
+    }
+    set font(f) {
+      this._font = f;
+      this.dirty = true;
+    }
+    get [(_dec189 = [
+      property
+    ], "fontWeight")]() {
+      return this._fontWeight;
+    }
+    set fontWeight(w) {
+      this._fontWeight = w;
+      this.dirty = true;
+    }
+    get [(_dec190 = [
+      property
+    ], "alignment")]() {
+      return this._alignment;
+    }
+    set alignment(a) {
+      this._alignment = a;
+      this.dirty = true;
+    }
+    get [(_dec191 = [
+      property
+    ], "maxWidth")]() {
+      return this._maxWidth;
+    }
+    set maxWidth(w) {
+      this._maxWidth = Math.max(0, w);
+      this.dirty = true;
+    }
+    get [(_dec192 = [
+      property
+    ], "pixelsPerUnit")]() {
+      return this._pixelsPerUnit;
+    }
+    set pixelsPerUnit(p) {
+      this._pixelsPerUnit = p;
+      this.dirty = true;
+    }
+    get [(_dec193 = [
+      property
+    ], "resolution")]() {
+      return this._resolution;
+    }
+    set resolution(r) {
+      this._resolution = r;
+      this.dirty = true;
+    }
+    onAwake() {
+      this.started = true;
+      this.send();
+    }
+    onPreRender() {
+      if (this.dirty)
+        this.send();
+    }
+    onDestroy() {
+      __iron_op("render.remove", this.id);
+    }
+    send() {
+      if (!this.started)
+        return;
+      this.dirty = false;
+      const c = this._color;
+      __iron_op("render.text", this.id, this.gameObject.id, this._text, [c.r, c.g, c.b, c.a], this._fontSize, this._font, this._fontWeight, this._alignment, this._maxWidth, this._pixelsPerUnit, this._resolution);
+    }
+  }
   // ../../js/engine/src/app.ts
   var focused = true;
   var paused = false;
@@ -8028,25 +8156,25 @@ ${err.stack}` : ""}`);
     }
   }
   var trip = "";
-  var _init39, _base39, _dec185, _dec186;
+  var _init40, _base40, _dec194, _dec195;
 
-  class Door extends (_base39 = Component) {
+  class Door extends (_base40 = Component) {
     constructor() {
       super(...arguments);
-      __runInitializers(_init39, 15, this);
+      __runInitializers(_init40, 15, this);
     }
     static {
-      _init39 = __decoratorStart(_base39);
-      __decorateElement(_init39, 5, "opensTo", _dec185, this);
-      __decorateElement(_init39, 5, "speed", _dec186, this);
-      __decoratorMetadata(_init39, this);
+      _init40 = __decoratorStart(_base40);
+      __decorateElement(_init40, 5, "opensTo", _dec194, this);
+      __decorateElement(_init40, 5, "speed", _dec195, this);
+      __decoratorMetadata(_init40, this);
     }
-    [(_dec185 = [
+    [(_dec194 = [
       property
-    ], "opensTo")] = __runInitializers(_init39, 8, this, null);
-    [(_dec186 = [
+    ], "opensTo")] = __runInitializers(_init40, 8, this, null);
+    [(_dec195 = [
       property
-    ], "speed")] = (__runInitializers(_init39, 11, this), __runInitializers(_init39, 12, this, 1));
+    ], "speed")] = (__runInitializers(_init40, 11, this), __runInitializers(_init40, 12, this, 1));
   }
 
   class SceneTrip extends Component {
@@ -8070,22 +8198,22 @@ ${err.stack}` : ""}`);
   }
   var starts = 0;
   var reloads = 0;
-  var _init40, _base40, _dec187, _dec188;
+  var _init41, _base41, _dec196, _dec197;
 
-  class HotCounter extends (_base40 = Component) {
+  class HotCounter extends (_base41 = Component) {
     static {
-      _init40 = __decoratorStart(_base40);
-      __decorateElement(_init40, 5, "speed", _dec187, this);
-      __decorateElement(_init40, 5, "label", _dec188, this);
-      __decoratorMetadata(_init40, this);
+      _init41 = __decoratorStart(_base41);
+      __decorateElement(_init41, 5, "speed", _dec196, this);
+      __decorateElement(_init41, 5, "label", _dec197, this);
+      __decoratorMetadata(_init41, this);
     }
-    [(_dec187 = [
+    [(_dec196 = [
       property
-    ], "speed")] = __runInitializers(_init40, 8, this, 1);
-    [(_dec188 = [
+    ], "speed")] = __runInitializers(_init41, 8, this, 1);
+    [(_dec197 = [
       property
-    ], "label")] = (__runInitializers(_init40, 11, this), __runInitializers(_init40, 12, this, "fresh"));
-    count = (__runInitializers(_init40, 15, this), 0);
+    ], "label")] = (__runInitializers(_init41, 11, this), __runInitializers(_init41, 12, this, "fresh"));
+    count = (__runInitializers(_init41, 15, this), 0);
     child = null;
     onStart() {
       starts++;

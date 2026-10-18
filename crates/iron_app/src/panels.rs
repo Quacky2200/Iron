@@ -8,10 +8,11 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use iron_core::Value;
 use iron_core::glam::{Mat4, Vec3, Vec4Swizzles};
+use iron_core::{Commit, NodeId, Value};
 use iron_render::{Gpu, RenderTarget, UiRenderer, WorldQuad, wgpu};
 use iron_scene::{ScriptObject, ScriptScene};
+use iron_ui::opcodes::{APPEND_CHILD, CREATE, CREATE_TEXT, SET_STYLE, SET_TEXT};
 use iron_ui::{Interaction, UiTree};
 
 /// The texture format panels are drawn into (sampled as sRGB by the world pass).
@@ -142,6 +143,121 @@ impl Panels {
             panel.tint = [t[0], t[1], t[2], t[3]];
         }
         panel.interactive = !matches!(args.get(6), Some(Value::Bool(false)));
+        Ok(())
+    }
+
+    /// `render.text component object text [r g b a] fontSize fontFamily|null fontWeight
+    /// align maxWidth pixelsPerUnit resolution`: a `TextMesh`. Its panel holds one text
+    /// element, drawn white and tinted by the colour (linear, like a sprite's), and sizes
+    /// itself to the text: one line per line break, wrapped at `maxWidth` UI pixels if set.
+    pub fn apply_text(
+        &mut self,
+        args: &[Value],
+        new_tree: impl FnOnce() -> NewTree,
+    ) -> Result<(), String> {
+        let id_at = |i: usize| -> Result<u32, String> {
+            args.get(i)
+                .and_then(Value::as_f64)
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .map(|v| v as u32)
+                .ok_or_else(|| format!("argument {i} must be an id"))
+        };
+        let num = |i: usize| {
+            args.get(i)
+                .and_then(Value::as_f64)
+                .filter(|v| v.is_finite())
+                .map(|v| v as f32)
+        };
+        let id = id_at(0)?;
+        let object = id_at(1)?;
+        let text = args
+            .get(2)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let tint = match args.get(3) {
+            Some(Value::Array(c)) if c.len() == 4 => {
+                let c: Vec<f32> = c
+                    .iter()
+                    .filter_map(|v| v.as_f64().map(|v| v as f32))
+                    .collect();
+                [c[0], c[1], c[2], c[3]]
+            }
+            _ => [1.0; 4],
+        };
+        let font_size = num(4).unwrap_or(32.0).max(1.0);
+        let family = match args.get(5) {
+            Some(Value::String(f)) => Value::String(f.clone()),
+            _ => Value::Null,
+        };
+        let weight = num(6).unwrap_or(400.0);
+        let align = args
+            .get(7)
+            .and_then(Value::as_str)
+            .unwrap_or("center")
+            .to_string();
+        let max_width = num(8).unwrap_or(0.0).max(0.0);
+
+        let fresh = !self.map.contains_key(&id);
+        let panel = self.get_or_create(id, new_tree);
+        panel.object = Some(object);
+        panel.pixels_per_meter = num(9).unwrap_or(100.0).max(1e-3);
+        panel.resolution = num(10).unwrap_or(2.0);
+        panel.tint = tint;
+        panel.interactive = false;
+
+        let n = |v: f32| Value::from(f64::from(v));
+        let mut ops = Vec::new();
+        if fresh {
+            ops.push(op(CREATE, vec![n(1.0), "text".into()]));
+            ops.push(op(APPEND_CHILD, vec![n(0.0), n(1.0)]));
+            ops.push(op(CREATE_TEXT, vec![n(2.0), text.into()]));
+            ops.push(op(APPEND_CHILD, vec![n(1.0), n(2.0)]));
+        } else {
+            ops.push(op(SET_TEXT, vec![n(2.0), text.into()]));
+        }
+        // Positioned, so it shrinks to its text instead of stretching across the panel.
+        ops.push(op(
+            SET_STYLE,
+            vec![
+                n(1.0),
+                "position".into(),
+                "absolute".into(),
+                "left".into(),
+                n(0.0),
+                "top".into(),
+                n(0.0),
+                "color".into(),
+                "#ffffff".into(),
+                "fontSize".into(),
+                n(font_size),
+                "fontFamily".into(),
+                family,
+                "fontWeight".into(),
+                n(weight),
+                "textAlign".into(),
+                align.into(),
+                "whiteSpace".into(),
+                if max_width > 0.0 { "pre-wrap" } else { "pre" }.into(),
+                "maxWidth".into(),
+                if max_width > 0.0 {
+                    n(max_width)
+                } else {
+                    Value::Null
+                },
+            ],
+        ));
+        if let Some(e) = panel.tree.apply_commit(&Commit { ops }).first() {
+            return Err(e.to_string());
+        }
+        // Lay out with room to spare, then fit the panel to the text.
+        panel.tree.set_size(4096.0, 4096.0);
+        panel.tree.layout_if_needed();
+        let (w, h) = panel.tree.content_box(NodeId(1)).map_or((1.0, 1.0), |r| {
+            (r.width.ceil().max(1.0), r.height.ceil().max(1.0))
+        });
+        panel.size = (w, h);
+        panel.tree.set_size(w, h);
         Ok(())
     }
 
@@ -316,6 +432,13 @@ pub fn camera_ray(
     })
 }
 
+/// A UI commit op: `[code, args...]`.
+fn op(code: u32, args: Vec<Value>) -> Value {
+    let mut v = vec![Value::from(code)];
+    v.extend(args);
+    Value::Array(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +461,51 @@ mod tests {
         // Behind the ray and parallel to the quad: no hit.
         assert!(ray_quad(model, Vec3::ZERO, Vec3::Z).is_none());
         assert!(ray_quad(model, Vec3::ZERO, Vec3::X).is_none());
+    }
+
+    // M5-TXT-01
+    #[test]
+    fn text_meshes_size_their_panel_to_the_text_and_take_its_colour_as_tint() {
+        let tree = || (UiTree::new(1.0, 1.0), HashMap::new());
+        let text = |s: &str, max_width: f64| {
+            vec![
+                Value::from(7.0),
+                Value::from(3.0),
+                s.into(),
+                Value::Array(vec![1.0.into(), 0.5.into(), 0.0.into(), 1.0.into()]),
+                Value::from(20.0),
+                Value::Null,
+                Value::from(400.0),
+                "center".into(),
+                Value::from(max_width),
+                Value::from(50.0),
+                Value::from(2.0),
+            ]
+        };
+        let mut panels = Panels::default();
+        panels.apply_text(&text("Hi", 0.0), tree).unwrap();
+        let p = &panels.map[&7];
+        let (short, line) = p.size;
+        assert!(short > 5.0 && line > 15.0 && line < 40.0, "{:?}", p.size);
+        assert_eq!(
+            (p.tint, p.pixels_per_meter, p.interactive),
+            ([1.0, 0.5, 0.0, 1.0], 50.0, false)
+        );
+        assert_eq!(p.object, Some(3));
+        // Longer text, the same tree: wider, one line.
+        panels
+            .apply_text(&text("Hello there, world", 0.0), tree)
+            .unwrap();
+        let (wide, same) = panels.map[&7].size;
+        assert!(wide > short * 3.0 && (same - line).abs() < 1.0);
+        // A line break: two lines.
+        panels.apply_text(&text("Hello\nthere", 0.0), tree).unwrap();
+        assert!(panels.map[&7].size.1 > line * 1.8);
+        // Wrapped at 60 UI pixels: narrower, several lines.
+        panels
+            .apply_text(&text("Hello there, world", 60.0), tree)
+            .unwrap();
+        let (w, h) = panels.map[&7].size;
+        assert!(w <= 60.0 && h > line * 1.8, "{w} x {h}");
     }
 }

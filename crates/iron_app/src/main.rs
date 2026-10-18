@@ -1033,6 +1033,16 @@ impl App {
                         tracing::warn!("render.panel: {e}");
                     }
                 }
+                "render.text" => {
+                    let (root, fonts, sheets) =
+                        (&self.asset_root, &self.font_sources, &self.sheet_sources);
+                    if let Err(e) = self
+                        .panels
+                        .apply_text(&op.args, || new_panel_tree(root, fonts, sheets))
+                    {
+                        tracing::warn!("render.text: {e}");
+                    }
+                }
                 name if name.starts_with("render.") => {
                     if name == "render.remove"
                         && let Some(id) = op.args.first().and_then(iron_core::Value::as_f64)
