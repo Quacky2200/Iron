@@ -164,8 +164,35 @@ generic; `self` is allowed only in a handle class's `impl`, by value.
 | declared handle | `number & { readonly __handle: "Name" }` | `u64` (`Handle::to_raw`) | `f64` number, cast to `u64` for `from_raw` |
 | declared value class | a class with the declared fields (`new Vector3(1, 2, 3)`) | one scalar per field as parameters (`v_0, v_1, v_2`); a result through a trailing out pointer to room for the fields | not available: `quickjs` together with `values(..)` is a compile error |
 
+| `&str` / `String` | `string` | a parameter: `*const u8` to the script string object; a result: `*const u8` plus a trailing `out_len: *mut i64` | not available: a string in a `quickjs` namespace is a compile error |
+
 Any other type is a compile error that lists the supported ones. Names follow `snake_case` to
 `camelCase` (`set_time_scale` is `setTimeScale`), done by `camel` in both crates.
+
+### Strings
+
+A function may take `&str` (or `String`) parameters and return `String`. The manifest, JSON and d.ts
+type is `string` (`iron_api::Ty::Str`); `string | null` parameters are not supported.
+
+- **In.** A string parameter is a `*const u8` pointing at the script string object: the header
+  `iron_api::ScriptStr` (layout equal to `iron_ts_rt::Str`, a test in `iron_ts_tests` checks it) and
+  the bytes inline after its 48 bytes. The shim reads it with `iron_api::script_str`, which
+  borrows the bytes as `&str` with no copy when the string is well formed. Script strings are WTF-8,
+  so one with a lone surrogate is copied with each lone surrogate replaced by one U+FFFD. A null
+  pointer reads as `""`. The collector is non-moving and the caller roots the string, so it stays
+  valid for the call. The engine must copy what it keeps (`set_name` stores an owned `String`).
+- **Out.** A `String` result adds a trailing `out_len: *mut i64` to the shim, which returns
+  `*const u8` into a per-thread buffer (`iron_api::return_string`). The compiled call copies it at
+  once into a new script string (`ts_rt_str_new_gc`), before any other engine call.
+- **Unsafe shims.** A shim with a string parameter is `unsafe extern "C"`, since it dereferences the
+  pointer.
+
+```rust
+pub fn find(name: &str) -> ObjectId { /* name is borrowed: copy it to keep it */ }
+pub fn name(self) -> String { /* the shim returns it through return_string */ }
+```
+
+Tests: `M9-API-21`..`22` (crates/iron_api/tests/strings.rs).
 
 ## Generating the files
 
@@ -208,8 +235,8 @@ first engine crate using `#[iron_api]` (`Scene`, in `iron_scene::api`; see
 app calls it yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
 (`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value
 classes (`Vector3`) with methods and getters (`a.add(b)`), handle classes (`GameObject`, `Transform`)
-and the engine context exist; strings, static functions and operators on value classes, classes and
-values in the QuickJS bindings and annotating the other engine crates (physics, audio) are not built.
+and the engine context exist, and so do strings across the boundary (`GameObject.name` and `find`);
+static functions and operators on value classes, classes, values and strings in the QuickJS bindings and annotating the other engine crates (physics, audio) are not built.
 
 Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
 150 ns per call through the typed function and about 245 ns through a simplified `__iron_op` (a name,

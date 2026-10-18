@@ -146,3 +146,53 @@ export function vectorLoop(n: number): number {
   }
   return acc.x * 1000 + acc.y;
 }
+
+/** Strings across the boundary: names in, names out, and `GameObject.find`. */
+export function names(): string {
+  const a = GameObject.create();
+  a.name = "player-" + 1;
+  const b = GameObject.create();
+  b.name = "enemy";
+  const found = GameObject.find("player-1");
+  const missing = GameObject.find("nobody") ? "yes" : "no";
+  const r = found.name + "/" + (found === a ? "same" : "other") + "/" + missing + "/" + b.name.length;
+  a.destroy();
+  b.destroy();
+  return r;
+}
+
+/** A name with accents and an emoji comes back unchanged (UTF-16 `length` of the script string). */
+export function unicodeName(): number {
+  const o = GameObject.create();
+  o.name = "héllo 😀";
+  const n = o.name;
+  const same = n === "héllo 😀" ? 1 : 0;
+  const len = n.length;
+  o.destroy();
+  return same * 1000 + len;
+}
+
+/** A lone surrogate in a name reaches the engine as U+FFFD (and the rest is untouched). */
+export function lossyName(): number {
+  const o = GameObject.create();
+  o.name = "x" + String.fromCharCode(0xd83d) + "y";
+  const n = o.name;
+  const r = n.length * 100000 + n.charCodeAt(1);
+  o.destroy();
+  return r;
+}
+
+/** Many names made and read back between collections. */
+export function manyNames(count: number): number {
+  const all: GameObject[] = [];
+  for (let i = 0; i < count; i++) {
+    const o = GameObject.create();
+    o.name = "n" + i;
+    all.push(o);
+  }
+  let total = 0;
+  for (const o of all) total += o.name.length;
+  const second = GameObject.find("n" + 2).name;
+  for (const o of all) o.destroy();
+  return total * 1000 + second.length;
+}

@@ -135,6 +135,8 @@ pub fn may_alloc(e: &Expr) -> bool {
         | ExprKind::CallVirtual(..)
         | ExprKind::CallClosure(..) => true,
         ExprKind::NewCell(_) | ExprKind::MakeClosure(..) => true,
+        // An engine function returning a string copies it into a new script string.
+        ExprKind::CallExtern(..) if e.ty == Ty::Str => true,
         // A sort runs the comparator, which allocates.
         ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew | RtFn::ArrSort, _) => true,
         // The runtime's string functions that make a string can collect first.

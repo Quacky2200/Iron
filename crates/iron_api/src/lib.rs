@@ -34,6 +34,10 @@ pub enum Ty {
     /// [`Namespace::values`]; across the C ABI it travels as one scalar per field (a result comes
     /// back through a trailing pointer).
     Value(&'static str),
+    /// A `string`. A script string comes in as a pointer to its object (read with
+    /// [`script_str`]) and a result goes out through [`return_string`]. The Rust types are `&str`
+    /// and `String`.
+    Str,
 }
 
 impl Ty {
@@ -44,6 +48,7 @@ impl Ty {
             Ty::Bool => "boolean",
             Ty::F64 | Ty::F32 | Ty::I32 | Ty::U32 => "number",
             Ty::Handle(name) | Ty::Value(name) => name,
+            Ty::Str => "string",
         }
     }
 
@@ -58,6 +63,7 @@ impl Ty {
             Ty::U32 => "u32".into(),
             Ty::Handle(n) => format!("handle:{n}"),
             Ty::Value(n) => format!("value:{n}"),
+            Ty::Str => "string".into(),
         }
     }
 }
@@ -190,6 +196,85 @@ mod glam_values {
 pub trait ValueType<const N: usize>: Copy {
     fn from_parts(parts: [f64; N]) -> Self;
     fn to_parts(self) -> [f64; N];
+}
+
+/// The header of a script string object (`iron_ts_rt::Str`): the bytes follow it. The layout is
+/// part of the contract with the compiled code and is checked by a test in `iron_ts_tests`.
+#[repr(C)]
+pub struct ScriptStr {
+    pub header: u64,
+    pub byte_len: i64,
+    pub utf16_len: i64,
+    pub flags: u64,
+    cursor_unit: i64,
+    cursor_byte: i64,
+}
+
+const SCRIPT_STR_WELL_FORMED: u64 = 2;
+
+/// A script string as Rust text, borrowed when it has no lone surrogates (the normal case, no
+/// copy) and otherwise copied with U+FFFD for each lone surrogate. A null pointer is "".
+///
+/// # Safety
+/// `p` must be null or point to a live script string that stays alive and unchanged while the
+/// result is used (the collector does not move objects, and the caller roots the string).
+pub unsafe fn script_str<'a>(p: *const u8) -> std::borrow::Cow<'a, str> {
+    if p.is_null() {
+        return std::borrow::Cow::Borrowed("");
+    }
+    // SAFETY: by contract `p` is a script string: a header and `byte_len` bytes after it.
+    let (flags, bytes) = unsafe {
+        let h = &*(p as *const ScriptStr);
+        (
+            h.flags,
+            std::slice::from_raw_parts(
+                p.add(std::mem::size_of::<ScriptStr>()),
+                h.byte_len as usize,
+            ),
+        )
+    };
+    if flags & SCRIPT_STR_WELL_FORMED != 0 {
+        // SAFETY: a well formed script string is valid UTF-8.
+        return std::borrow::Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(bytes) });
+    }
+    // A lone surrogate is `ED A0..BF xx`: one U+FFFD each.
+    let mut out = String::with_capacity(bytes.len());
+    let mut start = 0;
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        if bytes[i] == 0xED && bytes[i + 1] >= 0xA0 {
+            // SAFETY: the stretch before a lone surrogate is valid UTF-8.
+            out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[start..i]) });
+            out.push('\u{FFFD}');
+            i += 3;
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+    // SAFETY: the rest is valid UTF-8.
+    out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[start..]) });
+    std::borrow::Cow::Owned(out)
+}
+
+thread_local! {
+    static RETURNED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Hands a string result to compiled code: the text is kept here (per thread) and its bytes and
+/// length are returned; the caller copies them into a script string straight away, before it makes
+/// another engine call.
+///
+/// # Safety
+/// `out_len` must be valid for a write.
+pub unsafe fn return_string(s: impl Into<String>, out_len: *mut i64) -> *const u8 {
+    RETURNED.with(|r| {
+        let mut r = r.borrow_mut();
+        *r = s.into();
+        // SAFETY: by contract.
+        unsafe { *out_len = r.len() as i64 };
+        r.as_ptr()
+    })
 }
 
 pub trait Handle: Copy {

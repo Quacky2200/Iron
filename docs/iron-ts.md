@@ -94,6 +94,14 @@ bytes, bindings text, IR dump and the time of each phase.
   the receiver first (`a.add(b)`, `v.magnitude`), before any user-defined target is tried. Fields
   still win over getters. Not supported: static functions on value classes, operators, compound
   assignment on value properties.
+- **String arguments and results.** A `string` in the manifest is `ExtTy::Str`. As an argument the
+  call passes the script string pointer, and codegen adds a trailing stack slot for the length
+  when the extern has a string result. The callee borrows the bytes (`iron_api::script_str`), so
+  the string stays rooted for the call; a lone surrogate reaches the engine as U+FFFD. A string result
+  comes back as bytes plus length from a per-thread buffer and is copied at once into a new script
+  string with `ts_rt_str_new_gc`. That call can collect, so the root analysis (`frames.rs`) counts
+  it as allocating. See [iron-api.md](iron-api.md#strings). Not supported: `string | null`
+  parameters.
 - **Linking** is the host's job: the test crate's `build.rs` writes the `.obj`, passes it with
   `cargo:rustc-link-arg`, and includes the bindings.
 

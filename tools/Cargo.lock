@@ -451,6 +451,7 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "iron_api_macros",
+ "rquickjs",
 ]
 
 [[package]]
@@ -527,6 +528,7 @@ name = "iron_ts_tests"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "iron_api",
  "iron_core",
  "iron_demo_api",
  "iron_scene",

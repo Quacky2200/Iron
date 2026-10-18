@@ -103,14 +103,15 @@ TypeScript ([iron-ts.md](iron-ts.md)) calls its generated shims directly, with n
 functions: `create`, `destroy`, `exists`, `count`, `parent`, `setParent(object, parent, keepWorld)`,
 `enabled`/`setEnabled`, `active`, `layer`/`setLayer`, and position, rotation and scale in local space
 (`localPosition`, ...) plus `position` and `rotation` in world space, with `Vector3` and `Quaternion`
-value classes (glam's `Vec3` and `Quat`) on `GameObject` handles. There are no strings yet (names, `find`).
+value classes (glam's `Vec3` and `Quat`) on `GameObject` handles. Strings cross the boundary
+(see [iron-api.md](iron-api.md#strings)): `GameObject.name` and `GameObject.find(name)`.
 
 Next to those namespace functions there are two handle classes, declared in `impl` blocks inside the
 same module (see [iron-api.md](iron-api.md#handle-classes)):
 
 | Class | Rust type | Members |
 |---|---|---|
-| `GameObject` | `ObjectId` | static `create()`; methods `destroy()`, `exists()`; properties `transform` (read-only), `enabled`, `activeInHierarchy` (read-only), `layer` |
+| `GameObject` | `ObjectId` | static `create()`, `find(name)` (the first object with that name, or null); methods `destroy()`, `exists()`; properties `transform` (read-only), `name`, `enabled`, `activeInHierarchy` (read-only), `layer` |
 | `Transform` | `TransformRef(ObjectId)` | `gameObject` (read-only), `position`, `rotation` (world), `localPosition`, `localRotation`, `localScale`, `parent` (read-only, a `Transform`, 0 for a root), method `setParent(parent, keepWorld)` |
 
 `TransformRef` shares the object's raw handle, so `go.transform` is the same number as `go` seen as
@@ -140,7 +141,7 @@ functions (`Vector3.zero`) yet.
 - **Not wired in.** Nothing in `iron_app` calls `enter` yet, and the engine's scripts still use
   `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/iron_scene/tests/api.rs) (`M9-API-12..15`, `19`)
   and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..161`; the math methods are
-  `M9-TS-159..161`, the macro side `M9-API-20` in `iron_api`).
+  `M9-TS-159..161`, the macro side `M9-API-20` in `iron_api`; names and `find` are `M9-TS-183..186`).
 
 ## Components and the lifecycle
 

@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **183**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **187**).
 
 ## How to pick this up
 
@@ -102,10 +102,21 @@ Next, in order:
      `join`, truthiness, `switch`; a literal is a union tag or a `string` by context (`let` and array literals widen); `M9-TS-178..182`.
      Known gaps: `typeof`, `codePointAt` past the end gives NaN (not the null NaN), `s?.length`, string results of object-literal fields without a declared type,
      `join` of non-string arrays, `replace`/`match`/`localeCompare`/`normalize` (compile errors), template/`+` chains allocate one string per `+`.
-   - [ ] Slice 3, boundary: `string` manifest type, macro and compiler conversion (borrowed `&str`, out pointer), `GameObject.name` / `find` in `iron_scene`.
+   - [x] Slice 3, boundary: `string` in `#[iron_api]` (`&str` parameter read from the script string object, no copy unless it has a lone surrogate, which becomes U+FFFD;
+     `String` result through a per-thread buffer the compiled call copies into a new script string), manifest/d.ts `string`, `GameObject.name` / `find` in `iron_scene`;
+     `M9-API-21..22`, `M9-TS-183..186`. Strings are not available in the QuickJS bindings (a compile error in the macro). `string | null` parameters are not supported.
+     **The strings item is done.** Remaining string work lives in the standard library item below.
 2. **Annotate `iron_physics`, `iron_audio`, `iron_script`**; wire `iron_scene::api::enter` into `iron_app` (needs its owner:
    another session works there); retire the ops the new API replaces.
 3. Extending an engine class (`Component`) and the compiled-component vertical slice; `typeof`, class expressions.
+4. **A bare-minimum JavaScript standard library, native** (asked 2026-10-18; rule: JavaScript's exact results, no runtime differences, so
+   what is not built is a compile error): `String` (done, slices 1-2, minus `replace`/`match`/`localeCompare`/`normalize`), `Number`/`Math` (partly),
+   `Array` (partly: the gaps), `Object` (`keys`/`values`/`entries`/`assign`/`freeze`, spread), `JSON` (`stringify`/`parse`), `Map`/`Set`/`WeakMap`,
+   `Date` (UTC and local time, `Date.now`, formatting), `Intl` (`NumberFormat`, `DateTimeFormat`, `Collator`/`localeCompare`, `PluralRules`: the ICU data size
+   is a decision), `RegExp` (`test`/`exec`/`match`/`matchAll`/`replace`/`split`, JS syntax and `u`/`v` flags: an engine of our own or a Rust crate with JS
+   semantics is a decision), `Error` types with `try`/`catch`/`throw`, `console`, `Symbol.iterator`/generators, `Promise`/`async` (the event-loop item),
+   `structuredClone`, typed arrays. Needs a design note first (**STOP**): `docs/research/iron-ts-stdlib.md` (written 2026-10-18, waiting for review: exceptions, RegExp engine, ICU, JSON) with the inventory, the order,
+   and the decisions (RegExp engine, ICU data, Date time zones). Differential tests against bun for each, as for strings.
 
 Still to write (each a **STOP**): structural typing, UI without React, dev loop without Bun, strings. Fillers: IR
 verifier for the GC root rule, differential harness against bun.

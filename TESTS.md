@@ -660,6 +660,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-180 | Integration | Strings in arrays (`includes`, `indexOf`, `sort` with a comparator), object fields, `string \| null` and string-literal unions mixed with `string` equal bun's (`tests/strings.rs`). |
 | M9-TS-181 | Integration | Three hundred strings made in a loop survive a collection at every allocation (`tests/strings.rs`). |
 | M9-TS-182 | Unit | Unsupported string methods (`localeCompare`, `normalize`, `replace`) and a literal with a lone surrogate are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-183 | Integration | `GameObject.name` set and read, and `GameObject.find(name)`, through the real scene: strings in as script strings and out as new ones (`iron_ts_tests/tests/scene.rs`). |
+| M9-TS-184 | Integration | A name with accents and an emoji round-trips; a lone surrogate reaches the engine as U+FFFD (`tests/scene.rs`). |
+| M9-TS-185 | Integration | Thirty names made, read back and found survive a collection at every allocation (`tests/scene.rs`). |
+| M9-TS-186 | Integration | `iron_api::ScriptStr` has the layout of the runtime's `Str` (`tests/scene.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
@@ -680,6 +684,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-18 | Unit | The class shims take the receiver first and call the methods, properties and statics (`crates/iron_api/tests/classes.rs`). |
 | M9-API-19 | Unit | `GameObject` and `Transform` of `iron_scene` work through their shims, a transform shares its object's handle, and the declarations have accessors (`crates/iron_scene/tests/api.rs`). |
 | M9-API-20 | Unit | Value class methods and getters (`#[method(Vector3)]`, `#[getter(Vector3)]` on free functions whose first parameter is the value) are declared inside the value class, with the receiver as `this` and passed as its fields (`crates/iron_api/tests/values.rs`). |
+| M9-API-21 | Unit | Strings cross as script string objects (`&str` parameters, borrowed) and a returned buffer (`String` results); the manifest and `.d.ts` say `string` (`crates/iron_api/tests/strings.rs`). |
+| M9-API-22 | Unit | A lone surrogate in a script string becomes one U+FFFD for the engine; a well formed string is borrowed, not copied; null is empty (`crates/iron_api/tests/strings.rs`). |
 
 ---
 

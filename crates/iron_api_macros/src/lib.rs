@@ -177,6 +177,8 @@ enum Kind {
     Handle(String, Box<Type>),
     /// Index into `Args::values`.
     Value(usize),
+    /// `&str` (a parameter) or `String` (a result); the flag is true for `String`.
+    Str(bool),
 }
 
 fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
@@ -184,6 +186,12 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
         && t.elems.is_empty()
     {
         return Ok(Kind::Unit);
+    }
+    if let Type::Reference(r) = ty
+        && r.mutability.is_none()
+        && rust_name_of(&r.elem).as_deref() == Some("str")
+    {
+        return Ok(Kind::Str(false));
     }
     let Some(name) = rust_name_of(ty) else {
         return Err(syn::Error::new(
@@ -197,6 +205,7 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
         "f32" => Kind::F32,
         "i32" => Kind::I32,
         "u32" => Kind::U32,
+        "String" => Kind::Str(true),
         other => {
             if let Some((ts, _)) = args.handles.iter().find(|(_, rust)| rust == other) {
                 Kind::Handle(ts.clone(), Box::new(ty.clone()))
@@ -246,6 +255,7 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
         Kind::F32 => quote!(::iron_api::Ty::F32),
         Kind::I32 => quote!(::iron_api::Ty::I32),
         Kind::U32 => quote!(::iron_api::Ty::U32),
+        Kind::Str(_) => quote!(::iron_api::Ty::Str),
         Kind::Handle(ts, _) => quote!(::iron_api::Ty::Handle(#ts)),
         Kind::Value(i) => {
             let ts = &args.values[*i].ts;
@@ -264,6 +274,7 @@ fn abi_ty(k: &Kind) -> TokenStream2 {
         Kind::I32 => quote!(i32),
         Kind::U32 => quote!(u32),
         Kind::Handle(..) => quote!(u64),
+        Kind::Str(_) => quote!(*const u8),
     }
 }
 
@@ -485,6 +496,16 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             };
             (params, conv)
         }
+        Kind::Str(owned) => {
+            // The script string's object; `script_str` reads it (no copy unless it has a lone
+            // surrogate).
+            let conv = if *owned {
+                quote!(unsafe { ::iron_api::script_str(#name) }.into_owned())
+            } else {
+                quote!(&*unsafe { ::iron_api::script_str(#name) })
+            };
+            (vec![quote!(#name: *const u8)], conv)
+        }
         other => {
             let t = abi_ty(other);
             (vec![quote!(#name: #t)], from_abi(other, quote!(#name)))
@@ -698,19 +719,53 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     #( unsafe { *out.add(#idx) = parts[#idx] as #part; } )*
                 }
             });
+        } else if let Kind::Str(_) = &a.ret {
+            // A string result: the text stays in `iron_api`'s per-thread buffer and the caller
+            // copies it into a script string at once.
+            shims.push(quote! {
+                /// # Safety
+                /// `out_len` is valid for a write.
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
+                    unsafe { ::iron_api::return_string(#call, out_len) }
+                }
+            });
         } else {
             let abi_ret = abi_ty(&a.ret);
             let body = to_abi(&a.ret, call);
-            shims.push(quote! {
-                #[unsafe(no_mangle)]
-                pub extern "C" fn #symbol_ident( #( #abi_params ),* ) -> #abi_ret {
-                    #body
-                }
-            });
+            // A string parameter is a pointer to a script string: the shim is unsafe to call.
+            if a.params.iter().any(|(_, k)| matches!(k, Kind::Str(_))) {
+                shims.push(quote! {
+                    /// # Safety
+                    /// String arguments are live script strings (or null).
+                    #[unsafe(no_mangle)]
+                    pub unsafe extern "C" fn #symbol_ident( #( #abi_params ),* ) -> #abi_ret {
+                        #body
+                    }
+                });
+            } else {
+                shims.push(quote! {
+                    #[unsafe(no_mangle)]
+                    pub extern "C" fn #symbol_ident( #( #abi_params ),* ) -> #abi_ret {
+                        #body
+                    }
+                });
+            }
         }
 
         // The QuickJS function (namespace functions only: a handle is a plain number there).
         if args.quickjs && a.class.is_none() {
+            if a.params
+                .iter()
+                .chain(a.value_recv.iter())
+                .any(|(_, k)| matches!(k, Kind::Str(_)))
+                || matches!(a.ret, Kind::Str(_))
+            {
+                return Err(syn::Error::new(
+                    a.name.span(),
+                    "strings are not available in the QuickJS bindings yet: drop `quickjs`",
+                ));
+            }
             let js_params: Vec<TokenStream2> = a
                 .params
                 .iter()

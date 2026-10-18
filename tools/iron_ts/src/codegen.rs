@@ -38,7 +38,7 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
         ExtTy::F32 => types::F32,
         ExtTy::I32 | ExtTy::U32 => types::I32,
         ExtTy::Bool => types::I8,
-        ExtTy::Handle(_) | ExtTy::Value(_) | ExtTy::Void => types::I64,
+        ExtTy::Handle(_) | ExtTy::Value(_) | ExtTy::Void | ExtTy::Str => types::I64,
     }
 }
 
@@ -129,7 +129,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         for p in &d.params {
             sig.params.push(AbiParam::new(ext_clif(p)));
         }
-        if d.out.is_some() {
+        if d.out.is_some() || d.ret == ExtTy::Str {
             sig.params.push(AbiParam::new(types::I64));
         }
         if d.ret != ExtTy::Void {
@@ -958,6 +958,28 @@ impl Cg<'_, '_> {
                 let fr = self
                     .module
                     .declare_func_in_func(self.ext_funcs[*i], self.b.func);
+                // A string result: the engine leaves the text in a buffer of its own and writes its
+                // length through a trailing pointer; copy it into a new script string.
+                if decl.ret == ExtTy::Str {
+                    let slot = self.b.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        3,
+                    ));
+                    let len_addr = self.b.ins().stack_addr(types::I64, slot, 0);
+                    conv.push(len_addr);
+                    let call = self.b.ins().call(fr, &conv);
+                    let text = self.b.inst_results(call)[0];
+                    let len = self.b.ins().load(types::I64, self.mf_t, len_addr, 0);
+                    return Ok(self
+                        .rt(
+                            "ts_rt_str_new_gc",
+                            &[types::I64, types::I64],
+                            Some(types::I64),
+                            &[text, len],
+                        )
+                        .unwrap());
+                }
                 let call = self.b.ins().call(fr, &conv);
                 let ret = decl.ret.clone();
                 match (self.b.inst_results(call).first().copied(), ret) {

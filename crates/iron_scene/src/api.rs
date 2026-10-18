@@ -163,6 +163,23 @@ pub mod scene_api {
             with(|s| s.contains(self)).unwrap_or(false)
         }
 
+        /// The first object with this name, or no object.
+        pub fn find(name: &str) -> ObjectId {
+            with(|s| s.find(name)).flatten().unwrap_or_else(none)
+        }
+
+        /// Its name.
+        #[property]
+        pub fn name(self) -> String {
+            with(|s| s.name(self).map(str::to_owned))
+                .flatten()
+                .unwrap_or_default()
+        }
+
+        pub fn set_name(self, name: &str) {
+            with(|s| s.set_name(self, name));
+        }
+
         /// Its transform.
         #[property]
         pub fn transform(self) -> TransformRef {

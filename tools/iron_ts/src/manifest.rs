@@ -51,6 +51,7 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
         "f32" => ExtTy::F32,
         "i32" => ExtTy::I32,
         "u32" => ExtTy::U32,
+        "string" => ExtTy::Str,
         other => {
             if let Some(name) = other.strip_prefix("handle:") {
                 ExtTy::Handle(name.to_string())

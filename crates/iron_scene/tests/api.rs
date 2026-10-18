@@ -155,6 +155,9 @@ fn game_object_and_transform_classes_work_through_their_shims() {
     assert!(d.contains("declare class GameObject {"), "{d}");
     assert!(d.contains("static create(): GameObject;"), "{d}");
     assert!(d.contains("get transform(): Transform;"), "{d}");
+    assert!(d.contains("get name(): string;"), "{d}");
+    assert!(d.contains("set name(value: string);"), "{d}");
+    assert!(d.contains("static find(name: string): GameObject;"), "{d}");
     assert!(d.contains("get position(): Vector3;"), "{d}");
     assert!(d.contains("set position(value: Vector3);"), "{d}");
     assert!(

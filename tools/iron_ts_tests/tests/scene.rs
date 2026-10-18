@@ -173,3 +173,60 @@ fn a_vector_survives_allocations_between_method_calls() {
         assert_eq!(ts_scn_vectorLoop(200.0), want);
     });
 }
+
+// M9-TS-183
+//
+// A string goes in as a script string (borrowed by the engine for the call) and comes back as a
+// new one: `name` set and read, `GameObject.find(name)`, a name with a handle comparison.
+#[test]
+fn names_cross_the_boundary_as_strings() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        let r = ts_scn_names() as *const iron_ts_rt::Str;
+        assert_eq!(
+            iron_ts_rt::Str::from_raw(r).to_string_lossy(),
+            "player-1/same/no/5"
+        );
+    });
+}
+
+// M9-TS-184
+//
+// Accents and an emoji survive the round trip, and a lone surrogate arrives as U+FFFD.
+#[test]
+fn unicode_names_round_trip_and_lone_surrogates_become_replacement_characters() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(ts_scn_unicodeName(), 1008.0);
+        assert_eq!(ts_scn_lossyName(), 300_000.0 + 0xFFFD as f64);
+    });
+}
+
+// M9-TS-185
+//
+// Thirty names made, read back and found, with a collection at every allocation.
+#[test]
+fn many_names_survive_collections() {
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    in_every_gc_mode(|| unsafe {
+        // "n0".."n9" are 2 bytes, "n10".."n29" 3: 10 * 2 + 20 * 3 = 80; the found name "n2" is 2.
+        assert_eq!(ts_scn_manyNames(30.0), 80_002.0);
+    });
+}
+
+// M9-TS-186
+//
+// The engine side reads script strings through `iron_api::ScriptStr`, so its layout must be the
+// runtime's `Str`.
+#[test]
+fn the_engines_view_of_a_script_string_is_the_runtimes_layout() {
+    assert_eq!(
+        std::mem::size_of::<iron_api::ScriptStr>(),
+        std::mem::size_of::<iron_ts_rt::Str>()
+    );
+    let s = unsafe { iron_ts_rt::ts_rt_str_new("añ😀".as_ptr(), "añ😀".len() as i64) };
+    assert_eq!(unsafe { iron_api::script_str(s as *const u8) }, "añ😀");
+}

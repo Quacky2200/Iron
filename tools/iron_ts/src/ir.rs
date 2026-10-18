@@ -313,6 +313,8 @@ pub enum ExtTy {
     Handle(String),
     /// A value class (`Vector3`): passed as one scalar per field.
     Value(String),
+    /// A `string`: a script string object in, and out through a buffer the call copies from.
+    Str,
 }
 
 impl ExtTy {
@@ -323,6 +325,7 @@ impl ExtTy {
             ExtTy::Bool => Ty::Bool,
             ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => Ty::Num,
             ExtTy::Handle(n) => Ty::Handle(n.clone()),
+            ExtTy::Str => Ty::Str,
             // The struct is made by the lowering (it knows the struct ids).
             ExtTy::Value(_) => Ty::Void,
         }

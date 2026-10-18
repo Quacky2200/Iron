@@ -462,7 +462,7 @@ const p = child.transform.position; // world position, a new Vector3
 ```
 
 Not built yet: methods on value classes as intrinsics (`a.add(b)`; built in section 19), strings
-(names, `find`), classes in the QuickJS bindings, and the same treatment for `iron_physics` and
+(names, `find`; built in section 20), classes in the QuickJS bindings, and the same treatment for `iron_physics` and
 `iron_audio`.
 
 ## 19. Value-class methods (2026-10-18)
@@ -497,3 +497,24 @@ const m = new Vector3(3, 4, 0).magnitude; // 5
 const q = new Quaternion(0, 0.7071068, 0, 0.7071068); // 90 degrees round y
 const v = q.rotate(new Vector3(1, 0, 0)); // (0, 0, -1)
 ```
+
+## 20. Strings across the boundary (2026-10-18)
+
+`#[iron_api]` functions take `&str` (or `String`) parameters and return `String`; the strings item of
+the compiler is now complete (see [iron-ts-strings.md](iron-ts-strings.md)).
+
+- **Type.** Manifest, JSON and d.ts say `string` (`iron_api::Ty::Str`; compiler `ExtTy::Str`).
+  `string | null` parameters are not supported. A string in a `quickjs` namespace is a compile error.
+- **In.** A parameter is a `*const u8` to the script string object (header `iron_api::ScriptStr`,
+  layout equal to `iron_ts_rt::Str`, bytes inline after the 48-byte header). The shim reads it with
+  `iron_api::script_str`, which borrows the bytes as `&str` without a copy when the string is well
+  formed, and otherwise copies it with each lone surrogate replaced by one U+FFFD. The collector is
+  non-moving and the caller roots the string, so the pointer is valid for the call. The engine must
+  copy what it keeps. Shims with string parameters are `unsafe extern "C"`.
+- **Out.** A `String` result adds a trailing `out_len: *mut i64` and returns `*const u8` into a
+  per-thread buffer (`iron_api::return_string`). The compiled call copies it at once into a new script
+  string with `ts_rt_str_new_gc`, so it can collect: the root analysis counts it as allocating.
+  Codegen passes a trailing stack slot for the length.
+- **iron_scene.** `GameObject.name` (get and set) and `GameObject.find(name)`. Tests `M9-API-21`..`22`
+  (crates/iron_api/tests/strings.rs) and `M9-TS-183`..`186` (tools/iron_ts_tests/tests/scene.rs).
+- **Not built.** `string | null` parameters; strings in the QuickJS bindings.
