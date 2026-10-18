@@ -639,6 +639,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-159 | Integration | `Vector3` methods and getters (`add`, `scale`, `dot`, `cross`, `lerp`, `distance`, `magnitude`, `normalized`) compile to direct calls, chained on call results (`tests/scene.rs`). |
 | M9-TS-160 | Integration | `Quaternion` `rotate`, `mul` and `inverse` (`tests/scene.rs`). |
 | M9-TS-161 | Integration | A vector kept across the allocations of a loop of method calls survives collection at every allocation (`tests/scene.rs`). |
+| M9-TS-162 | Unit | A string's `length` counts UTF-16 units (accents, CJK, a pair is 2, a lone surrogate 1) (`iron_ts_rt/src/string.rs`). |
+| M9-TS-163 | Unit | Both units of a surrogate pair are reachable by index; `codePointAt` on the low half is the lone surrogate (`string.rs`). |
+| M9-TS-164 | Unit | Slicing through a pair leaves lone surrogates (WTF-8) that rejoin into the original on concatenation (`string.rs`). |
+| M9-TS-165 | Unit | Ordering is by UTF-16 code unit, not code point (an emoji sorts before U+FF21) (`string.rs`). |
+| M9-TS-166 | Unit | Search converts between byte offsets and unit indices; a lone low surrogate is found inside a pair (`string.rs`). |
+| M9-TS-167 | Unit | A forward and a backward scan of a long non-ASCII string through the cursor are correct (`string.rs`). |
+| M9-TS-168 | Differential | `length`, `charCodeAt`, `codePointAt`, `charAt` at every index of a 24-string corpus (ASCII, accents, CJK, astral, lone surrogates) equal what bun answers (`iron_ts_rt/tests/strings.rs`, expected data from `tests/gen_strings.ts`). |
+| M9-TS-169 | Differential | `slice` and `substring` for every index pair equal bun's (`tests/strings.rs`). |
+| M9-TS-170 | Differential | Equality, `<` ordering and concatenation (rejoining split pairs) over every pair of strings equal bun's (`tests/strings.rs`). |
+| M9-TS-171 | Differential | `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith` with every position over every pair equal bun's (`tests/strings.rs`). |
+| M9-TS-172 | Unit | A string is one collectable object: an unrooted one is freed, a rooted one survives (`string.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

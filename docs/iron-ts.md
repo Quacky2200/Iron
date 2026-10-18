@@ -185,9 +185,29 @@ calls into. Its header comment is the long version.
   `0xDD`, so a missing root crashes loudly. The root analysis is a conservative approximation, not a proof.
 - **Entry points** are `#[unsafe(no_mangle)] extern "C"` functions named `ts_rt_*`: allocation, arrays
   (`push`, `set_len`, `insert`, `drop`, `splice`, `slice`, `append`, `reverse`, `fill`, `sort`), strings
-  (`str_new`, `concat`, `eq`), cells and closures, math (`sin`, `cos`, `pow`, `random` ...), collection
+  (see below), cells and closures, math (`sin`, `cos`, `pow`, `random` ...), collection
   control (`gc_collect`, `gc_stress`, `gc_enable`, `allocated`) and roots. Panics inside `extern "C"`
   abort the process, so fallible logic is tested through a Rust-level function.
+- **Strings** ([string.rs](../tools/iron_ts_rt/src/string.rs); design in
+  [iron-ts-strings.md](research/iron-ts-strings.md)). Stored as WTF-8 (UTF-8 plus the three-byte form
+  of lone surrogates) in one GC object, `Str { header, byte_len, utf16_len, flags, cursor_unit,
+  cursor_byte }` with the bytes inline (a leaf for the collector). Flags `ASCII` and `WELL_FORMED`: an
+  ASCII string maps unit index to byte offset directly; for other text a one-entry cursor (last unit and
+  byte position) makes a forward scan O(1) per step. What a script sees is JavaScript's exactly:
+  `length`, indices, `slice` and `charCodeAt` count UTF-16 units, ordering is by code unit, lone
+  surrogates are values, and a slice through a surrogate pair leaves lone surrogates that rejoin on
+  concat. Host-side routines never collect: `ts_rt_str_new` (UTF-8/WTF-8 bytes), `ts_rt_str_from_utf16`,
+  `ts_rt_str_concat`. Routines for generated code may collect first and are suffixed `_gc`
+  (`concat_gc`, `char_at_gc`, `slice_gc`, `substring_gc`, `from_code_point_gc`). The rest return
+  numbers or bools: `eq`, `compare`, `length`, `char_code_at`, `code_point_at`, `index_of`,
+  `last_index_of`, `includes`, `starts_with`, `ends_with`. Rust code reads a string through `Str`:
+  `as_bytes`, `as_str` (borrowed when well formed), `to_string_lossy` (lone surrogates become U+FFFD),
+  `to_utf16`. Not done yet: compiler support for strings (slice 2), `trim`/`split`/`join`/`repeat`/
+  `pad`/case/number conversion (slice 1b), and the engine boundary (slice 3).
+  Tests: [tools/iron_ts_rt/tests/strings.rs](../tools/iron_ts_rt/tests/strings.rs) (M9-TS-162..172),
+  including a differential harness: `tests/gen_strings.ts` (run with bun) writes
+  `strings_expected.json` from a 24-string corpus and the Rust test repeats the same operations on the
+  runtime and compares.
 - **Host side.** `link_anchor()` keeps the exports linked into an executable that only reaches them from
   generated code; `gc_stats()` reports collections and live bytes. Several modules in one process each
   need their own `struct_base`; registering a different table under a taken id is refused.

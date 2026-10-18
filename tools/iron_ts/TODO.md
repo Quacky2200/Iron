@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **162**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **173**).
 
 ## How to pick this up
 
@@ -89,9 +89,16 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 Next, in order:
 
-1. **Strings** (STOP, waiting for review): `docs/research/iron-ts-strings.md` (revised 2026-10-18). Decisions so far: stored as UTF-8 (WTF-8, so lone
-   surrogates fit), behaviour exactly JavaScript's (UTF-16 `length`/indices, code-unit ordering, no runtime differences). Answer its section 6
-   (WTF-8 OK, `localeCompare`/`Intl`/`RegExp` as compile errors until built, U+FFFD at the boundary), then implement slices 1-3.
+1. **Strings** (design `docs/research/iron-ts-strings.md`, decided: stored as WTF-8, behaviour exactly JavaScript's; lone surrogates become U+FFFD at the
+   engine boundary and `localeCompare`/`Intl`/`RegExp` are compile errors until built, as the note proposes, not yet confirmed by the user).
+   - [x] Slice 1a, runtime core (`iron_ts_rt/src/string.rs`): inline-bytes `Str` with ASCII / well-formed flags and UTF-16 length, cursor, `charCodeAt`,
+     `codePointAt`, `charAt`, `slice`, `substring`, `indexOf`/`lastIndexOf`/`includes`/`startsWith`/`endsWith`, `<` ordering, concat, `fromCharCode`/`fromCodePoint`;
+     differential tests against bun (`tests/gen_strings.ts` -> `strings_expected.json`, `M9-TS-162..172`).
+   - [ ] Slice 1b, rest of the runtime: `trim*`, `split`/`join`, `repeat`, `padStart/End`, `toUpperCase/LowerCase` (Unicode, special casing), number to string
+     (JS shortest round-trip format), `parseInt`/`parseFloat`/`Number(s)`, `at`, `localeCompare` as compile error.
+   - [ ] Slice 2, compiler: `string` locals/fields/arrays/params, literals in writable data (the cursor is written), operations as runtime calls, `+`, template
+     literals (one call), `===`/`<`, `string | null`, `typeof`, `s.length` as a field load.
+   - [ ] Slice 3, boundary: `string` manifest type, macro and compiler conversion (borrowed `&str`, out pointer), `GameObject.name` / `find` in `iron_scene`.
 2. **Annotate `iron_physics`, `iron_audio`, `iron_script`**; wire `iron_scene::api::enter` into `iron_app` (needs its owner:
    another session works there); retire the ops the new API replaces.
 3. Extending an engine class (`Component`) and the compiled-component vertical slice; `typeof`, class expressions.

@@ -518,6 +518,9 @@ dependencies = [
 [[package]]
 name = "iron_ts_rt"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "iron_ts_tests"

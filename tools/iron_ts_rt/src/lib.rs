@@ -11,7 +11,7 @@
 //! - struct: `[header = struct id + 1][field 0][field 1]...`
 //! - array: `Array { header, len, cap, data }`; `data` is a separate block owned by the array
 //!   (`cap` 8-byte slots, or `cap` bytes for `Uint8Array`). `HDR_ARRAY_PTR` arrays hold pointers.
-//! - string: `Str { header, len, data }`, UTF-8; closure: `Closure { header, func, env }`
+//! - string: `Str { header, .. }` with its WTF-8 bytes inline (`string.rs`); closure: `Closure { header, func, env }`
 //!   (`env` is host memory and is not traced).
 //!
 //! The header's top bit is the mark bit. Which struct slots hold pointers comes from a table the
@@ -427,10 +427,6 @@ fn collect(h: &mut Heap) {
                 HDR_BYTES => {
                     let a = &*(p as *const Array);
                     raw_free(h, a.data, a.cap.max(1) as usize);
-                }
-                HDR_STR => {
-                    let s = &*(p as *const Str);
-                    raw_free(h, s.data as *mut u8, s.len.max(1) as usize);
                 }
                 _ => {}
             }
@@ -970,58 +966,10 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
     }
 }
 
-// ---- strings (the runtime side; lowering of general string code is future work) ----
+// ---- strings: see string.rs ----
 
-#[repr(C)]
-pub struct Str {
-    pub header: u64,
-    pub len: i64,
-    pub data: *const u8,
-}
-
-/// # Safety
-/// `data` must point to `len` readable bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ts_rt_str_new(data: *const u8, len: i64) -> *mut Str {
-    with_heap(|h| {
-        let s = new_obj(h, HDR_STR, std::mem::size_of::<Str>()) as *mut Str;
-        let n = len.max(0) as usize;
-        let copy = raw_alloc(h, n.max(1), false);
-        // SAFETY: `data` has `len` bytes by contract; `copy` was just allocated.
-        unsafe {
-            std::ptr::copy_nonoverlapping(data, copy, n);
-            (*s).len = len;
-            (*s).data = copy;
-        }
-        s
-    })
-}
-
-/// # Safety
-/// Both must be strings made by `ts_rt_str_new`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ts_rt_str_concat(a: *const Str, b: *const Str) -> *mut Str {
-    // SAFETY: both are strings.
-    unsafe {
-        let (la, lb) = ((*a).len as usize, (*b).len as usize);
-        let mut buf = Vec::with_capacity(la + lb);
-        buf.extend_from_slice(std::slice::from_raw_parts((*a).data, la));
-        buf.extend_from_slice(std::slice::from_raw_parts((*b).data, lb));
-        ts_rt_str_new(buf.as_ptr(), (la + lb) as i64)
-    }
-}
-
-/// # Safety
-/// Both must be strings made by `ts_rt_str_new`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ts_rt_str_eq(a: *const Str, b: *const Str) -> bool {
-    // SAFETY: both are strings.
-    unsafe {
-        (*a).len == (*b).len
-            && std::slice::from_raw_parts((*a).data, (*a).len as usize)
-                == std::slice::from_raw_parts((*b).data, (*b).len as usize)
-    }
-}
+mod string;
+pub use string::*;
 
 /// A new variable box holding `value` (a number's bits, a tag, or a pointer when `is_ptr`). May
 /// collect first; a pointer value is kept alive meanwhile.
@@ -1141,6 +1089,23 @@ pub fn link_anchor() -> usize {
         ts_rt_arr_fill as *const () as usize,
         ts_rt_arr_sort as *const () as usize,
         ts_rt_str_new as *const () as usize,
+        ts_rt_str_from_utf16 as *const () as usize,
+        ts_rt_str_concat as *const () as usize,
+        ts_rt_str_concat_gc as *const () as usize,
+        ts_rt_str_eq as *const () as usize,
+        ts_rt_str_compare as *const () as usize,
+        ts_rt_str_length as *const () as usize,
+        ts_rt_str_char_code_at as *const () as usize,
+        ts_rt_str_code_point_at as *const () as usize,
+        ts_rt_str_char_at_gc as *const () as usize,
+        ts_rt_str_slice_gc as *const () as usize,
+        ts_rt_str_substring_gc as *const () as usize,
+        ts_rt_str_index_of as *const () as usize,
+        ts_rt_str_last_index_of as *const () as usize,
+        ts_rt_str_includes as *const () as usize,
+        ts_rt_str_starts_with as *const () as usize,
+        ts_rt_str_ends_with as *const () as usize,
+        ts_rt_str_from_code_point_gc as *const () as usize,
         ts_rt_closure_new as *const () as usize,
         ts_rt_closure_new_gc as *const () as usize,
         ts_rt_cell_new_gc as *const () as usize,

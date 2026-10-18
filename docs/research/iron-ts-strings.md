@@ -1,6 +1,11 @@
 # iron_ts: strings (design note, for review)
 
-Status: **proposal, no code yet** (a STOP item of `tools/iron_ts/TODO.md`). Written 2026-10-18, revised
+Status: **slice 1a is implemented** (2026-10-18): the runtime side in
+`tools/iron_ts_rt/src/string.rs` (WTF-8 `Str` with inline bytes, flags, one-entry cursor; concat, eq,
+compare, length, charCodeAt/codePointAt, charAt, slice, substring, indexOf/lastIndexOf/includes/
+startsWith/endsWith, fromCodePoint) with tests M9-TS-162..172, including a differential harness against
+bun. Not yet: compiler support (slice 2), trim/split/join/repeat/pad/case/number conversion (slice 1b),
+the engine boundary (slice 3). The rest of this note is the design as proposed. Written 2026-10-18, revised
 the same day after review. The engine-boundary note (section 7) made string-taking engine functions
 wait for this.
 
