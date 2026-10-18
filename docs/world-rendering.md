@@ -19,10 +19,10 @@ the app builds a flat `WorldView` per camera.
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
-  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines, strokes }`.
+  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines, strokes, fills }`.
   The viewport is normalized, from the top-left of the target. `target_texture` names a render texture
   to draw into instead of the screen (see Render textures). `grid` and `lines` are the editor's ground grid
-  and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines (see Thick 2D lines).
+  and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines and `fills` their filled shapes (see Thick 2D lines).
 - `WorldCamera { view_proj, position, forward, orthographic, clear }`. `WorldCamera::new(world,
   projection, near, far, size, clear)` builds it from the camera's world matrix and a viewport `size`
   in pixels (for the aspect). `Projection` is `Perspective { fov_y_degrees }` or `Orthographic {
@@ -76,7 +76,17 @@ lays a quad along the segment, square to the camera's forward axis, a pixel wide
 size comes from unprojecting at each end). `fs_stroke` cuts a capsule by signed distance, so edges are
 smooth without MSAA and joins and caps are round. Strokes are depth-tested and blended after the
 see-through things and before the gizmo lines (`M5-RND-24`). Known limits: where see-through segments
-overlap they look darker; the width is not scaled by the object; there are no fills yet.
+overlap they look darker; the width is not scaled by the object.
+
+**Fills.** `WorldView.fills: Vec<FillVertex { position, color }>` holds triangles (three vertices each) in
+world space ([fill.rs](../crates/iron_render/src/world/fill.rs)). `tessellate_fill(points, FillRule)` turns a
+closed outline into triangles with lyon. Points that are not finite are skipped, and fewer than three
+leave nothing. `FillRule` is `EvenOdd` (the default, GDI's `Alternate`: a crossing star's middle is a hole)
+or `NonZero` (GDI's `Winding`: the star is solid). `WorldViews` tessellates when the `render.stroke` op
+arrives (in the object's local space) and moves the triangles through the object's matrix each frame. The
+fills are drawn by `vs_shape` / `fs_shape` just before the strokes, so an outline sits on its fill. Fill
+edges are only as smooth as MSAA makes them (an outline hides them). A stroke `width` of 0 draws no
+outline, only the fill (`M5-RND-25`).
 
 ### Editor grid and gizmo lines
 
@@ -393,7 +403,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 |---|---|
 | `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical antialiasing targetTexture\|null grid` (`grid` is `Camera.sceneGrid`) |
 | `render.gizmos` | `camera [ax ay az bx by bz r g b a ...]` (10 floats per line segment, world space; the camera shows them until replaced, and a later `render.camera` keeps them; non-finite lines are dropped) |
-| `render.stroke` | `component object width [r g b a] closed [x0 y0 x1 y1 ...]` (points on the object's local XY plane; `views()` turns them into world segments through the object's matrix, skips them by the camera's culling mask, and `render.remove` or destroying the object drops them) |
+| `render.stroke` | `component object width [r g b a] closed [x0 y0 x1 y1 ...] [fill r g b a]\|null evenodd\|nonzero` (the last two are optional: a fill colour and rule make the points a closed, filled shape; width 0 draws the fill alone; points on the object's local XY plane; `views()` turns them into world segments through the object's matrix, skips them by the camera's culling mask, and `render.remove` or destroying the object drops them) |
 | `render.plane` | `component object [w h] [r g b a]` |
 | `render.mesh` | `id [positions] [normals] [uvs] [indices] [joints, 4 per vertex] [weights, 4 per vertex]` (a script mesh; `id null` removes it) |
 | `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic ... [bone objects]\|null [bind poses, 16 each]` (the last two for `SkinnedMeshRenderer`) |
@@ -410,7 +420,8 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
 | `render.panel` | `component object [w h] pixelsPerMeter resolution [r g b a] interactive` (handled by `Panels`) |
-| `render.remove` | `component` (removes a camera, plane, mesh renderer, light, sprite, particle system, mirror, probe or panel) |
+| `render.text` | `component object text [r g b a] fontSize fontFamily\|null fontWeight align maxWidth pixelsPerUnit resolution` (a `TextMesh`; handled by `Panels::apply_text`, see World panels) |
+| `render.remove` | `component` (removes a camera, plane, mesh renderer, light, sprite, particle system, mirror, probe, panel or text mesh) |
 
 The component re-sends its op when a property changes. The defaults are a dark clear colour, `depth`
 0 and a full-screen `rect`. A bad op (unknown primitive, mesh with bad indices) logs a warning.
@@ -448,8 +459,15 @@ and presents it each frame (see [editor.md](editor.md#the-scene-view)). `Camera.
 object has `HideFlags.HideInHierarchy`.
 
 `LineRenderer2D` ([lines.ts](../js/engine/src/lines.ts)) draws thick lines on the object's local XY plane:
-`points`, `width`, `color` and `loop`. It sends the points flat at most once per frame (in `onPreRender`)
-and sends `render.remove` when destroyed.
+`points`, `width`, `color` and `loop`, plus `fillColor` (null: no fill) and `fillRule` (`evenodd` by default,
+or `nonzero`). A fill always closes the shape, and a `width` of 0 leaves just the fill. It sends the points
+flat at most once per frame (in `onPreRender`) and sends `render.remove` when destroyed.
+
+`Shapes` ([shapes.ts](../js/engine/src/shapes.ts)) makes points for `LineRenderer2D`, after GDI's drawing calls:
+`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
+`bezier`, and the cardinal splines `curve` and `closedCurve` (tension 0.5 is Catmull-Rom). They lie on the XY
+plane with y up, and angles are in degrees counter-clockwise from +x. Closed shapes do not repeat the first
+point: set `loop`, or add a `fillColor`.
 
 `CameraFollow` and `CameraOrbit` are script components that move a camera object in `onLateUpdate`.
 They have no Rust side.
@@ -493,6 +511,16 @@ arrive before `WorldPanel.onStart` sends `render.panel`).
   `removeStyleSheet` calls update the screen and all existing panels, so every tree has the same CSS.
 - Size, `pixelsPerMeter` (default 500), `resolution` (default 2, clamped 0.25 to 4) and `tint` come
   from `render.panel`. Size is clamped to at least 1 UI pixel.
+
+**TextMesh.** A `TextMesh` ([text-mesh.ts](../js/engine/src/text-mesh.ts)) is text in the world with no React
+root: `text`, `fontSize`, `color`, `font`, `fontWeight`, `alignment`, `maxWidth`, `pixelsPerUnit` (default 100)
+and `resolution`. It sends `render.text` at most once per frame and `render.remove` when destroyed.
+`Panels::apply_text` makes a panel (not interactive) and builds its UI tree in Rust: one absolutely
+positioned `text` element, so it shrink-wraps its text. The text is white and the colour is the panel's
+tint, like a sprite. `whiteSpace` is `pre`, or `pre-wrap` when `maxWidth` is above 0, with `maxWidth` set as
+the element's max width. The tree is laid out with room to spare, then the panel is fitted to the text's
+content box (at least 1 pixel) and drawn centred on its object (`M5-TXT-01`). Panels, text meshes
+included, are redrawn every frame (a TODO in TODO.md).
 
 **Textures.** `Panels::render` runs every frame before the world pass. For each active panel it sets
 the tree size and clock, loads images, builds the draw list and draws it with
@@ -654,7 +682,7 @@ procedural sky, with the skybox as background), `M5-RND-12` (a planar mirror: re
 and screen-space sampling) and `M5-RND-13` (a box-projected reflection probe in a room). Later goldens: `M5-RND-17` (material maps and
 rendering modes under a sky), `-18` (tonemapping, exposure and FXAA), `-19` (a render texture shown on a
 monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count), and `-21`
-(a tube skinned to two bones, bent, with a bent shadow), `-22` (the ground grid: axes, fade, hidden by a box) `-23` (gizmo lines: constant width, faint behind a mesh) and `-24` (thick 2D strokes: round joins and caps, soft edges, a 2-pixel line, hidden behind a cube). Cooked textures are tested with cooking
+(a tube skinned to two bones, bent, with a bent shadow), `-22` (the ground grid: axes, fade, hidden by a box) `-23` (gizmo lines: constant width, faint behind a mesh) `-24` (thick 2D strokes: round joins and caps, soft edges, a 2-pixel line, hidden behind a cube) and `-25` (filled shapes: tessellation units, both fill rules, a golden, the `world_view` unit and JS units). Cooked textures are tested with cooking
 (`M5-AST-06`, see [assets-and-models.md](assets-and-models.md#tests)).
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
