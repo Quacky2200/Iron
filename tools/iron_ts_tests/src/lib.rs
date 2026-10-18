@@ -49,6 +49,18 @@ pub mod glob {
     include!(concat!(env!("OUT_DIR"), "/globals_bindings.rs"));
 }
 
+/// `for(;;)`, `do...while` and labels (`bench/loops.ts`), prefix `loop_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod lp {
+    include!(concat!(env!("OUT_DIR"), "/loops_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,
@@ -86,6 +98,14 @@ pub fn gc_mode_from_env() {
         Ok("stress") => ts_rt_gc_stress(true),
         Ok("off") => iron_ts_rt::ts_rt_gc_enable(false),
         _ => {}
+    }
+}
+
+/// Pushes numbers onto a `number[]`.
+pub fn push_f64s(arr: *mut Array, vals: &[f64]) {
+    for v in vals {
+        // SAFETY: `arr` is a runtime array.
+        unsafe { ts_rt_arr_push(arr, v.to_bits()) };
     }
 }
 

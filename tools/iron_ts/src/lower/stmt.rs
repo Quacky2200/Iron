@@ -30,66 +30,7 @@ impl<'a> Lowerer<'a> {
                 r?;
             }
             Statement::ExpressionStatement(e) => self.lower_effect(&e.expression, out)?,
-            Statement::VariableDeclaration(v) => {
-                for d in &v.declarations {
-                    let BindingPattern::BindingIdentifier(id) = &d.id else {
-                        bail!("{}: destructuring declaration", self.loc(d.span.start))
-                    };
-                    let ann = match &d.type_annotation {
-                        Some(a) => Some(self.ty(&a.type_annotation, id.name.as_str())?),
-                        None => None,
-                    };
-                    // A closure that refers to its own name: the cell exists before the closure.
-                    let mut prebound = None;
-                    if self.captured.contains(id.name.as_str())
-                        && let Some(t @ Ty::Fn(_)) = &ann
-                    {
-                        let cell = self.new_local(Ty::Cell(Box::new(t.clone())));
-                        let cell_ty = self.cur.locals[cell as usize].clone();
-                        let zero = self.default_value(t);
-                        let new = Expr {
-                            kind: ExprKind::NewCell(Box::new(zero)),
-                            ty: cell_ty,
-                        };
-                        out.push(Stmt::Assign(cell, new));
-                        let scope = self.cur.scopes.len() - 1;
-                        self.cur.scopes[scope]
-                            .insert(id.name.to_string(), Binding::Boxed(cell, t.clone()));
-                        prebound = Some(cell);
-                    }
-                    let init = match &d.init {
-                        Some(e) => {
-                            let v = self.lower_expr(e, ann.as_ref())?;
-                            Some(match &ann {
-                                Some(t) => self.coerce(v, t)?,
-                                None => v,
-                            })
-                        }
-                        None => None,
-                    };
-                    let ty = match (&ann, &init) {
-                        (Some(t), _) => t.clone(),
-                        (None, Some(v)) if v.ty != Ty::Null => v.ty.clone(),
-                        _ => bail!(
-                            "{}: cannot infer the type of `{}`",
-                            self.loc(d.span.start),
-                            id.name
-                        ),
-                    };
-                    let v = match init {
-                        Some(v) => v,
-                        None => self.default_value(&ty),
-                    };
-                    if let Some(cell) = prebound {
-                        let c = self.var_expr(cell);
-                        out.push(Stmt::CellSet(c, v));
-                        continue;
-                    }
-                    let var = self.new_local(ty.clone());
-                    out.push(Stmt::Assign(var, v));
-                    self.bind_var(id.name.as_str(), var, out);
-                }
-            }
+            Statement::VariableDeclaration(v) => self.lower_var_decl(v, out)?,
             Statement::IfStatement(i) => {
                 let c = self.lower_expr(&i.test, None)?;
                 let c = self.to_bool(c);
@@ -105,7 +46,8 @@ impl<'a> Lowerer<'a> {
                 let c = self.lower_expr(&w.test, None)?;
                 let c = self.to_bool(c);
                 let not = mk(ExprKind::Un(UnOp::Not, Box::new(c)), Ty::Bool);
-                self.cur.loops.push(label);
+                let entry = self.loop_entry(label, Some(label));
+                self.cur.loops.push(entry);
                 let body = self.scoped(&w.body);
                 self.cur.loops.pop();
                 let mut b = vec![Stmt::If(not, vec![Stmt::Break(label)], vec![])];
@@ -125,7 +67,8 @@ impl<'a> Lowerer<'a> {
                 // A captured loop variable gets a fresh cell every iteration.
                 let mut bind = Vec::new();
                 self.bind_var(id.name.as_str(), it.elem, &mut bind);
-                self.cur.loops.push(it.label);
+                let entry = self.loop_entry(it.label, Some(it.label));
+                self.cur.loops.push(entry);
                 let body = self.scoped(&f.body);
                 self.cur.loops.pop();
                 self.cur.scopes.pop();
@@ -145,22 +88,230 @@ impl<'a> Lowerer<'a> {
                 };
                 self.emit_return(v, out)?;
             }
-            Statement::BreakStatement(_) => {
-                let Some(&l) = self.cur.loops.last() else {
-                    bail!("break outside a loop")
-                };
+            Statement::BreakStatement(b) => {
+                let l = self.jump_target(b.label.as_ref().map(|l| l.name.as_str()))?;
                 out.push(Stmt::Break(l));
             }
-            Statement::ContinueStatement(_) => {
-                let Some(&l) = self.cur.loops.last() else {
-                    bail!("continue outside a loop")
-                };
-                out.push(Stmt::Continue(l));
+            Statement::ContinueStatement(c) => {
+                let name = c.label.as_ref().map(|l| l.name.as_str());
+                let (l, is_loop) = self.continue_target(name)?;
+                out.push(if is_loop {
+                    Stmt::Continue(l)
+                } else {
+                    Stmt::Break(l)
+                });
+            }
+            Statement::DoWhileStatement(d) => {
+                // Loop { Block(cont) { body }; if !test break }: `continue` leaves the block and
+                // reaches the test.
+                let (top, cont) = (self.new_label(), self.new_label());
+                let entry = self.loop_entry(top, Some(cont));
+                self.cur.loops.push(entry);
+                let body = self.scoped(&d.body);
+                self.cur.loops.pop();
+                let c = self.lower_expr(&d.test, None)?;
+                let c = self.to_bool(c);
+                let not = mk(ExprKind::Un(UnOp::Not, Box::new(c)), Ty::Bool);
+                let b = vec![
+                    Stmt::Block(cont, body?),
+                    Stmt::If(not, vec![Stmt::Break(top)], vec![]),
+                ];
+                out.push(Stmt::Loop(top, b));
+            }
+            Statement::ForStatement(f) => self.lower_for(f, out)?,
+            Statement::LabeledStatement(l) => {
+                let name = l.label.name.to_string();
+                if matches!(
+                    l.body,
+                    Statement::ForStatement(_)
+                        | Statement::WhileStatement(_)
+                        | Statement::DoWhileStatement(_)
+                        | Statement::ForOfStatement(_)
+                ) {
+                    self.cur.pending_label = Some(name);
+                    self.lower_stmt(&l.body, out)?;
+                } else {
+                    // `name: { ... break name; ... }`
+                    let b = self.new_label();
+                    self.cur.loops.push(LoopLabels {
+                        name: Some(name),
+                        brk: b,
+                        cont: None,
+                        unlabeled_break: false,
+                    });
+                    let body = self.scoped(&l.body);
+                    self.cur.loops.pop();
+                    out.push(Stmt::Block(b, body?));
+                }
             }
             other => bail!(
                 "{}: unsupported statement",
                 self.loc(oxc_span::GetSpan::span(other).start)
             ),
+        }
+        Ok(())
+    }
+
+    /// The entry for a loop being lowered; it takes a pending source label.
+    pub(crate) fn loop_entry(&mut self, brk: LabelId, cont: Option<LabelId>) -> LoopLabels {
+        LoopLabels {
+            name: self.cur.pending_label.take(),
+            brk,
+            cont,
+            unlabeled_break: true,
+        }
+    }
+
+    /// Where `break` (or `break name`) goes.
+    fn jump_target(&self, name: Option<&str>) -> R<LabelId> {
+        for e in self.cur.loops.iter().rev() {
+            match name {
+                Some(n) if e.name.as_deref() == Some(n) => return Ok(e.brk),
+                None if e.unlabeled_break => return Ok(e.brk),
+                _ => {}
+            }
+        }
+        match name {
+            Some(n) => bail!("break to unknown label `{n}`"),
+            None => bail!("break outside a loop or switch"),
+        }
+    }
+
+    /// Where `continue` (or `continue name`) goes: the label, and whether it is a loop top
+    /// (`Continue`) or the end of a body block (`Break`).
+    fn continue_target(&self, name: Option<&str>) -> R<(LabelId, bool)> {
+        for e in self.cur.loops.iter().rev() {
+            let Some(c) = e.cont else { continue };
+            if name.is_none() || e.name.as_deref() == name {
+                return Ok((c, c == e.brk));
+            }
+        }
+        match name {
+            Some(n) => bail!("continue to `{n}`, which is not a loop"),
+            None => bail!("continue outside a loop"),
+        }
+    }
+
+    /// `for (init; test; update) body`:
+    /// `init; Loop { if !test break; Block(cont) { body }; update }`, `continue` leaving the block.
+    fn lower_for(&mut self, f: &'a ForStatement<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let name = self.cur.pending_label.take();
+        self.cur.scopes.push(HashMap::new());
+        let r = self.lower_for_in_scope(f, name, out);
+        self.cur.scopes.pop();
+        r
+    }
+
+    fn lower_for_in_scope(
+        &mut self,
+        f: &'a ForStatement<'a>,
+        name: Option<String>,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        match &f.init {
+            Some(ForStatementInit::VariableDeclaration(v)) => self.lower_var_decl(v, out)?,
+            Some(init) => {
+                let e = init.as_expression().ok_or("for initialiser")?;
+                self.lower_effect(e, out)?;
+            }
+            None => {}
+        }
+        // Captured `let` variables of the head are copied into a fresh cell every iteration.
+        let scope = self.cur.scopes.len() - 1;
+        let fresh: Vec<(VarId, Ty)> = self.cur.scopes[scope]
+            .values()
+            .filter_map(|b| match b {
+                Binding::Boxed(cell, ty) => Some((*cell, ty.clone())),
+                _ => None,
+            })
+            .collect();
+        let (top, cont) = (self.new_label(), self.new_label());
+        let mut b = Vec::new();
+        if let Some(t) = &f.test {
+            let c = self.lower_expr(t, None)?;
+            let c = self.to_bool(c);
+            let not = mk(ExprKind::Un(UnOp::Not, Box::new(c)), Ty::Bool);
+            b.push(Stmt::If(not, vec![Stmt::Break(top)], vec![]));
+        }
+        self.cur.pending_label = name;
+        let entry = self.loop_entry(top, Some(cont));
+        self.cur.loops.push(entry);
+        let body = self.scoped(&f.body);
+        self.cur.loops.pop();
+        b.push(Stmt::Block(cont, body?));
+        for (cell, ty) in fresh {
+            let cell_ty = self.cur.locals[cell as usize].clone();
+            let old = self.var_expr(cell);
+            let value = mk(ExprKind::CellGet(Box::new(old)), ty);
+            b.push(Stmt::Assign(
+                cell,
+                mk(ExprKind::NewCell(Box::new(value)), cell_ty),
+            ));
+        }
+        if let Some(u) = &f.update {
+            self.lower_effect(u, &mut b)?;
+        }
+        out.push(Stmt::Loop(top, b));
+        Ok(())
+    }
+
+    fn lower_var_decl(&mut self, v: &'a VariableDeclaration<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        for d in &v.declarations {
+            let BindingPattern::BindingIdentifier(id) = &d.id else {
+                bail!("{}: destructuring declaration", self.loc(d.span.start))
+            };
+            let ann = match &d.type_annotation {
+                Some(a) => Some(self.ty(&a.type_annotation, id.name.as_str())?),
+                None => None,
+            };
+            // A closure that refers to its own name: the cell exists before the closure.
+            let mut prebound = None;
+            if self.captured.contains(id.name.as_str())
+                && let Some(t @ Ty::Fn(_)) = &ann
+            {
+                let cell = self.new_local(Ty::Cell(Box::new(t.clone())));
+                let cell_ty = self.cur.locals[cell as usize].clone();
+                let zero = self.default_value(t);
+                let new = Expr {
+                    kind: ExprKind::NewCell(Box::new(zero)),
+                    ty: cell_ty,
+                };
+                out.push(Stmt::Assign(cell, new));
+                let scope = self.cur.scopes.len() - 1;
+                self.cur.scopes[scope].insert(id.name.to_string(), Binding::Boxed(cell, t.clone()));
+                prebound = Some(cell);
+            }
+            let init = match &d.init {
+                Some(e) => {
+                    let v = self.lower_expr(e, ann.as_ref())?;
+                    Some(match &ann {
+                        Some(t) => self.coerce(v, t)?,
+                        None => v,
+                    })
+                }
+                None => None,
+            };
+            let ty = match (&ann, &init) {
+                (Some(t), _) => t.clone(),
+                (None, Some(v)) if v.ty != Ty::Null => v.ty.clone(),
+                _ => bail!(
+                    "{}: cannot infer the type of `{}`",
+                    self.loc(d.span.start),
+                    id.name
+                ),
+            };
+            let v = match init {
+                Some(v) => v,
+                None => self.default_value(&ty),
+            };
+            if let Some(cell) = prebound {
+                let c = self.var_expr(cell);
+                out.push(Stmt::CellSet(c, v));
+                continue;
+            }
+            let var = self.new_local(ty.clone());
+            out.push(Stmt::Assign(var, v));
+            self.bind_var(id.name.as_str(), var, out);
         }
         Ok(())
     }

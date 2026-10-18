@@ -74,6 +74,19 @@ pub(crate) struct RetTarget {
     pub kind: RetKind,
 }
 
+/// What `break` and `continue` mean at one nesting level.
+#[derive(Clone)]
+pub(crate) struct LoopLabels {
+    /// The source label (`outer: for ...`), if any.
+    pub name: Option<String>,
+    /// `break` target: leaves the loop, switch or labelled block.
+    pub brk: LabelId,
+    /// `continue` target; none for a switch or a labelled block.
+    pub cont: Option<LabelId>,
+    /// Does an unlabelled `break` stop here (loops and switches, not labelled blocks)?
+    pub unlabeled_break: bool,
+}
+
 #[derive(Default)]
 pub(crate) struct FnCtx {
     pub locals: Vec<Ty>,
@@ -81,7 +94,10 @@ pub(crate) struct FnCtx {
     /// Declared or inferred return type.
     pub ret: Option<Ty>,
     pub next_label: u32,
-    pub loops: Vec<LabelId>,
+    /// Enclosing loops, switches and labelled statements, innermost last.
+    pub loops: Vec<LoopLabels>,
+    /// A label just read (`outer:`) that the loop lowered next takes as its name.
+    pub pending_label: Option<String>,
     pub rets: Vec<RetTarget>,
     /// Open optional chains: (exit label, result variable).
     pub chain: Vec<(LabelId, VarId)>,

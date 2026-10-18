@@ -535,6 +535,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-54 | Integration | A linked list reachable only from a module variable survives collections at every allocation (4950, then 4995). Runs in all three GC modes (`tests/globals.rs`). |
 | M9-TS-55 | Unit | A `let` with a literal initialiser is a data slot written by the function, not folded away; a `const` literal is folded (`iron_ts/src/lib.rs`). |
 | M9-TS-56 | Unit | Assigning a `const` (number or object) is an error naming the constant (`iron_ts/src/lib.rs`). |
+| M9-TS-57 | Integration | `for (let i = 0; i < n; i++)` sums 0..n-1, and `continue` still runs the update clause (sum of odd numbers below 10 = 25). Runs normally, in stress GC mode and with collection off (`tests/loops.rs`). |
+| M9-TS-58 | Integration | A `for` head with two declarators and a comma update, with no test, with no initialiser, or with no update (30, 8, 398). Runs in all three GC modes (`tests/loops.rs`). |
+| M9-TS-59 | Integration | A `do...while` body runs once when the test starts false (111), and `continue` reaches its test (1206). Runs in all three GC modes (`tests/loops.rs`). |
+| M9-TS-60 | Integration | `continue outer` and `break outer` reach the outer loop (15, 26). Runs in all three GC modes (`tests/loops.rs`). |
+| M9-TS-61 | Integration | Labels on a `while`, a `for...of` and a plain block (600100, 100100, 2001, 2, 3). Runs in all three GC modes (`tests/loops.rs`). |
+| M9-TS-62 | Integration | A captured `for` variable is a new binding every iteration (closures see 0, 1, 2) and a closure's change to it carries into the next iteration (12, 3). Runs in all three GC modes (`tests/loops.rs`). |
+| M9-TS-63 | Integration | Objects allocated in the head, body and update of a `for` survive a collection at every allocation (5050). Runs in all three GC modes (`tests/loops.rs`). |
 
 ---
 

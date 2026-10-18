@@ -455,3 +455,37 @@ Reading it:
   can wait behind classes and strings.
 - UI (JSX) is one file per game; it stays on QuickJS (the hybrid plan).
 - `Map`/`Set` are frequent enough that array-backed sets are only a stopgap.
+
+## 12. Loops and labels (stage 1 of the language features)
+
+Design, written before the code. The IR has `Loop(label)` (an infinite loop; `Continue(label)` jumps
+to its top, `Break(label)` leaves it) and `Block(label)` (`Break(label)` leaves it). Source loops
+map onto those:
+
+| Source | IR |
+|---|---|
+| `while (t) b` | `Loop L { if !t break L; b }`, `continue` = `Continue L` |
+| `for (init; t; u) b` | `init; Loop L { if !t break L; Block C { b }; u }`, `continue` = `Break C` |
+| `do b while (t)` | `Loop L { Block C { b }; if !t break L }`, `continue` = `Break C` |
+| `for (x of xs) b` | as before (the iterator's head runs the step) |
+| `name: <loop>` | the loop takes the name; `break name` / `continue name` look it up |
+| `name: { ... }` | `Block B { ... }`, `break name` = `Break B` |
+
+A `continue` therefore has to run the update (`for`) or the test (`do...while`), which is why the
+body sits in its own block and `continue` leaves that block instead of jumping to the loop top.
+Lowering keeps a stack of `LoopLabels { name, brk, cont, unlabeled_break }` per function: an
+unlabelled `break` takes the innermost loop (or later switch), an unlabelled `continue` the
+innermost loop, a labelled one the entry with that name. Inlined array callbacks start a fresh
+stack (a `break` there is an error, as in JS).
+
+**Per-iteration bindings.** JS gives a `let` in a `for` head a new binding each iteration. When a
+closure captures it, it is boxed in a cell (closures section above); the lowering then copies the
+value into a new cell at the end of the body, before the update, so a closure made in iteration k
+keeps iteration k's value and the update changes the next iteration's copy. Uncaptured variables
+are plain locals and cost nothing.
+
+Not done here: `for...in`, `for await`, `for (x of ...)` over an existing variable or a
+destructuring pattern (destructuring is stage 3).
+
+Tests: `tests/loops.rs` against the numbers bun computes from `bench/loops.ts`, in all three GC
+modes (`M9-TS-57`..`63`).

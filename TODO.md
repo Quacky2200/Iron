@@ -1471,7 +1471,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] `Map` and `Set` proper (hash by number, string, object identity; insertion order; iteration)
     - [ ] `JSON.stringify/parse` for plain data (or declare out of scope)
   - [ ] **Language features** (each small to medium; tick each)
-    - [ ] `for(;;)` with update clause, `do...while`, labelled `break`/`continue`
+    - [x] `for(;;)` with update clause, `do...while`, labelled `break`/`continue` (`M9-TS-57..63`)
     - [ ] `switch` (numbers, string-literal unions), enums (`enum`, `const enum`)
     - [ ] Destructuring (objects, arrays, parameters, nested, defaults), default and rest parameters
     - [ ] Spread: call arguments, array literals, object literals with overrides
