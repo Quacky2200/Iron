@@ -525,6 +525,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-44 | Integration | Closures held by the host keep their captured state, including an object, through collections and garbage churn, with a collection at every allocation. Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
 | M9-TS-45 | Integration | 20,000 short-lived arrays, cells and closures are collected. Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
 | M9-TS-46 | Integration | Closures are passed, returned and called through a call result while two fresh ones wait for each other (`compose(makeAdder(1), makeAdder(2))(10)` = 13). Runs normally, in stress GC mode and with collection off (`tests/closures.rs`). |
+| M9-TS-47 | Integration | A module-level `let counter = 0` is changed by functions, an arrow function and a `forEach` callback, continues across calls and starts over after `ts_init` (19, 38, 0). Runs normally, in stress GC mode and with collection off (`tests/globals.rs`). |
+| M9-TS-48 | Integration | A `let` global replaced by a call while its old value waits as an argument (`sum(current, swapCurrent(100))` = 101) is not freed. Fails if `let` globals are trusted like constants. Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-49 | Integration | A `let` global assigned inside a later argument, with an object literal and no call after it (`sum(current, (current = {v: 50}, {v: 7}.v))` = 8), keeps the old value alive. Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-50 | Integration | A global `Item | null` holds an object, then nothing (`remember`, `lastOr`, `forget`). Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-51 | Integration | A global `number | null` keeps the largest value seen (9). Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-52 | Integration | `let pending: Item | undefined;` and `let n: number | undefined;` without a value start as null and can be assigned. Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-53 | Integration | A closure stored in a global keeps what it captured (`handler = (n) => n * k + base`; 17), and the global's first value (`(n) => n`) is callable. Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-54 | Integration | A linked list reachable only from a module variable survives collections at every allocation (4950, then 4995). Runs in all three GC modes (`tests/globals.rs`). |
+| M9-TS-55 | Unit | A `let` with a literal initialiser is a data slot written by the function, not folded away; a `const` literal is folded (`iron_ts/src/lib.rs`). |
+| M9-TS-56 | Unit | Assigning a `const` (number or object) is an error naming the constant (`iron_ts/src/lib.rs`). |
 
 ---
 

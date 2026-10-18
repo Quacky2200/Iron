@@ -15,6 +15,8 @@ pub(crate) enum Place {
     Var(VarId, Ty),
     /// A captured variable: the cell and the value's type.
     Cell(Expr, Ty),
+    /// A module-level `let`/`var`.
+    Global(GlobalId, Ty),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
 }
@@ -132,7 +134,8 @@ impl<'a> Lowerer<'a> {
         }
         match self.consts.get(name).cloned() {
             Some(ConstInfo::Inline(e)) => return Ok(e),
-            Some(ConstInfo::Global(g, ty)) => return Ok(mk(ExprKind::Global(g), ty)),
+            Some(ConstInfo::Global(g, ty, false)) => return Ok(mk(ExprKind::Global(g), ty)),
+            Some(ConstInfo::Global(g, ty, true)) => return Ok(mk(ExprKind::GlobalVar(g), ty)),
             None => {}
         }
         match name {
@@ -570,7 +573,11 @@ impl<'a> Lowerer<'a> {
                         Ok(Place::Var(v, self.cur.locals[v as usize].clone()))
                     }
                     Some(Binding::Boxed(cell, ty)) => Ok(Place::Cell(self.var_expr(cell), ty)),
-                    None => bail!("assignment to `{}`: only locals are assignable", id.name),
+                    None => match self.consts.get(id.name.as_str()) {
+                        Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
+                        Some(_) => bail!("assignment to constant `{}`", id.name),
+                        None => bail!("assignment to unknown name `{}`", id.name),
+                    },
                 }
             }
             SimpleAssignmentTarget::StaticMemberExpression(m) => {
@@ -610,6 +617,7 @@ impl<'a> Lowerer<'a> {
         match p {
             Place::Var(_, t)
             | Place::Cell(_, t)
+            | Place::Global(_, t)
             | Place::Field(_, _, _, t)
             | Place::Index(_, _, t) => t,
         }
@@ -619,6 +627,7 @@ impl<'a> Lowerer<'a> {
         match p {
             Place::Var(v, _) => self.var_expr(*v),
             Place::Cell(c, t) => mk(ExprKind::CellGet(Box::new(c.clone())), t.clone()),
+            Place::Global(g, t) => mk(ExprKind::GlobalVar(*g), t.clone()),
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
             Place::Index(a, i, t) => mk(
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
@@ -631,6 +640,7 @@ impl<'a> Lowerer<'a> {
         match p {
             Place::Var(var, _) => Stmt::Assign(*var, v),
             Place::Cell(cell, _) => Stmt::CellSet(cell.clone(), v),
+            Place::Global(g, _) => Stmt::StoreGlobal(*g, v),
             Place::Field(o, s, i, _) => Stmt::StoreField(o.clone(), *s, *i, v),
             Place::Index(a, i, _) => Stmt::StoreIndex(a.clone(), i.clone(), v),
         }
@@ -734,7 +744,9 @@ impl<'a> Lowerer<'a> {
         match &c.callee {
             Expression::Identifier(id) => {
                 let name = id.name.as_str();
-                if self.lookup(name).is_some() {
+                if self.lookup(name).is_some()
+                    || matches!(self.consts.get(name), Some(ConstInfo::Global(..)))
+                {
                     let callee = self.lower_ident(name)?;
                     let Ty::Fn(sig) = callee.ty.clone() else {
                         bail!("`{name}` is not callable")

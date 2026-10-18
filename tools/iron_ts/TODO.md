@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **47**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **57**).
 
 ## How to pick this up
 
@@ -62,10 +62,10 @@ cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 | `iron_ts/src/codegen.rs` | IR to Cranelift object (frames, spills, `eval_args`, registration in `ts_init`) |
 | `iron_ts/src/layout.rs` | generated Rust bindings (`HDR_*`, `TAG_*`, structs, `extern "C"`) |
 | `iron_ts_rt/src/lib.rs` | GC heap, roots, arrays/strings/closures/cells, libm calls |
-| `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures}.rs`; `src/bin/{bench,sine_bench}.rs` |
+| `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals}.rs`; `src/bin/{bench,sine_bench}.rs` |
 
 Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name, prefix, struct_base)`
-(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, next 4000), a `pub mod` in
+(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, next 5000), a `pub mod` in
 `src/lib.rs`, a test file. Expected numbers come from running the same TS in bun.
 
 ## Rules we decided (do not undo without asking)
@@ -83,45 +83,30 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**First task: mutable module-level variables.** Small, high effect: `let demo: SineDemo` assigned
-from methods and closures is common in the examples; today `assignment to X: only locals are
-assignable`.
+**First task: the Classes design note** (`TODO.md` M9.b2 "Classes", marked **STOP**: a written design
+and the user's review come before any code). Gameplay is classes: `extends Component`,
+`@property`, `this`, getters/setters, `override`, statics, `instanceof`. The note is a document in
+`docs/research/` (suggested: `iron-ts-classes.md`), no compiler changes. It must decide, with the
+measured counts in the spike doc section 11:
 
-What exists: top-level `const`/`let` initialisers are lowered in `lower_program` step 2
-(`lower_top_var`); a literal becomes `ConstInfo::Inline`, anything else `ConstInfo::Global(id, ty)`
-with an 8-byte data slot, a `StoreGlobal` in `ts_init`, a GC root registered at the start of
-`ts_init` for pointer globals. Reads (`ExprKind::Global`) already work.
+- object layout (fields as a struct, base-class prefix, class id in the header for `instanceof`);
+- method calls: direct when the target is known, a per-class vtable otherwise; `super`;
+- constructors and field initialisers; getters/setters; statics; private fields;
+- how `Component` and its lifecycle hooks (`onUpdate`, ...) are called natively, and how that joins
+  "Direct engine calls" (`Component`, `Vector3` are TypeScript classes in `js/engine` today);
+- what `@property` becomes (metadata for scenes and the editor) and what release builds do about
+  scene serialisation and hot reload;
+- the order of sub-tasks and a size for each.
 
-Plan:
-1. `collect_vars` must know the declaration kind (`VariableDeclarationKind`): only `const` may be
-   inlined; a `let`/`var` is always a `Global`, never `Inline`, even with a literal initialiser.
-2. `place_of` for an identifier that is not a local: look in `self.consts`; `Global(g, ty)` gives a
-   new `Place::Global(g, ty)` (read = `ExprKind::Global`, write = `Stmt::StoreGlobal`). Assignment to
-   an `Inline` const or a `const` global stays an error ("assignment to constant").
-3. `let x: T | null = null;` and `let x: T;` (no initialiser: default value) at module level.
-4. Closures need nothing special: module names are not boxed (the scan only boxes names that resolve to
-   locals; `lookup` returns `None` for globals). Check that a closure assigning a global works.
-5. `frames.rs`: `Stmt::StoreGlobal` as an operand-evaluating statement is already single-operand;
-   check `assigns`/`stmt_assigns` and `count_stmts` still cover it. A global read is "stable" in
-   `is_stable`; a later operand can now *assign* the global, so make `is_stable` false for a
-   `Global` when a later operand contains a `StoreGlobal` to it (same shape as the local rule).
-6. Tests (`bench/globals.ts`, prefix `glob_`, base 4000; IDs from M9-TS-47): a counter global mutated
-   by functions and by closures; a pointer global replaced while an old value waits as an argument
-   (the GC hazard of step 5: write the failing test first); a nullable object global; mutation across
-   `ts_init` re-run; each test normally and in stress mode, expected numbers from bun.
-7. Docs: section 4 of the spike doc (what compiled), tick the sub-task in `TODO.md`
-   ("Mutable module-level variables"), log below.
-
-Then, in order (ask before starting a **STOP** item): the **Classes design note** (a document in
-`docs/research/`, no code, for the user to review), then the cheap language features
-(`for(;;)`, `switch`, enums, destructuring, default/rest parameters, spread), then the library
-surface (`Math`, array methods).
+Then wait for the user's review. After it, in order (ask before starting a **STOP** item): the cheap
+language features (`for(;;)` with an update clause, `switch`, enums, destructuring, default/rest
+parameters, spread; `for(;;)` is the next thing tests keep hitting), then the library surface
+(`Math`, array methods).
 
 ## Backlog
 
 The full list with sub-tasks, sizes and STOP gates is `TODO.md` M9.b2. Open top-level items: type
-sidecar, GC (verifier, cheaper frames, escape analysis, pauses), closures (module variables
-being done first), classes, generics, structural typing, strings, language features, library
+sidecar, GC (verifier, cheaper frames, escape analysis, pauses), closures, classes, generics, structural typing, strings, language features, library
 surface, JS-semantics conformance, `JsValue`, direct engine calls, hybrid release builds,
 performance, cross targets and CI.
 
@@ -129,6 +114,10 @@ performance, cross targets and CI.
 
 Newest first. One line per finished step: what, test IDs, numbers if measured.
 
+- 2026-10-18 Mutable module-level variables (`M9-TS-47..56`): `let`/`var` are data slots (never folded),
+  `Place::Global`, `GlobalVar` read node, `let x: T | undefined;`, closures stored in and called
+  through globals; a `let` global is a stable GC operand only when no later operand calls or stores
+  (two hazard tests fail under the old rule). Found on the way: global slots were 1-byte aligned.
 - 2026-10-18 Spike tracking file created (this file). Closures, GC review, GC and the sine benchmark
   are done as described below; next is the first task above.
 - 2026-10-18 TODO split into honest sub-tasks; measured feature counts (spike doc section 11).

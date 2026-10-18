@@ -1426,8 +1426,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [x] Arrow/function expressions as values, shared mutable cells, per-iteration bindings, nesting,
           recursion via annotated variable, calls through fields/call results/elements, top-level functions
           as values, host-held closures, GC-traced
-    - [ ] Mutable **module-level variables** (`let demo: SineDemo` assigned from functions and closures;
-          today only locals can be assigned): globals as cells or slots, GC roots, init order
+    - [x] Mutable **module-level variables** (`let demo: SineDemo` assigned from functions and closures):
+          data slots with GC roots, `let` never folded, `let x: T | undefined;`, closures in globals,
+          the spill rule extended (`M9-TS-47..56`). Still open: a global read by an initialiser that
+          runs before a later declaration, and sharing a module's variables between threads
     - [ ] Named function expressions that refer to their own name
     - [ ] Closures that use `this` / `arguments` (after Classes)
     - [ ] Destructured, default and rest parameters of closures (after those features)

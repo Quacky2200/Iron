@@ -50,6 +50,9 @@ fn is_stable(e: &Expr, later: &[&Expr]) -> bool {
     match &e.kind {
         ExprKind::Var(v) => !later.iter().any(|l| assigns(l, *v)),
         ExprKind::Global(_) | ExprKind::Null => true,
+        // A `let` global is a root too, but replacing it drops the old value. Any call can do
+        // that (the callee may assign the global), so only a call-free tail keeps it stable.
+        ExprKind::GlobalVar(g) => !later.iter().any(|l| replaces_global(l, *g)),
         ExprKind::Cast(a) => is_stable(a, later),
         _ => false,
     }
@@ -57,27 +60,48 @@ fn is_stable(e: &Expr, later: &[&Expr]) -> bool {
 
 /// Does evaluating `e` assign local `v` (so its frame slot stops holding the old value)?
 fn assigns(e: &Expr, v: VarId) -> bool {
+    scan_expr(
+        e,
+        &|_| false,
+        &|s| matches!(s, Stmt::Assign(x, _) if *x == v),
+    )
+}
+
+/// Can evaluating `e` store to global `g`: directly, or inside any call?
+fn replaces_global(e: &Expr, g: GlobalId) -> bool {
+    scan_expr(
+        e,
+        &|x| matches!(x.kind, ExprKind::Call(..) | ExprKind::CallClosure(..)),
+        &|s| matches!(s, Stmt::StoreGlobal(x, _) if *x == g),
+    )
+}
+
+/// Does `hit_e` match an expression, or `hit_s` a statement, anywhere inside `e`?
+fn scan_expr(e: &Expr, hit_e: &dyn Fn(&Expr) -> bool, hit_s: &dyn Fn(&Stmt) -> bool) -> bool {
+    if hit_e(e) {
+        return true;
+    }
     if let ExprKind::Seq(stmts, _) = &e.kind
-        && stmts.iter().any(|s| stmt_assigns(s, v))
+        && stmts.iter().any(|s| scan_stmt(s, hit_e, hit_s))
     {
         return true;
     }
-    children(e).iter().any(|c| assigns(c, v))
+    children(e).iter().any(|c| scan_expr(c, hit_e, hit_s))
 }
 
-fn stmt_assigns(s: &Stmt, v: VarId) -> bool {
+fn scan_stmt(s: &Stmt, he: &dyn Fn(&Expr) -> bool, hs: &dyn Fn(&Stmt) -> bool) -> bool {
+    if hs(s) {
+        return true;
+    }
+    let e = |x: &Expr| scan_expr(x, he, hs);
+    let st = |b: &[Stmt]| b.iter().any(|s| scan_stmt(s, he, hs));
     match s {
-        Stmt::Assign(x, e) => *x == v || assigns(e, v),
-        Stmt::StoreGlobal(_, e) | Stmt::Eval(e) => assigns(e, v),
-        Stmt::Return(e) => e.as_ref().is_some_and(|e| assigns(e, v)),
-        Stmt::StoreField(o, _, _, x) | Stmt::CellSet(o, x) => assigns(o, v) || assigns(x, v),
-        Stmt::StoreIndex(a, i, x) => assigns(a, v) || assigns(i, v) || assigns(x, v),
-        Stmt::If(c, a, b) => {
-            assigns(c, v)
-                || a.iter().any(|s| stmt_assigns(s, v))
-                || b.iter().any(|s| stmt_assigns(s, v))
-        }
-        Stmt::Block(_, b) | Stmt::Loop(_, b) => b.iter().any(|s| stmt_assigns(s, v)),
+        Stmt::Assign(_, x) | Stmt::StoreGlobal(_, x) | Stmt::Eval(x) => e(x),
+        Stmt::Return(x) => x.as_ref().is_some_and(e),
+        Stmt::StoreField(o, _, _, x) | Stmt::CellSet(o, x) => e(o) || e(x),
+        Stmt::StoreIndex(a, i, x) => e(a) || e(i) || e(x),
+        Stmt::If(c, a, b) => e(c) || st(a) || st(b),
+        Stmt::Block(_, b) | Stmt::Loop(_, b) => st(b),
         Stmt::Break(_) | Stmt::Continue(_) => false,
     }
 }

@@ -37,6 +37,18 @@ pub mod clo {
     include!(concat!(env!("OUT_DIR"), "/closures_bindings.rs"));
 }
 
+/// Module-level `let` variables (`bench/globals.ts`), prefix `glob_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod glob {
+    include!(concat!(env!("OUT_DIR"), "/globals_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

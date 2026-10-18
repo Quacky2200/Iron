@@ -97,6 +97,8 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
             .map_err(|e| e.to_string())?;
         let mut d = DataDescription::new();
         d.define_zeroinit(8);
+        // The collector reads pointer slots as `*mut u8`: they must be aligned.
+        d.set_align(8);
         module.define_data(id, &d).map_err(|e| e.to_string())?;
         gdata.push(id);
     }
@@ -506,7 +508,7 @@ impl Cg<'_, '_> {
             ExprKind::Tag(t) => self.b.ins().iconst(types::I32, *t as i64),
             ExprKind::Null => self.null_of(&e.ty),
             ExprKind::Var(v) => self.b.use_var(self.vars[*v as usize]),
-            ExprKind::Global(g) => {
+            ExprKind::Global(g) | ExprKind::GlobalVar(g) => {
                 let gv = self
                     .module
                     .declare_data_in_func(self.gdata[*g], self.b.func);

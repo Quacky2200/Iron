@@ -104,4 +104,38 @@ mod tests {
         assert!(!out.ir.contains("callc"), "{}", out.ir);
         assert!(out.object.windows(8).any(|w| w == b"ts_total"));
     }
+
+    // M9-TS-55
+    #[test]
+    fn a_let_with_a_literal_initialiser_is_a_global_not_a_folded_constant() {
+        let m = lower::lower_source(
+            "let n = 0; const k = 2; export function f(): number { n = n + k; return n; }",
+        )
+        .unwrap();
+        // `n` is a slot written by `f`; `k` is folded away.
+        assert_eq!(m.globals.len(), 1);
+        assert_eq!(m.globals[0].name, "n");
+        let f = m.funcs.iter().find(|f| f.name == "f").unwrap();
+        assert!(
+            matches!(f.body[0], ir::Stmt::StoreGlobal(0, _)),
+            "{:?}",
+            f.body
+        );
+    }
+
+    // M9-TS-56
+    #[test]
+    fn assigning_a_const_is_an_error() {
+        let e =
+            lower::lower_source("const k = 2; export function f(): number { k = 3; return k; }")
+                .err()
+                .unwrap();
+        assert!(e.contains("constant"), "{e}");
+        let e = lower::lower_source(
+            "const o = { v: 1 }; export function f(): number { o = { v: 2 }; return o.v; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("constant"), "{e}");
+    }
 }

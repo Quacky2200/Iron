@@ -171,7 +171,10 @@ pub enum ExprKind {
     /// `null`: a zero pointer or the null NaN, depending on `ty`.
     Null,
     Var(VarId),
+    /// A module-level `const`: written once by `ts_init`.
     Global(GlobalId),
+    /// A module-level `let`/`var`: any call or `StoreGlobal` may replace its value.
+    GlobalVar(GlobalId),
     Un(UnOp, Box<Expr>),
     Bin(BinOp, Box<Expr>, Box<Expr>),
     Cmp(CmpOp, Box<Expr>, Box<Expr>),
@@ -352,6 +355,7 @@ fn ex(e: &Expr) -> String {
         ExprKind::Null => "null".into(),
         ExprKind::Var(v) => format!("v{v}"),
         ExprKind::Global(g) => format!("g{g}"),
+        ExprKind::GlobalVar(g) => format!("g{g}'"),
         ExprKind::Un(o, a) => format!("{o:?}({})", ex(a)),
         ExprKind::Bin(o, a, b) => format!("{o:?}({}, {})", ex(a), ex(b)),
         ExprKind::Cmp(o, a, b) => format!("{o:?}({}, {})", ex(a), ex(b)),

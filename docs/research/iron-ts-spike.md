@@ -89,7 +89,8 @@ variants' fields**, so `e.kind === "reload"` is a tag compare and `e.player` a f
 Nullable-number fields are initialised to null, not 0.
 
 Statements: `Assign`, `StoreField`, `StoreIndex`, `StoreGlobal`, `If`, `Block`, `Loop`, `Break`,
-`Continue`, `Return`, `Eval`. Expressions: constants, `Var`, `Global`, unary / binary / compare
+`Continue`, `Return`, `Eval`. Expressions: constants, `Var`, `Global` (a `const`), `GlobalVar`
+(a `let`/`var`), unary / binary / compare
 ops, lazy `And` / `Or` / `Cond`, `IsNull`, `Cast` (representation-identical retype), `Field`,
 `Index`, `Len`, `NewObj`, `Call`, `CallClosure`, `Rt` (runtime calls) and `Seq(stmts, value)`,
 which lets a lowering emit a loop in the middle of an expression.
@@ -179,6 +180,15 @@ never become objects.
 - Tests: `tests/closures.rs` runs every demo in `bench/closures.ts` normally, with a collection at
   every allocation and with collection off, against the numbers bun computes from the same file
   (`M9-TS-34`..`46`).
+- **Module-level variables** (`M9-TS-47`..`56`): a `const` with a literal value is folded into its
+  uses; any other `const`, and every `let`/`var` (even `let n = 0`), is an 8-byte data slot written
+  by `ts_init`. A `let` can be assigned from any function and closure (`Place::Global`, lowered to
+  `StoreGlobal`; reads are `GlobalVar`), may be declared without a value when it has a type
+  (`let x: T | undefined;` starts as null, a number as 0), and may hold a closure (`handler(n)`
+  calls it). Assigning a `const` is an error. Running `ts_init` again resets them. Globals are
+  process-wide: a host that runs several scripts in threads must not share one module instance.
+  A fix on the way: the slots had alignment 1 and the collector reads them as pointers, so a
+  neighbouring non-pointer global could make one misaligned (a crash under the debug build).
 - Not done: closures that use `this` or `arguments`, getters, closures created at module level
   (top-level `const f = () => ...` is a function), named function expressions referring to their
   own name, and capturing variables from a generator/async function (neither exists).
@@ -270,8 +280,11 @@ Known gaps:
   as an argument (`f(a, (a = g(), h()))`, `M9-TS-28`); a pointer waiting to be *compared* with
   `===`, which could come out equal to a new object that took the freed block (`M9-TS-29`).
   JavaScript keeps an evaluated operand alive, so the native code must. Now only a local that no
-  later operand assigns, a global and null are trusted; every other pointer held while a later
-  operand can allocate is spilled to a frame slot. The code generator also refuses to compile a
+  later operand assigns, a `const` global and null are trusted; every other pointer held while a
+  later operand can allocate is spilled to a frame slot. A `let` global is trusted only when no later
+  operand contains a call (the callee may assign it) or a store to it: `sum(current, swap())` with
+  `swap` assigning `current` freed the old item (`M9-TS-48`, `49`; both fail if `let` globals are
+  trusted like constants). The code generator also refuses to compile a
   function whose spills would overrun its frame (the plan and the walk must agree).
   What it still assumes: no pointer lives only in a register or Cranelift spill slot across a
   call, other than as an operand of the node being evaluated. That holds for the IR the lowering
@@ -437,7 +450,7 @@ Reading it:
 - **Strings and templates** are everywhere in the engine and a little in games; the UTF-16
   question needs an answer before any string work.
 - **Module-level mutable variables** (`let demo: SineDemo` assigned from methods) are common in the
-  examples and not supported yet; that is a small item with a large effect.
+  examples; supported since `M9-TS-47`..`56` (section 4).
 - `try`/`throw` is used by the engine itself but not by gameplay code written in the examples; it
   can wait behind classes and strings.
 - UI (JSX) is one file per game; it stays on QuickJS (the hybrid plan).

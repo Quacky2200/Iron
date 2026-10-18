@@ -46,11 +46,15 @@ pub(crate) enum Binding {
     Boxed(VarId, Ty),
 }
 
+/// A top-level declarator: (declarator, exported, declared with `const`).
+type TopVar<'a> = (&'a VariableDeclarator<'a>, bool, bool);
+
 #[derive(Clone)]
 pub(crate) enum ConstInfo {
     /// A compile-time constant, inlined at every use.
     Inline(Expr),
-    Global(GlobalId, Ty),
+    /// A module-level value in a data slot; the flag says it is a `let`/`var` (assignable).
+    Global(GlobalId, Ty, bool),
 }
 
 #[derive(Clone)]
@@ -157,7 +161,7 @@ impl<'a> Lowerer<'a> {
 
     fn lower_program(&mut self, program: &'a Program<'a>) -> R<()> {
         // 1. Types and function signatures, in any order.
-        let mut vars: Vec<(&'a VariableDeclarator<'a>, bool)> = Vec::new();
+        let mut vars: Vec<TopVar<'a>> = Vec::new();
         for stmt in &program.body {
             match stmt {
                 Statement::ExportDeclaration(e) => self.collect(&e.declaration, true, &mut vars)?,
@@ -187,8 +191,8 @@ impl<'a> Lowerer<'a> {
         self.cur = FnCtx::default();
         self.cur.scopes.push(HashMap::new());
         let mut init_body = Vec::new();
-        for (decl, _exported) in vars {
-            self.lower_top_var(decl, &mut init_body)?;
+        for (decl, _exported, is_const) in vars {
+            self.lower_top_var(decl, is_const, &mut init_body)?;
         }
         init_body.push(Stmt::Return(None));
         let ctx = std::mem::take(&mut self.cur);
@@ -208,7 +212,7 @@ impl<'a> Lowerer<'a> {
         &mut self,
         d: &'a Declaration<'a>,
         exported: bool,
-        vars: &mut Vec<(&'a VariableDeclarator<'a>, bool)>,
+        vars: &mut Vec<TopVar<'a>>,
     ) -> R<()> {
         match d {
             Declaration::VariableDeclaration(v) => self.collect_vars(v, exported, vars)?,
@@ -242,8 +246,9 @@ impl<'a> Lowerer<'a> {
         &mut self,
         v: &'a VariableDeclaration<'a>,
         exported: bool,
-        vars: &mut Vec<(&'a VariableDeclarator<'a>, bool)>,
+        vars: &mut Vec<TopVar<'a>>,
     ) -> R<()> {
+        let is_const = v.kind == VariableDeclarationKind::Const;
         for d in &v.declarations {
             // `const f = (..) => ..` is a function declaration in disguise.
             if let (
@@ -265,7 +270,7 @@ impl<'a> Lowerer<'a> {
                 self.declare_fn(id.name.as_str(), src)?;
                 continue;
             }
-            vars.push((d, exported));
+            vars.push((d, exported, is_const));
         }
         Ok(())
     }
@@ -467,35 +472,52 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_top_var(&mut self, d: &'a VariableDeclarator<'a>, init_body: &mut Vec<Stmt>) -> R<()> {
+    fn lower_top_var(
+        &mut self,
+        d: &'a VariableDeclarator<'a>,
+        is_const: bool,
+        init_body: &mut Vec<Stmt>,
+    ) -> R<()> {
         let BindingPattern::BindingIdentifier(id) = &d.id else {
-            bail!("destructured top-level const")
+            bail!("destructured top-level binding")
         };
         let name = id.name.to_string();
-        let Some(init) = &d.init else {
-            bail!("{name}: top-level binding without a value")
-        };
         let exp = match &d.type_annotation {
             Some(a) => Some(self.ty(&a.type_annotation, &name)?),
             None => None,
         };
-        let mut e = self.lower_expr(init, exp.as_ref())?;
-        if let Some(t) = &exp {
-            e = self.coerce(e, t)?;
-        }
-        if matches!(
-            e.kind,
-            ExprKind::Num(_) | ExprKind::Bool(_) | ExprKind::Tag(_)
-        ) {
+        let e = match (&d.init, &exp) {
+            (Some(init), _) => {
+                let mut e = self.lower_expr(init, exp.as_ref())?;
+                if let Some(t) = &exp {
+                    e = self.coerce(e, t)?;
+                }
+                e
+            }
+            // `let x: T;` starts as null / 0, like a field nobody set.
+            (None, Some(t)) if !is_const => self.default_value(t),
+            _ => bail!("{name}: top-level binding without a value"),
+        };
+        // Only a `const` may be folded into its uses; a `let` can change.
+        if is_const
+            && matches!(
+                e.kind,
+                ExprKind::Num(_) | ExprKind::Bool(_) | ExprKind::Tag(_)
+            )
+        {
             self.consts.insert(name, ConstInfo::Inline(e));
             return Ok(());
+        }
+        if matches!(e.ty, Ty::Null) {
+            bail!("{name}: a variable initialised with null needs a type annotation")
         }
         let g = self.m.globals.len();
         self.m.globals.push(Global {
             name: name.clone(),
             ty: e.ty.clone(),
         });
-        self.consts.insert(name, ConstInfo::Global(g, e.ty.clone()));
+        self.consts
+            .insert(name, ConstInfo::Global(g, e.ty.clone(), !is_const));
         init_body.push(Stmt::StoreGlobal(g, e));
         Ok(())
     }
