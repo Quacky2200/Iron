@@ -1385,27 +1385,148 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     code under each option, and keeping dev builds on QuickJS for hot reload (M4)
 - [ ] **M9.b2** `iron_ts`: ahead-of-time TypeScript compiler (oxc → typed Iron IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
-  game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS. Next, in order:
-  - [ ] Type sidecar: Bun script dumping the TypeScript checker's per-expression types as JSON
-  - [x] GC (spike): precise, non-moving mark-sweep; roots from a shadow stack in generated code,
-        globals and host handles; stress mode (`IRON_TS_GC=stress`); see `docs/research/iron-ts-spike.md` §6
-  - [ ] GC, later: escape analysis for frame temporaries, cheaper frames (no call per push/pop),
-        generations if script heaps get large, GC-allocated closure cells
-  - [x] Closures: arrow and function expressions as values, capturing variables through shared
-        cells (per-iteration bindings, nested, recursive, as arguments and results, host-held);
-        top-level functions as values (`docs/research/iron-ts-spike.md` section 4)
-  - [ ] Classes: fields, methods, `this`, constructors, inheritance, `override`, getters/setters
-        (the engine's `Component` subclasses are the first target)
-  - [ ] Generics: monomorphise generic functions and types per instantiation
-  - [ ] General string code: `string` values, `+`, template literals, `.length`, comparison, the
-        common methods (`split`, `slice`, `indexOf`, `includes`, ...); `Map` and `Set` proper
-  - [ ] Destructuring, default and rest parameters, spread, `switch`, enums, `for(;;)`, `try`/`throw`
-  - [ ] `JsValue` fallback: NaN-boxed dynamic value and object model for `any` and untyped code,
-        with calls between native code and QuickJS
-  - [ ] Direct engine calls: `extern "C"` with shared layouts (`Vector3` = glam `Vec3`), `Mathf` and
-        vector maths as inline intrinsics, component lifecycle through a function table
-  - [ ] Hybrid release builds: typed gameplay modules native, React/UI stays on QuickJS
-  - [ ] Cross targets (Linux, macOS, Android, iOS), wire into the game build, CI
+  game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.
+  Rule for this list: a box is ticked only when the whole item is done. Finished parts of an open item
+  are ticked sub-items. **STOP** marks an item big or risky enough that we write down the design and
+  review it with the user before starting, not after.
+
+  What real gameplay code needs, counted in `js/engine/src` (11,500 lines), the examples and the zombie
+  game (`docs/research/iron-ts-spike.md` section 11): classes extending `Component` with `@property`
+  decorators, `this` (1,400 uses), getters/setters (210), `??` and `?.`, spread (96), `Map`/`Set` (64),
+  template literals (84 in the engine, 6 to 17 per example), string methods (51), `try`/`throw` (22 / 25),
+  `instanceof`/`typeof` (94), `switch` (7), a few `async`. React/JSX appears only in each game's UI file.
+
+  - [ ] **Type sidecar**: types from the real TypeScript checker instead of our own inference
+    - [ ] Bun script using the `typescript` API: per source span, the resolved type of every expression and
+          symbol, as JSON; fail the build on `tsc` errors
+    - [ ] Schema and the mapping from TS types to IR types (unions, literal types, generics instantiations,
+          `satisfies`, `as const`, `readonly`)
+    - [ ] Replace annotation reading and bottom-up inference in `lower/` with the JSON; keep a test that the
+          zombie `sim.ts` lowers to the same IR both ways
+    - [ ] Scope-resolved capture analysis (today: by name, over-boxes)
+    - [ ] Incremental: cache by file hash
+  - [ ] **GC** (the collector works and is tested; not done)
+    - [x] Precise non-moving mark-sweep, size-class free lists, per-thread heaps with heap ids
+    - [x] Roots: shadow-stack frames with spill temporaries, globals, host handles; closure cells and
+          environments traced
+    - [x] Stress mode (collect at every allocation, poison freed memory) and tests that broke the root
+          analysis (`M9-TS-27..33`)
+    - [ ] Check the root assumption instead of trusting it: an IR verifier (debug builds) that no pointer
+          SSA value is live across an allocating operation without a frame slot
+    - [ ] Cheaper frames: no runtime call per push/pop (single script thread: a global top pointer, or a
+          register); skip frames for functions that cannot allocate
+    - [ ] Escape analysis: frame-scoped temporaries (`filter` results, `events` arrays, `{...gun}`) skip
+          the heap
+    - [ ] Pauses: measure a collection on a 50-100 MB script heap; if long, generations or incremental
+          marking. **STOP** if the measurement says so
+    - [ ] Return memory to the OS (chunks are only reused today); a frame-arena reset API for hosts
+    - [ ] Enforce or document thread affinity of script objects
+  - [ ] **Closures** (core done and tested; not complete)
+    - [x] Arrow/function expressions as values, shared mutable cells, per-iteration bindings, nesting,
+          recursion via annotated variable, calls through fields/call results/elements, top-level functions
+          as values, host-held closures, GC-traced
+    - [ ] Mutable **module-level variables** (`let demo: SineDemo` assigned from functions and closures;
+          today only locals can be assigned): globals as cells or slots, GC roots, init order
+    - [ ] Named function expressions that refer to their own name
+    - [ ] Closures that use `this` / `arguments` (after Classes)
+    - [ ] Destructured, default and rest parameters of closures (after those features)
+    - [ ] Arrow functions as class fields / object-literal methods
+    - [ ] Capture by value when a variable is never reassigned after the closure is made (no cell)
+    - [ ] Functions in generic positions (after Generics)
+  - [ ] **Classes**: **STOP, design first.** Gameplay code is classes: `extends Component`, `@property`,
+        `this`, `override`, getters/setters, statics, `instanceof`
+    - [ ] Design note: object layout (fields as a struct, base-class prefix), method calls (direct when the
+          target is known, per-class vtable otherwise), `super`, constructors and field initialisers,
+          `instanceof` (class id ranges), how `Component` and its lifecycle hooks work natively, what
+          `@property` becomes (metadata for scenes/editor; reflection table), hot-reload/scene
+          serialisation in release builds
+    - [ ] Plain classes: fields, constructor, methods, `this`
+    - [ ] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes
+    - [ ] Getters/setters, statics, private fields (`#x`, `private`)
+    - [ ] `instanceof`, `typeof`, class expressions
+    - [ ] Decorators: `@property` and friends as compile-time metadata
+    - [ ] `Component` and the `register()` / spawn / lifecycle path calling compiled classes
+          (joins Direct engine calls)
+  - [ ] **Generics**: **STOP, needs the type sidecar first** (inference of type arguments is the
+        checker's job)
+    - [ ] Generic functions by monomorphisation (explicit, then inferred type arguments)
+    - [ ] Generic interfaces/type aliases/classes, constraints, defaults
+    - [ ] Generic helpers over `Array<T>`/`Map<K, V>` signatures; variance is not checked (tsc did)
+    - [ ] Code-size budget and a limit on instantiation depth
+  - [ ] **Structural typing**: **STOP, design first.** Structs are nominal by shape today; TS lets any
+        object with the right fields be passed (`Vector3Like`, interface subsets, object literals of
+        another interface)
+    - [ ] Choose: copy-coercion at the boundary, field accessors by name, or interface vtables; document
+          the cost
+    - [ ] Unions of different interfaces/classes (discriminated by a field), not only inline object types
+    - [ ] Optional properties and index signatures (`Record<string, V>`)
+  - [ ] **Strings**: **STOP, UTF-16 vs UTF-8 decision first** (JS `length`/indexing are UTF-16)
+    - [ ] Design note: representation, `length`/indexing/`charCodeAt` semantics, interop with Rust `String`
+    - [ ] `string` values: literals, `+`, `===`/`<`, `.length`, template literals
+    - [ ] Number to string exactly as JS (shortest round-trip, `toFixed`, `toString(radix)`), `parseFloat`,
+          `Number()`
+    - [ ] Methods: `slice substring indexOf includes startsWith endsWith split join trim replace
+          padStart padEnd toUpperCase toLowerCase charAt at`
+    - [ ] `Map` and `Set` proper (hash by number, string, object identity; insertion order; iteration)
+    - [ ] `JSON.stringify/parse` for plain data (or declare out of scope)
+  - [ ] **Language features** (each small to medium; tick each)
+    - [ ] `for(;;)` with update clause, `do...while`, labelled `break`/`continue`
+    - [ ] `switch` (numbers, string-literal unions), enums (`enum`, `const enum`)
+    - [ ] Destructuring (objects, arrays, parameters, nested, defaults), default and rest parameters
+    - [ ] Spread: call arguments, array literals, object literals with overrides
+    - [ ] Optional call `f?.()`, `??=`, `||=`, `&&=`, `**`, unary `~`, `in`, `void`, `delete` (limited)
+    - [ ] `try`/`catch`/`finally`/`throw`: **STOP, design first** (unwinding vs error returns; frame pops
+          and GC frames on unwind; script errors reaching the host)
+    - [ ] `async`/`await`/Promises and timers (`Task`, `setTimeout`): **STOP, design first** (needs an
+          event-loop contract with the host)
+  - [ ] **Library surface** the compiler knows
+    - [ ] `Math`: `ceil round trunc pow exp log log2 log10 tan asin acos atan cbrt fround clz32 random`
+    - [ ] Arrays: `pop shift unshift slice splice concat reverse sort indexOf lastIndexOf join reduce flat
+          fill at entries keys`, `Array.from/isArray`, `new Array(n)`, destructuring, `for...of` over
+          `Map`/`Set`/strings
+    - [ ] Typed arrays beyond `Uint8Array`: `Float32Array Float64Array Int32Array Uint16Array ...`
+    - [ ] `Object.keys/entries/values/assign`, `Number.isFinite/isInteger/EPSILON`, `Date`/`performance`
+  - [ ] **JS semantics conformance**: differential tests against bun on generated and real code
+    - [ ] A harness that runs every tested module (zombie `sim.ts` first) in bun and native and compares
+    - [ ] `-0` from `%` and rounding, bit operations beyond 2^63, `null === null` of two nullable numbers,
+          `==`, NaN payloads vs the null NaN, integer-valued fast paths
+    - [ ] Random program generator for the supported subset
+  - [ ] **`JsValue` fallback**: **STOP, decide whether it is needed at all** (the hybrid plan keeps
+        untyped code on QuickJS)
+    - [ ] Decision note: what must fall back (`any`, `unknown`, computed property access, `eval`-like) and
+          what simply stays in QuickJS
+    - [ ] If needed: NaN-boxed value, dynamic object model (shapes or hash maps), property get/set by name,
+          calls between native and QuickJS, GC handles across the two heaps
+  - [ ] **Direct engine calls**: **STOP, design first.** Biggest payoff, biggest surface
+    - [ ] Inventory the `__iron_op` names and shapes (`js/engine/src`) and what each passes
+    - [ ] Value types with shared layouts: `Vector2/3/4`, `Quaternion`, `Color`, `Matrix` are TS classes in
+          `math.ts` today; decide: compile `math.ts` natively, or intrinsics over glam types (f32 fields:
+          the IR has only f64 numbers, so a layout/annotation for f32 is needed)
+    - [ ] Generate `extern "C"` bindings from one op table, used by the engine and the compiler
+    - [ ] Handles and ids (`GameObject`, `Transform`, ...), strings and arrays across the boundary
+    - [ ] Callbacks from Rust into native script (`__iron_*` hooks) through a function table
+    - [ ] `Mathf`/vector arithmetic as inline intrinsics
+    - [ ] Component lifecycle without QuickJS (joins Classes)
+  - [ ] **Hybrid release builds**: **STOP, design first**
+    - [ ] Module partition: which files compile natively (manifest list or a directive), fallback to QuickJS
+          per module when the compiler rejects a file, with the reason printed
+    - [ ] Calls both ways between native modules and QuickJS (components in either)
+    - [ ] Scene save/restore, hot reload and `@property` reflection in release builds (or declared absent)
+    - [ ] `iron build --aot` (or similar) driving oxc + Cranelift + linking into the game exe; React/UI
+          stays on QuickJS
+  - [ ] **Performance** (after correctness)
+    - [ ] Integer loop counters / range analysis instead of f64 indexes; bounds-check elision
+    - [ ] Inline allocation fast path; scalar replacement of small non-escaping objects
+    - [ ] Avoid the frame call per function; inline small functions; devirtualise
+    - [ ] Re-run `bench`/`sine_bench` after each and record in the spike doc
+  - [ ] **Cross targets and CI**: one sub-item per platform, each tested on the platform
+    - [ ] Linux x86_64 (ELF), Linux aarch64
+    - [ ] macOS x86_64 / aarch64 (Mach-O)
+    - [ ] Android aarch64 (NDK link)
+    - [ ] iOS aarch64 (static link into the Xcode wrapper; AOT is the reason it can work at all)
+    - [ ] Windows aarch64
+    - [ ] Debug info / source maps for crashes; unwind tables where the platform needs them
+    - [ ] CI job building and running `tools/` tests on each host
 - [ ] **M9.c** Release packaging for macOS, Linux, Android and iOS (iOS: QuickJS backend, Xcode
   wrapper)
 

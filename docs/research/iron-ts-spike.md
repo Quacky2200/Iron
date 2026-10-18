@@ -403,3 +403,41 @@ cargo test --workspace
 ```bash
 cargo run --release -p iron_ts_tests --bin bench
 ```
+
+## 11. What real gameplay code needs (measured 2026-10-18)
+
+Line and feature counts, to order the work after the spike. Counted with `grep` over non-test
+`.ts`/`.tsx` files; approximate (a count is lines that match, not uses).
+
+| Feature | `js/engine/src` (11,468 lines) | arcade (799) | zombie game (1,375) | platformer (274) |
+|---|---|---|---|---|
+| `class` / `extends` | 87 / 58 | 4 / 4 | 1 / 1 | 4 / 4 |
+| `@property` decorators | 187 | 7 | 0 | 0 |
+| `this.` | 1,416 | 37 | 93 | 24 |
+| getters / setters | 212 | 2 | 1 | 0 |
+| `??` and `?.` | 301 | 4 | 27 | 0 |
+| object / array spread | 96 | 6 | 18 | 0 |
+| `Map` / `Set` | 64 | 1 | 13 | 1 |
+| template literals | 84 | 9 | 17 | n/a |
+| string methods (`split slice indexOf ...`) | 51 | 3 | 0 | n/a |
+| `try` / `throw` | 22 / 25 | 0 | 0 | 0 |
+| `instanceof` / `typeof` | 49 / 45 | 0 | 0 | 0 |
+| `switch` | 7 | 0 | 0 | 0 |
+| `async` / `await` | 6 | 0 | 0 | 0 |
+| JSX files | 0 | 1 | 1 | 0 |
+
+Reading it:
+
+- **Classes dominate.** A game's gameplay is classes that extend the engine's `Component`, with
+  `@property` fields and `override`d lifecycle methods. A compiler without classes compiles
+  helpers like `sim.ts` (which the zombie game deliberately separated from `main.tsx`) and not the
+  game. Classes and the engine boundary have to be designed together (`Component` and `Vector3` are
+  themselves TypeScript classes today).
+- **Strings and templates** are everywhere in the engine and a little in games; the UTF-16
+  question needs an answer before any string work.
+- **Module-level mutable variables** (`let demo: SineDemo` assigned from methods) are common in the
+  examples and not supported yet; that is a small item with a large effect.
+- `try`/`throw` is used by the engine itself but not by gameplay code written in the examples; it
+  can wait behind classes and strings.
+- UI (JSX) is one file per game; it stays on QuickJS (the hybrid plan).
+- `Map`/`Set` are frequent enough that array-backed sets are only a stopgap.
