@@ -95,6 +95,25 @@ all their descendants (as script ids, once each) and empties the list. Physics c
 so attached bodies follow objects that scripts moved
 ([physics-and-audio.md](physics-and-audio.md#components-on-gameobjects-m5a2)).
 
+## The typed script API (`iron_scene::api`)
+
+[api.rs](../crates/iron_scene/src/api.rs) declares a `Scene` namespace with `#[iron_api]` (see
+[iron-api.md](iron-api.md)), next to the op-based `ScriptScene`, which is untouched. Compiled
+TypeScript ([iron-ts.md](iron-ts.md)) calls its generated shims directly, with no op queue. The
+functions: `create`, `destroy`, `exists`, `count`, `parent`, `setParent(object, parent, keepWorld)`,
+`enabled`/`setEnabled`, `active`, `layer`/`setLayer`, and position, rotation and scale in local space
+(`localPosition`, ...) plus `position` and `rotation` in world space, with `Vector3` and `Quaternion`
+value classes (glam's `Vec3` and `Quat`) on `GameObject` handles. There are no strings yet (names, `find`).
+
+- **Handles.** `ObjectId`'s raw handle is `((generation + 1) << 32) | index`, so no live object is 0
+  (0 is `null` in `GameObject | null`; `from_raw(0)` gets a generation no slot has and misses).
+- **The scene.** `iron_scene::api::enter(&mut scene)` makes a scene current on the thread until the
+  returned scope is dropped (the `iron_api::context` thread-local). With none, or for a stale id, the
+  functions answer with defaults: no object, `false`, `0`, the origin, the identity rotation, scale one.
+- **Not wired in.** Nothing in `iron_app` calls `enter` yet, and the engine's scripts still use
+  `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/iron_scene/tests/api.rs) (`M9-API-12..15`)
+  and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..155`).
+
 ## Components and the lifecycle
 
 `ComponentHost` keeps `Entry { id, class, object, hooks, started, enabled }`.

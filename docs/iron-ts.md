@@ -194,6 +194,7 @@ calls into. Its header comment is the long version.
 | `fixtures/sim.ts`, `sim.test.ts` | The zombie game's simulation (678 lines) and its original bun tests |
 | `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
 | `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/iron_demo_api](../tools/iron_demo_api/src/lib.rs) (a small world of entities written with `#[iron_api]`), whose shims the test binaries link |
+| `bench/scene.ts` | Drives the real scene: `build.rs` compiles it (prefix `scn_`, base 15000) with `iron_scene`'s manifest (`iron_scene::api::scene_api::MANIFEST`) and the tests run it against a real `Scene` made current with `iron_scene::api::enter`; `iron_ts_tests::scene_anchor()` keeps the `Scene` shims linked |
 | `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker |
 | `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state); `demo_api_anchor()` uses `iron_demo_api` so the linker keeps its shims |
 | `tests/*.rs` | `sim_port` (13 ported cases), `gc`, and one file per language area |
@@ -209,7 +210,7 @@ To add a test module:
 
 1. Write `bench/<name>.ts` (exported functions only get symbols; run it in bun to get the expected numbers).
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
-   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000); take the next free one.
+   0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000, scene 15000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.

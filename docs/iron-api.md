@@ -57,6 +57,10 @@ pub mod demo {
 }
 ```
 
+The `glam` feature (`iron_api = { features = ["glam"] }`) implements `ValueType` for `Vec2`, `Vec3`,
+`Vec4` and `Quat`, so `iron_scene` declares `Vector3 = Vec3 [x: f32, y: f32, z: f32]` and
+`Quaternion = Quat [..]` without writing the impls.
+
 Each field is `f32`, `f64`, `i32` or `u32`, and all fields of one class have the same type. Functions
 may take and return the Rust type; scripts write `Demo.cross(new Vector3(1, 0, 0), v)`. `to_dts`
 declares `declare class Vector3 { constructor(x: number, ..); x: number; .. }` and `to_json` lists
@@ -125,11 +129,14 @@ let pos = iron_api::context::with(&WORLD, |w| w.position(id)).unwrap_or_default(
 
 ## Status
 
-Additive. `__iron_op` and the ops in [scripting.md](scripting.md) are untouched, no engine crate uses
-`#[iron_api]` yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
+Additive. `__iron_op` and the ops in [scripting.md](scripting.md) are untouched. `iron_scene` is the
+first engine crate using `#[iron_api]` (`Scene`, in `iron_scene::api`; see
+[scene-and-objects.md](scene-and-objects.md#the-typed-script-api-iron_sceneapi)), but nothing in the
+app calls it yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
 (`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value
 classes (`Vector3`) and the engine context exist; strings, methods on handles (`transform.position`),
-value classes in the QuickJS bindings and annotating the real engine crates are not built.
+value classes in the QuickJS bindings and annotating the other engine crates (physics, audio) are
+not built.
 
 Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
 150 ns per call through the typed function and about 245 ns through a simplified `__iron_op` (a name,
