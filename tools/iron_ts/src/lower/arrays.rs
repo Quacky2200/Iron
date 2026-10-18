@@ -135,6 +135,8 @@ impl<'a> Lowerer<'a> {
         }
         let label = self.new_label();
         let saved_loops = std::mem::take(&mut self.cur.loops);
+        // A `try ... finally` around the call is not left by a `break` inside the callback.
+        let saved_fins = std::mem::take(&mut self.cur.fins);
         self.cur.rets.push(RetTarget {
             label,
             var: res,
@@ -151,6 +153,7 @@ impl<'a> Lowerer<'a> {
         };
         self.cur.rets.pop();
         self.cur.loops = saved_loops;
+        self.cur.fins = saved_fins;
         self.cur.scopes.pop();
         r?;
         Ok(Stmt::Block(label, body))

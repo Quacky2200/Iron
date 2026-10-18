@@ -247,13 +247,27 @@ impl Str {
         units(self.as_bytes()).collect()
     }
 
-    fn set_cursor(&self, unit: i64, byte: usize) {
-        // SAFETY: a string is only touched by its own thread's code; the cursor is a cache.
+    /// The cursor is one word (`unit << 32 | byte`), read and written atomically: a static string
+    /// (a literal) may be used from several threads.
+    fn cursor_word(&self) -> &std::sync::atomic::AtomicU64 {
+        // SAFETY: `cursor_unit` is an aligned 8-byte word in writable memory, used only through
+        // this atomic.
         unsafe {
-            let m = self as *const Str as *mut Str;
-            (*m).cursor_unit = unit;
-            (*m).cursor_byte = byte as i64;
+            std::sync::atomic::AtomicU64::from_ptr(&self.cursor_unit as *const i64 as *mut u64)
         }
+    }
+
+    fn cursor(&self) -> (i64, usize) {
+        let w = self
+            .cursor_word()
+            .load(std::sync::atomic::Ordering::Relaxed);
+        ((w >> 32) as i64, (w & 0xFFFF_FFFF) as usize)
+    }
+
+    fn set_cursor(&self, unit: i64, byte: usize) {
+        let w = ((unit as u64) << 32) | (byte as u64 & 0xFFFF_FFFF);
+        self.cursor_word()
+            .store(w, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The code point that holds unit `i` (`0..=utf16_len`): its byte offset and its first unit.
@@ -266,7 +280,7 @@ impl Str {
         if i >= self.utf16_len {
             return (b.len(), self.utf16_len);
         }
-        let cursor = (self.cursor_unit, self.cursor_byte as usize);
+        let cursor = self.cursor();
         // Start from the nearest of the start, the cursor and the end.
         let mut best = (0i64, 0usize);
         for a in [(0, 0), cursor, (self.utf16_len, b.len())] {
@@ -303,7 +317,7 @@ impl Str {
         if p >= b.len() {
             return self.utf16_len;
         }
-        let cursor = (self.cursor_unit, self.cursor_byte as usize);
+        let cursor = self.cursor();
         let mut best = (0i64, 0usize);
         for a in [(0, 0), cursor, (self.utf16_len, b.len())] {
             if a.1.abs_diff(p) < best.1.abs_diff(p) {

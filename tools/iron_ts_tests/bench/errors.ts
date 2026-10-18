@@ -280,3 +280,22 @@ export function runtimeErrors(): string {
 export function runtimeErrorEscapes(): number {
   return "x".repeat(-1).length;
 }
+
+/** A `break` inside an array callback's own loop is not routed through the `finally` around the call. */
+export function callbackLoopInFinally(): string {
+  let out = "";
+  try {
+    const r = [1, 2, 3].map((x) => {
+      let s = 0;
+      for (let i = 0; i < 10; i++) {
+        if (i === x) break;
+        s += i;
+      }
+      return s;
+    });
+    out += r.join(",");
+  } finally {
+    out += "|done";
+  }
+  return out;
+}

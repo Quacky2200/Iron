@@ -8,7 +8,11 @@ use iron_ts_rt::{
 use iron_ts_tests::errs::*;
 use serde_json::Value;
 
+/// The module's globals are shared by every thread, so one test runs at a time.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn in_every_gc_mode(f: impl Fn()) {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     assert_ne!(link_anchor(), 0);
     unsafe { ts_err_init() };
     f();
@@ -159,5 +163,15 @@ fn an_uncaught_runtime_error_is_a_pending_range_error() {
             .unwrap()
             .to_string();
         assert_eq!(format!("RangeError: {}", text((*e).message)), want);
+    });
+}
+
+// M9-TS-198
+//
+// A callback inlined into a `try ... finally` has its own loops: a `break` inside it stays inside.
+#[test]
+fn a_break_in_an_inlined_callback_is_not_a_jump_through_the_finally_around_the_call() {
+    in_every_gc_mode(|| unsafe {
+        check_str("callbackLoopInFinally", ts_err_callbackLoopInFinally());
     });
 }
