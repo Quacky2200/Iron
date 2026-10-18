@@ -192,11 +192,7 @@ mod tests {
     // M9-TS-182
     #[test]
     fn string_methods_that_need_more_work_are_errors_with_a_reason() {
-        for call in [
-            "\"a\".localeCompare(\"b\")",
-            "\"a\".normalize()",
-            "\"a\".replace(\"a\", \"b\")",
-        ] {
+        for call in ["\"a\".localeCompare(\"b\")", "\"a\".normalize()"] {
             let e = lower::lower_source(&format!(
                 "export function f(): number {{ return {call} ? 1 : 0; }}"
             ))
@@ -341,6 +337,34 @@ mod tests {
             .err()
             .unwrap_or_default();
         assert!(!e.is_empty(), "duplicate flags are rejected");
+    }
+
+    // M9-TS-239
+    #[test]
+    fn a_replace_callback_needs_its_groups_known_at_compile_time() {
+        let e = lower::lower_source(
+            "export function f(re: RegExp): string { return \"a\".replace(re, (m, g) => g); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("groups must be known"), "{e}");
+        let e = lower::lower_source(
+            "export function f(): string { return \"a\".replace(/(a)/g, (m, g, o, s, x, y) => g); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("at most"), "{e}");
+        // The match alone needs no group list, and a `const` declared from a literal has one.
+        assert!(
+            lower::lower_source(
+                "export function f(re: RegExp): string { return \"a\".replace(re, (m) => m); }"
+            )
+            .is_ok()
+        );
+        assert!(lower::lower_source(
+            "export function f(): string { const re = /(a)/g; return \"a\".replace(re, (m, g) => g ?? \"\"); }"
+        )
+        .is_ok());
     }
 
     // M9-TS-84

@@ -126,7 +126,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
 | [lower/maps.rs](../tools/iron_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
 | [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
-| [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object |
+| [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object, and the String methods that take a regex (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`) |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
 | [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, and `RegExp` / `RegExpMatchArray`, as TypeScript source, compiled in front of programs that mention errors or regexes (or the string methods that take them) |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
@@ -311,10 +311,32 @@ only to validate regex literals at compile time (`regex_validate`).
 - **Limits** (see [differences.md](differences.md)): a group that did not take part is null where JavaScript
   has undefined, so `m[1].length` dereferences null instead of throwing a `TypeError`; `groups === null`
   is true where JavaScript has undefined; tuple types are not supported.
-- Not built yet (R2): the String methods `match`, `matchAll`, `search`, `replace`, `replaceAll`, `split` with a
-  regex.
 - Tests: `bench/regexp.ts` with `tests/regexp.rs` (M9-TS-222..231), expected values from
   `bench/gen_regexp_expected.ts` (bun) into `regexp_expected.json`.
+
+**Step R2: the String methods that take a regular expression** (section "the String methods that take a regular
+expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked in from
+[lower/strings.rs](../tools/iron_ts/src/lower/strings.rs); runtime appended to
+[iron_ts_rt/src/regexp.rs](../tools/iron_ts_rt/src/regexp.rs)).
+- **Methods.** `search`, `match`, `matchAll`, `replace`, `replaceAll` and `split` accept a `RegExp` or a string.
+  A string becomes a regex: `match`, `search` and `matchAll` treat it as a pattern; `replace`, `replaceAll` and
+  `split` match it literally (`ts_rt_regex_escape_gc`). Results are bun's, with UTF-16 indices.
+- **`match`.** With a `g` regex it returns the matched texts and resets `lastIndex` to 0; without `g` it returns
+  the match object, as `exec` does. **`matchAll`** is eager: it returns an array of match objects (so `for...of`,
+  spread and `map` work) from a copy of the regex. A non-global regex throws bun's `TypeError`, as does
+  `replaceAll` with a non-global regex.
+- **Replacement strings** support `$$`, `$&`, `` $` ``, `$'`, `$n`, `$nn` and `$<name>` (`GetSubstitution`).
+- **Replacement functions** are inlined. The parameters are (match, groups..., offset, string, namedGroups). A
+  function with more than the match as a parameter needs the regex's groups at compile time: a regex literal in
+  the call, `new RegExp("literal")`, or a function-local `const` declared from one. Otherwise, and for too many
+  parameters, it is a compile error; rest parameters are not supported.
+- **`split(re, limit)`** includes the captures; `split(string, limit)` now works too.
+- **Runtime.** `ts_rt_regex_search`, `_match_all_gc`, `_replace_gc`, `_split_gc`, `_escape_gc` and `_advance`
+  (the next index after an empty match, a whole pair under `u`/`v`); `join` works on `(string | null)[]`.
+- **Limits:** a group that did not take part is a null element; module-level `const` regexes carry no group
+  information for replacement functions (see [differences.md](differences.md)).
+- Tests: `bench/regexp2.ts` with `tests/regexp2.rs` (M9-TS-232..239), expected values from
+  `bench/gen_regexp2_expected.ts` (bun) into `regexp2_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

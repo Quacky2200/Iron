@@ -264,6 +264,18 @@ pub mod rex {
     include!(concat!(env!("OUT_DIR"), "/regexp_bindings.rs"));
 }
 
+/// String methods that take a regular expression (`bench/regexp2.ts`), prefix `re2_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod rex2 {
+    include!(concat!(env!("OUT_DIR"), "/regexp2_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

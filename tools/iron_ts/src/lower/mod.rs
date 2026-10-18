@@ -188,6 +188,8 @@ pub struct Lowerer<'a> {
     pub(crate) lambdas: usize,
     /// Wrapper functions that let a top-level function be used as a value.
     pub(crate) wrappers: HashMap<String, FuncId>,
+    /// The capture groups of `const re = /literal/` names (for `replace` callbacks).
+    pub(crate) regex_info: HashMap<String, Vec<Option<String>>>,
     /// Lines of prelude source in front of the program (skipped in messages).
     pub(crate) prelude_lines: usize,
 }
@@ -246,6 +248,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         closure_free: HashMap::new(),
         lambdas: 0,
         wrappers: HashMap::new(),
+        regex_info: HashMap::new(),
         prelude_lines,
     };
     l.lower_program(&program)?;

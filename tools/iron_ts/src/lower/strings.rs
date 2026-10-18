@@ -307,6 +307,14 @@ impl<'a> Lowerer<'a> {
         c: &'a CallExpression<'a>,
     ) -> R<Expr> {
         let at = self.loc(c.span.start);
+        // `match`, `replace`, `split` ... with a regular expression.
+        if matches!(
+            m,
+            "match" | "matchAll" | "search" | "replace" | "replaceAll" | "split"
+        ) && let Some(r) = self.lower_regex_string_method(recv.clone(), m, c)?
+        {
+            return Ok(r);
+        }
         match m {
             "toString" | "valueOf" | "toLocaleString" => return Ok(recv),
             "concat" => {

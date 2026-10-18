@@ -709,6 +709,14 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-229 | Integration | Bad patterns and flags are `SyntaxError`s with JavaScriptCore's text (`tests/regexp.rs`). |
 | M9-TS-230 | Integration | A match object works as an array: destructuring, spread, `for...of`, `map` (`tests/regexp.rs`). |
 | M9-TS-231 | Unit | An invalid regex literal is a compile error with the engine's message (`iron_ts/src/lib.rs`). |
+| M9-TS-232 | Integration | `search` with a regex or a string (UTF-16 index) equals bun's (`iron_ts_tests/tests/regexp2.rs`, `bench/regexp2.ts`, expected data from `bench/gen_regexp2_expected.ts`). |
+| M9-TS-233 | Integration | `match`: a plain regex gives the match object, a `g` regex the texts of all matches (`lastIndex` reset), a string pattern is a regex (`tests/regexp2.rs`). |
+| M9-TS-234 | Integration | `matchAll` steps over every match, past empty matches; a non-global regex is bun's `TypeError` (`tests/regexp2.rs`). |
+| M9-TS-235 | Integration | `replace` / `replaceAll` with string patterns (matched literally) and `$` patterns; `replaceAll` with a non-global regex is bun's `TypeError` (`tests/regexp2.rs`). |
+| M9-TS-236 | Integration | `replace` with a regex: `$1 $01 $10 $& $` $' $<name> $$`, global and first-only, empty matches, non-ASCII text (`tests/regexp2.rs`). |
+| M9-TS-237 | Integration | `replace` with a function: match, groups, offset, string and the named-groups object; a `const` regex keeps its `lastIndex` (`tests/regexp2.rs`). |
+| M9-TS-238 | Integration | `split` with a regex (captures included, limit, empty input, empty pattern, `u` flag) and a string with a limit (`tests/regexp2.rs`). |
+| M9-TS-239 | Unit | A replacement function with more than the match as a parameter needs a regex whose groups are known; too many parameters is a compile error (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
