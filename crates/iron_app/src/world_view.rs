@@ -12,8 +12,8 @@ use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, GizmoLine, Grading, Light, LightKind,
     MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe,
-    RenderMode, ShadowQuality, Shadows, Sky, TextureData, TextureFilter, TextureWrap, Tonemapping,
-    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    RenderMode, ShadowQuality, Shadows, Sky, Stroke, TextureData, TextureFilter, TextureWrap,
+    Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -278,6 +278,19 @@ struct Sprite {
     order: i32,
 }
 
+/// A `LineRenderer2D`: a polyline on its object's local XY plane, drawn as thick strokes.
+#[derive(Clone, Debug)]
+struct Stroke2d {
+    object: ScriptObject,
+    /// Points in the object's space, on its XY plane.
+    points: Vec<[f32; 2]>,
+    /// Full width in world units (not scaled with the object).
+    width: f32,
+    color: [f32; 4],
+    /// Joins the last point back to the first.
+    closed: bool,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct LightComponent {
     object: ScriptObject,
@@ -299,6 +312,7 @@ pub struct WorldViews {
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
     sprites: BTreeMap<u32, Sprite>,
+    strokes: BTreeMap<u32, Stroke2d>,
     /// Planar mirrors: their objects, the local normals of their planes and the layers
     /// they reflect.
     mirrors: BTreeMap<u32, (ScriptObject, Vec3, u32)>,
@@ -355,6 +369,7 @@ impl Default for WorldViews {
             renderers: BTreeMap::new(),
             lights: BTreeMap::new(),
             sprites: BTreeMap::new(),
+            strokes: BTreeMap::new(),
             mirrors: BTreeMap::new(),
             probes: BTreeMap::new(),
             lod_groups: BTreeMap::new(),
@@ -908,6 +923,22 @@ impl WorldViews {
                 };
                 self.sprites.insert(id, sprite);
             }
+            // `stroke component object width [r g b a] closed [x0 y0 x1 y1 ...]`
+            "stroke" => {
+                let points = flat(args.get(5))
+                    .ok_or("stroke needs [x, y, ...]")?
+                    .as_chunks::<2>()
+                    .0
+                    .to_vec();
+                let stroke = Stroke2d {
+                    object: id_at(1)?,
+                    points,
+                    width: num(2)?.max(0.0),
+                    color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
+                    closed: matches!(args.get(4), Some(Value::Bool(true))),
+                };
+                self.strokes.insert(id, stroke);
+            }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
             // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask`
             "light" => {
@@ -1130,6 +1161,7 @@ impl WorldViews {
                 self.skins.remove(&id);
                 self.lights.remove(&id);
                 self.sprites.remove(&id);
+                self.strokes.remove(&id);
                 self.mirrors.remove(&id);
                 self.probes.remove(&id);
                 self.particles.remove(&id);
@@ -1149,6 +1181,7 @@ impl WorldViews {
         self.skins.retain(|id, _| renderers.contains_key(id));
         self.lights.retain(|_, l| !objects.contains(&l.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
+        self.strokes.retain(|_, s| !objects.contains(&s.object));
         self.mirrors.retain(|_, m| !objects.contains(&m.0));
         self.probes.retain(|_, p| !objects.contains(&p.object));
         self.lod_groups.retain(|_, g| !objects.contains(&g.object));
@@ -1199,6 +1232,31 @@ impl WorldViews {
         extra: &[(ScriptObject, WorldQuad)],
     ) -> Vec<WorldView> {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
+        // Each `LineRenderer2D`'s points through its object, as world segments.
+        let strokes: Vec<Tagged<Vec<Stroke>>> = self
+            .strokes
+            .values()
+            .filter(|s| scene.active(s.object) && s.points.len() >= 2)
+            .filter_map(|s| {
+                let m = Mat4::from(world(s.object)?);
+                let p: Vec<[f32; 3]> = s
+                    .points
+                    .iter()
+                    .map(|&[x, y]| m.transform_point3(Vec3::new(x, y, 0.0)).into())
+                    .collect();
+                let n = p.len();
+                let count = if s.closed { n } else { n - 1 };
+                let segments = (0..count)
+                    .map(|i| Stroke {
+                        a: p[i],
+                        b: p[(i + 1) % n],
+                        width: s.width,
+                        color: s.color,
+                    })
+                    .collect();
+                Tagged::new(scene, s.object, segments)
+            })
+            .collect();
         let quads: Vec<Tagged<WorldQuad>> = self
             .planes
             .values()
@@ -1500,6 +1558,11 @@ impl WorldViews {
                     bones: bones.clone(),
                     grid: camera.grid,
                     lines: camera.lines.clone(),
+                    strokes: strokes
+                        .iter()
+                        .filter(|t| shows(t.layer, t.at))
+                        .flat_map(|t| t.item.iter().copied())
+                        .collect(),
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
@@ -1773,6 +1836,70 @@ mod tests {
             .apply("camera", &camera(None, Some([0.0, 6.0]), true))
             .unwrap();
         assert_eq!(seen(&views), vec![vec![-20.0, -5.0]]);
+    }
+
+    // M5-RND-24
+    #[test]
+    fn strokes_follow_their_object_close_loops_and_keep_to_their_layer() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        // The line's object sits at (10, 0, -5) on layer 3.
+        let at = Value::Array(vec![n(10.0), n(0.0), n(-5.0)]);
+        scene
+            .apply("create", &[n(2.0), "curve".into(), Value::Null, at])
+            .unwrap();
+        scene.apply("layer", &[n(2.0), n(3.0)]).unwrap();
+        scene.scene.update_world();
+        let stroke = |closed: bool| {
+            vec![
+                n(20.0),
+                n(2.0),
+                n(0.5),
+                Value::Array(vec![n(1.0), n(0.0), n(0.0), n(1.0)]),
+                Value::Bool(closed),
+                Value::Array([0.0, 0.0, 1.0, 0.0, 1.0, 1.0].map(n).to_vec()),
+            ]
+        };
+        let camera = |mask: Option<f64>| {
+            vec![
+                n(100.0),
+                n(1.0),
+                n(60.0),
+                n(0.1),
+                n(1000.0),
+                Value::Null,
+                n(0.0),
+                Value::Bool(false),
+                n(5.0),
+                Value::Null,
+                "color".into(),
+                mask.map_or(Value::Null, n),
+            ]
+        };
+        let strokes = |views: &WorldViews| views.views(&scene, (64, 64), &[])[0].strokes.clone();
+        views.apply("camera", &camera(None)).unwrap();
+        views.apply("stroke", &stroke(true)).unwrap();
+        // Three points closed: three segments, in world space, the last back to the first.
+        let s = strokes(&views);
+        assert_eq!(s.len(), 3);
+        assert_eq!(s[0].a, [10.0, 0.0, -5.0]);
+        assert_eq!(s[0].b, [11.0, 0.0, -5.0]);
+        assert_eq!(s[2].b, s[0].a);
+        assert_eq!((s[0].width, s[0].color), (0.5, [1.0, 0.0, 0.0, 1.0]));
+        // Open: two.
+        views.apply("stroke", &stroke(false)).unwrap();
+        assert_eq!(strokes(&views).len(), 2);
+        // A camera without layer 3 doesn't draw it.
+        let mask = f64::from(!(1u32 << 3));
+        views.apply("camera", &camera(Some(mask))).unwrap();
+        assert!(strokes(&views).is_empty());
+        views.apply("camera", &camera(None)).unwrap();
+        views.apply("remove", &[n(20.0)]).unwrap();
+        assert!(strokes(&views).is_empty());
     }
 
     // M5-LOD-01

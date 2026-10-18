@@ -208,6 +208,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             bones: Vec::new(),
             grid: false,
             lines: Vec::new(),
+            strokes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -233,6 +234,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             bones: Vec::new(),
             grid: false,
             lines: Vec::new(),
+            strokes: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -265,6 +267,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             bones: Vec::new(),
             grid: false,
             lines: Vec::new(),
+            strokes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -2368,4 +2371,128 @@ fn gizmo_lines_keep_their_width_and_show_faintly_behind_things() {
         "the line behind the cube is faint: {hidden:?}"
     );
     assert_golden("M5-RND-23", size.0, size.1, &pixels, 3);
+}
+
+// M5-RND-24
+#[test]
+fn strokes_are_smooth_capsules_with_round_joins_and_hide_behind_things() {
+    use iron_render::{MeshInstance, Projection, Stroke, primitive_id};
+    let gpu = shared_gpu();
+    let size = (240, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    // A 2D camera: 40 pixels a unit (160 pixels tall, a half height of 2).
+    let camera = WorldCamera::new(
+        Mat4::from_translation(Vec3::new(0.0, 0.0, 10.0)),
+        Projection::Orthographic { half_height: 2.0 },
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    // A grey cube in front of where the blue stroke runs.
+    v.meshes = vec![MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model: Mat4::from_translation(Vec3::new(1.5, -1.0, 0.0))
+            * Mat4::from_scale(Vec3::splat(0.8)),
+        color: [0.3, 0.3, 0.3, 1.0],
+        unlit: true,
+        ..Default::default()
+    }];
+    let white = [1.0, 1.0, 1.0, 1.0];
+    // A white zigzag 0.3 units (12 pixels) wide.
+    let zigzag = [
+        [-2.4, 1.2, 0.5],
+        [-1.2, 0.2, 0.5],
+        [0.0, 1.2, 0.5],
+        [1.2, 0.2, 0.5],
+    ];
+    for k in 0..3 {
+        v.strokes.push(Stroke {
+            a: zigzag[k],
+            b: zigzag[k + 1],
+            width: 0.3,
+            color: white,
+        });
+    }
+    // A thin orange line (2 pixels) and a blue one behind the cube.
+    v.strokes.push(Stroke {
+        a: [-2.5, -1.5, 0.0],
+        b: [0.5, -1.5, 0.0],
+        width: 0.05,
+        color: [1.0, 0.5, 0.1, 1.0],
+    });
+    v.strokes.push(Stroke {
+        a: [0.5, -1.0, -1.0],
+        b: [2.8, -1.0, -1.0],
+        width: 0.25,
+        color: [0.2, 0.4, 1.0, 1.0],
+    });
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let px = |p: Vec3| {
+        let c = view_proj.project_point3(p);
+        let x = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let y = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        (x, y)
+    };
+    let at = |p: Vec3| {
+        let (x, y) = px(p);
+        let i = (y * size.0 as usize + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    // Filled along the segments and at the joints (round joins leave no notch).
+    for p in [
+        Vec3::new(-1.8, 0.7, 0.5),
+        Vec3::new(-1.2, 0.2, 0.5),
+        Vec3::new(0.0, 1.2, 0.5),
+    ] {
+        let c = at(p);
+        assert!(c.iter().all(|&v| v > 200), "white at {p}: {c:?}");
+    }
+    // Round caps: just past the end it's still drawn; a square cap's corner isn't.
+    let end = Vec3::new(1.2, 0.2, 0.5);
+    let dir = (end - Vec3::new(0.0, 1.2, 0.5)).normalize();
+    let across = Vec3::new(-dir.y, dir.x, 0.0);
+    let cap = at(end + dir * 0.1);
+    assert!(cap[0] > 200, "inside the round cap: {cap:?}");
+    let corner = at(end + dir * 0.14 + across * 0.14);
+    assert!(corner[0] < 60, "outside the round cap's corner: {corner:?}");
+    let outside = at(Vec3::new(-1.2, -0.25, 0.5));
+    assert!(outside[0] < 30, "below the joint: {outside:?}");
+    // Soft edges: a column across a segment has partly covered pixels.
+    let (x, y) = px(Vec3::new(-1.8, 0.7, 0.5));
+    let partial = (y.saturating_sub(15)..y + 15)
+        .map(|row| pixels[(row * size.0 as usize + x) * 4])
+        .filter(|&v| v > 30 && v < 220)
+        .count();
+    assert!(
+        partial >= 2,
+        "partly covered pixels at the edges: {partial}"
+    );
+    // A 2-pixel line still shows.
+    let thin = at(Vec3::new(-1.0, -1.5, 0.0));
+    assert!(thin[0] > 150, "the thin line: {thin:?}");
+    // The blue line shows beside the cube and is hidden by it.
+    let beside = at(Vec3::new(2.4, -1.0, -1.0));
+    assert!(
+        beside[2] > 150 && beside[0] < 150,
+        "beside the cube: {beside:?}"
+    );
+    let behind = at(Vec3::new(1.5, -1.0, -1.0));
+    assert!(
+        (behind[2] as i32 - behind[0] as i32).abs() < 20,
+        "the cube hides the blue line: {behind:?}"
+    );
+    assert_golden("M5-RND-24", size.0, size.1, &pixels, 3);
 }

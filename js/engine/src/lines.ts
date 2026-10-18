@@ -3,7 +3,7 @@
 // mesh and the same from every side. It rebuilds its mesh when its points change.
 
 import { property } from "./property.ts";
-import { Color, type Vector3Like, Vector3 } from "./math.ts";
+import { Color, type Vector2Like, type Vector3Like, Vector3 } from "./math.ts";
 import { Material, Mesh, MeshRenderer } from "./rendering.ts";
 import { Component } from "./scene.ts";
 
@@ -113,5 +113,85 @@ export class LineRenderer extends Component {
   override onDestroy(): void {
     this.mesh?.destroy();
     this.mesh = null;
+  }
+}
+
+/**
+ * A 2D polyline drawn as thick, smooth strokes, like a WinForms pen: `points` on the object's
+ * local XY plane, `width` world units across (not scaled with the object), round joins and
+ * caps, optionally `loop`ed back to the start. Rust draws one capsule per segment, so a curve
+ * of thousands of points costs one op per change and no mesh. Assign a new `points` array to
+ * redraw. A see-through colour shows darker where segments overlap.
+ */
+export class LineRenderer2D extends Component {
+  private _points: Vector2Like[] = [];
+  private _width = 0.05;
+  private _color = Color.white;
+  private _loop = false;
+  private started = false;
+  private dirty = true;
+
+  /** The points, in the object's space on its XY plane. Set a new array to redraw. */
+  @property
+  get points(): Vector2Like[] {
+    return this._points;
+  }
+  set points(p: Vector2Like[]) {
+    this._points = p;
+    this.dirty = true;
+  }
+  /** Full width, in world units. */
+  @property
+  get width(): number {
+    return this._width;
+  }
+  set width(w: number) {
+    this._width = Math.max(0, w);
+    this.dirty = true;
+  }
+  @property
+  get color(): Color {
+    return this._color;
+  }
+  set color(c: Color) {
+    this._color = c;
+    this.dirty = true;
+  }
+  /** Joins the last point back to the first (a closed shape). */
+  @property
+  get loop(): boolean {
+    return this._loop;
+  }
+  set loop(on: boolean) {
+    this._loop = on;
+    this.dirty = true;
+  }
+
+  override onAwake(): void {
+    this.started = true;
+    this.send();
+  }
+
+  // Changes made during a frame go to the engine once, just before it's drawn.
+  override onPreRender(): void {
+    if (this.dirty) this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    this.dirty = false;
+    const points = this._points;
+    const flat = new Array<number>(points.length * 2);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i]!;
+      flat[i * 2] = p.x;
+      flat[i * 2 + 1] = p.y;
+    }
+    const c = this._color;
+    __iron_op("render.stroke", this.id, this.gameObject.id, this._width, [c.r, c.g, c.b, c.a], this._loop, flat);
   }
 }

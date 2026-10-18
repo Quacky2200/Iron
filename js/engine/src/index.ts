@@ -84,7 +84,7 @@ export {
   type SceneData,
   SceneManager,
 } from "./scenes.ts";
-export { LineRenderer } from "./lines.ts";
+export { LineRenderer, LineRenderer2D } from "./lines.ts";
 export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
 export {
   Bounds,

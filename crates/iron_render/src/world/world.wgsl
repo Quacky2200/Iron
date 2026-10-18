@@ -317,6 +317,82 @@ fn fs_line_hidden(in: LineOut) -> @location(0) vec4<f32> {
     return in.color * line_alpha(in.side) * 0.25;
 }
 
+// Strokes (`LineRenderer2D`): each instance is a segment `width` world units wide, drawn as a
+// capsule. The quad lies in the world along the segment and across it (square to the
+// camera's forward axis), a pixel wider all round. The fragment shader cuts the capsule out
+// by signed distance, so edges are smooth without MSAA and a run of segments gets round
+// joins and caps where the capsules overlap.
+struct StrokeOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    // Where this fragment is from the segment's start, along it (x) and across it (y), in
+    // world units.
+    @location(1) local: vec2<f32>,
+    // x: the segment's length; y: the stroke's radius.
+    @location(2) @interpolate(flat) shape: vec2<f32>,
+};
+
+fn unproject(ndc: vec3<f32>) -> vec3<f32> {
+    let p = g.inv_view_proj * vec4<f32>(ndc, 1.0);
+    return p.xyz / p.w;
+}
+
+@vertex
+fn vs_stroke(
+    @builtin(vertex_index) vi: u32,
+    @location(0) a: vec3<f32>,
+    @location(1) b: vec3<f32>,
+    @location(2) width: f32,
+    @location(3) color: vec4<f32>,
+) -> StrokeOut {
+    var out: StrokeOut;
+    out.color = vec4<f32>(color.rgb * color.a, color.a);
+    // The camera's forward axis, through the middle of the screen.
+    let forward = normalize(unproject(vec3<f32>(0.0, 0.0, 1.0)) - unproject(vec3<f32>(0.0, 0.0, 0.0)));
+    let seg = b - a;
+    let len = length(seg);
+    let along = select(vec3<f32>(1.0, 0.0, 0.0), seg / max(len, 1e-6), len > 1e-6);
+    var across = cross(forward, along);
+    if (dot(across, across) < 1e-10) {
+        // The segment points along the view: any direction across it will do.
+        across = cross(forward, vec3<f32>(0.0, 1.0, 0.0));
+        if (dot(across, across) < 1e-10) {
+            across = vec3<f32>(1.0, 0.0, 0.0);
+        }
+    }
+    across = normalize(across);
+    let r = width * 0.5;
+    // Corners: (end, side) for the two triangles.
+    let ends = array<f32, 6>(0.0, 0.0, 1.0, 0.0, 1.0, 1.0);
+    let sides = array<f32, 6>(-1.0, 1.0, -1.0, 1.0, 1.0, -1.0);
+    let end = ends[vi];
+    let side = sides[vi];
+    let base = select(a, b, end > 0.5);
+    // One pixel at this end, in world units, so the soft edge always fits in the quad.
+    let c = g.view_proj * vec4<f32>(base, 1.0);
+    var px = r;
+    if (c.w > 1e-4) {
+        let ndc = c.xyz / c.w;
+        px = length(unproject(ndc + vec3<f32>(0.0, 2.0 / g.viewport.w, 0.0)) - base);
+    }
+    let reach = r + px;
+    let u = select(-reach, len + reach, end > 0.5);
+    let v = side * reach;
+    out.pos = g.view_proj * vec4<f32>(a + along * u + across * v, 1.0);
+    out.local = vec2<f32>(u, v);
+    out.shape = vec2<f32>(len, r);
+    return out;
+}
+
+@fragment
+fn fs_stroke(in: StrokeOut) -> @location(0) vec4<f32> {
+    let len = in.shape.x;
+    let q = vec2<f32>(in.local.x - clamp(in.local.x, 0.0, len), in.local.y);
+    let d = length(q) - in.shape.y;
+    let aa = max(fwidth(d), 1e-6);
+    return in.color * clamp(0.5 - d / aa, 0.0, 1.0);
+}
+
 struct MeshOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) world: vec3<f32>,

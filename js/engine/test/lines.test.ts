@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { GameObject, LineRenderer, MeshRenderer, Vector3 } from "../src/index.ts";
+import { Color, GameObject, LineRenderer, LineRenderer2D, MeshRenderer, Vector2, Vector3 } from "../src/index.ts";
 import { tubeMesh } from "../src/lines.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 
@@ -49,5 +49,35 @@ describe("LineRenderer", () => {
     line.positions = [Vector3.zero, Vector3.right];
     line.onPreRender();
     expect(meshOps()).toBe(before + 1);
+  });
+});
+
+// M5-RND-24
+describe("LineRenderer2D", () => {
+  test("sends its points flat with width, colour and loop, once per frame, and goes on destroy", () => {
+    const go = new GameObject("curve");
+    const line = go.addComponent(LineRenderer2D, {
+      points: [new Vector2(0, 0), new Vector2(1, 2), new Vector2(3, 4)],
+      width: 0.25,
+      color: new Color(1, 0.5, 0, 1),
+      loop: true,
+    });
+    const strokes = () => ops.filter((o) => o[0] === "render.stroke");
+    expect(strokes().at(-1)).toEqual(["render.stroke", line.id, go.id, 0.25, [1, 0.5, 0, 1], true, [0, 0, 1, 2, 3, 4]]);
+    // Nothing changed: nothing sent before drawing.
+    const sent = strokes().length;
+    line.onPreRender();
+    expect(strokes().length).toBe(sent);
+    // Several changes in a frame go as one op.
+    line.points = [new Vector2(5, 6), new Vector2(7, 8)];
+    line.width = 0.5;
+    line.loop = false;
+    expect(strokes().length).toBe(sent);
+    line.onPreRender();
+    expect(strokes().length).toBe(sent + 1);
+    expect(strokes().at(-1)).toEqual(["render.stroke", line.id, go.id, 0.5, [1, 0.5, 0, 1], false, [5, 6, 7, 8]]);
+    // The engine runs onDestroy when the object goes.
+    line.onDestroy();
+    expect(ops.at(-1)).toEqual(["render.remove", line.id]);
   });
 });

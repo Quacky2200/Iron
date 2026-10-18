@@ -19,9 +19,9 @@ pub use world::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, CookedTexture, DEFAULT_PARTICLE_TEXTURE, GizmoLine,
     Grading, Light, LightKind, MISSING_TEXTURE, MaterialMaps, MeshData, MeshGlow, MeshInstance,
     Mirror, PRIMITIVE_BASE, PRIMITIVES, Projection, RENDER_TEXTURE_FORMAT, ReflectionProbe,
-    RenderMode, ShadowQuality, Shadows, Sky, TexelFormat, TextureData, TextureFilter, TextureWrap,
-    Tonemapping, WorldCamera, WorldQuad, WorldRenderer, WorldStats, WorldTexture, WorldView,
-    in_mask, mip_chain, primitive, primitive_id, viewport_size,
+    RenderMode, ShadowQuality, Shadows, Sky, Stroke, TexelFormat, TextureData, TextureFilter,
+    TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldRenderer, WorldStats, WorldTexture,
+    WorldView, in_mask, mip_chain, primitive, primitive_id, viewport_size,
 };
 
 /// A linear RGBA colour.

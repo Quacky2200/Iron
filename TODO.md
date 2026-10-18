@@ -826,6 +826,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     points, Catmull-Rom smoothed, parallel-transported rings, rebuilt when the points change;
     unlike Unity's flat ribbon) draws `Rope`s by default (`renderMode: "segments"` keeps the
     capsules) — `M5-LIN-01`
+  - [x] Thick 2D lines without a mesh: `LineRenderer2D` (points on its object's XY plane, a
+    width in world units, a colour, `loop`) sends one `render.stroke` op per change; Rust
+    draws one instanced SDF capsule per segment (`WorldView.strokes`, `vs_stroke` /
+    `fs_stroke`): smooth edges without MSAA, round joins and caps — `M5-RND-24`
+    - [ ] Later: fills (`FillClosedCurve`), e.g. stencil-then-cover for self-crossing shapes
+    - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)
+    - [ ] Later: points as one `Float32Array` if the op's number conversion shows up
   - [x] The Cornell box (`examples/cornell`): built from primitives with the original's
     reflectances; lit by an emissive panel, a point light, a soft-shadowed light from above
     and bounce lights (soft point lights tinted by the walls and floor, faking GI's colour

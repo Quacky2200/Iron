@@ -489,6 +489,9 @@ pub struct WorldView {
     /// Gizmo lines (the editor's wire shapes) drawn over everything, a constant width
     /// on screen, faint where something's in front of them.
     pub lines: Vec<GizmoLine>,
+    /// Thick lines (`LineRenderer2D`), depth-tested and blended after the see-through
+    /// things. A see-through stroke shows darker where its segments overlap.
+    pub strokes: Vec<Stroke>,
 }
 
 /// A line segment in the world, for [`WorldView::lines`].
@@ -503,6 +506,22 @@ pub struct GizmoLine {
 
 const LINE_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4];
+
+/// A thick line segment in the world, for [`WorldView::strokes`]: a capsule `width` world
+/// units across, so a run of segments gets round joins and round caps.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
+pub struct Stroke {
+    pub a: [f32; 3],
+    pub b: [f32; 3],
+    /// Full width, in world units.
+    pub width: f32,
+    /// Linear RGBA, straight alpha.
+    pub color: [f32; 4],
+}
+
+const STROKE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32, 3 => Float32x4];
 
 impl WorldView {
     /// A view of nothing yet (add quads, meshes and lights).
@@ -522,6 +541,7 @@ impl WorldView {
             bones: Vec::new(),
             grid: false,
             lines: Vec::new(),
+            strokes: Vec::new(),
         }
     }
 }
@@ -707,6 +727,8 @@ struct Pipelines {
     /// Gizmo lines where they're in front, and (faint) where they're hidden.
     lines: wgpu::RenderPipeline,
     lines_hidden: wgpu::RenderPipeline,
+    /// Thick world lines ([`WorldView::strokes`]).
+    strokes: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
     /// Double-sided materials: both faces drawn.
@@ -804,6 +826,8 @@ pub struct WorldRenderer {
     mesh_instances: wgpu::Buffer,
     /// Every view's gizmo lines (instances of the line pipelines).
     lines: wgpu::Buffer,
+    /// Every view's strokes (instances of the stroke pipeline).
+    strokes: wgpu::Buffer,
     meshes: HashMap<u32, MeshBuffers>,
     /// What the last frame drew and culled.
     stats: WorldStats,
@@ -1238,6 +1262,7 @@ impl WorldRenderer {
             quads: Self::storage::<GpuQuad>(gpu, "world quads", 64),
             mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
             lines: Self::buffer(gpu, "world gizmo lines", 4096, wgpu::BufferUsages::VERTEX),
+            strokes: Self::buffer(gpu, "world strokes", 4096, wgpu::BufferUsages::VERTEX),
             meshes: HashMap::new(),
             stats: WorldStats::default(),
             textures: HashMap::new(),
@@ -1935,6 +1960,11 @@ impl WorldRenderer {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &LINE_ATTRIBUTES,
         };
+        let stroke_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Stroke>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &STROKE_ATTRIBUTES,
+        };
         let make = |label: &str,
                     entry: (&str, &str),
                     buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
@@ -2035,6 +2065,14 @@ impl WorldRenderer {
                     &[Some(line_layout.clone())],
                     None,
                     (wgpu::CompareFunction::Greater, false),
+                    blend,
+                ),
+                strokes: make(
+                    "world strokes",
+                    ("vs_stroke", "fs_stroke"),
+                    &[Some(stroke_layout.clone())],
+                    None,
+                    (less_equal, false),
                     blend,
                 ),
                 mesh: make(
@@ -2922,6 +2960,27 @@ impl WorldRenderer {
             gpu.queue
                 .write_buffer(&self.lines, 0, bytemuck::cast_slice(&all_lines));
         }
+        // Strokes, the same way.
+        let mut stroke_ranges = Vec::with_capacity(views.len());
+        let mut all_strokes: Vec<Stroke> = Vec::new();
+        for view in views {
+            let start = all_strokes.len() as u32;
+            all_strokes.extend_from_slice(&view.strokes);
+            stroke_ranges.push(start..all_strokes.len() as u32);
+        }
+        if !all_strokes.is_empty() {
+            let bytes = std::mem::size_of_val(all_strokes.as_slice()) as u64;
+            if self.strokes.size() < bytes {
+                self.strokes = Self::buffer(
+                    gpu,
+                    "world strokes",
+                    bytes.next_power_of_two(),
+                    wgpu::BufferUsages::VERTEX,
+                );
+            }
+            gpu.queue
+                .write_buffer(&self.strokes, 0, bytemuck::cast_slice(&all_strokes));
+        }
         Self::upload(gpu, &mut self.mesh_instances, "world meshes", &meshes);
         Self::upload(gpu, &mut self.bones, "world bones", &bones);
         if self.globals.size() < self.stride * views.len().max(1) as u64 {
@@ -3189,6 +3248,15 @@ impl WorldRenderer {
                 }
                 for (_, run) in blended {
                     draw(&mut pass, run, true);
+                }
+                // Strokes after the see-through things, before the gizmo lines.
+                let range = stroke_ranges[i].clone();
+                if !range.is_empty() {
+                    pass.set_bind_group(1, plain, &[]);
+                    pass.set_bind_group(2, &shadow_group, &[]);
+                    pass.set_vertex_buffer(0, self.strokes.slice(..));
+                    pass.set_pipeline(&pipelines.strokes);
+                    pass.draw(0..6, range);
                 }
                 // Gizmo lines last: hidden parts faint first, then the visible ones.
                 let range = line_ranges[i].clone();
