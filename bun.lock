@@ -232,6 +232,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/topdown-zombie-game": {
+      "name": "topdown-zombie-game",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/world": {
       "name": "world",
       "version": "0.1.0",
@@ -347,6 +359,8 @@
     "sine-circle-demo": ["sine-circle-demo@workspace:examples/sine-circle-demo"],
 
     "text": ["text@workspace:examples/text"],
+
+    "topdown-zombie-game": ["topdown-zombie-game@workspace:examples/topdown-zombie-game"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
