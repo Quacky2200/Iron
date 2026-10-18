@@ -17,6 +17,7 @@ import {
   LineRenderer,
   Material,
   property,
+  QualitySettings,
   Screen,
   Time,
   Vector3,
@@ -313,6 +314,7 @@ class SineDemo extends Component {
     if (input.getKeyDown("Space")) this.togglePaused();
     if (input.getKeyDown("F5")) this.midPoint.visible = !this.midPoint.visible;
     if (input.getKeyDown("F11")) Screen.fullScreen = !Screen.fullScreen;
+    if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
     for (let i = 0; i < SINE_TYPES.length; i++) {
       if (input.getKeyDown(`Digit${i + 1}`)) this.setType(i);
     }
@@ -339,7 +341,7 @@ class SineDemo extends Component {
   }
 
   /** What the HUD shows. */
-  get stats(): { debug: string; paused: boolean; textColor: string; blink: string; typeIndex: number; fps: number } {
+  get stats(): { debug: string; paused: boolean; textColor: string; blink: string; typeIndex: number; fps: number; vsync: boolean } {
     const s = this.sine;
     const c = this.colour.value;
     const css = (x: Color) => `rgb(${Math.round(x.r * 255)}, ${Math.round(x.g * 255)}, ${Math.round(x.b * 255)})`;
@@ -351,6 +353,7 @@ class SineDemo extends Component {
       blink: css(blinkColour),
       typeIndex: this.typeIndex,
       fps: this.fps,
+      vsync: QualitySettings.vSyncCount > 0,
     };
   }
 }
@@ -365,7 +368,7 @@ function notify() {
 
 /** Re-renders the HUD whenever the demo says something changed. */
 function useStats() {
-  const read = () => demo?.stats ?? { debug: "", paused: true, textColor: "#000", blink: "#000", typeIndex: -1, fps: 0 };
+  const read = () => demo?.stats ?? { debug: "", paused: true, textColor: "#000", blink: "#000", typeIndex: -1, fps: 0, vsync: true };
   const [view, setView] = useState(read);
   useEffect(() => {
     const update = () => setView(read());
@@ -379,7 +382,7 @@ function useStats() {
 }
 
 // Text only, as the original: its stats line, the keys, and a blinking [paused].
-const HUD_KEYS = "1-4: sine type · Space: pause · F5: centre · F11: fullscreen";
+const HUD_KEYS = "1-4: sine type · Space: pause · F5: centre · F11: fullscreen · V: vsync";
 const HUD_MOUSE = "Left-click: next sine circle · Right-click: switch background";
 
 function Hud() {
@@ -389,7 +392,7 @@ function Hud() {
       <text style={{ color: s.textColor, fontSize: 12, fontFamily: "monospace" }}>{s.debug}</text>
       <text style={{ color: "#808080", fontSize: 12, fontFamily: "monospace" }}>{`${SINE_TYPE_ORDER.map((t, i) => `${i + 1} ${SINE_NAMES[t]}${i === s.typeIndex ? "*" : ""}`).join(" · ")}`}</text>
 
-      <text style={{ position: "absolute", right: 14, top: 14, color: "#808080", fontSize: 12, fontFamily: "monospace" }}>{`${Math.round(s.fps)} FPS`}</text>
+      <text style={{ position: "absolute", right: 14, top: 14, color: "#808080", fontSize: 12, fontFamily: "monospace" }}>{`${Math.round(s.fps)} FPS · vsync ${s.vsync ? "on" : "off"} (V)`}</text>
       <box style={{ position: "absolute", left: 0, right: 0, bottom: 14, alignItems: "center", flexDirection: "column" }}>
         <text style={{ color: "#808080", fontSize: 13 }}>{`${HUD_MOUSE}`}</text>
         <text style={{ color: "#808080", fontSize: 13 }}>{HUD_KEYS}</text>

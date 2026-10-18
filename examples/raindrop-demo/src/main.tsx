@@ -13,6 +13,7 @@ import {
   Component,
   GameObject,
   input,
+  QualitySettings,
   register,
   Screen,
   Sprite,
@@ -181,6 +182,7 @@ class RaindropDemo extends Component {
     });
     if (input.getKeyDown("KeyM")) this.toggleMusic();
     if (input.getKeyDown("F11")) Screen.fullScreen = !Screen.fullScreen;
+    if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
     if (input.getMouseButtonDown(0) || input.getMouseButtonDown(1)) this.cycleWeather();
 
     // Roll the weather every 25 ms, as the original did.
@@ -232,10 +234,10 @@ class RaindropDemo extends Component {
   }
 
   /** What the HUD shows. */
-  get stats(): { weather: string; muted: boolean; colour: Color; fps: number } {
+  get stats(): { weather: string; muted: boolean; colour: Color; fps: number; vsync: boolean } {
     // The original's red-to-blue pulse for the weather text.
     const t = this.textPhase > 1 ? 2 - this.textPhase : this.textPhase;
-    return { weather: WEATHER_NAME[this.weather], muted: this.muted, colour: new Color(1 - t, 0, t, 1), fps: this.fps };
+    return { weather: WEATHER_NAME[this.weather], muted: this.muted, colour: new Color(1 - t, 0, t, 1), fps: this.fps, vsync: QualitySettings.vSyncCount > 0 };
   }
 }
 
@@ -251,9 +253,9 @@ function notify() {
 function useStats() {
   const read = () => {
     const d = demo;
-    if (!d) return { weather: "", muted: false, colour: "#ff0000", fps: 0 };
+    if (!d) return { weather: "", muted: false, colour: "#ff0000", fps: 0, vsync: true };
     const s = d.stats;
-    return { weather: s.weather, muted: s.muted, colour: `rgb(${Math.round(s.colour.r * 255)}, 0, ${Math.round(s.colour.b * 255)})`, fps: s.fps };
+    return { weather: s.weather, muted: s.muted, colour: `rgb(${Math.round(s.colour.r * 255)}, 0, ${Math.round(s.colour.b * 255)})`, fps: s.fps, vsync: s.vsync };
   };
   const [view, setView] = useState(read);
   useEffect(() => {
@@ -274,9 +276,9 @@ function Hud() {
       <box style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}>
         <text style={{ color: s.colour, fontSize: 40, fontFamily: "monospace" }}>{`Weather: ${s.weather}`}</text>
       </box>
-      <text style={{ position: "absolute", right: 14, top: 14, color: "#808080", fontSize: 12, fontFamily: "monospace" }}>{`${Math.round(s.fps)} FPS`}</text>
+      <text style={{ position: "absolute", right: 14, top: 14, color: "#808080", fontSize: 12, fontFamily: "monospace" }}>{`${Math.round(s.fps)} FPS · vsync ${s.vsync ? "on" : "off"} (V)`}</text>
       <text style={{ color: "#808080", fontSize: 13 }}>
-        {`Click or 1-3: weather · M: ${s.muted ? "unmute" : "mute"} · F11: fullscreen`}
+        {`Click or 1-3: weather · M: ${s.muted ? "unmute" : "mute"} · F11: fullscreen · V: vsync`}
       </text>
     </box>
   );
