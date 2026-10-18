@@ -1375,7 +1375,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 
 - [ ] **M9.a** `deno_core` and Bun script backends; packaging and distribution (pack files, Steam
   Workshop?)
-- [ ] **M9.b** Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
+- [ ] **M9.b** (spike done, see `docs/research/iron-ts-spike.md`: `tools/iron_ts` compiles the zombie game's `sim.ts` with oxc + Cranelift, 13/13 ported tests pass, ~50x QuickJS) Ahead-of-time scripts for shipped games: compile the Bun-bundled TypeScript down when the game
   is built, instead of interpreting it in QuickJS. Native code compiled into the executable is
   the preferred output; bytecode is the fallback. Candidates to evaluate:
   - QuickJS bytecode (the cheapest step: skips parsing at startup)

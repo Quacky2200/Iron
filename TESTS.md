@@ -473,6 +473,31 @@ layout pass):
 | M5-EDT-23 | Manual | `iron_editor --screenshot`: the Scene panel shows the demo scene through the see-through panel with the ground grid, SceneIcons (sun, bulb, spot, camera, speaker, probe) at their objects and the orientation gizmo in the corner; the Hierarchy lists the live objects. In the window: right-drag looks (WASD / QE fly, Shift faster), middle-drag pans, the wheel zooms, Alt+left-drag orbits, F frames the selection, clicking an icon selects its object (and the Hierarchy row) and shows its wire gizmos (frustum, light range / cone / rays, probe box, audio distances), clicking a gizmo axis looks along it and the centre toggles Persp / Iso; Q / W / E / R (or the toolbar) pick view / move / rotate / scale handles on the last selected object, which light up on hover and drag it; the Game tab shows the main camera. |
 | M5-EDT-24 | JS unit | Transform handles (`handles.ts`): axes a constant length on screen; the pointer picks the centre or the nearest axis or ring (front arcs only); moving follows the pointer along local axes (Ctrl snaps to 1 m) or in the view plane; rings turn about their axis (Ctrl snaps to 15°); scale by the ratio along an axis, or uniformly from the centre, never below 0.01. |
 
+## M9.b — AOT scripts (`tools/iron_ts` spike)
+
+Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` with `iron_ts` and links the object into the test crate).
+
+| ID | Kind | Description |
+|---|---|---|
+| M9-TS-01 | Integration | Port of `sim.test.ts` "a baked mask keeps the runs of walls and open floor" against the native code (`tools/iron_ts_tests/tests/sim_port.rs`). |
+| M9-TS-02 | Integration | Port: zombies spawn in single player. |
+| M9-TS-03 | Integration | Port: a level's zombie budget grows by 3 to 5 each level (8..=10 at level 1). |
+| M9-TS-04 | Integration | Port: a player moves 400 px a second with one key held. |
+| M9-TS-05 | Integration | Port: a wall stops the player. |
+| M9-TS-06 | Integration | Port: a press fires one pistol round and turns the aim toward the mouse. |
+| M9-TS-07 | Integration | Port: holding fire with the pistol does not repeat. |
+| M9-TS-08 | Integration | Port: an empty clip starts a reload that blocks shooting (and emits the `reload` event). |
+| M9-TS-09 | Integration | Port: a hit takes health and scores 10; a kill scores 80 once the fade ends. |
+| M9-TS-10 | Integration | Port: four zombie hits kill a player with 100 health, the score is floored at 0, game over clears the events. |
+| M9-TS-11 | Integration | Port: the next level starts when the last zombie of this one dies. |
+| M9-TS-12 | Integration | Port: touching an ammo powerup adds 320 rounds. |
+| M9-TS-13 | Integration | Port: zombies speed up a little each level until level 3, then hold. |
+| M9-TS-14 | Unit | `iron_ts` lowers a discriminated union of object types to one struct holding every variant's fields, with string-literal tags interned. |
+| M9-TS-15 | Unit | Unsupported code is a compile error naming the line (`typeof`, `any`). |
+| M9-TS-16 | Unit | Array-method callbacks are inlined (no closure call) and exported functions get `ts_` symbols in the object. |
+| M9-TS-17 | Unit | `iron_ts_rt`: arrays grow and keep values (M9-TS-17a), strings concat and compare (17b), `Uint8Array.fill` clamps (17c). |
+| M9-TS-18 | Manual | `cargo run --release -p iron_ts_tests --bin bench` (from `tools/`): QuickJS, bun and the native code run 10,000 steps of a busy state and print the same checksum; timings in `docs/research/iron-ts-spike.md`. |
+
 ---
 
 ## Later milestones (outline)

@@ -1,0 +1,258 @@
+//! Annotation -> IR type resolution, struct layouts and coercions.
+
+use super::*;
+
+impl<'a> Lowerer<'a> {
+    pub(crate) fn key_name(&self, k: &PropertyKey<'a>) -> R<String> {
+        match k {
+            PropertyKey::StaticIdentifier(i) => Ok(i.name.to_string()),
+            PropertyKey::StringLiteral(s) => Ok(s.value.to_string()),
+            _ => bail!("computed property key"),
+        }
+    }
+
+    pub(crate) fn new_struct(&mut self, name: &str, fields: Vec<Field>) -> StructId {
+        self.m.structs.push(StructDef {
+            name: name.to_string(),
+            fields,
+        });
+        self.m.structs.len() - 1
+    }
+
+    /// A struct for an inline `{ x: number; y: number }` type or a literal: one per shape.
+    pub(crate) fn anon_struct(&mut self, name: &str, fields: Vec<Field>) -> StructId {
+        let key = fields
+            .iter()
+            .map(|f| format!("{}:{}", f.name, f.ty))
+            .collect::<Vec<_>>()
+            .join(",");
+        if let Some(id) = self.shapes.get(&key) {
+            return *id;
+        }
+        let id = self.new_struct(name, fields);
+        self.shapes.insert(key, id);
+        id
+    }
+
+    pub(crate) fn ty(&mut self, t: &'a TSType<'a>, hint: &str) -> R<Ty> {
+        Ok(match t {
+            TSType::TSNumberKeyword(_) => Ty::Num,
+            TSType::TSBooleanKeyword(_) => Ty::Bool,
+            TSType::TSStringKeyword(_) => Ty::Str,
+            TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,
+            TSType::TSNullKeyword(_) => Ty::Null,
+            TSType::TSParenthesizedType(p) => self.ty(&p.type_annotation, hint)?,
+            TSType::TSTypeOperatorType(o) => self.ty(&o.type_annotation, hint)?,
+            TSType::TSArrayType(a) => Ty::Arr(Box::new(self.ty(&a.element_type, hint)?)),
+            TSType::TSLiteralType(l) => match &l.literal {
+                TSLiteral::StringLiteral(s) => {
+                    self.tag(s.value.as_str());
+                    Ty::Lit
+                }
+                TSLiteral::NumericLiteral(_) => Ty::Num,
+                TSLiteral::BooleanLiteral(_) => Ty::Bool,
+                _ => bail!("unsupported literal type"),
+            },
+            TSType::TSUnionType(u) => self.union(&u.types, hint)?,
+            TSType::TSTypeLiteral(l) => {
+                let fields = self.members(&l.members, hint)?;
+                Ty::Obj(self.anon_struct(hint, fields))
+            }
+            TSType::TSFunctionType(f) => {
+                let mut params = Vec::new();
+                for p in &f.params.items {
+                    let Some(a) = &p.type_annotation else {
+                        bail!("untyped callback parameter")
+                    };
+                    params.push(self.ty(&a.type_annotation, hint)?);
+                }
+                let ret = self.ty(&f.return_type.type_annotation, hint)?;
+                Ty::Fn(Box::new(FnTy { params, ret }))
+            }
+            TSType::TSIndexedAccessType(i) => {
+                let obj = self.ty(&i.object_type, hint)?;
+                let TSType::TSLiteralType(l) = &i.index_type else {
+                    bail!("indexed access by a non-literal")
+                };
+                let TSLiteral::StringLiteral(s) = &l.literal else {
+                    bail!("indexed access by a non-string")
+                };
+                let Ty::Obj(sid) = obj.strip() else {
+                    bail!("indexed access on a non-object")
+                };
+                let st = &self.m.structs[*sid];
+                let Some(i) = st.field(s.value.as_str()) else {
+                    bail!("no field {}", s.value)
+                };
+                st.fields[i].ty.clone()
+            }
+            TSType::TSTypeReference(r) => {
+                let TSTypeName::IdentifierReference(id) = &r.type_name else {
+                    bail!("qualified type name")
+                };
+                let args: Vec<&'a TSType<'a>> = r
+                    .type_arguments
+                    .as_ref()
+                    .map(|a| a.params.iter().collect())
+                    .unwrap_or_default();
+                match id.name.as_str() {
+                    "Uint8Array" => Ty::Bytes,
+                    "Array" | "ReadonlyArray" | "Set" => {
+                        let Some(e) = args.first() else {
+                            bail!("generic collection without a type")
+                        };
+                        Ty::Arr(Box::new(self.ty(e, hint)?))
+                    }
+                    n => self.named_type(n)?,
+                }
+            }
+            _ => bail!("unsupported type annotation"),
+        })
+    }
+
+    fn members(&mut self, members: &'a [TSSignature<'a>], hint: &str) -> R<Vec<Field>> {
+        let mut fields = Vec::new();
+        for m in members {
+            let TSSignature::TSPropertySignature(p) = m else {
+                bail!("unsupported member in object type")
+            };
+            let name = self.key_name(&p.key)?;
+            let Some(a) = &p.type_annotation else {
+                bail!("property {name} without a type")
+            };
+            let mut ty = self.ty(&a.type_annotation, &format!("{hint}_{name}"))?;
+            if p.optional {
+                ty = ty.nullable();
+            }
+            fields.push(Field { name, ty });
+        }
+        Ok(fields)
+    }
+
+    /// An interface or alias by name, resolved once.
+    pub(crate) fn named_type(&mut self, name: &str) -> R<Ty> {
+        if let Some(t) = self.named.get(name) {
+            return Ok(t.clone());
+        }
+        if let Some(i) = self.ifaces.get(name).copied() {
+            if !i.extends.is_empty() {
+                bail!("interface {name}: extends is not supported");
+            }
+            let id = self.new_struct(name, vec![]);
+            self.named.insert(name.to_string(), Ty::Obj(id));
+            let fields = self.members(&i.body.body, name)?;
+            self.m.structs[id].fields = fields;
+            return Ok(Ty::Obj(id));
+        }
+        if let Some(a) = self.aliases.get(name).copied() {
+            let t = self.ty(&a.type_annotation, name)?;
+            self.named.insert(name.to_string(), t.clone());
+            return Ok(t);
+        }
+        bail!("unknown type {name}")
+    }
+
+    fn union(&mut self, types: &'a [TSType<'a>], hint: &str) -> R<Ty> {
+        let mut nullable = false;
+        let mut rest: Vec<&'a TSType<'a>> = Vec::new();
+        for t in types {
+            match t {
+                TSType::TSNullKeyword(_) | TSType::TSUndefinedKeyword(_) => nullable = true,
+                t => rest.push(t),
+            }
+        }
+        let ty = if rest.iter().all(|t| matches!(t, TSType::TSTypeLiteral(_))) && rest.len() > 1 {
+            // A discriminated union of object types: one struct holding every variant's fields.
+            let mut fields: Vec<Field> = Vec::new();
+            for t in &rest {
+                let TSType::TSTypeLiteral(l) = t else {
+                    unreachable!()
+                };
+                for f in self.members(&l.members, hint)? {
+                    match fields.iter().position(|o| o.name == f.name) {
+                        None => fields.push(f),
+                        Some(i) if fields[i].ty == f.ty => {}
+                        Some(i) => bail!(
+                            "union {hint}: field {} has two different types ({} and {})",
+                            f.name,
+                            fields[i].ty,
+                            f.ty
+                        ),
+                    }
+                }
+            }
+            Ty::Obj(self.anon_struct(hint, fields))
+        } else {
+            let mut tys = Vec::new();
+            for t in &rest {
+                tys.push(self.ty(t, hint)?);
+            }
+            if tys.is_empty() {
+                Ty::Null
+            } else if tys.iter().all(|t| *t == tys[0]) {
+                tys.swap_remove(0)
+            } else {
+                bail!(
+                    "unsupported union of {:?}",
+                    tys.iter().map(|t| t.to_string()).collect::<Vec<_>>()
+                )
+            }
+        };
+        Ok(if nullable { ty.nullable() } else { ty })
+    }
+
+    // ---- unify and coerce ----
+
+    pub(crate) fn unify(&self, a: &Ty, b: &Ty) -> R<Ty> {
+        if a == b {
+            return Ok(a.clone());
+        }
+        Ok(match (a, b) {
+            (Ty::Null, t) | (t, Ty::Null) => t.clone().nullable(),
+            _ if a.strip() == b.strip() => a.strip().clone().nullable(),
+            _ => bail!("cannot unify {a} and {b}"),
+        })
+    }
+
+    pub(crate) fn coerce(&self, e: Expr, to: &Ty) -> R<Expr> {
+        if e.ty == *to {
+            return Ok(e);
+        }
+        match (&e.ty, to) {
+            (Ty::Null, t) if t.is_nullable() => Ok(Expr {
+                kind: ExprKind::Null,
+                ty: to.clone(),
+            }),
+            (a, b) if a.strip() == b.strip() => Ok(Expr {
+                kind: ExprKind::Cast(Box::new(e)),
+                ty: to.clone(),
+            }),
+            (a, Ty::Void) => bail!("cannot use {a} as void"),
+            (a, b) => bail!("type mismatch: {a} where {b} is expected"),
+        }
+    }
+
+    /// Truthiness as a `Bool`.
+    pub(crate) fn to_bool(&self, e: Expr) -> Expr {
+        let ex = |k| Expr {
+            kind: k,
+            ty: Ty::Bool,
+        };
+        match &e.ty {
+            Ty::Bool => e,
+            Ty::Nullable(inner) if matches!(**inner, Ty::Num) => {
+                let null = ex(ExprKind::IsNull(Box::new(e.clone())));
+                ex(ExprKind::And(
+                    Box::new(ex(ExprKind::Un(UnOp::Not, Box::new(null)))),
+                    Box::new(ex(ExprKind::Truthy(Box::new(e)))),
+                ))
+            }
+            Ty::Num => ex(ExprKind::Truthy(Box::new(e))),
+            t if t.is_nullable() => {
+                let null = ex(ExprKind::IsNull(Box::new(e)));
+                ex(ExprKind::Un(UnOp::Not, Box::new(null)))
+            }
+            _ => ex(ExprKind::Bool(true)),
+        }
+    }
+}

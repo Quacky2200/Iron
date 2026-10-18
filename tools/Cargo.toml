@@ -1,0 +1,15 @@
+# The AOT script compiler spike. Its own workspace so engine builds never see it.
+[workspace]
+resolver = "3"
+members = ["iron_ts", "iron_ts_rt", "iron_ts_tests"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The build script compiles TypeScript with Cranelift; unoptimised that is slow.
+[profile.dev.build-override]
+opt-level = 3
+[profile.dev.package.cranelift-codegen]
+opt-level = 3

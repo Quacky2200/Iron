@@ -1,0 +1,16 @@
+[package]
+name = "iron_ts"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+cranelift-codegen = "0.136.3"
+cranelift-frontend = "0.136.3"
+cranelift-module = "0.136.3"
+cranelift-object = "0.136.3"
+oxc_allocator = "0.154.0"
+oxc_ast = "0.154.0"
+oxc_parser = "0.154.0"
+oxc_span = "0.154.0"
+target-lexicon = "0.13.5"
