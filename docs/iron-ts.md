@@ -76,6 +76,9 @@ bytes, bindings text, IR dump and the time of each phase.
   (`number`, `boolean`, `string`, `object:<Class>`, ..., `?` appended when nullable), base class
   first. A host reads and writes properties at those offsets with no script running (a scene loader
   can set a field before any code does). The IR carries them as `Module::props`.
+- **Engine calls.** `Module::externs` holds one `ExternDecl` per called symbol: a flattened scalar
+  parameter list (a value class is already split into its fields) and, for a value result, an
+  optional out pointer `(scalar type, count)` that codegen appends as the last parameter.
 - **Linking** is the host's job: the test crate's `build.rs` writes the `.obj`, passes it with
   `cargo:rustc-link-arg`, and includes the bindings.
 
@@ -83,7 +86,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | File | What |
 |---|---|
-| [manifest.rs](../tools/iron_ts/src/manifest.rs) | Reads the `iron_api` JSON manifests into a table of callable functions (`Manifest`, `ExternFn`) and the handle type names |
+| [manifest.rs](../tools/iron_ts/src/manifest.rs) | Reads the `iron_api` JSON manifests into a table of callable functions (`Manifest`, `ExternFn`), the handle type names and the value classes (`values`) |
 | [lib.rs](../tools/iron_ts/src/lib.rs) | `compile_source` / `compile_with_prefix` / `compile_with` / `compile_with_manifests`, `Output`; unit tests for lowering errors (`M9-TS-14..16`, `55`, `56`, `70`, `84`, `110`, `119`) |
 | [ir.rs](../tools/iron_ts/src/ir.rs) | The IR: `Ty`, `Module` (with `vtables` and `itables`), `Func`, `Stmt`, `Expr`/`ExprKind` (including `CallVirtual` and `InstanceOf`), `RtFn` (runtime calls), `field_offset`, `dump` |
 | [frames.rs](../tools/iron_ts/src/frames.rs) | Shadow-stack frame plan and the spill rule (see GC roots below) |
@@ -119,7 +122,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | `Math` and operators | Inline instructions or `ts_rt_*` (libm, JS `pow`, `random`); `**`, `~`, `??=`, `\|\|=`, `&&=`, bit operations with ToInt32 |
 | Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below); methods as values (`obj.m` is a closure over the receiver, so unlike JS a detached method keeps its `this`); arrow-function fields (the constructor scan includes field initialisers); `@property` on instance fields as compile-time metadata |
 | Optional chaining, `!`, `??`, `?:` | Inline null tests |
-| Engine API calls | With a manifest, `Namespace.fn(args)` is `CallExtern`: a direct call of the manifest's symbol (`iron_<Namespace>_<fn>`) with the manifest's C signature, arguments checked by count and type. Numbers stay `f64` in scripts and convert at the call: `f32` demotes in and promotes out, `i32`/`u32` use a saturating truncation, `bool` is a byte. Handles are `Ty::Handle(name)`: a 64-bit id, not a GC pointer (not traced or rooted, `===` compares ids). In a `T \| null` slot 0 is null, so a live handle is never 0. An engine function must not call back into scripts or allocate in the script heap |
+| Engine API calls | With a manifest, `Namespace.fn(args)` is `CallExtern`: a direct call of the manifest's symbol (`iron_<Namespace>_<fn>`) with the manifest's C signature, arguments checked by count and type. Numbers stay `f64` in scripts and convert at the call: `f32` demotes in and promotes out, `i32`/`u32` use a saturating truncation, `bool` is a byte. Handles are `Ty::Handle(name)`: a 64-bit id, not a GC pointer (not traced or rooted, `===` compares ids). In a `T \| null` slot 0 is null, so a live handle is never 0. An engine function must not call back into scripts or allocate in the script heap. Value classes (`new Vector3(1, 2, 3)`) are ordinary structs with one `number` field per manifest field; as an argument one is passed as its flattened field reads (every argument goes through a temporary first, to keep evaluation order), and a result is a new object filled through a trailing out pointer by `CallExternInto` (a stack slot, then the scalars widened into the fields) |
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

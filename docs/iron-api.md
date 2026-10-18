@@ -2,7 +2,9 @@
 
 Crates: [iron_api](../crates/iron_api/src/lib.rs) (manifest types and generators) and
 [iron_api_macros](../crates/iron_api_macros/src/lib.rs) (the `#[iron_api]` attribute). Tests:
-[api.rs](../crates/iron_api/tests/api.rs) (`M9-API-01`..`06`). Design and the road ahead:
+[api.rs](../crates/iron_api/tests/api.rs) (`M9-API-01`..`06`),
+[context.rs](../crates/iron_api/tests/context.rs) (`M9-API-07`..`09`) and
+[values.rs](../crates/iron_api/tests/values.rs) (`M9-API-10`, `11`). Design and the road ahead:
 [iron-ts-engine-boundary.md](research/iron-ts-engine-boundary.md).
 
 One module of ordinary Rust is the single source for a namespace of the script API: the manifest, the
@@ -34,8 +36,32 @@ pub mod demo {
 ```
 
 Arguments: `namespace = ".."` (required), `quickjs` (also generate `register_quickjs`) and
-`handles(TsName = RustType, ..)` (Rust types that implement `iron_api::Handle`). The module must be
+`handles(TsName = RustType, ..)` (Rust types that implement `iron_api::Handle`) and
+`values(TsName = RustType [field: scalar, ..], ..)` (value classes, below). The module must be
 inline (`pub mod x { .. }`).
+
+### Value classes
+
+A small Rust type that scripts see as a class of numbers (`glam::Vec3` as `Vector3`). The type
+implements `iron_api::ValueType<N>` (`N` fields; the parts travel as `f64`):
+
+```rust
+impl ValueType<3> for Vec3 {
+    fn from_parts(p: [f64; 3]) -> Self { Vec3 { x: p[0] as f32, y: p[1] as f32, z: p[2] as f32 } }
+    fn to_parts(self) -> [f64; 3] { [self.x as f64, self.y as f64, self.z as f64] }
+}
+
+#[iron_api(namespace = "Demo", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+pub mod demo {
+    pub fn cross(a: Vec3, b: Vec3) -> Vec3 { /* .. */ }
+}
+```
+
+Each field is `f32`, `f64`, `i32` or `u32`, and all fields of one class have the same type. Functions
+may take and return the Rust type; scripts write `Demo.cross(new Vector3(1, 0, 0), v)`. `to_dts`
+declares `declare class Vector3 { constructor(x: number, ..); x: number; .. }` and `to_json` lists
+the class under `values` (fields with their types), with `value:Vector3` as the parameter and result
+type.
 
 ## What the macro adds
 
@@ -43,7 +69,7 @@ The module's code is kept as it is. Inside the module the macro adds:
 
 | Item | What |
 |---|---|
-| `MANIFEST` | A `const Namespace`: name, handle names and, per function, `name`, `rust_name`, `symbol`, `doc`, `params`, `ret` |
+| `MANIFEST` | A `const Namespace`: name, handle names, value classes and, per function, `name`, `rust_name`, `symbol`, `doc`, `params`, `ret` |
 | `extern "C"` shims | One `#[no_mangle] pub extern "C" fn` per `pub fn`, named `iron_<Namespace>_<jsName>` (`iron_Demo_add`). Private functions are not exported |
 | `register_quickjs(ctx)` | With `quickjs`: installs the global `Demo` object whose `add` is a native closure with typed arguments (no `Value` array, no op queue) |
 
@@ -60,6 +86,7 @@ generic or take `self`.
 | `bool` | `boolean` | `bool` | `bool` |
 | `()` | `void` | `()` | `()` |
 | declared handle | `number & { readonly __handle: "Name" }` | `u64` (`Handle::to_raw`) | `f64` number, cast to `u64` for `from_raw` |
+| declared value class | a class with the declared fields (`new Vector3(1, 2, 3)`) | one scalar per field as parameters (`v_0, v_1, v_2`); a result through a trailing out pointer to room for the fields | not available: `quickjs` together with `values(..)` is a compile error |
 
 Any other type is a compile error that lists the supported ones. Names follow `snake_case` to
 `camelCase` (`set_time_scale` is `setTimeScale`), done by `camel` in both crates.
@@ -71,21 +98,38 @@ let dts = demo::MANIFEST.to_dts(); // declare namespace Demo { function add(a: n
 let json = demo::MANIFEST.to_json(); // {"namespace":"Demo","functions":[{"name":"add","symbol":"iron_Demo_add",..}]}
 ```
 
-`to_dts` writes a `declare type` per handle plus a `declare namespace` with the JSDoc. `to_json` is
-the table a compiler reads to call each symbol directly: the `handles` list (handle type names) and
-per function the name, symbol, parameter names and types (`f64`, `bool`, `handle:GameObject`, ...)
+`to_dts` writes a `declare type` per handle, a `declare class` per value class, plus a `declare
+namespace` with the JSDoc. `to_json` is the table a compiler reads to call each symbol directly: the
+`handles` list (handle type names), the `values` list and per function the name, symbol, parameter names and types (`f64`, `bool`, `handle:GameObject`, ...)
 and the result type.
 
 **Handle rule.** Compiled scripts store a handle as a raw `u64` and use 0 as null in `T | null`, so
 the id 0 means "no object": a handle type must never produce a live id 0 (start generations or
 indices at 1).
 
+## The engine context
+
+A shim has no world argument (scripts have none), so the host makes the world current on the thread
+that runs scripts and API functions reach it through `iron_api::context`. `enter` returns a scope
+guard that restores the previous world on drop; `with` runs a closure on the current world, or
+returns `None` when there is none. While the closure runs the world is not current, so a nested
+call gets `None` instead of a second `&mut` to it.
+
+```rust
+thread_local! { static WORLD: Cell<*mut World> = const { Cell::new(std::ptr::null_mut()) }; }
+let _scope = iron_api::context::enter(&WORLD, &mut world); // while scripts run
+// inside an API function:
+let pos = iron_api::context::with(&WORLD, |w| w.position(id)).unwrap_or_default();
+// a nested `with(&WORLD, ..)` inside that closure returns None
+```
+
 ## Status
 
 Additive. `__iron_op` and the ops in [scripting.md](scripting.md) are untouched, no engine crate uses
 `#[iron_api]` yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
-(`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value classes (`Vector3`), strings, methods on handles and an engine context for the
-shims are not built.
+(`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value
+classes (`Vector3`) and the engine context exist; strings, methods on handles (`transform.position`),
+value classes in the QuickJS bindings and annotating the real engine crates are not built.
 
 Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
 150 ns per call through the typed function and about 245 ns through a simplified `__iron_op` (a name,
