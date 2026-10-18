@@ -338,3 +338,23 @@ Sub-task 6 is done (`M9-TS-137`, `138`).
   function that uses `this`. The constructor's scan of captured names now includes the field
   initialisers, so `this` is boxed in a cell and the closure captures it. The field needs an
   annotation (a function type is not inferred from the initialiser).
+
+## 16. `@property` reflection tables (2026-10-18)
+
+Sub-task 7 is done (`M9-TS-139`, `140`; the rejection of other decorators is in `M9-TS-119`).
+
+- `@property` (or `@property()`) on an instance field marks it. The decorator is **compile-time
+  metadata**: nothing is called, the `import { property } from "@iron/engine"` is not read (the
+  compiler recognises the name). Any other decorator, on a field, method or class, is an error.
+- Each class with marked fields gets a table in the generated Rust bindings:
+  `pub const PROPS_Player: &[(&str, usize, &str)]` = (name, byte offset in the object, type). A
+  subclass's table lists its base classes' properties first, at the same offsets. The type is a short
+  name a loader switches on: `number`, `boolean`, `literal`, `string`, `object:<Class>`, `array`,
+  `function`, `other`, with `?` appended for a nullable field.
+- A host reads and writes a property by adding the offset to the object's address: a scene loader needs
+  no script to set `speed` on a `Player`, and the compiled code sees it (`tests/props.rs` does this
+  for a `Player` and, through the base table, a `Hero`).
+- The IR carries the tables as `Module::props` (`PropTable`, `PropEntry`).
+
+Not done: static properties, `@property` on accessors, options (`@property({ min: 0 })`), and the
+engine-side scene loader that would use the tables (engine-boundary note).

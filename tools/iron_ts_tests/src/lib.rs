@@ -145,6 +145,18 @@ pub mod inh {
     include!(concat!(env!("OUT_DIR"), "/inherit_bindings.rs"));
 }
 
+/// `@property` tables (`bench/props.ts`), prefix `prop_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod prop {
+    include!(concat!(env!("OUT_DIR"), "/props_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

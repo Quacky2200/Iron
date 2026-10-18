@@ -287,11 +287,28 @@ pub struct VTable {
     pub entries: Vec<(StructId, FuncId)>,
 }
 
+/// One `@property` field of a class.
+#[derive(Clone, Debug)]
+pub struct PropEntry {
+    pub name: String,
+    pub index: usize,
+    pub ty: Ty,
+}
+
+/// The `@property` fields of a class (its base classes' first): what a host reads and writes to
+/// save, load and edit a component without running any script.
+#[derive(Clone, Debug)]
+pub struct PropTable {
+    pub class: StructId,
+    pub entries: Vec<PropEntry>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Module {
     pub structs: Vec<StructDef>,
     pub globals: Vec<Global>,
     pub vtables: Vec<VTable>,
+    pub props: Vec<PropTable>,
     /// For `instanceof`: the structs that count as instances.
     pub itables: Vec<Vec<StructId>>,
     pub funcs: Vec<Func>,

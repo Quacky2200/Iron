@@ -28,6 +28,8 @@ pub(crate) struct ClassInfo {
     pub statics: HashMap<String, String>,
     /// The `$init` function.
     pub ctor: String,
+    /// Fields marked `@property` here (the table of a class also has its base classes').
+    pub property_fields: Vec<String>,
     pub collected: bool,
 }
 
@@ -143,9 +145,7 @@ impl<'a> Lowerer<'a> {
         for el in &c.body.body {
             match el {
                 ClassElement::PropertyDefinition(p) => {
-                    if !p.decorators.is_empty() {
-                        bail!("class {name}: decorators are not supported yet")
-                    }
+                    let marked = self.is_property_decorated(&p.decorators, name)?;
                     if p.r#static {
                         continue;
                     }
@@ -153,6 +153,9 @@ impl<'a> Lowerer<'a> {
                         bail!("class {name}: computed property name")
                     }
                     let key = self.member_key(&p.key)?;
+                    if marked {
+                        info.property_fields.push(key.clone());
+                    }
                     let what = format!("{name}.{key}");
                     let ty = self.field_ty(
                         p.type_annotation.as_deref(),
@@ -196,6 +199,27 @@ impl<'a> Lowerer<'a> {
         Ok(Ty::Obj(sid))
     }
 
+    /// Are these decorators exactly `@property` (or `@property()`)? Any other is an error: a
+    /// decorator is compile-time metadata here, not code that runs.
+    fn is_property_decorated(&self, decorators: &[Decorator<'a>], class: &str) -> R<bool> {
+        let mut marked = false;
+        for d in decorators {
+            let name = match &d.expression {
+                Expression::Identifier(id) => Some(id.name.as_str()),
+                Expression::CallExpression(c) => match &c.callee {
+                    Expression::Identifier(id) => Some(id.name.as_str()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            match name {
+                Some("property") => marked = true,
+                _ => bail!("class {class}: only `@property` decorators are supported"),
+            }
+        }
+        Ok(marked)
+    }
+
     /// Gives every class struct its fields: the base class's first, then its own. A field a
     /// subclass declares again (`x = 5` over the base's `x`) is the same slot.
     pub(crate) fn finalize_classes(&mut self) -> R<()> {
@@ -203,6 +227,41 @@ impl<'a> Lowerer<'a> {
         let names: Vec<String> = self.classes.keys().cloned().collect();
         for n in names {
             self.layout_class(&n, &mut done, 0)?;
+        }
+        // The `@property` tables, in struct order.
+        let mut by_sid: Vec<(StructId, String)> = self
+            .classes
+            .keys()
+            .map(|n| (self.classes_sid(n), n.clone()))
+            .collect();
+        by_sid.sort();
+        for (sid, n) in by_sid {
+            let mut chain = Vec::new();
+            let mut cur = Some(n);
+            while let Some(c) = cur {
+                let info = &self.classes[&c];
+                chain.push(info.property_fields.clone());
+                cur = info.parent.clone();
+            }
+            let mut entries: Vec<PropEntry> = Vec::new();
+            for names in chain.iter().rev() {
+                for f in names {
+                    let index = self.m.structs[sid].field(f).expect("a declared field");
+                    if entries.iter().all(|e| e.name != *f) {
+                        entries.push(PropEntry {
+                            name: f.clone(),
+                            index,
+                            ty: self.m.structs[sid].fields[index].ty.clone(),
+                        });
+                    }
+                }
+            }
+            if !entries.is_empty() {
+                self.m.props.push(PropTable {
+                    class: sid,
+                    entries,
+                });
+            }
         }
         Ok(())
     }

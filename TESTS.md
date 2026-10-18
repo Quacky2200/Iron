@@ -617,6 +617,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-136 | Integration | A call that returns nothing and needs a default filled in still runs (it was skipped when its value was void). Runs in all three GC modes (`tests/params.rs`). |
 | M9-TS-137 | Integration | Methods as values (`g.twice`, `xs.map(this.twice)`) and an arrow-function field that captures `this`. Runs normally, in stress GC mode and with collection off (`tests/classes.rs`). |
 | M9-TS-138 | Integration | A method taken as a value from a base-typed variable still dispatches on the real class. Runs in all three GC modes (`tests/inherit.rs`). |
+| M9-TS-139 | Integration | The `@property` table lists only the marked fields, in declaration order with the base class's first, with byte offsets and type names (`PROPS_Player`, `PROPS_Hero`). Not GC-dependent (`tests/props.rs`). |
+| M9-TS-140 | Integration | A host writes properties through the table (a number, a boolean, a subclass's own through its table and a base property through the base table) and the compiled code sees the new values; run with a collection at every allocation (`tests/props.rs`). |
 
 ---
 

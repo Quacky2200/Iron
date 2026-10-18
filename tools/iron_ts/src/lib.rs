@@ -225,11 +225,17 @@ mod tests {
         .unwrap();
         assert!(ext.contains("not a class of this program"), "{ext}");
         let dec = lower::lower_source(
-            "class A { @property x = 1; } export function f(): number { return new A().x; }",
+            "class A { @sealed x = 1; } export function f(): number { return new A().x; }",
         )
         .err()
         .unwrap();
-        assert!(dec.contains("decorators"), "{dec}");
+        assert!(dec.contains("only `@property`"), "{dec}");
+        let method = lower::lower_source(
+            "class A { @property m(): number { return 1; } } export function f(): number { return new A().m(); }",
+        )
+        .err()
+        .unwrap();
+        assert!(method.contains("decorators"), "{method}");
         let value = lower::lower_source(
             "class A { m(): number { return 1; } } export function f(): number { return new A().nope; }",
         )

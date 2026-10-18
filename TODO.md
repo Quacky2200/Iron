@@ -1448,7 +1448,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [x] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes (`M9-TS-120..136`; extending an engine class waits for the manifest)
     - [x] Getters/setters, statics, private fields (`#x`, `private`); static accessors are open
     - [ ] `instanceof` (done: `M9-TS-124`), `typeof`, class expressions
-    - [ ] Decorators: `@property` and friends as compile-time metadata
+    - [x] Decorators: `@property` as compile-time metadata, a generated `PROPS_<Class>` table (`M9-TS-139..140`); options and other decorators are open
     - [ ] `Component` and the `register()` / spawn / lifecycle path calling compiled classes
           (joins Direct engine calls)
   - [ ] **Generics**: **STOP, needs the type sidecar first** (inference of type arguments is the
