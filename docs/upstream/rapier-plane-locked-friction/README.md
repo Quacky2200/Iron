@@ -10,6 +10,9 @@ friction solve handles one direction at a time.
 
 - `ISSUE.md`: the issue.
 - `PR.md`: the pull request description.
+- `plane-locked-friction.gif` (and its last frame, `.png`): the test's scenario drawn from
+  traces of rapier itself, stock 0.36.1 ("Before") and with the fix ("After"). Drag it into the
+  GitHub issue or PR to attach it.
 - `fix-master.patch`: the fix plus a regression test, laid out for the rapier repository
   (`src/...`, the test in `crates/rapier3d/tests/`, where tests are found automatically). Use
   this one for the PR: `git apply fix-master.patch` from the repository's root.

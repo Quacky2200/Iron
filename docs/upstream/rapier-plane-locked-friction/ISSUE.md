@@ -17,6 +17,8 @@ A 1×1×1 cuboid resting on a fixed cuboid floor, both with friction 0.5, given 
 
 The expected distance is v² / (2μg) ≈ 0.92 m.
 
+<!-- Attach plane-locked-friction.gif here: drag it into the GitHub editor. -->
+
 ### Repro
 
 ```rust
