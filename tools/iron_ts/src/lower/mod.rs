@@ -224,6 +224,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         || prelude::wants_regexp(src)
         || prelude::wants_date(src)
         || prelude::wants_intl(src)
+        || prelude::wants_symbol(src)
     {
         // Regular expressions throw `SyntaxError`s, so they bring the error classes along.
         head += prelude::ERRORS;
@@ -251,6 +252,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if src.contains("Intl.DateTimeFormat") {
         head += prelude::INTL_DATETIME;
+    }
+    if prelude::wants_symbol(src) {
+        head += prelude::SYMBOL;
     }
     if !gen_templates.is_empty() {
         head += prelude::COROUTINE;

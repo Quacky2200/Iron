@@ -148,7 +148,52 @@ pub fn wants_intl(src: &str) -> bool {
 }
 
 /// The handle class of a generator's coroutine (an opaque runtime object).
-pub const COROUTINE: &str = "class Coroutine {}\n";
+pub const COROUTINE: &str = "class Coroutine {}\nclass __GenReturn extends Error {}\n";
+
+/// `Symbol()` values: objects compared by identity. `description` is null when none was given.
+pub const SYMBOL: &str = r#"class Symbol_ {
+    description: string | null;
+    key: string | null;
+    constructor(description: string | null, key: string | null) {
+        this.description = description;
+        this.key = key;
+    }
+    toString(): string {
+        const d = this.description;
+        if (d === null) {
+            return "Symbol()";
+        }
+        return "Symbol(" + d + ")";
+    }
+}
+const __symbolRegistry: Symbol_[] = [];
+function __Symbol(description: string | null = null): Symbol_ {
+    return new Symbol_(description, null);
+}
+function __symbolFor(key: string): Symbol_ {
+    for (const s of __symbolRegistry) {
+        if (s.key === key) {
+            return s;
+        }
+    }
+    const made = new Symbol_(key, key);
+    __symbolRegistry.push(made);
+    return made;
+}
+function __symbolKeyFor(s: Symbol_): string | null {
+    return s.key;
+}
+"#;
+
+/// Does the program use symbol values?
+pub fn wants_symbol(src: &str) -> bool {
+    src.contains("Symbol(")
+        || src.contains("Symbol.for(")
+        || src.contains("Symbol.keyFor(")
+        || src.contains(": symbol")
+        || src.contains("symbol>")
+        || src.contains("symbol[")
+}
 
 /// Does the program mention `Date` (and not define its own)?
 pub fn wants_date(src: &str) -> bool {

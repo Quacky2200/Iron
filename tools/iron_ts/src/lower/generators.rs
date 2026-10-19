@@ -13,8 +13,9 @@
 //! of the program. They call a few intrinsics (`__coNew`, `__coResume`, `__coYield<T>`, `__coValue<T>`,
 //! `__coError`, `__coFinish`, lowered in `strings.rs` -> `lower_coro_intrinsic`). Closures, captured
 //! variables, `this`, `try`/`finally` and exceptions are the ordinary machinery. Limits: the return
-//! type must be written (`Generator<T>`), `yield*` is a statement, a `return value` is dropped, and
-//! `generator.throw()` does not exist.
+//! type must be written (`Generator<T>`), `yield*` is a statement, and `return value` needs `Generator<T, T>`.
+//! `throw(e)` and `return(v)` set an error at the suspended `yield` (`ts_rt_co_inject_set`); `return` uses
+//! a marker class that `catch` clauses rewritten into the generator body rethrow.
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
@@ -90,6 +91,15 @@ impl Pass<'_> {
     fn inst_of(&mut self, args: &TSTypeParameterInstantiation<'_>) -> Option<Inst> {
         let x = self.text(args.params.first()?.span()).to_string();
         let n = args.params.get(2).map(|n| self.text(n.span()).to_string());
+        // The return type must be the yield type or nothing: one `value` field holds both.
+        if let Some(r) = args.params.get(1) {
+            let r = self.text(r.span()).trim().to_string();
+            if !matches!(r.as_str(), "void" | "undefined" | "any" | "unknown") && r != x.trim() {
+                self.fail(format!(
+                    "a generator's return type must be its yield type or void, not `{r}`"
+                ));
+            }
+        }
         let key = key_of(&x, n.as_deref());
         let x = if matches!(x.trim(), "void" | "undefined") {
             "number".to_string()
@@ -197,6 +207,51 @@ impl<'a> Visit<'a> for Pass<'_> {
         walk::walk_ts_type_reference(self, it);
     }
 
+    fn visit_return_statement(&mut self, it: &ReturnStatement<'a>) {
+        if let (Some(key), Some(arg)) = (self.gens.last().cloned(), &it.argument) {
+            let text = self.text(arg.span()).to_string();
+            if text.contains("yield") {
+                self.fail("`return yield ...` is not supported; use a variable".into());
+                return;
+            }
+            self.edits.push((
+                it.span.start as usize,
+                it.span.end as usize,
+                format!("{{ __genRet${key}({text}); return; }}"),
+            ));
+            return;
+        }
+        walk::walk_return_statement(self, it);
+    }
+
+    // `return()` is raised at the `yield` as a marker error so `finally` blocks run; a `catch`
+    // in the generator must not swallow it.
+    fn visit_catch_clause(&mut self, it: &CatchClause<'a>) {
+        if !self.gens.is_empty() {
+            let body = it.body.span.start as usize;
+            match it.param.as_ref().map(|p| &p.pattern) {
+                Some(BindingPattern::BindingIdentifier(id)) => {
+                    let n = id.name.as_str();
+                    self.edits.push((
+                        body + 1,
+                        body + 1,
+                        format!(" if ({n} instanceof __GenReturn) {{ throw {n}; }}"),
+                    ));
+                }
+                Some(_) => self.fail("a catch pattern in a generator must be a name".into()),
+                None => {
+                    self.edits.push((body, body, "(__c) ".to_string()));
+                    self.edits.push((
+                        body + 1,
+                        body + 1,
+                        " if (__c instanceof __GenReturn) { throw __c; }".to_string(),
+                    ));
+                }
+            }
+        }
+        walk::walk_catch_clause(self, it);
+    }
+
     fn visit_expression_statement(&mut self, it: &ExpressionStatement<'a>) {
         if let Expression::YieldExpression(y) = &it.expression
             && y.delegate
@@ -258,37 +313,65 @@ fn template(i: &Inst) -> String {
             format!("sent?: {n}"),
             "this.co, sent".to_string(),
             n.clone(),
-            format!("return __coYield<{n}>(v);"),
+            format!(
+                "const sent = __coYield<{n}>(v); const inj = __coInject(); if (inj !== null) throw inj as Error; return sent;"
+            ),
         ),
         None => (
             String::new(),
             "this.co".to_string(),
             "void".to_string(),
-            "__coYield(v);".to_string(),
+            "__coYield(v); const inj = __coInject(); if (inj !== null) throw inj as Error;"
+                .to_string(),
         ),
     };
     format!(
         "interface IteratorResult${k} {{ done: boolean; value: {x}; }}
 interface Iterator${k} {{ next: () => IteratorResult${k}; }}
+class __GenReturn${k} extends __GenReturn {{
+  value: {x};
+  constructor(v: {x}) {{ super(\"return\"); this.value = v; }}
+}}
 class Generator${k} {{
   co: Coroutine;
   constructor(co: Coroutine) {{ this.co = co; }}
   next({sent_param}): IteratorResult${k} {{
     const finished = __coResume({resume_args});
     const err = __coError();
-    if (err !== null) throw err as Error;
+    if (err !== null) {{
+      if (err instanceof __GenReturn${k}) {{
+        const r: IteratorResult${k} = {{ done: true, value: (err as __GenReturn${k}).value }};
+        return r;
+      }}
+      throw err as Error;
+    }}
     const r: IteratorResult${k} = {{ done: finished, value: __coValue<{x}>(this.co) }};
     return r;
   }}
-  return(): IteratorResult${k} {{
-    __coFinish(this.co);
-    const r: IteratorResult${k} = {{ done: true, value: __coValue<{x}>(this.co) }};
-    return r;
+  return(value?: {x}): IteratorResult${k} {{
+    let v = __coZero<{x}>();
+    if (value !== undefined) v = value;
+    if (!__coStarted(this.co) || __coDone(this.co)) {{
+      __coFinish(this.co);
+      const r: IteratorResult${k} = {{ done: true, value: v }};
+      return r;
+    }}
+    __coInjectSet(this.co, new __GenReturn${k}(v));
+    return this.next();
+  }}
+  throw(e: Error): IteratorResult${k} {{
+    if (!__coStarted(this.co) || __coDone(this.co)) {{
+      __coFinish(this.co);
+      throw e;
+    }}
+    __coInjectSet(this.co, e);
+    return this.next();
   }}
   [Symbol.iterator](): Generator${k} {{ return this; }}
 }}
 function __genNew${k}(body: () => void): Generator${k} {{ return new Generator${k}(__coNew(body)); }}
 function __yield${k}(v: {x}): {yield_ret} {{ {yield_body} }}
+function __genRet${k}(v: {x}): void {{ __coRet<{x}>(v); }}
 "
     )
 }
@@ -431,6 +514,50 @@ impl<'a> Lowerer<'a> {
             "__coError" => {
                 let err = Ty::Obj(self.classes_sid("Error")).nullable();
                 self.rt_str("ts_rt_exc_take", vec![], err)
+            }
+            "__coInject" => {
+                let err = Ty::Obj(self.classes_sid("Error")).nullable();
+                self.rt_str("ts_rt_co_inject_take", vec![], err)
+            }
+            "__coInjectSet" => {
+                let (Some(co), Some(e)) = (args.first(), args.get(1)) else {
+                    bail!("{at}: __coInjectSet(co, error)")
+                };
+                let co = self.lower_expr(co, None)?;
+                let e = self.lower_expr(e, None)?;
+                self.rt_str("ts_rt_co_inject_set", vec![co, e], Ty::Void)
+            }
+            "__coRet" => {
+                let Some(v) = args.first() else {
+                    bail!("{at}: __coRet needs a value")
+                };
+                let v = self.lower_expr(v, None)?;
+                let (slot, flag) = self.coro_slot(v);
+                self.rt_str("ts_rt_co_set_return", vec![slot, flag], Ty::Void)
+            }
+            "__coStarted" | "__coDone" => {
+                let Some(co) = args.first() else {
+                    bail!("{at}: {name} needs the coroutine")
+                };
+                let co = self.lower_expr(co, None)?;
+                let f = if name == "__coStarted" {
+                    "ts_rt_co_started"
+                } else {
+                    "ts_rt_co_done"
+                };
+                self.rt_str(f, vec![co], Ty::Bool)
+            }
+            "__coZero" => {
+                let Some(t) = type_arg else {
+                    bail!("{at}: __coZero<T>()")
+                };
+                mk(
+                    ExprKind::Unbits(Box::new(mk(
+                        ExprKind::Bits(Box::new(super::expr::num(0.0))),
+                        bits,
+                    ))),
+                    t,
+                )
             }
             "__coFinish" => {
                 let Some(co) = args.first() else {

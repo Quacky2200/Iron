@@ -32,6 +32,8 @@ pub struct Coro {
     yielded_is_ptr: i64,
     sent: u64,
     sent_is_ptr: i64,
+    /// An error (or `return()` marker) to raise at the `yield` the body is suspended on.
+    inject: *mut u8,
     saved_top: *mut Frame,
     bottom: *mut Frame,
     resumer_top: *mut Frame,
@@ -61,6 +63,7 @@ pub(crate) unsafe fn for_each_pointer(p: *const Coro, mut f: impl FnMut(*mut u8)
     unsafe {
         let c = &*p;
         f(c.closure as *mut u8);
+        f(c.inject);
         if c.yielded_is_ptr != 0 {
             f(c.yielded as *mut u8);
         }
@@ -127,13 +130,20 @@ pub unsafe extern "C" fn ts_rt_co_resume(co: *mut Coro, sent: u64, sent_is_ptr: 
     unsafe {
         let c = &mut *co;
         match c.state {
-            DONE => return true,
+            DONE => {
+                c.yielded = 0;
+                c.yielded_is_ptr = 0;
+                return true;
+            }
             RUNNING => {
                 raise(2.0, "Generator is already running");
                 return false;
             }
             _ => {}
         }
+        // What the last step produced was read by the caller.
+        c.yielded = 0;
+        c.yielded_is_ptr = 0;
         c.sent = sent;
         c.sent_is_ptr = i64::from(sent_is_ptr);
         c.resumer_top = top();
@@ -173,8 +183,6 @@ pub unsafe extern "C" fn ts_rt_co_resume(co: *mut Coro, sent: u64, sent_is_ptr: 
             }
             CoroutineResult::Return(()) => {
                 c.state = DONE;
-                c.yielded = 0;
-                c.yielded_is_ptr = 0;
                 true
             }
         }
@@ -202,6 +210,50 @@ pub extern "C" fn ts_rt_co_yield(value: u64, is_ptr: bool) -> u64 {
         c.yielded_is_ptr = 0;
         c.sent
     }
+}
+
+/// Sets what `yield` raises when the body is resumed next (null clears it).
+///
+/// # Safety
+/// `co` must be a live coroutine object; `err` null or a live object.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_co_inject_set(co: *mut Coro, err: *mut u8) {
+    // SAFETY: by contract.
+    unsafe { (*co).inject = err };
+}
+
+/// The error to raise at the `yield` just resumed (null when none); taken once.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_co_inject_take() -> *mut u8 {
+    let co = CURRENT.with(|s| s.borrow().last().copied());
+    let Some(co) = co else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: the running coroutine is live.
+    unsafe { std::mem::replace(&mut (*co).inject, std::ptr::null_mut()) }
+}
+
+/// `return value` in the running generator body: the value `next()` reports when it is done.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_co_set_return(value: u64, is_ptr: bool) {
+    let co = CURRENT.with(|s| s.borrow().last().copied());
+    if let Some(co) = co {
+        // SAFETY: the running coroutine is live.
+        unsafe {
+            (*co).yielded = value;
+            (*co).yielded_is_ptr = i64::from(is_ptr);
+        }
+    }
+}
+
+/// Has the body started (or finished)?
+///
+/// # Safety
+/// `co` must be a live coroutine object.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_co_started(co: *const Coro) -> bool {
+    // SAFETY: by contract.
+    unsafe { (*co).state != NEW }
 }
 
 /// The value the coroutine last yielded (the slot's bits).

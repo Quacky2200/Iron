@@ -38,6 +38,7 @@ impl<'a> Lowerer<'a> {
         Ok(match t {
             TSType::TSNumberKeyword(_) => Ty::Num,
             TSType::TSBigIntKeyword(_) => Ty::BigInt,
+            TSType::TSSymbolKeyword(_) => self.named_type("Symbol_")?,
             TSType::TSBooleanKeyword(_) => Ty::Bool,
             TSType::TSStringKeyword(_) => Ty::Str,
             TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,

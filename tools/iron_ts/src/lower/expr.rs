@@ -1608,7 +1608,14 @@ impl<'a> Lowerer<'a> {
                 self.call_method0(recv, name)
             }
             Expression::Identifier(id) => {
-                let name = id.name.as_str();
+                let mut name = id.name.as_str();
+                // `Symbol("x")` is the prelude's `__Symbol`.
+                if name == "Symbol"
+                    && self.lookup(name).is_none()
+                    && self.fids.contains_key("__Symbol")
+                {
+                    name = "__Symbol";
+                }
                 if self.lookup(name).is_some()
                     || matches!(self.consts.get(name), Some(ConstInfo::Global(..)))
                 {
@@ -1648,6 +1655,19 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("BigInt").is_none()
                 {
                     return self.lower_bigint_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "Symbol"
+                    && self.lookup("Symbol").is_none()
+                    && matches!(method, "for" | "keyFor")
+                    && self.fids.contains_key("__symbolFor")
+                {
+                    let f = if method == "for" {
+                        "__symbolFor"
+                    } else {
+                        "__symbolKeyFor"
+                    };
+                    return self.call_declared(f, &c.arguments, None);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Math"

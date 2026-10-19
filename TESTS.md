@@ -835,6 +835,20 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-391 | Integration | `next(value)` sending values in (`Generator<number, void, number | undefined>`) equal bun's (`iron_ts_tests/tests/generators.rs`, `bench/generators.ts`). |
 | M9-TS-392 | Integration | 300 short generators and 20 kept suspended under collection equal bun's (`iron_ts_tests/tests/generators.rs`, `bench/generators.ts`). |
 | M9-TS-393 | Unit | A generator without a written return type, and `yield*` used as a value, are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-394 | Integration | `Symbol("x")` values compare by identity (`===`, `!==`) equal bun's (`iron_ts_tests/tests/symbols.rs`, `bench/symbols.ts`). |
+| M9-TS-395 | Integration | `symbol.description` and `toString()` equal bun's (`iron_ts_tests/tests/symbols.rs`). |
+| M9-TS-396 | Integration | `Symbol.for` returns one symbol per key, `Symbol.keyFor` finds registered ones (`iron_ts_tests/tests/symbols.rs`). |
+| M9-TS-397 | Integration | `typeof symbol` is `"symbol"` (`iron_ts_tests/tests/symbols.rs`). |
+| M9-TS-398 | Integration | The `symbol` type in annotations and arrays equals bun's (`iron_ts_tests/tests/symbols.rs`). |
+| M9-TS-399 | Integration | `generator.throw()` caught inside the generator equals bun's (`iron_ts_tests/tests/generators2.rs`, `bench/generators2.ts`). |
+| M9-TS-400 | Integration | `throw()` escaping the generator finishes it, with `finally` run (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-401 | Integration | `throw()` before the first `next()` throws and finishes (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-402 | Integration | `return(v)` runs `finally` blocks and reports `v` (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-403 | Integration | `return(v)` before the first `next()` (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-404 | Integration | A `catch` inside a generator does not swallow `return()` (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-405 | Integration | `return()` while a `finally` yields, then `next()` finishing with the value (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-406 | Integration | `return value` in a generator (`Generator<number, number>`) is the final `value` (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-407 | Integration | An early `return` inside a loop (`iron_ts_tests/tests/generators2.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

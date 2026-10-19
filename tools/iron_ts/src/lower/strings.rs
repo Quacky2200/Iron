@@ -449,7 +449,12 @@ impl<'a> Lowerer<'a> {
             }
             Err(e) => return Err(e),
         };
+        let symbol_sid = match self.named.get("Symbol_") {
+            Some(Ty::Obj(s)) => Some(*s),
+            _ => None,
+        };
         let name_of = |t: &Ty| match t.strip() {
+            Ty::Obj(s) if Some(*s) == symbol_sid => "symbol",
             Ty::Num => "number",
             Ty::BigInt => "bigint",
             Ty::Bool => "boolean",
@@ -577,7 +582,9 @@ impl<'a> Lowerer<'a> {
                 self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
             }
             "BigInt" => self.lower_bigint_call(c)?,
-            "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish" => {
+            "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish"
+            | "__coInject" | "__coInjectSet" | "__coZero" | "__coRet" | "__coStarted"
+            | "__coDone" => {
                 return self.lower_coro_intrinsic(name, c);
             }
             // The prelude's `Intl.PluralRules.select`, `Intl.ListFormat.format` and

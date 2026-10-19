@@ -420,6 +420,30 @@ pub mod generators_t {
     include!(concat!(env!("OUT_DIR"), "/generators_bindings.rs"));
 }
 
+/// `bench/symbols.ts`, prefix `sym_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod symbols_t {
+    include!(concat!(env!("OUT_DIR"), "/symbols_bindings.rs"));
+}
+
+/// `bench/generators2.ts`, prefix `gn2_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod generators2_t {
+    include!(concat!(env!("OUT_DIR"), "/generators2_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

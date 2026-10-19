@@ -58,6 +58,8 @@ fn main() {
         ("logic", "lg_", 32000),
         ("iterators", "itr_", 33000),
         ("generators", "gn_", 34000),
+        ("symbols", "sym_", 700),
+        ("generators2", "gn2_", 800),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
