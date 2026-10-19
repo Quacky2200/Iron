@@ -132,6 +132,15 @@ impl<'a> Lowerer<'a> {
             let call = ExprKind::Rt(RtFn::Str("ts_rt_component_get"), vec![go.clone(), which]);
             return Ok(Some(mk(call, Ty::Obj(sid).nullable())));
         }
+        if m == "getComponents" {
+            let call = ExprKind::Rt(RtFn::Str("ts_rt_component_all_gc"), vec![go.clone(), which]);
+            return Ok(Some(mk(call, Ty::Arr(Box::new(Ty::Obj(sid))))));
+        }
+        if m == "getComponentInChildren" {
+            // A function of TypeScript that walks the children (`children_helpers`).
+            let e = self.call_helper(&format!("__cic_{name}"), vec![go.clone()])?;
+            return Ok(Some(e));
+        }
         let ty = Ty::Obj(sid);
         let tmp = self.new_local(ty.clone());
         let made = ExprKind::Rt(RtFn::Str("ts_rt_component_add_gc"), vec![go.clone(), which]);
@@ -158,6 +167,36 @@ impl<'a> Lowerer<'a> {
         }
         let result = self.var_expr(tmp);
         Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
+    }
+
+    /// `go.removeComponent(c)` and `c.destroy()` for a component of this program: it is gone for
+    /// `getComponent` at once and its `onDestroy` runs when the calling hook returns.
+    pub(crate) fn lower_remove_component(&mut self, component: Expr) -> Expr {
+        mk(
+            ExprKind::Rt(RtFn::Str("ts_rt_component_remove"), vec![component]),
+            Ty::Void,
+        )
+    }
+
+    /// `GameObject.findObjectOfType(Player)`: the first component of that class on any object.
+    pub(crate) fn lower_find_object_of_type(
+        &mut self,
+        c: &'a CallExpression<'a>,
+    ) -> R<Option<Expr>> {
+        let Some(Expression::Identifier(cls)) = c.arguments.first().and_then(|a| a.as_expression())
+        else {
+            return Ok(None);
+        };
+        let name = cls.name.to_string();
+        if !self.class_decls.contains_key(&name) {
+            return Ok(None);
+        }
+        let Ty::Obj(sid) = self.named_type(&name)? else {
+            return Ok(None);
+        };
+        let which = mk(ExprKind::Num(sid as f64), Ty::Num);
+        let call = ExprKind::Rt(RtFn::Str("ts_rt_component_find_any"), vec![which]);
+        Ok(Some(mk(call, Ty::Obj(sid).nullable())))
     }
 
     /// `go.addComponent(Camera, { .. })` for an engine component class (one with a static `attach`).

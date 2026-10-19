@@ -278,6 +278,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let src = rewritten3.as_deref().unwrap_or(src);
     // `register(Class)` becomes exported constructor and hook functions for the host.
     let has_go = manifests.iter().any(|m| m.contains("\"GameObject\""));
+    let with_cic = components::children_helpers(src, has_go).map(|h| format!("{src}{h}"));
+    let src = with_cic.as_deref().unwrap_or(src);
     let rewritten4 = components::desugar(src, has_go)?;
     let wants_components = components::wanted(src);
     let src = rewritten4.as_deref().unwrap_or(src);

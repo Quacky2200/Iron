@@ -461,12 +461,16 @@ impl<'a> Lowerer<'a> {
         by_sid.sort();
         for (sid, n) in by_sid {
             let mut chain = Vec::new();
+            let mut bases = Vec::new();
             let mut cur = Some(n);
             while let Some(c) = cur {
                 let info = &self.classes[&c];
                 chain.push(info.property_fields.clone());
+                bases.push(self.classes_sid(&c));
                 cur = info.parent.clone();
             }
+            // The class and its ancestors, for `getComponent(Base)` to find subclasses.
+            self.m.class_bases.push((sid, bases));
             let mut entries: Vec<PropEntry> = Vec::new();
             for names in chain.iter().rev() {
                 for f in names {

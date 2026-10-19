@@ -16,7 +16,9 @@ pub const HOOK_LATE_UPDATE: usize = 3;
 pub const HOOK_FIXED_UPDATE: usize = 4;
 pub const HOOK_PRE_RENDER: usize = 5;
 pub const HOOK_DESTROY: usize = 6;
-const HOOK_NAMES: [&str; 7] = [
+pub const HOOK_APP_FOCUS: usize = 7;
+pub const HOOK_APP_PAUSE: usize = 8;
+const HOOK_NAMES: [&str; 9] = [
     "onAwake",
     "onStart",
     "onUpdate",
@@ -24,6 +26,8 @@ const HOOK_NAMES: [&str; 7] = [
     "onFixedUpdate",
     "onPreRender",
     "onDestroy",
+    "onApplicationFocus",
+    "onApplicationPause",
 ];
 
 type Create = unsafe extern "C" fn(f64, u64) -> *mut u8;
@@ -34,8 +38,10 @@ pub struct NativeClass {
     pub name: &'static str,
     /// The class struct id in the compiled program: what `getComponent(Class)` passes.
     pub sid: u64,
+    /// The class and its ancestors (`getComponent(Base)` finds subclasses).
+    pub bases: &'static [u64],
     pub create: Create,
-    pub hooks: [Option<Hook>; 7],
+    pub hooks: [Option<Hook>; 9],
     /// The `@property` table: name, byte offset in the object, type name (`PROPS_<Class>`).
     pub props: &'static [(&'static str, usize, &'static str)],
 }
@@ -57,7 +63,15 @@ struct Live {
     id: u32,
     object: u64,
     sid: u64,
+    bases: &'static [u64],
     ptr: *mut u8,
+}
+
+impl Live {
+    /// Is this a component of class `sid`, or of a subclass?
+    fn is(&self, sid: u64) -> bool {
+        self.sid == sid || self.bases.contains(&sid)
+    }
 }
 
 /// A component `addComponent` made from script, waiting for the host to run its `onAwake`.
@@ -71,10 +85,13 @@ struct Pending {
 
 #[derive(Default)]
 struct Registry {
-    /// (sid, class index, constructor) of the classes of the current host.
-    creators: Vec<(u64, usize, Create)>,
+    /// (sid, class index, constructor, bases) of the classes of the current host.
+    creators: Vec<(u64, usize, Create, &'static [u64])>,
     live: Vec<Live>,
     pending: Vec<Pending>,
+    /// Components script asked to remove (`removeComponent`, `destroy()`): their `onDestroy` runs
+    /// when the calling hook returns.
+    removals: Vec<u32>,
     next_id: u32,
 }
 
@@ -89,9 +106,81 @@ pub extern "C" fn ts_rt_component_get(object: u64, sid: f64) -> *mut u8 {
         r.borrow()
             .live
             .iter()
-            .find(|l| l.object == object && l.sid == sid as u64)
+            .find(|l| l.object == object && l.is(sid as u64))
             .map_or(std::ptr::null_mut(), |l| l.ptr)
     })
+}
+
+/// How many components of class `sid` (or a subclass) are on the object.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_component_count(object: u64, sid: f64) -> f64 {
+    REG.with(|r| {
+        r.borrow()
+            .live
+            .iter()
+            .filter(|l| l.object == object && l.is(sid as u64))
+            .count() as f64
+    })
+}
+
+/// A new array of the object components of class `sid` (or a subclass), in the order they were
+/// added. May collect first.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_component_all_gc(object: u64, sid: f64) -> *mut Array {
+    let ptrs: Vec<u64> = REG.with(|r| {
+        r.borrow()
+            .live
+            .iter()
+            .filter(|l| l.object == object && l.is(sid as u64))
+            .map(|l| l.ptr as u64)
+            .collect()
+    });
+    component_array(&ptrs)
+}
+
+/// The first component of class `sid` (or a subclass) on any object, or null.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_component_find_any(sid: f64) -> *mut u8 {
+    REG.with(|r| {
+        r.borrow()
+            .live
+            .iter()
+            .find(|l| l.is(sid as u64))
+            .map_or(std::ptr::null_mut(), |l| l.ptr)
+    })
+}
+
+/// `removeComponent` / `destroy()` on a component: it is gone for `getComponent` at once and its
+/// `onDestroy` runs when the calling hook returns.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_component_remove(ptr: *mut u8) {
+    REG.with(|r| {
+        let mut r = r.borrow_mut();
+        if let Some(i) = r.live.iter().position(|l| l.ptr == ptr) {
+            let id = r.live[i].id;
+            r.live.remove(i);
+            // Added and removed in the same hook: it never wakes.
+            if let Some(j) = r.pending.iter().position(|p| p.id == id) {
+                let p = r.pending.remove(j);
+                ts_rt_root_remove(p.root);
+            } else {
+                r.removals.push(id);
+            }
+        }
+    });
+}
+
+/// An array holding these pointers (an array of objects).
+fn component_array(ptrs: &[u64]) -> *mut Array {
+    let arr = ts_rt_arr_new_gc(ptrs.len() as i64, 1);
+    // The array is not reachable from anything yet; the pushes below do not allocate.
+    let root = ts_rt_root_add(arr as *mut u8);
+    for p in ptrs {
+        // SAFETY: `arr` is a live array with room for every pointer.
+        unsafe { ts_rt_arr_push(arr, *p) };
+    }
+    ts_rt_root_remove(root);
+    arr
 }
 
 /// `go.addComponent(Class)`: makes the component now (fields default) and queues its `onAwake` for
@@ -101,12 +190,12 @@ pub extern "C" fn ts_rt_component_add_gc(object: u64, sid: f64) -> *mut u8 {
     let sid = sid as u64;
     let found = REG.with(|r| {
         let mut r = r.borrow_mut();
-        let (_, class, create) = *r.creators.iter().find(|c| c.0 == sid)?;
+        let (_, class, create, bases) = *r.creators.iter().find(|c| c.0 == sid)?;
         let id = r.next_id;
         r.next_id += 1;
-        Some((id, class, create))
+        Some((id, class, create, bases))
     });
-    let Some((id, class, create)) = found else {
+    let Some((id, class, create, bases)) = found else {
         panic!("addComponent: the class is not registered with a NativeHost");
     };
     // SAFETY: the thunk was generated for this class; the registry is not borrowed while it runs.
@@ -118,6 +207,7 @@ pub extern "C" fn ts_rt_component_add_gc(object: u64, sid: f64) -> *mut u8 {
             id,
             object,
             sid,
+            bases,
             ptr,
         });
         r.pending.push(Pending {
@@ -178,7 +268,7 @@ impl NativeHost {
             r.creators = classes
                 .iter()
                 .enumerate()
-                .map(|(i, c)| (c.sid, i, c.create))
+                .map(|(i, c)| (c.sid, i, c.create, c.bases))
                 .collect();
             r.live.clear();
             r.pending.clear();
@@ -234,6 +324,7 @@ impl NativeHost {
                 id,
                 object: object.unwrap_or(0),
                 sid: self.classes[ci].sid,
+                bases: self.classes[ci].bases,
                 ptr: this,
             })
         });
@@ -255,10 +346,24 @@ impl NativeHost {
         Ok(id)
     }
 
+    /// Runs what script asked for in a hook that has returned: components added get their `onAwake`
+    /// and components removed their `onDestroy`. The host does this after every hook it runs; call
+    /// it after calling compiled code directly.
+    pub fn settle(&mut self) -> Vec<Fault> {
+        self.adopt()
+    }
+
     /// Takes the components `addComponent` made from script and runs their `onAwake`. A component
     /// made by an `onAwake` is taken in turn.
     fn adopt(&mut self) -> Vec<Fault> {
         let mut faults = Vec::new();
+        // Components script removed: `onDestroy` runs, then they are forgotten.
+        while let Some(id) = REG.with(|r| {
+            let mut r = r.borrow_mut();
+            (!r.removals.is_empty()).then(|| r.removals.remove(0))
+        }) {
+            self.destroy(id);
+        }
         loop {
             let next = REG.with(|r| {
                 let mut r = r.borrow_mut();
@@ -310,6 +415,32 @@ impl NativeHost {
             self.drop_entry(i);
             self.adopt();
         }
+    }
+
+    /// The window gained or lost focus: `onApplicationFocus(hasFocus)` on the components of active
+    /// objects.
+    pub fn application_focus(&mut self, focused: bool, active: &dyn Fn(u64) -> bool) -> Vec<Fault> {
+        self.flag_hook(HOOK_APP_FOCUS, focused, active)
+    }
+
+    /// The game paused in the background or resumed: `onApplicationPause(paused)`.
+    pub fn application_pause(&mut self, paused: bool, active: &dyn Fn(u64) -> bool) -> Vec<Fault> {
+        self.flag_hook(HOOK_APP_PAUSE, paused, active)
+    }
+
+    fn flag_hook(&mut self, hook: usize, flag: bool, active: &dyn Fn(u64) -> bool) -> Vec<Fault> {
+        let mut faults = Vec::new();
+        for i in 0..self.entries.len() {
+            let e = &self.entries[i];
+            if !e.enabled || e.object.is_some_and(|o| !active(o)) {
+                continue;
+            }
+            if let Some(f) = self.call(i, hook, f64::from(u8::from(flag))) {
+                faults.push(f);
+            }
+        }
+        faults.extend(self.adopt());
+        faults
     }
 
     /// Destroys every component on `objects` (the engine destroyed them).

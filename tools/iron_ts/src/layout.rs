@@ -150,7 +150,7 @@ pub fn rust_bindings(m: &Module) -> String {
 /// The class table of `register(Class)`: wrappers that erase the object type, and `classes()`.
 /// Built from the exports `components.rs` generated (`iron_new_X`, `iron_hook_X_onUpdate`).
 fn component_table(m: &Module) -> String {
-    const HOOKS: [&str; 7] = [
+    const HOOKS: [&str; 9] = [
         "onAwake",
         "onStart",
         "onUpdate",
@@ -158,6 +158,8 @@ fn component_table(m: &Module) -> String {
         "onFixedUpdate",
         "onPreRender",
         "onDestroy",
+        "onApplicationFocus",
+        "onApplicationPause",
     ];
     let mut out = String::new();
     let mut entries = Vec::new();
@@ -211,8 +213,15 @@ fn component_table(m: &Module) -> String {
             ),
             _ => (0, "&[]".to_string()),
         };
+        let bases: Vec<String> = m
+            .class_bases
+            .iter()
+            .find(|(s, _)| *s == sid)
+            .map(|(_, b)| b.iter().map(|x| format!("{x}")).collect())
+            .unwrap_or_default();
         entries.push(format!(
-            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, create: create_{class}_any, hooks: [{}], props: {props} }},\n",
+            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, bases: &[{}], create: create_{class}_any, hooks: [{}], props: {props} }},\n",
+            bases.join(", "),
             hooks.join(", ")
         ));
     }

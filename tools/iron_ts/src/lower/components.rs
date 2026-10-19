@@ -17,7 +17,7 @@ use oxc_span::{GetSpan, SourceType};
 use std::collections::HashMap;
 
 /// The hooks the engine calls, in the order of the host's table.
-pub const HOOKS: [&str; 7] = [
+pub const HOOKS: [&str; 9] = [
     "onAwake",
     "onStart",
     "onUpdate",
@@ -25,16 +25,46 @@ pub const HOOKS: [&str; 7] = [
     "onFixedUpdate",
     "onPreRender",
     "onDestroy",
+    "onApplicationFocus",
+    "onApplicationPause",
 ];
 
 /// The base class. `gameObject` is there when the manifest has the `GameObject` handle.
 pub fn prelude(has_game_object: bool) -> String {
     let go = if has_game_object {
-        "  gameObject: GameObject | null = null;\n"
+        "  gameObject: GameObject | null = null;\n  get transform(): Transform {\n    return this.gameObject!.transform;\n  }\n"
     } else {
         ""
     };
     format!("class Component {{\n  id: number = 0;\n{go}}}\n")
+}
+
+/// Helper functions for `getComponentInChildren(Class)` calls: one per class named, appended to
+/// the program (a class value is not a runtime value here, so the walk is written per class).
+pub fn children_helpers(src: &str, has_game_object: bool) -> Option<String> {
+    if !has_game_object || !src.contains("getComponentInChildren(") {
+        return None;
+    }
+    let mut names: Vec<String> = Vec::new();
+    let mut rest = src;
+    while let Some(i) = rest.find("getComponentInChildren(") {
+        rest = &rest[i + "getComponentInChildren(".len()..];
+        let name: String = rest
+            .trim_start()
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut out = String::from("\n");
+    for n in names {
+        out += &format!(
+            "function __cic_{n}(go: GameObject): {n} | undefined {{\n  const own = go.getComponent({n});\n  if (own) return own;\n  for (let i = 0; i < go.childCount; i++) {{\n    const found = __cic_{n}(go.childAt(i));\n    if (found) return found;\n  }}\n  return undefined;\n}}\n"
+        );
+    }
+    Some(out)
 }
 
 /// Does the program use components? (`register(` is checked after parsing.)
@@ -163,8 +193,11 @@ pub fn desugar(src: &str, has_game_object: bool) -> R<Option<String>> {
         }
         for h in HOOKS {
             if have.contains(&h) {
+                // The frame hooks get the frame length; the focus and pause hooks a flag.
                 let call = if matches!(h, "onUpdate" | "onLateUpdate" | "onFixedUpdate") {
                     "dt"
+                } else if matches!(h, "onApplicationFocus" | "onApplicationPause") {
+                    "dt !== 0"
                 } else {
                     ""
                 };

@@ -12,6 +12,8 @@ mod clock;
 mod clone;
 mod closures;
 mod collections;
+mod comp_life;
+mod comp_query;
 mod components;
 mod components2;
 mod date;

@@ -41,10 +41,16 @@ fn the_bindings_list_the_registered_classes_and_their_hooks() {
     let names: Vec<_> = classes.iter().map(|c| c.name).collect();
     assert_eq!(names, ["Mover", "Fast", "Faulty", "Physics"]);
     let have = |c: usize| -> Vec<bool> { classes[c].hooks.iter().map(|h| h.is_some()).collect() };
-    // onAwake onStart onUpdate onLateUpdate onFixedUpdate onPreRender onDestroy
-    assert_eq!(have(0), [true, true, true, true, false, false, true]);
+    // onAwake onStart onUpdate onLateUpdate onFixedUpdate onPreRender onDestroy onApplicationFocus onApplicationPause
+    assert_eq!(
+        have(0),
+        [true, true, true, true, false, false, true, false, false]
+    );
     assert_eq!(have(1), have(0), "a subclass has the inherited hooks");
-    assert_eq!(have(3), [false, false, false, false, true, false, false]);
+    assert_eq!(
+        have(3),
+        [false, false, false, false, true, false, false, false, false]
+    );
 }
 
 // M9-TS-557

@@ -13,6 +13,18 @@ use std::cell::Cell;
 
 thread_local! {
     static SCENE: Cell<*mut Scene> = const { Cell::new(std::ptr::null_mut()) };
+    /// Objects script destroyed (with their children) that the host has not been told about.
+    static DESTROYED: std::cell::RefCell<Vec<ObjectId>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The objects destroyed through the script API since the last call (each object once, children
+/// included): the host removes their components and anything else attached to them.
+pub fn take_destroyed() -> Vec<ObjectId> {
+    DESTROYED.with(|d| std::mem::take(&mut *d.borrow_mut()))
+}
+
+fn destroyed(list: Vec<ObjectId>) {
+    DESTROYED.with(|d| d.borrow_mut().extend(list));
 }
 
 /// Makes `scene` the one the `Scene` API functions work on, on this thread, until the scope is
@@ -166,7 +178,7 @@ pub mod scene_api {
 
         /// Destroys the object and everything under it.
         pub fn destroy(self) {
-            with(|s| s.destroy(self));
+            super::destroyed(with(|s| s.destroy(self)).unwrap_or_default());
         }
 
         /// Does the object exist (it may have been destroyed)?
@@ -503,7 +515,7 @@ pub mod scene_api {
 
     /// Destroys an object and everything under it.
     pub fn destroy(object: ObjectId) {
-        with(|s| s.destroy(object));
+        super::destroyed(with(|s| s.destroy(object)).unwrap_or_default());
     }
 
     /// Does the object exist (it may have been destroyed)?

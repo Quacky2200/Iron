@@ -973,6 +973,30 @@ pub mod scene_objects_t {
     include!(concat!(env!("OUT_DIR"), "/scene_objects_bindings.rs"));
 }
 
+/// `bench/comp_query.ts`, prefix `cqy_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod comp_query_t {
+    include!(concat!(env!("OUT_DIR"), "/comp_query_bindings.rs"));
+}
+
+/// Component lifecycle and removal (`bench/comp_life.ts`), prefix `clf_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod comp_life_t {
+    include!(concat!(env!("OUT_DIR"), "/comp_life_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

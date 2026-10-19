@@ -625,6 +625,12 @@ impl<'a> Lowerer<'a> {
     /// the arguments checked against the manifest and numbers converted at the call. A value
     /// class argument is passed as its fields; a value class result is written into a new object.
     fn lower_extern_call(&mut self, ns: &str, name: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        if ns == "GameObject"
+            && name == "findObjectOfType"
+            && let Some(e) = self.lower_find_object_of_type(c)?
+        {
+            return Ok(e);
+        }
         if ns == "Ui" && name == "load" {
             return self.lower_ui_load(c);
         }
@@ -2277,6 +2283,14 @@ impl<'a> Lowerer<'a> {
                 }
                 if matches!(m.object, Expression::Super(_)) {
                     return self.lower_super_method(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "GameObject"
+                    && method == "findObjectOfType"
+                    && self.lookup("GameObject").is_none()
+                    && let Some(e) = self.lower_find_object_of_type(c)?
+                {
+                    return Ok(e);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()

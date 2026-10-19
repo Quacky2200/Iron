@@ -370,11 +370,23 @@ impl<'a> Lowerer<'a> {
             {
                 return self.lower_promise_method(recv, &key, value, m, c);
             }
-            if matches!(m, "getComponent" | "addComponent")
-                && let Some(go) = self.component_target(recv.clone())
+            if matches!(
+                m,
+                "getComponent" | "addComponent" | "getComponents" | "getComponentInChildren"
+            ) && let Some(go) = self.component_target(recv.clone())
                 && let Some(e) = self.lower_user_component_call(&go, m, c)?
             {
                 return Ok(e);
+            }
+            // `this.destroy()` on a component of the program.
+            if m == "destroy"
+                && c.arguments.is_empty()
+                && self.m.structs[sid].field("gameObject").is_some()
+                && self.m.structs[sid].field("id").is_some()
+                && self.find_generic_method(sid, m).is_none()
+                && self.resolve_in(sid, Which::Method, m).is_none()
+            {
+                return Ok(self.lower_remove_component(recv));
             }
             if Some(sid) == self.regexp_sid() {
                 return self.lower_regexp_method(recv, m, c);
@@ -430,10 +442,22 @@ impl<'a> Lowerer<'a> {
             if m == "addComponent" {
                 return self.lower_add_component(recv, c);
             }
-            if m == "getComponent"
-                && let Some(e) = self.lower_user_component_call(&recv, m, c)?
+            if matches!(
+                m,
+                "getComponent" | "getComponents" | "getComponentInChildren"
+            ) && let Some(e) = self.lower_user_component_call(&recv, m, c)?
             {
                 return Ok(e);
+            }
+            if m == "removeComponent"
+                && let Some(Expression::Identifier(_) | Expression::ThisExpression(_)) =
+                    c.arguments.first().and_then(|a| a.as_expression())
+                && let Some(a) = c.arguments.first().and_then(|a| a.as_expression())
+            {
+                let v = self.lower_expr(a, None)?;
+                if matches!(v.ty.strip(), Ty::Obj(_)) {
+                    return Ok(self.lower_remove_component(v));
+                }
             }
             let f = self
                 .manifest

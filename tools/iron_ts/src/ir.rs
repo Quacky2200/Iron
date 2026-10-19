@@ -478,6 +478,8 @@ pub struct Module {
     pub vtables: Vec<VTable>,
     pub externs: Vec<ExternDecl>,
     pub props: Vec<PropTable>,
+    /// Per class struct: the struct and its ancestors, the class first.
+    pub class_bases: Vec<(StructId, Vec<StructId>)>,
     /// For `instanceof`: the structs that count as instances.
     pub itables: Vec<Vec<StructId>>,
     pub funcs: Vec<Func>,
