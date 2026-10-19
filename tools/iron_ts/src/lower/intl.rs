@@ -20,6 +20,10 @@ impl<'a> Lowerer<'a> {
         if Self::is_undefined(e) {
             return Ok(String::new());
         }
+        let mut e = e;
+        while let Expression::TSAsExpression(a) = e {
+            e = &a.expression;
+        }
         let Expression::ObjectExpression(o) = e else {
             bail!(
                 "{at}: Intl options must be an object literal (its values are read at compile time)"
@@ -134,6 +138,31 @@ impl<'a> Lowerer<'a> {
         }))
     }
 
+    /// `new Intl.Locale(tag, options?)`: the prelude class holding the canonical tag.
+    fn lower_new_locale(&mut self, args: &'a [Argument<'a>], at: &str) -> R<Expr> {
+        if !self.classes.contains_key("Intl_Locale") {
+            bail!("{at}: Intl.Locale needs the Intl classes")
+        }
+        let arg = |i: usize| args.get(i).and_then(|a| a.as_expression());
+        let Some(tag) = arg(0) else {
+            bail!("{at}: new Intl.Locale needs a tag")
+        };
+        let tag = self.str_expr(tag)?;
+        let spec = self.options_spec(arg(1), at)?;
+        let opts = self.str_lit(&spec);
+        let made = self.rt_str("ts_rt_locale_new_gc", vec![tag, opts], Ty::Str);
+        let canonical = self.checked(made, Ty::Str);
+        let sid = self.classes_sid("Intl_Locale");
+        let made_obj = self.new_object("Intl_Locale", &[], 0)?;
+        let obj = self.new_local(Ty::Obj(sid));
+        let ov = self.var_expr(obj);
+        let stmts = vec![
+            Stmt::Assign(obj, made_obj),
+            self.store_field(&ov, sid, "tag", canonical),
+        ];
+        Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), Ty::Obj(sid)))
+    }
+
     /// `new Intl.Collator(locales?, options?)` and `new Intl.NumberFormat(locales?, options?)`: an
     /// object of the prelude class holding an id into the runtime's table.
     pub(crate) fn lower_new_intl(
@@ -143,6 +172,9 @@ impl<'a> Lowerer<'a> {
         at: u32,
     ) -> R<Expr> {
         let at = self.loc(at);
+        if kind == "Locale" {
+            return self.lower_new_locale(args, &at);
+        }
         let class = format!("Intl_{kind}");
         if !self.classes.contains_key(class.as_str()) {
             bail!("{at}: Intl.{kind} needs the Intl classes")
@@ -158,6 +190,8 @@ impl<'a> Lowerer<'a> {
             "PluralRules" => "ts_rt_plural_new",
             "ListFormat" => "ts_rt_list_new",
             "RelativeTimeFormat" => "ts_rt_rtf_new",
+            "Segmenter" => "ts_rt_segmenter_new",
+            "DisplayNames" => "ts_rt_display_names_new",
             _ => "ts_rt_number_format_new",
         };
         let made = self.rt_str(sym, vec![loc, opts], Ty::Num);

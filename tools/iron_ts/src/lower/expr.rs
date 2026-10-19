@@ -1167,6 +1167,9 @@ impl<'a> Lowerer<'a> {
                     | "PluralRules"
                     | "ListFormat"
                     | "RelativeTimeFormat"
+                    | "Segmenter"
+                    | "Locale"
+                    | "DisplayNames"
             )
         {
             return self.lower_new_intl(m.property.name.as_str(), &n.arguments, n.span.start);

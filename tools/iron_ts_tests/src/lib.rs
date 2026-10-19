@@ -492,6 +492,42 @@ pub mod weak_t {
     include!(concat!(env!("OUT_DIR"), "/weak_bindings.rs"));
 }
 
+/// `bench/segmenter.ts`, prefix `sg_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod segmenter_t {
+    include!(concat!(env!("OUT_DIR"), "/segmenter_bindings.rs"));
+}
+
+/// `bench/locale.ts`, prefix `lc_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod locale_t {
+    include!(concat!(env!("OUT_DIR"), "/locale_bindings.rs"));
+}
+
+/// `bench/dispnames.ts`, prefix `dn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod dispnames_t {
+    include!(concat!(env!("OUT_DIR"), "/dispnames_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

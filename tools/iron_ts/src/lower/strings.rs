@@ -583,6 +583,47 @@ impl<'a> Lowerer<'a> {
             }
             "BigInt" => self.lower_bigint_call(c)?,
             "structuredClone" => self.lower_structured_clone(c)?,
+            "__displayNameOf" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, code] = args.as_slice() else {
+                    bail!("{at}: __displayNameOf(id, code)")
+                };
+                let id = self.lower_expr(id, None)?;
+                let code = self.lower_expr(code, None)?;
+                let call = self.rt_str("ts_rt_display_names_of_gc", vec![id, code], Ty::Str);
+                self.checked(call, Ty::Str)
+            }
+            "__localeOp" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [tag, op] = args.as_slice() else {
+                    bail!("{at}: __localeOp(tag, op)")
+                };
+                let tag = self.lower_expr(tag, None)?;
+                let op = self.lower_expr(op, None)?;
+                let call = self.rt_str("ts_rt_locale_op_gc", vec![tag, op], Ty::Str);
+                self.checked(call, Ty::Str)
+            }
+            "__segments" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, s] = args.as_slice() else {
+                    bail!("{at}: __segments(id, text)")
+                };
+                let id = self.lower_expr(id, None)?;
+                let s = self.lower_expr(s, None)?;
+                self.rt_str("ts_rt_segments_gc", vec![id, s], Ty::Arr(Box::new(Ty::Num)))
+            }
             "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish"
             | "__coInject" | "__coInjectSet" | "__coZero" | "__coCurrent" | "__queueMicrotask"
             | "__timerAdd" | "__timerClear" | "__dvGet" | "__dvSet" | "__coRet" | "__coStarted"

@@ -1064,9 +1064,12 @@ mod date;
 mod event;
 mod intl;
 mod intl_date;
+mod intl_locale;
 mod intl_misc;
+mod intl_names;
 mod intl_number;
 mod intl_pad;
+mod intl_segment;
 mod json;
 mod map;
 mod regexp;
@@ -1080,8 +1083,11 @@ pub use date::*;
 pub use event::*;
 pub use intl::*;
 pub use intl_date::*;
+pub use intl_locale::*;
 pub use intl_misc::*;
+pub use intl_names::*;
 pub use intl_number::*;
+pub use intl_segment::*;
 pub use json::*;
 pub use map::*;
 pub use regexp::*;
@@ -1322,6 +1328,12 @@ pub fn link_anchor() -> usize {
         ts_rt_typed_byte_offset as *const () as usize,
         ts_rt_dv_get as *const () as usize,
         ts_rt_dv_set as *const () as usize,
+        ts_rt_display_names_new as *const () as usize,
+        ts_rt_display_names_of_gc as *const () as usize,
+        ts_rt_locale_new_gc as *const () as usize,
+        ts_rt_locale_op_gc as *const () as usize,
+        ts_rt_segmenter_new as *const () as usize,
+        ts_rt_segments_gc as *const () as usize,
         ts_rt_obj_copy_gc as *const () as usize,
         ts_rt_typed_from_host_gc as *const () as usize,
         ts_rt_typed_data as *const () as usize,

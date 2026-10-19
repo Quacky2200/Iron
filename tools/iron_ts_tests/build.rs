@@ -64,6 +64,9 @@ fn main() {
         ("buffers", "bf_", 1000),
         ("clone", "cl_", 1100),
         ("weak", "wk_", 1200),
+        ("segmenter", "sg_", 1300),
+        ("locale", "lc_", 1400),
+        ("dispnames", "dn_", 1500),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

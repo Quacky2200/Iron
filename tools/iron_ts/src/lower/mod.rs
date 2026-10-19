@@ -264,6 +264,15 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if src.contains("Intl.NumberFormat") {
         head += prelude::INTL_NUMBER;
     }
+    if src.contains("Intl.DisplayNames") {
+        head += prelude::INTL_DISPLAYNAMES;
+    }
+    if src.contains("Intl.Locale") {
+        head += prelude::INTL_LOCALE;
+    }
+    if src.contains("Intl.Segmenter") {
+        head += prelude::INTL_SEGMENTER;
+    }
     if src.contains("Intl.DateTimeFormat") {
         head += prelude::INTL_DATETIME;
     }

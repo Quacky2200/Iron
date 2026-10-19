@@ -897,6 +897,30 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-453 | Integration | An array of `WeakRef`s (`iron_ts_tests/tests/weak.rs`). |
 | M9-TS-454 | Integration | `WeakMap` get/set/has/delete by object identity (`iron_ts_tests/tests/weak.rs`). |
 | M9-TS-455 | Integration | `WeakSet` add/has/delete by object identity (`iron_ts_tests/tests/weak.rs`). |
+| M9-TS-456 | Integration | Graphemes of ASCII text equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-457 | Integration | Graphemes with combining marks equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-458 | Integration | Graphemes of emoji sequences, flags and skin tones equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-459 | Integration | Words of English text with punctuation, numbers and apostrophes equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-460 | Integration | `isWordLike` of word segments equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-461 | Integration | Sentences, including an abbreviation equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-462 | Integration | `segments.containing(index)` equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-463 | Integration | The default granularity is grapheme equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-464 | Integration | A bad granularity is a `RangeError` equal bun's (`iron_ts_tests/tests/segmenter.rs`, `bench/segmenter.ts`). |
+| M9-TS-465 | Integration | `Intl.Locale` language, script, region, base name equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-466 | Integration | Canonical form of mixed-case tags equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-467 | Integration | Unicode extension keywords (calendar, hour cycle, numbering system, collation, case first, numeric) equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-468 | Integration | Options (region, calendar, hour cycle) applied to a tag equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-469 | Integration | `maximize()` equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-470 | Integration | `minimize()` equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-471 | Integration | `maximize`/`minimize` keep extensions equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-472 | Integration | Invalid tags are `RangeError`s equal bun's (`iron_ts_tests/tests/locale.rs`, `bench/locale.ts`). |
+| M9-TS-473 | Integration | `Intl.DisplayNames` of regions equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-474 | Integration | Regions in French, German and Japanese equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-475 | Integration | Scripts equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-476 | Integration | Languages with dialects (`en-US` is American English) equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-477 | Integration | `languageDisplay: "standard"` equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-478 | Integration | Languages in French equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-479 | Integration | A missing `type` is a `TypeError` equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

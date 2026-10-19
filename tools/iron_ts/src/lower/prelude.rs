@@ -138,6 +138,89 @@ pub const INTL_DATETIME: &str = r#"class Intl_DateTimeFormat {
 }
 "#;
 
+pub const INTL_DISPLAYNAMES: &str = r#"class Intl_DisplayNames {
+  id: number = 0;
+  of: (code: string) => string = (code: string): string => __displayNameOf(this.id, code);
+}
+"#;
+pub const INTL_LOCALE: &str = r#"class Intl_Locale {
+  tag: string = "";
+  toString(): string { return this.tag; }
+  get baseName(): string { return __localeOp(this.tag, 4); }
+  get language(): string { return __localeOp(this.tag, 1); }
+  get script(): string | null { return __localePart(this.tag, 2); }
+  get region(): string | null { return __localePart(this.tag, 3); }
+  get calendar(): string | null { return __localePart(this.tag, 7); }
+  get numberingSystem(): string | null { return __localePart(this.tag, 8); }
+  get hourCycle(): string | null { return __localePart(this.tag, 9); }
+  get collation(): string | null { return __localePart(this.tag, 10); }
+  get caseFirst(): string | null { return __localePart(this.tag, 11); }
+  get numeric(): boolean { return __localeOp(this.tag, 12) === "1"; }
+  maximize(): Intl_Locale { return __newLocale(__localeOp(this.tag, 5)); }
+  minimize(): Intl_Locale { return __newLocale(__localeOp(this.tag, 6)); }
+}
+function __newLocale(tag: string): Intl_Locale {
+  const l = new Intl_Locale();
+  l.tag = tag;
+  return l;
+}
+function __localePart(tag: string, op: number): string | null {
+  const v = __localeOp(tag, op);
+  if (v === "") return null;
+  return v;
+}
+"#;
+pub const INTL_SEGMENTER: &str = r#"class Intl_SegmentData {
+  segment: string;
+  index: number;
+  input: string;
+  isWordLike: boolean;
+  constructor(segment: string, index: number, input: string, isWordLike: boolean) {
+    this.segment = segment;
+    this.index = index;
+    this.input = input;
+    this.isWordLike = isWordLike;
+  }
+}
+interface Intl_SegResult { done: boolean; value: Intl_SegmentData; }
+class Intl_SegIter {
+  items: Intl_SegmentData[];
+  at: number = 0;
+  constructor(items: Intl_SegmentData[]) { this.items = items; }
+  next(): Intl_SegResult {
+    if (this.at >= this.items.length) {
+      const end: Intl_SegResult = { done: true, value: new Intl_SegmentData("", 0, "", false) };
+      return end;
+    }
+    const r: Intl_SegResult = { done: false, value: this.items[this.at] };
+    this.at += 1;
+    return r;
+  }
+}
+class Intl_Segments {
+  items: Intl_SegmentData[];
+  constructor(items: Intl_SegmentData[]) { this.items = items; }
+  [Symbol.iterator](): Intl_SegIter { return new Intl_SegIter(this.items); }
+  containing(index: number = 0): Intl_SegmentData | null {
+    for (const s of this.items) {
+      if (index >= s.index && index < s.index + s.segment.length) return s;
+    }
+    return null;
+  }
+}
+class Intl_Segmenter {
+  id: number = 0;
+  segment(input: string): Intl_Segments {
+    const b = __segments(this.id, input);
+    const items: Intl_SegmentData[] = [];
+    for (let i = 0; i + 2 < b.length; i += 3) {
+      items.push(new Intl_SegmentData(input.substring(b[i], b[i + 1]), b[i], input, b[i + 2] === 1));
+    }
+    return new Intl_Segments(items);
+  }
+}
+"#;
+
 /// Does the program use `Intl` or a locale-aware string method (they raise `RangeError`s)?
 pub fn wants_intl(src: &str) -> bool {
     src.contains("Intl.")
