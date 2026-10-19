@@ -1218,6 +1218,8 @@ pub fn link_anchor() -> usize {
         ts_rt_random as *const () as usize,
         ts_rt_random_seed as *const () as usize,
         ts_rt_arr_set_len as *const () as usize,
+        host::ts_rt_component_get as *const () as usize,
+        host::ts_rt_component_add_gc as *const () as usize,
         ts_rt_arr_insert as *const () as usize,
         ts_rt_arr_drop as *const () as usize,
         ts_rt_arr_splice as *const () as usize,

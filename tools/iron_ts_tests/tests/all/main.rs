@@ -7,6 +7,7 @@ mod clone;
 mod closures;
 mod collections;
 mod components;
+mod components2;
 mod date;
 mod datefmt;
 mod destructure;

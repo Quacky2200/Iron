@@ -1102,3 +1102,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-598 | Integration | `boolean \| undefined` fields: `??`, truthiness, assignment (`bench/nullbool.ts`, bun-compared). |
 | M9-TS-599 | Integration | Optional boolean parameters and `=== undefined` (bun-compared). |
 | M9-TS-600 | Integration | Optional boolean members of a class (bun-compared). |
+| M9-TS-601 | Integration | `NativeHost::properties`: each class of the generated table carries its `@property` list (name, type); a class without any has none (`tests/all/components2.rs`). |
+| M9-TS-602 | Integration | `get_property` / `set_property` through the table: numbers, nullable numbers, booleans, strings (collected between write and read); a wrong kind is an error naming the property and changes nothing. |
+| M9-TS-603 | Integration | `save_properties` / `load_properties`: values saved from one component load into another, component references travel as ids; bad entries are reported and the rest apply. |
+| M9-TS-604 | Integration | `this.getComponent(X)`, `go.addComponent(X, { .. })` between compiled components: the sibling is found, the added component has its options and runs `onAwake`, a missing class is `undefined`, destroying the object destroys it. |

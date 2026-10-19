@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **601**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **605**).
 
 ## How to pick this up
 
@@ -91,7 +91,7 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
   `iron_ui_native` reconciler (hooks, keyed diff, effects in React's order, portals, events, controlled fields, `refresh`),
   `iron_ts_ui` bridge + JSX/hooks rewrite (`jsx.rs`, `ui.ts`), QuickJS bindings for values and strings, performance review
   (`docs/research/iron-ts-sine-demo.md`), `iron_engine_api` (Color, Time, input, Gizmos, Camera, Screen, QualitySettings), namespace
-  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **601**.
+  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **605**.
 - **Uncommitted at the time of writing** (checks were running; re-run fmt, clippy, `cargo test --workspace`, `IRON_TS_GC=stress`, then commit):
   the whole `SineDemo` compiling and running (`bench/sine_demo_full.ts`, `tests/sine_demo_full.rs`, `M9-TS-596..597`), `compile_check` bin,
   `engine_objs.rs` (`new GameObject(..)`, `addComponent(Camera, {..})`), options objects for engine calls, `Record<"a"|"b", V>`,
@@ -103,9 +103,7 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
   `tools/Cargo.toml`, `debug = "line-tables-only"` in the root `Cargo.toml`; `tools/target` deleted and rebuilt. The 56 test files are now one binary (`iron_ts_tests/tests/all/`, one link of ~500 MB instead of 56 in parallel, which was the memory spike); tests that run compiled code take `iron_ts_tests::serial()` because module globals are shared between threads. Run one with `cargo test -p iron_ts_tests --test all <name>`. Still possible: `incremental = false`.
 - **Waiting for the user:** `docs/research/iron-native-engine.md` ("nothing left in TypeScript but generated types": animation, scenes, math,
   physics/audio components, app/time/input to Rust; games without `node_modules`); `docs/research/iron-ui-native.md` was approved and is built.
-- **Next, in order:** (1) commit the above; (2) `@property` save/load through `PROPS_<Class>` in `NativeHost` and
-  `getComponent`/`addComponent` for compiled components (design in the boundary note section 5; an `iron_ts_rt` registry plus compiler
-  intrinsics); (3) a union of classes (an array of `Tween<number>`, `Tween<Color>` calling `update`), the one edit left in the demo copy;
+- **Next, in order:** (1) commit the above; (2) done: `@property` save/load and `getComponent`/`addComponent` (`M9-TS-601..604`; `getComponent(Base)` is exact-class only); (3) a union of classes (an array of `Tween<number>`, `Tween<Color>` calling `update`), the one edit left in the demo copy;
   (4) per the plan: animation then scenes in Rust with the TS as the oracle; (5) handle classes in the QuickJS bindings; (6) `iron_app` wiring
   (hand-over note in the shared notes folder).
 - Dev tools: `cargo run -p iron_ts_tests --bin compile_check file.ts` (compile against every engine API, `IRON_TS_TRACE=1` names the function

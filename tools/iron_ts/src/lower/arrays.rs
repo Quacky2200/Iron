@@ -370,6 +370,12 @@ impl<'a> Lowerer<'a> {
             {
                 return self.lower_promise_method(recv, &key, value, m, c);
             }
+            if matches!(m, "getComponent" | "addComponent")
+                && let Some(go) = self.component_target(recv.clone())
+                && let Some(e) = self.lower_user_component_call(&go, m, c)?
+            {
+                return Ok(e);
+            }
             if Some(sid) == self.regexp_sid() {
                 return self.lower_regexp_method(recv, m, c);
             }
@@ -423,6 +429,11 @@ impl<'a> Lowerer<'a> {
         if let Ty::Handle(class) = &rty {
             if m == "addComponent" {
                 return self.lower_add_component(recv, c);
+            }
+            if m == "getComponent"
+                && let Some(e) = self.lower_user_component_call(&recv, m, c)?
+            {
+                return Ok(e);
             }
             let f = self
                 .manifest

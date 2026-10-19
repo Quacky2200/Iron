@@ -51,8 +51,78 @@ impl<'a> Lowerer<'a> {
         Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
     }
 
+    /// The object a component call is on: a `GameObject` handle, or a component (its `gameObject`).
+    pub(crate) fn component_target(&self, recv: Expr) -> Option<Expr> {
+        match recv.ty.strip() {
+            Ty::Handle(_) => Some(recv),
+            Ty::Obj(sid) => {
+                let sid = *sid;
+                let idx = self.m.structs[sid].field("gameObject")?;
+                let ty = self.m.structs[sid].fields[idx].ty.strip().clone();
+                Some(mk(ExprKind::Field(Box::new(recv), sid, idx), ty))
+            }
+            _ => None,
+        }
+    }
+
+    /// `go.getComponent(Player)` / `go.addComponent(Player, { speed: 3 })` for a class of this
+    /// program (registered with `register`). `None` when the argument is not such a class.
+    pub(crate) fn lower_user_component_call(
+        &mut self,
+        go: &Expr,
+        m: &str,
+        c: &'a CallExpression<'a>,
+    ) -> R<Option<Expr>> {
+        let at = self.loc(c.span.start);
+        let Some(Expression::Identifier(cls)) = c.arguments.first().and_then(|a| a.as_expression())
+        else {
+            return Ok(None);
+        };
+        let name = cls.name.to_string();
+        if !self.class_decls.contains_key(&name) {
+            return Ok(None);
+        }
+        let Ty::Obj(sid) = self.named_type(&name)? else {
+            return Ok(None);
+        };
+        let which = mk(ExprKind::Num(sid as f64), Ty::Num);
+        if m == "getComponent" {
+            let call = ExprKind::Rt(RtFn::Str("ts_rt_component_get"), vec![go.clone(), which]);
+            return Ok(Some(mk(call, Ty::Obj(sid).nullable())));
+        }
+        let ty = Ty::Obj(sid);
+        let tmp = self.new_local(ty.clone());
+        let made = ExprKind::Rt(RtFn::Str("ts_rt_component_add_gc"), vec![go.clone(), which]);
+        let mut stmts = vec![Stmt::Assign(tmp, mk(made, ty.clone()))];
+        if let Some(e) = c.arguments.get(1).and_then(|a| a.as_expression()) {
+            let Expression::ObjectExpression(o) = e else {
+                bail!("{at}: addComponent options are an object literal")
+            };
+            for p in &o.properties {
+                let ObjectPropertyKind::ObjectProperty(p) = p else {
+                    bail!("{at}: spread in options")
+                };
+                let PropertyKey::StaticIdentifier(key) = &p.key else {
+                    bail!("{at}: option names are plain names")
+                };
+                let Some(idx) = self.m.structs[sid].field(key.name.as_str()) else {
+                    bail!("{at}: {name} has no field `{}` to set", key.name)
+                };
+                let want = self.m.structs[sid].fields[idx].ty.clone();
+                let v = self.lower_expr(&p.value, Some(&want))?;
+                let v = self.coerce(v, &want)?;
+                stmts.push(Stmt::StoreField(self.var_expr(tmp), sid, idx, v));
+            }
+        }
+        let result = self.var_expr(tmp);
+        Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
+    }
+
     /// `go.addComponent(Camera, { .. })` for an engine component class (one with a static `attach`).
     pub(crate) fn lower_add_component(&mut self, recv: Expr, c: &'a CallExpression<'a>) -> R<Expr> {
+        if let Some(e) = self.lower_user_component_call(&recv, "addComponent", c)? {
+            return Ok(e);
+        }
         let at = self.loc(c.span.start);
         let Some(Expression::Identifier(cls)) = c.arguments.first().and_then(|a| a.as_expression())
         else {

@@ -199,6 +199,18 @@ pub mod cmp {
     include!(concat!(env!("OUT_DIR"), "/components_bindings.rs"));
 }
 
+/// Component properties and lookups (`bench/components2.ts`), prefix `cm2_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod cm2 {
+    include!(concat!(env!("OUT_DIR"), "/components2_bindings.rs"));
+}
+
 /// Compiled UI components (`bench/ui.ts`), prefix `uic_`.
 #[allow(
     dead_code,

@@ -996,3 +996,16 @@ Compiled gameplay code reads like the engine's TypeScript:
 - `Record<"a" | "b", V>` (a struct with a field per member) and `rec[kind]` with a union-member `kind`.
 - `boolean | undefined` works for fields, parameters and members (`??`, truthiness, `=== undefined`, assignment).
 Tests `M9-TS-593..600`.
+
+## Component properties and lookups
+
+The host edits components without a script running. `iron_ts_rt::NativeHost` has `properties(id)`, `get_property` / `set_property`
+(`PropValue`: null, number, boolean, string, component id), `save_properties` and `load_properties`, all through the generated
+`PROPS_<Class>` table that each `NativeClass` carries (offsets are checked against the type name: `number`, `number?`, `boolean`,
+`string`, `object:Class?`; other kinds are not saved yet).
+
+`go.getComponent(Player)` and `go.addComponent(Player, { speed: 3 })` (also on `this`, through its `gameObject`) are compiler
+intrinsics for classes of the program: the class becomes its struct id, and `ts_rt_component_get` / `ts_rt_component_add_gc` search and
+extend a per-thread registry the host keeps in step. `addComponent` builds the object at once and applies the options; its `onAwake`
+runs when the calling hook returns (the QuickJS host runs it immediately). `getComponent(Base)` finds exact classes only, not subclass
+instances. Tests `M9-TS-601..604`.

@@ -200,8 +200,19 @@ fn component_table(m: &Module) -> String {
                 format!("{{ let _ = go; unsafe {{ create_{class}(id) }} }}")
             }
         );
+        let (sid, props) = match f.ret.strip() {
+            Ty::Obj(sid) => (
+                *sid,
+                if m.props.iter().any(|t| t.class == *sid) {
+                    format!("PROPS_{}", struct_name(m, *sid))
+                } else {
+                    "&[]".to_string()
+                },
+            ),
+            _ => (0, "&[]".to_string()),
+        };
         entries.push(format!(
-            "        iron_ts_rt::NativeClass {{ name: \"{class}\", create: create_{class}_any, hooks: [{}] }},\n",
+            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, create: create_{class}_any, hooks: [{}], props: {props} }},\n",
             hooks.join(", ")
         ));
     }
