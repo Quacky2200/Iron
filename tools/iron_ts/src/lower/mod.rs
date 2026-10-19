@@ -15,6 +15,7 @@ mod closure;
 mod date;
 mod enums;
 mod expr;
+mod generators;
 mod intl;
 mod iter;
 mod json;
@@ -210,9 +211,16 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     for m in manifests {
         manifest.add_json(m)?;
     }
+    // Generators are rewritten into closures over a coroutine, with classes written per yield type.
+    let (rewritten, gen_templates) = match generators::desugar(src)? {
+        Some(d) => (Some(d.src), d.templates),
+        None => (None, String::new()),
+    };
+    let src = rewritten.as_deref().unwrap_or(src);
     // Programs that use errors get the `Error` classes compiled in front of them.
     let mut head = String::new();
-    if prelude::wanted(src)
+    if !gen_templates.is_empty()
+        || prelude::wanted(src)
         || prelude::wants_regexp(src)
         || prelude::wants_date(src)
         || prelude::wants_intl(src)
@@ -243,6 +251,10 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if src.contains("Intl.DateTimeFormat") {
         head += prelude::INTL_DATETIME;
+    }
+    if !gen_templates.is_empty() {
+        head += prelude::COROUTINE;
+        head += &gen_templates;
     }
     let prelude_lines = head.matches('\n').count();
     let full = format!("{head}{src}");

@@ -103,6 +103,23 @@ impl<'a> Lowerer<'a> {
                     .map(|a| a.params.iter().collect())
                     .unwrap_or_default();
                 match id.name.as_str() {
+                    // `Generator<T>`, `Iterator<T>`, `IteratorResult<T>`: the classes written per type.
+                    n if generators::FAMILY.contains(&n) && !args.is_empty() => {
+                        let text = |t: &TSType<'_>| {
+                            let sp = oxc_span::GetSpan::span(t);
+                            self.src[sp.start as usize..sp.end as usize].to_string()
+                        };
+                        let key = generators::key_of(
+                            &text(args[0]),
+                            args.get(2).map(|a| text(a)).as_deref(),
+                        );
+                        let class = match n {
+                            "Iterator" => format!("Iterator${key}"),
+                            "IteratorResult" => format!("IteratorResult${key}"),
+                            _ => format!("Generator${key}"),
+                        };
+                        self.named_type(&class)?
+                    }
                     n if crate::ir::TypedKind::from_name(n).is_some() => {
                         Ty::Typed(crate::ir::TypedKind::from_name(n).expect("checked"))
                     }

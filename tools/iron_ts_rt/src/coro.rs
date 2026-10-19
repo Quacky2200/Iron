@@ -122,7 +122,7 @@ pub unsafe extern "C" fn ts_rt_co_new_gc(closure: *mut Closure) -> *mut Coro {
 /// # Safety
 /// `co` must be a live coroutine object.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ts_rt_co_resume(co: *mut Coro, sent: u64, sent_is_ptr: i64) -> bool {
+pub unsafe extern "C" fn ts_rt_co_resume(co: *mut Coro, sent: u64, sent_is_ptr: bool) -> bool {
     // SAFETY: by contract.
     unsafe {
         let c = &mut *co;
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn ts_rt_co_resume(co: *mut Coro, sent: u64, sent_is_ptr: 
             _ => {}
         }
         c.sent = sent;
-        c.sent_is_ptr = sent_is_ptr;
+        c.sent_is_ptr = i64::from(sent_is_ptr);
         c.resumer_top = top();
         if c.state == NEW {
             let stack = DefaultStack::new(STACK_BYTES).expect("a native stack for the coroutine");
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn ts_rt_co_resume(co: *mut Coro, sent: u64, sent_is_ptr: 
 /// `yield value` inside a coroutine: switches back to the resumer and returns what the next resume
 /// sends in.
 #[unsafe(no_mangle)]
-pub extern "C" fn ts_rt_co_yield(value: u64, is_ptr: i64) -> u64 {
+pub extern "C" fn ts_rt_co_yield(value: u64, is_ptr: bool) -> u64 {
     let co = CURRENT.with(|s| s.borrow().last().copied());
     let Some(co) = co else {
         raise(1.0, "yield outside a generator");
@@ -194,7 +194,7 @@ pub extern "C" fn ts_rt_co_yield(value: u64, is_ptr: i64) -> u64 {
     unsafe {
         let c = &mut *co;
         c.yielded = value;
-        c.yielded_is_ptr = is_ptr;
+        c.yielded_is_ptr = i64::from(is_ptr);
         c.saved_top = top();
         c.state = SUSPENDED;
         let y = &*(*c.inner).yielder;
@@ -254,7 +254,7 @@ mod tests {
         // SAFETY: slot 2 is the frame's one pointer slot; the collector reads it through the chain.
         unsafe { std::ptr::write_volatile(&mut frame[2], obj as u64) };
         for i in 1..=3u64 {
-            let got = ts_rt_co_yield(i, 0);
+            let got = ts_rt_co_yield(i, false);
             assert_eq!(got, 100 + i);
             ts_rt_gc_collect();
         }
@@ -271,7 +271,7 @@ mod tests {
             let root = ts_rt_root_add(co as *mut u8);
             let mut seen = Vec::new();
             let mut sent = 100;
-            while !ts_rt_co_resume(co, sent, 0) {
+            while !ts_rt_co_resume(co, sent, false) {
                 seen.push(ts_rt_co_value(co));
                 sent += 1;
                 ts_rt_gc_collect();
@@ -280,7 +280,7 @@ mod tests {
             assert_eq!(seen, [1, 2, 3]);
             assert!(ts_rt_co_done(co));
             assert!(
-                ts_rt_co_resume(co, 0, 0),
+                ts_rt_co_resume(co, 0, false),
                 "a finished coroutine stays finished"
             );
         }
@@ -290,7 +290,7 @@ mod tests {
         unsafe {
             let co = ts_rt_co_new_gc(closure);
             let root = ts_rt_root_add(co as *mut u8);
-            assert!(!ts_rt_co_resume(co, 101, 0));
+            assert!(!ts_rt_co_resume(co, 101, false));
             ts_rt_co_finish(co);
             assert!(ts_rt_co_done(co));
             ts_rt_root_remove(root);

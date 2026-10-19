@@ -439,6 +439,29 @@ mod tests {
         );
     }
 
+    // M9-TS-393
+    #[test]
+    fn generator_limits_are_compile_errors_with_a_reason() {
+        let e = lower::lower_source(
+            "function* g() { yield 1; } export function f(): number { return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("return type"), "{e}");
+        let e = lower::lower_source(
+            "function* g(): Generator<number> { const x = (yield* [1]) + 1; yield x; } export function f(): number { return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("yield*"), "{e}");
+        assert!(
+            lower::lower_source(
+                "function* g(): Generator<number> { yield 1; } export function f(): number { for (const x of g()) return x; return 0; }"
+            )
+            .is_ok()
+        );
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {

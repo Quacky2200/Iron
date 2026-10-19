@@ -577,6 +577,9 @@ impl<'a> Lowerer<'a> {
                 self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
             }
             "BigInt" => self.lower_bigint_call(c)?,
+            "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish" => {
+                return self.lower_coro_intrinsic(name, c);
+            }
             // The prelude's `Intl.PluralRules.select`, `Intl.ListFormat.format` and
             // `Intl.RelativeTimeFormat.format`.
             "__pluralSelect" | "__listFormat" | "__rtfFormat" => {

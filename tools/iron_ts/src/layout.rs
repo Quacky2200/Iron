@@ -24,12 +24,14 @@ fn ident(s: &str) -> String {
 }
 
 fn struct_name(m: &Module, id: StructId) -> String {
-    let n = &m.structs[id].name;
+    // Generated class names (`Generator$number`) are not Rust identifiers.
+    let clean = |n: &str| n.replace('$', "_");
+    let n = clean(&m.structs[id].name);
     // Names can repeat (anonymous shapes): add the id only for the later ones.
-    if m.structs[..id].iter().any(|s| s.name == *n) {
+    if m.structs[..id].iter().any(|s| clean(&s.name) == n) {
         format!("{n}{id}")
     } else {
-        n.clone()
+        n
     }
 }
 
