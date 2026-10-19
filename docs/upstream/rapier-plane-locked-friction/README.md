@@ -1,6 +1,9 @@
 # rapier: friction lost on plane-locked 3D bodies
 
-An upstream report for [dimforge/rapier](https://github.com/dimforge/rapier), ready to post.
+An upstream report for [dimforge/rapier](https://github.com/dimforge/rapier). Posted on
+2026-10-19 as [issue #1047](https://github.com/dimforge/rapier/issues/1047) and
+[PR #1048](https://github.com/dimforge/rapier/pull/1048) (branch `fix/plane-locked-friction` on
+Quacky2200/rapier).
 Iron works around the bug itself (`iron_physics`, `Physics::set_constraints`), so nothing here
 is needed to build Iron.
 

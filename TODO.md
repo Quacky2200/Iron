@@ -1112,9 +1112,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   `simd_inv(0)` gives 0, and every friction impulse becomes 0. Worked around in Iron
   (2026-10-19): that combination isn't given to rapier as a lock; `iron_physics` pins the axis
   itself each step (`set_constraints`, `hold_pins`) — `M4-PHY-07`
-  - [ ] Upstream: the issue, PR text and patch (with a rapier test) are in
-    `docs/upstream/rapier-plane-locked-friction/`, for the user to post. Once rapier fixes it,
-    drop the pins and lock the axis in rapier again
+  - [ ] Upstream: reported as dimforge/rapier#1047, fixed by dimforge/rapier#1048 (branch
+    `fix/plane-locked-friction` on Quacky2200/rapier; the material is in
+    `docs/upstream/rapier-plane-locked-friction/`). Once a rapier release has it, drop the pins
+    and lock the axis in rapier again
 - [x] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   (done 2026-10-17; the unticked items below are follow-ups for later)
   - [x] Materials (asked for 2026-10-17), Unity Standard / URP Lit style: PBR, the sky and
