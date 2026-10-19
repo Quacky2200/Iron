@@ -348,6 +348,18 @@ pub mod errors2_t {
     include!(concat!(env!("OUT_DIR"), "/errors2_bindings.rs"));
 }
 
+/// `bench/intl4.ts`, prefix `i4_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod intl4_t {
+    include!(concat!(env!("OUT_DIR"), "/intl4_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

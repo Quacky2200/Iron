@@ -226,6 +226,15 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if src.contains("Intl.Collator") {
         head += prelude::INTL_COLLATOR;
     }
+    if src.contains("Intl.PluralRules") {
+        head += prelude::INTL_PLURAL;
+    }
+    if src.contains("Intl.ListFormat") {
+        head += prelude::INTL_LIST;
+    }
+    if src.contains("Intl.RelativeTimeFormat") {
+        head += prelude::INTL_RTF;
+    }
     if src.contains("Intl.NumberFormat") {
         head += prelude::INTL_NUMBER;
     }

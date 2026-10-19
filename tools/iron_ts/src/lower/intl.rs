@@ -35,7 +35,18 @@ impl<'a> Lowerer<'a> {
                 PropertyKey::StringLiteral(s) => s.value.to_string(),
                 _ => bail!("{at}: Intl options: computed keys are not supported"),
             };
-            let value = match &p.value {
+            // `"x" as const` and `("x")` are the literal too.
+            let mut v = &p.value;
+            loop {
+                match v {
+                    Expression::TSAsExpression(a) => v = &a.expression,
+                    Expression::TSSatisfiesExpression(a) => v = &a.expression,
+                    Expression::TSNonNullExpression(a) => v = &a.expression,
+                    Expression::ParenthesizedExpression(a) => v = &a.expression,
+                    _ => break,
+                }
+            }
+            let value = match v {
                 Expression::StringLiteral(s) => s.value.to_string(),
                 Expression::BooleanLiteral(b) => b.value.to_string(),
                 Expression::NumericLiteral(n) => n.value.to_string(),
@@ -144,6 +155,9 @@ impl<'a> Lowerer<'a> {
         let sym = match kind {
             "Collator" => "ts_rt_collator_new",
             "DateTimeFormat" => "ts_rt_dtf_new",
+            "PluralRules" => "ts_rt_plural_new",
+            "ListFormat" => "ts_rt_list_new",
+            "RelativeTimeFormat" => "ts_rt_rtf_new",
             _ => "ts_rt_number_format_new",
         };
         let made = self.rt_str(sym, vec![loc, opts], Ty::Num);

@@ -1505,7 +1505,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           - [~] I3a on ICU4X field sets: `dateStyle`/`timeStyle`, `toLocale*String`, `Intl.DateTimeFormat.format`, component options (`M9-TS-277..286`); open: `formatToParts`, `formatRange`, `resolvedOptions`, `era`, `dayPeriod`, other calendars
           - [ ] Lightweight baked data (`icu4x-datagen`) for the main-market locale list
           - [ ] (optional, later) `icu-full` feature (`rust_icu`/ICU4C): spike on Windows, then the backend
-        - [ ] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`
+        - [~] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat` done (`M9-TS-296..312`); open: `Locale`, `DisplayNames`, `Segmenter`
         - [ ] The game's locale list from `package.json` into `ts_rt_intl_set_locales` (needs `iron_app`)
     - [ ] Tier 4 (asked for): `encodeURI`/`decodeURI` family and `AggregateError`/`cause` are done (`M9-TS-287..295`); iterators and generators (**STOP, design first**), `Symbol`, typed arrays / `ArrayBuffer` / `DataView`,
           `BigInt`, `Error.stack`/`captureStackTrace`, `Temporal`, real `WeakRef`/`FinalizationRegistry`,

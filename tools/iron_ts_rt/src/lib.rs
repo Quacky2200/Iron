@@ -1021,6 +1021,7 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 mod date;
 mod intl;
 mod intl_date;
+mod intl_misc;
 mod intl_number;
 mod intl_pad;
 mod json;
@@ -1032,6 +1033,7 @@ mod uri;
 pub use date::*;
 pub use intl::*;
 pub use intl_date::*;
+pub use intl_misc::*;
 pub use intl_number::*;
 pub use json::*;
 pub use map::*;
@@ -1231,6 +1233,12 @@ pub fn link_anchor() -> usize {
         ts_rt_uri_decode_gc as *const () as usize,
         ts_rt_escape_gc as *const () as usize,
         ts_rt_unescape_gc as *const () as usize,
+        ts_rt_plural_new as *const () as usize,
+        ts_rt_plural_select_gc as *const () as usize,
+        ts_rt_list_new as *const () as usize,
+        ts_rt_list_format_gc as *const () as usize,
+        ts_rt_rtf_new as *const () as usize,
+        ts_rt_rtf_format_gc as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

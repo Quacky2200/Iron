@@ -1056,7 +1056,12 @@ impl<'a> Lowerer<'a> {
             && matches!(&m.object, Expression::Identifier(o) if o.name == "Intl")
             && matches!(
                 m.property.name.as_str(),
-                "Collator" | "NumberFormat" | "DateTimeFormat"
+                "Collator"
+                    | "NumberFormat"
+                    | "DateTimeFormat"
+                    | "PluralRules"
+                    | "ListFormat"
+                    | "RelativeTimeFormat"
             )
         {
             return self.lower_new_intl(m.property.name.as_str(), &n.arguments, n.span.start);

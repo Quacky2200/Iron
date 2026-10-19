@@ -773,6 +773,23 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-293 | Integration | `cause` set in a `catch`, `instanceof` on it (`tests/errors2.rs`). |
 | M9-TS-294 | Integration | `AggregateError`: `errors`, `name`, message, `cause`, `instanceof` equal bun's (`tests/errors2.rs`). |
 | M9-TS-295 | Integration | A thrown `AggregateError` is caught and read (`tests/errors2.rs`). |
+| M9-TS-296 | Integration | `Intl.PluralRules` cardinal categories for 28 numbers in 20 locales (zero, one, two, few, many, other) equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-297 | Integration | `Intl.PluralRules` ordinal categories in 8 locales equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-298 | Integration | `PluralRules` with `minimumFractionDigits` / `maximumFractionDigits`, NaN and infinity equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-299 | Integration | `PluralRules` bad type and bad tag give bun's `RangeError` text equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-300 | Integration | `Intl.ListFormat` conjunction, long/short/narrow, 17 locales, lists of 0 to 4 equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-301 | Integration | `Intl.ListFormat` disjunction equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-302 | Integration | `Intl.ListFormat` unit equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-303 | Integration | `ListFormat` default options equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-304 | Integration | `ListFormat` bad style, type and tag equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-305 | Integration | `Intl.RelativeTimeFormat` numeric always, long: 17 locales, 8 units, 9 values equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-306 | Integration | `RelativeTimeFormat` numeric always, narrow equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-307 | Integration | `RelativeTimeFormat` numeric always, short equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-308 | Integration | `RelativeTimeFormat` numeric auto (yesterday, tomorrow, this year), long equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-309 | Integration | `RelativeTimeFormat` numeric auto, narrow equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-310 | Integration | `RelativeTimeFormat` numeric auto, short equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-311 | Integration | `RelativeTimeFormat` accepts plural unit names and `-0` equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
+| M9-TS-312 | Integration | `RelativeTimeFormat` bad unit, NaN, infinity, bad options and tag equal bun's (`iron_ts_tests/tests/intl4.rs`, `bench/intl4.ts`, made by `bench/gen_intl4_program.py`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

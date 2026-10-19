@@ -574,6 +574,35 @@ impl<'a> Lowerer<'a> {
                 let full = self.lower_expr(full, None)?;
                 self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
             }
+            // The prelude's `Intl.PluralRules.select`, `Intl.ListFormat.format` and
+            // `Intl.RelativeTimeFormat.format`.
+            "__pluralSelect" | "__listFormat" | "__rtfFormat" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let id =
+                    self.num_arg(args.first().ok_or_else(|| format!("{at}: {name}: no id"))?)?;
+                match (name, args.as_slice()) {
+                    ("__pluralSelect", [_, n]) => {
+                        let n = self.num_arg(n)?;
+                        self.rt_str("ts_rt_plural_select_gc", vec![id, n], Ty::Str)
+                    }
+                    ("__listFormat", [_, items]) => {
+                        let items = self.lower_expr(items, None)?;
+                        let call = self.rt_str("ts_rt_list_format_gc", vec![id, items], Ty::Str);
+                        self.checked(call, Ty::Str)
+                    }
+                    ("__rtfFormat", [_, v, unit]) => {
+                        let v = self.num_arg(v)?;
+                        let unit = self.str_expr(unit)?;
+                        let call = self.rt_str("ts_rt_rtf_format_gc", vec![id, v, unit], Ty::Str);
+                        self.checked(call, Ty::Str)
+                    }
+                    _ => bail!("{at}: {name}: wrong arguments"),
+                }
+            }
             // The prelude's `Intl.DateTimeFormat.format`.
             "__dtfFormat" => {
                 let args: Vec<&'a Expression<'a>> = c

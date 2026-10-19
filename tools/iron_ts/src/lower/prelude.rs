@@ -112,6 +112,21 @@ pub const INTL_COLLATOR: &str = r#"class Intl_Collator {
   compare: (a: string, b: string) => number = (a: string, b: string): number => __collatorCompare(this.id, a, b);
 }
 "#;
+pub const INTL_PLURAL: &str = r#"class Intl_PluralRules {
+  id: number = 0;
+  select: (n: number) => string = (n: number): string => __pluralSelect(this.id, n);
+}
+"#;
+pub const INTL_LIST: &str = r#"class Intl_ListFormat {
+  id: number = 0;
+  format: (items: string[]) => string = (items: string[]): string => __listFormat(this.id, items);
+}
+"#;
+pub const INTL_RTF: &str = r#"class Intl_RelativeTimeFormat {
+  id: number = 0;
+  format: (value: number, unit: string) => string = (value: number, unit: string): string => __rtfFormat(this.id, value, unit);
+}
+"#;
 pub const INTL_NUMBER: &str = r#"class Intl_NumberFormat {
   id: number = 0;
   format: (n: number) => string = (n: number): string => __numberFormat(this.id, n);
