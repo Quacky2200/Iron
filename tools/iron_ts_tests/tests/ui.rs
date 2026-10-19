@@ -354,3 +354,58 @@ fn refresh_keeps_state_unless_the_component_is_remounted() {
         );
     });
 }
+
+// M9-TS-589
+//
+// The updater form of a setter: two updaters in one handler both apply to the latest state.
+#[test]
+fn updater_setters_apply_to_the_latest_state() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_plusApp() });
+        assert_eq!(ui.dump(), "root(box(text:0))");
+        let b = ui.tree.children(ROOT)[0];
+        ui.click(b);
+        assert_eq!(ui.dump(), "root(box(text:11))");
+        ui.click(b);
+        assert_eq!(ui.dump(), "root(box(text:22))");
+    });
+}
+
+// M9-TS-590
+//
+// `style={obj}` with a typed object: its fields are the style, an optional field left out is not
+// set, and a field that goes away is reset.
+#[test]
+fn a_dynamic_style_object_sets_its_fields() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_styledApp(40.0, true) });
+        let b = ui.tree.children(ROOT)[0];
+        ui.tree.layout_if_needed();
+        assert_eq!(ui.tree.rect(b).unwrap().width, 40.0);
+        ui.show(unsafe { ts_uic_styledApp(70.0, false) });
+        ui.tree.layout_if_needed();
+        assert_eq!(ui.tree.rect(b).unwrap().width, 70.0);
+    });
+}
+
+// M9-TS-591
+//
+// `{...obj}` on a host element sets the object's fields as attributes; on a component it spreads
+// into the props (a later attribute wins).
+#[test]
+fn spread_attributes_and_props() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_spreadApp() });
+        let b = ui.tree.children(ROOT)[0];
+        let a = ui.tree.attrs(b).unwrap();
+        assert_eq!(a.id.as_deref(), Some("main"));
+        assert_eq!(a.classes, ["a", "b"]);
+        assert_eq!(a.tab_index, Some(3));
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_outerApp() });
+        assert_eq!(ui.dump(), "root(box(text:1,text:9))");
+    });
+}

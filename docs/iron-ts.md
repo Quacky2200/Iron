@@ -940,8 +940,10 @@ first, only when the manifest has the `Ui` namespace); the generic hooks and the
 - **Elements.** `<box style={{ width: 10 }} onClick={f} className="x" key="k">` becomes builder calls
   (`Ui.begin`, `Ui.style`, `Ui.attr`, `Ui.on`, `Ui.key`, `Ui.child`). A `Ui` function with several versions
   (`style`, `attr`, `child`, `dep`, `stateNew`, `store`) is picked by the argument types (`Manifest::overloads`); a child
-  may be an element, a string, a number or an array of elements. Elements are `UiElement` handles. `style` must be an
-  object literal; `ref=`, spread attributes and text children of a component are errors that say so.
+  may be an element, a string, a number or an array of elements. Elements are `UiElement` handles. `style={{ width: 10 }}` is a literal; `style={obj}` (or a literal with spread) uses the typed object's fields (`Ui.styleObj`: numbers
+  and strings, optional fields left out when null); `{...obj}` on a host element does the same for attributes
+  (`Ui.attrObj`: numbers, strings, booleans; handlers are written as `onX`), and `{...props}` on a component spreads into its props
+  (not with `memo`).  Text children of a component are an error that says so.
 - **Components** `function Counter(props: P): UiElement`: `<Counter a={1} />` becomes `Ui.component(ID, () => Counter({ a: 1 }))`,
   `ID` a hash of the name (it says which state belongs to which component). With no attributes the call is `Counter()`.
   Element children of a component arrive as `props.children: UiElement[]`.
@@ -951,7 +953,9 @@ first, only when the manifest has the `Ui` namespace); the generic hooks and the
 - **Hooks.** `const [n, setN] = useState(0)` (generic `useState<T>`; numbers, booleans, and script pointers such as strings,
   arrays and objects), `useRef`, `useMemo`, `useCallback`, `useEffect(f, [deps])` (`f` may return a cleanup function; no
   list means every render; a list is rewritten into `Ui.dep(..)` calls, so it may mix types). Setting state from a handler
-  schedules a render; setting it during a render only keeps the value. `setN(prev => ...)` (updater form) is not built.
+  schedules a render; setting it during a render only keeps the value. The updater form `setN(n => n + 1)` works for
+  setters bound by `const [x, setX] = useState(..)` when the argument is an arrow or function (it becomes `__up_setX`, which
+  applies the function to the latest state); a setter passed around under another name takes values only.
 - **Closures to Rust.** The manifest type `fn:T` is a zero-parameter closure the engine roots until the description holding
   it is dropped; render functions, handlers and effects are such closures. `ptr` is any other script pointer, `handles:T`
   an array of handles.

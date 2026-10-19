@@ -931,6 +931,18 @@ pub fn manifest_json() -> String {
         // so the namespace has them.
         f("load", "ts_ui_load_num", &[("slot", "f64")], "f64"),
         f("runEffect", "ts_ui_set_cleanup", &[("f", "ptr")], "void"),
+        f(
+            "styleObj",
+            "ts_ui_style_num",
+            &[("h", el), ("obj", "ptr")],
+            el,
+        ),
+        f(
+            "attrObj",
+            "ts_ui_attr_num",
+            &[("h", el), ("obj", "ptr")],
+            el,
+        ),
     ];
     json!({ "namespace": "Ui", "functions": functions }).to_string()
 }

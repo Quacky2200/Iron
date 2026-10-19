@@ -1076,3 +1076,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M2-NAT-13 | Integration | A controlled text field: an accepted (even transformed) edit shows the new value prop, a rejected one sends the old value back (`crates/iron_ui_native/tests/reconcile.rs`). |
 | M9-TS-587 | Integration | The compiler exports each component's stable id and ordered hook list (`__uiSignatures`). |
 | M9-TS-588 | Integration | Hot reload with `Runtime::refresh`: state is kept, except for components in the remount list. |
+| M9-TS-589 | Integration | The updater form `setN(n => n + 1)`: two updaters in one handler apply to the latest state (`iron_ts_tests/tests/ui.rs`). |
+| M9-TS-590 | Integration | `style={obj}` with a typed object sets its fields; an optional field left out is not set. |
+| M9-TS-591 | Integration | `{...obj}` on a host element sets attributes; on a component it spreads into the props. |

@@ -162,6 +162,71 @@ export function getHandleSeen(): number {
   return handleSeen;
 }
 
+function Plus(): UiElement {
+  const [n, setN] = useState(0);
+  return (
+    <box
+      onClick={() => {
+        setN((c) => c + 1);
+        setN((c) => c + 10);
+      }}
+    >
+      {n}
+    </box>
+  );
+}
+
+export function plusApp(): UiElement {
+  return <Plus />;
+}
+
+interface BoxStyle {
+  width: number;
+  color?: string;
+  height?: number;
+}
+
+function Styled(props: { st: BoxStyle }): UiElement {
+  return <box style={props.st} />;
+}
+
+export function styledApp(w: number, withColor: boolean): UiElement {
+  const st: BoxStyle = withColor ? { width: w, color: "red" } : { width: w };
+  return <Styled st={st} />;
+}
+
+interface Common {
+  className: string;
+  id: string;
+  tabIndex?: number;
+}
+
+function Spread(props: { c: Common }): UiElement {
+  return <box {...props.c} />;
+}
+
+export function spreadApp(): UiElement {
+  const c: Common = { className: "a b", id: "main", tabIndex: 3 };
+  return <Spread c={c} />;
+}
+
+function Inner(props: { a: number; b: number }): UiElement {
+  return (
+    <box>
+      {props.a}
+      {props.b}
+    </box>
+  );
+}
+
+function Outer(props: { a: number; b: number }): UiElement {
+  return <Inner {...props} b={9} />;
+}
+
+export function outerApp(): UiElement {
+  return <Outer a={1} b={2} />;
+}
+
 let leafCount = 0;
 
 function Leaf(props: { n: number }): UiElement {

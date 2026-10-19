@@ -556,6 +556,9 @@ impl<'a> Lowerer<'a> {
         if ns == "Ui" && name == "runEffect" {
             return self.lower_ui_run_effect(c);
         }
+        if ns == "Ui" && (name == "styleObj" || name == "attrObj") {
+            return self.lower_ui_fields(name == "attrObj", c);
+        }
         if let Some(cands) = self
             .manifest
             .overloads
@@ -672,6 +675,77 @@ impl<'a> Lowerer<'a> {
         let mut e = self.emit_extern(&f, vec![slot]);
         e.ty = t;
         Ok(e)
+    }
+
+    /// `Ui.styleObj(h, obj)` / `Ui.attrObj(h, obj)` (a dynamic `style={x}` or `{...x}` in JSX): the
+    /// fields of a typed object become style properties or attributes. An optional field that is
+    /// null is left out; a number, string or boolean goes through as itself; anything else (a
+    /// function, a nested object) is an error that names the field.
+    fn lower_ui_fields(&mut self, attr: bool, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let what = if attr { "{...props}" } else { "style={...}" };
+        let (Some(he), Some(oe)) = (
+            c.arguments.first().and_then(|a| a.as_expression()),
+            c.arguments.get(1).and_then(|a| a.as_expression()),
+        ) else {
+            bail!("{at}: Ui.styleObj(h, obj)")
+        };
+        let h = self.lower_expr(he, None)?;
+        let o = self.lower_expr(oe, None)?;
+        let Ty::Obj(sid) = o.ty.strip().clone() else {
+            bail!(
+                "{at}: {what} needs an object with known fields, not {}",
+                o.ty
+            )
+        };
+        let th = self.new_local(h.ty.clone());
+        let to = self.new_local(o.ty.clone());
+        let mut stmts = vec![Stmt::Assign(th, h.clone()), Stmt::Assign(to, o)];
+        let fields = self.m.structs[sid].fields.clone();
+        for (i, f) in fields.iter().enumerate() {
+            let field = mk(
+                ExprKind::Field(Box::new(self.var_expr(to)), sid, i),
+                f.ty.clone(),
+            );
+            let mut plain = field.clone();
+            plain.ty = f.ty.strip().clone();
+            let plain = self.widen_lit(plain);
+            let key = self.str_lit(&f.name);
+            let (symbol, vt) = match (&plain.ty, attr) {
+                (Ty::Num, false) => ("ts_ui_style_num", ExtTy::F64),
+                (Ty::Str, false) => ("ts_ui_style_str", ExtTy::Str),
+                (Ty::Num, true) => ("ts_ui_attr_num", ExtTy::F64),
+                (Ty::Str, true) => ("ts_ui_attr_str", ExtTy::Str),
+                (Ty::Bool, true) => ("ts_ui_attr_bool", ExtTy::Bool),
+                (other, _) => bail!(
+                    "{at}: {what}: field `{}` has type {other}, which cannot be set this way",
+                    f.name
+                ),
+            };
+            let ext = ExternFn {
+                symbol: symbol.into(),
+                params: vec![
+                    ("h".into(), ExtTy::Handle("UiElement".into())),
+                    ("key".into(), ExtTy::Str),
+                    ("v".into(), vt),
+                ],
+                ret: ExtTy::Handle("UiElement".into()),
+            };
+            let hv = self.var_expr(th);
+            let call = self.emit_extern(&ext, vec![hv, key, plain]);
+            if f.ty.is_nullable() {
+                stmts.push(Stmt::If(
+                    mk(ExprKind::IsNull(Box::new(field)), Ty::Bool),
+                    vec![],
+                    vec![Stmt::Eval(call)],
+                ));
+            } else {
+                stmts.push(Stmt::Eval(call));
+            }
+        }
+        let result = self.var_expr(th);
+        let ty = result.ty.clone();
+        Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
     }
 
     /// `Ui.runEffect(f)`: calls an effect function; a function it returns is its cleanup.

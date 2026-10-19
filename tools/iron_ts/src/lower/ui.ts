@@ -23,6 +23,7 @@ class State<T> {
   slot: number = 0;
   value: T;
   set: (v: T) => void;
+  update: (f: (prev: T) => T) => void;
 }
 
 function useState<T>(init: T): State<T> {
@@ -32,6 +33,9 @@ function useState<T>(init: T): State<T> {
   const slot = s.slot;
   s.set = (v: T): void => {
     Ui.store(slot, v);
+  };
+  s.update = (f: (prev: T) => T): void => {
+    Ui.store(slot, f(Ui.load<T>(slot)));
   };
   return s;
 }

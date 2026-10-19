@@ -107,6 +107,8 @@ struct Finder<'s> {
     memo: HashMap<String, String>,
     /// Components made by `forwardRef`: they take the ref as a second argument.
     forward: HashSet<String>,
+    /// The setters of `const [x, setX] = useState(..)` anywhere in the program.
+    setters: HashSet<String>,
 }
 
 impl<'s> Finder<'s> {
@@ -176,12 +178,14 @@ impl<'s> Finder<'s> {
         }
         let mut out = format!("Ui.begin({})", js_string(&name));
         for item in &open.attributes {
-            let JSXAttributeItem::Attribute(a) = item else {
-                self.fail(format!(
-                    "line {}: spread attributes are not supported",
-                    self.line(at)
-                ));
-                return out;
+            let a = match item {
+                JSXAttributeItem::Attribute(a) => a,
+                // `{...obj}`: the fields of a typed object become attributes (see `Ui.attrObj`).
+                JSXAttributeItem::SpreadAttribute(sp) => {
+                    let t = self.slice(sp.argument.span()).to_string();
+                    out = format!("Ui.attrObj({out}, {t})");
+                    continue;
+                }
             };
             let JSXAttributeName::Identifier(n) = &a.name else {
                 self.fail(format!(
@@ -208,12 +212,26 @@ impl<'s> Finder<'s> {
                         ));
                         return out;
                     };
-                    let Some(Expression::ObjectExpression(o)) = c.expression.as_expression() else {
-                        self.fail(format!(
-                            "line {}: style must be an object literal ({{{{ width: 10 }}}})",
-                            self.line(at)
-                        ));
-                        return out;
+                    let literal = match c.expression.as_expression() {
+                        Some(Expression::ObjectExpression(o))
+                            if o.properties
+                                .iter()
+                                .all(|p| matches!(p, ObjectPropertyKind::ObjectProperty(_))) =>
+                        {
+                            Some(o)
+                        }
+                        _ => None,
+                    };
+                    let Some(o) = literal else {
+                        // A variable, a call, an object with spread: its fields become style
+                        // properties (see `Ui.styleObj`).
+                        let Some(e) = c.expression.as_expression() else {
+                            self.fail(format!("line {}: an empty style", self.line(at)));
+                            return out;
+                        };
+                        let t = self.slice(e.span()).to_string();
+                        out = format!("Ui.styleObj({out}, {t})");
+                        continue;
                     };
                     for p in &o.properties {
                         let ObjectPropertyKind::ObjectProperty(p) = p else {
@@ -308,12 +326,18 @@ impl<'s> Finder<'s> {
         let mut ref_value = None;
         let mut key = None;
         for item in &open.attributes {
-            let JSXAttributeItem::Attribute(a) = item else {
-                self.fail(format!(
-                    "line {}: spread props are not supported",
-                    self.line(at)
-                ));
-                return String::new();
+            let a = match item {
+                JSXAttributeItem::Attribute(a) => a,
+                JSXAttributeItem::SpreadAttribute(sp) => {
+                    if is_memo {
+                        self.fail(format!(
+                            "line {}: a memo component cannot take spread props",
+                            self.line(at)
+                        ));
+                    }
+                    props.push(format!("...{}", self.slice(sp.argument.span())));
+                    continue;
+                }
             };
             let JSXAttributeName::Identifier(n) = &a.name else {
                 self.fail(format!("line {}: namespaced props", self.line(at)));
@@ -478,6 +502,9 @@ impl<'a> Visit<'a> for Finder<'_> {
             }
             if let Some(Some(s)) = names.get(1) {
                 text += &format!(" const {s} = {tmp}.{second};");
+                if hook.name == "useState" {
+                    text += &format!(" const __up_{s} = {tmp}.update;");
+                }
             }
             // The declaration's span has no `;`; a trailing one in the source stays harmless.
             self.edits.push(Edit {
@@ -491,6 +518,21 @@ impl<'a> Visit<'a> for Finder<'_> {
     }
 
     fn visit_call_expression(&mut self, c: &CallExpression<'a>) {
+        // `setN(n => n + 1)`: the updater form of a `useState` setter.
+        if let Expression::Identifier(f) = &c.callee
+            && self.setters.contains(f.name.as_str())
+            && c.arguments.len() == 1
+            && matches!(
+                c.arguments[0].as_expression(),
+                Some(Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_))
+            )
+        {
+            self.edits.push(Edit {
+                start: f.span.start as usize,
+                end: f.span.end as usize,
+                text: format!("__up_{}", f.name),
+            });
+        }
         if let Expression::Identifier(f) = &c.callee
             && matches!(
                 f.name.as_str(),
@@ -643,6 +685,7 @@ pub fn desugar(src: &str) -> R<Option<String>> {
 
 fn desugar_passes(src: &str) -> R<Option<String>> {
     let (mut cur, memo, forward) = prepass(src)?;
+    let setters = setter_names(&cur);
     let mut changed = cur != src;
     for _ in 0..64 {
         let alloc = Allocator::default();
@@ -657,6 +700,7 @@ fn desugar_passes(src: &str) -> R<Option<String>> {
             error: None,
             memo: memo.clone(),
             forward: forward.clone(),
+            setters: setters.clone(),
         };
         finder.visit_program(&ret.program);
         if let Some(e) = finder.error {
@@ -788,4 +832,33 @@ fn prepass(src: &str) -> R<(String, HashMap<String, String>, HashSet<String>)> {
     }
     out.push_str(&src[at..]);
     Ok((out, memo, forward))
+}
+
+/// The names bound as the second element of `const [x, setX] = useState(..)`.
+#[derive(Default)]
+struct SetterScan(HashSet<String>);
+
+impl<'a> Visit<'a> for SetterScan {
+    fn visit_variable_declaration(&mut self, d: &VariableDeclaration<'a>) {
+        for decl in &d.declarations {
+            if let BindingPattern::ArrayPattern(arr) = &decl.id
+                && let Some(Expression::CallExpression(call)) = &decl.init
+                && matches!(&call.callee, Expression::Identifier(f) if f.name == "useState")
+                && let Some(Some(BindingPattern::BindingIdentifier(b))) = arr.elements.get(1)
+            {
+                self.0.insert(b.name.to_string());
+            }
+        }
+        walk::walk_variable_declaration(self, d);
+    }
+}
+
+fn setter_names(src: &str) -> HashSet<String> {
+    let alloc = Allocator::default();
+    let ret = Parser::new(&alloc, src, SourceType::tsx()).parse();
+    let mut scan = SetterScan::default();
+    if ret.diagnostics.is_empty() {
+        scan.visit_program(&ret.program);
+    }
+    scan.0
 }
