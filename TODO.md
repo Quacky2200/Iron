@@ -1550,6 +1550,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
       - [x] `iron_scene` annotated: the `Scene` namespace (handles, `Vector3`/`Quaternion`, hierarchy, flags), driven by compiled TypeScript (`M9-API-12..15`, `M9-TS-151..155`); `GameObject`/`Transform` handle classes (`go.transform.position = v`, `M9-API-16..19`, `M9-TS-156..158`); not yet wired into `iron_app`
       - [ ] Annotate `iron_physics`, `iron_audio`, `iron_script`; wire `enter` into the app; retire the ops they replace
     - [x] Compiler: extern table from the JSON manifest, `Handle` type, namespace calls with scalar arguments and f32/i32/u32/bool conversions (`M9-TS-142..146`)
+    - [~] Compiled `Component` with hooks driven by a Rust host (`NativeHost`, `register(X)`, class table; `M9-TS-556..561`); `Input` axes and `iron_app` wiring open
     - [ ] First slice: `Time`, `Mathf`, `Vector3`, `Transform`, `Input` axes and a compiled `Component`
           with `onUpdate`, driven by `ComponentHost` with no JS engine in the loop
     - [ ] Inventory the `__iron_op` names and shapes (`js/engine/src`) and what each passes

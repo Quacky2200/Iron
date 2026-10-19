@@ -1029,3 +1029,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 - **VR:** stereo render at the headset's refresh rate; world panel interaction with controllers.
 - **iOS:** QuickJS backend passes the full M1-SCR suite; app passes TestFlight.
 - **Packaging:** packed build runs from a clean machine with no dev tools installed.
+| M9-TS-556 | Integration | The generated `classes()` table lists the registered classes and only the hooks each has (`iron_ts_tests/tests/components.rs`, `bench/components.ts`). |
+| M9-TS-557 | Integration | A compiled component moves its GameObject every frame through the real scene; fields persist; all GC modes. |
+| M9-TS-558 | Integration | Host order: `onStart` once, every `onUpdate` before any `onLateUpdate`. |
+| M9-TS-559 | Integration | Subclasses inherit hooks and override one; inactive objects are skipped; `destroy` runs `onDestroy`. |
+| M9-TS-560 | Integration | A throwing hook disables its component and reports it; the others run; an unknown class is an error. |
+| M9-TS-561 | Integration | `fixed_update` reaches only classes with `onFixedUpdate`. |

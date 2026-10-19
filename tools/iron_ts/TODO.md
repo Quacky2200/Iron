@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **556**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **562**).
 
 ## How to pick this up
 
@@ -85,13 +85,9 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**State (2026-10-19):** done and committed: strings, the standard library tiers 1 and 2, `RegExp`, `Date` (including `toString`), `Intl` I1 (collation, normalize, case) and I2 (`NumberFormat`). Next test ID **277**.
-**Waiting for the user:** how to do `Intl.DateTimeFormat` / `toLocale*String` exactly (`docs/research/iron-ts-intl-datetime.md`; options A, B, C and `rust_icu`).
-After that: Intl I4, then the Tier 4 list below (the user added iterators/generators, `Symbol`, typed arrays, `BigInt`, `encodeURI`, errors, `Temporal`, `Weak*`, `Proxy`).
-
-**Done:** `iron_scene`'s `Scene` API on `#[iron_api]`, driven end to end by compiled TypeScript (boundary note section 17).
-
-**Done:** value-class methods and getters (`a.add(b)`, `v.magnitude`; `#[method(Vector3)]` / `#[getter(Vector3)]` on free functions, `M9-API-20`, `M9-TS-159..161`); handle classes (`go.transform.position = v`, methods and statics on handles; `M9-API-16..19`, `M9-TS-156..158`), for `GameObject` and `Transform` of `iron_scene` (boundary note section 18).
+**State (2026-10-19):** the standard library list is delivered (strings, collections, JSON, `RegExp`, `Date`, `Intl`, generators, `Promise`/`async`/timers, typed arrays, `Temporal`, ...; `M9-TS-1..555`, detail in the Log and `docs/iron-ts.md`). Compiled components for the Rust host are built (`M9-TS-556..561`, `NativeHost`). Next free test ID **562**.
+**Next (user's priority):** (1) a design note for a Preact-style component/effect UI in Rust (STOP item "UI without React"; the existing React layer only produces `__iron_commit` ops and consumes `__iron_ui_event`, so the new layer must emit the same ops into `iron_ui::UiTree`, no second tree); (2) toward iron_api testing of iron_ts as the QuickJS replacement: `@property` save/load through `PROPS_<Class>`, `getComponent`/`addComponent`, QuickJS bindings for values and strings, annotating `iron_physics`/`iron_audio`, wiring `enter` + `NativeHost` into `iron_app` (another session's area: hand-over contract in boundary note section 21).
+**Open stdlib items (niche):** `Intl.*.formatRange`, `FinalizationRegistry`, `globalThis`, `Error.stack`, `Duration.total` with `relativeTo`, `for await` / async generators, `SharedArrayBuffer`/Atomics, Proxy (not until needed), optional `icu-full`.
 
 Next, in order:
 

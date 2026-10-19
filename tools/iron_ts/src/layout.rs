@@ -139,5 +139,75 @@ pub fn rust_bindings(m: &Module) -> String {
         );
     }
     s += "}\n";
+    s += &component_table(m);
     s
+}
+
+/// The class table of `register(Class)`: wrappers that erase the object type, and `classes()`.
+/// Built from the exports `components.rs` generated (`iron_new_X`, `iron_hook_X_onUpdate`).
+fn component_table(m: &Module) -> String {
+    const HOOKS: [&str; 7] = [
+        "onAwake",
+        "onStart",
+        "onUpdate",
+        "onLateUpdate",
+        "onFixedUpdate",
+        "onPreRender",
+        "onDestroy",
+    ];
+    let mut out = String::new();
+    let mut entries = Vec::new();
+    for f in m.funcs.iter().filter(|f| f.exported) {
+        let Some(class) = f.name.strip_prefix("iron_new_") else {
+            continue;
+        };
+        let sym = format!("ts_{}{}", m.prefix, f.name);
+        let has_go = f.params.len() > 1;
+        let (go_param, go_arg) = if has_go {
+            (", go: u64", ", go")
+        } else {
+            ("", "")
+        };
+        out += &format!(
+            "unsafe extern \"C\" fn create_{class}(id: f64{go_param}) -> *mut u8 {{ unsafe {{ {sym}(id{go_arg}) as *mut u8 }} }}\n"
+        );
+        let mut hooks = Vec::new();
+        for h in HOOKS {
+            let name = format!("iron_hook_{class}_{h}");
+            if let Some(hf) = m.funcs.iter().find(|g| g.exported && g.name == name) {
+                let hs = format!("ts_{}{}", m.prefix, hf.name);
+                let ty = rust_ty(m, &hf.locals[hf.params[0] as usize], false);
+                out += &format!(
+                    "unsafe extern \"C\" fn hook_{class}_{h}(c: *mut u8, dt: f64) {{ unsafe {{ {hs}(c as {ty}, dt) }} }}\n"
+                );
+                hooks.push(format!(
+                    "Some(hook_{class}_{h} as unsafe extern \"C\" fn(*mut u8, f64))"
+                ));
+            } else {
+                hooks.push("None".to_string());
+            }
+        }
+        // `create` has one signature in the table: (id, object).
+        out += &format!(
+            "unsafe extern \"C\" fn create_{class}_any(id: f64, go: u64) -> *mut u8 {{ {} }}\n",
+            if has_go {
+                format!("unsafe {{ create_{class}(id, go) }}")
+            } else {
+                format!("{{ let _ = go; unsafe {{ create_{class}(id) }} }}")
+            }
+        );
+        entries.push(format!(
+            "        iron_ts_rt::NativeClass {{ name: \"{class}\", create: create_{class}_any, hooks: [{}] }},\n",
+            hooks.join(", ")
+        ));
+    }
+    if entries.is_empty() {
+        return out;
+    }
+    out += "/// The classes the program registered, for `iron_ts_rt::NativeHost`.\npub fn classes() -> Vec<iron_ts_rt::NativeClass> {\n    vec![\n";
+    for e in entries {
+        out += &e;
+    }
+    out += "    ]\n}\n";
+    out
 }

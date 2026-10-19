@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn class_features_that_are_not_built_yet_are_errors_that_say_so() {
         let ext = lower::lower_source(
-            "class B extends Component { y = 2; } export function f(): number { return new B().y; }",
+            "class B extends Widget { y = 2; } export function f(): number { return new B().y; }",
         )
         .err()
         .unwrap();

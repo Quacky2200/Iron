@@ -518,3 +518,12 @@ the compiler is now complete (see [iron-ts-strings.md](iron-ts-strings.md)).
 - **iron_scene.** `GameObject.name` (get and set) and `GameObject.find(name)`. Tests `M9-API-21`..`22`
   (crates/iron_api/tests/strings.rs) and `M9-TS-183`..`186` (tools/iron_ts_tests/tests/scene.rs).
 - **Not built.** `string | null` parameters; strings in the QuickJS bindings.
+
+## 21. Components for the host (2026-10-19)
+
+Section 5 built in its smallest form: `Component` is a prelude class, `register(X)` becomes exported
+constructor and hook thunks, the bindings carry a class table and `iron_ts_rt::NativeHost` runs the
+lifecycle over it with the same rules as `ComponentHost` (see `docs/iron-ts.md`, "Components for the
+host"). The host lives in `iron_ts_rt` so the engine depends on one crate; `iron_app` wiring (enter the
+scene, call `update`/`fixed_update`/`pre_render`, call `ts_rt_timers_advance(now_ms)` once per frame) is
+the contract for the session that owns it. Tests `M9-TS-556..561`.

@@ -14,6 +14,7 @@ mod bigint;
 mod classes;
 mod clone;
 mod closure;
+mod components;
 mod date;
 mod enums;
 mod expr;
@@ -235,6 +236,11 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let rewritten3 = temporal::rewrite(src);
     let wants_temporal = rewritten3.is_some();
     let src = rewritten3.as_deref().unwrap_or(src);
+    // `register(Class)` becomes exported constructor and hook functions for the host.
+    let has_go = manifests.iter().any(|m| m.contains("\"GameObject\""));
+    let rewritten4 = components::desugar(src, has_go)?;
+    let wants_components = components::wanted(src);
+    let src = rewritten4.as_deref().unwrap_or(src);
     // Programs that use errors get the `Error` classes compiled in front of them.
     let mut head = String::new();
     if !gen_templates.is_empty()
@@ -287,6 +293,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if src.contains("Intl.DateTimeFormat") {
         head += prelude::INTL_DATETIME;
+    }
+    if wants_components {
+        head += &components::prelude(has_go);
     }
     if wants_temporal {
         head += temporal::TEMPORAL;

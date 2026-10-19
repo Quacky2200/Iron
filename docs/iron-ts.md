@@ -676,7 +676,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 `C` and its subclasses). A subclass must be declared after its base. Details and limits:
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
-Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes (`Component`),
+Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes other than `Component`,
 throwing anything but an `Error` object, unsupported string methods (see above), `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `for await`, async generators, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
@@ -886,3 +886,21 @@ To add a test module:
 4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.
 5. Add the IDs to `TESTS.md`, then run fmt, clippy, `cargo test --workspace` and the stress run.
+
+## Components for the host
+
+`class Player extends Component { onUpdate(dt: number) { .. } }` plus `register(Player)` at the top level
+([components.rs](../tools/iron_ts/src/lower/components.rs)). `Component` is a prelude class with `id` and, when
+the manifest has the `GameObject` handle, `gameObject: GameObject | null`. `register(X)` is blanked out of the
+program and exported functions are appended: `iron_new_X(id, gameObject)` and one `iron_hook_X_<hook>(this, dt)`
+for each hook the class or an ancestor defines (`onAwake`, `onStart`, `onUpdate`, `onLateUpdate`,
+`onFixedUpdate`, `onPreRender`, `onDestroy`; all take `dt` so the host calls them alike).
+
+The generated bindings add `classes() -> Vec<iron_ts_rt::NativeClass>` (name, create thunk, hooks as
+`Option<fn>`). `iron_ts_rt::NativeHost` ([host.rs](../tools/iron_ts_rt/src/host.rs)) is the engine side with no
+script engine: `spawn(class, object)` (roots the instance, runs `onAwake`), `update(dt, active)` (`onStart` once,
+all `onUpdate`, then all `onLateUpdate`), `fixed_update`, `pre_render`, `destroy`, `destroy_on_objects`. It runs
+`ts_rt_microtasks_run()` after every hook and disables a component whose hook left an exception pending
+(`Fault { id, class, hook }`). Same rules as `iron_script::ComponentHost`. Not built: `@property` save/load
+through `PROPS_<Class>` in the host, `getComponent`/`addComponent`, a message for the fault, `this.transform`.
+Tests `M9-TS-556..561`.
