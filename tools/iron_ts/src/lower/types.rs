@@ -329,6 +329,19 @@ impl<'a> Lowerer<'a> {
                     Box::new(ex(ExprKind::Truthy(Box::new(e)))),
                 ))
             }
+            // A nullable string or bigint is true when it is there and not empty / zero.
+            Ty::Nullable(inner) if matches!(**inner, Ty::Str | Ty::BigInt) => {
+                let null = ex(ExprKind::IsNull(Box::new(e.clone())));
+                let inner_ty = (**inner).clone();
+                let plain = Expr {
+                    kind: ExprKind::Cast(Box::new(e)),
+                    ty: inner_ty,
+                };
+                ex(ExprKind::And(
+                    Box::new(ex(ExprKind::Un(UnOp::Not, Box::new(null)))),
+                    Box::new(self.to_bool(plain)),
+                ))
+            }
             Ty::Num => ex(ExprKind::Truthy(Box::new(e))),
             // A bigint is false only at zero.
             Ty::BigInt => ex(ExprKind::Cmp(

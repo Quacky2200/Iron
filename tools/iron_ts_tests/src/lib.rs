@@ -384,6 +384,18 @@ pub mod bigint_t {
     include!(concat!(env!("OUT_DIR"), "/bigint_bindings.rs"));
 }
 
+/// `bench/logic.ts`, prefix `lg_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod logic_t {
+    include!(concat!(env!("OUT_DIR"), "/logic_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

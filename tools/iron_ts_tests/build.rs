@@ -55,6 +55,7 @@ fn main() {
         ("intl4", "i4_", 29000),
         ("typed", "ty_", 30000),
         ("bigint", "bi_", 31000),
+        ("logic", "lg_", 32000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

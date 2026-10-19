@@ -185,8 +185,7 @@ impl<'a> Lowerer<'a> {
             Expression::BinaryExpression(b) => self.lower_binary(b),
             Expression::LogicalExpression(l) => self.lower_logical(l, exp),
             Expression::ConditionalExpression(c) => {
-                let test = self.lower_expr(&c.test, None)?;
-                let test = self.to_bool(test);
+                let test = self.lower_cond(&c.test)?;
                 let a = self.lower_expr(&c.consequent, exp)?;
                 let b = self.lower_expr(&c.alternate, exp)?;
                 let ty = self.unify(&a.ty, &b.ty)?;
@@ -450,12 +449,12 @@ impl<'a> Lowerer<'a> {
         if u.operator == UnaryOperator::Typeof {
             return self.lower_typeof(&u.argument);
         }
+        if u.operator == UnaryOperator::LogicalNot {
+            let b = self.lower_cond(&u.argument)?;
+            return Ok(mk(ExprKind::Un(UnOp::Not, Box::new(b)), Ty::Bool));
+        }
         let a = self.lower_expr(&u.argument, None)?;
         match u.operator {
-            UnaryOperator::LogicalNot => {
-                let b = self.to_bool(a);
-                Ok(mk(ExprKind::Un(UnOp::Not, Box::new(b)), Ty::Bool))
-            }
             UnaryOperator::UnaryNegation if a.ty.strip() == &Ty::BigInt => {
                 Ok(self.bigint_unary(true, a))
             }
@@ -813,6 +812,32 @@ impl<'a> Lowerer<'a> {
         Ok(mk(ExprKind::Cmp(op, Box::new(l), Box::new(r)), Ty::Bool))
     }
 
+    /// An expression used as a condition (`if`, loops, `?:`, `!`): its truthiness. `&&` and `||`
+    /// stay boolean here, whatever their operands, which is what a test wants.
+    pub(crate) fn lower_cond(&mut self, e: &'a Expression<'a>) -> R<Expr> {
+        match e {
+            Expression::ParenthesizedExpression(p) => self.lower_cond(&p.expression),
+            Expression::LogicalExpression(l) if l.operator != LogicalOperator::Coalesce => {
+                let a = self.lower_cond(&l.left)?;
+                let b = self.lower_cond(&l.right)?;
+                let k = if l.operator == LogicalOperator::And {
+                    ExprKind::And(Box::new(a), Box::new(b))
+                } else {
+                    ExprKind::Or(Box::new(a), Box::new(b))
+                };
+                Ok(mk(k, Ty::Bool))
+            }
+            Expression::UnaryExpression(u) if u.operator == UnaryOperator::LogicalNot => {
+                let b = self.lower_cond(&u.argument)?;
+                Ok(mk(ExprKind::Un(UnOp::Not, Box::new(b)), Ty::Bool))
+            }
+            _ => {
+                let v = self.lower_expr(e, None)?;
+                Ok(self.to_bool(v))
+            }
+        }
+    }
+
     fn lower_logical(&mut self, l: &'a LogicalExpression<'a>, exp: Option<&Ty>) -> R<Expr> {
         match l.operator {
             LogicalOperator::Coalesce => {
@@ -845,6 +870,45 @@ impl<'a> Lowerer<'a> {
                 let _ = exp;
                 let a = self.lower_expr(&l.left, None)?;
                 let b = self.lower_expr(&l.right, None)?;
+                // `x || 5`, `a && b` on values: the operand, as JavaScript gives it, when both
+                // sides have one type. Mixed sides (`obj && obj.x > 0`) stay boolean, which is
+                // what every condition wants.
+                let (ak, bk) = (a.ty.strip().clone(), b.ty.strip().clone());
+                let value_typed = ak != Ty::Bool
+                    && (ak == bk
+                        || (ak == Ty::Lit && bk == Ty::Str)
+                        || (ak == Ty::Str && bk == Ty::Lit));
+                if value_typed {
+                    // A string literal beside a string is a string.
+                    let (a, b) = (
+                        if ak == Ty::Lit { self.widen_lit(a) } else { a },
+                        if bk == Ty::Lit { self.widen_lit(b) } else { b },
+                    );
+                    let or = op == LogicalOperator::Or;
+                    let mut ty = self.unify(&a.ty, &b.ty)?;
+                    // `x || 5` with a nullable x is never null: a null x is falsy.
+                    if or && !b.ty.is_nullable() {
+                        ty = ty.strip().clone();
+                    }
+                    let tmp = self.new_local(a.ty.clone());
+                    let t = self.var_expr(tmp);
+                    let test = self.to_bool(t.clone());
+                    let kept = if a.ty.is_nullable() && !ty.is_nullable() {
+                        mk(ExprKind::Cast(Box::new(t)), ty.clone())
+                    } else {
+                        self.coerce(t, &ty)?
+                    };
+                    let other = self.coerce(b, &ty)?;
+                    let (yes, no) = if or { (kept, other) } else { (other, kept) };
+                    let cond = mk(
+                        ExprKind::Cond(Box::new(test), Box::new(yes), Box::new(no)),
+                        ty.clone(),
+                    );
+                    return Ok(mk(
+                        ExprKind::Seq(vec![Stmt::Assign(tmp, a)], Box::new(cond)),
+                        ty,
+                    ));
+                }
                 let (a, b) = (self.to_bool(a), self.to_bool(b));
                 let k = if op == LogicalOperator::And {
                     ExprKind::And(Box::new(a), Box::new(b))

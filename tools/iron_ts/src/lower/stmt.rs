@@ -32,8 +32,7 @@ impl<'a> Lowerer<'a> {
             Statement::ExpressionStatement(e) => self.lower_effect(&e.expression, out)?,
             Statement::VariableDeclaration(v) => self.lower_var_decl(v, out)?,
             Statement::IfStatement(i) => {
-                let c = self.lower_expr(&i.test, None)?;
-                let c = self.to_bool(c);
+                let c = self.lower_cond(&i.test)?;
                 let then = self.scoped(&i.consequent)?;
                 let els = match &i.alternate {
                     Some(a) => self.scoped(a)?,
@@ -43,8 +42,7 @@ impl<'a> Lowerer<'a> {
             }
             Statement::WhileStatement(w) => {
                 let label = self.new_label();
-                let c = self.lower_expr(&w.test, None)?;
-                let c = self.to_bool(c);
+                let c = self.lower_cond(&w.test)?;
                 let not = mk(ExprKind::Un(UnOp::Not, Box::new(c)), Ty::Bool);
                 let entry = self.loop_entry(label, Some(label));
                 self.cur.loops.push(entry);
@@ -151,8 +149,7 @@ impl<'a> Lowerer<'a> {
                 self.cur.loops.push(entry);
                 let body = self.scoped(&d.body);
                 self.cur.loops.pop();
-                let c = self.lower_expr(&d.test, None)?;
-                let c = self.to_bool(c);
+                let c = self.lower_cond(&d.test)?;
                 let not = mk(ExprKind::Un(UnOp::Not, Box::new(c)), Ty::Bool);
                 let b = vec![
                     Stmt::Block(cont, body?),
@@ -602,8 +599,7 @@ impl<'a> Lowerer<'a> {
         let (top, cont) = (self.new_label(), self.new_label());
         let mut b = Vec::new();
         if let Some(t) = &f.test {
-            let c = self.lower_expr(t, None)?;
-            let c = self.to_bool(c);
+            let c = self.lower_cond(t)?;
             let not = mk(ExprKind::Un(UnOp::Not, Box::new(c)), Ty::Bool);
             b.push(Stmt::If(not, vec![Stmt::Break(top)], vec![]));
         }
