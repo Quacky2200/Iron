@@ -102,7 +102,9 @@ impl<'a> Lowerer<'a> {
                     .map(|a| a.params.iter().collect())
                     .unwrap_or_default();
                 match id.name.as_str() {
-                    "Uint8Array" => Ty::Bytes,
+                    n if crate::ir::TypedKind::from_name(n).is_some() => {
+                        Ty::Typed(crate::ir::TypedKind::from_name(n).expect("checked"))
+                    }
                     "Map" | "WeakMap" | "ReadonlyMap" => {
                         let (Some(k), Some(v)) = (args.first(), args.get(1)) else {
                             bail!("{} needs two type arguments", id.name)

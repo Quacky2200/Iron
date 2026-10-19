@@ -20,6 +20,69 @@ pub type LabelId = u32;
 /// The f64 bit pattern that means `null` / `undefined` in a `number | null` slot.
 pub const NULL_NUM_BITS: u64 = 0x7FF8_DEAD_BEEF_0001;
 
+/// The element type of a typed array (`Int8Array` .. `Float64Array`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TypedKind {
+    I8,
+    U8,
+    /// `Uint8ClampedArray`: stores clamp to 0..255 and round half to even.
+    U8C,
+    I16,
+    U16,
+    I32,
+    U32,
+    F32,
+    F64,
+}
+
+impl TypedKind {
+    pub const ALL: [TypedKind; 9] = [
+        TypedKind::I8,
+        TypedKind::U8,
+        TypedKind::U8C,
+        TypedKind::I16,
+        TypedKind::U16,
+        TypedKind::I32,
+        TypedKind::U32,
+        TypedKind::F32,
+        TypedKind::F64,
+    ];
+
+    /// Bytes per element.
+    pub fn size(self) -> usize {
+        match self {
+            TypedKind::I8 | TypedKind::U8 | TypedKind::U8C => 1,
+            TypedKind::I16 | TypedKind::U16 => 2,
+            TypedKind::I32 | TypedKind::U32 | TypedKind::F32 => 4,
+            TypedKind::F64 => 8,
+        }
+    }
+
+    /// The constructor's name.
+    pub fn name(self) -> &'static str {
+        match self {
+            TypedKind::I8 => "Int8Array",
+            TypedKind::U8 => "Uint8Array",
+            TypedKind::U8C => "Uint8ClampedArray",
+            TypedKind::I16 => "Int16Array",
+            TypedKind::U16 => "Uint16Array",
+            TypedKind::I32 => "Int32Array",
+            TypedKind::U32 => "Uint32Array",
+            TypedKind::F32 => "Float32Array",
+            TypedKind::F64 => "Float64Array",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<TypedKind> {
+        Self::ALL.into_iter().find(|k| k.name() == name)
+    }
+
+    /// The number the runtime and the generated code pass for this kind.
+    pub fn code(self) -> u8 {
+        Self::ALL.iter().position(|k| *k == self).unwrap_or(0) as u8
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ty {
     Void,
@@ -32,8 +95,8 @@ pub enum Ty {
     Null,
     Obj(StructId),
     Arr(Box<Ty>),
-    /// `Uint8Array`: the array header with one byte per element.
-    Bytes,
+    /// A typed array: the array header with `kind.size()` bytes per element.
+    Typed(TypedKind),
     Fn(Box<FnTy>),
     /// A variable shared by closures: a heap box holding one value of the inner type.
     Cell(Box<Ty>),
@@ -77,7 +140,7 @@ impl Ty {
             Ty::Str
                 | Ty::Obj(_)
                 | Ty::Arr(_)
-                | Ty::Bytes
+                | Ty::Typed(_)
                 | Ty::Fn(_)
                 | Ty::Cell(_)
                 | Ty::Map(..)
@@ -183,8 +246,6 @@ pub enum RtFn {
     Alloc,
     ArrNew,
     ArrPush,
-    BytesNew,
-    BytesFill,
     /// `Math.random()`: no arguments, a number in [0, 1).
     Random,
     /// `(array, length)`: `xs.length = n`, `pop`.
@@ -435,7 +496,7 @@ impl fmt::Display for Ty {
             Ty::Null => write!(f, "null"),
             Ty::Obj(i) => write!(f, "obj#{i}"),
             Ty::Arr(t) => write!(f, "[{t}]"),
-            Ty::Bytes => write!(f, "bytes"),
+            Ty::Typed(k) => write!(f, "{}", k.name()),
             Ty::Fn(t) => write!(f, "fn({} params)->{}", t.params.len(), t.ret),
             Ty::Cell(t) => write!(f, "cell<{t}>"),
             Ty::Nullable(t) => write!(f, "{t}?"),

@@ -348,8 +348,15 @@ impl<'a> Lowerer<'a> {
                 let ty = self.m.structs[sid].fields[i].ty.clone();
                 Ok(mk(ExprKind::Field(Box::new(obj), sid, i), ty))
             }
-            Ty::Arr(_) | Ty::Bytes if prop == "length" => {
+            Ty::Arr(_) | Ty::Typed(_) if prop == "length" => {
                 Ok(mk(ExprKind::Len(Box::new(obj)), Ty::Num))
+            }
+            Ty::Typed(k) if prop == "byteLength" => {
+                let len = mk(ExprKind::Len(Box::new(obj)), Ty::Num);
+                Ok(mk(
+                    ExprKind::Bin(BinOp::Mul, Box::new(len), Box::new(num(k.size() as f64))),
+                    Ty::Num,
+                ))
             }
             Ty::Str if prop == "length" => Ok(self.str_length(obj)),
             Ty::Map(..) | Ty::Set(_) if prop == "size" => Ok(self.collection_size(obj)),
@@ -380,7 +387,7 @@ impl<'a> Lowerer<'a> {
         let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
         let idx = self.as_num(idx)?;
         let ty = match arr.ty.strip() {
-            Ty::Bytes => Ty::Num,
+            Ty::Typed(_) => Ty::Num,
             Ty::Arr(el) => match &**el {
                 // Out of range reads null (a zero pointer, or the null NaN for numbers).
                 e if e.is_ptr() || *e == Ty::Num => e.clone().nullable(),
@@ -991,7 +998,7 @@ impl<'a> Lowerer<'a> {
                 }
                 let vt = match v.ty.strip() {
                     Ty::Arr(e) => (**e).clone(),
-                    Ty::Bytes => Ty::Num,
+                    Ty::Typed(_) => Ty::Num,
                     t => bail!("{}: cannot spread {t}", self.loc(sp.span.start)),
                 };
                 if el.is_none() {
@@ -1107,13 +1114,9 @@ impl<'a> Lowerer<'a> {
                 ];
                 Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty))
             }
-            "Uint8Array" => {
-                let len = match n.arguments.first().and_then(|a| a.as_expression()) {
-                    Some(e) => self.lower_expr(e, Some(&Ty::Num))?,
-                    None => num(0.0),
-                };
-                let len = self.as_num(len)?;
-                Ok(mk(ExprKind::Rt(RtFn::BytesNew, vec![len]), Ty::Bytes))
+            name if crate::ir::TypedKind::from_name(name).is_some() => {
+                let kind = crate::ir::TypedKind::from_name(name).expect("checked");
+                self.lower_new_typed(kind, n)
             }
             "Map" | "Set" | "WeakMap" | "WeakSet" => self.lower_new_collection(&id.name, n, exp),
             "RegExp" => self.lower_new_regexp(&n.arguments, n.span.start),
@@ -1179,7 +1182,7 @@ impl<'a> Lowerer<'a> {
                 let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
                 let idx = self.as_num(idx)?;
                 let ty = match arr.ty.strip() {
-                    Ty::Bytes => Ty::Num,
+                    Ty::Typed(_) => Ty::Num,
                     Ty::Arr(e) => (**e).clone(),
                     t => bail!("cannot index {t}"),
                 };
@@ -1542,6 +1545,12 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("Math").is_none()
                 {
                     return self.lower_math(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && let Some(kind) = crate::ir::TypedKind::from_name(id.name.as_str())
+                    && self.lookup(id.name.as_str()).is_none()
+                {
+                    return self.lower_typed_static(kind, method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Date"

@@ -439,6 +439,91 @@ impl Cg<'_, '_> {
         self.b.ins().fcvt_to_sint_sat(types::I64, v)
     }
 
+    /// Element `idx` of a typed array's data as a double.
+    fn typed_load(&mut self, kind: crate::ir::TypedKind, data: Value, idx: Value) -> Value {
+        use crate::ir::TypedKind as K;
+        let off = self.b.ins().imul_imm_s(idx, kind.size() as i64);
+        let addr = self.b.ins().iadd(data, off);
+        let f = self.mf_t;
+        match kind {
+            K::U8 | K::U8C => {
+                let v = self.b.ins().uload8(types::I64, f, addr, 0);
+                self.b.ins().fcvt_from_sint(types::F64, v)
+            }
+            K::I8 => {
+                let v = self.b.ins().sload8(types::I64, f, addr, 0);
+                self.b.ins().fcvt_from_sint(types::F64, v)
+            }
+            K::U16 => {
+                let v = self.b.ins().uload16(types::I64, f, addr, 0);
+                self.b.ins().fcvt_from_sint(types::F64, v)
+            }
+            K::I16 => {
+                let v = self.b.ins().sload16(types::I64, f, addr, 0);
+                self.b.ins().fcvt_from_sint(types::F64, v)
+            }
+            K::U32 => {
+                let w = self.b.ins().load(types::I32, f, addr, 0);
+                let v = self.b.ins().uextend(types::I64, w);
+                self.b.ins().fcvt_from_sint(types::F64, v)
+            }
+            K::I32 => {
+                let w = self.b.ins().load(types::I32, f, addr, 0);
+                let v = self.b.ins().sextend(types::I64, w);
+                self.b.ins().fcvt_from_sint(types::F64, v)
+            }
+            K::F32 => {
+                let v = self.b.ins().load(types::F32, f, addr, 0);
+                self.b.ins().fpromote(types::F64, v)
+            }
+            K::F64 => self.b.ins().load(types::F64, f, addr, 0),
+        }
+    }
+
+    /// Stores a double as element `idx` of a typed array's data, converting as the kind requires.
+    fn typed_store(&mut self, kind: crate::ir::TypedKind, data: Value, idx: Value, val: Value) {
+        use crate::ir::TypedKind as K;
+        let off = self.b.ins().imul_imm_s(idx, kind.size() as i64);
+        let addr = self.b.ins().iadd(data, off);
+        let f = self.mf_t;
+        match kind {
+            K::F64 => {
+                self.b.ins().store(f, val, addr, 0);
+            }
+            K::F32 => {
+                let v = self.b.ins().fdemote(types::F32, val);
+                self.b.ins().store(f, v, addr, 0);
+            }
+            K::U8C => {
+                // Round half to even, clamp to 0..255; NaN converts to 0.
+                let r = self.b.ins().nearest(val);
+                let zero = self.b.ins().f64const(0.0);
+                let max = self.b.ins().f64const(255.0);
+                let lo = self.b.ins().fmax(r, zero);
+                let hi = self.b.ins().fmin(lo, max);
+                let n = self.b.ins().fcvt_to_uint_sat(types::I64, hi);
+                let byte = self.b.ins().ireduce(types::I8, n);
+                self.b.ins().store(f, byte, addr, 0);
+            }
+            _ => {
+                // NaN, infinities and values of 2^63 or more store 0 (their low bits).
+                let sat = self.cvt_i64(val);
+                let abs = self.b.ins().fabs(val);
+                let limit = self.b.ins().f64const(9.223372036854776e18);
+                let small = self.b.ins().fcmp(FloatCC::LessThan, abs, limit);
+                let zero_i = self.b.ins().iconst(types::I64, 0);
+                let n = self.b.ins().select(small, sat, zero_i);
+                let w = match kind.size() {
+                    1 => types::I8,
+                    2 => types::I16,
+                    _ => types::I32,
+                };
+                let v = self.b.ins().ireduce(w, n);
+                self.b.ins().store(f, v, addr, 0);
+            }
+        }
+    }
+
     /// JS ToInt32 for the values games use (|x| < 2^63).
     fn cvt_i32(&mut self, v: Value) -> Value {
         let w = self.cvt_i64(v);
@@ -641,11 +726,8 @@ impl Cg<'_, '_> {
                 self.b.ins().brif(ok, st, &[], join, &[]);
                 self.b.switch_to_block(st);
                 let data = self.b.ins().load(types::I64, self.mf_t, arr, 24);
-                if matches!(a.ty.strip(), Ty::Bytes) {
-                    let n = self.cvt_i64(val);
-                    let byte = self.b.ins().ireduce(types::I8, n);
-                    let addr = self.b.ins().iadd(data, idx);
-                    self.b.ins().store(self.mf_t, byte, addr, 0);
+                if let Ty::Typed(kind) = a.ty.strip() {
+                    self.typed_store(*kind, data, idx, val);
                 } else {
                     let slot = self.slot_of(val, &v.ty);
                     let off = self.b.ins().imul_imm_s(idx, 8);
@@ -1027,10 +1109,8 @@ impl Cg<'_, '_> {
                 self.b.ins().brif(ok, inb, &[], oob, &[]);
                 self.b.switch_to_block(inb);
                 let data = self.b.ins().load(types::I64, self.mf_t, arr, 24);
-                let v = if matches!(a.ty.strip(), Ty::Bytes) {
-                    let addr = self.b.ins().iadd(data, idx);
-                    let byte = self.b.ins().uload8(types::I64, self.mf_t, addr, 0);
-                    self.b.ins().fcvt_from_sint(types::F64, byte)
+                let v = if let Ty::Typed(kind) = a.ty.strip() {
+                    self.typed_load(*kind, data, idx)
                 } else {
                     let off = self.b.ins().imul_imm_s(idx, 8);
                     let addr = self.b.ins().iadd(data, off);
@@ -1038,7 +1118,7 @@ impl Cg<'_, '_> {
                 };
                 self.b.ins().jump(join, &[ir::BlockArg::Value(v)]);
                 self.b.switch_to_block(oob);
-                let d = if matches!(a.ty.strip(), Ty::Bytes) {
+                let d = if matches!(a.ty.strip(), Ty::Typed(_)) {
                     b_f64(self, 0.0)
                 } else {
                     self.null_of(&e.ty)
@@ -1413,11 +1493,6 @@ impl Cg<'_, '_> {
                 );
                 dummy(self)
             }
-            RtFn::BytesNew => {
-                let n = self.cvt_i64(vals[0]);
-                self.rt("ts_rt_bytes_new_gc", &[types::I64], Some(types::I64), &[n])
-                    .unwrap()
-            }
             RtFn::ArrSetLen => {
                 self.rt(
                     "ts_rt_arr_set_len",
@@ -1497,20 +1572,6 @@ impl Cg<'_, '_> {
                 dummy(self)
             }
             RtFn::Random => self.rt("ts_rt_random", &[], Some(types::F64), &[]).unwrap(),
-            RtFn::BytesFill => {
-                let (v, s, e) = (
-                    self.cvt_i64(vals[1]),
-                    self.cvt_i64(vals[2]),
-                    self.cvt_i64(vals[3]),
-                );
-                self.rt(
-                    "ts_rt_bytes_fill",
-                    &[types::I64, types::I64, types::I64, types::I64],
-                    None,
-                    &[vals[0], v, s, e],
-                );
-                dummy(self)
-            }
         })
     }
 }

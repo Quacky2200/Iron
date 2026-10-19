@@ -85,7 +85,8 @@ impl<'a> Lowerer<'a> {
                 if matches!(arr.ty.strip(), Ty::Map(..) | Ty::Set(_)) {
                     return self.lower_for_of_collection(f, pat, arr, mode, out);
                 }
-                let arr = if matches!(arr.ty.strip(), Ty::Arr(_) | Ty::Bytes) || mode.is_empty() {
+                let arr = if matches!(arr.ty.strip(), Ty::Arr(_) | Ty::Typed(_)) || mode.is_empty()
+                {
                     arr
                 } else {
                     // Not an array (say, a user class with an `entries` method): iterate as written.

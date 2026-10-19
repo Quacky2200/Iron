@@ -1517,7 +1517,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
       - [x] `pop shift unshift slice splice concat reverse sort indexOf lastIndexOf findIndex reduce fill at`, `length = n`, `Array.from/of/isArray`, `new Array(n)` (`M9-TS-92..110`)
       - [x] `join` (needs strings), `flat`, `flatMap`, `entries`, `keys`, `findLast`, `reduceRight`, `sort()` without a comparator (string order) (`M9-TS-199..205`; not done: `toSpliced`, `with`, `copyWithin`)
       - [ ] `for...of` over `Map`/`Set` (done, `M9-TS-206..214`)/strings
-    - [ ] Typed arrays beyond `Uint8Array`: `Float32Array Float64Array Int32Array Uint16Array ...`
+    - [~] Typed arrays beyond `Uint8Array`: all nine element kinds done (`M9-TS-313..359`); `ArrayBuffer`, `DataView` and shared views are open
     - [ ] `Object.keys/entries/values/assign` and the `Number` statics (done, `M9-TS-199..205`), `Date` (done, `M9-TS-240..253`, `M9-TS-276`), `performance` (open)
   - [ ] **JS semantics conformance**: differential tests against bun on generated and real code
     - [ ] A harness that runs every tested module (zombie `sim.ts` first) in bun and native and compares

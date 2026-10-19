@@ -143,7 +143,7 @@ pub fn may_alloc(e: &Expr) -> bool {
         // An engine function returning a string copies it into a new script string.
         ExprKind::CallExtern(..) if e.ty == Ty::Str => true,
         // A sort runs the comparator, which allocates.
-        ExprKind::Rt(RtFn::ArrNew | RtFn::BytesNew | RtFn::ArrSort, _) => true,
+        ExprKind::Rt(RtFn::ArrNew | RtFn::ArrSort, _) => true,
         // The runtime's string functions that make a string can collect first.
         ExprKind::Rt(RtFn::Str(name), _) if name.ends_with("_gc") => true,
         ExprKind::Seq(stmts, v) => stmts.iter().any(stmt_may_alloc) || may_alloc(v),

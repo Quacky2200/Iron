@@ -1029,6 +1029,7 @@ mod map;
 mod regexp;
 mod string;
 mod string_more;
+mod typed;
 mod uri;
 pub use date::*;
 pub use intl::*;
@@ -1040,6 +1041,7 @@ pub use map::*;
 pub use regexp::*;
 pub use string::*;
 pub use string_more::*;
+pub use typed::*;
 pub use uri::*;
 
 /// A new variable box holding `value` (a number's bits, a tag, or a pointer when `is_ptr`). May
@@ -1239,6 +1241,14 @@ pub fn link_anchor() -> usize {
         ts_rt_list_format_gc as *const () as usize,
         ts_rt_rtf_new as *const () as usize,
         ts_rt_rtf_format_gc as *const () as usize,
+        ts_rt_typed_new_gc as *const () as usize,
+        ts_rt_typed_from_array_gc as *const () as usize,
+        ts_rt_typed_from_typed_gc as *const () as usize,
+        ts_rt_typed_to_array_gc as *const () as usize,
+        ts_rt_typed_fill as *const () as usize,
+        ts_rt_typed_set as *const () as usize,
+        ts_rt_typed_slice_gc as *const () as usize,
+        ts_rt_typed_reorder as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

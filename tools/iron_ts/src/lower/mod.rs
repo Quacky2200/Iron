@@ -23,6 +23,7 @@ mod regexp;
 mod scan;
 mod stmt;
 mod strings;
+mod typed;
 mod types;
 
 use crate::ir::*;

@@ -767,7 +767,7 @@ impl<'a> Lowerer<'a> {
             let v = self.lower_expr(e, None)?;
             if matches!(
                 v.ty.strip(),
-                Ty::Obj(_) | Ty::Arr(_) | Ty::Bytes | Ty::Fn(_)
+                Ty::Obj(_) | Ty::Arr(_) | Ty::Typed(_) | Ty::Fn(_)
             ) {
                 bail!(
                     "{at}: console.{method} of an object or array is not supported yet; log its fields"

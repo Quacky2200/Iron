@@ -27,7 +27,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn begin_iter_dir(&mut self, arr: Expr, rev: bool) -> R<Iter> {
         let el_ty = match arr.ty.strip() {
             Ty::Arr(e) => (**e).clone(),
-            Ty::Bytes => Ty::Num,
+            Ty::Typed(_) => Ty::Num,
             t => bail!("cannot iterate {t}"),
         };
         let a = self.new_local(arr.ty.clone());
@@ -49,7 +49,7 @@ impl<'a> Lowerer<'a> {
             )
         };
         let raw_ty = match &el_ty {
-            e if arr.ty.strip() != &Ty::Bytes && (e.is_ptr() || *e == Ty::Num) => {
+            e if !matches!(arr.ty.strip(), Ty::Typed(_)) && (e.is_ptr() || *e == Ty::Num) => {
                 e.clone().nullable()
             }
             e => e.clone(),
@@ -229,7 +229,7 @@ impl<'a> Lowerer<'a> {
             "isArray" => {
                 let e = arg(0).ok_or("Array.isArray needs an argument")?;
                 let v = self.lower_expr(e, None)?;
-                let is = matches!(v.ty.strip(), Ty::Arr(_) | Ty::Bytes);
+                let is = matches!(v.ty.strip(), Ty::Arr(_) | Ty::Typed(_));
                 Ok(mk(
                     ExprKind::Seq(
                         vec![Stmt::Eval(v)],
@@ -378,6 +378,9 @@ impl<'a> Lowerer<'a> {
                 return self.lower_method(Self::downcast(recv, sub), m, c);
             }
         }
+        if let Ty::Typed(kind) = &rty {
+            return self.lower_typed_method(recv, *kind, m, c);
+        }
         if rty == Ty::Str {
             return self.lower_str_method(recv, m, c);
         }
@@ -438,7 +441,7 @@ impl<'a> Lowerer<'a> {
                 Ok(void(stmts))
             }
             (
-                Ty::Arr(_) | Ty::Bytes,
+                Ty::Arr(_) | Ty::Typed(_),
                 "forEach" | "filter" | "find" | "findLast" | "some" | "every" | "map",
             ) => {
                 let cb = cb_arg(0)?;
@@ -863,7 +866,7 @@ impl<'a> Lowerer<'a> {
                     Ty::Num,
                 ))
             }
-            (Ty::Arr(_) | Ty::Bytes, "reduce" | "reduceRight") => {
+            (Ty::Arr(_) | Ty::Typed(_), "reduce" | "reduceRight") => {
                 let cb = cb_arg(0)?;
                 let Some(init) = c.arguments.get(1).and_then(|a| a.as_expression()) else {
                     bail!("reduce needs an initial value")
@@ -921,22 +924,6 @@ impl<'a> Lowerer<'a> {
                     ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
                     Ty::Bool,
                 ))
-            }
-            (Ty::Bytes, "fill") => {
-                let mut args = vec![recv];
-                for (i, a) in c.arguments.iter().enumerate().take(3) {
-                    let Some(e) = a.as_expression() else {
-                        bail!("fill: spread")
-                    };
-                    let v = self.lower_expr(e, Some(&Ty::Num))?;
-                    let v = self.as_num(v)?;
-                    let _ = i;
-                    args.push(v);
-                }
-                if args.len() != 4 {
-                    bail!("Uint8Array.fill needs (value, start, end)");
-                }
-                Ok(mk(ExprKind::Rt(RtFn::BytesFill, args), Ty::Void))
             }
             (t, m) => bail!(
                 "{}: method `{m}` on {t} is not supported",
