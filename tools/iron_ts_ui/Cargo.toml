@@ -1,0 +1,13 @@
+[package]
+name = "iron_ts_ui"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+iron_ts_rt = { path = "../iron_ts_rt" }
+iron_ui_native = { path = "../../crates/iron_ui_native" }
+iron_ui = { path = "../../crates/iron_ui" }
+iron_core = { path = "../../crates/iron_core" }
+iron_api = { path = "../../crates/iron_api" }
+serde_json = "1"

@@ -929,3 +929,33 @@ arguments gets its own copy (`identity$$number`, `Box$$string`, `Box$$Item_5`), 
   specialisation), default type arguments depending on later ones.
 
 Tests `M9-TS-562..574` (all bun-compared except the error cases).
+
+## UI: JSX and hooks (native reconciler)
+
+TSX components compile against the `Ui` namespace of [iron_ts_ui](../tools/iron_ts_ui/src/lib.rs) and are rendered by
+[iron_ui_native](ui-native.md); no JavaScript engine. Source rewrite: [jsx.rs](../tools/iron_ts/src/lower/jsx.rs) (runs
+first, only when the manifest has the `Ui` namespace); the generic hooks and the event class are the prelude
+[ui.ts](../tools/iron_ts/src/lower/ui.ts).
+
+- **Elements.** `<box style={{ width: 10 }} onClick={f} className="x" key="k">` becomes builder calls
+  (`Ui.begin`, `Ui.style`, `Ui.attr`, `Ui.on`, `Ui.key`, `Ui.child`). A `Ui` function with several versions
+  (`style`, `attr`, `child`, `dep`, `stateNew`, `store`) is picked by the argument types (`Manifest::overloads`); a child
+  may be an element, a string, a number or an array of elements. Elements are `UiElement` handles. `style` must be an
+  object literal; `ref=`, spread attributes and text children of a component are errors that say so.
+- **Components** `function Counter(props: P): UiElement`: `<Counter a={1} />` becomes `Ui.component(ID, () => Counter({ a: 1 }))`,
+  `ID` a hash of the name (it says which state belongs to which component). With no attributes the call is `Counter()`.
+  Element children of a component arrive as `props.children: UiElement[]`.
+- **Events.** `onClick`, `onPointerDown`, ... become handlers of the lowercase kind (`"click"`, `"pointerdown"`;
+  `onXCapture` is `"x:capture"`, `onChange` is `"input"`). The handler receives a `UiEvent` (`type`, `target`, `clientX`,
+  `clientY`, `key`, `value`, `stopPropagation()`, `preventDefault()`).
+- **Hooks.** `const [n, setN] = useState(0)` (generic `useState<T>`; numbers, booleans, and script pointers such as strings,
+  arrays and objects), `useRef`, `useMemo`, `useCallback`, `useEffect(f, [deps])` (`f` may return a cleanup function; no
+  list means every render; a list is rewritten into `Ui.dep(..)` calls, so it may mix types). Setting state from a handler
+  schedules a render; setting it during a render only keeps the value. `setN(prev => ...)` (updater form) is not built.
+- **Closures to Rust.** The manifest type `fn:T` is a zero-parameter closure the engine roots until the description holding
+  it is dropped; render functions, handlers and effects are such closures. `ptr` is any other script pointer, `handles:T`
+  an array of handles.
+- **Not built yet**: `ref=`, context, `memo`, `forwardRef`, `useReducer`, `useImperativeHandle`, `useSyncExternalStore`,
+  controlled text fields, hot-reload state, `iron_app` wiring.
+
+Tests `M9-TS-575..579`.

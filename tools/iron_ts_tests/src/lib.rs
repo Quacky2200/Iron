@@ -199,6 +199,23 @@ pub mod cmp {
     include!(concat!(env!("OUT_DIR"), "/components_bindings.rs"));
 }
 
+/// Compiled UI components (`bench/ui.ts`), prefix `uic_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod uic {
+    include!(concat!(env!("OUT_DIR"), "/ui_bindings.rs"));
+}
+
+/// Keeps the UI bridge (`iron_ts_ui`) linked into every binary of this crate: the `ui` module's
+/// object calls its `ts_ui_*` functions.
+#[used]
+static UI_BRIDGE: fn() -> usize = iron_ts_ui::link_anchor;
+
 /// Uses `iron_scene`, so that binaries linking this crate also link its `Scene` API shims.
 pub fn scene_anchor() -> usize {
     iron_scene::Scene::new().len()

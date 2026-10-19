@@ -19,6 +19,7 @@ parallel to the descriptions, diffs each new description against it and applies 
 | Events | `Runtime::dispatch(&mut Event, &mut UiTree)`: capture outside-in, bubble inside-out along the **component tree** (a portal's content bubbles to its logical parent), `stop_propagation` and `prevent_default`, then a synchronous flush. |
 | Portals / roots | `create_root(container)` mounts into any node; `Element::portal(target, children)` mounts under another node. One `Runtime` per `UiTree`. |
 
-Not built yet (in the design note's order): the compiler side (JSX, hook intrinsics through generics, stable component ids
-and hook signatures), `memo`, `forwardRef`, `useReducer`, `useImperativeHandle`, `useSyncExternalStore`, controlled text
+The compiler side (JSX, hooks, closures to Rust, stable component ids) is described in [iron-ts.md](iron-ts.md#ui-jsx-and-hooks-native-reconciler).
+
+Not built yet (in the design note's order): hook signatures for hot reload, `ref=`, context from TSX, `memo`, `forwardRef`, `useReducer`, `useImperativeHandle`, `useSyncExternalStore`, controlled text
 fields, hot-reload state, and wiring into `iron_app` (another session's area).

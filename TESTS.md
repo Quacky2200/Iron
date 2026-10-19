@@ -1061,3 +1061,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M2-NAT-10 | Integration | Refs set and cleared, context follows the provider, unmount cleans up and frees. |
 | M2-NAT-11 | Integration | An effect that sets state every render is reported after 100 chained updates. |
 | M2-NAT-12 | JS unit | Real React's effect/cleanup order for mount, update, removal, replacement and unmount (`js/react/test/native_oracle.test.tsx`). |
+| M9-TS-575 | Integration | A TSX counter (useState, style, onClick, text and number children) renders into a real UiTree and handles clicks (`iron_ts_tests/tests/ui.rs`, `bench/ui.ts`). |
+| M9-TS-576 | Integration | A keyed list from `items.map(..)` keeps its nodes when reversed. |
+| M9-TS-577 | Integration | `useEffect` with dependencies and cleanup: +1, no rerun, -1 +2, cleanup on unmount. |
+| M9-TS-578 | Integration | `useMemo` recomputes only when its dependencies change. |
+| M9-TS-579 | Integration | Boolean and string state and `useRef` persist across renders; all GC modes. |

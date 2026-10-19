@@ -41,6 +41,8 @@ pub struct Manifest {
     pub values: HashMap<String, Vec<(String, ExtTy)>>,
     /// Handle classes (`GameObject`) by name.
     pub classes: HashMap<String, ClassFns>,
+    /// Functions declared more than once under one name, picked by the argument types.
+    pub overloads: HashMap<(String, String), Vec<ExternFn>>,
 }
 
 fn ext_ty(s: &str) -> Result<ExtTy, String> {
@@ -53,7 +55,13 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
         "u32" => ExtTy::U32,
         "string" => ExtTy::Str,
         other => {
-            if let Some(name) = other.strip_prefix("handle:") {
+            if other == "ptr" {
+                ExtTy::Ptr
+            } else if let Some(n) = other.strip_prefix("handles:") {
+                ExtTy::HandleArr(n.to_string())
+            } else if let Some(inner) = other.strip_prefix("fn:") {
+                ExtTy::Fn(Box::new(ext_ty(inner)?))
+            } else if let Some(name) = other.strip_prefix("handle:") {
                 ExtTy::Handle(name.to_string())
             } else if let Some(name) = other.strip_prefix("value:") {
                 ExtTy::Value(name.to_string())
@@ -94,7 +102,13 @@ impl Manifest {
             .ok_or("manifest: missing `functions`")?
         {
             let (name, _, func) = self.parse_fn(f)?;
-            fns.insert(name, func);
+            if let Some(prev) = fns.insert(name.clone(), func.clone()) {
+                let list = self.overloads.entry((ns.clone(), name)).or_default();
+                if list.is_empty() {
+                    list.push(prev);
+                }
+                list.push(func);
+            }
         }
         for c in v["classes"].as_array().into_iter().flatten() {
             let cname = c["name"].as_str().ok_or("manifest: a class needs a name")?;

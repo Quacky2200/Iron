@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **575**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **580**).
 
 ## How to pick this up
 
@@ -85,7 +85,7 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**State (2026-10-19):** the standard library list is delivered (strings, collections, JSON, `RegExp`, `Date`, `Intl`, generators, `Promise`/`async`/timers, typed arrays, `Temporal`, ...; `M9-TS-1..555`, detail in the Log and `docs/iron-ts.md`). Compiled components for the Rust host are built (`M9-TS-556..561`, `NativeHost`); generics are built (`M9-TS-562..574`, monomorphisation). Next free test ID **575**.
+**State (2026-10-19):** the standard library list is delivered (strings, collections, JSON, `RegExp`, `Date`, `Intl`, generators, `Promise`/`async`/timers, typed arrays, `Temporal`, ...; `M9-TS-1..555`, detail in the Log and `docs/iron-ts.md`). Compiled components for the Rust host are built (`M9-TS-556..561`, `NativeHost`); generics are built (`M9-TS-562..574`, monomorphisation); TSX components with hooks render through `iron_ui_native` (`M9-TS-575..579`). Next free test ID **580**.
 **Next (user's priority):** (1) UI without React: design note written, awaiting the user's review (`docs/research/iron-ui-native.md`; hooks kept, native reconciler, same ops into `iron_ui::UiTree`); (2) toward iron_api testing of iron_ts as the QuickJS replacement: `@property` save/load through `PROPS_<Class>`, `getComponent`/`addComponent`, QuickJS bindings for values and strings, annotating `iron_physics`/`iron_audio`, wiring `enter` + `NativeHost` into `iron_app` (another session's area: hand-over contract in boundary note section 21).
 **Open stdlib items (niche):** `Intl.*.formatRange`, `FinalizationRegistry`, `globalThis`, `Error.stack`, `Duration.total` with `relativeTo`, `for await` / async generators, `SharedArrayBuffer`/Atomics, Proxy (not until needed), optional `icu-full`.
 

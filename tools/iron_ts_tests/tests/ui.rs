@@ -1,0 +1,179 @@
+//! Compiled TSX components rendered by the native reconciler (`bench/ui.ts`): JSX, hooks, keyed
+//! lists and events written as ordinary TypeScript, run through `iron_ts_ui` and `iron_ui_native`
+//! into a real `UiTree`. Each test runs normally and with a collection at every allocation.
+//! IDs are in TESTS.md (M9-TS-575..).
+use iron_core::NodeId;
+use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use iron_ts_tests::uic::*;
+use iron_ui::{ROOT, UiTree};
+use iron_ui_native::{Event, Runtime};
+use std::sync::Mutex;
+
+/// The scripts' globals are shared; one test at a time.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+fn in_every_gc_mode(f: impl Fn()) {
+    assert_ne!(link_anchor(), 0);
+    assert_ne!(iron_ts_ui::link_anchor(), 0);
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe { ts_uic_init() };
+    f();
+    ts_rt_gc_stress(true);
+    unsafe { ts_uic_init() };
+    f();
+    ts_rt_gc_stress(false);
+    ts_rt_gc_enable(false);
+    unsafe { ts_uic_init() };
+    f();
+    ts_rt_gc_enable(true);
+}
+
+fn dump(tree: &UiTree, id: NodeId) -> String {
+    let kind = tree.kind(id).unwrap_or("?");
+    if kind == "#text" {
+        return format!("text:{}", tree.text(id).unwrap_or(""));
+    }
+    let kids: Vec<String> = tree.children(id).iter().map(|c| dump(tree, *c)).collect();
+    format!("{kind}({})", kids.join(","))
+}
+
+fn no_errors(errors: Vec<iron_ui::UiError>) {
+    assert!(errors.is_empty(), "{errors:?}");
+    let script = iron_ts_ui::take_errors();
+    assert!(script.is_empty(), "{script:?}");
+}
+
+struct Ui {
+    tree: UiTree,
+    rt: Runtime,
+    root: iron_ui_native::RootId,
+}
+
+impl Ui {
+    fn new() -> Ui {
+        let mut rt = Runtime::new(1 << 30);
+        let root = rt.create_root(ROOT);
+        Ui {
+            tree: UiTree::new(300.0, 300.0),
+            rt,
+            root,
+        }
+    }
+
+    fn show(&mut self, handle: u64) {
+        let el = iron_ts_ui::element_from(handle);
+        no_errors(self.rt.render(self.root, el, &mut self.tree));
+    }
+
+    fn click(&mut self, node: NodeId) {
+        let mut ev = Event::new("click", node);
+        self.rt.dispatch(&mut ev, &mut self.tree);
+        no_errors(Vec::new());
+    }
+
+    fn dump(&self) -> String {
+        dump(&self.tree, ROOT)
+    }
+}
+
+// M9-TS-575
+//
+// A component written as TSX: `useState`, a host element with a style and a click handler, text
+// and a number as children. A click inside the compiled handler changes the state and the text.
+#[test]
+fn a_counter_component_renders_and_handles_a_click() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_counterApp() });
+        assert_eq!(ui.dump(), "root(box(text(text:n=),text:3))");
+        let boxn = ui.tree.children(ROOT)[0];
+        ui.click(boxn);
+        assert_eq!(ui.dump(), "root(box(text(text:n=),text:4))");
+        ui.click(boxn);
+        ui.click(boxn);
+        assert_eq!(ui.dump(), "root(box(text(text:n=),text:6))");
+        ui.tree.layout_if_needed();
+        assert_eq!(ui.tree.rect(boxn).unwrap().width, 100.0);
+    });
+}
+
+// M9-TS-576
+//
+// A keyed list from `items.map(...)`: reversing it moves the nodes, it does not recreate them.
+#[test]
+fn a_keyed_list_keeps_its_nodes_when_reordered() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_listApp(4.0, false) });
+        let list = ui.tree.children(ROOT)[0];
+        let before: Vec<NodeId> = ui.tree.children(list).to_vec();
+        assert_eq!(
+            ui.dump(),
+            "root(box(text(text:k0),text(text:k1),text(text:k2),text(text:k3)))"
+        );
+        ui.show(unsafe { ts_uic_listApp(4.0, true) });
+        let after: Vec<NodeId> = ui.tree.children(list).to_vec();
+        let want: Vec<NodeId> = before.iter().rev().copied().collect();
+        assert_eq!(after, want);
+        ui.show(unsafe { ts_uic_listApp(2.0, false) });
+        assert_eq!(ui.dump(), "root(box(text(text:k0),text(text:k1)))");
+    });
+}
+
+// M9-TS-577
+//
+// `useEffect` with dependencies and a cleanup: the log shows +1, then -1 +2 when the dependency
+// changes, nothing when it does not, and the cleanup on unmount.
+#[test]
+fn effects_run_with_dependencies_and_clean_up() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_fxApp(1.0) });
+        assert_eq!(unsafe { ts_uic_getLog() }, 11.0);
+        ui.show(unsafe { ts_uic_fxApp(1.0) });
+        assert_eq!(
+            unsafe { ts_uic_getLog() },
+            11.0,
+            "same dependency: no rerun"
+        );
+        ui.show(unsafe { ts_uic_fxApp(2.0) });
+        assert_eq!(unsafe { ts_uic_getLog() }, 112_112.0);
+        no_errors(ui.rt.unmount_root(ui.root, &mut ui.tree));
+        assert_eq!(unsafe { ts_uic_getLog() }, 11_211_222.0);
+    });
+}
+
+// M9-TS-578
+//
+// `useMemo` with dependencies: recomputed only when they change.
+#[test]
+fn use_memo_recomputes_only_when_its_dependencies_change() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_memoApp(3.0, 0.0) });
+        assert_eq!(ui.dump(), "root(box(text:9,text:0))");
+        ui.show(unsafe { ts_uic_memoApp(3.0, 5.0) });
+        assert_eq!(ui.dump(), "root(box(text:9,text:5))");
+        assert_eq!(unsafe { ts_uic_memoCount() }, 1.0);
+        ui.show(unsafe { ts_uic_memoApp(4.0, 5.0) });
+        assert_eq!(ui.dump(), "root(box(text:16,text:5))");
+        assert_eq!(unsafe { ts_uic_memoCount() }, 2.0);
+    });
+}
+
+// M9-TS-579
+//
+// Boolean and string state and `useRef`: a click flips both, the ref counts renders and survives.
+#[test]
+fn bool_and_string_state_and_use_ref_persist_across_renders() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_toggleApp() });
+        assert_eq!(ui.dump(), "root(box(text:off,text:1))");
+        let b = ui.tree.children(ROOT)[0];
+        ui.click(b);
+        assert_eq!(ui.dump(), "root(box(text:on,text:2))");
+        ui.click(b);
+        assert_eq!(ui.dump(), "root(box(text:off,text:3))");
+    });
+}

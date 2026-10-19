@@ -12,7 +12,7 @@ mod element;
 mod hooks;
 
 pub use element::{Cleanup, Element, Event, Handler, HostProps, NodeRef, RenderFn};
-pub use hooks::{Context, Ctx, Dep, EffectFn, Setter};
+pub use hooks::{Context, Ctx, Dep, EffectFn, Scheduler, Setter};
 
 use hooks::{Shared, Slot};
 use iron_core::{NodeId, Value};

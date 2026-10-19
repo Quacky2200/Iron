@@ -59,6 +59,19 @@ impl Shared {
     }
 }
 
+/// Asks for the component to render again.
+#[derive(Clone)]
+pub struct Scheduler {
+    shared: Rc<Shared>,
+    inst: usize,
+}
+
+impl Scheduler {
+    pub fn mark(&self) {
+        self.shared.mark(self.inst);
+    }
+}
+
 /// A state setter. Setting the value it already has schedules nothing (`Object.is`).
 pub struct Setter<T> {
     cell: Rc<RefCell<T>>,
@@ -111,6 +124,25 @@ impl Ctx<'_> {
             self.slots.push(make());
         }
         i
+    }
+
+    /// A hook slot holding a value of your own type (the script bridge keeps its cells here).
+    pub fn use_shared<T: 'static>(&mut self, make: impl FnOnce() -> T) -> Rc<T> {
+        let i = self.next_slot(|| Slot::Cell(Rc::new(make())));
+        let Slot::Cell(c) = &self.slots[i] else {
+            panic!("hooks changed order: expected a shared cell in slot {i}")
+        };
+        c.clone()
+            .downcast::<T>()
+            .unwrap_or_else(|_| panic!("hooks changed type in slot {i}"))
+    }
+
+    /// Marks this component dirty when asked, from anywhere (a setter, a subscription).
+    pub fn scheduler(&self) -> Scheduler {
+        Scheduler {
+            shared: self.shared.clone(),
+            inst: self.inst,
+        }
     }
 
     /// `useState`: the current value and its setter.

@@ -550,10 +550,170 @@ impl<'a> Lowerer<'a> {
     /// the arguments checked against the manifest and numbers converted at the call. A value
     /// class argument is passed as its fields; a value class result is written into a new object.
     fn lower_extern_call(&mut self, ns: &str, name: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        if ns == "Ui" && name == "load" {
+            return self.lower_ui_load(c);
+        }
+        if ns == "Ui" && name == "runEffect" {
+            return self.lower_ui_run_effect(c);
+        }
+        if let Some(cands) = self
+            .manifest
+            .overloads
+            .get(&(ns.to_string(), name.to_string()))
+            .cloned()
+        {
+            return self.lower_overloaded(ns, name, &cands, c);
+        }
         let Some(f) = self.manifest.namespaces[ns].get(name).cloned() else {
             bail!("{}: {ns} has no function `{name}`", self.loc(c.span.start))
         };
         self.call_ext_fn(f, None, &format!("{ns}.{name}"), c)
+    }
+
+    /// How an argument's type is passed to the boundary, for choosing among overloads.
+    fn ext_class(&self, t: &Ty) -> Option<ExtTy> {
+        Some(match t {
+            Ty::Num => ExtTy::F64,
+            Ty::Bool => ExtTy::Bool,
+            Ty::Str | Ty::Lit => ExtTy::Str,
+            Ty::Handle(n) => ExtTy::Handle(n.clone()),
+            Ty::Arr(e) if matches!(&**e, Ty::Handle(_)) => {
+                let Ty::Handle(n) = &**e else { unreachable!() };
+                ExtTy::HandleArr(n.clone())
+            }
+            Ty::Nullable(inner) => match &**inner {
+                Ty::Num => ExtTy::F64,
+                Ty::Handle(n) => ExtTy::Handle(n.clone()),
+                other if other.is_ptr() => ExtTy::Ptr,
+                _ => return None,
+            },
+            other if other.is_ptr() => ExtTy::Ptr,
+            _ => return None,
+        })
+    }
+
+    /// A boundary function with several versions: the one whose parameters take the argument types.
+    fn lower_overloaded(
+        &mut self,
+        ns: &str,
+        name: &str,
+        cands: &[ExternFn],
+        c: &'a CallExpression<'a>,
+    ) -> R<Expr> {
+        let mut vals = Vec::new();
+        for a in &c.arguments {
+            let Some(e) = a.as_expression() else {
+                bail!("{ns}.{name}: spread argument")
+            };
+            let v = self.lower_expr(e, None)?;
+            vals.push(self.widen_lit(v));
+        }
+        let classes: Vec<Option<ExtTy>> = vals.iter().map(|v| self.ext_class(&v.ty)).collect();
+        for f in cands {
+            if f.params.len() == vals.len()
+                && f.params
+                    .iter()
+                    .zip(&classes)
+                    .all(|((_, p), c)| c.as_ref() == Some(p))
+            {
+                return Ok(self.emit_extern(f, vals));
+            }
+        }
+        // A string or array with no version of its own goes where any script pointer does.
+        let loose: Vec<Option<ExtTy>> = classes
+            .iter()
+            .map(|c| match c {
+                Some(ExtTy::Str | ExtTy::HandleArr(_)) => Some(ExtTy::Ptr),
+                other => other.clone(),
+            })
+            .collect();
+        for f in cands {
+            if f.params.len() == vals.len()
+                && f.params
+                    .iter()
+                    .zip(&loose)
+                    .all(|((_, p), c)| c.as_ref() == Some(p))
+            {
+                return Ok(self.emit_extern(f, vals));
+            }
+        }
+        let have: Vec<String> = vals.iter().map(|v| v.ty.to_string()).collect();
+        bail!(
+            "{}: {ns}.{name} has no version for ({})",
+            self.loc(c.span.start),
+            have.join(", ")
+        )
+    }
+
+    /// `Ui.load<T>(slot)`: reads a hook slot as a `T` (a number, a boolean or a script pointer).
+    fn lower_ui_load(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let (Some(targ), Some(arg)) = (
+            c.type_arguments.as_ref().and_then(|t| t.params.first()),
+            c.arguments.first().and_then(|a| a.as_expression()),
+        ) else {
+            bail!("{at}: Ui.load<T>(slot)")
+        };
+        let t = self.ty(targ, "Ui.load")?;
+        let slot = self.lower_expr(arg, Some(&Ty::Num))?;
+        let slot = self.coerce(slot, &Ty::Num)?;
+        let (symbol, ret) = match t.strip() {
+            Ty::Num => ("ts_ui_load_num", ExtTy::F64),
+            Ty::Bool => ("ts_ui_load_bool", ExtTy::Bool),
+            Ty::Handle(n) => ("ts_ui_load_num", ExtTy::Handle(n.clone())),
+            other if other.is_ptr() => ("ts_ui_load_ptr", ExtTy::Ptr),
+            other => bail!("{at}: Ui.load<{other}> is not supported"),
+        };
+        let f = ExternFn {
+            symbol: symbol.into(),
+            params: vec![("slot".into(), ExtTy::F64)],
+            ret,
+        };
+        let mut e = self.emit_extern(&f, vec![slot]);
+        e.ty = t;
+        Ok(e)
+    }
+
+    /// `Ui.runEffect(f)`: calls an effect function; a function it returns is its cleanup.
+    fn lower_ui_run_effect(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
+            bail!("{at}: Ui.runEffect(f)")
+        };
+        let saved = std::mem::replace(&mut self.infer_ret, true);
+        let hint = Ty::Fn(Box::new(FnTy {
+            params: vec![],
+            ret: Ty::Void,
+        }));
+        let f = self.lower_expr(arg, Some(&hint));
+        self.infer_ret = saved;
+        let f = f?;
+        let Ty::Fn(sig) = f.ty.strip().clone() else {
+            bail!("{at}: an effect must be a function")
+        };
+        let tf = self.new_local(f.ty.clone());
+        let mut stmts = vec![Stmt::Assign(tf, f)];
+        let call = mk(
+            ExprKind::CallClosure(Box::new(self.var_expr(tf)), vec![]),
+            sig.ret.clone(),
+        );
+        match sig.ret.strip() {
+            Ty::Void => stmts.push(Stmt::Eval(call)),
+            Ty::Fn(_) => {
+                let r = self.new_local(sig.ret.clone());
+                stmts.push(Stmt::Assign(r, call));
+                let set = ExternFn {
+                    symbol: "ts_ui_set_cleanup".into(),
+                    params: vec![("f".into(), ExtTy::Ptr)],
+                    ret: ExtTy::Void,
+                };
+                let r = self.var_expr(r);
+                stmts.push(Stmt::Eval(self.emit_extern(&set, vec![r])));
+            }
+            other => bail!("{at}: an effect returns nothing or a cleanup function, not {other}"),
+        }
+        let unit = mk(ExprKind::Bool(false), Ty::Void);
+        Ok(mk(ExprKind::Seq(stmts, Box::new(unit)), Ty::Void))
     }
 
     /// A call of a boundary function with the call's arguments, after an optional receiver

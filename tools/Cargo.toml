@@ -1,7 +1,7 @@
 # The AOT script compiler spike. Its own workspace so engine builds never see it.
 [workspace]
 resolver = "3"
-members = ["iron_ts", "iron_ts_rt", "iron_ts_tests", "iron_demo_api"]
+members = ["iron_ts", "iron_ts_rt", "iron_ts_tests", "iron_demo_api", "iron_ts_ui"]
 
 [workspace.package]
 version = "0.1.0"
