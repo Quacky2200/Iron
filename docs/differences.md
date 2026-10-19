@@ -70,6 +70,14 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `RegExp` match as a tuple | Tuple types are not supported; a match is a `RegExpMatchArray` object seen as its string array | An array with extra properties | No tuples in the type system |
 | `RegExp` replacement functions | The parameters after the match (groups, named groups) need the regex's groups known at compile time (a regex literal, `new RegExp("literal")`, or a function-local `const` from one); module-level `const` regexes do not carry them; rest parameters are a compile error | Any function, any regex | The function is inlined and its arity is checked against the groups |
 | `matchAll` | Eager: an array of match objects, from a copy of the regex | A lazy iterator | No iterator objects; `for...of`, spread and `map` still work |
+| Generator return type | Must be written (`Generator<T>`, `IterableIterator<T>`, ...) | Inferred | The yield type picks the generated classes |
+| `yield*` | Only as a statement; a `yield` inside another `yield`'s operand is an error | An expression | Rewritten to a loop of yields |
+| `return value` in a generator | Dropped: the final result is `{ done: true, value: <zero> }` | `value` is the returned value | One `IteratorResult` type per yield type |
+| `generator.throw()`, `return()` | No `throw()`; `return()` does not run `finally` blocks | Both supported | Not built yet |
+| `IteratorResult.value` when done | The zero value (0, null) | `undefined` | The compiler does not tell null from undefined |
+| `Iterable<T>` annotations | Accept generators only (not arrays, strings or other iterables) | Any iterable | Maps to the generated classes |
+| `Symbol()` values | Not built; only `Symbol.iterator` as a method name | Available | Needed only for the iterator protocol |
+| Coroutines on WebAssembly | Not available | n/a | Not a target in the next year |
 | `Date()` without `new` | Not supported | Returns the current time as a string | Use `new Date().toString()` |
 | `Date.parse` of exotic legacy strings | A few return NaN (a bare number such as `"0"`, `"Oct 19"` without a year) | Engines guess a year or a value | The legacy tokenizer is strict where engines are lax; ISO and the common legacy forms match bun |
 | `Date` constructor arguments | `new Date(y, m, ...)` takes plain arguments, at most seven | Spread allowed | Lowered to a fixed-arity runtime call |

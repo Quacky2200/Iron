@@ -141,6 +141,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date`, `Intl_Collator`, `Intl_NumberFormat`, `Intl_DateTimeFormat`, `Intl_PluralRules`, `Intl_ListFormat` and `Intl_RelativeTimeFormat`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date`, `Intl` or bigints (each `Intl` class only when the program mentions it) |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
+| [lower/iter.rs](../tools/iron_ts/src/lower/iter.rs) | Well-known symbol member names (`symbol_key`, `well_known`) and the iterator protocol over classes with `@@iterator` |
+| [lower/generators.rs](../tools/iron_ts/src/lower/generators.rs) | `desugar` (generators by source rewriting, before parsing), the generated `Generator$K` classes, the `__co*` intrinsics; `Coroutine` is a prelude handle class |
+| [iron_ts_rt/src/coro.rs](../tools/iron_ts_rt/src/coro.rs) | Stackful coroutines (corosensei): resume/yield, shadow-stack relinking, GC scanning of suspended frames |
 
 ## Supported language
 
@@ -579,6 +582,39 @@ throwing anything but an `Error` object, unsupported string methods (see above),
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
+
+## Symbol, iterators and generators
+
+- **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`
+  (`symbol_key` maps the computed key, `well_known` recognises `Symbol.<name>`). `obj[Symbol.iterator]()` is
+  an ordinary call of it. `Symbol()` values are not built.
+- **Iterator protocol for classes.** `for...of`, array spread and `Array.from` over a value whose class has
+  `@@iterator` call it, then `next()` until `done` (an `IteratorResult` object of the program's own types).
+  Arrays, strings, `Map`, `Set` and typed arrays keep their loops.
+- **Coroutines** ([iron_ts_rt/src/coro.rs](../tools/iron_ts_rt/src/coro.rs)). A coroutine runs a `() => void`
+  closure on its own native stack (corosensei, 256 KB). The shadow stack (the linked list of frames living in
+  each function's native frame) needs no change, because the GC roots are not on the native stack: the
+  coroutine's first frame is relinked under the resumer's frame on every resume; when the coroutine object
+  (header `HDR_CORO`) is marked, a suspended coroutine's frames are scanned by walking `saved_top` down to
+  `bottom`; a coroutine swept while suspended gets `force_reset` (no unwinding: compiled frames have no
+  destructors). Not available on WebAssembly (not a target in the next year).
+- **Generators** ([lower/generators.rs](../tools/iron_ts/src/lower/generators.rs)) are a source rewrite
+  (`generators::desugar`, before parsing). `function*` and generator methods become normal functions whose body
+  is `return __genNew$K(() => { ... })`; every `yield x` becomes `__yield$K(x)`, and `yield* e;` (statement)
+  a `for...of` loop of yields. For each yield type `K` the program mentions, the classes `Generator$K`,
+  `Iterator$K`, `IteratorResult$K` and helper functions are generated as TypeScript text and put in front of
+  the program. The annotations `Generator<T,R,N>`, `IterableIterator<T>`, `Iterable<T>`, `Iterator<T>` and
+  `IteratorResult<T>` map to them. The intrinsics `__coNew`, `__coResume`, `__coYield<N>`, `__coValue<T>`,
+  `__coError` and `__coFinish` are lowered in `generators.rs`. Closures, captures, `this`, `try/finally` and
+  checked-return exceptions are the ordinary machinery: an exception thrown in the body is left pending by
+  the coroutine and rethrown by `next()`. Struct names with `$` are made Rust-safe in the generated bindings.
+- **Limits:** the return type must be written; `yield*` only as a statement; a `yield` inside another
+  `yield`'s operand is an error; `return value` in a generator is dropped (the result is
+  `{ done: true, value: <zero> }`); no `generator.throw()`; `return()` does not run `finally` blocks;
+  `IteratorResult.value` is the zero value (0, null) instead of `undefined` when done; `Iterable<T>`
+  annotations accept generators only. See [differences.md](differences.md).
+- Tests: `M9-TS-376..393` (`bench/generators.ts` with `tests/generators.rs`, bun-compared; the Rust coroutine
+  test is `M9-TS-381`).
 
 ## Runtime and GC
 
