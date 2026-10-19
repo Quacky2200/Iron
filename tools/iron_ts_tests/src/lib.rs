@@ -552,6 +552,42 @@ pub mod zoned_t {
     include!(concat!(env!("OUT_DIR"), "/zoned_bindings.rs"));
 }
 
+/// `bench/monthday.ts`, prefix `md_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod monthday_t {
+    include!(concat!(env!("OUT_DIR"), "/monthday_bindings.rs"));
+}
+
+/// `bench/rounding.ts`, prefix `rd_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod rounding_t {
+    include!(concat!(env!("OUT_DIR"), "/rounding_bindings.rs"));
+}
+
+/// `bench/canon.ts`, prefix `cn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod canon_t {
+    include!(concat!(env!("OUT_DIR"), "/canon_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

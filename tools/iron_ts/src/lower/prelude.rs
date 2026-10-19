@@ -143,6 +143,18 @@ pub const INTL_DISPLAYNAMES: &str = r#"class Intl_DisplayNames {
   of: (code: string) => string = (code: string): string => __displayNameOf(this.id, code);
 }
 "#;
+pub const INTL_CANON: &str = r#"function __canonLocalesN(tags: string[]): string[] {
+  const out: string[] = [];
+  for (const t of tags) {
+    const c = __localeCanon(t);
+    if (!out.includes(c)) out.push(c);
+  }
+  return out;
+}
+function __canonLocales1(tag: string): string[] {
+  return [__localeCanon(tag)];
+}
+"#;
 pub const INTL_LOCALE: &str = r#"class Intl_Locale {
   tag: string = "";
   toString(): string { return this.tag; }

@@ -623,6 +623,12 @@ impl<'a> Lowerer<'a> {
                 let call = self.rt_str("ts_rt_display_names_of_gc", vec![id, code], Ty::Str);
                 self.checked(call, Ty::Str)
             }
+            "__localeCanon" => {
+                let tag = first(self)?;
+                let opts = self.str_lit("");
+                let call = self.rt_str("ts_rt_locale_new_gc", vec![tag, opts], Ty::Str);
+                self.checked(call, Ty::Str)
+            }
             "__localeOp" => {
                 let args: Vec<&'a Expression<'a>> = c
                     .arguments

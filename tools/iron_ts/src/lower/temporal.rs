@@ -42,6 +42,8 @@ fn parser(class: &str) -> Option<&'static str> {
         "Temporal_PlainDateTime" => "__tpParseDateTime",
         "Temporal_Instant" => "__tpParseInstant",
         "Temporal_ZonedDateTime" => "__tpParseZoned",
+        "Temporal_PlainYearMonth" => "__tpParseYearMonth",
+        "Temporal_PlainMonthDay" => "__tpParseMonthDay",
         _ => return None,
     })
 }
@@ -55,6 +57,8 @@ fn copier(class: &str) -> Option<&'static str> {
         "Temporal_PlainDateTime" => "__tpDateTimeFrom",
         "Temporal_Instant" => "__tpInstantFrom",
         "Temporal_ZonedDateTime" => "__tpZonedFrom",
+        "Temporal_PlainYearMonth" => "__tpYearMonthFrom",
+        "Temporal_PlainMonthDay" => "__tpMonthDayFrom",
         _ => return None,
     })
 }
@@ -69,6 +73,11 @@ impl<'a> Lowerer<'a> {
             return Ok(v);
         }
         let name = self.m.structs[*sid].name.clone();
+        // `round("minute")` is `round({ smallestUnit: "minute" })`.
+        if name == "Temporal_RoundOptions" {
+            let v = self.widen_lit(v);
+            return self.call_helper("__tpRoundOpts", vec![v]);
+        }
         let Some(f) = parser(&name) else {
             return Ok(v);
         };

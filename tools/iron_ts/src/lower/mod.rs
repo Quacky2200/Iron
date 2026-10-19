@@ -273,6 +273,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if src.contains("Intl.DisplayNames") {
         head += prelude::INTL_DISPLAYNAMES;
     }
+    if src.contains("getCanonicalLocales") {
+        head += prelude::INTL_CANON;
+    }
     if src.contains("Intl.Locale") {
         head += prelude::INTL_LOCALE;
     }

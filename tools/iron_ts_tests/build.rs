@@ -69,6 +69,9 @@ fn main() {
         ("dispnames", "dn_", 1500),
         ("temporal", "tp_", 1600),
         ("zoned", "zn_", 1700),
+        ("monthday", "md_", 1800),
+        ("rounding", "rd_", 1900),
+        ("canon", "cn_", 2000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

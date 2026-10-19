@@ -265,6 +265,74 @@ function __tpParseDateTime(s: string): Temporal_PlainDateTime {
   return new Temporal_PlainDateTime(d.year, d.month, d.day, t.hour, t.minute, t.second, t.millisecond, t.microsecond, t.nanosecond);
 }
 
+
+// ---- rounding ----
+
+interface Temporal_RoundOptions {
+  smallestUnit?: string;
+  largestUnit?: string;
+  roundingMode?: string;
+  roundingIncrement?: number;
+}
+
+function __tpRoundOpts(unit: string): Temporal_RoundOptions {
+  return { smallestUnit: unit };
+}
+
+// The size of a unit in nanoseconds (day, hour .. nanosecond).
+function __tpUnitSize(unit: string): bigint {
+  if (unit === "day" || unit === "days") return 86400000000000n;
+  if (unit === "hour" || unit === "hours") return 3600000000000n;
+  if (unit === "minute" || unit === "minutes") return 60000000000n;
+  if (unit === "second" || unit === "seconds") return 1000000000n;
+  if (unit === "millisecond" || unit === "milliseconds") return 1000000n;
+  if (unit === "microsecond" || unit === "microseconds") return 1000n;
+  if (unit === "nanosecond" || unit === "nanoseconds") return 1n;
+  throw new RangeError("invalid unit " + unit);
+}
+
+// Rounds `v` to a multiple of `size` by a Temporal rounding mode.
+function __tpRound(v: bigint, size: bigint, mode: string): bigint {
+  let q = v / size;
+  if (v % size < 0n) q -= 1n;
+  const down = q * size;
+  const r = v - down;
+  if (r === 0n) return v;
+  const up = down + size;
+  const neg = v < 0n;
+  if (mode === "ceil") return up;
+  if (mode === "floor") return down;
+  if (mode === "trunc") return neg ? up : down;
+  if (mode === "expand") return neg ? down : up;
+  const twice = r * 2n;
+  if (twice < size) return down;
+  if (twice > size) return up;
+  if (mode === "halfCeil") return up;
+  if (mode === "halfFloor") return down;
+  if (mode === "halfTrunc") return neg ? up : down;
+  if (mode === "halfEven") return q % 2n === 0n ? down : up;
+  if (mode === "halfExpand") return neg ? down : up;
+  throw new RangeError("invalid rounding mode " + mode);
+}
+
+function __tpMode(o: Temporal_RoundOptions): string {
+  const m = o.roundingMode;
+  if (m === undefined) return "halfExpand";
+  if (m !== "ceil" && m !== "floor" && m !== "trunc" && m !== "expand" && m !== "halfCeil" && m !== "halfFloor" && m !== "halfTrunc" && m !== "halfExpand" && m !== "halfEven") {
+    throw new RangeError("invalid rounding mode " + m);
+  }
+  return m;
+}
+
+function __tpUnitOf(o: Temporal_RoundOptions): string {
+  if (o.smallestUnit === undefined) throw new RangeError("smallestUnit is required");
+  return o.smallestUnit;
+}
+
+function __tpIncrement(o: Temporal_RoundOptions): bigint {
+  return o.roundingIncrement === undefined ? 1n : BigInt(o.roundingIncrement);
+}
+
 // ---- Duration ----
 
 class Temporal_Duration {
@@ -401,6 +469,41 @@ class Temporal_Duration {
     const whole = t / size;
     const rest = t - whole * size;
     return Number(whole) + Number(rest) / Number(size);
+  }
+  round(options: Temporal_RoundOptions): Temporal_Duration {
+    if (this.years !== 0 || this.months !== 0 || this.weeks !== 0) {
+      throw new RangeError("a starting point is required for years, months and weeks");
+    }
+    let unit = "nanosecond";
+    if (options.smallestUnit !== undefined) unit = options.smallestUnit;
+    const size = __tpUnitSize(unit);
+    const rounded = __tpRound(this.timeNs(), size * __tpIncrement(options), __tpMode(options));
+    // The largest unit: the larger of the existing one and the smallest asked for.
+    let largest = "";
+    if (options.largestUnit !== undefined && options.largestUnit !== "auto") largest = options.largestUnit;
+    if (largest === "") {
+      const names = ["day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"];
+      let own = Math.max(this.largest(), 3) - 3;
+      let want = 0;
+      for (let i = 0; i < 7; i++) {
+        if (__tpUnitSize(names[i]) === size) want = i;
+      }
+      largest = names[Math.min(own, want)];
+    }
+    const names2 = ["day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"];
+    let first = 0;
+    for (let i = 0; i < 7; i++) {
+      if (__tpUnitSize(names2[i]) === __tpUnitSize(largest)) first = i;
+    }
+    let total = rounded;
+    const out: number[] = [0, 0, 0, 0, 0, 0, 0];
+    for (let i = first; i < 7; i++) {
+      const s = __tpUnitSize(names2[i]);
+      const q = total / s;
+      out[i] = Number(q);
+      total = total - q * s;
+    }
+    return new Temporal_Duration(0, 0, 0, out[0] + 0, out[1] + 0, out[2] + 0, out[3] + 0, out[4] + 0, out[5] + 0, out[6] + 0);
   }
   toString(): string {
     if (this.sign === 0) return "PT0S";
@@ -598,6 +701,12 @@ class Temporal_PlainTime {
   since(other: Temporal_PlainTime, opts: Temporal_DiffOptions | null = null): Temporal_Duration {
     return this.diff(other, 1, opts).negated();
   }
+  round(options: Temporal_RoundOptions): Temporal_PlainTime {
+    const size = __tpUnitSize(__tpUnitOf(options));
+    if (size > 3600000000000n) throw new RangeError("invalid unit for PlainTime.round");
+    const r = __tpRound(BigInt(this.ns()), size * __tpIncrement(options), __tpMode(options));
+    return Temporal_PlainTime.fromNs(Number(r % 86400000000000n));
+  }
   equals(other: Temporal_PlainTime): boolean {
     return this.ns() === other.ns();
   }
@@ -789,6 +898,12 @@ class Temporal_PlainDate {
   static compare(a: Temporal_PlainDate, b: Temporal_PlainDate): number {
     return __tpSign(a.epochDays() - b.epochDays());
   }
+  toPlainYearMonth(): Temporal_PlainYearMonth {
+    return new Temporal_PlainYearMonth(this.year, this.month);
+  }
+  toPlainMonthDay(): Temporal_PlainMonthDay {
+    return new Temporal_PlainMonthDay(this.month, this.day);
+  }
   toPlainDateTime(time: Temporal_PlainTime | null = null): Temporal_PlainDateTime {
     const t = time === null ? new Temporal_PlainTime(0, 0, 0, 0, 0, 0) : time;
     return new Temporal_PlainDateTime(this.year, this.month, this.day, t.hour, t.minute, t.second, t.millisecond, t.microsecond, t.nanosecond);
@@ -966,6 +1081,21 @@ class Temporal_PlainDateTime {
   since(other: Temporal_PlainDateTime, opts: Temporal_DiffOptions | null = null): Temporal_Duration {
     return this.diff(other, 1, opts).negated();
   }
+  round(options: Temporal_RoundOptions): Temporal_PlainDateTime {
+    const size = __tpUnitSize(__tpUnitOf(options));
+    const day = 86400000000000n;
+    const total = BigInt(this.toPlainDate().epochDays()) * day + BigInt(this.toPlainTime().ns());
+    const r = __tpRound(total, size * __tpIncrement(options), __tpMode(options));
+    let days = r / day;
+    let rest = r - days * day;
+    if (rest < 0n) {
+      rest += day;
+      days -= 1n;
+    }
+    const d = Temporal_PlainDate.fromEpochDays(Number(days));
+    const t = Temporal_PlainTime.fromNs(Number(rest));
+    return new Temporal_PlainDateTime(d.year, d.month, d.day, t.hour, t.minute, t.second, t.millisecond, t.microsecond, t.nanosecond);
+  }
   equals(other: Temporal_PlainDateTime): boolean {
     return Temporal_PlainDateTime.compare(this, other) === 0;
   }
@@ -1043,6 +1173,11 @@ class Temporal_Instant {
   }
   since(other: Temporal_Instant, opts: Temporal_DiffOptions | null = null): Temporal_Duration {
     return this.diff(other, 1, opts).negated();
+  }
+  round(options: Temporal_RoundOptions): Temporal_Instant {
+    const size = __tpUnitSize(__tpUnitOf(options));
+    if (size > 3600000000000n) throw new RangeError("invalid unit for Instant.round");
+    return Temporal_Instant.fromNs(__tpRound(this.ns, size * __tpIncrement(options), __tpMode(options)));
   }
   equals(other: Temporal_Instant): boolean {
     return this.ns === other.ns;
@@ -1303,6 +1438,20 @@ class Temporal_ZonedDateTime {
   since(other: Temporal_ZonedDateTime, opts: Temporal_DiffOptions | null = null): Temporal_Duration {
     return this.until(other, opts).negated();
   }
+  round(options: Temporal_RoundOptions): Temporal_ZonedDateTime {
+    const unit = __tpUnitOf(options);
+    if (unit === "day" || unit === "days") {
+      const start = this.startOfDay();
+      const l = this.local();
+      const next = Temporal_PlainDate.fromEpochDays(l.toPlainDate().epochDays() + 1);
+      const end = Temporal_ZonedDateTime.fromLocal(new Temporal_PlainDateTime(next.year, next.month, next.day, 0, 0, 0, 0, 0, 0), this.tz, 0);
+      const len = end.ns - start.ns;
+      const r = __tpRound(this.ns - start.ns, len, __tpMode(options));
+      return Temporal_ZonedDateTime.make(start.ns + r, this.tz);
+    }
+    const local = this.local().round(options);
+    return Temporal_ZonedDateTime.fromLocal(local, this.tz, 0);
+  }
   equals(other: Temporal_ZonedDateTime): boolean {
     return this.ns === other.ns && this.tz === other.tz;
   }
@@ -1382,4 +1531,160 @@ function __tpZonedFromLike(l: Temporal_ZonedLike): Temporal_ZonedDateTime {
 
 function __tpZonedFrom(z: Temporal_ZonedDateTime): Temporal_ZonedDateTime {
   return Temporal_ZonedDateTime.make(z.ns, z.tz);
+}
+
+// ---- PlainYearMonth and PlainMonthDay ----
+
+interface Temporal_YearMonthLike {
+  year?: number;
+  month?: number;
+}
+
+interface Temporal_MonthDayLike {
+  month?: number;
+  day?: number;
+}
+
+class Temporal_PlainYearMonth {
+  year: number = 1970;
+  month: number = 1;
+  constructor(year: number, month: number) {
+    if (!(Number.isInteger(year) && Number.isInteger(month)) || month < 1 || month > 12) throw new RangeError("invalid year-month");
+    this.year = year;
+    this.month = month;
+  }
+  get calendarId(): string {
+    return "iso8601";
+  }
+  get monthCode(): string {
+    return "M" + __tpPad(this.month, 2);
+  }
+  get daysInMonth(): number {
+    return __tpDaysInMonth(this.year, this.month);
+  }
+  get daysInYear(): number {
+    return __tpIsLeap(this.year) ? 366 : 365;
+  }
+  get monthsInYear(): number {
+    return 12;
+  }
+  get inLeapYear(): boolean {
+    return __tpIsLeap(this.year);
+  }
+  // Months since year 0, January.
+  index(): number {
+    return this.year * 12 + (this.month - 1);
+  }
+  static fromIndex(i: number): Temporal_PlainYearMonth {
+    const y = Math.floor(i / 12);
+    return new Temporal_PlainYearMonth(y, i - y * 12 + 1);
+  }
+  with(like: Temporal_YearMonthLike): Temporal_PlainYearMonth {
+    const m = like.month === undefined ? this.month : Math.min(12, Math.max(1, like.month));
+    return new Temporal_PlainYearMonth(like.year === undefined ? this.year : like.year, m);
+  }
+  addSigned(d: Temporal_Duration, sign: number): Temporal_PlainYearMonth {
+    if (d.weeks !== 0 || d.days !== 0 || d.hours !== 0 || d.minutes !== 0 || d.seconds !== 0 || d.milliseconds !== 0 || d.microseconds !== 0 || d.nanoseconds !== 0) {
+      throw new RangeError("Duration must not have units below months for PlainYearMonth arithmetic");
+    }
+    return Temporal_PlainYearMonth.fromIndex(this.index() + sign * (d.years * 12 + d.months));
+  }
+  add(d: Temporal_Duration): Temporal_PlainYearMonth {
+    return this.addSigned(d, 1);
+  }
+  subtract(d: Temporal_Duration): Temporal_PlainYearMonth {
+    return this.addSigned(d, -1);
+  }
+  until(other: Temporal_PlainYearMonth, opts: Temporal_DiffOptions | null = null): Temporal_Duration {
+    let unit = "year";
+    if (opts !== null && opts.largestUnit !== undefined && opts.largestUnit !== "auto") unit = opts.largestUnit;
+    const total = other.index() - this.index();
+    if (unit === "month" || unit === "months") return new Temporal_Duration(0, total + 0);
+    return new Temporal_Duration(Math.trunc(total / 12) + 0, (total % 12) + 0);
+  }
+  since(other: Temporal_PlainYearMonth, opts: Temporal_DiffOptions | null = null): Temporal_Duration {
+    return this.until(other, opts).negated();
+  }
+  equals(other: Temporal_PlainYearMonth): boolean {
+    return this.index() === other.index();
+  }
+  static compare(a: Temporal_PlainYearMonth, b: Temporal_PlainYearMonth): number {
+    return __tpSign(a.index() - b.index());
+  }
+  toPlainDate(like: Temporal_DateLike): Temporal_PlainDate {
+    return Temporal_PlainDate.constrained(this.year, this.month, like.day === undefined ? 1 : like.day);
+  }
+  toString(): string {
+    return __tpYearString(this.year) + "-" + __tpPad(this.month, 2);
+  }
+  toJSON(): string {
+    return this.toString();
+  }
+}
+
+function __tpParseYearMonth(s: string): Temporal_PlainYearMonth {
+  const c = new Temporal_Cursor(s);
+  const y = __tpParseYear(c);
+  c.eat("-");
+  const m = c.digits(2);
+  if (c.eat("-")) c.digits(2);
+  if (c.more()) throw __tpBad(s);
+  return new Temporal_PlainYearMonth(y, m);
+}
+
+function __tpYearMonthFrom(v: Temporal_PlainYearMonth): Temporal_PlainYearMonth {
+  return new Temporal_PlainYearMonth(v.year, Math.min(12, Math.max(1, v.month)));
+}
+
+class Temporal_PlainMonthDay {
+  month: number = 1;
+  day: number = 1;
+  constructor(month: number, day: number) {
+    // 1972 is the reference year: a leap year, so February 29 exists.
+    if (!(Number.isInteger(month) && Number.isInteger(day)) || month < 1 || month > 12 || day < 1 || day > __tpDaysInMonth(1972, month)) {
+      throw new RangeError("invalid month-day");
+    }
+    this.month = month;
+    this.day = day;
+  }
+  get calendarId(): string {
+    return "iso8601";
+  }
+  get monthCode(): string {
+    return "M" + __tpPad(this.month, 2);
+  }
+  with(like: Temporal_MonthDayLike): Temporal_PlainMonthDay {
+    const m = like.month === undefined ? this.month : Math.min(12, Math.max(1, like.month));
+    const d = like.day === undefined ? this.day : Math.max(1, like.day);
+    return new Temporal_PlainMonthDay(m, Math.min(d, __tpDaysInMonth(1972, m)));
+  }
+  equals(other: Temporal_PlainMonthDay): boolean {
+    return this.month === other.month && this.day === other.day;
+  }
+  toPlainDate(like: Temporal_DateLike): Temporal_PlainDate {
+    if (like.year === undefined) throw new TypeError("a year is required");
+    return Temporal_PlainDate.constrained(like.year, this.month, this.day);
+  }
+  toString(): string {
+    return __tpPad(this.month, 2) + "-" + __tpPad(this.day, 2);
+  }
+  toJSON(): string {
+    return this.toString();
+  }
+}
+
+function __tpParseMonthDay(s: string): Temporal_PlainMonthDay {
+  const c = new Temporal_Cursor(s);
+  c.eat("-");
+  c.eat("-");
+  const m = c.digits(2);
+  c.eat("-");
+  const d = c.digits(2);
+  if (c.more()) throw __tpBad(s);
+  return new Temporal_PlainMonthDay(m, d);
+}
+
+function __tpMonthDayFrom(v: Temporal_PlainMonthDay): Temporal_PlainMonthDay {
+  const m = Math.min(12, Math.max(1, v.month));
+  return new Temporal_PlainMonthDay(m, Math.min(Math.max(1, v.day), __tpDaysInMonth(1972, m)));
 }

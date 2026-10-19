@@ -957,6 +957,27 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-513 | Integration | Temporal.ZonedDateTime: from fields equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
 | M9-TS-514 | Integration | Temporal.ZonedDateTime: errors equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
 | M9-TS-515 | Integration | Temporal.ZonedDateTime: now zoned equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-516 | Integration | Temporal.PlainYearMonth / PlainMonthDay: year month basics equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-517 | Integration | Temporal.PlainYearMonth / PlainMonthDay: year month math equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-518 | Integration | Temporal.PlainYearMonth / PlainMonthDay: year month diff equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-519 | Integration | Temporal.PlainYearMonth / PlainMonthDay: year month compare equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-520 | Integration | Temporal.PlainYearMonth / PlainMonthDay: year month conversions equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-521 | Integration | Temporal.PlainYearMonth / PlainMonthDay: year month errors equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-522 | Integration | Temporal.PlainYearMonth / PlainMonthDay: month day basics equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-523 | Integration | Temporal.PlainYearMonth / PlainMonthDay: month day math equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-524 | Integration | Temporal.PlainYearMonth / PlainMonthDay: month day errors equal bun's (`iron_ts_tests/tests/monthday.rs`, `bench/monthday.ts`). |
+| M9-TS-525 | Integration | Temporal rounding: time units equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-526 | Integration | Temporal rounding: time modes equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-527 | Integration | Temporal rounding: time increments equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-528 | Integration | Temporal rounding: date time equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-529 | Integration | Temporal rounding: instant equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-530 | Integration | Temporal rounding: zoned equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-531 | Integration | Temporal rounding: duration equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-532 | Integration | Temporal rounding: errors equal bun's (`iron_ts_tests/tests/rounding.rs`, `bench/rounding.ts`). |
+| M9-TS-533 | Integration | Intl.getCanonicalLocales: single equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
+| M9-TS-534 | Integration | Intl.getCanonicalLocales: list equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
+| M9-TS-535 | Integration | Intl.getCanonicalLocales: empty equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
+| M9-TS-536 | Integration | Intl.getCanonicalLocales: invalid equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

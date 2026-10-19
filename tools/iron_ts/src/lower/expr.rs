@@ -1705,6 +1705,23 @@ impl<'a> Lowerer<'a> {
                     return self.lower_temporal_from(id.name.as_str(), c);
                 }
                 if let Expression::Identifier(id) = &m.object
+                    && id.name == "Intl"
+                    && method == "getCanonicalLocales"
+                    && self.fids.contains_key("__canonLocales1")
+                {
+                    let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
+                        bail!("Intl.getCanonicalLocales needs locales")
+                    };
+                    let v = self.lower_expr(arg, None)?;
+                    let name = if matches!(v.ty.strip(), Ty::Arr(_)) {
+                        "__canonLocalesN"
+                    } else {
+                        "__canonLocales1"
+                    };
+                    let v = self.widen_lit(v);
+                    return self.call_helper(name, vec![v]);
+                }
+                if let Expression::Identifier(id) = &m.object
                     && id.name == "Promise"
                     && self.lookup("Promise").is_none()
                 {
