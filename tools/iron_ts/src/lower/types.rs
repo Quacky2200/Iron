@@ -66,7 +66,9 @@ impl<'a> Lowerer<'a> {
                     let Some(a) = &p.type_annotation else {
                         bail!("untyped callback parameter")
                     };
-                    params.push(self.ty(&a.type_annotation, hint)?);
+                    let ty = self.ty(&a.type_annotation, hint)?;
+                    // `(x?: T) => ..`: a call may leave it out, so it is null then.
+                    params.push(if p.optional { ty.nullable() } else { ty });
                 }
                 let ret = self.ty(&f.return_type.type_annotation, hint)?;
                 Ty::Fn(Box::new(FnTy { params, ret }))
@@ -104,6 +106,11 @@ impl<'a> Lowerer<'a> {
                     .map(|a| a.params.iter().collect())
                     .unwrap_or_default();
                 match id.name.as_str() {
+                    "Promise" if !args.is_empty() => {
+                        let sp = oxc_span::GetSpan::span(args[0]);
+                        let key = asyncs::key(&self.src[sp.start as usize..sp.end as usize]);
+                        self.named_type(&format!("Promise${key}"))?
+                    }
                     // `Generator<T>`, `Iterator<T>`, `IteratorResult<T>`: the classes written per type.
                     n if generators::FAMILY.contains(&n) && !args.is_empty() => {
                         let text = |t: &TSType<'_>| {

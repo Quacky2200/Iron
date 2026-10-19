@@ -1498,7 +1498,10 @@ impl<'a> Lowerer<'a> {
         params: &[Ty],
         what: &str,
     ) -> R<Vec<Expr>> {
-        if args.len() != params.len() {
+        // A parameter that may be null (`x?: T`) can be left out.
+        let optional_tail =
+            params.len() > args.len() && params[args.len()..].iter().all(|p| p.is_nullable());
+        if args.len() > params.len() || (args.len() < params.len() && !optional_tail) {
             bail!(
                 "{what}: {} arguments, {} expected",
                 args.len(),
@@ -1512,6 +1515,9 @@ impl<'a> Lowerer<'a> {
             };
             let v = self.lower_expr(e, Some(p))?;
             out.push(self.coerce(v, p)?);
+        }
+        for p in &params[args.len()..] {
+            out.push(mk(ExprKind::Null, p.clone()));
         }
         Ok(out)
     }
@@ -1616,6 +1622,12 @@ impl<'a> Lowerer<'a> {
                 {
                     name = "__Symbol";
                 }
+                if name == "__await" {
+                    return self.lower_await(c);
+                }
+                if let Some(key) = name.strip_prefix("__asyncRet$") {
+                    return self.lower_async_return(key, c);
+                }
                 if self.lookup(name).is_some()
                     || matches!(self.consts.get(name), Some(ConstInfo::Global(..)))
                 {
@@ -1655,6 +1667,12 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("BigInt").is_none()
                 {
                     return self.lower_bigint_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "Promise"
+                    && self.lookup("Promise").is_none()
+                {
+                    return self.lower_promise_static(method, c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Symbol"

@@ -274,6 +274,9 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
     let mut imports: HashMap<&'static str, CFuncId> = HashMap::new();
     let mut fbc = FunctionBuilderContext::new();
     for (fi, f) in m.funcs.iter().enumerate() {
+        if std::env::var_os("IRON_TS_TRACE").is_some() {
+            eprintln!("codegen {}", f.name);
+        }
         let mut ctx = module.make_context();
         let ptys: Vec<Ty> = f
             .params

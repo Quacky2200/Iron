@@ -9,6 +9,7 @@ macro_rules! bail {
 }
 
 mod arrays;
+mod asyncs;
 mod bigint;
 mod classes;
 mod closure;
@@ -22,6 +23,7 @@ mod json;
 mod maps;
 mod object;
 mod prelude;
+mod promise;
 mod regexp;
 mod scan;
 mod stmt;
@@ -198,6 +200,8 @@ pub struct Lowerer<'a> {
     pub(crate) regex_info: HashMap<String, Vec<Option<String>>>,
     /// Lines of prelude source in front of the program (skipped in messages).
     pub(crate) prelude_lines: usize,
+    /// The next closure's return type comes from its body, not from the expected type.
+    pub(crate) infer_ret: bool,
 }
 
 /// Parses and lowers one TypeScript module.
@@ -217,9 +221,16 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         None => (None, String::new()),
     };
     let src = rewritten.as_deref().unwrap_or(src);
+    // Promises and async functions become closures over coroutines too.
+    let (rewritten2, async_templates) = match asyncs::desugar(src)? {
+        Some(d) => (Some(d.src), d.templates),
+        None => (None, String::new()),
+    };
+    let src = rewritten2.as_deref().unwrap_or(src);
     // Programs that use errors get the `Error` classes compiled in front of them.
     let mut head = String::new();
     if !gen_templates.is_empty()
+        || !async_templates.is_empty()
         || prelude::wanted(src)
         || prelude::wants_regexp(src)
         || prelude::wants_date(src)
@@ -256,17 +267,34 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if prelude::wants_symbol(src) {
         head += prelude::SYMBOL;
     }
-    if !gen_templates.is_empty() {
+    if !gen_templates.is_empty() || !async_templates.is_empty() {
         head += prelude::COROUTINE;
         head += &gen_templates;
     }
+    if prelude::wants_timers(src) || !async_templates.is_empty() {
+        head += prelude::TIMERS;
+    }
+    head += &async_templates;
     let prelude_lines = head.matches('\n').count();
     let full = format!("{head}{src}");
     let src = full.as_str();
+    if std::env::var_os("IRON_TS_DUMP_SRC").is_some() {
+        eprintln!("{full}");
+    }
     let alloc = Allocator::default();
     let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
     if !ret.diagnostics.is_empty() {
-        bail!("parse error: {}", ret.diagnostics[0]);
+        let d = &ret.diagnostics[0];
+        let line = d.labels.first().map(|l| {
+            src[..(l.offset() as usize).min(src.len())]
+                .matches(char::from(10))
+                .count()
+                + 1
+        });
+        match line {
+            Some(l) => bail!("parse error (line {l} with the prelude): {d}"),
+            None => bail!("parse error: {d}"),
+        }
     }
     let program = ret.program;
     let mut l = Lowerer {
@@ -296,6 +324,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         wrappers: HashMap::new(),
         regex_info: HashMap::new(),
         prelude_lines,
+        infer_ret: false,
     };
     l.lower_program(&program)?;
     let mut m = l.m;

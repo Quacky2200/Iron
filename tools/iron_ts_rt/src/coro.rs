@@ -246,6 +246,12 @@ pub extern "C" fn ts_rt_co_set_return(value: u64, is_ptr: bool) {
     }
 }
 
+/// The coroutine whose body is running (null outside any).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_co_current() -> *mut Coro {
+    CURRENT.with(|s| s.borrow().last().copied().unwrap_or(std::ptr::null_mut()))
+}
+
 /// Has the body started (or finished)?
 ///
 /// # Safety

@@ -89,8 +89,17 @@ impl<'a> Lowerer<'a> {
             };
             ptys.push(ty);
         }
+        // A callback may take fewer parameters than the type says; the rest are ignored.
+        if params.rest.is_none()
+            && let Some(f) = &exp_fn
+        {
+            for t in f.params.iter().skip(ptys.len()) {
+                ptys.push(t.clone());
+            }
+        }
         let ret_exp = match ret_ann {
             Some(r) => Some(self.ty(r, "closure")?),
+            None if std::mem::take(&mut self.infer_ret) => None,
             None => exp_fn.as_ref().map(|f| f.ret.clone()),
         };
 
@@ -205,6 +214,10 @@ impl<'a> Lowerer<'a> {
             let v = self.new_local(ty.clone());
             pvars.push(v);
             self.bind_param(&r.rest.argument, v, &mut pro)?;
+        }
+        // Parameters the closure does not name (it takes fewer than its type).
+        for ty in ptys {
+            pvars.push(self.new_local(ty.clone()));
         }
         let (stmts, ret) = self.lower_body_into(body, pro)?;
         Ok((pvars, envv, stmts, ret))

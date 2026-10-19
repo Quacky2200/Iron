@@ -150,6 +150,24 @@ pub fn wants_intl(src: &str) -> bool {
 /// The handle class of a generator's coroutine (an opaque runtime object).
 pub const COROUTINE: &str = "class Coroutine {}\nclass __GenReturn extends Error {}\n";
 
+/// `setTimeout` and friends over the runtime's timers (`iron_ts_rt/src/event.rs`).
+pub const TIMERS: &str = r#"function queueMicrotask(callback: () => void): void { __queueMicrotask(callback); }
+function setTimeout(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, false); }
+function setInterval(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, true); }
+function clearTimeout(id: number): void { __timerClear(id); }
+function clearInterval(id: number): void { __timerClear(id); }
+"#;
+
+/// Does the program use timers or microtasks (and not define them itself)?
+pub fn wants_timers(src: &str) -> bool {
+    (src.contains("setTimeout(")
+        || src.contains("setInterval(")
+        || src.contains("queueMicrotask(")
+        || src.contains("clearTimeout(")
+        || src.contains("clearInterval("))
+        && !src.contains("function setTimeout")
+}
+
 /// `Symbol()` values: objects compared by identity. `description` is null when none was given.
 pub const SYMBOL: &str = r#"class Symbol_ {
     description: string | null;

@@ -583,8 +583,8 @@ impl<'a> Lowerer<'a> {
             }
             "BigInt" => self.lower_bigint_call(c)?,
             "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish"
-            | "__coInject" | "__coInjectSet" | "__coZero" | "__coRet" | "__coStarted"
-            | "__coDone" => {
+            | "__coInject" | "__coInjectSet" | "__coZero" | "__coCurrent" | "__queueMicrotask"
+            | "__timerAdd" | "__timerClear" | "__coRet" | "__coStarted" | "__coDone" => {
                 return self.lower_coro_intrinsic(name, c);
             }
             // The prelude's `Intl.PluralRules.select`, `Intl.ListFormat.format` and

@@ -849,6 +849,26 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-405 | Integration | `return()` while a `finally` yields, then `next()` finishing with the value (`iron_ts_tests/tests/generators2.rs`). |
 | M9-TS-406 | Integration | `return value` in a generator (`Generator<number, number>`) is the final `value` (`iron_ts_tests/tests/generators2.rs`). |
 | M9-TS-407 | Integration | An early `return` inside a loop (`iron_ts_tests/tests/generators2.rs`). |
+| M9-TS-408 | Integration | An async function returns a value and `await` waits for it equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-409 | Integration | `await` of a plain value takes one tick equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-410 | Integration | The order of async functions, promise reactions, `queueMicrotask` and a timer equals bun's equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-411 | Integration | An async function that throws rejects, and `try/catch` around `await` catches it equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-412 | Integration | `.catch(handler)` returning a replacement value equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-413 | Integration | `.then` chains that change the value's type (number to string) equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-414 | Integration | `.then` returning a promise flattens it, with bun's tick count equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-415 | Integration | `.finally` runs on both outcomes and passes the result through, with bun's ordering equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-416 | Integration | `Promise.all` of promises of different speeds, in order equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-417 | Integration | `Promise.all` rejects with the first rejection equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-418 | Integration | `Promise.race` settles with the fastest equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-419 | Integration | Timers run by due time and then insertion order (`setTimeout` 0, 5, 5, 10) equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-420 | Integration | `setInterval` repeats until `clearInterval` equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-421 | Integration | `clearTimeout` stops a timer equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-422 | Integration | Async methods, async arrows with a block and with an expression body equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-423 | Integration | The executor of `new Promise` settles once; a throwing executor rejects equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-424 | Integration | `return promise` in an async function takes more ticks than `return await promise`, as in bun equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-425 | Integration | 200 async calls under collection (coroutines kept suspended while the collector runs) equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-426 | Integration | `await` in a loop runs the steps in sequence equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
+| M9-TS-427 | Unit | Async limits (async generators, `await` outside async, `new Promise` without a type, untyped async return, `then(f, g)`) are compile errors with a reason (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

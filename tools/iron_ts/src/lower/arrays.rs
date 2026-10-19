@@ -360,6 +360,11 @@ impl<'a> Lowerer<'a> {
         let rty = recv.ty.strip().clone();
         if let Ty::Obj(sid) = &rty {
             let sid = *sid;
+            if matches!(m, "then" | "catch" | "finally")
+                && let Some((key, value)) = self.promise_of(&rty)
+            {
+                return self.lower_promise_method(recv, &key, value, m, c);
+            }
             if Some(sid) == self.regexp_sid() {
                 return self.lower_regexp_method(recv, m, c);
             }

@@ -559,6 +559,31 @@ impl<'a> Lowerer<'a> {
                     t,
                 )
             }
+            "__coCurrent" => self.rt_str("ts_rt_co_current", vec![], co_ty),
+            "__queueMicrotask" => {
+                let Some(cb) = args.first() else {
+                    bail!("{at}: __queueMicrotask needs a callback")
+                };
+                let cb = self.lower_expr(cb, None)?;
+                self.rt_str("ts_rt_microtask_push", vec![cb], Ty::Void)
+            }
+            "__timerAdd" => {
+                let (Some(cb), Some(ms), Some(rep)) = (args.first(), args.get(1), args.get(2))
+                else {
+                    bail!("{at}: __timerAdd(callback, ms, repeat)")
+                };
+                let cb = self.lower_expr(cb, None)?;
+                let ms = self.lower_expr(ms, None)?;
+                let rep = self.lower_expr(rep, None)?;
+                self.rt_str("ts_rt_timer_add", vec![cb, ms, rep], Ty::Num)
+            }
+            "__timerClear" => {
+                let Some(id) = args.first() else {
+                    bail!("{at}: __timerClear needs an id")
+                };
+                let id = self.lower_expr(id, None)?;
+                self.rt_str("ts_rt_timer_clear", vec![id], Ty::Void)
+            }
             "__coFinish" => {
                 let Some(co) = args.first() else {
                     bail!("{at}: __coFinish needs the coroutine")

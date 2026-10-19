@@ -108,6 +108,8 @@ struct Heap {
     enabled: bool,
     /// The exception being thrown (an object), or null. A root.
     exc: *mut u8,
+    /// Microtasks and timers (their closures are roots).
+    events: event::Events,
 }
 
 thread_local! {
@@ -130,6 +132,7 @@ thread_local! {
         stress: false,
         enabled: true,
         exc: std::ptr::null_mut(),
+        events: event::Events::new(),
     }) };
 }
 
@@ -371,6 +374,7 @@ fn collect(h: &mut Heap) {
             .iter()
             .chain(h.temps.iter())
             .chain(std::iter::once(&h.exc))
+            .chain(h.events.roots())
         {
             mark_ptr(r, heap, &mut stack);
         }
@@ -1033,6 +1037,7 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 mod bigint;
 mod coro;
 mod date;
+mod event;
 mod intl;
 mod intl_date;
 mod intl_misc;
@@ -1048,6 +1053,7 @@ mod uri;
 pub use bigint::*;
 pub use coro::*;
 pub use date::*;
+pub use event::*;
 pub use intl::*;
 pub use intl_date::*;
 pub use intl_misc::*;
@@ -1286,6 +1292,14 @@ pub fn link_anchor() -> usize {
         ts_rt_co_inject_take as *const () as usize,
         ts_rt_co_set_return as *const () as usize,
         ts_rt_co_started as *const () as usize,
+        ts_rt_co_current as *const () as usize,
+        ts_rt_microtask_push as *const () as usize,
+        ts_rt_microtasks_run as *const () as usize,
+        ts_rt_timer_add as *const () as usize,
+        ts_rt_timer_clear as *const () as usize,
+        ts_rt_timers_advance as *const () as usize,
+        ts_rt_run_loop as *const () as usize,
+        ts_rt_events_pending as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

@@ -462,6 +462,34 @@ mod tests {
         );
     }
 
+    // M9-TS-427
+    #[test]
+    fn async_limits_are_compile_errors_with_a_reason() {
+        let tail = " export function f(): number { return 1; }";
+        for (src, want) in [
+            (
+                "async function* g(): Promise<number> { return 1; }",
+                "generator",
+            ),
+            ("function g(): number { await 1; return 1; }", "await"),
+            ("const p = new Promise((r) => r(1));", "type written"),
+            ("async function g() { return 1; }", "needs its type written"),
+            (
+                "async function g(): number { return 1; }",
+                "must return `Promise<T>`",
+            ),
+            (
+                "async function g(): Promise<number> { return 1; } function h(): void { g().then((a) => a, (b) => b); }",
+                "takes one callback",
+            ),
+        ] {
+            let e = lower::lower_source(&format!("{src}{tail}"))
+                .err()
+                .unwrap_or_default();
+            assert!(e.contains(want), "{src}: {e}");
+        }
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {
