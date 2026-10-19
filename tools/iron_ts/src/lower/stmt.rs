@@ -83,6 +83,9 @@ impl<'a> Lowerer<'a> {
                 if matches!(arr.ty.strip(), Ty::Map(..) | Ty::Set(_)) {
                     return self.lower_for_of_collection(f, pat, arr, mode, out);
                 }
+                if mode.is_empty() && self.is_iterable(&arr.ty) {
+                    return self.lower_for_of_iterable(f, pat, arr, out);
+                }
                 let arr = if matches!(arr.ty.strip(), Ty::Arr(_) | Ty::Typed(_)) || mode.is_empty()
                 {
                     arr

@@ -371,10 +371,11 @@ impl<'a> Lowerer<'a> {
             if !m.decorators.is_empty() {
                 bail!("class {name}: decorators are not supported yet")
             }
-            if m.computed {
-                bail!("class {name}: computed method name")
-            }
-            let key = self.member_key(&m.key)?;
+            let key = if m.computed {
+                self.symbol_key(&m.key)?
+            } else {
+                self.member_key(&m.key)?
+            };
             let f: &'a Function<'a> = &m.value;
             let is_abstract_method = f.body.is_none() && c.r#abstract && !m.r#static;
             // An overload signature has no body; an abstract method becomes an empty stub that is

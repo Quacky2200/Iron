@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **376**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **382**).
 
 ## How to pick this up
 

@@ -97,3 +97,10 @@ typed-array views that share memory (an owner pointer in the array header), `str
 2. `async`/`await` and `Promise` on the same coroutines, with the microtask/timer contract above?
 3. `Proxy`: option 1 (not supported) for now, option 2 when needed?
 4. Is WebAssembly a target in the next year? (It decides whether A is needed early.)
+
+## Answers (user, 2026-10-19)
+
+1. Generators: B, stackful coroutines first. 2. `async`/`await` and `Promise` on the same coroutines with
+the microtask and timer contract above. 3. `Proxy`: not supported until needed. 4. WebAssembly is not a
+target in the next year. Build `Symbol`, iterators and generators now (async follows on the same
+mechanism).

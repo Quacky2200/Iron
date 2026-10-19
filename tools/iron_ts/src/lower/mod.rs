@@ -16,6 +16,7 @@ mod date;
 mod enums;
 mod expr;
 mod intl;
+mod iter;
 mod json;
 mod maps;
 mod object;

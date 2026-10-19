@@ -75,6 +75,8 @@ pub const HDR_CLOSURE_ENV: u64 = 0xA11A_0008;
 pub const HDR_MAP: u64 = 0xA11A_0009;
 /// A `BigInt`: sign, byte count and magnitude bytes, no children.
 pub const HDR_BIGINT: u64 = 0xA11A_000A;
+/// A coroutine (a generator's body on its own stack): see `coro.rs`.
+pub const HDR_CORO: u64 = 0xA11A_000B;
 
 /// One function activation's pointer slots; `n` slots follow in memory.
 #[repr(C)]
@@ -401,6 +403,13 @@ fn collect(h: &mut Heap) {
                     }
                 }
                 HDR_CLOSURE_ENV => mark_ptr(*(p.add(16) as *const *mut u8), heap, &mut stack),
+                HDR_CORO => {
+                    let mut found = Vec::new();
+                    coro::for_each_pointer(p as *const coro::Coro, |q| found.push(q));
+                    for q in found {
+                        mark_ptr(q, heap, &mut stack);
+                    }
+                }
                 HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE | HDR_CELL | HDR_BIGINT => {}
                 id => {
                     let (n, mask) = *h.structs.get(id as usize - 1).unwrap_or_else(|| {
@@ -452,6 +461,7 @@ fn collect(h: &mut Heap) {
                     raw_free(h, a.data, a.cap.max(1) as usize);
                 }
                 HDR_MAP => (*(p as *mut MapObj)).free_blocks(h),
+                HDR_CORO => coro::free(p as *mut coro::Coro),
                 _ => {}
             }
         }
@@ -1021,6 +1031,7 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 // ---- strings: see string.rs ----
 
 mod bigint;
+mod coro;
 mod date;
 mod intl;
 mod intl_date;
@@ -1035,6 +1046,7 @@ mod string_more;
 mod typed;
 mod uri;
 pub use bigint::*;
+pub use coro::*;
 pub use date::*;
 pub use intl::*;
 pub use intl_date::*;
@@ -1264,6 +1276,12 @@ pub fn link_anchor() -> usize {
         ts_rt_bigint_sign as *const () as usize,
         ts_rt_bigint_to_string_gc as *const () as usize,
         ts_rt_bigint_as_n_gc as *const () as usize,
+        ts_rt_co_new_gc as *const () as usize,
+        ts_rt_co_resume as *const () as usize,
+        ts_rt_co_yield as *const () as usize,
+        ts_rt_co_value as *const () as usize,
+        ts_rt_co_done as *const () as usize,
+        ts_rt_co_finish as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

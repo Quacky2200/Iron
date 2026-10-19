@@ -313,6 +313,11 @@ impl<'a> Lowerer<'a> {
                 if let Some(snapshot) = self.collection_snapshot(v.clone()) {
                     return Ok(snapshot);
                 }
+                let v = if self.is_iterable(&v.ty) {
+                    self.iterable_to_array(v)?
+                } else {
+                    v
+                };
                 if !matches!(v.ty.strip(), Ty::Arr(_)) {
                     bail!("Array.from of {} is not supported", v.ty)
                 }

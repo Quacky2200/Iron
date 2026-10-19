@@ -1079,6 +1079,10 @@ impl<'a> Lowerer<'a> {
                 if let Some(snapshot) = self.collection_snapshot(v.clone()) {
                     v = snapshot;
                 }
+                // `[...iterable]`: the elements of its iterator.
+                if self.is_iterable(&v.ty) {
+                    v = self.iterable_to_array(v)?;
+                }
                 let vt = match v.ty.strip() {
                     Ty::Arr(e) => (**e).clone(),
                     Ty::Typed(_) => Ty::Num,
@@ -1595,6 +1599,14 @@ impl<'a> Lowerer<'a> {
 
     fn lower_call(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
         match &c.callee {
+            // `obj[Symbol.iterator]()`.
+            Expression::ComputedMemberExpression(m)
+                if iter::well_known(&m.expression).is_some() =>
+            {
+                let name = iter::well_known(&m.expression).expect("checked");
+                let recv = self.lower_expr(&m.object, None)?;
+                self.call_method0(recv, name)
+            }
             Expression::Identifier(id) => {
                 let name = id.name.as_str();
                 if self.lookup(name).is_some()

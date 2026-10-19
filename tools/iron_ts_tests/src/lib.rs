@@ -396,6 +396,18 @@ pub mod logic_t {
     include!(concat!(env!("OUT_DIR"), "/logic_bindings.rs"));
 }
 
+/// `bench/iterators.ts`, prefix `itr_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod iterators_t {
+    include!(concat!(env!("OUT_DIR"), "/iterators_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,
