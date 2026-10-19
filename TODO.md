@@ -1447,7 +1447,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [x] Plain classes: fields, constructor, methods, `this` (`M9-TS-111..119`)
     - [x] Inheritance, `super(...)`/`super.m()`, virtual calls, `override`, abstract classes (`M9-TS-120..136`; extending an engine class waits for the manifest)
     - [x] Getters/setters, statics, private fields (`#x`, `private`); static accessors are open
-    - [ ] `instanceof` (done: `M9-TS-124`), `typeof`, class expressions
+    - [ ] `instanceof` (done: `M9-TS-124`), `typeof` (done, `M9-TS-199..205`), class expressions
     - [x] Decorators: `@property` as compile-time metadata, a generated `PROPS_<Class>` table (`M9-TS-139..140`); options and other decorators are open
     - [ ] `Component` and the `register()` / spawn / lifecycle path calling compiled classes
           (joins Direct engine calls)
@@ -1465,39 +1465,57 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Unions of different interfaces/classes (discriminated by a field), not only inline object types
     - [ ] Optional properties and index signatures (`Record<string, V>`)
   - [ ] **Strings**: **STOP, UTF-16 vs UTF-8 decision first** (JS `length`/indexing are UTF-16)
-    - [ ] Design note: representation, `length`/indexing/`charCodeAt` semantics, interop with Rust `String`
-    - [ ] `string` values: literals, `+`, `===`/`<`, `.length`, template literals
+    - [x] Design note: representation, `length`/indexing/`charCodeAt` semantics, interop with Rust `String` (`docs/research/iron-ts-strings.md`: WTF-8 storage, exact JavaScript behaviour)
+    - [x] `string` values: literals, `+`, `===`/`<`, `.length`, template literals (`M9-TS-162..186`, including strings across the engine boundary)
     - [ ] Number to string exactly as JS (shortest round-trip, `toFixed`, `toString(radix)`), `parseFloat`,
-          `Number()`
-    - [ ] Methods: `slice substring indexOf includes startsWith endsWith split join trim replace
-          padStart padEnd toUpperCase toLowerCase charAt at`
-    - [ ] `Map` and `Set` proper (hash by number, string, object identity; insertion order; iteration)
-    - [ ] `JSON.stringify/parse` for plain data (or declare out of scope)
+          `Number()` (done except `toString(radix)` of fractions, `toPrecision`, `toExponential`; `M9-TS-173..177`)
+    - [x] Methods: `slice substring indexOf includes startsWith endsWith split join trim replace
+          padStart padEnd toUpperCase toLowerCase charAt at` (`replace` and the other regex methods with `RegExp`, `M9-TS-232..239`; `localeCompare`/`normalize` with Intl, `M9-TS-254..263`)
+    - [x] `Map` and `Set` proper (hash by number, string, object identity; insertion order; iteration) (`M9-TS-206..214`; not done: `new Map(map)`, map spread, `groupBy`)
+    - [x] `JSON.stringify/parse` for plain data, typed from the program's types (`M9-TS-215..221`; a dynamic `JsonValue` is open)
   - [ ] **Language features** (each small to medium; tick each)
     - [x] `for(;;)` with update clause, `do...while`, labelled `break`/`continue` (`M9-TS-57..63`)
     - [x] `switch` (numbers, string-literal unions), enums (`enum`, `const enum`) (`M9-TS-64..70`)
     - [ ] Destructuring
       - [x] Objects and arrays in declarations, parameters, `for...of` and callback parameters; nested; defaults (`M9-TS-71..76`)
-      - [ ] Rest elements (`{ a, ...r }`, `[a, ...r]`), assignment to existing variables (`[a, b] = [b, a]`), computed keys
+      - [ ] Rest elements (`{ a, ...r }`, `[a, ...r]`: done, `M9-TS-199..205`), assignment to existing variables (`[a, b] = [b, a]`), computed keys
     - [x] Default, optional and rest parameters (`M9-TS-77..84`; a function with them used as a value needs all its arguments)
     - [ ] Spread
       - [x] Array literals, call arguments into a rest parameter, object literals with overrides
       - [ ] Into fixed parameters (`f(...xs)`), of maps and strings
     - [ ] Operators
       - [x] `??=`, `||=`, `&&=`, `**`, `**=`, unary `~` (`M9-TS-85..91`)
-      - [ ] Optional call `f?.()`, `in`, `void`, `delete` (limited)
-    - [ ] `try`/`catch`/`finally`/`throw`: **STOP, design first** (unwinding vs error returns; frame pops
-          and GC frames on unwind; script errors reaching the host)
+      - [ ] Optional call `f?.()`, `in` (done, `M9-TS-199..205`), `void`, `delete` (limited)
+    - [x] `try`/`catch`/`finally`/`throw`: design in `docs/research/iron-ts-stdlib.md` (approved: checked returns in
+          may-throw functions only), built with the `Error` classes from a prelude (`M9-TS-187..198`); not done:
+          `error.stack`/`cause`, throwing non-Error values, `AggregateError`
     - [ ] `async`/`await`/Promises and timers (`Task`, `setTimeout`): **STOP, design first** (needs an
           event-loop contract with the host)
+  - [ ] **Standard library, native** (`docs/research/iron-ts-stdlib.md`; rule: JavaScript's exact results, compared with
+        bun; what is not built is a compile error). Detail and open gaps are in `tools/iron_ts/TODO.md`
+    - [x] Tier 1: errors and `try`/`catch`/`finally`, `typeof`, `Object.*`, spread/rest, `Array` gaps, `Number`, `Math`, `console` (`M9-TS-187..205`)
+    - [x] Tier 2: `Map`/`Set`/`WeakMap`/`WeakSet`, typed `JSON` (`M9-TS-206..221`)
+    - [ ] Tier 3
+      - [x] `RegExp` (the `regress` crate): literals, `new RegExp`, `test`/`exec`, flags, named groups, and `String.match/matchAll/search/replace/replaceAll/split` (`M9-TS-222..239`)
+      - [x] `Date` (`jiff`): constructors, `Date.now/UTC/parse`, getters and setters (local and UTC), ISO and legacy parsing, `toISOString/toJSON/toUTCString/toDateString`, `toString/toTimeString` with zone names, arithmetic (`M9-TS-240..253`, `M9-TS-276`)
+      - [ ] `Intl` (ICU4X, compiled data for every locale)
+        - [x] I1 `normalize`, `localeCompare`, `Intl.Collator`, `toLocaleUpperCase/LowerCase` (`M9-TS-254..263`)
+        - [x] I2 `Intl.NumberFormat`, `Number.toLocaleString` (`M9-TS-264..275`; not: `style: unit`, compact currency, `formatToParts`)
+        - [ ] I3 `Intl.DateTimeFormat`, `toLocale*String`, component options: **STOP, design note written** (`docs/research/iron-ts-intl-datetime.md`), waiting for the user's choice
+        - [ ] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`
+        - [ ] The game's locale list from `package.json` into `ts_rt_intl_set_locales` (needs `iron_app`)
+    - [ ] Tier 4 (asked for): iterators and generators (**STOP, design first**), `Symbol`, typed arrays / `ArrayBuffer` / `DataView`,
+          `BigInt`, `encodeURI`/`decodeURI` (+ `Component`), `AggregateError`/`cause`/`stack`, `Temporal`, real `WeakRef`/`FinalizationRegistry`,
+          `Promise`/`async`/timers (**STOP**), `Proxy`/`Reflect` (**STOP**), `structuredClone`, `globalThis`, bytes across the engine boundary
+          (`btoa`/`atob`, `TextEncoder`/`TextDecoder`)
   - [ ] **Library surface** the compiler knows
-    - [x] `Math`: `ceil round trunc pow exp log log2 log10 tan asin acos atan cbrt fround clz32 random` (`M9-TS-85..91`); still open: `sinh cosh tanh log1p expm1`
+    - [x] `Math`: `ceil round trunc pow exp log log2 log10 tan asin acos atan cbrt fround clz32 random` (`M9-TS-85..91`); `sinh cosh tanh log1p expm1` and the rest in `M9-TS-199..205`
     - [ ] Arrays
       - [x] `pop shift unshift slice splice concat reverse sort indexOf lastIndexOf findIndex reduce fill at`, `length = n`, `Array.from/of/isArray`, `new Array(n)` (`M9-TS-92..110`)
-      - [ ] `join` (needs strings), `flat`, `flatMap`, `entries`, `keys`, `findLast`, `reduceRight`, `sort()` without a comparator (string order)
-      - [ ] `for...of` over `Map`/`Set`/strings
+      - [x] `join` (needs strings), `flat`, `flatMap`, `entries`, `keys`, `findLast`, `reduceRight`, `sort()` without a comparator (string order) (`M9-TS-199..205`; not done: `toSpliced`, `with`, `copyWithin`)
+      - [ ] `for...of` over `Map`/`Set` (done, `M9-TS-206..214`)/strings
     - [ ] Typed arrays beyond `Uint8Array`: `Float32Array Float64Array Int32Array Uint16Array ...`
-    - [ ] `Object.keys/entries/values/assign`, `Number.isFinite/isInteger/EPSILON`, `Date`/`performance`
+    - [ ] `Object.keys/entries/values/assign` and the `Number` statics (done, `M9-TS-199..205`), `Date` (done, `M9-TS-240..253`, `M9-TS-276`), `performance` (open)
   - [ ] **JS semantics conformance**: differential tests against bun on generated and real code
     - [ ] A harness that runs every tested module (zombie `sim.ts` first) in bun and native and compares
     - [ ] `-0` from `%` and rounding, bit operations beyond 2^63, `null === null` of two nullable numbers,
@@ -1522,7 +1540,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
       - [x] First slice: `crates/iron_api` + `iron_api_macros`: scalars, bools and handles, manifest, `.d.ts`,
             JSON, `extern "C"` shims, typed QuickJS bindings (`M9-API-01..06`); additive
       - [x] Value classes (`Vector3`) scalarised across the boundary (`M9-API-10..11`, `M9-TS-147..150`) and the engine context: a thread-local current world (`M9-API-07..09`)
-      - [ ] Strings, methods on handles (`transform.position`), value-class methods as intrinsics, QuickJS bindings for values
+      - [ ] Strings (done, `M9-API-21..22`), methods on handles (done, `M9-API-16..19`), value-class methods as intrinsics (done, `M9-API-20`), QuickJS bindings for values (open)
       - [x] `iron_scene` annotated: the `Scene` namespace (handles, `Vector3`/`Quaternion`, hierarchy, flags), driven by compiled TypeScript (`M9-API-12..15`, `M9-TS-151..155`); `GameObject`/`Transform` handle classes (`go.transform.position = v`, `M9-API-16..19`, `M9-TS-156..158`); not yet wired into `iron_app`
       - [ ] Annotate `iron_physics`, `iron_audio`, `iron_script`; wire `enter` into the app; retire the ops they replace
     - [x] Compiler: extern table from the JSON manifest, `Handle` type, namespace calls with scalar arguments and f32/i32/u32/bool conversions (`M9-TS-142..146`)

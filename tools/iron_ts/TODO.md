@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **232**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **277**).
 
 ## How to pick this up
 
@@ -56,6 +56,8 @@ cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 | `iron_ts/src/lower/types.rs` | annotations to IR types, structs, `coerce`, `to_bool` |
 | `iron_ts/src/lower/expr.rs` | expressions, places (assignment targets), calls, `Math` |
 | `iron_ts/src/lower/stmt.rs`, `arrays.rs` | statements; array methods with inlined callbacks, `Iter`, `emit_return` |
+| `iron_ts/src/lower/{strings,object,maps,json,regexp,date,intl,prelude}.rs`, `throws.rs` | strings and numbers; `Object.*`/spread; `Map`/`Set`; typed JSON; `RegExp` and the regex string methods; `Date`; `Intl`; TS prelude classes (`Error`s, `RegExp`, `Date`, `Intl_*`); which functions can throw |
+| `iron_ts_rt/src/{string,string_more,map,json,regexp,date,intl,intl_number}.rs` | runtime: WTF-8 strings, collections, JSON, `regress`, `jiff`, ICU4X |
 | `iron_ts/src/lower/scan.rs`, `closure.rs` | which variables closures capture; lifting closures to functions, function values |
 | `iron_ts/src/ir.rs` | the IR and its dump |
 | `iron_ts/src/frames.rs` | shadow-stack frame plan; **the spill rule is the GC's correctness argument** |
@@ -65,7 +67,7 @@ cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 | `iron_ts_tests/` | `build.rs` compiles `fixtures/sim.ts` plus `bench/{sine,gap,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props,engine}.ts` (prefix and struct base each); `tests/{sim_port,gc,closures,globals,loops,switches,destructure,params,mathlib,arraylib,classes,inherit,props,engine}.rs`; `src/bin/{bench,sine_bench}.rs` |
 
 Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name, prefix, struct_base)`
-(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, mathlib 9000, arraylib 10000, classes 11000, inherit 12000, engine 14000, scene 15000, next 16000), a `pub mod` in
+(bases are 1000 apart: sim 0, sine 1000, gap 2000, closures 3000, globals 4000, loops 5000, switches 6000, destructure 7000, params 8000, mathlib 9000, arraylib 10000, classes 11000, inherit 12000, engine 14000, scene 15000, strings 16000, errors 17000, stdlib 18000, collections 19000, json 20000, regexp 21000, regexp2 22000, date 23000, intl 24000, numfmt 25000, next 26000), a `pub mod` in
 `src/lib.rs`, a test file. Expected numbers come from running the same TS in bun.
 
 ## Rules we decided (do not undo without asking)
@@ -82,6 +84,10 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
   (the "33 bullets in flight" claim was wrong and was fixed).
 
 ## Now
+
+**State (2026-10-19):** done and committed: strings, the standard library tiers 1 and 2, `RegExp`, `Date` (including `toString`), `Intl` I1 (collation, normalize, case) and I2 (`NumberFormat`). Next test ID **277**.
+**Waiting for the user:** how to do `Intl.DateTimeFormat` / `toLocale*String` exactly (`docs/research/iron-ts-intl-datetime.md`; options A, B, C and `rust_icu`).
+After that: Intl I4, then the Tier 4 list below (the user added iterators/generators, `Symbol`, typed arrays, `BigInt`, `encodeURI`, errors, `Temporal`, `Weak*`, `Proxy`).
 
 **Done:** `iron_scene`'s `Scene` API on `#[iron_api]`, driven end to end by compiled TypeScript (boundary note section 17).
 
@@ -135,6 +141,17 @@ performance, cross targets and CI.
 ## Log
 
 Newest first. One line per finished step: what, test IDs, numbers if measured.
+
+- 2026-10-19 `Date.toString/toTimeString/String(date)/date + x` (`M9-TS-276`): ICU4X root zone names, whole-minute offsets, the name follows the daylight state for old dates. Design note for `Intl.DateTimeFormat` written, awaiting review.
+- 2026-10-19 Intl I2 (`M9-TS-264..275`): `Intl.NumberFormat`, `Number.toLocaleString` (decimal, percent, currency, compact, scientific, digit options, grouping, sign display, rounding modes), 15 locales against bun.
+- 2026-10-19 Intl I1 (`M9-TS-254..263`): `normalize`, `localeCompare`, `Intl.Collator` (also as `sort` comparator), `toLocaleUpperCase/LowerCase` on ICU4X.
+- 2026-10-19 `Date` (`M9-TS-240..253`): spec calendar maths, `jiff` local time (OS zone or `ts_rt_date_set_zone`), constructors, statics, getters/setters, ISO and legacy parsing; five time zones against bun.
+- 2026-10-19 `RegExp` R2 (`M9-TS-232..239`): `match/matchAll/search/replace/replaceAll/split` with regexes, `$` patterns, replacement functions. R1 (`M9-TS-222..231`): the `regress` engine, literals, `exec/test`, flags, named groups.
+- 2026-10-19 JSON (`M9-TS-215..221`): typed `stringify`/`parse` through descriptor blobs; bun's `SyntaxError` texts (67 cases).
+- 2026-10-19 `Map`/`Set`/`WeakMap`/`WeakSet` (`M9-TS-206..214`): insertion-ordered hash table, SameValueZero, exact live iteration.
+- 2026-10-19 Standard library tier 1 E-H (`M9-TS-199..205`): `typeof`, `Number` statics, `Math` extras, `Array` gaps, `console`, `Object.*`, spread/rest.
+- 2026-10-18 Exceptions, tier 1 A-D (`M9-TS-187..198`): `Error` classes from a prelude, `throw`/`try`/`catch`/`finally` as checked returns in may-throw functions only, runtime `RangeError`s catchable.
+- 2026-10-18 Strings (`M9-TS-162..186`): WTF-8 storage with JavaScript's UTF-16 behaviour; runtime, compiler and the engine boundary (`&str`/`String`); design `docs/research/iron-ts-strings.md`.
 
 - 2026-10-18 Array library (`M9-TS-92..110`): runtime routines for pop/shift/unshift/slice/splice/concat/reverse/fill/sort,
   inline loops for indexOf/findIndex/reduce/at, `length = n`, `Array.from/of/isArray`, `new Array(n)`. The sort
