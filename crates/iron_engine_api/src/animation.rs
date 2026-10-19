@@ -507,6 +507,16 @@ pub mod animation_component_api {
             }))
         }
 
+        /// The `Animation` on an object, or none (what `go.getComponent(Animation)` does).
+        pub fn find_on(object: ObjectId) -> AnimationRef {
+            AnimationRef(with_world(|w| {
+                w.players
+                    .iter()
+                    .position(|p| p.object == object)
+                    .map_or(0, |i| i as u64 + 1)
+            }))
+        }
+
         #[property]
         pub fn game_object(self) -> ObjectId {
             player(self, |p, _| p.object).unwrap_or(ObjectId {

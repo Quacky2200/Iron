@@ -1597,6 +1597,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_kinds"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "iron_math"
 version = "0.1.0"
 dependencies = [
@@ -1654,6 +1661,18 @@ dependencies = [
  "iron_math",
  "iron_script",
  "rquickjs",
+]
+
+[[package]]
+name = "iron_scenes"
+version = "0.1.0"
+dependencies = [
+ "glam 0.34.1",
+ "iron_api",
+ "iron_engine_api",
+ "iron_kinds",
+ "iron_scene",
+ "serde_json",
 ]
 
 [[package]]

@@ -283,6 +283,7 @@ pub fn engine_api_anchor() -> usize {
         iron_engine_api::screen::quality_api::iron_QualitySettings_vSyncCount as *const () as usize,
         iron_engine_api::color::color_api::iron_Color_lerp as *const () as usize,
         iron_engine_api::audio::audio_api::iron_audio_load as *const () as usize,
+        iron_scenes::scene_manager_api::iron_SceneManager_loadScene as *const () as usize,
     ]
     .iter()
     .fold(0, |a, p| a ^ p)
@@ -1196,4 +1197,16 @@ pub fn busy_checksum(s: *mut SimState) -> f64 {
 pub fn serial() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Scene files, `instantiate` and prefabs (`bench/scenes.ts`), prefix `scn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod scenes_t {
+    include!(concat!(env!("OUT_DIR"), "/scenes_bindings.rs"));
 }

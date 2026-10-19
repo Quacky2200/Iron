@@ -34,6 +34,7 @@ type Create = unsafe extern "C" fn(f64, u64) -> *mut u8;
 type Hook = unsafe extern "C" fn(*mut u8, f64);
 
 /// One registered class: its constructor thunk and the hooks it has (a missing hook costs nothing).
+#[derive(Clone)]
 pub struct NativeClass {
     pub name: &'static str,
     /// The class struct id in the compiled program: what `getComponent(Class)` passes.
@@ -56,6 +57,29 @@ pub enum PropValue {
     Str(String),
     /// Another component, by id.
     Component(u32),
+    /// A GameObject, by raw handle.
+    Object(u64),
+    /// A value class (`Vector3`, `Color`, ...) by name and field values.
+    Value(String, Vec<f64>),
+}
+
+/// The value classes a `@property` may hold: name and field count. The compiled layout is a header
+/// word and one f64 per field.
+const VALUE_CLASSES: [(&str, usize); 9] = [
+    ("Vector2", 2),
+    ("Vector3", 3),
+    ("Vector4", 4),
+    ("Quaternion", 4),
+    ("Color", 4),
+    ("Rect", 4),
+    ("RectInt", 4),
+    ("Vector2Int", 2),
+    ("Vector3Int", 3),
+];
+
+fn value_class(kind: &str) -> Option<(&'static str, usize)> {
+    let name = kind.strip_prefix("object:")?;
+    VALUE_CLASSES.iter().copied().find(|(n, _)| *n == name)
 }
 
 /// A component in the thread registry: what `getComponent` searches.
@@ -64,6 +88,8 @@ struct Live {
     object: u64,
     sid: u64,
     bases: &'static [u64],
+    /// Index in `Registry::classes`.
+    class: usize,
     ptr: *mut u8,
 }
 
@@ -87,6 +113,8 @@ struct Pending {
 struct Registry {
     /// (sid, class index, constructor, bases) of the classes of the current host.
     creators: Vec<(u64, usize, Create, &'static [u64])>,
+    /// The class table of the current host: scene loading reads and writes components by name.
+    classes: Vec<NativeClass>,
     live: Vec<Live>,
     pending: Vec<Pending>,
     /// Components script asked to remove (`removeComponent`, `destroy()`): their `onDestroy` runs
@@ -208,6 +236,7 @@ pub extern "C" fn ts_rt_component_add_gc(object: u64, sid: f64) -> *mut u8 {
             object,
             sid,
             bases,
+            class,
             ptr,
         });
         r.pending.push(Pending {
@@ -256,8 +285,12 @@ impl Drop for NativeHost {
                 ts_rt_root_remove(p.root);
             }
             r.creators.clear();
+            r.classes.clear();
             r.live.clear();
         });
+        for c in &self.classes {
+            iron_kinds::unregister(c.name);
+        }
     }
 }
 
@@ -270,9 +303,13 @@ impl NativeHost {
                 .enumerate()
                 .map(|(i, c)| (c.sid, i, c.create, c.bases))
                 .collect();
+            r.classes = classes.clone();
             r.live.clear();
             r.pending.clear();
         });
+        for c in &classes {
+            register_kind(c.name);
+        }
         NativeHost {
             classes,
             entries: Vec::new(),
@@ -325,6 +362,7 @@ impl NativeHost {
                 object: object.unwrap_or(0),
                 sid: self.classes[ci].sid,
                 bases: self.classes[ci].bases,
+                class: ci,
                 ptr: this,
             })
         });
@@ -509,134 +547,332 @@ impl NativeHost {
         ts_rt_root_remove(e.root);
     }
 
-    fn entry(&self, id: u32) -> Result<&Entry, String> {
-        self.entries
-            .iter()
-            .find(|e| e.id == id)
-            .ok_or_else(|| format!("no component {id}"))
-    }
-
     /// The `@property` fields of a component: name and type name.
     pub fn properties(&self, id: u32) -> Result<Vec<(&'static str, &'static str)>, String> {
-        let e = self.entry(id)?;
-        Ok(self.classes[e.class]
-            .props
-            .iter()
-            .map(|p| (p.0, p.2))
-            .collect())
+        property_table(id)
     }
 
     /// Reads a `@property` through the reflection table, with no script running.
     pub fn get_property(&self, id: u32, name: &str) -> Result<PropValue, String> {
-        let e = self.entry(id)?;
-        let class = &self.classes[e.class];
-        let &(_, off, kind) = class
-            .props
-            .iter()
-            .find(|p| p.0 == name)
-            .ok_or_else(|| format!("{} has no property `{name}`", class.name))?;
-        let (base, nullable) = split_kind(kind);
-        // SAFETY: the table offsets were generated for this class and its fields are 8 bytes.
-        let word = unsafe { *(e.this.add(off) as *const u64) };
-        match base {
-            "number" => Ok(if nullable && word == NULL_NUM_BITS {
-                PropValue::Null
-            } else {
-                PropValue::Num(f64::from_bits(word))
-            }),
-            "boolean" => Ok(match (nullable, word) {
-                (true, 0) => PropValue::Null,
-                (true, w) => PropValue::Bool(w == 2),
-                (false, w) => PropValue::Bool(w != 0),
-            }),
-            "string" => Ok(if word == 0 {
-                PropValue::Null
-            } else {
-                // SAFETY: a string field holds a live string or null.
-                PropValue::Str(unsafe { Str::from_raw(word as *const Str) }.to_string_lossy())
-            }),
-            b if b.starts_with("object:") => {
-                if word == 0 {
-                    return Ok(PropValue::Null);
-                }
-                REG.with(|r| {
-                    r.borrow()
-                        .live
-                        .iter()
-                        .find(|l| l.ptr as u64 == word)
-                        .map(|l| PropValue::Component(l.id))
-                })
-                .ok_or_else(|| format!("property `{name}` holds an object that is not a component"))
-            }
-            _ => Err(format!(
-                "property `{name}` has the unsupported type `{kind}`"
-            )),
-        }
+        get_property(id, name)
     }
 
     /// Writes a `@property` through the reflection table.
     pub fn set_property(&mut self, id: u32, name: &str, v: PropValue) -> Result<(), String> {
-        let e = self.entry(id)?;
-        let class = &self.classes[e.class];
-        let &(_, off, kind) = class
-            .props
-            .iter()
-            .find(|p| p.0 == name)
-            .ok_or_else(|| format!("{} has no property `{name}`", class.name))?;
-        let (base, nullable) = split_kind(kind);
-        let word: u64 = match (base, &v) {
-            ("number", PropValue::Null) if nullable => NULL_NUM_BITS,
-            (_, PropValue::Null) if nullable => 0,
-            ("number", PropValue::Num(n)) => n.to_bits(),
-            ("boolean", PropValue::Bool(b)) => match (nullable, b) {
-                (true, true) => 2,
-                (true, false) => 1,
-                (false, b) => *b as u64,
-            },
-            ("string", PropValue::Str(s)) => {
-                // SAFETY: the bytes are valid UTF-8, hence WTF-8; this never collects.
-                unsafe { ts_rt_str_new(s.as_ptr(), s.len() as i64) as u64 }
-            }
-            (b, PropValue::Component(c)) if b.starts_with("object:") => {
-                let other = self.entry(*c)?;
-                if self.classes[other.class].name != &b["object:".len()..] {
-                    return Err(format!(
-                        "property `{name}` is `{kind}`, but component {c} is a {}",
-                        self.classes[other.class].name
-                    ));
-                }
-                other.this as u64
-            }
-            _ => return Err(format!("property `{name}` is `{kind}`, not {v:?}")),
-        };
-        // SAFETY: as in `get_property`.
-        unsafe { *(e.this.add(off) as *mut u64) = word };
-        Ok(())
+        set_property(id, name, v)
     }
 
     /// Every supported `@property` of a component: what a scene file stores.
     pub fn save_properties(&self, id: u32) -> Result<Vec<(&'static str, PropValue)>, String> {
-        let mut out = Vec::new();
-        for (name, kind) in self.properties(id)? {
-            let base = split_kind(kind).0;
-            if matches!(base, "number" | "boolean" | "string") || base.starts_with("object:") {
-                out.push((name, self.get_property(id, name)?));
-            }
-        }
-        Ok(out)
+        save_properties(id)
     }
 
     /// Applies saved values; a value that does not fit is an error in the returned list and the
     /// rest are still applied.
     pub fn load_properties(&mut self, id: u32, values: &[(&str, PropValue)]) -> Vec<String> {
-        let mut errors = Vec::new();
-        for (name, v) in values {
-            if let Err(e) = self.set_property(id, name, v.clone()) {
-                errors.push(e);
+        load_properties(id, values)
+    }
+}
+
+/// (pointer, class index) of a live component.
+fn locate(id: u32) -> Result<(*mut u8, usize), String> {
+    REG.with(|r| {
+        r.borrow()
+            .live
+            .iter()
+            .find(|l| l.id == id)
+            .map(|l| (l.ptr, l.class))
+    })
+    .ok_or_else(|| format!("no component {id}"))
+}
+
+fn class_of(class: usize) -> NativeClass {
+    REG.with(|r| r.borrow().classes[class].clone())
+}
+
+fn property_table(id: u32) -> Result<Vec<(&'static str, &'static str)>, String> {
+    let (_, class) = locate(id)?;
+    Ok(class_of(class).props.iter().map(|p| (p.0, p.2)).collect())
+}
+
+fn get_property(id: u32, name: &str) -> Result<PropValue, String> {
+    let (this, ci) = locate(id)?;
+    let class = class_of(ci);
+    let &(_, off, kind) = class
+        .props
+        .iter()
+        .find(|p| p.0 == name)
+        .ok_or_else(|| format!("{} has no property `{name}`", class.name))?;
+    let (base, nullable) = split_kind(kind);
+    // SAFETY: the table offsets were generated for this class and its fields are 8 bytes.
+    let word = unsafe { *(this.add(off) as *const u64) };
+    match base {
+        "number" => Ok(if nullable && word == NULL_NUM_BITS {
+            PropValue::Null
+        } else {
+            PropValue::Num(f64::from_bits(word))
+        }),
+        "boolean" => Ok(match (nullable, word) {
+            (true, 0) => PropValue::Null,
+            (true, w) => PropValue::Bool(w == 2),
+            (false, w) => PropValue::Bool(w != 0),
+        }),
+        "string" => Ok(if word == 0 {
+            PropValue::Null
+        } else {
+            // SAFETY: a string field holds a live string or null.
+            PropValue::Str(unsafe { Str::from_raw(word as *const Str) }.to_string_lossy())
+        }),
+        "handle:GameObject" => Ok(if word == 0 {
+            PropValue::Null
+        } else {
+            PropValue::Object(word)
+        }),
+        b if let Some((n, count)) = value_class(b) => {
+            if word == 0 {
+                return Ok(PropValue::Null);
+            }
+            // SAFETY: a value class object is a header word and `count` f64 fields.
+            let fields = (0..count)
+                .map(|i| unsafe { *((word as *const f64).add(1 + i)) })
+                .collect();
+            Ok(PropValue::Value(n.to_string(), fields))
+        }
+        b if b.starts_with("object:") => {
+            if word == 0 {
+                return Ok(PropValue::Null);
+            }
+            REG.with(|r| {
+                r.borrow()
+                    .live
+                    .iter()
+                    .find(|l| l.ptr as u64 == word)
+                    .map(|l| PropValue::Component(l.id))
+            })
+            .ok_or_else(|| format!("property `{name}` holds an object that is not a component"))
+        }
+        _ => Err(format!(
+            "property `{name}` has the unsupported type `{kind}`"
+        )),
+    }
+}
+
+fn set_property(id: u32, name: &str, v: PropValue) -> Result<(), String> {
+    let (this, ci) = locate(id)?;
+    let class = class_of(ci);
+    let &(_, off, kind) = class
+        .props
+        .iter()
+        .find(|p| p.0 == name)
+        .ok_or_else(|| format!("{} has no property `{name}`", class.name))?;
+    let (base, nullable) = split_kind(kind);
+    let word: u64 = match (base, &v) {
+        ("number", PropValue::Null) if nullable => NULL_NUM_BITS,
+        (_, PropValue::Null) if nullable => 0,
+        ("number", PropValue::Num(n)) => n.to_bits(),
+        ("boolean", PropValue::Bool(b)) => match (nullable, b) {
+            (true, true) => 2,
+            (true, false) => 1,
+            (false, b) => *b as u64,
+        },
+        ("string", PropValue::Str(s)) => {
+            // SAFETY: the bytes are valid UTF-8, hence WTF-8; this never collects.
+            unsafe { ts_rt_str_new(s.as_ptr(), s.len() as i64) as u64 }
+        }
+        (b, PropValue::Value(n, fields)) if let Some((vn, count)) = value_class(b) => {
+            if vn != n || fields.len() != count {
+                return Err(format!("property `{name}` is `{kind}`, not {n}"));
+            }
+            // SAFETY: the object's fields are written in place, as `get_property` reads them.
+            let word = unsafe { *(this.add(off) as *const u64) };
+            if word == 0 {
+                return Err(format!(
+                    "property `{name}` is null; its value cannot be set"
+                ));
+            }
+            for (i, f) in fields.iter().enumerate() {
+                unsafe { *((word as *mut f64).add(1 + i)) = *f };
+            }
+            return Ok(());
+        }
+        ("handle:GameObject", PropValue::Object(o)) => *o,
+        ("handle:GameObject", PropValue::Null) => 0,
+        (b, PropValue::Component(c)) if b.starts_with("object:") => {
+            let want = &b["object:".len()..];
+            let (other, oi) = locate(*c)?;
+            let (sid, bases) = REG.with(|r| {
+                let r = r.borrow();
+                let l = r.live.iter().find(|l| l.id == *c).expect("located above");
+                (l.sid, l.bases)
+            });
+            let want_sid = REG.with(|r| {
+                r.borrow()
+                    .classes
+                    .iter()
+                    .find(|k| k.name == want)
+                    .map(|k| k.sid)
+            });
+            if want_sid.is_none_or(|w| w != sid && !bases.contains(&w)) {
+                return Err(format!(
+                    "property `{name}` is `{kind}`, but component {c} is a {}",
+                    class_of(oi).name
+                ));
+            }
+            other as u64
+        }
+        _ => return Err(format!("property `{name}` is `{kind}`, not {v:?}")),
+    };
+    // SAFETY: as in `get_property`.
+    unsafe { *(this.add(off) as *mut u64) = word };
+    Ok(())
+}
+
+fn save_properties(id: u32) -> Result<Vec<(&'static str, PropValue)>, String> {
+    let mut out = Vec::new();
+    for (name, kind) in property_table(id)? {
+        let base = split_kind(kind).0;
+        if matches!(base, "number" | "boolean" | "string" | "handle:GameObject")
+            || base.starts_with("object:")
+        {
+            // A field holding something that is not a component or value (a plain object) is left out.
+            if let Ok(v) = get_property(id, name) {
+                out.push((name, v));
             }
         }
-        errors
     }
+    Ok(out)
+}
+
+fn load_properties(id: u32, values: &[(&str, PropValue)]) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (name, v) in values {
+        if let Err(e) = set_property(id, name, v.clone()) {
+            errors.push(e);
+        }
+    }
+    errors
+}
+
+fn kind_value(v: PropValue) -> serde_json::Value {
+    use serde_json::Value;
+    match v {
+        PropValue::Null => Value::Null,
+        PropValue::Num(n) => serde_json::Number::from_f64(n).map_or(Value::Null, Value::Number),
+        PropValue::Bool(b) => Value::Bool(b),
+        PropValue::Str(s) => Value::String(s),
+        PropValue::Object(o) => iron_kinds::object_ref(o),
+        PropValue::Value(n, v) => serde_json::json!({ "$type": n, "value": v }),
+        PropValue::Component(c) => {
+            let name = locate(c)
+                .map(|(_, ci)| class_of(ci).name)
+                .unwrap_or_default();
+            iron_kinds::component_ref(name, u64::from(c))
+        }
+    }
+}
+
+fn prop_value(v: &serde_json::Value) -> Option<PropValue> {
+    use serde_json::Value;
+    Some(match v {
+        Value::Null => PropValue::Null,
+        Value::Number(n) => PropValue::Num(n.as_f64()?),
+        Value::Bool(b) => PropValue::Bool(*b),
+        Value::String(s) => PropValue::Str(s.clone()),
+        Value::Object(o) if o.contains_key("$type") => {
+            let n = o.get("$type")?.as_str()?;
+            let fields = o
+                .get("value")?
+                .as_array()?
+                .iter()
+                .map(Value::as_f64)
+                .collect::<Option<Vec<f64>>>()?;
+            PropValue::Value(n.to_string(), fields)
+        }
+        Value::Object(o) => match o.get("$ref").and_then(Value::as_str)? {
+            "GameObject" => PropValue::Object(o.get("object")?.as_u64()?),
+            "Component" => PropValue::Component(o.get("handle")?.as_u64()? as u32),
+            _ => return None,
+        },
+        Value::Array(_) => return None,
+    })
+}
+
+/// Registers the scene-file kind of a class: components are made the way `addComponent` makes
+/// them (asleep, woken when the host settles) and saved and loaded through the reflection table.
+fn register_kind(name: &'static str) {
+    use serde_json::{Map, Value};
+    let sid = REG
+        .with(|r| {
+            r.borrow()
+                .classes
+                .iter()
+                .find(|c| c.name == name)
+                .map(|c| c.sid)
+        })
+        .expect("the class is in the table");
+    iron_kinds::register(iron_kinds::Kind {
+        name: name.to_string(),
+        create: Box::new(move |object| {
+            let ptr = ts_rt_component_add_gc(object, sid as f64);
+            REG.with(|r| {
+                r.borrow()
+                    .live
+                    .iter()
+                    .find(|l| l.ptr == ptr)
+                    .map(|l| u64::from(l.id))
+            })
+            .ok_or_else(|| "the component was not registered".to_string())
+        }),
+        on: Box::new(move |object| {
+            REG.with(|r| {
+                r.borrow()
+                    .live
+                    .iter()
+                    .filter(|l| l.object == object && l.sid == sid)
+                    .map(|l| u64::from(l.id))
+                    .collect()
+            })
+        }),
+        save: Box::new(|handle| {
+            let mut m = Map::new();
+            for (k, v) in save_properties(handle as u32).unwrap_or_default() {
+                m.insert(k.to_string(), kind_value(v));
+            }
+            m
+        }),
+        load: Box::new(|handle, props: &Map<String, Value>| {
+            let mut warnings = Vec::new();
+            for (k, v) in props {
+                match prop_value(v) {
+                    Some(p) => {
+                        if let Err(e) = set_property(handle as u32, k, p) {
+                            warnings.push(e);
+                        }
+                    }
+                    None => warnings.push(format!(
+                        "property `{k}` has a value of an unsupported shape"
+                    )),
+                }
+            }
+            warnings
+        }),
+        // Components made by `create` wake when the host settles (after the calling hook).
+        awake: Box::new(|_| {}),
+        object: Box::new(|handle| {
+            REG.with(|r| {
+                r.borrow()
+                    .live
+                    .iter()
+                    .find(|l| l.id == handle as u32)
+                    .map(|l| l.object)
+            })
+        }),
+        destroy: Box::new(|handle| {
+            if let Ok((ptr, _)) = locate(handle as u32) {
+                ts_rt_component_remove(ptr);
+            }
+        }),
+    });
 }
 
 /// `"number?"` is (`"number"`, nullable).

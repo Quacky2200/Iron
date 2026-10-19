@@ -8,6 +8,7 @@
 
 use super::expr::mk;
 use super::*;
+use crate::manifest::ExternFn;
 
 impl<'a> Lowerer<'a> {
     /// Does `new Class(..)` mean "create an engine object" (the class has a static `create`)?
@@ -122,6 +123,19 @@ impl<'a> Lowerer<'a> {
         };
         let name = cls.name.to_string();
         if !self.class_decls.contains_key(&name) {
+            // An engine component (`Camera`): its static `findOn(go)`.
+            if m == "getComponent"
+                && let Some(find) = self
+                    .manifest
+                    .classes
+                    .get(&name)
+                    .and_then(|k| k.statics.get("findOn"))
+                    .cloned()
+            {
+                let mut e = self.emit_extern(&find, vec![go.clone()]);
+                e.ty = Ty::Handle(name).nullable();
+                return Ok(Some(e));
+            }
             return Ok(None);
         }
         let Ty::Obj(sid) = self.named_type(&name)? else {
@@ -176,6 +190,108 @@ impl<'a> Lowerer<'a> {
             ExprKind::Rt(RtFn::Str("ts_rt_component_remove"), vec![component]),
             Ty::Void,
         )
+    }
+
+    /// `GameObject.instantiate(original, { position, rotation, parent })`,
+    /// `GameObject.dontDestroyOnLoad(go)` and `prefab.instantiate({ .. })`: calls of the scene
+    /// manager's functions (the options become the numbers it takes; NaN is "left out").
+    pub(crate) fn lower_scene_call(
+        &mut self,
+        method: &str,
+        c: &'a CallExpression<'a>,
+    ) -> R<Option<Expr>> {
+        let at = self.loc(c.span.start);
+        let Some(ns) = self.manifest.namespaces.get("SceneManager").cloned() else {
+            return Ok(None);
+        };
+        if method == "dontDestroyOnLoad" {
+            let f = ns["dontDestroyOnLoad"].clone();
+            return Ok(Some(self.call_ext_args(
+                f,
+                None,
+                "GameObject.dontDestroyOnLoad",
+                c.span.start,
+                &c.arguments,
+            )?));
+        }
+        let Some(first) = c.arguments.first().and_then(|a| a.as_expression()) else {
+            bail!("{at}: instantiate takes an object or a prefab")
+        };
+        let original = self.lower_expr(first, None)?;
+        let (f, lead) = match original.ty.strip() {
+            Ty::Handle(h) if h == "Prefab" => (
+                self.manifest.classes["Prefab"].methods["instantiate"].clone(),
+                vec![original],
+            ),
+            _ => (ns["instantiate"].clone(), vec![original]),
+        };
+        let options = match c.arguments.get(1).and_then(|a| a.as_expression()) {
+            Some(Expression::ObjectExpression(o)) => Some(&**o),
+            Some(_) => bail!("{at}: instantiate options are an object literal"),
+            None => None,
+        };
+        self.finish_instantiate(f, lead, options, &at).map(Some)
+    }
+
+    /// The call of an `instantiate` function (`lead`: the original or the prefab) with the
+    /// options object's `position`, `rotation` and `parent` as arguments.
+    pub(crate) fn finish_instantiate(
+        &mut self,
+        f: ExternFn,
+        lead: Vec<Expr>,
+        options: Option<&'a ObjectExpression<'a>>,
+        at: &str,
+    ) -> R<Expr> {
+        let nan = || mk(ExprKind::Num(f64::NAN), Ty::Num);
+        let (mut position, mut rotation, mut parent) = (None, None, None);
+        for p in options.map(|o| o.properties.iter()).into_iter().flatten() {
+            let ObjectPropertyKind::ObjectProperty(p) = p else {
+                bail!("{at}: spread in options")
+            };
+            let PropertyKey::StaticIdentifier(key) = &p.key else {
+                bail!("{at}: option names are plain names")
+            };
+            match key.name.as_str() {
+                "position" => {
+                    let sid = self.value_struct("Vector3");
+                    position = Some((self.lower_expr(&p.value, Some(&Ty::Obj(sid)))?, sid));
+                }
+                "rotation" => {
+                    let sid = self.value_struct("Quaternion");
+                    rotation = Some((self.lower_expr(&p.value, Some(&Ty::Obj(sid)))?, sid));
+                }
+                "parent" => parent = Some(self.lower_expr(&p.value, None)?),
+                other => bail!("{at}: instantiate has no option `{other}`"),
+            }
+        }
+        let mut args = lead;
+        // A vector or quaternion is read into a temporary once, then its fields are the arguments.
+        let mut pre = Vec::new();
+        let mut parts =
+            |this: &mut Self, v: Option<(Expr, usize)>, n: usize, args: &mut Vec<Expr>| match v {
+                Some((e, sid)) => {
+                    let tmp = this.new_local(Ty::Obj(sid));
+                    pre.push(Stmt::Assign(tmp, e));
+                    for i in 0..n {
+                        args.push(mk(
+                            ExprKind::Field(Box::new(this.var_expr(tmp)), sid, i),
+                            Ty::Num,
+                        ));
+                    }
+                }
+                None => args.extend((0..n).map(|_| mk(ExprKind::Num(f64::NAN), Ty::Num))),
+            };
+        parts(self, position, 3, &mut args);
+        parts(self, rotation, 4, &mut args);
+        let handle_ty = Ty::Handle("GameObject".into());
+        args.push(match parent {
+            Some(p) => p,
+            None => mk(ExprKind::Null, handle_ty),
+        });
+        let _ = nan;
+        let call = self.emit_extern(&f, args);
+        let ty = call.ty.clone();
+        Ok(mk(ExprKind::Seq(pre, Box::new(call)), ty))
     }
 
     /// `GameObject.findObjectOfType(Player)`: the first component of that class on any object.

@@ -1,0 +1,513 @@
+//! Scenes (Unity's `SceneManager`): a scene is a set of root objects loaded, saved and unloaded
+//! together. The state is per thread. Objects remember the scene they were made in (a tag on the
+//! `iron_scene::Scene` object); an object with no tag belongs to the active scene.
+
+use crate::data::{Saver, load_objects, sc, warn};
+use iron_api::Handle;
+use iron_scene::ObjectId;
+use serde_json::{Value, json};
+use std::cell::RefCell;
+
+/// The tag of objects kept across scene loads (`dontDestroyOnLoad`).
+const KEEP: u32 = u32::MAX;
+
+/// A scene by number (0 is "no scene").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SceneRef(pub u32);
+
+impl Handle for SceneRef {
+    fn to_raw(self) -> u64 {
+        u64::from(self.0)
+    }
+    fn from_raw(raw: u64) -> Self {
+        SceneRef(raw as u32)
+    }
+}
+
+/// A prefab by number (0 is "no prefab").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefabRef(pub u32);
+
+impl Handle for PrefabRef {
+    fn to_raw(self) -> u64 {
+        u64::from(self.0)
+    }
+    fn from_raw(raw: u64) -> Self {
+        PrefabRef(raw as u32)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SceneInfo {
+    pub handle: u32,
+    pub name: String,
+    /// Where it was loaded from (none: made in code or from text).
+    pub path: Option<String>,
+    /// The lighting it was saved with, applied when it is made active.
+    pub render_settings: Option<Value>,
+}
+
+/// Something the game may want to react to; read with [`take_events`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum SceneEvent {
+    Loaded { scene: u32, additive: bool },
+    Unloaded { scene: u32 },
+    ActiveChanged { previous: u32, next: u32 },
+}
+
+struct Prefab {
+    name: String,
+    root: Value,
+    src: Option<String>,
+}
+
+struct State {
+    scenes: Vec<SceneInfo>,
+    active: u32,
+    next: u32,
+    events: Vec<SceneEvent>,
+    requests: Vec<(u64, String, bool)>,
+    next_request: u64,
+    prefabs: Vec<Prefab>,
+}
+
+impl State {
+    fn new() -> Self {
+        State {
+            scenes: vec![SceneInfo {
+                handle: 1,
+                name: "Main".into(),
+                path: None,
+                render_settings: None,
+            }],
+            active: 1,
+            next: 2,
+            events: Vec::new(),
+            requests: Vec::new(),
+            next_request: 1,
+            prefabs: Vec::new(),
+        }
+    }
+}
+
+thread_local! {
+    static STATE: RefCell<State> = RefCell::new(State::new());
+}
+
+fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
+    STATE.with(|s| f(&mut s.borrow_mut()))
+}
+
+/// Forgets every scene and prefab (a new game, tests): one empty `Main` scene is active.
+pub fn reset() {
+    STATE.with(|s| *s.borrow_mut() = State::new());
+}
+
+/// Makes objects created from now on belong to the active scene. Called by every entry point.
+pub fn sync() {
+    crate::ensure_kinds();
+    let a = active();
+    sc(|s| s.set_new_tag(a));
+}
+
+pub fn scene_count() -> usize {
+    st(|s| s.scenes.len())
+}
+
+/// The scene at an index, or 0.
+pub fn scene_at(index: usize) -> u32 {
+    st(|s| s.scenes.get(index).map_or(0, |i| i.handle))
+}
+
+pub fn scene_by_name(name: &str) -> u32 {
+    st(|s| {
+        s.scenes
+            .iter()
+            .find(|i| i.name == name)
+            .map_or(0, |i| i.handle)
+    })
+}
+
+pub fn active() -> u32 {
+    st(|s| s.active)
+}
+
+pub fn info(scene: u32) -> Option<SceneInfo> {
+    st(|s| s.scenes.iter().find(|i| i.handle == scene).cloned())
+}
+
+pub fn is_loaded(scene: u32) -> bool {
+    info(scene).is_some()
+}
+
+/// Makes a loaded scene active (false if it is not loaded).
+pub fn set_active(scene: u32) -> bool {
+    if !is_loaded(scene) {
+        return false;
+    }
+    let previous = active();
+    if previous != scene {
+        st(|s| {
+            s.active = scene;
+            s.events.push(SceneEvent::ActiveChanged {
+                previous,
+                next: scene,
+            });
+        });
+        sync();
+    }
+    true
+}
+
+/// A new empty scene, loaded alongside the others (0 if the name is taken).
+pub fn create_scene(name: &str) -> u32 {
+    if scene_by_name(name) != 0 {
+        warn(format!("a scene named {name} is already loaded"));
+        return 0;
+    }
+    st(|s| {
+        let handle = s.next;
+        s.next += 1;
+        s.scenes.push(SceneInfo {
+            handle,
+            name: name.to_owned(),
+            path: None,
+            render_settings: None,
+        });
+        handle
+    })
+}
+
+fn tag_of(object: ObjectId) -> u32 {
+    let tag = sc(|s| {
+        let mut o = object;
+        while let Some(p) = s.parent(o) {
+            o = p;
+        }
+        s.tag(o)
+    })
+    .unwrap_or(0);
+    if tag == 0 { active() } else { tag }
+}
+
+/// The scene an object is in (0 for an object that does not exist, `u32::MAX` for kept ones).
+pub fn scene_of(object: ObjectId) -> u32 {
+    if sc(|s| s.contains(object)) != Some(true) {
+        return 0;
+    }
+    tag_of(object)
+}
+
+/// The root objects of a scene, in order.
+pub fn roots(scene: u32) -> Vec<ObjectId> {
+    let a = active();
+    sc(|s| {
+        s.roots()
+            .iter()
+            .copied()
+            .filter(|r| match s.tag(*r) {
+                0 => scene == a,
+                t => t == scene,
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// Everything in a scene as `SceneData` JSON text.
+pub fn serialize(scene: u32) -> Option<String> {
+    let info = info(scene)?;
+    let mut saver = Saver::new(false);
+    let roots = roots(scene);
+    saver.number(&roots);
+    let objects: Vec<Value> = roots
+        .into_iter()
+        .filter_map(|r| saver.save_object(r))
+        .collect();
+    let mut data = json!({
+        "format": "iron.scene",
+        "version": 1,
+        "name": info.name,
+        "objects": objects,
+    });
+    if scene == active()
+        && let Some(r) = info.render_settings
+    {
+        data["renderSettings"] = r;
+    }
+    Some(data.to_string())
+}
+
+fn unload(scene: u32) {
+    for o in roots(scene) {
+        iron_scene::api::scene_api::destroy(o);
+    }
+    st(|s| {
+        s.scenes.retain(|i| i.handle != scene);
+        s.events.push(SceneEvent::Unloaded { scene });
+    });
+}
+
+/// Loads scene data (text). `additive` adds it to the loaded scenes; otherwise every other scene
+/// is unloaded first (not the objects kept with [`dont_destroy_on_load`]) and it becomes active.
+pub fn load_scene(text: &str, additive: bool) -> Result<u32, String> {
+    sync();
+    let data: Value = serde_json::from_str(text).map_err(|e| format!("not a scene: {e}"))?;
+    if data.get("format").and_then(Value::as_str) != Some("iron.scene") {
+        return Err("not a scene (format isn't iron.scene)".into());
+    }
+    if data.get("version").and_then(Value::as_u64) != Some(1) {
+        return Err(format!("scene version {} isn't supported", data["version"]));
+    }
+    let name = data.get("name").and_then(Value::as_str).unwrap_or("Scene");
+    let (handle, old) = st(|s| {
+        let handle = s.next;
+        s.next += 1;
+        let old: Vec<u32> = if additive {
+            Vec::new()
+        } else {
+            s.scenes.iter().map(|i| i.handle).collect()
+        };
+        s.scenes.push(SceneInfo {
+            handle,
+            name: name.to_owned(),
+            path: None,
+            render_settings: data.get("renderSettings").cloned(),
+        });
+        (handle, old)
+    });
+    for o in old {
+        unload(o);
+    }
+    let objects = data
+        .get("objects")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    load_objects(&objects, None, handle);
+    if !additive {
+        set_active(handle);
+    }
+    st(|s| {
+        s.events.push(SceneEvent::Loaded {
+            scene: handle,
+            additive,
+        })
+    });
+    Ok(handle)
+}
+
+/// Destroys a scene's objects and drops it. The last scene cannot be unloaded.
+pub fn unload_scene(scene: u32) -> bool {
+    if !is_loaded(scene) || scene_count() == 1 {
+        return false;
+    }
+    unload(scene);
+    if active() == scene {
+        set_active(scene_at(0));
+    }
+    true
+}
+
+/// Moves a root object (with its children) to another loaded scene.
+pub fn move_to_scene(object: ObjectId, scene: u32) -> bool {
+    if !is_loaded(scene) || sc(|s| s.parent(object).is_some()) != Some(false) {
+        return false;
+    }
+    sc(|s| s.set_tag(object, scene));
+    true
+}
+
+/// Moves every object of `source` into `destination` and unloads `source`.
+pub fn merge_scenes(source: u32, destination: u32) {
+    for o in roots(source) {
+        move_to_scene(o, destination);
+    }
+    unload_scene(source);
+}
+
+/// Keeps the root of an object when scenes unload.
+pub fn dont_destroy_on_load(object: ObjectId) {
+    sc(|s| {
+        let mut o = object;
+        while let Some(p) = s.parent(o) {
+            o = p;
+        }
+        s.set_tag(o, KEEP);
+    });
+}
+
+/// What happened since the last call.
+pub fn take_events() -> Vec<SceneEvent> {
+    st(|s| std::mem::take(&mut s.events))
+}
+
+/// Asks the host to read a scene file (it is the app that has the game folder). The host calls
+/// [`finish_load`] with the text. Returns the request id.
+pub fn request_load(path: &str, additive: bool) -> u64 {
+    st(|s| {
+        let id = s.next_request;
+        s.next_request += 1;
+        s.requests.push((id, path.to_owned(), additive));
+        id
+    })
+}
+
+/// The files the script asked for, as (request id, path).
+pub fn take_load_requests() -> Vec<(u64, String)> {
+    st(|s| s.requests.iter().map(|(i, p, _)| (*i, p.clone())).collect())
+}
+
+/// The host read the file of a request: the scene loads (the new scene's handle).
+pub fn finish_load(id: u64, text: &str) -> Result<u32, String> {
+    let (path, additive) = st(|s| {
+        let i = s.requests.iter().position(|r| r.0 == id)?;
+        let r = s.requests.remove(i);
+        Some((r.1, r.2))
+    })
+    .ok_or_else(|| format!("no load request {id}"))?;
+    let handle = load_scene(text, additive)?;
+    st(|s| {
+        if let Some(i) = s.scenes.iter_mut().find(|i| i.handle == handle) {
+            i.path = Some(path);
+        }
+    });
+    Ok(handle)
+}
+
+fn place(data: &mut Value, position: Option<[f64; 3]>, rotation: Option<[f64; 4]>) {
+    if let Some(p) = position {
+        data["position"] = json!(p);
+    }
+    if let Some(r) = rotation {
+        data["rotation"] = json!(r);
+    }
+}
+
+/// Copies an object with its children and components (Unity's `Instantiate`): references inside
+/// the copy point at the copies, others at the originals. `position` and `rotation` (world, when
+/// there is no parent) default to the original's.
+pub fn instantiate(
+    original: ObjectId,
+    position: Option<[f64; 3]>,
+    rotation: Option<[f64; 4]>,
+    parent: Option<ObjectId>,
+) -> Option<ObjectId> {
+    sync();
+    let mut saver = Saver::new(true);
+    saver.number(&[original]);
+    let Some(mut data) = saver.save_object(original) else {
+        warn("parts of a model cannot be copied on their own; copy the model's root");
+        return None;
+    };
+    if parent.is_none() {
+        // Where the original is in the world.
+        let w = sc(|s| s.world(original))?;
+        let f = f64::from;
+        data["position"] = json!([f(w.position.x), f(w.position.y), f(w.position.z)]);
+        data["rotation"] = json!([
+            f(w.rotation.x),
+            f(w.rotation.y),
+            f(w.rotation.z),
+            f(w.rotation.w)
+        ]);
+        data["scale"] = json!([f(w.scale.x), f(w.scale.y), f(w.scale.z)]);
+    }
+    place(&mut data, position, rotation);
+    // A root copy goes into the original's scene.
+    let tag = if parent.is_some() {
+        active()
+    } else {
+        tag_of(original)
+    };
+    load_objects(&[data], parent, tag).into_iter().next()
+}
+
+/// Captures an object and everything under it as it is now. References to objects outside it are
+/// dropped. Returns the prefab's number (1-based), 0 if the object cannot be a prefab.
+pub fn prefab_from_object(object: ObjectId) -> u32 {
+    let mut saver = Saver::new(false);
+    saver.number(&[object]);
+    let Some(mut root) = saver.save_object(object) else {
+        warn("parts of a model cannot be prefabs on their own; use the model's root");
+        return 0;
+    };
+    // The prefab's own placement starts from the origin.
+    if let Some(o) = root.as_object_mut() {
+        o.remove("position");
+        o.remove("rotation");
+    }
+    let name = sc(|s| s.name(object).unwrap_or_default().to_owned()).unwrap_or_default();
+    st(|s| {
+        s.prefabs.push(Prefab {
+            name,
+            root,
+            src: None,
+        });
+        s.prefabs.len() as u32
+    })
+}
+
+/// A prefab from saved data (`prefab_json`'s output).
+pub fn prefab_from_data(text: &str, src: Option<&str>) -> Result<u32, String> {
+    let d: Value = serde_json::from_str(text).map_err(|e| format!("not prefab data: {e}"))?;
+    if d.get("format").and_then(Value::as_str) != Some("iron.prefab") || d.get("root").is_none() {
+        return Err("not prefab data".into());
+    }
+    let name = d
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("Prefab")
+        .to_owned();
+    Ok(st(|s| {
+        s.prefabs.push(Prefab {
+            name,
+            root: d["root"].clone(),
+            src: src.map(str::to_owned),
+        });
+        s.prefabs.len() as u32
+    }))
+}
+
+pub fn prefab_name(prefab: u32) -> String {
+    st(|s| {
+        s.prefabs
+            .get((prefab as usize).wrapping_sub(1))
+            .map(|p| p.name.clone())
+            .unwrap_or_default()
+    })
+}
+
+/// A prefab as JSON text, for a `.prefab.json` file.
+pub fn prefab_json(prefab: u32) -> String {
+    st(|s| {
+        s.prefabs
+            .get((prefab as usize).wrapping_sub(1))
+            .map(|p| {
+                json!({ "format": "iron.prefab", "version": 1, "name": p.name, "root": p.root })
+                    .to_string()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// Places a copy: in the active scene (or under `parent`), at `position` / `rotation`.
+pub fn instantiate_prefab(
+    prefab: u32,
+    position: Option<[f64; 3]>,
+    rotation: Option<[f64; 4]>,
+    parent: Option<ObjectId>,
+) -> Option<ObjectId> {
+    sync();
+    let mut root = st(|s| {
+        s.prefabs.get((prefab as usize).wrapping_sub(1)).map(|p| {
+            let mut r = p.root.clone();
+            if let (Some(src), Some(o)) = (&p.src, r.as_object_mut()) {
+                o.insert("prefab".into(), json!(src));
+            }
+            r
+        })
+    })?;
+    place(&mut root, position, rotation);
+    load_objects(&[root], parent, active()).into_iter().next()
+}

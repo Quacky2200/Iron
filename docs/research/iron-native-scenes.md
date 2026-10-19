@@ -1,6 +1,6 @@
 # Scene, components and scene files in Rust: design note
 
-Status: **decided by the plan, built in steps; step 1 (members, lookups, removal, lifecycle hooks) done, `instantiate` and the scenes loader next** (2026-10-19). The user asked for `scene.ts` and the component model, then
+Status: **decided by the plan, built in steps; steps 1 to 3 done (members, lookups, lifecycle, `instantiate`, prefabs, `SceneManager`, the loader/saver); hot-reload state, async loads and more kinds next** (2026-10-19). The user asked for `scene.ts` and the component model, then
 `scenes.ts`. Most of the object model is native already (`iron_scene`, `NativeHost`, `getComponent`/`addComponent`, `@property`
 save and load, the animation components). This note says what is left, how `scenes.ts` fits when most engine components are not
 ported yet, and the order.

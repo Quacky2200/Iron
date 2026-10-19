@@ -721,6 +721,16 @@ pub mod animator_api {
             }))
         }
 
+        /// The `Animator` on an object, or none (what `go.getComponent(Animator)` does).
+        pub fn find_on(object: ObjectId) -> AnimatorRef {
+            AnimatorRef(with_world(|w| {
+                w.animators
+                    .iter()
+                    .position(|p| p.object == object)
+                    .map_or(0, |i| i as u64 + 1)
+            }))
+        }
+
         #[property]
         pub fn game_object(self) -> ObjectId {
             animator(self, |p, _| p.object).unwrap_or(ObjectId {

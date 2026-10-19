@@ -2293,6 +2293,14 @@ impl<'a> Lowerer<'a> {
                     return Ok(e);
                 }
                 if let Expression::Identifier(id) = &m.object
+                    && id.name == "GameObject"
+                    && matches!(method, "instantiate" | "dontDestroyOnLoad")
+                    && self.lookup("GameObject").is_none()
+                    && let Some(e) = self.lower_scene_call(method, c)?
+                {
+                    return Ok(e);
+                }
+                if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()
                     && self.manifest.namespaces.contains_key(id.name.as_str())
                 {

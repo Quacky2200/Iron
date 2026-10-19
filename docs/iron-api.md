@@ -342,3 +342,24 @@ as bun does), and the tests that compare with bun run the original with the same
 `#[optional(keep_world = true, fade = 0.3)]` gives a left-out parameter a value instead of NaN / false / empty: a compiled call and
 QuickJS both pass it (`GameObject.setParent(parent, keepWorld = true)` is declared this way). The manifest says `"default": 1`
 (a flag is 0 or 1).
+
+## Scenes (`iron_scenes`, `iron_kinds`)
+
+`iron_scenes` is `scenes.ts` in Rust: `SceneManager` (`loadScene(text, mode?)`, `getActiveScene`, `setActiveScene`,
+`createScene`, `unloadScene`, `moveGameObjectToScene`, `mergeScenes`, `sceneOf`, `dontDestroyOnLoad`, `instantiate`), `Scene`
+(`name`, `path`, `isLoaded`, `rootCount` / `rootAt(i)`, `serialize()`) and `Prefab` (`fromObject`, `fromData`, `instantiate`,
+`toJSON`). The file format is `scenes.ts`'s `iron.scene` version 1, read and written with `serde_json`.
+
+The loader does not know component classes. `iron_kinds` is a per-thread registry of *kinds* (`create`, `on`, `save`, `load`,
+`awake`, `object`, `destroy` over raw `u64` handles). `iron_scenes` registers `Camera`, `Animation` and `Animator`; a compiled
+program's `NativeHost` registers one kind per class it has (properties go through the `PROPS` table: numbers, booleans, strings,
+component and `GameObject` references, and the value classes `Vector2/3/4`, `Quaternion`, `Color`, `Rect`, ... written in
+place). A component whose kind is not registered is skipped with a warning (`take_warnings()`). References are placeholders for
+kinds (`{"$ref":"GameObject","object":raw}`, `{"$ref":"Component","kind","handle"}`) that the loader and saver map to file ids.
+`instantiate` is save plus load with external references kept live. The compiler lowers `GameObject.instantiate(go, { position,
+rotation, parent })` and `prefab.instantiate({..})` onto the numeric `SceneManager.instantiate` / `Prefab.instantiate`.
+
+Differences: the components of one object are saved kind by kind, not in the order they were added; `loadSceneAsync` is a host
+request (`request_load` / `take_load_requests` / `finish_load`); scene events are read with `take_events()` until closure APIs
+exist; compiled programs do not keep state across a hot reload (they restart); `$asset`, `Material` and `Texture` values are not
+loaded yet.

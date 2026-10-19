@@ -1110,6 +1110,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_kinds"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "iron_math"
 version = "0.1.0"
 dependencies = [
@@ -1124,6 +1131,18 @@ dependencies = [
  "iron_api",
  "iron_core",
  "iron_math",
+]
+
+[[package]]
+name = "iron_scenes"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "iron_api",
+ "iron_engine_api",
+ "iron_kinds",
+ "iron_scene",
+ "serde_json",
 ]
 
 [[package]]
@@ -1162,6 +1181,7 @@ dependencies = [
  "corosensei",
  "fixed_decimal",
  "icu",
+ "iron_kinds",
  "jiff",
  "num-bigint 0.4.8",
  "num-integer",
@@ -1181,7 +1201,9 @@ dependencies = [
  "iron_core",
  "iron_demo_api",
  "iron_engine_api",
+ "iron_kinds",
  "iron_scene",
+ "iron_scenes",
  "iron_script",
  "iron_ts",
  "iron_ts_rt",

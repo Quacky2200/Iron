@@ -439,6 +439,20 @@ impl<'a> Lowerer<'a> {
             return self.lower_join(recv, c);
         }
         if let Ty::Handle(class) = &rty {
+            if class == "Prefab"
+                && m == "instantiate"
+                && let Some(e) = {
+                    let f = self.manifest.classes["Prefab"].methods["instantiate"].clone();
+                    let at = self.loc(c.span.start);
+                    let options = match c.arguments.first().and_then(|a| a.as_expression()) {
+                        Some(Expression::ObjectExpression(o)) => Some(&**o),
+                        _ => None,
+                    };
+                    Some(self.finish_instantiate(f, vec![recv.clone()], options, &at)?)
+                }
+            {
+                return Ok(e);
+            }
             if m == "addComponent" {
                 return self.lower_add_component(recv, c);
             }

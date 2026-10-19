@@ -65,6 +65,7 @@ fn prop_kind(m: &Module, t: &Ty) -> String {
         Ty::Lit => "literal".to_string(),
         Ty::Str => "string".to_string(),
         Ty::Obj(s) => format!("object:{}", struct_name(m, *s)),
+        Ty::Handle(h) => format!("handle:{h}"),
         Ty::Arr(_) | Ty::Typed(_) => "array".to_string(),
         Ty::Fn(_) => "function".to_string(),
         _ => "other".to_string(),

@@ -72,6 +72,15 @@ pub fn remove_on(object: ObjectId) {
     });
 }
 
+/// Removes one camera.
+pub fn remove(c: CameraRef) {
+    CAMERAS.with(|v| {
+        if let Some(slot) = v.borrow_mut().get_mut((c.0 as usize).wrapping_sub(1)) {
+            *slot = None;
+        }
+    });
+}
+
 pub fn reset() {
     CAMERAS.with(|c| c.borrow_mut().clear());
 }
@@ -120,6 +129,11 @@ pub mod camera_api {
                 }));
                 CameraRef(c.len() as u32)
             })
+        }
+
+        /// The camera on an object, or none (what `go.getComponent(Camera)` does).
+        pub fn find_on(object: ObjectId) -> CameraRef {
+            super::camera_on(object).unwrap_or(CameraRef(0))
         }
 
         #[property]

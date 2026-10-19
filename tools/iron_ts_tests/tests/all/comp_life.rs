@@ -134,3 +134,28 @@ fn destroyed_objects_take_their_components_with_them() {
         assert!(host.is_empty());
     });
 }
+
+// M9-TS-711
+//
+// `go.getComponent(Camera)` (and `Animation`, `Animator`) finds the engine component on that
+// object only.
+#[test]
+fn get_component_finds_engine_components() {
+    in_every_gc_mode(|| {
+        let mut scene = Scene::new();
+        let _scope = iron_scene::api::enter(&mut scene);
+        iron_engine_api::animation::reset();
+        iron_engine_api::camera::reset();
+        let a = api::create();
+        let b = api::create();
+        let kinds = |o: iron_scene::ObjectId| unsafe { ts_clf_engineKinds(o.to_raw()) };
+        assert_eq!(kinds(a), 0.0);
+        unsafe {
+            ts_clf_addEngine(a.to_raw(), 1.0);
+            ts_clf_addEngine(b.to_raw(), 4.0);
+            ts_clf_addEngine(a.to_raw(), 2.0);
+        }
+        assert_eq!(kinds(a), 3.0);
+        assert_eq!(kinds(b), 4.0);
+    });
+}

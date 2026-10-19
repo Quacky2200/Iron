@@ -59,6 +59,7 @@ mod rotations;
 mod rounding;
 mod scene;
 mod scene_objects;
+mod scenes;
 mod segmenter;
 mod shapes;
 mod sim_port;

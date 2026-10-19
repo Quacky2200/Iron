@@ -72,6 +72,8 @@ struct Object {
     layer: u8,
     /// `HideFlags` bits: what the editor shows and saves.
     hide_flags: u32,
+    /// The scene (a loader's handle) the object was made in; 0 for none.
+    tag: u32,
     parent: Option<ObjectId>,
     children: Vec<ObjectId>,
     local: Transform,
@@ -95,6 +97,8 @@ pub struct Scene {
     /// Objects whose world transform changed since [`Scene::take_moved`].
     moved: Vec<ObjectId>,
     len: usize,
+    /// The tag new objects get.
+    new_tag: u32,
 }
 
 impl Scene {
@@ -134,6 +138,7 @@ impl Scene {
             enabled: true,
             layer: 0,
             hide_flags: 0,
+            tag: self.new_tag,
             parent: None,
             children: Vec::new(),
             local: Transform::IDENTITY,
@@ -221,6 +226,26 @@ impl Scene {
     }
 
     /// The object's `HideFlags` bits (0 for unknown objects).
+    /// The scene tag of an object (0 when it has none).
+    pub fn tag(&self, id: ObjectId) -> u32 {
+        self.get(id).map_or(0, |o| o.tag)
+    }
+
+    pub fn set_tag(&mut self, id: ObjectId, tag: u32) {
+        if let Some(o) = self.get_mut(id) {
+            o.tag = tag;
+        }
+    }
+
+    /// The tag objects made from now on get.
+    pub fn set_new_tag(&mut self, tag: u32) {
+        self.new_tag = tag;
+    }
+
+    pub fn new_tag(&self) -> u32 {
+        self.new_tag
+    }
+
     pub fn hide_flags(&self, id: ObjectId) -> u32 {
         self.get(id).map_or(0, |o| o.hide_flags)
     }

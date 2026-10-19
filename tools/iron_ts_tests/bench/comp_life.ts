@@ -60,3 +60,18 @@ export function suicide(go: GameObject): void {
 export function count(go: GameObject): number {
   return go.getComponents(Watcher).length;
 }
+
+// Engine components are found with `getComponent` too.
+export function engineKinds(go: GameObject): number {
+  let n = 0;
+  if (go.getComponent(Camera)) n += 1;
+  if (go.getComponent(Animation)) n += 2;
+  if (go.getComponent(Animator)) n += 4;
+  return n;
+}
+
+export function addEngine(go: GameObject, which: number): void {
+  if (which == 1) go.addComponent(Camera);
+  if (which == 2) go.addComponent(Animation);
+  if (which == 4) go.addComponent(Animator);
+}
