@@ -59,3 +59,24 @@ export function shared(): string {
   out.push(Random.bool(0.1) ? "T" : "F");
   return out.join(",");
 }
+
+function s3(v: Vector3): string {
+  return `(${v.x},${v.y},${v.z})`;
+}
+
+export function vectors(): string {
+  const r = new Rng(31337);
+  let s = "";
+  for (let i = 0; i < 5; i++) {
+    const c = r.insideUnitCircle();
+    s += `(${c.x},${c.y})${s3(r.onUnitSphere())}${s3(r.insideUnitSphere())}`;
+    const q = r.rotation();
+    s += `(${q.x},${q.y},${q.z},${q.w});`;
+  }
+  Random.initState(77);
+  const a = Random.insideUnitCircle;
+  const b = Random.insideUnitSphere;
+  const c = Random.onUnitSphere;
+  const d = Random.rotation;
+  return `${s}${a.x},${a.y}|${s3(b)}|${s3(c)}|${d.x},${d.w}`;
+}

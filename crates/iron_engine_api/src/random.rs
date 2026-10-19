@@ -2,10 +2,11 @@
 //! generator is mulberry32, the one `js/engine/src/random.ts` uses, so a seed gives the same
 //! numbers in both. Not for security.
 //!
-//! Vector-valued members (`insideUnitSphere`, `rotation`) wait for the math types to be declared
-//! in Rust.
+//! The vector-valued members (`insideUnitCircle`, `onUnitSphere`, `insideUnitSphere`, `rotation`)
+//! draw their numbers in the order `random.ts` does.
 
 use iron_api::{Handle, iron_api};
+use iron_math::{Q, V2, V3};
 use std::cell::RefCell;
 
 /// mulberry32: 32 bits of state.
@@ -31,6 +32,48 @@ impl Mulberry {
         t = (t ^ (t >> 15)).wrapping_mul(t | 1);
         t ^= t.wrapping_add((t ^ (t >> 7)).wrapping_mul(t | 61));
         f64::from(t ^ (t >> 14)) / 4_294_967_296.0
+    }
+
+    /// A point inside a circle of radius 1.
+    pub fn inside_unit_circle(&mut self) -> V2 {
+        let angle = self.next_double() * std::f64::consts::PI * 2.0;
+        let r = self.next_double().sqrt();
+        V2 {
+            x: angle.cos() * r,
+            y: angle.sin() * r,
+        }
+    }
+
+    /// A point on a sphere of radius 1.
+    pub fn on_unit_sphere(&mut self) -> V3 {
+        let z = self.next_double() * 2.0 - 1.0;
+        let angle = self.next_double() * std::f64::consts::PI * 2.0;
+        let r = (1.0 - z * z).sqrt();
+        V3 {
+            x: angle.cos() * r,
+            y: angle.sin() * r,
+            z,
+        }
+    }
+
+    /// A point inside a sphere of radius 1.
+    pub fn inside_unit_sphere(&mut self) -> V3 {
+        let p = self.on_unit_sphere();
+        p.scale(self.next_double().cbrt())
+    }
+
+    /// A uniformly random rotation.
+    pub fn rotation(&mut self) -> Q {
+        let (u1, u2, u3) = (self.next_double(), self.next_double(), self.next_double());
+        let a = (1.0 - u1).sqrt();
+        let b = u1.sqrt();
+        let tau = 2.0 * std::f64::consts::PI;
+        Q {
+            x: a * (tau * u2).sin(),
+            y: a * (tau * u2).cos(),
+            z: b * (tau * u3).sin(),
+            w: b * (tau * u3).cos(),
+        }
     }
 
     /// An integer from `lo` (inclusive) to `hi` (exclusive); `lo` when the range is empty.
@@ -82,9 +125,12 @@ fn seed_of(seed: f64) -> Mulberry {
     }
 }
 
-#[iron_api(namespace = "Rng", handles(Rng = RngRef))]
+#[iron_api(namespace = "Rng", handles(Rng = RngRef), values(
+    Vector2 = V2 [x: f64, y: f64],
+    Vector3 = V3 [x: f64, y: f64, z: f64],
+    Quaternion = Q [x: f64, y: f64, z: f64, w: f64]))]
 pub mod rng_api {
-    use super::{Mulberry, RNGS, RngRef, seed_of, with_rng};
+    use super::{Mulberry, Q, RNGS, RngRef, V2, V3, seed_of, with_rng};
 
     impl RngRef {
         /// A generator; the same seed gives the same sequence. Seeded from the clock without one.
@@ -131,6 +177,26 @@ pub mod rng_api {
             with_rng(self, |g| g.range_int(min.ceil(), max.floor()))
         }
 
+        /// A point inside a circle of radius 1.
+        pub fn inside_unit_circle(self) -> V2 {
+            with_rng(self, Mulberry::inside_unit_circle)
+        }
+
+        /// A point on a sphere of radius 1.
+        pub fn on_unit_sphere(self) -> V3 {
+            with_rng(self, Mulberry::on_unit_sphere)
+        }
+
+        /// A point inside a sphere of radius 1.
+        pub fn inside_unit_sphere(self) -> V3 {
+            with_rng(self, Mulberry::inside_unit_sphere)
+        }
+
+        /// A uniformly random rotation.
+        pub fn rotation(self) -> Q {
+            with_rng(self, Mulberry::rotation)
+        }
+
         /// True with the given chance (0.5 without one).
         #[optional(chance)]
         pub fn bool(self, chance: f64) -> bool {
@@ -140,9 +206,12 @@ pub mod rng_api {
     }
 }
 
-#[iron_api(namespace = "Random", quickjs)]
+#[iron_api(namespace = "Random", quickjs, values(
+    Vector2 = V2 [x: f64, y: f64],
+    Vector3 = V3 [x: f64, y: f64, z: f64],
+    Quaternion = Q [x: f64, y: f64, z: f64, w: f64]))]
 pub mod random_api {
-    use super::SHARED;
+    use super::{Q, SHARED, V2, V3};
 
     /// Reseeds the shared generator, for repeatable runs.
     pub fn init_state(seed: f64) {
@@ -168,5 +237,25 @@ pub mod random_api {
     pub fn bool(chance: f64) -> bool {
         let chance = if chance.is_nan() { 0.5 } else { chance };
         SHARED.with(|g| g.borrow_mut().next_double()) < chance
+    }
+
+    #[property]
+    pub fn inside_unit_circle() -> V2 {
+        SHARED.with(|g| g.borrow_mut().inside_unit_circle())
+    }
+
+    #[property]
+    pub fn inside_unit_sphere() -> V3 {
+        SHARED.with(|g| g.borrow_mut().inside_unit_sphere())
+    }
+
+    #[property]
+    pub fn on_unit_sphere() -> V3 {
+        SHARED.with(|g| g.borrow_mut().on_unit_sphere())
+    }
+
+    #[property]
+    pub fn rotation() -> Q {
+        SHARED.with(|g| g.borrow_mut().rotation())
     }
 }

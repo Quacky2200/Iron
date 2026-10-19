@@ -1131,3 +1131,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-671..674 | Integration | `Rect` / `RectInt`, `Ray`, `Plane` (NaN where the original answers null), `Bounds` and `Pose`, bit-for-bit equal to `math.ts`. |
 | M9-API-46 | Integration | The math types as JavaScript classes in QuickJS: `new X(..)` through `create`, instances from methods, statics and getters (`crates/iron_math/tests/quickjs.rs`). |
 | M9-API-47 | Integration | Overloads by argument count in QuickJS (`Quaternion.euler` two forms, `lookRotation`, `Matrix4x4.trs`), and the shapes (`Ray`, `Plane`, `Bounds`, `Pose`). |
+| M9-TS-675 | Integration | The vector-valued members of `Rng` and `Random` (`insideUnitCircle`, `onUnitSphere`, `insideUnitSphere`, `rotation`) equal the original in bun, bit for bit. |

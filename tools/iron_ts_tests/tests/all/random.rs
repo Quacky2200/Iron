@@ -95,3 +95,11 @@ fn shared_matches_the_original() {
         check_str("shared", ts_rnd_shared());
     });
 }
+
+// M9-TS-675
+#[test]
+fn vectors_matches_the_original() {
+    in_every_gc_mode(|| unsafe {
+        check_str("vectors", ts_rnd_vectors());
+    });
+}
