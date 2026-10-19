@@ -104,6 +104,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-LAY-03 | Unit | Grid: a 3×3 grid places items in the right cells. |
 | M2-LAY-04 | Unit | Layout only recomputes when something is dirty: a second `compute` with no changes does no work. |
 | M2-LAY-05 | Unit | The same fixtures pass through the `LayoutEngine` trait, so a Yoga backend can run them later. |
+| M2-UI-OP-01 | Integration | `UiTree::apply_ops` with typed `Op`s builds the same tree as the script arrays; `Op::decode` rejects bad arity, types and opcodes (`crates/iron_ui/tests/tree.rs`). |
 | M2-LAY-06 | Integration | A React render error unmounts the UI (with absolutely positioned boxes in it) and the tree still lays out: removing a node takes it off its containing block's out-of-flow list, so no cached layout visits it. |
 
 ### Drawing

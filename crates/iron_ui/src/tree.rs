@@ -2344,15 +2344,40 @@ impl<L: LayoutEngine> UiTree<L> {
     }
 
     pub fn apply_commit(&mut self, commit: &Commit) -> Vec<UiError> {
+        // Decoded op by op, so errors keep the order of the ops that caused them.
+        self.apply_decoded(
+            commit.ops.iter().map(opcodes::Op::decode),
+            commit.ops.is_empty(),
+        )
+    }
+
+    /// Applies decoded ops as one batch (one layout sync at the end). The native reconciler
+    /// builds these directly; `apply_commit` decodes a script's arrays into them.
+    pub fn apply_ops(&mut self, ops: &[opcodes::Op]) -> Vec<UiError> {
+        self.apply_decoded(ops.iter().map(Ok), ops.is_empty())
+    }
+
+    fn apply_decoded<O: std::borrow::Borrow<opcodes::Op>>(
+        &mut self,
+        ops: impl Iterator<Item = Result<O, UiError>>,
+        empty: bool,
+    ) -> Vec<UiError> {
         let mut errors = Vec::new();
         let mut children_changed = HashSet::default();
         let mut styles_changed = HashSet::default();
         let mut text_changed = HashSet::default();
         let mut text_style_changed = HashSet::default();
 
-        for op in &commit.ops {
+        for op in ops {
+            let op = match op {
+                Ok(op) => op,
+                Err(e) => {
+                    errors.push(e);
+                    continue;
+                }
+            };
             if let Err(e) = self.apply_op(
-                op,
+                op.borrow(),
                 &mut children_changed,
                 &mut styles_changed,
                 &mut text_changed,
@@ -2431,7 +2456,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 stack.extend_from_slice(self.children(n));
             }
         }
-        if !commit.ops.is_empty() {
+        if !empty {
             self.needs_layout = true;
         }
         errors
@@ -2439,34 +2464,20 @@ impl<L: LayoutEngine> UiTree<L> {
 
     fn apply_op(
         &mut self,
-        op: &Value,
+        op: &opcodes::Op,
         children_changed: &mut HashSet<NodeId>,
         styles_changed: &mut HashSet<NodeId>,
         text_changed: &mut HashSet<NodeId>,
         text_style_changed: &mut HashSet<NodeId>,
     ) -> Result<(), UiError> {
-        let Value::Array(args) = op else {
-            return Err(UiError(format!("op must be an array, got {op:?}")));
-        };
-        let opcode = args
-            .first()
-            .and_then(Value::as_f64)
-            .ok_or_else(|| UiError(format!("op is missing its opcode: {op:?}")))?;
-        let arg = |i: usize| {
-            args.get(i)
-                .ok_or_else(|| UiError(format!("op is missing argument {i}: {op:?}")))
-        };
-        let id = |i: usize| node_id(arg(i)?);
-
-        match opcode as u32 {
-            opcodes::CREATE => {
-                let id = id(1)?;
+        use opcodes::Op;
+        match op {
+            Op::Create { id, kind } => {
+                let id = *id;
                 if id == ROOT || self.nodes.contains_key(&id) {
                     return Err(UiError(format!("node {id} already exists")));
                 }
-                let kind = arg(2)?
-                    .as_str()
-                    .ok_or_else(|| UiError(format!("CREATE needs an element type: {op:?}")))?;
+                let kind = kind.as_str();
                 let style = base_style(kind);
                 self.layout.create_node(id, &style);
                 self.style_dirty.insert(id);
@@ -2502,14 +2513,11 @@ impl<L: LayoutEngine> UiTree<L> {
                     }),
                 );
             }
-            opcodes::CREATE_TEXT => {
-                let id = id(1)?;
+            Op::CreateText { id, text } => {
+                let id = *id;
                 if id == ROOT || self.nodes.contains_key(&id) {
                     return Err(UiError(format!("node {id} already exists")));
                 }
-                let text = arg(2)?
-                    .as_str()
-                    .ok_or_else(|| UiError(format!("CREATE_TEXT needs a string: {op:?}")))?;
                 let style = Style::default();
                 self.layout.create_node(id, &style);
                 self.nodes.insert(
@@ -2530,25 +2538,17 @@ impl<L: LayoutEngine> UiTree<L> {
                     }),
                 );
             }
-            opcodes::SET_ATTRS => {
-                let id = id(1)?;
+            Op::SetAttrs { id, pairs } => {
+                let id = *id;
                 let node = self.node_mut(id)?;
                 let before = node.attrs.clone();
-                let pairs = &args[2..];
-                if pairs.len() % 2 != 0 {
-                    return Err(UiError(format!("SET_ATTRS needs name/value pairs: {op:?}")));
-                }
                 let mut problems = Vec::new();
-                for pair in pairs.chunks(2) {
-                    let Some(name) = pair[0].as_str() else {
-                        problems.push(format!("attribute name must be a string: {:?}", pair[0]));
-                        continue;
-                    };
-                    if let Err(e) = node.attrs.set(name, &pair[1]) {
+                for (name, value) in pairs {
+                    if let Err(e) = node.attrs.set(name, value) {
                         // SVG elements (and `text`, which may be SVG text) take any
                         // attribute.
                         if crate::svg::is_svg_kind(&node.kind) || node.kind == "text" {
-                            node.attrs.set_svg(name, &pair[1]);
+                            node.attrs.set_svg(name, value);
                         } else {
                             problems.push(e);
                         }
@@ -2605,12 +2605,9 @@ impl<L: LayoutEngine> UiTree<L> {
                     return Err(UiError(format!("node {id}: {}", problems.join("; "))));
                 }
             }
-            opcodes::SET_TEXT => {
-                let id = id(1)?;
-                let new_text = arg(2)?
-                    .as_str()
-                    .ok_or_else(|| UiError(format!("SET_TEXT needs a string: {op:?}")))?
-                    .to_owned();
+            Op::SetText { id, text } => {
+                let id = *id;
+                let new_text = text.clone();
                 let node = self.node_mut(id)?;
                 if node.kind != TEXT_NODE {
                     return Err(UiError(format!(
@@ -2622,35 +2619,25 @@ impl<L: LayoutEngine> UiTree<L> {
                 // The text block containing this node must be measured again.
                 text_changed.insert(id);
             }
-            opcodes::SET_STYLE => {
-                let id = id(1)?;
+            Op::SetStyle { id, pairs } => {
+                let id = *id;
                 let node = self.node_mut(id)?;
-                let pairs = &args[2..];
-                if pairs.len() % 2 != 0 {
-                    return Err(UiError(format!("SET_STYLE needs prop/value pairs: {op:?}")));
-                }
                 let mut saw_var = false;
                 let mut problems = Vec::new();
-                for pair in pairs.chunks(2) {
-                    let Some(prop) = pair[0].as_str() else {
-                        problems.push(format!(
-                            "style property name must be a string: {:?}",
-                            pair[0]
-                        ));
-                        continue;
-                    };
+                for (prop, value) in pairs {
+                    let prop = prop.as_str();
                     // CSS-wide keywords need the parent: resolved at restyle too.
-                    let is_wide = WideKeyword::parse(&pair[1]).is_some();
+                    let is_wide = WideKeyword::parse(value).is_some();
                     let is_var = prop.starts_with("--")
                         || is_wide
-                        || pair[1].as_str().is_some_and(|v| {
+                        || value.as_str().is_some_and(|v| {
                             v.contains("var(") || crate::units::needs_resolution_for(prop, v)
                         });
                     if is_var {
                         // Resolved during restyle, once inherited variables are known.
                         // Without var(), the math can be checked now (with typical units).
                         if let Some(text) =
-                            pair[1].as_str().filter(|v| !v.contains("var(") && !is_wide)
+                            value.as_str().filter(|v| !v.contains("var(") && !is_wide)
                         {
                             let ctx = UnitContext {
                                 em: 16.0,
@@ -2674,27 +2661,27 @@ impl<L: LayoutEngine> UiTree<L> {
                         }
                         saw_var = true;
                     } else if let Err(e) =
-                        apply_style(&mut node.style, &mut node.visual, prop, &pair[1])
+                        apply_style(&mut node.style, &mut node.visual, prop, value)
                     {
                         problems.push(e.to_string());
                         continue;
                     }
                     node.inline.retain(|(p, _)| p != prop);
-                    if pair[1] != Value::Null {
-                        node.inline.push((prop.to_owned(), pair[1].clone()));
+                    if *value != Value::Null {
+                        node.inline.push((prop.to_owned(), value.clone()));
                     }
                     if is_text_prop(prop) {
                         text_style_changed.insert(id);
                     }
                 }
-                if pairs.chunks(2).any(|p| p[0].as_str() == Some("direction")) {
+                if pairs.iter().any(|p| p.0 == "direction") {
                     dir_fallback(node);
                 }
-                let changes = |name| pairs.chunks(2).any(|p| p[0].as_str() == Some(name));
-                if pairs.chunks(2).any(|p| {
-                    p[0].as_str()
-                        .is_some_and(|n| n.starts_with("listStyle") || is_start_padding(n))
-                }) {
+                let changes = |name: &str| pairs.iter().any(|p| p.0 == name);
+                if pairs
+                    .iter()
+                    .any(|p| p.0.starts_with("listStyle") || is_start_padding(&p.0))
+                {
                     // Inherited: every marker below may change, and a list's default
                     // indent depends on whether it has markers.
                     let mut stack = vec![id];
@@ -2723,10 +2710,10 @@ impl<L: LayoutEngine> UiTree<L> {
                 if saw_var {
                     self.uses_vars = true;
                 }
-                if pairs.chunks(2).any(|p| {
-                    p[0].as_str()
-                        .is_some_and(|n| n.starts_with("transition") || n.starts_with("animation"))
-                }) {
+                if pairs
+                    .iter()
+                    .any(|p| p.0.starts_with("transition") || p.0.starts_with("animation"))
+                {
                     self.uses_motion = true;
                 }
                 if !self.sheets.is_empty() || self.uses_vars || self.uses_motion {
@@ -2737,16 +2724,20 @@ impl<L: LayoutEngine> UiTree<L> {
                     return Err(UiError(format!("node {id}: {}", problems.join("; "))));
                 }
             }
-            opcodes::APPEND_CHILD => {
-                let (parent, child) = (id(1)?, id(2)?);
+            Op::AppendChild { parent, child } => {
+                let (parent, child) = (*parent, *child);
                 self.attach(parent, child, None, children_changed)?;
             }
-            opcodes::INSERT_BEFORE => {
-                let (parent, child, before) = (id(1)?, id(2)?, id(3)?);
+            Op::InsertBefore {
+                parent,
+                child,
+                before,
+            } => {
+                let (parent, child, before) = (*parent, *child, *before);
                 self.attach(parent, child, Some(before), children_changed)?;
             }
-            opcodes::REMOVE_CHILD => {
-                let (parent, child) = (id(1)?, id(2)?);
+            Op::RemoveChild { parent, child } => {
+                let (parent, child) = (*parent, *child);
                 if self.parent(child) != Some(parent) {
                     return Err(UiError(format!("node {child} is not a child of {parent}")));
                 }
@@ -2769,7 +2760,6 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.detach(child, children_changed);
                 self.destroy_subtree(child);
             }
-            other => return Err(UiError(format!("unknown opcode {other}"))),
         }
         Ok(())
     }
@@ -4692,13 +4682,6 @@ fn root_style(width: f32, height: f32) -> Style {
             height: Dimension::length(height),
         },
         ..Style::default()
-    }
-}
-
-fn node_id(v: &Value) -> Result<NodeId, UiError> {
-    match v.as_f64() {
-        Some(n) if n >= 0.0 && n.fract() == 0.0 && n <= f64::from(u32::MAX) => Ok(NodeId(n as u32)),
-        _ => Err(UiError(format!("invalid node id {v:?}"))),
     }
 }
 

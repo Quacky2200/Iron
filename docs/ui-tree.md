@@ -583,3 +583,7 @@ size from `ObjectFit::background_size`, position from `objectPosition`, no repea
 Until the size is known it fits as if the natural size matched the box. `paint::ObjectFit` is
 `fill`, `contain`, `cover`, `none` or `scale-down`; `Visual.object_fit` / `object_position`
 (default `50% 50%`) come from the `objectFit` / `objectPosition` style props.
+
+## Typed ops
+
+`iron_ui::opcodes::Op` is the decoded form of a commit op (`Create`, `SetStyle`, `AppendChild`, ...). `UiTree::apply_commit` decodes each `[opcode, ...args]` array with `Op::decode` (arity and argument types checked there, errors in op order) and applies it; `UiTree::apply_ops(&[Op])` applies already-typed ops as one batch. There is one applier (`apply_op`), shared by the React path and the planned native reconciler ([research/iron-ui-native.md](research/iron-ui-native.md)). A non-string style or attribute name now rejects the whole op instead of skipping the one pair. Test `M2-UI-OP-01`.

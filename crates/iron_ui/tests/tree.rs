@@ -726,3 +726,43 @@ fn clearing_script_nodes_lets_a_reloaded_bundle_reuse_ids() {
     tree.layout_if_needed();
     assert_eq!(ids(tree.children(NodeId(0))), [1]);
 }
+
+// M2-UI-OP-01
+//
+// `apply_ops` takes typed ops and gives the same tree as the script's arrays, and `Op::decode`
+// checks arity and argument types once.
+#[test]
+fn typed_ops_build_the_same_tree_as_script_arrays() {
+    let mut a = UiTree::new(100.0, 100.0);
+    apply_ok(
+        &mut a,
+        vec![create(1), style(1, &[("width", 10.0.into())]), append(0, 1)],
+    );
+    let mut b = UiTree::new(100.0, 100.0);
+    let errors = b.apply_ops(&[
+        Op::Create {
+            id: NodeId(1),
+            kind: "box".into(),
+        },
+        Op::SetStyle {
+            id: NodeId(1),
+            pairs: vec![("width".into(), 10.0.into())],
+        },
+        Op::AppendChild {
+            parent: ROOT,
+            child: NodeId(1),
+        },
+    ]);
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(a.children(ROOT), b.children(ROOT));
+    assert_eq!(
+        Op::decode(&style(3, &[("width", 1.0.into())])).unwrap(),
+        Op::SetStyle {
+            id: NodeId(3),
+            pairs: vec![("width".into(), 1.0.into())]
+        }
+    );
+    assert!(Op::decode(&op(SET_STYLE, &[n(1), "width".into()])).is_err());
+    assert!(Op::decode(&op(CREATE, &[n(1)])).is_err());
+    assert!(Op::decode(&op(77, &[])).is_err());
+}
