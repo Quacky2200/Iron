@@ -69,6 +69,8 @@ impl Clip {
 pub struct World {
     pub curves: Vec<Curve>,
     pub clips: Vec<Clip>,
+    /// The `Animation` components, in the order they were made (the id is the index plus one).
+    pub players: Vec<crate::player::AnimationPlayer>,
 }
 
 thread_local! {

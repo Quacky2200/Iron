@@ -121,3 +121,10 @@ The user's direction: explicit classes **and** a chained builder over them, with
   A namespace named like a handle class (`AnimationCurve`) also holds the class statics for the compiler.
 - Next: the `Animation` component (states, cross-fade, events) with the property registry for components, then the
   controller classes and builder.
+
+- **Phase 3 done (2026-10-19):** the `Animation` component (`iron_animation::player`, `iron_engine_api::animation`:
+  `Animation.attach`, `AnimationState`, `Animations.updateAll(dt)` / `takeEvents()`), the property registry
+  (`iron_animation::registry`, `Camera` registered), `M9-TS-684..691`. The host calls `iron_engine_api::animation::update(dt, other)`
+  after the component updates and delivers the returned `FiredEvent`s. Differences: the first update starts the default clip
+  (the original did it in `onStart`, before the frame's `onUpdate`); events are delivered after the frame's pose is written
+  (the original called the methods in the middle of it).

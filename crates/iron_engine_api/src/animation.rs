@@ -361,3 +361,364 @@ pub mod animation_clip_api {
         }
     }
 }
+
+// ---- the Animation component ----
+
+use iron_animation::{AnimationPlayer, RegistrySink, register_setter, register_type};
+use std::cell::{Cell, RefCell};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AnimationRef(pub u64);
+
+impl Handle for AnimationRef {
+    fn to_raw(self) -> u64 {
+        self.0
+    }
+    fn from_raw(raw: u64) -> Self {
+        AnimationRef(raw)
+    }
+}
+
+/// A state of an `Animation`: the player number in the high half, the state index plus one below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateRef(pub u64);
+
+impl Handle for StateRef {
+    fn to_raw(self) -> u64 {
+        self.0
+    }
+    fn from_raw(raw: u64) -> Self {
+        StateRef(raw)
+    }
+}
+
+impl AnimationRef {
+    fn index(self) -> usize {
+        (self.0 as usize).wrapping_sub(1)
+    }
+}
+
+impl StateRef {
+    fn parts(self) -> (usize, usize) {
+        (
+            ((self.0 >> 32) as usize).wrapping_sub(1),
+            ((self.0 & 0xffff_ffff) as usize).wrapping_sub(1),
+        )
+    }
+}
+
+fn player<R>(
+    a: AnimationRef,
+    f: impl FnOnce(&mut AnimationPlayer, &iron_animation::World) -> R,
+) -> Option<R> {
+    with_world(|w| {
+        let mut p = w.players.get(a.index())?.clone();
+        let r = f(&mut p, w);
+        w.players[a.index()] = p;
+        Some(r)
+    })
+}
+
+fn state<R>(
+    s: StateRef,
+    f: impl FnOnce(&mut iron_animation::AnimState, &iron_animation::World) -> R,
+) -> Option<R> {
+    let (pi, si) = s.parts();
+    with_world(|w| {
+        let mut p = w.players.get(pi)?.clone();
+        let r = f(p.states.get_mut(si)?, w);
+        w.players[pi] = p;
+        Some(r)
+    })
+}
+
+thread_local! {
+    /// The clip events that came due and were not taken yet.
+    static EVENTS: RefCell<Vec<iron_animation::FiredEvent>> = const { RefCell::new(Vec::new()) };
+    static REGISTERED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Makes the engine components animatable (their number properties).
+fn ensure_registered() {
+    if REGISTERED.with(Cell::get) {
+        return;
+    }
+    REGISTERED.with(|r| r.set(true));
+    use crate::camera::{camera_on, with_camera};
+    register_type("Camera", |o| camera_on(o).is_some());
+    macro_rules! cam {
+        ($prop:literal, |$d:ident, $v:ident| $body:expr) => {
+            register_setter("Camera", $prop, |o, $v| {
+                if let Some(c) = camera_on(o) {
+                    with_camera(c, |$d| $body);
+                }
+            });
+        };
+    }
+    cam!("fieldOfView", |d, v| d.fov = (v as f32).clamp(1.0, 179.0));
+    cam!("nearClipPlane", |d, v| d.near = v as f32);
+    cam!("farClipPlane", |d, v| d.far = v as f32);
+    cam!("depth", |d, v| d.depth = v as f32);
+    cam!("orthographicSize", |d, v| d.orthographic_size = v as f32);
+    cam!("orthographic", |d, v| d.orthographic = v > 0.5);
+    cam!("backgroundColor.r", |d, v| d.background.r = v);
+    cam!("backgroundColor.g", |d, v| d.background.g = v);
+    cam!("backgroundColor.b", |d, v| d.background.b = v);
+    cam!("backgroundColor.a", |d, v| d.background.a = v);
+}
+
+/// Advances every `Animation` by `dt` after the component updates and poses the objects. The clip
+/// events that came due are returned (and kept for `Animations.takeEvents()`): the host delivers
+/// them to the components of the object. `other` finds the rest of the components (the compiled
+/// ones of a game).
+pub fn update(
+    dt: f64,
+    other: Option<&mut dyn iron_animation::PropertySink>,
+) -> Vec<iron_animation::FiredEvent> {
+    ensure_registered();
+    let mut sink = RegistrySink { other };
+    let events = with_world(|w| {
+        iron_scene::api::with_scene(|scene| iron_animation::update(w, scene, &mut sink, dt))
+    })
+    .unwrap_or_default();
+    EVENTS.with(|e| e.borrow_mut().extend(events.iter().cloned()));
+    events
+}
+
+/// Forgets every animation object and pending event (a test, or a new game).
+pub fn reset() {
+    iron_animation::clip::reset();
+    EVENTS.with(|e| e.borrow_mut().clear());
+}
+
+#[iron_api(namespace = "Animation", handles(
+    Animation = AnimationRef, AnimationState = StateRef, AnimationClip = ClipRef, GameObject = ObjectId))]
+pub mod animation_component_api {
+    use super::{
+        AnimationPlayer, AnimationRef, ClipId, ClipRef, ObjectId, StateRef, player, with_world,
+    };
+
+    impl AnimationRef {
+        /// Adds an `Animation` to a GameObject (what `go.addComponent(Animation)` does).
+        pub fn attach(object: ObjectId) -> AnimationRef {
+            AnimationRef(with_world(|w| {
+                w.players.push(AnimationPlayer::new(object));
+                w.players.len() as u64
+            }))
+        }
+
+        #[property]
+        pub fn game_object(self) -> ObjectId {
+            player(self, |p, _| p.object).unwrap_or(ObjectId {
+                index: u32::MAX,
+                generation: u32::MAX,
+            })
+        }
+
+        /// The default clip (it plays by itself when `playAutomatically`).
+        #[property]
+        pub fn clip(self) -> ClipRef {
+            player(self, |p, _| {
+                p.clip.map_or(ClipRef(0), |c| ClipRef(u64::from(c.0)))
+            })
+            .unwrap_or(ClipRef(0))
+        }
+
+        pub fn set_clip(self, clip: ClipRef) {
+            player(self, |p, _| {
+                p.clip = (clip.0 != 0).then_some(ClipId(clip.0 as u32))
+            });
+        }
+
+        #[property]
+        pub fn play_automatically(self) -> bool {
+            player(self, |p, _| p.play_automatically).unwrap_or(false)
+        }
+
+        pub fn set_play_automatically(self, on: bool) {
+            player(self, |p, _| p.play_automatically = on);
+        }
+
+        /// How many clips were added.
+        #[property]
+        pub fn clip_count(self) -> f64 {
+            player(self, |p, _| p.clips.len() as f64).unwrap_or(0.0)
+        }
+
+        /// The i-th clip added (no clip past the end).
+        pub fn clip_at(self, index: f64) -> ClipRef {
+            player(self, |p, _| {
+                p.clips
+                    .get(index as usize)
+                    .map_or(ClipRef(0), |c| ClipRef(u64::from(c.0)))
+            })
+            .unwrap_or(ClipRef(0))
+        }
+
+        /// Adds a clip under a name (its own by default).
+        #[optional(name)]
+        pub fn add_clip(self, clip: ClipRef, name: &str) {
+            let name = (!name.is_empty()).then_some(name);
+            player(self, |p, w| p.add_clip(w, ClipId(clip.0 as u32), name));
+        }
+
+        /// The state of a clip by name (no state if there is none).
+        pub fn state(self, name: &str) -> StateRef {
+            let found = player(self, |p, w| p.state_index(w, name)).flatten();
+            match found {
+                Some(i) => StateRef((self.0 << 32) | (i as u64 + 1)),
+                None => StateRef(0),
+            }
+        }
+
+        /// Plays a clip from the start at full weight, stopping the others. False if unknown.
+        #[optional(name)]
+        pub fn play(self, name: &str) -> bool {
+            let name = (!name.is_empty()).then_some(name);
+            player(self, |p, w| p.play(w, name)).unwrap_or(false)
+        }
+
+        /// Fades a clip in over `fadeLength` seconds (0.3 by default) while the others fade out.
+        #[optional(fade_length)]
+        pub fn cross_fade(self, name: &str, fade_length: f64) {
+            let fade = if fade_length.is_nan() {
+                0.3
+            } else {
+                fade_length
+            };
+            player(self, |p, w| p.cross_fade(w, name, fade));
+        }
+
+        /// Stops a clip, or all of them without a name.
+        #[optional(name)]
+        pub fn stop(self, name: &str) {
+            let name = (!name.is_empty()).then_some(name);
+            player(self, |p, _| p.stop(name));
+        }
+
+        /// Is a clip, or any clip without a name, playing?
+        #[optional(name)]
+        pub fn is_playing(self, name: &str) -> bool {
+            let name = (!name.is_empty()).then_some(name);
+            player(self, |p, _| p.is_playing(name)).unwrap_or(false)
+        }
+    }
+}
+
+#[iron_api(namespace = "AnimationState", handles(AnimationState = StateRef, AnimationClip = ClipRef))]
+pub mod animation_state_api {
+    use super::{ClipRef, StateRef, state};
+    use iron_animation::WrapMode;
+
+    impl StateRef {
+        #[property]
+        pub fn name(self) -> String {
+            state(self, |s, _| s.name.clone()).unwrap_or_default()
+        }
+
+        #[property]
+        pub fn clip(self) -> ClipRef {
+            state(self, |s, _| ClipRef(u64::from(s.clip.0))).unwrap_or(ClipRef(0))
+        }
+
+        /// Seconds into the clip.
+        #[property]
+        pub fn time(self) -> f64 {
+            state(self, |s, _| s.time).unwrap_or(0.0)
+        }
+
+        pub fn set_time(self, v: f64) {
+            state(self, |s, _| s.time = v);
+        }
+
+        #[property]
+        pub fn speed(self) -> f64 {
+            state(self, |s, _| s.speed).unwrap_or(1.0)
+        }
+
+        pub fn set_speed(self, v: f64) {
+            state(self, |s, _| s.speed = v);
+        }
+
+        #[property]
+        pub fn weight(self) -> f64 {
+            state(self, |s, _| s.weight).unwrap_or(0.0)
+        }
+
+        pub fn set_weight(self, v: f64) {
+            state(self, |s, _| s.weight = v);
+        }
+
+        #[property]
+        pub fn enabled(self) -> bool {
+            state(self, |s, _| s.enabled).unwrap_or(false)
+        }
+
+        pub fn set_enabled(self, v: bool) {
+            state(self, |s, _| s.enabled = v);
+        }
+
+        #[property]
+        pub fn wrap_mode(self) -> String {
+            state(self, |s, _| s.wrap_mode.name().to_string()).unwrap_or_default()
+        }
+
+        pub fn set_wrap_mode(self, mode: &str) {
+            if let Some(m) = WrapMode::parse(mode) {
+                state(self, |s, _| s.wrap_mode = m);
+            }
+        }
+
+        #[property]
+        pub fn length(self) -> f64 {
+            state(self, |s, w| s.length(w)).unwrap_or(0.0)
+        }
+
+        /// Time over length (past 1 after a loop).
+        #[property]
+        pub fn normalized_time(self) -> f64 {
+            state(self, |s, w| {
+                let l = s.length(w);
+                if l > 0.0 { s.time / l } else { 0.0 }
+            })
+            .unwrap_or(0.0)
+        }
+
+        pub fn set_normalized_time(self, t: f64) {
+            state(self, |s, w| s.time = t * s.length(w));
+        }
+    }
+}
+
+#[iron_api(namespace = "Animations")]
+pub mod animations_api {
+    use super::{EVENTS, update};
+
+    /// Advances every `Animation` by `dt` and poses the objects (the host does this each frame
+    /// after the component updates; this is for tools and tests).
+    pub fn update_all(dt: f64) {
+        update(dt, None);
+    }
+
+    /// The clip events that came due since the last call, one per line as
+    /// `objectName|functionName|parameter`.
+    pub fn take_events() -> String {
+        let events = EVENTS.with(|e| std::mem::take(&mut *e.borrow_mut()));
+        let lines: Vec<String> = events
+            .iter()
+            .map(|e| {
+                let name =
+                    iron_scene::api::with_scene(|s| s.name(e.object).unwrap_or("").to_string())
+                        .unwrap_or_default();
+                let param = match &e.parameter {
+                    Some(iron_animation::Parameter::Num(n)) => iron_math::jsnum::to_string(*n),
+                    Some(iron_animation::Parameter::Str(s)) => s.clone(),
+                    Some(iron_animation::Parameter::Bool(b)) => b.to_string(),
+                    None => String::new(),
+                };
+                format!("{name}|{}|{param}", e.function_name)
+            })
+            .collect();
+        lines.join("\n")
+    }
+}

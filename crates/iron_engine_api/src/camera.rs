@@ -48,6 +48,19 @@ pub fn cameras() -> Vec<(CameraRef, CameraData)> {
     })
 }
 
+/// The first camera on an object.
+pub fn camera_on(object: ObjectId) -> Option<CameraRef> {
+    cameras()
+        .into_iter()
+        .find(|(_, d)| d.object == object)
+        .map(|(c, _)| c)
+}
+
+/// Runs `f` on a camera's data (what animation writes through).
+pub fn with_camera<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
+    with(c, f)
+}
+
 /// Removes the cameras of destroyed GameObjects.
 pub fn remove_on(object: ObjectId) {
     CAMERAS.with(|c| {
