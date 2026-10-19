@@ -574,6 +574,20 @@ impl<'a> Lowerer<'a> {
                 let full = self.lower_expr(full, None)?;
                 self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
             }
+            // The prelude's `Intl.DateTimeFormat.format`.
+            "__dtfFormat" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, t] = args.as_slice() else {
+                    bail!("{at}: __dtfFormat takes two arguments")
+                };
+                let (id, t) = (self.num_arg(id)?, self.num_arg(t)?);
+                let call = self.rt_str("ts_rt_dtf_format_gc", vec![id, t], Ty::Str);
+                self.checked(call, Ty::Str)
+            }
             // The prelude's `Intl.NumberFormat.format`.
             "__numberFormat" => {
                 let args: Vec<&'a Expression<'a>> = c

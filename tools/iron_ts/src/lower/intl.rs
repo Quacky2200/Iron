@@ -141,10 +141,10 @@ impl<'a> Lowerer<'a> {
         let loc = self.locales_arg(arg(0))?;
         let spec = self.options_spec(arg(1), &at)?;
         let opts = self.str_lit(&spec);
-        let sym = if kind == "Collator" {
-            "ts_rt_collator_new"
-        } else {
-            "ts_rt_number_format_new"
+        let sym = match kind {
+            "Collator" => "ts_rt_collator_new",
+            "DateTimeFormat" => "ts_rt_dtf_new",
+            _ => "ts_rt_number_format_new",
         };
         let made = self.rt_str(sym, vec![loc, opts], Ty::Num);
         let id = self.checked(made, Ty::Num);

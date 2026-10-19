@@ -266,9 +266,22 @@ impl<'a> Lowerer<'a> {
                 Ok(with_this(vec![], bind, call, Ty::Str))
             }
             "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" => {
-                bail!(
-                    "{at}: Date.{m} needs time zone names and locale data, which come with Intl (not built yet); use toISOString, toUTCString or toDateString"
-                )
+                let arg = |i: usize| args.get(i).copied();
+                let loc = self.locales_arg(arg(0))?;
+                let spec = self.options_spec(arg(1), &at)?;
+                let opts = self.str_lit(&spec);
+                let kind = match m {
+                    "toLocaleString" => 0.0,
+                    "toLocaleDateString" => 1.0,
+                    _ => 2.0,
+                };
+                let call = self.rt_str(
+                    "ts_rt_date_locale_string_gc",
+                    vec![t, loc, opts, num(kind)],
+                    Ty::Str,
+                );
+                let call = self.checked(call, Ty::Str);
+                Ok(with_this(vec![], bind, call, Ty::Str))
             }
             _ => bail!("{at}: the Date method `{m}` is not supported"),
         }

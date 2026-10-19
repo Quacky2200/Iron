@@ -93,13 +93,19 @@ pub const DATE: &str = r#"class Date {
 "#;
 
 /// The `Intl` classes (a collator is an id into the runtime's table; see `lower/intl.rs`).
-pub const INTL: &str = r#"class Intl_Collator {
+pub const INTL_COLLATOR: &str = r#"class Intl_Collator {
   id: number = 0;
   compare: (a: string, b: string) => number = (a: string, b: string): number => __collatorCompare(this.id, a, b);
 }
-class Intl_NumberFormat {
+"#;
+pub const INTL_NUMBER: &str = r#"class Intl_NumberFormat {
   id: number = 0;
   format: (n: number) => string = (n: number): string => __numberFormat(this.id, n);
+}
+"#;
+pub const INTL_DATETIME: &str = r#"class Intl_DateTimeFormat {
+  id: number = 0;
+  format: (d: Date) => string = (d: Date): string => __dtfFormat(this.id, d.t);
 }
 "#;
 

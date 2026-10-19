@@ -34,3 +34,34 @@ S&Box who impressed me with their Razor flexbox system.
 
 This source code is current under a private license until a working demo is
 made with satisfaction it is able to provide something useful to all.
+
+Languages, dates and numbers (Intl):
+====================================
+
+Scripts written in TypeScript get the usual JavaScript Intl features natively
+(string comparison, number and date formatting, time zones). For this we use
+ICU4X, the Unicode Consortium's Rust library, instead of ICU4C, the C++
+library the browsers use. The reasons are space and simplicity:
+
+ - ICU4X is plain Rust, so it links into the game executable with the rest of
+   Iron: no C++ toolchain, no separate native library to ship, and the same
+   build on Windows, Linux, macOS and (later) consoles and the web.
+ - Its data is split by locale and by feature, so a game only carries the
+   languages it lists in its package.json (a set of main markets such as US,
+   UK and the EU languages is the default). ICU4C ships one big data file
+   (tens of megabytes) for everything. Today the build still links ICU4X's
+   data for every locale; trimming it to the game's list is planned.
+
+The structural difference: ICU4C finds the best date pattern for any mix of
+options ({ weekday: "long", hour: "numeric" } and so on) from a table called
+availableFormats. ICU4X has no such table; it formats from a fixed set of
+field combinations. The common cases give the same text as the browsers
+(they are compared against Bun in the tests), but unusual combinations of date
+options can differ or be refused. docs/differences.md lists them.
+
+If a game needs the exact browser behaviour and every locale, an optional
+build (the icu-full feature, using ICU4C through rust_icu) is planned. It needs
+a native ICU installed at build time and makes the executable larger, so it
+is off by default. The plan and its status are in
+docs/research/iron-ts-intl-datetime.md.
+

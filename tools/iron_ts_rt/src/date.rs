@@ -19,6 +19,58 @@ fn zone() -> TimeZone {
     ZONE.with(|z| z.borrow_mut().get_or_insert_with(TimeZone::system).clone())
 }
 
+/// The zone local time is read in.
+pub(crate) fn current_zone() -> TimeZone {
+    zone()
+}
+
+/// The local civil fields of an instant in `zone` (year, month 1-12, day, hour, minute, second,
+/// milliseconds) and the zone as ICU4X wants it (IANA id, offset and a name timestamp). For an old
+/// instant the offset and name timestamp are those of a recent day with the same daylight state,
+/// which is how `zone_name` finds a name for dates before time zones had names.
+pub(crate) fn icu_parts(
+    zone: &TimeZone,
+    t: f64,
+) -> (
+    i32,
+    u8,
+    u8,
+    u8,
+    u8,
+    u8,
+    u32,
+    i32,
+    icu::datetime::input::TimeZoneInfo<icu::time::zone::models::AtTime>,
+) {
+    use icu::datetime::input::{TimeZone as IcuZone, UtcOffset};
+    use icu::time::zone::ZoneNameTimestamp;
+    let ts = clamp_ts(t);
+    let info = zone.to_offset_info(ts);
+    let off_ms = info.offset().seconds() as f64 * 1000.0;
+    let f = fields(t + off_ms);
+    // The real offset and instant: ICU4X names the zone when they match one of its periods and
+    // writes `GMT+01:00` otherwise, as ICU4C does.
+    let reference = ts;
+    let secs = info.offset().seconds();
+    let id = zone
+        .iana_name()
+        .map_or(IcuZone::UNKNOWN, IcuZone::from_iana_id);
+    let zinfo = id
+        .with_offset(UtcOffset::try_from_seconds(secs).ok())
+        .with_zone_name_timestamp(ZoneNameTimestamp::from_epoch_seconds(reference.as_second()));
+    (
+        f[0] as i32,
+        (f[1] as u8) + 1,
+        f[2] as u8,
+        f[3] as u8,
+        f[4] as u8,
+        f[5] as u8,
+        f[6] as u32,
+        info.offset().seconds(),
+        zinfo,
+    )
+}
+
 /// Sets the zone `Date` reads local time in (an IANA name such as `Europe/London`). Returns false
 /// for a name the database does not know.
 ///

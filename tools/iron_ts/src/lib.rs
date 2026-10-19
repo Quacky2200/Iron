@@ -370,17 +370,23 @@ mod tests {
 
     // M9-TS-253
     #[test]
-    fn date_features_that_need_intl_are_compile_errors_with_a_reason() {
+    fn date_formatting_options_must_be_literals_and_dates_subtract() {
+        let e = lower::lower_source(
+            "export function f(m: string): string { return new Date(0).toLocaleString(\"en\", { month: m }); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("must be a literal"), "{e}");
         for body in [
-            "new Date(0).toLocaleDateString()",
-            "new Date(0).toLocaleString()",
+            "new Date(0).toLocaleDateString(\"de\", { dateStyle: \"short\" })",
             "new Date(0).toLocaleTimeString()",
+            "new Intl.DateTimeFormat(\"fr\").format(new Date(0))",
         ] {
-            let e =
+            assert!(
                 lower::lower_source(&format!("export function f(): string {{ return {body}; }}"))
-                    .err()
-                    .unwrap_or_default();
-            assert!(e.contains("Intl"), "{body}: {e}");
+                    .is_ok(),
+                "{body}"
+            );
         }
         assert!(
             lower::lower_source(

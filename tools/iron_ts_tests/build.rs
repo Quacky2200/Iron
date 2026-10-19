@@ -49,6 +49,7 @@ fn main() {
         ("date", "dt_", 23000),
         ("intl", "in_", 24000),
         ("numfmt", "nf_", 25000),
+        ("datefmt", "df_", 26000),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

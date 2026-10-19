@@ -30,6 +30,30 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | Date component options (`{ year, month, day, weekday, hour... }`) | Matched against CLDR `availableFormats` by ICU's pattern generator | Not built yet (`toLocale*String` and `Intl.DateTimeFormat` are compile errors); the first version will map to ICU4X field sets, so rare combinations will differ or be rejected | Exact only with `icu-full` or a generated `availableFormats` table |
 | Locale choice | Best fit among the locales the engine has | The first tag in the list, root collation/formatting when the locale has no data | The per-game locale list is not wired from `package.json` yet |
 
+## Intl date formatting (compiled TypeScript, `icu-lite`)
+
+What differs from the reference engine today (measured by `bench/datefmt.ts`, 15 locales, five zones;
+the columns below are left out of that test). The cause is either the structural one (ICU4X formats
+from fixed field sets, ICU4C picks a pattern from `availableFormats`) or a CLDR version difference.
+
+| Case | Browser / bun | Iron | Cause |
+|---|---|---|---|
+| `{ month: "short", day: "numeric" }`, `{ weekday: "short", month: "short", day: "numeric" }` in de and ja | `19. Okt.`, `10月19日` | `19.10.`, `10/19`: the month name width is not applied to a numeric field set | structural |
+| `{ hour: "numeric", hour12: true }` in de; midnight in ja | `6 AM`, `午前0時` | `6 Uhr morgens`, `午前12時` | structural / CLDR |
+| Numeric month, day and hour padding | per locale from `availableFormats` | looked up in a table generated from the reference engine for 31 locales (`intl_pad.rs`); other locales keep ICU4X's padding | structural (table is the stand-in) |
+| `dateStyle: "short"` in pl; times in es (`6:30` against `06:30`) | CLDR of the engine | CLDR 48 of ICU4X | CLDR version |
+| ja, ko and zh `timeStyle` full/long | `6時30分00秒`, `오전 6시 30분 0초`, `GMT-4 06:30:00` | `6:30:00`, `오전 6:30:00`, `GMT-406:30:00` | CLDR version |
+| fr `timeStyle` long | `UTC−4` (U+2212) | `UTC-4` | CLDR version |
+| `timeZoneName: "shortGeneric"` / `longGeneric` in en-GB | `United Kingdom Time` | `UK Time` | CLDR version |
+| en-GB with `timeZoneName` | `3:30:00 GMT-7` | `03:30:00 GMT-7` | structural |
+| Zone names for old instants (Lord Howe 1970) | `Australian Eastern Standard Time` | `Lord Howe Standard Time` | zone history in the data |
+| U+202F (narrow no-break space) before AM/PM and in some patterns | plain space | replaced by a plain space, as engines do | compatibility |
+| `era`, `dayPeriod`, `calendar`, `numberingSystem`, `formatToParts`, `formatRange`, `resolvedOptions` | supported | `RangeError` / not built | open |
+| Default calendar other than Gregorian (th, fa, ar, he, ps) | that calendar's years and names | ICU4X's calendar output, the width adjustment is skipped | open |
+
+Exact results for every option and locale need `availableFormats`: the optional `icu-full` build
+(ICU4C through `rust_icu`) or a generated table; see `docs/research/iron-ts-intl-datetime.md`.
+
 ## Compiled TypeScript (iron_ts)
 
 The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see

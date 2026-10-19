@@ -1502,7 +1502,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
         - [x] I1 `normalize`, `localeCompare`, `Intl.Collator`, `toLocaleUpperCase/LowerCase` (`M9-TS-254..263`)
         - [x] I2 `Intl.NumberFormat`, `Number.toLocaleString` (`M9-TS-264..275`; not: `style: unit`, compact currency, `formatToParts`)
         - [ ] I3 `Intl.DateTimeFormat`, `toLocale*String`, component options: decided 2026-10-19 (`docs/research/iron-ts-intl-datetime.md`): ICU4X now with lightweight main-market data, `rust_icu` as an optional `icu-full` build (spike first)
-          - [ ] I3a on ICU4X field sets
+          - [~] I3a on ICU4X field sets: `dateStyle`/`timeStyle`, `toLocale*String`, `Intl.DateTimeFormat.format`, component options (`M9-TS-277..286`); open: `formatToParts`, `formatRange`, `resolvedOptions`, `era`, `dayPeriod`, other calendars
           - [ ] Lightweight baked data (`icu4x-datagen`) for the main-market locale list
           - [ ] `icu-full` feature (`rust_icu`/ICU4C): spike on Windows, then the backend
         - [ ] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`

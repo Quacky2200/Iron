@@ -1054,7 +1054,10 @@ impl<'a> Lowerer<'a> {
     fn lower_new(&mut self, n: &'a NewExpression<'a>, exp: Option<&Ty>) -> R<Expr> {
         if let Expression::StaticMemberExpression(m) = &n.callee
             && matches!(&m.object, Expression::Identifier(o) if o.name == "Intl")
-            && matches!(m.property.name.as_str(), "Collator" | "NumberFormat")
+            && matches!(
+                m.property.name.as_str(),
+                "Collator" | "NumberFormat" | "DateTimeFormat"
+            )
         {
             return self.lower_new_intl(m.property.name.as_str(), &n.arguments, n.span.start);
         }
