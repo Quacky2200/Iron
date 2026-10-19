@@ -24,6 +24,18 @@ impl<'a> Lowerer<'a> {
         let k = self.manifest.classes[class].clone();
         let create = k.statics["create"].clone();
         let ty = Ty::Handle(class.to_string());
+        // `create(a, b)`: the constructor arguments are its parameters (`new Rng(seed)`).
+        if !create.params.is_empty() {
+            let mut e = self.call_ext_args(
+                create,
+                None,
+                &format!("new {class}"),
+                n.span.start,
+                &n.arguments,
+            )?;
+            e.ty = ty;
+            return Ok(e);
+        }
         let tmp = self.new_local(ty.clone());
         let made = self.emit_extern(&create, vec![]);
         let mut stmts = vec![Stmt::Assign(tmp, made)];

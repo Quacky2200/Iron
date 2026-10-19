@@ -72,6 +72,9 @@ impl Ty {
 pub struct Param {
     pub name: &'static str,
     pub ty: Ty,
+    /// A trailing parameter a call may leave out (`#[optional(name)]`): the function sees NaN for
+    /// a number, an empty string, `false` or a zero handle.
+    pub optional: bool,
 }
 
 /// How a function is called from a script.
@@ -311,7 +314,14 @@ fn class_members(c: &ClassDef) -> String {
         f.params
             .iter()
             .skip(skip)
-            .map(|p| format!("{}: {}", p.name, p.ty.ts()))
+            .map(|p| {
+                format!(
+                    "{}{}: {}",
+                    p.name,
+                    if p.optional { "?" } else { "" },
+                    p.ty.ts()
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -363,9 +373,10 @@ fn function_json(f: &Function) -> String {
         .iter()
         .map(|p| {
             format!(
-                "{{\"name\":{},\"type\":{}}}",
+                "{{\"name\":{},\"type\":{}{}}}",
                 json_str(p.name),
-                json_str(&p.ty.name())
+                json_str(&p.ty.name()),
+                if p.optional { ",\"optional\":true" } else { "" }
             )
         })
         .collect();
@@ -458,7 +469,14 @@ impl Namespace {
             let params: Vec<String> = f
                 .params
                 .iter()
-                .map(|p| format!("{}: {}", p.name, p.ty.ts()))
+                .map(|p| {
+                    format!(
+                        "{}{}: {}",
+                        p.name,
+                        if p.optional { "?" } else { "" },
+                        p.ty.ts()
+                    )
+                })
                 .collect();
             s += &format!(
                 "  function {}({}): {};\n",

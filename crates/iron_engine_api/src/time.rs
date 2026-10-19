@@ -25,6 +25,8 @@ const START: TimeState = TimeState {
 
 thread_local! {
     static STATE: Cell<TimeState> = const { Cell::new(START) };
+    /// When the thread first looked at the clock: `realtimeSinceStartup` counts from here.
+    static STARTED: std::time::Instant = std::time::Instant::now();
 }
 
 /// Starts a frame `unscaled_dt` seconds long: `deltaTime` is that times `timeScale`.
@@ -44,6 +46,18 @@ pub fn state() -> TimeState {
     STATE.with(Cell::get)
 }
 
+/// Puts back what a reload saved (the clock keeps running across a code reload).
+pub fn restore(time: f64, unscaled_time: f64, frame_count: u32, time_scale: f64) {
+    STATE.with(|s| {
+        let mut t = s.get();
+        t.time = time;
+        t.unscaled_time = unscaled_time;
+        t.frame_count = frame_count;
+        t.time_scale = time_scale;
+        s.set(t);
+    });
+}
+
 /// Back to the start (a new game, or a test).
 pub fn reset() {
     STATE.with(|s| s.set(START));
@@ -51,7 +65,7 @@ pub fn reset() {
 
 #[iron_api(namespace = "Time", quickjs)]
 pub mod time_api {
-    use super::STATE;
+    use super::{STARTED, STATE};
 
     /// Seconds of game time since the start (scaled by `timeScale`).
     #[property]
@@ -80,6 +94,12 @@ pub mod time_api {
     #[property]
     pub fn fixed_delta_time() -> f64 {
         1.0 / 60.0
+    }
+
+    /// Wall-clock seconds since the game started (the first look at the clock).
+    #[property]
+    pub fn realtime_since_startup() -> f64 {
+        STARTED.with(|t| t.elapsed().as_secs_f64())
     }
 
     /// Frames run so far.

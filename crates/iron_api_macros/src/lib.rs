@@ -297,6 +297,19 @@ fn js_param_ty(k: &Kind) -> TokenStream2 {
     }
 }
 
+/// The value a left-out optional parameter has (what a compiled call passes).
+fn js_default(k: &Kind) -> TokenStream2 {
+    match k {
+        Kind::Bool => quote!(false),
+        Kind::F64 => quote!(f64::NAN),
+        Kind::F32 => quote!(f32::NAN),
+        Kind::I32 | Kind::U32 => quote!(0),
+        Kind::Handle(..) => quote!(0.0),
+        Kind::Str(_) => quote!(::std::string::String::new()),
+        _ => quote!(compile_error!("this parameter type cannot be optional")),
+    }
+}
+
 /// The type a QuickJS function returns for a result.
 fn js_ret_ty(k: &Kind) -> TokenStream2 {
     match k {
@@ -389,6 +402,29 @@ fn camel(s: &str) -> String {
     out
 }
 
+/// The attributes this macro reads from a function (they are removed from the output).
+fn is_ours(a: &syn::Attribute) -> bool {
+    ["property", "optional", "method", "getter", "js_name"]
+        .iter()
+        .any(|n| a.path().is_ident(n))
+}
+
+/// `#[js_name = "graphicsDeviceVendorID"]`: the script name when `snake_case` to `camelCase` does
+/// not spell it.
+fn js_name_attr(attrs: &[syn::Attribute]) -> Option<String> {
+    attrs.iter().find_map(|a| {
+        if a.path().is_ident("js_name")
+            && let Meta::NameValue(nv) = &a.meta
+            && let Expr::Lit(l) = &nv.value
+            && let Lit::Str(s) = &l.lit
+        {
+            Some(s.value())
+        } else {
+            None
+        }
+    })
+}
+
 fn doc_of(attrs: &[syn::Attribute]) -> String {
     let mut lines = Vec::new();
     for a in attrs {
@@ -427,6 +463,8 @@ struct Api {
     value_recv: Option<(Ident, Kind)>,
     /// Not including the receiver.
     params: Vec<(Ident, Kind)>,
+    /// Names of the trailing parameters a call may leave out (`#[optional(a, b)]`).
+    optional: Vec<String>,
     ret: Kind,
 }
 
@@ -484,16 +522,41 @@ fn api_of(
         (true, false) => Tag::Method,
         (false, _) => Tag::Static,
     };
-    let stem = camel(&sig.ident.to_string());
+    let stem = camel(sig.ident.to_string().trim_start_matches("r#"));
+    let mut optional = Vec::new();
+    for at in attrs.iter().filter(|a| a.path().is_ident("optional")) {
+        let names = at.parse_args_with(Punctuated::<Ident, Token![,]>::parse_terminated)?;
+        for n in names {
+            if !params.iter().any(|(p, _)| *p == n) {
+                return Err(syn::Error::new(n.span(), "no such parameter"));
+            }
+            optional.push(n.to_string());
+        }
+    }
+    // Only trailing parameters can be left out.
+    let first_opt = params
+        .iter()
+        .position(|(p, _)| optional.contains(&p.to_string()));
+    if let Some(i) = first_opt
+        && params[i..]
+            .iter()
+            .any(|(p, _)| !optional.contains(&p.to_string()))
+    {
+        return Err(syn::Error::new(
+            sig.span(),
+            "#[optional(..)] parameters must be the last ones",
+        ));
+    }
     Ok(Api {
         name: sig.ident.clone(),
         doc: doc_of(attrs),
-        js_name: stem.clone(),
+        js_name: js_name_attr(attrs).unwrap_or_else(|| stem.clone()),
         stem,
         class,
         tag,
         value_recv: None,
         params,
+        optional,
         ret,
     })
 }
@@ -600,13 +663,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 match value_method(&f.sig, &f.attrs, &args)? {
                     Some(a) => {
                         apis.push(a);
-                        f.attrs.retain(|a| {
-                            !a.path().is_ident("method") && !a.path().is_ident("getter")
-                        });
+                        f.attrs.retain(|a| !is_ours(a));
                     }
                     None => {
                         apis.push(api_of(&f.sig, &f.attrs, &args, None)?);
-                        f.attrs.retain(|a| !a.path().is_ident("property"));
+                        f.attrs.retain(|a| !is_ours(a));
                     }
                 }
             }
@@ -623,7 +684,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                         && matches!(f.vis, Visibility::Public(_))
                     {
                         apis.push(api_of(&f.sig, &f.attrs, &args, class.clone())?);
-                        f.attrs.retain(|a| !a.path().is_ident("property"));
+                        f.attrs.retain(|a| !is_ours(a));
                     }
                 }
             }
@@ -706,7 +767,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     > = std::collections::BTreeMap::new();
     for a in &apis {
         let name = &a.name;
-        let rust_name = name.to_string();
+        let rust_name = name.to_string().trim_start_matches("r#").to_string();
         let js_name = &a.js_name;
         let owner = a
             .class
@@ -732,9 +793,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             pnames.push("this".into());
             ptys.push(manifest_ty(k, &args));
         }
+        let mut popts: Vec<bool> = vec![false; pnames.len()];
         for (n, k) in &a.params {
             pnames.push(camel(&n.to_string()));
             ptys.push(manifest_ty(k, &args));
+            popts.push(a.optional.contains(&n.to_string()));
         }
         let ret_m = manifest_ty(&a.ret, &args);
         let kind = kind_tokens(a.tag);
@@ -745,7 +808,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 rust_name: #rust_name,
                 symbol: #symbol,
                 doc: #doc,
-                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys } ),* ],
+                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts } ),* ],
                 ret: #ret_m,
             }
         };
@@ -840,11 +903,25 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         if args.quickjs && (a.class.is_none() || a.value_recv.is_some()) {
             // A value method takes the value first (an object), then its own parameters.
             let all_params: Vec<&(Ident, Kind)> = a.value_recv.iter().chain(&a.params).collect();
+            let is_opt = |n: &Ident| a.optional.contains(&n.to_string());
             let js_params: Vec<TokenStream2> = all_params
                 .iter()
                 .map(|(n, k)| {
                     let t = js_param_ty(k);
-                    quote!(#n: #t)
+                    if is_opt(n) {
+                        quote!(#n: ::iron_api::rquickjs::function::Opt<::std::option::Option<#t>>)
+                    } else {
+                        quote!(#n: #t)
+                    }
+                })
+                .collect();
+            // A left-out parameter takes the default the compiled call passes.
+            let js_defaults: Vec<TokenStream2> = all_params
+                .iter()
+                .filter(|(n, _)| is_opt(n))
+                .map(|(n, k)| {
+                    let d = js_default(k);
+                    quote!(let #n = #n.0.flatten().unwrap_or(#d);)
                 })
                 .collect();
             let js_args: Vec<TokenStream2> = all_params
@@ -857,6 +934,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 | ctx: ::iron_api::rquickjs::Ctx<'js>, #( #js_params ),* |
                     -> ::iron_api::rquickjs::Result<#js_ret> {
                     let _ = &ctx;
+                    #( #js_defaults )*
                     #js_body
                 }
             };

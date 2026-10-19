@@ -19,6 +19,8 @@ pub struct ExternFn {
     pub symbol: String,
     pub params: Vec<(String, ExtTy)>,
     pub ret: ExtTy,
+    /// Index of the first parameter a call may leave out (`params.len()`: none).
+    pub optional_from: usize,
 }
 
 /// The functions of a handle class, by how scripts call them. Methods, getters and setters take
@@ -171,6 +173,7 @@ impl Manifest {
             .to_string();
         let kind = f["kind"].as_str().unwrap_or("static").to_string();
         let mut params = Vec::new();
+        let mut optional_from = usize::MAX;
         for p in f["params"].as_array().ok_or("manifest: missing `params`")? {
             let pn = p["name"].as_str().unwrap_or("arg").to_string();
             let pt = ext_ty(
@@ -180,6 +183,9 @@ impl Manifest {
             )?;
             if let ExtTy::Handle(h) = &pt {
                 self.handles.insert(h.clone());
+            }
+            if p["optional"].as_bool() == Some(true) && optional_from > params.len() {
+                optional_from = params.len();
             }
             params.push((pn, pt));
         }
@@ -192,6 +198,7 @@ impl Manifest {
             kind,
             ExternFn {
                 symbol,
+                optional_from: optional_from.min(params.len()),
                 params,
                 ret,
             },

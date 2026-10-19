@@ -745,6 +745,78 @@ pub mod nullbool_t {
     include!(concat!(env!("OUT_DIR"), "/nullbool_bindings.rs"));
 }
 
+/// `bench/random.ts`, prefix `rnd_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod random_t {
+    include!(concat!(env!("OUT_DIR"), "/random_bindings.rs"));
+}
+
+/// `bench/layers.ts`, prefix `lyr_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod layers_t {
+    include!(concat!(env!("OUT_DIR"), "/layers_bindings.rs"));
+}
+
+/// `bench/prefs.ts`, prefix `prf_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod prefs_t {
+    include!(concat!(env!("OUT_DIR"), "/prefs_bindings.rs"));
+}
+
+/// `bench/assets.ts`, prefix `ast_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod assets_t {
+    include!(concat!(env!("OUT_DIR"), "/assets_bindings.rs"));
+}
+
+/// `bench/app.ts`, prefix `apc_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod app_t {
+    include!(concat!(env!("OUT_DIR"), "/app_bindings.rs"));
+}
+
+/// `bench/clock.ts`, prefix `clk_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod clock_t {
+    include!(concat!(env!("OUT_DIR"), "/clock_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

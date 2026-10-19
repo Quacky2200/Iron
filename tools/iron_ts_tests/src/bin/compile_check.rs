@@ -10,17 +10,9 @@ fn main() {
     let _ = iron_ts_tests::scene_anchor();
     let path = std::env::args().nth(1).expect("compile_check file.ts");
     let src = std::fs::read_to_string(&path).expect("read the file");
-    let manifests = vec![
-        iron_scene::api::scene_api::MANIFEST.to_json(),
-        iron_engine_api::color::color_api::MANIFEST.to_json(),
-        iron_engine_api::time::time_api::MANIFEST.to_json(),
-        iron_engine_api::input::input_api::MANIFEST.to_json(),
-        iron_engine_api::gizmos::gizmos_api::MANIFEST.to_json(),
-        iron_engine_api::camera::camera_api::MANIFEST.to_json(),
-        iron_engine_api::screen::screen_api::MANIFEST.to_json(),
-        iron_engine_api::screen::quality_api::MANIFEST.to_json(),
-        iron_engine_api::audio::audio_api::MANIFEST.to_json(),
-    ];
+    let mut manifests = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
+    manifests.extend(iron_engine_api::manifests());
+
     // Lowering and code generation both (set IRON_TS_TRACE=1 to see each function as it is built).
     match iron_ts::compile_with_manifests(&src, "speed", "chk_", 40000, &manifests) {
         Ok(out) => println!("ok: {} bytes of object code", out.object.len()),

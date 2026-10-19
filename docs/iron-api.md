@@ -276,3 +276,30 @@ code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen`
 
 `iron_engine_api` also has `audio` (`load(path, stream)`, `Sound.play(loop)`, `Playback.pause/resume/stop`, recorded as
 `AudioCommand`s for the host). A Rust parameter written `r#loop` is the script's `loop`. Tests `M9-TS-593..597`.
+
+## Optional parameters and renamed members
+
+- `#[optional(a, b)]` on a function marks trailing parameters a call may leave out. The manifest says
+  `optional`, the declaration writes `seed?: number`, and the function sees a default: **NaN** for a
+  number (so `seed.is_nan()` means "left out"), an empty string, `false` or a zero handle. A compiled
+  call fills them in; QuickJS treats a missing or `undefined` argument the same way.
+- `new Rng(seed)`: a handle class whose static `create` has parameters is constructed with them
+  (`new Class(args)` calls `create(args)`).
+- `#[js_name = "graphicsDeviceVendorID"]` gives the script name when `snake_case` to `camelCase` does not
+  spell it. A Rust keyword is written raw (`r#in` for `TimeUntil.in(2)`).
+
+## The first batch moved out of `js/engine` (2026-10-19)
+
+`iron_engine_api` now also declares `Rng` / `Random`, `LayerMask`, `Debug` / `Log` / `Console`,
+`PlayerPrefs`, `Assets`, `Application` / `SystemInfo`, `TimeSince` / `TimeUntil`. Each keeps its state per
+thread and has host functions: `layers::set_game_layers`, `log::set_sink`, `prefs::{load, take_changes}`,
+`assets::{set_assets, changed}`, `app::{set_app, set_system, set_focus, take_requests}`. Differences from
+the TypeScript, all because a call has fixed typed parameters:
+
+- logging functions take one string (compiled code writes a template literal); objects are not printed as JSON;
+- `getMask` takes up to four names; a left-out lookup (`guidToPath`) returns `""` instead of `undefined`;
+- `Assets` has `count()` / `pathAt(i)` / `guidAt(i)` / `importer(path)` as JSON text / `takeChanges()` (a
+  newline-separated string to poll) instead of `all`, an object and `onChanged(fn)`;
+- `SystemInfo.screenWidth` / `screenHeight` / `screenRefreshRate` / `screenDpi` replace `SystemInfo.screen`;
+- `Application.onFocusChanged(fn)`, `Task` and the vector-valued `Random` members wait for closures and the
+  Rust math types.

@@ -1106,3 +1106,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-602 | Integration | `get_property` / `set_property` through the table: numbers, nullable numbers, booleans, strings (collected between write and read); a wrong kind is an error naming the property and changes nothing. |
 | M9-TS-603 | Integration | `save_properties` / `load_properties`: values saved from one component load into another, component references travel as ids; bad entries are reported and the rest apply. |
 | M9-TS-604 | Integration | `this.getComponent(X)`, `go.addComponent(X, { .. })` between compiled components: the sibling is found, the added component has its options and runs `onAwake`, a missing class is `undefined`, destroying the object destroys it. |
+| M9-TS-605..610 | Integration | `Rng` (`new Rng(seed?)`, `nextDouble`, `next`, `float`, `int`, `bool`) and the shared `Random`: mulberry32 sequences equal the original `random.ts` run in bun (`bench/random.ts`, `tests/all/random.rs`). |
+| M9-TS-611..614 | Integration | `LayerMask`: built-in and game layer names (renaming, out-of-range and empty names ignored), `getMask`, `contains`, `everything` / `nothing`, compared with `layers.ts` in bun. |
+| M9-TS-615..616 | Integration | `PlayerPrefs`: typed reads with and without fallbacks, truncating `setInt`, `hasKey`, `deleteKey`, `deleteAll`, compared with `prefs.ts` in bun. |
+| M9-TS-617..620 | Integration | `Assets`: GUID and path lookups (backslashes and `./` cleaned), `guid:` sources, importer JSON, enumeration, compared with `assets.ts` in bun through a prelude that adapts the shape. |
+| M9-TS-621..623 | Integration | `Application` and `SystemInfo` read in compiled code against the manifest and machine the host installs, settable `targetFrameRate` / `runInBackground`, compared with `app.ts` in bun. |
+| M9-TS-624..626 | Integration | `TimeSince`, `TimeUntil` and `Time` after three engine ticks, compared with `clock.ts` in bun. |
+| M9-API-37 | Integration | `Random` in QuickJS gives the TypeScript generator numbers for a seed; an omitted `bool` chance defaults to 0.5. |
+| M9-API-38 | Integration | `LayerMask` in QuickJS: names, masks, `contains`. |
+| M9-API-39 | Integration | Log lines reach the host sink with their level; `Debug.assert` logs only when false. |
+| M9-API-40 | Integration | `PlayerPrefs` in QuickJS, and the ordered changes the host writes to the file. |
+| M9-API-41 | Integration | `Assets` in QuickJS: lookups, `guid:` sources, importer JSON, polled changes. |
+| M9-API-42 | Integration | `Application` / `SystemInfo` in QuickJS, script writes returned as requests, focus and pause changes. |
+| M9-API-43 | Integration | `TimeSince` / `TimeUntil` value classes in QuickJS follow the game clock. |

@@ -733,6 +733,7 @@ impl<'a> Lowerer<'a> {
             other => bail!("{at}: Ui.load<{other}> is not supported"),
         };
         let f = ExternFn {
+            optional_from: usize::MAX,
             symbol: symbol.into(),
             params: vec![("slot".into(), ExtTy::F64)],
             ret,
@@ -788,6 +789,7 @@ impl<'a> Lowerer<'a> {
                 ),
             };
             let ext = ExternFn {
+                optional_from: usize::MAX,
                 symbol: symbol.into(),
                 params: vec![
                     ("h".into(), ExtTy::Handle("UiElement".into())),
@@ -842,6 +844,7 @@ impl<'a> Lowerer<'a> {
                 let r = self.new_local(sig.ret.clone());
                 stmts.push(Stmt::Assign(r, call));
                 let set = ExternFn {
+                    optional_from: usize::MAX,
                     symbol: "ts_ui_set_cleanup".into(),
                     params: vec![("f".into(), ExtTy::Ptr)],
                     ret: ExtTy::Void,
@@ -864,11 +867,23 @@ impl<'a> Lowerer<'a> {
         what: &str,
         c: &'a CallExpression<'a>,
     ) -> R<Expr> {
+        self.call_ext_args(f, recv, what, c.span.start, &c.arguments)
+    }
+
+    /// `call_ext_fn` over an argument list (a call's, or a `new`'s).
+    pub(crate) fn call_ext_args(
+        &mut self,
+        f: ExternFn,
+        recv: Option<Expr>,
+        what: &str,
+        span_start: u32,
+        arguments: &'a [Argument<'a>],
+    ) -> R<Expr> {
         let skip = usize::from(recv.is_some());
-        let at = self.loc(c.span.start);
+        let at = self.loc(span_start);
         let params: Vec<(String, ExtTy)> = f.params[skip..].to_vec();
         let mut given: Vec<&'a Expression<'a>> = Vec::new();
-        for a in &c.arguments {
+        for a in arguments {
             let Some(e) = a.as_expression() else {
                 bail!("{at}: {what}: spread argument")
             };
@@ -889,8 +904,9 @@ impl<'a> Lowerer<'a> {
             options = Some(o);
             given.pop();
         }
+        let opt_from = f.optional_from.saturating_sub(skip);
         if given.len() > params.len()
-            || (options.is_none() && given.len() < params.len() && {
+            || (options.is_none() && given.len() < params.len() && given.len() < opt_from && {
                 // A flag may be left out (false); a missing number or string is an error.
                 !params[given.len()..]
                     .iter()
@@ -899,7 +915,7 @@ impl<'a> Lowerer<'a> {
         {
             bail!(
                 "{at}: {what}: {} arguments, {} expected",
-                c.arguments.len(),
+                arguments.len(),
                 params.len()
             )
         }
@@ -924,7 +940,10 @@ impl<'a> Lowerer<'a> {
                 args.push(match pt {
                     ExtTy::Bool => mk(ExprKind::Bool(false), Ty::Bool),
                     ExtTy::Str => self.str_lit(""),
+                    // An optional number is NaN: the function tells "left out" from 0.
+                    ExtTy::F64 | ExtTy::F32 if i >= opt_from => num(f64::NAN),
                     ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
+                    ExtTy::Handle(_) if i >= opt_from => mk(ExprKind::Num(0.0), self.ext_ir(pt)),
                     other => bail!("{at}: {what}: parameter `{pname}` ({other:?}) has no default"),
                 });
                 continue;
