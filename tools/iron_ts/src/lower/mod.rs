@@ -211,6 +211,8 @@ pub struct Lowerer<'a> {
     pub(crate) prelude_lines: usize,
     /// The next closure's return type comes from its body, not from the expected type.
     pub(crate) infer_ret: bool,
+    /// Top-level `const NAME = init` without an annotation, for guessing field types from syntax.
+    pub(crate) const_inits: HashMap<String, &'a Expression<'a>>,
     /// The type parameters of the specialisation being lowered (`generics.rs`).
     pub(crate) tenv: generics::TEnv,
     pub(crate) generic_fns: HashMap<String, generics::GenericFn<'a>>,
@@ -393,6 +395,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         regex_info: HashMap::new(),
         prelude_lines,
         infer_ret: false,
+        const_inits: HashMap::new(),
         tenv: Default::default(),
         generic_fns: HashMap::new(),
         generic_classes: HashMap::new(),
@@ -431,6 +434,28 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_program(&mut self, program: &'a Program<'a>) -> R<()> {
+        // Top-level constants whose type comes from their initialiser.
+        for stmt in &program.body {
+            let decl = match stmt {
+                Statement::VariableDeclaration(d) => Some(&**d),
+                Statement::ExportDeclaration(x) => match &x.declaration {
+                    Declaration::VariableDeclaration(d) => Some(&**d),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(d) = decl
+                && d.kind == VariableDeclarationKind::Const
+            {
+                for v in &d.declarations {
+                    if let (BindingPattern::BindingIdentifier(id), Some(init), None) =
+                        (&v.id, &v.init, &v.type_annotation)
+                    {
+                        self.const_inits.insert(id.name.to_string(), init);
+                    }
+                }
+            }
+        }
         // 1. Types and function signatures, in any order.
         // 0. Enums, interfaces, aliases and classes first: their names are types that signatures
         // below mention.

@@ -1083,3 +1083,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-24 | Integration | QuickJS bindings: `&str`/`String` are JS strings (non-BMP and accents). |
 | M9-API-25 | Integration | A value object missing a field is a catchable JS exception. |
 | M9-API-26 | Integration | The `Scene` namespace of `iron_scene` works from QuickJS on the current scene (`crates/iron_scene/tests/api.rs`). |
+| M9-TS-592 | Unit | A class field's type is inferred from constants, arithmetic, `C.x` of a constant object and object literals; a call is still an error asking for an annotation. |

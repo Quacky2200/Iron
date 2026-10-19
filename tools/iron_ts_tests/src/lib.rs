@@ -211,6 +211,30 @@ pub mod uic {
     include!(concat!(env!("OUT_DIR"), "/ui_bindings.rs"));
 }
 
+/// The sine-circle demo's curve, verbatim (`bench/sine_demo.ts`), prefix `sd_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod sd {
+    include!(concat!(env!("OUT_DIR"), "/sine_demo_bindings.rs"));
+}
+
+/// The UI benchmark's app (`bench/ui_perf.ts`), prefix `uip_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod uip {
+    include!(concat!(env!("OUT_DIR"), "/ui_perf_bindings.rs"));
+}
+
 /// Keeps the UI bridge (`iron_ts_ui`) linked into every binary of this crate: the `ui` module's
 /// object calls its `ts_ui_*` functions.
 #[used]

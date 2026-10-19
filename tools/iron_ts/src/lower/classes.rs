@@ -123,12 +123,127 @@ impl<'a> Lowerer<'a> {
                     };
                     self.named_type(id.name.as_str())?
                 }
-                _ => bail!(
-                    "{what}: needs a type annotation (only a literal or `new Class()` is inferred)"
-                ),
+                Some(e) => match self.guess_ty(e, 0)? {
+                    Some(t) => t,
+                    None => bail!(
+                        "{what}: needs a type annotation (only a literal, arithmetic, a top-level constant, an object literal of those, or `new Class()` is inferred)"
+                    ),
+                },
+                None => bail!("{what}: needs a type or a value"),
             },
         };
         Ok(if optional { ty.nullable() } else { ty })
+    }
+
+    /// The type of a field initialiser, found from the syntax alone (the class is declared before
+    /// any code is lowered): literals, arithmetic, a top-level `const` without an annotation,
+    /// `a.b` of an object literal, and object literals of those.
+    fn guess_ty(&mut self, e: &'a Expression<'a>, depth: u8) -> R<Option<Ty>> {
+        if depth > 8 {
+            return Ok(None);
+        }
+        Ok(match e {
+            Expression::NumericLiteral(_) => Some(Ty::Num),
+            Expression::BooleanLiteral(_) => Some(Ty::Bool),
+            Expression::StringLiteral(_) | Expression::TemplateLiteral(_) => Some(Ty::Str),
+            Expression::ParenthesizedExpression(p) => self.guess_ty(&p.expression, depth + 1)?,
+            Expression::UnaryExpression(u) => match u.operator {
+                UnaryOperator::UnaryNegation
+                | UnaryOperator::UnaryPlus
+                | UnaryOperator::BitwiseNot => Some(Ty::Num),
+                UnaryOperator::LogicalNot => Some(Ty::Bool),
+                _ => None,
+            },
+            Expression::BinaryExpression(b) => match b.operator {
+                BinaryOperator::Subtraction
+                | BinaryOperator::Multiplication
+                | BinaryOperator::Division
+                | BinaryOperator::Remainder
+                | BinaryOperator::Exponential
+                | BinaryOperator::ShiftLeft
+                | BinaryOperator::ShiftRight
+                | BinaryOperator::ShiftRightZeroFill
+                | BinaryOperator::BitwiseAnd
+                | BinaryOperator::BitwiseOR
+                | BinaryOperator::BitwiseXOR => Some(Ty::Num),
+                BinaryOperator::Addition => {
+                    let l = self.guess_ty(&b.left, depth + 1)?;
+                    let r = self.guess_ty(&b.right, depth + 1)?;
+                    match (l, r) {
+                        (Some(Ty::Str), _) | (_, Some(Ty::Str)) => Some(Ty::Str),
+                        (Some(Ty::Num), Some(Ty::Num)) => Some(Ty::Num),
+                        _ => None,
+                    }
+                }
+                BinaryOperator::Equality
+                | BinaryOperator::Inequality
+                | BinaryOperator::StrictEquality
+                | BinaryOperator::StrictInequality
+                | BinaryOperator::LessThan
+                | BinaryOperator::LessEqualThan
+                | BinaryOperator::GreaterThan
+                | BinaryOperator::GreaterEqualThan => Some(Ty::Bool),
+                _ => None,
+            },
+            Expression::Identifier(id) => match self.const_inits.get(id.name.as_str()).copied() {
+                Some(init) => self.guess_ty(init, depth + 1)?,
+                None => None,
+            },
+            Expression::StaticMemberExpression(m) => {
+                // `CENTER.x` where `CENTER = { x: .., y: .. }`.
+                let mut obj = &m.object;
+                while let Expression::ParenthesizedExpression(p) = obj {
+                    obj = &p.expression;
+                }
+                let base = match obj {
+                    Expression::Identifier(id) => self
+                        .const_inits
+                        .get(id.name.as_str())
+                        .copied()
+                        .unwrap_or(obj),
+                    other => other,
+                };
+                if let Expression::ObjectExpression(o) = base {
+                    let want = m.property.name.as_str();
+                    let mut found = None;
+                    for p in &o.properties {
+                        if let ObjectPropertyKind::ObjectProperty(p) = p
+                            && let PropertyKey::StaticIdentifier(k) = &p.key
+                            && k.name == want
+                        {
+                            found = Some(&p.value);
+                        }
+                    }
+                    match found {
+                        Some(v) => self.guess_ty(v, depth + 1)?,
+                        None => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            Expression::ObjectExpression(o) => {
+                let mut fields = Vec::new();
+                for p in &o.properties {
+                    let ObjectPropertyKind::ObjectProperty(p) = p else {
+                        return Ok(None);
+                    };
+                    let PropertyKey::StaticIdentifier(k) = &p.key else {
+                        return Ok(None);
+                    };
+                    let Some(ty) = self.guess_ty(&p.value, depth + 1)? else {
+                        return Ok(None);
+                    };
+                    fields.push(Field {
+                        name: k.name.to_string(),
+                        ty,
+                        optional: false,
+                    });
+                }
+                Some(Ty::Obj(self.anon_struct("object", fields)))
+            }
+            _ => None,
+        })
     }
 
     /// The struct of class `name`, created on first use. Its fields are filled in by

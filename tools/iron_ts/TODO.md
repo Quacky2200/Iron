@@ -149,6 +149,8 @@ performance, cross targets and CI.
 
 ## Log
 
+- 2026-10-19 Performance review and the sine-demo swap-out check: `docs/research/iron-ts-sine-demo.md` (verbatim `SineCircle` 33x QuickJS, UI list 8-34x React/QuickJS, sim 44x). Field types are now inferred from constants and arithmetic (`M9-TS-592`).
+
 Newest first. One line per finished step: what, test IDs, numbers if measured.
 
 - 2026-10-19 `Date.toString/toTimeString/String(date)/date + x` (`M9-TS-276`): ICU4X root zone names, whole-minute offsets, the name follows the daylight state for old dates. Design note for `Intl.DateTimeFormat` written, awaiting review.

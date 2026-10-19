@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@iron/engine": ["../../js/engine/src/index.ts"]
+    }
+  },
+  "include": ["bench/**/*.ts"]
+}

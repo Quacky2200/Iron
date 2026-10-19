@@ -3,6 +3,11 @@
 //! QuickJS computing it, QuickJS computing it and sending it to Rust through `__iron_op`
 //! (the old way), bun, and the native code `iron_ts` generated (computing it, then Rust reading
 //! the array in place).
+//!
+//! The second part runs the demo's own class (`bench/sine_demo.ts`, copied verbatim from the
+//! commit before `LineRenderer2D`: `SineCircle.points()` building `Vector3` objects with a point
+//! every degree) the same three ways: QuickJS with the engine package's `Vector3`, bun, and the
+//! compiled code. One source, so it also shows what a swap-out costs.
 use iron_core::Value;
 use iron_script::{QuickJsRuntime, ScriptRuntime};
 use iron_ts_rt::{Array, link_anchor};
@@ -76,6 +81,44 @@ fn native(frames: usize, read_in_place: bool) -> (f64, f64) {
     (t.elapsed().as_secs_f64() * 1000.0, sum)
 }
 
+/// The verbatim demo class under QuickJS (`__sineDemo(n)` of the bundle).
+fn quickjs_demo(frames: usize, bundle: &str) -> (f64, f64) {
+    let mut rt = QuickJsRuntime::new();
+    rt.load_bundle("sine_demo", bundle).expect("bundle");
+    let t = Instant::now();
+    let v = rt
+        .call_global("__sineDemo", &[Value::Number(frames as f64)])
+        .expect("run");
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    let Value::Number(sum) = v else {
+        panic!("{v:?}")
+    };
+    (ms, sum)
+}
+
+fn bun_demo(frames: usize, dir: &std::path::Path) -> Option<(f64, f64)> {
+    let out = Command::new("bun")
+        .arg("--preload")
+        .arg(dir.join("bench/iron_stub.ts"))
+        .arg(dir.join("bench/sine_demo_run.ts"))
+        .arg(frames.to_string())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let line = text.lines().last()?;
+    let num = |k: &str| -> Option<f64> {
+        let i = line.find(&format!("\"{k}\":"))? + k.len() + 3;
+        line[i..].split([',', '}']).next()?.parse().ok()
+    };
+    Some((num("ms")?, num("checksum")?))
+}
+
+fn native_demo(frames: usize) -> (f64, f64) {
+    let t = Instant::now();
+    let sum = unsafe { iron_ts_tests::sd::ts_sd_frames(frames as f64) };
+    (t.elapsed().as_secs_f64() * 1000.0, sum)
+}
+
 fn main() {
     assert_ne!(link_anchor(), 0);
     iron_ts_tests::gc_mode_from_env();
@@ -118,4 +161,24 @@ fn main() {
     best("bun, compute", &mut || bun(frames, dir));
     best("native, compute", &mut || Some(native(frames, false)));
     best("native, compute + copy", &mut || Some(native(frames, true)));
+
+    // The demo's own class, verbatim.
+    unsafe { iron_ts_tests::sd::ts_sd_init() };
+    let demo_path = std::env::temp_dir().join("iron_ts_sine_demo_bundle.js");
+    let st = Command::new("bun")
+        .arg("build")
+        .arg(dir.join("bench/sine_demo_run.ts"))
+        .args(["--format=iife", "--target=browser", "--outfile"])
+        .arg(&demo_path)
+        .status()
+        .expect("bun build");
+    assert!(st.success());
+    let demo_bundle = std::fs::read_to_string(&demo_path).unwrap();
+    println!();
+    println!("the demo's own SineCircle class, verbatim (a Vector3 per point, 1,084 a frame):");
+    best("quickjs (engine Vector3)", &mut || {
+        Some(quickjs_demo(frames, &demo_bundle))
+    });
+    best("bun", &mut || bun_demo(frames, dir));
+    best("native", &mut || Some(native_demo(frames)));
 }

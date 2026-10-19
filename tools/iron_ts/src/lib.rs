@@ -565,6 +565,21 @@ mod tests {
         assert!(e.contains("only plain instance methods"), "{e}");
     }
 
+    // M9-TS-592
+    #[test]
+    fn field_types_are_inferred_from_constants_arithmetic_and_object_literals() {
+        let m = lower::lower_source(
+            "const W = 1008; const C = { x: W / 2, y: 3 }; class A { w = W / 3; c = { x: C.x, y: C.y }; s = 'a' + 'b'; } export function f(): number { const a = new A(); return a.w + a.c.x + a.s.length; }",
+        );
+        assert!(m.is_ok(), "{:?}", m.err());
+        let e = lower::lower_source(
+            "class B { v = someCall(); } export function f(): number { return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("needs a type annotation"), "{e}");
+    }
+
     // M9-TS-119
     #[test]
     fn class_features_that_are_not_built_yet_are_errors_that_say_so() {
