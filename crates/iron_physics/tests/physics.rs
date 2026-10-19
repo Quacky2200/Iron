@@ -492,9 +492,7 @@ fn slide_after_shove(translations: [bool; 3], rotations: [bool; 3]) -> f32 {
 }
 
 // M4-PHY-07
-// Ignored until rapier's 3D friction fix lands (TODO.md, "locked axes switch friction off").
 #[test]
-#[ignore = "rapier drops friction when z movement is locked; see TODO.md"]
 fn friction_stops_a_box_locked_to_a_plane() {
     // Unlocked, friction stops it in about a metre (v² / 2μg with μ = 0.5).
     let free = slide_after_shove([true; 3], [true; 3]);
@@ -514,4 +512,40 @@ fn friction_stops_a_box_locked_to_a_plane() {
         let slid = slide_after_shove(t, r);
         assert!(slid < 2.0, "locks {t:?} {r:?}: slid {slid} m");
     }
+
+    // The plane lock still holds (Iron pins z itself for this combination): shoved along z,
+    // moved by `position`, the box stays in its plane.
+    let mut p = Physics::new();
+    floor(&mut p);
+    op(
+        &mut p,
+        "body",
+        vec![num(2.0), "dynamic".into(), arr(&[0.0, 0.5, 0.25])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![num(2.0), num(2.0), "box".into(), arr(&[0.5, 0.5, 0.5])],
+    );
+    let plane = [true, true, false, false, false, true].map(Value::Bool);
+    op(
+        &mut p,
+        "set",
+        vec![num(2.0), "constraints".into(), Value::Array(plane.to_vec())],
+    );
+    op(
+        &mut p,
+        "set",
+        vec![num(2.0), "velocity".into(), arr(&[1.0, 0.0, 5.0])],
+    );
+    steps(&mut p, 60);
+    let [_, _, z] = p.position(2).unwrap();
+    assert_eq!(z, 0.25, "left its plane");
+    op(
+        &mut p,
+        "set",
+        vec![num(2.0), "position".into(), arr(&[0.0, 0.5, -1.0])],
+    );
+    steps(&mut p, 10);
+    assert_eq!(p.position(2).unwrap()[2], -1.0, "not held where it was put");
 }

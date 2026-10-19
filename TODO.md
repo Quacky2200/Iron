@@ -1104,14 +1104,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] 2D shapes: check draw calls and re-tessellation with hundreds of shapes, and batch
     them where it helps
   - [ ] Profile the rest of the frame (~6 ms engine and render with 123 fish, ~800 shapes)
-- [ ] **Physics: locked axes switch friction off** (found 2026-10-18 with `examples/physics`):
+- [x] **Physics: locked axes switch friction off** (found 2026-10-18 with `examples/physics`):
   a body that can't move along one axis and can't turn about the other two (`setAllowedAxes`
-  with z movement and x/y turns locked, the usual way to keep bodies in a plane) slides as if
+  with z movement and x/y turns locked, the usual way to keep bodies in a plane) slid as if
   on ice. rapier 0.36.1's 3D friction solve (`contact_constraint_element.rs`) inverts the
   2×2 tangent mass matrix; the locked direction has zero mass, the determinant is 0,
-  `simd_inv(0)` gives 0, and every friction impulse becomes 0. Fix: patch rapier (fall back to
-  one tangent at a time when the matrix is singular) or report it upstream; add a test (a
-  shoved, plane-locked box stops). `examples/physics` avoids it by locking only the tilts
+  `simd_inv(0)` gives 0, and every friction impulse becomes 0. Worked around in Iron
+  (2026-10-19): that combination isn't given to rapier as a lock; `iron_physics` pins the axis
+  itself each step (`set_constraints`, `hold_pins`) — `M4-PHY-07`
+  - [ ] Upstream: the issue, PR text and patch (with a rapier test) are in
+    `docs/upstream/rapier-plane-locked-friction/`, for the user to post. Once rapier fixes it,
+    drop the pins and lock the axis in rapier again
 - [x] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   (done 2026-10-17; the unticked items below are follow-ups for later)
   - [x] Materials (asked for 2026-10-17), Unity Standard / URP Lit style: PBR, the sky and

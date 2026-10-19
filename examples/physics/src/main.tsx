@@ -39,12 +39,10 @@ function drop(x: number, y: number, i: number) {
   const shape = i % 3 === 0 ? "ball" : "box";
   const half = 0.25 + (i % 4) * 0.08;
   // Bodies stay in the z = 0 plane: the scene is 2D, seen from the side. They're 3D bodies,
-  // so a tilt in a pile would push them along z (unseen) until they fell off the floor's
-  // front or back. Turning only about z keeps every contact in the plane, so nothing pushes
-  // along z. (Locking z movement too would also stop friction: rapier's 3D friction solve
-  // gets a zero-mass direction and does nothing, so bodies slide as if on ice.)
+  // so knocks in a pile would push them along z (unseen) until they fell off the floor's
+  // front or back: they move only in x and y and turn only about z.
   const body = physics.createBody({ position: { x, y, z: 0 }, angularDamping: 0.2 });
-  body.setAllowedAxes([true, true, true], [false, false, true]);
+  body.setAllowedAxes([true, true, false], [false, false, true]);
   body.addCollider({
     shape: shape === "ball" ? { ball: half } : { box: { x: half, y: half, z: half } },
     restitution: shape === "ball" ? 0.5 : 0.1,

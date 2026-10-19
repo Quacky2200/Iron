@@ -429,6 +429,7 @@ layout pass):
 | M4-PHY-04 | Integration | Physics bodies survive a script hot reload. |
 | M4-PHY-05 | Integration | Raycasts queued in a tick are answered after the step with the collider, distance and normal; misses report `-1` in the flat batch. |
 | M4-PHY-06 | Integration | Bad physics ops (unknown kinds and shapes, missing bodies, zero directions, NaN) are rejected without changing the world; a triangle-mesh collider catches a ball. |
+| M4-PHY-07 | Integration | A box kept in a plane (`constraints`: no z movement, turning only about z) stops under friction like a free one when shoved, stays in its plane when pushed along z, and is held where `position` puts it. |
 | M4-PHY-07 | Integration | A shoved box stops from friction when its axes are locked to a plane (z movement and x/y turns locked); ignored until the rapier friction fix in TODO.md lands. |
 | M4-AUD-01 | Integration | Playing a WAV (decoded and streamed) through `kira` with an offline backend produces non-silent output, and both are reported ended after they play out; undecodable files fail to load. |
 | M4-AUD-02 | Integration | An emitter 1 m to the right pans right, fades at 10 m, is silent past its max distance, and pans left when moved to the left. |
