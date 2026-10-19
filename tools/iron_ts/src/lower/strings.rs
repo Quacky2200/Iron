@@ -671,6 +671,25 @@ impl<'a> Lowerer<'a> {
                     t => bail!("{at}: Number({t}) is not supported"),
                 }
             }
+            "encodeURI" | "encodeURIComponent" | "decodeURI" | "decodeURIComponent" | "escape"
+            | "unescape" => {
+                let v = first(self)?;
+                let s = self.widen_lit(v);
+                let s = self.coerce(s, &Ty::Str)?;
+                let component = mk(ExprKind::Bool(name.ends_with("Component")), Ty::Bool);
+                let (sym, args) = match name {
+                    "encodeURI" | "encodeURIComponent" => {
+                        ("ts_rt_uri_encode_gc", vec![s, component])
+                    }
+                    "decodeURI" | "decodeURIComponent" => {
+                        ("ts_rt_uri_decode_gc", vec![s, component])
+                    }
+                    "escape" => ("ts_rt_escape_gc", vec![s]),
+                    _ => ("ts_rt_unescape_gc", vec![s]),
+                };
+                let call = self.rt_str(sym, args, Ty::Str);
+                self.checked(call, Ty::Str)
+            }
             "parseFloat" => {
                 let v = first(self)?;
                 let s = self.widen_lit(v);

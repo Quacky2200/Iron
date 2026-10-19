@@ -324,6 +324,30 @@ pub mod dfm {
     include!(concat!(env!("OUT_DIR"), "/datefmt_bindings.rs"));
 }
 
+/// `bench/uri.ts`, prefix `uri_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod uri_t {
+    include!(concat!(env!("OUT_DIR"), "/uri_bindings.rs"));
+}
+
+/// `bench/errors2.ts`, prefix `e2_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod errors2_t {
+    include!(concat!(env!("OUT_DIR"), "/errors2_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

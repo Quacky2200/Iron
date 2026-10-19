@@ -1028,6 +1028,7 @@ mod map;
 mod regexp;
 mod string;
 mod string_more;
+mod uri;
 pub use date::*;
 pub use intl::*;
 pub use intl_date::*;
@@ -1037,6 +1038,7 @@ pub use map::*;
 pub use regexp::*;
 pub use string::*;
 pub use string_more::*;
+pub use uri::*;
 
 /// A new variable box holding `value` (a number's bits, a tag, or a pointer when `is_ptr`). May
 /// collect first; a pointer value is kept alive meanwhile.
@@ -1225,6 +1227,10 @@ pub fn link_anchor() -> usize {
         ts_rt_dtf_new as *const () as usize,
         ts_rt_dtf_format_gc as *const () as usize,
         ts_rt_date_locale_string_gc as *const () as usize,
+        ts_rt_uri_encode_gc as *const () as usize,
+        ts_rt_uri_decode_gc as *const () as usize,
+        ts_rt_escape_gc as *const () as usize,
+        ts_rt_unescape_gc as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,

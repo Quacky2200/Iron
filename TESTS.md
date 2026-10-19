@@ -764,6 +764,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-284 | Integration | `Intl.DateTimeFormat.format`: also detached and as a `map` callback equal bun's in five time zones (`iron_ts_tests/tests/datefmt.rs`, `bench/datefmt.ts`, made by `bench/gen_datefmt_program.py`). |
 | M9-TS-285 | Integration | An invalid date: `toLocale*String` gives `Invalid Date`, `format` throws bun's `RangeError` equal bun's in five time zones (`iron_ts_tests/tests/datefmt.rs`, `bench/datefmt.ts`, made by `bench/gen_datefmt_program.py`). |
 | M9-TS-286 | Integration | Errors: bad option values, `dateStyle` with other options, a style the entry point does not allow, bad zone, bad tag: bun's text equal bun's in five time zones (`iron_ts_tests/tests/datefmt.rs`, `bench/datefmt.ts`, made by `bench/gen_datefmt_program.py`). |
+| M9-TS-287 | Integration | `encodeURIComponent` / `encodeURI` of ASCII, reserved characters, accents, euro, emoji and control characters equal bun's (`iron_ts_tests/tests/uri.rs`, `bench/uri.ts`). |
+| M9-TS-288 | Integration | `decodeURIComponent` / `decodeURI` (which keeps escapes of reserved characters, upper and lower case hex) equal bun's (`tests/uri.rs`). |
+| M9-TS-289 | Integration | Encode then decode returns the text, for several scripts and emoji (`tests/uri.rs`). |
+| M9-TS-290 | Integration | A lone surrogate, a bad or truncated escape, an overlong, surrogate or too-large UTF-8 sequence are `URIError`s with JavaScriptCore's text and class (`tests/uri.rs`). |
+| M9-TS-291 | Integration | `escape` / `unescape` equal bun's (`tests/uri.rs`). |
+| M9-TS-292 | Integration | `new Error(message, { cause })` chains, `cause` absent is null (`iron_ts_tests/tests/errors2.rs`, `bench/errors2.ts`). |
+| M9-TS-293 | Integration | `cause` set in a `catch`, `instanceof` on it (`tests/errors2.rs`). |
+| M9-TS-294 | Integration | `AggregateError`: `errors`, `name`, message, `cause`, `instanceof` equal bun's (`tests/errors2.rs`). |
+| M9-TS-295 | Integration | A thrown `AggregateError` is caught and read (`tests/errors2.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

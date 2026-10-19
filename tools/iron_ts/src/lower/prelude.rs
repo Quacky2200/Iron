@@ -4,56 +4,70 @@
 //! runtime support. Line numbers in messages skip the prelude.
 
 /// The standard error classes (`name` is an own field here; `message` is empty by default).
-pub const ERRORS: &str = r#"class Error {
+pub const ERRORS: &str = r#"interface ErrorOptions {
+  cause?: Error;
+}
+class Error {
   name: string = "Error";
   message: string;
-  constructor(message: string = "") {
+  cause: Error | null = null;
+  constructor(message: string = "", options: ErrorOptions | null = null) {
     this.message = message;
+    if (options !== null) this.cause = options.cause ?? null;
   }
   toString(): string {
     return this.message === "" ? this.name : this.name + ": " + this.message;
   }
 }
 class EvalError extends Error {
-  constructor(message: string = "") {
-    super(message);
+  constructor(message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
     this.name = "EvalError";
   }
 }
 class RangeError extends Error {
-  constructor(message: string = "") {
-    super(message);
+  constructor(message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
     this.name = "RangeError";
   }
 }
 class ReferenceError extends Error {
-  constructor(message: string = "") {
-    super(message);
+  constructor(message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
     this.name = "ReferenceError";
   }
 }
 class SyntaxError extends Error {
-  constructor(message: string = "") {
-    super(message);
+  constructor(message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
     this.name = "SyntaxError";
   }
 }
 class TypeError extends Error {
-  constructor(message: string = "") {
-    super(message);
+  constructor(message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
     this.name = "TypeError";
   }
 }
 class URIError extends Error {
-  constructor(message: string = "") {
-    super(message);
+  constructor(message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
     this.name = "URIError";
+  }
+}
+class AggregateError extends Error {
+  errors: Error[] = [];
+  constructor(errors: Error[], message: string = "", options: ErrorOptions | null = null) {
+    super(message, options);
+    this.name = "AggregateError";
+    this.errors = errors.slice();
   }
 }
 function __rtThrow(kind: number, message: string): void {
   if (kind === 1) throw new RangeError(message);
   if (kind === 2) throw new TypeError(message);
   if (kind === 3) throw new SyntaxError(message);
+  if (kind === 4) throw new URIError(message);
   throw new Error(message);
 }
 "#;
@@ -154,6 +168,8 @@ pub fn wanted(src: &str) -> bool {
         || src.contains(".toFixed(")
         || src.contains("fromCodePoint")
         || src.contains(".toString(")
-        || src.contains("JSON."))
+        || src.contains("JSON.")
+        || src.contains("URI")
+        || src.contains("unescape("))
         && !src.contains("class Error")
 }
