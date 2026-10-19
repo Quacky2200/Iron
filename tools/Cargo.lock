@@ -1052,6 +1052,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_animation"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "iron_api",
+ "iron_math",
+ "iron_scene",
+ "serde_json",
+]
+
+[[package]]
 name = "iron_api"
 version = "0.1.0"
 dependencies = [
@@ -1090,10 +1101,12 @@ name = "iron_engine_api"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "iron_animation",
  "iron_api",
  "iron_math",
  "iron_scene",
  "jiff",
+ "serde_json",
 ]
 
 [[package]]
@@ -1163,6 +1176,7 @@ name = "iron_ts_tests"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "iron_animation",
  "iron_api",
  "iron_core",
  "iron_demo_api",

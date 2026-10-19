@@ -642,7 +642,15 @@ impl<'a> Lowerer<'a> {
         {
             return self.lower_overloaded(ns, name, &cands, c);
         }
-        let Some(f) = self.manifest.namespaces[ns].get(name).cloned() else {
+        // A namespace named like a handle class (`AnimationCurve`) also holds the class statics.
+        let found = self.manifest.namespaces[ns].get(name).cloned().or_else(|| {
+            self.manifest
+                .classes
+                .get(ns)
+                .and_then(|k| k.statics.get(name))
+                .cloned()
+        });
+        let Some(f) = found else {
             bail!("{}: {ns} has no function `{name}`", self.loc(c.span.start))
         };
         self.call_ext_fn(f, None, &format!("{ns}.{name}"), c)

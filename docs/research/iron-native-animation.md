@@ -111,3 +111,13 @@ The user's direction: explicit classes **and** a chained builder over them, with
   above, so both ways give the same controller. Clips get `event(time, functionName, parameter?)` over `AnimationEvent`.
 - Phase 1 (arrays) is no longer first: nothing in this shape needs an array. It moves to when physics needs it.
 - Open: whether `Animator` should be renamed too.
+
+## 9. Status
+
+- **Phase 2 done (2026-10-19):** `crates/iron_animation` (curves, clips, pose blending with quaternion alignment, `sample`, JSON)
+  and the script API for `Keyframe`, `AnimationCurve`, `AnimationClip` (`iron_engine_api::animation`), `M9-TS-676..683`.
+  Differences so far: `addKey(time, value?)` makes flat tangents (use `addKeyframe(new Keyframe(..))` for tangents, as the
+  original), a clip's target is a class-name string, an event parameter is a number, `toJson()` is text, `fromPoints` waits for arrays.
+  A namespace named like a handle class (`AnimationCurve`) also holds the class statics for the compiler.
+- Next: the `Animation` component (states, cross-fade, events) with the property registry for components, then the
+  controller classes and builder.

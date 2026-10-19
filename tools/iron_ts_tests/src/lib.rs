@@ -925,6 +925,18 @@ pub mod shapes_t {
     include!(concat!(env!("OUT_DIR"), "/shapes_bindings.rs"));
 }
 
+/// `bench/anim_clips.ts`, prefix `acl_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod anim_clips_t {
+    include!(concat!(env!("OUT_DIR"), "/anim_clips_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

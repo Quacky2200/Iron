@@ -53,6 +53,12 @@ fn with<R>(f: impl FnOnce(&mut Scene) -> R) -> Option<R> {
     context::with(&SCENE, f)
 }
 
+/// Runs `f` on the scene the host made current with [`enter`] (`None` when there is none): for
+/// engine systems (animation) that work on the scene next to the script API.
+pub fn with_scene<R>(f: impl FnOnce(&mut Scene) -> R) -> Option<R> {
+    with(f)
+}
+
 fn world_position(object: ObjectId) -> Vec3 {
     with(|s| s.contains(object).then(|| s.world(object).position))
         .flatten()

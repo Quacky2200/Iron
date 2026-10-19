@@ -1,3 +1,4 @@
+mod anim_clips;
 mod app;
 mod arraylib;
 mod assets;

@@ -11,6 +11,7 @@ iron_ts_rt = { path = "../iron_ts_rt" }
 iron_demo_api = { path = "../iron_demo_api" }
 iron_scene = { path = "../../crates/iron_scene" }
 iron_engine_api = { path = "../../crates/iron_engine_api" }
+iron_animation = { path = "../../crates/iron_animation" }
 glam = "0.34.1"
 iron_core = { path = "../../crates/iron_core" }
 iron_script = { path = "../../crates/iron_script" }
@@ -25,6 +26,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 [build-dependencies]
 iron_ts = { path = "../iron_ts" }
 iron_engine_api = { path = "../../crates/iron_engine_api" }
+iron_animation = { path = "../../crates/iron_animation" }
 iron_ts_ui = { path = "../iron_ts_ui" }
 iron_demo_api = { path = "../iron_demo_api" }
 iron_scene = { path = "../../crates/iron_scene" }

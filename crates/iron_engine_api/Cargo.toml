@@ -7,7 +7,9 @@ publish.workspace = true
 [dependencies]
 glam = "0.34.1"
 jiff = "0.2"
+serde_json = "1"
 iron_api = { path = "../iron_api", default-features = false, features = ["glam", "quickjs"] }
+iron_animation = { path = "../iron_animation" }
 iron_math = { path = "../iron_math" }
 iron_scene = { path = "../iron_scene" }
 

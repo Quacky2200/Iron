@@ -9,6 +9,7 @@
 
 pub use iron_math;
 
+pub mod animation;
 pub mod app;
 pub mod assets;
 pub mod audio;
@@ -30,6 +31,9 @@ pub mod time;
 pub fn manifests() -> Vec<String> {
     let mut all = iron_math::manifests();
     all.extend([
+        animation::keyframe_api::MANIFEST.to_json(),
+        animation::animation_curve_api::MANIFEST.to_json(),
+        animation::animation_clip_api::MANIFEST.to_json(),
         color::color_api::MANIFEST.to_json(),
         datetime::time_span_api::MANIFEST.to_json(),
         datetime::date_time_api::MANIFEST.to_json(),
