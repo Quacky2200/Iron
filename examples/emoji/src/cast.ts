@@ -2,7 +2,7 @@
 // Art is Noto Emoji (assets/emoji/<codepoint>.svg). Two performers are drawn in code instead,
 // because their eyes follow the mouse.
 
-export type PoseName = "bow" | "wink" | "spin" | "pump" | "sway" | "shake" | "float" | "flip" | "dizzy" | "watch";
+export type PoseName = "bow" | "wink" | "spin" | "pump" | "sway" | "shake" | "float" | "flip" | "dizzy" | "watch" | "beat" | "fart" | "party" | "zap";
 
 export interface Star {
   /** The Noto file (its codepoint), or a stand-in id for the performers drawn in code. */

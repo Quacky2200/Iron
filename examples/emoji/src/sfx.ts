@@ -1,0 +1,47 @@
+// Sound effects: the WAV files in assets/sfx, made by tools/make_sfx.py.
+import { audio, type Playback, type Sound } from "@iron/engine";
+
+export const NAMES = [
+  "tick", "ding", "tada", "drumroll",
+  "clap", "cheer", "boo", "aww", "gasp", "laugh",
+  "fart", "wah", "slide", "slide_down", "kazoo", "pop",
+  "heartbeat", "thunder", "rain", "splash",
+  "rocket", "rumble", "splat", "crash", "skid",
+  "scamper", "whoosh", "boing", "thud", "step",
+  "zap", "freeze", "sparkle", "disco",
+  "whistle", "boom", "crackle", "explosion", "fuse",
+] as const;
+
+export type Sfx = (typeof NAMES)[number];
+
+const MASTER = 0.8;
+const sounds = new Map<Sfx, Sound>();
+const loops = new Map<Sfx, Playback>();
+
+export const sfx = {
+  /** Loads every sound up front, so the first play doesn't stutter. */
+  preload(): void {
+    for (const n of NAMES) if (!sounds.has(n)) sounds.set(n, audio.load(`assets/sfx/${n}.wav`));
+  },
+
+  play(name: Sfx, volume = 1, rate = 1): Playback {
+    sfx.preload();
+    return sounds.get(name)!.play({ volume: volume * MASTER, rate });
+  },
+
+  /** Plays on repeat until `stop`. */
+  loop(name: Sfx, volume = 1): void {
+    if (loops.has(name)) return;
+    sfx.preload();
+    loops.set(name, sounds.get(name)!.play({ volume: volume * MASTER, loop: true }));
+  },
+
+  stop(name: Sfx, fade = 0.4): void {
+    loops.get(name)?.stop(fade);
+    loops.delete(name);
+  },
+
+  stopAll(fade = 0.4): void {
+    for (const n of [...loops.keys()]) sfx.stop(n, fade);
+  },
+};

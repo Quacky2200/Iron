@@ -28,8 +28,18 @@ function store<T>(init: T) {
   };
 }
 
-export const shown = store<{ code: string; look: "eyes" | "googly" | null }>({ code: "1f600", look: null });
+export const shown = store<{ code: string; look: "eyes" | "googly" | null; mirror: boolean }>({ code: "1f600", look: null, mirror: false });
 export const caption = store<string | null>(null);
+/** Whole-stage overlays drawn over the emoji: rain, storm clouds, a white flash (lightning), the room blushing red, a party. */
+export const overlay = store({ rain: false, storm: false, love: false, party: false, flash: 0 });
+/** Tomato splats on the emoji, in the panel's pixels. */
+export interface Splat {
+  x: number;
+  y: number;
+  size: number;
+  rot: number;
+}
+export const splats = store<Splat[]>([]);
 /** Pupil offsets (-1..1 of how far they can move) and how shut the eyelids are (0..1). */
 export const eyes = store({ px: 0, py: 0, blink: 0 });
 
@@ -62,6 +72,29 @@ addStyleSheet(`
 }
 .drape-l { box-shadow: inset -26px 0 34px rgba(0,0,0,0.5); }
 .drape-r { box-shadow: inset 26px 0 34px rgba(0,0,0,0.5); }
+.drop { position: absolute; top: -140px; background-image: linear-gradient(180deg, rgba(190,210,255,0), rgba(225,236,255,0.9)); }
+@keyframes fall { from { transform: translateY(0px); } to { transform: translateY(940px); } }
+.storm-dark { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-image: linear-gradient(180deg, rgba(4,6,18,0.85) 0%, rgba(6,8,24,0.55) 45%, rgba(6,8,24,0.5) 100%); animation: fadein 1.2s ease-out both; }
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.cloud-in { position: absolute; width: 420px; height: 200px; animation: fadein 1.6s ease-out both; }
+.cloud { position: absolute; left: 0; top: 0; width: 420px; height: 200px; animation: drift 14s ease-in-out infinite alternate; }
+@keyframes drift { from { transform: translateX(-70px); } to { transform: translateX(70px); } }
+.puff { position: absolute; border-radius: 50%; background-image: radial-gradient(circle, rgba(78,84,110,0.97) 0%, rgba(48,52,76,0.95) 55%, rgba(30,33,52,0) 74%); }
+.confetti { position: absolute; top: -30px; width: 11px; height: 17px; }
+@keyframes confall { from { transform: translateY(0px) rotate(0deg); } to { transform: translateY(840px) rotate(900deg); } }
+.balloon { position: absolute; bottom: -140px; }
+@keyframes balloon {
+  0% { transform: translate(0px, 0px) rotate(-4deg); }
+  25% { transform: translate(26px, -240px) rotate(5deg); }
+  50% { transform: translate(-22px, -480px) rotate(-5deg); }
+  75% { transform: translate(28px, -720px) rotate(5deg); }
+  100% { transform: translate(0px, -960px) rotate(-3deg); }
+}
+.flag { position: absolute; width: 38px; height: 48px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.love-glow { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-image: radial-gradient(circle, rgba(255,40,90,0) 30%, rgba(255,30,80,0.8) 100%); animation: lub 0.86s ease-out infinite; }
+@keyframes lub { 0% { opacity: 0.15; } 8% { opacity: 1; } 24% { opacity: 0.35; } 36% { opacity: 0.85; } 60% { opacity: 0.2; } 100% { opacity: 0.15; } }
+.heart-f { position: absolute; bottom: -90px; animation: floatup 4.5s ease-in infinite; }
+@keyframes floatup { from { transform: translateY(0px) scale(0.6); opacity: 0; } 12% { opacity: 0.9; } to { transform: translateY(-820px) scale(1.15); opacity: 0; } }
 .valance { width: 100%; height: 100%; flex-direction: column; }
 .valance-bar {
   width: 100%; height: 50px; border-bottom: 5px solid #e0b04a;
@@ -77,9 +110,38 @@ addStyleSheet(`
 
 export const Face = () => {
   const s = shown.use();
-  if (s.look) return <Eyed head={s.look === "googly"} />;
-  return <Image src={`assets/emoji/${s.code}.svg`} style={{ width: PANEL, height: PANEL }} />;
+  const marks = splats.use();
+  return (
+    <box style={{ width: PANEL, height: PANEL }}>
+      {s.look ? (
+        <Eyed head={s.look === "googly"} />
+      ) : (
+        <Image src={`assets/emoji/${s.code}.svg`} style={{ width: PANEL, height: PANEL, transform: s.mirror ? "scaleX(-1)" : "none" }} />
+      )}
+      {marks.map((m, i) => (
+        <box
+          key={i}
+          style={{
+            position: "absolute",
+            left: m.x - m.size / 2,
+            top: m.y - m.size / 2,
+            width: m.size,
+            height: m.size,
+            borderRadius: "50%",
+            transform: `rotate(${m.rot}deg) scale(1, 0.8)`,
+            backgroundImage: "radial-gradient(circle, rgba(240,50,35,1) 0%, rgba(215,35,22,0.95) 50%, rgba(190,25,15,0) 74%)",
+          }}
+        />
+      ))}
+    </box>
+  );
 };
+
+/** A fragment of the exploding emoji: the same picture, small. */
+export function Shard() {
+  const s = shown.use();
+  return <Image src={`assets/emoji/${s.look ? "1f440" : s.code}.svg`} style={{ width: 120, height: 120 }} />;
+}
 
 /** Eyes in code: whites, pupils with a glint, and lids that blink. With a head it's a yellow face. */
 function Eyed({ head }: { head: boolean }) {
@@ -195,10 +257,103 @@ function Wheel() {
   );
 }
 
+// Fixed random positions, so a re-render doesn't scatter them again.
+const DROPS = Array.from({ length: 130 }, (_, i) => {
+  const near = i % 2 === 0;
+  return {
+    left: `${Math.random() * 104 - 2}%`,
+    width: near ? 3 : 2,
+    height: near ? 70 + Math.random() * 60 : 40 + Math.random() * 30,
+    dur: near ? 0.26 + Math.random() * 0.1 : 0.38 + Math.random() * 0.15,
+    delay: -Math.random(),
+    alpha: near ? 0.95 : 0.6,
+  };
+});
+const HEARTS = Array.from({ length: 12 }, (_, i) => ({ left: `${4 + i * 8 + Math.random() * 5}%`, delay: -Math.random() * 4.5, size: 40 + Math.random() * 40 }));
+const PARTY_COLOURS = ["#ff4d6d", "#ffd166", "#4cc9f0", "#80ed99", "#f72585", "#b5179e", "#ffffff", "#ff9f1c"];
+const PIECES = Array.from({ length: 80 }, () => ({ left: `${Math.random() * 100}%`, dur: 2.4 + Math.random() * 1.6, delay: -Math.random() * 4, colour: pick(PARTY_COLOURS) }));
+const BALLOONS = Array.from({ length: 10 }, (_, i) => ({ left: `${3 + i * 10 + Math.random() * 4}%`, size: 90 + Math.random() * 40, delay: -Math.random() * 6.5, dur: 5.5 + Math.random() * 2 }));
+const FLAGS = Array.from({ length: 26 }, (_, i) => {
+  const u = (i + 0.5) / 26;
+  const swag = Math.sin(3 * Math.PI * u);
+  return { left: `${u * 100}%`, top: 140 + 26 * Math.abs(swag), rot: 18 * Math.cos(3 * Math.PI * u) * Math.sign(swag), colour: PARTY_COLOURS[i % PARTY_COLOURS.length]! };
+});
+function pick<T>(list: T[]): T {
+  return list[Math.floor(Math.random() * list.length)]!;
+}
+const CLOUDS = [
+  { left: -60, top: -80, scale: 1.2 }, { left: 140, top: -40, scale: 1.0 }, { left: 320, top: -90, scale: 1.3 }, { left: 520, top: -50, scale: 1.1 },
+  { left: 700, top: -90, scale: 1.25 }, { left: 900, top: -40, scale: 1.0 }, { left: 1090, top: -80, scale: 1.2 },
+];
+const PUFFS: [number, number, number][] = [[0, 70, 150], [80, 20, 190], [190, 0, 200], [280, 40, 170], [240, 95, 150], [110, 85, 170], [30, 100, 120]];
+
+function Rain() {
+  return (
+    <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, overflow: "hidden", pointerEvents: "none" }}>
+      {DROPS.map((d, i) => (
+        <box key={i} className="drop" style={{ left: d.left, width: d.width, height: d.height, opacity: d.alpha, animation: `fall ${d.dur}s linear ${d.delay}s infinite` }} />
+      ))}
+    </box>
+  );
+}
+
+/** Dark, heavy clouds drift across the top and the room goes dim. */
+function Storm() {
+  return (
+    <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <box className="storm-dark" />
+      {CLOUDS.map((c, i) => (
+        <box key={i} className="cloud-in" style={{ left: c.left, top: c.top, transform: `scale(${c.scale})` }}>
+          <box className="cloud" style={{ animationDelay: `${-i * 2.3}s` }}>
+            {PUFFS.map(([x, y, size], k) => (
+              <box key={k} className="puff" style={{ left: x, top: y, width: size, height: size * 0.8 }} />
+            ))}
+          </box>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+/** Confetti raining down, balloons rising and bunting across the top. */
+function Party() {
+  return (
+    <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, overflow: "hidden", pointerEvents: "none" }}>
+      {BALLOONS.map((b, i) => (
+        <Image key={i} src="assets/emoji/1f388.svg" className="balloon" style={{ left: b.left, width: b.size, height: b.size, animation: `balloon ${b.dur}s linear ${b.delay}s infinite` }} />
+      ))}
+      {FLAGS.map((f, i) => (
+        <box key={i} className="flag" style={{ left: f.left, top: f.top, backgroundColor: f.colour, transform: `rotate(${f.rot}deg)` }} />
+      ))}
+      {PIECES.map((p, i) => (
+        <box key={i} className="confetti" style={{ left: p.left, backgroundColor: p.colour, animation: `confall ${p.dur}s linear ${p.delay}s infinite` }} />
+      ))}
+    </box>
+  );
+}
+
+function Love() {
+  return (
+    <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, backgroundColor: "rgba(255,40,80,0.16)" }} />
+      <box className="love-glow" />
+      {HEARTS.map((h, i) => (
+        <Image key={i} src="assets/emoji/2764.svg" className="heart-f" style={{ left: h.left, width: h.size, height: h.size, animation: `floatup 4.5s ease-in ${h.delay}s infinite` }} />
+      ))}
+    </box>
+  );
+}
+
 export function Hud() {
   const name = caption.use();
+  const ov = overlay.use();
   return (
     <box style={{ width: "100%", height: "100%", pointerEvents: "none" }}>
+      {ov.storm && <Storm />}
+      {ov.rain && <Rain />}
+      {ov.love && <Love />}
+      {ov.party && <Party />}
+      {ov.flash > 0.01 && <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, backgroundColor: "#ffffff", opacity: ov.flash }} />}
       <text style={{ position: "absolute", left: 28, top: 22, fontSize: 18, fontWeight: 800, color: "#e0b04a", letterSpacing: 7, textTransform: "uppercase", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
         ★ Emoji celebrity
       </text>

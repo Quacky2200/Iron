@@ -1,21 +1,30 @@
 // Emoji celebrity: a spinner wheel picks an emoji, the red curtain opens and it comes on in one
-// of nine ways (walking, hopping, rushing, crawling with sparks, peeking from behind the
-// curtain, dropping in, rolling, popping up, rising), strikes a pose in the spotlight while its
-// name appears, then leaves the same way. About a hundred and five performers; two of them are
-// drawn in code and watch the mouse.
+// of thirteen ways, strikes a pose in the spotlight while its name appears, the crowd reacts
+// (applause and cheers with cannons and balloons, boos and thrown tomatoes, gasps, aws, laughs), and it leaves in one of
+// eighteen. Some have a show of their own (a heart blushes the room red with a heartbeat, the
+// poop has a fart and a sad trombone, the party popper a kazoo, the lightning bolt a storm).
+// About a hundred and five performers; two of them are drawn in code and watch the mouse.
 //
-// The motion is in motion.ts as pure functions of time; this file is the director that turns
-// a `Move` into transforms, a shadow, sparks and curtain moves.
+// The motion is in entrances.ts, exits.ts and poses.ts as pure functions of time with cues
+// (sounds and effects at set moments); this file is the director that turns a `Move` into
+// transforms, a shadow, particles and curtain moves, and runs the cues. Sounds are
+// synthesised by tools/make_sfx.py.
 import { Camera, Color, Component, GameObject, input, LineRenderer2D, register, Screen, Shapes, Vector2, Vector3, WorldPanel } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { CAST, type Star } from "./cast.ts";
 import { GROUND, HEIGHT, LIGHT, PANEL, view } from "./config.ts";
+import { Effects } from "./effects.tsx";
+import { ENTRANCES } from "./entrances.ts";
+import { EXITS } from "./exits.ts";
 import { Fx } from "./fx.ts";
-import { caption, eyes, Face, Hud, shown, wheel, type WheelState } from "./hud.tsx";
-import { type Gait, GAITS, type Move, POSE_TIME, poseMove } from "./motion.ts";
+import { caption, eyes, Face, Hud, overlay, shown, wheel, type WheelState } from "./hud.tsx";
+import type { Act, Ctx, Cue, Move } from "./moves.ts";
+import { POSES } from "./poses.ts";
+import { sfx } from "./sfx.ts";
+import { randomReaction, randomScene, type Reaction, type Scene, SPECIAL } from "./specials.ts";
 import { buildStage, Curtain, Mote } from "./stage.tsx";
 
-type Phase = "wheel" | "enter" | "pose" | "exit" | "close";
+type Phase = "wheel" | "enter" | "pose" | "exit" | "miss" | "close";
 
 // Wheel timeline, seconds.
 const W_IN = 0.7;
@@ -26,35 +35,58 @@ const W_TOTAL = W_IN + W_SPIN + W_GLOW + W_OUT;
 /** The curtain is drawn back this long before the emoji appears. */
 const LEAD = 1;
 
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)]!;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smoothstep = (t: number) => {
   const c = clamp01(t);
   return c * c * (3 - 2 * c);
 };
+function weighted<T extends { weight?: number }>(list: T[]): T {
+  let r = Math.random() * list.reduce((n, a) => n + (a.weight ?? 1), 0);
+  for (const a of list) {
+    r -= a.weight ?? 1;
+    if (r <= 0) return a;
+  }
+  return list[0]!;
+}
+const named = (list: Act[], name: string): Act | undefined => list.find((a) => a.name === name);
+
 type Rgba = [number, number, number, number];
 const SPARK: Rgba[] = [[1, 0.85, 0.3, 1], [1, 0.6, 0.15, 1], [1, 0.95, 0.7, 1]];
+const FIRE: Rgba[] = [[1, 0.85, 0.3, 1], [1, 0.55, 0.12, 1], [1, 0.28, 0.05, 0.9]];
 const CONFETTI: Rgba[] = [[1, 0.35, 0.4, 1], [1, 0.85, 0.3, 1], [0.3, 0.8, 1, 1], [0.5, 1, 0.5, 1], [1, 0.5, 0.9, 1]];
 
 class Parade extends Component {
+  private cam!: GameObject;
   private actor!: GameObject;
   private art!: GameObject;
   private shadow!: GameObject;
   private panel!: WorldPanel;
   private fx!: Fx;
   private curtain!: Curtain;
+  private effects!: Effects;
+  private ctx!: Ctx;
 
   private phase: Phase = "wheel";
   private t = 0;
   private clock = 0;
   private star: Star = CAST[0]!;
   private last = -1;
-  private gait: Gait = GAITS[0]!;
-  private outGait: Gait = GAITS[0]!;
-  private pose: Star["poses"][number] = "bow";
+  private enterAct!: Act;
+  private exitAct!: Act;
+  private poseAct!: Act;
+  private current!: Act;
+  private cues: Cue[] = [];
+  private cueAt = 0;
+  private scene: Scene | undefined;
+  private reaction: Reaction = "none";
+  private reactAt = 0.5;
+  private reacted = false;
   private side = 1;
   private outSide = -1;
   private shownCode = "";
+  private shownMirror = false;
 
   // Wheel.
   private items: Star[] = [];
@@ -62,15 +94,22 @@ class Parade extends Component {
   private finalAngle = 0;
   private lastPeg = 0;
   private flapAge = 9;
+  private wheelStage = 0;
 
   // Motion.
   private heading = 1;
   private px = 0;
+  private py = 0;
   private carry = 0;
+  private groundCarry = 0;
   private wasThump = 0;
   private wasPuff = false;
-  private lit = -1;
-  private litAlpha = -1;
+  private lastStride: number | null = null;
+  private litKey = "";
+  private jolt = 0;
+  private shakeAmount = 0;
+  private shakeLeft = 0;
+  private shakeTotal = 1;
 
   // Eyes.
   private mouse = new Vector2(-1, -1);
@@ -82,12 +121,10 @@ class Parade extends Component {
 
   override onAwake(): void {
     view.half = 5 * Screen.aspect;
-    new GameObject("Main Camera", { position: new Vector3(0, 0, 10) }).addComponent(Camera, {
-      orthographic: true,
-      orthographicSize: 5,
-      backgroundColor: Color.hex("#04050a"),
-    });
+    this.cam = new GameObject("Main Camera", { position: new Vector3(0, 0, 10) });
+    this.cam.addComponent(Camera, { orthographic: true, orthographicSize: 5, backgroundColor: Color.hex("#04050a") });
     buildStage();
+    sfx.preload();
 
     this.shadow = new GameObject("Shadow", { position: new Vector3(0, GROUND, 0.1) });
     this.shadow.addComponent(LineRenderer2D, { points: Shapes.ellipse(Vector2.zero, 2.4, 0.35, 40), fillColor: new Color(0, 0, 0, 0.45), width: 0, loop: true });
@@ -97,8 +134,26 @@ class Parade extends Component {
     this.panel = this.art.addComponent(WorldPanel, { width: PANEL, height: PANEL, pixelsPerMeter: PANEL / HEIGHT, resolution: 1.5, interactive: false });
     createRoot(this.panel).render(<Face />);
 
-    this.fx = new Fx(90);
+    this.fx = new Fx(450);
     this.curtain = new Curtain();
+    const self = this;
+    this.ctx = {
+      sfx: (name, volume = 1, rate = 1) => void sfx.play(name, volume, rate),
+      shake: (amount, seconds) => {
+        if (amount >= self.shakeAmount * (self.shakeLeft / self.shakeTotal)) {
+          self.shakeAmount = amount;
+          self.shakeLeft = self.shakeTotal = Math.max(0.01, seconds);
+        }
+      },
+      burst: (x, y, count) => self.burst(x, y, count),
+      smoke: (x, y, count, color) => self.smoke(x, y, count, color),
+      jolt: (amount) => void (self.jolt = Math.max(self.jolt, amount)),
+      at: () => ({ x: self.px, y: GROUND + HEIGHT / 2 + self.py }),
+      get scene() {
+        return self.effects;
+      },
+    };
+    this.effects = new Effects(this.fx, this.ctx);
     createRoot().render(<Hud />);
     this.beginWheel();
   }
@@ -108,9 +163,12 @@ class Parade extends Component {
   private beginWheel(): void {
     this.phase = "wheel";
     this.t = 0;
+    this.wheelStage = 0;
     this.actor.enabled = false;
     this.shadow.enabled = false;
     caption.set(null);
+    this.effects.clear();
+    sfx.stopAll(0.2);
 
     // Eight different performers, one of them the winner (never the one just seen).
     const pool = CAST.map((_, i) => i).filter((i) => i !== this.last);
@@ -139,17 +197,27 @@ class Parade extends Component {
       const e = 1 - (1 - t / W_IN) ** 3;
       this.drawWheel(0, 0.4 + 0.6 * e, e, 0);
     } else if (t < W_IN + W_SPIN) {
+      if (this.wheelStage < 1) {
+        this.wheelStage = 1;
+        sfx.play("drumroll", 0.7);
+      }
       const u = (t - W_IN) / W_SPIN;
       const angle = this.finalAngle * (1 - (1 - u) ** 3.4);
-      // A peg every 45 degrees kicks the pointer's flap back.
+      // A peg every 45 degrees kicks the pointer's flap back, with a tick.
       const peg = Math.floor((angle + 22.5) / 45);
       if (peg !== this.lastPeg) {
         this.lastPeg = peg;
         this.flapAge = 0;
+        sfx.play("tick", 0.8, 0.9 + 0.3 * u);
       }
       this.flapAge += dt;
       this.drawWheel(angle, 1, 1, 0, -28 * Math.exp(-this.flapAge * 13));
     } else if (t < W_IN + W_SPIN + W_GLOW) {
+      if (this.wheelStage < 2) {
+        this.wheelStage = 2;
+        sfx.play("ding", 0.9);
+        sfx.play("tada", 0.7);
+      }
       const g = smoothstep((t - W_IN - W_SPIN) / 0.5);
       this.drawWheel(this.finalAngle, 1, 1, g, 0);
     } else if (t < W_TOTAL) {
@@ -164,19 +232,85 @@ class Parade extends Component {
   // ---- The act ----
 
   private beginAct(star: Star): void {
+    const special = SPECIAL[star.code] ?? {};
     this.star = star;
-    this.gait = pick(GAITS);
-    this.outGait = pick(GAITS);
-    this.pose = pick(star.poses);
+    this.enterAct = (special.enter && named(ENTRANCES, special.enter)) || weighted(ENTRANCES);
+    this.exitAct = (special.exit && named(EXITS, special.exit)) || weighted(EXITS);
+    this.poseAct = POSES[special.pose ?? pick(star.poses)];
+    this.scene = special.scene ?? randomScene();
+    this.reaction = special.react ?? randomReaction();
+    this.reactAt = special.reactAt ?? 0.5;
+    this.reacted = false;
     this.side = Math.random() < 0.5 ? 1 : -1;
     // Usually leaves across the stage; sometimes goes back the way it came.
     this.outSide = Math.random() < 0.7 ? -this.side : this.side;
-    this.phase = "enter";
-    this.t = -LEAD;
     this.heading = -this.side;
     this.px = 99;
+    this.py = 0;
     this.shownCode = star.code;
-    shown.set({ code: star.code, look: star.look ?? null });
+    this.shownMirror = false;
+    shown.set({ code: star.code, look: star.look ?? null, mirror: false });
+    this.startPhase("enter", this.enterAct, -LEAD);
+  }
+
+  private startPhase(phase: Phase, act: Act | null, t = 0): void {
+    this.phase = phase;
+    this.t = t;
+    if (act) this.current = act;
+    this.cues = act?.cues ?? [];
+    this.cueAt = 0;
+    this.lastStride = null;
+  }
+
+  private startScene(): void {
+    switch (this.scene) {
+      case "rain":
+        this.effects.weather("rain");
+        break;
+      case "storm":
+        this.effects.weather("storm");
+        break;
+      case "love":
+        this.effects.love(true);
+        break;
+      case "lights":
+        this.effects.disco("lights");
+        break;
+      case "ball":
+        this.effects.disco("ball");
+        break;
+    }
+  }
+
+  /** The crowd's reaction. */
+  private react(kind: Reaction): void {
+    const { x, y } = this.ctx.at();
+    switch (kind) {
+      case "applause":
+        sfx.play("clap", 0.9);
+        this.effects.celebrate(false);
+        break;
+      case "cheer":
+        sfx.play("cheer", 0.9);
+        sfx.play("clap", 0.5);
+        this.burst(x, y, 40);
+        this.effects.celebrate(true);
+        break;
+      case "boo":
+        sfx.play("boo", 0.9);
+        this.effects.throwTomatoes(3 + Math.floor(Math.random() * 3));
+        break;
+      case "gasp":
+        sfx.play("gasp", 0.9);
+        this.jolt = Math.max(this.jolt, 0.6);
+        break;
+      case "aww":
+        sfx.play("aww", 0.9);
+        break;
+      case "laugh":
+        sfx.play("laugh", 0.9);
+        break;
+    }
   }
 
   override onUpdate(rawDt: number): void {
@@ -185,6 +319,8 @@ class Parade extends Component {
     this.clock += dt;
     this.t += dt;
     this.fx.update(dt);
+    this.effects.update(dt, { x: this.px, y: GROUND + HEIGHT / 2 + this.py });
+    this.shakeCamera(dt);
 
     let m: Move;
     let side = this.side;
@@ -194,34 +330,56 @@ class Parade extends Component {
         this.curtain.approach(0, 6, dt);
         return;
       case "enter":
-        m = this.gait.at(Math.max(0, this.t));
-        if (this.t >= this.gait.dur) {
-          this.phase = "pose";
-          this.t = 0;
+        m = this.enterAct.at(Math.max(0, this.t));
+        this.runCues();
+        if (this.t >= this.enterAct.dur) {
+          if (this.enterAct.miss) {
+            // It rolled straight past and crashed: it never gets its moment.
+            this.actor.enabled = false;
+            this.shadow.enabled = false;
+            this.startPhase("miss", null);
+            caption.set(`${this.star.name} missed the show!`);
+            return;
+          }
+          this.startPhase("pose", this.poseAct);
           caption.set(this.star.name);
-          if (this.pose === "pump" || this.pose === "spin") this.burst(0, GROUND + HEIGHT * 0.6, 22);
+          this.startScene();
         }
         break;
       case "pose":
-        m = poseMove(this.pose, this.t);
+        m = this.poseAct.at(this.t);
         side = 1;
-        if (this.t >= POSE_TIME) {
-          this.phase = "exit";
-          this.t = 0;
+        this.runCues();
+        if (!this.reacted && this.t >= this.reactAt) {
+          this.reacted = true;
+          this.react(this.reaction);
+        }
+        if (this.t >= this.poseAct.dur) {
           caption.set(null);
+          this.effects.weather("none");
+          this.effects.love(false);
+          this.effects.disco(null);
+          this.heading = -this.outSide;
+          this.startPhase("exit", this.exitAct);
         }
         break;
       case "exit":
-        // The way in, played backwards, out of the other side (or the same one).
-        m = this.outGait.at(Math.max(0, this.outGait.dur - this.t));
+        m = this.exitAct.at(this.t);
         side = this.outSide;
-        if (this.t >= this.outGait.dur) {
-          this.phase = "close";
-          this.t = 0;
+        this.runCues();
+        if (this.t >= this.exitAct.dur) {
           this.actor.enabled = false;
           this.shadow.enabled = false;
+          this.startPhase("close", null);
         }
         break;
+      case "miss":
+        this.curtain.approach(1, 3, dt);
+        if (this.t > 2.8) {
+          caption.set(null);
+          this.startPhase("close", null);
+        }
+        return;
       case "close":
         this.curtain.approach(0, 3, dt);
         if (this.curtain.open < 0.04) this.beginWheel();
@@ -230,6 +388,21 @@ class Parade extends Component {
 
     this.curtain.approach(m.open ?? 1, 5, dt);
     this.apply(m, side, dt);
+  }
+
+  private runCues(): void {
+    while (this.cueAt < this.cues.length && this.cues[this.cueAt]![0] <= this.t) this.cues[this.cueAt++]![1](this.ctx);
+  }
+
+  private shakeCamera(dt: number): void {
+    if (this.shakeLeft > 0) {
+      this.shakeLeft = Math.max(0, this.shakeLeft - dt);
+      const k = (this.shakeAmount * this.shakeLeft) / this.shakeTotal;
+      this.cam.transform.position = new Vector3(rnd(-k, k), rnd(-k, k), 10);
+    } else if (this.shakeAmount > 0) {
+      this.shakeAmount = 0;
+      this.cam.transform.position = new Vector3(0, 0, 10);
+    }
   }
 
   private apply(m: Move, side: number, dt: number): void {
@@ -242,39 +415,54 @@ class Parade extends Component {
     // Which way it's going decides which way it leans.
     const v = (x - this.px) / Math.max(dt, 1e-4);
     this.px = x;
+    this.py = m.y;
     const target = v < -0.4 ? 1 : v > 0.4 ? -1 : this.heading;
     this.heading += (target - this.heading) * Math.min(1, dt * 12);
     const dir = v < 0 ? -1 : 1;
+
+    // A knock from a tomato or a gasp: a quick shiver that settles.
+    this.jolt = Math.max(0, this.jolt - dt * 2.5);
+    const shiver = 9 * this.jolt * Math.sin(this.clock * 45);
 
     const c = m.centre;
     const half = HEIGHT / 2;
     const t = this.actor.transform;
     t.position = new Vector3(x, GROUND + m.y + half * c, 0);
-    t.localScale = new Vector3(m.sx * m.spin, m.sy, 1);
-    t.localEulerAngles = new Vector3(0, 0, m.rot * this.heading);
+    t.localScale = new Vector3(m.sx * m.spin, m.sy * (1 - 0.06 * this.jolt), 1);
+    t.localEulerAngles = new Vector3(0, 0, m.rot * this.heading + shiver);
     this.art.transform.localPosition = new Vector3(0, half * (1 - c), 0);
 
-    // Dim outside the light (the dark is drawn behind panels, so the emoji does it itself).
+    // Dim outside the light (the dark is drawn behind panels, so the emoji does it itself);
+    // a flash of lightning lights it up.
     const spot = Math.exp(-((x - LIGHT.x) * (x - LIGHT.x)) / 9);
-    const lit = 0.3 + 0.7 * spot;
-    if (Math.abs(lit - this.lit) > 0.004 || Math.abs(m.alpha - this.litAlpha) > 0.004) {
-      this.lit = lit;
-      this.litAlpha = m.alpha;
-      this.panel.tint = new Color(lit, lit, lit, m.alpha);
+    const lit = Math.min(1.4, 0.3 + 0.7 * spot + 0.9 * overlay.get().flash);
+    const tint = m.tint ?? [1, 1, 1];
+    const key = `${lit.toFixed(2)}|${tint.join(",")}|${m.alpha.toFixed(2)}`;
+    if (key !== this.litKey) {
+      this.litKey = key;
+      this.panel.tint = new Color(lit * tint[0], lit * tint[1], lit * tint[2], m.alpha);
     }
 
-    // The shadow shrinks and fades as it leaves the floor.
+    // The shadow shrinks as it leaves the floor.
     const spread = Math.min(1.25, Math.max(0.3, 1 - 0.08 * m.y)) * (1 + 0.5 * (1 - m.sy)) * Math.max(0.2, m.sx * m.spin);
     this.shadow.transform.position = new Vector3(x, GROUND, 0.1);
     this.shadow.transform.localScale = new Vector3(spread, spread, 1);
 
     const code = m.swap ?? this.star.code;
-    if (code !== this.shownCode) {
+    const mirror = !!m.mirror;
+    if (code !== this.shownCode || mirror !== this.shownMirror) {
       this.shownCode = code;
-      shown.set({ code, look: this.star.look ?? null });
+      this.shownMirror = mirror;
+      shown.set({ code, look: this.star.look ?? null, mirror });
     }
     if (this.star.look) this.watch(x, m.y, dt);
 
+    // Footsteps.
+    if (m.stride !== undefined) {
+      const step = Math.floor(m.stride);
+      if (this.lastStride !== null && step !== this.lastStride) sfx.play("step", 0.35, rnd(0.9, 1.1));
+      this.lastStride = step;
+    }
     this.emitFx(m, x, dir, dt);
   }
 
@@ -300,6 +488,18 @@ class Parade extends Component {
           });
         } else if (m.fx.kind === "dust") {
           this.dust(x + behind * Math.random() * 1.5, behind);
+        } else if (m.fx.kind === "fire") {
+          this.fx.emit({
+            x: x + rnd(-0.8, 0.8),
+            y: GROUND + m.y + 0.2,
+            vx: rnd(-1, 1),
+            vy: -rnd(6, 12),
+            life: rnd(0.25, 0.5),
+            color: pick(FIRE),
+            len: 0.5,
+            width: 0.22,
+            drag: 1.5,
+          });
         } else {
           this.fx.emit({
             x: x + behind * (2.4 + Math.random() * 1.4),
@@ -315,7 +515,15 @@ class Parade extends Component {
         }
       }
     }
+    if (m.ground) {
+      this.groundCarry += m.ground * dt;
+      while (this.groundCarry >= 1) {
+        this.groundCarry -= 1;
+        this.smoke(x + rnd(-1.5, 1.5), GROUND + 0.1, 1, [0.75, 0.72, 0.68, 0.45]);
+      }
+    }
     if (m.thump > 0.5 && this.wasThump <= 0.5) {
+      sfx.play(this.phase === "enter" ? (this.current.land ?? "thud") : "thud", 0.6);
       for (let i = 0; i < 8; i++) this.dust(x + (Math.random() - 0.5) * 2.4, i % 2 ? 1 : -1);
     }
     this.wasThump = m.thump;
@@ -336,6 +544,24 @@ class Parade extends Component {
       gravity: -0.5,
       drag: 1.5,
     });
+  }
+
+  /** Soft coloured puffs (fart clouds, tomato juice, smoke). */
+  private smoke(x: number, y: number, count: number, color: Rgba): void {
+    for (let i = 0; i < count; i++) {
+      this.fx.emit({
+        x: x + rnd(-0.5, 0.5),
+        y: y + rnd(-0.3, 0.3),
+        vx: rnd(-1.8, 1.8),
+        vy: rnd(0.2, 1.8),
+        life: rnd(0.8, 1.4),
+        color,
+        len: 0.01,
+        width: rnd(0.25, 0.55),
+        gravity: -0.4,
+        drag: 1.2,
+      });
+    }
   }
 
   /** Confetti shot out of a point. */
