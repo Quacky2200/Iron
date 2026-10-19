@@ -1573,6 +1573,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Design note: what of React is used (components, state, effects, events, refs), signals-style
           effects versus a vdom diff, how the library compiles under `iron_ts` (it must stay inside the
           typed subset), the native UI tree API (`iron_ui` opcodes today), styles and CSS
+  - [ ] **Nothing left in TypeScript but generated types** (user request 2026-10-19): animation, scenes, math, physics and audio components, app/time/input ported to Rust behind `#[iron_api]`; games without `node_modules`; plan awaiting review in `docs/research/iron-native-engine.md` (**STOP**: order and the type-checking question)
   - [ ] **Dev loop without Bun**: **STOP, design first.** Hot reload with the compiler as the watcher
     - [ ] Design note: Cranelift JIT in-process for development and AOT for release from the same IR,
           function-level swap, state kept through the `@property` reflection table, type checking via

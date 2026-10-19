@@ -189,6 +189,63 @@ impl<'a> Lowerer<'a> {
                 Some(init) => self.guess_ty(init, depth + 1)?,
                 None => None,
             },
+            // `new Tween<number>(..)`: a generic class with its type arguments written.
+            Expression::NewExpression(n)
+                if n.type_arguments.is_some()
+                    && matches!(&n.callee, Expression::Identifier(id)
+                        if self.generic_classes.contains_key(id.name.as_str())) =>
+            {
+                let Expression::Identifier(id) = &n.callee else {
+                    unreachable!("matched above")
+                };
+                let mut targs = Vec::new();
+                for t in &n.type_arguments.as_ref().expect("checked").params {
+                    targs.push(self.ty(t, id.name.as_str())?);
+                }
+                Some(self.generic_type(id.name.as_str(), targs)?)
+            }
+            // `new Vector3(..)` of the engine API.
+            Expression::NewExpression(n)
+                if matches!(&n.callee, Expression::Identifier(id)
+                    if self.manifest.values.contains_key(id.name.as_str())) =>
+            {
+                let Expression::Identifier(id) = &n.callee else {
+                    unreachable!("matched above")
+                };
+                Some(self.named_type(id.name.as_str())?)
+            }
+            // `Color.hex("..")`: a function of an engine namespace.
+            Expression::CallExpression(c)
+                if matches!(&c.callee, Expression::StaticMemberExpression(m)
+                    if matches!(&m.object, Expression::Identifier(id)
+                        if self.manifest.namespaces.contains_key(id.name.as_str()))) =>
+            {
+                let Expression::StaticMemberExpression(m) = &c.callee else {
+                    unreachable!("matched above")
+                };
+                let Expression::Identifier(id) = &m.object else {
+                    unreachable!("matched above")
+                };
+                let ret = self.manifest.namespaces[id.name.as_str()]
+                    .get(m.property.name.as_str())
+                    .map(|f| f.ret.clone());
+                ret.map(|r| self.ext_ir(&r))
+            }
+            Expression::StaticMemberExpression(m)
+                if matches!(&m.object, Expression::Identifier(id)
+                    if self.manifest.ns_props.get(id.name.as_str())
+                        .is_some_and(|p| p.contains_key(m.property.name.as_str()))) =>
+            {
+                // `Color.white`: a property of an engine namespace.
+                let Expression::Identifier(id) = &m.object else {
+                    unreachable!("matched above")
+                };
+                let ret = self.manifest.ns_props[id.name.as_str()][m.property.name.as_str()]
+                    .getter
+                    .as_ref()
+                    .map(|g| g.ret.clone());
+                ret.map(|r| self.ext_ir(&r))
+            }
             Expression::StaticMemberExpression(m) => {
                 // `CENTER.x` where `CENTER = { x: .., y: .. }`.
                 let mut obj = &m.object;

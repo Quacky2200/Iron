@@ -247,6 +247,18 @@ pub mod en2 {
     include!(concat!(env!("OUT_DIR"), "/engine2_bindings.rs"));
 }
 
+/// The whole sine-circle demo component (`bench/sine_demo_full.ts`), prefix `sdf_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod sdf {
+    include!(concat!(env!("OUT_DIR"), "/sine_demo_full_bindings.rs"));
+}
+
 /// Keeps the engine API shims linked into every binary: the `engine2` module's object calls them.
 pub fn engine_api_anchor() -> usize {
     [
@@ -258,6 +270,7 @@ pub fn engine_api_anchor() -> usize {
         iron_engine_api::screen::screen_api::iron_Screen_width as *const () as usize,
         iron_engine_api::screen::quality_api::iron_QualitySettings_vSyncCount as *const () as usize,
         iron_engine_api::color::color_api::iron_Color_lerp as *const () as usize,
+        iron_engine_api::audio::audio_api::iron_audio_load as *const () as usize,
     ]
     .iter()
     .fold(0, |a, p| a ^ p)
@@ -706,6 +719,18 @@ pub mod resolved_t {
 )]
 pub mod generics_t {
     include!(concat!(env!("OUT_DIR"), "/generics_bindings.rs"));
+}
+
+/// `bench/nullbool.ts`, prefix `nb_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod nullbool_t {
+    include!(concat!(env!("OUT_DIR"), "/nullbool_bindings.rs"));
 }
 
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.

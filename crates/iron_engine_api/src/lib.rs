@@ -7,6 +7,7 @@
 //! functions each frame, run scripts, then read [`gizmos::take_frame`] and [`camera::cameras`].
 //! Design: `docs/research/iron-ts-engine-boundary.md` and `docs/iron-api.md`.
 
+pub mod audio;
 pub mod camera;
 pub mod color;
 pub mod gizmos;

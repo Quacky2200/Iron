@@ -6,7 +6,14 @@ use super::*;
 impl<'a> Lowerer<'a> {
     pub(crate) fn lower_stmts(&mut self, stmts: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
         for s in stmts {
-            self.lower_stmt(s, out)?;
+            // A message without a line gets the statement's (the innermost one wins).
+            self.lower_stmt(s, out).map_err(|e| {
+                if e.contains("line ") {
+                    e
+                } else {
+                    format!("{}: {e}", self.loc(oxc_span::GetSpan::span(s).start))
+                }
+            })?;
         }
         Ok(())
     }

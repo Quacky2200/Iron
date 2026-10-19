@@ -88,11 +88,26 @@ pub fn desugar(src: &str, has_game_object: bool) -> R<Option<String>> {
             && let Expression::Identifier(f) = &call.callee
             && f.name == "register"
         {
-            let Some(Argument::Identifier(arg)) = call.arguments.first() else {
-                return Err("register(..) takes a class name".to_string());
-            };
             let sp = es.span();
-            registered.push((arg.name.to_string(), (sp.start, sp.end)));
+            match call.arguments.first() {
+                // `register(Player)`
+                Some(Argument::Identifier(arg)) => {
+                    registered.push((arg.name.to_string(), (sp.start, sp.end)));
+                }
+                // `register({ Player, Enemy })`: the engine's form, several classes at once.
+                Some(Argument::ObjectExpression(o)) => {
+                    for p in &o.properties {
+                        let ObjectPropertyKind::ObjectProperty(p) = p else {
+                            return Err("register({ .. }) takes class names".to_string());
+                        };
+                        let PropertyKey::StaticIdentifier(k) = &p.key else {
+                            return Err("register({ .. }) takes class names".to_string());
+                        };
+                        registered.push((k.name.to_string(), (sp.start, sp.end)));
+                    }
+                }
+                _ => return Err("register(..) takes a class name".to_string()),
+            }
         }
     }
     if registered.is_empty() {

@@ -1097,3 +1097,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-593 | Integration | `Color` statics, `new Color`, `lerp`/`withAlpha`/`toHex` work in compiled code (`iron_ts_tests/tests/engine2.rs`, `bench/engine2.ts`). |
 | M9-TS-594 | Integration | Namespace properties (`Time.timeScale = ..`, `Time.deltaTime`, `Screen.fullScreen`, `QualitySettings.vSyncCount`) and `input` work in compiled code. |
 | M9-TS-595 | Integration | `Camera.attach(go)` with property assignments, and `Gizmos` (static colour, `drawLine`, `present`) work in compiled code. |
+| M9-TS-596 | Integration | The whole `SineDemo` component (copied from `9dc2f51`) compiles and wakes up: camera made with `new GameObject(..)` / `addComponent(Camera, {..})`, music loaded with options, the curve drawn as 1,083 gizmo lines (`iron_ts_tests/tests/sine_demo_full.rs`). |
+| M9-TS-597 | Integration | Keys drive the compiled demo: Space plays the music looped and the tweens move the curve, a digit picks a formula, F5 adds the 24-line centre ring. |
+| M9-TS-598 | Integration | `boolean \| undefined` fields: `??`, truthiness, assignment (`bench/nullbool.ts`, bun-compared). |
+| M9-TS-599 | Integration | Optional boolean parameters and `=== undefined` (bun-compared). |
+| M9-TS-600 | Integration | Optional boolean members of a class (bun-compared). |

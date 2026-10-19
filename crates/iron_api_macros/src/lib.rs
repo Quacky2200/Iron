@@ -373,6 +373,7 @@ fn to_js(k: &Kind, x: TokenStream2) -> TokenStream2 {
 }
 
 fn camel(s: &str) -> String {
+    let s = s.strip_prefix("r#").unwrap_or(s);
     let mut out = String::new();
     let mut up = false;
     for c in s.chars() {

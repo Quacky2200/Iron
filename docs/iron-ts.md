@@ -978,3 +978,21 @@ first, only when the manifest has the `Ui` namespace); the generic hooks and the
 - **Not built yet**: `iron_app` wiring, the dev loop itself.
 
 Tests `M9-TS-575..588`.
+
+## Engine objects and options
+
+Compiled gameplay code reads like the engine's TypeScript:
+
+- `new GameObject("Main Camera", { position: new Vector3(0, 0, 10) })` is `GameObject.create()` plus the setter of `name` and of each
+  option (an option the object has no property for goes to its `transform`); `go.addComponent(Camera, { orthographic: true })` is
+  `Camera.attach(go)` plus a setter per option (`engine_objs.rs`). A key with no setter is an error that names it.
+- A trailing `{ key: value }` argument of an engine function fills the parameters after the positional ones by name; a parameter
+  left out is `false`, `0` or `""` (`audio.load(path, { stream: true })`; Rust parameter `r#loop` is the script's `loop`).
+- `Time.deltaTime`, `Gizmos.color = c`, `Color.white`, `Color.hex("#ff0000")`: namespace properties and statics of
+  [iron-api.md](iron-api.md).
+- `register(Player)` or `register({ Player, Enemy })`.
+- Class fields without an annotation get their type from the initialiser's syntax: literals, arithmetic, a top-level `const`,
+  `C.x` of a constant object, object literals, `Color.white`, `new Vector3(..)`, `Color.hex(..)`, `new Tween<number>(..)`.
+- `Record<"a" | "b", V>` (a struct with a field per member) and `rec[kind]` with a union-member `kind`.
+- `boolean | undefined` works for fields, parameters and members (`??`, truthiness, `=== undefined`, assignment).
+Tests `M9-TS-593..600`.

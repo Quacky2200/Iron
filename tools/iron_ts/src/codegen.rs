@@ -1092,7 +1092,20 @@ impl Cg<'_, '_> {
                     self.b.ins().icmp_imm_s(IntCC::Equal, v, 0)
                 }
             }
-            ExprKind::Cast(a) => self.expr_as(a, &e.ty)?,
+            ExprKind::Cast(a) => {
+                let v = self.expr_as(a, &e.ty)?;
+                // A `boolean | undefined` is a word: 0 undefined, 1 false, 2 true.
+                match (&a.ty, &e.ty) {
+                    (Ty::Bool, Ty::Nullable(i)) if **i == Ty::Bool => {
+                        let w = self.b.ins().uextend(types::I64, v);
+                        self.b.ins().iadd_imm_s(w, 1)
+                    }
+                    (Ty::Nullable(i), Ty::Bool) if **i == Ty::Bool => {
+                        self.b.ins().icmp_imm_s(IntCC::Equal, v, 2)
+                    }
+                    _ => v,
+                }
+            }
             ExprKind::Truthy(a) => {
                 let v = self.expr(a)?;
                 let z = b_f64(self, 0.0);

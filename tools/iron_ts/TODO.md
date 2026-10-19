@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **592**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **601**).
 
 ## How to pick this up
 
@@ -85,9 +85,34 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
 
 ## Now
 
-**State (2026-10-19):** the standard library list is delivered (strings, collections, JSON, `RegExp`, `Date`, `Intl`, generators, `Promise`/`async`/timers, typed arrays, `Temporal`, ...; `M9-TS-1..555`, detail in the Log and `docs/iron-ts.md`). Compiled components for the Rust host are built (`M9-TS-556..561`, `NativeHost`); generics are built (`M9-TS-562..574`, monomorphisation); TSX components with hooks render through `iron_ui_native` (`M9-TS-575..586`: state, ref, memo, effect, context, reducer, memo, forwardRef, external store). Next free test ID **592**.
-**Next (user's priority):** (1) UI without React: design note written, awaiting the user's review (`docs/research/iron-ui-native.md`; hooks kept, native reconciler, same ops into `iron_ui::UiTree`); (2) toward iron_api testing of iron_ts as the QuickJS replacement: `@property` save/load through `PROPS_<Class>`, `getComponent`/`addComponent`, QuickJS bindings for values and strings, annotating `iron_physics`/`iron_audio`, wiring `enter` + `NativeHost` into `iron_app` (another session's area: hand-over contract in boundary note section 21).
-**Open stdlib items (niche):** `Intl.*.formatRange`, `FinalizationRegistry`, `globalThis`, `Error.stack`, `Duration.total` with `relativeTo`, `for await` / async generators, `SharedArrayBuffer`/Atomics, Proxy (not until needed), optional `icu-full`.
+**State (2026-10-19, end of a long session; read this first after a compaction):**
+
+- Committed on this branch (newest last): components for the Rust host (`NativeHost`), generics (monomorphisation), `iron_ui` typed `Op`,
+  `iron_ui_native` reconciler (hooks, keyed diff, effects in React's order, portals, events, controlled fields, `refresh`),
+  `iron_ts_ui` bridge + JSX/hooks rewrite (`jsx.rs`, `ui.ts`), QuickJS bindings for values and strings, performance review
+  (`docs/research/iron-ts-sine-demo.md`), `iron_engine_api` (Color, Time, input, Gizmos, Camera, Screen, QualitySettings), namespace
+  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **601**.
+- **Uncommitted at the time of writing** (checks were running; re-run fmt, clippy, `cargo test --workspace`, `IRON_TS_GC=stress`, then commit):
+  the whole `SineDemo` compiling and running (`bench/sine_demo_full.ts`, `tests/sine_demo_full.rs`, `M9-TS-596..597`), `compile_check` bin,
+  `engine_objs.rs` (`new GameObject(..)`, `addComponent(Camera, {..})`), options objects for engine calls, `Record<"a"|"b", V>`,
+  `boolean | undefined` (`bench/nullbool.ts`, `M9-TS-598..600`), `iron_engine_api::audio`, optional-chain literal widening, line numbers on
+  statement errors, `register({ A, B })`, field-type inference from API reads, `docs/research/iron-native-engine.md`, TESTS/doc updates, and the
+  build-size fix below. `build.rs` soft-fails only `sine_demo_full` (it compiles now; the guard can go).
+- **Disk finding (user report: PC chugging).** The bottleneck was the disk, not RAM/CPU: `tools/target` held 1,109 PDBs = 86 GB (56 test
+  executables, each with its own debug info) and the root `target` 8.6 GB. Fixed: `debug = false` for `[profile.dev]`/`[profile.test]` in
+  `tools/Cargo.toml`, `debug = "line-tables-only"` in the root `Cargo.toml`; `tools/target` deleted and rebuilt. Further ideas if it still
+  hurts: merge the 56 `iron_ts_tests/tests/*.rs` into fewer binaries (each links every object, ~36 MB), `incremental = false`, run
+  `cargo test -j 4`.
+- **Waiting for the user:** `docs/research/iron-native-engine.md` ("nothing left in TypeScript but generated types": animation, scenes, math,
+  physics/audio components, app/time/input to Rust; games without `node_modules`); `docs/research/iron-ui-native.md` was approved and is built.
+- **Next, in order:** (1) commit the above; (2) `@property` save/load through `PROPS_<Class>` in `NativeHost` and
+  `getComponent`/`addComponent` for compiled components (design in the boundary note section 5; an `iron_ts_rt` registry plus compiler
+  intrinsics); (3) a union of classes (an array of `Tween<number>`, `Tween<Color>` calling `update`), the one edit left in the demo copy;
+  (4) per the plan: animation then scenes in Rust with the TS as the oracle; (5) handle classes in the QuickJS bindings; (6) `iron_app` wiring
+  (hand-over note in the shared notes folder).
+- Dev tools: `cargo run -p iron_ts_tests --bin compile_check file.ts` (compile against every engine API, `IRON_TS_TRACE=1` names the function
+  being generated), `--bin sine_bench`, `--bin ui_bench`, `--bin bench`. Edit files with the Write/Edit tools or Python scripts (bash heredocs
+  with apostrophes break on this machine; the user asked for this).
 
 Next, in order:
 

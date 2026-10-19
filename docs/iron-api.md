@@ -273,3 +273,6 @@ code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen`
 `js/engine`. Each keeps its state per thread and has plain Rust functions for the host: `time::advance(real_dt)`,
 `input::{key_down_event, key_up_event, mouse_button_event, mouse_move, end_frame}`, `gizmos::take_frame()`, `camera::cameras()`,
 `screen::{state, quality, set_size}`. `iron_app` is not wired to them yet (another session's area). Tests `M9-API-27..36`.
+
+`iron_engine_api` also has `audio` (`load(path, stream)`, `Sound.play(loop)`, `Playback.pause/resume/stop`, recorded as
+`AudioCommand`s for the host). A Rust parameter written `r#loop` is the script's `loop`. Tests `M9-TS-593..597`.

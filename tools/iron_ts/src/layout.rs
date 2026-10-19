@@ -25,7 +25,11 @@ fn ident(s: &str) -> String {
 
 fn struct_name(m: &Module, id: StructId) -> String {
     // Generated class names (`Generator$number`) are not Rust identifiers.
-    let clean = |n: &str| n.replace('$', "_");
+    let clean = |n: &str| {
+        n.chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect::<String>()
+    };
     let n = clean(&m.structs[id].name);
     // Names can repeat (anonymous shapes): add the id only for the later ones.
     if m.structs[..id].iter().any(|s| clean(&s.name) == n) {

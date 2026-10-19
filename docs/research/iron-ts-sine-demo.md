@@ -72,3 +72,25 @@ sequences (not seeded the same), and floating-point formatting (`toString` of nu
   the whole `SineDemo` component (it extends `Component`, uses `@property`, `register`), not just the curve.
 - Run the same component under both backends from one bundle: QuickJS through the typed `register_quickjs` bindings,
   compiled through the shims (the Scene namespace already has both, `M9-API-26`).
+
+## Update: the whole `SineDemo` component compiles and runs
+
+`bench/sine_demo_full.ts` is `main.tsx` of commit `9dc2f51` up to the React HUD plus `tween.ts`, in one file; `compile_check`
+(`cargo run -p iron_ts_tests --bin compile_check file.ts`) compiles any program against every engine API. It compiles to native code
+and runs under `NativeHost` against `iron_engine_api` (`tests/sine_demo_full.rs`, `M9-TS-596..597`): the camera is made, 1,083 gizmo
+lines are drawn, Space plays the music and starts the tweens, a digit changes the formula, F5 adds the centre ring.
+
+What it took (compiler changes, each with a test): `register({ SineDemo })`; class field types inferred from constants, arithmetic,
+`Color.white`, `new Vector3(..)`, `Color.hex(..)` and `new Tween<number>(..)`; `Record<"a" | "b", V>` and `rec[kind]`;
+`xs.map(x => x.type)` into a `SineType[]` keeps the literals; an optional chain through a union member is a `string | undefined`;
+`boolean | undefined` is a word (0 undefined, 1 false, 2 true); `new GameObject(name?, { position })`; `go.addComponent(Class, { .. })`;
+trailing option objects for engine calls (`audio.load(path, { stream: true })`, `sound.play({ loop: true })`); namespace
+properties (`Time.deltaTime`, `Gizmos.color = c`, `Color.white`); line numbers on every statement error.
+
+**Differences left** (the copy is verbatim except for these):
+
+1. `for (const t of [this.radius, this.frequency, ...]) t.update(dt)` is six calls: the array mixes `Tween<number>`, `Tween<{..}>` and
+   `Tween<Color>`, a union of classes, which iron_ts does not have (it needs an interface type with dispatch on the struct).
+2. The React HUD is not part of it (the native reconciler is the replacement; the demo's HUD would be written as TSX).
+3. Option objects must name parameters of the engine function; an unknown key is an error, a missing one is false/0/"".
+4. `audio.load`/`play` only record commands (`AudioCommand`); the host has to drive `iron_audio` from them.

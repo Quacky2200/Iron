@@ -164,6 +164,25 @@ impl<'a> Lowerer<'a> {
                     n if crate::ir::TypedKind::from_name(n).is_some() => {
                         Ty::Typed(crate::ir::TypedKind::from_name(n).expect("checked"))
                     }
+                    // `Record<"a" | "b", V>`: a struct with one field per member.
+                    "Record" if args.len() == 2 => {
+                        let Some(keys) = self.lit_members(args[0]) else {
+                            bail!(
+                                "Record needs a union of string literals as its keys; \
+                                 use Map<string, V> for other keys"
+                            )
+                        };
+                        let vt = self.ty(args[1], hint)?;
+                        let fields = keys
+                            .into_iter()
+                            .map(|name| Field {
+                                name,
+                                ty: vt.clone(),
+                                optional: false,
+                            })
+                            .collect();
+                        Ty::Obj(self.anon_struct("Record", fields))
+                    }
                     "Map" | "WeakMap" | "ReadonlyMap" => {
                         let (Some(k), Some(v)) = (args.first(), args.get(1)) else {
                             bail!("{} needs two type arguments", id.name)
@@ -215,9 +234,35 @@ impl<'a> Lowerer<'a> {
         Ok(fields)
     }
 
+    /// The members of a union of string literals (through aliases), or `None` for any other type.
+    fn lit_members(&self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+        match t {
+            TSType::TSParenthesizedType(p) => self.lit_members(&p.type_annotation),
+            TSType::TSLiteralType(l) => match &l.literal {
+                TSLiteral::StringLiteral(s) => Some(vec![s.value.to_string()]),
+                _ => None,
+            },
+            TSType::TSUnionType(u) => {
+                let mut out = Vec::new();
+                for m in &u.types {
+                    out.extend(self.lit_members(m)?);
+                }
+                Some(out)
+            }
+            TSType::TSTypeReference(r) => {
+                let TSTypeName::IdentifierReference(id) = &r.type_name else {
+                    return None;
+                };
+                let a = self.aliases.get(id.name.as_str())?;
+                self.lit_members(&a.type_annotation)
+            }
+            _ => None,
+        }
+    }
+
     /// `Box<number>`, `Pair<A, B>`, `Opt<T>`: the specialisation of a generic class, interface or
     /// alias, made once per list of type arguments.
-    fn generic_type(&mut self, base: &str, targs: Vec<Ty>) -> R<Ty> {
+    pub(crate) fn generic_type(&mut self, base: &str, targs: Vec<Ty>) -> R<Ty> {
         if self.generic_classes.contains_key(base) {
             let tparams = self.generic_classes[base].tparams.clone();
             let targs = self.complete_targs(base, &tparams, targs)?;
@@ -439,6 +484,8 @@ impl<'a> Lowerer<'a> {
                     Box::new(ex(ExprKind::Truthy(Box::new(e)))),
                 ))
             }
+            // `boolean | undefined` is true only when it is `true`.
+            Ty::Nullable(inner) if matches!(**inner, Ty::Bool) => ex(ExprKind::Cast(Box::new(e))),
             // A nullable string or bigint is true when it is there and not empty / zero.
             Ty::Nullable(inner) if matches!(**inner, Ty::Str | Ty::BigInt) => {
                 let null = ex(ExprKind::IsNull(Box::new(e.clone())));

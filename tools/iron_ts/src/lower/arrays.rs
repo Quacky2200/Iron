@@ -421,6 +421,9 @@ impl<'a> Lowerer<'a> {
             return self.lower_join(recv, c);
         }
         if let Ty::Handle(class) = &rty {
+            if m == "addComponent" {
+                return self.lower_add_component(recv, c);
+            }
             let f = self
                 .manifest
                 .classes
@@ -548,7 +551,8 @@ impl<'a> Lowerer<'a> {
                         body.push(self.inline_cb(cb, &params, RetKind::Val, Some(r))?);
                         let rty = self.cur.locals[r as usize].clone();
                         // A callback that returns string literals (`v ? "1" : "0"`) makes strings.
-                        let (rty, pushed) = if rty == Ty::Lit {
+                        let keep_lit = std::mem::take(&mut self.map_keeps_lit);
+                        let (rty, pushed) = if rty == Ty::Lit && !keep_lit {
                             let v = self.var_expr(r);
                             (Ty::Str, self.widen_lit(v))
                         } else {

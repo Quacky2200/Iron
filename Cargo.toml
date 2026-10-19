@@ -7,6 +7,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+# Line tables only: full debug info made 185 PDBs of 8.6 GB; panics and backtraces still show lines.
+[profile.dev]
+debug = "line-tables-only"
+
 # Dependencies (QuickJS, Parley, swash, wgpu, ...) are optimized even in debug builds:
 # typing in a debug build otherwise takes ~25 ms per key in QuickJS alone. Iron's own
 # crates stay unoptimized for debugging.

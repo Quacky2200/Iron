@@ -88,6 +88,13 @@ impl<'a> Lowerer<'a> {
     }
 
     pub(crate) fn lower_expr(&mut self, e: &'a Expression<'a>, exp: Option<&Ty>) -> R<Expr> {
+        // `const order: SineType[] = xs.map(x => x.type)`: the callback's literals stay literals.
+        if let (Some(Ty::Arr(el)), Expression::CallExpression(c)) = (exp, e)
+            && **el == Ty::Lit
+            && matches!(&c.callee, Expression::StaticMemberExpression(m) if m.property.name == "map")
+        {
+            self.map_keeps_lit = true;
+        }
         match e {
             Expression::NumericLiteral(n) => Ok(num(n.value)),
             Expression::BigIntLiteral(b) => self.lower_bigint_literal(b),
@@ -405,6 +412,17 @@ impl<'a> Lowerer<'a> {
 
     fn lower_computed_member(&mut self, m: &'a ComputedMemberExpression<'a>) -> R<Expr> {
         let mut arr = self.lower_expr(&m.object, None)?;
+        // `names[kind]` where `names` is a `Record<Kind, V>` and `kind` a union member.
+        if let Ty::Obj(sid) = arr.ty.strip().clone()
+            && Some(sid) != self.match_sid()
+            && !m.optional
+        {
+            let key = self.lower_expr(&m.expression, None)?;
+            if key.ty == Ty::Lit && !self.m.structs[sid].fields.is_empty() {
+                return Ok(self.record_index(arr, sid, key));
+            }
+            bail!("cannot index an object by {}", key.ty)
+        }
         arr = self.match_view(arr);
         if m.optional {
             arr = self.chain_guard(arr)?;
@@ -421,6 +439,38 @@ impl<'a> Lowerer<'a> {
             t => bail!("cannot index {t}"),
         };
         Ok(mk(ExprKind::Index(Box::new(arr), Box::new(idx)), ty))
+    }
+
+    /// `rec[key]` for a record struct: the field whose name is the key's tag.
+    fn record_index(&mut self, obj: Expr, sid: StructId, key: Expr) -> Expr {
+        let fields = self.m.structs[sid].fields.clone();
+        let ty = fields[0].ty.clone();
+        let (to, tk) = (self.new_local(obj.ty.clone()), self.new_local(Ty::Lit));
+        let (ov, kv) = (self.var_expr(to), self.var_expr(tk));
+        let field = |i: usize| mk(ExprKind::Field(Box::new(ov.clone()), sid, i), ty.clone());
+        let mut acc = field(fields.len() - 1);
+        for i in (0..fields.len() - 1).rev() {
+            let t = self.tag(&fields[i].name);
+            let is = mk(
+                ExprKind::Cmp(
+                    CmpOp::Eq,
+                    Box::new(kv.clone()),
+                    Box::new(mk(ExprKind::Tag(t), Ty::Lit)),
+                ),
+                Ty::Bool,
+            );
+            acc = mk(
+                ExprKind::Cond(Box::new(is), Box::new(field(i)), Box::new(acc)),
+                ty.clone(),
+            );
+        }
+        mk(
+            ExprKind::Seq(
+                vec![Stmt::Assign(to, obj), Stmt::Assign(tk, key)],
+                Box::new(acc),
+            ),
+            ty,
+        )
     }
 
     /// For `a?.b`: evaluates `a` once; if it is null the whole chain yields null.
@@ -459,7 +509,8 @@ impl<'a> Lowerer<'a> {
             _ => bail!("unsupported optional chain"),
         };
         self.cur.chain.pop();
-        let inner = inner?;
+        // A union member that may be missing is a `string | undefined` (a tag has no null).
+        let inner = self.widen_lit(inner?);
         let ty = inner.ty.clone().nullable();
         self.cur.locals[res as usize] = ty.clone();
         let v = self.coerce(inner, &ty)?;
@@ -528,7 +579,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// The IR type scripts see for a boundary type.
-    fn ext_ir(&mut self, t: &ExtTy) -> Ty {
+    pub(crate) fn ext_ir(&mut self, t: &ExtTy) -> Ty {
         match t {
             ExtTy::Value(n) => Ty::Obj(self.value_struct(n)),
             other => other.to_ir(),
@@ -814,28 +865,75 @@ impl<'a> Lowerer<'a> {
         c: &'a CallExpression<'a>,
     ) -> R<Expr> {
         let skip = usize::from(recv.is_some());
-        if c.arguments.len() + skip != f.params.len() {
+        let at = self.loc(c.span.start);
+        let params: Vec<(String, ExtTy)> = f.params[skip..].to_vec();
+        let mut given: Vec<&'a Expression<'a>> = Vec::new();
+        for a in &c.arguments {
+            let Some(e) = a.as_expression() else {
+                bail!("{at}: {what}: spread argument")
+            };
+            given.push(e);
+        }
+        // A trailing `{ key: value }` fills the parameters after the positional ones by name
+        // (`audio.load(path, { stream: true })`); a parameter left out is false, 0 or "".
+        let mut options: Option<&'a ObjectExpression<'a>> = None;
+        if let Some(Expression::ObjectExpression(o)) = given.last().copied()
+            && given.len() <= params.len()
+            && !matches!(params[given.len() - 1].1, ExtTy::Value(_))
+            && o.properties.iter().all(|p| {
+                matches!(p, ObjectPropertyKind::ObjectProperty(p)
+                    if matches!(&p.key, PropertyKey::StaticIdentifier(k)
+                        if params[given.len() - 1..].iter().any(|(n, _)| n == k.name.as_str())))
+            })
+        {
+            options = Some(o);
+            given.pop();
+        }
+        if given.len() > params.len()
+            || (options.is_none() && given.len() < params.len() && {
+                // A flag may be left out (false); a missing number or string is an error.
+                !params[given.len()..]
+                    .iter()
+                    .all(|(_, t)| matches!(t, ExtTy::Bool))
+            })
+        {
             bail!(
-                "{}: {what}: {} arguments, {} expected",
-                self.loc(c.span.start),
+                "{at}: {what}: {} arguments, {} expected",
                 c.arguments.len(),
-                f.params.len() - skip
+                params.len()
             )
         }
         let mut args: Vec<Expr> = recv.into_iter().collect();
-        for (a, (_, pt)) in c.arguments.iter().zip(&f.params[skip..]) {
-            let Some(e) = a.as_expression() else {
-                bail!("{what}: spread argument")
+        for (i, (pname, pt)) in params.iter().enumerate() {
+            let expr: Option<&'a Expression<'a>> = if i < given.len() {
+                Some(given[i])
+            } else {
+                options.and_then(|o| {
+                    o.properties.iter().find_map(|p| match p {
+                        ObjectPropertyKind::ObjectProperty(p)
+                            if matches!(&p.key, PropertyKey::StaticIdentifier(k) if k.name == pname.as_str()) =>
+                        {
+                            Some(&p.value)
+                        }
+                        _ => None,
+                    })
+                })
+            };
+            let Some(e) = expr else {
+                // Left out: false, 0 or an empty string.
+                args.push(match pt {
+                    ExtTy::Bool => mk(ExprKind::Bool(false), Ty::Bool),
+                    ExtTy::Str => self.str_lit(""),
+                    ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
+                    other => bail!("{at}: {what}: parameter `{pname}` ({other:?}) has no default"),
+                });
+                continue;
             };
             if *pt == ExtTy::Ptr {
                 // Any script pointer goes through as it is.
                 let v = self.lower_expr(e, None)?;
                 if !v.ty.is_ptr() {
-                    bail!(
-                        "{}: {what}: expected an object, found {}",
-                        self.loc(c.span.start),
-                        v.ty
-                    )
+                    bail!("{at}: {what}: expected an object, found {}", v.ty)
                 }
                 args.push(v);
                 continue;
@@ -1511,6 +1609,7 @@ impl<'a> Lowerer<'a> {
             other if self.manifest.values.contains_key(other) => {
                 self.new_value(other, &n.arguments, n.span.start)
             }
+            other if self.is_creatable(other) => self.lower_new_handle(other, n),
             other if self.classes.contains_key(other) => {
                 self.new_object(other, &n.arguments, n.span.start)
             }
