@@ -243,6 +243,11 @@ impl Ctx<'_> {
         }
     }
 
+    /// The value of the nearest provider of context `id`, if there is one.
+    pub fn find_context(&self, id: u32) -> Option<Rc<dyn Any>> {
+        (self.lookup)(id)
+    }
+
     /// `useContext`: the nearest provider's value, else `default`.
     pub fn use_context<T: Clone + 'static>(&mut self, context: &Context<T>) -> T {
         match (self.lookup)(context.id).and_then(|v| v.downcast_ref::<T>().cloned()) {

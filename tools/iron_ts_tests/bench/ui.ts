@@ -95,3 +95,175 @@ function Toggle(): UiElement {
 export function toggleApp(): UiElement {
   return <Toggle />;
 }
+
+const Theme = createContext("light");
+
+function Reader(): UiElement {
+  const t = useContext(Theme);
+  return <text>{t}</text>;
+}
+
+export function ctxApp(dark: boolean): UiElement {
+  const value = dark ? "dark" : "light";
+  return (
+    <Theme.Provider value={value}>
+      <Reader />
+    </Theme.Provider>
+  );
+}
+
+export function ctxNone(): UiElement {
+  return <Reader />;
+}
+
+let seenNode = -2;
+
+function WithRef(): UiElement {
+  const r = useRef<UiNode | null>(null);
+  useEffect(() => {
+    seenNode = Ui.nodeId(r.current);
+  }, []);
+  return <box ref={r} />;
+}
+
+export function refApp(): UiElement {
+  return <WithRef />;
+}
+
+export function getSeenNode(): number {
+  return seenNode;
+}
+
+interface Api {
+  answer: number;
+}
+
+let handleSeen = -1;
+
+function Child(props: { handle: Ref<Api | null> }): UiElement {
+  useImperativeHandle(props.handle, (): Api => ({ answer: 42 }), []);
+  return <box />;
+}
+
+function Parent(): UiElement {
+  const h = useRef<Api | null>(null);
+  useEffect(() => {
+    const api = h.current;
+    handleSeen = api === null ? -1 : api.answer;
+  }, []);
+  return <Child handle={h} />;
+}
+
+export function handleApp(): UiElement {
+  return <Parent />;
+}
+
+export function getHandleSeen(): number {
+  return handleSeen;
+}
+
+let leafCount = 0;
+
+function Leaf(props: { n: number }): UiElement {
+  leafCount += 1;
+  return <box>{props.n}</box>;
+}
+
+const FastLeaf = memo(Leaf);
+
+function MemoParent(props: { n: number; tick: number }): UiElement {
+  return (
+    <box>
+      {props.tick}
+      <FastLeaf n={props.n} />
+    </box>
+  );
+}
+
+export function memoParentApp(n: number, tick: number): UiElement {
+  return <MemoParent n={n} tick={tick} />;
+}
+
+export function leafRenders(): number {
+  return leafCount;
+}
+
+interface BoxApi {
+  size: number;
+}
+
+const Fwd = forwardRef((props: { label: string }, ref: Ref<BoxApi | null>): UiElement => {
+  useImperativeHandle(ref, (): BoxApi => ({ size: props.label.length }), []);
+  return <text>{props.label}</text>;
+});
+
+let fwdSeen = -1;
+
+function FwdParent(): UiElement {
+  const r = useRef<BoxApi | null>(null);
+  useEffect(() => {
+    const a = r.current;
+    fwdSeen = a === null ? -1 : a.size;
+  }, []);
+  return <Fwd label="hello" ref={r} />;
+}
+
+export function fwdApp(): UiElement {
+  return <FwdParent />;
+}
+
+export function getFwdSeen(): number {
+  return fwdSeen;
+}
+
+function counterReducer(s: number, a: string): number {
+  return a === "inc" ? s + 1 : s - 1;
+}
+
+function RedCounter(): UiElement {
+  const [count, dispatch] = useReducer(counterReducer, 10);
+  return (
+    <box
+      onClick={() => dispatch("inc")}
+      onPointerDown={() => {
+        dispatch("dec");
+        dispatch("dec");
+      }}
+    >
+      {count}
+    </box>
+  );
+}
+
+export function reducerApp(): UiElement {
+  return <RedCounter />;
+}
+
+let store = 5;
+const listeners: (() => void)[] = [];
+
+function subscribeStore(cb: () => void): () => void {
+  listeners.push(cb);
+  return () => {
+    const i = listeners.indexOf(cb);
+    if (i >= 0) listeners.splice(i, 1);
+  };
+}
+
+function StoreView(): UiElement {
+  const v = useSyncExternalStore(subscribeStore, () => store);
+  return <box>{v}</box>;
+}
+
+export function storeApp(): UiElement {
+  return <StoreView />;
+}
+
+export function bumpStore(): void {
+  store += 1;
+  for (const l of listeners.slice()) l();
+}
+
+export function listenerCount(): number {
+  return listeners.length;
+}

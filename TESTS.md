@@ -1066,3 +1066,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-577 | Integration | `useEffect` with dependencies and cleanup: +1, no rerun, -1 +2, cleanup on unmount. |
 | M9-TS-578 | Integration | `useMemo` recomputes only when its dependencies change. |
 | M9-TS-579 | Integration | Boolean and string state and `useRef` persist across renders; all GC modes. |
+| M9-TS-580 | Integration | Context: a consumer reads the nearest provider, the default without one, and follows the provider (`iron_ts_tests/tests/ui.rs`). |
+| M9-TS-581 | Integration | `ref={r}` writes the node into the ref on attach (an effect sees it). |
+| M9-TS-582 | Integration | `useImperativeHandle` fills the parent's ref before the parent's effect runs. |
+| M9-TS-583 | Integration | `useSyncExternalStore` follows a store, subscribes once, unsubscribes on unmount. |
+| M9-TS-584 | Integration | `memo` skips a child with equal props and renders it when a prop changes. |
+| M9-TS-585 | Integration | `forwardRef` passes the ref as the second parameter. |
+| M9-TS-586 | Integration | `useReducer` applies actions to the latest state (two dispatches in one handler both count). |

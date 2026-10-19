@@ -57,6 +57,7 @@ enum Kind {
         key: Option<String>,
         id: u32,
         render: RenderFn,
+        memo: Option<Vec<Dep>>,
         hooks: Vec<Slot>,
         child: Option<usize>,
     },
@@ -563,13 +564,19 @@ impl Runtime {
                 self.place_children(id, desired, pass);
                 id
             }
-            Element::Component { key, id, render } => {
+            Element::Component {
+                key,
+                id,
+                render,
+                memo,
+            } => {
                 let inst = self.alloc(Inst {
                     parent,
                     kind: Kind::Component {
                         key,
                         id,
                         render,
+                        memo,
                         hooks: Vec::new(),
                         child: None,
                     },
@@ -697,13 +704,24 @@ impl Runtime {
                 let desired = self.desired_of(i);
                 self.place_children(i, desired, pass);
             }
-            Element::Component { key, render, .. } => {
+            Element::Component {
+                key, render, memo, ..
+            } => {
+                let dirty = self.shared.dirty.borrow().contains(&i);
                 if let Kind::Component {
-                    key: k, render: r, ..
+                    key: k,
+                    render: r,
+                    memo: m,
+                    ..
                 } = &mut self.inst_mut(i).kind
                 {
                     *k = key;
+                    // `memo`: same props and no state change of its own: nothing to render.
+                    if memo.is_some() && *m == memo && !dirty {
+                        return;
+                    }
                     *r = render;
+                    *m = memo;
                 }
                 self.render_component(i, pass);
             }

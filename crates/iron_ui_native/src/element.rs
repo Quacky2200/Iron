@@ -1,7 +1,7 @@
 //! Element descriptions: what a component returns. Plain data; the reconciler diffs it against
 //! the previous tree.
 
-use crate::hooks::Ctx;
+use crate::hooks::{Ctx, Dep};
 use iron_core::{NodeId, Value};
 use std::any::Any;
 use std::cell::Cell;
@@ -17,19 +17,37 @@ pub type Cleanup = Box<dyn FnOnce()>;
 /// A reference to a host element's node (`useRef` + `ref=`): set when the element is attached,
 /// cleared when it is removed.
 #[derive(Clone, Default)]
-pub struct NodeRef(Rc<Cell<Option<NodeId>>>);
+pub struct NodeRef(Rc<RefState>);
+
+#[derive(Default)]
+struct RefState {
+    node: Cell<Option<NodeId>>,
+    /// Told about every change (the script bridge writes the node into the script's ref object).
+    on_change: Option<Box<dyn Fn(Option<NodeId>)>>,
+}
 
 impl NodeRef {
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// A reference that also calls `f` whenever the node it points to changes.
+    pub fn with_callback(f: impl Fn(Option<NodeId>) + 'static) -> Self {
+        NodeRef(Rc::new(RefState {
+            node: Cell::new(None),
+            on_change: Some(Box::new(f)),
+        }))
+    }
+
     pub fn get(&self) -> Option<NodeId> {
-        self.0.get()
+        self.0.node.get()
     }
 
     pub(crate) fn set(&self, id: Option<NodeId>) {
-        self.0.set(id);
+        self.0.node.set(id);
+        if let Some(f) = &self.0.on_change {
+            f(id);
+        }
     }
 
     pub(crate) fn same(&self, other: &NodeRef) -> bool {
@@ -67,6 +85,9 @@ pub enum Element {
         key: Option<String>,
         id: u32,
         render: RenderFn,
+        /// `memo`: the props as dependencies. An update with equal ones renders nothing (unless
+        /// the component's own state changed).
+        memo: Option<Vec<Dep>>,
     },
     /// Children mounted under another node (`createPortal`).
     Portal {
@@ -108,6 +129,7 @@ impl Element {
             key: None,
             id,
             render: Rc::new(render),
+            memo: None,
         }
     }
 

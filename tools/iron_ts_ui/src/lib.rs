@@ -16,7 +16,9 @@ use iron_api::{return_string, script_str};
 use iron_ts_rt::{
     Array, Closure, ts_rt_exc_pending, ts_rt_exc_take, ts_rt_root_add, ts_rt_root_remove,
 };
-use iron_ui_native::{Cleanup, Ctx, Dep, Element, Event, Handler, HostProps, RenderFn, Scheduler};
+use iron_ui_native::{
+    Cleanup, Ctx, Dep, Element, Event, Handler, HostProps, NodeRef, RenderFn, Scheduler,
+};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -92,6 +94,13 @@ enum Built {
         key: Option<String>,
         id: u32,
         render: Rc<Rooted>,
+        memo: Option<Vec<Dep>>,
+    },
+    Provider {
+        key: Option<String>,
+        context: u32,
+        value: Rc<ScriptCell>,
+        children: Vec<u64>,
     },
 }
 
@@ -136,7 +145,8 @@ struct ScriptCell {
     kind: Cell<u8>,
     bits: Cell<u64>,
     root: Cell<Option<usize>>,
-    sched: Scheduler,
+    /// None for a provider's value, which nothing re-renders for.
+    sched: Option<Scheduler>,
     /// Memo: the dependencies it was computed with, and whether the last render found it stale.
     deps: RefCell<Option<Vec<Dep>>>,
     stale: Cell<bool>,
@@ -147,7 +157,7 @@ const BOOL: u8 = 2;
 const PTR: u8 = 3;
 
 impl ScriptCell {
-    fn new(sched: Scheduler) -> ScriptCell {
+    fn new(sched: Option<Scheduler>) -> ScriptCell {
         ScriptCell {
             id: Cell::new(0),
             kind: Cell::new(0),
@@ -172,8 +182,11 @@ impl ScriptCell {
         self.kind.set(kind);
         self.bits.set(bits);
         // A set during a render only keeps the value; one from a handler asks for a render.
-        if changed && CX.with(|c| c.get()).is_null() {
-            self.sched.mark();
+        if changed
+            && CX.with(|c| c.get()).is_null()
+            && let Some(s) = &self.sched
+        {
+            s.mark();
         }
     }
 }
@@ -196,6 +209,7 @@ thread_local! {
     static CLEANUP: RefCell<Option<Rooted>> = const { RefCell::new(None) };
     static CELLS: RefCell<HashMap<u64, Weak<ScriptCell>>> = RefCell::new(HashMap::new());
     static NEXT_CELL: Cell<u64> = const { Cell::new(1) };
+    static NEXT_CONTEXT: Cell<u32> = const { Cell::new(1) };
 }
 
 fn with_cx<R>(f: impl FnOnce(&mut Ctx) -> R) -> R {
@@ -224,18 +238,23 @@ fn cell_of(slot: f64) -> Rc<ScriptCell> {
 fn next_cell() -> Rc<ScriptCell> {
     with_cx(|cx| {
         let sched = cx.scheduler();
-        let cell = cx.use_shared(move || ScriptCell::new(sched));
-        if cell.id.get() == 0 {
-            let id = NEXT_CELL.with(|n| {
-                let v = n.get();
-                n.set(v + 1);
-                v
-            });
-            cell.id.set(id);
-            CELLS.with(|c| c.borrow_mut().insert(id, Rc::downgrade(&cell)));
-        }
+        let cell = cx.use_shared(move || ScriptCell::new(Some(sched)));
+        register_cell(&cell);
         cell
     })
+}
+
+/// Gives a cell its id (once) and makes it findable by `cell_of`.
+fn register_cell(cell: &Rc<ScriptCell>) {
+    if cell.id.get() == 0 {
+        let id = NEXT_CELL.with(|n| {
+            let v = n.get();
+            n.set(v + 1);
+            v
+        });
+        cell.id.set(id);
+        CELLS.with(|c| c.borrow_mut().insert(id, Rc::downgrade(cell)));
+    }
 }
 
 fn component_render(rc: Rc<Rooted>) -> RenderFn {
@@ -273,10 +292,27 @@ pub fn element_from(h: u64) -> Element {
             key,
             children: children.into_iter().map(element_from).collect(),
         },
-        Built::Component { key, id, render } => Element::Component {
+        Built::Component {
+            key,
+            id,
+            render,
+            memo,
+        } => Element::Component {
             key,
             id,
             render: component_render(render),
+            memo,
+        },
+        Built::Provider {
+            key,
+            context,
+            value,
+            children,
+        } => Element::Provider {
+            key,
+            context,
+            value,
+            children: children.into_iter().map(element_from).collect(),
         },
     }
 }
@@ -316,10 +352,13 @@ pub extern "C" fn ts_ui_fragment() -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_component(id: f64, render: *mut Closure) -> u64 {
+    // A dependency list built just before is `memo`'s props.
+    let memo = DEPS.with(|d| d.borrow_mut().take());
     add(Built::Component {
         key: None,
         id: id as u32,
         render: Rc::new(Rooted::new(render)),
+        memo,
     })
 }
 
@@ -327,9 +366,10 @@ pub extern "C" fn ts_ui_component(id: f64, render: *mut Closure) -> u64 {
 pub extern "C" fn ts_ui_key(h: u64, k: *const u8) -> u64 {
     let k = text(k);
     with_built(h, |b| match b {
-        Built::Host { key, .. } | Built::Fragment { key, .. } | Built::Component { key, .. } => {
-            *key = Some(k)
-        }
+        Built::Host { key, .. }
+        | Built::Fragment { key, .. }
+        | Built::Component { key, .. }
+        | Built::Provider { key, .. } => *key = Some(k),
         Built::Text(_) => {}
     });
     h
@@ -402,7 +442,9 @@ pub extern "C" fn ts_ui_attr_bool(h: u64, k: *const u8, v: bool) -> u64 {
 fn push_child(h: u64, child: u64) -> u64 {
     if child != 0 {
         with_built(h, |b| match b {
-            Built::Host { children, .. } | Built::Fragment { children, .. } => children.push(child),
+            Built::Host { children, .. }
+            | Built::Fragment { children, .. }
+            | Built::Provider { children, .. } => children.push(child),
             _ => {}
         });
     }
@@ -450,6 +492,95 @@ fn format_number(n: f64) -> String {
     } else {
         format!("{n}")
     }
+}
+
+/// A script object the host keeps alive and writes a field of.
+struct RootedObj {
+    ptr: *mut u8,
+    root: usize,
+}
+
+impl Drop for RootedObj {
+    fn drop(&mut self) {
+        ts_rt_root_remove(self.root);
+    }
+}
+
+/// `ref={r}`: the node is written into the ref object (`current`, its first field, as a handle:
+/// the node id plus one, 0 for none) when the element attaches and clears.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_ref(h: u64, obj: u64) -> u64 {
+    if obj != 0 {
+        let held = RootedObj {
+            ptr: obj as *mut u8,
+            root: ts_rt_root_add(obj as *mut u8),
+        };
+        let node_ref = NodeRef::with_callback(move |n| {
+            let v = n.map_or(0, |n| u64::from(n.raw()) + 1);
+            // SAFETY: the object is a `Ref<T>`: a header and then the 8-byte `current` field.
+            unsafe { *(held.ptr as *mut u64).add(1) = v };
+        });
+        with_built(h, |b| {
+            if let Built::Host { props, .. } = b {
+                props.node_ref = Some(node_ref);
+            }
+        });
+    }
+    h
+}
+
+/// A `UiNode` handle as the node id.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_id(n: u64) -> f64 {
+    n.wrapping_sub(1) as f64
+}
+
+// ---- context ----
+
+fn provider(context: f64, kind: u8, bits: u64) -> u64 {
+    let cell = Rc::new(ScriptCell::new(None));
+    register_cell(&cell);
+    cell.set(kind, bits);
+    add(Built::Provider {
+        key: None,
+        context: context as u32,
+        value: cell,
+        children: Vec::new(),
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_provider_num(context: f64, v: f64) -> u64 {
+    provider(context, NUM, v.to_bits())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_provider_bool(context: f64, v: bool) -> u64 {
+    provider(context, BOOL, u64::from(v))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_provider_ptr(context: f64, v: u64) -> u64 {
+    provider(context, PTR, v)
+}
+
+/// The slot of the nearest provider's value for context `id`, or 0 when there is none.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_context_slot(id: f64) -> f64 {
+    with_cx(|cx| {
+        cx.find_context(id as u32)
+            .and_then(|v| v.downcast::<ScriptCell>().ok())
+            .map_or(0.0, |c| c.id.get() as f64)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_context_id() -> f64 {
+    NEXT_CONTEXT.with(|n| {
+        let v = n.get();
+        n.set(v + 1);
+        f64::from(v)
+    })
 }
 
 // ---- hooks ----
@@ -653,6 +784,13 @@ pub fn link_anchor() -> usize {
         ts_ui_stale as *const () as usize,
         ts_ui_effect as *const () as usize,
         ts_ui_set_cleanup as *const () as usize,
+        ts_ui_ref as *const () as usize,
+        ts_ui_node_id as *const () as usize,
+        ts_ui_provider_num as *const () as usize,
+        ts_ui_provider_bool as *const () as usize,
+        ts_ui_provider_ptr as *const () as usize,
+        ts_ui_context_slot as *const () as usize,
+        ts_ui_context_id as *const () as usize,
         ts_ui_ev_num as *const () as usize,
         ts_ui_ev_str as *const () as usize,
         ts_ui_ev_kind as *const () as usize,
@@ -732,6 +870,28 @@ pub fn manifest_json() -> String {
         ),
         f("child", "ts_ui_child_num", &[("h", el), ("n", "f64")], el),
         f("child", "ts_ui_child_arr", &[("h", el), ("items", els)], el),
+        f("ref", "ts_ui_ref", &[("h", el), ("r", "ptr")], el),
+        f("nodeId", "ts_ui_node_id", &[("n", "handle:UiNode")], "f64"),
+        f(
+            "provider",
+            "ts_ui_provider_num",
+            &[("ctx", "f64"), ("v", "f64")],
+            el,
+        ),
+        f(
+            "provider",
+            "ts_ui_provider_bool",
+            &[("ctx", "f64"), ("v", "bool")],
+            el,
+        ),
+        f(
+            "provider",
+            "ts_ui_provider_ptr",
+            &[("ctx", "f64"), ("v", "ptr")],
+            el,
+        ),
+        f("contextSlot", "ts_ui_context_slot", &[("id", "f64")], "f64"),
+        f("contextId", "ts_ui_context_id", &[], "f64"),
         f("depsBegin", "ts_ui_deps_begin", &[], "void"),
         f("dep", "ts_ui_dep_num", &[("v", "f64")], "void"),
         f("dep", "ts_ui_dep_bool", &[("v", "bool")], "void"),

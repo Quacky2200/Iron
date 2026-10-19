@@ -20,6 +20,7 @@ use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType};
+use std::collections::{HashMap, HashSet};
 
 /// The prelude: the event class, the handler wrapper and the generic hooks.
 pub const UI_PRELUDE: &str = include_str!("ui.ts");
@@ -29,9 +30,20 @@ pub fn wanted(src: &str) -> bool {
     src.contains("</")
         || src.contains("/>")
         || src.contains("<>")
-        || ["useState", "useEffect", "useMemo", "useCallback", "useRef"]
-            .iter()
-            .any(|h| src.contains(&format!("{h}(")) || src.contains(&format!("{h}<")))
+        || [
+            "useState",
+            "useEffect",
+            "useMemo",
+            "useCallback",
+            "useRef",
+            "useReducer",
+            "useContext",
+            "createContext",
+            "memo",
+            "forwardRef",
+        ]
+        .iter()
+        .any(|h| src.contains(&format!("{h}(")) || src.contains(&format!("{h}<")))
 }
 
 /// A stable component id from its name (FNV-1a, 31 bits).
@@ -91,6 +103,10 @@ struct Finder<'s> {
     src: &'s str,
     edits: Vec<Edit>,
     error: Option<String>,
+    /// `const Fast = memo(Slow)`: `Fast` -> `Slow`.
+    memo: HashMap<String, String>,
+    /// Components made by `forwardRef`: they take the ref as a second argument.
+    forward: HashSet<String>,
 }
 
 impl<'s> Finder<'s> {
@@ -136,6 +152,17 @@ impl<'s> Finder<'s> {
         let (name, is_component) = match &open.name {
             JSXElementName::Identifier(i) => (i.name.to_string(), false),
             JSXElementName::IdentifierReference(i) => (i.name.to_string(), true),
+            // `<Theme.Provider value={v}>`
+            JSXElementName::MemberExpression(m) if m.property.name == "Provider" => {
+                if let JSXMemberExpressionObject::IdentifierReference(ctx) = &m.object {
+                    return self.provider_text(ctx.name.as_str(), e);
+                }
+                self.fail(format!(
+                    "line {}: a provider is `Name.Provider`",
+                    self.line(at)
+                ));
+                return String::new();
+            }
             _ => {
                 self.fail(format!(
                     "line {}: only plain tag names are supported",
@@ -169,10 +196,10 @@ impl<'s> Finder<'s> {
                     let v = self.attr_value(&a.value, at);
                     out = format!("Ui.key({out}, {v})");
                 }
-                "ref" => self.fail(format!(
-                    "line {}: `ref` is not supported yet",
-                    self.line(at)
-                )),
+                "ref" => {
+                    let v = self.attr_value(&a.value, at);
+                    out = format!("Ui.ref({out}, {v})");
+                }
                 "style" => {
                     let Some(JSXAttributeValue::ExpressionContainer(c)) = &a.value else {
                         self.fail(format!(
@@ -269,7 +296,16 @@ impl<'s> Finder<'s> {
     fn component_text(&mut self, name: &str, e: &JSXElement<'_>) -> String {
         let open = &e.opening_element;
         let at = open.span.start;
+        let target = self
+            .memo
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_string());
+        let is_memo = target != name;
+        let is_forward = self.forward.contains(&target);
         let mut props = Vec::new();
+        let mut dep_values = Vec::new();
+        let mut ref_value = None;
         let mut key = None;
         for item in &open.attributes {
             let JSXAttributeItem::Attribute(a) = item else {
@@ -286,7 +322,10 @@ impl<'s> Finder<'s> {
             let v = self.attr_value(&a.value, at);
             if n.name == "key" {
                 key = Some(v);
+            } else if n.name == "ref" && is_forward {
+                ref_value = Some(v);
             } else {
+                dep_values.push(v.clone());
                 props.push(format!("{}: {v}", n.name));
             }
         }
@@ -310,10 +349,16 @@ impl<'s> Finder<'s> {
         if !kids.is_empty() {
             props.push(format!("children: [{}]", kids.join(", ")));
         }
-        let call = if props.is_empty() {
-            format!("{name}()")
+        let call = if is_forward {
+            format!(
+                "{target}({{ {} }}, {})",
+                props.join(", "),
+                ref_value.as_deref().unwrap_or("null")
+            )
+        } else if props.is_empty() {
+            format!("{target}()")
         } else {
-            format!("{name}({{ {} }})", props.join(", "))
+            format!("{target}({{ {} }})", props.join(", "))
         };
         let mut out = format!(
             "Ui.component({}, (): UiElement => {call})",
@@ -322,6 +367,52 @@ impl<'s> Finder<'s> {
         if let Some(k) = key {
             out = format!("Ui.key({out}, {k})");
         }
+        if is_memo {
+            // The props are the component's dependencies: equal ones skip the render.
+            let mut seq = vec!["Ui.depsBegin()".to_string()];
+            seq.extend(dep_values.iter().map(|v| format!("Ui.dep({v})")));
+            seq.push(out);
+            out = format!("({})", seq.join(", "));
+        }
+        out
+    }
+
+    /// `<Ctx.Provider value={v} key="k">children</Ctx.Provider>`.
+    fn provider_text(&mut self, ctx: &str, e: &JSXElement<'_>) -> String {
+        let at = e.opening_element.span.start;
+        let mut value = None;
+        let mut key = None;
+        for item in &e.opening_element.attributes {
+            let JSXAttributeItem::Attribute(a) = item else {
+                self.fail(format!("line {}: spread on a provider", self.line(at)));
+                return String::new();
+            };
+            let JSXAttributeName::Identifier(n) = &a.name else {
+                self.fail(format!("line {}: namespaced attribute", self.line(at)));
+                return String::new();
+            };
+            let v = self.attr_value(&a.value, at);
+            match n.name.as_str() {
+                "value" => value = Some(v),
+                "key" => key = Some(v),
+                other => self.fail(format!(
+                    "line {}: a provider takes `value` and `key`, not `{other}`",
+                    self.line(at)
+                )),
+            }
+        }
+        let Some(value) = value else {
+            self.fail(format!(
+                "line {}: a provider needs a `value`",
+                self.line(at)
+            ));
+            return String::new();
+        };
+        let mut out = format!("Ui.provider({ctx}.id, {value})");
+        if let Some(k) = key {
+            out = format!("Ui.key({out}, {k})");
+        }
+        self.children_text(&mut out, &e.children, at);
         out
     }
 
@@ -357,8 +448,14 @@ impl<'a> Visit<'a> for Finder<'_> {
             && let decl = &d.declarations[0]
             && let BindingPattern::ArrayPattern(arr) = &decl.id
             && let Some(Expression::CallExpression(call)) = &decl.init
-            && matches!(&call.callee, Expression::Identifier(f) if f.name == "useState")
+            && let Expression::Identifier(hook) = &call.callee
+            && matches!(hook.name.as_str(), "useState" | "useReducer")
         {
+            let (first, second) = if hook.name == "useState" {
+                ("value", "set")
+            } else {
+                ("state", "dispatch")
+            };
             let names: Vec<Option<String>> = arr
                 .elements
                 .iter()
@@ -377,10 +474,10 @@ impl<'a> Visit<'a> for Finder<'_> {
             let tmp = format!("__st{}", d.span.start);
             let mut text = format!("const {tmp} = {};", self.slice(call.span));
             if let Some(Some(v)) = names.first() {
-                text += &format!(" const {v} = {tmp}.value;");
+                text += &format!(" const {v} = {tmp}.{first};");
             }
             if let Some(Some(s)) = names.get(1) {
-                text += &format!(" const {s} = {tmp}.set;");
+                text += &format!(" const {s} = {tmp}.{second};");
             }
             // The declaration's span has no `;`; a trailing one in the source stays harmless.
             self.edits.push(Edit {
@@ -395,11 +492,23 @@ impl<'a> Visit<'a> for Finder<'_> {
 
     fn visit_call_expression(&mut self, c: &CallExpression<'a>) {
         if let Expression::Identifier(f) = &c.callee
-            && matches!(f.name.as_str(), "useEffect" | "useMemo" | "useCallback")
-            && (c.arguments.len() == 2 || f.name == "useEffect")
+            && matches!(
+                f.name.as_str(),
+                "useEffect" | "useMemo" | "useCallback" | "useImperativeHandle"
+            )
+            && (c.arguments.len() == 2 || f.name == "useEffect" || c.arguments.len() == 3)
             && let Some(first) = c.arguments.first().and_then(|a| a.as_expression())
         {
-            let deps = match c.arguments.get(1).and_then(|a| a.as_expression()) {
+            // `useImperativeHandle(ref, create, deps)` has its list third.
+            let dep_at = if f.name == "useImperativeHandle" {
+                2
+            } else {
+                1
+            };
+            if f.name == "useImperativeHandle" && c.arguments.len() < 3 {
+                return;
+            }
+            let deps = match c.arguments.get(dep_at).and_then(|a| a.as_expression()) {
                 Some(Expression::ArrayExpression(arr)) => {
                     let mut seq = vec!["Ui.depsBegin()".to_string()];
                     for el in &arr.elements {
@@ -428,6 +537,10 @@ impl<'a> Visit<'a> for Finder<'_> {
             let f_text = self.slice(first.span()).to_string();
             let call = if f.name == "useEffect" {
                 format!("Ui.effect((): void => {{ Ui.runEffect({f_text}); }})")
+            } else if f.name == "useImperativeHandle" {
+                let second = c.arguments.get(1).and_then(|a| a.as_expression());
+                let create = second.map_or("", |x| self.slice(x.span()));
+                format!("useImperativeHandle({f_text}, {create})")
             } else {
                 format!("{}({f_text})", f.name)
             };
@@ -455,8 +568,8 @@ pub fn desugar(src: &str) -> R<Option<String>> {
     if !wanted(src) {
         return Ok(None);
     }
-    let mut cur = src.to_string();
-    let mut changed = false;
+    let (mut cur, memo, forward) = prepass(src)?;
+    let mut changed = cur != src;
     for _ in 0..64 {
         let alloc = Allocator::default();
         let ret = Parser::new(&alloc, &cur, SourceType::tsx()).parse();
@@ -468,6 +581,8 @@ pub fn desugar(src: &str) -> R<Option<String>> {
             src: &cur,
             edits: Vec::new(),
             error: None,
+            memo: memo.clone(),
+            forward: forward.clone(),
         };
         finder.visit_program(&ret.program);
         if let Some(e) = finder.error {
@@ -495,4 +610,108 @@ pub fn desugar(src: &str) -> R<Option<String>> {
         changed = true;
     }
     Err("JSX nests too deeply".into())
+}
+
+/// `const Fast = memo(Slow)` and `const Box = forwardRef((props, ref) => ...)` declarations: the
+/// first is erased (the names are remembered), the second becomes a function taking the ref as its
+/// second parameter. Returns the text and the two tables.
+fn prepass(src: &str) -> R<(String, HashMap<String, String>, HashSet<String>)> {
+    let mut memo = HashMap::new();
+    let mut forward = HashSet::new();
+    if !src.contains("memo(") && !src.contains("forwardRef(") {
+        return Ok((src.to_string(), memo, forward));
+    }
+    let alloc = Allocator::default();
+    let ret = Parser::new(&alloc, src, SourceType::tsx()).parse();
+    if !ret.diagnostics.is_empty() {
+        return Ok((src.to_string(), memo, forward));
+    }
+    let slice = |sp: oxc_span::Span| &src[sp.start as usize..sp.end as usize];
+    let mut edits: Vec<Edit> = Vec::new();
+    for st in &ret.program.body {
+        let (decl, exported, span) = match st {
+            Statement::VariableDeclaration(d) => (&**d, false, d.span),
+            Statement::ExportDeclaration(x) => match &x.declaration {
+                Declaration::VariableDeclaration(d) => (&**d, true, x.span),
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let [d] = decl.declarations.as_slice() else {
+            continue;
+        };
+        let (BindingPattern::BindingIdentifier(id), Some(Expression::CallExpression(call))) =
+            (&d.id, &d.init)
+        else {
+            continue;
+        };
+        let Expression::Identifier(f) = &call.callee else {
+            continue;
+        };
+        let name = id.name.to_string();
+        let arg = call.arguments.first().and_then(|a| a.as_expression());
+        match (f.name.as_str(), arg) {
+            ("memo", Some(Expression::Identifier(t))) => {
+                memo.insert(name, t.name.to_string());
+                let blank: String = slice(span)
+                    .chars()
+                    .map(|c| if c == '\n' { '\n' } else { ' ' })
+                    .collect();
+                edits.push(Edit {
+                    start: span.start as usize,
+                    end: span.end as usize,
+                    text: blank,
+                });
+            }
+            ("forwardRef", Some(arg)) => {
+                let (params, ret_ty, body) = match arg {
+                    Expression::ArrowFunctionExpression(a) => {
+                        let body = match &a.body {
+                            ArrowFunctionBody::FunctionBody(b) => slice(b.span).to_string(),
+                            other => match other.as_expression() {
+                                Some(e) => format!("{{ return {}; }}", slice(e.span())),
+                                None => return Err("forwardRef: an empty arrow body".into()),
+                            },
+                        };
+                        (&a.params, a.return_type.as_ref(), body)
+                    }
+                    Expression::FunctionExpression(f) => {
+                        let Some(b) = &f.body else {
+                            return Err("forwardRef: a function without a body".into());
+                        };
+                        (&f.params, f.return_type.as_ref(), slice(b.span).to_string())
+                    }
+                    _ => return Err("forwardRef takes a function".into()),
+                };
+                let plist: Vec<&str> = params.items.iter().map(|p| slice(p.span)).collect();
+                if plist.len() != 2 {
+                    return Err(format!(
+                        "forwardRef({name}): the function takes (props, ref), not {} parameters",
+                        plist.len()
+                    ));
+                }
+                let ret = ret_ty.map_or("UiElement", |r| slice(r.type_annotation.span()));
+                forward.insert(name.clone());
+                edits.push(Edit {
+                    start: span.start as usize,
+                    end: span.end as usize,
+                    text: format!(
+                        "{}function {name}({}): {ret} {body}",
+                        if exported { "export " } else { "" },
+                        plist.join(", ")
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+    let mut out = String::with_capacity(src.len());
+    let mut at = 0;
+    for e in &edits {
+        out.push_str(&src[at..e.start]);
+        out.push_str(&e.text);
+        at = e.end;
+    }
+    out.push_str(&src[at..]);
+    Ok((out, memo, forward))
 }

@@ -955,7 +955,20 @@ first, only when the manifest has the `Ui` namespace); the generic hooks and the
 - **Closures to Rust.** The manifest type `fn:T` is a zero-parameter closure the engine roots until the description holding
   it is dropped; render functions, handlers and effects are such closures. `ptr` is any other script pointer, `handles:T`
   an array of handles.
-- **Not built yet**: `ref=`, context, `memo`, `forwardRef`, `useReducer`, `useImperativeHandle`, `useSyncExternalStore`,
-  controlled text fields, hot-reload state, `iron_app` wiring.
+- **Refs and context.** `ref={r}` (with `const r = useRef<UiNode | null>(null)`) writes the node into `r.current` when the
+  element attaches and clears it on unmount (`Ui.nodeId(r.current)` is the node id); `createContext(default)`,
+  `<Ctx.Provider value={v}>` and `useContext(Ctx)` for numbers, booleans and script pointers.
+- **More hooks.** `useReducer` (`const [s, dispatch] = useReducer(reducer, init)`; dispatch applies the reducer to the latest
+  state), `useImperativeHandle(ref, create, deps)` (filled and cleared as an effect), `useSyncExternalStore(subscribe, getSnapshot)`
+  (resubscribes only when `subscribe` changes).
+- **`memo` and `forwardRef`.** `const Fast = memo(Slow)` is erased and `<Fast a={x} />` passes its props as the component's
+  dependencies, so equal props skip the render (a prop expression is evaluated twice: keep them free of side effects).
+  `const Box = forwardRef((props, ref) => ...)` becomes `function Box(props, ref)`; `<Box ref={r} />` passes `r` (or `null`) as
+  the second argument. A component that is not a `forwardRef` gets `ref` as an ordinary prop.
+- **Limits.** The updater form `setN(n => n + 1)`; an inline object literal returned from a callback needs a type annotation
+  when another argument names the type (`(): Api => ({ ... })`); `string | null` state works as a pointer, `number | null`
+  as a number.
+- **Not built yet**: controlled text fields (`value`/`onChange` restore), hot-reload state (component ids are stable hashes;
+  hook signatures are not emitted yet), `iron_app` wiring.
 
-Tests `M9-TS-575..579`.
+Tests `M9-TS-575..586`.

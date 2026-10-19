@@ -739,6 +739,19 @@ impl<'a> Lowerer<'a> {
             let Some(e) = a.as_expression() else {
                 bail!("{what}: spread argument")
             };
+            if *pt == ExtTy::Ptr {
+                // Any script pointer goes through as it is.
+                let v = self.lower_expr(e, None)?;
+                if !v.ty.is_ptr() {
+                    bail!(
+                        "{}: {what}: expected an object, found {}",
+                        self.loc(c.span.start),
+                        v.ty
+                    )
+                }
+                args.push(v);
+                continue;
+            }
             let want = self.ext_ir(pt);
             let v = self.lower_expr(e, Some(&want))?;
             args.push(self.coerce(v, &want)?);

@@ -177,3 +177,124 @@ fn bool_and_string_state_and_use_ref_persist_across_renders() {
         assert_eq!(ui.dump(), "root(box(text:off,text:3))");
     });
 }
+
+// M9-TS-580
+//
+// Context: a consumer reads the nearest provider's value, the default without one, and follows
+// the provider when it changes.
+#[test]
+fn context_reaches_consumers_and_follows_the_provider() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_ctxNone() });
+        assert_eq!(ui.dump(), "root(text(text:light))");
+        ui.show(unsafe { ts_uic_ctxApp(true) });
+        assert_eq!(ui.dump(), "root(text(text:dark))");
+        ui.show(unsafe { ts_uic_ctxApp(false) });
+        assert_eq!(ui.dump(), "root(text(text:light))");
+    });
+}
+
+// M9-TS-581
+//
+// `ref={r}` writes the node into the ref when the element attaches (the effect sees it) and
+// clears it on unmount.
+#[test]
+fn a_node_ref_is_set_when_the_element_attaches() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_refApp() });
+        let node = ui.tree.children(ROOT)[0];
+        assert_eq!(unsafe { ts_uic_getSeenNode() }, f64::from(node.raw()));
+    });
+}
+
+// M9-TS-582
+//
+// `useImperativeHandle`: a child fills the ref its parent passed; the parent effect (which runs
+// after the child's) reads it.
+#[test]
+fn use_imperative_handle_fills_the_ref_before_the_parents_effect() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_handleApp() });
+        assert_eq!(unsafe { ts_uic_getHandleSeen() }, 42.0);
+    });
+}
+
+// M9-TS-583
+//
+// `useSyncExternalStore`: the component shows the store, subscribes once, re-renders when the
+// store notifies, and unsubscribes on unmount.
+#[test]
+fn use_sync_external_store_follows_a_store() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_storeApp() });
+        assert_eq!(ui.dump(), "root(box(text:5))");
+        assert_eq!(unsafe { ts_uic_listenerCount() }, 1.0);
+        unsafe { ts_uic_bumpStore() };
+        no_errors(ui.rt.flush(&mut ui.tree));
+        assert_eq!(ui.dump(), "root(box(text:6))");
+        assert_eq!(
+            unsafe { ts_uic_listenerCount() },
+            1.0,
+            "not subscribed again"
+        );
+        no_errors(ui.rt.unmount_root(ui.root, &mut ui.tree));
+        assert_eq!(unsafe { ts_uic_listenerCount() }, 0.0);
+    });
+}
+
+// M9-TS-584
+//
+// `memo`: a child whose props are equal is not rendered when its parent renders again; a changed
+// prop renders it.
+#[test]
+fn memo_skips_a_child_with_equal_props() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_memoParentApp(1.0, 0.0) });
+        assert_eq!(ui.dump(), "root(box(text:0,box(text:1)))");
+        assert_eq!(unsafe { ts_uic_leafRenders() }, 1.0);
+        ui.show(unsafe { ts_uic_memoParentApp(1.0, 1.0) });
+        assert_eq!(ui.dump(), "root(box(text:1,box(text:1)))");
+        assert_eq!(unsafe { ts_uic_leafRenders() }, 1.0, "skipped");
+        ui.show(unsafe { ts_uic_memoParentApp(2.0, 1.0) });
+        assert_eq!(ui.dump(), "root(box(text:1,box(text:2)))");
+        assert_eq!(unsafe { ts_uic_leafRenders() }, 2.0);
+    });
+}
+
+// M9-TS-585
+//
+// `forwardRef`: the component gets the parent's ref as its second parameter and fills it with
+// `useImperativeHandle`.
+#[test]
+fn forward_ref_passes_the_ref_to_the_component() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_fwdApp() });
+        assert_eq!(ui.dump(), "root(text(text:hello))");
+        assert_eq!(unsafe { ts_uic_getFwdSeen() }, 5.0);
+    });
+}
+
+// M9-TS-586
+//
+// `useReducer`: dispatch applies the reducer to the latest state, so two dispatches in one
+// handler both count.
+#[test]
+fn use_reducer_applies_actions_to_the_latest_state() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_reducerApp() });
+        assert_eq!(ui.dump(), "root(box(text:10))");
+        let b = ui.tree.children(ROOT)[0];
+        ui.click(b);
+        assert_eq!(ui.dump(), "root(box(text:11))");
+        let mut ev = Event::new("pointerdown", b);
+        ui.rt.dispatch(&mut ev, &mut ui.tree);
+        assert_eq!(ui.dump(), "root(box(text:9))");
+    });
+}
