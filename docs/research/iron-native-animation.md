@@ -95,3 +95,19 @@ GC stress runs as for the rest.
    current code.
 2. Is "only `@property` fields are animatable on compiled components" fine?
 3. Should phase 1 (arrays) go first and be reviewed separately, or all in one go?
+
+## 8. Revision after review (2026-10-19)
+
+The user's direction: explicit classes **and** a chained builder over them, with the `Animation*` family named by the user.
+
+- Classes (handles with properties and `{ option }` constructors, no arrays needed): `AnimationController`,
+  `AnimationParameter(name, type, defaultValue?)`, `AnimationCondition(parameter, mode, threshold?)`,
+  `AnimationTransition(from, to, { duration, hasExitTime, exitTime, offset })` with `addCondition`, `AnimationNode`
+  (the controller's state; `AnimationState` stays the legacy per-clip play state of `Animation`) and `AnimationBlendTree`.
+  `Animation` (clip player) and `Animator` (runs a controller) stay components.
+- `AnimationController.build()` returns an `AnimationBuilder` handle whose methods return itself: `parameter`, `state(name, clip,
+  { speed, speedParameter })`, `blendState(name, parameter)` + `child(clip, threshold, timeScale?)`, `transition(from, to)` then
+  `when(parameter, mode, threshold?)`, `exitTime`, `duration`, `offset`, `defaultState`, and `create()`. It makes the objects
+  above, so both ways give the same controller. Clips get `event(time, functionName, parameter?)` over `AnimationEvent`.
+- Phase 1 (arrays) is no longer first: nothing in this shape needs an array. It moves to when physics needs it.
+- Open: whether `Animator` should be renamed too.
