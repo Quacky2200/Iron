@@ -1507,7 +1507,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           - [ ] (optional, later) `icu-full` feature (`rust_icu`/ICU4C): spike on Windows, then the backend
         - [~] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat` done (`M9-TS-296..312`); open: `Locale`, `DisplayNames`, `Segmenter`
         - [ ] The game's locale list from `package.json` into `ts_rt_intl_set_locales` (needs `iron_app`)
-    - [ ] Tier 4 (asked for): `encodeURI`/`decodeURI` family and `AggregateError`/`cause` are done (`M9-TS-287..295`); iterators and generators (**STOP, design first**), `Symbol`, typed arrays / `ArrayBuffer` / `DataView`,
+    - [ ] Tier 4 (asked for): `encodeURI`/`decodeURI` family and `AggregateError`/`cause` are done (`M9-TS-287..295`); iterators and generators (**STOP**: design note written, awaiting review: `docs/research/iron-ts-generators-and-proxy.md`), `Symbol`, typed arrays / `ArrayBuffer` / `DataView`,
           `BigInt`, `Error.stack`/`captureStackTrace`, `Temporal`, real `WeakRef`/`FinalizationRegistry`,
           `Promise`/`async`/timers (**STOP**), `Proxy`/`Reflect` (**STOP**), `structuredClone`, `globalThis`, bytes across the engine boundary
           (`btoa`/`atob`, `TextEncoder`/`TextDecoder`)

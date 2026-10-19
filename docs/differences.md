@@ -89,6 +89,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `NumberFormat` `useGrouping: "always"` | Does not force grouping in locales that group only from five digits (es, pl, pt-PT) | Forces grouping | ICU4X's decimal formatter treats `always` as `auto` |
 | `NumberFormat` NaN text | `"NaN"` in every locale except `ar` and `ru`, which are localized | Localized per locale | Only those two locales were handled |
 | `NumberFormat` currency code after the number with NaN or infinity | A space is put before NaN or infinity (`KWD NaN`) | `KWDNaN` | The placeholder swap does not copy the engine's automatic spacing rule |
+| Typed arrays | `Int8Array` .. `Float64Array` and `Uint8ClampedArray` own their memory. No `ArrayBuffer`, `DataView`, `subarray`, `buffer` or `new X(buffer, offset, length)` (a compile error), no `BigInt64Array` / `BigUint64Array`; a read past the end gives 0, not `undefined`; no `constructor` property; `X.of` and `Array.from(typed)` are missing | Views share an `ArrayBuffer`; out-of-range reads give `undefined` | Typed arrays are a header plus raw data, with no buffer object to share; missing values are 0 as for `number[]` |
 | `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
 
 ## SVG (M3d step 5.1)

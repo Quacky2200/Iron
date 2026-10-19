@@ -144,7 +144,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | Feature | Lowering |
 |---|---|
-| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, `Uint8Array`, `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` and `Date` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
+| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, the typed arrays (see "Typed arrays"), `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` and `Date` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
 | Functions | `function` and arrow declarations; return types inferred; calls are direct |
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
@@ -511,6 +511,27 @@ ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-da
 - Tests: `bench/uri.ts` with `tests/uri.rs` and `bench/errors2.ts` with `tests/errors2.rs` (M9-TS-287..295), expected
   values from `bench/gen_uri_expected.ts` and `bench/gen_errors2_expected.ts` (bun). `bench/add_module.py` scaffolds
   a new bun-compared test module.
+
+**Typed arrays** ([lower/typed.rs](../tools/iron_ts/src/lower/typed.rs), runtime in
+[iron_ts_rt/src/typed.rs](../tools/iron_ts_rt/src/typed.rs), element access in `typed_load` / `typed_store` in
+`codegen.rs`).
+- **Types.** `Ty::Typed(TypedKind)` for `Int8Array`, `Uint8Array`, `Uint8ClampedArray`, `Int16Array`, `Uint16Array`,
+  `Int32Array`, `Uint32Array`, `Float32Array` and `Float64Array`. The object is the array header with the `HDR_BYTES`
+  tag: `len` elements, `cap` bytes, raw little-endian data. The compiler passes the kind code (the index in
+  `TypedKind::ALL`) to the runtime functions.
+- **Elements.** Reads and stores are inline code, loaded or stored by width and converted to or from a double. A store
+  wraps integers as `ToInt8` .. `ToUint32`, rounds to `f32` for `Float32Array`, and clamps and rounds half to even for
+  `Uint8ClampedArray`. NaN, infinities and values of 2^63 or more store 0 in the integer kinds.
+- **Constructors.** `new X()`, `new X(length)`, `new X(number[])`, `new X(typed)` and `X.from(...)` with the same three
+  sources.
+- **Members.** `length`, `byteLength`; `fill`, `set(source, offset)`, `slice`, `reverse`, `sort` (numeric, with or
+  without a comparator), `toSorted`, `toReversed`, `toString`; `for...of` and spread.
+- **Everything else** (`indexOf`, `join`, `reduce`, `every`, `map`, `filter`, ...) runs on a `number[]` copy; `map` and
+  `filter` convert the result back to the same typed kind.
+- **GC.** A runtime function that allocates copies its source out first, because a temporary source is not rooted.
+- Tests: `bench/typed.ts` with `tests/typed.rs` (M9-TS-313..359, 47 tests, bun-compared, run in normal, stress and
+  GC-off modes), expected values from `bench/gen_typed_expected.ts` and `bench/gen_typed_program.py`.
+- **Not built:** see "Typed arrays" in [differences.md](differences.md).
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler
