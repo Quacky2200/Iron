@@ -235,6 +235,37 @@ pub mod uip {
     include!(concat!(env!("OUT_DIR"), "/ui_perf_bindings.rs"));
 }
 
+/// Compiled code calling `iron_engine_api` (`bench/engine2.ts`), prefix `en2_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod en2 {
+    include!(concat!(env!("OUT_DIR"), "/engine2_bindings.rs"));
+}
+
+/// Keeps the engine API shims linked into every binary: the `engine2` module's object calls them.
+pub fn engine_api_anchor() -> usize {
+    [
+        iron_engine_api::color::color_api::iron_Color_white as *const () as usize,
+        iron_engine_api::time::time_api::iron_Time_time as *const () as usize,
+        iron_engine_api::input::input_api::iron_input_getKey as *const () as usize,
+        iron_engine_api::gizmos::gizmos_api::iron_Gizmos_clear as *const () as usize,
+        iron_engine_api::camera::camera_api::iron_Camera_attach as *const () as usize,
+        iron_engine_api::screen::screen_api::iron_Screen_width as *const () as usize,
+        iron_engine_api::screen::quality_api::iron_QualitySettings_vSyncCount as *const () as usize,
+        iron_engine_api::color::color_api::iron_Color_lerp as *const () as usize,
+    ]
+    .iter()
+    .fold(0, |a, p| a ^ p)
+}
+
+#[used]
+static ENGINE_API: fn() -> usize = engine_api_anchor;
+
 /// Keeps the UI bridge (`iron_ts_ui`) linked into every binary of this crate: the `ui` module's
 /// object calls its `ts_ui_*` functions.
 #[used]
@@ -389,7 +420,7 @@ pub mod uri_t {
     include!(concat!(env!("OUT_DIR"), "/uri_bindings.rs"));
 }
 
-/// `bench/errors2.ts`, prefix `e2_`.
+/// `bench/errors2.ts`, prefix `en2_`.
 #[allow(
     dead_code,
     non_camel_case_types,

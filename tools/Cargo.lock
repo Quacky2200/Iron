@@ -1086,6 +1086,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_engine_api"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "iron_api",
+ "iron_scene",
+]
+
+[[package]]
 name = "iron_scene"
 version = "0.1.0"
 dependencies = [
@@ -1147,6 +1156,7 @@ dependencies = [
  "iron_api",
  "iron_core",
  "iron_demo_api",
+ "iron_engine_api",
  "iron_scene",
  "iron_script",
  "iron_ts",

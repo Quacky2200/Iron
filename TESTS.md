@@ -1094,3 +1094,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-34 | Integration | `Gizmos` collect lines and present them to a camera; the host takes the frame once. |
 | M9-API-35 | Integration | `Camera` defaults, field of view clamp, orthographic settings, removal with its object. |
 | M9-API-36 | Integration | Value classes are JS classes in QuickJS (constructor, methods, getters, instances as results) (`crates/iron_scene/tests/api.rs`). |
+| M9-TS-593 | Integration | `Color` statics, `new Color`, `lerp`/`withAlpha`/`toHex` work in compiled code (`iron_ts_tests/tests/engine2.rs`, `bench/engine2.ts`). |
+| M9-TS-594 | Integration | Namespace properties (`Time.timeScale = ..`, `Time.deltaTime`, `Screen.fullScreen`, `QualitySettings.vSyncCount`) and `input` work in compiled code. |
+| M9-TS-595 | Integration | `Camera.attach(go)` with property assignments, and `Gizmos` (static colour, `drawLine`, `present`) work in compiled code. |
