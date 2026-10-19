@@ -451,8 +451,14 @@ currency and percent formatters) and `fixed_decimal` with `ryu`.
   `fraction`, `minusSign`, `plusSign`, `percentSign`, `currency`, `compact`, `exponentSeparator`, `exponentInteger`,
   `exponentMinusSign`, `nan`, `infinity` and `literal`. The result is `Intl.NumberFormatPart[]`, the prelude class
   `Intl_Part { type, value }` (`INTL_PARTS` in `lower/prelude.rs`, decoded from a separator-joined string).
+- **`resolvedOptions`.** `nf.resolvedOptions()` gives the prelude class `Intl_Resolved` (`ts_rt_number_format_resolved_gc`
+  in `intl_number.rs`, passed as `key=value;` pairs and parsed in the prelude): `locale`, `numberingSystem` (always
+  `latn`), `style`, `currency`, `notation`, `signDisplay`, `minimumIntegerDigits`, and either the fraction digits or
+  the significant digits that apply. Fields not listed (`currencyDisplay`, `useGrouping`, `roundingMode`,
+  `roundingIncrement`, `trailingZeroDisplay`, ...) are not in the result. The numeric fields are `0` when they do
+  not apply (JavaScript leaves them out).
 - **Limits** (see [differences.md](differences.md)): `style: "unit"`, compact currency,
-  `formatRange`, `resolvedOptions` and `supportedLocalesOf` are not built; Number values only (no BigInt,
+  `formatRange` and `supportedLocalesOf` are not built; Number values only (no BigInt,
   no strings).
 - Checked against bun for 15 locales and many option combinations.
 - Tests: `bench/numfmt.ts` with `tests/numfmt.rs` (M9-TS-264..275), expected values from
@@ -488,8 +494,12 @@ ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-da
   (`intl_parts.rs`). Types: `era`, `year`, `month`, `day`, `weekday`, `dayPeriod`, `hour`, `minute`, `second`,
   `timeZoneName` and `literal`; there is no `fractionalSecond` part. The result is `Intl.DateTimeFormatPart[]`
   (the same `Intl_Part` class).
+- **`resolvedOptions`.** `dtf.resolvedOptions()` gives `Intl_Resolved` (`ts_rt_dtf_resolved_gc` in `intl_date.rs`):
+  `locale` (the first requested tag, or the default), `calendar` (`gregory`), `numberingSystem` (`latn`) and
+  `timeZone` (the canonical IANA name; the system zone when none was given, `UTC` for `utc`). The component fields
+  (`year`, `hour`, `hour12`, `hourCycle`, `dateStyle`, ...) are not in the result.
 - **Limits** (see [differences.md](differences.md), "Intl date formatting"): `formatRange`,
-  `resolvedOptions`, `era`, `dayPeriod` and other calendars are not built; component combinations ICU4X cannot
+  `era`, `dayPeriod` and other calendars are not built; component combinations ICU4X cannot
   match differ from ICU4C. Exactness would come from `icu-full` or a generated table.
 - Tests: `bench/datefmt.ts` (made by `bench/gen_datefmt_program.py`) with `tests/datefmt.rs` (M9-TS-277..286), five
   time zones and 15 locales, expected values from `bench/gen_datefmt_expected.ts` (bun) into
@@ -536,7 +546,7 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
   `calendar` or `dateTimeField` type and no `fallback: "none"`.
 - **`Intl.getCanonicalLocales`.** Takes a string or an array of strings, canonicalizes each tag (as `Intl.Locale`
   does), drops duplicates and throws a `RangeError` for an invalid tag (`INTL_CANON` in `lower/prelude.rs`).
-- Tests: M9-TS-456..479; `getCanonicalLocales` M9-TS-516..536; `formatToParts` M9-TS-537..549.
+- Tests: M9-TS-456..479; `getCanonicalLocales` M9-TS-516..536; `formatToParts` M9-TS-537..549; `resolvedOptions` M9-TS-550..555.
 
 **Temporal, ISO calendar** ([lower/temporal.rs](../tools/iron_ts/src/lower/temporal.rs), classes in
 [lower/temporal.ts](../tools/iron_ts/src/lower/temporal.ts), zones in [iron_ts_rt/src/tz.rs](../tools/iron_ts_rt/src/tz.rs)).
