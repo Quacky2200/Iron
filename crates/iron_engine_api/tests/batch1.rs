@@ -1,7 +1,7 @@
 //! The first batch of modules moved from `js/engine` to Rust (random, layers, log, prefs, assets,
 //! app, time classes) through their QuickJS bindings and host functions. IDs are in TESTS.md
 //! (M9-API-37..).
-use iron_engine_api::{app, assets, clock, layers, log, prefs, random, time};
+use iron_engine_api::{app, assets, clock, datetime, input, layers, log, prefs, random, time};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -20,6 +20,9 @@ fn with_js<R>(f: impl FnOnce(&rquickjs::Ctx<'_>) -> R) -> R {
         app::system_info_api::register_quickjs(&ctx).unwrap();
         clock::time_since_api::register_quickjs(&ctx).unwrap();
         clock::time_until_api::register_quickjs(&ctx).unwrap();
+        input::input_api::register_quickjs(&ctx).unwrap();
+        datetime::time_span_api::register_quickjs(&ctx).unwrap();
+        datetime::date_time_api::register_quickjs(&ctx).unwrap();
         f(&ctx)
     })
 }
@@ -257,4 +260,78 @@ fn time_since_and_until_follow_the_game_clock() {
         assert_eq!(r, "[0,true,1]");
     });
     time::reset();
+}
+
+// M9-API-44
+//
+// Input in QuickJS follows the tick: events become "this frame" at `time::advance`, the stick wins
+// the axis when pushed further than the keys, pads come and go, and a blur clears held keys.
+#[test]
+fn input_events_become_a_frame_at_the_tick_and_pads_are_read_by_id() {
+    input::reset();
+    time::reset();
+    with_js(|ctx| {
+        input::key_down("KeyD", false);
+        input::mouse_delta(2.0, 3.0);
+        input::gamepad_connected(4, "Pad");
+        input::gamepad_axis(4, "LeftStickX", -0.5);
+        input::gamepad_button(4, "South", 1.0);
+        let before: String = ctx
+            .eval(r#"JSON.stringify([input.getKey("KeyD"), input.getKeyDown("KeyD"), input.getAxis("Horizontal"), input.mouseDelta.y])"#)
+            .unwrap();
+        assert_eq!(
+            before, "[true,false,1,0]",
+            "nothing is this frame before the tick"
+        );
+        time::advance(0.016);
+        let after: String = ctx
+            .eval(
+                r#"JSON.stringify([input.getKeyDown("KeyD"), input.getAxis("Horizontal"), input.getAxis("Mouse Y"),
+                  input.mouseDelta.y, input.getButton("Jump"), input.gamepadCount(), input.gamepadId(0),
+                  input.gamepadName(4), input.gamepadButton(4, "South"), input.isButtonDown("South")])"#,
+            )
+            .unwrap();
+        assert_eq!(
+            after,
+            r#"[true,1,-0.30000000000000004,-3,true,1,4,"Pad",1,true]"#
+        );
+        input::blur();
+        input::gamepad_disconnected(4);
+        let end: String = ctx
+            .eval(r#"JSON.stringify([input.getKey("KeyD"), input.gamepadCount(), input.gamepadButton(4, "South"), input.gamepadId(0)])"#)
+            .unwrap();
+        assert_eq!(end, "[false,0,0,-1]");
+    });
+    input::reset();
+    time::reset();
+}
+
+// M9-API-45
+//
+// `TimeSpan` and `DateTime` in QuickJS: `new X(..)` goes through `create` (rounding, carrying,
+// the kind), members and statics work on the value classes, in either registration order.
+#[test]
+fn time_span_and_date_time_work_as_javascript_classes() {
+    datetime::set_zone(Some("America/New_York")).unwrap();
+    with_js(|ctx| {
+        let s: String = ctx
+            .eval(
+                r#"
+                const t = new TimeSpan(1500.4);
+                const d = new DateTime(2024, 3, 5, 9, 7, 3, 45);
+                const u = new DateTime(2024, 13, 1, 0, 0, 0, 0, "utc");
+                JSON.stringify([t.totalMilliseconds, TimeSpan.of(1, 2).add(TimeSpan.fromMinutes(1)).toString(),
+                  TimeSpan.parse("1.02:03:04.5").totalSeconds, TimeSpan.zero.toString("hh"),
+                  d.toString("o"), u.toString("o"), u.kind, d.addMonths(11).toString("s"),
+                  d.subtract(u).days, d.date.hour, d.dayOfWeek, DateTime.daysInMonth(2024, 2),
+                  DateTime.fromEpoch(0, "utc").toISOString(), DateTime.parse("2024-05-03T10:20:30+02:00").epochMilliseconds]);
+                "#,
+            )
+            .unwrap();
+        assert_eq!(
+            s,
+            r#"[1500,"1.02:01:00",93784.5,"00","2024-03-05T09:07:03.045-05:00","2025-01-01T00:00:00.000Z","utc","2025-02-05T09:07:03",-301,0,2,29,"1970-01-01T00:00:00.000Z",1714724430000]"#
+        );
+    });
+    datetime::set_zone(None).unwrap();
 }

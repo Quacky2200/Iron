@@ -588,6 +588,16 @@ impl<'a> Lowerer<'a> {
 
     /// `new Vector3(x, y, z)`: the fields in order.
     pub(crate) fn new_value(&mut self, name: &str, args: &'a [Argument<'a>], at: u32) -> R<Expr> {
+        // A value class with a static `create` is built by it (`new DateTime(2024, 5, 3)`).
+        if let Some(create) = self
+            .manifest
+            .namespaces
+            .get(name)
+            .and_then(|n| n.get("create"))
+            .cloned()
+        {
+            return self.call_ext_args(create, None, &format!("new {name}"), at, args);
+        }
         let sid = self.value_struct(name);
         let n = self.m.structs[sid].fields.len();
         if args.len() != n {

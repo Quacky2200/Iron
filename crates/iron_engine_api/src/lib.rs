@@ -13,6 +13,7 @@ pub mod audio;
 pub mod camera;
 pub mod clock;
 pub mod color;
+pub mod datetime;
 pub mod gizmos;
 pub mod input;
 pub mod layers;
@@ -27,6 +28,8 @@ pub mod time;
 pub fn manifests() -> Vec<String> {
     vec![
         color::color_api::MANIFEST.to_json(),
+        datetime::time_span_api::MANIFEST.to_json(),
+        datetime::date_time_api::MANIFEST.to_json(),
         time::time_api::MANIFEST.to_json(),
         clock::time_since_api::MANIFEST.to_json(),
         clock::time_until_api::MANIFEST.to_json(),

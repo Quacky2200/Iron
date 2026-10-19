@@ -817,6 +817,54 @@ pub mod clock_t {
     include!(concat!(env!("OUT_DIR"), "/clock_bindings.rs"));
 }
 
+/// `bench/inputs.ts`, prefix `inp_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod inputs_t {
+    include!(concat!(env!("OUT_DIR"), "/inputs_bindings.rs"));
+}
+
+/// `bench/inputs2.ts`, prefix `in2_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod inputs2_t {
+    include!(concat!(env!("OUT_DIR"), "/inputs2_bindings.rs"));
+}
+
+/// `bench/timespan.ts`, prefix `tsp_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod timespan_t {
+    include!(concat!(env!("OUT_DIR"), "/timespan_bindings.rs"));
+}
+
+/// `bench/datetime.ts`, prefix `dtm_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod datetime_t {
+    include!(concat!(env!("OUT_DIR"), "/datetime_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

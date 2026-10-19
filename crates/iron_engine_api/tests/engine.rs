@@ -72,6 +72,7 @@ fn input_reports_this_frames_presses_and_releases() {
         input::key_down_event("Space"); // a repeat is not a new press
         input::mouse_button_event(1, true);
         input::mouse_move(10.0, 20.0);
+        input::tick();
         let s: String = ctx
             .eval(
                 r#"JSON.stringify([input.getKey("Space"), input.getKeyDown("Space"), input.getKeyUp("Space"),
@@ -79,8 +80,8 @@ fn input_reports_this_frames_presses_and_releases() {
             )
             .unwrap();
         assert_eq!(s, "[true,true,false,true,false,10,20]");
-        input::end_frame();
         input::key_up_event("Space");
+        input::tick();
         let s: String = ctx
             .eval(r#"JSON.stringify([input.getKey("Space"), input.getKeyDown("Space"), input.getKeyUp("Space"), input.getMouseButtonDown(1), input.getMouseButton(1)])"#)
             .unwrap();

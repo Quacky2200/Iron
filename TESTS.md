@@ -1119,3 +1119,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-41 | Integration | `Assets` in QuickJS: lookups, `guid:` sources, importer JSON, polled changes. |
 | M9-API-42 | Integration | `Application` / `SystemInfo` in QuickJS, script writes returned as requests, focus and pause changes. |
 | M9-API-43 | Integration | `TimeSince` / `TimeUntil` value classes in QuickJS follow the game clock. |
+| M9-TS-627..636 | Integration | `input` after the engine delivered events and ticked: keys held / pressed / released, mouse position, delta and wheel, mouse buttons as keys, `getAxis` (keys, stick, mouse), `getButton` / `getButtonDown`, gamepads by id; a second program checks the frame after (a key released, a pad gone, a blur), compared with `input.ts` in bun (`inputs`, `inputs2`). |
+| M9-TS-637..642 | Integration | `TimeSpan`: `new TimeSpan(ms)` rounding, `of`, `fromX`, parts and totals (negative too), arithmetic, comparison, `toString` constant and custom formats, `parse`, compared with `time.ts` in bun. |
+| M9-TS-643..650 | Integration | `DateTime` in New York time: fields, epoch and kind, every standard and custom format, month / year / day arithmetic with clamping, daylight-saving gaps and overlaps, field carrying (`new DateTime(2024, 13, 1)`), ISO parsing, statics, compared with `time.ts` in bun. |
+| M9-API-44 | Integration | `input` in QuickJS follows the tick (`time::advance`): events become this frame, the stick beats the keys when pushed further, pads are read by id, a blur clears held keys. |
+| M9-API-45 | Integration | `TimeSpan` and `DateTime` as JavaScript classes in QuickJS: `new X(..)` goes through `create`, members and statics work. |

@@ -68,12 +68,13 @@ fn keys_start_the_music_change_the_formula_and_show_the_centre() {
     audio::take_commands();
 
     // Paused at the start: a frame changes nothing.
+    input::tick();
     assert!(host.update(0.1, &all).is_empty());
     assert!(gizmos::take_frame().is_none(), "paused: nothing is redrawn");
 
     input::key_down_event("Space");
+    input::tick();
     assert!(host.update(0.5, &all).is_empty());
-    input::end_frame();
     input::key_up_event("Space");
     let cmds = audio::take_commands();
     assert!(
@@ -82,8 +83,8 @@ fn keys_start_the_music_change_the_formula_and_show_the_centre() {
         "{cmds:?}"
     );
     // Space is handled at the end of the update: the next frame is the first one that runs.
+    input::tick();
     assert!(host.update(0.5, &all).is_empty());
-    input::end_frame();
     let moved = gizmos::take_frame().expect("running: redrawn");
     assert_eq!(moved.lines.len(), 1083);
     assert_ne!(
@@ -93,15 +94,15 @@ fn keys_start_the_music_change_the_formula_and_show_the_centre() {
 
     // Digit2: the "normal" formula; a new curve.
     input::key_down_event("Digit2");
+    input::tick();
     assert!(host.update(0.1, &all).is_empty());
-    input::end_frame();
     let normal = gizmos::take_frame().expect("redrawn");
     assert_ne!(normal.lines[100].from, moved.lines[100].from);
 
     // F5: the centre ring is drawn as well.
     input::key_down_event("F5");
+    input::tick();
     assert!(host.update(0.1, &all).is_empty());
-    input::end_frame();
     let with_centre = gizmos::take_frame().expect("redrawn");
     assert_eq!(with_centre.lines.len(), 1083 + 24);
 }

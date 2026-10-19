@@ -1,0 +1,18 @@
+// Runs every exported function of timespan.ts in bun against the original engine TypeScript
+// (time.ts) and writes what they return.
+//   bun bench/gen_timespan_expected.ts
+import * as e0 from "../../../js/engine/src/time.ts";
+
+Object.assign(globalThis, e0);
+// What the engine sets up around the game (info, clock ticks), if the program needs any.
+if (await Bun.file(import.meta.dir + "/timespan_prelude.ts").exists()) await import("./timespan_prelude.ts");
+const m = await import("./timespan.ts");
+
+const out: Record<string, unknown> = {};
+for (const [name, fn] of Object.entries(m)) {
+  if (typeof fn !== "function") continue;
+  const v = (fn as () => unknown)();
+  out[name] = typeof v === "string" ? { s: Array.from({ length: v.length }, (_, i) => v.charCodeAt(i)) } : v;
+}
+await Bun.write(import.meta.dir + "/timespan_expected.json", JSON.stringify(out));
+console.log("wrote", Object.keys(out).length, "results");

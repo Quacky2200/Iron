@@ -303,3 +303,16 @@ the TypeScript, all because a call has fixed typed parameters:
 - `SystemInfo.screenWidth` / `screenHeight` / `screenRefreshRate` / `screenDpi` replace `SystemInfo.screen`;
 - `Application.onFocusChanged(fn)`, `Task` and the vector-valued `Random` members wait for closures and the
   Rust math types.
+
+### Input, TimeSpan and DateTime
+
+- `input` follows `js/engine/src/input.ts`: events (`key_down`, `key_up_event`, `mouse_move`, `mouse_delta`, `wheel`,
+  `gamepad_*`, `blur`) arrive as they happen and become "this frame" at `input::tick()`, which `time::advance` calls (the engine
+  tick). Mouse buttons are keys (`MouseLeft`...). Gamepads are read by id (`gamepadCount`, `gamepadId(i)`, `gamepadName(id)`,
+  `gamepadButton(id, name)`, `gamepadAxis(id, name)`); `input.on(..)` listeners wait for closures.
+- `TimeSpan` (field `totalMilliseconds`) and `DateTime` (fields `epochMilliseconds`, `utc`; local time through the OS zone or
+  `datetime::set_zone`) are value classes. A static `create` makes `new TimeSpan(ms)` and `new DateTime(y, m, ...)` round and
+  carry as TypeScript does (compiled code and QuickJS both call it; the engine builds its own results with the fields).
+  Differences: `parse` logs an error and returns NaN instead of throwing, `DateTime.parse` knows ISO 8601 only (no whitespace),
+  `subtract(TimeSpan)` is `subtractTimeSpan`, `DateTime.fromDate(Date)` and `Task` are not there.
+- A function with more than four parameters reads its QuickJS arguments from the rest list (`new DateTime(..)` has eight).

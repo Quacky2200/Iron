@@ -350,11 +350,13 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             let idx: Vec<usize> = (0..n).collect();
             let ts = &v.ts;
             let _ = &names;
+            // The marker first says "these are the fields", not constructor arguments.
             quote! {
                 let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(#call);
                 let class: ::iron_api::rquickjs::function::Constructor =
                     ctx.globals().get(#ts)?;
-                class.construct(( #( parts[#idx], )* ))
+                let raw: ::iron_api::rquickjs::Value = ctx.globals().get("__iron_raw")?;
+                class.construct((raw, #( parts[#idx], )* ))
             }
         }
         other => {
@@ -930,12 +932,55 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .collect();
             let js_ret = js_ret_ty(&a.ret);
             let js_body = js_result(&a.ret, quote!(#name( #( #js_args ),* )), &args);
-            let closure = quote! {
-                | ctx: ::iron_api::rquickjs::Ctx<'js>, #( #js_params ),* |
-                    -> ::iron_api::rquickjs::Result<#js_ret> {
-                    let _ = &ctx;
-                    #( #js_defaults )*
-                    #js_body
+            // rquickjs takes a few typed parameters; a function with more reads its arguments from
+            // the rest list one by one.
+            let closure = if all_params.len() > 4 {
+                let binds: Vec<TokenStream2> = all_params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (n, k))| {
+                        let t = js_param_ty(k);
+                        if is_opt(n) {
+                            let d = js_default(k);
+                            quote! {
+                                let #n: #t = match rest.0.get(#i) {
+                                    Some(v) if !v.is_undefined() && !v.is_null() => {
+                                        ::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?
+                                    }
+                                    _ => #d,
+                                };
+                            }
+                        } else {
+                            quote! {
+                                let #n: #t = match rest.0.get(#i) {
+                                    Some(v) => ::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?,
+                                    None => {
+                                        return Err(::iron_api::rquickjs::Exception::throw_type(
+                                            &ctx,
+                                            "missing argument",
+                                        ));
+                                    }
+                                };
+                            }
+                        }
+                    })
+                    .collect();
+                quote! {
+                    | ctx: ::iron_api::rquickjs::Ctx<'js>,
+                      rest: ::iron_api::rquickjs::function::Rest<::iron_api::rquickjs::Value<'js>> |
+                        -> ::iron_api::rquickjs::Result<#js_ret> {
+                        #( #binds )*
+                        #js_body
+                    }
+                }
+            } else {
+                quote! {
+                    | ctx: ::iron_api::rquickjs::Ctx<'js>, #( #js_params ),* |
+                        -> ::iron_api::rquickjs::Result<#js_ret> {
+                        let _ = &ctx;
+                        #( #js_defaults )*
+                        #js_body
+                    }
                 }
             };
             if let Some((ts, _)) = a.class.as_ref().filter(|_| a.value_recv.is_some()) {
@@ -952,6 +997,20 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     )?;
                 });
                 continue;
+            }
+            // A value class's `create` is also what `new X(..)` calls.
+            if a.class.is_none()
+                && a.tag == Tag::Static
+                && js_name == "create"
+                && args.values.iter().any(|v| v.ts == args.namespace)
+            {
+                let hidden = format!("__iron_create_{}", args.namespace);
+                js_hidden.push(quote! {
+                    ctx.globals().set(
+                        #hidden,
+                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                    )?;
+                });
             }
             match a.tag {
                 // A namespace property: an accessor on the namespace object.
@@ -992,10 +1051,28 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let ctor_body: Vec<String> = fields.iter().map(|f| format!("this.{f} = {f};")).collect();
         // The class is made once (another module may have made it already) and each module adds
         // its methods to the prototype.
+        // `new X(..)`: the engine's own results come with a marker first (the fields); a script's
+        // call goes through the static `create` when the namespace has one, else the fields.
+        let plain: Vec<String> = fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| format!("this.{f} = a[{i}] === undefined ? 0 : a[{i}];"))
+            .collect();
+        let raw: Vec<String> = fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| format!("this.{f} = a[{}];", i + 1))
+            .collect();
+        let copy: Vec<String> = fields
+            .iter()
+            .map(|f| format!("this.{f} = v.{f};"))
+            .collect();
+        let _ = (&ctor_params, &ctor_body);
         let mut src = format!(
-            "globalThis.{ts} ??= class {ts} {{ constructor({}) {{ {} }} }};",
-            ctor_params.join(", "),
-            ctor_body.join(" ")
+            "globalThis.{ts} ??= class {ts} {{ constructor(...a) {{ if (a[0] === globalThis.__iron_raw) {{ {} }} else if (globalThis.__iron_create_{ts}) {{ const v = globalThis.__iron_create_{ts}(...a); {} }} else {{ {} }} }} }};",
+            raw.join(" "),
+            copy.join(" "),
+            plain.join(" ")
         );
         for (name, is_get, hidden) in js_value_methods.get(ts).into_iter().flatten() {
             if *is_get {
@@ -1023,6 +1100,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             pub fn register_quickjs<'js>(
                 ctx: &::iron_api::rquickjs::Ctx<'js>,
             ) -> ::iron_api::rquickjs::Result<()> {
+                if ctx.globals().get::<_, ::iron_api::rquickjs::Value>("__iron_raw")?.is_undefined() {
+                    ctx.globals().set("__iron_raw", ::iron_api::rquickjs::Object::new(ctx.clone())?)?;
+                }
                 #( #js_class_stmts )*
                 let ns = #ns_init;
                 #( #js_hidden )*

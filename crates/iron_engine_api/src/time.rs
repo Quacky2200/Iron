@@ -40,6 +40,8 @@ pub fn advance(unscaled_dt: f64) {
         t.frame_count += 1;
         s.set(t);
     });
+    // The engine tick also starts the input frame (`input.ts` listens to it).
+    crate::input::tick();
 }
 
 pub fn state() -> TimeState {

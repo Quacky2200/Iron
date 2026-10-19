@@ -52,6 +52,7 @@ fn time_input_and_display_properties_work_in_compiled_code() {
         input::key_down_event("KeyV");
         input::mouse_button_event(0, true);
         input::mouse_move(2.0, 3.0);
+        input::tick();
         assert_eq!(unsafe { ts_en2_keys() }, 2111.0);
 
         screen::set_size(800, 600);
