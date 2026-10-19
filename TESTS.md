@@ -1049,3 +1049,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-572 | Integration | Generics `aliases` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
 | M9-TS-573 | Integration | Generics `nested` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
 | M9-TS-574 | Unit | Generic mistakes are errors with a reason: cannot infer, exported generic, conflicting inference, generic static or accessor. |
+| M2-NAT-01 | Integration | Native reconciler: a description becomes nodes in a real `UiTree` (`crates/iron_ui_native/tests/reconcile.rs`). |
+| M2-NAT-02 | Integration | State setter re-renders only its component, text updated in place; same value renders nothing. |
+| M2-NAT-03 | Integration | Keyed children keep their nodes when reordered, inserted and removed. |
+| M2-NAT-04 | Integration | Style diff sends what changed; a removed property resets. |
+| M2-NAT-05 | Integration | Components and fragments place their nodes in the container; a component switching output replaces in place. |
+| M2-NAT-06 | Integration | Effects and cleanups run in real React's order (log from `js/react/test/native_oracle.test.tsx`). |
+| M2-NAT-07 | Integration | `useRef`/`useMemo`/effect without deps keep values and run as React does. |
+| M2-NAT-08 | Integration | Portals mount under another node; events bubble through the component tree. |
+| M2-NAT-09 | Integration | Capture then bubble, `stopPropagation`, `preventDefault`, state set in a handler is committed before dispatch returns. |
+| M2-NAT-10 | Integration | Refs set and cleared, context follows the provider, unmount cleans up and frees. |
+| M2-NAT-11 | Integration | An effect that sets state every render is reported after 100 chained updates. |
+| M2-NAT-12 | JS unit | Real React's effect/cleanup order for mount, update, removal, replacement and unmount (`js/react/test/native_oracle.test.tsx`). |

@@ -1566,6 +1566,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
         remake) over a native UI tree, written in the compiled TypeScript subset; no React reconciler, no
         OneJS-style embedded engine for the common case
     - [x] Generics in `iron_ts` (functions, classes, methods, interfaces, aliases; `M9-TS-562..574`)
+    - [x] Step 2 of the migration: `iron_ui_native` reconciler core with Rust closures (hooks, keyed diff, effects in React's order, portals, events; `M2-NAT-01..12`); next: compiler side (JSX, hook intrinsics), then events/refs wiring, then `memo`/`forwardRef`/`useReducer`
     - [x] Step 1 of the migration: typed `Op` enum and one applier (`M2-UI-OP-01`)
     - [x] Design note written and approved (answers: portal events follow React, non-boolean `&&` is a compile error, `memo`/`forwardRef`/`useReducer` last, generics added to `iron_ts`): `docs/research/iron-ui-native.md` (user decision: hooks kept, native reconciler with re-render semantics and element descriptions, portals, one `Op` applier; React stays until it exists)
     - [ ] Design note: what of React is used (components, state, effects, events, refs), signals-style

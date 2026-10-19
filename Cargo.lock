@@ -1621,6 +1621,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_ui_native"
+version = "0.1.0"
+dependencies = [
+ "iron_core",
+ "iron_ui",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
