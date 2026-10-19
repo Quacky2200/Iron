@@ -68,13 +68,15 @@ impl Ty {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Param {
     pub name: &'static str,
     pub ty: Ty,
     /// A trailing parameter a call may leave out (`#[optional(name)]`): the function sees NaN for
     /// a number, an empty string, `false` or a zero handle.
     pub optional: bool,
+    /// What a left-out parameter is when `#[optional(name = value)]` says (a flag is 0 or 1).
+    pub default: Option<f64>,
 }
 
 /// How a function is called from a script.
@@ -101,7 +103,7 @@ impl FnKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Function {
     pub kind: FnKind,
     /// The name scripts use (`deltaTime`).
@@ -135,13 +137,13 @@ pub struct ValueDef {
 
 /// A handle class: `GameObject`, `Transform`. Its functions take the receiver as their first
 /// parameter (`this`); scripts see methods, properties and statics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClassDef {
     pub name: &'static str,
     pub functions: &'static [Function],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Namespace {
     pub name: &'static str,
     /// The handle types it mentions: `(TypeScript name)`.
@@ -373,10 +375,12 @@ fn function_json(f: &Function) -> String {
         .iter()
         .map(|p| {
             format!(
-                "{{\"name\":{},\"type\":{}{}}}",
+                "{{\"name\":{},\"type\":{}{}{}}}",
                 json_str(p.name),
                 json_str(&p.ty.name()),
-                if p.optional { ",\"optional\":true" } else { "" }
+                if p.optional { ",\"optional\":true" } else { "" },
+                p.default
+                    .map_or(String::new(), |d| format!(",\"default\":{d}"))
             )
         })
         .collect();

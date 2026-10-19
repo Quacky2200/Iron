@@ -21,6 +21,8 @@ pub struct ExternFn {
     pub ret: ExtTy,
     /// Index of the first parameter a call may leave out (`params.len()`: none).
     pub optional_from: usize,
+    /// Per parameter: the value a left-out one takes (a flag is 0 or 1), if the API says.
+    pub defaults: Vec<Option<f64>>,
 }
 
 /// The functions of a handle class, by how scripts call them. Methods, getters and setters take
@@ -174,6 +176,7 @@ impl Manifest {
         let kind = f["kind"].as_str().unwrap_or("static").to_string();
         let mut params = Vec::new();
         let mut optional_from = usize::MAX;
+        let mut defaults: Vec<Option<f64>> = Vec::new();
         for p in f["params"].as_array().ok_or("manifest: missing `params`")? {
             let pn = p["name"].as_str().unwrap_or("arg").to_string();
             let pt = ext_ty(
@@ -187,6 +190,7 @@ impl Manifest {
             if p["optional"].as_bool() == Some(true) && optional_from > params.len() {
                 optional_from = params.len();
             }
+            defaults.push(p["default"].as_f64());
             params.push((pn, pt));
         }
         let ret = ext_ty(f["returns"].as_str().ok_or("manifest: missing `returns`")?)?;
@@ -199,6 +203,7 @@ impl Manifest {
             ExternFn {
                 symbol,
                 optional_from: optional_from.min(params.len()),
+                defaults,
                 params,
                 ret,
             },

@@ -961,6 +961,18 @@ pub mod anim_animator_t {
     include!(concat!(env!("OUT_DIR"), "/anim_animator_bindings.rs"));
 }
 
+/// `bench/scene_objects.ts`, prefix `sob_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod scene_objects_t {
+    include!(concat!(env!("OUT_DIR"), "/scene_objects_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

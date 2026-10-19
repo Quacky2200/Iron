@@ -336,3 +336,9 @@ as bun does), and the tests that compare with bun run the original with the same
   `Plane.raycast` / `intersect` answer NaN where the TypeScript returned `null`; `RectInt.positions()` is not there;
   `Ray`, `Plane`, `Bounds` and `Pose` keep flat numbers and give their vectors from getters; `Random.insideUnitSphere` and
   friends can now be added (the vectors exist).
+
+### Defaults for left-out parameters
+
+`#[optional(keep_world = true, fade = 0.3)]` gives a left-out parameter a value instead of NaN / false / empty: a compiled call and
+QuickJS both pass it (`GameObject.setParent(parent, keepWorld = true)` is declared this way). The manifest says `"default": 1`
+(a flag is 0 or 1).

@@ -59,10 +59,54 @@ pub fn with_scene<R>(f: impl FnOnce(&mut Scene) -> R) -> Option<R> {
     with(f)
 }
 
-fn world_position(object: ObjectId) -> Vec3 {
-    with(|s| s.contains(object).then(|| s.world(object).position))
-        .flatten()
-        .unwrap_or_default()
+/// The world position, rotation and scale of an object, composed down its parent chain the way
+/// `scene.ts` does it: rotations multiply and scales multiply component-wise (so a rotated
+/// non-uniformly scaled parent gives no shear, as in Unity).
+fn world_pose(scene: &Scene, object: ObjectId) -> (V3, Q, V3) {
+    let one = V3 {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+    let mut chain = vec![object];
+    while let Some(p) = scene.parent(*chain.last().expect("not empty")) {
+        chain.push(p);
+    }
+    let (mut pos, mut rot, mut scale) = (V3::ZERO, Q::IDENTITY, one);
+    for id in chain.into_iter().rev() {
+        let Some(t) = scene.local(id) else {
+            continue;
+        };
+        let (lp, lq, ls) = (v3_of(t.position), q_of(t.rotation), v3_of(t.scale));
+        pos = pos.add(rot.rotate(V3 {
+            x: scale.x * lp.x,
+            y: scale.y * lp.y,
+            z: scale.z * lp.z,
+        }));
+        rot = rot.mul(lq);
+        scale = V3 {
+            x: scale.x * ls.x,
+            y: scale.y * ls.y,
+            z: scale.z * ls.z,
+        };
+    }
+    (pos, rot, scale)
+}
+
+/// The pose of the parent chain above an object (the identity for a root).
+fn parent_pose(scene: &Scene, object: ObjectId) -> (V3, Q, V3) {
+    match scene.parent(object) {
+        Some(p) => world_pose(scene, p),
+        None => (
+            V3::ZERO,
+            Q::IDENTITY,
+            V3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+        ),
+    }
 }
 
 /// The script's doubles as the scene's floats, and back.
@@ -106,8 +150,12 @@ fn none() -> ObjectId {
     )
 )]
 pub mod scene_api {
-    use super::{ObjectId, Q, Transform, TransformRef, V3, none, q_of, quat, v3_of, vec3, with};
+    use super::{
+        ObjectId, Q, Transform, TransformRef, V3, none, parent_pose, q_of, quat, v3_of, vec3, with,
+        world_pose,
+    };
     use glam::{Quat, Vec3};
+    use iron_api::Handle;
 
     // `GameObject`: creating, destroying, flags and the transform.
     impl ObjectId {
@@ -174,6 +222,101 @@ pub mod scene_api {
         pub fn set_layer(self, layer: u32) {
             with(|s| s.set_layer(self, layer.min(31) as u8));
         }
+
+        /// The object it is under (no object at the root).
+        #[property]
+        pub fn parent(self) -> ObjectId {
+            parent(self)
+        }
+
+        /// Moves the object under `parent` (no object: to the world root). It keeps its place in the
+        /// world unless `keepWorld` is false, in which case it keeps its local transform.
+        #[optional(keep_world = true)]
+        pub fn set_parent(self, parent: ObjectId, keep_world: bool) {
+            set_parent(self, parent, keep_world);
+        }
+
+        /// How many children it has.
+        #[property]
+        pub fn child_count(self) -> f64 {
+            with(|s| s.children(self).len() as f64).unwrap_or(0.0)
+        }
+
+        /// The i-th child (no object past the end).
+        pub fn child_at(self, index: f64) -> ObjectId {
+            with(|s| s.children(self).get(index as usize).copied())
+                .flatten()
+                .unwrap_or_else(none)
+        }
+
+        /// A child by name (direct children only; no object if none).
+        pub fn find_child(self, name: &str) -> ObjectId {
+            with(|s| {
+                s.children(self)
+                    .iter()
+                    .copied()
+                    .find(|c| s.name(*c) == Some(name))
+            })
+            .flatten()
+            .unwrap_or_else(none)
+        }
+
+        /// The topmost object above it (itself at the root).
+        #[property]
+        pub fn root(self) -> ObjectId {
+            with(|s| {
+                let mut o = self;
+                while let Some(p) = s.parent(o) {
+                    o = p;
+                }
+                o
+            })
+            .unwrap_or(self)
+        }
+
+        /// True once the object was destroyed.
+        #[property]
+        pub fn destroyed(self) -> bool {
+            !with(|s| s.contains(self)).unwrap_or(false)
+        }
+
+        /// Flags that keep it out of the editor views and saved scenes (`HideFlags` bits).
+        #[property]
+        pub fn hide_flags(self) -> f64 {
+            with(|s| f64::from(s.hide_flags(self))).unwrap_or(0.0)
+        }
+
+        pub fn set_hide_flags(self, flags: f64) {
+            with(|s| s.set_hide_flags(self, flags as u32));
+        }
+
+        /// A number that names the object while it lives (the same object, the same number).
+        #[property]
+        pub fn id(self) -> f64 {
+            self.to_raw() as f64
+        }
+
+        /// An object by its `id` (no object if it is gone).
+        pub fn by_id(id: f64) -> ObjectId {
+            let o = ObjectId::from_raw(id as u64);
+            if with(|s| s.contains(o)).unwrap_or(false) {
+                o
+            } else {
+                none()
+            }
+        }
+
+        /// How many objects are at the world root.
+        pub fn root_count() -> f64 {
+            with(|s| s.roots().len() as f64).unwrap_or(0.0)
+        }
+
+        /// The i-th root object (no object past the end).
+        pub fn root_at(index: f64) -> ObjectId {
+            with(|s| s.roots().get(index as usize).copied())
+                .flatten()
+                .unwrap_or_else(none)
+        }
     }
 
     // `Transform`: position, rotation and scale, and the hierarchy.
@@ -187,7 +330,7 @@ pub mod scene_api {
         /// Position in the world.
         #[property]
         pub fn position(self) -> V3 {
-            v3_of(super::world_position(self.0))
+            position(self.0)
         }
 
         /// Puts the object at a world position, keeping its world rotation.
@@ -234,6 +377,113 @@ pub mod scene_api {
             set_local_scale(self.0, scale);
         }
 
+        /// Local rotation as Euler angles in degrees.
+        #[property]
+        pub fn local_euler_angles(self) -> V3 {
+            local_rotation(self.0).euler_angles()
+        }
+
+        pub fn set_local_euler_angles(self, v: V3) {
+            set_local_rotation(self.0, Q::euler(v.x, v.y, v.z));
+        }
+
+        /// World rotation as Euler angles in degrees.
+        #[property]
+        pub fn euler_angles(self) -> V3 {
+            rotation(self.0).euler_angles()
+        }
+
+        pub fn set_euler_angles(self, v: V3) {
+            set_rotation(self.0, Q::euler(v.x, v.y, v.z));
+        }
+
+        /// World scale (approximate under rotated, non-uniformly scaled parents, like Unity).
+        #[property]
+        pub fn lossy_scale(self) -> V3 {
+            lossy_scale(self.0)
+        }
+
+        /// The object forward (-z) direction in the world.
+        #[property]
+        pub fn forward(self) -> V3 {
+            rotation(self.0).rotate(V3 {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+            })
+        }
+
+        /// The object right (+x) direction in the world.
+        #[property]
+        pub fn right(self) -> V3 {
+            rotation(self.0).rotate(V3::RIGHT)
+        }
+
+        /// The object up (+y) direction in the world.
+        #[property]
+        pub fn up(self) -> V3 {
+            rotation(self.0).rotate(V3::UP)
+        }
+
+        /// Moves by `delta`, in world space (or along the object own axes with `"self"`).
+        #[optional(space)]
+        pub fn translate(self, delta: V3, space: &str) {
+            let d = if space == "self" {
+                rotation(self.0).rotate(delta)
+            } else {
+                delta
+            };
+            let p = position(self.0);
+            set_position(self.0, p.add(d));
+        }
+
+        /// Rotates by Euler angles in degrees, about the object own axes (or the world with
+        /// `"world"`).
+        #[optional(space)]
+        pub fn rotate(self, euler: V3, space: &str) {
+            let q = Q::euler(euler.x, euler.y, euler.z);
+            let r = rotation(self.0);
+            set_rotation(self.0, if space == "world" { q.mul(r) } else { r.mul(q) });
+        }
+
+        /// Turns the object so forward points at `target`.
+        pub fn look_at(self, target: V3) {
+            let d = target.sub(position(self.0));
+            set_rotation(self.0, Q::look_rotation(d, V3::UP));
+        }
+
+        /// Like `lookAt`, with the direction that should stay up.
+        pub fn look_at_up(self, target: V3, up: V3) {
+            let d = target.sub(position(self.0));
+            set_rotation(self.0, Q::look_rotation(d, up));
+        }
+
+        /// A point from the object local space to the world.
+        pub fn transform_point(self, p: V3) -> V3 {
+            let s = lossy_scale(self.0);
+            position(self.0).add(rotation(self.0).rotate(V3 {
+                x: s.x * p.x,
+                y: s.y * p.y,
+                z: s.z * p.z,
+            }))
+        }
+
+        /// A point from the world to the object local space.
+        pub fn inverse_transform_point(self, p: V3) -> V3 {
+            let s = lossy_scale(self.0);
+            let q = rotation(self.0).inverse().rotate(p.sub(position(self.0)));
+            V3 {
+                x: q.x / s.x,
+                y: q.y / s.y,
+                z: q.z / s.z,
+            }
+        }
+
+        /// A direction from local space to the world (rotation only).
+        pub fn transform_direction(self, d: V3) -> V3 {
+            rotation(self.0).rotate(d)
+        }
+
         /// The parent transform, or no object for a root.
         #[property]
         pub fn parent(self) -> TransformRef {
@@ -273,10 +523,17 @@ pub mod scene_api {
 
     /// Moves an object under a parent (no object: to the root), optionally keeping its world pose.
     pub fn set_parent(object: ObjectId, parent: ObjectId, keep_world: bool) {
+        // The world pose is read and put back the way `scene.ts` does it (a rotated, non-uniformly
+        // scaled parent gives no shear), not through the matrices.
+        let pose = with(|s| s.contains(object).then(|| world_pose(s, object))).flatten();
         with(|s| {
             let p = s.contains(parent).then_some(parent);
-            s.set_parent(object, p, keep_world)
+            s.set_parent(object, p, false)
         });
+        if keep_world && let Some((pos, rot, _)) = pose {
+            set_position(object, pos);
+            set_rotation(object, rot);
+        }
     }
 
     pub fn enabled(object: ObjectId) -> bool {
@@ -358,42 +615,70 @@ pub mod scene_api {
         });
     }
 
+    /// World scale: the local scales up the parent chain, multiplied.
+    pub fn lossy_scale(object: ObjectId) -> V3 {
+        with(|s| world_pose(s, object).2).unwrap_or(V3 {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        })
+    }
+
     /// Position in the world.
     pub fn position(object: ObjectId) -> V3 {
-        v3_of(
-            with(|s| s.contains(object).then(|| s.world(object).position))
-                .flatten()
-                .unwrap_or_default(),
-        )
+        with(|s| s.contains(object).then(|| world_pose(s, object).0))
+            .flatten()
+            .unwrap_or(V3::ZERO)
     }
 
     /// Puts the object at a world position, keeping its world rotation.
     pub fn set_position(object: ObjectId, position: V3) {
-        let position = vec3(position);
         with(|s| {
-            if s.contains(object) {
-                let rotation = s.world(object).rotation;
-                s.set_world(object, position, rotation);
+            if !s.contains(object) {
+                return;
+            }
+            let (pp, pr, ps) = parent_pose(s, object);
+            let d = pr.inverse().rotate(position.sub(pp));
+            let local = vec3(V3 {
+                x: d.x / ps.x,
+                y: d.y / ps.y,
+                z: d.z / ps.z,
+            });
+            if let Some(t) = s.local(object) {
+                s.set_local(
+                    object,
+                    Transform {
+                        position: local,
+                        ..t
+                    },
+                );
             }
         });
     }
 
     /// Rotation in the world.
     pub fn rotation(object: ObjectId) -> Q {
-        q_of(
-            with(|s| s.contains(object).then(|| s.world(object).rotation))
-                .flatten()
-                .unwrap_or(Quat::IDENTITY),
-        )
+        with(|s| s.contains(object).then(|| world_pose(s, object).1))
+            .flatten()
+            .unwrap_or(Q::IDENTITY)
     }
 
     /// Rotates the object in the world, keeping its world position.
     pub fn set_rotation(object: ObjectId, rotation: Q) {
-        let rotation = quat(rotation);
         with(|s| {
-            if s.contains(object) {
-                let position = s.world(object).position;
-                s.set_world(object, position, rotation);
+            if !s.contains(object) {
+                return;
+            }
+            let (_, pr, _) = parent_pose(s, object);
+            let local = quat(pr.inverse().mul(rotation).normalized());
+            if let Some(t) = s.local(object) {
+                s.set_local(
+                    object,
+                    Transform {
+                        rotation: local,
+                        ..t
+                    },
+                );
             }
         });
     }

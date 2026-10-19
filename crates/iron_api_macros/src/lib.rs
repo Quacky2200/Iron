@@ -297,6 +297,59 @@ fn js_param_ty(k: &Kind) -> TokenStream2 {
     }
 }
 
+/// One entry of `#[optional(..)]`: a name, and perhaps `= value`.
+struct OptItem {
+    name: Ident,
+    default: Option<f64>,
+}
+
+impl syn::parse::Parse for OptItem {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        let default = if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            let e: Expr = input.parse()?;
+            let (neg, lit) = match &e {
+                Expr::Unary(u) if matches!(u.op, syn::UnOp::Neg(_)) => (true, &*u.expr),
+                other => (false, other),
+            };
+            let Expr::Lit(l) = lit else {
+                return Err(syn::Error::new(e.span(), "a number or true / false"));
+            };
+            let v = match &l.lit {
+                Lit::Bool(b) => f64::from(u8::from(b.value)),
+                Lit::Int(i) => i.base10_parse::<f64>()?,
+                Lit::Float(f) => f.base10_parse::<f64>()?,
+                other => return Err(syn::Error::new(other.span(), "a number or true / false")),
+            };
+            Some(if neg { -v } else { v })
+        } else {
+            None
+        };
+        Ok(OptItem { name, default })
+    }
+}
+
+/// The value a left-out optional parameter has when it was given a default.
+fn js_default_value(k: &Kind, v: f64) -> TokenStream2 {
+    match k {
+        Kind::Bool => {
+            let b = v != 0.0;
+            quote!(#b)
+        }
+        Kind::F64 => quote!(#v),
+        Kind::F32 => {
+            let v = v as f32;
+            quote!(#v)
+        }
+        Kind::I32 | Kind::U32 => {
+            let v = v as i64;
+            quote!(#v as _)
+        }
+        _ => quote!(compile_error!("this parameter type cannot have a default")),
+    }
+}
+
 /// The value a left-out optional parameter has (what a compiled call passes).
 fn js_default(k: &Kind) -> TokenStream2 {
     match k {
@@ -468,8 +521,10 @@ struct Api {
     value_recv: Option<(Ident, Kind)>,
     /// Not including the receiver.
     params: Vec<(Ident, Kind)>,
-    /// Names of the trailing parameters a call may leave out (`#[optional(a, b)]`).
+    /// Names of the trailing parameters a call may leave out (`#[optional(a, b = 1.5)]`).
     optional: Vec<String>,
+    /// The defaults given (`b = 1.5`; a flag is 0 or 1).
+    defaults: Vec<(String, f64)>,
     ret: Kind,
 }
 
@@ -529,13 +584,17 @@ fn api_of(
     };
     let stem = camel(sig.ident.to_string().trim_start_matches("r#"));
     let mut optional = Vec::new();
+    let mut defaults = Vec::new();
     for at in attrs.iter().filter(|a| a.path().is_ident("optional")) {
-        let names = at.parse_args_with(Punctuated::<Ident, Token![,]>::parse_terminated)?;
-        for n in names {
-            if !params.iter().any(|(p, _)| *p == n) {
-                return Err(syn::Error::new(n.span(), "no such parameter"));
+        let items = at.parse_args_with(Punctuated::<OptItem, Token![,]>::parse_terminated)?;
+        for it in items {
+            if !params.iter().any(|(p, _)| *p == it.name) {
+                return Err(syn::Error::new(it.name.span(), "no such parameter"));
             }
-            optional.push(n.to_string());
+            optional.push(it.name.to_string());
+            if let Some(d) = it.default {
+                defaults.push((it.name.to_string(), d));
+            }
         }
     }
     // Only trailing parameters can be left out.
@@ -562,6 +621,7 @@ fn api_of(
         value_recv: None,
         params,
         optional,
+        defaults,
         ret,
     })
 }
@@ -803,10 +863,16 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             ptys.push(manifest_ty(k, &args));
         }
         let mut popts: Vec<bool> = vec![false; pnames.len()];
+        let mut pdefaults: Vec<TokenStream2> =
+            vec![quote!(::std::option::Option::None); pnames.len()];
         for (n, k) in &a.params {
             pnames.push(camel(&n.to_string()));
             ptys.push(manifest_ty(k, &args));
             popts.push(a.optional.contains(&n.to_string()));
+            pdefaults.push(match a.defaults.iter().find(|d| *n == d.0) {
+                Some((_, v)) => quote!(::std::option::Option::Some(#v)),
+                None => quote!(::std::option::Option::None),
+            });
         }
         let ret_m = manifest_ty(&a.ret, &args);
         let kind = kind_tokens(a.tag);
@@ -817,7 +883,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 rust_name: #rust_name,
                 symbol: #symbol,
                 doc: #doc,
-                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts } ),* ],
+                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults } ),* ],
                 ret: #ret_m,
             }
         };
@@ -929,7 +995,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .iter()
                 .filter(|(n, _)| is_opt(n))
                 .map(|(n, k)| {
-                    let d = js_default(k);
+                    let d = match a.defaults.iter().find(|d| *n == d.0) {
+                        Some((_, v)) => js_default_value(k, *v),
+                        None => js_default(k),
+                    };
                     quote!(let #n = #n.0.flatten().unwrap_or(#d);)
                 })
                 .collect();
@@ -948,7 +1017,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     .map(|(i, (n, k))| {
                         let t = js_param_ty(k);
                         if is_opt(n) {
-                            let d = js_default(k);
+                            let d = match a.defaults.iter().find(|d| *n == d.0) {
+                                Some((_, v)) => js_default_value(k, *v),
+                                None => js_default(k),
+                            };
                             quote! {
                                 let #n: #t = match rest.0.get(#i) {
                                     Some(v) if !v.is_undefined() && !v.is_null() => {

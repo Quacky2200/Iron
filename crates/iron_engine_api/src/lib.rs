@@ -22,6 +22,7 @@ pub mod gizmos;
 pub mod input;
 pub mod layers;
 pub mod log;
+pub mod objects;
 pub mod prefs;
 pub mod random;
 pub mod screen;
@@ -61,6 +62,7 @@ pub fn manifests() -> Vec<String> {
         random::rng_api::MANIFEST.to_json(),
         random::random_api::MANIFEST.to_json(),
         layers::layer_mask_api::MANIFEST.to_json(),
+        objects::hide_flags_api::MANIFEST.to_json(),
         log::debug_api::MANIFEST.to_json(),
         log::log_api::MANIFEST.to_json(),
         log::console_api::MANIFEST.to_json(),

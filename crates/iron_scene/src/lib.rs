@@ -70,6 +70,8 @@ struct Object {
     enabled: bool,
     /// Render group 0 to 31 (Unity's `layer`).
     layer: u8,
+    /// `HideFlags` bits: what the editor shows and saves.
+    hide_flags: u32,
     parent: Option<ObjectId>,
     children: Vec<ObjectId>,
     local: Transform,
@@ -131,6 +133,7 @@ impl Scene {
             name: name.to_owned(),
             enabled: true,
             layer: 0,
+            hide_flags: 0,
             parent: None,
             children: Vec::new(),
             local: Transform::IDENTITY,
@@ -214,6 +217,17 @@ impl Scene {
     pub fn set_layer(&mut self, id: ObjectId, layer: u8) {
         if let Some(o) = self.get_mut(id) {
             o.layer = layer.min(31);
+        }
+    }
+
+    /// The object's `HideFlags` bits (0 for unknown objects).
+    pub fn hide_flags(&self, id: ObjectId) -> u32 {
+        self.get(id).map_or(0, |o| o.hide_flags)
+    }
+
+    pub fn set_hide_flags(&mut self, id: ObjectId, flags: u32) {
+        if let Some(o) = self.get_mut(id) {
+            o.hide_flags = flags;
         }
     }
 

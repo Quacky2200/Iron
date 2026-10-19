@@ -761,6 +761,7 @@ impl<'a> Lowerer<'a> {
         };
         let f = ExternFn {
             optional_from: usize::MAX,
+            defaults: Vec::new(),
             symbol: symbol.into(),
             params: vec![("slot".into(), ExtTy::F64)],
             ret,
@@ -817,6 +818,7 @@ impl<'a> Lowerer<'a> {
             };
             let ext = ExternFn {
                 optional_from: usize::MAX,
+                defaults: Vec::new(),
                 symbol: symbol.into(),
                 params: vec![
                     ("h".into(), ExtTy::Handle("UiElement".into())),
@@ -872,6 +874,7 @@ impl<'a> Lowerer<'a> {
                 stmts.push(Stmt::Assign(r, call));
                 let set = ExternFn {
                     optional_from: usize::MAX,
+                    defaults: Vec::new(),
                     symbol: "ts_ui_set_cleanup".into(),
                     params: vec![("f".into(), ExtTy::Ptr)],
                     ret: ExtTy::Void,
@@ -963,7 +966,20 @@ impl<'a> Lowerer<'a> {
                 })
             };
             let Some(e) = expr else {
-                // Left out: false, 0 or an empty string.
+                // Left out: the default the API names, else false, 0 or an empty string.
+                if let Some(Some(d)) = f.defaults.get(skip + i) {
+                    match pt {
+                        ExtTy::Bool => {
+                            args.push(mk(ExprKind::Bool(*d != 0.0), Ty::Bool));
+                            continue;
+                        }
+                        ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => {
+                            args.push(num(*d));
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
                 args.push(match pt {
                     ExtTy::Bool => mk(ExprKind::Bool(false), Ty::Bool),
                     ExtTy::Str => self.str_lit(""),
