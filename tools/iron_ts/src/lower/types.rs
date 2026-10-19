@@ -105,6 +105,29 @@ impl<'a> Lowerer<'a> {
                     .as_ref()
                     .map(|a| a.params.iter().collect())
                     .unwrap_or_default();
+                // A type parameter of the specialisation being lowered.
+                if args.is_empty()
+                    && let Some(t) = self.tenv.get(id.name.as_str())
+                {
+                    return Ok(t.clone());
+                }
+                if !args.is_empty()
+                    && (self.generic_classes.contains_key(id.name.as_str())
+                        || self
+                            .ifaces
+                            .get(id.name.as_str())
+                            .is_some_and(|i| i.type_parameters.is_some())
+                        || self
+                            .aliases
+                            .get(id.name.as_str())
+                            .is_some_and(|a| a.type_parameters.is_some()))
+                {
+                    let mut targs = Vec::new();
+                    for a in &args {
+                        targs.push(self.ty(a, hint)?);
+                    }
+                    return self.generic_type(id.name.as_str(), targs);
+                }
                 match id.name.as_str() {
                     "WeakRef" if !args.is_empty() => {
                         let sp = oxc_span::GetSpan::span(args[0]);
@@ -169,7 +192,7 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    fn members(&mut self, members: &'a [TSSignature<'a>], hint: &str) -> R<Vec<Field>> {
+    pub(crate) fn members(&mut self, members: &'a [TSSignature<'a>], hint: &str) -> R<Vec<Field>> {
         let mut fields = Vec::new();
         for m in members {
             let TSSignature::TSPropertySignature(p) = m else {
@@ -190,6 +213,58 @@ impl<'a> Lowerer<'a> {
             });
         }
         Ok(fields)
+    }
+
+    /// `Box<number>`, `Pair<A, B>`, `Opt<T>`: the specialisation of a generic class, interface or
+    /// alias, made once per list of type arguments.
+    fn generic_type(&mut self, base: &str, targs: Vec<Ty>) -> R<Ty> {
+        if self.generic_classes.contains_key(base) {
+            let tparams = self.generic_classes[base].tparams.clone();
+            let targs = self.complete_targs(base, &tparams, targs)?;
+            let name = self.instantiate_class(base, targs)?;
+            return self.named_type(&name);
+        }
+        let (tparams, is_iface) = match self.ifaces.get(base) {
+            Some(i) => (generics::tparam_list(i.type_parameters.as_deref()), true),
+            None => (
+                generics::tparam_list(self.aliases[base].type_parameters.as_deref()),
+                false,
+            ),
+        };
+        let targs = self.complete_targs(base, &tparams, targs)?;
+        let name = self.inst_name(base, &targs);
+        if let Some(t) = self.named.get(&name) {
+            return Ok(t.clone());
+        }
+        let env: generics::TEnv = std::rc::Rc::new(
+            tparams
+                .iter()
+                .map(|(n, _)| n.clone())
+                .zip(targs.iter().cloned())
+                .collect(),
+        );
+        let saved = std::mem::replace(&mut self.tenv, env);
+        let r = if is_iface {
+            let i = self.ifaces[base];
+            if !i.extends.is_empty() {
+                self.tenv = saved;
+                bail!("interface {base}: extends is not supported");
+            }
+            let id = self.new_struct(&name, vec![]);
+            self.named.insert(name.clone(), Ty::Obj(id));
+            self.targs_of_struct.insert(id, (base.to_string(), targs));
+            self.members(&i.body.body, &name).map(|fields| {
+                self.m.structs[id].fields = fields;
+                Ty::Obj(id)
+            })
+        } else {
+            let a = self.aliases[base];
+            self.ty(&a.type_annotation, &name)
+        };
+        self.tenv = saved;
+        let t = r?;
+        self.named.insert(name, t.clone());
+        Ok(t)
     }
 
     /// An interface or alias by name, resolved once.

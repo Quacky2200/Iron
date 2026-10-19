@@ -624,6 +624,18 @@ pub mod resolved_t {
     include!(concat!(env!("OUT_DIR"), "/resolved_bindings.rs"));
 }
 
+/// `bench/generics.ts`, prefix `gx_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod generics_t {
+    include!(concat!(env!("OUT_DIR"), "/generics_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

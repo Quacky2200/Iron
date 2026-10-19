@@ -667,6 +667,17 @@ impl<'a> Lowerer<'a> {
                 self.loc(b.span.start)
             )
         };
+        if self.generic_classes.contains_key(id.name.as_str()) {
+            // `x instanceof Box`: any specialisation of Box, now or made later (fixed up at the end).
+            let l = self.lower_expr(&b.left, None)?;
+            if !matches!(l.ty.strip(), Ty::Obj(_)) {
+                bail!("{}: `instanceof` on {}", self.loc(b.span.start), l.ty)
+            }
+            self.m.itables.push(Vec::new());
+            let table = self.m.itables.len() - 1;
+            self.generic_itables.push((table, id.name.to_string()));
+            return Ok(mk(ExprKind::InstanceOf(Box::new(l), table), Ty::Bool));
+        }
         if !self.classes.contains_key(id.name.as_str()) {
             bail!(
                 "{}: `instanceof {}` is only supported for classes of this program",
@@ -1242,6 +1253,13 @@ impl<'a> Lowerer<'a> {
             other if self.classes.contains_key(other) => {
                 self.new_object(other, &n.arguments, n.span.start)
             }
+            other if self.generic_classes.contains_key(other) => {
+                let targs = self.new_targs(other, n, exp)?;
+                let tparams = self.generic_classes[other].tparams.clone();
+                let targs = self.complete_targs(other, &tparams, targs)?;
+                let inst = self.instantiate_class(other, targs)?;
+                self.new_object(&inst, &n.arguments, n.span.start)
+            }
             other => bail!("{}: `new {other}` is not supported", self.loc(n.span.start)),
         }
     }
@@ -1669,6 +1687,9 @@ impl<'a> Lowerer<'a> {
                         ExprKind::CallClosure(Box::new(callee), args),
                         sig.ret.clone(),
                     ));
+                }
+                if self.lookup(name).is_none() && self.generic_fns.contains_key(name) {
+                    return self.lower_generic_call(name, c, None);
                 }
                 if !self.fids.contains_key(name)
                     && let Some(e) = self.lower_string_global(name, c)?

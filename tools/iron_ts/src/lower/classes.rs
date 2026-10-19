@@ -59,6 +59,16 @@ impl<'a> Lowerer<'a> {
         let Some(id) = &c.id else {
             bail!("a class expression is not supported")
         };
+        if c.type_parameters.is_some() {
+            self.generic_classes.insert(
+                id.name.to_string(),
+                generics::GenericClass {
+                    class: c,
+                    tparams: generics::tparam_list(c.type_parameters.as_deref()),
+                },
+            );
+            return Ok(());
+        }
         self.class_decls.insert(id.name.to_string(), c);
         Ok(())
     }
@@ -124,9 +134,17 @@ impl<'a> Lowerer<'a> {
     /// The struct of class `name`, created on first use. Its fields are filled in by
     /// `finalize_classes`, once every class is known (a base class may mention its subclasses).
     pub(crate) fn class_type(&mut self, name: &str) -> R<Ty> {
+        let env = self.class_tenv.get(name).cloned().unwrap_or_default();
+        let saved = std::mem::replace(&mut self.tenv, env);
+        let r = self.class_type_in_env(name);
+        self.tenv = saved;
+        r
+    }
+
+    fn class_type_in_env(&mut self, name: &str) -> R<Ty> {
         let c = self.class_decls[name];
-        if c.type_parameters.is_some() || !c.decorators.is_empty() {
-            bail!("class {name}: generic and decorated classes are not supported yet")
+        if !c.decorators.is_empty() {
+            bail!("class {name}: decorated classes are not supported yet")
         }
         let sid = self.new_struct(name, vec![]);
         self.named.insert(name.to_string(), Ty::Obj(sid));
@@ -139,10 +157,21 @@ impl<'a> Lowerer<'a> {
             let Expression::Identifier(pid) = &h.expression else {
                 bail!("class {name}: `extends` needs a class name")
             };
-            if h.type_arguments.is_some() {
-                bail!("class {name}: a generic base class is not supported yet")
+            let mut parent = pid.name.to_string();
+            if self.generic_classes.contains_key(&parent) {
+                // `extends Base<number>`: the base class specialised.
+                let mut targs = Vec::new();
+                if let Some(ta) = &h.type_arguments {
+                    for t in &ta.params {
+                        targs.push(self.ty(t, name)?);
+                    }
+                }
+                let tparams = self.generic_classes[&parent].tparams.clone();
+                let targs = self.complete_targs(&parent, &tparams, targs)?;
+                parent = self.instantiate_class(&parent, targs)?;
+            } else if h.type_arguments.is_some() {
+                bail!("class {name}: `{parent}` is not a generic class")
             }
-            let parent = pid.name.to_string();
             if !self.class_decls.contains_key(&parent) {
                 bail!(
                     "class {name} extends `{parent}`, which is not a class of this program \
@@ -242,15 +271,19 @@ impl<'a> Lowerer<'a> {
     /// Gives every class struct its fields: the base class's first, then its own. A field a
     /// subclass declares again (`x = 5` over the base's `x`) is the same slot.
     pub(crate) fn finalize_classes(&mut self) -> R<()> {
-        let mut done: HashSet<String> = HashSet::new();
         let names: Vec<String> = self.classes.keys().cloned().collect();
+        self.finalize_some(&names)
+    }
+
+    /// `finalize_classes` for some classes (specialisations made after the first pass).
+    pub(crate) fn finalize_some(&mut self, names: &[String]) -> R<()> {
+        let mut done: HashSet<String> = HashSet::new();
         for n in names {
-            self.layout_class(&n, &mut done, 0)?;
+            self.layout_class(n, &mut done, 0)?;
         }
         // The `@property` tables, in struct order.
-        let mut by_sid: Vec<(StructId, String)> = self
-            .classes
-            .keys()
+        let mut by_sid: Vec<(StructId, String)> = names
+            .iter()
             .map(|n| (self.classes_sid(n), n.clone()))
             .collect();
         by_sid.sort();
@@ -325,7 +358,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// An empty parameter list and body, for a class without a constructor.
-    fn empty_function(&mut self) -> (&'a FormalParameters<'a>, &'a FunctionBody<'a>) {
+    pub(crate) fn empty_function(&mut self) -> (&'a FormalParameters<'a>, &'a FunctionBody<'a>) {
         if let Some(e) = self.empty_fn {
             return e;
         }
@@ -354,6 +387,13 @@ impl<'a> Lowerer<'a> {
     /// Declares the constructor, methods and accessors of a class (in the main collection pass).
     pub(crate) fn collect_class(&mut self, c: &'a Class<'a>) -> R<()> {
         let name = c.id.as_ref().expect("checked").name.to_string();
+        self.collect_class_as(c, &name)
+    }
+
+    /// `collect_class` for a class under `name` (a specialisation has its own name).
+    pub(crate) fn collect_class_as(&mut self, c: &'a Class<'a>, name: &str) -> R<()> {
+        let env = self.class_tenv.get(name).cloned();
+        let name = name.to_string();
         let Ty::Obj(sid) = self.named_type(&name)? else {
             unreachable!("a class is a struct")
         };
@@ -377,6 +417,21 @@ impl<'a> Lowerer<'a> {
                 self.member_key(&m.key)?
             };
             let f: &'a Function<'a> = &m.value;
+            if f.type_parameters.is_some() {
+                if m.kind != MethodDefinitionKind::Method || m.r#static || f.body.is_none() {
+                    bail!("class {name}: only plain instance methods can be generic")
+                }
+                self.generic_methods.insert(
+                    (name.clone(), key),
+                    generics::GenericFn {
+                        tparams: generics::tparam_list(f.type_parameters.as_deref()),
+                        params: &f.params,
+                        ret: f.return_type.as_ref().map(|r| &r.type_annotation),
+                        body: FnBody::Block(f.body.as_ref().expect("checked")),
+                    },
+                );
+                continue;
+            }
             let is_abstract_method = f.body.is_none() && c.r#abstract && !m.r#static;
             // An overload signature has no body; an abstract method becomes an empty stub that is
             // never called (every instance is of a subclass that overrides it).
@@ -394,6 +449,7 @@ impl<'a> Lowerer<'a> {
                 exported: false,
                 kind: FnKind::Method(sid),
                 ret_ty: None,
+                tenv: env.clone(),
             };
             match (m.kind, m.r#static) {
                 (MethodDefinitionKind::Constructor, _) => {
@@ -447,6 +503,7 @@ impl<'a> Lowerer<'a> {
                 exported: false,
                 kind: FnKind::Ctor(sid, info.parent.is_some()),
                 ret_ty: Some(Ty::Void),
+                tenv: env.clone(),
             };
             self.declare_fn(&fname, src)?;
             info.ctor = fname;

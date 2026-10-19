@@ -1036,3 +1036,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-559 | Integration | Subclasses inherit hooks and override one; inactive objects are skipped; `destroy` runs `onDestroy`. |
 | M9-TS-560 | Integration | A throwing hook disables its component and reports it; the others run; an unknown class is an error. |
 | M9-TS-561 | Integration | `fixed_update` reaches only classes with `onFixedUpdate`. |
+| M9-TS-562 | Integration | Generics `identityTypes` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-563 | Integration | Generics `firstOf` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-564 | Integration | Generics `mapping` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-565 | Integration | Generics `pairs` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-566 | Integration | Generics `fills` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-567 | Integration | Generics `reducing` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-568 | Integration | Generics `boxes` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-569 | Integration | Generics `stacks` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-570 | Integration | Generics `lists` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-571 | Integration | Generics `subclass` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-572 | Integration | Generics `aliases` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-573 | Integration | Generics `nested` equals bun (`iron_ts_tests/tests/generics.rs`, `bench/generics.ts`). |
+| M9-TS-574 | Unit | Generic mistakes are errors with a reason: cannot infer, exported generic, conflicting inference, generic static or accessor. |

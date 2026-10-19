@@ -538,6 +538,33 @@ mod tests {
         assert!(e.contains("pop"), "{e}");
     }
 
+    // M9-TS-574
+    #[test]
+    fn generics_mistakes_are_errors_with_a_reason() {
+        let e = lower::lower_source(
+            "function mk<T>(): T[] { return []; } export function f(): number { return mk().length; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("cannot infer the type argument `T`"), "{e}");
+        let e = lower::lower_source("export function id<T>(x: T): T { return x; }")
+            .err()
+            .unwrap();
+        assert!(e.contains("cannot be exported"), "{e}");
+        let e = lower::lower_source(
+            "function two<T>(a: T, b: T): T { return a; } export function f(): number { return two(1, \"a\"); }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("conflicting types for `T`"), "{e}");
+        let e = lower::lower_source(
+            "class A { m<T>(x: T): T { return x; } static s<T>(x: T): T { return x; } } export function f(): number { return 1; }",
+        )
+        .err()
+        .unwrap();
+        assert!(e.contains("only plain instance methods"), "{e}");
+    }
+
     // M9-TS-119
     #[test]
     fn class_features_that_are_not_built_yet_are_errors_that_say_so() {

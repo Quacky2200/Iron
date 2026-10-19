@@ -1565,6 +1565,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] **UI without React**: **STOP, design first.** A small component/effect library (Preact or our own
         remake) over a native UI tree, written in the compiled TypeScript subset; no React reconciler, no
         OneJS-style embedded engine for the common case
+    - [x] Generics in `iron_ts` (functions, classes, methods, interfaces, aliases; `M9-TS-562..574`)
     - [x] Step 1 of the migration: typed `Op` enum and one applier (`M2-UI-OP-01`)
     - [x] Design note written and approved (answers: portal events follow React, non-boolean `&&` is a compile error, `memo`/`forwardRef`/`useReducer` last, generics added to `iron_ts`): `docs/research/iron-ui-native.md` (user decision: hooks kept, native reconciler with re-render semantics and element descriptions, portals, one `Op` applier; React stays until it exists)
     - [ ] Design note: what of React is used (components, state, effects, events, refs), signals-style

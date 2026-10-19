@@ -384,6 +384,9 @@ impl<'a> Lowerer<'a> {
             if let Some(f) = self.value_member(sid, m, false) {
                 return self.call_ext_fn(f, Some(recv), m, c);
             }
+            if let Some((owner, g)) = self.find_generic_method(sid, m) {
+                return self.call_generic_method(recv, &owner, m, g, c);
+            }
             if let Some((stat, target)) = self.target_for(sid, Which::Method, m) {
                 return self.call_target(&stat, target, &c.arguments, Some(recv));
             }

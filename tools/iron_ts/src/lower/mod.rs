@@ -19,6 +19,7 @@ mod date;
 mod enums;
 mod expr;
 mod generators;
+mod generics;
 mod intl;
 mod iter;
 mod json;
@@ -69,6 +70,8 @@ pub(crate) struct FnSrc<'a> {
     pub kind: FnKind,
     /// A return type that is not an annotation (a constructor returns its class).
     pub ret_ty: Option<Ty>,
+    /// The type parameters in scope: set for a specialisation of a generic function or class.
+    pub tenv: Option<generics::TEnv>,
 }
 
 /// What a name means inside a function.
@@ -207,6 +210,23 @@ pub struct Lowerer<'a> {
     pub(crate) prelude_lines: usize,
     /// The next closure's return type comes from its body, not from the expected type.
     pub(crate) infer_ret: bool,
+    /// The type parameters of the specialisation being lowered (`generics.rs`).
+    pub(crate) tenv: generics::TEnv,
+    pub(crate) generic_fns: HashMap<String, generics::GenericFn<'a>>,
+    pub(crate) generic_classes: HashMap<String, generics::GenericClass<'a>>,
+    /// Generic methods by (class name, method name).
+    pub(crate) generic_methods: HashMap<(String, String), generics::GenericFn<'a>>,
+    /// Specialised classes by name: their type environment.
+    pub(crate) class_tenv: HashMap<String, generics::TEnv>,
+    /// Specialised classes, interfaces and aliases by struct: the generic name and its arguments.
+    pub(crate) targs_of_struct: HashMap<StructId, (String, Vec<Ty>)>,
+    pub(crate) inst_names: HashMap<String, String>,
+    /// Specialised classes whose methods are not declared yet.
+    pub(crate) pending_collect: Vec<String>,
+    /// The program's own classes are laid out: later specialisations finish at once.
+    pub(crate) classes_ready: bool,
+    /// `instanceof GenericClass` tables, filled in once every specialisation exists.
+    pub(crate) generic_itables: Vec<(usize, String)>,
 }
 
 /// Parses and lowers one TypeScript module.
@@ -365,6 +385,16 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         regex_info: HashMap::new(),
         prelude_lines,
         infer_ret: false,
+        tenv: Default::default(),
+        generic_fns: HashMap::new(),
+        generic_classes: HashMap::new(),
+        generic_methods: HashMap::new(),
+        class_tenv: HashMap::new(),
+        targs_of_struct: HashMap::new(),
+        inst_names: HashMap::new(),
+        pending_collect: Vec::new(),
+        classes_ready: false,
+        generic_itables: Vec::new(),
     };
     l.lower_program(&program)?;
     let mut m = l.m;
@@ -415,6 +445,7 @@ impl<'a> Lowerer<'a> {
                 Statement::ExportDeclaration(e) => self.collect(&e.declaration, true, &mut vars)?,
                 Statement::VariableDeclaration(d) => self.collect_vars(d, false, &mut vars)?,
                 Statement::FunctionDeclaration(f) => self.collect_fn(f, false)?,
+                Statement::ClassDeclaration(c) if c.type_parameters.is_some() => {}
                 Statement::ClassDeclaration(c) => {
                     self.collect_class(c)?;
                     vars.push(TopItem::Class(c));
@@ -428,7 +459,9 @@ impl<'a> Lowerer<'a> {
                 _ => {}
             }
         }
+        self.flush_pending_classes()?;
         self.finalize_classes()?;
+        self.classes_ready = true;
         // 2. Top-level values, in source order, into the init function.
         let init_id = self.m.funcs.len();
         self.m.funcs.push(Func {
@@ -458,11 +491,24 @@ impl<'a> Lowerer<'a> {
         self.m.funcs[init_id].body = init_body;
         self.m.init = Some(init_id);
         // 3. Every function body.
-        let mut names: Vec<String> = self.fids.keys().cloned().collect();
-        names.sort_by_key(|n| self.fids[n]);
-        for n in names {
-            self.ensure_lowered(&n)?;
+        // Lowering can declare more functions (specialisations of generics): go on until none
+        // is left.
+        loop {
+            let mut names: Vec<String> = self
+                .fids
+                .iter()
+                .filter(|(_, id)| self.fstate[**id] == 0)
+                .map(|(n, _)| n.clone())
+                .collect();
+            if names.is_empty() {
+                break;
+            }
+            names.sort_by_key(|n| self.fids[n]);
+            for n in names {
+                self.ensure_lowered(&n)?;
+            }
         }
+        self.fixup_generic_itables();
         Ok(())
     }
 
@@ -475,6 +521,7 @@ impl<'a> Lowerer<'a> {
         match d {
             Declaration::VariableDeclaration(v) => self.collect_vars(v, exported, vars)?,
             Declaration::FunctionDeclaration(f) => self.collect_fn(f, exported)?,
+            Declaration::ClassDeclaration(c) if c.type_parameters.is_some() => {}
             Declaration::ClassDeclaration(c) => {
                 self.collect_class(c)?;
                 vars.push(TopItem::Class(c));
@@ -495,6 +542,24 @@ impl<'a> Lowerer<'a> {
             bail!("anonymous function")
         };
         let Some(body) = &f.body else { return Ok(()) };
+        if f.type_parameters.is_some() {
+            if exported {
+                bail!(
+                    "{}: a generic function cannot be exported; export a specialisation",
+                    id.name
+                )
+            }
+            self.generic_fns.insert(
+                id.name.to_string(),
+                generics::GenericFn {
+                    tparams: generics::tparam_list(f.type_parameters.as_deref()),
+                    params: &f.params,
+                    ret: f.return_type.as_ref().map(|r| &r.type_annotation),
+                    body: FnBody::Block(body),
+                },
+            );
+            return Ok(());
+        }
         let src = FnSrc {
             params: &f.params,
             ret: f.return_type.as_ref().map(|r| &r.type_annotation),
@@ -502,6 +567,7 @@ impl<'a> Lowerer<'a> {
             exported,
             kind: FnKind::Free,
             ret_ty: None,
+            tenv: None,
         };
         self.declare_fn(id.name.as_str(), src)
     }
@@ -525,6 +591,18 @@ impl<'a> Lowerer<'a> {
                     ArrowFunctionBody::FunctionBody(b) => FnBody::Block(b),
                     other => FnBody::Expr(other.as_expression().ok_or("arrow body")?),
                 };
+                if a.type_parameters.is_some() {
+                    self.generic_fns.insert(
+                        id.name.to_string(),
+                        generics::GenericFn {
+                            tparams: generics::tparam_list(a.type_parameters.as_deref()),
+                            params: &a.params,
+                            ret: a.return_type.as_ref().map(|r| &r.type_annotation),
+                            body,
+                        },
+                    );
+                    continue;
+                }
                 let src = FnSrc {
                     params: &a.params,
                     ret: a.return_type.as_ref().map(|r| &r.type_annotation),
@@ -532,6 +610,7 @@ impl<'a> Lowerer<'a> {
                     exported,
                     kind: FnKind::Free,
                     ret_ty: None,
+                    tenv: None,
                 };
                 self.declare_fn(id.name.as_str(), src)?;
                 continue;
@@ -542,6 +621,14 @@ impl<'a> Lowerer<'a> {
     }
 
     pub(crate) fn declare_fn(&mut self, name: &str, src: FnSrc<'a>) -> R<()> {
+        let env = src.tenv.clone().unwrap_or_default();
+        let saved = std::mem::replace(&mut self.tenv, env);
+        let r = self.declare_fn_in_env(name, src);
+        self.tenv = saved;
+        r
+    }
+
+    fn declare_fn_in_env(&mut self, name: &str, src: FnSrc<'a>) -> R<()> {
         let mut ptys = Vec::new();
         if let FnKind::Method(sid) | FnKind::Ctor(sid, _) = src.kind {
             ptys.push(Ty::Obj(sid));
@@ -625,7 +712,10 @@ impl<'a> Lowerer<'a> {
         }
         let saved_captured = std::mem::replace(&mut self.captured, scan.captured);
         self.closure_free.extend(scan.free);
+        let env = self.fsrc[name].tenv.clone().unwrap_or_default();
+        let saved_env = std::mem::replace(&mut self.tenv, env);
         let r = self.lower_fn(name, id);
+        self.tenv = saved_env;
         self.captured = saved_captured;
         self.cur = saved;
         r?;

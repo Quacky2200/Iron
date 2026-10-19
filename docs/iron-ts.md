@@ -904,3 +904,28 @@ all `onUpdate`, then all `onLateUpdate`), `fixed_update`, `pre_render`, `destroy
 (`Fault { id, class, hook }`). Same rules as `iron_script::ComponentHost`. Not built: `@property` save/load
 through `PROPS_<Class>` in the host, `getComponent`/`addComponent`, a message for the fault, `this.transform`.
 Tests `M9-TS-556..561`.
+
+## Generics
+
+Generic functions, classes, interfaces and type aliases are supported by **monomorphisation**
+([generics.rs](../tools/iron_ts/src/lower/generics.rs)): nothing is generic at run time. Each distinct list of type
+arguments gets its own copy (`identity$$number`, `Box$$string`, `Box$$Item_5`), lowered with a type environment
+(`Lowerer::tenv`) that maps the type parameters to IR types, so `T` in any annotation of the copy means that type.
+
+- **Functions** `function f<T, U>(..)`, `const f = <T>(..) => ..`: type arguments come from the call
+  (`f<number>(x)`), else from the argument types (arguments are lowered once only to learn their type, closures
+  after the others so their parameter types are known and their result type is read from the body), else from a
+  parameter default, else from the expected type of the result. A conflict (`two(1, "a")`) or a parameter that
+  nothing fixes is an error. Constraints (`T extends X`) are accepted and not checked.
+- **Classes** `class Box<T>`: `Box<number>` in a type, `new Box<number>(1)` or `new Box(1)` (inferred from the
+  constructor) make the class `Box$$number` with its own struct, fields and methods; `extends Base<T>` and
+  recursive uses (`next: Node<T> | null`) work. `x instanceof Box` is true for any specialisation (the table is
+  filled in at the end, so specialisations made later count).
+- **Generic methods** `map<U>(f: (x: T) => U)`: one copy per list of type arguments, called directly (never
+  virtual, so an override of a generic method is not dispatched). Only plain instance methods; a generic static
+  method, accessor or constructor is an error.
+- **Interfaces and aliases** `Pair<A, B>`, `Maybe<T>` are specialised the same way.
+- **Not built**: a generic function used as a value (`xs.map(identity)`), exporting a generic function (export a
+  specialisation), default type arguments depending on later ones.
+
+Tests `M9-TS-562..574` (all bun-compared except the error cases).
