@@ -2146,6 +2146,10 @@ impl<L: LayoutEngine> UiTree<L> {
                 if prop == "display" && value != "none" {
                     continue;
                 }
+                // The root's box draws these itself (an `opacity` would otherwise apply twice).
+                if root && crate::svg::box_applies(prop) {
+                    continue;
+                }
                 let value = match prop.as_str() {
                     "transform" => crate::svg::svg_transform(value),
                     "transformOrigin" => value.replace("px", ""),
