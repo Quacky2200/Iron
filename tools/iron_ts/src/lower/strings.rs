@@ -705,6 +705,25 @@ impl<'a> Lowerer<'a> {
                 let call = self.rt_str("ts_rt_dtf_format_gc", vec![id, t], Ty::Str);
                 self.checked(call, Ty::Str)
             }
+            "__intlResolved" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, which] = args.as_slice() else {
+                    bail!("{at}: __intlResolved(id, kind)")
+                };
+                let id = self.num_arg(id)?;
+                // 0 DateTimeFormat, 1 NumberFormat.
+                let f = match which {
+                    Expression::NumericLiteral(n) if n.value == 1.0 => {
+                        "ts_rt_number_format_resolved_gc"
+                    }
+                    _ => "ts_rt_dtf_resolved_gc",
+                };
+                self.rt_str(f, vec![id], Ty::Str)
+            }
             "__dtfParts" | "__numberFormatParts" => {
                 let args: Vec<&'a Expression<'a>> = c
                     .arguments

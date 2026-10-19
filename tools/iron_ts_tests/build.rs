@@ -73,6 +73,7 @@ fn main() {
         ("rounding", "rd_", 1900),
         ("canon", "cn_", 2000),
         ("fparts", "fp_", 2100),
+        ("resolved", "rs_", 2200),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

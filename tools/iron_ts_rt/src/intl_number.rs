@@ -683,6 +683,49 @@ fn number_parts(f: &NumFmt, x: f64, text: &str) -> Result<Vec<(String, String)>,
     Ok(out)
 }
 
+/// `numberFormat.resolvedOptions()` as `key=value;` pairs.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_number_format_resolved_gc(id: f64) -> *mut Str {
+    let f = FORMATS.with(|v| v.borrow()[id as usize].clone());
+    let style = match f.style {
+        Style::Decimal => "decimal",
+        Style::Percent => "percent",
+        Style::Currency => "currency",
+    };
+    let notation = match f.notation {
+        Notation::Standard => "standard",
+        Notation::Scientific => "scientific",
+        Notation::Engineering => "engineering",
+        Notation::Compact => "compact",
+    };
+    let sign = match f.sign {
+        SignDisplay::Auto => "auto",
+        SignDisplay::Never => "never",
+        SignDisplay::Always => "always",
+        SignDisplay::ExceptZero => "exceptZero",
+        _ => "negative",
+    };
+    let (lo, hi) = f.fraction.unwrap_or(f.default_fraction);
+    let mut out = format!(
+        "locale={};numberingSystem=latn;style={style};notation={notation};signDisplay={sign};minimumIntegerDigits={};",
+        f.locale, f.min_int
+    );
+    if f.significant.is_none() {
+        out.push_str(&format!(
+            "minimumFractionDigits={lo};maximumFractionDigits={hi};"
+        ));
+    }
+    if let Some((a, b)) = f.significant {
+        out.push_str(&format!(
+            "minimumSignificantDigits={a};maximumSignificantDigits={b};"
+        ));
+    }
+    if let Some(c) = &f.currency {
+        out.push_str(&format!("currency={c};"));
+    }
+    str_from(&out)
+}
+
 /// `numberFormat.formatToParts(x)` as encoded records.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_number_format_parts_gc(id: f64, x: f64) -> *mut Str {

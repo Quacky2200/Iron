@@ -135,6 +135,44 @@ pub const INTL_PARTS: &str = r#"class Intl_Part {
     this.value = value;
   }
 }
+class Intl_Resolved {
+  locale: string = "";
+  calendar: string | null = null;
+  numberingSystem: string | null = null;
+  timeZone: string | null = null;
+  style: string | null = null;
+  currency: string | null = null;
+  notation: string | null = null;
+  signDisplay: string | null = null;
+  minimumIntegerDigits: number = 0;
+  minimumFractionDigits: number = 0;
+  maximumFractionDigits: number = 0;
+  minimumSignificantDigits: number = 0;
+  maximumSignificantDigits: number = 0;
+}
+function __resolved(s: string): Intl_Resolved {
+  const r = new Intl_Resolved();
+  for (const kv of s.split(";")) {
+    const cut = kv.indexOf("=");
+    if (cut < 0) continue;
+    const k = kv.slice(0, cut);
+    const v = kv.slice(cut + 1);
+    if (k === "locale") r.locale = v;
+    else if (k === "calendar") r.calendar = v;
+    else if (k === "numberingSystem") r.numberingSystem = v;
+    else if (k === "timeZone") r.timeZone = v;
+    else if (k === "style") r.style = v;
+    else if (k === "currency") r.currency = v;
+    else if (k === "notation") r.notation = v;
+    else if (k === "signDisplay") r.signDisplay = v;
+    else if (k === "minimumIntegerDigits") r.minimumIntegerDigits = Number(v);
+    else if (k === "minimumFractionDigits") r.minimumFractionDigits = Number(v);
+    else if (k === "maximumFractionDigits") r.maximumFractionDigits = Number(v);
+    else if (k === "minimumSignificantDigits") r.minimumSignificantDigits = Number(v);
+    else if (k === "maximumSignificantDigits") r.maximumSignificantDigits = Number(v);
+  }
+  return r;
+}
 type Intl_NumberFormatPart = Intl_Part;
 type Intl_DateTimeFormatPart = Intl_Part;
 function __decodeParts(s: string): Intl_Part[] {
@@ -151,12 +189,14 @@ pub const INTL_NUMBER: &str = r#"class Intl_NumberFormat {
   id: number = 0;
   format: (n: number) => string = (n: number): string => __numberFormat(this.id, n);
   formatToParts: (n: number) => Intl_Part[] = (n: number): Intl_Part[] => __decodeParts(__numberFormatParts(this.id, n));
+  resolvedOptions: () => Intl_Resolved = (): Intl_Resolved => __resolved(__intlResolved(this.id, 1));
 }
 "#;
 pub const INTL_DATETIME: &str = r#"class Intl_DateTimeFormat {
   id: number = 0;
   format: (d: Date) => string = (d: Date): string => __dtfFormat(this.id, d.t);
   formatToParts: (d: Date) => Intl_Part[] = (d: Date): Intl_Part[] => __decodeParts(__dtfParts(this.id, d.t));
+  resolvedOptions: () => Intl_Resolved = (): Intl_Resolved => __resolved(__intlResolved(this.id, 0));
 }
 "#;
 

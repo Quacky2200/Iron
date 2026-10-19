@@ -27,6 +27,9 @@ struct DtFmt {
     /// `2-digit` month and day, the year, the weekday and month names), formatted through typed
     /// names; None when the pattern already fits or the calendar is not Gregorian.
     adjusted: Option<Adjusted>,
+    /// The locale as `resolvedOptions` shows it, and the zone's name.
+    locale_tag: String,
+    zone_name: String,
 }
 
 struct Adjusted {
@@ -444,10 +447,19 @@ fn build(locales: &str, options: &str, kind: i64) -> Result<DtFmt, String> {
     } else {
         None
     };
+    let zone_name = match &zone {
+        Some(z) => z.iana_name().unwrap_or("UTC").to_string(),
+        None => super::date::current_zone()
+            .iana_name()
+            .unwrap_or("UTC")
+            .to_string(),
+    };
     Ok(DtFmt {
         formatter,
         zone,
         adjusted,
+        locale_tag: locale.to_string(),
+        zone_name,
     })
 }
 
@@ -569,6 +581,16 @@ fn format_parts(f: &DtFmt, t: f64) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let parts = sink.into_parts(plain_spaces);
     Ok(super::intl_parts::encode(&parts))
+}
+
+/// `dateTimeFormat.resolvedOptions()` as `key=value;` pairs.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_dtf_resolved_gc(id: f64) -> *mut Str {
+    let f = FORMATS.with(|v| v.borrow()[id as usize].clone());
+    str_from(&format!(
+        "locale={};calendar=gregory;numberingSystem=latn;timeZone={};",
+        f.locale_tag, f.zone_name
+    ))
 }
 
 /// `dateTimeFormat.formatToParts(date)` as encoded records.

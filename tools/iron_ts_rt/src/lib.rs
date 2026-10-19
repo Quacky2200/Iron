@@ -1331,6 +1331,8 @@ pub fn link_anchor() -> usize {
         ts_rt_typed_byte_offset as *const () as usize,
         ts_rt_dv_get as *const () as usize,
         ts_rt_dv_set as *const () as usize,
+        ts_rt_dtf_resolved_gc as *const () as usize,
+        ts_rt_number_format_resolved_gc as *const () as usize,
         ts_rt_dtf_parts_gc as *const () as usize,
         ts_rt_number_format_parts_gc as *const () as usize,
         ts_rt_tz_check_gc as *const () as usize,
