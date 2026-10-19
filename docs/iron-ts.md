@@ -134,6 +134,12 @@ bytes, bindings text, IR dump and the time of each phase.
 | [iron_ts_rt/src/intl_number.rs](../tools/iron_ts_rt/src/intl_number.rs) | The `NumberFormat` runtime: option parsing, rounding and padding on a `fixed_decimal` `Decimal`, ICU4X formatting, scientific/engineering by hand |
 | [iron_ts_rt/src/intl_date.rs](../tools/iron_ts_rt/src/intl_date.rs) | The `DateTimeFormat` runtime and `Date.prototype.toLocale*String`: ECMA-402 option defaults, mapping options to an ICU4X field set, pattern width rewriting (`adjust_pattern`), time zones through jiff |
 | [iron_ts_rt/src/intl_misc.rs](../tools/iron_ts_rt/src/intl_misc.rs) | The `PluralRules`, `ListFormat` and `RelativeTimeFormat` runtime (options parsing, tables of formatters by id, bun's `RangeError` texts) |
+| [iron_ts_rt/src/intl_segment.rs](../tools/iron_ts_rt/src/intl_segment.rs) | The `Intl.Segmenter` runtime: grapheme, word and sentence boundaries from ICU4X's segmenter, returned to the prelude as arrays of pieces |
+| [iron_ts_rt/src/intl_locale.rs](../tools/iron_ts_rt/src/intl_locale.rs) | The `Intl.Locale` runtime: canonical tags, subtags and unicode extension keys, `maximize` / `minimize` |
+| [iron_ts_rt/src/intl_names.rs](../tools/iron_ts_rt/src/intl_names.rs) | The `Intl.DisplayNames` runtime: region, script and language names from CLDR data |
+| [lower/temporal.rs](../tools/iron_ts/src/lower/temporal.rs) | `Temporal`: the `Temporal.X` to `Temporal_X` text rewrite, `Temporal.X.from(v)` routing, string arguments where a Temporal object is expected |
+| [lower/temporal.ts](../tools/iron_ts/src/lower/temporal.ts) | The `Temporal_*` classes, written in TypeScript and compiled in front of programs that mention `Temporal.` |
+| [iron_ts_rt/src/tz.rs](../tools/iron_ts_rt/src/tz.rs) | IANA time zones for `ZonedDateTime`: canonical zone name, offset at an instant, local time to instant (compatible disambiguation), fixed-offset zones |
 | [lower/bigint.rs](../tools/iron_ts/src/lower/bigint.rs) | `bigint`: literals, binary and unary operators, comparison with bigints and numbers, `BigInt(x)`, `BigInt.asIntN`/`asUintN`, `toString(radix)`, `Number(big)` |
 | [iron_ts_rt/src/bigint.rs](../tools/iron_ts_rt/src/bigint.rs) | The `BigInt` runtime: the object layout, operations on `num_bigint::BigInt`, parsing, conversions, JavaScriptCore's error texts |
 | [iron_ts_rt/src/uri.rs](../tools/iron_ts_rt/src/uri.rs) | `encodeURI` / `decodeURI` and their Component forms, `escape` / `unescape`; `URIError`s with JavaScriptCore's texts |
@@ -495,12 +501,50 @@ ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-da
   through `as`, `satisfies`, `!` and parentheses, so `{ type: "ordinal" as any }` is still a literal.
 - **Runtime.** `ts_rt_plural_new` / `_select_gc`, `ts_rt_list_new` / `_format_gc`, `ts_rt_rtf_new` / `_format_gc`,
   on ICU4X's plural rules, list formatter and relative-time formatter.
-- **Limits** (see [differences.md](differences.md)): `Intl.Locale`, `Intl.DisplayNames` and `Intl.Segmenter` (which
-  needs iterators) are not built; neither are `supportedLocalesOf`, `resolvedOptions`, `formatToParts`,
-  `formatRange` and `selectRange`.
+- **Limits** (see [differences.md](differences.md)): `supportedLocalesOf`, `resolvedOptions`, `formatToParts`,
+  `formatRange` and `selectRange` are not built (`Locale`, `DisplayNames` and `Segmenter` came later, below).
 - Checked against bun in 17 to 20 locales (every result equal).
 - Tests: `bench/intl4.ts` (made by `bench/gen_intl4_program.py`) with `tests/intl4.rs` (M9-TS-296..312), expected
   values from `bench/gen_intl4_expected.ts` (bun) into `intl4_expected.json`.
+
+**Standard library tier 3: `Intl.Segmenter`, `Intl.Locale`, `Intl.DisplayNames`**
+(runtime in [iron_ts_rt/src/intl_segment.rs](../tools/iron_ts_rt/src/intl_segment.rs),
+[intl_locale.rs](../tools/iron_ts_rt/src/intl_locale.rs) and [intl_names.rs](../tools/iron_ts_rt/src/intl_names.rs);
+prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lower/prelude.rs`).
+- **Segmenter.** `new Intl.Segmenter(locales?, { granularity })` with `grapheme`, `word` or `sentence` boundaries from
+  ICU4X's segmenter. `segment(text)` returns an iterable of `{ segment, index, input, isWordLike }`, plus
+  `containing(i)`. `isWordLike` is `false`, not `undefined`, for the non-word granularities.
+- **Locale.** `new Intl.Locale(tag, options?)` gives the canonical `toString()`, `language`, `script`, `region`,
+  `baseName`, and `calendar`, `collation`, `hourCycle`, `caseFirst`, `numeric` and `numberingSystem` (from the tag's
+  `-u-` extension or the options), and `maximize()` / `minimize()`. `"und"` maximizes to `en-Latn-US` by a special
+  case. Getters of absent parts give `null`, not `undefined`.
+- **DisplayNames.** `new Intl.DisplayNames(locales, { type })` for `region`, `script` and `language` only, with
+  `.of(code)`. CLDR names can differ from bun's (for example `zh-Hans`).
+- **Options.** As for the other `Intl` classes: object literals with literal values, read at compile time; a
+  `{} as X` cast is looked through.
+- **Limits** (see [differences.md](differences.md)): `formatToParts`, `formatRange`, `resolvedOptions`,
+  `Intl.supportedValuesOf` and `Intl.getCanonicalLocales` are not built; `DisplayNames` has no `currency`,
+  `calendar` or `dateTimeField` type and no `fallback: "none"`.
+- Tests: M9-TS-456..479.
+
+**Temporal, ISO calendar** ([lower/temporal.rs](../tools/iron_ts/src/lower/temporal.rs), classes in
+[lower/temporal.ts](../tools/iron_ts/src/lower/temporal.ts), zones in [iron_ts_rt/src/tz.rs](../tools/iron_ts_rt/src/tz.rs)).
+- **Rewrite.** `Temporal.X` becomes the prelude class `Temporal_X`, as a text rewrite of the program before parsing (a
+  string literal containing `Temporal.Name` is rewritten too). The classes are plain TypeScript in `temporal.ts`,
+  compiled in front of any program that mentions `Temporal.`.
+- **Classes.** `Duration`, `PlainDate`, `PlainTime`, `PlainDateTime`, `Instant` (bigint nanoseconds),
+  `ZonedDateTime` (nanoseconds plus a zone name) and `Now`. `tz.rs` supplies the canonical zone name, the offset at
+  an instant, local time to instant with the `compatible` disambiguation, and fixed-offset zones such as `+05:30`.
+- **`from`.** The lowerer routes `Temporal.X.from(v)`: a string goes to the parse function, an object literal builds
+  the class from the literal and then validates and constrains it, any other object is copied. A `ZonedDateTime`
+  literal needs `timeZone`. A string is also accepted where a Temporal object is expected
+  (`date.equals("2024-01-01")`), and an object literal passed as a `Duration` or `PlainDate` parameter is typed as the
+  class itself.
+- **Limits** (see [differences.md](differences.md)): no `PlainYearMonth` or `PlainMonthDay`, no other calendars,
+  `round`, `toLocaleString`, `total` with `relativeTo`, rounding options, `overflow: "reject"`, or
+  `disambiguation` / `offset` options.
+- Checked against bun. Tests: `bench/temporal.ts` and `bench/zoned.ts` with `tests/temporal.rs` and `tests/zoned.rs`
+  (M9-TS-480..515).
 
 **URI functions and error causes** ([iron_ts_rt/src/uri.rs](../tools/iron_ts_rt/src/uri.rs), hooks in
 `lower/{strings,prelude}.rs`).

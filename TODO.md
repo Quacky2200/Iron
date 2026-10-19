@@ -1489,8 +1489,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [x] `try`/`catch`/`finally`/`throw`: design in `docs/research/iron-ts-stdlib.md` (approved: checked returns in
           may-throw functions only), built with the `Error` classes from a prelude (`M9-TS-187..198`); not done:
           `error.stack`/`cause`, throwing non-Error values, `AggregateError`
-    - [ ] `async`/`await`/Promises and timers (`Task`, `setTimeout`): **STOP, design first** (needs an
-          event-loop contract with the host)
+    - [x] `async`/`await`/Promises and timers (design in `docs/research/iron-ts-generators-and-proxy.md`, approved): built on stackful
+          coroutines with a microtask queue and timers in the runtime (`M9-TS-408..430`). The host must call `ts_rt_microtasks_run()` after
+          every call into script and `ts_rt_timers_advance(now_ms)` once per frame (needs `iron_app`, not done); also done: `Symbol`
+          values, iterators and generators (`M9-TS-376..407`), `ArrayBuffer`/`DataView`/views, `structuredClone`, `WeakRef`,
+          `Intl.Segmenter/Locale/DisplayNames`, `Temporal` (ISO calendar) (`M9-TS-431..515`); detail in `tools/iron_ts/TODO.md`
   - [ ] **Standard library, native** (`docs/research/iron-ts-stdlib.md`; rule: JavaScript's exact results, compared with
         bun; what is not built is a compile error). Detail and open gaps are in `tools/iron_ts/TODO.md`
     - [x] Tier 1: errors and `try`/`catch`/`finally`, `typeof`, `Object.*`, spread/rest, `Array` gaps, `Number`, `Math`, `console` (`M9-TS-187..205`)
