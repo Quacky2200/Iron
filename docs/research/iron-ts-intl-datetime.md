@@ -75,6 +75,36 @@ C, with B's data produced by the dev-time generator (D as a tool, not as a runti
 3. Component bags for the common field sets, `hour12` / `hourCycle`, `timeZone`, `timeZoneName`.
 4. `formatToParts`, `formatRange`, `resolvedOptions`.
 
-## Question for review
+## Decision (user, 2026-10-19)
+
+ICU4X now, with **lightweight data for the main markets** (US, UK and the EU languages), and
+**`rust_icu` as an optional build** for full functionality and full locale data. Also: write the
+current implementation's limits down (TODO and `docs/differences.md`) and find out how the full build
+can be enabled. In short:
+
+1. **`icu-lite` (default).** ICU4X. Slices 2 to 4 above are built on its field sets. The data is
+   trimmed to a main-market locale list (`en-US`, `en-GB`, `en-CA`, `en-AU`, `de`, `fr`, `es`, `it`,
+   `pt`, `nl`, `sv`, `da`, `nb`, `fi`, `pl`, `cs`, `el`, `tr`, `ru`, `uk`, plus `ja`, `ko`, `zh`
+   which the tests already cover) with `icu4x-datagen` into a baked data crate. **Today the build
+   links ICU4X's compiled data for every locale** (nothing is trimmed yet); the per-game locale list
+   only decides which tags are accepted.
+2. **`icu-full` (cargo feature of `iron_ts_rt`, off by default).** The same `ts_rt_*` functions
+   backed by ICU4C through `rust_icu` (`udat`, and the pattern generator `udatpg_getBestPattern`
+   through `rust_icu_sys`, since no safe crate wraps it): exact `availableFormats`, every locale,
+   `formatToParts`, `formatRange`, calendars. The compiler and the generated bindings do not change;
+   only the runtime functions in `intl*.rs` pick the backend with `cfg(feature = "icu-full")`.
+3. **How the full build is enabled (researched, not tried here).** `rust_icu` 5.x supports ICU 74 to
+   77. It finds ICU with `icu-config` on `PATH` and runs `bindgen` (needs LLVM/clang), or, without
+   bindgen, the `renaming` feature with `RUST_ICU_MAJOR_VERSION_NUMBER` (the `icu_version_in_env`
+   feature). The `static` feature links ICU statically (the C++ runtime stays dynamic), and
+   `RUST_ICU_LINK_SEARCH_DIR` points at a non-standard ICU build. Every `rust_icu_*` crate must
+   enable the same features. The project documents Linux and macOS, is moving to Bazel, and says
+   nothing about Windows (the OS `icu.dll` exports unversioned names, which the `renaming` feature
+   does not match), so on Windows it needs an ICU build with versioned symbols (built from source
+   or vcpkg with a static triplet), `icu-config` provided by that build or a shim, and bindgen. The
+   first task for `icu-full` is a spike: build `rust_icu_sys` + `rust_icu_udat` here against a
+   source-built ICU 77 and call `udatpg_getBestPattern`.
+
+## Question for review (answered above)
 
 Is A-then-maybe-B (option C) right, should the exact route (B, data from CLDR JSON or a `rust_icu` dev-time dump) be done up front, or do you want `rust_icu` as the runtime (D) despite the native dependency?

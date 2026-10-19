@@ -1501,7 +1501,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
       - [ ] `Intl` (ICU4X, compiled data for every locale)
         - [x] I1 `normalize`, `localeCompare`, `Intl.Collator`, `toLocaleUpperCase/LowerCase` (`M9-TS-254..263`)
         - [x] I2 `Intl.NumberFormat`, `Number.toLocaleString` (`M9-TS-264..275`; not: `style: unit`, compact currency, `formatToParts`)
-        - [ ] I3 `Intl.DateTimeFormat`, `toLocale*String`, component options: **STOP, design note written** (`docs/research/iron-ts-intl-datetime.md`), waiting for the user's choice
+        - [ ] I3 `Intl.DateTimeFormat`, `toLocale*String`, component options: decided 2026-10-19 (`docs/research/iron-ts-intl-datetime.md`): ICU4X now with lightweight main-market data, `rust_icu` as an optional `icu-full` build (spike first)
+          - [ ] I3a on ICU4X field sets
+          - [ ] Lightweight baked data (`icu4x-datagen`) for the main-market locale list
+          - [ ] `icu-full` feature (`rust_icu`/ICU4C): spike on Windows, then the backend
         - [ ] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`
         - [ ] The game's locale list from `package.json` into `ts_rt_intl_set_locales` (needs `iron_app`)
     - [ ] Tier 4 (asked for): iterators and generators (**STOP, design first**), `Symbol`, typed arrays / `ArrayBuffer` / `DataView`,

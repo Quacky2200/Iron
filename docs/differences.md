@@ -22,6 +22,14 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Iron | The CSS way, no extra flags |
 | Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
 
+## Intl backends (compiled TypeScript)
+
+| Area | Browser / bun | Iron today | Notes |
+|---|---|---|---|
+| ICU | ICU4C: every locale, `availableFormats`, all calendars | ICU4X `compiled_data`: every locale's data is linked (no trimming yet) | Planned: baked data for a main-market locale list (`icu-lite`, default) and an optional `icu-full` cargo feature using `rust_icu`/ICU4C for exact results; see `docs/research/iron-ts-intl-datetime.md` and `tools/iron_ts/TODO.md` |
+| Date component options (`{ year, month, day, weekday, hour... }`) | Matched against CLDR `availableFormats` by ICU's pattern generator | Not built yet (`toLocale*String` and `Intl.DateTimeFormat` are compile errors); the first version will map to ICU4X field sets, so rare combinations will differ or be rejected | Exact only with `icu-full` or a generated `availableFormats` table |
+| Locale choice | Best fit among the locales the engine has | The first tag in the list, root collation/formatting when the locale has no data | The per-game locale list is not wired from `package.json` yet |
+
 ## Compiled TypeScript (iron_ts)
 
 The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
