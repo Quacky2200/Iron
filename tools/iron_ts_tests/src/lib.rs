@@ -468,6 +468,30 @@ pub mod buffers_t {
     include!(concat!(env!("OUT_DIR"), "/buffers_bindings.rs"));
 }
 
+/// `bench/clone.ts`, prefix `cl_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod clone_t {
+    include!(concat!(env!("OUT_DIR"), "/clone_bindings.rs"));
+}
+
+/// `bench/weak.ts`, prefix `wk_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod weak_t {
+    include!(concat!(env!("OUT_DIR"), "/weak_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

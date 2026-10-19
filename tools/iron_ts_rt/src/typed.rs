@@ -542,3 +542,73 @@ pub unsafe extern "C" fn ts_rt_dv_set(
         std::ptr::copy_nonoverlapping(b.as_ptr(), (*bytes).data.add(o as usize), size);
     }
 }
+
+// ---- bytes across the engine boundary: the host copies bytes into script and reads them back
+
+/// A typed array of `kind` holding a copy of the host bytes `data[..byte_len]` (a trailing partial
+/// element is dropped). The host owns the result until it hands it to script; root it
+/// (`ts_rt_root_add`) if it must survive a collection first.
+///
+/// # Safety
+/// `data` must point at `byte_len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_from_host_gc(
+    kind: f64,
+    data: *const u8,
+    byte_len: usize,
+) -> *mut Array {
+    let size = size_of_kind(kind as u8);
+    let n = byte_len / size;
+    let out = with_heap(|h| {
+        maybe_collect(h);
+        new_typed(h, kind as u8, n as i64)
+    });
+    // SAFETY: by contract; `out` holds `n * size` bytes.
+    unsafe { std::ptr::copy_nonoverlapping(data, (*out).data, n * size) };
+    out
+}
+
+/// The bytes of a typed array (or view), for the host to read: valid until the next collection or
+/// allocation.
+///
+/// # Safety
+/// `a` must be a live typed array or view of `kind`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_data(a: *const Array) -> *const u8 {
+    // SAFETY: by contract.
+    unsafe { (*a).data }
+}
+
+/// The size in bytes of a typed array (or view) of `kind`.
+///
+/// # Safety
+/// `a` must be a live typed array or view of `kind`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_byte_len(a: *const Array, kind: f64) -> usize {
+    // SAFETY: by contract.
+    unsafe { (*a).len as usize * size_of_kind(kind as u8) }
+}
+
+#[cfg(test)]
+mod host_tests {
+    use super::*;
+
+    // M9-TS-442
+    #[test]
+    fn the_host_can_hand_bytes_to_script_and_read_them_back() {
+        let image = [1u8, 2, 3, 4, 5, 6, 7, 8, 9];
+        // SAFETY: a live array made from a live slice.
+        unsafe {
+            let a = ts_rt_typed_from_host_gc(1.0, image.as_ptr(), image.len());
+            let root = ts_rt_root_add(a as *mut u8);
+            ts_rt_gc_collect();
+            assert_eq!(ts_rt_typed_byte_len(a, 1.0), 9);
+            let back = std::slice::from_raw_parts(ts_rt_typed_data(a), 9);
+            assert_eq!(back, image);
+            // Four-byte elements: the ninth byte is a partial element and is dropped.
+            let f = ts_rt_typed_from_host_gc(7.0, image.as_ptr(), image.len());
+            assert_eq!((*f).len, 2);
+            ts_rt_root_remove(root);
+        }
+    }
+}

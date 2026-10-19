@@ -1217,6 +1217,20 @@ impl<'a> Lowerer<'a> {
                 self.lower_new_typed(kind, n)
             }
             "Map" | "Set" | "WeakMap" | "WeakSet" => self.lower_new_collection(&id.name, n, exp),
+            "WeakRef"
+                if self.lookup("WeakRef").is_none() && !self.classes.contains_key("WeakRef") =>
+            {
+                let at = self.loc(n.span.start);
+                let Some(arg) = n.arguments.first().and_then(|a| a.as_expression()) else {
+                    bail!("{at}: new WeakRef needs an object")
+                };
+                let v = self.lower_expr(arg, None)?;
+                let Ty::Obj(sid) = v.ty.strip().clone() else {
+                    bail!("{at}: a WeakRef holds an object")
+                };
+                let name = self.m.structs[sid].name.clone();
+                self.call_helper(&format!("__newWeakRef${name}"), vec![v])
+            }
             "RegExp" => self.lower_new_regexp(&n.arguments, n.span.start),
             "Date" if self.date_sid().is_some() => self.lower_new_date(&n.arguments, n.span.start),
             other if self.manifest.values.contains_key(other) => {

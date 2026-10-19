@@ -239,6 +239,27 @@ pub extern "C" fn ts_rt_obj_new_gc(header: u64, size: usize) -> *mut u8 {
     })
 }
 
+/// A shallow copy of a struct object, keeping its own (possibly derived) class.
+///
+/// # Safety
+/// `p` must be a live struct object.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_obj_copy_gc(p: *const u8) -> *mut u8 {
+    // SAFETY: by contract; the source is copied before it can be collected (it is rooted by the
+    // caller's frame while this runs).
+    unsafe {
+        let header = header_kind(*(p as *const u64));
+        let fields = with_heap(|h| {
+            maybe_collect(h);
+            h.structs[header as usize - 1].0 as usize
+        });
+        let size = 8 + fields * 8;
+        let out = with_heap(|h| new_obj(h, header, size));
+        std::ptr::copy_nonoverlapping(p.add(8), out.add(8), fields * 8);
+        out
+    }
+}
+
 #[repr(C)]
 pub struct Array {
     pub header: u64,
@@ -1301,6 +1322,10 @@ pub fn link_anchor() -> usize {
         ts_rt_typed_byte_offset as *const () as usize,
         ts_rt_dv_get as *const () as usize,
         ts_rt_dv_set as *const () as usize,
+        ts_rt_obj_copy_gc as *const () as usize,
+        ts_rt_typed_from_host_gc as *const () as usize,
+        ts_rt_typed_data as *const () as usize,
+        ts_rt_typed_byte_len as *const () as usize,
         ts_rt_co_current as *const () as usize,
         ts_rt_microtask_push as *const () as usize,
         ts_rt_microtasks_run as *const () as usize,

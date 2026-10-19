@@ -106,6 +106,11 @@ impl<'a> Lowerer<'a> {
                     .map(|a| a.params.iter().collect())
                     .unwrap_or_default();
                 match id.name.as_str() {
+                    "WeakRef" if !args.is_empty() => {
+                        let sp = oxc_span::GetSpan::span(args[0]);
+                        let name = self.src[sp.start as usize..sp.end as usize].trim();
+                        self.named_type(&format!("WeakRef${name}"))?
+                    }
                     "PromiseSettledResult" if !args.is_empty() => {
                         let sp = oxc_span::GetSpan::span(args[0]);
                         let key = asyncs::key(&self.src[sp.start as usize..sp.end as usize]);

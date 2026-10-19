@@ -582,6 +582,7 @@ impl<'a> Lowerer<'a> {
                 self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
             }
             "BigInt" => self.lower_bigint_call(c)?,
+            "structuredClone" => self.lower_structured_clone(c)?,
             "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish"
             | "__coInject" | "__coInjectSet" | "__coZero" | "__coCurrent" | "__queueMicrotask"
             | "__timerAdd" | "__timerClear" | "__dvGet" | "__dvSet" | "__coRet" | "__coStarted"

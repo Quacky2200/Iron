@@ -199,6 +199,31 @@ pub fn wants_arraybuffer(src: &str) -> bool {
         && !src.contains("class ArrayBuffer")
 }
 
+/// `WeakRef<T>` for every class of the program: it holds its target strongly (a collector may keep
+/// a weakly held object as long as it likes), so `deref()` always finds it.
+pub fn weak_refs(src: &str) -> String {
+    if !src.contains("WeakRef") || src.contains("class WeakRef") {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(i) = rest.find("class ") {
+        rest = &rest[i + 6..];
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() || name.contains('$') {
+            continue;
+        }
+        out += &format!(
+            "class WeakRef${name} {{ target: {name}; constructor(t: {name}) {{ this.target = t; }} deref(): {name} | null {{ return this.target; }} }}\n\
+function __newWeakRef${name}(t: {name}): WeakRef${name} {{ return new WeakRef${name}(t); }}\n"
+        );
+    }
+    out
+}
+
 /// `setTimeout` and friends over the runtime's timers (`iron_ts_rt/src/event.rs`).
 pub const TIMERS: &str = r#"function queueMicrotask(callback: () => void): void { __queueMicrotask(callback); }
 function setTimeout(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, false); }

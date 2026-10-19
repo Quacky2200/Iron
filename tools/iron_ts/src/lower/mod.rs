@@ -12,6 +12,7 @@ mod arrays;
 mod asyncs;
 mod bigint;
 mod classes;
+mod clone;
 mod closure;
 mod date;
 mod enums;
@@ -269,6 +270,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if prelude::wants_symbol(src) {
         head += prelude::SYMBOL;
     }
+    head += &prelude::weak_refs(src);
     if prelude::wants_arraybuffer(src) {
         head += prelude::ARRAYBUFFER;
     }

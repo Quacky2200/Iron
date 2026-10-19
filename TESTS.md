@@ -883,6 +883,20 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-439 | Integration | `DataView` float getters and setters, both byte orders equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
 | M9-TS-440 | Integration | `DataView` over a window, its `buffer` and its bounds errors equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
 | M9-TS-441 | Integration | Views stay alive while their buffer is only reachable through them, under collection equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-442 | Unit | The host copies bytes into script as a typed array and reads them back; a trailing partial element is dropped (`iron_ts_rt/src/typed.rs`). |
+| M9-TS-443 | Integration | `structuredClone` of nested objects and arrays equals bun's (`iron_ts_tests/tests/clone.rs`, `bench/clone.ts`). |
+| M9-TS-444 | Integration | The clone is independent of the original (objects, arrays, nested fields) (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-445 | Integration | `structuredClone` keeps null fields null (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-446 | Integration | `structuredClone` of a recursive tree type (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-447 | Integration | `structuredClone` of arrays of arrays and of strings (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-448 | Integration | `structuredClone` of a typed array copies its elements (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-449 | Integration | `structuredClone` of numbers, strings, booleans and bigints (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-450 | Integration | 300 clones under collection (`iron_ts_tests/tests/clone.rs`). |
+| M9-TS-451 | Integration | `WeakRef.deref()` finds its target (`iron_ts_tests/tests/weak.rs`, `bench/weak.ts`). |
+| M9-TS-452 | Integration | `WeakRef<Derived>` typed and used (`iron_ts_tests/tests/weak.rs`). |
+| M9-TS-453 | Integration | An array of `WeakRef`s (`iron_ts_tests/tests/weak.rs`). |
+| M9-TS-454 | Integration | `WeakMap` get/set/has/delete by object identity (`iron_ts_tests/tests/weak.rs`). |
+| M9-TS-455 | Integration | `WeakSet` add/has/delete by object identity (`iron_ts_tests/tests/weak.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
