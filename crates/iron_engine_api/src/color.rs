@@ -5,28 +5,28 @@ use iron_api::{ValueType, iron_api};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rgba {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
+    pub a: f64,
 }
 
 impl ValueType<4> for Rgba {
     fn from_parts(p: [f64; 4]) -> Self {
         Rgba {
-            r: p[0] as f32,
-            g: p[1] as f32,
-            b: p[2] as f32,
-            a: p[3] as f32,
+            r: p[0],
+            g: p[1],
+            b: p[2],
+            a: p[3],
         }
     }
 
     fn to_parts(self) -> [f64; 4] {
-        [self.r.into(), self.g.into(), self.b.into(), self.a.into()]
+        [self.r, self.g, self.b, self.a]
     }
 }
 
-const fn rgba(r: f32, g: f32, b: f32, a: f32) -> Rgba {
+const fn rgba(r: f64, g: f64, b: f64, a: f64) -> Rgba {
     Rgba { r, g, b, a }
 }
 
@@ -59,12 +59,12 @@ pub fn parse_hex(hex: &str) -> Rgba {
             .and_then(|s| u8::from_str_radix(s, 16).ok())
             .map_or(0.0, |v| f64::from(v) / 255.0)
     };
-    let lin = |i: usize| gamma_to_linear(n(i)) as f32;
+    let lin = |i: usize| gamma_to_linear(n(i));
     rgba(
         lin(0),
         lin(2),
         lin(4),
-        if h.len() >= 8 { n(6) as f32 } else { 1.0 },
+        if h.len() >= 8 { n(6) } else { 1.0 },
     )
 }
 
@@ -72,7 +72,7 @@ fn channel_hex(v: f64) -> String {
     format!("{:02x}", (v.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
-#[iron_api(namespace = "Color", quickjs, values(Color = Rgba [r: f32, g: f32, b: f32, a: f32]))]
+#[iron_api(namespace = "Color", quickjs, values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
 pub mod color_api {
     use super::{Rgba, channel_hex, gamma_to_linear, linear_to_gamma, parse_hex, rgba};
 
@@ -120,30 +120,24 @@ pub mod color_api {
     /// From sRGB components 0 to 1, converted to linear.
     pub fn from_srgb(r: f64, g: f64, b: f64, a: f64) -> Rgba {
         rgba(
-            gamma_to_linear(r) as f32,
-            gamma_to_linear(g) as f32,
-            gamma_to_linear(b) as f32,
-            a as f32,
+            gamma_to_linear(r),
+            gamma_to_linear(g),
+            gamma_to_linear(b),
+            a,
         )
     }
 
     /// The colour as sRGB hex, `#rrggbbaa` (the inverse of `hex`).
     #[method(Color)]
     pub fn to_hex(c: Rgba) -> String {
-        let g = |v: f32| channel_hex(linear_to_gamma(f64::from(v).clamp(0.0, 1.0)));
-        format!(
-            "#{}{}{}{}",
-            g(c.r),
-            g(c.g),
-            g(c.b),
-            channel_hex(f64::from(c.a))
-        )
+        let g = |v: f64| channel_hex(linear_to_gamma(v.clamp(0.0, 1.0)));
+        format!("#{}{}{}{}", g(c.r), g(c.g), g(c.b), channel_hex(c.a))
     }
 
     /// Blends towards `to` by `t` (clamped to 0..1).
     #[method(Color)]
     pub fn lerp(c: Rgba, to: Rgba, t: f64) -> Rgba {
-        let k = t.clamp(0.0, 1.0) as f32;
+        let k = t.clamp(0.0, 1.0);
         rgba(
             c.r + (to.r - c.r) * k,
             c.g + (to.g - c.g) * k,
@@ -154,6 +148,6 @@ pub mod color_api {
 
     #[method(Color)]
     pub fn with_alpha(c: Rgba, a: f64) -> Rgba {
-        rgba(c.r, c.g, c.b, a as f32)
+        rgba(c.r, c.g, c.b, a)
     }
 }

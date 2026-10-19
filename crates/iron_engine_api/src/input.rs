@@ -7,8 +7,8 @@
 //! Listeners (`input.on(..)`) need closures across the boundary and are not here yet; scripts read
 //! the state each frame.
 
-use glam::Vec2;
 use iron_api::iron_api;
+use iron_math::V2;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
@@ -40,7 +40,7 @@ struct State {
     released_pending: HashSet<String>,
     pressed: HashSet<String>,
     released: HashSet<String>,
-    mouse: Vec2,
+    mouse: V2,
     delta_pending: (f64, f64),
     wheel_pending: (f64, f64),
     delta: (f64, f64),
@@ -122,7 +122,12 @@ pub fn mouse_button_event(button: usize, down: bool) {
 }
 
 pub fn mouse_move(x: f32, y: f32) {
-    STATE.with(|s| s.borrow_mut().mouse = Vec2::new(x, y));
+    STATE.with(|s| {
+        s.borrow_mut().mouse = V2 {
+            x: f64::from(x),
+            y: f64::from(y),
+        }
+    });
 }
 
 /// Raw mouse movement (it keeps coming while the cursor is locked).
@@ -223,10 +228,10 @@ fn button_def(name: &str) -> Option<(&'static [&'static str], &'static [&'static
 /// Raw mouse movement per "Mouse X" / "Mouse Y" unit (Unity's default sensitivity).
 const MOUSE_SENSITIVITY: f64 = 0.1;
 
-#[iron_api(namespace = "input", quickjs, values(Vector2 = Vec2 [x: f32, y: f32]))]
+#[iron_api(namespace = "input", quickjs, values(Vector2 = V2 [x: f64, y: f64]))]
 pub mod input_api {
     use super::{MOUSE_SENSITIVITY, STATE, axis_def, button_def, mouse_code, value_of};
-    use glam::Vec2;
+    use iron_math::V2;
 
     /// Whether a key (by physical `code`, e.g. `"KeyW"`) is held.
     pub fn is_key_down(code: &str) -> bool {
@@ -250,26 +255,29 @@ pub mod input_api {
 
     /// Where the mouse is, in UI pixels from the top-left.
     #[property]
-    pub fn mouse_position() -> Vec2 {
+    pub fn mouse_position() -> V2 {
         STATE.with(|s| s.borrow().mouse)
     }
 
     /// How far the mouse moved this frame in raw device units, right and up positive. It keeps
     /// coming while the cursor is locked: use it for mouse look.
     #[property]
-    pub fn mouse_delta() -> Vec2 {
+    pub fn mouse_delta() -> V2 {
         STATE.with(|s| {
             let d = s.borrow().delta;
-            Vec2::new(d.0 as f32, (0.0 - d.1) as f32)
+            V2 {
+                x: d.0,
+                y: 0.0 - d.1,
+            }
         })
     }
 
     /// Wheel movement this frame, in lines: y up (away from you) positive.
     #[property]
-    pub fn mouse_scroll_delta() -> Vec2 {
+    pub fn mouse_scroll_delta() -> V2 {
         STATE.with(|s| {
             let w = s.borrow().wheel;
-            Vec2::new(w.0 as f32, w.1 as f32)
+            V2 { x: w.0, y: w.1 }
         })
     }
 

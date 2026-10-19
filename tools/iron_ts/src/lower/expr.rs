@@ -665,6 +665,15 @@ impl<'a> Lowerer<'a> {
                 other if other.is_ptr() => ExtTy::Ptr,
                 _ => return None,
             },
+            // A value class (`Vector3`) is passed as itself.
+            Ty::Obj(sid)
+                if self
+                    .manifest
+                    .values
+                    .contains_key(&self.m.structs[*sid].name) =>
+            {
+                ExtTy::Value(self.m.structs[*sid].name.clone())
+            }
             other if other.is_ptr() => ExtTy::Ptr,
             _ => return None,
         })
@@ -968,7 +977,16 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             let want = self.ext_ir(pt);
-            let v = self.lower_expr(e, Some(&want))?;
+            let mut v = self.lower_expr(e, Some(&want))?;
+            // A value class argument may be another class with the same fields (a `Vector2Int`
+            // where a `Vector2` goes): the fields are read by position.
+            if let (Ty::Obj(a), Ty::Obj(b)) = (v.ty.strip(), &want)
+                && a != b
+                && self.manifest.values.contains_key(&self.m.structs[*a].name)
+                && self.m.structs[*a].fields.len() == self.m.structs[*b].fields.len()
+            {
+                v.ty = want.clone();
+            }
             args.push(self.coerce(v, &want)?);
         }
         Ok(self.emit_extern(&f, args))

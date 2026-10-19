@@ -316,3 +316,23 @@ the TypeScript, all because a call has fixed typed parameters:
   Differences: `parse` logs an error and returns NaN instead of throwing, `DateTime.parse` knows ISO 8601 only (no whitespace),
   `subtract(TimeSpan)` is `subtractTimeSpan`, `DateTime.fromDate(Date)` and `Task` are not there.
 - A function with more than four parameters reads its QuickJS arguments from the rest list (`new DateTime(..)` has eight).
+
+### The math types (`iron_math`)
+
+`crates/iron_math` declares `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`,
+`Ray`, `Plane`, `Bounds` and `Pose` as `js/engine/src/math.ts` has them (the scene, input, gizmos and colour APIs use its
+types, so they live below `iron_scene`). Values are **doubles** (the TypeScript's), computed in the same order, so
+results are bit for bit the same as bun's for everything but `Math.hypot` of three or more numbers, where engines differ
+in the last bit: the native version scales by the largest and sums the squares (two numbers use the C library's `hypot`,
+as bun does), and the tests that compare with bun run the original with the same algorithm. The scene's `Vector3` /
+`Quaternion` are now these f64 types too (positions are still stored as f32 in the scene), and `Color` is f64.
+
+- `new Vector3(x, y, z)` calls the static `create` (a missing component is 0); the classes in QuickJS are made by it too.
+- A name with several versions (`Quaternion.euler(x, y, z)` and `euler(vector)`) is chosen by argument count in QuickJS and
+  by argument types in compiled code. A function of more than four parameters reads its QuickJS arguments from the rest list.
+- A value class argument may be another value class with the same fields (a `Vector2Int` where a `Vector2` goes).
+- Differences: the `...Like` parameters are the classes; `toArray()`, `from(v)`, `new Matrix4x4(array)` and `.m` are not
+  there (`Matrix4x4.fromColumns` and `get(row, col)` are); `Mathf.smoothDamp` returns a `Vector2` (value, velocity);
+  `Plane.raycast` / `intersect` answer NaN where the TypeScript returned `null`; `RectInt.positions()` is not there;
+  `Ray`, `Plane`, `Bounds` and `Pose` keep flat numbers and give their vectors from getters; `Random.insideUnitSphere` and
+  friends can now be added (the vectors exist).

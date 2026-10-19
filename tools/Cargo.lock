@@ -1091,8 +1091,16 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "iron_api",
+ "iron_math",
  "iron_scene",
  "jiff",
+]
+
+[[package]]
+name = "iron_math"
+version = "0.1.0"
+dependencies = [
+ "iron_api",
 ]
 
 [[package]]
@@ -1102,6 +1110,7 @@ dependencies = [
  "glam",
  "iron_api",
  "iron_core",
+ "iron_math",
 ]
 
 [[package]]

@@ -73,7 +73,7 @@ fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
 #[iron_api(
     namespace = "Cameras",
     handles(GameObject = ObjectId, Camera = CameraRef),
-    values(Color = Rgba [r: f32, g: f32, b: f32, a: f32])
+    values(Color = Rgba [r: f64, g: f64, b: f64, a: f64])
 )]
 pub mod camera_api {
     use super::{CAMERAS, CameraData, CameraRef, with};

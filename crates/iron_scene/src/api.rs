@@ -8,6 +8,7 @@
 use crate::{ObjectId, Scene, Transform};
 use glam::{Quat, Vec3};
 use iron_api::{Handle, context, iron_api};
+use iron_math::{Q, V3};
 use std::cell::Cell;
 
 thread_local! {
@@ -58,6 +59,32 @@ fn world_position(object: ObjectId) -> Vec3 {
         .unwrap_or_default()
 }
 
+/// The script's doubles as the scene's floats, and back.
+pub fn vec3(v: V3) -> Vec3 {
+    Vec3::new(v.x as f32, v.y as f32, v.z as f32)
+}
+
+pub fn v3_of(v: Vec3) -> V3 {
+    V3 {
+        x: f64::from(v.x),
+        y: f64::from(v.y),
+        z: f64::from(v.z),
+    }
+}
+
+pub fn quat(q: Q) -> Quat {
+    Quat::from_xyzw(q.x as f32, q.y as f32, q.z as f32, q.w as f32)
+}
+
+pub fn q_of(q: Quat) -> Q {
+    Q {
+        x: f64::from(q.x),
+        y: f64::from(q.y),
+        z: f64::from(q.z),
+        w: f64::from(q.w),
+    }
+}
+
 fn none() -> ObjectId {
     // `from_raw(0)` wraps to a generation no slot has, so it misses everywhere.
     ObjectId::from_raw(0)
@@ -68,84 +95,13 @@ fn none() -> ObjectId {
     quickjs,
     handles(GameObject = ObjectId, Transform = TransformRef),
     values(
-        Vector3 = Vec3 [x: f32, y: f32, z: f32],
-        Quaternion = Quat [x: f32, y: f32, z: f32, w: f32]
+        Vector3 = V3 [x: f64, y: f64, z: f64],
+        Quaternion = Q [x: f64, y: f64, z: f64, w: f64]
     )
 )]
 pub mod scene_api {
-    use super::{ObjectId, Quat, Transform, TransformRef, Vec3, none, with};
-
-    // Math on the value classes, so scripts write `a.add(b)` and `v.magnitude` (compiled as direct
-    // calls; a second crate that shares `Vector3` will move these to a math namespace).
-
-    /// Component-wise sum.
-    #[method(Vector3)]
-    pub fn add(a: Vec3, b: Vec3) -> Vec3 {
-        a + b
-    }
-
-    /// Component-wise difference.
-    #[method(Vector3)]
-    pub fn sub(a: Vec3, b: Vec3) -> Vec3 {
-        a - b
-    }
-
-    /// Multiplies every component by a number.
-    #[method(Vector3)]
-    pub fn scale(a: Vec3, s: f32) -> Vec3 {
-        a * s
-    }
-
-    #[method(Vector3)]
-    pub fn dot(a: Vec3, b: Vec3) -> f32 {
-        a.dot(b)
-    }
-
-    #[method(Vector3)]
-    pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
-        a.cross(b)
-    }
-
-    #[method(Vector3)]
-    pub fn distance(a: Vec3, b: Vec3) -> f32 {
-        a.distance(b)
-    }
-
-    /// Linear interpolation: `a` at 0, `b` at 1.
-    #[method(Vector3)]
-    pub fn lerp(a: Vec3, b: Vec3, t: f32) -> Vec3 {
-        a.lerp(b, t)
-    }
-
-    /// Its length.
-    #[getter(Vector3)]
-    pub fn magnitude(a: Vec3) -> f32 {
-        a.length()
-    }
-
-    /// The same direction with length 1 (the zero vector stays zero).
-    #[getter(Vector3)]
-    pub fn normalized(a: Vec3) -> Vec3 {
-        a.normalize_or_zero()
-    }
-
-    /// Combines two rotations: `b` is applied first, then `a` (`a * b`, like Unity).
-    #[method(Quaternion)]
-    pub fn mul(a: Quat, b: Quat) -> Quat {
-        a * b
-    }
-
-    /// Rotates a vector.
-    #[method(Quaternion)]
-    pub fn rotate(q: Quat, v: Vec3) -> Vec3 {
-        q * v
-    }
-
-    /// The opposite rotation.
-    #[getter(Quaternion)]
-    pub fn inverse(q: Quat) -> Quat {
-        q.inverse()
-    }
+    use super::{ObjectId, Q, Transform, TransformRef, V3, none, q_of, quat, v3_of, vec3, with};
+    use glam::{Quat, Vec3};
 
     // `GameObject`: creating, destroying, flags and the transform.
     impl ObjectId {
@@ -224,51 +180,51 @@ pub mod scene_api {
 
         /// Position in the world.
         #[property]
-        pub fn position(self) -> Vec3 {
-            super::world_position(self.0)
+        pub fn position(self) -> V3 {
+            v3_of(super::world_position(self.0))
         }
 
         /// Puts the object at a world position, keeping its world rotation.
-        pub fn set_position(self, position: Vec3) {
+        pub fn set_position(self, position: V3) {
             set_position(self.0, position);
         }
 
         /// Rotation in the world.
         #[property]
-        pub fn rotation(self) -> Quat {
+        pub fn rotation(self) -> Q {
             rotation(self.0)
         }
 
         /// Rotates the object in the world, keeping its world position.
-        pub fn set_rotation(self, rotation: Quat) {
+        pub fn set_rotation(self, rotation: Q) {
             set_rotation(self.0, rotation);
         }
 
         /// Position relative to the parent.
         #[property]
-        pub fn local_position(self) -> Vec3 {
+        pub fn local_position(self) -> V3 {
             local_position(self.0)
         }
 
-        pub fn set_local_position(self, position: Vec3) {
+        pub fn set_local_position(self, position: V3) {
             set_local_position(self.0, position);
         }
 
         #[property]
-        pub fn local_rotation(self) -> Quat {
+        pub fn local_rotation(self) -> Q {
             local_rotation(self.0)
         }
 
-        pub fn set_local_rotation(self, rotation: Quat) {
+        pub fn set_local_rotation(self, rotation: Q) {
             set_local_rotation(self.0, rotation);
         }
 
         #[property]
-        pub fn local_scale(self) -> Vec3 {
+        pub fn local_scale(self) -> V3 {
             local_scale(self.0)
         }
 
-        pub fn set_local_scale(self, scale: Vec3) {
+        pub fn set_local_scale(self, scale: V3) {
             set_local_scale(self.0, scale);
         }
 
@@ -339,13 +295,16 @@ pub mod scene_api {
     }
 
     /// Position relative to the parent.
-    pub fn local_position(object: ObjectId) -> Vec3 {
-        with(|s| s.local(object).map(|t| t.position))
-            .flatten()
-            .unwrap_or_default()
+    pub fn local_position(object: ObjectId) -> V3 {
+        v3_of(
+            with(|s| s.local(object).map(|t| t.position))
+                .flatten()
+                .unwrap_or_default(),
+        )
     }
 
-    pub fn set_local_position(object: ObjectId, position: Vec3) {
+    pub fn set_local_position(object: ObjectId, position: V3) {
+        let position = vec3(position);
         with(|s| {
             if let Some(t) = s.local(object) {
                 s.set_local(object, Transform { position, ..t });
@@ -353,13 +312,16 @@ pub mod scene_api {
         });
     }
 
-    pub fn local_rotation(object: ObjectId) -> Quat {
-        with(|s| s.local(object).map(|t| t.rotation))
-            .flatten()
-            .unwrap_or(Quat::IDENTITY)
+    pub fn local_rotation(object: ObjectId) -> Q {
+        q_of(
+            with(|s| s.local(object).map(|t| t.rotation))
+                .flatten()
+                .unwrap_or(Quat::IDENTITY),
+        )
     }
 
-    pub fn set_local_rotation(object: ObjectId, rotation: Quat) {
+    pub fn set_local_rotation(object: ObjectId, rotation: Q) {
+        let rotation = quat(rotation);
         with(|s| {
             if let Some(t) = s.local(object) {
                 s.set_local(
@@ -373,13 +335,16 @@ pub mod scene_api {
         });
     }
 
-    pub fn local_scale(object: ObjectId) -> Vec3 {
-        with(|s| s.local(object).map(|t| t.scale))
-            .flatten()
-            .unwrap_or(Vec3::ONE)
+    pub fn local_scale(object: ObjectId) -> V3 {
+        v3_of(
+            with(|s| s.local(object).map(|t| t.scale))
+                .flatten()
+                .unwrap_or(Vec3::ONE),
+        )
     }
 
-    pub fn set_local_scale(object: ObjectId, scale: Vec3) {
+    pub fn set_local_scale(object: ObjectId, scale: V3) {
+        let scale = vec3(scale);
         with(|s| {
             if let Some(t) = s.local(object) {
                 s.set_local(object, Transform { scale, ..t });
@@ -388,14 +353,17 @@ pub mod scene_api {
     }
 
     /// Position in the world.
-    pub fn position(object: ObjectId) -> Vec3 {
-        with(|s| s.contains(object).then(|| s.world(object).position))
-            .flatten()
-            .unwrap_or_default()
+    pub fn position(object: ObjectId) -> V3 {
+        v3_of(
+            with(|s| s.contains(object).then(|| s.world(object).position))
+                .flatten()
+                .unwrap_or_default(),
+        )
     }
 
     /// Puts the object at a world position, keeping its world rotation.
-    pub fn set_position(object: ObjectId, position: Vec3) {
+    pub fn set_position(object: ObjectId, position: V3) {
+        let position = vec3(position);
         with(|s| {
             if s.contains(object) {
                 let rotation = s.world(object).rotation;
@@ -405,14 +373,17 @@ pub mod scene_api {
     }
 
     /// Rotation in the world.
-    pub fn rotation(object: ObjectId) -> Quat {
-        with(|s| s.contains(object).then(|| s.world(object).rotation))
-            .flatten()
-            .unwrap_or(Quat::IDENTITY)
+    pub fn rotation(object: ObjectId) -> Q {
+        q_of(
+            with(|s| s.contains(object).then(|| s.world(object).rotation))
+                .flatten()
+                .unwrap_or(Quat::IDENTITY),
+        )
     }
 
     /// Rotates the object in the world, keeping its world position.
-    pub fn set_rotation(object: ObjectId, rotation: Quat) {
+    pub fn set_rotation(object: ObjectId, rotation: Q) {
+        let rotation = quat(rotation);
         with(|s| {
             if s.contains(object) {
                 let position = s.world(object).position;

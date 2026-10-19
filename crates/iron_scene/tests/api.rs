@@ -49,9 +49,9 @@ fn the_shims_create_move_and_destroy_objects_in_the_current_scene() {
         assert_eq!(api::iron_Scene_count(), 2);
         assert!(api::iron_Scene_exists(a));
 
-        // A Vector3 argument is three f32s; the result comes back through a pointer.
+        // A Vector3 argument is three f64s; the result comes back through a pointer.
         api::iron_Scene_setLocalPosition(a, 1.0, 2.0, 3.0);
-        let mut out = [0.0f32; 3];
+        let mut out = [0.0f64; 3];
         unsafe { api::iron_Scene_localPosition(a, out.as_mut_ptr()) };
         assert_eq!(out, [1.0, 2.0, 3.0]);
 
@@ -91,10 +91,10 @@ fn rotation_is_a_quaternion_value_and_flags_are_booleans() {
     let _scope = enter(&mut scene);
     let a = api::iron_Scene_create();
     let q = Quat::from_rotation_y(0.5);
-    api::iron_Scene_setLocalRotation(a, q.x, q.y, q.z, q.w);
-    let mut out = [0.0f32; 4];
+    api::iron_Scene_setLocalRotation(a, q.x.into(), q.y.into(), q.z.into(), q.w.into());
+    let mut out = [0.0f64; 4];
     unsafe { api::iron_Scene_localRotation(a, out.as_mut_ptr()) };
-    let back = Quat::from_xyzw(out[0], out[1], out[2], out[3]);
+    let back = Quat::from_xyzw(out[0] as f32, out[1] as f32, out[2] as f32, out[3] as f32);
     assert!(back.abs_diff_eq(q, 1e-6), "{back:?} vs {q:?}");
     assert!(api::iron_Scene_enabled(a));
     api::iron_Scene_setEnabled(a, false);
@@ -142,7 +142,7 @@ fn game_object_and_transform_classes_work_through_their_shims() {
     assert_eq!(api::iron_Transform_gameObject(t), go);
     api::iron_Transform_setLocalScale(t, 2.0, 2.0, 2.0);
     api::iron_Transform_setPosition(t, 1.0, 2.0, 3.0);
-    let mut out = [0.0f32; 3];
+    let mut out = [0.0f64; 3];
     unsafe { api::iron_Transform_position(t, out.as_mut_ptr()) };
     assert_eq!(out, [1.0, 2.0, 3.0]);
     api::iron_GameObject_setEnabled(go, false);
@@ -207,6 +207,7 @@ fn value_classes_have_constructors_methods_and_getters_in_quickjs() {
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
+        iron_math::register_quickjs(&ctx).unwrap();
         api::register_quickjs(&ctx).unwrap();
         let out: String = ctx
             .eval(

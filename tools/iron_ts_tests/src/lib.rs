@@ -877,6 +877,54 @@ pub mod task_t {
     include!(concat!(env!("OUT_DIR"), "/task_bindings.rs"));
 }
 
+/// `bench/mathf.ts`, prefix `mtf_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod mathf_t {
+    include!(concat!(env!("OUT_DIR"), "/mathf_bindings.rs"));
+}
+
+/// `bench/vectors.ts`, prefix `vct_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod vectors_t {
+    include!(concat!(env!("OUT_DIR"), "/vectors_bindings.rs"));
+}
+
+/// `bench/rotations.ts`, prefix `rot_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod rotations_t {
+    include!(concat!(env!("OUT_DIR"), "/rotations_bindings.rs"));
+}
+
+/// `bench/shapes.ts`, prefix `shp_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod shapes_t {
+    include!(concat!(env!("OUT_DIR"), "/shapes_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

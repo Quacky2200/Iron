@@ -356,7 +356,10 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
                 let class: ::iron_api::rquickjs::function::Constructor =
                     ctx.globals().get(#ts)?;
                 let raw: ::iron_api::rquickjs::Value = ctx.globals().get("__iron_raw")?;
-                class.construct((raw, #( parts[#idx], )* ))
+                let mut args = ::iron_api::rquickjs::function::Args::new(ctx.clone(), 1 + #n);
+                args.push_arg(raw)?;
+                #( args.push_arg(parts[#idx])?; )*
+                class.construct_args(args)
             }
         }
         other => {
@@ -760,6 +763,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let mut class_entries: Vec<Vec<TokenStream2>> = Vec::new();
     let mut shims = Vec::new();
     let mut js_sets = Vec::new();
+    // Namespace functions by script name: a name with several versions (overloads) dispatches by
+    // the number of arguments.
+    let mut js_fns: std::collections::BTreeMap<String, Vec<(TokenStream2, usize, usize)>> =
+        std::collections::BTreeMap::new();
     let mut js_hidden: Vec<TokenStream2> = Vec::new();
     let mut js_value_methods: std::collections::BTreeMap<String, Vec<(String, bool, String)>> =
         std::collections::BTreeMap::new();
@@ -1016,14 +1023,50 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 // A namespace property: an accessor on the namespace object.
                 Tag::Get => js_props.entry(js_name.clone()).or_default().0 = Some(closure),
                 Tag::Set => js_props.entry(js_name.clone()).or_default().1 = Some(closure),
-                _ => js_sets.push(quote! {
-                    ns.set(
-                        #js_name,
-                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
-                    )?;
-                }),
+                _ => {
+                    let max = a.params.len() + usize::from(a.value_recv.is_some());
+                    let min = max
+                        - a.params
+                            .iter()
+                            .filter(|(n, _)| a.optional.contains(&n.to_string()))
+                            .count();
+                    js_fns
+                        .entry(js_name.clone())
+                        .or_default()
+                        .push((closure, min, max));
+                }
             }
         }
+    }
+    for (name, versions) in &js_fns {
+        if let [(closure, _, _)] = versions.as_slice() {
+            js_sets.push(quote! {
+                ns.set(
+                    #name,
+                    ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                )?;
+            });
+            continue;
+        }
+        // Several versions: each is a hidden function, and a dispatcher picks one by argument count.
+        let mut branches = String::new();
+        for (i, (closure, min, max)) in versions.iter().enumerate() {
+            let hidden = format!("__iron_ov_{}_{name}_{i}", args.namespace);
+            js_hidden.push(quote! {
+                ctx.globals().set(
+                    #hidden,
+                    ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                )?;
+            });
+            branches +=
+                &format!("if (n >= {min} && n <= {max}) return globalThis.{hidden}(...a); ");
+        }
+        let src = format!(
+            "(function(...a) {{ const n = a.length; {branches}throw new TypeError('{name}: no version takes ' + n + ' arguments'); }})"
+        );
+        js_sets.push(quote! {
+            ns.set(#name, ctx.eval::<::iron_api::rquickjs::Function, _>(#src)?)?;
+        });
     }
 
     for (name, (get, set)) in &js_props {

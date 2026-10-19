@@ -4,14 +4,14 @@
 
 use crate::camera::CameraRef;
 use crate::color::Rgba;
-use glam::Vec3;
 use iron_api::iron_api;
+use iron_math::V3;
 use std::cell::RefCell;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GizmoLine {
-    pub from: Vec3,
-    pub to: Vec3,
+    pub from: V3,
+    pub to: V3,
     pub color: Rgba,
 }
 
@@ -60,15 +60,15 @@ pub fn reset() {
     quickjs,
     handles(Camera = CameraRef),
     values(
-        Vector3 = Vec3 [x: f32, y: f32, z: f32],
-        Color = Rgba [r: f32, g: f32, b: f32, a: f32]
+        Vector3 = V3 [x: f64, y: f64, z: f64],
+        Color = Rgba [r: f64, g: f64, b: f64, a: f64]
     )
 )]
 pub mod gizmos_api {
     use super::{GizmoFrame, GizmoLine, STATE};
     use crate::camera::CameraRef;
     use crate::color::Rgba;
-    use glam::Vec3;
+    use iron_math::V3;
 
     /// The colour of the lines drawn next.
     #[property]
@@ -85,7 +85,7 @@ pub mod gizmos_api {
         STATE.with(|s| s.borrow_mut().pending.clear());
     }
 
-    pub fn draw_line(from: Vec3, to: Vec3) {
+    pub fn draw_line(from: V3, to: V3) {
         STATE.with(|s| {
             let mut s = s.borrow_mut();
             let color = s.color;

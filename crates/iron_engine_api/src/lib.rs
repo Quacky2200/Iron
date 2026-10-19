@@ -7,6 +7,8 @@
 //! functions each frame, run scripts, then read [`gizmos::take_frame`] and [`camera::cameras`].
 //! Design: `docs/research/iron-ts-engine-boundary.md` and `docs/iron-api.md`.
 
+pub use iron_math;
+
 pub mod app;
 pub mod assets;
 pub mod audio;
@@ -26,7 +28,8 @@ pub mod time;
 /// The manifests (JSON) of every namespace this crate declares, for the compiler to check calls
 /// against. The scene's (`iron_scene::api::scene_api`) is separate.
 pub fn manifests() -> Vec<String> {
-    vec![
+    let mut all = iron_math::manifests();
+    all.extend([
         color::color_api::MANIFEST.to_json(),
         datetime::time_span_api::MANIFEST.to_json(),
         datetime::date_time_api::MANIFEST.to_json(),
@@ -49,5 +52,6 @@ pub fn manifests() -> Vec<String> {
         assets::assets_api::MANIFEST.to_json(),
         app::application_api::MANIFEST.to_json(),
         app::system_info_api::MANIFEST.to_json(),
-    ]
+    ]);
+    all
 }

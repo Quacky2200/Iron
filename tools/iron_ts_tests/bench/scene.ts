@@ -134,7 +134,7 @@ export function vectorMath(): number {
 export function quatMath(): number {
   const q = new Quaternion(0, 0.7071068, 0, 0.7071068); // 90 degrees round y
   const v = q.rotate(new Vector3(1, 0, 0)); // (0, 0, -1)
-  const r = q.mul(q.inverse); // identity
+  const r = q.mul(q.inverse()); // identity
   return v.z * 1000 + r.w * 100000;
 }
 
