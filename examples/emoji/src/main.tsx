@@ -1,230 +1,394 @@
-// Emoji parade: one random emoji at a time hops across the stage from right to left and
-// lingers in a spotlight, where it takes a deep bow. Each emoji is a Noto SVG shown by a React
-// WorldPanel on a pivot at its feet, so squash and bow are plain scale and rotation of that
-// pivot, and the vector art stays sharp at 10em. The spotlight is soft dark rings with a hole,
-// drawn over the stage; the caption is screen UI with a CSS pop-in.
-import { addStyleSheet, Camera, Color, Component, GameObject, LineRenderer2D, register, Shapes, Vector2, Vector3, WorldPanel } from "@iron/engine";
-import { createRoot, Image } from "@iron/react";
-import { useEffect, useState } from "react";
+// Emoji celebrity: a spinner wheel picks an emoji, the red curtain opens and it comes on in one
+// of nine ways (walking, hopping, rushing, crawling with sparks, peeking from behind the
+// curtain, dropping in, rolling, popping up, rising), strikes a pose in the spotlight while its
+// name appears, then leaves the same way. About a hundred and five performers; two of them are
+// drawn in code and watch the mouse.
+//
+// The motion is in motion.ts as pure functions of time; this file is the director that turns
+// a `Move` into transforms, a shadow, sparks and curtain moves.
+import { Camera, Color, Component, GameObject, input, LineRenderer2D, register, Screen, Shapes, Vector2, Vector3, WorldPanel } from "@iron/engine";
+import { createRoot } from "@iron/react";
+import { CAST, type Star } from "./cast.ts";
+import { GROUND, HEIGHT, LIGHT, PANEL, view } from "./config.ts";
+import { Fx } from "./fx.ts";
+import { caption, eyes, Face, Hud, shown, wheel, type WheelState } from "./hud.tsx";
+import { type Gait, GAITS, type Move, POSE_TIME, poseMove } from "./motion.ts";
+import { buildStage, Curtain, Mote } from "./stage.tsx";
 
-// [Noto file (codepoint), name]
-const EMOJI: [string, string][] = [
-  ["1f600", "Grinning"], ["1f602", "Tears of joy"], ["1f923", "Rolling on the floor"], ["1f60a", "Blushing"], ["1f60d", "Heart eyes"],
-  ["1f618", "Blowing a kiss"], ["1f60e", "Cool"], ["1f913", "Nerd"], ["1f633", "Embarrassed"], ["1f605", "Nervous sweat"],
-  ["1f62d", "Sobbing"], ["1f621", "Angry"], ["1f92c", "Swearing"], ["1f631", "Screaming"], ["1f976", "Freezing"],
-  ["1f975", "Overheated"], ["1f922", "Queasy"], ["1f92e", "Sick"], ["1f634", "Sleeping"], ["1f914", "Thinking"],
-  ["1f644", "Eye roll"], ["1f60f", "Smirk"], ["1f973", "Party"], ["1f929", "Star-struck"], ["1f607", "Angel"],
-  ["1f92a", "Zany"], ["1f92f", "Mind blown"], ["1f917", "Hugging"], ["1f643", "Upside down"], ["1f608", "Devil"],
-  ["1f47b", "Ghost"], ["1f480", "Skull"], ["1f921", "Clown"], ["1f47d", "Alien"], ["1f916", "Robot"],
-  ["1f4a9", "Poop"], ["1f435", "Monkey"], ["1f648", "See no evil"], ["1f436", "Dog"], ["1f431", "Cat"],
-  ["1f984", "Unicorn"], ["1f438", "Frog"], ["1f437", "Pig"], ["1f52b", "Water pistol"], ["1f525", "Fire"],
-  ["1f4af", "One hundred"], ["2764", "Heart"], ["1f44d", "Thumbs up"], ["1f383", "Pumpkin"], ["1f31e", "Sun"],
-];
+type Phase = "wheel" | "enter" | "pose" | "exit" | "close";
 
-const GROUND = -3.7;
-/** World units an emoji stands tall (about half of the screen's 10 units at this camera). */
-const HEIGHT = 5.2;
-const PANEL = 480;
-const HOP = 0.9;
-/** Seconds per hop and per trip across the stage. */
-const BEAT = 0.8;
-const CROSSING = 9;
-const EDGE = 14;
-const LIGHT = new Vector2(0, 0.2);
+// Wheel timeline, seconds.
+const W_IN = 0.7;
+const W_SPIN = 4.6;
+const W_GLOW = 1.3;
+const W_OUT = 0.6;
+const W_TOTAL = W_IN + W_SPIN + W_GLOW + W_OUT;
+/** The curtain is drawn back this long before the emoji appears. */
+const LEAD = 1;
 
-addStyleSheet(`
-.caption { animation: caption-in 0.45s cubic-bezier(0.2, 1.7, 0.4, 1) both; }
-@keyframes caption-in {
-  from { opacity: 0; transform: translateY(28px) scale(0.6); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-`);
-
-// The React side only needs to know which emoji is on stage.
-const listeners = new Set<(i: number) => void>();
-const showEmoji = (i: number) => listeners.forEach((f) => f(i));
-
-function useEmoji(): number {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    listeners.add(setI);
-    return () => void listeners.delete(setI);
-  }, []);
-  return i;
-}
-
-function Face() {
-  return <Image src={`assets/emoji/${EMOJI[useEmoji()]![0]}.svg`} style={{ width: PANEL, height: PANEL }} />;
-}
-
-function Hud() {
-  const i = useEmoji();
-  return (
-    <box style={{ width: "100%", height: "100%", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", paddingBottom: 26, pointerEvents: "none" }}>
-      <text key={i} className="caption" style={{ fontSize: 46, fontWeight: 800, color: "#f6f1e2", letterSpacing: 4, textTransform: "uppercase", textShadow: "0 3px 12px rgba(0,0,0,0.8)" }}>
-        {EMOJI[i]![1]}
-      </text>
-      <text style={{ marginTop: 4, fontSize: 15, color: "#8a93a8", letterSpacing: 6, textTransform: "uppercase" }}>{`Emoji parade · ${EMOJI.length} stars`}</text>
-    </box>
-  );
-}
-
-const smooth = (t: number) => t * t * (3 - 2 * t);
-
-/** A rectangle with a round hole cut out, the hole's rim reached over a zero-width bridge. */
-function framed(half: Vector2, hole: Vector2, radius: number): Vector2[] {
-  const rect = [new Vector2(-half.x, -half.y), new Vector2(half.x, -half.y), new Vector2(half.x, half.y), new Vector2(-half.x, half.y)];
-  const ring = Shapes.circle(hole, radius, 64);
-  const [corner, rim] = [rect[0]!, ring[0]!];
-  return [...rect, corner, ...ring, rim, corner];
-}
-
-class Mote extends Component {
-  speed = 0.2 + Math.random() * 0.4;
-  sway = Math.random() * 6.28;
-  home = 0;
-  override onUpdate(dt: number): void {
-    const p = this.transform.position;
-    let y = p.y + this.speed * dt;
-    if (y > 5.5) y = GROUND + 0.2;
-    this.sway += dt * 0.7;
-    this.transform.position = new Vector3(this.home + Math.sin(this.sway) * 0.3, y, p.z);
-  }
-}
+const pick = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)]!;
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const smoothstep = (t: number) => {
+  const c = clamp01(t);
+  return c * c * (3 - 2 * c);
+};
+type Rgba = [number, number, number, number];
+const SPARK: Rgba[] = [[1, 0.85, 0.3, 1], [1, 0.6, 0.15, 1], [1, 0.95, 0.7, 1]];
+const CONFETTI: Rgba[] = [[1, 0.35, 0.4, 1], [1, 0.85, 0.3, 1], [0.3, 0.8, 1, 1], [0.5, 1, 0.5, 1], [1, 0.5, 0.9, 1]];
 
 class Parade extends Component {
   private actor!: GameObject;
+  private art!: GameObject;
   private shadow!: GameObject;
   private panel!: WorldPanel;
+  private fx!: Fx;
+  private curtain!: Curtain;
+
+  private phase: Phase = "wheel";
+  private t = 0;
   private clock = 0;
+  private star: Star = CAST[0]!;
   private last = -1;
+  private gait: Gait = GAITS[0]!;
+  private outGait: Gait = GAITS[0]!;
+  private pose: Star["poses"][number] = "bow";
+  private side = 1;
+  private outSide = -1;
+  private shownCode = "";
+
+  // Wheel.
+  private items: Star[] = [];
+  private winner = 0;
+  private finalAngle = 0;
+  private lastPeg = 0;
+  private flapAge = 9;
+
+  // Motion.
+  private heading = 1;
+  private px = 0;
+  private carry = 0;
+  private wasThump = 0;
+  private wasPuff = false;
+  private lit = -1;
+  private litAlpha = -1;
+
+  // Eyes.
+  private mouse = new Vector2(-1, -1);
+  private idle = 9;
+  private look = { x: 0, y: 0 };
+  private blinkIn = 2;
+  private blinkAge = 9;
+  private blinks = 0;
 
   override onAwake(): void {
+    view.half = 5 * Screen.aspect;
     new GameObject("Main Camera", { position: new Vector3(0, 0, 10) }).addComponent(Camera, {
       orthographic: true,
       orthographicSize: 5,
       backgroundColor: Color.hex("#04050a"),
     });
-    this.stage();
+    buildStage();
 
     this.shadow = new GameObject("Shadow", { position: new Vector3(0, GROUND, 0.1) });
-    this.shadow.addComponent(LineRenderer2D, {
-      points: Shapes.ellipse(Vector2.zero, 2.4, 0.35, 40),
-      fillColor: new Color(0, 0, 0, 0.45),
-      width: 0,
-      loop: true,
-    });
+    this.shadow.addComponent(LineRenderer2D, { points: Shapes.ellipse(Vector2.zero, 2.4, 0.35, 40), fillColor: new Color(0, 0, 0, 0.45), width: 0, loop: true });
 
-    this.actor = new GameObject("Emoji", { position: new Vector3(EDGE, GROUND, 0) });
-    const art = new GameObject("Art", { position: new Vector3(0, HEIGHT / 2, 0), parent: this.actor });
-    const panel = this.panel = art.addComponent(WorldPanel, { width: PANEL, height: PANEL, pixelsPerMeter: PANEL / HEIGHT, resolution: 1.5, interactive: false });
-    createRoot(panel).render(<Face />);
+    this.actor = new GameObject("Emoji", { position: new Vector3(99, GROUND, 0) });
+    this.art = new GameObject("Art", { position: new Vector3(0, HEIGHT / 2, 0), parent: this.actor });
+    this.panel = this.art.addComponent(WorldPanel, { width: PANEL, height: PANEL, pixelsPerMeter: PANEL / HEIGHT, resolution: 1.5, interactive: false });
+    createRoot(this.panel).render(<Face />);
+
+    this.fx = new Fx(90);
+    this.curtain = new Curtain();
     createRoot().render(<Hud />);
-    this.next();
+    this.beginWheel();
   }
 
-  /** The beam, the pool of light on the floor, drifting dust and the dark around the spot. */
-  private stage(): void {
-    const floor = new GameObject("Floor", { position: new Vector3(0, GROUND - 1.1, 0.2) });
-    floor.addComponent(LineRenderer2D, {
-      points: Shapes.rectangle(-20, -1.2, 40, 2.4),
-      fillColor: Color.hex("#131724"),
-      width: 0,
-      loop: true,
-    });
-    const beam = new GameObject("Beam", { position: new Vector3(LIGHT.x, 0, -1) });
-    beam.addComponent(LineRenderer2D, {
-      points: [new Vector2(-0.7, 6), new Vector2(0.7, 6), new Vector2(5.4, GROUND), new Vector2(-5.4, GROUND)],
-      fillColor: new Color(1, 0.92, 0.68, 0.075),
-      width: 0,
-      loop: true,
-    });
-    const pool = new GameObject("Pool", { position: new Vector3(LIGHT.x, GROUND, -1) });
-    pool.addComponent(LineRenderer2D, {
-      points: Shapes.ellipse(Vector2.zero, 5.6, 0.75, 56),
-      fillColor: new Color(1, 0.92, 0.68, 0.2),
-      width: 0,
-      loop: true,
-    });
+  // ---- The wheel ----
 
-    for (let i = 0; i < 28; i++) {
-      const home = (Math.random() - 0.5) * 8;
-      const mote = new GameObject(`Mote ${i}`, { position: new Vector3(home, GROUND + Math.random() * 9, -0.5) });
-      mote.addComponent(LineRenderer2D, {
-        points: Shapes.circle(Vector2.zero, 0.025 + Math.random() * 0.03, 8),
-        fillColor: new Color(1, 0.95, 0.8, 0.5),
-        width: 0,
-        loop: true,
-      });
-      mote.addComponent(Mote).home = home;
-    }
+  private beginWheel(): void {
+    this.phase = "wheel";
+    this.t = 0;
+    this.actor.enabled = false;
+    this.shadow.enabled = false;
+    caption.set(null);
 
-    // Rings of dark, each with a slightly wider hole, add up to a soft edge.
-    const rings = 28;
-    for (let i = 0; i < rings; i++) {
-      const dark = new GameObject(`Dark ${i}`, { position: new Vector3(LIGHT.x, LIGHT.y, 3) });
-      dark.addComponent(LineRenderer2D, {
-        points: framed(new Vector2(30, 20), Vector2.zero, 3.2 + i * 0.22),
-        fillColor: new Color(0.01, 0.01, 0.03, 0.08),
-        width: 0,
-        loop: true,
-        sortingOrder: 10,
-      });
+    // Eight different performers, one of them the winner (never the one just seen).
+    const pool = CAST.map((_, i) => i).filter((i) => i !== this.last);
+    this.items = [];
+    while (this.items.length < 8) {
+      const k = Math.floor(Math.random() * pool.length);
+      this.items.push(CAST[pool.splice(k, 1)[0]!]!);
     }
+    this.winner = Math.floor(Math.random() * 8);
+    this.last = CAST.indexOf(this.items[this.winner]!);
+    // Segment i sits i*45 degrees round; turning the wheel by -i*45 brings it under the pointer.
+    this.finalAngle = 360 * 5 - this.winner * 45 + (Math.random() - 0.5) * 24;
+    this.lastPeg = 0;
+    this.flapAge = 9;
+    this.drawWheel(0, 0.4, 0, 0);
   }
 
-  /** A different emoji from the last, just off the right edge. */
-  private next(): void {
-    let i = this.last;
-    while (i === this.last) i = Math.floor(Math.random() * EMOJI.length);
-    this.last = i;
-    showEmoji(i);
-    this.clock = 0;
+  private drawWheel(angle: number, scale: number, fade: number, glow: number, flap = 0): void {
+    const state: WheelState = { items: this.items.map((s) => s.chip), angle, flap, glow, scale, fade, winner: this.winner };
+    wheel.set(state);
   }
 
-  override onUpdate(dt: number): void {
-    this.clock += dt;
-    const u = this.clock / CROSSING;
-    if (u >= 1) {
-      this.next();
-      return;
-    }
-    // Slow down through the middle of the stage, where the light is.
-    const along = u + (0.7 * Math.sin(u * Math.PI * 2)) / (Math.PI * 2);
-    const x = EDGE - along * EDGE * 2;
-    const spot = Math.exp(-((x - LIGHT.x) * (x - LIGHT.x)) / 9);
-    // The dark is drawn behind world panels, so the emoji dims itself outside the light.
-    const lit = 0.3 + 0.7 * spot;
-    this.panel.tint = new Color(lit, lit, lit, 1);
-
-    // One hop: 0..1 in the air, then a short landing.
-    const beat = (this.clock / BEAT) % 1;
-    const air = 0.72;
-    let lift = 0;
-    let squash = 0;
-    if (beat < air) {
-      lift = Math.sin((beat / air) * Math.PI);
+  private tickWheel(dt: number): void {
+    const t = this.t;
+    if (t < W_IN) {
+      const e = 1 - (1 - t / W_IN) ** 3;
+      this.drawWheel(0, 0.4 + 0.6 * e, e, 0);
+    } else if (t < W_IN + W_SPIN) {
+      const u = (t - W_IN) / W_SPIN;
+      const angle = this.finalAngle * (1 - (1 - u) ** 3.4);
+      // A peg every 45 degrees kicks the pointer's flap back.
+      const peg = Math.floor((angle + 22.5) / 45);
+      if (peg !== this.lastPeg) {
+        this.lastPeg = peg;
+        this.flapAge = 0;
+      }
+      this.flapAge += dt;
+      this.drawWheel(angle, 1, 1, 0, -28 * Math.exp(-this.flapAge * 13));
+    } else if (t < W_IN + W_SPIN + W_GLOW) {
+      const g = smoothstep((t - W_IN - W_SPIN) / 0.5);
+      this.drawWheel(this.finalAngle, 1, 1, g, 0);
+    } else if (t < W_TOTAL) {
+      const u = (t - W_IN - W_SPIN - W_GLOW) / W_OUT;
+      this.drawWheel(this.finalAngle, 1 + 0.15 * u, 1 - u, 1, 0);
     } else {
-      // Squash in fast on touchdown, then spring back.
-      const land = (beat - air) / (1 - air);
-      squash = Math.sin(land * Math.PI) * (1 - land * 0.25);
+      wheel.set(null);
+      this.beginAct(this.items[this.winner]!);
     }
-    // In the light the landings get deeper and become bows.
-    const deep = 1 + spot * 0.8;
-    const sy = 1 + 0.09 * lift - 0.32 * squash * deep;
-    const sx = 1 - 0.05 * lift + 0.2 * squash * deep;
-    // Bow towards the way it's going (left) on the floor, lean back in the air.
-    const tilt = (14 + 24 * spot) * smooth(squash) - 5 * lift;
+  }
 
+  // ---- The act ----
+
+  private beginAct(star: Star): void {
+    this.star = star;
+    this.gait = pick(GAITS);
+    this.outGait = pick(GAITS);
+    this.pose = pick(star.poses);
+    this.side = Math.random() < 0.5 ? 1 : -1;
+    // Usually leaves across the stage; sometimes goes back the way it came.
+    this.outSide = Math.random() < 0.7 ? -this.side : this.side;
+    this.phase = "enter";
+    this.t = -LEAD;
+    this.heading = -this.side;
+    this.px = 99;
+    this.shownCode = star.code;
+    shown.set({ code: star.code, look: star.look ?? null });
+  }
+
+  override onUpdate(rawDt: number): void {
+    const dt = Math.min(rawDt, 0.05);
+    view.half = 5 * Screen.aspect;
+    this.clock += dt;
+    this.t += dt;
+    this.fx.update(dt);
+
+    let m: Move;
+    let side = this.side;
+    switch (this.phase) {
+      case "wheel":
+        this.tickWheel(dt);
+        this.curtain.approach(0, 6, dt);
+        return;
+      case "enter":
+        m = this.gait.at(Math.max(0, this.t));
+        if (this.t >= this.gait.dur) {
+          this.phase = "pose";
+          this.t = 0;
+          caption.set(this.star.name);
+          if (this.pose === "pump" || this.pose === "spin") this.burst(0, GROUND + HEIGHT * 0.6, 22);
+        }
+        break;
+      case "pose":
+        m = poseMove(this.pose, this.t);
+        side = 1;
+        if (this.t >= POSE_TIME) {
+          this.phase = "exit";
+          this.t = 0;
+          caption.set(null);
+        }
+        break;
+      case "exit":
+        // The way in, played backwards, out of the other side (or the same one).
+        m = this.outGait.at(Math.max(0, this.outGait.dur - this.t));
+        side = this.outSide;
+        if (this.t >= this.outGait.dur) {
+          this.phase = "close";
+          this.t = 0;
+          this.actor.enabled = false;
+          this.shadow.enabled = false;
+        }
+        break;
+      case "close":
+        this.curtain.approach(0, 3, dt);
+        if (this.curtain.open < 0.04) this.beginWheel();
+        return;
+    }
+
+    this.curtain.approach(m.open ?? 1, 5, dt);
+    this.apply(m, side, dt);
+  }
+
+  private apply(m: Move, side: number, dt: number): void {
+    const edge = view.half + HEIGHT / 2 + 0.8;
+    const x = m.x !== undefined ? m.x * -side : side * edge * (1 - m.d);
+    const live = this.t >= 0 || this.phase !== "enter";
+    this.actor.enabled = live;
+    this.shadow.enabled = live && m.y > -0.5 && m.alpha > 0.2;
+
+    // Which way it's going decides which way it leans.
+    const v = (x - this.px) / Math.max(dt, 1e-4);
+    this.px = x;
+    const target = v < -0.4 ? 1 : v > 0.4 ? -1 : this.heading;
+    this.heading += (target - this.heading) * Math.min(1, dt * 12);
+    const dir = v < 0 ? -1 : 1;
+
+    const c = m.centre;
+    const half = HEIGHT / 2;
     const t = this.actor.transform;
-    t.position = new Vector3(x, GROUND + lift * HOP, 0);
-    t.localScale = new Vector3(sx, sy, 1);
-    t.localEulerAngles = new Vector3(0, 0, tilt);
+    t.position = new Vector3(x, GROUND + m.y + half * c, 0);
+    t.localScale = new Vector3(m.sx * m.spin, m.sy, 1);
+    t.localEulerAngles = new Vector3(0, 0, m.rot * this.heading);
+    this.art.transform.localPosition = new Vector3(0, half * (1 - c), 0);
 
-    // The shadow shrinks and fades as it leaves the floor and spreads when it lands.
-    const spread = (1 - 0.35 * lift) * (1 + 0.25 * squash);
+    // Dim outside the light (the dark is drawn behind panels, so the emoji does it itself).
+    const spot = Math.exp(-((x - LIGHT.x) * (x - LIGHT.x)) / 9);
+    const lit = 0.3 + 0.7 * spot;
+    if (Math.abs(lit - this.lit) > 0.004 || Math.abs(m.alpha - this.litAlpha) > 0.004) {
+      this.lit = lit;
+      this.litAlpha = m.alpha;
+      this.panel.tint = new Color(lit, lit, lit, m.alpha);
+    }
+
+    // The shadow shrinks and fades as it leaves the floor.
+    const spread = Math.min(1.25, Math.max(0.3, 1 - 0.08 * m.y)) * (1 + 0.5 * (1 - m.sy)) * Math.max(0.2, m.sx * m.spin);
     this.shadow.transform.position = new Vector3(x, GROUND, 0.1);
     this.shadow.transform.localScale = new Vector3(spread, spread, 1);
+
+    const code = m.swap ?? this.star.code;
+    if (code !== this.shownCode) {
+      this.shownCode = code;
+      shown.set({ code, look: this.star.look ?? null });
+    }
+    if (this.star.look) this.watch(x, m.y, dt);
+
+    this.emitFx(m, x, dir, dt);
+  }
+
+  // ---- Particles ----
+
+  private emitFx(m: Move, x: number, dir: number, dt: number): void {
+    const behind = -dir;
+    if (m.fx) {
+      this.carry += m.fx.rate * dt;
+      while (this.carry >= 1) {
+        this.carry -= 1;
+        if (m.fx.kind === "sparks") {
+          this.fx.emit({
+            x: x + behind * (0.8 + Math.random() * 1.6),
+            y: GROUND + 0.04,
+            vx: behind * (2 + Math.random() * 6),
+            vy: 1.5 + Math.random() * 4,
+            life: 0.3 + Math.random() * 0.4,
+            color: pick(SPARK),
+            len: 0.25 + Math.random() * 0.3,
+            width: 0.07,
+            gravity: 16,
+          });
+        } else if (m.fx.kind === "dust") {
+          this.dust(x + behind * Math.random() * 1.5, behind);
+        } else {
+          this.fx.emit({
+            x: x + behind * (2.4 + Math.random() * 1.4),
+            y: GROUND + Math.random() * HEIGHT,
+            vx: 0,
+            vy: 0,
+            angle: behind > 0 ? 180 : 0,
+            life: 0.18 + Math.random() * 0.12,
+            color: [1, 1, 1, 0.7],
+            len: 1.5 + Math.random() * 2.5,
+            width: 0.06,
+          });
+        }
+      }
+    }
+    if (m.thump > 0.5 && this.wasThump <= 0.5) {
+      for (let i = 0; i < 8; i++) this.dust(x + (Math.random() - 0.5) * 2.4, i % 2 ? 1 : -1);
+    }
+    this.wasThump = m.thump;
+    if (m.puff && !this.wasPuff) this.burst(x, GROUND + HEIGHT / 2, 34);
+    this.wasPuff = m.puff;
+  }
+
+  private dust(x: number, way: number): void {
+    this.fx.emit({
+      x,
+      y: GROUND + 0.1,
+      vx: way * (0.5 + Math.random() * 2) + (Math.random() - 0.5),
+      vy: 0.3 + Math.random() * 1.2,
+      life: 0.7 + Math.random() * 0.5,
+      color: [0.8, 0.75, 0.65, 0.35],
+      len: 0.01,
+      width: 0.2 + Math.random() * 0.2,
+      gravity: -0.5,
+      drag: 1.5,
+    });
+  }
+
+  /** Confetti shot out of a point. */
+  private burst(x: number, y: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 4 + Math.random() * 6;
+      this.fx.emit({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.7 + Math.random() * 0.5, color: pick(CONFETTI), len: 0.18 + Math.random() * 0.15, width: 0.07, gravity: 9, drag: 0.8 });
+    }
+  }
+
+  // ---- Eyes ----
+
+  /** Points the pupils at the mouse (or wanders when it's been still), and blinks now and then. */
+  private watch(x: number, y: number, dt: number): void {
+    const mp = input.mousePosition;
+    if (mp.x !== this.mouse.x || mp.y !== this.mouse.y) {
+      this.mouse = mp;
+      this.idle = 0;
+    } else {
+      this.idle += dt;
+    }
+    let tx = (mp.x / Math.max(1, Screen.width) - 0.5) * 10 * Screen.aspect;
+    let ty = (0.5 - mp.y / Math.max(1, Screen.height)) * 10;
+    if (this.idle > 2.5) {
+      tx = Math.sin(this.clock * 0.7) * 6;
+      ty = 1 + Math.sin(this.clock * 1.3) * 2.5;
+    }
+    const dx = tx - x;
+    const dy = ty - (GROUND + y + HEIGHT / 2);
+    const dist = Math.hypot(dx, dy) || 1;
+    const k = Math.min(1, dist / 4);
+    const ease = Math.min(1, dt * 14);
+    this.look.x += ((dx / dist) * k - this.look.x) * ease;
+    this.look.y += ((-dy / dist) * k - this.look.y) * ease;
+
+    this.blinkIn -= dt;
+    if (this.blinkIn <= 0) {
+      this.blinkAge = 0;
+      // One in four is a double blink.
+      this.blinks = Math.random() < 0.25 ? 1 : 0;
+      this.blinkIn = 1.8 + Math.random() * 3.5;
+    }
+    this.blinkAge += dt;
+    if (this.blinkAge > 0.3 && this.blinks > 0) {
+      this.blinks--;
+      this.blinkAge = 0;
+    }
+    const blink = this.blinkAge < 0.2 ? Math.sin((Math.PI * this.blinkAge) / 0.2) : 0;
+    const e = eyes.get();
+    if (Math.abs(e.px - this.look.x) + Math.abs(e.py - this.look.y) + Math.abs(e.blink - blink) > 0.01) {
+      eyes.set({ px: this.look.x, py: this.look.y, blink });
+    }
   }
 }
 

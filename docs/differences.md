@@ -138,6 +138,8 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | Area | Iron | Browsers / spec | Why |
 |---|---|---|---|
 | `background-origin` | Images and gradients position against the **border box** | Default `padding-box` | Not implemented; `background-clip` is |
+| `radial-gradient()` shape and position | Only `circle` or `ellipse`, always centred (`circle at 30% 20%` and sizes like `closest-side` don't parse) | Any size keyword, length and `at` position | The parser reads just the shape (`paint.rs`) |
+| Gradient stops | The first 8 stops are drawn (a two-position stop like `red 0 45deg` counts as two); the rest are dropped with a warning | Unlimited | The shader's stop table is fixed (`MAX_STOPS`) |
 | `background-repeat: space` for gradients | The gaps aren't kept (tiles repeat edge to edge) | Gaps as for images | Gradient tiles repeat in the shader without the gap logic images have |
 | `border-style` default | `solid`: a width alone draws a border (as in s&box) | `none`: no border without a style | Matches s&box authoring; the `border` shorthand still follows CSS (no style, no border) |
 | Gradients in `border-image` | Pieces stretch; `repeat`/`round`/`space` don't tile them | Tile like images | Image pieces tile; gradient pieces don't yet |
