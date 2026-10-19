@@ -10,18 +10,18 @@ friction solve handles one direction at a time.
 
 - `ISSUE.md`: the issue.
 - `PR.md`: the pull request description.
-- `fix.patch`: the fix plus a regression test, against the published rapier3d 0.36.1 crate.
-  It applies cleanly there (`git apply fix.patch`).
+- `fix-master.patch`: the fix plus a regression test, laid out for the rapier repository
+  (`src/...`, the test in `crates/rapier3d/tests/`, where tests are found automatically). Use
+  this one for the PR: `git apply fix-master.patch` from the repository's root.
+- `fix.patch`: the same change laid out for the published rapier3d 0.36.1 crate (the test in
+  `tests/`). That crate's `Cargo.toml` lists each test (`autotests = false`), so running it
+  there also needs:
 
-Before opening the PR, check the code against rapier's current `master`; the solve may have
-changed since 0.36.1. In the repository, the test also needs registering wherever rapier lists
-its tests. The published crate's `Cargo.toml` lists each one, with `autotests = false`:
-
-```toml
-[[test]]
-name = "plane_locked_friction"
-path = "tests/plane_locked_friction.rs"
-```
+  ```toml
+  [[test]]
+  name = "plane_locked_friction"
+  path = "tests/plane_locked_friction.rs"
+  ```
 
 Checked on 2026-10-19:
 
@@ -30,3 +30,7 @@ Checked on 2026-10-19:
   friction behavior", is from 2020 and unrelated.
 - rapier3d 0.36.1 (the newest release) passes all 443 of its own tests both with and without
   the fix; the new test fails without it and passes with it (444 in all).
+- On `master`, `contact_constraint_element.rs`, `contact_with_coulomb_friction.rs` and
+  `contact_with_twist_friction.rs` are identical to 0.36.1. The bug is still there, and
+  `fix-master.patch` applies cleanly. The file's last change was the soft-body work (#1010,
+  2026-09-19). None of the 12 open PRs touches the contact constraints.
