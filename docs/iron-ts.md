@@ -446,7 +446,12 @@ currency and percent formatters) and `fixed_decimal` with `ryu`.
   ICU4X's currency formatter forces the currency's own fraction digits. Scientific and engineering are
   assembled by hand (`1.235E6`, with the locale's digits and decimal mark). NaN and infinity are text (`NaN`,
   `∞`; NaN is localized only for `ar` and `ru`).
-- **Limits** (see [differences.md](differences.md)): `style: "unit"`, compact currency, `formatToParts`,
+- **`formatToParts`.** `nf.formatToParts(n)` formats the number, then splits the string using the locale's digits,
+  decimal separator and group separator (`number_parts` in `intl_number.rs`). Types: `integer`, `group`, `decimal`,
+  `fraction`, `minusSign`, `plusSign`, `percentSign`, `currency`, `compact`, `exponentSeparator`, `exponentInteger`,
+  `exponentMinusSign`, `nan`, `infinity` and `literal`. The result is `Intl.NumberFormatPart[]`, the prelude class
+  `Intl_Part { type, value }` (`INTL_PARTS` in `lower/prelude.rs`, decoded from a separator-joined string).
+- **Limits** (see [differences.md](differences.md)): `style: "unit"`, compact currency,
   `formatRange`, `resolvedOptions` and `supportedLocalesOf` are not built; Number values only (no BigInt,
   no strings).
 - Checked against bun for 15 locales and many option combinations.
@@ -479,7 +484,11 @@ ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-da
   replaced by a plain space, as engines do.
 - **Time zones.** ICU4X gets the real offset and instant, so an offset with no zone name prints `GMT+01:00`. That
   differs from `Date.toString`, which looks up the name of a recent day with the same daylight state.
-- **Limits** (see [differences.md](differences.md), "Intl date formatting"): `formatToParts`, `formatRange`,
+- **`formatToParts`.** `dtf.formatToParts(date)` asks ICU4X for part annotations through a `PartsWrite` sink
+  (`intl_parts.rs`). Types: `era`, `year`, `month`, `day`, `weekday`, `dayPeriod`, `hour`, `minute`, `second`,
+  `timeZoneName` and `literal`; there is no `fractionalSecond` part. The result is `Intl.DateTimeFormatPart[]`
+  (the same `Intl_Part` class).
+- **Limits** (see [differences.md](differences.md), "Intl date formatting"): `formatRange`,
   `resolvedOptions`, `era`, `dayPeriod` and other calendars are not built; component combinations ICU4X cannot
   match differ from ICU4C. Exactness would come from `icu-full` or a generated table.
 - Tests: `bench/datefmt.ts` (made by `bench/gen_datefmt_program.py`) with `tests/datefmt.rs` (M9-TS-277..286), five
@@ -522,10 +531,12 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
   `.of(code)`. CLDR names can differ from bun's (for example `zh-Hans`).
 - **Options.** As for the other `Intl` classes: object literals with literal values, read at compile time; a
   `{} as X` cast is looked through.
-- **Limits** (see [differences.md](differences.md)): `formatToParts`, `formatRange`, `resolvedOptions`,
-  `Intl.supportedValuesOf` and `Intl.getCanonicalLocales` are not built; `DisplayNames` has no `currency`,
+- **Limits** (see [differences.md](differences.md)): `formatRange`, `resolvedOptions` and
+  `Intl.supportedValuesOf` are not built; `DisplayNames` has no `currency`,
   `calendar` or `dateTimeField` type and no `fallback: "none"`.
-- Tests: M9-TS-456..479.
+- **`Intl.getCanonicalLocales`.** Takes a string or an array of strings, canonicalizes each tag (as `Intl.Locale`
+  does), drops duplicates and throws a `RangeError` for an invalid tag (`INTL_CANON` in `lower/prelude.rs`).
+- Tests: M9-TS-456..479; `getCanonicalLocales` M9-TS-516..536; `formatToParts` M9-TS-537..549.
 
 **Temporal, ISO calendar** ([lower/temporal.rs](../tools/iron_ts/src/lower/temporal.rs), classes in
 [lower/temporal.ts](../tools/iron_ts/src/lower/temporal.ts), zones in [iron_ts_rt/src/tz.rs](../tools/iron_ts_rt/src/tz.rs)).
@@ -540,11 +551,18 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
   literal needs `timeZone`. A string is also accepted where a Temporal object is expected
   (`date.equals("2024-01-01")`), and an object literal passed as a `Duration` or `PlainDate` parameter is typed as the
   class itself.
-- **Limits** (see [differences.md](differences.md)): no `PlainYearMonth` or `PlainMonthDay`, no other calendars,
-  `round`, `toLocaleString`, `total` with `relativeTo`, rounding options, `overflow: "reject"`, or
-  `disambiguation` / `offset` options.
+- **`PlainYearMonth`.** `add` / `subtract` take years and months only (a duration with units below months is a
+  `RangeError`), `until` / `since` with `year` or `month`, `toPlainDate({ day })`, `with`, `compare`, `equals`.
+- **`PlainMonthDay`.** Reference year 1972; `with`, `toPlainDate({ year })`, `equals`. There is no `month` getter,
+  as in the engines.
+- **`round`.** On `PlainTime`, `PlainDateTime`, `Instant` and `ZonedDateTime`: `smallestUnit`, `roundingMode`
+  (all nine modes) and `roundingIncrement`; `round("minute")` string shorthand goes through
+  `Temporal_RoundOptions`. `Duration.round` handles time units only, with `largestUnit` and no `relativeTo`.
+  Rounding is not available in `until` / `since`.
+- **Limits** (see [differences.md](differences.md)): no other calendars, `toLocaleString`, `total` with
+  `relativeTo`, rounding in `until` / `since`, `overflow: "reject"`, or `disambiguation` / `offset` options.
 - Checked against bun. Tests: `bench/temporal.ts` and `bench/zoned.ts` with `tests/temporal.rs` and `tests/zoned.rs`
-  (M9-TS-480..515).
+  (M9-TS-480..515); `PlainYearMonth`, `PlainMonthDay` and `round` M9-TS-516..536.
 
 **URI functions and error causes** ([iron_ts_rt/src/uri.rs](../tools/iron_ts_rt/src/uri.rs), hooks in
 `lower/{strings,prelude}.rs`).

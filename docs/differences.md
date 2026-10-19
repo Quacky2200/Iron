@@ -48,7 +48,7 @@ from fixed field sets, ICU4C picks a pattern from `availableFormats`) or a CLDR 
 | en-GB with `timeZoneName` | `3:30:00 GMT-7` | `03:30:00 GMT-7` | structural |
 | Zone names for old instants (Lord Howe 1970) | `Australian Eastern Standard Time` | `Lord Howe Standard Time` | zone history in the data |
 | U+202F (narrow no-break space) before AM/PM and in some patterns | plain space | replaced by a plain space, as engines do | compatibility |
-| `era`, `dayPeriod`, `calendar`, `numberingSystem`, `formatToParts`, `formatRange`, `resolvedOptions` | supported | `RangeError` / not built | open |
+| `era`, `dayPeriod`, `calendar`, `numberingSystem`, `formatRange`, `resolvedOptions` | supported | `RangeError` / not built | open |
 | Default calendar other than Gregorian (th, fa, ar, he, ps) | that calendar's years and names | ICU4X's calendar output, the width adjustment is skipped | open |
 
 Exact results for every option and locale need `availableFormats`: the optional `icu-full` build
@@ -100,16 +100,16 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `Intl.Locale` | Getters of absent parts (`script`, `region`, `calendar`, `hourCycle`, ...) give `null`; `"und"` maximizes to `en-Latn-US` by a special case | `undefined` | Typed fields; null stands for undefined |
 | `Intl.DisplayNames` | Only `region`, `script` and `language`; CLDR names can differ from bun's (for example `zh-Hans`); no `currency`, `calendar`, `dateTimeField` or `fallback: "none"` | The full API | Later steps of the `Intl` work |
 | `Intl` options (`Segmenter`, `Locale`, `DisplayNames`) | Object literals with literal values, read at compile time (a `{} as X` cast is looked through) | Any expression | Shared `options_spec` |
-| `Intl` not built | `formatToParts`, `formatRange`, `resolvedOptions`, `Intl.supportedValuesOf`, `Intl.getCanonicalLocales` | Available | Later steps of the `Intl` work |
-| `Temporal` calendar and types | ISO calendar only; `Duration`, `PlainDate`, `PlainTime`, `PlainDateTime`, `Instant`, `ZonedDateTime`, `Now`; no `PlainYearMonth` or `PlainMonthDay` | All calendars and types | Written in TypeScript (`lower/temporal.ts`) |
+| `Intl` not built | `formatRange`, `resolvedOptions`, `Intl.supportedValuesOf` (`formatToParts` exists on `NumberFormat` and `DateTimeFormat` only; `Intl.getCanonicalLocales` is built) | Available | Later steps of the `Intl` work |
+| `Temporal` calendar and types | ISO calendar only; `Duration`, `PlainDate`, `PlainTime`, `PlainDateTime`, `Instant`, `ZonedDateTime`, `PlainYearMonth` (months and years only), `PlainMonthDay` (no `month` getter), `Now` | All calendars and types | Written in TypeScript (`lower/temporal.ts`) |
 | `Temporal` names | `Temporal.X` is rewritten to the class `Temporal_X` by text before parsing, so a string literal containing `Temporal.Name` is rewritten too | Real namespace | Text rewrite in `lower/temporal.rs` |
-| `Temporal` options and methods | No `round`, `toLocaleString`, `total` with `relativeTo`, `smallestUnit` / `roundingMode`, `overflow: "reject"` (constrain only), `disambiguation` / `offset` options | The full API | Not built |
+| `Temporal` options and methods | `round` exists, but no rounding options in `until` / `since`, no `relativeTo` for `Duration.round` (time units only); no `toLocaleString`, `total` with `relativeTo`, `overflow: "reject"` (constrain only), `disambiguation` / `offset` options | The full API | Not built |
 | `Temporal` zones and durations | `ZonedDateTime.until` with calendar units across a clock change uses the local date-times; `Duration` math with years, months or weeks needs a `PlainDate`; `from` of an object literal needs a literal, and a `ZonedDateTime` literal needs `timeZone` | Uses the zone's rules and the relative-to option | Simplified in `temporal.ts` |
 | `PluralRules`, `ListFormat`, `RelativeTimeFormat` members | Only the constructor and `select` / `format`; no `supportedLocalesOf`, `resolvedOptions`, `formatToParts`, `formatRange` or `selectRange`; `ListFormat.format` takes a `string[]`, not an iterable; options and locales are read at compile time like the collator's | The full API | Step I4 of the `Intl` work |
 | `Error` `cause` | `cause: Error \| null`: only an `Error` can be a cause; an absent cause is null, not told apart from `undefined` (test with `== null`) | Any value; `undefined` when absent | Typed field; null stands for undefined |
 | `Error.stack`, `captureStackTrace` | Not built | Available | No stack capture in compiled code |
 | `Intl.NumberFormat` options and locales | Same as the collator: an object literal with literal values, locales a string or an array of strings, read at compile time; `Number.prototype.toLocaleString` takes the same arguments | Any expression | Shared `options_spec` |
-| `Intl.NumberFormat` members | Only `new Intl.NumberFormat(...)` and `.format`; no `formatToParts`, `formatRange`, `resolvedOptions` or `supportedLocalesOf`; Number values only (no BigInt, no strings) | The full API | Step I2 of the `Intl` work |
+| `Intl.NumberFormat` members | Only `new Intl.NumberFormat(...)` and `.format`; `formatToParts` exists; no `formatRange`, `resolvedOptions` or `supportedLocalesOf`; Number values only (no BigInt, no strings) | The full API | Step I2 of the `Intl` work |
 | `NumberFormat` `style: "unit"`, compact currency | `style: "unit"` raises a `RangeError`; `notation: "compact"` with `style: "currency"` is not built | Supported | Not yet done |
 | `NumberFormat` `useGrouping: "always"` | Does not force grouping in locales that group only from five digits (es, pl, pt-PT) | Forces grouping | ICU4X's decimal formatter treats `always` as `auto` |
 | `NumberFormat` NaN text | `"NaN"` in every locale except `ar` and `ru`, which are localized | Localized per locale | Only those two locales were handled |
