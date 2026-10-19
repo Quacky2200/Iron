@@ -251,6 +251,15 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let wants_ui = manifest.namespaces.contains_key("Ui") && jsx::wanted(src);
     let rewritten_ui = if wants_ui { jsx::desugar(src)? } else { None };
     let src = rewritten_ui.as_deref().unwrap_or(src);
+    // `Task.delay(..)` is a class of TypeScript appended to the program.
+    let with_task = prelude::wants_task(src).then(|| {
+        format!(
+            "{src}
+{}",
+            prelude::TASK
+        )
+    });
+    let src = with_task.as_deref().unwrap_or(src);
     // Generators are rewritten into closures over a coroutine, with classes written per yield type.
     let (rewritten, gen_templates) = match generators::desugar(src)? {
         Some(d) => (Some(d.src), d.templates),

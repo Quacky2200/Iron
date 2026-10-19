@@ -1009,3 +1009,5 @@ intrinsics for classes of the program: the class becomes its struct id, and `ts_
 extend a per-thread registry the host keeps in step. `addComponent` builds the object at once and applies the options; its `onAwake`
 runs when the calling hook returns (the QuickJS host runs it immediately). `getComponent(Base)` finds exact classes only, not subclass
 instances. Tests `M9-TS-601..604`.
+
+`Task.delay(ms)`, `Task.delaySeconds(s)` and `Task.frame()` are a class of TypeScript appended to the program (`prelude::TASK`) over `setTimeout`; the host advances the timers with engine time (`ts_rt_timers_advance`). Test `M9-TS-651`.

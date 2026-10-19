@@ -381,6 +381,30 @@ function __newWeakRef${name}(t: {name}): WeakRef${name} {{ return new WeakRef${n
     out
 }
 
+/// `Task.delay(ms)`, `Task.delaySeconds(s)` and `Task.frame()`: awaitable waits on the runtime's
+/// timers (which the host advances with engine time), as `js/engine/src/clock.ts` has them. The
+/// class is appended to the program before the async rewrite.
+pub const TASK: &str = r#"
+class Task {
+  static delay(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => { setTimeout(() => { resolve(); }, ms); });
+  }
+  static delaySeconds(seconds: number): Promise<void> {
+    return Task.delay(seconds * 1000);
+  }
+  static frame(): Promise<void> {
+    return new Promise<void>((resolve) => { setTimeout(() => { resolve(); }, 0); });
+  }
+}
+"#;
+
+pub fn wants_task(src: &str) -> bool {
+    (src.contains("Task.delay(")
+        || src.contains("Task.delaySeconds(")
+        || src.contains("Task.frame("))
+        && !src.contains("class Task")
+}
+
 /// `setTimeout` and friends over the runtime's timers (`iron_ts_rt/src/event.rs`).
 pub const TIMERS: &str = r#"function queueMicrotask(callback: () => void): void { __queueMicrotask(callback); }
 function setTimeout(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, false); }

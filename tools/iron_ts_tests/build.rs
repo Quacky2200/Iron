@@ -83,6 +83,7 @@ fn main() {
         ("generics", "gx_", 2400),
         ("nullbool", "nb_", 3000),
         ("components2", "cm2_", 3100),
+        ("task", "tsk_", 4200),
         ("random", "rnd_", 3200),
         ("layers", "lyr_", 3300),
         ("prefs", "prf_", 3400),
