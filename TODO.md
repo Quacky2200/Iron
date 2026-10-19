@@ -1565,6 +1565,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] **UI without React**: **STOP, design first.** A small component/effect library (Preact or our own
         remake) over a native UI tree, written in the compiled TypeScript subset; no React reconciler, no
         OneJS-style embedded engine for the common case
+    - [~] Design note written, awaiting review: `docs/research/iron-ui-native.md` (signals core with hook-shaped surface, one `Op` applier, handlers dispatched in Rust)
     - [ ] Design note: what of React is used (components, state, effects, events, refs), signals-style
           effects versus a vdom diff, how the library compiles under `iron_ts` (it must stay inside the
           typed subset), the native UI tree API (`iron_ui` opcodes today), styles and CSS
