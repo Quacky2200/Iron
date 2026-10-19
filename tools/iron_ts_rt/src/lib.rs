@@ -1076,6 +1076,7 @@ mod regexp;
 mod string;
 mod string_more;
 mod typed;
+mod tz;
 mod uri;
 pub use bigint::*;
 pub use coro::*;
@@ -1094,6 +1095,7 @@ pub use regexp::*;
 pub use string::*;
 pub use string_more::*;
 pub use typed::*;
+pub use tz::*;
 pub use uri::*;
 
 /// A new variable box holding `value` (a number's bits, a tag, or a pointer when `is_ptr`). May
@@ -1328,6 +1330,10 @@ pub fn link_anchor() -> usize {
         ts_rt_typed_byte_offset as *const () as usize,
         ts_rt_dv_get as *const () as usize,
         ts_rt_dv_set as *const () as usize,
+        ts_rt_tz_check_gc as *const () as usize,
+        ts_rt_tz_offset as *const () as usize,
+        ts_rt_tz_local as *const () as usize,
+        ts_rt_tz_system_gc as *const () as usize,
         ts_rt_display_names_new as *const () as usize,
         ts_rt_display_names_of_gc as *const () as usize,
         ts_rt_locale_new_gc as *const () as usize,

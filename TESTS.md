@@ -921,6 +921,42 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-477 | Integration | `languageDisplay: "standard"` equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
 | M9-TS-478 | Integration | Languages in French equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
 | M9-TS-479 | Integration | A missing `type` is a `TypeError` equal bun's (`iron_ts_tests/tests/dispnames.rs`, `bench/dispnames.ts`). |
+| M9-TS-480 | Integration | Temporal: date fields equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-481 | Integration | Temporal: date week years equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-482 | Integration | Temporal: date constrain equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-483 | Integration | Temporal: date add equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-484 | Integration | Temporal: date with equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-485 | Integration | Temporal: date until equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-486 | Integration | Temporal: date compare equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-487 | Integration | Temporal: date errors equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-488 | Integration | Temporal: date formats equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-489 | Integration | Temporal: time basics equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-490 | Integration | Temporal: time math equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-491 | Integration | Temporal: time compare equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-492 | Integration | Temporal: time errors equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-493 | Integration | Temporal: date time basics equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-494 | Integration | Temporal: date time math equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-495 | Integration | Temporal: date time diff equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-496 | Integration | Temporal: date to date time equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-497 | Integration | Temporal: duration basics equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-498 | Integration | Temporal: duration strings equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-499 | Integration | Temporal: duration math equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-500 | Integration | Temporal: duration total equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-501 | Integration | Temporal: duration errors equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-502 | Integration | Temporal: instant basics equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-503 | Integration | Temporal: instant offsets equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-504 | Integration | Temporal: instant math equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-505 | Integration | Temporal: instant errors equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-506 | Integration | Temporal: now is sane equal bun's (`iron_ts_tests/tests/temporal.rs`, `bench/temporal.ts`). |
+| M9-TS-507 | Integration | Temporal.ZonedDateTime: parse and print equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-508 | Integration | Temporal.ZonedDateTime: fields equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-509 | Integration | Temporal.ZonedDateTime: spring forward equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-510 | Integration | Temporal.ZonedDateTime: fall back equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-511 | Integration | Temporal.ZonedDateTime: convert equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-512 | Integration | Temporal.ZonedDateTime: arithmetic equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-513 | Integration | Temporal.ZonedDateTime: from fields equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-514 | Integration | Temporal.ZonedDateTime: errors equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
+| M9-TS-515 | Integration | Temporal.ZonedDateTime: now zoned equal bun's (`iron_ts_tests/tests/zoned.rs`, `bench/zoned.ts`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

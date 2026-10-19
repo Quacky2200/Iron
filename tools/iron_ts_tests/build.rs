@@ -67,6 +67,8 @@ fn main() {
         ("segmenter", "sg_", 1300),
         ("locale", "lc_", 1400),
         ("dispnames", "dn_", 1500),
+        ("temporal", "tp_", 1600),
+        ("zoned", "zn_", 1700),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

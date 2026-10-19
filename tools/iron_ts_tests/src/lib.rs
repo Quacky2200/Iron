@@ -528,6 +528,30 @@ pub mod dispnames_t {
     include!(concat!(env!("OUT_DIR"), "/dispnames_bindings.rs"));
 }
 
+/// `bench/temporal.ts`, prefix `tp_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod temporal_t {
+    include!(concat!(env!("OUT_DIR"), "/temporal_bindings.rs"));
+}
+
+/// `bench/zoned.ts`, prefix `zn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod zoned_t {
+    include!(concat!(env!("OUT_DIR"), "/zoned_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

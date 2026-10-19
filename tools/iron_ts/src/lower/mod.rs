@@ -29,6 +29,7 @@ mod regexp;
 mod scan;
 mod stmt;
 mod strings;
+mod temporal;
 mod typed;
 mod types;
 
@@ -230,10 +231,15 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         None => (None, String::new()),
     };
     let src = rewritten2.as_deref().unwrap_or(src);
+    // `Temporal.PlainDate` is the prelude class `Temporal_PlainDate`.
+    let rewritten3 = temporal::rewrite(src);
+    let wants_temporal = rewritten3.is_some();
+    let src = rewritten3.as_deref().unwrap_or(src);
     // Programs that use errors get the `Error` classes compiled in front of them.
     let mut head = String::new();
     if !gen_templates.is_empty()
         || !async_templates.is_empty()
+        || wants_temporal
         || prelude::wanted(src)
         || prelude::wants_regexp(src)
         || prelude::wants_date(src)
@@ -275,6 +281,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if src.contains("Intl.DateTimeFormat") {
         head += prelude::INTL_DATETIME;
+    }
+    if wants_temporal {
+        head += temporal::TEMPORAL;
     }
     if prelude::wants_symbol(src) {
         head += prelude::SYMBOL;

@@ -583,6 +583,32 @@ impl<'a> Lowerer<'a> {
             }
             "BigInt" => self.lower_bigint_call(c)?,
             "structuredClone" => self.lower_structured_clone(c)?,
+            "__tzCheck" | "__tzOffset" | "__tzLocal" | "__tzSystem" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let mut v = Vec::new();
+                for a in &args {
+                    v.push(self.lower_expr(a, None)?);
+                }
+                match name {
+                    "__tzCheck" => {
+                        let call = self.rt_str("ts_rt_tz_check_gc", v, Ty::Str);
+                        self.checked(call, Ty::Str)
+                    }
+                    "__tzOffset" => {
+                        let call = self.rt_str("ts_rt_tz_offset", v, Ty::Num);
+                        self.checked(call, Ty::Num)
+                    }
+                    "__tzLocal" => {
+                        let call = self.rt_str("ts_rt_tz_local", v, Ty::Num);
+                        self.checked(call, Ty::Num)
+                    }
+                    _ => self.rt_str("ts_rt_tz_system_gc", v, Ty::Str),
+                }
+            }
             "__displayNameOf" => {
                 let args: Vec<&'a Expression<'a>> = c
                     .arguments

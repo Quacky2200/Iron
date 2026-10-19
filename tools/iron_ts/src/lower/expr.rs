@@ -1578,6 +1578,7 @@ impl<'a> Lowerer<'a> {
                 bail!("{name}: a spread argument can only feed a rest parameter")
             };
             let v = self.lower_expr(e, Some(p))?;
+            let v = self.temporal_arg(v, p)?;
             vals.push(self.coerce(v, p)?);
         }
         let mut pre = Vec::new();
@@ -1695,6 +1696,13 @@ impl<'a> Lowerer<'a> {
                     && self.lookup("BigInt").is_none()
                 {
                     return self.lower_bigint_static(method, c);
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && id.name.starts_with("Temporal_")
+                    && method == "from"
+                    && self.classes.contains_key(id.name.as_str())
+                {
+                    return self.lower_temporal_from(id.name.as_str(), c);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Promise"
