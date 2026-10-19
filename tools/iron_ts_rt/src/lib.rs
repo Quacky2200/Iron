@@ -1069,6 +1069,7 @@ mod intl_misc;
 mod intl_names;
 mod intl_number;
 mod intl_pad;
+mod intl_parts;
 mod intl_segment;
 mod json;
 mod map;
@@ -1330,6 +1331,8 @@ pub fn link_anchor() -> usize {
         ts_rt_typed_byte_offset as *const () as usize,
         ts_rt_dv_get as *const () as usize,
         ts_rt_dv_set as *const () as usize,
+        ts_rt_dtf_parts_gc as *const () as usize,
+        ts_rt_number_format_parts_gc as *const () as usize,
         ts_rt_tz_check_gc as *const () as usize,
         ts_rt_tz_offset as *const () as usize,
         ts_rt_tz_local as *const () as usize,

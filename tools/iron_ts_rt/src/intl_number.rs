@@ -558,6 +558,145 @@ fn raise_for(m: &str) {
     }
 }
 
+/// The pieces of a formatted number, found from the text: runs of the locale's digits are
+/// `integer` before the decimal separator and `fraction` after it, group separators between integer
+/// digits are `group`, and the rest is the sign, percent sign, currency, compact suffix or literal.
+fn number_parts(f: &NumFmt, x: f64, text: &str) -> Result<Vec<(String, String)>, String> {
+    let (_seven, zero, sep) = digit_info(f)?;
+    let is_digit = |c: char| (zero..=char::from_u32(zero as u32 + 9).unwrap_or(zero)).contains(&c);
+    // The group separator: what a million looks like between its digits.
+    let mut o = DecimalFormatterOptions::default();
+    o.grouping_strategy = Some(GroupingStrategy::Always);
+    let big = DecimalFormatter::try_new((&f.locale).into(), o)
+        .map_err(|e| e.to_string())?
+        .format_to_string(&Decimal::from(1_000_000));
+    let group: String = big
+        .chars()
+        .skip_while(|c| is_digit(*c))
+        .take_while(|c| !is_digit(*c))
+        .collect();
+    let chars: Vec<char> = text.chars().collect();
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut push = |kind: &str, s: String| match out.last_mut() {
+        Some((k, v)) if k == kind && kind == "literal" => v.push_str(&s),
+        _ => out.push((kind.to_string(), s)),
+    };
+    let sep_chars: Vec<char> = sep.chars().collect();
+    let group_chars: Vec<char> = group.chars().collect();
+    let mut i = 0;
+    let mut after_decimal = false;
+    let mut in_exponent = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if is_digit(c) {
+            let start = i;
+            while i < chars.len() && is_digit(chars[i]) {
+                i += 1;
+            }
+            let kind = if in_exponent {
+                "exponentInteger"
+            } else if after_decimal {
+                "fraction"
+            } else {
+                "integer"
+            };
+            push(kind, chars[start..i].iter().collect());
+            continue;
+        }
+        if !in_exponent
+            && !after_decimal
+            && !sep_chars.is_empty()
+            && chars[i..].starts_with(&sep_chars)
+            && chars.get(i + sep_chars.len()).is_some_and(|d| is_digit(*d))
+            && i > 0
+            && is_digit(chars[i - 1])
+        {
+            push("decimal", sep.clone());
+            i += sep_chars.len();
+            after_decimal = true;
+            continue;
+        }
+        if !group_chars.is_empty()
+            && !after_decimal
+            && !in_exponent
+            && chars[i..].starts_with(&group_chars)
+            && chars
+                .get(i + group_chars.len())
+                .is_some_and(|d| is_digit(*d))
+            && i > 0
+            && is_digit(chars[i - 1])
+        {
+            push("group", group.clone());
+            i += group_chars.len();
+            continue;
+        }
+        match c {
+            '-' | '\u{2212}' => push(
+                if in_exponent {
+                    "exponentMinusSign"
+                } else {
+                    "minusSign"
+                },
+                c.to_string(),
+            ),
+            '+' => push("plusSign", c.to_string()),
+            '%' | '\u{66a}' => push("percentSign", c.to_string()),
+            'E' if chars.get(i + 1).is_some_and(|d| is_digit(*d) || *d == '-') => {
+                push("exponentSeparator", "E".to_string());
+                in_exponent = true;
+            }
+            '\u{221e}' => push("infinity", c.to_string()),
+            c if c.is_whitespace() || c == '\u{a0}' || c == '(' || c == ')' => {
+                push("literal", c.to_string())
+            }
+            _ => {
+                // A run of letters or symbols: NaN, the currency or the compact suffix.
+                let start = i;
+                while i < chars.len()
+                    && !is_digit(chars[i])
+                    && !chars[i].is_whitespace()
+                    && !matches!(
+                        chars[i],
+                        '-' | '+' | '%' | '(' | ')' | '\u{a0}' | '\u{221e}'
+                    )
+                {
+                    i += 1;
+                }
+                let word: String = chars[start..i].iter().collect();
+                let kind = if x.is_nan() {
+                    "nan"
+                } else if f.notation == Notation::Compact && f.style != Style::Currency {
+                    "compact"
+                } else if f.style == Style::Currency {
+                    "currency"
+                } else if f.notation == Notation::Compact {
+                    "compact"
+                } else {
+                    "literal"
+                };
+                push(kind, word);
+                continue;
+            }
+        }
+        i += 1;
+    }
+    Ok(out)
+}
+
+/// `numberFormat.formatToParts(x)` as encoded records.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_number_format_parts_gc(id: f64, x: f64) -> *mut Str {
+    let f = FORMATS.with(|v| v.borrow()[id as usize].clone());
+    let r = format(&f, x).and_then(|text| number_parts(&f, x, &text));
+    match r {
+        Ok(parts) => str_from(&super::intl_parts::encode(&parts)),
+        Err(m) => {
+            raise_for(&m);
+            str_from("")
+        }
+    }
+}
+
 fn run(id: usize, x: f64) -> *mut Str {
     let f = FORMATS.with(|v| v.borrow()[id].clone());
     match format(&f, x) {

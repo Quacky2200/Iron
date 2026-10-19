@@ -535,6 +535,55 @@ fn format(f: &DtFmt, t: f64) -> Result<String, String> {
     Ok(plain_spaces(&f.formatter.format(&input).to_string()))
 }
 
+/// The parts of a formatted date: `type \u{2} value` records joined by `\u{1}`.
+fn format_parts(f: &DtFmt, t: f64) -> Result<String, String> {
+    let zone = f.zone.clone().unwrap_or_else(super::date::current_zone);
+    let (y, mo, d, h, mi, s, ms, _off, zinfo) = super::date::icu_parts(&zone, t);
+    let date = Date::try_new_iso(y, mo, d).map_err(|e| format!("RangeError: {e}"))?;
+    let time = Time::try_new(h, mi, s, ms * 1_000_000).map_err(|e| format!("RangeError: {e}"))?;
+    let input = ZonedDateTime {
+        date,
+        time,
+        zone: zinfo,
+    };
+    let mut sink = super::intl_parts::Collect::default();
+    if let Some(adj) = &f.adjusted {
+        let gregorian =
+            Date::try_new_gregorian(y, mo, d).map_err(|e| format!("RangeError: {e}"))?;
+        let input = ZonedDateTime {
+            date: gregorian,
+            time: input.time,
+            zone: input.zone,
+        };
+        let mut names = adj.names.borrow_mut();
+        if let Ok(formatter) = names.include_for_pattern(&adj.pattern) {
+            let shown = formatter.format(&input);
+            writeable::TryWriteable::try_write_to_parts(&shown, &mut sink)
+                .map_err(|e| e.to_string())?
+                .ok();
+            let parts = sink.into_parts(plain_spaces);
+            return Ok(super::intl_parts::encode(&parts));
+        }
+    }
+    writeable::Writeable::write_to_parts(&f.formatter.format(&input), &mut sink)
+        .map_err(|e| e.to_string())?;
+    let parts = sink.into_parts(plain_spaces);
+    Ok(super::intl_parts::encode(&parts))
+}
+
+/// `dateTimeFormat.formatToParts(date)` as encoded records.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_dtf_parts_gc(id: f64, t: f64) -> *mut Str {
+    let f = FORMATS.with(|v| v.borrow()[id as usize].clone());
+    match format_parts(&f, t) {
+        Ok(s) => str_from(&s),
+        Err(m) => {
+            raise_for(&m);
+            str_from("")
+        }
+    }
+}
+
 fn run(id: usize, t: f64) -> *mut Str {
     let f = FORMATS.with(|v| v.borrow()[id].clone());
     match format(&f, t) {

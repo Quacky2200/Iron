@@ -72,6 +72,7 @@ fn main() {
         ("monthday", "md_", 1800),
         ("rounding", "rd_", 1900),
         ("canon", "cn_", 2000),
+        ("fparts", "fp_", 2100),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());

@@ -705,6 +705,24 @@ impl<'a> Lowerer<'a> {
                 let call = self.rt_str("ts_rt_dtf_format_gc", vec![id, t], Ty::Str);
                 self.checked(call, Ty::Str)
             }
+            "__dtfParts" | "__numberFormatParts" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, t] = args.as_slice() else {
+                    bail!("{at}: {name} takes two arguments")
+                };
+                let (id, t) = (self.num_arg(id)?, self.num_arg(t)?);
+                let f = if name == "__dtfParts" {
+                    "ts_rt_dtf_parts_gc"
+                } else {
+                    "ts_rt_number_format_parts_gc"
+                };
+                let call = self.rt_str(f, vec![id, t], Ty::Str);
+                self.checked(call, Ty::Str)
+            }
             // The prelude's `Intl.NumberFormat.format`.
             "__numberFormat" => {
                 let args: Vec<&'a Expression<'a>> = c

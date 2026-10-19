@@ -127,14 +127,36 @@ pub const INTL_RTF: &str = r#"class Intl_RelativeTimeFormat {
   format: (value: number, unit: string) => string = (value: number, unit: string): string => __rtfFormat(this.id, value, unit);
 }
 "#;
+pub const INTL_PARTS: &str = r#"class Intl_Part {
+  type: string;
+  value: string;
+  constructor(type: string, value: string) {
+    this.type = type;
+    this.value = value;
+  }
+}
+type Intl_NumberFormatPart = Intl_Part;
+type Intl_DateTimeFormatPart = Intl_Part;
+function __decodeParts(s: string): Intl_Part[] {
+  const out: Intl_Part[] = [];
+  if (s.length === 0) return out;
+  for (const rec of s.split("\u0001")) {
+    const cut = rec.indexOf("\u0002");
+    out.push(new Intl_Part(rec.slice(0, cut), rec.slice(cut + 1)));
+  }
+  return out;
+}
+"#;
 pub const INTL_NUMBER: &str = r#"class Intl_NumberFormat {
   id: number = 0;
   format: (n: number) => string = (n: number): string => __numberFormat(this.id, n);
+  formatToParts: (n: number) => Intl_Part[] = (n: number): Intl_Part[] => __decodeParts(__numberFormatParts(this.id, n));
 }
 "#;
 pub const INTL_DATETIME: &str = r#"class Intl_DateTimeFormat {
   id: number = 0;
   format: (d: Date) => string = (d: Date): string => __dtfFormat(this.id, d.t);
+  formatToParts: (d: Date) => Intl_Part[] = (d: Date): Intl_Part[] => __decodeParts(__dtfParts(this.id, d.t));
 }
 "#;
 

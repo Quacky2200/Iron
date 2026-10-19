@@ -588,6 +588,18 @@ pub mod canon_t {
     include!(concat!(env!("OUT_DIR"), "/canon_bindings.rs"));
 }
 
+/// `bench/fparts.ts`, prefix `fp_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod fparts_t {
+    include!(concat!(env!("OUT_DIR"), "/fparts_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

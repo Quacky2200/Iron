@@ -267,6 +267,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if src.contains("Intl.RelativeTimeFormat") {
         head += prelude::INTL_RTF;
     }
+    if src.contains("Intl.NumberFormat") || src.contains("Intl.DateTimeFormat") {
+        head += prelude::INTL_PARTS;
+    }
     if src.contains("Intl.NumberFormat") {
         head += prelude::INTL_NUMBER;
     }

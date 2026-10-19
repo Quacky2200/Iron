@@ -978,6 +978,19 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-534 | Integration | Intl.getCanonicalLocales: list equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
 | M9-TS-535 | Integration | Intl.getCanonicalLocales: empty equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
 | M9-TS-536 | Integration | Intl.getCanonicalLocales: invalid equal bun's (`iron_ts_tests/tests/canon.rs`, `bench/canon.ts`). |
+| M9-TS-537 | Integration | formatToParts: decimal equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-538 | Integration | formatToParts: currency equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-539 | Integration | formatToParts: percent equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-540 | Integration | formatToParts: other locales equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-541 | Integration | formatToParts: signs equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-542 | Integration | formatToParts: compact equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-543 | Integration | formatToParts: scientific equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-544 | Integration | formatToParts: special equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-545 | Integration | formatToParts: date english equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-546 | Integration | formatToParts: date long equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-547 | Integration | formatToParts: date fields equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-548 | Integration | formatToParts: date other locales equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
+| M9-TS-549 | Integration | formatToParts: date hour12 equal bun's (`iron_ts_tests/tests/fparts.rs`, `bench/fparts.ts`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |
