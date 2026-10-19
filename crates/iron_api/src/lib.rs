@@ -430,6 +430,24 @@ impl Namespace {
         }
         s += &format!("declare namespace {} {{\n", self.name);
         for f in self.functions {
+            // A namespace property: a getter (and maybe a setter) without a receiver.
+            if f.kind == FnKind::Get {
+                s += &jsdoc(f.doc, "  ");
+                let writable = self
+                    .functions
+                    .iter()
+                    .any(|g| g.kind == FnKind::Set && g.name == f.name);
+                s += &format!(
+                    "  {} {}: {};\n",
+                    if writable { "let" } else { "const" },
+                    f.name,
+                    f.ret.ts()
+                );
+                continue;
+            }
+            if f.kind == FnKind::Set {
+                continue;
+            }
             if !f.doc.is_empty() {
                 s += "  /**\n";
                 for line in f.doc.lines() {

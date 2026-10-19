@@ -43,6 +43,15 @@ pub struct Manifest {
     pub classes: HashMap<String, ClassFns>,
     /// Functions declared more than once under one name, picked by the argument types.
     pub overloads: HashMap<(String, String), Vec<ExternFn>>,
+    /// Properties of a namespace (`Time.deltaTime`, `Gizmos.color = c`): namespace -> name -> accessors.
+    pub ns_props: HashMap<String, HashMap<String, NsProp>>,
+}
+
+/// A namespace property: its getter and setter (neither takes a receiver).
+#[derive(Clone, Debug, Default)]
+pub struct NsProp {
+    pub getter: Option<ExternFn>,
+    pub setter: Option<ExternFn>,
 }
 
 fn ext_ty(s: &str) -> Result<ExtTy, String> {
@@ -101,7 +110,21 @@ impl Manifest {
             .as_array()
             .ok_or("manifest: missing `functions`")?
         {
-            let (name, _, func) = self.parse_fn(f)?;
+            let (name, kind, func) = self.parse_fn(f)?;
+            if kind == "get" || kind == "set" {
+                let p = self
+                    .ns_props
+                    .entry(ns.clone())
+                    .or_default()
+                    .entry(name)
+                    .or_default();
+                if kind == "get" {
+                    p.getter = Some(func);
+                } else {
+                    p.setter = Some(func);
+                }
+                continue;
+            }
             if let Some(prev) = fns.insert(name.clone(), func.clone()) {
                 let list = self.overloads.entry((ns.clone(), name)).or_default();
                 if list.is_empty() {

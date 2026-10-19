@@ -253,3 +253,23 @@ the script can catch) and a result is a new object. Every generated function ret
 (`GameObject.name`, `transform.position`) and value-class methods are still not in the QuickJS bindings; scripts there call the
 namespace functions (`Scene.setLocalPosition(go, v)`). `iron_scene`'s `Scene` namespace has `quickjs` on, so the same API
 runs from QuickJS and from compiled code. Tests `M9-API-23..26`.
+
+## Namespace properties and value classes in QuickJS
+
+- **Namespace properties.** In a namespace (no `impl`), `#[property] pub fn color() -> Color` is a getter and `pub fn set_color(c: Color)`
+  next to it the setter: scripts write `Gizmos.color = c` and `Time.deltaTime`. The manifest has them as functions of kind `get` and
+  `set` with no receiver, the `.d.ts` as `let color: Color;` (`const` when read only), the shims as `iron_Gizmos_color()` /
+  `iron_Gizmos_setColor(..)`, QuickJS as accessors on the namespace object, and `iron_ts` calls the getter on a read and the
+  setter on an assignment (`Place::NsProp`, also for `+=`). A value class's statics are the properties and functions of a namespace
+  with the same name (`Color.white`, `Color.hex("#ff0000")`).
+- **Value classes in QuickJS.** Each value type is a real JS class (made once, `globalThis.Vector3 ??= class ...`): the constructor takes
+  the fields, methods (`#[method(Vector3)]`) and getters (`#[getter(Vector3)]`) are on the prototype and call hidden Rust functions
+  (`__iron_vm_<Value>_<name>`), results are instances. Modules that mention the same value type share the class.
+
+## The engine API beyond the scene
+
+[iron_engine_api](../crates/iron_engine_api/src/lib.rs) declares, with `#[iron_api]`, what the sine-circle demo and most gameplay
+code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen` and `QualitySettings`, with the names and behaviour of
+`js/engine`. Each keeps its state per thread and has plain Rust functions for the host: `time::advance(real_dt)`,
+`input::{key_down_event, key_up_event, mouse_button_event, mouse_move, end_frame}`, `gizmos::take_frame()`, `camera::cameras()`,
+`screen::{state, quality, set_size}`. `iron_app` is not wired to them yet (another session's area). Tests `M9-API-27..36`.

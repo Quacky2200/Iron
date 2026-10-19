@@ -335,11 +335,13 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             let rust = &v.rust;
             let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
             let idx: Vec<usize> = (0..n).collect();
+            let ts = &v.ts;
+            let _ = &names;
             quote! {
                 let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(#call);
-                let o = ::iron_api::rquickjs::Object::new(ctx)?;
-                #( o.set(#names, parts[#idx])?; )*
-                Ok(o)
+                let class: ::iron_api::rquickjs::function::Constructor =
+                    ctx.globals().get(#ts)?;
+                class.construct(( #( parts[#idx], )* ))
             }
         }
         other => {
@@ -469,6 +471,8 @@ fn api_of(
     };
     let property = attrs.iter().any(|a| a.path().is_ident("property"));
     let tag = match (has_receiver, property) {
+        // A namespace property: `#[property] pub fn color() -> Color` (and `set_color(v)`).
+        (false, true) if class.is_none() && params.is_empty() => Tag::Get,
         (_, true) if !has_receiver || !params.is_empty() => {
             return Err(syn::Error::new(
                 sig.span(),
@@ -599,7 +603,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                             !a.path().is_ident("method") && !a.path().is_ident("getter")
                         });
                     }
-                    None => apis.push(api_of(&f.sig, &f.attrs, &args, None)?),
+                    None => {
+                        apis.push(api_of(&f.sig, &f.attrs, &args, None)?);
+                        f.attrs.retain(|a| !a.path().is_ident("property"));
+                    }
                 }
             }
             Item::Impl(imp) if imp.trait_.is_none() => {
@@ -628,16 +635,27 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         .filter(|a| a.tag == Tag::Get)
         .map(|a| {
             (
-                a.class.as_ref().expect("a getter is in a class").0.clone(),
+                a.class
+                    .as_ref()
+                    .map_or_else(|| args.namespace.clone(), |c| c.0.clone()),
                 a.js_name.clone(),
                 manifest_ty(&a.ret, &args).to_string(),
             )
         })
         .collect();
     for a in apis.iter_mut() {
-        let Some((class, _)) = &a.class else { continue };
+        let class = &a
+            .class
+            .as_ref()
+            .map_or_else(|| args.namespace.clone(), |c| c.0.clone());
         let rust = a.name.to_string();
-        if a.tag == Tag::Method
+        // A method of a handle class, or a plain function of the namespace.
+        let settable = if a.class.is_some() {
+            a.tag == Tag::Method
+        } else {
+            a.tag == Tag::Static
+        };
+        if settable
             && a.value_recv.is_none()
             && let Some(prop) = rust.strip_prefix("set_")
             && a.params.len() == 1
@@ -678,6 +696,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let mut class_entries: Vec<Vec<TokenStream2>> = Vec::new();
     let mut shims = Vec::new();
     let mut js_sets = Vec::new();
+    let mut js_hidden: Vec<TokenStream2> = Vec::new();
+    let mut js_value_methods: std::collections::BTreeMap<String, Vec<(String, bool, String)>> =
+        std::collections::BTreeMap::new();
+    let mut js_props: std::collections::BTreeMap<
+        String,
+        (Option<TokenStream2>, Option<TokenStream2>),
+    > = std::collections::BTreeMap::new();
     for a in &apis {
         let name = &a.name;
         let rust_name = name.to_string();
@@ -690,8 +715,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let symbol = format!("iron_{owner}_{}", a.stem);
         let symbol_ident = format_ident!("{}", symbol);
         let doc = &a.doc;
-        let has_receiver =
-            matches!(a.tag, Tag::Method | Tag::Get | Tag::Set) && a.value_recv.is_none();
+        let has_receiver = a.class.is_some()
+            && matches!(a.tag, Tag::Method | Tag::Get | Tag::Set)
+            && a.value_recv.is_none();
 
         // The manifest entry (a receiver is listed first, as `this`).
         let mut pnames: Vec<String> = Vec::new();
@@ -810,38 +836,107 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
 
         // The QuickJS function (namespace functions only: a handle is a plain number there). A
         // string is a JS string, a value is an object with the fields' names, a result is a new one.
-        if args.quickjs && a.class.is_none() {
-            let js_params: Vec<TokenStream2> = a
-                .params
+        if args.quickjs && (a.class.is_none() || a.value_recv.is_some()) {
+            // A value method takes the value first (an object), then its own parameters.
+            let all_params: Vec<&(Ident, Kind)> = a.value_recv.iter().chain(&a.params).collect();
+            let js_params: Vec<TokenStream2> = all_params
                 .iter()
                 .map(|(n, k)| {
                     let t = js_param_ty(k);
                     quote!(#n: #t)
                 })
                 .collect();
-            let js_args: Vec<TokenStream2> = a
-                .params
+            let js_args: Vec<TokenStream2> = all_params
                 .iter()
                 .map(|(n, k)| js_arg(k, quote!(#n), &args))
                 .collect();
             let js_ret = js_ret_ty(&a.ret);
             let js_body = js_result(&a.ret, quote!(#name( #( #js_args ),* )), &args);
-            js_sets.push(quote! {
-                ns.set(
-                    #js_name,
-                    ::iron_api::rquickjs::Function::new(
-                        ctx.clone(),
-                        | ctx: ::iron_api::rquickjs::Ctx<'js>, #( #js_params ),* |
-                            -> ::iron_api::rquickjs::Result<#js_ret> {
-                            let _ = &ctx;
-                            #js_body
-                        },
-                    )?,
-                )?;
-            });
+            let closure = quote! {
+                | ctx: ::iron_api::rquickjs::Ctx<'js>, #( #js_params ),* |
+                    -> ::iron_api::rquickjs::Result<#js_ret> {
+                    let _ = &ctx;
+                    #js_body
+                }
+            };
+            if let Some((ts, _)) = a.class.as_ref().filter(|_| a.value_recv.is_some()) {
+                let hidden = format!("__iron_vm_{ts}_{js_name}");
+                js_value_methods.entry(ts.clone()).or_default().push((
+                    js_name.clone(),
+                    a.tag == Tag::Get,
+                    hidden.clone(),
+                ));
+                js_hidden.push(quote! {
+                    ctx.globals().set(
+                        #hidden,
+                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                    )?;
+                });
+                continue;
+            }
+            match a.tag {
+                // A namespace property: an accessor on the namespace object.
+                Tag::Get => js_props.entry(js_name.clone()).or_default().0 = Some(closure),
+                Tag::Set => js_props.entry(js_name.clone()).or_default().1 = Some(closure),
+                _ => js_sets.push(quote! {
+                    ns.set(
+                        #js_name,
+                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                    )?;
+                }),
+            }
         }
     }
 
+    for (name, (get, set)) in &js_props {
+        let acc = match (get, set) {
+            (Some(g), Some(st)) => {
+                quote!(::iron_api::rquickjs::object::Accessor::from(#g).set(#st).enumerable())
+            }
+            (Some(g), None) => {
+                quote!(::iron_api::rquickjs::object::Accessor::from(#g).enumerable())
+            }
+            (None, Some(st)) => {
+                quote!(::iron_api::rquickjs::object::Accessor::new_set(#st).enumerable())
+            }
+            (None, None) => continue,
+        };
+        js_sets.push(quote! { ns.prop(#name, #acc)?; });
+    }
+    // One JS class per value type: a constructor taking the fields, and its methods and getters.
+    let mut js_class_stmts: Vec<TokenStream2> = Vec::new();
+    let mut ns_init = quote!(::iron_api::rquickjs::Object::new(ctx.clone())?);
+    for v in &args.values {
+        let ts = &v.ts;
+        let fields: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
+        let ctor_params: Vec<String> = fields.iter().map(|f| format!("{f} = 0")).collect();
+        let ctor_body: Vec<String> = fields.iter().map(|f| format!("this.{f} = {f};")).collect();
+        // The class is made once (another module may have made it already) and each module adds
+        // its methods to the prototype.
+        let mut src = format!(
+            "globalThis.{ts} ??= class {ts} {{ constructor({}) {{ {} }} }};",
+            ctor_params.join(", "),
+            ctor_body.join(" ")
+        );
+        for (name, is_get, hidden) in js_value_methods.get(ts).into_iter().flatten() {
+            if *is_get {
+                src += &format!(
+                    " Object.defineProperty({ts}.prototype, '{name}', {{ get() {{ return {hidden}(this); }}, configurable: true }});"
+                );
+            } else {
+                src += &format!(
+                    " Object.defineProperty({ts}.prototype, '{name}', {{ value(...a) {{ return {hidden}(this, ...a); }}, configurable: true, writable: true }});"
+                );
+            }
+        }
+        if *ts == args.namespace {
+            // The namespace object is the class itself: `Color.white` is a static of `Color`.
+            let src = format!("{src} {ts}");
+            ns_init = quote!(ctx.eval::<::iron_api::rquickjs::Object, _>(#src)?);
+        } else {
+            js_class_stmts.push(quote!(ctx.eval::<(), _>(#src)?;));
+        }
+    }
     let quickjs = if args.quickjs {
         quote! {
             /// Installs the namespace as a QuickJS global, with typed arguments (no `Value` array,
@@ -849,7 +944,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             pub fn register_quickjs<'js>(
                 ctx: &::iron_api::rquickjs::Ctx<'js>,
             ) -> ::iron_api::rquickjs::Result<()> {
-                let ns = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                #( #js_class_stmts )*
+                let ns = #ns_init;
+                #( #js_hidden )*
                 #( #js_sets )*
                 ctx.globals().set(#ns, ns)?;
                 Ok(())

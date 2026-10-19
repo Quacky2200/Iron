@@ -197,3 +197,28 @@ fn the_scene_api_works_from_quickjs() {
         assert_eq!(out, "[11,2,3,1,2,0,false]");
     });
 }
+
+// M9-API-36
+//
+// Value classes are real JS classes in QuickJS: `new Vector3(..)`, methods and getters from the
+// Rust functions, results that are instances.
+#[test]
+fn value_classes_have_constructors_methods_and_getters_in_quickjs() {
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(
+                r#"
+                const a = new Vector3(1, 2, 2);
+                const b = a.add(new Vector3(1, 1, 1)).scale(2);
+                const q = new Quaternion(0, 0, 0, 1);
+                const r = q.rotate(new Vector3(0, 1, 0));
+                JSON.stringify([a.magnitude, b.x, b.y, b.z, b instanceof Vector3, r.y, a.dot(a)]);
+                "#,
+            )
+            .unwrap();
+        assert_eq!(out, "[3,4,6,6,true,1,9]");
+    });
+}

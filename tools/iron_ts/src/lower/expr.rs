@@ -61,6 +61,8 @@ pub(crate) enum Place {
     /// A property of an engine handle class: the receiver, its getter (if any), its setter and
     /// the value type.
     Ext(Expr, Option<ExternFn>, ExternFn, Ty),
+    /// A property of a namespace (no receiver): its getter (if any), its setter and the value type.
+    NsProp(Option<ExternFn>, ExternFn, Ty),
 }
 
 impl<'a> Lowerer<'a> {
@@ -247,6 +249,18 @@ impl<'a> Lowerer<'a> {
 
     fn lower_static_member(&mut self, m: &'a StaticMemberExpression<'a>) -> R<Expr> {
         let prop = m.property.name.as_str();
+        // `Time.deltaTime`: the getter of a namespace property.
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && let Some(g) = self
+                .manifest
+                .ns_props
+                .get(id.name.as_str())
+                .and_then(|p| p.get(prop))
+                .and_then(|p| p.getter.clone())
+        {
+            return Ok(self.emit_extern(&g, vec![]));
+        }
         if let Expression::Identifier(id) = &m.object
             && id.name == "Math"
             && self.lookup("Math").is_none()
@@ -1533,6 +1547,22 @@ impl<'a> Lowerer<'a> {
                 }
             }
             SimpleAssignmentTarget::StaticMemberExpression(m) => {
+                // `Gizmos.color = ...`: the setter of a namespace property.
+                if let Expression::Identifier(id) = &m.object
+                    && self.lookup(id.name.as_str()).is_none()
+                    && let Some(p) = self
+                        .manifest
+                        .ns_props
+                        .get(id.name.as_str())
+                        .and_then(|p| p.get(m.property.name.as_str()))
+                        .cloned()
+                {
+                    let Some(setter) = p.setter else {
+                        bail!("{}.{} is read only", id.name, m.property.name)
+                    };
+                    let ty = self.ext_ir(&setter.params[0].1);
+                    return Ok(Place::NsProp(p.getter, setter, ty));
+                }
                 // `Class.count = ...`: a static field.
                 if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()
@@ -1625,7 +1655,7 @@ impl<'a> Lowerer<'a> {
         static NUM: Ty = Ty::Num;
         match p {
             Place::ArrLen(_) => &NUM,
-            Place::Accessor(_, _, _, t) | Place::Ext(_, _, _, t) => t,
+            Place::Accessor(_, _, _, t) | Place::Ext(_, _, _, t) | Place::NsProp(_, _, t) => t,
             Place::Var(_, t)
             | Place::Cell(_, t)
             | Place::Global(_, t)
@@ -1648,6 +1678,10 @@ impl<'a> Lowerer<'a> {
                 Some(g) => self.emit_extern(g, vec![o.clone()]),
                 None => mk(ExprKind::Null, t.clone()),
             },
+            Place::NsProp(g, _, t) => match g {
+                Some(g) => self.emit_extern(g, vec![]),
+                None => mk(ExprKind::Null, t.clone()),
+            },
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
             Place::Index(a, i, t) => mk(
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
@@ -1665,6 +1699,7 @@ impl<'a> Lowerer<'a> {
                 Stmt::Eval(Self::target_call(setter, vec![o.clone(), v], Ty::Void))
             }
             Place::Ext(o, _, setter, _) => Stmt::Eval(self.emit_extern(setter, vec![o.clone(), v])),
+            Place::NsProp(_, setter, _) => Stmt::Eval(self.emit_extern(setter, vec![v])),
             Place::ArrLen(a) => Stmt::Eval(mk(
                 ExprKind::Rt(RtFn::ArrSetLen, vec![a.clone(), v]),
                 Ty::Void,
@@ -1705,7 +1740,10 @@ impl<'a> Lowerer<'a> {
             let value = self.place_read(&place);
             return Ok((pre, value));
         }
-        let is_accessor = matches!(place, Place::Accessor(..) | Place::Ext(..));
+        let is_accessor = matches!(
+            place,
+            Place::Accessor(..) | Place::Ext(..) | Place::NsProp(..)
+        );
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;
             self.coerce(v, &pty)?

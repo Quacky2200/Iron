@@ -1541,6 +1541,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_engine_api"
+version = "0.1.0"
+dependencies = [
+ "glam 0.34.1",
+ "iron_api",
+ "iron_scene",
+ "rquickjs",
+]
+
+[[package]]
 name = "iron_physics"
 version = "0.1.0"
 dependencies = [

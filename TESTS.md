@@ -1084,3 +1084,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-25 | Integration | A value object missing a field is a catchable JS exception. |
 | M9-API-26 | Integration | The `Scene` namespace of `iron_scene` works from QuickJS on the current scene (`crates/iron_scene/tests/api.rs`). |
 | M9-TS-592 | Unit | A class field's type is inferred from constants, arithmetic, `C.x` of a constant object and object literals; a call is still an error asking for an annotation. |
+| M9-API-27 | Integration | Namespace properties: a `#[property]` function without a receiver is a getter, `set_x(v)` its setter; manifest kinds, `.d.ts` (`let` / `const`) and JSON (`crates/iron_api/tests/ns_props.rs`). |
+| M9-API-28 | Integration | The shims of namespace properties take no receiver. |
+| M9-API-29 | Integration | QuickJS gets accessors for namespace properties (`Cfg.level = 9`). |
+| M9-API-30 | Integration | `Color` (`crates/iron_engine_api/tests/engine.rs`): constants, `hex` (sRGB to linear), `lerp`, `toHex`, `withAlpha`. |
+| M9-API-31 | Integration | `Time` follows the host's frames and the time scale (a bad scale reads as 1). |
+| M9-API-32 | Integration | `input` reports this frame's presses and releases; key repeats are not presses. |
+| M9-API-33 | Integration | `Screen` and `QualitySettings` are read and set. |
+| M9-API-34 | Integration | `Gizmos` collect lines and present them to a camera; the host takes the frame once. |
+| M9-API-35 | Integration | `Camera` defaults, field of view clamp, orthographic settings, removal with its object. |
+| M9-API-36 | Integration | Value classes are JS classes in QuickJS (constructor, methods, getters, instances as results) (`crates/iron_scene/tests/api.rs`). |
