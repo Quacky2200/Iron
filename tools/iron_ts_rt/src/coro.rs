@@ -251,7 +251,8 @@ mod tests {
         // SAFETY: the frame is 16 + 8 bytes and stays valid until the pop.
         unsafe { ts_rt_frame_push(frame.as_mut_ptr() as *mut Frame, 1) };
         let obj = ts_rt_obj_new(HDR_STR, 32);
-        frame[2] = obj as u64;
+        // SAFETY: slot 2 is the frame's one pointer slot; the collector reads it through the chain.
+        unsafe { std::ptr::write_volatile(&mut frame[2], obj as u64) };
         for i in 1..=3u64 {
             let got = ts_rt_co_yield(i, 0);
             assert_eq!(got, 100 + i);
