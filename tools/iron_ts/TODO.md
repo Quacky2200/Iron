@@ -100,9 +100,7 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
   build-size fix below. `build.rs` soft-fails only `sine_demo_full` (it compiles now; the guard can go).
 - **Disk finding (user report: PC chugging).** The bottleneck was the disk, not RAM/CPU: `tools/target` held 1,109 PDBs = 86 GB (56 test
   executables, each with its own debug info) and the root `target` 8.6 GB. Fixed: `debug = false` for `[profile.dev]`/`[profile.test]` in
-  `tools/Cargo.toml`, `debug = "line-tables-only"` in the root `Cargo.toml`; `tools/target` deleted and rebuilt. Further ideas if it still
-  hurts: merge the 56 `iron_ts_tests/tests/*.rs` into fewer binaries (each links every object, ~36 MB), `incremental = false`, run
-  `cargo test -j 4`.
+  `tools/Cargo.toml`, `debug = "line-tables-only"` in the root `Cargo.toml`; `tools/target` deleted and rebuilt. The 56 test files are now one binary (`iron_ts_tests/tests/all/`, one link of ~500 MB instead of 56 in parallel, which was the memory spike); tests that run compiled code take `iron_ts_tests::serial()` because module globals are shared between threads. Run one with `cargo test -p iron_ts_tests --test all <name>`. Still possible: `incremental = false`.
 - **Waiting for the user:** `docs/research/iron-native-engine.md` ("nothing left in TypeScript but generated types": animation, scenes, math,
   physics/audio components, app/time/input to Rust; games without `node_modules`); `docs/research/iron-ui-native.md` was approved and is built.
 - **Next, in order:** (1) commit the above; (2) `@property` save/load through `PROPS_<Class>` in `NativeHost` and

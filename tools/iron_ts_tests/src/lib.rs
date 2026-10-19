@@ -926,3 +926,10 @@ pub fn busy_checksum(s: *mut SimState) -> f64 {
         sum
     }
 }
+
+/// Compiled programs keep module globals in static data that every thread shares, while each
+/// thread has its own heap; tests that initialise and run one must not overlap.
+pub fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
