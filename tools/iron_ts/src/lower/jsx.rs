@@ -563,11 +563,85 @@ impl<'a> Visit<'a> for Finder<'_> {
     }
 }
 
-/// The program with JSX and hooks rewritten, or `None` when it has none.
+/// The hook calls of one function body, in order.
+#[derive(Default)]
+struct HookScan(Vec<String>);
+
+impl<'a> Visit<'a> for HookScan {
+    fn visit_call_expression(&mut self, c: &CallExpression<'a>) {
+        if let Expression::Identifier(f) = &c.callee {
+            let n = f.name.as_str();
+            if n.len() > 3 && n.starts_with("use") && n.as_bytes()[3].is_ascii_uppercase() {
+                self.0.push(n.to_string());
+            }
+        }
+        walk::walk_call_expression(self, c);
+    }
+}
+
+/// `Name:ID:hook,hook;...` for every top-level component function (an uppercase name returning
+/// `UiElement`): the id and the ordered hook list a hot reload compares to decide whether a
+/// component keeps its state (same list) or starts over.
+fn signatures(src: &str) -> Option<String> {
+    let alloc = Allocator::default();
+    let ret = Parser::new(&alloc, src, SourceType::tsx()).parse();
+    if !ret.diagnostics.is_empty() {
+        return None;
+    }
+    let mut out = Vec::new();
+    for st in &ret.program.body {
+        let f = match st {
+            Statement::FunctionDeclaration(f) => &**f,
+            Statement::ExportDeclaration(x) => match &x.declaration {
+                Declaration::FunctionDeclaration(f) => &**f,
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let (Some(id), Some(body)) = (&f.id, &f.body) else {
+            continue;
+        };
+        let name = id.name.as_str();
+        let returns_element = f
+            .return_type
+            .as_ref()
+            .is_some_and(|r| src[r.span.start as usize..r.span.end as usize].contains("UiElement"));
+        if !name.as_bytes()[0].is_ascii_uppercase() || !returns_element {
+            continue;
+        }
+        let mut scan = HookScan::default();
+        scan.visit_function_body(body);
+        out.push(format!(
+            "{name}:{}:{}",
+            component_id(name),
+            scan.0.join(",")
+        ));
+    }
+    (!out.is_empty()).then(|| out.join(";"))
+}
+
+/// The program with JSX and hooks rewritten, or `None` when it has none. A program with components
+/// also exports `__uiSignatures()` (see `signatures`).
 pub fn desugar(src: &str) -> R<Option<String>> {
     if !wanted(src) {
         return Ok(None);
     }
+    let sig = signatures(src);
+    let out = desugar_passes(src)?;
+    Ok(match (out, sig) {
+        (Some(text), Some(sig)) => Some(format!(
+            "{text}\nexport function __uiSignatures(): string {{ return {}; }}\n",
+            js_string(&sig)
+        )),
+        (None, Some(sig)) => Some(format!(
+            "{src}\nexport function __uiSignatures(): string {{ return {}; }}\n",
+            js_string(&sig)
+        )),
+        (out, None) => out,
+    })
+}
+
+fn desugar_passes(src: &str) -> R<Option<String>> {
     let (mut cur, memo, forward) = prepass(src)?;
     let mut changed = cur != src;
     for _ in 0..64 {

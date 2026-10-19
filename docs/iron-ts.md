@@ -968,7 +968,9 @@ first, only when the manifest has the `Ui` namespace); the generic hooks and the
 - **Limits.** The updater form `setN(n => n + 1)`; an inline object literal returned from a callback needs a type annotation
   when another argument names the type (`(): Api => ({ ... })`); `string | null` state works as a pointer, `number | null`
   as a number.
-- **Not built yet**: controlled text fields (`value`/`onChange` restore), hot-reload state (component ids are stable hashes;
-  hook signatures are not emitted yet), `iron_app` wiring.
+- **Hot reload data.** A program with components exports `__uiSignatures(): string` (`Name:ID:hook,hook;...`, ids are name hashes,
+  hooks in call order). The host keeps the old table, and after loading new code calls `Runtime::refresh` with the ids whose
+  list changed ([ui-native.md](ui-native.md)).
+- **Not built yet**: `iron_app` wiring, the dev loop itself.
 
-Tests `M9-TS-575..586`.
+Tests `M9-TS-575..588`.

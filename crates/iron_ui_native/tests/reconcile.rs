@@ -531,3 +531,64 @@ fn a_render_loop_is_reported() {
         "{errors:?}"
     );
 }
+
+fn field(value: &str, on_input: iron_ui_native::Handler) -> Element {
+    Element::host(
+        "input",
+        HostProps {
+            attrs: vec![("value".into(), Value::String(value.into()))],
+            handlers: vec![("input".into(), on_input)],
+            ..HostProps::default()
+        },
+        vec![],
+    )
+}
+
+fn typed(text: &str, node: NodeId) -> Event {
+    let mut ev = Event::new("input", node);
+    ev.strings.push(text.into());
+    ev
+}
+
+// M2-NAT-13
+//
+// A controlled text field: when the handler accepts the typed text (even transformed) the new
+// value prop is what the tree holds; when it does not, the old value goes back.
+#[test]
+fn a_controlled_field_keeps_its_value_prop() {
+    let mut tree = tree();
+    let mut rt = Runtime::new(FIRST);
+    let root = rt.create_root(ROOT);
+    let accept = Rc::new(RefCell::new(true));
+    let a2 = accept.clone();
+    ok(rt.render(
+        root,
+        Element::component(1, move |cx| {
+            let (text, set) = cx.use_state(|| "init".to_string());
+            let a3 = a2.clone();
+            let on_input: iron_ui_native::Handler = Rc::new(move |e: &mut Event| {
+                if *a3.borrow() {
+                    set.set(e.strings[0].to_uppercase());
+                }
+            });
+            field(&text, on_input)
+        }),
+        &mut tree,
+    ));
+    let node = tree.children(ROOT)[0];
+    let value = |tree: &UiTree| tree.attrs(node).unwrap().value.clone();
+    assert_eq!(value(&tree), Some("init".to_string()));
+    // Accepted, and transformed.
+    rt.dispatch(&mut typed("abc", node), &mut tree);
+    assert_eq!(value(&tree), Some("ABC".to_string()));
+    // Rejected: the old value is sent back (one op).
+    *accept.borrow_mut() = false;
+    let before = rt.ops_applied();
+    rt.dispatch(&mut typed("ABCD", node), &mut tree);
+    assert_eq!(rt.ops_applied(), before + 1);
+    assert_eq!(value(&tree), Some("ABC".to_string()));
+    // Accepted again after a rejection.
+    *accept.borrow_mut() = true;
+    rt.dispatch(&mut typed("xyz", node), &mut tree);
+    assert_eq!(value(&tree), Some("XYZ".to_string()));
+}

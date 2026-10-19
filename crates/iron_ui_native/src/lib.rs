@@ -100,6 +100,13 @@ pub struct Runtime {
     shared: Rc<Shared>,
     next_node: u32,
     by_node: HashMap<NodeId, usize>,
+    /// What a text field holds as far as we know: its `value` prop, or what was typed since.
+    field_text: HashMap<usize, String>,
+    /// Ops applied so far (for tests and statistics).
+    ops_total: usize,
+    /// During a `refresh`: components (by id) that start over, and whether `memo` is ignored.
+    remount: HashSet<u32>,
+    force: bool,
 }
 
 fn diff_pairs(old: &[(String, Value)], new: &[(String, Value)]) -> Vec<(String, Value)> {
@@ -130,7 +137,16 @@ impl Runtime {
             shared: Rc::default(),
             next_node: first_node,
             by_node: HashMap::new(),
+            field_text: HashMap::new(),
+            ops_total: 0,
+            remount: HashSet::new(),
+            force: false,
         }
+    }
+
+    /// How many ops this runtime has applied to trees.
+    pub fn ops_applied(&self) -> usize {
+        self.ops_total
     }
 
     /// Number of live instances (for tests).
@@ -170,6 +186,24 @@ impl Runtime {
         self.place_children(root.0, desired, &mut pass);
         let mut errors = self.commit(pass, tree);
         errors.extend(self.flush(tree));
+        errors
+    }
+
+    /// Hot reload: renders the new code's element over the old tree. Every component renders again
+    /// with its new render function (`memo` is ignored) and keeps its state, except those in
+    /// `remount` (their hook signature changed), which start over.
+    pub fn refresh(
+        &mut self,
+        root: RootId,
+        element: Element,
+        remount: &[u32],
+        tree: &mut UiTree,
+    ) -> Vec<UiError> {
+        self.remount = remount.iter().copied().collect();
+        self.force = true;
+        let errors = self.render(root, element, tree);
+        self.remount.clear();
+        self.force = false;
         errors
     }
 
@@ -230,6 +264,13 @@ impl Runtime {
             }
             cur = self.inst(i).parent;
         }
+        // A text field's own text changes before any handler runs, like `e.target.value`.
+        let is_field = matches!(&self.inst(start).kind,
+            Kind::Host { ty, .. } if ty == "input" || ty == "textarea");
+        if is_field && event.kind == "input" {
+            self.field_text
+                .insert(start, event.strings.first().cloned().unwrap_or_default());
+        }
         let capture = format!("{}:capture", event.kind);
         let handlers = |rt: &Runtime, i: usize, name: &str| -> Vec<Handler> {
             match &rt.inst(i).kind {
@@ -265,7 +306,39 @@ impl Runtime {
         }
         // A discrete event commits before it returns.
         self.flush(tree);
+        if is_field && event.kind == "input" {
+            self.restore_controlled(start, tree);
+        }
         event.prevented
+    }
+
+    /// A field with a `value` prop shows that value: if the handlers did not accept what was
+    /// typed (no state change, or a different one), the prop wins and the tree's text goes back.
+    fn restore_controlled(&mut self, i: usize, tree: &mut UiTree) {
+        let Some(Inst {
+            kind: Kind::Host { node, props, .. },
+            ..
+        }) = self.arena[i].as_ref()
+        else {
+            return;
+        };
+        let Some(Value::String(want)) = props
+            .attrs
+            .iter()
+            .find(|(k, _)| k == "value")
+            .map(|(_, v)| v.clone())
+        else {
+            return;
+        };
+        if self.field_text.get(&i) != Some(&want) {
+            let op = Op::SetAttrs {
+                id: *node,
+                pairs: vec![("value".into(), Value::String(want.clone()))],
+            };
+            tree.apply_ops(std::slice::from_ref(&op));
+            self.ops_total += 1;
+            self.field_text.insert(i, want);
+        }
     }
 
     // ---- arena ----
@@ -313,7 +386,9 @@ impl Runtime {
             (Kind::Nothing, Element::None) | (Kind::Text { .. }, Element::Text(_)) => true,
             (Kind::Host { ty, .. }, Element::Host { ty: t, .. }) => ty == t,
             (Kind::Fragment { .. }, Element::Fragment { .. }) => true,
-            (Kind::Component { id, .. }, Element::Component { id: c, .. }) => id == c,
+            (Kind::Component { id, .. }, Element::Component { id: c, .. }) => {
+                id == c && !self.remount.contains(id)
+            }
             (Kind::Portal { target, .. }, Element::Portal { target: t, .. }) => target == t,
             (Kind::Provider { context, .. }, Element::Provider { context: c, .. }) => context == c,
             _ => false,
@@ -665,7 +740,19 @@ impl Runtime {
                     }
                 }
                 *k = key;
+                let shown =
+                    props
+                        .attrs
+                        .iter()
+                        .find(|(n, _)| n == "value")
+                        .and_then(|(_, v)| match v {
+                            Value::String(t) => Some(t.clone()),
+                            _ => None,
+                        });
                 *old = props;
+                if let Some(t) = shown {
+                    self.field_text.insert(i, t);
+                }
                 let old_kids = self.take_children(i);
                 let kids = self.reconcile_children(i, old_kids, children, pass);
                 self.set_children(i, kids);
@@ -707,7 +794,7 @@ impl Runtime {
             Element::Component {
                 key, render, memo, ..
             } => {
-                let dirty = self.shared.dirty.borrow().contains(&i);
+                let dirty = self.shared.dirty.borrow().contains(&i) || self.force;
                 if let Kind::Component {
                     key: k,
                     render: r,
@@ -821,6 +908,7 @@ impl Runtime {
                 ..
             } => {
                 self.by_node.remove(&node);
+                self.field_text.remove(&i);
                 if let Some(r) = props.node_ref {
                     pass.refs.push((r, None));
                 }
@@ -899,6 +987,7 @@ impl Runtime {
     // ---- commit ----
 
     fn commit(&mut self, pass: Pass, tree: &mut UiTree) -> Vec<UiError> {
+        self.ops_total += pass.ops.len();
         let errors = tree.apply_ops(&pass.ops);
         for (r, n) in &pass.refs {
             r.set(*n);

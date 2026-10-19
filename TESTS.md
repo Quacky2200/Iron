@@ -1073,3 +1073,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-584 | Integration | `memo` skips a child with equal props and renders it when a prop changes. |
 | M9-TS-585 | Integration | `forwardRef` passes the ref as the second parameter. |
 | M9-TS-586 | Integration | `useReducer` applies actions to the latest state (two dispatches in one handler both count). |
+| M2-NAT-13 | Integration | A controlled text field: an accepted (even transformed) edit shows the new value prop, a rejected one sends the old value back (`crates/iron_ui_native/tests/reconcile.rs`). |
+| M9-TS-587 | Integration | The compiler exports each component's stable id and ordered hook list (`__uiSignatures`). |
+| M9-TS-588 | Integration | Hot reload with `Runtime::refresh`: state is kept, except for components in the remount list. |

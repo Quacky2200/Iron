@@ -298,3 +298,59 @@ fn use_reducer_applies_actions_to_the_latest_state() {
         assert_eq!(ui.dump(), "root(box(text:9))");
     });
 }
+
+/// The component table the compiler exported: name -> (id, hooks).
+fn signatures() -> std::collections::HashMap<String, (u32, String)> {
+    let text = unsafe { iron_api::script_str(ts_uic___uiSignatures() as *const u8) }.into_owned();
+    text.split(';')
+        .map(|e| {
+            let mut p = e.splitn(3, ':');
+            let name = p.next().unwrap().to_string();
+            let id: u32 = p.next().unwrap().parse().unwrap();
+            (name, (id, p.next().unwrap().to_string()))
+        })
+        .collect()
+}
+
+// M9-TS-587
+//
+// The compiler exports each component's stable id and its ordered hook list.
+#[test]
+fn the_compiler_exports_component_ids_and_hook_lists() {
+    in_every_gc_mode(|| {
+        let sig = signatures();
+        assert_eq!(sig["Counter"].1, "useState");
+        assert_eq!(sig["Fx"].1, "useEffect");
+        assert_eq!(sig["Toggle"].1, "useState,useState,useRef");
+        assert_eq!(sig["Memo"].1, "useMemo");
+        assert_eq!(sig["Reader"].1, "useContext");
+        assert_ne!(sig["Counter"].0, sig["Fx"].0);
+    });
+}
+
+// M9-TS-588
+//
+// Hot reload: rendering the new code's element over the old tree keeps the state of components
+// whose hook list is unchanged and starts over those in the remount list.
+#[test]
+fn refresh_keeps_state_unless_the_component_is_remounted() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_counterApp() });
+        let b = ui.tree.children(ROOT)[0];
+        ui.click(b);
+        ui.click(b);
+        assert_eq!(ui.dump(), "root(box(text(text:n=),text:5))");
+        let id = signatures()["Counter"].0;
+        let el = iron_ts_ui::element_from(unsafe { ts_uic_counterApp() });
+        no_errors(ui.rt.refresh(ui.root, el, &[], &mut ui.tree));
+        assert_eq!(ui.dump(), "root(box(text(text:n=),text:5))", "state kept");
+        let el = iron_ts_ui::element_from(unsafe { ts_uic_counterApp() });
+        no_errors(ui.rt.refresh(ui.root, el, &[id], &mut ui.tree));
+        assert_eq!(
+            ui.dump(),
+            "root(box(text(text:n=),text:3))",
+            "remounted: initial state"
+        );
+    });
+}
