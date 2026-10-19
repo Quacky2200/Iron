@@ -37,6 +37,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn ty(&mut self, t: &'a TSType<'a>, hint: &str) -> R<Ty> {
         Ok(match t {
             TSType::TSNumberKeyword(_) => Ty::Num,
+            TSType::TSBigIntKeyword(_) => Ty::BigInt,
             TSType::TSBooleanKeyword(_) => Ty::Bool,
             TSType::TSStringKeyword(_) => Ty::Str,
             TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,
@@ -329,6 +330,18 @@ impl<'a> Lowerer<'a> {
                 ))
             }
             Ty::Num => ex(ExprKind::Truthy(Box::new(e))),
+            // A bigint is false only at zero.
+            Ty::BigInt => ex(ExprKind::Cmp(
+                CmpOp::Ne,
+                Box::new(Expr {
+                    kind: ExprKind::Rt(RtFn::Str("ts_rt_bigint_sign"), vec![e]),
+                    ty: Ty::Num,
+                }),
+                Box::new(Expr {
+                    kind: ExprKind::Num(0.0),
+                    ty: Ty::Num,
+                }),
+            )),
             // A union member is true unless its text is empty.
             Ty::Lit => match e.kind {
                 ExprKind::Tag(t) => ex(ExprKind::Bool(!self.m.tags[t as usize].is_empty())),

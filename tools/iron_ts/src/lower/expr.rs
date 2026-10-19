@@ -88,6 +88,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn lower_expr(&mut self, e: &'a Expression<'a>, exp: Option<&Ty>) -> R<Expr> {
         match e {
             Expression::NumericLiteral(n) => Ok(num(n.value)),
+            Expression::BigIntLiteral(b) => self.lower_bigint_literal(b),
             Expression::BooleanLiteral(b) => Ok(mk(ExprKind::Bool(b.value), Ty::Bool)),
             Expression::NullLiteral(_) => Ok(mk(ExprKind::Null, Ty::Null)),
             Expression::StringLiteral(s) => {
@@ -455,6 +456,18 @@ impl<'a> Lowerer<'a> {
                 let b = self.to_bool(a);
                 Ok(mk(ExprKind::Un(UnOp::Not, Box::new(b)), Ty::Bool))
             }
+            UnaryOperator::UnaryNegation if a.ty.strip() == &Ty::BigInt => {
+                Ok(self.bigint_unary(true, a))
+            }
+            UnaryOperator::BitwiseNot if a.ty.strip() == &Ty::BigInt => {
+                Ok(self.bigint_unary(false, a))
+            }
+            UnaryOperator::UnaryPlus if a.ty.strip() == &Ty::BigInt => {
+                bail!(
+                    "{}: unary + on a bigint (JavaScript throws a TypeError); use Number(x)",
+                    self.loc(u.span.start)
+                )
+            }
             UnaryOperator::UnaryNegation => {
                 let a = self.as_num(a)?;
                 Ok(match a.kind {
@@ -730,6 +743,9 @@ impl<'a> Lowerer<'a> {
     }
 
     pub(crate) fn arith(&mut self, op: BinOp, l: Expr, r: Expr) -> R<Expr> {
+        if let Some(big) = self.bigint_binary(op, &l, &r)? {
+            return Ok(big);
+        }
         let (l, r) = (self.as_num(l)?, self.as_num(r)?);
         // Constant folding, so `const UNITS = 10 / 729` is a constant rather than a global.
         if let (ExprKind::Num(a), ExprKind::Num(b)) = (&l.kind, &r.kind) {
@@ -756,6 +772,9 @@ impl<'a> Lowerer<'a> {
     }
 
     pub(crate) fn lower_compare(&mut self, op: CmpOp, l: Expr, r: Expr, at: u32) -> R<Expr> {
+        if let Some(big) = self.bigint_compare(op, &l, &r)? {
+            return Ok(big);
+        }
         let eq = matches!(op, CmpOp::Eq | CmpOp::Ne);
         if eq && (l.ty == Ty::Null || r.ty == Ty::Null) {
             let other = if l.ty == Ty::Null { r } else { l };
@@ -1381,13 +1400,21 @@ impl<'a> Lowerer<'a> {
         } else {
             -1.0
         };
-        let new = self.arith(BinOp::Add, old.clone(), num(delta))?;
+        let new = if pty.strip() == &Ty::BigInt {
+            self.bigint_step(old.clone(), delta > 0.0)?
+        } else {
+            self.arith(BinOp::Add, old.clone(), num(delta))?
+        };
         let new = self.coerce(new, &pty)?;
         let value = if u.prefix {
             pre.push(self.place_write(&place, new));
             self.place_read(&place)
         } else {
-            let tmp = self.new_local(Ty::Num);
+            let tmp = self.new_local(if pty.strip() == &Ty::BigInt {
+                Ty::BigInt
+            } else {
+                Ty::Num
+            });
             pre.push(Stmt::Assign(tmp, old));
             pre.push(self.place_write(&place, new));
             self.var_expr(tmp)
@@ -1540,6 +1567,12 @@ impl<'a> Lowerer<'a> {
             }
             Expression::StaticMemberExpression(m) => {
                 let method = m.property.name.as_str();
+                if let Expression::Identifier(id) = &m.object
+                    && id.name == "BigInt"
+                    && self.lookup("BigInt").is_none()
+                {
+                    return self.lower_bigint_static(method, c);
+                }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Math"
                     && self.lookup("Math").is_none()

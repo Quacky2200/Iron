@@ -419,6 +419,26 @@ mod tests {
         );
     }
 
+    // M9-TS-369
+    #[test]
+    fn bigint_mixing_and_unary_plus_are_compile_errors() {
+        for body in [
+            "export function f(a: bigint): bigint { return a + 1; }",
+            "export function f(a: bigint, b: number): bigint { return a * b; }",
+            "export function f(a: bigint): number { return +a; }",
+            "export function f(a: bigint): bigint { return a >>> 1n; }",
+        ] {
+            let e = lower::lower_source(body).err().unwrap_or_default();
+            assert!(!e.is_empty(), "{body}");
+        }
+        assert!(
+            lower::lower_source(
+                "export function f(a: bigint): boolean { return a < 5 && a != 2n; }"
+            )
+            .is_ok()
+        );
+    }
+
     // M9-TS-84
     #[test]
     fn calls_with_the_wrong_number_of_arguments_are_errors() {

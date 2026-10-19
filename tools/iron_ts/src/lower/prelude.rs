@@ -170,6 +170,14 @@ pub fn wants_regexp(src: &str) -> bool {
         .any(|m| src.contains(m))
 }
 
+/// Is there a literal like `10n` (a digit, then `n`, then a character that cannot continue a name)?
+fn has_bigint_literal(src: &str) -> bool {
+    let b = src.as_bytes();
+    b.windows(3).any(|w| {
+        w[0].is_ascii_digit() && w[1] == b'n' && !(w[2].is_ascii_alphanumeric() || w[2] == b'_')
+    })
+}
+
 /// Does the program use errors (and not define its own `Error`)?
 pub fn wanted(src: &str) -> bool {
     (src.contains("Error")
@@ -185,6 +193,9 @@ pub fn wanted(src: &str) -> bool {
         || src.contains(".toString(")
         || src.contains("JSON.")
         || src.contains("URI")
+        || src.contains("BigInt")
+        || src.contains("bigint")
+        || has_bigint_literal(src)
         || src.contains("unescape("))
         && !src.contains("class Error")
 }

@@ -9,6 +9,7 @@ macro_rules! bail {
 }
 
 mod arrays;
+mod bigint;
 mod classes;
 mod closure;
 mod date;

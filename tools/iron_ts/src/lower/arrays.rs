@@ -381,6 +381,9 @@ impl<'a> Lowerer<'a> {
         if let Ty::Typed(kind) = &rty {
             return self.lower_typed_method(recv, *kind, m, c);
         }
+        if rty == Ty::BigInt {
+            return self.lower_bigint_method(recv, m, c);
+        }
         if rty == Ty::Str {
             return self.lower_str_method(recv, m, c);
         }
@@ -526,6 +529,13 @@ impl<'a> Lowerer<'a> {
                         let r = self.new_local(Ty::Void);
                         body.push(self.inline_cb(cb, &params, RetKind::Val, Some(r))?);
                         let rty = self.cur.locals[r as usize].clone();
+                        // A callback that returns string literals (`v ? "1" : "0"`) makes strings.
+                        let (rty, pushed) = if rty == Ty::Lit {
+                            let v = self.var_expr(r);
+                            (Ty::Str, self.widen_lit(v))
+                        } else {
+                            (rty, self.var_expr(r))
+                        };
                         let ty = Ty::Arr(Box::new(rty));
                         let out = self.new_local(ty.clone());
                         let ov = self.var_expr(out);
@@ -534,7 +544,7 @@ impl<'a> Lowerer<'a> {
                             mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty.clone()),
                         ));
                         body.push(Stmt::Eval(mk(
-                            ExprKind::Rt(RtFn::ArrPush, vec![ov.clone(), self.var_expr(r)]),
+                            ExprKind::Rt(RtFn::ArrPush, vec![ov.clone(), pushed]),
                             Ty::Void,
                         )));
                         stmts.push(Stmt::Loop(label, body));

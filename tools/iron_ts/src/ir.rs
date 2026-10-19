@@ -91,6 +91,8 @@ pub enum Ty {
     /// A member of a string-literal union, as a small integer (the id is global, see `Module::tags`).
     Lit,
     Str,
+    /// An arbitrary-precision integer: a leaf GC object.
+    BigInt,
     /// The type of the `null` literal before it is coerced to a nullable type.
     Null,
     Obj(StructId),
@@ -141,6 +143,7 @@ impl Ty {
                 | Ty::Obj(_)
                 | Ty::Arr(_)
                 | Ty::Typed(_)
+                | Ty::BigInt
                 | Ty::Fn(_)
                 | Ty::Cell(_)
                 | Ty::Map(..)
@@ -493,6 +496,7 @@ impl fmt::Display for Ty {
             Ty::Bool => write!(f, "bool"),
             Ty::Lit => write!(f, "tag"),
             Ty::Str => write!(f, "str"),
+            Ty::BigInt => write!(f, "bigint"),
             Ty::Null => write!(f, "null"),
             Ty::Obj(i) => write!(f, "obj#{i}"),
             Ty::Arr(t) => write!(f, "[{t}]"),

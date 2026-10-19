@@ -801,6 +801,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-353..357 | Integration | `Float64Array`: stores of 28 awkward numbers (wrapping, clamping, rounding, NaN, infinities), constructors (length, `number[]`, other typed arrays, `from`), `forEach/map/filter/slice/reduce/indexOf/includes/find/some/every/at/join`, `fill/set/sort/reverse/toSorted/toReversed`, `for...of`, spread and out-of-range writes equal bun's (`iron_ts_tests/tests/typed.rs`, `bench/typed.ts`, made by `bench/gen_typed_program.py`). |
 | M9-TS-358 | Integration | `set` out of range or with a negative offset is bun's `RangeError` text (`tests/typed.rs`). |
 | M9-TS-359 | Integration | Sorting floats with NaN and infinities, and `Float32Array` rounding (`tests/typed.rs`). |
+| M9-TS-360 | Integration | Literals in decimal, hex, binary, octal and with separators, 30 digits and more equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-361 | Integration | Arithmetic: `+ - * / % **` with truncating division, negative operands and large powers equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-362 | Integration | Bitwise `& | ^ ~ << >>` over positive, negative and huge operands (all pairs) equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-363 | Integration | Comparison with bigints and numbers (`< <= > >= == != === !==`, NaN, infinities, fractions, 2^64) equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-364 | Integration | Conversions: `BigInt(number | string | boolean | bigint)`, `Number(big)`, `toString(radix)`, `String`, template, `typeof` equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-365 | Integration | Truthiness of `0n` equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-366 | Integration | `BigInt.asIntN` / `asUintN` at several widths equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-367 | Integration | `++`, `--`, `*=`, `for` and `while` loops, factorial of 30, Fibonacci of 150, arrays of bigints equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-368 | Integration | `RangeError` / `SyntaxError` texts: non-integer, bad string, division by zero, negative exponent, radix, too big, negative bits equal bun's (`iron_ts_tests/tests/bigint.rs`, `bench/bigint.ts`). |
+| M9-TS-369 | Unit | Mixing a bigint with a number in arithmetic, unary `+`, and `>>>` are compile errors; comparing with a number is allowed (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

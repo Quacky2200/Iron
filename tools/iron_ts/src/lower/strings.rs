@@ -200,6 +200,7 @@ impl<'a> Lowerer<'a> {
             Ty::Str => Ok(e),
             Ty::Lit => Ok(self.tag_to_str(e)),
             Ty::Num => Ok(self.rt_str("ts_rt_num_to_str_gc", vec![e], Ty::Str)),
+            Ty::BigInt => Ok(self.bigint_to_string(e, num(10.0))),
             Ty::Bool => {
                 let (t, f) = (self.str_lit("true"), self.str_lit("false"));
                 Ok(mk(
@@ -450,6 +451,7 @@ impl<'a> Lowerer<'a> {
         };
         let name_of = |t: &Ty| match t.strip() {
             Ty::Num => "number",
+            Ty::BigInt => "bigint",
             Ty::Bool => "boolean",
             Ty::Str | Ty::Lit => "string",
             Ty::Fn(_) => "function",
@@ -574,6 +576,7 @@ impl<'a> Lowerer<'a> {
                 let full = self.lower_expr(full, None)?;
                 self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
             }
+            "BigInt" => self.lower_bigint_call(c)?,
             // The prelude's `Intl.PluralRules.select`, `Intl.ListFormat.format` and
             // `Intl.RelativeTimeFormat.format`.
             "__pluralSelect" | "__listFormat" | "__rtfFormat" => {
@@ -692,6 +695,7 @@ impl<'a> Lowerer<'a> {
                 let v = self.date_value(v);
                 match v.ty.strip() {
                     Ty::Num => v,
+                    Ty::BigInt => self.bigint_to_number(v),
                     Ty::Bool => self.bool_as_num(v),
                     Ty::Str | Ty::Lit => {
                         let s = self.widen_lit(v);
@@ -740,7 +744,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// A bool as 0 or 1 (kept as a conditional so `Number(true)` is exact).
-    fn bool_as_num(&self, b: Expr) -> Expr {
+    pub(crate) fn bool_as_num(&self, b: Expr) -> Expr {
         mk(
             ExprKind::Cond(Box::new(b), Box::new(num(1.0)), Box::new(num(0.0))),
             Ty::Num,

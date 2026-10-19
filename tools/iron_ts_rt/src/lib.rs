@@ -73,6 +73,8 @@ pub const HDR_CELL_PTR: u64 = 0xA11A_0007;
 pub const HDR_CLOSURE_ENV: u64 = 0xA11A_0008;
 /// A `Map` or `Set` (`map.rs`): entries and an index in raw blocks; keys and values are traced.
 pub const HDR_MAP: u64 = 0xA11A_0009;
+/// A `BigInt`: sign, byte count and magnitude bytes, no children.
+pub const HDR_BIGINT: u64 = 0xA11A_000A;
 
 /// One function activation's pointer slots; `n` slots follow in memory.
 #[repr(C)]
@@ -399,7 +401,7 @@ fn collect(h: &mut Heap) {
                     }
                 }
                 HDR_CLOSURE_ENV => mark_ptr(*(p.add(16) as *const *mut u8), heap, &mut stack),
-                HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE | HDR_CELL => {}
+                HDR_ARRAY | HDR_BYTES | HDR_STR | HDR_CLOSURE | HDR_CELL | HDR_BIGINT => {}
                 id => {
                     let (n, mask) = *h.structs.get(id as usize - 1).unwrap_or_else(|| {
                         panic!("struct header {id} was never registered (call ts_init)")
@@ -1018,6 +1020,7 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
 
 // ---- strings: see string.rs ----
 
+mod bigint;
 mod date;
 mod intl;
 mod intl_date;
@@ -1031,6 +1034,7 @@ mod string;
 mod string_more;
 mod typed;
 mod uri;
+pub use bigint::*;
 pub use date::*;
 pub use intl::*;
 pub use intl_date::*;
@@ -1249,6 +1253,17 @@ pub fn link_anchor() -> usize {
         ts_rt_typed_set as *const () as usize,
         ts_rt_typed_slice_gc as *const () as usize,
         ts_rt_typed_reorder as *const () as usize,
+        ts_rt_bigint_literal_gc as *const () as usize,
+        ts_rt_bigint_from_text_gc as *const () as usize,
+        ts_rt_bigint_from_f64_gc as *const () as usize,
+        ts_rt_bigint_to_f64 as *const () as usize,
+        ts_rt_bigint_op_gc as *const () as usize,
+        ts_rt_bigint_unary_gc as *const () as usize,
+        ts_rt_bigint_cmp as *const () as usize,
+        ts_rt_bigint_cmp_f64 as *const () as usize,
+        ts_rt_bigint_sign as *const () as usize,
+        ts_rt_bigint_to_string_gc as *const () as usize,
+        ts_rt_bigint_as_n_gc as *const () as usize,
         ts_rt_regex_new as *const () as usize,
         ts_rt_regex_flags_gc as *const () as usize,
         ts_rt_regex_source_gc as *const () as usize,
