@@ -3,7 +3,7 @@
 // and a component on every animated object that records the clip events it is called with
 // (the native `Animations.takeEvents()` reports them as `object|function|parameter` lines).
 import "./anim_clips_prelude.ts";
-import { Animation } from "../../../js/engine/src/animation.ts";
+import { Animation, Animator } from "../../../js/engine/src/animation.ts";
 import { Component, GameObject } from "../../../js/engine/src/scene.ts";
 
 const log: string[] = [];
@@ -16,7 +16,7 @@ const proto = GameObject.prototype as any;
 const addComponent = proto.addComponent;
 proto.addComponent = function (cls: any, ...rest: any[]) {
   const c = addComponent.call(this, cls, ...rest);
-  if (cls === Animation && !this.components.some((x: any) => x instanceof EventLog)) addComponent.call(this, EventLog);
+  if ((cls === Animation || cls === Animator) && !this.components.some((x: any) => x instanceof EventLog)) addComponent.call(this, EventLog);
   return c;
 };
 
@@ -36,3 +36,9 @@ const started = new WeakSet<object>();
 // Native names for reading the clip list.
 Object.defineProperty(Animation.prototype, "clipCount", { get() { return this.clips.length; } });
 (Animation.prototype as any).clipAt = function (i: number) { return this.clips[i]; };
+
+const resetScene = (globalThis as any).__bench_reset;
+(globalThis as any).__bench_reset = () => {
+  resetScene();
+  log.length = 0;
+};

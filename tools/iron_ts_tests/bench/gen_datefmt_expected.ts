@@ -8,7 +8,8 @@ for (const zone of ZONES) {
   const m = await import("./datefmt.ts?" + zone);
   for (const [name, fn] of Object.entries(m)) {
     if (typeof fn !== "function") continue;
-    const v = (fn as () => unknown)();
+    (globalThis as any).__bench_reset?.(); // a program that keeps state starts each function fresh
+  const v = (fn as () => unknown)();
     out[name + "@" + zone] = typeof v === "string" ? { s: Array.from({ length: v.length }, (_, i) => v.charCodeAt(i)) } : v;
   }
 }

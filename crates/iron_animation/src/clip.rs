@@ -71,6 +71,10 @@ pub struct World {
     pub clips: Vec<Clip>,
     /// The `Animation` components, in the order they were made (the id is the index plus one).
     pub players: Vec<crate::player::AnimationPlayer>,
+    /// The `Animator` components, in the order they were made.
+    pub animators: Vec<crate::animator::AnimatorPlayer>,
+    /// Controller pieces.
+    pub graphs: crate::controller::Graphs,
 }
 
 thread_local! {

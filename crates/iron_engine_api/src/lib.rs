@@ -10,6 +10,7 @@
 pub use iron_math;
 
 pub mod animation;
+pub mod animator;
 pub mod app;
 pub mod assets;
 pub mod audio;
@@ -37,6 +38,14 @@ pub fn manifests() -> Vec<String> {
         animation::animation_component_api::MANIFEST.to_json(),
         animation::animation_state_api::MANIFEST.to_json(),
         animation::animations_api::MANIFEST.to_json(),
+        animator::animation_parameter_api::MANIFEST.to_json(),
+        animator::animation_condition_api::MANIFEST.to_json(),
+        animator::animation_transition_api::MANIFEST.to_json(),
+        animator::animation_blend_tree_api::MANIFEST.to_json(),
+        animator::animation_node_api::MANIFEST.to_json(),
+        animator::animation_controller_api::MANIFEST.to_json(),
+        animator::animation_builder_api::MANIFEST.to_json(),
+        animator::animator_api::MANIFEST.to_json(),
         color::color_api::MANIFEST.to_json(),
         datetime::time_span_api::MANIFEST.to_json(),
         datetime::date_time_api::MANIFEST.to_json(),

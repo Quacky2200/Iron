@@ -11,6 +11,7 @@ const m = await import("./prefs.ts");
 const out: Record<string, unknown> = {};
 for (const [name, fn] of Object.entries(m)) {
   if (typeof fn !== "function") continue;
+  (globalThis as any).__bench_reset?.(); // a program that keeps state starts each function fresh
   const v = (fn as () => unknown)();
   out[name] = typeof v === "string" ? { s: Array.from({ length: v.length }, (_, i) => v.charCodeAt(i)) } : v;
 }

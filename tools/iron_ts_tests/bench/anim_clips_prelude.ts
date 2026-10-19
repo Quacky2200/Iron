@@ -43,3 +43,7 @@ clip.curve = function (path: string, type: string, property: string) {
 clip.toJson = function () { return JSON.stringify(this.toJSON()); };
 (AnimationClip as any).fromJson = (text: string) => AnimationClip.fromJSON(JSON.parse(text));
 void GameObject;
+
+(globalThis as any).__bench_reset = () => {
+  _resetSceneForTests();
+};

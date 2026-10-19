@@ -1,3 +1,4 @@
+mod anim_animator;
 mod anim_clips;
 mod anim_player;
 mod app;

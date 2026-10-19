@@ -300,6 +300,7 @@ pub fn update(
     let mut events = Vec::new();
     // Players of destroyed objects are dropped lazily: they are skipped here.
     let mut players = std::mem::take(&mut world.players);
+    let mut animators = std::mem::take(&mut world.animators);
     let mut stack: Vec<ObjectId> = scene.roots().iter().rev().copied().collect();
     while let Some(go) = stack.pop() {
         if !scene.active(go) {
@@ -308,8 +309,12 @@ pub fn update(
         for p in players.iter_mut().filter(|p| p.object == go) {
             p.animate(world, scene, sink, dt, &mut events);
         }
+        for a in animators.iter_mut().filter(|a| a.object == go) {
+            a.animate(world, scene, sink, dt, &mut events);
+        }
         stack.extend(scene.children(go).iter().rev().copied());
     }
     world.players = players;
+    world.animators = animators;
     events
 }

@@ -26,15 +26,45 @@ impl<'a> Lowerer<'a> {
         let ty = Ty::Handle(class.to_string());
         // `create(a, b)`: the constructor arguments are its parameters (`new Rng(seed)`).
         if !create.params.is_empty() {
+            // A trailing `{ key: value }` after the required parameters sets properties once the
+            // object is made (`new AnimationTransition("A", "B", { duration: 0.2 })`), unless its
+            // keys are parameters of `create` (then call_ext_args maps them by name).
+            let args: &'a [Argument<'a>] = &n.arguments;
+            let required = create.optional_from.min(create.params.len());
+            let options = match args.last() {
+                Some(Argument::ObjectExpression(o))
+                    if args.len() > required
+                        && !o.properties.iter().all(|p| {
+                            matches!(p, ObjectPropertyKind::ObjectProperty(p)
+                                if matches!(&p.key, PropertyKey::StaticIdentifier(k)
+                                    if create.params.iter().any(|(n, _)| n == k.name.as_str())))
+                        }) =>
+                {
+                    Some(&**o)
+                }
+                _ => None,
+            };
+            let positional = if options.is_some() {
+                &args[..args.len() - 1]
+            } else {
+                args
+            };
             let mut e = self.call_ext_args(
                 create,
                 None,
                 &format!("new {class}"),
                 n.span.start,
-                &n.arguments,
+                positional,
             )?;
-            e.ty = ty;
-            return Ok(e);
+            e.ty = ty.clone();
+            let Some(o) = options else {
+                return Ok(e);
+            };
+            let tmp = self.new_local(ty.clone());
+            let mut stmts = vec![Stmt::Assign(tmp, e)];
+            self.apply_options(class, tmp, o, &mut stmts, &at)?;
+            let result = self.var_expr(tmp);
+            return Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty));
         }
         let tmp = self.new_local(ty.clone());
         let made = self.emit_extern(&create, vec![]);

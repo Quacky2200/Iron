@@ -128,3 +128,8 @@ The user's direction: explicit classes **and** a chained builder over them, with
   after the component updates and delivers the returned `FiredEvent`s. Differences: the first update starts the default clip
   (the original did it in `onStart`, before the frame's `onUpdate`); events are delivered after the frame's pose is written
   (the original called the methods in the middle of it).
+
+- **Phase 4 done (2026-10-19):** the controller classes, the builder and the `Animator` (`iron_animation::{controller, animator}`,
+  `iron_engine_api::animator`), `M9-TS-692..697`; `new Class(a, b, { option })` sets the options through setters after `create`.
+  The page for the code is `docs/animation-native.md`. Left: `AnimationCurve.fromPoints` (arrays), engine components beyond `Camera`
+  in the registry (as they are ported), `examples/animation` on the native path (needs `iron_app` wiring).

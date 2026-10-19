@@ -949,6 +949,18 @@ pub mod anim_player_t {
     include!(concat!(env!("OUT_DIR"), "/anim_player_bindings.rs"));
 }
 
+/// `bench/anim_animator.ts`, prefix `ani_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod anim_animator_t {
+    include!(concat!(env!("OUT_DIR"), "/anim_animator_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,
