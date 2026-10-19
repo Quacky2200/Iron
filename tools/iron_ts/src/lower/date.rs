@@ -260,8 +260,12 @@ impl<'a> Lowerer<'a> {
                 let call = self.rt_str("ts_rt_date_date_string_gc", vec![t], Ty::Str);
                 Ok(with_this(vec![], bind, call, Ty::Str))
             }
-            "toString" | "toTimeString" | "toLocaleString" | "toLocaleDateString"
-            | "toLocaleTimeString" => {
+            "toString" | "toTimeString" => {
+                let full = mk(ExprKind::Bool(m == "toString"), Ty::Bool);
+                let call = self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str);
+                Ok(with_this(vec![], bind, call, Ty::Str))
+            }
+            "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" => {
                 bail!(
                     "{at}: Date.{m} needs time zone names and locale data, which come with Intl (not built yet); use toISOString, toUTCString or toDateString"
                 )

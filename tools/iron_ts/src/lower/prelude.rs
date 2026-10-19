@@ -86,6 +86,9 @@ class RegExpMatchArray {
 /// The `Date` class: its one field is the time value (see `lower/date.rs`).
 pub const DATE: &str = r#"class Date {
   t: number = NaN;
+  toString(): string {
+    return __dateToString(this.t, true);
+  }
 }
 "#;
 

@@ -5,6 +5,7 @@ Code: [tools/iron_ts](../tools/iron_ts/src) (compiler), [tools/iron_ts_rt](../to
 Progress and next steps: [tools/iron_ts/TODO.md](../tools/iron_ts/TODO.md). Why it exists, the
 measurements and the design notes: [iron-ts-spike.md](research/iron-ts-spike.md),
 [iron-ts-classes.md](research/iron-ts-classes.md), [iron-ts-engine-boundary.md](research/iron-ts-engine-boundary.md).
+Design note for `Intl.DateTimeFormat` options (awaiting review): [iron-ts-intl-datetime.md](research/iron-ts-intl-datetime.md).
 
 This is a **spike**. It compiles a typed subset of TypeScript (gameplay rules written as plain
 functions and classes) to a native object file. It is not wired into `iron`, the build scripts or
@@ -362,12 +363,19 @@ expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked i
   `+hhmm`, parenthesised comments, and two-digit years (0-49 are 20xx, 50-99 are 19xx). Checked against bun
   for about 76 strings in five zones.
 - **Runtime.** `ts_rt_date_now`, `_field`, `_offset`, `_from_parts`, `_set`, `_clip`, `_iso_gc`,
-  `_utc_string_gc`, `_date_string_gc`, `_parse`, `_set_zone`.
-- **Compile errors until `Intl` lands** (Intl date formatting is wanted then): `toString` and `toTimeString`
-  (they need zone names), `toLocale*String`, and `date + x` (JavaScript concatenates the string).
+  `_utc_string_gc`, `_date_string_gc`, `_to_string_gc`, `_parse`, `_set_zone`.
+- **`toString` / `toTimeString`** (`ts_rt_date_to_string_gc`; `String(date)`, template strings and `date + x`
+  use the same text): `Mon Oct 19 2026 10:30:00 GMT-0400 (Eastern Daylight Time)`, equal to bun's. The prelude
+  `Date` class has a `toString` method (`__dateToString`), so generic stringification works, and `date + x`
+  concatenates that string like JavaScript. The offset is written in whole minutes toward zero (`GMT-0456`
+  for old local mean time). The zone name (`zone_name`) comes from ICU4X's root English long specific names
+  through the zone's IANA id. For old dates, and dates whose raw offset has no name, the name follows whether
+  the zone was on daylight time then: a recent winter or summer day with the same daylight state is used for
+  the lookup, as engines do. A zone without an IANA id (a fixed offset) prints `GMT+hh:mm`.
+- **Compile errors until Intl step I3:** `toLocaleString`, `toLocaleDateString`, `toLocaleTimeString`.
 - **Limits** (see [differences.md](differences.md)): `Date()` without `new`; a few exotic legacy strings;
   `Date` inside typed JSON.
-- Tests: `bench/date.ts` with `tests/date.rs` (M9-TS-240..253), expected values from
+- Tests: `bench/date.ts` with `tests/date.rs` (M9-TS-240..253, 276), expected values from
   `bench/gen_date_expected.ts` (bun) into `date_expected.json`.
 
 **Standard library tier 3: `Intl`, step I1** ([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs), runtime in
@@ -393,7 +401,7 @@ The runtime uses ICU4X (`icu` 2.x in `iron_ts_rt`) with its compiled CLDR data.
 - **Limits** (see [differences.md](differences.md)): all locales' data is linked (no trimming yet); an
   unsupported locale id falls back to root collation; `resolvedOptions`, `supportedLocalesOf` and the other
   `Collator` methods are not built; ICU4X's CLDR version can order a few things differently from the engine's.
-- **Still to come:** `DateTimeFormat` (with `Date.toString` zone names and `toLocale*String`),
+- **Still to come:** `DateTimeFormat` (with `toLocale*String`; `Date.toString` is done),
   `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`.
 - Tests: `bench/intl.ts` with `tests/intl.rs` (M9-TS-254..263), expected values from
   `bench/gen_intl_expected.ts` (bun) into `intl_expected.json`.

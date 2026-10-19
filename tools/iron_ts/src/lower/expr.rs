@@ -700,11 +700,9 @@ impl<'a> Lowerer<'a> {
         if b.operator == B::Addition && (Self::is_stringy(&l.ty) || Self::is_stringy(&r.ty)) {
             return self.str_concat(l, r);
         }
+        // A date added to anything is the concatenation of its string.
         if b.operator == B::Addition && (self.is_date(&l) || self.is_date(&r)) {
-            bail!(
-                "{}: `date + x` concatenates the date's string, which needs Intl (not built yet); use date.getTime() + x",
-                self.loc(b.span.start)
-            )
+            return self.str_concat(l, r);
         }
         let op = match b.operator {
             B::Addition => BinOp::Add,

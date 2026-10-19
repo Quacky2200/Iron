@@ -141,3 +141,13 @@ export function now(): string {
 export function clipping(): string {
   return [new Date(8.64e15).getTime(), new Date(-8.64e15).getTime(), new Date(8.64e15 + 1).getTime(), new Date(-0).getTime(), new Date(0.9).getTime(), new Date(-0.9).getTime(), 1 / new Date(-0.9).getTime()].join(",");
 }
+
+export function toStrings(): string {
+  const ts = [0, 1792405800123, 1772955000000, 1783000000000, -62198755200000, 8.64e15, -8.64e15, -2208988800000, 253402300800000, NaN];
+  let out = "";
+  for (const t of ts) {
+    const d = new Date(t);
+    out += d.toString() + " | " + d.toTimeString() + " | " + String(d) + " | " + `${d}` + " | " + (d + "!") + " | " + ("<" + d) + ";";
+  }
+  return out;
+}

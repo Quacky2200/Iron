@@ -372,10 +372,9 @@ mod tests {
     #[test]
     fn date_features_that_need_intl_are_compile_errors_with_a_reason() {
         for body in [
-            "new Date(0).toString()",
             "new Date(0).toLocaleDateString()",
-            "new Date(0).toTimeString()",
-            "String(new Date(0) + 1)",
+            "new Date(0).toLocaleString()",
+            "new Date(0).toLocaleTimeString()",
         ] {
             let e =
                 lower::lower_source(&format!("export function f(): string {{ return {body}; }}"))

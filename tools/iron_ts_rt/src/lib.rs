@@ -1207,6 +1207,7 @@ pub fn link_anchor() -> usize {
         ts_rt_date_iso_gc as *const () as usize,
         ts_rt_date_utc_string_gc as *const () as usize,
         ts_rt_date_date_string_gc as *const () as usize,
+        ts_rt_date_to_string_gc as *const () as usize,
         ts_rt_date_parse as *const () as usize,
         ts_rt_date_set_zone as *const () as usize,
         ts_rt_intl_set_locales as *const () as usize,

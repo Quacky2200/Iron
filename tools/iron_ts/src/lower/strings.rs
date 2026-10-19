@@ -560,6 +560,20 @@ impl<'a> Lowerer<'a> {
             }
         };
         Ok(Some(match name {
+            // The prelude's `Date.prototype.toString`.
+            "__dateToString" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [t, full] = args.as_slice() else {
+                    bail!("{at}: __dateToString takes two arguments")
+                };
+                let t = self.num_arg(t)?;
+                let full = self.lower_expr(full, None)?;
+                self.rt_str("ts_rt_date_to_string_gc", vec![t, full], Ty::Str)
+            }
             // The prelude's `Intl.NumberFormat.format`.
             "__numberFormat" => {
                 let args: Vec<&'a Expression<'a>> = c

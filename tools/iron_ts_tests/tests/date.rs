@@ -142,3 +142,10 @@ date_test!(
     "clipping",
     ts_dt_clipping
 );
+// M9-TS-276
+date_test!(
+    276,
+    to_string_matches_javascript,
+    "toStrings",
+    ts_dt_toStrings
+);

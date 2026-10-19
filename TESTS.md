@@ -730,7 +730,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-250 | Integration | `getTimezoneOffset` over DST changes, old local mean time and the range edges (`tests/date.rs`). |
 | M9-TS-251 | Integration | `Date.now()` and `new Date()` give the current time (`tests/date.rs`). |
 | M9-TS-252 | Integration | Time clipping at +-8.64e15 and truncation of fractions (`tests/date.rs`). |
-| M9-TS-253 | Unit | `toString`, `toTimeString`, `toLocale*String` and `date + x` are compile errors that point to Intl (`iron_ts/src/lib.rs`). |
+| M9-TS-253 | Unit | `toLocaleString`, `toLocaleDateString` and `toLocaleTimeString` are compile errors that point to Intl (`iron_ts/src/lib.rs`). |
 | M9-TS-254 | Integration | `localeCompare` with default and explicit locales (de, sv, tr, a locale list) equals bun's (`iron_ts_tests/tests/intl.rs`, `bench/intl.ts`, expected data from `bench/gen_intl_expected.ts`). |
 | M9-TS-255 | Integration | `localeCompare` options: `sensitivity`, `numeric`, `caseFirst`, `ignorePunctuation`, `usage` (`tests/intl.rs`). |
 | M9-TS-256 | Integration | An invalid language tag or option value is a `RangeError` with JavaScriptCore's text (`tests/intl.rs`). |
@@ -753,6 +753,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-273 | Integration | Rounding: all nine `roundingMode`s and `trailingZeroDisplay` equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
 | M9-TS-274 | Integration | Format object: `new Intl.NumberFormat(..).format`, also as a detached function and as a `map` callback equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
 | M9-TS-275 | Integration | Errors: bad `style`, `currency`, `currencyDisplay`, `notation`, `signDisplay`, digit ranges and tags are bun's `RangeError`/`TypeError` text equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-276 | Integration | `toString`, `toTimeString`, `String(date)`, template strings and `date + x` give bun's text, including the zone name ("Eastern Daylight Time"), old dates, the range edges and an invalid date, in five zones (`tests/date.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

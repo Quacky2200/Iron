@@ -772,3 +772,78 @@ fn weekday_index(w: &str) -> Option<usize> {
     }
     FULL.iter().position(|d| d[..3] == w[..3])
 }
+
+// ---- toString / toTimeString ----
+
+/// The long zone name for an instant ("Eastern Daylight Time"), from ICU4X's root English names.
+/// The name follows whether the zone is on daylight time then (as engines do for old dates, whose
+/// raw offset is a local mean time no name exists for): a recent instant with the same daylight
+/// state stands in for the name lookup.
+fn zone_name(t: f64) -> String {
+    use icu::datetime::NoCalendarFormatter;
+    use icu::datetime::fieldsets::zone::SpecificLong;
+    use icu::datetime::input::{TimeZone as IcuZone, UtcOffset};
+    use icu::time::zone::ZoneNameTimestamp;
+    let zone = zone();
+    let offset_text = |secs: i32| {
+        let sign = if secs < 0 { '-' } else { '+' };
+        let mins = secs.abs() / 60;
+        format!("GMT{sign}{:02}:{:02}", mins / 60, mins % 60)
+    };
+    let ts = clamp_ts(t);
+    let info = zone.to_offset_info(ts);
+    let Some(id) = zone.iana_name() else {
+        return offset_text(info.offset().seconds());
+    };
+    // A recent winter or summer day with the same daylight state.
+    let mut reference = ts;
+    for probe in ["2020-01-15T12:00:00Z", "2020-07-15T12:00:00Z"] {
+        let p: Timestamp = probe.parse().expect("a valid timestamp");
+        if zone.to_offset_info(p).dst() == info.dst() {
+            reference = p;
+            break;
+        }
+    }
+    let secs = zone.to_offset(reference).seconds();
+    let zone_info = IcuZone::from_iana_id(id)
+        .with_offset(UtcOffset::try_from_seconds(secs).ok())
+        .with_zone_name_timestamp(ZoneNameTimestamp::from_epoch_seconds(reference.as_second()));
+    match NoCalendarFormatter::try_new(icu::locale::locale!("en").into(), SpecificLong) {
+        Ok(f) => f.format(&zone_info).to_string(),
+        Err(_) => offset_text(secs),
+    }
+}
+
+/// `toString()` (`full`) and `toTimeString()`: `Mon Oct 19 2026 10:30:00 GMT-0400 (Eastern Daylight
+/// Time)`.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_date_to_string_gc(t: f64, full: bool) -> *mut Str {
+    if t.is_nan() {
+        return new_str("Invalid Date");
+    }
+    let off = offset_ms(t);
+    let f = fields(t + off);
+    // The offset is written in whole minutes toward zero ("GMT-0456" for -4:56:02).
+    let mins = (off / 60_000.0).trunc() as i64;
+    let sign = if off < 0.0 { '-' } else { '+' };
+    let time = format!(
+        "{:02}:{:02}:{:02} GMT{sign}{:02}{:02} ({})",
+        f[3] as i64,
+        f[4] as i64,
+        f[5] as i64,
+        mins.abs() / 60,
+        mins.abs() % 60,
+        zone_name(t)
+    );
+    if full {
+        new_str(&format!(
+            "{} {} {:02} {} {time}",
+            DAYS[f[7] as usize],
+            MONTHS[f[1] as usize],
+            f[2] as i64,
+            year_text(f[0] as i64),
+        ))
+    } else {
+        new_str(&time)
+    }
+}
