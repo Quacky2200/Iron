@@ -155,12 +155,6 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
             "`namespace = \"..\"` is required",
         ));
     }
-    if args.quickjs && !args.values.is_empty() {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "value types are not available in the QuickJS bindings yet: drop `quickjs` or `values(..)`",
-        ));
-    }
     Ok(args)
 }
 
@@ -291,6 +285,67 @@ fn from_abi(k: &Kind, x: TokenStream2) -> TokenStream2 {
     match k {
         Kind::Handle(_, rust) => quote!(<#rust as ::iron_api::Handle>::from_raw(#x)),
         _ => x,
+    }
+}
+
+/// The type a QuickJS function takes for a parameter.
+fn js_param_ty(k: &Kind) -> TokenStream2 {
+    match k {
+        Kind::Str(_) => quote!(::std::string::String),
+        Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
+        other => js_ty(other),
+    }
+}
+
+/// The type a QuickJS function returns for a result.
+fn js_ret_ty(k: &Kind) -> TokenStream2 {
+    match k {
+        Kind::Str(_) => quote!(::std::string::String),
+        Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
+        other => js_ty(other),
+    }
+}
+
+/// The Rust argument built from the JS parameter `x` (a value reads its fields from the object).
+fn js_arg(k: &Kind, x: TokenStream2, args: &Args) -> TokenStream2 {
+    match k {
+        Kind::Str(false) => quote!(&#x),
+        Kind::Str(true) => x,
+        Kind::Value(i) => {
+            let v = &args.values[*i];
+            let n = v.fields.len();
+            let rust = &v.rust;
+            let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
+            quote! {
+                <#rust as ::iron_api::ValueType<#n>>::from_parts([
+                    #( #x.get::<_, f64>(#names)? ),*
+                ])
+            }
+        }
+        other => from_js(other, x),
+    }
+}
+
+/// The body of a QuickJS function: the call, as the JS result.
+fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
+    match k {
+        Kind::Value(i) => {
+            let v = &args.values[*i];
+            let n = v.fields.len();
+            let rust = &v.rust;
+            let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
+            let idx: Vec<usize> = (0..n).collect();
+            quote! {
+                let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(#call);
+                let o = ::iron_api::rquickjs::Object::new(ctx)?;
+                #( o.set(#names, parts[#idx])?; )*
+                Ok(o)
+            }
+        }
+        other => {
+            let e = to_js(other, call);
+            quote!(Ok(#e))
+        }
     }
 }
 
@@ -753,40 +808,34 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             }
         }
 
-        // The QuickJS function (namespace functions only: a handle is a plain number there).
+        // The QuickJS function (namespace functions only: a handle is a plain number there). A
+        // string is a JS string, a value is an object with the fields' names, a result is a new one.
         if args.quickjs && a.class.is_none() {
-            if a.params
-                .iter()
-                .chain(a.value_recv.iter())
-                .any(|(_, k)| matches!(k, Kind::Str(_)))
-                || matches!(a.ret, Kind::Str(_))
-            {
-                return Err(syn::Error::new(
-                    a.name.span(),
-                    "strings are not available in the QuickJS bindings yet: drop `quickjs`",
-                ));
-            }
             let js_params: Vec<TokenStream2> = a
                 .params
                 .iter()
                 .map(|(n, k)| {
-                    let t = js_ty(k);
+                    let t = js_param_ty(k);
                     quote!(#n: #t)
                 })
                 .collect();
             let js_args: Vec<TokenStream2> = a
                 .params
                 .iter()
-                .map(|(n, k)| from_js(k, quote!(#n)))
+                .map(|(n, k)| js_arg(k, quote!(#n), &args))
                 .collect();
-            let js_ret = js_ty(&a.ret);
-            let js_body = to_js(&a.ret, quote!(#name( #( #js_args ),* )));
+            let js_ret = js_ret_ty(&a.ret);
+            let js_body = js_result(&a.ret, quote!(#name( #( #js_args ),* )), &args);
             js_sets.push(quote! {
                 ns.set(
                     #js_name,
                     ::iron_api::rquickjs::Function::new(
                         ctx.clone(),
-                        | #( #js_params ),* | -> #js_ret { #js_body },
+                        | ctx: ::iron_api::rquickjs::Ctx<'js>, #( #js_params ),* |
+                            -> ::iron_api::rquickjs::Result<#js_ret> {
+                            let _ = &ctx;
+                            #js_body
+                        },
                     )?,
                 )?;
             });

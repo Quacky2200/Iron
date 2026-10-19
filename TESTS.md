@@ -1079,3 +1079,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-589 | Integration | The updater form `setN(n => n + 1)`: two updaters in one handler apply to the latest state (`iron_ts_tests/tests/ui.rs`). |
 | M9-TS-590 | Integration | `style={obj}` with a typed object sets its fields; an optional field left out is not set. |
 | M9-TS-591 | Integration | `{...obj}` on a host element sets attributes; on a component it spreads into the props. |
+| M9-API-23 | Integration | QuickJS bindings: a value class is a plain object (arguments read from it, results new objects) (`crates/iron_api/tests/quickjs.rs`). |
+| M9-API-24 | Integration | QuickJS bindings: `&str`/`String` are JS strings (non-BMP and accents). |
+| M9-API-25 | Integration | A value object missing a field is a catchable JS exception. |
+| M9-API-26 | Integration | The `Scene` namespace of `iron_scene` works from QuickJS on the current scene (`crates/iron_scene/tests/api.rs`). |

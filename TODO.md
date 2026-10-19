@@ -1546,7 +1546,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
       - [x] First slice: `crates/iron_api` + `iron_api_macros`: scalars, bools and handles, manifest, `.d.ts`,
             JSON, `extern "C"` shims, typed QuickJS bindings (`M9-API-01..06`); additive
       - [x] Value classes (`Vector3`) scalarised across the boundary (`M9-API-10..11`, `M9-TS-147..150`) and the engine context: a thread-local current world (`M9-API-07..09`)
-      - [ ] Strings (done, `M9-API-21..22`), methods on handles (done, `M9-API-16..19`), value-class methods as intrinsics (done, `M9-API-20`), QuickJS bindings for values (open)
+      - [ ] Strings (done, `M9-API-21..22`), methods on handles (done, `M9-API-16..19`), value-class methods as intrinsics (done, `M9-API-20`), QuickJS bindings for values and strings (done, `M9-API-23..26`; handle classes in QuickJS open)
       - [x] `iron_scene` annotated: the `Scene` namespace (handles, `Vector3`/`Quaternion`, hierarchy, flags), driven by compiled TypeScript (`M9-API-12..15`, `M9-TS-151..155`); `GameObject`/`Transform` handle classes (`go.transform.position = v`, `M9-API-16..19`, `M9-TS-156..158`); not yet wired into `iron_app`
       - [ ] Annotate `iron_physics`, `iron_audio`, `iron_script`; wire `enter` into the app; retire the ops they replace
     - [x] Compiler: extern table from the JSON manifest, `Handle` type, namespace calls with scalar arguments and f32/i32/u32/bool conversions (`M9-TS-142..146`)

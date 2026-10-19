@@ -243,3 +243,13 @@ Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000
 a rest array of numbers and a queue push; the real op also converts each argument to a `Value`, so
 the real gap is larger). Most of the remaining 150 ns is QuickJS's own call overhead. The large win
 is for compiled code, which calls the shim directly.
+
+## QuickJS bindings for values and strings
+
+`#[iron_api(namespace = "X", quickjs, ...)]` now also generates QuickJS functions for namespace functions that take or return
+a string or a value class (they used to be a macro error). A `&str` or `String` is a JS string; a value class (`Vector3`) is
+a plain object with the fields' names (`{ x, y, z }`): an argument is read field by field (a missing field is a JS exception
+the script can catch) and a result is a new object. Every generated function returns `rquickjs::Result`. Handle classes
+(`GameObject.name`, `transform.position`) and value-class methods are still not in the QuickJS bindings; scripts there call the
+namespace functions (`Scene.setLocalPosition(go, v)`). `iron_scene`'s `Scene` namespace has `quickjs` on, so the same API
+runs from QuickJS and from compiled code. Tests `M9-API-23..26`.

@@ -65,6 +65,7 @@ fn none() -> ObjectId {
 
 #[iron_api(
     namespace = "Scene",
+    quickjs,
     handles(GameObject = ObjectId, Transform = TransformRef),
     values(
         Vector3 = Vec3 [x: f32, y: f32, z: f32],

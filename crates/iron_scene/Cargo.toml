@@ -6,11 +6,12 @@ publish.workspace = true
 
 [dependencies]
 glam = "0.34.1"
-iron_api = { path = "../iron_api", default-features = false, features = ["glam"] }
+iron_api = { path = "../iron_api", default-features = false, features = ["glam", "quickjs"] }
 iron_core = { path = "../iron_core" }
 
 [dev-dependencies]
 criterion = "0.8.2"
+rquickjs = "0.14.0"
 iron_script = { path = "../iron_script" }
 
 [[bench]]

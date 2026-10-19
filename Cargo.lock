@@ -1588,6 +1588,7 @@ dependencies = [
  "iron_api",
  "iron_core",
  "iron_script",
+ "rquickjs",
 ]
 
 [[package]]
