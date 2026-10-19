@@ -195,6 +195,7 @@ class Arcade extends Component {
   override onStart() {
     // The frame cap the player chose last time (vsync and quality come back on their own).
     Application.targetFrameRate = PlayerPrefs.getInt("arcade.frameCap", -1);
+    Application.runInBackground = true;
     const game = new GameObject("Game");
     game.addComponent(GameManager);
     GameObject.dontDestroyOnLoad(game);
