@@ -868,7 +868,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-424 | Integration | `return promise` in an async function takes more ticks than `return await promise`, as in bun equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
 | M9-TS-425 | Integration | 200 async calls under collection (coroutines kept suspended while the collector runs) equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
 | M9-TS-426 | Integration | `await` in a loop runs the steps in sequence equal bun's (`iron_ts_tests/tests/promises.rs`, `bench/promises_src.ts`). |
-| M9-TS-427 | Unit | Async limits (async generators, `await` outside async, `new Promise` without a type, untyped async return, `then(f, g)`) are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-427 | Integration | `then(f, g)` with both callbacks, fulfilled and rejected, equal bun's (`iron_ts_tests/tests/promises.rs`). |
+| M9-TS-428 | Integration | `Promise.any` resolves with the first fulfilment and rejects with an `AggregateError` holding every reason (`iron_ts_tests/tests/promises.rs`). |
+| M9-TS-429 | Integration | `Promise.allSettled` results (`status`, `value`, `reason`) equal bun's (`iron_ts_tests/tests/promises.rs`). |
+| M9-TS-430 | Unit | Async limits (async generators, `await` outside async, `new Promise` without a type, untyped async return, `then(f, g)`) are compile errors with a reason (`iron_ts/src/lib.rs`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

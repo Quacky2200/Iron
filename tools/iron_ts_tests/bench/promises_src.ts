@@ -288,3 +288,35 @@ async function t_sequence(): Promise<string> {
   }
   return acc;
 }
+
+async function t_then_two(): Promise<string> {
+  const a = await add(1, 2).then(
+    (v) => "ok" + v,
+    (e) => "err",
+  );
+  const b = await boom().then(
+    (v) => "ok" + v,
+    (e) => "err:" + e.message,
+  );
+  return a + " " + b;
+}
+
+async function t_any(): Promise<string> {
+  const v = await Promise.any([boom(), slowDouble(4), slowDouble(2)]);
+  let r = "none";
+  try {
+    await Promise.any([boom(), boom()]);
+  } catch (e) {
+    r = (e as Error).name + ":" + (e as AggregateError).errors.length;
+  }
+  return v + " " + r;
+}
+
+async function t_all_settled(): Promise<string> {
+  const rs = await Promise.allSettled([add(1, 2), boom(), slowDouble(1)]);
+  let out = "";
+  for (const r of rs) {
+    out += r.status + ":" + (r.status === "fulfilled" ? String(r.value) : (r.reason as Error).message) + ";";
+  }
+  return out + rs.length;
+}

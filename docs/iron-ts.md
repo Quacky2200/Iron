@@ -144,6 +144,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/iter.rs](../tools/iron_ts/src/lower/iter.rs) | Well-known symbol member names (`symbol_key`, `well_known`) and the iterator protocol over classes with `@@iterator` |
 | [lower/generators.rs](../tools/iron_ts/src/lower/generators.rs) | `desugar` (generators by source rewriting, before parsing), the generated `Generator$K` classes, the `__co*` intrinsics; `Coroutine` is a prelude handle class |
 | [iron_ts_rt/src/coro.rs](../tools/iron_ts_rt/src/coro.rs) | Stackful coroutines (corosensei): resume/yield, shadow-stack relinking, GC scanning of suspended frames |
+| [lower/asyncs.rs](../tools/iron_ts/src/lower/asyncs.rs) | `desugar` for `async` functions, methods and arrows (before parsing, after generators), `await`, `new Promise<T>`; generates the `Promise$K` classes and their helper functions as TypeScript text |
+| [lower/promise.rs](../tools/iron_ts/src/lower/promise.rs) | Routes `__await`, `__asyncRet`, `.then` / `.catch` / `.finally` (by the callback's return type) and `Promise.resolve` / `reject` / `all` / `race` onto the generated helpers |
+| [iron_ts_rt/src/event.rs](../tools/iron_ts_rt/src/event.rs) | The microtask queue and the timers (`queueMicrotask`, `setTimeout`, `setInterval`), and the host entry points `ts_rt_microtasks_run`, `ts_rt_timers_advance`, `ts_rt_run_loop` |
 
 ## Supported language
 
@@ -578,7 +581,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
 Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes (`Component`),
-throwing anything but an `Error` object, unsupported string methods (see above), `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `async`, `any`/`JsValue` and anything
+throwing anything but an `Error` object, unsupported string methods (see above), `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `for await`, async generators, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
@@ -587,7 +590,12 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 
 - **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`
   (`symbol_key` maps the computed key, `well_known` recognises `Symbol.<name>`). `obj[Symbol.iterator]()` is
-  an ordinary call of it. `Symbol()` values are not built.
+  an ordinary call of it.
+- **Symbol values** (prelude class `Symbol_`, [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs)). `Symbol(desc)`
+  makes an object with identity; `description` (null, not `undefined`, when none), `toString()`,
+  `Symbol.for(key)` / `Symbol.keyFor(sym)` (null for an unregistered symbol), `typeof sym === "symbol"` and
+  the `symbol` type work. Symbols are not usable as property or Map keys, and the other well-known symbols
+  are not available as values.
 - **Iterator protocol for classes.** `for...of`, array spread and `Array.from` over a value whose class has
   `@@iterator` call it, then `next()` until `done` (an `IteratorResult` object of the program's own types).
   Arrays, strings, `Map`, `Set` and typed arrays keep their loops.
@@ -608,13 +616,55 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   `__coError` and `__coFinish` are lowered in `generators.rs`. Closures, captures, `this`, `try/finally` and
   checked-return exceptions are the ordinary machinery: an exception thrown in the body is left pending by
   the coroutine and rethrown by `next()`. Struct names with `$` are made Rust-safe in the generated bindings.
-- **Limits:** the return type must be written; `yield*` only as a statement; a `yield` inside another
-  `yield`'s operand is an error; `return value` in a generator is dropped (the result is
-  `{ done: true, value: <zero> }`); no `generator.throw()`; `return()` does not run `finally` blocks;
+- **`throw`, `return`, return values.** `generator.throw(e)` raises `e` at the suspended `yield`.
+  `generator.return(v)` raises a marker error (`__GenReturn$K`) there, so `finally` blocks run; `catch`
+  clauses inside generator bodies are rewritten to rethrow the marker. `return value` works for
+  `Generator<T, T>` (the return type must equal the yield type, or be void); the `value` of a finished
+  generator without one is the zero value.
+- **Limits:** the return type must be written (untyped generators are an error); `yield*` only as a
+  statement (not as a value); a `yield` inside another `yield`'s operand is an error;
   `IteratorResult.value` is the zero value (0, null) instead of `undefined` when done; `Iterable<T>`
   annotations accept generators only. See [differences.md](differences.md).
 - Tests: `M9-TS-376..393` (`bench/generators.ts` with `tests/generators.rs`, bun-compared; the Rust coroutine
-  test is `M9-TS-381`).
+  test is `M9-TS-381`); `M9-TS-394..398` symbols, `M9-TS-399..407` `throw` / `return` / return values
+  (`bench/symbols.ts`, `bench/generators2.ts`).
+
+## Promise, async/await and timers
+
+- **`Promise<T>`** is a prelude class `Promise$K` per value type text (`K` is the mangled type), written as
+  TypeScript text in front of the program together with helper functions (`__fulfill$K`, `__then$K$V`,
+  ...) by [lower/asyncs.rs](../tools/iron_ts/src/lower/asyncs.rs). `void` shares `number`'s class;
+  `number`, `string` and `boolean` always exist; `T[]` too when `Promise.all` appears. A `Promise<T>` needs
+  `T` written somewhere in the program, and awaiting needs the value's `Promise<T>` class to exist.
+- **`async` rewrite** (`asyncs::desugar`, after the generator rewrite and before parsing). An `async`
+  function, method or arrow becomes `__async$K((__p) => { ... })`, a coroutine closure; `return x` becomes
+  `__asyncRet$K(__p, x)`, `await e` becomes `__await(e)` (the coroutine suspends and a reaction on the
+  promise resumes it), and `new Promise<T>(f)` becomes `__newPromise$K(f)`.
+- **Routing** ([lower/promise.rs](../tools/iron_ts/src/lower/promise.rs)). `__await`, `__asyncRet`,
+  `.then(f)`, `.catch(f)`, `.finally(f)`, `Promise.resolve`, `Promise.reject`, `Promise.all` and
+  `Promise.race` are typed calls into the generated helpers. The callback's return type picks the helper:
+  `__then$K$V` for a value of type `V`, `__thenP` when it returns a promise (flattened), `__thenV` for void.
+- **Microtasks and timers** ([iron_ts_rt/src/event.rs](../tools/iron_ts_rt/src/event.rs)). A FIFO microtask
+  queue (`queueMicrotask`, promise reactions) and timers (`setTimeout`, `setInterval`, `clearTimeout`,
+  `clearInterval`); no thread and no OS event loop. Timers run on virtual time and are at least 1 ms, like
+  browsers. Queued closures and timers are GC roots. An exception escaping a queued job is dropped.
+- **Host contract.** After every call into script the host calls `ts_rt_microtasks_run()`; once per frame it
+  calls `ts_rt_timers_advance(now_ms)` with the game clock (a paused game pauses its timers);
+  `ts_rt_run_loop()` runs both until nothing is left (tests and tools). `ts_rt_events_pending()` reports
+  what is queued. Wiring this into `iron_app` is not done.
+- **Tick order equals bun's:** returning a promise from `then` costs 3 ticks, `await` 1, and `finally`
+  settles 2 jobs later; the tests compare the order of logged events with bun.
+- **Also changed.** A function type `(x?: T) => void` makes the parameter nullable and a call may leave it
+  out; a closure may take fewer parameters than its expected type. `IRON_TS_DUMP_SRC=1` prints the program
+  after the rewrites; `IRON_TS_TRACE=1` prints function names during codegen; parse errors give the line
+  (counting the prelude).
+- **Limits:** `then(f, g)` needs both callbacks to return the same kind of result; `Promise.allSettled` results are `PromiseSettledResult<T>` objects with all of `status`/`value`/`reason`;
+  no `for await`, async generators or top-level `await`; `Promise.reject(e)` is `Promise<number>` unless
+  written `Promise.reject<T>(e)`; `resolve()` with no value only for `Promise<void>` / `Promise<number>`;
+  `resolve(v)` takes a value, not a promise; unhandled rejections are silent; `setTimeout` takes no extra
+  arguments; `Promise<Promise<T>>` is unsupported. See [differences.md](differences.md).
+- Tests: `M9-TS-408..427` (`bench/promises.ts` with `tests/promises.rs`, bun-compared; the source is
+  generated from `bench/promises_src.ts` by `gen_promises_program.py`).
 
 ## Runtime and GC
 

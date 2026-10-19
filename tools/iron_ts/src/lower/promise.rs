@@ -78,10 +78,11 @@ impl<'a> Lowerer<'a> {
             .iter()
             .filter_map(|a| a.as_expression())
             .collect();
+        if m == "then" && args.len() == 2 {
+            return self.lower_then2(recv, key, value, args[0], args[1], &at);
+        }
         let [cb] = args.as_slice() else {
-            bail!(
-                "{at}: Promise.{m} takes one callback here (for then(f, g) write .then(f).catch(g))"
-            )
+            bail!("{at}: Promise.{m} takes one callback (then takes two)")
         };
         match m {
             "then" => {
@@ -126,6 +127,38 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `p.then(f, g)`: both callbacks give the same kind of result.
+    fn lower_then2(
+        &mut self,
+        recv: Expr,
+        key: &str,
+        value: Ty,
+        f: &'a Expression<'a>,
+        g: &'a Expression<'a>,
+        at: &str,
+    ) -> R<Expr> {
+        let f = self.lower_callback(f, vec![value])?;
+        let g = self.lower_callback(g, vec![self.error_ty()])?;
+        let (Ty::Fn(fs), Ty::Fn(gs)) = (f.ty.strip().clone(), g.ty.strip().clone()) else {
+            bail!("{at}: then needs functions")
+        };
+        if fs.ret == Ty::Void && gs.ret == Ty::Void {
+            return self.call_helper(&format!("__then2V${key}"), vec![recv, f, g]);
+        }
+        if fs.ret == Ty::Void || gs.ret == Ty::Void {
+            bail!(
+                "{at}: the two callbacks of then(f, g) must both return a value or both return nothing"
+            )
+        }
+        if let (Some((rk, _)), Some(_)) = (self.promise_of(&fs.ret), self.promise_of(&gs.ret)) {
+            return self.call_helper(&format!("__then2P${key}${rk}"), vec![recv, f, g]);
+        }
+        let Some(rk) = self.promise_key_for(&fs.ret) else {
+            bail!("{at}: no `Promise<{}>` in the program", fs.ret)
+        };
+        self.call_helper(&format!("__then2${key}${rk}"), vec![recv, f, g])
+    }
+
     /// `Promise.resolve`, `Promise.reject`, `Promise.all`, `Promise.race`.
     pub(crate) fn lower_promise_static(&mut self, m: &str, c: &'a CallExpression<'a>) -> R<Expr> {
         let at = self.loc(c.span.start);
@@ -154,7 +187,7 @@ impl<'a> Lowerer<'a> {
                 };
                 self.call_helper(&format!("__rejected${k}"), vec![v])
             }
-            "all" | "race" => {
+            "all" | "race" | "any" | "allSettled" => {
                 let Ty::Arr(el) = v.ty.strip().clone() else {
                     bail!("{at}: Promise.{m} takes an array of promises")
                 };

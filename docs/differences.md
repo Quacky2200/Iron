@@ -72,11 +72,20 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `matchAll` | Eager: an array of match objects, from a copy of the regex | A lazy iterator | No iterator objects; `for...of`, spread and `map` still work |
 | Generator return type | Must be written (`Generator<T>`, `IterableIterator<T>`, ...) | Inferred | The yield type picks the generated classes |
 | `yield*` | Only as a statement; a `yield` inside another `yield`'s operand is an error | An expression | Rewritten to a loop of yields |
-| `return value` in a generator | Dropped: the final result is `{ done: true, value: <zero> }` | `value` is the returned value | One `IteratorResult` type per yield type |
-| `generator.throw()`, `return()` | No `throw()`; `return()` does not run `finally` blocks | Both supported | Not built yet |
+| `return value` in a generator | Only for `Generator<T, T>` (the return type equals the yield type, or void); a finished generator without one gives the zero value | `value` is the returned value of any type | One `IteratorResult` type per yield type |
+| `generator.return(v)` | Runs `finally` blocks through a marker error; `catch` clauses in generator bodies are rewritten to rethrow it | Same result | `throw(e)` is supported |
 | `IteratorResult.value` when done | The zero value (0, null) | `undefined` | The compiler does not tell null from undefined |
 | `Iterable<T>` annotations | Accept generators only (not arrays, strings or other iterables) | Any iterable | Maps to the generated classes |
-| `Symbol()` values | Not built; only `Symbol.iterator` as a method name | Available | Needed only for the iterator protocol |
+| `Symbol()` values | `description` is null (not `undefined`) when absent; `Symbol.keyFor` gives null for an unregistered symbol; no symbols as property or Map keys; no other well-known symbols as values | Available | A prelude class, and null stands for undefined |
+| Untyped generators | An error: the return type must be written | Inferred | The yield type picks the generated classes |
+| `Promise<T>` | One generated class per value type; `T` must be written somewhere; `Promise<Promise<T>>` and `Promise<A \| B>` unsupported | Any value | Typed classes, no dynamic values |
+| `then` | `then(f, g)`: both callbacks must return the same kind of result (both a value, both a promise, or both nothing) | Different result types per callback | The callback's return type picks the helper |
+| `Promise` statics | `resolve`, `reject`, `all`, `race`, `any`, `allSettled`; `Promise.reject(e)` is `Promise<number>` unless `Promise.reject<T>(e)`; the `AggregateError` message of `any` is "All promises were rejected" (bun's is empty) | `withResolvers` | Not built yet |
+| `resolve()` and `resolve(v)` | `resolve()` with no value only for `Promise<void>` / `Promise<number>`; `resolve(v)` takes a value, not a promise | Any value or thenable | No thenable adoption for non-Promise values |
+| Async iteration | No `for await`, async generators or top-level `await` | Supported | Not built yet |
+| Unhandled rejections and escaped exceptions | Silent; an exception escaping a queued job is dropped | Reported | No reporting hook yet |
+| Timers | Virtual time from `ts_rt_timers_advance(now_ms)` (the game clock), at least 1 ms; `setTimeout` takes no extra arguments; none fire until the host advances them | Real time, extra arguments | The host owns the clock and the loop |
+| `Promise` / `async` on WebAssembly | Not available (coroutines) | n/a | Not a target in the next year |
 | Coroutines on WebAssembly | Not available | n/a | Not a target in the next year |
 | `Date()` without `new` | Not supported | Returns the current time as a string | Use `new Date().toString()` |
 | `Date.parse` of exotic legacy strings | A few return NaN (a bare number such as `"0"`, `"Oct 19"` without a year) | Engines guess a year or a value | The legacy tokenizer is strict where engines are lax; ISO and the common legacy forms match bun |

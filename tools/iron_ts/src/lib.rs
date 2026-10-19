@@ -462,7 +462,7 @@ mod tests {
         );
     }
 
-    // M9-TS-427
+    // M9-TS-430
     #[test]
     fn async_limits_are_compile_errors_with_a_reason() {
         let tail = " export function f(): number { return 1; }";
@@ -479,8 +479,8 @@ mod tests {
                 "must return `Promise<T>`",
             ),
             (
-                "async function g(): Promise<number> { return 1; } function h(): void { g().then((a) => a, (b) => b); }",
-                "takes one callback",
+                "async function g(): Promise<number> { for await (const x of [1]) {} return 1; }",
+                "for await",
             ),
         ] {
             let e = lower::lower_source(&format!("{src}{tail}"))

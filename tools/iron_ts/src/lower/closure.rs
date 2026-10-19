@@ -97,9 +97,10 @@ impl<'a> Lowerer<'a> {
                 ptys.push(t.clone());
             }
         }
+        let infer = std::mem::take(&mut self.infer_ret);
         let ret_exp = match ret_ann {
             Some(r) => Some(self.ty(r, "closure")?),
-            None if std::mem::take(&mut self.infer_ret) => None,
+            None if infer => None,
             None => exp_fn.as_ref().map(|f| f.ret.clone()),
         };
 
@@ -155,6 +156,7 @@ impl<'a> Lowerer<'a> {
 
         let saved = std::mem::take(&mut self.cur);
         self.cur.ret = ret_exp;
+        self.cur.widen_ret = infer;
         self.cur.scopes.push(HashMap::new());
         let r = self.lift_body(params, &ptys, &caps, body);
         let ctx = std::mem::take(&mut self.cur);

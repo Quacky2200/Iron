@@ -229,3 +229,33 @@ fn sequence_matches_javascript() {
         check_str("sequence_result", ts_pr_sequence_result());
     });
 }
+
+// M9-TS-427
+#[test]
+fn then_two_matches_javascript() {
+    in_every_gc_mode(|| unsafe {
+        ts_pr_then_two();
+        ts_rt_run_loop();
+        check_str("then_two_result", ts_pr_then_two_result());
+    });
+}
+
+// M9-TS-428
+#[test]
+fn any_matches_javascript() {
+    in_every_gc_mode(|| unsafe {
+        ts_pr_any();
+        ts_rt_run_loop();
+        check_str("any_result", ts_pr_any_result());
+    });
+}
+
+// M9-TS-429
+#[test]
+fn all_settled_matches_javascript() {
+    in_every_gc_mode(|| unsafe {
+        ts_pr_all_settled();
+        ts_rt_run_loop();
+        check_str("all_settled_result", ts_pr_all_settled_result());
+    });
+}

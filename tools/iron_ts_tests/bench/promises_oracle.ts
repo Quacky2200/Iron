@@ -1,6 +1,6 @@
 // Runs every test of promises.ts in bun, one after the other, lets timers and microtasks finish,
-// and writes each result. Keys are the `_result` functions' names without the suffix.
-//   bun bench/gen_promises_expected.ts
+// and writes each result. (add_module.py writes gen_promises_expected.ts over and over; this is
+// the real oracle.)   bun bench/promises_oracle.ts
 import * as m from "./promises.ts";
 
 const out: Record<string, unknown> = {};

@@ -45,6 +45,8 @@ struct Pass<'s> {
     types: BTreeMap<String, String>,
     asyncs: Vec<Option<Entry>>,
     async_from: Option<u32>,
+    /// A `.then(f, g)` call exists.
+    then2: bool,
     error: Option<String>,
 }
 
@@ -262,6 +264,16 @@ impl<'a> Visit<'a> for Pass<'_> {
         walk::walk_await_expression(self, it);
     }
 
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Expression::StaticMemberExpression(m) = &it.callee
+            && m.property.name == "then"
+            && it.arguments.len() == 2
+        {
+            self.then2 = true;
+        }
+        walk::walk_call_expression(self, it);
+    }
+
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
         if it.r#await {
             self.fail("`for await` is not supported".into());
@@ -309,6 +321,7 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
         types: BTreeMap::new(),
         asyncs: Vec::new(),
         async_from: None,
+        then2: false,
         error: None,
     };
     pass.visit_program(&ret.program);
@@ -321,14 +334,18 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
     for b in BASE {
         pass.add_type(b);
     }
-    // `Promise.all` makes an array of each value.
-    let wants_all = src.contains("Promise.all");
-    if wants_all {
-        let base: Vec<String> = pass.types.values().cloned().collect();
-        for x in base {
-            if !x.ends_with("[]") {
-                pass.add_type(&format!("{x}[]"));
-            }
+    // The types the program wrote; `then` can return these. The arrays below are derived.
+    let core: Vec<String> = pass.types.keys().cloned().collect();
+    let base: Vec<String> = pass.types.values().cloned().collect();
+    // `Promise.all` makes an array of each value, `Promise.allSettled` an array of results.
+    let wants_all = src.contains("Promise.all(");
+    let wants_settled = src.contains("Promise.allSettled");
+    for x in &base {
+        if wants_all {
+            pass.add_type(&format!("{x}[]"));
+        }
+        if wants_settled {
+            pass.add_type(&format!("PromiseSettledResult<{x}>[]"));
         }
     }
     let mut edits = pass.edits;
@@ -350,6 +367,8 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
         finally: src.contains(".finally("),
         all: wants_all,
         race: src.contains("Promise.race"),
+        any: src.contains("Promise.any"),
+        then2: pass.then2,
     };
     let types: Vec<(String, String)> = pass.types.into_iter().collect();
     let mut templates = String::from(COMMON);
@@ -359,17 +378,28 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
     if wants.then {
         for (k, x) in &types {
             templates += &then_void(k, x);
-            for (v, xv) in &types {
+            if wants.then2 {
+                templates += &fill(THEN2_VOID, k, x);
+            }
+            for (v, xv) in types.iter().filter(|(v, _)| core.contains(v)) {
                 templates += &then_pair(k, x, v, xv);
+                if wants.then2 {
+                    templates += &then_pair2(k, x, v, xv);
+                }
             }
         }
     }
-    if wants.all {
-        for (k, x) in &types {
-            if !x.ends_with("[]") {
-                let ka = key_of(&format!("{x}[]"), None);
-                templates += &all_of(k, x, &ka);
-            }
+    for (k, x) in types.iter().filter(|(k, _)| core.contains(k)) {
+        if wants.all {
+            let ka = key_of(&format!("{x}[]"), None);
+            templates += &all_of(k, x, &ka);
+        }
+        if wants.any {
+            templates += &fill(ANY, k, x);
+        }
+        if wants_settled {
+            let ka = key_of(&format!("PromiseSettledResult<{x}>[]"), None);
+            templates += &fill(SETTLED, k, x).replace("@A@", &ka);
         }
     }
     Ok(Some(Desugared {
@@ -384,6 +414,8 @@ struct Wants {
     finally: bool,
     all: bool,
     race: bool,
+    any: bool,
+    then2: bool,
 }
 
 const COMMON: &str = "function __asyncStep(co: Coroutine): void { __coResume(co); }\n";
@@ -414,6 +446,10 @@ fn then_void(k: &str, x: &str) -> String {
 
 fn then_pair(k: &str, x: &str, v: &str, xv: &str) -> String {
     fill(THEN_PAIR, k, x).replace("@V@", v).replace("@XV@", xv)
+}
+
+fn then_pair2(k: &str, x: &str, v: &str, xv: &str) -> String {
+    fill(THEN2_PAIR, k, x).replace("@V@", v).replace("@XV@", xv)
 }
 
 fn all_of(k: &str, x: &str, ka: &str) -> String {
@@ -653,5 +689,103 @@ const EXEC_OPTIONAL: &str = r#"function __newPromise$@K@(exec: (resolve: (value?
     __rejectIf$@K@(p, e as Error);
   }
   return p;
+}
+"#;
+
+const THEN2_VOID: &str = r#"function __then2V$@K@(p: Promise$@K@, f: (value: @X@) => void, g: (e: Error) => void): Promise$number {
+  const r = new Promise$number();
+  __onSettled$@K@(p, () => {
+    try {
+      if (p.state === 1) f(p.value);
+      else g(p.reason as Error);
+      __fulfill$number(r, 0);
+    } catch (e) {
+      __reject$number(r, e as Error);
+    }
+  });
+  return r;
+}
+"#;
+
+const THEN2_PAIR: &str = r#"function __then2$@K@$@V@(p: Promise$@K@, f: (value: @X@) => @XV@, g: (e: Error) => @XV@): Promise$@V@ {
+  const r = new Promise$@V@();
+  __onSettled$@K@(p, () => {
+    try {
+      if (p.state === 1) __fulfill$@V@(r, f(p.value));
+      else __fulfill$@V@(r, g(p.reason as Error));
+    } catch (e) {
+      __reject$@V@(r, e as Error);
+    }
+  });
+  return r;
+}
+function __then2P$@K@$@V@(p: Promise$@K@, f: (value: @X@) => Promise$@V@, g: (e: Error) => Promise$@V@): Promise$@V@ {
+  const r = new Promise$@V@();
+  __onSettled$@K@(p, () => {
+    try {
+      if (p.state === 1) __adopt$@V@(r, f(p.value));
+      else __adopt$@V@(r, g(p.reason as Error));
+    } catch (e) {
+      __reject$@V@(r, e as Error);
+    }
+  });
+  return r;
+}
+"#;
+
+const ANY: &str = r#"function __anyOne$@K@(r: Promise$@K@, p: Promise$@K@, i: number, errors: Error[], left: number[]): void {
+  __onSettled$@K@(p, () => {
+    if (p.state === 1) {
+      __fulfill$@K@(r, p.value);
+    } else {
+      errors[i] = p.reason as Error;
+      left[0] -= 1;
+      if (left[0] === 0) __reject$@K@(r, new AggregateError(errors, "All promises were rejected"));
+    }
+  });
+}
+function __any$@K@(ps: Promise$@K@[]): Promise$@K@ {
+  const r = new Promise$@K@();
+  const errors: Error[] = [];
+  for (let i = 0; i < ps.length; i++) errors.push(new Error(""));
+  if (ps.length === 0) {
+    __reject$@K@(r, new AggregateError(errors, "All promises were rejected"));
+    return r;
+  }
+  const left: number[] = [ps.length];
+  for (let i = 0; i < ps.length; i++) __anyOne$@K@(r, ps[i], i, errors, left);
+  return r;
+}
+"#;
+
+const SETTLED: &str = r#"class PromiseSettledResult$@K@ {
+  status: string;
+  value: @X@;
+  reason: Error | null;
+  constructor(status: string, value: @X@, reason: Error | null) {
+    this.status = status;
+    this.value = value;
+    this.reason = reason;
+  }
+}
+function __settledOne$@K@(r: Promise$@A@, p: Promise$@K@, i: number, out: PromiseSettledResult$@K@[], left: number[]): void {
+  __onSettled$@K@(p, () => {
+    if (p.state === 1) out[i] = new PromiseSettledResult$@K@("fulfilled", p.value, null);
+    else out[i] = new PromiseSettledResult$@K@("rejected", __coZero<@X@>(), p.reason);
+    left[0] -= 1;
+    if (left[0] === 0) __fulfill$@A@(r, out);
+  });
+}
+function __allSettled$@K@(ps: Promise$@K@[]): Promise$@A@ {
+  const r = new Promise$@A@();
+  const out: PromiseSettledResult$@K@[] = [];
+  for (let i = 0; i < ps.length; i++) out.push(new PromiseSettledResult$@K@("fulfilled", __coZero<@X@>(), null));
+  if (ps.length === 0) {
+    __fulfill$@A@(r, out);
+    return r;
+  }
+  const left: number[] = [ps.length];
+  for (let i = 0; i < ps.length; i++) __settledOne$@K@(r, ps[i], i, out, left);
+  return r;
 }
 "#;

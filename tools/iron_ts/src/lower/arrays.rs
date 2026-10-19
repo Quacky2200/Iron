@@ -125,6 +125,11 @@ impl<'a> Lowerer<'a> {
                 let v = match self.cur.ret.clone() {
                     Some(t) => self.coerce(v, &t)?,
                     None => {
+                        let v = if self.cur.widen_ret {
+                            self.widen_lit(v)
+                        } else {
+                            v
+                        };
                         self.cur.ret = Some(v.ty.clone());
                         v
                     }

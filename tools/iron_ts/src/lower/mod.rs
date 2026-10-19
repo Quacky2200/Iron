@@ -151,6 +151,8 @@ pub(crate) struct FnCtx {
     pub scopes: Vec<HashMap<String, Binding>>,
     /// Declared or inferred return type.
     pub ret: Option<Ty>,
+    /// The return type is inferred for a callback: a string literal is a `string`.
+    pub widen_ret: bool,
     pub next_label: u32,
     /// Enclosing loops, switches and labelled statements, innermost last.
     pub loops: Vec<LoopLabels>,
@@ -711,6 +713,7 @@ impl<'a> Lowerer<'a> {
                 } else {
                     let ex = match exp {
                         Some(t) => self.coerce(ex, &t)?,
+                        None if self.cur.widen_ret => self.widen_lit(ex),
                         None => ex,
                     };
                     self.cur.ret = Some(ex.ty.clone());

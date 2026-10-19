@@ -289,6 +289,38 @@ async function t_sequence(): Promise<string> {
   return acc;
 }
 
+async function t_then_two(): Promise<string> {
+  const a = await add(1, 2).then(
+    (v) => "ok" + v,
+    (e) => "err",
+  );
+  const b = await boom().then(
+    (v) => "ok" + v,
+    (e) => "err:" + e.message,
+  );
+  return a + " " + b;
+}
+
+async function t_any(): Promise<string> {
+  const v = await Promise.any([boom(), slowDouble(4), slowDouble(2)]);
+  let r = "none";
+  try {
+    await Promise.any([boom(), boom()]);
+  } catch (e) {
+    r = (e as Error).name + ":" + (e as AggregateError).errors.length;
+  }
+  return v + " " + r;
+}
+
+async function t_all_settled(): Promise<string> {
+  const rs = await Promise.allSettled([add(1, 2), boom(), slowDouble(1)]);
+  let out = "";
+  for (const r of rs) {
+    out += r.status + ":" + (r.status === "fulfilled" ? String(r.value) : (r.reason as Error).message) + ";";
+  }
+  return out + rs.length;
+}
+
 // ---- glue: start each test and keep its result ----
 
 let r_basic = "";
@@ -593,4 +625,52 @@ export function sequence(): string {
 }
 export function sequence_result(): string {
   return r_sequence;
+}
+
+let r_then_two = "";
+export function then_two(): string {
+  r_then_two = "";
+  t_then_two()
+    .then((v) => {
+      r_then_two = v;
+    })
+    .catch((e) => {
+      r_then_two = "rejected:" + e.message;
+    });
+  return "";
+}
+export function then_two_result(): string {
+  return r_then_two;
+}
+
+let r_any = "";
+export function any(): string {
+  r_any = "";
+  t_any()
+    .then((v) => {
+      r_any = v;
+    })
+    .catch((e) => {
+      r_any = "rejected:" + e.message;
+    });
+  return "";
+}
+export function any_result(): string {
+  return r_any;
+}
+
+let r_all_settled = "";
+export function all_settled(): string {
+  r_all_settled = "";
+  t_all_settled()
+    .then((v) => {
+      r_all_settled = v;
+    })
+    .catch((e) => {
+      r_all_settled = "rejected:" + e.message;
+    });
+  return "";
+}
+export function all_settled_result(): string {
+  return r_all_settled;
 }
