@@ -1,8 +1,8 @@
 //! Typed arrays (`Int8Array` .. `Float64Array`, `Uint8ClampedArray`): `new`, `from`, the in-place
 //! methods (`fill`, `set`, `reverse`, `sort`), `slice`, and every read-only array method through a
 //! `number[]` copy. Element reads and writes are in the code generator (`typed_load`/`typed_store`),
-//! the runtime is `iron_ts_rt/src/typed.rs`. Not built: views sharing memory (`subarray`, `buffer`,
-//! `ArrayBuffer`, `DataView`).
+//! the runtime is `iron_ts_rt/src/typed.rs`. `subarray`, `new X(buffer, offset, length)` and `.buffer`
+//! make views that share memory; `ArrayBuffer` and `DataView` are prelude classes.
 
 use super::expr::{mk, num};
 use super::*;
@@ -45,14 +45,39 @@ impl<'a> Lowerer<'a> {
             .collect();
         match args.as_slice() {
             [] => self.typed_from(kind, num(0.0), &at),
-            [one] => {
-                let v = self.lower_expr(one, None)?;
-                self.typed_from(kind, v, &at)
+            [first, rest @ ..] if rest.len() <= 2 => {
+                let v = self.lower_expr(first, None)?;
+                let is_buffer = matches!(v.ty.strip(), Ty::Obj(sid) if self.m.structs[*sid].name == "ArrayBuffer");
+                if !is_buffer {
+                    if !rest.is_empty() {
+                        bail!(
+                            "{at}: new {}(x, offset, length) needs an ArrayBuffer",
+                            kind.name()
+                        )
+                    }
+                    return self.typed_from(kind, v, &at);
+                }
+                let Ty::Obj(sid) = v.ty.strip().clone() else {
+                    unreachable!("checked")
+                };
+                let bytes = self.field_of(v, sid, "bytes");
+                let off = match rest.first() {
+                    Some(e) => self.num_arg(e)?,
+                    None => num(0.0),
+                };
+                let len = match rest.get(1) {
+                    Some(e) => self.num_arg(e)?,
+                    None => num(f64::NAN),
+                };
+                let ty = Ty::Typed(kind);
+                let call = self.rt_str(
+                    "ts_rt_typed_view_gc",
+                    vec![Self::kind_num(kind), bytes, off, len],
+                    ty.clone(),
+                );
+                Ok(self.checked(call, ty))
             }
-            _ => bail!(
-                "{at}: new {}(buffer, offset, length) needs ArrayBuffer, which is not built yet",
-                kind.name()
-            ),
+            _ => bail!("{at}: new {}(buffer, offset, length)", kind.name()),
         }
     }
 
@@ -148,9 +173,15 @@ impl<'a> Lowerer<'a> {
                 );
                 Ok(mk(ExprKind::Seq(vec![bind], Box::new(call)), ty))
             }
-            "subarray" => bail!(
-                "{at}: subarray shares the memory of its source, which needs ArrayBuffer views (not built yet); use slice for a copy"
-            ),
+            "subarray" => {
+                let (s, e) = (optional(self, 0, 0.0)?, optional(self, 1, f64::INFINITY)?);
+                let call = self.rt_str(
+                    "ts_rt_typed_subarray_gc",
+                    vec![thisv, Self::kind_num(kind), s, e],
+                    ty.clone(),
+                );
+                Ok(mk(ExprKind::Seq(vec![bind], Box::new(call)), ty))
+            }
             "reverse" | "sort" | "toSorted" | "toReversed" if args.is_empty() => {
                 let copy = matches!(m, "toSorted" | "toReversed");
                 let target = if copy {

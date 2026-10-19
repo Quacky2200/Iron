@@ -150,6 +150,55 @@ pub fn wants_intl(src: &str) -> bool {
 /// The handle class of a generator's coroutine (an opaque runtime object).
 pub const COROUTINE: &str = "class Coroutine {}\nclass __GenReturn extends Error {}\n";
 
+/// `ArrayBuffer` and `DataView` over a `Uint8Array` that owns the bytes (typed arrays made from a
+/// buffer are views of it, `iron_ts_rt/src/typed.rs`).
+pub const ARRAYBUFFER: &str = r#"class ArrayBuffer {
+  bytes: Uint8Array;
+  constructor(byteLength: number) { this.bytes = new Uint8Array(byteLength); }
+  get byteLength(): number { return this.bytes.length; }
+  slice(begin: number = 0, end: number = 2147483647): ArrayBuffer { return __wrapBuffer(this.bytes.slice(begin, end)); }
+}
+function __wrapBuffer(b: Uint8Array): ArrayBuffer {
+  const r = new ArrayBuffer(0);
+  r.bytes = b;
+  return r;
+}
+class DataView {
+  buf: ArrayBuffer;
+  bytes: Uint8Array;
+  constructor(buffer: ArrayBuffer, byteOffset: number = 0, byteLength: number = -1) {
+    this.buf = buffer;
+    if (byteLength < 0) this.bytes = new Uint8Array(buffer, byteOffset);
+    else this.bytes = new Uint8Array(buffer, byteOffset, byteLength);
+  }
+  get buffer(): ArrayBuffer { return this.buf; }
+  get byteLength(): number { return this.bytes.length; }
+  get byteOffset(): number { return this.bytes.byteOffset; }
+  getInt8(o: number): number { return __dvGet(this.bytes, o, 0, true); }
+  setInt8(o: number, v: number): void { __dvSet(this.bytes, o, 0, true, v); }
+  getUint8(o: number): number { return __dvGet(this.bytes, o, 1, true); }
+  setUint8(o: number, v: number): void { __dvSet(this.bytes, o, 1, true, v); }
+  getInt16(o: number, little: boolean = false): number { return __dvGet(this.bytes, o, 3, little); }
+  setInt16(o: number, v: number, little: boolean = false): void { __dvSet(this.bytes, o, 3, little, v); }
+  getUint16(o: number, little: boolean = false): number { return __dvGet(this.bytes, o, 4, little); }
+  setUint16(o: number, v: number, little: boolean = false): void { __dvSet(this.bytes, o, 4, little, v); }
+  getInt32(o: number, little: boolean = false): number { return __dvGet(this.bytes, o, 5, little); }
+  setInt32(o: number, v: number, little: boolean = false): void { __dvSet(this.bytes, o, 5, little, v); }
+  getUint32(o: number, little: boolean = false): number { return __dvGet(this.bytes, o, 6, little); }
+  setUint32(o: number, v: number, little: boolean = false): void { __dvSet(this.bytes, o, 6, little, v); }
+  getFloat32(o: number, little: boolean = false): number { return __dvGet(this.bytes, o, 7, little); }
+  setFloat32(o: number, v: number, little: boolean = false): void { __dvSet(this.bytes, o, 7, little, v); }
+  getFloat64(o: number, little: boolean = false): number { return __dvGet(this.bytes, o, 8, little); }
+  setFloat64(o: number, v: number, little: boolean = false): void { __dvSet(this.bytes, o, 8, little, v); }
+}
+"#;
+
+/// Does the program use buffers?
+pub fn wants_arraybuffer(src: &str) -> bool {
+    (src.contains("ArrayBuffer") || src.contains("DataView") || src.contains(".buffer"))
+        && !src.contains("class ArrayBuffer")
+}
+
 /// `setTimeout` and friends over the runtime's timers (`iron_ts_rt/src/event.rs`).
 pub const TIMERS: &str = r#"function queueMicrotask(callback: () => void): void { __queueMicrotask(callback); }
 function setTimeout(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, false); }

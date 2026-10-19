@@ -872,6 +872,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-428 | Integration | `Promise.any` resolves with the first fulfilment and rejects with an `AggregateError` holding every reason (`iron_ts_tests/tests/promises.rs`). |
 | M9-TS-429 | Integration | `Promise.allSettled` results (`status`, `value`, `reason`) equal bun's (`iron_ts_tests/tests/promises.rs`). |
 | M9-TS-430 | Unit | Async limits (async generators, `await` outside async, `new Promise` without a type, untyped async return, `then(f, g)`) are compile errors with a reason (`iron_ts/src/lib.rs`). |
+| M9-TS-431 | Integration | Typed arrays over one `ArrayBuffer` (`Uint8Array`, `Uint32Array`, `Float32Array` with an offset) share memory equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-432 | Integration | Views with offsets and lengths report `length`, `byteOffset` and `byteLength` equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-433 | Integration | Bad view offsets and lengths throw `RangeError` equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-434 | Integration | `subarray` shares memory with its source, including a subarray of a subarray and negative indexes equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-435 | Integration | `array.buffer` of an owning typed array shares its memory equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-436 | Integration | `subarray(..).buffer` is the whole buffer and `byteOffset` is the window's start equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-437 | Integration | `ArrayBuffer.slice` copies (positive and negative indexes) equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-438 | Integration | `DataView` integer getters and setters, both byte orders equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-439 | Integration | `DataView` float getters and setters, both byte orders equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-440 | Integration | `DataView` over a window, its `buffer` and its bounds errors equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
+| M9-TS-441 | Integration | Views stay alive while their buffer is only reachable through them, under collection equal bun's (`iron_ts_tests/tests/buffers.rs`, `bench/buffers.ts`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

@@ -457,7 +457,11 @@ impl<'a> Lowerer<'a> {
             .iter()
             .filter_map(|a| a.as_expression())
             .collect();
-        let co_ty = Ty::Obj(self.classes_sid("Coroutine"));
+        // Only programs with coroutines have the class.
+        let co_ty = match self.named.get("Coroutine") {
+            Some(Ty::Obj(s)) => Ty::Obj(*s),
+            _ => Ty::Void,
+        };
         let type_arg = match c.type_arguments.as_ref().and_then(|a| a.params.first()) {
             Some(t) => Some(self.ty(t, "gen")?),
             None => None,
@@ -558,6 +562,23 @@ impl<'a> Lowerer<'a> {
                     ))),
                     t,
                 )
+            }
+            "__dvGet" | "__dvSet" => {
+                let n = if name == "__dvGet" { 4 } else { 5 };
+                if args.len() != n {
+                    bail!("{at}: {name} takes {n} arguments")
+                }
+                let mut v = Vec::new();
+                for a in &args {
+                    v.push(self.lower_expr(a, None)?);
+                }
+                if name == "__dvGet" {
+                    let call = self.rt_str("ts_rt_dv_get", v, Ty::Num);
+                    self.checked(call, Ty::Num)
+                } else {
+                    let call = self.rt_str("ts_rt_dv_set", v, Ty::Void);
+                    self.checked(call, Ty::Void)
+                }
             }
             "__coCurrent" => self.rt_str("ts_rt_co_current", vec![], co_ty),
             "__queueMicrotask" => {

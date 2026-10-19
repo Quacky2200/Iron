@@ -75,6 +75,8 @@ pub const HDR_CLOSURE_ENV: u64 = 0xA11A_0008;
 pub const HDR_MAP: u64 = 0xA11A_0009;
 /// A `BigInt`: sign, byte count and magnitude bytes, no children.
 pub const HDR_BIGINT: u64 = 0xA11A_000A;
+/// A typed array over another object's bytes (`typed.rs`): `{header, len, cap, data, owner}`.
+pub const HDR_VIEW: u64 = 0xA11A_000C;
 /// A coroutine (a generator's body on its own stack): see `coro.rs`.
 pub const HDR_CORO: u64 = 0xA11A_000B;
 
@@ -407,6 +409,7 @@ fn collect(h: &mut Heap) {
                     }
                 }
                 HDR_CLOSURE_ENV => mark_ptr(*(p.add(16) as *const *mut u8), heap, &mut stack),
+                HDR_VIEW => mark_ptr(*(p.add(32) as *const *mut u8), heap, &mut stack),
                 HDR_CORO => {
                     let mut found = Vec::new();
                     coro::for_each_pointer(p as *const coro::Coro, |q| found.push(q));
@@ -1292,6 +1295,12 @@ pub fn link_anchor() -> usize {
         ts_rt_co_inject_take as *const () as usize,
         ts_rt_co_set_return as *const () as usize,
         ts_rt_co_started as *const () as usize,
+        ts_rt_typed_view_gc as *const () as usize,
+        ts_rt_typed_bytes_view_gc as *const () as usize,
+        ts_rt_typed_subarray_gc as *const () as usize,
+        ts_rt_typed_byte_offset as *const () as usize,
+        ts_rt_dv_get as *const () as usize,
+        ts_rt_dv_set as *const () as usize,
         ts_rt_co_current as *const () as usize,
         ts_rt_microtask_push as *const () as usize,
         ts_rt_microtasks_run as *const () as usize,

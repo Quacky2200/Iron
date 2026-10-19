@@ -351,6 +351,17 @@ impl<'a> Lowerer<'a> {
             Ty::Arr(_) | Ty::Typed(_) if prop == "length" => {
                 Ok(mk(ExprKind::Len(Box::new(obj)), Ty::Num))
             }
+            Ty::Typed(_) if prop == "byteOffset" => {
+                Ok(self.rt_str("ts_rt_typed_byte_offset", vec![obj], Ty::Num))
+            }
+            Ty::Typed(k) if prop == "buffer" => {
+                let bytes = self.rt_str(
+                    "ts_rt_typed_bytes_view_gc",
+                    vec![obj, num(f64::from(k.code()))],
+                    Ty::Typed(crate::ir::TypedKind::U8),
+                );
+                self.call_helper("__wrapBuffer", vec![bytes])
+            }
             Ty::Typed(k) if prop == "byteLength" => {
                 let len = mk(ExprKind::Len(Box::new(obj)), Ty::Num);
                 Ok(mk(

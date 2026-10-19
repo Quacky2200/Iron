@@ -269,6 +269,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if prelude::wants_symbol(src) {
         head += prelude::SYMBOL;
     }
+    if prelude::wants_arraybuffer(src) {
+        head += prelude::ARRAYBUFFER;
+    }
     if !gen_templates.is_empty() || !async_templates.is_empty() {
         head += prelude::COROUTINE;
         head += &gen_templates;

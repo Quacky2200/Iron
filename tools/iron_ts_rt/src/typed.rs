@@ -316,3 +316,229 @@ pub unsafe extern "C" fn ts_rt_typed_reorder(a: *mut Array, kind: f64, sort: boo
         }
     }
 }
+
+// ---- views that share memory: `new Float32Array(buffer, offset, length)`, `subarray`, `.buffer`,
+// ---- and the bytes behind `DataView`
+
+/// A typed array over another array's bytes: the same fields as `Array` (so element reads and
+/// writes need no change), `cap` 0 (the block is not its own) and the owner that keeps it alive.
+#[repr(C)]
+pub struct View {
+    header: u64,
+    len: i64,
+    cap: i64,
+    data: *mut u8,
+    owner: *mut u8,
+}
+
+/// The object whose block a view of `a` should name: views of views point at the first owner.
+///
+/// # Safety
+/// `a` must be a live typed array or view.
+unsafe fn root_owner(a: *mut Array) -> *mut u8 {
+    // SAFETY: by contract.
+    unsafe {
+        if header_kind(*(a as *const u64)) == HDR_VIEW {
+            (*(a as *mut View)).owner
+        } else {
+            a as *mut u8
+        }
+    }
+}
+
+fn new_view(owner: *mut u8, data: *mut u8, len: i64) -> *mut Array {
+    with_heap(|h| {
+        h.temps.push(owner);
+        maybe_collect(h);
+        h.temps.pop();
+        let v = new_obj(h, HDR_VIEW, std::mem::size_of::<View>()) as *mut View;
+        // SAFETY: just allocated and zeroed.
+        unsafe {
+            (*v).len = len;
+            (*v).data = data;
+            (*v).owner = owner;
+        }
+        v as *mut Array
+    })
+}
+
+const KIND_NAMES: [&str; 9] = [
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float32Array",
+    "Float64Array",
+];
+
+/// `new Float32Array(buffer, byteOffset, length)` over the bytes of `bytes` (a `Uint8Array`
+/// that is the buffer). `length` NaN means "to the end".
+///
+/// # Safety
+/// `bytes` must be a live typed array of bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_view_gc(
+    kind: f64,
+    bytes: *mut Array,
+    byte_offset: f64,
+    length: f64,
+) -> *mut Array {
+    let size = size_of_kind(kind as u8);
+    let name = KIND_NAMES[(kind as usize).min(8)];
+    // SAFETY: by contract.
+    unsafe {
+        let total = (*bytes).len;
+        let off = if byte_offset.is_nan() {
+            0.0
+        } else {
+            byte_offset.trunc()
+        };
+        if off < 0.0 || off % size as f64 != 0.0 {
+            raise(
+                1.0,
+                &format!("start offset of {name} should be a multiple of {size}"),
+            );
+            return std::ptr::null_mut();
+        }
+        if off > total as f64 {
+            raise(
+                1.0,
+                &format!("Start offset {off} is outside the bounds of the buffer"),
+            );
+            return std::ptr::null_mut();
+        }
+        let off = off as i64;
+        let len = if length.is_nan() {
+            if (total - off) % size as i64 != 0 {
+                raise(
+                    1.0,
+                    &format!("byte length of {name} should be a multiple of {size}"),
+                );
+                return std::ptr::null_mut();
+            }
+            (total - off) / size as i64
+        } else {
+            let l = length.trunc();
+            if l < 0.0 || off as f64 + l * size as f64 > total as f64 {
+                raise(1.0, &format!("Invalid typed array length: {l}"));
+                return std::ptr::null_mut();
+            }
+            l as i64
+        };
+        new_view(root_owner(bytes), (*bytes).data.add(off as usize), len)
+    }
+}
+
+/// The bytes of a typed array as a `Uint8Array` over the same memory (what `.buffer` wraps).
+///
+/// # Safety
+/// `a` must be a live typed array of `kind`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_bytes_view_gc(a: *mut Array, kind: f64) -> *mut Array {
+    let size = size_of_kind(kind as u8) as i64;
+    // SAFETY: by contract.
+    unsafe {
+        // The whole block this array lives in, not just its window.
+        let owner = root_owner(a);
+        let o = owner as *mut Array;
+        // `cap` of an owning typed array is its size in bytes.
+        let _ = size;
+        new_view(owner, (*o).data, (*o).cap)
+    }
+}
+
+/// `typed.subarray(start, end)`: a window on the same memory.
+///
+/// # Safety
+/// `a` must be a live typed array of `kind`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_subarray_gc(
+    a: *mut Array,
+    kind: f64,
+    start: f64,
+    end: f64,
+) -> *mut Array {
+    let size = size_of_kind(kind as u8);
+    // SAFETY: by contract.
+    unsafe {
+        let (s, e) = range((*a).len, start, end);
+        new_view(root_owner(a), (*a).data.add(s * size), (e - s) as i64)
+    }
+}
+
+/// `typed.byteOffset`: where the array starts in its buffer.
+///
+/// # Safety
+/// `a` must be a live typed array.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_typed_byte_offset(a: *mut Array) -> f64 {
+    // SAFETY: by contract.
+    unsafe {
+        let owner = root_owner(a);
+        if owner == a as *mut u8 {
+            0.0
+        } else {
+            ((*a).data as usize - (*(owner as *mut Array)).data as usize) as f64
+        }
+    }
+}
+
+/// `DataView.getInt16(offset, littleEndian)` and friends, over the DataView bytes.
+///
+/// # Safety
+/// `bytes` must be a live `Uint8Array`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_dv_get(
+    bytes: *const Array,
+    offset: f64,
+    kind: f64,
+    little: bool,
+) -> f64 {
+    let size = size_of_kind(kind as u8);
+    // SAFETY: by contract; the range is checked.
+    unsafe {
+        let o = if offset.is_nan() { 0.0 } else { offset.trunc() };
+        if o < 0.0 || o + size as f64 > (*bytes).len as f64 {
+            raise(1.0, "Offset is outside the bounds of the DataView");
+            return 0.0;
+        }
+        let mut b = [0u8; 8];
+        std::ptr::copy_nonoverlapping((*bytes).data.add(o as usize), b.as_mut_ptr(), size);
+        if !little {
+            b[..size].reverse();
+        }
+        load(b.as_ptr(), kind as u8, 0)
+    }
+}
+
+/// `DataView.setInt16(offset, value, littleEndian)` and friends.
+///
+/// # Safety
+/// `bytes` must be a live `Uint8Array`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_dv_set(
+    bytes: *mut Array,
+    offset: f64,
+    kind: f64,
+    little: bool,
+    value: f64,
+) {
+    let size = size_of_kind(kind as u8);
+    // SAFETY: by contract; the range is checked.
+    unsafe {
+        let o = if offset.is_nan() { 0.0 } else { offset.trunc() };
+        if o < 0.0 || o + size as f64 > (*bytes).len as f64 {
+            raise(1.0, "Offset is outside the bounds of the DataView");
+            return;
+        }
+        let mut b = [0u8; 8];
+        store(b.as_mut_ptr(), kind as u8, 0, value);
+        if !little {
+            b[..size].reverse();
+        }
+        std::ptr::copy_nonoverlapping(b.as_ptr(), (*bytes).data.add(o as usize), size);
+    }
+}
