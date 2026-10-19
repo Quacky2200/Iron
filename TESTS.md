@@ -741,6 +741,18 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-261 | Integration | `new Intl.Collator().compare(a, b)` results (`tests/intl.rs`). |
 | M9-TS-262 | Integration | `new Intl.Collator` with a bad tag or option is bun's `RangeError` (`tests/intl.rs`). |
 | M9-TS-263 | Unit | Intl options that are not literals, and `resolvedOptions`, are compile errors (`iron_ts/src/lib.rs`). |
+| M9-TS-264 | Integration | Decimal locales: `toLocaleString` for 15 locales (grouping, decimal marks, Indian grouping, Arabic digits, minus signs, NaN and infinity) equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-265 | Integration | Fraction digits: `minimumFractionDigits`, `maximumFractionDigits`, `minimumIntegerDigits` and their defaults equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-266 | Integration | Significant digits: `minimumSignificantDigits` / `maximumSignificantDigits` equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-267 | Integration | Percent and sign display: `style: percent` in three locales, `signDisplay` (auto, never, always, exceptZero, negative), NaN and infinity equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-268 | Integration | Currency: `style: currency` in ten locale/currency pairs (symbols, placement, currency digits, rounding) equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-269 | Integration | Currency display: `currencyDisplay` code/name/narrowSymbol, `currencySign: accounting`, lower-case codes, fraction overrides equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-270 | Integration | Compact: `notation: compact` short and long in en, de, ja, fr, en-IN, with carry into the next unit equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-271 | Integration | Scientific: `notation: scientific` and `engineering` equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-272 | Integration | Grouping: `useGrouping` false/true/min2 and locales that group from five digits equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-273 | Integration | Rounding: all nine `roundingMode`s and `trailingZeroDisplay` equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-274 | Integration | Format object: `new Intl.NumberFormat(..).format`, also as a detached function and as a `map` callback equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
+| M9-TS-275 | Integration | Errors: bad `style`, `currency`, `currencyDisplay`, `notation`, `signDisplay`, digit ranges and tags are bun's `RangeError`/`TypeError` text equals bun's (`iron_ts_tests/tests/numfmt.rs`, `bench/numfmt.ts`). |
 | M9-API-01 | Unit | The `#[iron_api]` manifest lists every `pub` function with its script name, Rust name, symbol, docs, parameters and result; private functions are left out (`crates/iron_api/tests/api.rs`). |
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/iron_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/iron_api/tests/api.rs`). |

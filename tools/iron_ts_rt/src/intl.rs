@@ -45,7 +45,7 @@ fn default_locale() -> Locale {
 }
 
 /// The locale a list of tags ("de", "xx,de") selects: the first tag, or the default for none.
-fn resolve_locale(spec: &str) -> Result<Locale, String> {
+pub(crate) fn resolve_locale(spec: &str) -> Result<Locale, String> {
     let mut first = None;
     for tag in spec.split(',').filter(|t| !t.is_empty()) {
         let loc: Locale = tag

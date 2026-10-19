@@ -8,18 +8,12 @@ use super::expr::mk;
 use super::*;
 
 impl<'a> Lowerer<'a> {
-    pub(crate) fn collator_sid(&self) -> Option<StructId> {
-        self.classes
-            .contains_key("Intl_Collator")
-            .then(|| self.classes_sid("Intl_Collator"))
-    }
-
     fn is_undefined(e: &Expression<'_>) -> bool {
         matches!(e, Expression::Identifier(id) if id.name == "undefined")
     }
 
     /// The options object literal as `key=value;key=value`.
-    fn options_spec(&self, e: Option<&'a Expression<'a>>, at: &str) -> R<String> {
+    pub(crate) fn options_spec(&self, e: Option<&'a Expression<'a>>, at: &str) -> R<String> {
         let Some(e) = e else {
             return Ok(String::new());
         };
@@ -129,20 +123,33 @@ impl<'a> Lowerer<'a> {
         }))
     }
 
-    /// `new Intl.Collator(locales?, options?)`.
-    pub(crate) fn lower_new_collator(&mut self, args: &'a [Argument<'a>], at: u32) -> R<Expr> {
+    /// `new Intl.Collator(locales?, options?)` and `new Intl.NumberFormat(locales?, options?)`: an
+    /// object of the prelude class holding an id into the runtime's table.
+    pub(crate) fn lower_new_intl(
+        &mut self,
+        kind: &str,
+        args: &'a [Argument<'a>],
+        at: u32,
+    ) -> R<Expr> {
         let at = self.loc(at);
-        let Some(sid) = self.collator_sid() else {
-            bail!("{at}: Intl.Collator needs the Intl classes")
-        };
+        let class = format!("Intl_{kind}");
+        if !self.classes.contains_key(class.as_str()) {
+            bail!("{at}: Intl.{kind} needs the Intl classes")
+        }
+        let sid = self.classes_sid(&class);
         let arg = |i: usize| args.get(i).and_then(|a| a.as_expression());
         let loc = self.locales_arg(arg(0))?;
         let spec = self.options_spec(arg(1), &at)?;
         let opts = self.str_lit(&spec);
-        let made = self.rt_str("ts_rt_collator_new", vec![loc, opts], Ty::Num);
+        let sym = if kind == "Collator" {
+            "ts_rt_collator_new"
+        } else {
+            "ts_rt_number_format_new"
+        };
+        let made = self.rt_str(sym, vec![loc, opts], Ty::Num);
         let id = self.checked(made, Ty::Num);
-        // The class constructor runs the field initializers (`compare` is a closure over `this`).
-        let made_obj = self.new_object("Intl_Collator", &[], 0)?;
+        // The class constructor runs the field initializers (`compare` / `format` are closures over `this`).
+        let made_obj = self.new_object(&class, &[], 0)?;
         let obj = self.new_local(Ty::Obj(sid));
         let ov = self.var_expr(obj);
         let stmts = vec![

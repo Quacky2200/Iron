@@ -128,9 +128,10 @@ bytes, bindings text, IR dump and the time of each phase.
 | [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
 | [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object, and the String methods that take a regex (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`) |
 | [lower/date.rs](../tools/iron_ts/src/lower/date.rs) | `Date`: constructors, `Date.now`/`UTC`/`parse`, getters and setters (local and UTC), the string conversions, and arithmetic and comparison on the time value |
-| [lower/intl.rs](../tools/iron_ts/src/lower/intl.rs) | `Intl`, step I1: `localeCompare`, `normalize`, `toLocaleUpperCase`/`toLocaleLowerCase` and `new Intl.Collator`; locale and options arguments are read at compile time |
+| [lower/intl.rs](../tools/iron_ts/src/lower/intl.rs) | `Intl`, steps I1 and I2: `localeCompare`, `normalize`, `toLocaleUpperCase`/`toLocaleLowerCase`, `new Intl.Collator` and `new Intl.NumberFormat` (`lower_new_intl`); locale and options arguments are read at compile time (`options_spec`) |
+| [iron_ts_rt/src/intl_number.rs](../tools/iron_ts_rt/src/intl_number.rs) | The `NumberFormat` runtime: option parsing, rounding and padding on a `fixed_decimal` `Decimal`, ICU4X formatting, scientific/engineering by hand |
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
-| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date` and `Intl_Collator`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date` or `Intl` |
+| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date`, `Intl_Collator` and `Intl_NumberFormat`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date` or `Intl` |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 
@@ -392,10 +393,38 @@ The runtime uses ICU4X (`icu` 2.x in `iron_ts_rt`) with its compiled CLDR data.
 - **Limits** (see [differences.md](differences.md)): all locales' data is linked (no trimming yet); an
   unsupported locale id falls back to root collation; `resolvedOptions`, `supportedLocalesOf` and the other
   `Collator` methods are not built; ICU4X's CLDR version can order a few things differently from the engine's.
-- **Still to come:** `NumberFormat`, `DateTimeFormat` (with `Date.toString` zone names and `toLocale*String`),
+- **Still to come:** `DateTimeFormat` (with `Date.toString` zone names and `toLocale*String`),
   `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames`, `Segmenter`.
 - Tests: `bench/intl.ts` with `tests/intl.rs` (M9-TS-254..263), expected values from
   `bench/gen_intl_expected.ts` (bun) into `intl_expected.json`.
+
+**Standard library tier 3: `Intl`, step I2: `NumberFormat`** ([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs),
+runtime in [iron_ts_rt/src/intl_number.rs](../tools/iron_ts_rt/src/intl_number.rs); hooks in
+`lower/{strings,prelude,expr,mod}.rs`). `iron_ts_rt` enables ICU4X's `unstable` feature (the experimental
+currency and percent formatters) and `fixed_decimal` with `ryu`.
+- **Supported.** `Number.prototype.toLocaleString(locales?, options?)` (in `strings.rs`) and
+  `new Intl.NumberFormat(locales?, options?)` with `.format(n)`. `Intl.NumberFormat` is the prelude class
+  `Intl_NumberFormat`; `format` is a closure field, so `numbers.map(nf.format)` works. Locales and the
+  options literal are read at compile time like the collator's (`lower_new_intl`, `options_spec` are shared).
+- **Options.** `style` (`decimal`, `percent`, `currency`; `unit` raises a `RangeError` for now), `currency`,
+  `currencyDisplay` (`symbol`, `narrowSymbol`, `code`, `name`), `currencySign` (`standard`, `accounting`),
+  `notation` (`standard`, `scientific`, `engineering`, `compact`), `compactDisplay`, `signDisplay` (all five),
+  `useGrouping`, `minimumIntegerDigits`, `minimumFractionDigits` / `maximumFractionDigits`,
+  `minimumSignificantDigits` / `maximumSignificantDigits`, `roundingMode` (all nine), `trailingZeroDisplay`.
+  Defaults follow ECMA-402: currency digits come from an ISO 4217 table; compact keeps whole numbers from two
+  integer digits and otherwise two significant digits.
+- **How.** Rounding and padding are done on a `fixed_decimal::Decimal`; ICU4X then formats it (decimal,
+  compact with the exponent chosen first, percent). Currency and non-finite values use a placeholder: the
+  style's formatter formats the digit 7 and the compiler-side code swaps in the number string, because
+  ICU4X's currency formatter forces the currency's own fraction digits. Scientific and engineering are
+  assembled by hand (`1.235E6`, with the locale's digits and decimal mark). NaN and infinity are text (`NaN`,
+  `∞`; NaN is localized only for `ar` and `ru`).
+- **Limits** (see [differences.md](differences.md)): `style: "unit"`, compact currency, `formatToParts`,
+  `formatRange`, `resolvedOptions` and `supportedLocalesOf` are not built; Number values only (no BigInt,
+  no strings).
+- Checked against bun for 15 locales and many option combinations.
+- Tests: `bench/numfmt.ts` with `tests/numfmt.rs` (M9-TS-264..275), expected values from
+  `bench/gen_numfmt_expected.ts` (bun) into `numfmt_expected.json`.
 
 **Inheritance.** `class B extends A` gives `B`'s struct the fields of `A` first (prefix layout), so a
 `B` pointer is an `A` pointer and a subclass can be used wherever its base is expected. The compiler

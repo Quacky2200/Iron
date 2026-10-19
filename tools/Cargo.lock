@@ -364,6 +364,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79c3c892f121fff406e5dd6b28c1b30096b95111c30701a899d4f2b18da6d1bd"
 dependencies = [
  "displaydoc",
+ "ryu",
  "smallvec",
  "writeable",
 ]
@@ -652,12 +653,16 @@ version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "785f595c61ef57169a467eeed7b4b6936a66f6cacbb116a96ee86da983251bf4"
 dependencies = [
+ "displaydoc",
+ "either",
  "icu_collections",
  "icu_locale_core",
  "icu_locale_data",
  "icu_locale_fallback",
+ "icu_pattern",
  "icu_provider",
  "tinystr",
+ "writeable",
  "zerovec",
 ]
 
@@ -929,6 +934,7 @@ dependencies = [
 name = "iron_ts_rt"
 version = "0.1.0"
 dependencies = [
+ "fixed_decimal",
  "icu",
  "jiff",
  "regress",
@@ -1486,6 +1492,12 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "ryu"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "seq-macro"

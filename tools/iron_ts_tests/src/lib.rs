@@ -300,6 +300,18 @@ pub mod itl {
     include!(concat!(env!("OUT_DIR"), "/intl_bindings.rs"));
 }
 
+/// Number formatting in compiled code (`bench/numfmt.ts`), prefix `nf_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod nfm {
+    include!(concat!(env!("OUT_DIR"), "/numfmt_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

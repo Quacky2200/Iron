@@ -1056,9 +1056,9 @@ impl<'a> Lowerer<'a> {
     fn lower_new(&mut self, n: &'a NewExpression<'a>, exp: Option<&Ty>) -> R<Expr> {
         if let Expression::StaticMemberExpression(m) = &n.callee
             && matches!(&m.object, Expression::Identifier(o) if o.name == "Intl")
-            && m.property.name == "Collator"
+            && matches!(m.property.name.as_str(), "Collator" | "NumberFormat")
         {
-            return self.lower_new_collator(&n.arguments, n.span.start);
+            return self.lower_new_intl(m.property.name.as_str(), &n.arguments, n.span.start);
         }
         let Expression::Identifier(id) = &n.callee else {
             bail!("{}: unsupported `new`", self.loc(n.span.start))

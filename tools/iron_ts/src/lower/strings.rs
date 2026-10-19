@@ -404,6 +404,15 @@ impl<'a> Lowerer<'a> {
                 Ok(self.rt_str_checked("ts_rt_num_to_fixed_gc", vec![recv, d], Ty::Str))
             }
             "valueOf" => Ok(recv),
+            "toLocaleString" => {
+                let loc = self.locales_arg(c.arguments.first().and_then(|a| a.as_expression()))?;
+                let spec =
+                    self.options_spec(c.arguments.get(1).and_then(|a| a.as_expression()), &at)?;
+                let opts = self.str_lit(&spec);
+                let call =
+                    self.rt_str("ts_rt_num_locale_string_gc", vec![recv, loc, opts], Ty::Str);
+                Ok(self.checked(call, Ty::Str))
+            }
             _ => bail!("{at}: the number method `{m}` is not supported yet"),
         }
     }
@@ -551,6 +560,19 @@ impl<'a> Lowerer<'a> {
             }
         };
         Ok(Some(match name {
+            // The prelude's `Intl.NumberFormat.format`.
+            "__numberFormat" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                let [id, n] = args.as_slice() else {
+                    bail!("{at}: __numberFormat takes two arguments")
+                };
+                let (id, n) = (self.num_arg(id)?, self.num_arg(n)?);
+                self.rt_str("ts_rt_number_format_gc", vec![id, n], Ty::Str)
+            }
             // The prelude's `Intl.Collator.compare`.
             "__collatorCompare" => {
                 let args: Vec<&'a Expression<'a>> = c

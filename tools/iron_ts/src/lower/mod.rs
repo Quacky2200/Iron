@@ -223,7 +223,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if prelude::wants_date(src) {
         head += prelude::DATE;
     }
-    if src.contains("Intl.Collator") {
+    if src.contains("Intl.Collator") || src.contains("Intl.NumberFormat") {
         head += prelude::INTL;
     }
     let prelude_lines = head.matches('\n').count();

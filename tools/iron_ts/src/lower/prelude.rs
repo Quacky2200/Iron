@@ -94,6 +94,10 @@ pub const INTL: &str = r#"class Intl_Collator {
   id: number = 0;
   compare: (a: string, b: string) => number = (a: string, b: string): number => __collatorCompare(this.id, a, b);
 }
+class Intl_NumberFormat {
+  id: number = 0;
+  format: (n: number) => string = (n: number): string => __numberFormat(this.id, n);
+}
 "#;
 
 /// Does the program use `Intl` or a locale-aware string method (they raise `RangeError`s)?

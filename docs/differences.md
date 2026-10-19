@@ -48,7 +48,13 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `Intl.Collator` members | Only `new Intl.Collator(...)` and `.compare`; no `resolvedOptions` or `supportedLocalesOf` | The full API | Step I1 of the `Intl` work |
 | Locale data | ICU4X (CLDR) data for every locale is linked in; an unsupported locale id falls back to root collation, not the default locale; the CLDR version can differ from the engine's, so rare orderings may differ | The engine's own ICU, which falls back to the default locale | No data trimming yet; checked against bun for en, de, sv, tr, ja, zh |
 | Default locale | `en-US` until the host calls `ts_rt_intl_set_locales`; the game's `package.json` list is not wired to it yet | The environment's locale | Needs `iron_app` |
-| `Intl` beyond `Collator` | `NumberFormat`, `DateTimeFormat`, `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames` and `Segmenter` are not built; `Date` locale strings stay compile errors | Available | Later steps of the `Intl` work |
+| `Intl` beyond `Collator` and `NumberFormat` | `DateTimeFormat`, `PluralRules`, `ListFormat`, `RelativeTimeFormat`, `Locale`, `DisplayNames` and `Segmenter` are not built; `Date` locale strings stay compile errors | Available | Later steps of the `Intl` work |
+| `Intl.NumberFormat` options and locales | Same as the collator: an object literal with literal values, locales a string or an array of strings, read at compile time; `Number.prototype.toLocaleString` takes the same arguments | Any expression | Shared `options_spec` |
+| `Intl.NumberFormat` members | Only `new Intl.NumberFormat(...)` and `.format`; no `formatToParts`, `formatRange`, `resolvedOptions` or `supportedLocalesOf`; Number values only (no BigInt, no strings) | The full API | Step I2 of the `Intl` work |
+| `NumberFormat` `style: "unit"`, compact currency | `style: "unit"` raises a `RangeError`; `notation: "compact"` with `style: "currency"` is not built | Supported | Not yet done |
+| `NumberFormat` `useGrouping: "always"` | Does not force grouping in locales that group only from five digits (es, pl, pt-PT) | Forces grouping | ICU4X's decimal formatter treats `always` as `auto` |
+| `NumberFormat` NaN text | `"NaN"` in every locale except `ar` and `ru`, which are localized | Localized per locale | Only those two locales were handled |
+| `NumberFormat` currency code after the number with NaN or infinity | A space is put before NaN or infinity (`KWD NaN`) | `KWDNaN` | The placeholder swap does not copy the engine's automatic spacing rule |
 | `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
 
 ## SVG (M3d step 5.1)
