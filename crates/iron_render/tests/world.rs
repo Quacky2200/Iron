@@ -211,6 +211,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             strokes: Vec::new(),
             fills: Vec::new(),
             shapes: Vec::new(),
+            fog: None,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -239,6 +240,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             strokes: Vec::new(),
             fills: Vec::new(),
             shapes: Vec::new(),
+            fog: None,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -274,6 +276,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             strokes: Vec::new(),
             fills: Vec::new(),
             shapes: Vec::new(),
+            fog: None,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -2612,4 +2615,232 @@ fn fills_follow_their_rule_and_sit_under_their_outlines() {
         "the see-through circle: {glass:?}"
     );
     assert_golden("M5-RND-25", size.0, size.1, &pixels, 3);
+}
+
+/// A linear colour channel as the sRGB byte the target stores.
+fn srgb_byte(l: f32) -> u8 {
+    let l = l.clamp(0.0, 1.0);
+    let s = if l <= 0.003_130_8 {
+        l * 12.92
+    } else {
+        1.055 * l.powf(1.0 / 2.4) - 0.055
+    };
+    (s * 255.0).round() as u8
+}
+
+fn close_to(a: [u8; 3], b: [u8; 3], tolerance: i32) -> bool {
+    a.iter()
+        .zip(b)
+        .all(|(&x, y)| (x as i32 - y as i32).abs() <= tolerance)
+}
+
+// M7-FOG-01
+#[test]
+fn fog_modes_fade_things_towards_the_fog_colour_with_distance() {
+    use iron_render::{
+        Fog, FogMode, MeshInstance, Projection, WorldView, primitive_id, viewport_size,
+    };
+    let gpu = shared_gpu();
+    let size = (320, 240);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let fog_color = [0.6, 0.7, 0.8];
+    // Red cubes at these distances, spread across the view, each the same size on screen.
+    let distances = [3.0f32, 8.0, 15.0, 30.0, 60.0];
+    let centres: Vec<Vec3> = distances
+        .iter()
+        .enumerate()
+        .map(|(i, &d)| Vec3::new(d * (-0.5 + 0.25 * i as f32), 0.0, -d))
+        .collect();
+    let fogs = [
+        None,
+        Some(Fog {
+            mode: FogMode::Linear,
+            color: fog_color,
+            start: 5.0,
+            end: 40.0,
+            ..Default::default()
+        }),
+        Some(Fog {
+            mode: FogMode::Exponential,
+            color: fog_color,
+            density: 0.05,
+            ..Default::default()
+        }),
+        Some(Fog {
+            mode: FogMode::ExponentialSquared,
+            color: fog_color,
+            density: 0.03,
+            ..Default::default()
+        }),
+    ];
+    // Top left: clear air; top right: linear; bottom: exponential and squared.
+    let rects = [
+        [0.0, 0.0, 0.5, 0.5],
+        [0.5, 0.0, 0.5, 0.5],
+        [0.0, 0.5, 0.5, 0.5],
+        [0.5, 0.5, 0.5, 0.5],
+    ];
+    let views: Vec<WorldView> = rects
+        .iter()
+        .zip(fogs)
+        .map(|(&rect, fog)| {
+            let camera = WorldCamera::new(
+                Mat4::IDENTITY,
+                Projection::Perspective {
+                    fov_y_degrees: 60.0,
+                },
+                0.1,
+                200.0,
+                viewport_size(rect, size),
+                Color::rgb(0.05, 0.05, 0.08),
+            );
+            let mut v = WorldView::new(camera, rect);
+            v.meshes = centres
+                .iter()
+                .map(|&c| MeshInstance {
+                    mesh: primitive_id("cube").unwrap(),
+                    model: Mat4::from_translation(c) * Mat4::from_scale(Vec3::splat(-c.z * 0.12)),
+                    color: [1.0, 0.1, 0.1, 1.0],
+                    unlit: true,
+                    ..Default::default()
+                })
+                .collect();
+            v.fog = fog;
+            v
+        })
+        .collect();
+    let view_projs: Vec<Mat4> = views.iter().map(|v| v.camera.view_proj).collect();
+    world.render_views(&gpu, &rt, &views, &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    // A cube's middle in view `k`.
+    let at = |k: usize, i: usize| {
+        let c = view_projs[k].project_point3(centres[i]);
+        let r = rects[k];
+        let x = (r[0] + (c.x + 1.0) / 2.0 * r[2]) * size.0 as f32;
+        let y = (r[1] + (1.0 - c.y) / 2.0 * r[3]) * size.1 as f32;
+        let p = (y as usize * size.0 as usize + x as usize) * 4;
+        [pixels[p], pixels[p + 1], pixels[p + 2]]
+    };
+    let red = [255, srgb_byte(0.1), srgb_byte(0.1)];
+    let fog = fog_color.map(srgb_byte);
+    // Clear air: the farthest cube keeps its colour.
+    assert!(close_to(at(0, 4), red, 2), "no fog: {:?}", at(0, 4));
+    // Linear: nothing before the start, all fog past the end, partway between.
+    assert!(
+        close_to(at(1, 0), red, 2),
+        "before the start: {:?}",
+        at(1, 0)
+    );
+    assert!(close_to(at(1, 4), fog, 2), "past the end: {:?}", at(1, 4));
+    let mid = at(1, 3);
+    assert!(
+        !close_to(mid, red, 20) && !close_to(mid, fog, 20),
+        "between: {mid:?}"
+    );
+    // Exponential: some fog at once; squared: clearer nearby; both thick far away.
+    let (exp_near, sq_near) = (at(2, 0), at(3, 0));
+    assert!(
+        exp_near[1] > sq_near[1] + 10,
+        "exponential fogs nearby more than squared: {exp_near:?} {sq_near:?}"
+    );
+    assert!(
+        close_to(at(2, 4), fog, 25),
+        "exponential far: {:?}",
+        at(2, 4)
+    );
+    assert!(close_to(at(3, 4), fog, 25), "squared far: {:?}", at(3, 4));
+    // The background isn't fogged.
+    let p = (size.0 as usize * 2 - 2) * 4;
+    let corner = [pixels[p], pixels[p + 1], pixels[p + 2]];
+    let clear = [srgb_byte(0.05), srgb_byte(0.05), srgb_byte(0.08)];
+    assert!(close_to(corner, clear, 2), "background: {corner:?}");
+    assert_golden("M7-FOG-01", size.0, size.1, &pixels, 3);
+}
+
+// M7-FOG-02
+#[test]
+fn orthographic_fog_goes_by_depth_and_covers_quads_shapes_and_strokes() {
+    use iron_render::{FillVertex, Fog, FogMode, Projection, Stroke, WorldView};
+    let gpu = shared_gpu();
+    let size = (240, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let camera = WorldCamera::new(
+        Mat4::from_translation(Vec3::new(0.0, 0.0, 10.0)),
+        Projection::Orthographic { half_height: 2.0 },
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let white = [1.0, 1.0, 1.0, 1.0];
+    // Two white quads at the same depth, one in the middle and one near the edge, and a
+    // third farther back.
+    for (x, z) in [(-2.2, 0.0), (0.0, 0.0), (2.2, -6.0)] {
+        v.quads.push(WorldQuad::colored(
+            Mat4::from_translation(Vec3::new(x, 1.0, z)) * Mat4::from_scale(Vec3::splat(0.8)),
+            white,
+        ));
+    }
+    // A filled triangle and a stroke, both 10 m away.
+    for p in [[-2.6, -1.6], [-1.4, -1.6], [-2.0, -0.6]] {
+        v.fills.push(FillVertex {
+            position: [p[0], p[1], 0.0],
+            color: white,
+        });
+    }
+    v.strokes.push(Stroke {
+        a: [0.0, -1.0, 0.0],
+        b: [2.5, -1.0, 0.0],
+        width: 0.3,
+        color: white,
+    });
+    v.fog = Some(Fog {
+        mode: FogMode::Linear,
+        color: [0.0, 0.0, 1.0],
+        start: 0.0,
+        end: 20.0,
+        ..Default::default()
+    });
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let at = |x: f32, y: f32, z: f32| {
+        let c = view_proj.project_point3(Vec3::new(x, y, z));
+        let px = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let py = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        let i = (py * size.0 as usize + px) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    // Halfway into the fog: white half mixed with blue.
+    let half = [srgb_byte(0.5), srgb_byte(0.5), 255];
+    let (edge, middle) = (at(-2.2, 1.0, 0.0), at(0.0, 1.0, 0.0));
+    assert!(close_to(middle, half, 3), "the middle quad: {middle:?}");
+    assert_eq!(edge, middle, "the same depth, the same fog");
+    // 16 m deep: 80% fog.
+    let back = at(2.2, 1.0, -6.0);
+    let deeper = [srgb_byte(0.2), srgb_byte(0.2), 255];
+    assert!(close_to(back, deeper, 3), "the deeper quad: {back:?}");
+    let fill = at(-2.0, -1.3, 0.0);
+    assert!(close_to(fill, half, 3), "the fill: {fill:?}");
+    let stroke = at(1.2, -1.0, 0.0);
+    assert!(close_to(stroke, half, 3), "the stroke: {stroke:?}");
 }

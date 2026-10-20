@@ -1435,11 +1435,16 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   lights (`Light.bounceIntensity`, Unity's): baked with the lightmaps first, then a realtime
   approximation (virtual point lights from shadow-map hits, or probe volumes); the Cornell
   box is the test scene (asked for 2026-10-17)
-- [ ] Fog (Unity's `RenderSettings.fog`, asked for 2026-10-18): linear, exponential and
-  exponential-squared distance fog in a colour, in the world shader for meshes, quads, sprites,
-  2D shapes and text panels alike (the sky / background untouched or fogged to match), per camera
-  on or off; then height fog and volumetric light shafts. `examples/fishtank` fakes it today by
-  mixing every shape toward the water's colour by depth.
+- [ ] Fog (Unity's `RenderSettings.fog`, asked for 2026-10-18)
+  - [x] Distance fog (2026-10-20): linear, exponential and exponential squared in a colour
+    (`RenderSettings.fog` / `fogMode` / `fogColor` / `fogDensity` / `fogStartDistance` /
+    `fogEndDistance`, saved with scenes), in the world shader for meshes, quads (sprites,
+    particles, panels, text) and 2D shapes alike; glows fade out; the background stays clear
+    (Unity's); per camera on or off (`Camera.fog`); orthographic cameras fog by depth.
+    `examples/fishtank` uses it instead of mixing its colours by depth (`M7-FOG-01`..`03`)
+  - [ ] Height fog: thicker low down, thinning with height; it also covers the sky near the
+    horizon
+  - [ ] Volumetric light shafts: the sun (and spot lights) lighting the fog, cut by shadows
 
 ## M8 — Multiplayer
 

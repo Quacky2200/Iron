@@ -1,8 +1,8 @@
 // Fish tank: an aquarium in the style of the aquarium channels — a calm, full-screen view into
 // deep water. A perspective camera drifts slowly through layers: a hazy back wall, distant rock
 // silhouettes, a sand floor that fades into the blue, light shafts, caustics shimmering on the
-// sand, kelp at several depths and marine snow. There's no fog in the engine, so everything is
-// mixed toward the water's colour by how far back it is (in steps, so colours rarely change).
+// sand, kelp at several depths and marine snow, all fading into the water's colour with distance
+// (linear fog).
 //
 // Fish of four kinds school in 3D with their own kind, swim mostly level, keep inside the tank
 // and flee the pointer. Click to feed (the nearest fish race for the food and grow),
@@ -19,6 +19,7 @@ import {
   QualitySettings,
   Quaternion,
   register,
+  RenderSettings,
   Shapes,
   Spline,
   Vector2,
@@ -41,8 +42,20 @@ const LIGHT = Color.hex("#7fd0ef");
 const SAND = Color.hex("#c7ab72");
 
 const mix = (a: Color, b: Color, t: number) => new Color(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a);
-/** How much of the water's colour something `z` deep takes on (0 near, about 0.8 at the back). */
-const haze = (z: number) => Math.round(Math.max(0, Math.min(1, (NEAR - z) / (NEAR - FAR - 2))) ** 0.9 * 0.82 * 16) / 16;
+/** The water: linear fog in its colour, from just behind the glass to past the back wall. */
+const FOG_START = 8;
+const FOG_END = 27;
+/** The camera's resting distance from the back wall. */
+const WALL_DISTANCE = 22;
+/**
+ * The colour to paint the back wall so that, seen through the fog from where the camera
+ * rests, it shows as `c`: the wall stands for the light far off in the water.
+ */
+const unfogged = (c: Color) => {
+  const f = Math.min(0.95, (WALL_DISTANCE - FOG_START) / (FOG_END - FOG_START));
+  const back = (x: number, h: number) => Math.max(0, (x - h * f) / (1 - f));
+  return new Color(back(c.r, HAZE.r), back(c.g, HAZE.g), back(c.b, HAZE.b), c.a);
+};
 
 function shape(name: string, look: Partial<LineRenderer2D>, at = Vector3.zero, parent?: GameObject): LineRenderer2D {
   const go = new GameObject(name, parent ? { position: at, parent } : { position: at });
@@ -89,18 +102,11 @@ function body(length: number): Vector2[] {
   return s.sample(8).map((p) => new Vector2(p.x, p.y));
 }
 
-/** A part of a fish, with the colours it has up close (it's hazed by depth). */
-interface Part {
-  line: LineRenderer2D;
-  stroke: Color;
-  fill: Color | null;
-}
-
 class Fish {
   readonly go: GameObject;
   private readonly tail: GameObject;
-  private parts: Part[] = [];
-  private shownHaze = -1;
+  private parts: LineRenderer2D[] = [];
+  private shownOrder = NaN;
   pos: Vector3;
   vel: Vector3;
   grown = 1;
@@ -119,8 +125,7 @@ class Fish {
     this.go = new GameObject(kind.name, { position: at, parent: tank });
     const edge = mix(kind.body, Color.black, 0.35);
     const part = (name: string, look: Partial<LineRenderer2D>, parent: GameObject) => {
-      const line = shape(name, look, Vector3.zero, parent);
-      this.parts.push({ line, stroke: look.color ?? Color.white, fill: look.fillColor ?? null });
+      this.parts.push(shape(name, look, Vector3.zero, parent));
     };
     this.tail = new GameObject("tail", { position: new Vector3(-0.38 * kind.length, 0, 0), parent: this.go });
     part("tail fin", { points: [new Vector2(0, 0), new Vector2(-0.36, 0.24), new Vector2(-0.28, 0), new Vector2(-0.36, -0.24)], loop: true, width: 0.025, color: edge, fillColor: kind.fin, sortingOrder: 10 }, this.tail);
@@ -228,15 +233,12 @@ class Fish {
     this.go.transform.localScale = new Vector3(s, left ? -s : s, 1);
     this.beat += dt * (6 + this.vel.magnitude * 6);
     this.tail.transform.localRotation = Quaternion.euler(0, 0, Math.sin(this.beat) * 22);
-    // Hazed by depth (only when the step changes); deeper fish draw first.
-    const h = haze(this.pos.z);
-    if (h !== this.shownHaze) {
-      this.shownHaze = h;
-      const order = Math.round(this.pos.z * 10) * 10;
+    // Deeper fish draw first (set only when the step changes).
+    const order = Math.round(this.pos.z * 10) * 10;
+    if (order !== this.shownOrder) {
+      this.shownOrder = order;
       this.parts.forEach((p, i) => {
-        p.line.color = mix(p.stroke, HAZE, h);
-        if (p.fill) p.line.fillColor = mix(p.fill, HAZE, h);
-        p.line.sortingOrder = order + i;
+        p.sortingOrder = order + i;
       });
     }
   }
@@ -281,13 +283,18 @@ class Tank extends Component {
       fieldOfView: 40,
       backgroundColor: DEEP,
     });
+    RenderSettings.fogMode = "linear";
+    RenderSettings.fogColor = HAZE;
+    RenderSettings.fogStartDistance = FOG_START;
+    RenderSettings.fogEndDistance = FOG_END;
+    RenderSettings.fog = true;
     const root = this.gameObject;
 
     // The back wall of water: lighter towards the surface.
     for (let i = 0; i < 16; i++) {
       const h = 22 / 16;
       const top = 14 - i * h;
-      shape(`back ${i}`, { points: Shapes.rectangle(-26, top - h - 0.05, 52, h + 0.1), loop: true, width: 0, fillColor: mix(mix(HAZE, LIGHT, 0.35), DEEP, i / 15), sortingOrder: -1000 }, new Vector3(0, 0, -10), root);
+      shape(`back ${i}`, { points: Shapes.rectangle(-26, top - h - 0.05, 52, h + 0.1), loop: true, width: 0, fillColor: unfogged(mix(mix(HAZE, LIGHT, 0.35), DEEP, i / 15)), sortingOrder: -1000 }, new Vector3(0, 0, -10), root);
     }
     // Distant rock silhouettes, then nearer rocks.
     const rock = Color.hex("#3d4a52");
@@ -297,19 +304,18 @@ class Tank extends Component {
       [7.2, 1.2, 1.2, 0.8], [-6.8, 1.6, 1.0, 0.65],
     ];
     rocks.forEach(([x, z, w, h], i) => {
-      const c = mix(mix(rock, Color.hex("#6c7780"), (i % 3) / 3), HAZE, haze(z));
+      const c = mix(rock, Color.hex("#6c7780"), (i % 3) / 3);
       shape(`rock ${i}`, { points: Shapes.ellipse(Vector2.zero, w, h, 24), loop: true, width: 0, fillColor: c, sortingOrder: Math.round(z * 100) }, new Vector3(x, FLOOR + h * 0.4, z), root);
     });
-    // The floor: strips of sand from the front to the back, fading into the haze.
+    // The floor: strips of sand from the front to the back.
     for (let z = NEAR + 3; z > -11; z -= 1) {
-      flat(`sand ${z}`, { points: Shapes.rectangle(-30, -0.5, 60, 1.04), loop: true, width: 0, fillColor: mix(SAND, HAZE, Math.min(0.9, haze(z) * 1.1)), sortingOrder: -900 }, new Vector3(0, FLOOR, z), root);
+      flat(`sand ${z}`, { points: Shapes.rectangle(-30, -0.5, 60, 1.04), loop: true, width: 0, fillColor: SAND, sortingOrder: -900 }, new Vector3(0, FLOOR, z), root);
     }
     // Caustics: wobbling loops of light on the sand.
     for (let i = 0; i < 18; i++) {
       const centre = new Vector2(-10 + ((i * 7.3) % 20), -(((i * 3.7) % 11) - 2.5));
-      const z = centre.y;
       this.caustics.push({
-        line: flat(`caustic ${i}`, { loop: true, width: 0.035, color: mix(mix(SAND, Color.white, 0.3), HAZE, haze(z) * 1.05), sortingOrder: -899 }, new Vector3(0, FLOOR + 0.01, 0), root),
+        line: flat(`caustic ${i}`, { loop: true, width: 0.035, color: mix(SAND, Color.white, 0.3), sortingOrder: -899 }, new Vector3(0, FLOOR + 0.01, 0), root),
         centre,
         size: 0.3 + (i % 4) * 0.12,
         phase: i * 1.3,
@@ -319,7 +325,7 @@ class Tank extends Component {
     for (let i = 0; i < 5; i++) {
       const z = -6 + i * 1.2;
       const go = new GameObject(`shaft ${i}`, { position: new Vector3(-8 + i * 4, 9, z), parent: root });
-      shape("shaft", { points: [new Vector2(-0.7, 0), new Vector2(0.8, 0), new Vector2(3.2, -13), new Vector2(1.0, -13)], loop: true, width: 0, fillColor: mix(HAZE, LIGHT, 0.2 - haze(z) * 0.1), sortingOrder: -950 + i }, Vector3.zero, go);
+      shape("shaft", { points: [new Vector2(-0.7, 0), new Vector2(0.8, 0), new Vector2(3.2, -13), new Vector2(1.0, -13)], loop: true, width: 0, fillColor: mix(HAZE, LIGHT, 0.3), sortingOrder: -950 + i }, Vector3.zero, go);
       this.shafts.push(go);
     }
     // Kelp at several depths.
@@ -328,7 +334,7 @@ class Tank extends Component {
       const z = [-6.5, -4, -1.5, 1.5][i % 4]!;
       const x = -11 + ((i * 5.3) % 22);
       this.plants.push({
-        line: shape(`kelp ${i}`, { width: 0.16 + (i % 3) * 0.05, color: mix(greens[i % 5]!, HAZE, haze(z)), sortingOrder: Math.round(z * 100) + 5 }, new Vector3(0, 0, z), root),
+        line: shape(`kelp ${i}`, { width: 0.16 + (i % 3) * 0.05, color: greens[i % 5]!, sortingOrder: Math.round(z * 100) + 5 }, new Vector3(0, 0, z), root),
         base: new Vector3(x, FLOOR, z),
         height: 2.2 + (i % 5) * 0.8,
         phase: i * 1.4,
@@ -338,15 +344,14 @@ class Tank extends Component {
     for (let i = 0; i < 70; i++) {
       const pos = new Vector3(LEFT * 1.4 + Math.random() * (RIGHT - LEFT) * 1.4, FLOOR + Math.random() * 8, FAR + Math.random() * (NEAR - FAR + 2));
       const go = new GameObject(`speck ${i}`, { position: pos, parent: root });
-      const c = mix(Color.hex("#d6eef7"), HAZE, haze(pos.z));
-      shape("speck", { points: Shapes.circle(Vector2.zero, 0.02 + (i % 3) * 0.012, 6), loop: true, width: 0, fillColor: c, sortingOrder: Math.round(pos.z * 100) + 50 }, Vector3.zero, go);
+      shape("speck", { points: Shapes.circle(Vector2.zero, 0.02 + (i % 3) * 0.012, 6), loop: true, width: 0, fillColor: Color.hex("#d6eef7"), sortingOrder: Math.round(pos.z * 100) + 50 }, Vector3.zero, go);
       this.snow.push({ go, pos, phase: Math.random() * 10 });
     }
     const stone = new Vector3(5.5, FLOOR + 0.1, -3);
-    shape("air stone", { points: Shapes.roundedRectangle(-0.3, -0.1, 0.6, 0.2, 0.08), loop: true, width: 0, fillColor: mix(Color.hex("#6a7079"), HAZE, haze(stone.z)), sortingOrder: -290 }, stone, root);
+    shape("air stone", { points: Shapes.roundedRectangle(-0.3, -0.1, 0.6, 0.2, 0.08), loop: true, width: 0, fillColor: Color.hex("#6a7079"), sortingOrder: -290 }, stone, root);
     for (let i = 0; i < 24; i++) {
       const go = new GameObject(`bubble ${i}`, { parent: root });
-      shape("bubble", { points: Shapes.circle(Vector2.zero, 0.04 + (i % 4) * 0.025, 12), loop: true, width: 0.018, color: mix(Color.hex("#d8f2ff"), HAZE, haze(stone.z)), sortingOrder: -280 }, Vector3.zero, go);
+      shape("bubble", { points: Shapes.circle(Vector2.zero, 0.04 + (i % 4) * 0.025, 12), loop: true, width: 0.018, color: Color.hex("#d8f2ff"), sortingOrder: -280 }, Vector3.zero, go);
       this.bubbles.push({ go, pos: new Vector3(stone.x, FLOOR + (i / 24) * 9, stone.z), speed: 1.1 + (i % 5) * 0.25, phase: i * 0.7 });
     }
 

@@ -170,6 +170,7 @@ export {
   PlaneRenderer,
   type PrimitiveMesh,
   type BloomSettings,
+  type FogMode,
   RenderSettings,
   type ProceduralSky,
   type LightShadows,

@@ -70,7 +70,7 @@ describe("Camera conversions", () => {
     const a = cam.screenPointToRay({ x: 450, y: 50 });
     const b = cam.screenPointToRay({ x: 750, y: 550 });
     expect(near(a.direction, b.direction)).toBe(true);
-    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false, "none", null, false]);
+    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false, "none", null, false, true]);
     // Post anti-aliasing (M5-RND-18).
     cam.antialiasing = "fxaa";
     expect(ops.at(-1)![15]).toBe("fxaa");
@@ -86,12 +86,12 @@ describe("Camera conversions", () => {
     const security = camera(new Vector3(5, 5, 5));
     security.targetTexture = rt;
     expect(ops.at(-1)![0]).toBe("render.camera");
-    expect(ops.at(-1)!.at(-2)).toBe(rt.id);
+    expect(ops.at(-1)![16]).toBe(rt.id);
     expect(Camera.main).toBe(screen);
     rt.setSize(64, 64);
     expect(ops.at(-1)).toEqual(["render.renderTexture", rt.id, 64, 64]);
     security.targetTexture = null;
-    expect(ops.at(-1)!.at(-2)).toBeNull();
+    expect(ops.at(-1)![16]).toBeNull();
   });
 
   test("main camera and draw order", () => {

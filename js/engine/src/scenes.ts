@@ -631,6 +631,12 @@ function saveRenderSettings(saver: Saver): Record<string, unknown> {
       reflectionIntensity: RenderSettings.reflectionIntensity,
       skybox: RenderSettings.skybox,
       bloom: RenderSettings.bloom,
+      fog: RenderSettings.fog,
+      fogMode: RenderSettings.fogMode,
+      fogColor: RenderSettings.fogColor,
+      fogDensity: RenderSettings.fogDensity,
+      fogStartDistance: RenderSettings.fogStartDistance,
+      fogEndDistance: RenderSettings.fogEndDistance,
     },
     "renderSettings",
   ) as Record<string, unknown>;
@@ -643,6 +649,13 @@ function applyRenderSettings(saved: Record<string, unknown>): void {
   if (typeof s.reflectionIntensity === "number") RenderSettings.reflectionIntensity = s.reflectionIntensity;
   if ("skybox" in s) RenderSettings.skybox = (s.skybox as never) ?? null;
   if ("bloom" in s) RenderSettings.bloom = (s.bloom as never) ?? null;
+  // The fog's settings before its switch, so turning it on sends them all.
+  if (s.fogMode === "linear" || s.fogMode === "exponential" || s.fogMode === "exponentialSquared") RenderSettings.fogMode = s.fogMode;
+  if (s.fogColor instanceof Color) RenderSettings.fogColor = s.fogColor;
+  if (typeof s.fogDensity === "number") RenderSettings.fogDensity = s.fogDensity;
+  if (typeof s.fogStartDistance === "number") RenderSettings.fogStartDistance = s.fogStartDistance;
+  if (typeof s.fogEndDistance === "number") RenderSettings.fogEndDistance = s.fogEndDistance;
+  if (typeof s.fog === "boolean") RenderSettings.fog = s.fog;
 }
 
 export type LoadSceneMode = "single" | "additive";

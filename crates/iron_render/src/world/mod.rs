@@ -501,6 +501,48 @@ pub struct WorldView {
     /// The shapes those fills and strokes belong to, in drawing order. Empty: all the
     /// fills, then all the strokes.
     pub shapes: Vec<ShapeRun>,
+    /// Fog over everything this view draws except its background and the editor's grid
+    /// and gizmos (`None`: clear air).
+    pub fog: Option<Fog>,
+}
+
+/// How fog thickens with distance (Unity's `FogMode`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FogMode {
+    /// None at `start`, total at `end`.
+    Linear,
+    /// `1 - e^(-density × distance)`.
+    Exponential,
+    /// `1 - e^(-(density × distance)²)`: clear nearby, then closing in (Unity's default).
+    #[default]
+    ExponentialSquared,
+}
+
+/// Fog (Unity's `RenderSettings.fog`): things fade towards `color` the farther they are
+/// from the camera. Additive light (glows, beams) fades out instead.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fog {
+    pub mode: FogMode,
+    /// Linear RGB.
+    pub color: [f32; 3],
+    /// The exponential modes' thickness, per metre.
+    pub density: f32,
+    /// Linear fog: where it begins and where it's total, in metres.
+    pub start: f32,
+    pub end: f32,
+}
+
+impl Default for Fog {
+    /// Unity's defaults.
+    fn default() -> Self {
+        Self {
+            mode: FogMode::ExponentialSquared,
+            color: [0.5, 0.5, 0.5],
+            density: 0.01,
+            start: 0.0,
+            end: 300.0,
+        }
+    }
 }
 
 /// A line segment in the world, for [`WorldView::lines`].
@@ -574,6 +616,7 @@ impl WorldView {
             strokes: Vec::new(),
             fills: Vec::new(),
             shapes: Vec::new(),
+            fog: None,
         }
     }
 }
@@ -693,6 +736,28 @@ struct GpuGlobals {
     flags: [f32; 4],
     /// Fragments where `dot(xyz, p) + w < 0` are dropped (zero: none).
     clip: [f32; 4],
+    /// rgb: the fog's colour; w: its mode (0 none, 1 linear, 2 exponential, 3 squared).
+    fog: [f32; 4],
+    /// x: density; y, z: linear fog's start and end.
+    fog_params: [f32; 4],
+    /// xyz: the camera's forward axis; w: 1 for orthographic.
+    view_dir: [f32; 4],
+}
+
+impl GpuGlobals {
+    fn set_fog(&mut self, fog: Option<&Fog>) {
+        let Some(f) = fog else {
+            self.fog = [0.0; 4];
+            return;
+        };
+        let mode = match f.mode {
+            FogMode::Linear => 1.0,
+            FogMode::Exponential => 2.0,
+            FogMode::ExponentialSquared => 3.0,
+        };
+        self.fog = [f.color[0], f.color[1], f.color[2], mode];
+        self.fog_params = [f.density.max(0.0), f.start, f.end, 0.0];
+    }
 }
 
 #[repr(C)]
@@ -3074,7 +3139,8 @@ impl WorldRenderer {
             let c = view.camera.clear;
             let p = view.camera.position;
             let count = per_view[i].2.len() as f32;
-            let globals = GpuGlobals {
+            let f = view.camera.forward;
+            let mut globals = GpuGlobals {
                 view_proj: view.camera.view_proj.to_cols_array_2d(),
                 background: [
                     (c.r * c.a) as f32,
@@ -3097,7 +3163,10 @@ impl WorldRenderer {
                     f32::from(u8::from(view.grid)),
                 ],
                 clip: view.clip_plane.unwrap_or([0.0; 4]),
+                view_dir: [f.x, f.y, f.z, f32::from(u8::from(view.camera.orthographic))],
+                ..Zeroable::zeroed()
             };
+            globals.set_fog(view.fog.as_ref());
             gpu.queue.write_buffer(
                 &self.globals,
                 self.stride * i as u64,

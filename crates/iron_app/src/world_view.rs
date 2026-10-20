@@ -10,11 +10,11 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, GizmoLine, Grading,
-    Light, LightKind, MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection,
-    ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData,
-    TextureFilter, TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView,
-    primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog, FogMode,
+    GizmoLine, Grading, Light, LightKind, MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror,
+    Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke,
+    TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldTexture,
+    WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -46,6 +46,8 @@ struct Camera {
     target: Option<u32>,
     /// Draws the editor's ground grid (`Camera.sceneGrid`).
     grid: bool,
+    /// Shows `RenderSettings.fog` (`Camera.fog`).
+    fog: bool,
     /// Gizmo lines only this camera shows (`render.gizmos`, from `Gizmos`).
     lines: Vec<GizmoLine>,
 }
@@ -340,6 +342,8 @@ pub struct WorldViews {
     pub sky: Option<Sky>,
     /// Reflection / sky light intensity, and whether ambient light comes from the sky.
     pub environment: (f32, bool),
+    /// Fog for every camera that shows it (`render.fog`).
+    fog: Option<Fog>,
     /// `emit` requests waiting for the next particle update (which knows where objects are).
     pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
@@ -387,6 +391,7 @@ impl Default for WorldViews {
             grading: Grading::default(),
             sky: None,
             environment: (1.0, true),
+            fog: None,
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
@@ -747,7 +752,8 @@ impl WorldViews {
         match name {
             // `camera component object fov near far [r g b a] depth orthographic
             // orthographicSize [x y w h] clearFlags(skybox|color) cullingMask
-            // [32 cull distances]|null cullSpherical antialiasing targetTexture|null grid`
+            // [32 cull distances]|null cullSpherical antialiasing targetTexture|null grid
+            // fog`
             "camera" => {
                 let orthographic = matches!(args.get(7), Some(Value::Bool(true)));
                 let projection = if orthographic {
@@ -777,6 +783,7 @@ impl WorldViews {
                         _ => Some(id_at(15)?),
                     },
                     grid: matches!(args.get(16), Some(Value::Bool(true))),
+                    fog: !matches!(args.get(17), Some(Value::Bool(false))),
                     // Kept from before: gizmos come separately.
                     lines: self
                         .cameras
@@ -1163,6 +1170,25 @@ impl WorldViews {
                         threshold: num(1)?.max(0.0),
                         intensity: num(2)?.max(0.0),
                         scatter: num(3)?.clamp(0.0, 1.0),
+                    }),
+                };
+            }
+            // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end`;
+            // `fog 0 null` clears the air.
+            "fog" => {
+                self.fog = match args.get(1) {
+                    Some(Value::Null) | None => None,
+                    _ => Some(Fog {
+                        mode: match args.get(1).and_then(Value::as_str) {
+                            Some("linear") => FogMode::Linear,
+                            Some("exponential") => FogMode::Exponential,
+                            Some("exponentialSquared") => FogMode::ExponentialSquared,
+                            other => return Err(format!("unknown fog mode {other:?}")),
+                        },
+                        color: nums::<3>(args.get(2)).ok_or("fog needs [r, g, b]")?,
+                        density: num(3)?.max(0.0),
+                        start: num(4)?,
+                        end: num(5)?,
                     }),
                 };
             }
@@ -1605,6 +1631,7 @@ impl WorldViews {
                     strokes: shown_strokes,
                     fills: shown_fills,
                     shapes: shown_shapes,
+                    fog: self.fog.filter(|_| camera.fog),
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
@@ -2140,5 +2167,79 @@ mod tests {
         group(&mut views, 1.0);
         assert_eq!(level(&mut scene, &views, -1.5), ["simple"]);
         assert_eq!(level(&mut scene, &views, -300.0), ["simple"]);
+    }
+
+    // M7-FOG-03
+    #[test]
+    fn fog_reaches_cameras_that_show_it() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene.scene.update_world();
+        let camera = |fog: Option<bool>| {
+            let mut args = vec![
+                n(100.0),
+                n(1.0),
+                n(60.0),
+                n(0.1),
+                n(1000.0),
+                Value::Null,
+                n(0.0),
+                Value::Bool(false),
+                n(5.0),
+                Value::Null,
+                "color".into(),
+                Value::Null,
+                Value::Null,
+                Value::Bool(false),
+                "none".into(),
+                Value::Null,
+                Value::Bool(false),
+            ];
+            args.extend(fog.map(Value::Bool));
+            args
+        };
+        let fog = |views: &WorldViews| views.views(&scene, (64, 64), &[])[0].fog;
+        views.apply("camera", &camera(None)).unwrap();
+        assert_eq!(fog(&views), None, "clear air by default");
+        let color = Value::Array(vec![n(0.5), n(0.6), n(0.7)]);
+        views
+            .apply(
+                "fog",
+                &[
+                    n(0.0),
+                    "linear".into(),
+                    color.clone(),
+                    n(0.02),
+                    n(10.0),
+                    n(80.0),
+                ],
+            )
+            .unwrap();
+        // Cameras show it unless they opt out.
+        assert_eq!(
+            fog(&views),
+            Some(Fog {
+                mode: FogMode::Linear,
+                color: [0.5, 0.6, 0.7],
+                density: 0.02,
+                start: 10.0,
+                end: 80.0,
+            })
+        );
+        views.apply("camera", &camera(Some(false))).unwrap();
+        assert_eq!(fog(&views), None);
+        views.apply("camera", &camera(Some(true))).unwrap();
+        assert!(fog(&views).is_some());
+        let bad = views.apply(
+            "fog",
+            &[n(0.0), "thick".into(), color, n(0.0), n(0.0), n(0.0)],
+        );
+        assert!(bad.is_err());
+        views.apply("fog", &[n(0.0), Value::Null]).unwrap();
+        assert_eq!(fog(&views), None);
     }
 }

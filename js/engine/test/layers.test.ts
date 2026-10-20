@@ -76,7 +76,7 @@ describe("layers", () => {
     cam.onStart();
     const last = () => ops.filter((o) => o[0] === "render.camera").at(-1)!;
     expect(cam.cullingMask).toBe(0xffffffff);
-    expect(last().slice(12)).toEqual([0xffffffff, null, false, "none", null, false]);
+    expect(last().slice(12)).toEqual([0xffffffff, null, false, "none", null, false, true]);
     // Signed masks (Unity's ~) come out unsigned.
     cam.cullingMask &= ~LayerMask.getMask("UI");
     expect(cam.cullingMask).toBe(0xffffffdf);

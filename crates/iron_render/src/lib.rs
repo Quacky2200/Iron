@@ -17,12 +17,12 @@ pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, needs_backdro
 pub use wgpu;
 pub use world::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, CookedTexture, DEFAULT_PARTICLE_TEXTURE, FillRule,
-    FillVertex, GizmoLine, Grading, Light, LightKind, MISSING_TEXTURE, MaterialMaps, MeshData,
-    MeshGlow, MeshInstance, Mirror, PRIMITIVE_BASE, PRIMITIVES, Projection, RENDER_TEXTURE_FORMAT,
-    ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TexelFormat,
-    TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldRenderer,
-    WorldStats, WorldTexture, WorldView, in_mask, mip_chain, primitive, primitive_id,
-    tessellate_fill, viewport_size,
+    FillVertex, Fog, FogMode, GizmoLine, Grading, Light, LightKind, MISSING_TEXTURE, MaterialMaps,
+    MeshData, MeshGlow, MeshInstance, Mirror, PRIMITIVE_BASE, PRIMITIVES, Projection,
+    RENDER_TEXTURE_FORMAT, ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky,
+    Stroke, TexelFormat, TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera,
+    WorldQuad, WorldRenderer, WorldStats, WorldTexture, WorldView, in_mask, mip_chain, primitive,
+    primitive_id, tessellate_fill, viewport_size,
 };
 
 /// A linear RGBA colour.

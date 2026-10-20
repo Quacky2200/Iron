@@ -48,6 +48,7 @@ export class Camera extends Component {
   private _layerCullSpherical = false;
   private _antialiasing: "none" | "fxaa" = "none";
   private _sceneGrid = false;
+  private _fog = true;
   private _targetTexture: RenderTexture | null = null;
   private started = false;
 
@@ -238,6 +239,16 @@ export class Camera extends Component {
     this.send();
   }
 
+  /** Shows `RenderSettings.fog` (on by default): turn it off for a minimap or a clear view. */
+  @property
+  get fog(): boolean {
+    return this._fog;
+  }
+  set fog(on: boolean) {
+    this._fog = on;
+    this.send();
+  }
+
   /** The camera's area of the screen in UI pixels. */
   get pixelRect(): Rect {
     return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
@@ -366,6 +377,7 @@ export class Camera extends Component {
       this._antialiasing,
       this._targetTexture?.id ?? null,
       this._sceneGrid,
+      this._fog,
     );
   }
 
@@ -1170,6 +1182,28 @@ export interface ProceduralSky {
   sunSize?: number;
 }
 
+/**
+ * How fog thickens with distance (Unity's `FogMode`): `linear` from `fogStartDistance`
+ * to `fogEndDistance`; `exponential` by `fogDensity` per metre; `exponentialSquared`
+ * clear nearby, then closing in.
+ */
+export type FogMode = "linear" | "exponential" | "exponentialSquared";
+
+let fog = false;
+let fogMode: FogMode = "exponentialSquared";
+let fogColor = new Color(0.5, 0.5, 0.5);
+let fogDensity = 0.01;
+let fogStart = 0;
+let fogEnd = 300;
+
+function sendFog(): void {
+  if (!fog) {
+    __iron_op("render.fog", 0, null);
+    return;
+  }
+  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd);
+}
+
 let skybox: ProceduralSky | null = null;
 let ambientMode: "skybox" | "color" = "skybox";
 let reflectionIntensity = 1;
@@ -1261,6 +1295,57 @@ export const RenderSettings = {
   set postExposure(ev: number) {
     postExposure = ev;
     sendPost();
+  },
+  /**
+   * Fog (off by default): things fade towards `fogColor` with distance from the camera;
+   * glows fade out. Backgrounds and skies stay clear, so match the camera's background
+   * colour to the fog for a seamless horizon. Cameras can opt out (`Camera.fog`).
+   */
+  get fog(): boolean {
+    return fog;
+  },
+  set fog(on: boolean) {
+    fog = on;
+    sendFog();
+  },
+  get fogMode(): FogMode {
+    return fogMode;
+  },
+  set fogMode(m: FogMode) {
+    fogMode = m;
+    if (fog) sendFog();
+  },
+  /** The fog's colour (linear). */
+  get fogColor(): Color {
+    return fogColor;
+  },
+  set fogColor(c: Color) {
+    fogColor = c;
+    if (fog) sendFog();
+  },
+  /** How thick the exponential modes are, per metre. */
+  get fogDensity(): number {
+    return fogDensity;
+  },
+  set fogDensity(d: number) {
+    fogDensity = Math.max(0, d);
+    if (fog) sendFog();
+  },
+  /** Where linear fog begins, in metres from the camera. */
+  get fogStartDistance(): number {
+    return fogStart;
+  },
+  set fogStartDistance(d: number) {
+    fogStart = d;
+    if (fog) sendFog();
+  },
+  /** Where linear fog hides everything. */
+  get fogEndDistance(): number {
+    return fogEnd;
+  },
+  set fogEndDistance(d: number) {
+    fogEnd = d;
+    if (fog) sendFog();
   },
 };
 

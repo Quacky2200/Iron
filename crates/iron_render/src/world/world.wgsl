@@ -24,6 +24,13 @@ struct Globals {
     flags: vec4<f32>,
     // Fragments where dot(xyz, p) + w < 0 are dropped (all zero: none).
     clip: vec4<f32>,
+    // rgb: the fog's colour (linear); w: its mode (0 none, 1 linear, 2 exponential,
+    // 3 exponential squared).
+    fog: vec4<f32>,
+    // x: density per metre; y, z: linear fog's start and end in metres.
+    fog_params: vec4<f32>,
+    // xyz: the camera's forward axis; w: 1 for orthographic (fog by depth along it).
+    view_dir: vec4<f32>,
 };
 
 struct Quad {
@@ -159,7 +166,38 @@ fn fs_quad(in: VsOut) -> @location(0) vec4<f32> {
     if (c.a <= 0.002 && max(c.r, max(c.g, c.b)) <= 0.002) {
         discard;
     }
-    return c;
+    return fogged(c, in.world);
+}
+
+// How much of the fog lies between the camera and `p`: 0 none, 1 only fog. Perspective
+// cameras measure straight to the point (turning doesn't move the fog); orthographic
+// ones by depth along their view, so a 2D scene fogs by layer.
+fn fog_amount(p: vec3<f32>) -> f32 {
+    let mode = g.fog.w;
+    if (mode < 0.5) {
+        return 0.0;
+    }
+    let to = p - g.camera.xyz;
+    let d = select(length(to), max(dot(to, g.view_dir.xyz), 0.0), g.view_dir.w > 0.5);
+    var clear: f32;
+    if (mode < 1.5) {
+        let start = g.fog_params.y;
+        let end = g.fog_params.z;
+        clear = clamp((end - d) / max(end - start, 1e-4), 0.0, 1.0);
+    } else if (mode < 2.5) {
+        clear = exp(-g.fog_params.x * d);
+    } else {
+        let x = g.fog_params.x * d;
+        clear = exp(-x * x);
+    }
+    return 1.0 - clear;
+}
+
+// A premultiplied colour at `p` seen through the fog: what it covers turns to fog colour,
+// and light it adds (alpha 0) fades out.
+fn fogged(c: vec4<f32>, p: vec3<f32>) -> vec4<f32> {
+    let f = fog_amount(p);
+    return vec4<f32>(c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f), c.a);
 }
 
 // A camera's background over its viewport, at the far plane: it clears colour and
@@ -321,6 +359,7 @@ fn fs_line_hidden(in: LineOut) -> @location(0) vec4<f32> {
 struct ShapeOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) world: vec3<f32>,
 };
 
 @vertex
@@ -328,12 +367,13 @@ fn vs_shape(@location(0) position: vec3<f32>, @location(1) color: vec4<f32>) -> 
     var out: ShapeOut;
     out.pos = g.view_proj * vec4<f32>(position, 1.0);
     out.color = vec4<f32>(color.rgb * color.a, color.a);
+    out.world = position;
     return out;
 }
 
 @fragment
 fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
-    return in.color;
+    return fogged(in.color, in.world);
 }
 
 // Strokes (`LineRenderer2D`): each instance is a segment `width` world units wide, drawn as a
@@ -349,6 +389,7 @@ struct StrokeOut {
     @location(1) local: vec2<f32>,
     // x: the segment's length; y: the stroke's radius.
     @location(2) @interpolate(flat) shape: vec2<f32>,
+    @location(3) world: vec3<f32>,
 };
 
 fn unproject(ndc: vec3<f32>) -> vec3<f32> {
@@ -397,7 +438,8 @@ fn vs_stroke(
     let reach = r + px;
     let u = select(-reach, len + reach, end > 0.5);
     let v = side * reach;
-    out.pos = g.view_proj * vec4<f32>(a + along * u + across * v, 1.0);
+    out.world = a + along * u + across * v;
+    out.pos = g.view_proj * vec4<f32>(out.world, 1.0);
     out.local = vec2<f32>(u, v);
     out.shape = vec2<f32>(len, r);
     return out;
@@ -409,7 +451,7 @@ fn fs_stroke(in: StrokeOut) -> @location(0) vec4<f32> {
     let q = vec2<f32>(in.local.x - clamp(in.local.x, 0.0, len), in.local.y);
     let d = length(q) - in.shape.y;
     let aa = max(fwidth(d), 1e-6);
-    return in.color * clamp(0.5 - d / aa, 0.0, 1.0);
+    return fogged(in.color * clamp(0.5 - d / aa, 0.0, 1.0), in.world);
 }
 
 struct MeshOut {
@@ -718,12 +760,12 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
             let along = clamp(in.uv.y, 0.0, 1.0);
             light *= e2 * e2 * (1.0 - along) * (1.0 - along) * smoothstep(0.0, 0.08, along);
         }
-        return vec4<f32>(light, 0.0);
+        return fogged(vec4<f32>(light, 0.0), in.world);
     }
     let out_alpha = select(alpha, 1.0, mode == 1u);
     if (m.params.x > 0.5) {
         let unlit = base + emission;
-        return vec4<f32>(unlit * out_alpha, out_alpha);
+        return fogged(vec4<f32>(unlit * out_alpha, out_alpha), in.world);
     }
     var n = normalize(in.normal);
     var tangent = in.tangent.xyz;
@@ -843,8 +885,8 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         // don't, and what's reflected covers what's behind (Unity's Standard).
         let reflectivity = max(f0.r, max(f0.g, f0.b));
         let a = 1.0 - (1.0 - alpha) * (1.0 - reflectivity);
-        return vec4<f32>(diffuse * alpha + specular + emission, a);
+        return fogged(vec4<f32>(diffuse * alpha + specular + emission, a), in.world);
     }
     let lit = diffuse + specular + emission;
-    return vec4<f32>(lit * out_alpha, out_alpha);
+    return fogged(vec4<f32>(lit * out_alpha, out_alpha), in.world);
 }
