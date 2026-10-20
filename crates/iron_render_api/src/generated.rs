@@ -2600,6 +2600,625 @@ fn lod_group_kind() -> Kind {
     }
 }
 
+// ---- CameraFollow ----
+
+numbered_handle!(
+    /// A `CameraFollow` by number (1-based: 0 is "none").
+    CameraFollowRef
+);
+
+/// The data of one `CameraFollow`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FollowData {
+    pub object: ObjectId,
+    pub target: Option<ObjectId>,
+    pub offset: V3,
+    pub offset_in_target_space: bool,
+    pub smooth_time: f64,
+    pub look_at_target: bool,
+    pub velocity: [f64; 3],
+}
+
+impl FollowData {
+    fn new(object: ObjectId) -> Self {
+        FollowData {
+            object,
+            target: None,
+            offset: V3 {
+                x: 0.0,
+                y: 3.0,
+                z: 6.0,
+            },
+            offset_in_target_space: false,
+            smooth_time: 0.25,
+            look_at_target: true,
+            velocity: [0.0; 3],
+        }
+    }
+}
+
+thread_local! {
+    static FOLLOWS: RefCell<Vec<Option<FollowData>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Runs `f` on a `CameraFollow`'s data.
+pub fn with_camera_follow<R>(
+    r: CameraFollowRef,
+    f: impl FnOnce(&mut FollowData) -> R,
+) -> Option<R> {
+    FOLLOWS.with(|v| {
+        let mut v = v.borrow_mut();
+        v.get_mut((r.0 as usize).checked_sub(1)?)?.as_mut().map(f)
+    })
+}
+
+/// The live `CameraFollows`, in the order they were made (for the renderer).
+pub fn camera_follows() -> Vec<(CameraFollowRef, FollowData)> {
+    FOLLOWS.with(|v| {
+        v.borrow()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.clone().map(|d| (CameraFollowRef(i as u32 + 1), d)))
+            .collect()
+    })
+}
+
+/// The `CameraFollows` on an object, in the order they were added.
+pub fn camera_follows_on(object: ObjectId) -> Vec<CameraFollowRef> {
+    camera_follows()
+        .into_iter()
+        .filter(|(_, d)| d.object == object)
+        .map(|(r, _)| r)
+        .collect()
+}
+
+pub fn attach_camera_follow(object: ObjectId) -> CameraFollowRef {
+    FOLLOWS.with(|v| {
+        let mut v = v.borrow_mut();
+        v.push(Some(FollowData::new(object)));
+        CameraFollowRef(v.len() as u32)
+    })
+}
+
+pub fn remove_camera_follow(r: CameraFollowRef) {
+    FOLLOWS.with(|v| {
+        if let Some(slot) = v.borrow_mut().get_mut((r.0 as usize).wrapping_sub(1)) {
+            *slot = None;
+        }
+    });
+}
+
+/// Removes the `CameraFollows` of a destroyed object.
+pub fn remove_camera_follows_on(object: ObjectId) {
+    FOLLOWS.with(|v| {
+        for slot in v.borrow_mut().iter_mut() {
+            if slot.as_ref().is_some_and(|d| d.object == object) {
+                *slot = None;
+            }
+        }
+    });
+}
+
+pub fn reset_camera_follows() {
+    FOLLOWS.with(|v| v.borrow_mut().clear());
+}
+
+/// Runs every `CameraFollow`: follows its target from an offset, easing into place, and looks at
+/// it. The host calls it once a frame after the other late updates (`onLateUpdate`).
+pub fn late_update_camera_follows(dt: f64) {
+    use iron_math::mathf_api::smooth_damp;
+    use iron_scene::api::scene_api as scene;
+    for (r, d) in camera_follows() {
+        let Some(target) = d
+            .target
+            .filter(|t| iron_scene::api::with_scene(|s| s.contains(*t)).unwrap_or(false))
+        else {
+            continue;
+        };
+        let offset = if d.offset_in_target_space {
+            scene::rotation(target).rotate(d.offset)
+        } else {
+            d.offset
+        };
+        let target_pos = scene::position(target);
+        let goal = target_pos.add(offset);
+        let at = scene::position(d.object);
+        if d.smooth_time <= 0.0 {
+            scene::set_position(d.object, goal);
+        } else {
+            let dt = dt.max(1e-4);
+            let mut velocity = d.velocity;
+            let mut axis = |i: usize, a: f64, b: f64| {
+                let r = smooth_damp(a, b, velocity[i], d.smooth_time, dt, f64::NAN);
+                velocity[i] = r.y;
+                r.x
+            };
+            let p = V3 {
+                x: axis(0, at.x, goal.x),
+                y: axis(1, at.y, goal.y),
+                z: axis(2, at.z, goal.z),
+            };
+            scene::set_position(d.object, p);
+            with_camera_follow(r, |d| d.velocity = velocity);
+        }
+        if d.look_at_target {
+            iron_scene::api::TransformRef(d.object).look_at(target_pos);
+        }
+    }
+}
+
+/// The saved properties of a `CameraFollow`.
+pub fn save_camera_follow(r: CameraFollowRef) -> Map<String, Value> {
+    let mut m = Map::new();
+    with_camera_follow(r, |d| {
+        m.insert(
+            "target".into(),
+            d.target.map_or(Value::Null, |o| object_ref(o.to_raw())),
+        );
+        m.insert(
+            "offset".into(),
+            json!({ "$type": "Vector3", "value": [d.offset.x, d.offset.y, d.offset.z] }),
+        );
+        m.insert(
+            "offsetInTargetSpace".into(),
+            json!(d.offset_in_target_space),
+        );
+        m.insert("smoothTime".into(), json!(d.smooth_time));
+        m.insert("lookAtTarget".into(), json!(d.look_at_target));
+    });
+    m
+}
+
+/// Applies saved properties to a `CameraFollow`; returns warnings.
+pub fn load_camera_follow(r: CameraFollowRef, props: &Map<String, Value>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    with_camera_follow(r, |d| {
+        for (k, v) in props {
+            let ok = match k.as_str() {
+                "target" => object_of(v).map(|x| d.target = x),
+                "offset" => v3_of(v).map(|x| d.offset = x),
+                "offsetInTargetSpace" => v.as_bool().map(|x| d.offset_in_target_space = x),
+                "smoothTime" => v.as_f64().map(|x| d.smooth_time = x),
+                "lookAtTarget" => v.as_bool().map(|x| d.look_at_target = x),
+                other => {
+                    warnings.push(format!("no property `{other}`; dropped"));
+                    continue;
+                }
+            };
+            if ok.is_none() {
+                warnings.push(format!("property `{k}` has a value of the wrong shape"));
+            }
+        }
+    });
+    warnings
+}
+
+#[iron_api(namespace = "CameraFollow", handles(CameraFollow = CameraFollowRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+pub mod camera_follow_api {
+    use super::*;
+
+    impl CameraFollowRef {
+        /// Adds a `CameraFollow` to a GameObject (what `go.addComponent(CameraFollow)` does).
+        pub fn attach(object: ObjectId) -> CameraFollowRef {
+            super::attach_camera_follow(object)
+        }
+
+        /// The first `CameraFollow` on an object, or none.
+        pub fn find_on(object: ObjectId) -> CameraFollowRef {
+            super::camera_follows_on(object)
+                .first()
+                .copied()
+                .unwrap_or(CameraFollowRef(0))
+        }
+
+        #[property]
+        pub fn game_object(self) -> ObjectId {
+            with_camera_follow(self, |d| d.object).unwrap_or_else(none_object)
+        }
+
+        /// The object to follow.
+        #[property]
+        pub fn target(self) -> ObjectId {
+            with_camera_follow(self, |d| d.target.unwrap_or_else(none_object))
+                .unwrap_or_else(|| none_object())
+        }
+
+        pub fn set_target(self, v: ObjectId) {
+            with_camera_follow(self, |d| {
+                d.target = (v.to_raw() != 0).then_some(v);
+            });
+        }
+
+        /// Where to sit, from the target.
+        #[property]
+        pub fn offset(self) -> V3 {
+            with_camera_follow(self, |d| d.offset).unwrap_or_else(|| V3::ZERO)
+        }
+
+        pub fn set_offset(self, v: V3) {
+            with_camera_follow(self, |d| {
+                d.offset = v;
+            });
+        }
+
+        /// Rotate the offset with the target (behind a car), or keep it in world space.
+        #[property]
+        pub fn offset_in_target_space(self) -> bool {
+            with_camera_follow(self, |d| d.offset_in_target_space).unwrap_or_else(|| false)
+        }
+
+        pub fn set_offset_in_target_space(self, v: bool) {
+            with_camera_follow(self, |d| {
+                d.offset_in_target_space = v;
+            });
+        }
+
+        /// About how long catching up takes, in seconds (0: instantly).
+        #[property]
+        pub fn smooth_time(self) -> f64 {
+            with_camera_follow(self, |d| d.smooth_time).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_smooth_time(self, v: f64) {
+            with_camera_follow(self, |d| {
+                d.smooth_time = v;
+            });
+        }
+
+        #[property]
+        pub fn look_at_target(self) -> bool {
+            with_camera_follow(self, |d| d.look_at_target).unwrap_or_else(|| false)
+        }
+
+        pub fn set_look_at_target(self, v: bool) {
+            with_camera_follow(self, |d| {
+                d.look_at_target = v;
+            });
+        }
+    }
+}
+
+fn camera_follow_kind() -> Kind {
+    Kind {
+        name: "CameraFollow".into(),
+        create: Box::new(|o| Ok(u64::from(attach_camera_follow(ObjectId::from_raw(o)).0))),
+        on: Box::new(|o| {
+            camera_follows_on(ObjectId::from_raw(o))
+                .into_iter()
+                .map(|r| u64::from(r.0))
+                .collect()
+        }),
+        save: Box::new(|h| save_camera_follow(CameraFollowRef(h as u32))),
+        load: Box::new(|h, props| load_camera_follow(CameraFollowRef(h as u32), props)),
+        awake: Box::new(|_| {}),
+        object: Box::new(|h| with_camera_follow(CameraFollowRef(h as u32), |d| d.object.to_raw())),
+        destroy: Box::new(|h| remove_camera_follow(CameraFollowRef(h as u32))),
+    }
+}
+
+// ---- CameraOrbit ----
+
+numbered_handle!(
+    /// A `CameraOrbit` by number (1-based: 0 is "none").
+    CameraOrbitRef
+);
+
+/// The data of one `CameraOrbit`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrbitData {
+    pub object: ObjectId,
+    pub target: Option<ObjectId>,
+    pub center: V3,
+    pub distance: f64,
+    pub yaw: f64,
+    pub pitch: f64,
+    pub min_pitch: f64,
+    pub max_pitch: f64,
+    pub auto_rotate: f64,
+}
+
+impl OrbitData {
+    fn new(object: ObjectId) -> Self {
+        OrbitData {
+            object,
+            target: None,
+            center: V3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            distance: 8.0,
+            yaw: 0.0,
+            pitch: 20.0,
+            min_pitch: -80.0,
+            max_pitch: 80.0,
+            auto_rotate: 0.0,
+        }
+    }
+}
+
+thread_local! {
+    static ORBITS: RefCell<Vec<Option<OrbitData>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Runs `f` on a `CameraOrbit`'s data.
+pub fn with_camera_orbit<R>(r: CameraOrbitRef, f: impl FnOnce(&mut OrbitData) -> R) -> Option<R> {
+    ORBITS.with(|v| {
+        let mut v = v.borrow_mut();
+        v.get_mut((r.0 as usize).checked_sub(1)?)?.as_mut().map(f)
+    })
+}
+
+/// The live `CameraOrbits`, in the order they were made (for the renderer).
+pub fn camera_orbits() -> Vec<(CameraOrbitRef, OrbitData)> {
+    ORBITS.with(|v| {
+        v.borrow()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.clone().map(|d| (CameraOrbitRef(i as u32 + 1), d)))
+            .collect()
+    })
+}
+
+/// The `CameraOrbits` on an object, in the order they were added.
+pub fn camera_orbits_on(object: ObjectId) -> Vec<CameraOrbitRef> {
+    camera_orbits()
+        .into_iter()
+        .filter(|(_, d)| d.object == object)
+        .map(|(r, _)| r)
+        .collect()
+}
+
+pub fn attach_camera_orbit(object: ObjectId) -> CameraOrbitRef {
+    ORBITS.with(|v| {
+        let mut v = v.borrow_mut();
+        v.push(Some(OrbitData::new(object)));
+        CameraOrbitRef(v.len() as u32)
+    })
+}
+
+pub fn remove_camera_orbit(r: CameraOrbitRef) {
+    ORBITS.with(|v| {
+        if let Some(slot) = v.borrow_mut().get_mut((r.0 as usize).wrapping_sub(1)) {
+            *slot = None;
+        }
+    });
+}
+
+/// Removes the `CameraOrbits` of a destroyed object.
+pub fn remove_camera_orbits_on(object: ObjectId) {
+    ORBITS.with(|v| {
+        for slot in v.borrow_mut().iter_mut() {
+            if slot.as_ref().is_some_and(|d| d.object == object) {
+                *slot = None;
+            }
+        }
+    });
+}
+
+pub fn reset_camera_orbits() {
+    ORBITS.with(|v| v.borrow_mut().clear());
+}
+
+/// Runs every `CameraOrbit` (once a frame after the other late updates).
+pub fn late_update_camera_orbits(dt: f64) {
+    use iron_math::{Q, mathf_api::repeat};
+    use iron_scene::api::scene_api as scene;
+    for (r, d) in camera_orbits() {
+        let yaw = repeat(d.yaw + d.auto_rotate * dt, 360.0);
+        let pitch = d
+            .pitch
+            .clamp(d.min_pitch.min(d.max_pitch), d.max_pitch.max(d.min_pitch));
+        with_camera_orbit(r, |d| {
+            d.yaw = yaw;
+            d.pitch = pitch;
+        });
+        let center = match d.target {
+            Some(t) if iron_scene::api::with_scene(|s| s.contains(t)).unwrap_or(false) => {
+                scene::position(t)
+            }
+            _ => d.center,
+        };
+        let rotation = Q::euler(-pitch, yaw, 0.0);
+        let back = V3 {
+            x: 0.0,
+            y: 0.0,
+            z: -1.0,
+        };
+        scene::set_position(
+            d.object,
+            center.add(rotation.rotate(back).scale(d.distance)),
+        );
+        iron_scene::api::TransformRef(d.object).look_at(center);
+    }
+}
+
+/// The saved properties of a `CameraOrbit`.
+pub fn save_camera_orbit(r: CameraOrbitRef) -> Map<String, Value> {
+    let mut m = Map::new();
+    with_camera_orbit(r, |d| {
+        m.insert(
+            "target".into(),
+            d.target.map_or(Value::Null, |o| object_ref(o.to_raw())),
+        );
+        m.insert(
+            "center".into(),
+            json!({ "$type": "Vector3", "value": [d.center.x, d.center.y, d.center.z] }),
+        );
+        m.insert("distance".into(), json!(d.distance));
+        m.insert("yaw".into(), json!(d.yaw));
+        m.insert("pitch".into(), json!(d.pitch));
+        m.insert("minPitch".into(), json!(d.min_pitch));
+        m.insert("maxPitch".into(), json!(d.max_pitch));
+        m.insert("autoRotate".into(), json!(d.auto_rotate));
+    });
+    m
+}
+
+/// Applies saved properties to a `CameraOrbit`; returns warnings.
+pub fn load_camera_orbit(r: CameraOrbitRef, props: &Map<String, Value>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    with_camera_orbit(r, |d| {
+        for (k, v) in props {
+            let ok = match k.as_str() {
+                "target" => object_of(v).map(|x| d.target = x),
+                "center" => v3_of(v).map(|x| d.center = x),
+                "distance" => v.as_f64().map(|x| d.distance = x),
+                "yaw" => v.as_f64().map(|x| d.yaw = x),
+                "pitch" => v.as_f64().map(|x| d.pitch = x),
+                "minPitch" => v.as_f64().map(|x| d.min_pitch = x),
+                "maxPitch" => v.as_f64().map(|x| d.max_pitch = x),
+                "autoRotate" => v.as_f64().map(|x| d.auto_rotate = x),
+                other => {
+                    warnings.push(format!("no property `{other}`; dropped"));
+                    continue;
+                }
+            };
+            if ok.is_none() {
+                warnings.push(format!("property `{k}` has a value of the wrong shape"));
+            }
+        }
+    });
+    warnings
+}
+
+#[iron_api(namespace = "CameraOrbit", handles(CameraOrbit = CameraOrbitRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+pub mod camera_orbit_api {
+    use super::*;
+
+    impl CameraOrbitRef {
+        /// Adds a `CameraOrbit` to a GameObject (what `go.addComponent(CameraOrbit)` does).
+        pub fn attach(object: ObjectId) -> CameraOrbitRef {
+            super::attach_camera_orbit(object)
+        }
+
+        /// The first `CameraOrbit` on an object, or none.
+        pub fn find_on(object: ObjectId) -> CameraOrbitRef {
+            super::camera_orbits_on(object)
+                .first()
+                .copied()
+                .unwrap_or(CameraOrbitRef(0))
+        }
+
+        #[property]
+        pub fn game_object(self) -> ObjectId {
+            with_camera_orbit(self, |d| d.object).unwrap_or_else(none_object)
+        }
+
+        /// Orbits this object (or `center` when there is none).
+        #[property]
+        pub fn target(self) -> ObjectId {
+            with_camera_orbit(self, |d| d.target.unwrap_or_else(none_object))
+                .unwrap_or_else(|| none_object())
+        }
+
+        pub fn set_target(self, v: ObjectId) {
+            with_camera_orbit(self, |d| {
+                d.target = (v.to_raw() != 0).then_some(v);
+            });
+        }
+
+        /// Orbits this point when there is no target.
+        #[property]
+        pub fn center(self) -> V3 {
+            with_camera_orbit(self, |d| d.center).unwrap_or_else(|| V3::ZERO)
+        }
+
+        pub fn set_center(self, v: V3) {
+            with_camera_orbit(self, |d| {
+                d.center = v;
+            });
+        }
+
+        #[property]
+        pub fn distance(self) -> f64 {
+            with_camera_orbit(self, |d| d.distance).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_distance(self, v: f64) {
+            with_camera_orbit(self, |d| {
+                d.distance = v;
+            });
+        }
+
+        /// Degrees.
+        #[property]
+        pub fn yaw(self) -> f64 {
+            with_camera_orbit(self, |d| d.yaw).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_yaw(self, v: f64) {
+            with_camera_orbit(self, |d| {
+                d.yaw = v;
+            });
+        }
+
+        /// Degrees.
+        #[property]
+        pub fn pitch(self) -> f64 {
+            with_camera_orbit(self, |d| d.pitch).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_pitch(self, v: f64) {
+            with_camera_orbit(self, |d| {
+                d.pitch = v;
+            });
+        }
+
+        #[property]
+        pub fn min_pitch(self) -> f64 {
+            with_camera_orbit(self, |d| d.min_pitch).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_min_pitch(self, v: f64) {
+            with_camera_orbit(self, |d| {
+                d.min_pitch = v;
+            });
+        }
+
+        #[property]
+        pub fn max_pitch(self) -> f64 {
+            with_camera_orbit(self, |d| d.max_pitch).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_max_pitch(self, v: f64) {
+            with_camera_orbit(self, |d| {
+                d.max_pitch = v;
+            });
+        }
+
+        /// Degrees per second.
+        #[property]
+        pub fn auto_rotate(self) -> f64 {
+            with_camera_orbit(self, |d| d.auto_rotate).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_auto_rotate(self, v: f64) {
+            with_camera_orbit(self, |d| {
+                d.auto_rotate = v;
+            });
+        }
+    }
+}
+
+fn camera_orbit_kind() -> Kind {
+    Kind {
+        name: "CameraOrbit".into(),
+        create: Box::new(|o| Ok(u64::from(attach_camera_orbit(ObjectId::from_raw(o)).0))),
+        on: Box::new(|o| {
+            camera_orbits_on(ObjectId::from_raw(o))
+                .into_iter()
+                .map(|r| u64::from(r.0))
+                .collect()
+        }),
+        save: Box::new(|h| save_camera_orbit(CameraOrbitRef(h as u32))),
+        load: Box::new(|h, props| load_camera_orbit(CameraOrbitRef(h as u32), props)),
+        awake: Box::new(|_| {}),
+        object: Box::new(|h| with_camera_orbit(CameraOrbitRef(h as u32), |d| d.object.to_raw())),
+        destroy: Box::new(|h| remove_camera_orbit(CameraOrbitRef(h as u32))),
+    }
+}
+
 // ---- Material ----
 
 numbered_handle!(
@@ -3512,6 +4131,8 @@ pub fn register_generated_kinds() {
     iron_kinds::register(mesh_renderer_kind());
     iron_kinds::register(skinned_mesh_renderer_kind());
     iron_kinds::register(lod_group_kind());
+    iron_kinds::register(camera_follow_kind());
+    iron_kinds::register(camera_orbit_kind());
     iron_kinds::register_asset(material_asset_kind());
     iron_kinds::register_asset(sprite_asset_kind());
 }
@@ -3529,6 +4150,8 @@ pub fn generated_manifests() -> Vec<String> {
         mesh_renderer_api::MANIFEST.to_json(),
         skinned_mesh_renderer_api::MANIFEST.to_json(),
         lod_group_api::MANIFEST.to_json(),
+        camera_follow_api::MANIFEST.to_json(),
+        camera_orbit_api::MANIFEST.to_json(),
         material_api::MANIFEST.to_json(),
         sprite_api::MANIFEST.to_json(),
     ]
@@ -3546,6 +4169,8 @@ pub fn remove_generated_on(object: ObjectId) {
     remove_mesh_renderers_on(object);
     remove_skinned_mesh_renderers_on(object);
     remove_lod_groups_on(object);
+    remove_camera_follows_on(object);
+    remove_camera_orbits_on(object);
 }
 
 /// Forgets every generated component and asset.
@@ -3560,6 +4185,8 @@ pub fn reset_generated() {
     reset_mesh_renderers();
     reset_skinned_mesh_renderers();
     reset_lod_groups();
+    reset_camera_follows();
+    reset_camera_orbits();
     reset_materials();
     reset_sprites();
 }

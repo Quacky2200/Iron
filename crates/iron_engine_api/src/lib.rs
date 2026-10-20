@@ -18,6 +18,7 @@ pub mod audio_components;
 pub mod camera;
 pub mod clock;
 pub mod color;
+pub mod cursor;
 pub mod datetime;
 pub mod gizmos;
 pub mod input;
@@ -49,6 +50,8 @@ pub fn manifests() -> Vec<String> {
         animator::animation_builder_api::MANIFEST.to_json(),
         animator::animator_api::MANIFEST.to_json(),
         color::color_api::MANIFEST.to_json(),
+        cursor::cursor_api::MANIFEST.to_json(),
+        cursor::cursor_lock_mode_api::MANIFEST.to_json(),
         datetime::time_span_api::MANIFEST.to_json(),
         datetime::date_time_api::MANIFEST.to_json(),
         time::time_api::MANIFEST.to_json(),

@@ -428,7 +428,15 @@ draws, the app reads per-thread registries and a command queue. **No change to `
 - **Compiler help.** A string where a handle is expected calls the class's `fromString` (`mesh: "sphere"` is `Mesh.fromString`); an
   optional array parameter left out is empty; `Class.create({ .. })` on a class whose `create` takes nothing is `new Class({ .. })`;
   an optional handle left out is a zero handle.
-- **Differences from the TypeScript.** `Material` is mutable (a shared handle, like Unity's `sharedMaterial`; `with(..)` is
+- **Settings and behaviours.** `RenderSettings` (namespace properties: `ambientLight`, `ambientMode`, `reflectionIntensity`,
+  `skyboxEnabled` + `skyZenith` / `skyHorizon` / `skyGround` / `skySunDirection` / `skyHasSun` / `skySunColor` / `skySunSize`,
+  `bloomEnabled` + `bloomThreshold` / `bloomIntensity` / `bloomScatter`, `tonemapping`, `postExposure`; the host reads
+  `settings()` when `version()` changed). Scene files apply their `renderSettings` when the scene becomes active and the active scene
+  saves the current ones. `Cursor` (`visible`, `lockState`, `setCursor(path, { hotspotX, hotspotY })`, `clearCursor()`;
+  host: `iron_engine_api::cursor::state()`) with `CursorLockMode.None/Locked/Confined` strings. `CameraFollow` and `CameraOrbit` are
+  components whose update the host runs: `late_update_camera_follows(dt)` and `late_update_camera_orbits(dt)` once a frame.
+- **Differences from the TypeScript.** `RenderSettings.skybox = { .. }` is the `sky...` properties; `Cursor.setCursor(texture)` takes a
+  path only. `Material` is mutable (a shared handle, like Unity's `sharedMaterial`; `with(..)` is
   `copy()`); `Texture.load` mipmaps / linear given as their defaults let the importer decide; `RenderTexture` is a `Texture`
   (`createRenderTexture`, `isRenderTexture`); `whenLoaded()` promises are not there (read `isLoaded`); `Sprite.create(texture, ppu?)`
   with `pivot` / `setRect(..)` setters and `Sprite.gridCell(texture, columns, rows, index)` instead of `grid`; a `SkinnedMeshRenderer` is not

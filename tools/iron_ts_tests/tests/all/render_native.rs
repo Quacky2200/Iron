@@ -120,6 +120,82 @@ fn mirrors_probes_planes_panels_and_strokes_hold_their_data() {
     });
 }
 
+// M9-TS-1228
+#[test]
+fn render_settings_and_the_cursor_hold_their_state_and_ignore_unknown_names() {
+    in_every_gc_mode(|| unsafe {
+        iron_engine_api::cursor::reset();
+        assert_eq!(
+            text(ts_rdn_settings()),
+            "0.5|true|3|2|true|aces|true|skybox"
+        );
+        let s = render::settings();
+        assert_eq!(s.skybox.unwrap().sun_size, 3.0);
+        assert_eq!(s.bloom.unwrap().intensity, 2.0);
+        assert!(render::version() > 0);
+        assert_eq!(text(ts_rdn_cursor()), "false|locked");
+        let c = iron_engine_api::cursor::state();
+        assert_eq!(c.image, Some(("ui/hand.png".to_string(), Some([4.0, 5.0]))));
+    });
+}
+
+// M9-TS-1229
+#[test]
+fn camera_follow_and_orbit_move_their_objects_when_the_host_runs_them() {
+    in_every_gc_mode(|| unsafe {
+        ts_rdn_behaviours();
+        render::late_update_camera_follows(0.016);
+        render::late_update_camera_orbits(1.0);
+        let pos = |name: &str| {
+            iron_scene::api::with_scene(|sc| {
+                let o = sc.find(name).unwrap();
+                sc.world(o).position
+            })
+            .unwrap()
+        };
+        // Smooth time 0: it sits at the target plus the offset.
+        let f = pos("Follower");
+        assert_eq!((f.x, f.y, f.z), (10.0, 2.0, 5.0));
+        // yaw 90 + 90 degrees a second for one second = 180: behind the centre at +z.
+        let o = pos("Orbiter");
+        assert!(
+            (o.x).abs() < 1e-4 && (o.z - 4.0).abs() < 1e-4 && o.y.abs() < 1e-4,
+            "{o:?}"
+        );
+    });
+}
+
+// M9-TS-1230
+//
+// `renderSettings` of a scene file applies when the scene becomes active, and the active scene
+// saves the current settings.
+#[test]
+fn scene_files_apply_and_save_render_settings() {
+    let _serial = iron_ts_tests::serial();
+    reset();
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let text = r#"{"format":"iron.scene","version":1,"name":"Sky","objects":[],
+      "renderSettings":{"ambientLight":{"$type":"Color","value":[0.1,0.2,0.3,1]},"ambientMode":"color",
+        "reflectionIntensity":0.5,
+        "skybox":{"zenith":{"$type":"Color","value":[0,0,1,1]},"sunDirection":null},
+        "bloom":{"threshold":0.8,"intensity":1.5,"scatter":0.3}}}"#;
+    let handle = iron_scenes::load_scene(text, false).expect("loads");
+    let s = render::settings();
+    assert_eq!(s.ambient_mode, "color");
+    assert_eq!(s.ambient_light.b, 0.3);
+    assert_eq!(s.reflection_intensity, 0.5);
+    let sky = s.skybox.unwrap();
+    assert_eq!((sky.zenith.b, sky.sun_direction), (1.0, None));
+    assert_eq!(s.bloom.unwrap().threshold, 0.8);
+    let saved: serde_json::Value =
+        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+    assert_eq!(saved["renderSettings"]["ambientMode"], "color");
+    assert_eq!(saved["renderSettings"]["bloom"]["intensity"], 1.5);
+    assert!(saved["renderSettings"]["skybox"]["sunDirection"].is_null());
+    reset();
+}
+
 // M9-TS-1226
 //
 // The example game's scene file loads its Light, MeshRenderer (primitive mesh, inline Material)

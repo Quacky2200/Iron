@@ -37,9 +37,11 @@ macro_rules! numbered_handle {
 
 #[allow(clippy::redundant_closure, clippy::unnecessary_lazy_evaluations)]
 mod generated;
+mod render_settings;
 mod resources;
 
 pub use generated::*;
+pub use render_settings::*;
 pub use resources::*;
 
 pub(crate) fn none_object() -> ObjectId {
@@ -124,12 +126,14 @@ pub fn destroyed(objects: &[ObjectId]) {
 pub fn reset() {
     reset_generated();
     reset_resources();
+    render_settings::reset_render_settings();
 }
 
 /// The manifests of this crate's script API, for the compiler.
 pub fn manifests() -> Vec<String> {
     let mut all = generated_manifests();
     all.extend(resources::resource_manifests());
+    all.push(render_settings::render_settings_api::MANIFEST.to_json());
     all
 }
 

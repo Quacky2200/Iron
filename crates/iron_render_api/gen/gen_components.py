@@ -314,6 +314,92 @@ COMPONENTS = [
 """,
     ),
     dict(
+        name="CameraFollow", low="camera_follow", ref="CameraFollowRef", store="FOLLOWS", data="FollowData",
+        fields=[
+            ("target", "target", "object", None, "The object to follow."),
+            ("offset", "offset", "v3", (0, 3, 6), "Where to sit, from the target."),
+            ("offsetInTargetSpace", "offset_in_target_space", "bool", False, "Rotate the offset with the target (behind a car), or keep it in world space."),
+            ("smoothTime", "smooth_time", "f64", 0.25, "About how long catching up takes, in seconds (0: instantly)."),
+            ("lookAtTarget", "look_at_target", "bool", True, ""),
+        ],
+        extra_fields=["pub velocity: [f64; 3],"],
+        extra_defaults=["velocity: [0.0; 3],"],
+        items="""
+/// Runs every `CameraFollow`: follows its target from an offset, easing into place, and looks at
+/// it. The host calls it once a frame after the other late updates (`onLateUpdate`).
+pub fn late_update_camera_follows(dt: f64) {
+    use iron_math::mathf_api::smooth_damp;
+    use iron_scene::api::scene_api as scene;
+    for (r, d) in camera_follows() {
+        let Some(target) = d.target.filter(|t| iron_scene::api::with_scene(|s| s.contains(*t)).unwrap_or(false)) else {
+            continue;
+        };
+        let offset = if d.offset_in_target_space {
+            scene::rotation(target).rotate(d.offset)
+        } else {
+            d.offset
+        };
+        let target_pos = scene::position(target);
+        let goal = target_pos.add(offset);
+        let at = scene::position(d.object);
+        if d.smooth_time <= 0.0 {
+            scene::set_position(d.object, goal);
+        } else {
+            let dt = dt.max(1e-4);
+            let mut velocity = d.velocity;
+            let mut axis = |i: usize, a: f64, b: f64| {
+                let r = smooth_damp(a, b, velocity[i], d.smooth_time, dt, f64::NAN);
+                velocity[i] = r.y;
+                r.x
+            };
+            let p = V3 { x: axis(0, at.x, goal.x), y: axis(1, at.y, goal.y), z: axis(2, at.z, goal.z) };
+            scene::set_position(d.object, p);
+            with_camera_follow(r, |d| d.velocity = velocity);
+        }
+        if d.look_at_target {
+            iron_scene::api::TransformRef(d.object).look_at(target_pos);
+        }
+    }
+}
+""",
+    ),
+    dict(
+        name="CameraOrbit", low="camera_orbit", ref="CameraOrbitRef", store="ORBITS", data="OrbitData",
+        fields=[
+            ("target", "target", "object", None, "Orbits this object (or `center` when there is none)."),
+            ("center", "center", "v3", (0, 0, 0), "Orbits this point when there is no target."),
+            ("distance", "distance", "f64", 8.0, ""),
+            ("yaw", "yaw", "f64", 0.0, "Degrees."),
+            ("pitch", "pitch", "f64", 20.0, "Degrees."),
+            ("minPitch", "min_pitch", "f64", -80.0, ""),
+            ("maxPitch", "max_pitch", "f64", 80.0, ""),
+            ("autoRotate", "auto_rotate", "f64", 0.0, "Degrees per second."),
+        ],
+        items="""
+/// Runs every `CameraOrbit` (once a frame after the other late updates).
+pub fn late_update_camera_orbits(dt: f64) {
+    use iron_math::{Q, mathf_api::repeat};
+    use iron_scene::api::scene_api as scene;
+    for (r, d) in camera_orbits() {
+        let yaw = repeat(d.yaw + d.auto_rotate * dt, 360.0);
+        let pitch = d.pitch.clamp(d.min_pitch.min(d.max_pitch), d.max_pitch.max(d.min_pitch));
+        with_camera_orbit(r, |d| {
+            d.yaw = yaw;
+            d.pitch = pitch;
+        });
+        let center = match d.target {
+            Some(t) if iron_scene::api::with_scene(|s| s.contains(t)).unwrap_or(false) => scene::position(t),
+            _ => d.center,
+        };
+        let rotation = Q::euler(-pitch, yaw, 0.0);
+        let back = V3 { x: 0.0, y: 0.0, z: -1.0 };
+        scene::set_position(d.object, center.add(rotation.rotate(back).scale(d.distance)));
+        iron_scene::api::TransformRef(d.object).look_at(center);
+    }
+}
+""",
+    ),
+    dict(
         name="Material", low="material", ref="MaterialRef", store="MATERIALS", data="MaterialData", asset=True, shared=False,
         fields=[
             ("color", "color", "color", ONE, "Base colour (linear; alpha below 1 makes it see-through). For metals, the reflection's tint."),

@@ -170,6 +170,10 @@ pub fn set_active(scene: u32) -> bool {
             });
         });
         sync();
+        // The lighting the scene was saved with.
+        if let Some(r) = info(scene).and_then(|i| i.render_settings) {
+            iron_render_api::apply_render_settings(&r);
+        }
         dispatch();
     }
     true
@@ -290,10 +294,9 @@ pub fn serialize(scene: u32) -> Option<String> {
         "name": info.name,
         "objects": objects,
     });
-    if scene == active()
-        && let Some(r) = info.render_settings
+    if scene == active() && (info.render_settings.is_some() || iron_render_api::settings_changed())
     {
-        data["renderSettings"] = r;
+        data["renderSettings"] = iron_render_api::save_render_settings();
     }
     let assets = saver.take_assets();
     if !assets.is_empty() {

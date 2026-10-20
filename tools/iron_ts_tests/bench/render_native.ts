@@ -69,6 +69,31 @@ export function lods(): string {
   return `${lod.lodCount}|${lod.lodHeight(1)}|${lod.lodRendererCount(0)}|${lod.lodRendererAt(1, 0) === far}`;
 }
 
+export function settings(): string {
+  RenderSettings.ambientLight = new Color(0.5, 0.5, 0.5, 1);
+  RenderSettings.skyboxEnabled = true;
+  RenderSettings.skySunSize = 3;
+  RenderSettings.bloomIntensity = 2;
+  RenderSettings.tonemapping = "aces";
+  RenderSettings.tonemapping = "bogus";
+  return `${RenderSettings.ambientLight.r}|${RenderSettings.skyboxEnabled}|${RenderSettings.skySunSize}|${RenderSettings.bloomIntensity}|${RenderSettings.bloomEnabled}|${RenderSettings.tonemapping}|${RenderSettings.skyHasSun}|${RenderSettings.ambientMode}`;
+}
+
+export function cursor(): string {
+  Cursor.visible = false;
+  Cursor.lockState = CursorLockMode.Locked;
+  Cursor.setCursor("ui/hand.png", { hotspotX: 4, hotspotY: 5 });
+  return `${Cursor.visible}|${Cursor.lockState}`;
+}
+
+export function behaviours(): void {
+  const target = new GameObject("Target", { position: new Vector3(10, 0, 0) });
+  const cam = new GameObject("Follower");
+  cam.addComponent(CameraFollow, { target: target, offset: new Vector3(0, 2, 5), smoothTime: 0 });
+  const orbiter = new GameObject("Orbiter");
+  orbiter.addComponent(CameraOrbit, { center: new Vector3(0, 0, 0), distance: 4, yaw: 90, pitch: 0, autoRotate: 90 });
+}
+
 export function others(): string {
   const go = new GameObject("Stuff");
   const mirror = go.addComponent(Mirror, { cullingMask: 6 });
