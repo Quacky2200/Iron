@@ -430,7 +430,7 @@ pub fn create_primitive(kind: &str, name: &str) -> ObjectId {
     object
 }
 
-#[iron_api(namespace = "Primitives", handles(GameObject = ObjectId))]
+#[iron_api(namespace = "Primitives", quickjs, handles(GameObject = ObjectId))]
 pub mod primitives_api {
     use super::*;
 
@@ -443,7 +443,7 @@ pub mod primitives_api {
     }
 }
 
-#[iron_api(namespace = "PrimitiveType")]
+#[iron_api(namespace = "PrimitiveType", quickjs)]
 pub mod primitive_type_api {
     #[property]
     #[js_name = "Cube"]

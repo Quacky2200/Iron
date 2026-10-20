@@ -1036,7 +1036,7 @@ def gen(c):
     hl += [HANDLES[k] for k in handles]
     hl += c.get("extra_handles", [])
     hl = list(dict.fromkeys(hl))
-    attr = 'namespace = "%s", handles(%s)' % (name, ", ".join(hl))
+    attr = 'namespace = "%s", quickjs, handles(%s)' % (name, ", ".join(hl))
     if values:
         attr += ", values(%s)" % ", ".join(VALUES[k] for k in values)
     w("")

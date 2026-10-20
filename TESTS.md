@@ -1172,3 +1172,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-111 | Integration | `SceneManager`, `Scene` and `Prefab` as handle classes (`crates/iron_scenes/tests/handles_quickjs.rs`). |
 | M9-API-112 | Integration | A namespace and a class with the same name (`Scene`) merge, whichever is registered first. |
 | M9-API-113 | Integration | `QuickJsRuntime::add_native` installs a native API and reinstalls it after `reset()` (`crates/iron_script/tests/native.rs`). |
+| M9-API-120 | Integration | Every function of every manifest (namespaces, class statics, methods, properties, value classes) exists in QuickJS after `iron_native::register_quickjs` (`crates/iron_native/tests/surface.rs`). |
+| M9-API-121 | Integration | Methods of one class with the same script name dispatch by argument count (`this` is passed on); no version for the count is a `TypeError`. |
+| M9-API-122 | Integration | A JS function passed as a `Callback` is kept (survives scripts ending and a collection), called with the event's arguments, and `off(token)` removes it (`crates/iron_api/tests/callbacks_quickjs.rs`). |
+| M9-API-123 | Integration | Handle and boolean callback arguments reach JS as handle objects / `null` and booleans; a callback with no arguments. |
+| M9-API-124 | Integration | An exception in a JS callback is recorded (`take_errors`), the other callbacks still run, and a callback may subscribe from inside a call. |
+| M9-API-125 | Integration | A callback survives repeated collections while only the engine holds it; a non-function is a `TypeError`. |

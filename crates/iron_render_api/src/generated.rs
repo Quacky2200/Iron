@@ -171,7 +171,7 @@ pub fn load_light(r: LightRef, props: &Map<String, Value>) -> Vec<String> {
     warnings
 }
 
-#[iron_api(namespace = "Light", handles(Light = LightRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
+#[iron_api(namespace = "Light", quickjs, handles(Light = LightRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
 pub mod light_api {
     use super::*;
 
@@ -481,7 +481,7 @@ pub fn load_plane_renderer(r: PlaneRendererRef, props: &Map<String, Value>) -> V
     warnings
 }
 
-#[iron_api(namespace = "PlaneRenderer", handles(PlaneRenderer = PlaneRendererRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector2 = V2 [x: f64, y: f64]))]
+#[iron_api(namespace = "PlaneRenderer", quickjs, handles(PlaneRenderer = PlaneRendererRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector2 = V2 [x: f64, y: f64]))]
 pub mod plane_renderer_api {
     use super::*;
 
@@ -696,7 +696,7 @@ pub fn load_mirror(r: MirrorRef, props: &Map<String, Value>) -> Vec<String> {
     warnings
 }
 
-#[iron_api(namespace = "Mirror", handles(Mirror = MirrorRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "Mirror", quickjs, handles(Mirror = MirrorRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod mirror_api {
     use super::*;
 
@@ -922,7 +922,7 @@ pub fn load_reflection_probe(r: ReflectionProbeRef, props: &Map<String, Value>) 
     warnings
 }
 
-#[iron_api(namespace = "ReflectionProbe", handles(ReflectionProbe = ReflectionProbeRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "ReflectionProbe", quickjs, handles(ReflectionProbe = ReflectionProbeRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod reflection_probe_api {
     use super::*;
 
@@ -1185,7 +1185,7 @@ pub fn load_world_panel(r: WorldPanelRef, props: &Map<String, Value>) -> Vec<Str
     warnings
 }
 
-#[iron_api(namespace = "WorldPanel", handles(WorldPanel = WorldPanelRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
+#[iron_api(namespace = "WorldPanel", quickjs, handles(WorldPanel = WorldPanelRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
 pub mod world_panel_api {
     use super::*;
 
@@ -1458,7 +1458,7 @@ pub fn load_sprite_renderer(r: SpriteRendererRef, props: &Map<String, Value>) ->
     warnings
 }
 
-#[iron_api(namespace = "SpriteRenderer", handles(SpriteRenderer = SpriteRendererRef, GameObject = ObjectId, Sprite = SpriteRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
+#[iron_api(namespace = "SpriteRenderer", quickjs, handles(SpriteRenderer = SpriteRendererRef, GameObject = ObjectId, Sprite = SpriteRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
 pub mod sprite_renderer_api {
     use super::*;
 
@@ -1710,7 +1710,7 @@ pub fn load_line_renderer2d(r: LineRenderer2DRef, props: &Map<String, Value>) ->
     warnings
 }
 
-#[iron_api(namespace = "LineRenderer2D", handles(LineRenderer2D = LineRenderer2DRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector2 = V2 [x: f64, y: f64]))]
+#[iron_api(namespace = "LineRenderer2D", quickjs, handles(LineRenderer2D = LineRenderer2DRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector2 = V2 [x: f64, y: f64]))]
 pub mod line_renderer2d_api {
     use super::*;
 
@@ -1943,7 +1943,7 @@ pub fn load_mesh_renderer(r: MeshRendererRef, props: &Map<String, Value>) -> Vec
     warnings
 }
 
-#[iron_api(namespace = "MeshRenderer", handles(MeshRenderer = MeshRendererRef, GameObject = ObjectId, Material = MaterialRef, Mesh = MeshRef))]
+#[iron_api(namespace = "MeshRenderer", quickjs, handles(MeshRenderer = MeshRendererRef, GameObject = ObjectId, Material = MaterialRef, Mesh = MeshRef))]
 pub mod mesh_renderer_api {
     use super::*;
 
@@ -2179,7 +2179,7 @@ pub fn load_skinned_mesh_renderer(
     warnings
 }
 
-#[iron_api(namespace = "SkinnedMeshRenderer", handles(SkinnedMeshRenderer = SkinnedMeshRendererRef, GameObject = ObjectId, Material = MaterialRef, Mesh = MeshRef))]
+#[iron_api(namespace = "SkinnedMeshRenderer", quickjs, handles(SkinnedMeshRenderer = SkinnedMeshRendererRef, GameObject = ObjectId, Material = MaterialRef, Mesh = MeshRef))]
 pub mod skinned_mesh_renderer_api {
     use super::*;
 
@@ -2440,7 +2440,7 @@ pub fn load_lod_group(r: LODGroupRef, props: &Map<String, Value>) -> Vec<String>
     warnings
 }
 
-#[iron_api(namespace = "LODGroup", handles(LODGroup = LODGroupRef, GameObject = ObjectId, MeshRenderer = MeshRendererRef))]
+#[iron_api(namespace = "LODGroup", quickjs, handles(LODGroup = LODGroupRef, GameObject = ObjectId, MeshRenderer = MeshRendererRef))]
 pub mod lod_group_api {
     use super::*;
 
@@ -2761,7 +2761,7 @@ pub fn load_camera_follow(r: CameraFollowRef, props: &Map<String, Value>) -> Vec
     warnings
 }
 
-#[iron_api(namespace = "CameraFollow", handles(CameraFollow = CameraFollowRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "CameraFollow", quickjs, handles(CameraFollow = CameraFollowRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod camera_follow_api {
     use super::*;
 
@@ -3047,7 +3047,7 @@ pub fn load_camera_orbit(r: CameraOrbitRef, props: &Map<String, Value>) -> Vec<S
     warnings
 }
 
-#[iron_api(namespace = "CameraOrbit", handles(CameraOrbit = CameraOrbitRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "CameraOrbit", quickjs, handles(CameraOrbit = CameraOrbitRef, GameObject = ObjectId), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod camera_orbit_api {
     use super::*;
 
@@ -3534,7 +3534,7 @@ pub fn load_particle_system(r: ParticleSystemRef, props: &Map<String, Value>) ->
     warnings
 }
 
-#[iron_api(namespace = "ParticleSystem", handles(ParticleSystem = ParticleSystemRef, GameObject = ObjectId, Texture = TextureRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "ParticleSystem", quickjs, handles(ParticleSystem = ParticleSystemRef, GameObject = ObjectId, Texture = TextureRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod particle_system_api {
     use super::*;
 
@@ -4173,7 +4173,7 @@ pub fn load_line_renderer(r: LineRendererRef, props: &Map<String, Value>) -> Vec
     warnings
 }
 
-#[iron_api(namespace = "LineRenderer", handles(LineRenderer = LineRendererRef, GameObject = ObjectId, Material = MaterialRef), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "LineRenderer", quickjs, handles(LineRenderer = LineRendererRef, GameObject = ObjectId, Material = MaterialRef), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod line_renderer_api {
     use super::*;
 
@@ -4518,7 +4518,7 @@ pub fn load_cloth(r: ClothRef, props: &Map<String, Value>) -> Vec<String> {
     warnings
 }
 
-#[iron_api(namespace = "Cloth", handles(Cloth = ClothRef, GameObject = ObjectId, Mesh = MeshRef), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "Cloth", quickjs, handles(Cloth = ClothRef, GameObject = ObjectId, Mesh = MeshRef), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod cloth_api {
     use super::*;
 
@@ -5021,7 +5021,7 @@ pub fn load_material(r: MaterialRef, props: &Map<String, Value>) -> Vec<String> 
     warnings
 }
 
-#[iron_api(namespace = "Material", handles(Material = MaterialRef, Texture = TextureRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector2 = V2 [x: f64, y: f64]))]
+#[iron_api(namespace = "Material", quickjs, handles(Material = MaterialRef, Texture = TextureRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector2 = V2 [x: f64, y: f64]))]
 pub mod material_api {
     use super::*;
 
@@ -5503,7 +5503,7 @@ pub fn load_sprite(r: SpriteRef, props: &Map<String, Value>) -> Vec<String> {
     warnings
 }
 
-#[iron_api(namespace = "Sprite", handles(Sprite = SpriteRef, Texture = TextureRef), values(Vector2 = V2 [x: f64, y: f64]))]
+#[iron_api(namespace = "Sprite", quickjs, handles(Sprite = SpriteRef, Texture = TextureRef), values(Vector2 = V2 [x: f64, y: f64]))]
 pub mod sprite_api {
     use super::*;
 

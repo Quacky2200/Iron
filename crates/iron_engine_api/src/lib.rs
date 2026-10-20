@@ -82,8 +82,7 @@ pub fn manifests() -> Vec<String> {
 
 /// Installs every QuickJS-enabled namespace of the engine in a context: the math classes, the
 /// scene (`Scene`, `GameObject`, `Transform`), and this crate's. Handles (`GameObject`, `Camera`,
-/// `AnimationClip`...) are opaque objects there (see `iron_api::qjs`). `Rng` and `audio` are not
-/// included yet (no `quickjs` on them).
+/// `AnimationClip`...) are opaque objects there (see `iron_api::qjs`). Audio, `Rng` and `Cursor` are in it.
 pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
     iron_math::register_quickjs(ctx)?;
     iron_scene::api::scene_api::register_quickjs(ctx)?;
@@ -122,5 +121,11 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     app::application_api::register_quickjs(ctx)?;
     app::system_info_api::register_quickjs(ctx)?;
     random::random_api::register_quickjs(ctx)?;
+    random::rng_api::register_quickjs(ctx)?;
+    audio::audio_api::register_quickjs(ctx)?;
+    audio_components::audio_source_api::register_quickjs(ctx)?;
+    audio_components::audio_listener_api::register_quickjs(ctx)?;
+    cursor::cursor_api::register_quickjs(ctx)?;
+    cursor::cursor_lock_mode_api::register_quickjs(ctx)?;
     Ok(())
 }

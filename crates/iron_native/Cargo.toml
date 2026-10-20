@@ -1,0 +1,20 @@
+[package]
+name = "iron_native"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+iron_api = { path = "../iron_api", default-features = false, features = ["glam", "quickjs"] }
+iron_engine_api = { path = "../iron_engine_api" }
+iron_physics_api = { path = "../iron_physics_api" }
+iron_render_api = { path = "../iron_render_api" }
+iron_scene = { path = "../iron_scene" }
+iron_scenes = { path = "../iron_scenes" }
+iron_script = { path = "../iron_script" }
+
+[dev-dependencies]
+iron_math = { path = "../iron_math" }
+iron_kinds = { path = "../iron_kinds" }
+rquickjs = "0.14.0"
+serde_json = "1"

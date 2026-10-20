@@ -99,7 +99,7 @@ pub(crate) fn count_rigidbodies_2d() -> u32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[iron_api(
-    namespace = "Physics2D",
+    namespace = "Physics2D", quickjs,
     handles(
         GameObject = ObjectId,
         Rigidbody2D = Rigidbody2DRef,

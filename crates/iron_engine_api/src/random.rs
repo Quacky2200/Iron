@@ -125,7 +125,7 @@ fn seed_of(seed: f64) -> Mulberry {
     }
 }
 
-#[iron_api(namespace = "Rng", handles(Rng = RngRef), values(
+#[iron_api(namespace = "Rng", quickjs, handles(Rng = RngRef), values(
     Vector2 = V2 [x: f64, y: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64],
     Quaternion = Q [x: f64, y: f64, z: f64, w: f64]))]

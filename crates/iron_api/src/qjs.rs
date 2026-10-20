@@ -6,7 +6,10 @@
 //! has no own properties, `JSON.stringify` gives `{}`, and every member lives on the class's
 //! prototype. Id 0 is "no object" and travels as `null`.
 
-use rquickjs::{Class, Ctx, Exception, JsLifetime, Object, Result, Value, class::Trace};
+use rquickjs::{
+    Class, Ctx, Exception, Function, JsLifetime, Object, Result, Value, class::Trace,
+    function::Args,
+};
 
 /// What a handle object holds: the id and the class it was made as (`Transform` and `GameObject`
 /// can share an id but are not interchangeable).
@@ -104,4 +107,37 @@ pub fn install_namespace<'js>(ctx: &Ctx<'js>, name: &str, ns: Object<'js>) -> Re
         return Ok(());
     }
     globals.set(name, ns)
+}
+
+/// Keeps a script function for as long as the engine holds it. The reference count of the
+/// function keeps it (and what it closes over) alive and visible to the collector as a root; drop
+/// every `Callback` (clear the engine's listeners) before the runtime is dropped.
+pub fn keep_function<'js>(f: Function<'js>) -> Function<'static> {
+    // SAFETY: the function owns a reference to its context; only the borrow's lifetime is erased.
+    // It is used on the thread that runs the scripts, while its runtime lives.
+    unsafe { std::mem::transmute::<Function<'js>, Function<'static>>(f) }
+}
+
+/// Calls a kept function with `n` arguments made by `fill`. An exception (or a conversion error)
+/// is not propagated: the engine called, not a script, so it is recorded for
+/// `iron_api::callback::take_errors`.
+pub fn call_function(
+    f: &Function<'static>,
+    n: usize,
+    fill: impl FnOnce(&Ctx<'static>, &mut Args<'static>) -> Result<()>,
+) {
+    let ctx = f.ctx().clone();
+    let mut args = Args::new(ctx.clone(), n);
+    let r = fill(&ctx, &mut args).and_then(|()| f.call_arg::<Value>(args).map(|_| ()));
+    if r.is_err() {
+        let thrown = ctx.catch();
+        let text = if let Some(o) = thrown.as_object() {
+            o.get::<_, String>("message").unwrap_or_default()
+        } else {
+            String::new()
+        };
+        crate::callback::push_error(format!(
+            "a callback given to the engine threw an exception: {text}"
+        ));
+    }
 }

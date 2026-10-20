@@ -216,7 +216,7 @@ pub(crate) fn count_rigidbodies() -> u32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[iron_api(
-    namespace = "PhysicsComponents",
+    namespace = "PhysicsComponents", quickjs,
     handles(
         GameObject = ObjectId,
         PhysicsBody = BodyRef,
@@ -995,7 +995,7 @@ pub mod components_api {
     }
 }
 
-#[iron_api(namespace = "ForceMode")]
+#[iron_api(namespace = "ForceMode", quickjs)]
 pub mod force_mode_api {
     /// A force in newtons, over one fixed step (call it from `onFixedUpdate`).
     #[property]
@@ -1026,7 +1026,7 @@ pub mod force_mode_api {
     }
 }
 
-#[iron_api(namespace = "RigidbodyConstraints")]
+#[iron_api(namespace = "RigidbodyConstraints", quickjs)]
 pub mod constraints_api {
     #[property]
     #[js_name = "None"]

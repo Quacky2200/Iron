@@ -141,6 +141,17 @@ pub mod things {
             }
         }
 
+        /// Two Rust methods with one script name: chosen by argument count.
+        #[js_name = "plus"]
+        pub fn plus_one(self, a: f64) -> f64 {
+            self.0 as f64 + a
+        }
+
+        #[js_name = "plus"]
+        pub fn plus_two(self, a: f64, b: f64) -> f64 {
+            self.0 as f64 + a + b * 10.0
+        }
+
         /// Six parameters: read from the rest list.
         pub fn mix(self, a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 {
             self.0 as f64 + a + b * 2.0 + c * 3.0 + d * 4.0 + e * 5.0
@@ -474,4 +485,20 @@ fn a_namespace_and_a_class_with_one_name_merge_in_either_order() {
             assert_eq!(out, r#"[7,true,8,"function"]"#, "class first: {class_first}");
         });
     }
+}
+
+// M9-API-121
+#[test]
+fn methods_with_one_script_name_dispatch_by_argument_count() {
+    run(|ctx| {
+        let out: String = js(
+            ctx,
+            r#"
+            const t = Thing.create(1);
+            const bad = (() => { try { t.plus(); return 'no error'; } catch (e) { return e.name; } })();
+            JSON.stringify([t.plus(5), t.plus(5, 2), bad])
+            "#,
+        );
+        assert_eq!(out, r#"[6,26,"TypeError"]"#);
+    });
 }

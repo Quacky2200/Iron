@@ -392,6 +392,7 @@ fn js_param_ty(k: &Kind) -> TokenStream2 {
         Kind::Str(_) => quote!(::std::string::String),
         Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
         Kind::F64s => quote!(::std::vec::Vec<f64>),
+        Kind::Callback(_) => quote!(::iron_api::rquickjs::Function<'js>),
         Kind::Values(_) => quote!(::std::vec::Vec<::iron_api::rquickjs::Object<'js>>),
         other => js_ty(other),
     }
@@ -458,6 +459,7 @@ fn js_default(k: &Kind) -> TokenStream2 {
         Kind::F32 => quote!(f32::NAN),
         Kind::I32 | Kind::U32 => quote!(0),
         Kind::Handle(..) => quote!(::iron_api::rquickjs::Value::new_null(ctx.clone())),
+        Kind::F64s | Kind::Values(_) => quote!(::std::vec::Vec::new()),
         Kind::Str(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
     }
@@ -473,8 +475,21 @@ fn js_ret_ty(k: &Kind) -> TokenStream2 {
 }
 
 /// The Rust argument built from the JS parameter `x` (a value reads its fields from the object).
-fn js_arg(k: &Kind, x: TokenStream2, args: &Args) -> TokenStream2 {
+fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
     match k {
+        // A left-out value is NaN in every field (what a compiled call passes).
+        Kind::Value(i) if opt => {
+            let v = &args.values[*i];
+            let n = v.fields.len();
+            let rust = &v.rust;
+            let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
+            quote! {
+                <#rust as ::iron_api::ValueType<#n>>::from_parts(match &#x {
+                    Some(o) => ::iron_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?,
+                    None => [f64::NAN; #n],
+                })
+            }
+        }
         Kind::Str(false) => quote!(&#x),
         Kind::Str(true) => x,
         Kind::Value(i) => {
@@ -486,6 +501,45 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args) -> TokenStream2 {
                 <#rust as ::iron_api::ValueType<#n>>::from_parts(
                     ::iron_api::qjs::value_parts(&ctx, &#x, [ #( #names ),* ])?
                 )
+            }
+        }
+        Kind::Callback(ks) => {
+            let tys: Vec<TokenStream2> = ks
+                .iter()
+                .map(|k| match k {
+                    Kind::Handle(_, rust) => quote!(::iron_api::callback::HandleArg<#rust>),
+                    Kind::Str(_) => quote!(::std::string::String),
+                    Kind::Bool => quote!(bool),
+                    Kind::I32 => quote!(i32),
+                    Kind::U32 => quote!(u32),
+                    _ => quote!(f64),
+                })
+                .collect();
+            let names: Vec<Ident> = (0..ks.len()).map(|i| format_ident!("a{i}")).collect();
+            let pushes: Vec<TokenStream2> = ks
+                .iter()
+                .zip(&names)
+                .map(|(k, n)| match k {
+                    Kind::Handle(ts, _) => quote! {
+                        args.push_arg(::iron_api::qjs::handle_new(
+                            ctx, #ts, ::iron_api::Handle::to_raw(#n.0),
+                        )?)?;
+                    },
+                    Kind::Str(_) | Kind::Bool => quote!(args.push_arg(#n)?;),
+                    _ => quote!(args.push_arg(#n as f64)?;),
+                })
+                .collect();
+            let count = ks.len();
+            quote! {
+                {
+                    let kept = ::iron_api::qjs::keep_function(#x);
+                    ::iron_api::Callback::<( #( #tys, )* )>::from_fn(move |( #( #names, )* )| {
+                        ::iron_api::qjs::call_function(&kept, #count, |ctx, args| {
+                            #( #pushes )*
+                            Ok(())
+                        });
+                    })
+                }
             }
         }
         Kind::F64s => quote!(&#x),
@@ -968,7 +1022,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     // Keyed by (owner, name); the owner is "" for the namespace, else a handle class.
     let mut js_fns: JsFns = std::collections::BTreeMap::new();
     // (class, name, closure): methods of handle classes, put on the prototype.
-    let mut js_methods: Vec<(String, String, TokenStream2)> = Vec::new();
+    let mut js_methods: Vec<(String, String, TokenStream2, usize, usize)> = Vec::new();
     // Properties of handle classes: (class, name) to (getter, setter).
     let mut js_cprops: std::collections::BTreeMap<
         (String, String),
@@ -1129,7 +1183,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         // names (or an array of them), a handle is an opaque object (`null` for 0), a result is a
         // new one. A handle class's members go on its prototype (methods, accessors) or on the
         // class (statics).
-        if args.quickjs && !a.params.iter().any(|(_, k)| matches!(k, Kind::Callback(_))) {
+        if args.quickjs {
             let handle_class = a.class.as_ref().filter(|_| a.value_recv.is_none());
             // A value method takes the value first (an object), then its own parameters.
             let all_params: Vec<&(Ident, Kind)> = a.value_recv.iter().chain(&a.params).collect();
@@ -1168,6 +1222,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .iter()
                 .filter(|(n, _)| is_opt(n))
                 .map(|(n, k)| {
+                    if matches!(k, Kind::Value(_)) {
+                        return quote!(let #n = #n.0.flatten(););
+                    }
                     let d = match a.defaults.iter().find(|d| *n == d.0) {
                         Some((_, v)) => js_default_value(k, *v),
                         None => js_default(k),
@@ -1177,7 +1234,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .collect();
             let js_args: Vec<TokenStream2> = all_params
                 .iter()
-                .map(|(n, k)| js_arg(k, quote!(#n), &args))
+                .map(|(n, k)| js_arg(k, quote!(#n), &args, is_opt(n)))
                 .collect();
             let js_ret = js_ret_ty(&a.ret);
             let js_body = js_result(&a.ret, quote!(#call_path( #( #js_args ),* )), &args);
@@ -1189,7 +1246,16 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     .enumerate()
                     .map(|(i, (n, k))| {
                         let t = js_param_ty(k);
-                        if is_opt(n) {
+                        if is_opt(n) && matches!(k, Kind::Value(_)) {
+                            quote! {
+                                let #n: ::std::option::Option<#t> = match rest.0.get(#i) {
+                                    Some(v) if !v.is_undefined() && !v.is_null() => {
+                                        Some(::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?)
+                                    }
+                                    _ => None,
+                                };
+                            }
+                        } else if is_opt(n) {
                             let d = match a.defaults.iter().find(|d| *n == d.0) {
                                 Some((_, v)) => js_default_value(k, *v),
                                 None => js_default(k),
@@ -1285,7 +1351,15 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 (Tag::Set, true) => {
                     js_cprops.entry((target, js_name.clone())).or_default().1 = Some(closure)
                 }
-                (Tag::Method, _) => js_methods.push((target, js_name.clone(), closure)),
+                (Tag::Method, _) => {
+                    let max = a.params.len();
+                    let min = max
+                        - a.params
+                            .iter()
+                            .filter(|(n, _)| a.optional.contains(&n.to_string()))
+                            .count();
+                    js_methods.push((target, js_name.clone(), closure, min, max));
+                }
                 // A namespace property: an accessor on the namespace object.
                 (Tag::Get, false) => js_props.entry(js_name.clone()).or_default().0 = Some(closure),
                 (Tag::Set, false) => js_props.entry(js_name.clone()).or_default().1 = Some(closure),
@@ -1344,22 +1418,50 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
 
     // Methods and accessors of handle classes go on the prototype (not enumerable, so a handle
     // has no own or listed properties).
-    for (target, name, closure) in &js_methods {
+    let mut method_groups: JsFns = std::collections::BTreeMap::new();
+    for (target, name, closure, min, max) in &js_methods {
+        method_groups
+            .entry((target.clone(), name.clone()))
+            .or_default()
+            .push((closure.clone(), *min, *max));
+    }
+    for ((target, name), versions) in &method_groups {
         let holder = if *target == args.namespace {
             quote!(ns)
         } else {
             quote!(ctx.globals().get::<_, ::iron_api::rquickjs::Object>(#target)?)
+        };
+        // One version is the function; several are hidden functions behind a dispatcher by
+        // argument count that passes `this` on.
+        let func = if let [(closure, _, _)] = versions.as_slice() {
+            quote!(::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?)
+        } else {
+            let mut branches = String::new();
+            for (i, (closure, min, max)) in versions.iter().enumerate() {
+                let hidden = format!("__iron_ovm_{}_{target}_{name}_{i}", args.namespace);
+                js_hidden.push(quote! {
+                    ctx.globals().set(
+                        #hidden,
+                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                    )?;
+                });
+                branches += &format!(
+                    "if (n >= {min} && n <= {max}) return globalThis.{hidden}.call(this, ...a); "
+                );
+            }
+            let src = format!(
+                "(function(...a) {{ const n = a.length; {branches}throw new TypeError('{name}: no version takes ' + n + ' arguments'); }})"
+            );
+            quote!(ctx.eval::<::iron_api::rquickjs::Function, _>(#src)?)
         };
         js_sets.push(quote! {
             {
                 let proto: ::iron_api::rquickjs::Object = #holder.get("prototype")?;
                 proto.prop(
                     #name,
-                    ::iron_api::rquickjs::object::Property::from(
-                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
-                    )
-                    .writable()
-                    .configurable(),
+                    ::iron_api::rquickjs::object::Property::from(#func)
+                        .writable()
+                        .configurable(),
                 )?;
             }
         });

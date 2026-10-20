@@ -157,3 +157,31 @@ pub fn register_kinds() {
     register_resource_kinds();
     models::register_model_extra();
 }
+
+/// Installs every namespace of this crate in a QuickJS context (after `iron_engine_api`'s).
+pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+    generated::light_api::register_quickjs(ctx)?;
+    generated::plane_renderer_api::register_quickjs(ctx)?;
+    generated::mirror_api::register_quickjs(ctx)?;
+    generated::reflection_probe_api::register_quickjs(ctx)?;
+    generated::world_panel_api::register_quickjs(ctx)?;
+    generated::sprite_renderer_api::register_quickjs(ctx)?;
+    generated::line_renderer2d_api::register_quickjs(ctx)?;
+    generated::mesh_renderer_api::register_quickjs(ctx)?;
+    generated::skinned_mesh_renderer_api::register_quickjs(ctx)?;
+    generated::lod_group_api::register_quickjs(ctx)?;
+    generated::camera_follow_api::register_quickjs(ctx)?;
+    generated::camera_orbit_api::register_quickjs(ctx)?;
+    generated::particle_system_api::register_quickjs(ctx)?;
+    generated::line_renderer_api::register_quickjs(ctx)?;
+    generated::cloth_api::register_quickjs(ctx)?;
+    generated::material_api::register_quickjs(ctx)?;
+    generated::sprite_api::register_quickjs(ctx)?;
+    resources::texture_api::register_quickjs(ctx)?;
+    resources::mesh_api::register_quickjs(ctx)?;
+    render_settings::render_settings_api::register_quickjs(ctx)?;
+    effects::primitives_api::register_quickjs(ctx)?;
+    effects::primitive_type_api::register_quickjs(ctx)?;
+    models::model_api::register_quickjs(ctx)?;
+    Ok(())
+}

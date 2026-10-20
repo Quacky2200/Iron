@@ -285,7 +285,7 @@ pub fn load_texture(
 }
 
 #[iron_api(
-    namespace = "Texture",
+    namespace = "Texture", quickjs,
     handles(Texture = TextureRef),
     values(Color = Rgba [r: f64, g: f64, b: f64, a: f64])
 )]
@@ -517,7 +517,7 @@ pub(crate) fn set_mesh_data(
 }
 
 #[iron_api(
-    namespace = "Mesh",
+    namespace = "Mesh", quickjs,
     handles(Mesh = MeshRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Vector2 = V2 [x: f64, y: f64])
 )]

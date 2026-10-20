@@ -490,7 +490,7 @@ fn arr3(v: V3) -> [f64; 3] {
 }
 
 #[iron_api(
-    namespace = "audio",
+    namespace = "audio", quickjs,
     handles(Sound = SoundRef, Playback = PlaybackRef, Bus = BusRef, Emitter = EmitterRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]

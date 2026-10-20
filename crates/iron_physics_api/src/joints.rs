@@ -51,7 +51,7 @@ pub(crate) fn count_joints() -> u32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[iron_api(
-    namespace = "PhysicsJoints",
+    namespace = "PhysicsJoints", quickjs,
     handles(
         GameObject = ObjectId,
         Rigidbody = RigidbodyRef,

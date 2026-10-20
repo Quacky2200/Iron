@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 glam = "0.34.1"
-iron_api = { path = "../iron_api", default-features = false, features = ["glam"] }
+iron_api = { path = "../iron_api", default-features = false, features = ["glam", "quickjs"] }
 iron_core = { path = "../iron_core" }
 iron_engine_api = { path = "../iron_engine_api" }
 iron_kinds = { path = "../iron_kinds" }

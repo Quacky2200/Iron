@@ -410,7 +410,7 @@ fn none_object() -> ObjectId {
 }
 
 #[iron_api(
-    namespace = "AudioSource",
+    namespace = "AudioSource", quickjs,
     handles(
         AudioSource = AudioSourceRef,
         GameObject = ObjectId,
@@ -690,7 +690,7 @@ pub(crate) fn finished_temp(ids: &[PlaybackRef]) {
 }
 
 #[iron_api(
-    namespace = "AudioListener",
+    namespace = "AudioListener", quickjs,
     handles(AudioListener = AudioListenerRef, GameObject = ObjectId)
 )]
 pub mod audio_listener_api {

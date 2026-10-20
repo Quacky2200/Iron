@@ -202,6 +202,11 @@ thread_local! {
     static ERRORS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// Records an exception a script callback threw (the QuickJS side calls this).
+pub fn push_error(message: String) {
+    ERRORS.with(|e| e.borrow_mut().push(message));
+}
+
 /// Exceptions that script callbacks threw since the last call.
 pub fn take_errors() -> Vec<String> {
     ERRORS.with(|e| std::mem::take(&mut *e.borrow_mut()))

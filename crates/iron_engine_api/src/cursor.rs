@@ -52,7 +52,7 @@ fn change(f: impl FnOnce(&mut CursorState)) {
     });
 }
 
-#[iron_api(namespace = "Cursor")]
+#[iron_api(namespace = "Cursor", quickjs)]
 pub mod cursor_api {
     use super::{STATE, change};
 
@@ -94,7 +94,7 @@ pub mod cursor_api {
     }
 }
 
-#[iron_api(namespace = "CursorLockMode")]
+#[iron_api(namespace = "CursorLockMode", quickjs)]
 pub mod cursor_lock_mode_api {
     /// Free to leave the window.
     #[property]

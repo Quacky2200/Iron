@@ -206,7 +206,7 @@ pub fn settings_changed() -> bool {
 }
 
 #[iron_api(
-    namespace = "RenderSettings",
+    namespace = "RenderSettings", quickjs,
     values(
         Color = Rgba [r: f64, g: f64, b: f64, a: f64],
         Vector3 = V3 [x: f64, y: f64, z: f64]
