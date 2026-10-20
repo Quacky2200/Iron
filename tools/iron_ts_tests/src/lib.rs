@@ -1223,3 +1223,15 @@ pub mod scenes_t {
 pub mod physics_t {
     include!(concat!(env!("OUT_DIR"), "/physics_bindings.rs"));
 }
+
+/// Contact hooks on components (`bench/contacts.ts`), prefix `cnt_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod contacts_t {
+    include!(concat!(env!("OUT_DIR"), "/contacts_bindings.rs"));
+}

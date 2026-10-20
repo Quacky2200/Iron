@@ -14,7 +14,7 @@ mod bigint;
 mod classes;
 mod clone;
 mod closure;
-mod components;
+pub(crate) mod components;
 mod date;
 mod engine_objs;
 mod enums;
@@ -280,7 +280,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let has_go = manifests.iter().any(|m| m.contains("\"GameObject\""));
     let with_cic = components::children_helpers(src, has_go).map(|h| format!("{src}{h}"));
     let src = with_cic.as_deref().unwrap_or(src);
-    let rewritten4 = components::desugar(src, has_go)?;
+    let has_collider = manifests.iter().any(|m| m.contains("\"Collider\""));
+    let rewritten4 = components::desugar(src, has_go, has_collider)?;
     let wants_components = components::wanted(src);
     let src = rewritten4.as_deref().unwrap_or(src);
     // Programs that use errors get the `Error` classes compiled in front of them.
@@ -337,7 +338,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         head += prelude::INTL_DATETIME;
     }
     if wants_components {
-        head += &components::prelude(has_go);
+        head += &components::prelude(has_go, has_collider);
     }
     if wants_ui {
         head += jsx::UI_PRELUDE;

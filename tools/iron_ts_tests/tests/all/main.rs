@@ -16,6 +16,7 @@ mod comp_life;
 mod comp_query;
 mod components;
 mod components2;
+mod contacts;
 mod date;
 mod datefmt;
 mod datetime;

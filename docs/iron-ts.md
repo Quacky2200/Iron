@@ -905,6 +905,10 @@ all `onUpdate`, then all `onLateUpdate`), `fixed_update`, `pre_render`, `destroy
 through `PROPS_<Class>` in the host, `getComponent`/`addComponent`, a message for the fault, `this.transform`.
 Tests `M9-TS-556..561`.
 
+Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`) take a prelude `Collision` (`other`, `collider`,
+`speed`, `sensor`); `NativeClass.contact_hooks` holds their thunks and `NativeHost::dispatch_physics` / `dispatch_contacts` call them
+(design: `docs/research/iron-native-physics.md` section 8). Tests `M9-TS-1000..1003`.
+
 ## Generics
 
 Generic functions, classes, interfaces and type aliases are supported by **monomorphisation**

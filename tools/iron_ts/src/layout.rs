@@ -194,6 +194,25 @@ fn component_table(m: &Module) -> String {
                 hooks.push("None".to_string());
             }
         }
+        // Contact hooks take (this, other object, its collider, speed, sensor flag).
+        let mut contact_hooks = Vec::new();
+        for h in crate::lower::components::CONTACT_HOOKS {
+            let name = format!("iron_hook_{class}_{h}");
+            if let Some(hf) = m.funcs.iter().find(|g| g.exported && g.name == name) {
+                let hs = format!("ts_{}{}", m.prefix, hf.name);
+                let ty = rust_ty(m, &hf.locals[hf.params[0] as usize], false);
+                let t1 = rust_ty(m, &hf.locals[hf.params[1] as usize], false);
+                let t2 = rust_ty(m, &hf.locals[hf.params[2] as usize], false);
+                out += &format!(
+                    "unsafe extern \"C\" fn hook_{class}_{h}(c: *mut u8, other: u64, coll: u64, speed: f64, sensor: f64) {{ unsafe {{ {hs}(c as {ty}, other as {t1}, coll as {t2}, speed, sensor) }} }}\n"
+                );
+                contact_hooks.push(format!(
+                    "Some(hook_{class}_{h} as unsafe extern \"C\" fn(*mut u8, u64, u64, f64, f64))"
+                ));
+            } else {
+                contact_hooks.push("None".to_string());
+            }
+        }
         // `create` has one signature in the table: (id, object).
         out += &format!(
             "unsafe extern \"C\" fn create_{class}_any(id: f64, go: u64) -> *mut u8 {{ {} }}\n",
@@ -221,9 +240,10 @@ fn component_table(m: &Module) -> String {
             .map(|(_, b)| b.iter().map(|x| format!("{x}")).collect())
             .unwrap_or_default();
         entries.push(format!(
-            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, bases: &[{}], create: create_{class}_any, hooks: [{}], props: {props} }},\n",
+            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, bases: &[{}], create: create_{class}_any, hooks: [{}], contact_hooks: [{}], props: {props} }},\n",
             bases.join(", "),
-            hooks.join(", ")
+            hooks.join(", "),
+            contact_hooks.join(", ")
         ));
     }
     if entries.is_empty() {

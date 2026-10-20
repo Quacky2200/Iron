@@ -29,14 +29,38 @@ pub const HOOKS: [&str; 9] = [
     "onApplicationPause",
 ];
 
-/// The base class. `gameObject` is there when the manifest has the `GameObject` handle.
-pub fn prelude(has_game_object: bool) -> String {
+/// The contact hooks, called by name when the physics step reports a contact. Each takes a
+/// `Collision` (the other side). Their thunks take the pieces, the host passes plain numbers.
+pub const CONTACT_HOOKS: [&str; 6] = [
+    "onCollisionEnter",
+    "onCollisionExit",
+    "onCollisionStay",
+    "onTriggerEnter",
+    "onTriggerExit",
+    "onTriggerStay",
+];
+
+/// The base class. `gameObject` is there when the manifest has the `GameObject` handle; so is
+/// `Collision`, whose `collider` is a `Collider` handle when the manifest has one.
+pub fn prelude(has_game_object: bool, has_collider: bool) -> String {
     let go = if has_game_object {
         "  gameObject: GameObject | null = null;\n  get transform(): Transform {\n    return this.gameObject!.transform;\n  }\n"
     } else {
         ""
     };
-    format!("class Component {{\n  id: number = 0;\n{go}}}\n")
+    let collision = if has_game_object {
+        let ct = if has_collider {
+            "Collider | null"
+        } else {
+            "number"
+        };
+        format!(
+            "class Collision {{\n  other: GameObject | null;\n  collider: {ct};\n  speed: number;\n  sensor: boolean;\n  constructor(other: GameObject | null, collider: {ct}, speed: number, sensor: boolean) {{\n    this.other = other;\n    this.collider = collider;\n    this.speed = speed;\n    this.sensor = sensor;\n  }}\n  get gameObject(): GameObject | null {{\n    return this.other;\n  }}\n  get relativeSpeed(): number {{\n    return this.speed;\n  }}\n}}\n"
+        )
+    } else {
+        String::new()
+    };
+    format!("{collision}class Component {{\n  id: number = 0;\n{go}}}\n")
 }
 
 /// Helper functions for `getComponentInChildren(Class)` calls: one per class named, appended to
@@ -74,7 +98,7 @@ pub fn wanted(src: &str) -> bool {
 
 /// The program with every top-level `register(Class)` removed (blanked, so lines stay) and the
 /// thunks appended. `None` when there is nothing to register.
-pub fn desugar(src: &str, has_game_object: bool) -> R<Option<String>> {
+pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option<String>> {
     if !src.contains("register(") {
         return Ok(None);
     }
@@ -186,9 +210,21 @@ pub fn desugar(src: &str, has_game_object: bool) -> R<Option<String>> {
                             have.push(h);
                         }
                     }
+                    for h in CONTACT_HOOKS {
+                        if methods.iter().any(|m| m == h) && !have.contains(&h) {
+                            have.push(h);
+                        }
+                    }
                     chain = parent.clone();
                 }
                 None => break,
+            }
+        }
+        if has_game_object {
+            for h in CONTACT_HOOKS {
+                if have.contains(&h) {
+                    tail += &contact_thunk(name, h, has_collider);
+                }
             }
         }
         for h in HOOKS {
@@ -209,4 +245,17 @@ pub fn desugar(src: &str, has_game_object: bool) -> R<Option<String>> {
     }
     out.push_str(&tail);
     Ok(Some(out))
+}
+
+/// The thunk of a contact hook: the host passes the other object, its collider, the speed and
+/// the sensor flag as plain values and the thunk builds the `Collision`.
+fn contact_thunk(name: &str, h: &str, has_collider: bool) -> String {
+    let ct = if has_collider {
+        "Collider | null"
+    } else {
+        "number"
+    };
+    format!(
+        "export function iron_hook_{name}_{h}(c: {name}, other: GameObject | null, collider: {ct}, speed: number, sensor: number): void {{ c.{h}(new Collision(other, collider, speed, sensor !== 0)); }}\n"
+    )
 }

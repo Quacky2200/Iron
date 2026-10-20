@@ -70,3 +70,31 @@ in place).
 - Handles in QuickJS: whatever the compiled side treats as internal (engine ids, handles) is exported to QuickJS as an opaque
   internal value, like V8's internal fields; QuickJS encodes plain data (numbers, strings, arrays, value classes) and anything
   that touches the engine goes through those opaque handles. Details to confirm when QuickJS handle classes are built.
+
+## 8. Contact hooks (done, 2026-10-20)
+
+Contacts reach components as hooks called by name: `onCollisionEnter`, `onCollisionExit`, `onCollisionStay`, `onTriggerEnter`,
+`onTriggerExit`, `onTriggerStay`. All six take one `Collision`, a prelude class the compiler builds in the hook's thunk (so a
+script that only declares the hook costs nothing elsewhere):
+
+```ts
+class Collision {
+  other: GameObject | null;   // the object on the other side (null: its body is not attached to one)
+  collider: Collider | null;  // the other side's collider (a number when the manifest has no Collider handle)
+  speed: number;              // impact speed going in (m/s); 0 on exit
+  sensor: boolean;            // one side is a sensor (the trigger hooks are used then)
+  get gameObject()            // = other (the QuickJS Collision's name)
+  get relativeSpeed()         // = speed
+}
+```
+
+`NativeHost::dispatch_physics(active)` takes `iron_physics_api::take_contacts()`, maps colliders to objects with
+`object_of_collider` and tells the components of both objects (a collider with no object tells nobody).
+`dispatch_contacts(&[ContactEvent], active)` is the same with events made by hand. Sensors call the trigger hooks, solid contacts
+the collision hooks. `Stay` is made by the host: every pair that began and has not ended gets `onCollisionStay` /
+`onTriggerStay` on each dispatch (events first, so a pair that began this tick gets Enter and then Stay). Call it after every
+fixed tick. Disabled components and components of inactive objects miss events (the pair still counts as touching). A hook that
+throws is a `Fault` and disables the component; a component not started yet gets `onStart` first.
+
+Differences from the QuickJS `physics-components.ts`: `onTriggerEnter` gets a `Collision` (not the other `Collider`; the object is
+`collision.other`), there is no `rigidbody` field, and `Stay` / `onTriggerStay` exist. 2D hooks are not made yet.

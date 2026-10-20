@@ -32,6 +32,24 @@ const HOOK_NAMES: [&str; 9] = [
 
 type Create = unsafe extern "C" fn(f64, u64) -> *mut u8;
 type Hook = unsafe extern "C" fn(*mut u8, f64);
+/// A contact hook: (this, the other object's raw handle or 0, the other collider's number, speed,
+/// sensor flag). The compiled thunk builds the `Collision` the script sees.
+type ContactHook = unsafe extern "C" fn(*mut u8, u64, u64, f64, f64);
+
+pub const CONTACT_ENTER: usize = 0;
+pub const CONTACT_EXIT: usize = 1;
+pub const CONTACT_STAY: usize = 2;
+pub const TRIGGER_ENTER: usize = 3;
+pub const TRIGGER_EXIT: usize = 4;
+pub const TRIGGER_STAY: usize = 5;
+const CONTACT_NAMES: [&str; 6] = [
+    "onCollisionEnter",
+    "onCollisionExit",
+    "onCollisionStay",
+    "onTriggerEnter",
+    "onTriggerExit",
+    "onTriggerStay",
+];
 
 /// One registered class: its constructor thunk and the hooks it has (a missing hook costs nothing).
 #[derive(Clone)]
@@ -43,6 +61,8 @@ pub struct NativeClass {
     pub bases: &'static [u64],
     pub create: Create,
     pub hooks: [Option<Hook>; 9],
+    /// `onCollisionEnter/Exit/Stay` and `onTriggerEnter/Exit/Stay` (see the `CONTACT_*` indices).
+    pub contact_hooks: [Option<ContactHook>; 6],
     /// The `@property` table: name, byte offset in the object, type name (`PROPS_<Class>`).
     pub props: &'static [(&'static str, usize, &'static str)],
 }
@@ -269,9 +289,24 @@ pub struct Fault {
     pub hook: &'static str,
 }
 
+/// One side of a contact, as the host dispatches it: `object` is the object being told, `other`
+/// the object on the other side (0: none) with its collider `collider`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContactEvent {
+    pub started: bool,
+    pub object: u64,
+    pub other: u64,
+    pub collider: u64,
+    pub speed: f64,
+    pub sensor: bool,
+}
+
 pub struct NativeHost {
     classes: Vec<NativeClass>,
     entries: Vec<Entry>,
+    /// Contacts that began and have not ended: `onCollisionStay` / `onTriggerStay` run for these
+    /// on every dispatch.
+    touching: Vec<ContactEvent>,
 }
 
 impl Drop for NativeHost {
@@ -313,6 +348,7 @@ impl NativeHost {
         NativeHost {
             classes,
             entries: Vec::new(),
+            touching: Vec::new(),
         }
     }
 
@@ -481,8 +517,156 @@ impl NativeHost {
         faults
     }
 
+    /// Tells the components of each event's object about it: `onCollisionEnter` / `Exit` for
+    /// solid contacts and `onTriggerEnter` / `Exit` for sensors, then `onCollisionStay` /
+    /// `onTriggerStay` for every contact still touching (including the ones that just began).
+    /// Call it after each fixed tick, with `[]` if there is nothing new. Components of inactive
+    /// objects and disabled components are skipped (they miss the event, as in Unity); the
+    /// `Stay` set keeps track either way.
+    pub fn dispatch_contacts(
+        &mut self,
+        events: &[ContactEvent],
+        active: &dyn Fn(u64) -> bool,
+    ) -> Vec<Fault> {
+        let mut faults = Vec::new();
+        for ev in events {
+            let same = |t: &ContactEvent| {
+                t.object == ev.object && t.collider == ev.collider && t.other == ev.other
+            };
+            if ev.started {
+                if !self.touching.iter().any(same) {
+                    self.touching.push(*ev);
+                }
+            } else {
+                self.touching.retain(|t| !same(t));
+            }
+            let hook = match (ev.sensor, ev.started) {
+                (false, true) => CONTACT_ENTER,
+                (false, false) => CONTACT_EXIT,
+                (true, true) => TRIGGER_ENTER,
+                (true, false) => TRIGGER_EXIT,
+            };
+            faults.extend(self.contact_hook(hook, ev, active));
+        }
+        for ev in self.touching.clone() {
+            let hook = if ev.sensor {
+                TRIGGER_STAY
+            } else {
+                CONTACT_STAY
+            };
+            faults.extend(self.contact_hook(hook, &ev, active));
+        }
+        faults
+    }
+
+    /// Takes the contacts the physics step queued (`iron_physics_api::take_contacts`) and
+    /// dispatches them: each contact tells the components of both objects (a collider with no
+    /// object attached tells nobody).
+    pub fn dispatch_physics(&mut self, active: &dyn Fn(u64) -> bool) -> Vec<Fault> {
+        use iron_api::Handle;
+        let raw = |c: u32| iron_physics_api::object_of_collider(c).map(|o| o.to_raw());
+        let mut events = Vec::new();
+        for c in iron_physics_api::take_contacts() {
+            let (oa, ob) = (raw(c.a), raw(c.b));
+            for (me, other, coll) in [(oa, ob, c.b), (ob, oa, c.a)] {
+                if let Some(object) = me {
+                    events.push(ContactEvent {
+                        started: c.started,
+                        object,
+                        other: other.unwrap_or(0),
+                        collider: u64::from(coll),
+                        speed: f64::from(c.speed),
+                        sensor: c.sensor,
+                    });
+                }
+            }
+        }
+        self.dispatch_contacts(&events, active)
+    }
+
+    /// Runs one contact hook on every component of the event's object that has it.
+    fn contact_hook(
+        &mut self,
+        hook: usize,
+        ev: &ContactEvent,
+        active: &dyn Fn(u64) -> bool,
+    ) -> Vec<Fault> {
+        let mut faults = Vec::new();
+        if !active(ev.object) {
+            return faults;
+        }
+        // Hooks may add or remove components: walk a snapshot of ids.
+        let ids: Vec<u32> = self
+            .entries
+            .iter()
+            .filter(|e| e.object == Some(ev.object))
+            .map(|e| e.id)
+            .collect();
+        for id in ids {
+            let Some(i) = self.entries.iter().position(|e| e.id == id) else {
+                continue;
+            };
+            let e = &self.entries[i];
+            if !e.enabled || self.classes[e.class].contact_hooks[hook].is_none() {
+                continue;
+            }
+            if !e.started {
+                self.entries[i].started = true;
+                let f = self.call(i, HOOK_START, 0.0);
+                faults.extend(self.adopt());
+                if let Some(f) = f {
+                    faults.push(f);
+                    continue;
+                }
+                // `adopt` may have removed components, so the index is looked up again.
+                if !self.entries.iter().any(|e| e.id == id) {
+                    continue;
+                }
+            }
+            let Some(i) = self.entries.iter().position(|e| e.id == id) else {
+                continue;
+            };
+            if let Some(f) = self.call_contact(i, hook, ev) {
+                faults.push(f);
+            }
+            faults.extend(self.adopt());
+        }
+        faults
+    }
+
+    fn call_contact(&mut self, i: usize, hook: usize, ev: &ContactEvent) -> Option<Fault> {
+        let e = &self.entries[i];
+        let class = &self.classes[e.class];
+        let f = class.contact_hooks[hook]?;
+        // SAFETY: `this` is rooted and has the class the thunk was generated for.
+        unsafe {
+            f(
+                e.this,
+                ev.other,
+                ev.collider,
+                ev.speed,
+                f64::from(u8::from(ev.sensor)),
+            )
+        };
+        ts_rt_microtasks_run();
+        if ts_rt_exc_pending() {
+            ts_rt_exc_take();
+            let id = e.id;
+            let name = class.name;
+            self.entries[i].enabled = false;
+            return Some(Fault {
+                id,
+                class: name,
+                hook: CONTACT_NAMES[hook],
+            });
+        }
+        None
+    }
+
     /// Destroys every component on `objects` (the engine destroyed them).
     pub fn destroy_on_objects(&mut self, objects: &[u64]) {
+        self.touching
+            .retain(|t| !objects.contains(&t.object) && !objects.contains(&t.other));
         let ids: Vec<u32> = self
             .entries
             .iter()
