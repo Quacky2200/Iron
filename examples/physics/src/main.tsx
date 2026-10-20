@@ -2,7 +2,20 @@
 // ramp (rapier in Rust), drawn as UI boxes from each body's last-tick pose. Click to
 // drop another; a sensor zone counts what passes through it. Impacts knock (kira),
 // louder when harder and panned to where they happen.
-import { audio, Component, physics, type PhysicsBody, register } from "@iron/engine";
+import {
+  audio,
+  BoxCollider,
+  type Collider,
+  type Collision,
+  Component,
+  GameObject,
+  Quaternion,
+  register,
+  Rigidbody,
+  RigidbodyConstraints,
+  SphereCollider,
+  Vector3,
+} from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { useEffect, useState } from "react";
 
@@ -10,11 +23,27 @@ import { useEffect, useState } from "react";
 const SCALE = 60;
 const ORIGIN = { x: 640, y: 660 };
 
-interface Thing {
-  body: PhysicsBody;
-  shape: "box" | "ball";
-  half: number;
-  color: string;
+/** A falling crate or ball: it knocks when it lands, louder when harder and panned to where it is. */
+class Thing extends Component {
+  shape = "box";
+  half = 0.25;
+  color = "#ffffff";
+  onCollisionEnter(c: Collision) {
+    const speed = c.relativeSpeed;
+    if (speed < 0.8) return;
+    audio.play("assets/thud.wav", {
+      volume: Math.min(1, speed / 8),
+      rate: 0.8 + (1 - this.half) * 0.5,
+      pan: Math.max(-1, Math.min(1, this.transform.position.x / 8)),
+    });
+  }
+}
+
+/** A sensor zone: counts what passes through. */
+class Zone extends Component {
+  onTriggerEnter(other: Collider) {
+    passes++;
+  }
 }
 
 const things: Thing[] = [];
@@ -22,39 +51,27 @@ let passes = 0;
 
 /** Ground, a ramp tilted 20° about z, and a trigger zone over the floor. */
 function buildLevel() {
-  physics.addCollider({ shape: { box: { x: 10, y: 0.5, z: 2 } }, position: { x: 0, y: -0.5, z: 0 } });
-  const tilt = (-20 * Math.PI) / 360;
-  physics.addCollider({
-    shape: { box: { x: 3, y: 0.15, z: 2 } },
-    position: { x: -4, y: 3, z: 0 },
-    rotation: { x: 0, y: 0, z: Math.sin(tilt), w: Math.cos(tilt) },
-    friction: 0.2,
-  });
-  const zone = physics.createBody({ kind: "fixed", position: { x: 3, y: 1.5, z: 0 } });
-  zone.addCollider({ shape: { box: { x: 1, y: 1.5, z: 2 } }, sensor: true });
-  zone.onCollisionStart = () => passes++;
+  const ground = new GameObject("Ground", { position: new Vector3(0, -0.5, 0) });
+  ground.addComponent(BoxCollider, { size: new Vector3(20, 1, 4) });
+  const ramp = new GameObject("Ramp", { position: new Vector3(-4, 3, 0), rotation: Quaternion.euler(0, 0, -20) });
+  ramp.addComponent(BoxCollider, { size: new Vector3(6, 0.3, 4), dynamicFriction: 0.2 });
+  const zone = new GameObject("Zone", { position: new Vector3(3, 1.5, 0) });
+  zone.addComponent(BoxCollider, { size: new Vector3(2, 3, 4), isTrigger: true });
+  zone.addComponent(Zone);
 }
 
 function drop(x: number, y: number, i: number) {
-  const shape = i % 3 === 0 ? "ball" : "box";
+  const ball = i % 3 === 0;
   const half = 0.25 + (i % 4) * 0.08;
   // Bodies stay in the z = 0 plane: the scene is 2D, seen from the side.
-  const body = physics.createBody({ position: { x, y, z: 0 }, angularDamping: 0.2 });
-  body.addCollider({
-    shape: shape === "ball" ? { ball: half } : { box: { x: half, y: half, z: half } },
-    restitution: shape === "ball" ? 0.5 : 0.1,
+  const go = new GameObject("Thing", { position: new Vector3(x, y, 0) });
+  if (ball) go.addComponent(SphereCollider, { radius: half, bounciness: 0.5 });
+  else go.addComponent(BoxCollider, { size: new Vector3(half * 2, half * 2, half * 2), bounciness: 0.1 });
+  go.addComponent(Rigidbody, {
+    angularDrag: 0.2,
+    constraints: RigidbodyConstraints.FreezePositionZ | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationY,
   });
-  body.onCollisionStart = (e) => {
-    if (e.sensor) return;
-    const speed = e.speed;
-    if (speed < 0.8) return;
-    audio.play("assets/thud.wav", {
-      volume: Math.min(1, speed / 8),
-      rate: 0.8 + (1 - half) * 0.5,
-      pan: Math.max(-1, Math.min(1, body.position.x / 8)),
-    });
-  };
-  things.push({ body, shape, half, color: `hsl(${(i * 47) % 360} 70% 60%)` });
+  things.push(go.addComponent(Thing, { shape: ball ? "ball" : "box", half, color: `hsl(${(i * 47) % 360} 70% 60%)` }));
 }
 
 class Spawner extends Component {
@@ -80,7 +97,7 @@ function useFrame() {
 }
 
 /** Rotation about z, in degrees, from a quaternion (screen y points down). */
-const angle = (q: { z: number; w: number }) => (-2 * Math.atan2(q.z, q.w) * 180) / Math.PI;
+const angle = (q: Quaternion) => (-2 * Math.atan2(q.z, q.w) * 180) / Math.PI;
 
 function World() {
   useFrame();
@@ -116,17 +133,17 @@ function World() {
         const size = t.half * 2 * SCALE;
         return (
           <box
-            key={t.body.id}
+            key={t.id}
             style={{
               position: "absolute",
-              left: ORIGIN.x + t.body.position.x * SCALE - size / 2,
-              top: ORIGIN.y - t.body.position.y * SCALE - size / 2,
+              left: ORIGIN.x + t.transform.position.x * SCALE - size / 2,
+              top: ORIGIN.y - t.transform.position.y * SCALE - size / 2,
               width: size,
               height: size,
               backgroundColor: t.color,
               borderRadius: t.shape === "ball" ? "50%" : 4,
               boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
-              transform: `rotate(${angle(t.body.rotation)}deg)`,
+              transform: `rotate(${angle(t.transform.rotation)}deg)`,
             }}
           />
         );

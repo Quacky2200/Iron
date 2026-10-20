@@ -332,3 +332,7 @@ export function bumpStore(): void {
 export function listenerCount(): number {
   return listeners.length;
 }
+
+export function radiusApp(ball: boolean): UiElement {
+  return <box style={{ width: 50, borderRadius: ball ? "50%" : 4 }} />;
+}

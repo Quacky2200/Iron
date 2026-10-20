@@ -201,3 +201,11 @@ fn for_of_over_an_array_of_unrelated_types_runs_the_body_for_each() {
         assert_eq!(text(ts_fac_unrolledMixedLoop()), "3|a2|2");
     });
 }
+
+// M9-TS-2010
+#[test]
+fn a_generic_arrow_over_the_keys_of_a_type_is_written_per_key() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_keyedSetter()), "b|5");
+    });
+}

@@ -820,6 +820,29 @@ pub extern "C" fn ts_ui_ev_target() -> f64 {
     with_event(|e| f64::from(e.target.raw()), 0.0)
 }
 
+thread_local! {
+    static TARGET_KIND: Cell<Option<fn(u32) -> String>> = const { Cell::new(None) };
+}
+
+/// Tells `e.target.type` what element kind (`"input"`, `"box"`, ..) a node id is; the host that
+/// owns the tree sets it (without one the type is empty).
+pub fn set_target_kind_resolver(f: fn(u32) -> String) {
+    TARGET_KIND.with(|c| c.set(Some(f)));
+}
+
+/// # Safety
+/// `out_len` is a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_ui_ev_target_kind(out_len: *mut i64) -> *const u8 {
+    let id = with_event(|e| e.target.raw(), 0);
+    let s = TARGET_KIND
+        .with(|c| c.get())
+        .map(|f| f(id))
+        .unwrap_or_default();
+    // SAFETY: per the contract above.
+    unsafe { return_string(s, out_len) }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_ev_stop() {
     with_event(Event::stop_propagation, ());
@@ -883,6 +906,7 @@ pub fn link_anchor() -> usize {
         ts_ui_ev_str as *const () as usize,
         ts_ui_ev_kind as *const () as usize,
         ts_ui_ev_target as *const () as usize,
+        ts_ui_ev_target_kind as *const () as usize,
         ts_ui_ev_stop as *const () as usize,
         ts_ui_ev_prevent as *const () as usize,
     ]
@@ -1022,6 +1046,7 @@ pub fn manifest_json() -> String {
         f("evStr", "ts_ui_ev_str", &[("i", "f64")], "string"),
         f("evKind", "ts_ui_ev_kind", &[], "string"),
         f("evTarget", "ts_ui_ev_target", &[], "f64"),
+        f("evTargetKind", "ts_ui_ev_target_kind", &[], "string"),
         f("evStop", "ts_ui_ev_stop", &[], "void"),
         f("evPrevent", "ts_ui_ev_prevent", &[], "void"),
         // Special forms the compiler lowers itself (`Ui.load<T>(slot)`, `Ui.runEffect(f)`); listed

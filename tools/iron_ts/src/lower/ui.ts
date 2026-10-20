@@ -1,5 +1,6 @@
 class UiTarget {
   id: number = Ui.evTarget();
+  type: string = Ui.evTargetKind();
   value: string = Ui.evStr(0);
 }
 

@@ -224,6 +224,20 @@ impl<'a> Lowerer<'a> {
                         // `show ? points.map(..) : []`: both go to the type the context wants.
                         Err(e) => match exp {
                             Some(t) => t.clone(),
+                            // `ball ? "50%" : 4` as a style value with no type around it.
+                            None if matches!(
+                                (a.ty.strip(), b.ty.strip()),
+                                (Ty::Num, Ty::Str | Ty::Lit) | (Ty::Str | Ty::Lit, Ty::Num)
+                            ) && self.fids.contains_key("__sv_num") =>
+                            {
+                                let sv = self
+                                    .m
+                                    .structs
+                                    .iter()
+                                    .position(|d| d.name == "StyleValue")
+                                    .ok_or(e)?;
+                                Ty::Obj(sv)
+                            }
                             None => return Err(e),
                         },
                     },
@@ -1851,7 +1865,7 @@ impl<'a> Lowerer<'a> {
                     items.push(Item::Spread(e));
                 }
                 ObjectPropertyKind::ObjectProperty(p) => {
-                    if p.computed || p.method {
+                    if (p.computed && !matches!(p.key, PropertyKey::StringLiteral(_))) || p.method {
                         bail!("{}: computed or method property", self.loc(p.span.start));
                     }
                     let name = self.key_name(&p.key)?;

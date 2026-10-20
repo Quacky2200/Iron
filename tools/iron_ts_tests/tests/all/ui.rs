@@ -410,3 +410,17 @@ fn spread_attributes_and_props() {
         assert_eq!(ui.dump(), "root(box(text:1,text:9))");
     });
 }
+
+// M9-TS-2011
+//
+// `ball ? "50%" : 4` as a style value with no type around it.
+#[test]
+fn a_style_value_that_is_a_string_or_a_number_by_condition() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_radiusApp(true) });
+        let b = ui.tree.children(ROOT)[0];
+        ui.tree.layout_if_needed();
+        assert_eq!(ui.tree.rect(b).unwrap().width, 50.0);
+    });
+}

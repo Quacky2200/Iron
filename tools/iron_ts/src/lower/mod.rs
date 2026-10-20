@@ -26,6 +26,7 @@ mod intl;
 mod iter;
 mod json;
 mod jsx;
+mod keyed;
 pub use jsx::UI_MANIFEST;
 mod maps;
 mod object;
@@ -266,6 +267,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     // JSX and hooks become calls of the `Ui` namespace (first: the other rewrites parse plain TS).
     // The compiler brings the `Ui` namespace itself when the caller did not pass it (the host links
     // the `ts_ui_*` symbols; `iron_ts_ui` checks that this copy equals its own).
+    let with_keyed = keyed::desugar(src)?;
+    let src = with_keyed.as_deref().unwrap_or(src);
     let wants_ui = jsx::wanted(src);
     if wants_ui && !manifest.namespaces.contains_key("Ui") {
         manifest.add_json(jsx::UI_MANIFEST)?;

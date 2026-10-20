@@ -206,3 +206,18 @@ export function unrolledMixedLoop(): string {
   }
   return `${a.v}|${b.s}|${seen}`;
 }
+
+interface Prof {
+  name: string;
+  age: number;
+}
+
+export function keyedSetter(): string {
+  let p: Prof = { name: "a", age: 1 };
+  const set = <K extends keyof Prof>(key: K, value: Prof[K]) => {
+    p = { ...p, [key]: value };
+  };
+  set("name", "b");
+  set("age", 5);
+  return `${p.name}|${p.age}`;
+}

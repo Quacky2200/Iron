@@ -1238,6 +1238,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2007 | Integration | `{ x, y }[]` goes where `Vector2[]` is expected (setter, `cond ? list : []`). |
 | M9-TS-2008 | Integration | `for (const t of [a, b])` over unrelated types runs the body per element. |
 | M9-TS-2009 | Integration | A component class no `register(..)` names is in the class table with `registered == false` (so `addComponent(Class)` works); the registered ones start as before. |
+| M9-TS-2010 | Integration | `const set = <K extends keyof T>(key: K, value: T[K]) => ..` is written once per literal key it is called with. |
+| M9-TS-2011 | Integration | `cond ? "50%" : 4` as a style value with no type around it. |
 | M9-API-500 | Unit | `UiResources` requests come out in order with stylesheet ids; the queue is emptied by `take_requests`. |
 | M9-TS-1800 | Unit | A relative import pulls the file in before the importer; `export` is dropped from non-entry files. |
 | M9-TS-1801 | Unit | `@iron/*` and `react` imports are erased; an aliased name is renamed to the real one. |
