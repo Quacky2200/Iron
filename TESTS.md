@@ -1145,3 +1145,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-723..725 | Integration | Value classes (`Vector3`, `Color`, `Quaternion`, ...) stringify compactly as their numbers (`[1,2,3]`) and parse back from that or from the object form (`{"x":1,..}`, left-out fields 0, alpha 1) (a difference to the TypeScript classes, by decision). |
 | M9-TS-726 | Integration | A `Vector2[]` is passed to the engine in place (`AnimationCurve.fromPoints(points, mode?)`; modes linear / step; default linear). |
 | M9-API-48 | Unit | `script_f64s` reads a script `number[]` in place; null and empty give an empty slice. |
+| M9-TS-727..730 | Integration | Native physics from compiled code (`bench/physics.ts`): a ball falls and rests on a floor; a ray answers at once (distance, point, normal; a miss); an attached body moves its GameObject; gravity, impulse with mass, body kind. |

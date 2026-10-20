@@ -222,6 +222,67 @@ impl Physics {
         Some(body.translation().to_array())
     }
 
+    /// A body's linear velocity, if it exists.
+    pub fn velocity(&self, id: ScriptId) -> Option<[f32; 3]> {
+        let body = self.world.bodies.get(*self.bodies.get(&id)?)?;
+        Some(body.linvel().to_array())
+    }
+
+    /// A body's angular velocity (radians per second about each world axis).
+    pub fn angular_velocity(&self, id: ScriptId) -> Option<[f32; 3]> {
+        let body = self.world.bodies.get(*self.bodies.get(&id)?)?;
+        Some(body.angvel().to_array())
+    }
+
+    /// The body a collider is attached to (none for a world collider or an unknown id).
+    pub fn collider_body(&self, collider: ScriptId) -> Option<ScriptId> {
+        let parent = self
+            .world
+            .colliders
+            .get(*self.colliders.get(&collider)?)?
+            .parent()?;
+        self.bodies
+            .iter()
+            .find_map(|(&id, &h)| (h == parent).then_some(id))
+    }
+
+    /// Casts a ray at once: the first collider hit within `max` metres (its id, the distance and
+    /// the surface normal). Colliders added since the last step are not in the world's query
+    /// structures yet, so then every collider is tested directly.
+    pub fn raycast_now(
+        &self,
+        origin: [f32; 3],
+        direction: [f32; 3],
+        max: f32,
+    ) -> Option<(ScriptId, f32, [f32; 3])> {
+        let dir = Vector::from_array(direction);
+        if dir.length_squared() == 0.0 {
+            return None;
+        }
+        let ray = Ray::new(Vector::from_array(origin), dir.normalize());
+        let id_of = |h: ColliderHandle| self.world.colliders.get(h).map(|c| c.user_data as u32);
+        if !self.dirty {
+            let (h, hit) =
+                self.world
+                    .cast_ray_and_get_normal(&ray, max, true, QueryFilter::default())?;
+            return Some((id_of(h)?, hit.time_of_impact, hit.normal.to_array()));
+        }
+        self.colliders
+            .values()
+            .filter_map(|&h| {
+                let c = self.world.colliders.get(h)?;
+                let hit = c
+                    .shape()
+                    .cast_ray_and_get_normal(c.position(), &ray, max, true)?;
+                Some((
+                    c.user_data as u32,
+                    hit.time_of_impact,
+                    hit.normal.to_array(),
+                ))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+    }
+
     /// Runs one `physics.*` op (the name without the prefix). Returns an error message
     /// for a bad op; nothing is changed then.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {

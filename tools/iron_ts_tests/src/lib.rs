@@ -284,6 +284,7 @@ pub fn engine_api_anchor() -> usize {
         iron_engine_api::color::color_api::iron_Color_lerp as *const () as usize,
         iron_engine_api::audio::audio_api::iron_audio_load as *const () as usize,
         iron_scenes::scene_manager_api::iron_SceneManager_loadScene as *const () as usize,
+        iron_physics_api::physics_api::iron_Physics_step as *const () as usize,
     ]
     .iter()
     .fold(0, |a, p| a ^ p)
@@ -1209,4 +1210,16 @@ pub fn serial() -> std::sync::MutexGuard<'static, ()> {
 )]
 pub mod scenes_t {
     include!(concat!(env!("OUT_DIR"), "/scenes_bindings.rs"));
+}
+
+/// Physics from compiled code (`bench/physics.ts`), prefix `phy_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod physics_t {
+    include!(concat!(env!("OUT_DIR"), "/physics_bindings.rs"));
 }

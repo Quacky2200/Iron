@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **727**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **731**).
 
 ## How to pick this up
 
@@ -91,7 +91,7 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
   `iron_ui_native` reconciler (hooks, keyed diff, effects in React's order, portals, events, controlled fields, `refresh`),
   `iron_ts_ui` bridge + JSX/hooks rewrite (`jsx.rs`, `ui.ts`), QuickJS bindings for values and strings, performance review
   (`docs/research/iron-ts-sine-demo.md`), `iron_engine_api` (Color, Time, input, Gizmos, Camera, Screen, QualitySettings), namespace
-  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **727**.
+  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **731**.
 - **Uncommitted at the time of writing** (checks were running; re-run fmt, clippy, `cargo test --workspace`, `IRON_TS_GC=stress`, then commit):
   the whole `SineDemo` compiling and running (`bench/sine_demo_full.ts`, `tests/sine_demo_full.rs`, `M9-TS-596..597`), `compile_check` bin,
   `engine_objs.rs` (`new GameObject(..)`, `addComponent(Camera, {..})`), options objects for engine calls, `Record<"a"|"b", V>`,
@@ -244,3 +244,4 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
 - **Review (JSON of value classes, 2026-10-20):** by decision, `JSON.stringify` of `Vector2/3/4`, `Quaternion`, `Color`, `Rect`, ... gives the compact array of numbers and `JSON.parse` reads it back (and the object form too); the TypeScript classes (and bun) give `{x,y,z}`. QuickJS side to match when handle/value classes are bound there.
 
 - **Native arrays across the boundary (2026-10-20):** an `#[iron_api]` function may take `&[f64]` (a `number[]`, read in place) or `&[V]` for a declared value type (a `Vector3[]`, read into `V`s), manifest types `f64s` / `values:Name`. Used by `AnimationCurve.fromPoints(points: Vector2[], mode?)` (a difference to the TypeScript `[time, value]` pairs). Not yet: arrays as results, arrays in QuickJS, flat inline storage of `Vector3[]` in compiled code (benchmark first).
+- **Physics, first part (2026-10-20):** `crates/iron_physics_api` is `Physics` (gravity, `createBody`, world colliders, immediate `raycast`, `step`), `Body` (pose, velocity, forces, mass, kind, colliders, character controller, attach to a GameObject) and `Collider` / `RaycastHit`, a typed layer over `iron_physics::Physics::apply`. Left: joints, contacts as component hooks, Rigidbody and collider components (kinds), scene sync of kinematic bodies, 2D.
