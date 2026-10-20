@@ -107,6 +107,7 @@ fn main() {
         ("scenes", "scf_", 5300),
         ("physics", "phy_", 5400),
         ("contacts", "cnt_", 6000),
+        ("comp_api", "cap_", 6100),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
@@ -118,9 +119,8 @@ fn main() {
             "engine2" | "sine_demo_full" | "random" | "layers" | "prefs" | "assets" | "app"
             | "clock" | "inputs" | "inputs2" | "timespan" | "datetime" | "mathf" | "vectors"
             | "rotations" | "shapes" | "anim_clips" | "anim_player" | "anim_animator"
-            | "scene_objects" | "comp_query" | "comp_life" | "scenes" | "physics" | "contacts" => {
-                engine_manifests()
-            }
+            | "scene_objects" | "comp_query" | "comp_life" | "scenes" | "physics" | "contacts"
+            | "comp_api" => engine_manifests(),
             "scene" | "components" | "components2" | "sine_demo" => {
                 let mut v = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
                 v.extend(iron_engine_api::iron_math::manifests());

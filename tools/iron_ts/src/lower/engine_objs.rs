@@ -183,6 +183,38 @@ impl<'a> Lowerer<'a> {
         Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
     }
 
+    /// The `GameObject` properties scene.ts has that the engine API does not declare: `children`
+    /// (a helper that walks `childAt`), `components` (every component of the program on the object)
+    /// and `scene` (`SceneManager.sceneOf`).
+    pub(crate) fn game_object_member(&mut self, obj: Expr, prop: &str) -> R<Expr> {
+        match prop {
+            "children" if self.fids.contains_key("__go_children") => {
+                self.call_helper("__go_children", vec![obj])
+            }
+            "components" => {
+                let Ty::Obj(sid) = self.named_type("Component")? else {
+                    bail!("GameObject.components needs the program to use components")
+                };
+                let which = mk(ExprKind::Num(sid as f64), Ty::Num);
+                let call = ExprKind::Rt(RtFn::Str("ts_rt_component_all_gc"), vec![obj, which]);
+                Ok(mk(call, Ty::Arr(Box::new(Ty::Obj(sid)))))
+            }
+            "scene" => {
+                let f = self
+                    .manifest
+                    .namespaces
+                    .get("SceneManager")
+                    .and_then(|n| n.get("sceneOf"))
+                    .cloned();
+                match f {
+                    Some(f) => Ok(self.emit_extern(&f, vec![obj])),
+                    None => bail!("GameObject.scene needs the scene manager API"),
+                }
+            }
+            _ => bail!("GameObject has no property `{prop}`"),
+        }
+    }
+
     /// `go.removeComponent(c)` and `c.destroy()` for a component of this program: it is gone for
     /// `getComponent` at once and its `onDestroy` runs when the calling hook returns.
     pub(crate) fn lower_remove_component(&mut self, component: Expr) -> Expr {

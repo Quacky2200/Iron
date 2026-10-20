@@ -12,6 +12,7 @@ mod clock;
 mod clone;
 mod closures;
 mod collections;
+mod comp_api;
 mod comp_life;
 mod comp_query;
 mod components;

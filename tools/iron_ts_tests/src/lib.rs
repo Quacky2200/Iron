@@ -1235,3 +1235,15 @@ pub mod physics_t {
 pub mod contacts_t {
     include!(concat!(env!("OUT_DIR"), "/contacts_bindings.rs"));
 }
+
+/// The component / GameObject surface of scene.ts (`bench/comp_api.ts`), prefix `cap_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod comp_api_t {
+    include!(concat!(env!("OUT_DIR"), "/comp_api_bindings.rs"));
+}

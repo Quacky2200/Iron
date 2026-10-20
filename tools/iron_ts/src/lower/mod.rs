@@ -280,6 +280,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let has_go = manifests.iter().any(|m| m.contains("\"GameObject\""));
     let with_cic = components::children_helpers(src, has_go).map(|h| format!("{src}{h}"));
     let src = with_cic.as_deref().unwrap_or(src);
+    let with_tree = components::tree_helpers(src, has_go).map(|h| format!("{src}{h}"));
+    let src = with_tree.as_deref().unwrap_or(src);
     let has_collider = manifests.iter().any(|m| m.contains("\"Collider\""));
     let rewritten4 = components::desugar(src, has_go, has_collider)?;
     let wants_components = components::wanted(src);

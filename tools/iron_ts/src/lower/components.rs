@@ -91,6 +91,22 @@ pub fn children_helpers(src: &str, has_game_object: bool) -> Option<String> {
     Some(out)
 }
 
+/// Helpers for the `GameObject` properties that are arrays (`children`, `GameObject.roots`), written
+/// in TypeScript over the engine's count/index functions and appended when the program names them.
+pub fn tree_helpers(src: &str, has_game_object: bool) -> Option<String> {
+    if !has_game_object {
+        return None;
+    }
+    let mut out = String::new();
+    if src.contains(".children") {
+        out += "\nfunction __go_children(go: GameObject): GameObject[] {\n  const out: GameObject[] = [];\n  for (let i = 0; i < go.childCount; i++) out.push(go.childAt(i));\n  return out;\n}\n";
+    }
+    if src.contains("GameObject.roots") {
+        out += "\nfunction __go_roots(): GameObject[] {\n  const out: GameObject[] = [];\n  const n = GameObject.rootCount();\n  for (let i = 0; i < n; i++) out.push(GameObject.rootAt(i));\n  return out;\n}\n";
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 /// Does the program use components? (`register(` is checked after parsing.)
 pub fn wanted(src: &str) -> bool {
     src.contains("extends Component") || src.contains("register(")

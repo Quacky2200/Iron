@@ -300,6 +300,15 @@ impl<'a> Lowerer<'a> {
                 _ => bail!("Number.{prop} is not a value"),
             };
         }
+        // `GameObject.roots`: the objects at the world root.
+        if let Expression::Identifier(id) = &m.object
+            && id.name == "GameObject"
+            && prop == "roots"
+            && self.lookup("GameObject").is_none()
+            && self.fids.contains_key("__go_roots")
+        {
+            return self.call_helper("__go_roots", vec![]);
+        }
         if let Expression::Identifier(id) = &m.object
             && self.lookup(id.name.as_str()).is_none()
             && let Some(v) = self.enum_member(id.name.as_str(), prop)
@@ -403,6 +412,7 @@ impl<'a> Lowerer<'a> {
                     .cloned();
                 match getter {
                     Some(g) => Ok(self.emit_extern(&g, vec![obj])),
+                    None if class == "GameObject" => self.game_object_member(obj, prop),
                     None => bail!("{class} has no property `{prop}`"),
                 }
             }
@@ -1243,7 +1253,12 @@ impl<'a> Lowerer<'a> {
         }
         let eq = matches!(op, CmpOp::Eq | CmpOp::Ne);
         if eq && (l.ty == Ty::Null || r.ty == Ty::Null) {
-            let other = if l.ty == Ty::Null { r } else { l };
+            let mut other = if l.ty == Ty::Null { r } else { l };
+            // An engine handle is 0 for "no object" (`go.parent`, `GameObject.find`): the manifest
+            // types them as handles, so `=== null` tests the 0.
+            if matches!(other.ty, Ty::Handle(_)) {
+                other.ty = other.ty.nullable();
+            }
             let is_null = if other.ty.is_nullable() {
                 mk(ExprKind::IsNull(Box::new(other)), Ty::Bool)
             } else {

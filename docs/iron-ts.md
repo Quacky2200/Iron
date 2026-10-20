@@ -909,6 +909,11 @@ Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`) take a 
 `speed`, `sensor`); `NativeClass.contact_hooks` holds their thunks and `NativeHost::dispatch_physics` / `dispatch_contacts` call them
 (design: `docs/research/iron-native-physics.md` section 8). Tests `M9-TS-1000..1003`.
 
+The `GameObject` properties that are arrays or not in the engine API are done by the compiler: `go.children` and `GameObject.roots`
+(TypeScript helpers over `childAt` / `rootAt`, appended when the source names them), `go.components` (every component of the program on
+the object, `ts_rt_component_all_gc` with `Component`'s class id) and `go.scene` (`SceneManager.sceneOf`). `x === null` on an engine
+handle tests the raw 0 (`go.parent`, `GameObject.find`). Tests `M9-TS-1010..1013`.
+
 ## Generics
 
 Generic functions, classes, interfaces and type aliases are supported by **monomorphisation**
