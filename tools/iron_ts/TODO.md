@@ -4,7 +4,7 @@ Tracks the ahead-of-time TypeScript compiler (`tools/iron_ts`, `tools/iron_ts_rt
 `tools/iron_ts_tests`). The repo-wide plan is `TODO.md` M9.b2; **this file is where progress is
 kept up to date** and where a fresh session (or a context after compaction) starts. Update the
 "Now" and "Log" sections at the end of every step. Design and measurements:
-`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **723**).
+`docs/research/iron-ts-spike.md`. Test IDs: `TESTS.md` section "M9.b" (`M9-TS-*`, next free: **724**).
 
 ## How to pick this up
 
@@ -91,7 +91,7 @@ Adding a test module: a `bench/<name>.ts`, an entry in `build.rs`'s list `(name,
   `iron_ui_native` reconciler (hooks, keyed diff, effects in React's order, portals, events, controlled fields, `refresh`),
   `iron_ts_ui` bridge + JSX/hooks rewrite (`jsx.rs`, `ui.ts`), QuickJS bindings for values and strings, performance review
   (`docs/research/iron-ts-sine-demo.md`), `iron_engine_api` (Color, Time, input, Gizmos, Camera, Screen, QualitySettings), namespace
-  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **723**.
+  properties, compiled calls of those (`M9-TS-593..595`). Next free test ID **724**.
 - **Uncommitted at the time of writing** (checks were running; re-run fmt, clippy, `cargo test --workspace`, `IRON_TS_GC=stress`, then commit):
   the whole `SineDemo` compiling and running (`bench/sine_demo_full.ts`, `tests/sine_demo_full.rs`, `M9-TS-596..597`), `compile_check` bin,
   `engine_objs.rs` (`new GameObject(..)`, `addComponent(Camera, {..})`), options objects for engine calls, `Record<"a"|"b", V>`,

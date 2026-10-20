@@ -384,3 +384,17 @@ fn engine_objects_stringify_as_empty_objects() {
         );
     });
 }
+
+// M9-TS-723
+//
+// Value classes stringify as plain objects of their fields, as the TypeScript classes do
+// (`{"x":1,"y":2,"z":3}`, `{"r":..,"g":..,"b":..,"a":..}`).
+#[test]
+fn value_classes_stringify_as_their_fields() {
+    in_every_gc_mode(|_| unsafe {
+        assert_eq!(
+            text(ts_scf_jsonOfVector(1.0, 2.0, 3.0)),
+            r#"{"v":{"x":1,"y":2,"z":3},"c":{"r":0.5,"g":0.25,"b":1,"a":1},"q":{"x":0,"y":0,"z":0,"w":1}}"#
+        );
+    });
+}

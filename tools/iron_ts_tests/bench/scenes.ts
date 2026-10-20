@@ -138,3 +138,7 @@ export function sceneOfName(go: GameObject): string {
 export function jsonOfHandle(go: GameObject): string {
   return JSON.stringify({ object: go, n: 1 });
 }
+
+export function jsonOfVector(x: number, y: number, z: number): string {
+  return JSON.stringify({ v: new Vector3(x, y, z), c: new Color(0.5, 0.25, 1, 1), q: Quaternion.identity });
+}
