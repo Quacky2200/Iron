@@ -1,7 +1,7 @@
 // Ways on to the stage. Each is an `Act` over time `t`, ending still at the centre (apart from
 // `rollcrash`, which misses the show).
 import { GATHER, GROUND, HEIGHT, view } from "./config.ts";
-import { type Act, clamp01, type Cue, keys, lerp, line, smooth, still } from "./moves.ts";
+import { type Act, clamp01, keys, lerp, line, smooth, still } from "./moves.ts";
 
 const walk: Act = {
   name: "walk",
@@ -88,7 +88,12 @@ const crawl: Act = {
   name: "crawl",
   dur: 8.5,
   weight: 6,
-  cues: [0.3, 3.6, 6.9].map((t): Cue => [t, (c) => c.sfx("drag", 0.8)]),
+  // Two scrapes back to back, ended as it pushes itself up onto its feet (u = 0.8, at 6.8 s).
+  cues: [
+    [0.3, (c) => c.sfx("drag", 0.8)],
+    [3.6, (c) => c.sfx("drag", 0.8)],
+    [6.8, (c) => c.stop("drag", 0.25)],
+  ],
   at(t) {
     const m = still();
     const u = clamp01(t / 8.5);

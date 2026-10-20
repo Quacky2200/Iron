@@ -22,6 +22,7 @@ const FILE: Partial<Record<Sfx, string>> = { liftoff: "mp3" };
 const CUT: Partial<Record<Sfx, number>> = { liftoff: 6 };
 const sounds = new Map<Sfx, Sound>();
 const loops = new Map<Sfx, Playback>();
+const active = new Map<Sfx, Set<Playback>>();
 
 export const sfx = {
   /** Loads every sound up front, so the first play doesn't stutter. */
@@ -34,7 +35,17 @@ export const sfx = {
     const playback = sounds.get(name)!.play({ volume: volume * MASTER, rate });
     const cut = CUT[name];
     if (cut !== undefined) setTimeout(() => playback.stop(0.5), (cut * 1000) / rate);
+    // Remembered while it plays, so `stopPlaying` can end it early.
+    const set = active.get(name) ?? new Set<Playback>();
+    active.set(name, set);
+    set.add(playback);
+    playback.onEnded = () => set.delete(playback);
     return playback;
+  },
+
+  /** Ends every copy of a one-shot sound still playing, fading out over `fade` seconds. */
+  stopPlaying(name: Sfx, fade = 0.3): void {
+    for (const p of active.get(name) ?? []) p.stop(fade);
   },
 
   /** Plays on repeat until `stop`. */

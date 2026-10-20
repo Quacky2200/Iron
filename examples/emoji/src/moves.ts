@@ -52,6 +52,8 @@ export const still = (): Move => ({ d: 1, y: 0, sx: 1, sy: 1, rot: 0, spin: 1, c
 /** What cues can ask of the show. */
 export interface Ctx {
   sfx(name: Sfx, volume?: number, rate?: number): void;
+  /** Ends a sound still playing (fading out), for sounds that belong to a movement that has stopped. */
+  stop(name: Sfx, fade?: number): void;
   shake(amount: number, seconds: number): void;
   /** Confetti shot out of a point. */
   burst(x: number, y: number, count: number): void;

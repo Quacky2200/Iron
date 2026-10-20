@@ -142,6 +142,7 @@ class Parade extends Component {
     const self = this;
     this.ctx = {
       sfx: (name, volume = 1, rate = 1) => void sfx.play(name, volume, rate),
+      stop: (name, fade = 0.3) => sfx.stopPlaying(name, fade),
       shake: (amount, seconds) => {
         if (amount >= self.shakeAmount * (self.shakeLeft / self.shakeTotal)) {
           self.shakeAmount = amount;
