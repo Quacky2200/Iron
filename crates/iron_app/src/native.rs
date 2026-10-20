@@ -146,6 +146,8 @@ pub struct Native {
     env: Box<dyn Fn()>,
     /// Classes registered with `{ spawn: false }`: no starting object.
     no_spawn: Vec<String>,
+    /// The game folder: scene files the program loads come from here.
+    root: Option<std::path::PathBuf>,
     #[allow(dead_code)]
     pub bundle: Bundle,
 }
@@ -198,6 +200,7 @@ impl Native {
             remount: None,
             panel_mounts: Vec::new(),
             env,
+            root: None,
             no_spawn: no_spawn_classes(&bundle.source),
             bundle,
         };
@@ -247,6 +250,45 @@ impl Native {
         }
     }
 
+    /// Scene files the program asked for (`SceneManager.load`): read from the game folder.
+    /// Runs with the scene current.
+    fn load_requested_scenes(&mut self) {
+        for (id, path) in iron_scenes::take_load_requests() {
+            let text = self
+                .root
+                .as_deref()
+                .and_then(|root| iron_core::resolve_asset(root, &path))
+                .ok_or_else(|| "must be a relative path inside the game folder".to_string())
+                .and_then(|file| std::fs::read_to_string(&file).map_err(|e| e.to_string()));
+            let result = match text {
+                Ok(text) => iron_scenes::finish_load(id, &text),
+                Err(e) => {
+                    // Drops the request.
+                    let _ = iron_scenes::finish_load(id, "");
+                    Err(e)
+                }
+            };
+            if let Err(e) = result {
+                tracing::error!(target: "script", "loading scene `{path}`: {e}");
+            }
+            for w in iron_scenes::take_warnings() {
+                tracing::warn!(target: "script", "scene `{path}`: {w}");
+            }
+        }
+    }
+
+    /// The game folder, for scene files.
+    pub fn set_root(&mut self, root: &Path) {
+        self.root = Some(root.to_path_buf());
+    }
+
+    /// Loads the manifest's `iron.startScene` (a single-mode load, like the scripts' own).
+    pub fn start_scene(&mut self, scene: &mut Scene, ui: &mut UiTree, path: &str) {
+        self.with_scene(scene, ui, || {
+            iron_scenes::request_load(path, false);
+        });
+    }
+
     /// Objects the program destroyed: components on them and the engine's data for them go too.
     /// Runs with the scene current.
     fn pump_destroyed(&mut self) {
@@ -279,6 +321,10 @@ impl Native {
         ts_rt_microtasks_run();
         log_faults(self.host.settle());
         self.pump_destroyed();
+        self.load_requested_scenes();
+        // Scene events reach the program's listeners once the world is consistent.
+        iron_scenes::dispatch();
+        log_faults(self.host.settle());
         for (target, handle) in iron_ts_ui::take_mounts() {
             tracing::debug!(target, handle, "mount");
             let element = iron_ts_ui::element_from(handle);
@@ -413,7 +459,6 @@ impl Native {
     }
 
     /// Runs `f` with the scene current, then what follows a call into the program.
-    #[allow(dead_code)]
     pub fn with_scene<R>(
         &mut self,
         scene: &mut Scene,
@@ -976,5 +1021,40 @@ mod tests {
             ["A", "B", "D"]
         );
         assert!(no_spawn_classes("register(A);").is_empty());
+    }
+
+    // M9-API-806
+    #[test]
+    fn scene_files_load_from_the_game_folder_and_assets_changed_runs_its_closure() {
+        let dir = std::env::temp_dir().join(format!("iron-native-scene-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("lvl.scene.json"),
+            r#"{"format":"iron.scene","version":1,"name":"Second","objects":[]}"#,
+        )
+        .unwrap();
+        let (mut n, mut scene, mut ui) = start(
+            "class Loader extends Component {\n\
+               onStart(): void {\n\
+                 SceneManager.onSceneLoaded((s: Scene, mode: string) => {\n\
+                   this.gameObject!.transform.localPosition = new Vector3(mode === \"additive\" ? 4 : 5, 0, 0);\n\
+                 });\n\
+                 Assets.onChanged((paths: string) => {\n\
+                   this.gameObject!.transform.localScale = new Vector3(paths.length, 1, 1);\n\
+                 });\n\
+                 SceneManager.loadSceneAsync(\"lvl.scene.json\", \"additive\");\n\
+               }\n\
+             }\n\
+             register(Loader);",
+        );
+        n.set_root(&dir);
+        let go = scene.find("Loader").unwrap();
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        assert_eq!(scene.local(go).unwrap().position.x, 4.0);
+        n.with_scene(&mut scene, &mut ui, || {
+            iron_engine_api::assets::changed(["a.png".to_string()]);
+        });
+        assert_eq!(scene.local(go).unwrap().scale.x, 5.0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

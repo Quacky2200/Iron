@@ -41,6 +41,21 @@ impl App {
         }
     }
 
+    /// Files changed on disk: `Assets.onChanged` closures run, textures that reloaded report
+    /// their size.
+    pub(super) fn native_assets_changed(&mut self, keys: &[String], textures: &[(u32, u32, u32)]) {
+        let Some(n) = self.native.as_mut() else {
+            return;
+        };
+        let (keys, textures) = (keys.to_vec(), textures.to_vec());
+        n.with_scene(&mut self.scene.scene, &mut self.ui, move || {
+            for (id, w, h) in textures {
+                iron_render_api::texture_loaded(iron_render_api::TextureRef(id), w, h);
+            }
+            iron_engine_api::assets::changed(keys);
+        });
+    }
+
     /// Sounds the mixer finished go back to the program (`onEnded`, `AudioSource` state).
     pub(super) fn native_audio_ended(&mut self, ended: &[u32]) {
         let ids: Vec<PlaybackRef> = ended.iter().map(|i| PlaybackRef(*i)).collect();
@@ -120,6 +135,19 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
         touch_supported: sys["touchSupported"].as_bool().unwrap_or(false),
         ..SystemInfo::default()
     });
+    if let Some(list) = info.0.get("assets").and_then(serde_json::Value::as_array) {
+        iron_engine_api::assets::set_assets(
+            list.iter()
+                .filter_map(|a| {
+                    Some(iron_engine_api::assets::AssetEntry {
+                        path: a["path"].as_str()?.to_owned(),
+                        guid: a["guid"].as_str()?.to_owned(),
+                        importer_json: a["importer"].to_string(),
+                    })
+                })
+                .collect(),
+        );
+    }
 }
 
 /// The engine API's JSON values as the values ops carry.

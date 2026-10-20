@@ -257,12 +257,17 @@ fn run() -> Result<()> {
             native_render::configure_engine(&asset_root);
             native_pump::seed_prefs(&prefs);
             let (m, i) = (manifest.clone(), info.clone());
-            Some(native::Native::load_with(
+            let mut n = native::Native::load_with(
                 bundle,
                 &mut scene.scene,
                 &mut ui,
                 Box::new(move || native_pump::configure_engine(&m, &i)),
-            )?)
+            )?;
+            n.set_root(&asset_root);
+            if let Some(start) = &manifest.start_scene {
+                n.start_scene(&mut scene.scene, &mut ui, start);
+            }
+            Some(n)
         }
         None => None,
     };
@@ -1272,6 +1277,22 @@ impl App {
             }
         }
         let mut sizes = Vec::new();
+        if self.native.is_some()
+            && keys.iter().any(|k| k.ends_with(".meta"))
+            && let Some(list) = self.info.0.get("assets").and_then(|a| a.as_array())
+        {
+            iron_engine_api::assets::set_assets(
+                list.iter()
+                    .filter_map(|a| {
+                        Some(iron_engine_api::assets::AssetEntry {
+                            path: a["path"].as_str()?.to_owned(),
+                            guid: a["guid"].as_str()?.to_owned(),
+                            importer_json: a["importer"].to_string(),
+                        })
+                    })
+                    .collect(),
+            );
+        }
         for key in keys {
             let (s, models) = self.world_view.reload_asset(&self.asset_root, key);
             if !s.is_empty() || !models.is_empty() {
@@ -1286,6 +1307,7 @@ impl App {
                 }
             }
         }
+        self.native_assets_changed(keys, &sizes);
         self.report_textures(sizes);
         if self
             .scripts
