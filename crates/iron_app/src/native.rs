@@ -308,6 +308,8 @@ impl Native {
         {
             let _scope = iron_scene::api::enter(scene);
             log_faults(self.host.pre_render(&active));
+            // Emitters and the listener follow their objects.
+            iron_engine_api::audio_components::pre_render();
         }
         self.after_script(scene, ui);
     }
@@ -346,6 +348,20 @@ impl Native {
         {
             let _scope = iron_scene::api::enter(scene);
             super::game_input::apply_native(args);
+        }
+        self.after_script(scene, ui);
+    }
+
+    /// Sounds the mixer finished: `onEnded` callbacks and `AudioSource`s hear about it.
+    pub fn audio_ended(
+        &mut self,
+        scene: &mut Scene,
+        ui: &mut UiTree,
+        ids: &[iron_engine_api::audio::PlaybackRef],
+    ) {
+        {
+            let _scope = iron_scene::api::enter(scene);
+            iron_engine_api::audio::ended(ids);
         }
         self.after_script(scene, ui);
     }
@@ -770,5 +786,36 @@ mod tests {
         let ball = scene.find("ball").expect("the ball");
         let y = scene.world(ball).position.y;
         assert!(y < 4.9 && y > 0.0, "the ball fell: {y}");
+    }
+
+    // M9-API-803
+    #[test]
+    fn audio_commands_come_out_and_finished_sounds_run_on_ended() {
+        use iron_engine_api::audio::{AudioCommand, PlaybackRef};
+        let (mut n, mut scene, mut ui) = start(
+            "class Ding extends Component {
+               onStart(): void {
+                 const p = audio.load(\"sfx/hit.wav\").play();
+                 p.onEnded(() => {
+                   this.gameObject!.transform.localPosition = new Vector3(5, 0, 0);
+                 });
+               }
+             }
+             register(Ding);",
+        );
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        let cmds = iron_engine_api::audio::take_commands();
+        assert!(matches!(cmds.first(), Some(AudioCommand::Load { .. })));
+        let play = cmds
+            .iter()
+            .find_map(|c| match c {
+                AudioCommand::Play { playback, .. } => Some(*playback),
+                _ => None,
+            })
+            .expect("a play command");
+        let go = scene.find("Ding").unwrap();
+        assert_eq!(scene.local(go).unwrap().position.x, 0.0);
+        n.audio_ended(&mut scene, &mut ui, &[play, PlaybackRef(99)]);
+        assert_eq!(scene.local(go).unwrap().position.x, 5.0);
     }
 }

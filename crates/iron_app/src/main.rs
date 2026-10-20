@@ -23,6 +23,7 @@ mod lifecycle;
 mod logging;
 pub(crate) mod models;
 mod native;
+mod native_pump;
 mod native_render;
 mod panels;
 pub(crate) mod particles;
@@ -967,11 +968,18 @@ impl App {
 
     /// Lets audio progress and tells scripts which sounds finished (`__iron_audio`).
     fn update_audio(&mut self, elapsed: f64) {
+        self.native_audio_commands();
         let Some(mixer) = self.audio.as_mut() else {
             return;
         };
         mixer.advance(elapsed);
         let ended = mixer.poll();
+        if self.native.is_some() {
+            if !ended.is_empty() {
+                self.native_audio_ended(&ended);
+            }
+            return;
+        }
         if ended.is_empty() || !self.audio_events {
             return;
         }
@@ -2072,6 +2080,7 @@ impl PlatformApp for App {
         if !self.lifecycle.paused() {
             if let Some(n) = self.native.as_mut() {
                 n.pre_render(&mut self.scene.scene, &mut self.ui);
+                self.native_audio_commands();
                 self.sync_native_render();
             }
             let scene = &self.scene;
