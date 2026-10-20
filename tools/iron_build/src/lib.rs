@@ -1,0 +1,538 @@
+//! `iron-build`: builds a game written in TypeScript into `dist/` for `iron_app`, with no bun and no
+//! `node_modules` (see `docs/iron-build.md`).
+//!
+//! A build reads `package.json` (`iron` section) and `tsconfig.json`, resolves the module graph from the
+//! entry file (`iron_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
+//! bundle with all engine manifests (so errors are found now, not when the game starts), and writes
+//! `dist/game.irbundle` (the resolved source, the CSS and asset lists), `dist/game.css`, and the assets
+//! the program names.
+
+pub mod assets;
+pub mod css;
+pub mod dev;
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// What `package.json` and `tsconfig.json` say about a game.
+#[derive(Debug, Clone)]
+pub struct GameConfig {
+    pub root: PathBuf,
+    pub name: String,
+    pub title: String,
+    pub company: String,
+    pub identifier: String,
+    /// The entry file, relative to the game folder.
+    pub entry: String,
+    /// `tsconfig.json` `include` (default `["src"]`).
+    pub include: Vec<String>,
+    pub jsx: Option<String>,
+    pub has_tsconfig: bool,
+}
+
+impl GameConfig {
+    pub fn load(root: &Path) -> Result<GameConfig, String> {
+        let pkg_path = root.join("package.json");
+        let pkg: serde_json::Value = match std::fs::read_to_string(&pkg_path) {
+            Ok(t) => {
+                serde_json::from_str(&t).map_err(|e| format!("{}: {e}", pkg_path.display()))?
+            }
+            Err(_) => serde_json::json!({}),
+        };
+        let dir_name = root
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "game".into());
+        let name = pkg["name"].as_str().unwrap_or(&dir_name).to_string();
+        let iron = &pkg["iron"];
+        let get = |k: &str, d: &str| iron[k].as_str().unwrap_or(d).to_string();
+        let ts_path = root.join("tsconfig.json");
+        let ts: serde_json::Value = std::fs::read_to_string(&ts_path)
+            .ok()
+            .and_then(|t| serde_json::from_str(&strip_json_comments(&t)).ok())
+            .unwrap_or(serde_json::Value::Null);
+        let include = ts["include"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_else(|| vec!["src".to_string()]);
+        let entry = match iron["main"].as_str() {
+            Some(m) => m.to_string(),
+            None => [
+                "src/main.tsx",
+                "src/main.ts",
+                "src/index.tsx",
+                "src/index.ts",
+                "main.tsx",
+                "main.ts",
+            ]
+            .iter()
+            .find(|c| root.join(c).exists())
+            .map(|c| c.to_string())
+            .ok_or_else(|| {
+                format!(
+                    "{}: no entry file (src/main.tsx, src/main.ts, ...)",
+                    root.display()
+                )
+            })?,
+        };
+        Ok(GameConfig {
+            root: root.to_path_buf(),
+            title: get("title", &name),
+            company: get("company", ""),
+            identifier: get("identifier", &format!("dev.iron.{name}")),
+            name,
+            entry,
+            include,
+            jsx: ts["compilerOptions"]["jsx"].as_str().map(String::from),
+            has_tsconfig: ts_path.exists(),
+        })
+    }
+}
+
+/// Removes `//` and `/* */` comments (outside strings) and trailing commas, so JSONC parses.
+pub fn strip_json_comments(s: &str) -> String {
+    let b: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    let mut in_str = false;
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            out.push(c);
+            if c == '\\' && i + 1 < b.len() {
+                out.push(b[i + 1]);
+                i += 1;
+            } else if c == '"' {
+                in_str = false;
+            }
+        } else if c == '"' {
+            in_str = true;
+            out.push(c);
+        } else if c == '/' && b.get(i + 1) == Some(&'/') {
+            while i < b.len() && b[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        } else if c == '/' && b.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i + 1 < b.len() && !(b[i] == '*' && b[i + 1] == '/') {
+                i += 1;
+            }
+            i += 2;
+            continue;
+        } else {
+            out.push(c);
+        }
+        i += 1;
+    }
+    // Trailing commas before } or ].
+    let chars: Vec<char> = out.chars().collect();
+    let mut res = String::new();
+    let mut in_str = false;
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '"' && (i == 0 || chars[i - 1] != '\\') {
+            in_str = !in_str;
+        }
+        if !in_str && c == ',' {
+            let next = chars[i + 1..].iter().find(|c| !c.is_whitespace());
+            if matches!(next, Some('}') | Some(']')) {
+                continue;
+            }
+        }
+        res.push(c);
+    }
+    res
+}
+
+/// Every engine manifest the compiler checks calls against, plus the `Ui` namespace: the same lists
+/// as `iron_native::manifests()` (that crate links QuickJS, which a build tool does not need).
+pub fn manifests() -> Vec<String> {
+    let mut all = iron_engine_api::manifests();
+    all.push(iron_scene::api::scene_api::MANIFEST.to_json());
+    all.extend(iron_scenes::manifests());
+    all.extend(iron_physics_api::manifests());
+    all.extend(iron_render_api::manifests());
+    all.push(iron_ts_ui::manifest_json());
+    all
+}
+
+/// The ambient declarations (`react`, `@iron/react`, `JSX`) shipped with the compiler, if present.
+pub fn ambient_dts() -> String {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../iron_ts/src/lower/ambient.d.ts");
+    std::fs::read_to_string(p).unwrap_or_default()
+}
+
+/// The text of `types/iron.d.ts`.
+pub fn types_dts() -> Result<String, String> {
+    let ms: Vec<String> = manifests()
+        .into_iter()
+        .filter(|m| !m.contains("\"namespace\":\"Ui\""))
+        .collect();
+    iron_ts::types_dts::generate(&ms, &ambient_dts())
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    /// Skip the `tsc` check.
+    pub no_tsc: bool,
+    /// Also write the AOT object `dist/game.o` (release builds).
+    pub aot: bool,
+    /// Run `iron <game> --cook` afterwards (needs the `iron` binary; see `find_iron`).
+    pub cook: bool,
+    /// Skip compiling the bundle (module graph, CSS and assets only).
+    pub no_compile: bool,
+}
+
+/// How `tsc` went.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tsc {
+    Skipped,
+    Missing,
+    Ok,
+    Failed(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct Report {
+    pub config: GameConfig,
+    pub files: Vec<String>,
+    pub css_files: Vec<String>,
+    pub assets: Vec<String>,
+    pub tsc: Tsc,
+    pub warnings: Vec<String>,
+    pub object_bytes: usize,
+    pub time: Duration,
+}
+
+fn find_tsc(root: &Path) -> Option<PathBuf> {
+    let mut dirs = vec![root.to_path_buf()];
+    let mut p = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    while p.pop() {
+        dirs.push(p.clone());
+    }
+    let names: &[&str] = if cfg!(windows) {
+        &["tsc.cmd", "tsc.exe"]
+    } else {
+        &["tsc"]
+    };
+    for d in dirs {
+        for n in names {
+            let c = d.join("node_modules/.bin").join(n);
+            if c.exists() {
+                return Some(c);
+            }
+        }
+    }
+    for n in names {
+        if let Ok(o) = std::process::Command::new(n).arg("--version").output()
+            && o.status.success()
+        {
+            return Some(PathBuf::from(n));
+        }
+    }
+    None
+}
+
+fn run_tsc(root: &Path) -> Tsc {
+    let Some(tsc) = find_tsc(root) else {
+        return Tsc::Missing;
+    };
+    match std::process::Command::new(&tsc)
+        .args(["--noEmit", "-p", "."])
+        .current_dir(root)
+        .output()
+    {
+        Ok(o) if o.status.success() => Tsc::Ok,
+        Ok(o) => {
+            let mut text = String::from_utf8_lossy(&o.stdout).to_string();
+            text.push_str(&String::from_utf8_lossy(&o.stderr));
+            Tsc::Failed(text.trim().to_string())
+        }
+        Err(e) => Tsc::Failed(format!("cannot run {}: {e}", tsc.display())),
+    }
+}
+
+/// String literals of the bundled source that name an existing file under the game folder.
+fn referenced_assets(source: &str, root: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let b = source.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let q = b[i];
+        if q == b'"' || q == b'\'' || q == b'`' {
+            let start = i + 1;
+            let mut j = start;
+            while j < b.len() && b[j] != q && b[j] != b'\n' {
+                if b[j] == b'\\' {
+                    j += 1;
+                }
+                j += 1;
+            }
+            if j < b.len() && b[j] == q {
+                let lit = &source[start..j.min(source.len())];
+                let ext_ok = lit.rsplit_once('.').is_some_and(|(_, e)| {
+                    assets::kind(&e.to_lowercase()).is_some() || lit.ends_with(".scene.json")
+                });
+                if ext_ok
+                    && !lit.contains(['{', '$'])
+                    && let Some(p) = iron_core::resolve_asset(root, lit)
+                    && p.is_file()
+                {
+                    let rel = lit.trim_start_matches("./").to_string();
+                    if !found.contains(&rel) {
+                        found.push(rel);
+                    }
+                }
+            }
+            i = j + 1;
+        } else {
+            i += 1;
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Writes `path` by a temporary file and a rename, so a watcher never reads half a file.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Builds the game in `root` into `root/dist`.
+pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
+    let t0 = Instant::now();
+    let config = GameConfig::load(root)?;
+    let dist = root.join("dist");
+    let entry = root.join(&config.entry);
+    let bundle = iron_ts::modules::bundle(&entry)?;
+    let mut warnings = Vec::new();
+
+    let tsc = if opts.no_tsc || !config.has_tsconfig {
+        Tsc::Skipped
+    } else {
+        run_tsc(root)
+    };
+    if let Tsc::Failed(text) = &tsc {
+        return Err(format!("tsc failed:\n{text}"));
+    }
+
+    let mut object_bytes = 0;
+    if !opts.no_compile {
+        let out =
+            iron_ts::compile_with_manifests(&bundle.source, "speed", "game_", 0, &manifests())
+                .map_err(|e| format!("{}: {}", config.name, bundle.locate_in(&e)))?;
+        object_bytes = out.object.len();
+        if opts.aot {
+            write_atomic(&dist.join("game.o"), &out.object).map_err(|e| e.to_string())?;
+            write_atomic(&dist.join("game_bindings.rs"), out.bindings.as_bytes())
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Stylesheets, in import order.
+    let css_paths: Vec<PathBuf> = bundle.css.iter().map(PathBuf::from).collect();
+    let mut css_name = None;
+    let mut copied = Vec::new();
+    if !css_paths.is_empty() {
+        let out = css::bundle(&css_paths, &dist).map_err(|e| e.to_string())?;
+        warnings.extend(out.warnings);
+        copied = out.copied;
+        write_atomic(&dist.join("game.css"), out.css.as_bytes()).map_err(|e| e.to_string())?;
+        css_name = Some("game.css".to_string());
+    } else {
+        let _ = std::fs::remove_file(dist.join("game.css"));
+    }
+
+    // Assets: .meta files, then what the program names, copied into dist/ with the same relative path.
+    assets::update(root, false).map_err(|e| e.to_string())?;
+    let names = referenced_assets(&bundle.source, root);
+    for a in &names {
+        for src_rel in [a.clone(), format!("{a}.meta")] {
+            let src = root.join(&src_rel);
+            if src.is_file() {
+                let to = dist.join(&src_rel);
+                if let Some(d) = to.parent() {
+                    std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+                }
+                std::fs::copy(&src, &to).map_err(|e| format!("{}: {e}", src.display()))?;
+            }
+        }
+    }
+
+    let irbundle = serde_json::json!({
+        "format": 1,
+        "title": config.title,
+        "company": config.company,
+        "identifier": config.identifier,
+        "entry": config.entry,
+        "source": bundle.source,
+        "files": bundle.files,
+        "css": css_name,
+        "assets": names,
+    });
+    let text = serde_json::to_string_pretty(&irbundle).map_err(|e| e.to_string())?;
+    write_atomic(&dist.join("game.irbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
+
+    if opts.cook {
+        match find_iron(root) {
+            Some(iron) => {
+                let st = std::process::Command::new(&iron)
+                    .arg(root)
+                    .arg("--cook")
+                    .status();
+                if !matches!(st, Ok(s) if s.success()) {
+                    warnings.push(format!("{} --cook failed", iron.display()));
+                }
+            }
+            None => warnings
+                .push("--cook: the `iron` binary was not found (cargo build -p iron_app)".into()),
+        }
+    }
+    let _ = copied;
+    Ok(Report {
+        config,
+        files: bundle.files,
+        css_files: bundle.css,
+        assets: names,
+        tsc,
+        warnings,
+        object_bytes,
+        time: t0.elapsed(),
+    })
+}
+
+/// The engine binary, for `--cook`: next to the repo's `target/`, or on the PATH.
+pub fn find_iron(root: &Path) -> Option<PathBuf> {
+    let mut p = root.canonicalize().ok()?;
+    while p.pop() {
+        for rel in [
+            "target/release/iron_app.exe",
+            "target/debug/iron_app.exe",
+            "target/release/iron_app",
+            "target/debug/iron_app",
+        ] {
+            let c = p.join(rel);
+            if c.exists() {
+                return Some(c);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("iron_build_{name}_{}", assets::new_guid()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    // M9-TS-1850
+    #[test]
+    fn jsonc_comments_and_trailing_commas_are_stripped() {
+        let t = strip_json_comments("{ // c\n \"a\": \"x//y\", /* b */ \"b\": [1, 2,], }");
+        let v: serde_json::Value = serde_json::from_str(&t).unwrap();
+        assert_eq!(v["a"], "x//y");
+        assert_eq!(v["b"][1], 2);
+    }
+
+    // M9-TS-1851
+    #[test]
+    fn config_reads_the_iron_section_and_tsconfig() {
+        let d = temp("cfg");
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("src/main.ts"), "export const a = 1;").unwrap();
+        std::fs::write(
+            d.join("package.json"),
+            r#"{"name":"g","iron":{"title":"T","company":"C","identifier":"dev.x.g"}}"#,
+        )
+        .unwrap();
+        std::fs::write(d.join("tsconfig.json"), "{\n // x\n \"compilerOptions\": {\"jsx\": \"react-jsx\"}, \"include\": [\"src\", \"types\"] }").unwrap();
+        let c = GameConfig::load(&d).unwrap();
+        assert_eq!(
+            (c.title.as_str(), c.identifier.as_str(), c.entry.as_str()),
+            ("T", "dev.x.g", "src/main.ts")
+        );
+        assert_eq!(c.include, ["src", "types"]);
+        assert_eq!(c.jsx.as_deref(), Some("react-jsx"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-1852
+    #[test]
+    fn a_build_writes_the_bundle_css_and_the_assets_the_code_names() {
+        let d = temp("build");
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::create_dir_all(d.join("assets")).unwrap();
+        std::fs::write(d.join("assets/hit.wav"), b"RIFF").unwrap();
+        std::fs::write(d.join("assets/unused.png"), b"x").unwrap();
+        std::fs::write(d.join("package.json"), r#"{"name":"g"}"#).unwrap();
+        std::fs::write(d.join("src/ui.css"), ".a { color: red }").unwrap();
+        std::fs::write(
+            d.join("src/util.ts"),
+            "export function twice(n: number): number { return n * 2; }",
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("src/main.ts"),
+            "import \"./ui.css\";\nimport { twice } from \"./util\";\nexport function f(): number { const s = \"assets/hit.wav\"; return twice(s.length); }",
+        )
+        .unwrap();
+        let r = build(
+            &d,
+            &Options {
+                no_tsc: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.assets, ["assets/hit.wav"]);
+        assert!(
+            d.join("dist/assets/hit.wav").exists() && !d.join("dist/assets/unused.png").exists()
+        );
+        assert!(d.join("dist/assets/hit.wav.meta").exists());
+        assert_eq!(
+            std::fs::read_to_string(d.join("dist/game.css"))
+                .unwrap()
+                .trim(),
+            ".a { color: red }"
+        );
+        let b: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap())
+                .unwrap();
+        assert_eq!(b["format"], 1);
+        assert_eq!(b["css"], "game.css");
+        assert!(b["source"].as_str().unwrap().contains("function twice"));
+        assert!(r.object_bytes > 0);
+        // A type error stops the build.
+        std::fs::write(
+            d.join("src/util.ts"),
+            "export function twice(n: number): number { return n + undefinedName; }",
+        )
+        .unwrap();
+        assert!(
+            build(
+                &d,
+                &Options {
+                    no_tsc: true,
+                    ..Options::default()
+                }
+            )
+            .is_err()
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

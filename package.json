@@ -7,7 +7,8 @@
     "build:fixtures": "bun run --filter iron-fixtures build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
-    "screenshots": "bun scripts/screenshots.ts"
+    "screenshots": "bun scripts/screenshots.ts",
+    "check:examples": "cargo run -q --manifest-path tools/Cargo.toml -p iron_build -- check examples"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

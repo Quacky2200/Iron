@@ -1191,6 +1191,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_build"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "iron_core",
+ "iron_engine_api",
+ "iron_physics_api",
+ "iron_render_api",
+ "iron_scene",
+ "iron_scenes",
+ "iron_ts",
+ "iron_ts_ui",
+ "serde_json",
+]
+
+[[package]]
 name = "iron_core"
 version = "0.1.0"
 dependencies = [

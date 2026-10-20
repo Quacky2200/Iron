@@ -1236,3 +1236,12 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1804 | Unit | A renamed shorthand property keeps its key (`{ count: n_2 }`). |
 | M9-TS-1805 | Unit | `import "./x.css"` is listed, not read; a missing module or export is an error naming it. |
 | M9-TS-1806 | Unit | `export default <expression>` gets a generated name that importers use. |
+| M9-TS-1810 | Unit | Manifests become `declare module "@iron/engine"` declarations (classes, value classes, statics, properties, namespaces, callbacks) and the ambient text is appended. |
+| M9-TS-1830 | Unit | `.meta` files are made for new assets, kept (GUID unchanged) for old ones, not for `package.json`. |
+| M9-TS-1831 | Unit | A moved asset keeps its GUID; a gone one is an orphan, deleted with `--prune`. |
+| M9-TS-1840 | Unit | CSS bundling: `@import` joined, small `url()` inlined as `data:`, large copied with a hash, missing ones warned. |
+| M9-TS-1850 | Unit | `tsconfig.json` comments and trailing commas are stripped. |
+| M9-TS-1851 | Unit | Game config from `package.json` `iron` and `tsconfig.json`. |
+| M9-TS-1852 | Integration | A build writes `game.irbundle`, `game.css`, the named assets and `.meta`; a compile error fails the build. |
+| M9-TS-1860 | Unit | `dist/.iron-reload` holds `{seq, ok}` or `{seq, ok:false, error}`. |
+| M9-TS-1861 | Unit | The watch fingerprint changes with sources, not with `dist/`. |

@@ -7,3 +7,5 @@ dist/
 tests/output/
 # Cooked assets (`iron --cook`), rebuilt from the sources.
 .iron/
+# Generated type declarations (`iron-build types`).
+examples/*/types/

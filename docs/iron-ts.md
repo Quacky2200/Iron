@@ -1053,3 +1053,9 @@ reads and writes become variable reads and writes, `new Vector3(..)` becomes ass
 (`CallExternInto`) becomes `CallExternOut`, which reads the result from the call's stack buffer straight into the locals. A local
 stays an object when it is passed to a script function, returned, stored in a field, array or closure, or when two names for it
 exist and either is changed. `JSON.stringify` of an engine handle gives `{}`.
+
+## Several files
+
+`iron_ts::modules::bundle(entry)` (`compile_program` bundles and compiles) turns a program of several files into one source text: relative
+imports and re-exports are resolved, `@iron/*` and `react` imports erased, colliding top-level names renamed, `import "./x.css"`
+listed for the build tool. `compile_with_manifests(src, ..)` still takes one source. See `docs/iron-build.md`. Tests `M9-TS-1800..1806`.
