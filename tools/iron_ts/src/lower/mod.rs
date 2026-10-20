@@ -19,6 +19,7 @@ mod date;
 mod engine_objs;
 mod enums;
 mod expr;
+mod facade;
 mod generators;
 mod generics;
 mod intl;

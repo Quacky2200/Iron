@@ -406,7 +406,13 @@ impl<'a> Lowerer<'a> {
         stmts: &mut Vec<Stmt>,
         at: &str,
     ) -> R<()> {
-        for p in &o.properties {
+        // `parent` first: `position`, `rotation` and `scale` of a GameObject are local to it.
+        let mut props: Vec<&ObjectPropertyKind<'a>> = o.properties.iter().collect();
+        props.sort_by_key(|p| {
+            !matches!(p, ObjectPropertyKind::ObjectProperty(p)
+                if matches!(&p.key, PropertyKey::StaticIdentifier(k) if k.name == "parent"))
+        });
+        for p in props {
             let ObjectPropertyKind::ObjectProperty(p) = p else {
                 bail!("{at}: spread in options")
             };
@@ -414,6 +420,9 @@ impl<'a> Lowerer<'a> {
                 bail!("{at}: option names are plain names")
             };
             let key = key.name.as_str();
+            if class == "GameObject" && self.game_object_option(tmp, key, &p.value, stmts, at)? {
+                continue;
+            }
             let own = self.manifest.classes[class].setters.get(key).cloned();
             if let Some(setter) = own {
                 let want = self.ext_ir(&setter.params[1].1);

@@ -29,6 +29,7 @@ mod engine;
 mod engine2;
 mod errors;
 mod errors2;
+mod facade;
 mod fparts;
 mod gc;
 mod generators;

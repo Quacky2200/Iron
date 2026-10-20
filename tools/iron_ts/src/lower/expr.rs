@@ -1302,6 +1302,10 @@ impl<'a> Lowerer<'a> {
             let s = self.coerce(v, &Ty::Str)?;
             return Ok(self.emit_extern(&from, vec![s]));
         }
+        // `null` where the API takes a handle is "no object" (`parent: null`, `sprite: null`).
+        if matches!(want.strip(), Ty::Handle(_)) && matches!(v.ty.strip(), Ty::Null) {
+            return Ok(mk(ExprKind::Null, want.clone()));
+        }
         self.coerce(v, want)
     }
 
@@ -2330,6 +2334,9 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn lower_assign(&mut self, a: &'a AssignmentExpression<'a>) -> R<(Vec<Stmt>, Expr)> {
         use AssignmentOperator as A;
         let mut pre = Vec::new();
+        if let Some(stmts) = self.lower_split_assign(a)? {
+            return Ok((stmts, mk(ExprKind::Null, Ty::Null)));
+        }
         let place = self.assign_target(&a.left, &mut pre)?;
         let pty = Self::place_ty(&place).clone();
         if matches!(a.operator, A::LogicalAnd | A::LogicalOr | A::LogicalNullish) {

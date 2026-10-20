@@ -1301,3 +1301,15 @@ pub mod comp_api_t {
 pub mod physics_comp_t {
     include!(concat!(env!("OUT_DIR"), "/physics_comp_bindings.rs"));
 }
+
+/// `bench/facade.ts`, prefix `fac_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod facade_t {
+    include!(concat!(env!("OUT_DIR"), "/facade_bindings.rs"));
+}

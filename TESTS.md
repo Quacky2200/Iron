@@ -1219,3 +1219,5 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1616 | Integration | `[number, number]` and `[number, number][]` are arrays (`react_front.rs`). |
 | M9-TS-1617 | Integration | `Record<NumericEnum, V>` with computed enum keys is an array indexed by the enum. |
 | M9-TS-1618 | Integration | A `const` arrow that calls itself (`setTimeout(loop, 16)`) and a top-level `let` arrow that is reassigned. |
+| M9-TS-1700 | Integration | `RenderSettings.skybox = { .. }` and `.bloom = { .. }` (and `= null`) compile to the per-field setters: off, on with the defaults, then each key (`sunDirection: null` is `skyHasSun = false`); `bench/facade.ts`. |
+| M9-TS-1701 | Integration | `new GameObject(name, { parent, position, rotation, scale, layer, active })`: `parent` first (`null` is no parent), `position` / `rotation` / `scale` are local to the parent. |
