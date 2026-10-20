@@ -2766,6 +2766,110 @@ fn fog_modes_fade_things_towards_the_fog_colour_with_distance() {
     assert_golden("M7-FOG-01", size.0, size.1, &pixels, 3);
 }
 
+// M7-FOG-04
+#[test]
+fn height_fog_lies_low_and_covers_the_horizon() {
+    use iron_render::{Fog, FogMode, HeightFog, MeshInstance, Projection, WorldView, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 240);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    let fog_color = [0.6, 0.7, 0.8];
+    // Level, 4 m up, looking down -z.
+    let camera = WorldCamera::new(
+        Mat4::from_translation(Vec3::new(0.0, 4.0, 0.0)),
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+        0.1,
+        200.0,
+        size,
+        Color::rgb(0.05, 0.1, 0.3),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let cube = |model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model,
+        color,
+        unlit: true,
+        ..Default::default()
+    };
+    // A grey floor and white pillars 10 m tall.
+    v.meshes.push(cube(
+        Mat4::from_translation(Vec3::new(0.0, -0.05, -100.0))
+            * Mat4::from_scale(Vec3::new(400.0, 0.1, 200.0)),
+        [0.25, 0.25, 0.25, 1.0],
+    ));
+    for (x, z) in [(-4.0, -15.0), (3.0, -30.0), (-9.0, -60.0)] {
+        v.meshes.push(cube(
+            Mat4::from_translation(Vec3::new(x, 5.0, z))
+                * Mat4::from_scale(Vec3::new(1.5, 10.0, 1.5)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // Height fog alone: exponential distance fog with no density.
+    v.fog = Some(Fog {
+        mode: FogMode::Exponential,
+        color: fog_color,
+        density: 0.0,
+        height: Some(HeightFog {
+            density: 0.15,
+            base_height: 0.0,
+            falloff: 0.5,
+        }),
+        ..Default::default()
+    });
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let pixel = |x: usize, y: usize| {
+        let i = (y * size.0 as usize + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    let at = |p: Vec3| {
+        let c = view_proj.project_point3(p);
+        pixel(
+            ((c.x + 1.0) / 2.0 * size.0 as f32) as usize,
+            ((1.0 - c.y) / 2.0 * size.1 as f32) as usize,
+        )
+    };
+    let fog = fog_color.map(srgb_byte);
+    let foggy = |c: [u8; 3]| {
+        (0..3)
+            .map(|i| (c[i] as i32 - fog[i] as i32).abs())
+            .sum::<i32>()
+    };
+    // The near pillar: its foot in the fog, its top above it.
+    let (foot, top) = (
+        at(Vec3::new(-4.0, 0.5, -14.2)),
+        at(Vec3::new(-4.0, 9.0, -14.2)),
+    );
+    assert!(foggy(top) > foggy(foot) + 30, "foot {foot:?}, top {top:?}");
+    // The background: thick fog just above the horizon, clear high up.
+    let horizon = pixel(size.0 as usize - 4, size.1 as usize / 2 - 3);
+    assert!(foggy(horizon) < 40, "the horizon: {horizon:?}");
+    // Looking 30° up through the fog's thin top: about 8% fog.
+    let high = pixel(size.0 as usize - 4, 2);
+    assert!(
+        foggy(high) > 150 && high[2] > high[0] + 50,
+        "high up: {high:?}"
+    );
+    // The floor far away is fog; up close it's still grey-ish.
+    let far_floor = at(Vec3::new(10.0, 0.0, -150.0));
+    assert!(foggy(far_floor) < 30, "the far floor: {far_floor:?}");
+    let near_floor = at(Vec3::new(0.0, 0.0, -8.0));
+    assert!(foggy(near_floor) > 60, "the near floor: {near_floor:?}");
+    assert_golden("M7-FOG-04", size.0, size.1, &pixels, 3);
+}
+
 // M7-FOG-02
 #[test]
 fn orthographic_fog_goes_by_depth_and_covers_quads_shapes_and_strokes() {

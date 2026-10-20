@@ -1442,8 +1442,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     particles, panels, text) and 2D shapes alike; glows fade out; the background stays clear
     (Unity's); per camera on or off (`Camera.fog`); orthographic cameras fog by depth.
     `examples/fishtank` uses it instead of mixing its colours by depth (`M7-FOG-01`..`03`)
-  - [ ] Height fog: thicker low down, thinning with height; it also covers the sky near the
-    horizon
+  - [x] Height fog (2026-10-20): exponential in height, integrated exactly along each view
+    ray (`RenderSettings.heightFog`: density, base height, falloff); it covers the background
+    out to the far plane, so the horizon sinks into it (`M7-FOG-04`)
   - [ ] Volumetric light shafts: the sun (and spot lights) lighting the fog, cut by shadows
 
 ## M8 — Multiplayer

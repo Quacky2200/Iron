@@ -1196,12 +1196,27 @@ let fogDensity = 0.01;
 let fogStart = 0;
 let fogEnd = 300;
 
+/**
+ * Fog lying low (Unreal's exponential height fog), in `fogColor`: `density` per metre at
+ * `baseHeight`, thinning by a factor of e every `1 / falloff` metres above it and
+ * thickening below. It covers the sky and background too, so the horizon sinks into it.
+ */
+export interface HeightFogSettings {
+  density: number;
+  baseHeight: number;
+  /** Per metre (larger: a thinner layer). */
+  falloff: number;
+}
+
+let heightFog: HeightFogSettings | null = null;
+
 function sendFog(): void {
   if (!fog) {
     __iron_op("render.fog", 0, null);
     return;
   }
-  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd);
+  const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
+  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h);
 }
 
 let skybox: ProceduralSky | null = null;
@@ -1345,6 +1360,17 @@ export const RenderSettings = {
   },
   set fogEndDistance(d: number) {
     fogEnd = d;
+    if (fog) sendFog();
+  },
+  /**
+   * Height fog on top of the distance fog, while `fog` is on (`null`: none, the default).
+   * For height fog alone, use `fogMode = "exponential"` with `fogDensity = 0`.
+   */
+  get heightFog(): HeightFogSettings | null {
+    return heightFog;
+  },
+  set heightFog(h: HeightFogSettings | null) {
+    heightFog = h ? { ...h } : null;
     if (fog) sendFog();
   },
 };

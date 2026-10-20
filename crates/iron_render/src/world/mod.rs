@@ -530,6 +530,8 @@ pub struct Fog {
     /// Linear fog: where it begins and where it's total, in metres.
     pub start: f32,
     pub end: f32,
+    /// Fog lying low as well, in the same colour.
+    pub height: Option<HeightFog>,
 }
 
 impl Default for Fog {
@@ -541,8 +543,20 @@ impl Default for Fog {
             density: 0.01,
             start: 0.0,
             end: 300.0,
+            height: None,
         }
     }
+}
+
+/// Exponential height fog (Unreal's): `density` per metre at `base_height`, thinning by a
+/// factor of e every `1 / falloff` metres above it and thickening below. Unlike distance
+/// fog it covers the background too, so the horizon sinks into it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeightFog {
+    pub density: f32,
+    pub base_height: f32,
+    /// Per metre.
+    pub falloff: f32,
 }
 
 /// A line segment in the world, for [`WorldView::lines`].
@@ -742,6 +756,8 @@ struct GpuGlobals {
     fog_params: [f32; 4],
     /// xyz: the camera's forward axis; w: 1 for orthographic.
     view_dir: [f32; 4],
+    /// Height fog: x density, y base height, z falloff, w 1 when on.
+    fog_height: [f32; 4],
 }
 
 impl GpuGlobals {
@@ -757,6 +773,9 @@ impl GpuGlobals {
         };
         self.fog = [f.color[0], f.color[1], f.color[2], mode];
         self.fog_params = [f.density.max(0.0), f.start, f.end, 0.0];
+        if let Some(h) = f.height {
+            self.fog_height = [h.density.max(0.0), h.base_height, h.falloff.max(1e-4), 1.0];
+        }
     }
 }
 

@@ -22,6 +22,7 @@ afterEach(() => {
   RenderSettings.fogDensity = 0.01;
   RenderSettings.fogStartDistance = 0;
   RenderSettings.fogEndDistance = 300;
+  RenderSettings.heightFog = null;
   delete (globalThis as { __iron_op?: unknown }).__iron_op;
 });
 
@@ -36,14 +37,17 @@ describe("fog", () => {
     RenderSettings.fogMode = "linear";
     expect(fogOps()).toEqual([]);
     RenderSettings.fog = true;
-    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 0, 300]);
+    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 0, 300, null]);
     RenderSettings.fogStartDistance = 10;
     RenderSettings.fogEndDistance = 50;
-    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 10, 50]);
+    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 10, 50, null]);
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogDensity = -1;
     expect(RenderSettings.fogDensity).toBe(0);
     expect(fogOps().at(-1)!.slice(2, 5)).toEqual(["exponential", [0.2, 0.3, 0.4], 0]);
+    // Height fog rides along (M7-FOG-04).
+    RenderSettings.heightFog = { density: 0.1, baseHeight: -2, falloff: 0.5 };
+    expect(fogOps().at(-1)!.at(-1)).toEqual([0.1, -2, 0.5]);
     RenderSettings.fog = false;
     expect(fogOps().at(-1)).toEqual(["render.fog", 0, null]);
   });
@@ -63,15 +67,17 @@ describe("fog", () => {
     RenderSettings.fogColor = new Color(0.1, 0.2, 0.3);
     RenderSettings.fogStartDistance = 5;
     RenderSettings.fogEndDistance = 25;
+    RenderSettings.heightFog = { density: 0.2, baseHeight: 1, falloff: 0.3 };
     RenderSettings.fog = true;
     const json = JSON.parse(JSON.stringify(SceneManager.getActiveScene().serialize())) as SceneData;
     RenderSettings.fog = false;
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogEndDistance = 300;
+    RenderSettings.heightFog = null;
     ops = [];
     SceneManager.loadScene(json);
     expect(RenderSettings.fog).toBe(true);
     expect(RenderSettings.fogColor.g).toBeCloseTo(0.2);
-    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.1, 0.2, 0.3], 0.01, 5, 25]);
+    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.1, 0.2, 0.3], 0.01, 5, 25, [0.2, 1, 0.3]]);
   });
 });

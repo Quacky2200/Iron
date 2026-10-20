@@ -31,6 +31,9 @@ struct Globals {
     fog_params: vec4<f32>,
     // xyz: the camera's forward axis; w: 1 for orthographic (fog by depth along it).
     view_dir: vec4<f32>,
+    // Height fog: x density at the base height (y), thinning by e every 1 / z metres
+    // above it; w: 1 when on.
+    fog_height: vec4<f32>,
 };
 
 struct Quad {
@@ -178,7 +181,8 @@ fn fog_amount(p: vec3<f32>) -> f32 {
         return 0.0;
     }
     let to = p - g.camera.xyz;
-    let d = select(length(to), max(dot(to, g.view_dir.xyz), 0.0), g.view_dir.w > 0.5);
+    let ortho = g.view_dir.w > 0.5;
+    let d = select(length(to), max(dot(to, g.view_dir.xyz), 0.0), ortho);
     var clear: f32;
     if (mode < 1.5) {
         let start = g.fog_params.y;
@@ -190,7 +194,24 @@ fn fog_amount(p: vec3<f32>) -> f32 {
         let x = g.fog_params.x * d;
         clear = exp(-x * x);
     }
-    return 1.0 - clear;
+    // Orthographic views look from their camera's plane, not its position.
+    let eye = select(g.camera.xyz, p - g.view_dir.xyz * d, ortho);
+    return 1.0 - clear * height_clear(eye, p);
+}
+
+// How much light gets through height fog on the way from `a` to `b` (1: all of it). The
+// fog's density along the line is exponential in height, so its integral is exact:
+// density × length × e^(-falloff (a.y - base)) × (1 - e^(-falloff Δy)) / (falloff Δy).
+fn height_clear(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    if (g.fog_height.w < 0.5) {
+        return 1.0;
+    }
+    let falloff = g.fog_height.z;
+    let k = falloff * (b.y - a.y);
+    // Level lines (k near 0) keep the first terms of the series.
+    let along = select((1.0 - exp(min(-k, 60.0))) / k, 1.0 - 0.5 * k, abs(k) < 1e-3);
+    let at_eye = exp(min(-falloff * (a.y - g.fog_height.y), 60.0));
+    return exp(-g.fog_height.x * length(b - a) * at_eye * along);
 }
 
 // A premultiplied colour at `p` seen through the fog: what it covers turns to fog colour,
@@ -210,15 +231,25 @@ fn vs_fill(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let uv = (pos.xy - g.viewport.xy) / g.viewport.zw;
+    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let far4 = g.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    let far = far4.xyz / far4.w;
+    var c = g.background;
     if (g.flags.x > 0.5) {
         // The sky along this pixel's view ray.
-        let uv = (pos.xy - g.viewport.xy) / g.viewport.zw;
-        let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-        let far = g.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
-        let dir = normalize(far.xyz / far.w - g.camera.xyz);
-        return vec4<f32>(textureSampleLevel(env_map, env_samp, dir, 0.0).rgb * g.env.y, 1.0);
+        let dir = normalize(far - g.camera.xyz);
+        c = vec4<f32>(textureSampleLevel(env_map, env_samp, dir, 0.0).rgb * g.env.y, 1.0);
     }
-    return g.background;
+    // Distance fog leaves the background alone (Unity's); height fog covers it out to the
+    // far plane, so the horizon sinks into it.
+    if (g.fog.w > 0.5 && g.fog_height.w > 0.5) {
+        let near4 = g.inv_view_proj * vec4<f32>(ndc, 0.0, 1.0);
+        let eye = select(g.camera.xyz, near4.xyz / near4.w, g.view_dir.w > 0.5);
+        let f = 1.0 - height_clear(eye, far);
+        c = vec4<f32>(c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f), c.a);
+    }
+    return c;
 }
 
 // The editor's ground grid: each pixel's view ray meets y = 0, where 1 m and 10 m lines

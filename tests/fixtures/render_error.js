@@ -11192,12 +11192,14 @@ ${err.stack}` : ""}`);
   var fogDensity = 0.01;
   var fogStart = 0;
   var fogEnd = 300;
+  var heightFog = null;
   function sendFog() {
     if (!fog) {
       __iron_op("render.fog", 0, null);
       return;
     }
-    __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd);
+    const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
+    __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h);
   }
   var skybox = null;
   var ambientMode = "skybox";
@@ -11311,6 +11313,14 @@ ${err.stack}` : ""}`);
     },
     set fogEndDistance(d) {
       fogEnd = d;
+      if (fog)
+        sendFog();
+    },
+    get heightFog() {
+      return heightFog;
+    },
+    set heightFog(h) {
+      heightFog = h ? { ...h } : null;
       if (fog)
         sendFog();
     }
@@ -15610,7 +15620,8 @@ ${err.stack}` : ""}`);
       fogColor: RenderSettings.fogColor,
       fogDensity: RenderSettings.fogDensity,
       fogStartDistance: RenderSettings.fogStartDistance,
-      fogEndDistance: RenderSettings.fogEndDistance
+      fogEndDistance: RenderSettings.fogEndDistance,
+      heightFog: RenderSettings.heightFog
     }, "renderSettings");
   }
   function applyRenderSettings(saved) {
@@ -15635,6 +15646,8 @@ ${err.stack}` : ""}`);
       RenderSettings.fogStartDistance = s.fogStartDistance;
     if (typeof s.fogEndDistance === "number")
       RenderSettings.fogEndDistance = s.fogEndDistance;
+    if ("heightFog" in s)
+      RenderSettings.heightFog = s.heightFog ?? null;
     if (typeof s.fog === "boolean")
       RenderSettings.fog = s.fog;
   }

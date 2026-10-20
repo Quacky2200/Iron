@@ -637,6 +637,7 @@ function saveRenderSettings(saver: Saver): Record<string, unknown> {
       fogDensity: RenderSettings.fogDensity,
       fogStartDistance: RenderSettings.fogStartDistance,
       fogEndDistance: RenderSettings.fogEndDistance,
+      heightFog: RenderSettings.heightFog,
     },
     "renderSettings",
   ) as Record<string, unknown>;
@@ -655,6 +656,7 @@ function applyRenderSettings(saved: Record<string, unknown>): void {
   if (typeof s.fogDensity === "number") RenderSettings.fogDensity = s.fogDensity;
   if (typeof s.fogStartDistance === "number") RenderSettings.fogStartDistance = s.fogStartDistance;
   if (typeof s.fogEndDistance === "number") RenderSettings.fogEndDistance = s.fogEndDistance;
+  if ("heightFog" in s) RenderSettings.heightFog = (s.heightFog as never) ?? null;
   if (typeof s.fog === "boolean") RenderSettings.fog = s.fog;
 }
 

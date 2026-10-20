@@ -488,6 +488,7 @@ layout pass):
 | M7-FOG-01 | Golden | Distance fog (`WorldView.fog`): red cubes from 3 m to 60 m in four views, clear air, linear (none before the start, all fog past the end), exponential and exponential squared (clearer nearby than exponential, both thick far away); the background stays clear. |
 | M7-FOG-02 | Integration | Orthographic cameras fog by depth along the view (two quads at one depth match wherever they are on screen, a deeper one is foggier), and fog covers quads, filled shapes and strokes. |
 | M7-FOG-03 | Unit + JS unit | `render.fog` reaches the views of cameras that show it and `null` clears it; an unknown mode is an error; `Camera.fog` (on by default) opts out. `RenderSettings.fog` / `fogMode` / `fogColor` / `fogDensity` / `fogStartDistance` / `fogEndDistance` send the fog only while it's on; scenes save it and bring it back. |
+| M7-FOG-04 | Golden + unit + JS unit | Height fog (`Fog.height`, exact exponential integral): a camera 4 m up over a floor sees pillars hazy at the foot and clear at the top, the floor fading to fog far off, and the background thick with fog just above the horizon but nearly clear 30° up. `render.fog`'s seventh argument and `RenderSettings.heightFog` carry it; scenes save it. |
 
 ---
 

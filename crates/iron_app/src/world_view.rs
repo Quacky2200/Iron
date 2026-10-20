@@ -11,10 +11,10 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog, FogMode,
-    GizmoLine, Grading, Light, LightKind, MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror,
-    Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke,
-    TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldTexture,
-    WorldView, primitive_id, viewport_size,
+    GizmoLine, Grading, HeightFog, Light, LightKind, MaterialMaps, MeshData, MeshGlow,
+    MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows,
+    ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera,
+    WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -1173,8 +1173,8 @@ impl WorldViews {
                     }),
                 };
             }
-            // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end`;
-            // `fog 0 null` clears the air.
+            // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end
+            // [heightDensity baseHeight falloff]|null`; `fog 0 null` clears the air.
             "fog" => {
                 self.fog = match args.get(1) {
                     Some(Value::Null) | None => None,
@@ -1189,6 +1189,13 @@ impl WorldViews {
                         density: num(3)?.max(0.0),
                         start: num(4)?,
                         end: num(5)?,
+                        height: nums::<3>(args.get(6)).map(|[density, base_height, falloff]| {
+                            HeightFog {
+                                density: density.max(0.0),
+                                base_height,
+                                falloff: falloff.max(1e-4),
+                            }
+                        }),
                     }),
                 };
             }
@@ -2228,6 +2235,31 @@ mod tests {
                 density: 0.02,
                 start: 10.0,
                 end: 80.0,
+                height: None,
+            })
+        );
+        // Height fog comes as a seventh argument (M7-FOG-04).
+        let height = Value::Array(vec![n(0.1), n(-2.0), n(0.5)]);
+        views
+            .apply(
+                "fog",
+                &[
+                    n(0.0),
+                    "exponential".into(),
+                    color.clone(),
+                    n(0.0),
+                    n(0.0),
+                    n(0.0),
+                    height,
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            fog(&views).and_then(|f| f.height),
+            Some(HeightFog {
+                density: 0.1,
+                base_height: -2.0,
+                falloff: 0.5,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();
