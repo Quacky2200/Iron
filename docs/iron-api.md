@@ -585,8 +585,13 @@ QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both se
   mounts (`iron_ts_ui::take_mounts`, `UiRoot.mount(target, element)`), `Runtime::flush`, script faults and UI errors to the log.
   Every call runs inside `iron_scene::api::enter(&mut app.scene.scene)`.
 - **Console.** `console.log` goes to the `script` log target through `ts_rt_set_console`.
-- **Not wired yet:** audio,
-  `Screen` / `QualitySettings` change closures, input listeners, hot reload (see `tools/iron_ts/TODO.md`).
+- **Host wiring** (`native.rs`, `native_pump.rs`, `game_input.rs`):
+  - *Input.* Keys, mouse, wheel and gamepad events go to `iron_engine_api::input` (`game_input::apply_native`, the same argument lists as `__iron_input`), so `getKey*` and the `onKeyDown` closures work. UI events run through the compiled handlers *inside* the interaction layer's dispatch (`Native::ui_event`, with `Runtime::dispatch_handlers`; world panels go through `native_render::panel_event` the same way), so `preventDefault()` reaches the default actions; `Native::settle` commits afterwards. `iron_ts_ui::take_node_commands()` (`ref.focus()`, `blur()`, `scrollTo()`) is applied to the UI by `App::apply_node_commands`.
+  - *Physics.* `fixed_tick` calls `iron_physics_api::step()` (it writes body poses into the scene) and `dispatch_physics`.
+  - *Audio.* `AudioCommand`s go to the mixer through `audio_op` (`Load` reads the file, the others `to_op()`); the mixer's finished sounds go back as `audio::ended` (`onEnded`, `AudioSource` state); `AudioSource` / `AudioListener` follow their objects in `pre_render`.
+  - *Window and settings.* The window, `Screen`, quality levels and cursor are `native_render.rs`. `Application` requests (target frame rate, run in background, quit) and focus / pause (`onApplicationFocus` / `Pause`, `Application.onFocusChanged`) are applied. `PlayerPrefs` start from the saved prefs and their changes are written back. The manifest's `Application` info, layer names, quality levels and asset GUIDs are set by `native_pump::configure_engine`, before the program's top level, again after a reload.
+  - *Scenes and assets.* `SceneManager.loadSceneAsync` requests are read from the game folder (`Native::set_root`), scene events are dispatched after every call into the program, `iron.startScene` loads at start, `Assets.onChanged` runs when the asset watcher reloads files. `register(.., { spawn: false })` is read from the source text (the compiler erases `register`).
+  - *Still missing:* `onReload`, component references between components across a reload, model completion callbacks.
 
 **Hot reload of a native game** (`Native::reload`, triggered by a change of `dist/game.irbundle` or `dist/.iron-reload`,
 `IRON_RELOAD_AT_FRAME=N` in screenshot runs; about 30 ms for hello): the new source is compiled first (a failure, or a
@@ -596,7 +601,7 @@ state is reset (`input`, `assets`, `app`, `screen`, `audio`, `animation`, `camer
 `iron_scenes`) because it holds the old code's closures, the new program's top level runs, the objects it made are removed and the
 saved scenes load again (`load_scene`: components come back on their objects with their fields, `onAwake` runs; classes new in this
 program get a starting object). The UI keeps its hook state through `Runtime::refresh`, except components whose `__uiSignatures`
-hook list changed. Differences to QuickJS: no `onReload` hook, non-`@property` fields start over, module variables of objects the
+hook list changed. Differences to QuickJS: no `onReload` hook (the compiled runtime has no such hook), non-`@property` fields start over, module variables of objects the
 top level made hold removed objects, component references between components are not restored.
 
 **3D from a native game** (`crates/iron_app/src/render_sync.rs`): each frame `sync` takes the resource commands
