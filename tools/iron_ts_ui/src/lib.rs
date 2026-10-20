@@ -12,6 +12,9 @@
 //! Design: `docs/research/iron-ui-native.md`; the TypeScript side is `tools/iron_ts/src/lower/jsx.rs`
 //! and the prelude in `ui.ts`.
 
+mod mount;
+pub use mount::{root_manifest_json, take_mounts};
+
 use iron_api::{return_string, script_str};
 use iron_ts_rt::{
     Array, Closure, ts_rt_exc_pending, ts_rt_exc_take, ts_rt_root_add, ts_rt_root_remove,

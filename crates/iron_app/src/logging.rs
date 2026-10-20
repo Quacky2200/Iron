@@ -21,7 +21,8 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-const DEFAULT_FILTER: &str = "info,wgpu_core=warn,wgpu_hal=error";
+const DEFAULT_FILTER: &str =
+    "info,wgpu_core=warn,wgpu_hal=error,cranelift_jit=warn,cranelift_codegen=warn";
 
 /// On Windows, a GUI program started from a terminal writes to that terminal's console
 /// (when its output isn't already piped somewhere).

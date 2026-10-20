@@ -22,6 +22,7 @@ pub(crate) mod info;
 mod lifecycle;
 mod logging;
 pub(crate) mod models;
+mod native;
 mod panels;
 pub(crate) mod particles;
 mod physics_sync;
@@ -164,8 +165,18 @@ fn run() -> Result<()> {
     }
 
     let (bundle_path, asset_root) = resolve_bundle(&args.game)?;
-    let code = std::fs::read_to_string(&bundle_path)
-        .with_context(|| format!("reading {}", bundle_path.display()))?;
+    // A compiled (native) game is JIT-compiled below; there is no JavaScript to read.
+    let native_bundle = if native::is_native(&bundle_path) {
+        Some(native::Bundle::read(&bundle_path)?)
+    } else {
+        None
+    };
+    let code = if native_bundle.is_some() {
+        String::new()
+    } else {
+        std::fs::read_to_string(&bundle_path)
+            .with_context(|| format!("reading {}", bundle_path.display()))?
+    };
     let name = bundle_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -198,19 +209,23 @@ fn run() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     // A dev build (`scripts/dev.ts`) comes as vendor.js plus the game's own code.
     let vendor = dev_vendor(&bundle_path, &code);
-    load_bundles(&mut scripts, vendor.as_deref(), &name, &code)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    if native_bundle.is_none() {
+        load_bundles(&mut scripts, vendor.as_deref(), &name, &code)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
 
     // One GameObject per starting component class (registered without
     // `spawn: false`), each with that component; a start scene (`iron.startScene`)
     // is loaded by the scripts themselves.
     let mut components = ComponentHost::new();
     let mut scene = iron_scene::ScriptScene::new();
-    let classes =
-        ComponentHost::registered_classes(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
-    spawn_starting_components(&mut scripts, &mut components, &mut scene, &classes)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    tracing::info!(?classes, "loaded {}", bundle_path.display());
+    if native_bundle.is_none() {
+        let classes =
+            ComponentHost::registered_classes(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
+        spawn_starting_components(&mut scripts, &mut components, &mut scene, &classes)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        tracing::info!(?classes, "loaded {}", bundle_path.display());
+    }
     // Set by @iron/react; games without React UI get no UI events.
     let ui_events = scripts
         .eval("typeof __iron_ui_event === 'function'")
@@ -234,6 +249,10 @@ fn run() -> Result<()> {
     let css_path = bundle_path.with_extension("css");
     let game_css = load_game_css(&mut ui, &asset_root, &css_path);
     let game_css_source = game_css_source(&asset_root, &css_path);
+    let native = match native_bundle {
+        Some(bundle) => Some(native::Native::load(bundle, &mut scene.scene, &mut ui)?),
+        None => None,
+    };
 
     // Rebuilds by `bun build --watch` reload the scripts (not for screenshot runs).
     let watcher = match args.screenshot {
@@ -267,6 +286,8 @@ fn run() -> Result<()> {
         sound_files: HashMap::new(),
         scripts,
         components,
+        native,
+        native_events: Vec::new(),
         scene,
         scene_events,
         world_view: world_view::WorldViews::default(),
@@ -336,6 +357,11 @@ fn run() -> Result<()> {
 /// The bundle to load and the folder its assets (`url(...)` images) live in.
 fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
     if path.is_dir() {
+        // A game built for the native backend has an `.irbundle`.
+        let native = path.join("dist").join("game.irbundle");
+        if native.is_file() {
+            return Ok((native, path.to_path_buf()));
+        }
         let bundle = path.join("dist").join("game.js");
         if !bundle.is_file() {
             bail!(
@@ -435,6 +461,11 @@ struct App {
     sound_files: HashMap<String, Vec<Vec<iron_core::Value>>>,
     scripts: QuickJsRuntime,
     components: ComponentHost,
+    /// A compiled game, when the folder has a native bundle (then `scripts` and
+    /// `components` stay empty).
+    native: Option<native::Native>,
+    /// UI events a native game has yet to receive.
+    native_events: Vec<UiEvent>,
     ui: UiTree,
     asset_root: PathBuf,
     gfx: Option<Gfx>,
@@ -497,6 +528,10 @@ impl App {
     /// run `onStart` again (state survives once GameObjects exist, TODO.md M5).
     fn reload_scripts(&mut self) {
         let started = Instant::now();
+        if self.native.is_some() {
+            self.reload_native(started);
+            return;
+        }
         let code = match std::fs::read_to_string(&self.bundle_path) {
             Ok(code) => code,
             Err(e) => {
@@ -608,6 +643,28 @@ impl App {
         );
     }
 
+    /// Hot reload of a compiled game: the bundle is compiled again; a failure keeps the old one.
+    fn reload_native(&mut self, started: Instant) {
+        let bundle = match native::Bundle::read(&self.bundle_path) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!("reload: {e:#}");
+                return;
+            }
+        };
+        let Some(n) = self.native.as_mut() else {
+            return;
+        };
+        match n.reload(bundle, &mut self.scene.scene, &mut self.ui) {
+            Ok(()) => tracing::info!(
+                "reloaded {} in {:.1} ms",
+                self.bundle_name,
+                started.elapsed().as_secs_f64() * 1000.0
+            ),
+            Err(e) => tracing::error!("reload failed, keeping the old code: {e:#}"),
+        }
+    }
+
     /// A dev build whose vendor bundle didn't change: the game's new code runs in the
     /// same runtime. React (Fast Refresh) keeps its state, components move onto their new
     /// classes, and the world, physics and sounds stay as they are.
@@ -696,6 +753,9 @@ impl App {
         }
         let (elapsed, ticks) = self.clock.advance(now, TICK, MAX_TICKS_PER_FRAME);
         for _ in 0..ticks {
+            if let Some(n) = self.native.as_mut() {
+                n.fixed_tick(&mut self.scene.scene, &mut self.ui, TICK);
+            }
             let scene = &self.scene;
             self.components
                 .fixed_update(&mut self.scripts, TICK, &|o| scene.active(o));
@@ -720,6 +780,14 @@ impl App {
 
         // Per-frame component updates (`onUpdate`, `onLateUpdate`).
         self.apply_script_output();
+        if let Some(n) = self.native.as_mut() {
+            n.frame(
+                &mut self.scene.scene,
+                &mut self.ui,
+                elapsed.min(MAX_FRAME_DT),
+                now_ms,
+            );
+        }
         let scene = &self.scene;
         self.components
             .update_active(&mut self.scripts, elapsed.min(MAX_FRAME_DT), &|o| {
@@ -1237,9 +1305,15 @@ impl App {
     /// scripts, then updates the IME and the OS cursor.
     fn handle_on(&mut self, surface: Surface, input: Input) {
         let (scripts, ui_events) = (&mut self.scripts, self.ui_events);
+        // A compiled game gets the events after the interaction layer is done with them.
+        let (native, native_events) = (self.native.is_some(), &mut self.native_events);
         let clipboard = match surface {
             Surface::Screen => {
                 self.interaction.handle(&mut self.ui, input, &mut |event| {
+                    if native {
+                        native_events.push(event.clone());
+                        return false;
+                    }
                     dispatch(scripts, ui_events, event)
                 });
                 self.interaction.take_clipboard()
@@ -1249,6 +1323,10 @@ impl App {
                     return;
                 };
                 p.interaction.handle(&mut p.tree, input, &mut |event| {
+                    if native {
+                        native_events.push(event.clone());
+                        return false;
+                    }
                     dispatch(scripts, ui_events, event)
                 });
                 p.interaction.take_clipboard()
@@ -1267,8 +1345,20 @@ impl App {
             }
             None => {}
         }
+        self.deliver_native_events();
         self.update_ime();
         self.update_cursor();
+    }
+
+    /// Hands the UI events collected while handling input to the compiled game.
+    fn deliver_native_events(&mut self) {
+        if self.native_events.is_empty() {
+            return;
+        }
+        let events = std::mem::take(&mut self.native_events);
+        if let Some(n) = self.native.as_mut() {
+            n.ui_events(&mut self.scene.scene, &mut self.ui, &events);
+        }
     }
 
     /// Runs a `cursor.*` op: `visible bool`, `lock none|locked|confined`, `image
@@ -1938,6 +2028,9 @@ impl PlatformApp for App {
         self.pump_file_drag();
         // Last-moment changes before drawing (`onPreRender`).
         if !self.lifecycle.paused() {
+            if let Some(n) = self.native.as_mut() {
+                n.pre_render(&mut self.scene.scene, &mut self.ui);
+            }
             let scene = &self.scene;
             self.components
                 .pre_render(&mut self.scripts, &|o| scene.active(o));

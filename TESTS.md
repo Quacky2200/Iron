@@ -1252,3 +1252,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1904 | Integration | A JIT-compiled component program: the class table is read at run time and `NativeHost` drives it over the real scene. |
 | M9-API-600 | Integration | Reading the manifests registers the shim addresses: every manifest function symbol resolves with no hand-kept list. |
 | M9-API-601 | Unit | The runtime's generated symbol table lists its `extern "C"` exports. |
+| M9-API-610 | Unit | A native bundle is JSON with a format number and a source; other formats and missing sources are errors. |
+| M9-API-611 | Integration | A compiled component gets a GameObject and `onUpdate` every frame (`iron_app::native`). |
+| M9-API-612 | Integration | Timers of a compiled game run from the frame's clock. |
+| M9-API-613 | Integration | A mounted root is drawn into the screen's `UiTree` and a click reaches its handler. |
+| M9-API-614 | Unit | A game that does not compile is an error naming the compile step, not a panic. |

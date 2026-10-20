@@ -567,3 +567,23 @@ handles `null`. Methods of one class with the same script name (`#[js_name]`) ar
    native globals **or** the `@iron/engine` classes, not hand ids between them.
 
 - **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/iron_ts/TODO.md` and `tools/iron_ts/src/lower/facade.ts`. `Camera.main()` is a native static (`CameraRef::main`).
+### Native games in `iron_app` (compiled in process)
+
+`iron_app` runs a game two ways. A folder with `dist/game.irbundle` (or a `.irbundle` / `.ts` / `.tsx` path) is a **native
+game**: [native.rs](../crates/iron_app/src/native.rs) JIT-compiles the bundled TypeScript with `iron_ts::jit` and drives it with no
+QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both sets of fields and branches at the pump points).
+
+- **Bundle** (written by `iron-build`): JSON `{"format":1,"title","entry","source":"<one TS/TSX text>","css":"game.css"|null,
+  "assets":[..]}`. `Bundle::read` / `Bundle::parse`. The stylesheet is still `dist/game.css`, loaded by `load_game_css`.
+- **Compile.** Manifests: `iron_native::manifests()` (all engine namespaces, which also registers their shim addresses in
+  `iron_api::symbol`) plus `iron_ts_ui::manifest_json()` and `root_manifest_json()`; extra symbols: `iron_ts_ui::symbols()`; the
+  runtime's come from `iron_ts_rt::symbols()` (a build script lists its `#[no_mangle]` exports). Each reload gets a new
+  `struct_base` (100,000 apart).
+- **Per frame and event** (`Native`): `fixed_tick` (`NativeHost::fixed_update`, `iron_physics_api::step`, `dispatch_physics`),
+  `frame` (`Time` via `iron_engine_api::time::advance`, `ts_rt_timers_advance(now_ms)`, microtasks, `NativeHost::update`),
+  `pre_render`, `ui_events` (a `UiEvent` becomes an `iron_ui_native::Event` for `Runtime::dispatch`), and after each of them the
+  mounts (`iron_ts_ui::take_mounts`, `UiRoot.mount(target, element)`), `Runtime::flush`, script faults and UI errors to the log.
+  Every call runs inside `iron_scene::api::enter(&mut app.scene.scene)`.
+- **Console.** `console.log` goes to the `script` log target through `ts_rt_set_console`.
+- **Not wired yet:** world panels, the 3D renderer from the `iron_render_api` registries, audio, texture and model completion,
+  `Screen` / `QualitySettings` change closures, input listeners, hot reload (see `tools/iron_ts/TODO.md`).
