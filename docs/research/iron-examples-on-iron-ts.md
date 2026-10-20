@@ -145,6 +145,25 @@ Measured with `compile_check` on `main.ts(x)`, one block per commit.
 | text | error: line 10: call to unknown function `loadFont` |
 | world | error: line 221: call to unknown function `addStyleSheet` |
 
+### 1c. Round 2, agent F: all 19 build (measured 2026-10-21)
+
+`cd tools && cargo run -q -p iron_build -- check ../examples` prints `19 built, 0 failed`. The nine that failed, and the root cause fixed for each (tests `M9-TS-2000..2011`, details in `tools/iron_ts/TODO.md`):
+
+| Example | Was | Fix |
+|---|---|---|
+| animation | `[[f64]]` where `Vector2[]` is expected | facade `AnimationCurve.fromPoints([[t, v], ..], mode)` (a `Vector2[]` argument still takes the native call) |
+| arcade | a callback with a bare `return;` and a later `return cleanup` was typed void; `as const` rows of mixed `number`/`boolean` | the callback is nullable; mixed array literals and `[number, boolean]` types are tuples (objects with fields `0`, `1`, ..); `Screen.supportedFullScreenModes` is a `FullScreenMode[]` |
+| form | `unknown type K` (generic arrow over `keyof`), `e.target.type` | source rewrite `lower/keyed.rs`: the arrow is written once per literal key (`set$name`, ..); `UiTarget.type` through `Ui.evTargetKind` (the host must call `iron_ts_ui::set_target_kind_resolver`, else it is `""` and the Enter-to-save check in `examples/form` does nothing) |
+| materials | closure parameter default without an annotation | the default's literal gives the type; the parameter is nullable and the body applies the default, so calls may leave it out |
+| platformer, scenes | `unsupported unary operator` (`void x`); hook thunks pass `dt` to hooks that take none | `void` lowered; a method call drops (evaluates) arguments it has no parameter for |
+| quality | subscribe calls returned a numeric token; `Record<ShadowQuality, ..>` indexed by an engine string | the facade wraps `QualitySettings.onLevelChanged`, `Screen.onChange`, `Assets.onChanged`, `Application.onFocusChanged`, `SceneManager.on*` into unsubscribe functions (`fn$n(..)` is the native token form); `Record` index by `string` |
+| sine-circle-demo | `{x, y}[]` where `Vector2[]` is expected; `cond ? list : []`; `for (const t of [tweenA, tweenB])` over unrelated generic instances | field-copy coercion for plain objects and lists, conditionals go to the context type, the loop is unrolled per element |
+| physics | retired `physics` object | `examples/physics/src/main.tsx` rewritten on `Rigidbody`, `BoxCollider`, `SphereCollider` and the `onCollisionEnter` / `onTriggerEnter` hooks (the only rewrite) |
+
+Also fixed because `world` / `classics` hit it at run time: every non-abstract `Component` subclass now gets creation thunks (not only the `register()`ed ones), so `go.addComponent(Spin)` works; `NativeClass.registered` / `ClassMeta.registered` say which ones `register()` named, and the host should start only those.
+
+Left: `UiTarget.type` needs the host to set the resolver; a defaulted `boolean` closure parameter is not nullable yet; tuples have no `.length` and no rest patterns.
+
 ## 2. Per-example table
 
 Imports: E = `@iron/engine` names, R = `@iron/react` names, H = `react` names. Every example also `import`s nothing relative except

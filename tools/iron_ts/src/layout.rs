@@ -243,8 +243,12 @@ fn component_table(m: &Module) -> String {
             .find(|(s, _)| *s == sid)
             .map(|(_, b)| b.iter().map(|x| format!("{x}")).collect())
             .unwrap_or_default();
+        let registered = !m
+            .funcs
+            .iter()
+            .any(|g| g.exported && g.name == format!("iron_noreg_{class}"));
         entries.push(format!(
-            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, bases: &[{}], create: create_{class}_any, hooks: [{}], contact_hooks: [{}], props: {props} }},\n",
+            "        iron_ts_rt::NativeClass {{ name: \"{class}\", sid: {sid}, bases: &[{}], create: create_{class}_any, hooks: [{}], contact_hooks: [{}], props: {props}, registered: {registered} }},\n",
             bases.join(", "),
             hooks.join(", "),
             contact_hooks.join(", ")

@@ -289,6 +289,7 @@ impl Game {
                 hooks,
                 contact_hooks,
                 props: Box::leak(props.into_boxed_slice()),
+                registered: c.registered,
             });
         }
         Ok(out)

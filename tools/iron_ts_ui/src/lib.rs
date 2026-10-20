@@ -820,8 +820,10 @@ pub extern "C" fn ts_ui_ev_target() -> f64 {
     with_event(|e| f64::from(e.target.raw()), 0.0)
 }
 
+type KindResolver = fn(u32) -> String;
+
 thread_local! {
-    static TARGET_KIND: Cell<Option<fn(u32) -> String>> = const { Cell::new(None) };
+    static TARGET_KIND: Cell<Option<KindResolver>> = const { Cell::new(None) };
 }
 
 /// Tells `e.target.type` what element kind (`"input"`, `"box"`, ..) a node id is; the host that

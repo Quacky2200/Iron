@@ -65,6 +65,9 @@ pub struct NativeClass {
     pub contact_hooks: [Option<ContactHook>; 6],
     /// The `@property` table: name, byte offset in the object, type name (`PROPS_<Class>`).
     pub props: &'static [(&'static str, usize, &'static str)],
+    /// Named in a `register(..)` call: the host starts these with an object; the other component
+    /// classes of the program are only made by `addComponent`.
+    pub registered: bool,
 }
 
 /// A `@property` value as the engine sees it (scene files, the editor).
