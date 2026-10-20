@@ -6,6 +6,7 @@ mod arraylib;
 mod assets;
 mod bigint;
 mod buffers;
+mod callbacks;
 mod canon;
 mod classes;
 mod clock;

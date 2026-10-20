@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+iron_api = { path = "../../crates/iron_api", default-features = false }
 iron_kinds = { path = "../../crates/iron_kinds" }
 iron_api = { path = "../../crates/iron_api" }
 iron_physics_api = { path = "../../crates/iron_physics_api" }

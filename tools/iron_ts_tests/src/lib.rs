@@ -798,6 +798,18 @@ pub mod assets_t {
     include!(concat!(env!("OUT_DIR"), "/assets_bindings.rs"));
 }
 
+/// `bench/callbacks.ts`, prefix `cbk_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod callbacks_t {
+    include!(concat!(env!("OUT_DIR"), "/callbacks_bindings.rs"));
+}
+
 /// `bench/app.ts`, prefix `apc_`.
 #[allow(
     dead_code,

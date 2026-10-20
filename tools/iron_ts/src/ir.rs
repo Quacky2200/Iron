@@ -407,9 +407,9 @@ pub enum ExtTy {
     Value(String),
     /// A `string`: a script string object in, and out through a buffer the call copies from.
     Str,
-    /// A closure with no parameters (`() => R`), passed as a pointer the engine keeps (and roots)
-    /// and calls later as `func(env)`. The inner type is its result.
-    Fn(Box<ExtTy>),
+    /// A closure (`(a, b) => R`), passed as a pointer the engine keeps (and roots) and calls
+    /// later as `func(env, a, b)`. The parameter types (scalars, strings, handles) then the result.
+    Fn(Vec<ExtTy>, Box<ExtTy>),
     /// Any other script pointer (an object, array or closure), passed as it is: the engine
     /// stores it as a rooted opaque value.
     Ptr,
@@ -435,8 +435,8 @@ impl ExtTy {
             ExtTy::F64Arr => Ty::Arr(Box::new(Ty::Num)),
             // The element struct is made by the lowering (it knows the struct ids).
             ExtTy::ValueArr(_) => Ty::JsValue,
-            ExtTy::Fn(r) => Ty::Fn(Box::new(FnTy {
-                params: vec![],
+            ExtTy::Fn(ps, r) => Ty::Fn(Box::new(FnTy {
+                params: ps.iter().map(|p| p.to_ir()).collect(),
                 ret: r.to_ir(),
             })),
             // The struct is made by the lowering (it knows the struct ids).

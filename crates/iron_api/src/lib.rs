@@ -13,6 +13,8 @@
 //! numbers, booleans and engine handles; value classes (`Vector3`), strings and objects come next.
 
 pub use iron_api_macros::iron_api;
+pub mod callback;
+pub use callback::Callback;
 #[cfg(feature = "quickjs")]
 pub use rquickjs;
 
@@ -42,6 +44,9 @@ pub enum Ty {
     F64s,
     /// An array of a value class (its TypeScript name, and that name with `[]`).
     Values(&'static str, &'static str),
+    /// A closure the engine keeps and calls later: the manifest signature (`fn(f64,string):void`)
+    /// and the TypeScript type (`(a: number, b: string) => void`).
+    Callback(&'static str, &'static str),
 }
 
 impl Ty {
@@ -55,6 +60,7 @@ impl Ty {
             Ty::Str => "string",
             Ty::F64s => "number[]",
             Ty::Values(_, arr) => arr,
+            Ty::Callback(_, ts) => ts,
         }
     }
 
@@ -72,6 +78,7 @@ impl Ty {
             Ty::Str => "string".into(),
             Ty::F64s => "f64s".into(),
             Ty::Values(n, _) => format!("values:{n}"),
+            Ty::Callback(sig, _) => (*sig).into(),
         }
     }
 }

@@ -4,6 +4,7 @@
 
 use crate::data::{Saver, load_objects, sc, warn};
 use iron_api::Handle;
+use iron_api::callback::{HandleArg, Listeners, emit};
 use iron_scene::ObjectId;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -66,12 +67,22 @@ struct State {
     active: u32,
     next: u32,
     events: Vec<SceneEvent>,
+    /// Events not yet given to listeners (`take_events` is a separate reader).
+    pending: Vec<SceneEvent>,
+    on_loaded: Listeners<(HandleArg<SceneRef>, String)>,
+    on_unloaded: Listeners<(HandleArg<SceneRef>,)>,
+    on_active: Listeners<(HandleArg<SceneRef>, HandleArg<SceneRef>)>,
     requests: Vec<(u64, String, bool)>,
     next_request: u64,
     prefabs: Vec<Prefab>,
 }
 
 impl State {
+    fn push(&mut self, e: SceneEvent) {
+        self.events.push(e.clone());
+        self.pending.push(e);
+    }
+
     fn new() -> Self {
         State {
             scenes: vec![SceneInfo {
@@ -83,6 +94,10 @@ impl State {
             active: 1,
             next: 2,
             events: Vec::new(),
+            pending: Vec::new(),
+            on_loaded: Listeners::default(),
+            on_unloaded: Listeners::default(),
+            on_active: Listeners::default(),
             requests: Vec::new(),
             next_request: 1,
             prefabs: Vec::new(),
@@ -149,14 +164,59 @@ pub fn set_active(scene: u32) -> bool {
     if previous != scene {
         st(|s| {
             s.active = scene;
-            s.events.push(SceneEvent::ActiveChanged {
+            s.push(SceneEvent::ActiveChanged {
                 previous,
                 next: scene,
             });
         });
         sync();
+        dispatch();
     }
     true
+}
+
+/// Gives the events since the last call to the script listeners (after the world is consistent,
+/// so a listener may call back into the manager).
+pub fn dispatch() {
+    let (events, loaded, unloaded, active) = st(|s| {
+        (
+            std::mem::take(&mut s.pending),
+            s.on_loaded.snapshot(),
+            s.on_unloaded.snapshot(),
+            s.on_active.snapshot(),
+        )
+    });
+    for e in events {
+        match e {
+            SceneEvent::Loaded { scene, additive } => {
+                let mode = if additive { "additive" } else { "single" };
+                emit(&loaded, (HandleArg(SceneRef(scene)), mode.to_string()));
+            }
+            SceneEvent::Unloaded { scene } => emit(&unloaded, (HandleArg(SceneRef(scene)),)),
+            SceneEvent::ActiveChanged { previous, next } => emit(
+                &active,
+                (HandleArg(SceneRef(previous)), HandleArg(SceneRef(next))),
+            ),
+        }
+    }
+}
+
+/// Calls `f(scene, mode)` after a scene loads (`"single"` or `"additive"`); the token is for [`off`].
+pub fn on_loaded(f: iron_api::Callback<(HandleArg<SceneRef>, String)>) -> u32 {
+    st(|s| s.on_loaded.add(f))
+}
+
+pub fn on_unloaded(f: iron_api::Callback<(HandleArg<SceneRef>,)>) -> u32 {
+    st(|s| s.on_unloaded.add(f))
+}
+
+pub fn on_active_changed(f: iron_api::Callback<(HandleArg<SceneRef>, HandleArg<SceneRef>)>) -> u32 {
+    st(|s| s.on_active.add(f))
+}
+
+/// Removes a listener by its token; false when it is unknown.
+pub fn off(token: u32) -> bool {
+    st(|s| s.on_loaded.remove(token) | s.on_unloaded.remove(token) | s.on_active.remove(token))
 }
 
 /// A new empty scene, loaded alongside the others (0 if the name is taken).
@@ -244,7 +304,7 @@ fn unload(scene: u32) {
     }
     st(|s| {
         s.scenes.retain(|i| i.handle != scene);
-        s.events.push(SceneEvent::Unloaded { scene });
+        s.push(SceneEvent::Unloaded { scene });
     });
 }
 
@@ -289,11 +349,12 @@ pub fn load_scene(text: &str, additive: bool) -> Result<u32, String> {
         set_active(handle);
     }
     st(|s| {
-        s.events.push(SceneEvent::Loaded {
+        s.push(SceneEvent::Loaded {
             scene: handle,
             additive,
         })
     });
+    dispatch();
     Ok(handle)
 }
 
@@ -306,6 +367,7 @@ pub fn unload_scene(scene: u32) -> bool {
     if active() == scene {
         set_active(scene_at(0));
     }
+    dispatch();
     true
 }
 

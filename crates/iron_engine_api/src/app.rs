@@ -119,6 +119,7 @@ struct State {
     focused: bool,
     paused: bool,
     requests: Vec<Request>,
+    focus_listeners: iron_api::callback::Listeners<(bool,)>,
 }
 
 thread_local! {
@@ -130,6 +131,7 @@ thread_local! {
         focused: true,
         paused: false,
         requests: Vec::new(),
+        focus_listeners: Default::default(),
     });
 }
 
@@ -143,7 +145,7 @@ pub fn set_system(info: SystemInfo) {
 
 /// The window gained or lost focus (or was minimised), and whether that pauses the game.
 pub fn set_focus(focused: bool, paused: bool) -> FocusChange {
-    STATE.with(|s| {
+    let (change, cbs) = STATE.with(|s| {
         let mut s = s.borrow_mut();
         let change = FocusChange {
             pause_changed: paused != s.paused,
@@ -151,8 +153,12 @@ pub fn set_focus(focused: bool, paused: bool) -> FocusChange {
         };
         s.focused = focused;
         s.paused = paused;
-        change
-    })
+        (change, s.focus_listeners.snapshot())
+    });
+    if change.focus_changed {
+        iron_api::callback::emit(&cbs, (focused,));
+    }
+    change
 }
 
 /// What scripts asked since the last call.
@@ -169,6 +175,7 @@ pub fn reset() {
         s.focused = true;
         s.paused = false;
         s.requests.clear();
+        s.focus_listeners.clear();
     });
 }
 
@@ -289,6 +296,17 @@ pub mod application_api {
     #[property]
     pub fn is_paused() -> bool {
         STATE.with(|s| s.borrow().paused)
+    }
+
+    /// Calls `f(focused)` when the window gains or loses focus; returns a token for
+    /// `offFocusChanged` (the TypeScript returned an unsubscribe function).
+    pub fn on_focus_changed(f: iron_api::Callback<(bool,)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().focus_listeners.add(f))
+    }
+
+    /// Stops a listener from `onFocusChanged`; false when the token is unknown.
+    pub fn off_focus_changed(token: u32) -> bool {
+        STATE.with(|s| s.borrow_mut().focus_listeners.remove(token))
     }
 
     /// Closes the game after this frame.

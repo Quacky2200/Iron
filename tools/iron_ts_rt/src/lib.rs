@@ -138,6 +138,20 @@ thread_local! {
     }) };
 }
 
+/// Tells `iron_api` how engine code roots a closure it keeps, makes a script string for a
+/// callback argument and takes an exception a callback threw (`iron_api::callback`).
+fn install_engine_bridge() {
+    iron_api::callback::install_bridge(iron_api::callback::ScriptBridge {
+        root_add: |p| ts_rt_root_add(p),
+        root_remove: |r| ts_rt_root_remove(r),
+        str_new: |s| {
+            // SAFETY: the pointer and length are a live Rust string.
+            unsafe { string::ts_rt_str_new_gc(s.as_ptr(), s.len() as i64) as *mut u8 }
+        },
+        exc_take: || !ts_rt_exc_take().is_null(),
+    });
+}
+
 /// Runs `f` on this thread's heap. `f` must not call back into a `with_heap` function.
 fn with_heap<T>(f: impl FnOnce(&mut Heap) -> T) -> T {
     // SAFETY: thread local; callers do not nest.
@@ -145,6 +159,7 @@ fn with_heap<T>(f: impl FnOnce(&mut Heap) -> T) -> T {
         let h = unsafe { &mut *h.get() };
         if h.id == 0 {
             h.id = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
+            install_engine_bridge();
         }
         f(h)
     })

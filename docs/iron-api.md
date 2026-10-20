@@ -383,3 +383,23 @@ puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
   `onTriggerEnter` (and the `2D` names), `object_destroyed(object)` for destroyed GameObjects, `register_kinds()`.
 - Differences to the TypeScript are listed in `tools/iron_ts/TODO.md` ("Physics components"). Tests `M9-API-200..209`,
   `M9-TS-1100..1105`.
+## Closures given to the engine (`iron_api::callback`)
+
+A parameter of type `Callback<(A, B)>` (elements `f64`, `i32`, `u32`, `bool`, `String` or `HandleArg<T>` for a declared handle) is a
+script closure the engine keeps and calls later: `input.onKeyDown((code, repeat) => ..)`. Manifest type `fn(f64,string):void`
+(`ExtTy::Fn(params, result)` in the compiler; the old `fn:void` form still reads), declaration `(a: number, b: string) => void`.
+The closure returns nothing.
+
+- **Rust side.** `cb.call((1.0, "x".into()))`, `Callback::from_fn(rust_closure)` (host code and tests), `Listeners<A>` (a table with
+  `add` / `remove` / `snapshot`; tokens are unique across all events) and `emit(&snapshot, args)`. Emit after the state borrow is
+  released, from a snapshot, so a listener may subscribe, unsubscribe or call the API.
+- **Runtime.** The shim wraps the closure pointer with `Callback::from_script`, which roots it (a host root) until the last clone is
+  dropped. The runtime tells `iron_api` how to root, make a script string and take a thrown exception through
+  `callback::install_bridge`; `iron_ts_rt` installs it with its heap. A string argument is a new rooted script string for the call.
+  An exception thrown by a callback is swallowed and listed by `callback::take_errors()`.
+- **QuickJS.** A function with a `Callback` parameter is not generated for QuickJS yet.
+- **Differences.** The TypeScript `on(..)` returned an unsubscribe function; here `onX(f)` returns a token (a number, never 0) and a
+  matching `off(token)` removes it: `input.off`, `Assets.offChanged`, `Application.offFocusChanged`, `SceneManager.offSceneEvent`.
+  `input.onKeyDown` gets `(code, repeat)` (no layout `key`); gamepad events get the id as a number. `Assets.onChanged` gets the paths as
+  one string, one per line. Scene events get the `Scene` handle and the mode as `"single"` / `"additive"`. Listeners are called at once
+  (`SceneManager` after the load or unload finished); `take_events()` still works.

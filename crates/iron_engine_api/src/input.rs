@@ -4,10 +4,11 @@
 //! arrive; at the start of each frame ([`tick`], which [`crate::time::advance`] calls) what arrived
 //! since the last tick becomes "this frame", so `getKeyDown` is true for exactly one frame.
 //!
-//! Listeners (`input.on(..)`) need closures across the boundary and are not here yet; scripts read
-//! the state each frame.
+//! Listeners: `input.onKeyDown(fn)` and friends return a token for `input.off(token)` (the
+//! TypeScript's `input.on(type, fn)` returned an unsubscribe function).
 
-use iron_api::iron_api;
+use iron_api::callback::{Listeners, emit};
+use iron_api::{Callback, iron_api};
 use iron_math::V2;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -46,6 +47,13 @@ struct State {
     delta: (f64, f64),
     wheel: (f64, f64),
     pads: Vec<Pad>,
+    on_key_down: Listeners<(String, bool)>,
+    on_key_up: Listeners<(String,)>,
+    on_pad_connected: Listeners<(f64,)>,
+    on_pad_disconnected: Listeners<(f64,)>,
+    on_pad_button_down: Listeners<(f64, String)>,
+    on_pad_button_up: Listeners<(f64, String)>,
+    on_pad_axis: Listeners<(f64, String, f64)>,
 }
 
 impl State {
@@ -85,22 +93,26 @@ pub fn key_down_event(code: &str) {
 
 /// A key went down; `repeat` is the OS auto-repeat.
 pub fn key_down(code: &str, repeat: bool) {
-    STATE.with(|s| {
+    let cbs = STATE.with(|s| {
         let mut s = s.borrow_mut();
         if !repeat && !s.keys.contains(code) {
             s.pressed_pending.insert(code.to_string());
         }
         s.keys.insert(code.to_string());
+        s.on_key_down.snapshot()
     });
+    emit(&cbs, (code.to_string(), repeat));
 }
 
 pub fn key_up_event(code: &str) {
-    STATE.with(|s| {
+    let cbs = STATE.with(|s| {
         let mut s = s.borrow_mut();
         if s.keys.remove(code) {
             s.released_pending.insert(code.to_string());
         }
+        s.on_key_up.snapshot()
     });
+    emit(&cbs, (code.to_string(),));
 }
 
 /// The name a mouse button has as a key: Unity's numbers 0 left, 1 right, 2 middle.
@@ -162,19 +174,73 @@ pub fn blur() {
 }
 
 pub fn gamepad_connected(id: i64, name: &str) {
-    STATE.with(|s| s.borrow_mut().pad(id, name).connected = true);
+    let cbs = STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.pad(id, name).connected = true;
+        s.on_pad_connected.snapshot()
+    });
+    emit(&cbs, (id as f64,));
 }
 
 pub fn gamepad_disconnected(id: i64) {
-    STATE.with(|s| s.borrow_mut().pad(id, "").connected = false);
+    let cbs = STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.pad(id, "").connected = false;
+        s.on_pad_disconnected.snapshot()
+    });
+    emit(&cbs, (id as f64,));
 }
 
 pub fn gamepad_button(id: i64, button: &str, value: f64) {
-    STATE.with(|s| set_value(&mut s.borrow_mut().pad(id, "").buttons, button, value));
+    let (was, down, up) = STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        let pad = s.pad(id, "");
+        let was = value_of(&pad.buttons, button) > 0.5;
+        set_value(&mut pad.buttons, button, value);
+        (
+            was,
+            s.on_pad_button_down.snapshot(),
+            s.on_pad_button_up.snapshot(),
+        )
+    });
+    let now = value > 0.5;
+    if now && !was {
+        emit(&down, (id as f64, button.to_string()));
+    } else if !now && was {
+        emit(&up, (id as f64, button.to_string()));
+    }
 }
 
 pub fn gamepad_axis(id: i64, axis: &str, value: f64) {
-    STATE.with(|s| set_value(&mut s.borrow_mut().pad(id, "").axes, axis, value));
+    let cbs = STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        set_value(&mut s.pad(id, "").axes, axis, value);
+        s.on_pad_axis.snapshot()
+    });
+    emit(&cbs, (id as f64, axis.to_string(), value));
+}
+
+/// Subscribes a Rust function to key presses (the host, or a test); returns the token for [`off`].
+pub fn on_key_down(f: impl Fn(&str, bool) + 'static) -> u32 {
+    STATE.with(|s| {
+        s.borrow_mut()
+            .on_key_down
+            .add(Callback::from_fn(move |(c, r): (String, bool)| f(&c, r)))
+    })
+}
+
+/// Removes any listener by its token; false when it is unknown.
+pub fn off(token: u32) -> bool {
+    STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.on_key_down.remove(token)
+            | s.on_key_up.remove(token)
+            | s.on_pad_connected.remove(token)
+            | s.on_pad_disconnected.remove(token)
+            | s.on_pad_button_down.remove(token)
+            | s.on_pad_button_up.remove(token)
+            | s.on_pad_axis.remove(token)
+    })
 }
 
 /// Starts a frame: what arrived since the last tick is what happened "this frame".
@@ -231,7 +297,49 @@ const MOUSE_SENSITIVITY: f64 = 0.1;
 #[iron_api(namespace = "input", quickjs, values(Vector2 = V2 [x: f64, y: f64]))]
 pub mod input_api {
     use super::{MOUSE_SENSITIVITY, STATE, axis_def, button_def, mouse_code, value_of};
+    use iron_api::Callback;
     use iron_math::V2;
+
+    /// Calls `f(code, repeat)` when a key goes down; returns a token for `off`.
+    pub fn on_key_down(f: Callback<(String, bool)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_key_down.add(f))
+    }
+
+    /// Calls `f(code)` when a key goes up; returns a token for `off`.
+    pub fn on_key_up(f: Callback<(String,)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_key_up.add(f))
+    }
+
+    /// Calls `f(id)` when a gamepad connects.
+    pub fn on_gamepad_connected(f: Callback<(f64,)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_pad_connected.add(f))
+    }
+
+    /// Calls `f(id)` when a gamepad disconnects.
+    pub fn on_gamepad_disconnected(f: Callback<(f64,)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_pad_disconnected.add(f))
+    }
+
+    /// Calls `f(id, button)` when a gamepad button goes down.
+    pub fn on_gamepad_button_down(f: Callback<(f64, String)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_pad_button_down.add(f))
+    }
+
+    /// Calls `f(id, button)` when a gamepad button goes up.
+    pub fn on_gamepad_button_up(f: Callback<(f64, String)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_pad_button_up.add(f))
+    }
+
+    /// Calls `f(id, axis, value)` when a gamepad axis moves.
+    pub fn on_gamepad_axis(f: Callback<(f64, String, f64)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().on_pad_axis.add(f))
+    }
+
+    /// Stops a listener given by one of the `on...` functions (the TypeScript's `on` returned an
+    /// unsubscribe function).
+    pub fn off(token: u32) -> bool {
+        super::off(token)
+    }
 
     /// Whether a key (by physical `code`, e.g. `"KeyW"`) is held.
     pub fn is_key_down(code: &str) -> bool {

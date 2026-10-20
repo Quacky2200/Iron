@@ -177,6 +177,9 @@ enum Kind {
     F64s,
     /// `&[V]` for a declared value type (index into `Args::values`): a script `Vector3[]`.
     Values(usize),
+    /// `Callback<(A, B)>`: a script closure the engine keeps. The elements are scalar kinds,
+    /// strings, or `HandleArg<T>` for a declared handle `T`.
+    Callback(Vec<Kind>),
 }
 
 fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
@@ -210,6 +213,43 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
             ty.span(),
             "a slice parameter is `&[f64]` or `&[V]` for a type declared in `values(..)`",
         ));
+    }
+    if let Type::Path(p) = ty
+        && let Some(seg) = p.path.segments.last()
+        && seg.ident == "Callback"
+        && let syn::PathArguments::AngleBracketed(ab) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = ab.args.first()
+    {
+        let Type::Tuple(t) = inner else {
+            return Err(syn::Error::new(
+                inner.span(),
+                "a `Callback` takes a tuple of arguments: `Callback<(f64, String)>`",
+            ));
+        };
+        let mut kinds = Vec::new();
+        for e in &t.elems {
+            let k = if let Type::Path(ep) = e
+                && let Some(es) = ep.path.segments.last()
+                && es.ident == "HandleArg"
+                && let syn::PathArguments::AngleBracketed(eab) = &es.arguments
+                && let Some(syn::GenericArgument::Type(h)) = eab.args.first()
+            {
+                classify(h, args)?
+            } else {
+                classify(e, args)?
+            };
+            if !matches!(
+                k,
+                Kind::Bool | Kind::F64 | Kind::I32 | Kind::U32 | Kind::Str(true) | Kind::Handle(..)
+            ) {
+                return Err(syn::Error::new(
+                    e.span(),
+                    "a callback argument is f64, i32, u32, bool, String or HandleArg<T>",
+                ));
+            }
+            kinds.push(k);
+        }
+        return Ok(Kind::Callback(kinds));
     }
     let Some(name) = rust_name_of(ty) else {
         return Err(syn::Error::new(
@@ -280,6 +320,33 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
             quote!(::iron_api::Ty::Value(#ts))
         }
         Kind::F64s => quote!(::iron_api::Ty::F64s),
+        Kind::Callback(ks) => {
+            let names: Vec<String> = ks
+                .iter()
+                .map(|k| match k {
+                    Kind::Bool => "bool".to_string(),
+                    Kind::Str(_) => "string".to_string(),
+                    Kind::Handle(ts, _) => format!("handle:{ts}"),
+                    _ => "f64".to_string(),
+                })
+                .collect();
+            let sig = format!("fn({}):void", names.join(","));
+            let params: Vec<String> = ks
+                .iter()
+                .enumerate()
+                .map(|(i, k)| {
+                    let t = match k {
+                        Kind::Bool => "boolean".to_string(),
+                        Kind::Str(_) => "string".to_string(),
+                        Kind::Handle(ts, _) => ts.clone(),
+                        _ => "number".to_string(),
+                    };
+                    format!("{}: {t}", (b'a' + i as u8) as char)
+                })
+                .collect();
+            let ts = format!("({}) => void", params.join(", "));
+            quote!(::iron_api::Ty::Callback(#sig, #ts))
+        }
         Kind::Values(i) => {
             let ts = &args.values[*i].ts;
             let arr = format!("{ts}[]");
@@ -292,6 +359,7 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
 fn abi_ty(k: &Kind) -> TokenStream2 {
     match k {
         Kind::Unit | Kind::Value(_) => quote!(()),
+        Kind::Callback(_) => quote!(*const u8),
         Kind::Bool => quote!(bool),
         Kind::F64 => quote!(f64),
         Kind::F32 => quote!(f32),
@@ -724,6 +792,23 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             };
             (vec![quote!(#name: *const u8)], conv)
         }
+        Kind::Callback(ks) => {
+            let tys: Vec<TokenStream2> = ks
+                .iter()
+                .map(|k| match k {
+                    Kind::Handle(_, rust) => quote!(::iron_api::callback::HandleArg<#rust>),
+                    Kind::Str(_) => quote!(::std::string::String),
+                    Kind::Bool => quote!(bool),
+                    Kind::I32 => quote!(i32),
+                    Kind::U32 => quote!(u32),
+                    _ => quote!(f64),
+                })
+                .collect();
+            (
+                vec![quote!(#name: *const u8)],
+                quote!(unsafe { ::iron_api::Callback::<( #( #tys, )* )>::from_script(#name) }),
+            )
+        }
         Kind::F64s => (
             vec![quote!(#name: *const u8)],
             quote!(unsafe { ::iron_api::script_f64s(#name) }),
@@ -997,7 +1082,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let abi_ret = abi_ty(&a.ret);
             let body = to_abi(&a.ret, call);
             // A string parameter is a pointer to a script string: the shim is unsafe to call.
-            if a.params.iter().any(|(_, k)| matches!(k, Kind::Str(_))) {
+            if a.params
+                .iter()
+                .any(|(_, k)| matches!(k, Kind::Str(_) | Kind::Callback(_)))
+            {
                 shims.push(quote! {
                     /// # Safety
                     /// String arguments are live script strings (or null).
@@ -1018,7 +1106,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
 
         // The QuickJS function (namespace functions only: a handle is a plain number there). A
         // string is a JS string, a value is an object with the fields' names, a result is a new one.
-        if args.quickjs && (a.class.is_none() || a.value_recv.is_some()) {
+        if args.quickjs
+            && (a.class.is_none() || a.value_recv.is_some())
+            && !a.params.iter().any(|(_, k)| matches!(k, Kind::Callback(_)))
+        {
             // A value method takes the value first (an object), then its own parameters.
             let all_params: Vec<&(Ident, Kind)> = a.value_recv.iter().chain(&a.params).collect();
             let is_opt = |n: &Ident| a.optional.contains(&n.to_string());

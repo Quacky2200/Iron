@@ -3,7 +3,8 @@
 //! lowered by the compiler onto `SceneManager.instantiate` / `dontDestroyOnLoad`.
 
 use crate::manager::{self, PrefabRef, SceneRef};
-use iron_api::{Handle, iron_api};
+use iron_api::callback::HandleArg;
+use iron_api::{Callback, Handle, iron_api};
 use iron_scene::ObjectId;
 
 fn some_object(o: ObjectId) -> Option<ObjectId> {
@@ -104,6 +105,27 @@ pub mod scene_manager_api {
     /// Moves every object of `source` into `destination` and unloads `source`.
     pub fn merge_scenes(source: SceneRef, destination: SceneRef) {
         manager::merge_scenes(source.0, destination.0);
+    }
+
+    /// Calls `f(scene, mode)` after a scene loads (`mode` is `"single"` or `"additive"`). Returns
+    /// a token for `offSceneEvent` (the TypeScript returned an unsubscribe function).
+    pub fn on_scene_loaded(f: Callback<(HandleArg<SceneRef>, String)>) -> u32 {
+        manager::on_loaded(f)
+    }
+
+    /// Calls `f(scene)` after a scene is unloaded.
+    pub fn on_scene_unloaded(f: Callback<(HandleArg<SceneRef>,)>) -> u32 {
+        manager::on_unloaded(f)
+    }
+
+    /// Calls `f(previous, next)` when the active scene changes.
+    pub fn on_active_scene_changed(f: Callback<(HandleArg<SceneRef>, HandleArg<SceneRef>)>) -> u32 {
+        manager::on_active_changed(f)
+    }
+
+    /// Stops a listener from one of the `onScene...` functions; false when the token is unknown.
+    pub fn off_scene_event(token: u32) -> bool {
+        manager::off(token)
     }
 
     /// Keeps the object (its root) when scenes unload.

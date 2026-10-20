@@ -42,7 +42,7 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
         | ExtTy::Value(_)
         | ExtTy::Void
         | ExtTy::Str
-        | ExtTy::Fn(_)
+        | ExtTy::Fn(..)
         | ExtTy::Ptr
         | ExtTy::HandleArr(_)
         | ExtTy::F64Arr

@@ -1,8 +1,10 @@
 //! `Assets`: the asset database (each asset `.meta` file gives it a GUID and importer settings),
 //! `"guid:<guid>"` sources, and the paths of files that changed on disk (hot reload). The host
 //! fills it ([`set_assets`], [`changed`]); scripts read it. `js/engine/src/assets.ts` had
-//! `onChanged(fn)`; until closures cross the boundary here, scripts poll `takeChanges()`.
+//! `onChanged(fn)`: here `onChanged(fn)` returns a token for `offChanged(token)` and `fn` gets the
+//! changed paths as one string, a path per line; `takeChanges()` polls the same list.
 
+use iron_api::callback::{Listeners, emit};
 use iron_api::iron_api;
 use std::cell::RefCell;
 
@@ -20,6 +22,7 @@ pub struct AssetEntry {
 struct State {
     entries: Vec<AssetEntry>,
     changed: Vec<String>,
+    listeners: Listeners<(String,)>,
 }
 
 thread_local! {
@@ -32,7 +35,16 @@ pub fn set_assets(entries: Vec<AssetEntry>) {
 
 /// Files that changed on disk: scripts read them with `takeChanges()`.
 pub fn changed(paths: impl IntoIterator<Item = String>) {
-    STATE.with(|s| s.borrow_mut().changed.extend(paths));
+    let paths: Vec<String> = paths.into_iter().collect();
+    if paths.is_empty() {
+        return;
+    }
+    let cbs = STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.changed.extend(paths.iter().cloned());
+        s.listeners.snapshot()
+    });
+    emit(&cbs, (paths.join("\n"),));
 }
 
 pub fn reset() {
@@ -65,6 +77,18 @@ pub fn resolve(src: &str) -> String {
 #[iron_api(namespace = "Assets", quickjs)]
 pub mod assets_api {
     use super::{STATE, clean};
+    use iron_api::Callback;
+
+    /// Calls `f(paths)` when asset files change on disk (the paths, one per line); returns a token
+    /// for `offChanged`.
+    pub fn on_changed(f: Callback<(String,)>) -> u32 {
+        STATE.with(|s| s.borrow_mut().listeners.add(f))
+    }
+
+    /// Stops a listener from `onChanged`; false when the token is unknown.
+    pub fn off_changed(token: u32) -> bool {
+        STATE.with(|s| s.borrow_mut().listeners.remove(token))
+    }
 
     /// How many assets have a `.meta` file.
     pub fn count() -> f64 {

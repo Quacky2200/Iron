@@ -77,7 +77,18 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
             } else if let Some(n) = other.strip_prefix("handles:") {
                 ExtTy::HandleArr(n.to_string())
             } else if let Some(inner) = other.strip_prefix("fn:") {
-                ExtTy::Fn(Box::new(ext_ty(inner)?))
+                ExtTy::Fn(Vec::new(), Box::new(ext_ty(inner)?))
+            } else if let Some(rest) = other.strip_prefix("fn(") {
+                // `fn(f64,string,handle:Scene):void`
+                let (params, ret) = rest
+                    .split_once("):")
+                    .ok_or_else(|| format!("manifest: bad closure type `{other}`"))?;
+                let ps = params
+                    .split(',')
+                    .filter(|p| !p.is_empty())
+                    .map(ext_ty)
+                    .collect::<Result<Vec<_>, _>>()?;
+                ExtTy::Fn(ps, Box::new(ext_ty(ret)?))
             } else if let Some(name) = other.strip_prefix("handle:") {
                 ExtTy::Handle(name.to_string())
             } else if let Some(name) = other.strip_prefix("value:") {
