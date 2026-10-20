@@ -519,18 +519,49 @@ value classes) is encoded normally.
   results are not built.
 - Code: `crates/iron_api/src/qjs.rs`, the macro's `handle_class` branch. Tests `M9-API-100..113`.
 
-### Installing the APIs (`iron_script`)
+### Installing the APIs: one call
 
-`QuickJsRuntime::add_native(register_quickjs)` runs a generated `register_quickjs` in the current context and again in each new
-context (`reset()` on a hot reload). `iron_engine_api::register_quickjs(ctx)` installs the math classes, the scene
-(`GameObject`, `Transform`) and every QuickJS-enabled namespace of the engine (Camera, animation, Time, Color, input, ...);
-`iron_scenes::register_quickjs(ctx)` adds `SceneManager` (after the first). `Rng`, `audio` and `Physics` have no `quickjs` flag yet.
+`iron_native::install(&mut quickjs_runtime)` (crate `crates/iron_native`) installs the whole native API: it runs
+`iron_native::register_quickjs(ctx)` in the runtime's context and again in every context a `reset()` (hot reload) makes
+(`QuickJsRuntime::add_native`). The order inside is fixed: `iron_engine_api::register_quickjs` (math, scene, animation, input,
+time, audio, camera, ...), `iron_scenes::register_quickjs` (`SceneManager`, `Scene`, `Prefab`),
+`iron_physics_api::register_quickjs`, `iron_render_api::register_quickjs`. `iron_native::manifests()` lists them all for the compiler.
 
-**Hand-over for `iron_app`** (not done here, the area is the lead's): (1) where the app builds its `QuickJsRuntime`, call
-`rt.add_native(iron_engine_api::register_quickjs)?` and `rt.add_native(iron_scenes::register_quickjs)?` once before loading the
-bundle (both are `fn(&Ctx) -> Result<()>`, so they are valid `NativeInit`s); (2) wrap script execution (load, tick, event
-callbacks) in `iron_scene::api::enter(&mut scene)` so `GameObject.create()` and friends have a current scene, and keep the
-per-thread engine state (`time::advance`, `input::*`, `camera::reset`, `gizmos::take_frame`) fed as in the engine API section;
-(3) the old `__iron_op("scene.*")` path and these APIs both exist, so a game bundle must use the `@iron/engine` classes **or**
-the native globals, not mix handles between them; (4) hot reload drops every handle object (the engine state lives in Rust and is
-kept), so scripts re-find objects (`GameObject.find`) in `onReload`.
+**Classes and namespaces in QuickJS** (every `#[iron_api]` module of the engine has the `quickjs` flag; test `M9-API-120` checks
+that every function of every manifest exists, `M9-API-144` that every property of every component round-trips):
+
+- *Math (value classes):* `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds`, `Pose`, `Color`, `Keyframe`, `TimeSpan`, `DateTime`, `TimeSince`, `TimeUntil`.
+- *Scene and objects:* `Scene` (helper functions; also the scene class), `GameObject`, `Transform`, `SceneManager`, `Prefab`, `HideFlags`, `LayerMask`.
+- *Services:* `Time`, `input`, `Random` / `Rng`, `Debug`, `Log`, `Console`, `PlayerPrefs`, `Assets`, `Application`, `SystemInfo`, `Cursor` / `CursorLockMode`, `Screen`, `QualitySettings`, `Gizmos`.
+- *Animation:* `AnimationCurve`, `AnimationClip`, `Animation`, `AnimationState`, `Animations`, `Animator`, `AnimationController` with its parameter / condition / transition / blend tree / node / builder classes.
+- *Audio:* `audio` (`Sound`, `Playback`, `Bus`, `Emitter`), `AudioSource`, `AudioListener`.
+- *Physics:* `Physics` (`PhysicsBody`, `PhysicsCollider`, `PhysicsJoint`, `RaycastHit`), `Rigidbody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`, `MeshCollider`, `CharacterController`, `FixedJoint`, `CharacterJoint`, `HingeJoint`, `SpringJoint`, `RopeJoint`, `Rope`, `ForceMode`, `RigidbodyConstraints`, `Physics2D` (`Rigidbody2D`, `BoxCollider2D`, `CircleCollider2D`, `CapsuleCollider2D`, `PolygonCollider2D`, `EdgeCollider2D`, `RaycastHit2D`).
+- *Rendering data:* `Camera` (`Cameras`), `Light`, `MeshRenderer`, `SkinnedMeshRenderer`, `SpriteRenderer`, `LineRenderer`, `LineRenderer2D`, `LODGroup`, `Mirror`, `ReflectionProbe`, `PlaneRenderer`, `WorldPanel`, `CameraFollow`, `CameraOrbit`, `ParticleSystem`, `Cloth`, `Material`, `Sprite`, `Texture`, `Mesh`, `Model`, `Primitives` / `PrimitiveType`, `RenderSettings`.
+
+**Callbacks.** A `Callback<(..)>` parameter (listener APIs: `input.onKeyDown(f)`, `Assets.onChanged`, `SceneManager.onSceneLoaded`,
+`Screen.onChange`, `ParticleSystem.onStopped`, `Playback.onEnded`, ...) takes a JS function. The engine keeps it as a reference
+counted `Function` (`iron_api::qjs::keep_function`), so the collector treats it as a root until the `Callback` is dropped, and
+calls it with the same arguments the compiled side gives (numbers, booleans, strings, handle objects); the listener APIs return
+the numeric token and `off(token)` removes it. An exception in a callback is not thrown into the engine: it is recorded for
+`iron_api::callback::take_errors()` and the other callbacks still run. **Drop the callbacks before the runtime**: QuickJS asserts when
+objects are alive at `JS_FreeRuntime`, so reset the engine state that holds listeners (`input::reset`, `assets::reset`,
+`app::reset`, `screen::reset`, `audio::reset`, `iron_render_api::reset`, `iron_scenes::reset`) before dropping or replacing a
+runtime (the `reset()` of a hot reload included).
+
+**Optional parameters** of value classes are NaN-filled when left out (as in compiled code), optional arrays are empty, optional
+handles `null`. Methods of one class with the same script name (`#[js_name]`) are chosen by argument count like namespace functions.
+
+**Hand-over for `iron_app`** (not done here, the area is the lead's):
+1. Where the app builds its `QuickJsRuntime`, call `iron_native::install(&mut rt)?` once before loading the bundle (add `iron_native` to
+   `crates/iron_app/Cargo.toml`). It replaces calling the per-crate functions.
+2. Wrap script execution (load, tick, event callbacks, the hot-reload `__iron_restore_state`) in `iron_scene::api::enter(&mut scene)`, so `GameObject.create()` and friends
+   have a current scene, and call `iron_scenes::register_engine_kinds()`, `iron_render_api::register_kinds()`,
+   `iron_engine_api::audio_components::register_kinds()` (and the physics kinds) as the compiled host does.
+3. Feed the per-thread state each frame as in "The engine API beyond the scene": `time::advance`, `input::*` events,
+   `Physics.step()` (or `iron_physics_api::step()` once per fixed tick), `gizmos::take_frame()`, `audio::take_commands()` for the mixer
+   and `audio::ended(..)` back, `iron_render_api::take_commands()` / `texture_loaded`, `report_particles`, `assets::changed`, `app::set_focus`,
+   `screen::set_size`.
+4. On a runtime reset (hot reload) call the `reset()` functions listed under Callbacks first, then `rt.reset()` (the natives are
+   installed again by `install`). Handle objects do not survive a reload; the Rust state does.
+5. The old `__iron_op("scene.*" / "physics.*" / "audio.*")` paths and these native globals both exist: a game bundle should use the
+   native globals **or** the `@iron/engine` classes, not hand ids between them.

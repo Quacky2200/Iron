@@ -1178,3 +1178,23 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-123 | Integration | Handle and boolean callback arguments reach JS as handle objects / `null` and booleans; a callback with no arguments. |
 | M9-API-124 | Integration | An exception in a JS callback is recorded (`take_errors`), the other callbacks still run, and a callback may subscribe from inside a call. |
 | M9-API-125 | Integration | A callback survives repeated collections while only the engine holds it; a non-function is a `TypeError`. |
+| M9-API-126 | Integration | Physics from QuickJS: a Rigidbody with a BoxCollider falls and rests on a floor at y = 1 (as the compiled test), `ForceMode` / `RigidbodyConstraints`, a wrong handle is a `TypeError` (`crates/iron_native/tests/physics.rs`). |
+| M9-API-127 | Integration | Raycast from QuickJS: distance, point, normal of the hit, a miss and a too-short ray are `null`, `maxDistance` optional. |
+| M9-API-128 | Integration | Bodies, colliders and a rope joint made from script; gravity getter/setter; bad arguments are `TypeError`s. |
+| M9-API-129 | Integration | `CharacterController` grounded and moving, `Rope` points, as the compiled tests. |
+| M9-API-130 | Integration | 2D: `Rigidbody2D` rests on a 2D floor with z kept, `Physics2D.raycast` names the object. |
+| M9-API-131 | Integration | `FixedJoint` holds a body, `HingeJoint` properties, `MeshCollider.setMesh` from arrays. |
+| M9-API-132 | Integration | Audio from QuickJS: the host receives Load / Bus / Emitter / Play / Set / Stop / Listener commands with the script's values; `onEnded` runs when the host reports (`crates/iron_native/tests/audio.rs`). |
+| M9-API-133 | Integration | `AudioSource` / `AudioListener` components, one-shots and static `playClipAtPoint`. |
+| M9-API-134 | Integration | `input.on...` listeners get the events' arguments, tokens and `off` (`crates/iron_native/tests/services.rs`). |
+| M9-API-135 | Integration | `Assets.onChanged`, `Application.onFocusChanged`, `Screen.onChange` callbacks and `Time`. |
+| M9-API-136 | Integration | `Rng` handles and `Random` agree with the compiled shims for one seed. |
+| M9-API-137 | Integration | Scenes from script: serialize, load additively, instantiate a prefab, `onSceneLoaded` / `onSceneUnloaded` / `onActiveSceneChanged`. |
+| M9-API-138 | Integration | `Cursor`, `Screen` and `QualitySettings` property pairs. |
+| M9-API-139 | Integration | `Light`, `MeshRenderer`, `Material` (enums, colors, numbers, handles), and the host's view of the data (`crates/iron_native/tests/render.rs`). |
+| M9-API-140 | Integration | `Texture`, `Mesh.create` from arrays, `Sprite`, `SpriteRenderer`. |
+| M9-API-141 | Integration | `RenderSettings`, `Primitives`, `LineRenderer.setPositions`, `Cloth`, `ParticleSystem`. |
+| M9-API-142 | Integration | `ParticleSystem.onStopped` runs when the host reports the system stopped. |
+| M9-API-143 | Integration | `Model.load` / `instantiate` with optional values left out. |
+| M9-API-144 | Integration | Every component class with `attach` (and assets with `create()`): each get/set property round-trips its own value (265 properties, `surface.rs`). |
+| M9-API-145 | Integration | GC stress: tiny collection threshold, thousands of handle objects and 200 engine-held callbacks stay correct. |
