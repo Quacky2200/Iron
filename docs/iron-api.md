@@ -428,6 +428,17 @@ draws, the app reads per-thread registries and a command queue. **No change to `
 - **Compiler help.** A string where a handle is expected calls the class's `fromString` (`mesh: "sphere"` is `Mesh.fromString`); an
   optional array parameter left out is empty; `Class.create({ .. })` on a class whose `create` takes nothing is `new Class({ .. })`;
   an optional handle left out is a zero handle.
+- **Effects.** `ParticleSystem` (main settings as properties, `startLifetime` etc. as a value plus `...Max` and
+  `setStartLifetimeRange(min, max)`, `setStartColorRange`, `shapeType` / `shapeRadius` / `shapeAngle` / `shapeSize`, `addBurst`,
+  `addSizeKey`, `addColorKey`, `setTextureSheet`, `play` / `stop(clear)` / `pause` / `clear` / `emit(n)`, `onStopped(f)`): the data is in
+  `particle_systems()`; scripts' `play` / `emit` ... are queued for the host (`take_particle_controls()`), which reports back with
+  `report_particles(system, count, alive)` (runs `onStopped`, and `stopAction: "destroy"` destroys the object). `LineRenderer`
+  (`setPositions(points)`, `redraw()`; a tube through a `MeshRenderer` of its own that scene files leave out; the host calls
+  `pre_render_lines()` before drawing). `Cloth` (`rebuild()` swaps the object's `MeshRenderer` mesh for an engine-filled copy that
+  `mesh_info` marks `engine`; `destroy` puts the original back; the physics side reads `pins`, `pin_box` and the collider lists).
+  `Primitives.create(kind, { name })` with `PrimitiveType.Cube` ... (`set_primitive_collider_hook` lets the physics side add the
+  collider). Differences: `Cloth` rebuilds on a scene load or an explicit `rebuild()`, not on `onStart`; `LineRenderer.positions`
+  and the other arrays are call-style (`setPositions`, `addPin`, `addSphereCollider`).
 - **Settings and behaviours.** `RenderSettings` (namespace properties: `ambientLight`, `ambientMode`, `reflectionIntensity`,
   `skyboxEnabled` + `skyZenith` / `skyHorizon` / `skyGround` / `skySunDirection` / `skyHasSun` / `skySunColor` / `skySunSize`,
   `bloomEnabled` + `bloomThreshold` / `bloomIntensity` / `bloomScatter`, `tonemapping`, `postExposure`; the host reads

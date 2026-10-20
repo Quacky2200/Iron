@@ -196,6 +196,159 @@ fn scene_files_apply_and_save_render_settings() {
     reset();
 }
 
+// M9-TS-1231
+#[test]
+fn particle_systems_hold_their_settings_and_report_back_to_scripts() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_rdn_particles()), "1|2|1|false|true|false|true|1");
+        let (r, d) = render::particle_systems().remove(0);
+        assert_eq!(d.shape_type, "sphere");
+        assert_eq!(d.blend_mode, "additive");
+        assert_eq!(d.texture_sheet, Some([4.0, 4.0, 1.0]));
+        assert_eq!(d.size_over_lifetime.as_ref().unwrap().len(), 2);
+        let controls: Vec<(String, f64)> = render::take_particle_controls()
+            .into_iter()
+            .map(|(_, a, n)| (a, n))
+            .collect();
+        assert_eq!(
+            controls,
+            [
+                ("play".to_string(), 0.0),
+                ("emit".to_string(), 5.0),
+                ("pause".to_string(), 0.0)
+            ]
+        );
+        // The host reports: alive, then gone. `onStopped` runs and `destroy` destroys the object.
+        render::report_particles(r, 12, true);
+        assert_eq!(ts_rdn_stoppedCount(), 0.0);
+        render::report_particles(r, 0, false);
+        assert_eq!(ts_rdn_stoppedCount(), 1.0);
+        assert!(iron_scene::api::take_destroyed().contains(&d.object));
+    });
+}
+
+// M9-TS-1232
+#[test]
+fn a_line_renderer_draws_a_tube_through_a_mesh_renderer_of_its_own() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_rdn_lines()), "3|1");
+        let (_, line) = render::line_renderers().remove(0);
+        let renderers = render::mesh_renderers_on(line.object);
+        assert_eq!(renderers.len(), 1);
+        let mesh = render::with_mesh_renderer(renderers[0], |d| d.mesh).unwrap();
+        let info = render::mesh_info(render::MeshRef(mesh)).unwrap();
+        // 2 segments x (1 + 1) points + the end = 5 rings of 7 vertices.
+        assert_eq!(info.vertices.len(), 5 * 7 * 3);
+        assert_eq!(info.triangles.len(), 4 * 6 * 6);
+        // Moving a point rebuilds it on the next pre-render.
+        let before = info.vertices.clone();
+        let l = render::line_renderers().remove(0).0;
+        render::with_line_renderer(l, |d| d.positions[2].y = 3.0);
+        render::pre_render_lines();
+        let after = render::mesh_info(render::MeshRef(mesh)).unwrap();
+        assert_ne!(after.vertices, before);
+    });
+}
+
+// M9-TS-1233
+#[test]
+fn cloth_swaps_the_renderers_mesh_for_a_simulated_copy_and_back() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_rdn_cloth()), "0.9|false");
+        let (c, cloth) = render::cloths().remove(0);
+        let r = render::mesh_renderers_on(cloth.object)[0];
+        let now = render::with_mesh_renderer(r, |d| d.mesh).unwrap();
+        assert!(
+            render::mesh_info(render::MeshRef(now)).unwrap().engine,
+            "the engine fills it"
+        );
+        assert_eq!(cloth.pin_box.unwrap().1.y, 0.1);
+        assert_eq!(cloth.pins.len(), 1);
+        render::destroyed(&[cloth.object]);
+        let _ = c;
+    });
+}
+
+// M9-TS-1234
+#[test]
+fn primitives_have_a_mesh_a_name_and_a_collider_hook() {
+    in_every_gc_mode(|| unsafe {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let s2 = seen.clone();
+        render::set_primitive_collider_hook(Some(std::rc::Rc::new(move |_, kind: &str| {
+            s2.borrow_mut().push(kind.to_string())
+        })));
+        assert_eq!(text(ts_rdn_primitives()), "Crate|Sphere|cube");
+        assert_eq!(*seen.borrow(), ["cube", "sphere"]);
+        render::set_primitive_collider_hook(None);
+    });
+}
+
+// M9-TS-1235
+//
+// Particle systems, line renderers and cloth load from a scene file and save the same data
+// again (ranges as `[min, max]`, shapes, bursts, curves, pins).
+#[test]
+fn effect_components_round_trip_through_scene_files() {
+    let _serial = iron_ts_tests::serial();
+    reset();
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let text = r#"{"format":"iron.scene","version":1,"name":"Fx","objects":[
+     {"id":1,"name":"P","components":[
+       {"id":2,"type":"ParticleSystem","properties":{"duration":2,"loop":false,"startLifetime":[1,2],"startSpeed":3,
+         "startColor":[{"$type":"Color","value":[1,0,0,1]},{"$type":"Color","value":[1,1,0,1]}],
+         "bursts":[{"time":0.5,"count":20,"cycles":2,"interval":0.1}],
+         "shape":{"type":"box","size":{"x":1,"y":2,"z":3}},
+         "sizeOverLifetime":[{"time":0,"value":1},{"time":1,"value":0}],
+         "colorOverLifetime":[{"time":1,"color":{"$type":"Color","value":[1,1,1,0]}}],
+         "textureSheet":{"tilesX":4,"tilesY":2,"cycles":1},"blendMode":"additive","stopAction":"destroy"}}]},
+     {"id":3,"name":"L","components":[
+       {"id":4,"type":"LineRenderer","properties":{"width":0.1,"sides":5,
+         "positions":[{"$type":"Vector3","value":[0,0,0]},{"$type":"Vector3","value":[0,1,0]}]}}]},
+     {"id":5,"name":"C","components":[
+       {"id":6,"type":"MeshRenderer","properties":{"mesh":"plane"}},
+       {"id":7,"type":"Cloth","properties":{"bendingStiffness":0.7,"pins":[{"$type":"Vector3","value":[1,2,3]}],
+         "pinBox":{"min":{"$type":"Vector3","value":[0,0,0]},"max":{"$type":"Vector3","value":[1,1,1]}},
+         "sphereColliders":[{"$ref":"GameObject","id":1}]}}]}]}"#;
+    let handle = iron_scenes::load_scene(text, false).expect("loads");
+    assert!(iron_scenes::take_warnings().is_empty());
+    let (_, p) = render::particle_systems().remove(0);
+    assert_eq!((p.start_lifetime, p.start_speed), ([1.0, 2.0], [3.0, 3.0]));
+    assert_eq!(p.shape_type, "box");
+    assert_eq!(p.bursts, [[0.5, 20.0, 2.0, 0.1]]);
+    assert!(!p.r#loop);
+    let first = iron_scenes::serialize(handle).unwrap();
+    let saved: serde_json::Value = serde_json::from_str(&first).unwrap();
+    let props = |object: usize, ty: &str| {
+        saved["objects"][object]["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["type"] == ty)
+            .map(|c| c["properties"].clone())
+            .unwrap()
+    };
+    let ps = props(0, "ParticleSystem");
+    assert_eq!(ps["startLifetime"], serde_json::json!([1.0, 2.0]));
+    assert_eq!(ps["startSpeed"], 3.0);
+    assert_eq!(ps["shape"]["type"], "box");
+    assert_eq!(ps["textureSheet"]["tilesX"], 4.0);
+    assert_eq!(props(1, "LineRenderer")["sides"], 5);
+    assert_eq!(
+        props(2, "Cloth")["pinBox"]["max"]["value"],
+        serde_json::json!([1.0, 1.0, 1.0])
+    );
+    // What was saved loads and saves the same.
+    let again = iron_scenes::load_scene(&first, false).expect("loads again");
+    assert!(iron_scenes::take_warnings().is_empty());
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&iron_scenes::serialize(again).unwrap()).unwrap(),
+        saved
+    );
+    reset();
+}
+
 // M9-TS-1226
 //
 // The example game's scene file loads its Light, MeshRenderer (primitive mesh, inline Material)

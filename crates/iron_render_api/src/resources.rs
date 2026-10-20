@@ -163,6 +163,14 @@ pub fn primitive_name(m: MeshRef) -> Option<String> {
     mesh_info(m)?.primitive
 }
 
+/// A mesh the engine fills in (a cloth's simulated copy).
+pub(crate) fn new_engine_mesh() -> MeshRef {
+    new_mesh(MeshInfo {
+        engine: true,
+        ..MeshInfo::default()
+    })
+}
+
 fn new_mesh(info: MeshInfo) -> MeshRef {
     st(|s| {
         s.meshes.push(Some(info));
@@ -468,7 +476,13 @@ fn flat2(a: &[V2]) -> Vec<f64> {
     a.iter().flat_map(|v| [v.x, v.y]).collect()
 }
 
-fn set_mesh_data(m: MeshRef, vertices: &[V3], triangles: &[f64], normals: &[V3], uv: &[V2]) {
+pub(crate) fn set_mesh_data(
+    m: MeshRef,
+    vertices: &[V3],
+    triangles: &[f64],
+    normals: &[V3],
+    uv: &[V2],
+) {
     with_mesh(m, |d| {
         d.vertices = flat3(vertices);
         d.triangles = triangles.iter().map(|t| *t as u32).collect();

@@ -72,6 +72,41 @@ def default_lit(t, d):
     return repr(float(d))
 
 
+
+
+def minmax_api(low, rust, ts, doc):
+    """Getter, setter, max getter and range setter of a MinMax field stored as [min, max]."""
+    return """
+        /// %(doc)s A fixed value, or `%(rust)s_max` above it for a random one per particle.
+        #[property]
+        pub fn %(rust)s(self) -> f64 {
+            with_%(low)s(self, |d| d.%(rust)s[0]).unwrap_or(0.0)
+        }
+
+        /// Sets both ends.
+        pub fn set_%(rust)s(self, v: f64) {
+            with_%(low)s(self, |d| d.%(rust)s = [v, v]);
+        }
+
+        #[property]
+        pub fn %(rust)s_max(self) -> f64 {
+            with_%(low)s(self, |d| d.%(rust)s[1]).unwrap_or(0.0)
+        }
+
+        /// A random value between `min` and `max` per particle.
+        pub fn set_%(rust)s_range(self, min: f64, max: f64) {
+            with_%(low)s(self, |d| d.%(rust)s = [min, max]);
+        }
+""" % dict(low=low, rust=rust, doc=doc)
+
+
+PS_MINMAX = [
+    ("startLifetime", "start_lifetime", 5.0, "Seconds a particle lives."),
+    ("startSpeed", "start_speed", 5.0, "Metres per second."),
+    ("startSize", "start_size", 1.0, "Metres."),
+    ("startRotation", "start_rotation", 0.0, "Degrees."),
+    ("angularVelocity", "angular_velocity", 0.0, "Degrees per second."),
+]
 ONE = (1, 1, 1, 1)
 MASK = 0xFFFFFFFF
 
@@ -196,6 +231,7 @@ COMPONENTS = [
     ),
     dict(
         name="MeshRenderer", low="mesh_renderer", ref="MeshRendererRef", store="MESH_RENDERERS", data="MeshRendererData",
+        kind_on_filter="!internal_renderer(*r)",
         fields=[
             ("mesh", "mesh", "mesh", '=primitive_mesh("cube").0', "A built-in mesh by name (`mesh: \"cube\"`) or a script `Mesh`."),
             ("material", "material", "material", "=create_material().0", ""),
@@ -397,6 +433,308 @@ pub fn late_update_camera_orbits(dt: f64) {
         iron_scene::api::TransformRef(d.object).look_at(center);
     }
 }
+""",
+    ),
+    dict(
+        name="ParticleSystem", low="particle_system", ref="ParticleSystemRef", store="PARTICLES", data="ParticleData",
+        fields=[
+            ("duration", "duration", "f64", 5.0, "Seconds per cycle."),
+            ("loop", "r#loop", "bool", True, ""),
+            ("playOnAwake", "play_on_awake", "bool", True, ""),
+            ("startDelay", "start_delay", "f64", 0.0, ""),
+            ("gravityModifier", "gravity_modifier", "f64", 0.0, "Multiplies gravity (9.81 m/s2 down)."),
+            ("drag", "drag", "f64", 0.0, "Fraction of speed lost per second."),
+            ("simulationSpace", "simulation_space", "enum:local|world", "local", "`world`: particles stay where they were emitted when the object moves."),
+            ("maxParticles", "max_particles", "i32", 1000, ""),
+            ("randomSeed", "random_seed", "i32", 1, ""),
+            ("rateOverTime", "rate_over_time", "f64", 10.0, "Particles emitted per second."),
+            ("texture", "texture", "texture", 0, "The particle image (a soft round spot by default)."),
+            ("blendMode", "blend_mode", "enum:alpha|additive", "alpha", "`additive` makes them glow."),
+            ("stopAction", "stop_action", "enum:none|destroy", "none", "What happens once it has stopped and its particles are gone."),
+            ("shapeType", "shape_type", "enum:point|sphere|hemisphere|cone|box", "cone", "Where particles start; they go along the object's up (+y)."),
+            ("shapeRadius", "shape_radius", "f64", 1.0, "Sphere, hemisphere and cone."),
+            ("shapeAngle", "shape_angle", "f64", 25.0, "Cone: degrees from straight up."),
+            ("shapeSize", "shape_size", "v3", (1, 1, 1), "Box."),
+        ],
+        skip_save=["shapeType", "shapeRadius", "shapeAngle", "shapeSize"],
+        set_hook={"playOnAwake": "d.alive = v;"},
+        extra_fields=[
+            "pub start_lifetime: [f64; 2],", "pub start_speed: [f64; 2],", "pub start_size: [f64; 2],",
+            "pub start_rotation: [f64; 2],", "pub angular_velocity: [f64; 2],",
+            "pub start_color: Rgba,", "pub start_color2: Option<Rgba>,",
+            "/// time, count, cycles, interval", "pub bursts: Vec<[f64; 4]>,",
+            "/// time, value", "pub size_over_lifetime: Option<Vec<[f64; 2]>>,",
+            "pub color_over_lifetime: Option<Vec<(f64, Rgba)>>,",
+            "/// tilesX, tilesY, cycles", "pub texture_sheet: Option<[f64; 3]>,",
+            "pub alive: bool,", "pub paused: bool,", "pub particle_count: u32,",
+        ],
+        extra_defaults=[
+            "start_lifetime: [5.0, 5.0],", "start_speed: [5.0, 5.0],", "start_size: [1.0, 1.0],",
+            "start_rotation: [0.0, 0.0],", "angular_velocity: [0.0, 0.0],",
+            "start_color: Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },", "start_color2: None,",
+            "bursts: Vec::new(),", "size_over_lifetime: None,", "color_over_lifetime: None,",
+            "texture_sheet: None,", "alive: true,", "paused: false,", "particle_count: 0,",
+        ],
+        extra_save="""for (k, v) in [("startLifetime", d.start_lifetime), ("startSpeed", d.start_speed), ("startSize", d.start_size), ("startRotation", d.start_rotation), ("angularVelocity", d.angular_velocity)] { m.insert(k.into(), minmax_json(v)); }
+                m.insert("startColor".into(), start_color_json(d.start_color, d.start_color2, true));
+                m.insert("bursts".into(), Value::Array(d.bursts.iter().map(|b| json!({ "time": b[0], "count": b[1], "cycles": b[2], "interval": b[3] })).collect()));
+                m.insert("shape".into(), shape_json(&d.shape_type, d.shape_radius, d.shape_angle, d.shape_size));
+                m.insert("sizeOverLifetime".into(), d.size_over_lifetime.as_ref().map_or(Value::Null, |k| Value::Array(k.iter().map(|k| json!({ "time": k[0], "value": k[1] })).collect())));
+                m.insert("colorOverLifetime".into(), d.color_over_lifetime.as_ref().map_or(Value::Null, |k| Value::Array(k.iter().map(|(t, c)| json!({ "time": t, "color": color_json(*c) })).collect())));
+                m.insert("textureSheet".into(), d.texture_sheet.map_or(Value::Null, |s| json!({ "tilesX": s[0], "tilesY": s[1], "cycles": s[2] })));""",
+        extra_load="""    "startLifetime" => minmax_of(v).map(|x| d.start_lifetime = x),
+                "startSpeed" => minmax_of(v).map(|x| d.start_speed = x),
+                "startSize" => minmax_of(v).map(|x| d.start_size = x),
+                "startRotation" => minmax_of(v).map(|x| d.start_rotation = x),
+                "angularVelocity" => minmax_of(v).map(|x| d.angular_velocity = x),
+                "startColor" => start_color_of(v).map(|(a, b)| { d.start_color = a; d.start_color2 = b; }),
+                "bursts" => v.as_array().and_then(|a| a.iter().map(|b| Some([b.get("time")?.as_f64()?, b.get("count")?.as_f64()?, b.get("cycles").and_then(Value::as_f64).unwrap_or(1.0), b.get("interval").and_then(Value::as_f64).unwrap_or(0.01)])).collect::<Option<Vec<_>>>()).map(|b| d.bursts = b),
+                "shape" => shape_of(v).map(|(t, r, a, s)| { d.shape_type = t; if let Some(r) = r { d.shape_radius = r; } if let Some(a) = a { d.shape_angle = a; } if let Some(s) = s { d.shape_size = s; } }),
+                "sizeOverLifetime" => if v.is_null() { d.size_over_lifetime = None; Some(()) } else { v.as_array().and_then(|a| a.iter().map(|k| Some([k.get("time")?.as_f64()?, k.get("value")?.as_f64()?])).collect::<Option<Vec<_>>>()).map(|k| d.size_over_lifetime = Some(k)) },
+                "colorOverLifetime" => if v.is_null() { d.color_over_lifetime = None; Some(()) } else { v.as_array().and_then(|a| a.iter().map(|k| Some((k.get("time")?.as_f64()?, color_of(k.get("color")?)?))).collect::<Option<Vec<_>>>()).map(|k| d.color_over_lifetime = Some(k)) },
+                "textureSheet" => if v.is_null() { d.texture_sheet = None; Some(()) } else { (|| Some([v.get("tilesX")?.as_f64()?, v.get("tilesY")?.as_f64()?, v.get("cycles").and_then(Value::as_f64).unwrap_or(1.0)]))().map(|s| d.texture_sheet = Some(s)) }""",
+        extra_value_types=["color"],
+        api="".join(minmax_api("particle_system", r, t, doc) for t, r, _, doc in PS_MINMAX) + """
+        /// A colour, or `setStartColorRange` for a random mix of two per particle.
+        #[property]
+        pub fn start_color(self) -> Rgba {
+            with_particle_system(self, |d| d.start_color).unwrap_or(Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 })
+        }
+
+        pub fn set_start_color(self, c: Rgba) {
+            with_particle_system(self, |d| {
+                d.start_color = c;
+                d.start_color2 = None;
+            });
+        }
+
+        pub fn set_start_color_range(self, a: Rgba, b: Rgba) {
+            with_particle_system(self, |d| {
+                d.start_color = a;
+                d.start_color2 = Some(b);
+            });
+        }
+
+        /// The second colour of a range (the first when there is none).
+        #[property]
+        pub fn start_color_max(self) -> Rgba {
+            with_particle_system(self, |d| d.start_color2.unwrap_or(d.start_color)).unwrap_or(Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 })
+        }
+
+        /// Adds a burst: `count` particles at `time` seconds into each cycle, firing `cycles`
+        /// times (0 keeps firing every `interval`).
+        #[optional(cycles = 1, interval = 0.01)]
+        pub fn add_burst(self, time: f64, count: f64, cycles: f64, interval: f64) {
+            with_particle_system(self, |d| d.bursts.push([time, count, cycles, interval]));
+        }
+
+        pub fn clear_bursts(self) {
+            with_particle_system(self, |d| d.bursts.clear());
+        }
+
+        #[property]
+        pub fn burst_count(self) -> f64 {
+            with_particle_system(self, |d| d.bursts.len() as f64).unwrap_or(0.0)
+        }
+
+        /// Adds a key to the size over the particle's life: `time` from 0 (birth) to 1 (death),
+        /// linear between keys; `value` multiplies the start size.
+        pub fn add_size_key(self, time: f64, value: f64) {
+            with_particle_system(self, |d| d.size_over_lifetime.get_or_insert_with(Vec::new).push([time, value]));
+        }
+
+        pub fn clear_size_over_lifetime(self) {
+            with_particle_system(self, |d| d.size_over_lifetime = None);
+        }
+
+        /// Adds a key to the colour over life; it multiplies the start colour (alpha too: fade out
+        /// with alpha 0 at time 1).
+        pub fn add_color_key(self, time: f64, color: Rgba) {
+            with_particle_system(self, |d| d.color_over_lifetime.get_or_insert_with(Vec::new).push((time, color)));
+        }
+
+        pub fn clear_color_over_lifetime(self) {
+            with_particle_system(self, |d| d.color_over_lifetime = None);
+        }
+
+        /// A flipbook: the texture cut into `tilesX` x `tilesY` frames, played `cycles` times per life.
+        #[optional(cycles = 1)]
+        pub fn set_texture_sheet(self, tiles_x: f64, tiles_y: f64, cycles: f64) {
+            with_particle_system(self, |d| d.texture_sheet = Some([tiles_x, tiles_y, cycles]));
+        }
+
+        pub fn clear_texture_sheet(self) {
+            with_particle_system(self, |d| d.texture_sheet = None);
+        }
+
+        /// Live particles (as of the last report).
+        #[property]
+        pub fn particle_count(self) -> f64 {
+            with_particle_system(self, |d| f64::from(d.particle_count)).unwrap_or(0.0)
+        }
+
+        /// Emitting or has particles left, and not paused.
+        #[property]
+        pub fn is_playing(self) -> bool {
+            with_particle_system(self, |d| d.alive && !d.paused).unwrap_or(false)
+        }
+
+        #[property]
+        pub fn is_paused(self) -> bool {
+            with_particle_system(self, |d| d.paused).unwrap_or(false)
+        }
+
+        /// Starts (or resumes) emitting.
+        pub fn play(self) {
+            with_particle_system(self, |d| {
+                d.paused = false;
+                d.alive = true;
+            });
+            control(self, "play", 0.0);
+        }
+
+        /// Stops emitting; with `clear`, removes the live particles too.
+        pub fn stop(self, clear: bool) {
+            control(self, if clear { "stopClear" } else { "stop" }, 0.0);
+        }
+
+        pub fn pause(self) {
+            with_particle_system(self, |d| d.paused = true);
+            control(self, "pause", 0.0);
+        }
+
+        pub fn clear(self) {
+            control(self, "clear", 0.0);
+        }
+
+        /// Emits `count` particles at once (works while stopped, too).
+        pub fn emit(self, count: f64) {
+            control(self, "emit", count);
+        }
+
+        /// Calls `f()` once it has stopped and its particles are gone.
+        pub fn on_stopped(self, f: Callback<()>) {
+            add_stopped(self, f);
+        }
+""",
+    ),
+    dict(
+        name="LineRenderer", low="line_renderer", ref="LineRendererRef", store="LINES", data="LineData",
+        fields=[
+            ("width", "width", "f64", 0.05, "Tube thickness (diameter, metres)."),
+            ("sides", "sides", "i32", 8, "Points around the tube."),
+            ("smoothing", "smoothing", "i32", 3, "Extra points between each pair of positions, for curves."),
+            ("material", "material", "material", "=create_line_material().0", ""),
+        ],
+        extra_fields=["/// The points it goes through, in world space.", "pub positions: Vec<V3>,"],
+        extra_defaults=["positions: Vec::new(),"],
+        extra_value_types=["v3"],
+        extra_save='m.insert("positions".into(), Value::Array(d.positions.iter().map(|p| v3_json(*p)).collect()));',
+        extra_load='"positions" => v.as_array().and_then(|a| a.iter().map(v3_of).collect::<Option<Vec<V3>>>()).map(|p| d.positions = p)',
+        attach_hook="line_attached(r);",
+        remove_hook="line_removed(r);",
+        awake_hook="line_redraw(r);",
+        api="""
+        /// Replaces the points (world space); a new array redraws the tube.
+        pub fn set_positions(self, points: &[V3]) {
+            with_line_renderer(self, |d| d.positions = points.to_vec());
+        }
+
+        #[property]
+        pub fn position_count(self) -> f64 {
+            with_line_renderer(self, |d| d.positions.len() as f64).unwrap_or(0.0)
+        }
+
+        /// The i-th point (the origin past the end).
+        pub fn position_at(self, index: f64) -> V3 {
+            with_line_renderer(self, |d| d.positions.get(index as usize).copied())
+                .flatten()
+                .unwrap_or(V3::ZERO)
+        }
+
+        /// Rebuilds the tube now if the points or its look changed (the host does it before each
+        /// frame with `pre_render_lines`).
+        pub fn redraw(self) {
+            line_redraw(self);
+        }
+""",
+    ),
+    dict(
+        name="Cloth", low="cloth", ref="ClothRef", store="CLOTHS_STORE", data="ClothData",
+        fields=[
+            ("stretchingStiffness", "stretching_stiffness", "f64", 1.0, "0 (rubbery) to 1 (keeps its edges' lengths)."),
+            ("bendingStiffness", "bending_stiffness", "f64", 0.3, "0 (folds freely) to 1 (resists folding)."),
+            ("damping", "damping", "f64", 0.1, "0..1: how much of its motion it loses each second."),
+            ("useGravity", "use_gravity", "bool", True, ""),
+            ("externalAcceleration", "external_acceleration", "v3", (0, 0, 0), "A steady acceleration on every vertex (steady wind)."),
+            ("randomAcceleration", "random_acceleration", "v3", (0, 0, 0), "Up to this much more, varying (gusts)."),
+            ("friction", "friction", "f64", 0.5, "0..1: how much sliding over colliders slows it."),
+            ("solverIterations", "solver_iterations", "f64", 8.0, "Constraint passes per step: more is stiffer, and slower to run."),
+            ("pinRadius", "pin_radius", "f64", 0.05, "Vertices within this of the pins stay put."),
+            ("rebuildRequests", "rebuild_requests", "f64", 0.0, "How many times the simulation was (re)started (the host restarts when it grows)."),
+            ("sourceMesh", "source_mesh", "mesh", 0, "The mesh the simulation started from."),
+            ("simulatedMesh", "simulated_mesh", "mesh", 0, "The mesh the engine fills in each step; the object's renderer draws it."),
+        ],
+        skip_save=["rebuildRequests", "sourceMesh", "simulatedMesh"],
+        extra_fields=[
+            "/// Vertices within `pin_radius` of these points (object space) stay put.", "pub pins: Vec<V3>,",
+            "/// Vertices in this object-space box (min, max) stay put.", "pub pin_box: Option<(V3, V3)>,",
+            "pub sphere_colliders: Vec<ObjectId>,", "pub capsule_colliders: Vec<ObjectId>,",
+        ],
+        extra_defaults=["pins: Vec::new(),", "pin_box: None,", "sphere_colliders: Vec::new(),", "capsule_colliders: Vec::new(),"],
+        extra_value_types=["v3"],
+        extra_save="""m.insert("pins".into(), Value::Array(d.pins.iter().map(|p| v3_json(*p)).collect()));
+                m.insert("pinBox".into(), d.pin_box.map_or(Value::Null, |(a, b)| json!({ "min": v3_json(a), "max": v3_json(b) })));
+                m.insert("sphereColliders".into(), Value::Array(d.sphere_colliders.iter().map(|o| object_ref(o.to_raw())).collect()));
+                m.insert("capsuleColliders".into(), Value::Array(d.capsule_colliders.iter().map(|o| object_ref(o.to_raw())).collect()));""",
+        extra_load="""    "pins" => v.as_array().and_then(|a| a.iter().map(v3_of).collect::<Option<Vec<V3>>>()).map(|p| d.pins = p),
+                "pinBox" => if v.is_null() { d.pin_box = None; Some(()) } else { (|| Some((v3_of(v.get("min")?)?, v3_of(v.get("max")?)?)))().map(|b| d.pin_box = Some(b)) },
+                "sphereColliders" => v.as_array().and_then(|a| a.iter().map(|x| object_of(x).flatten()).collect::<Option<Vec<ObjectId>>>()).map(|o| d.sphere_colliders = o),
+                "capsuleColliders" => v.as_array().and_then(|a| a.iter().map(|x| object_of(x).flatten()).collect::<Option<Vec<ObjectId>>>()).map(|o| d.capsule_colliders = o)""",
+        remove_hook="cloth_removed(r);",
+        awake_hook="cloth_rebuild(r);",
+        api="""
+        /// Starts the simulation again from the mesh with the current settings. The object needs a
+        /// `MeshRenderer`: it then draws the simulated copy. (The TypeScript started on `onStart`;
+        /// here a scene load does it, and a script calls `rebuild()` after setting things up.)
+        pub fn rebuild(self) {
+            cloth_rebuild(self);
+        }
+
+        /// A point (object space): vertices near it stay put.
+        pub fn add_pin(self, point: V3) {
+            with_cloth(self, |d| d.pins.push(point));
+        }
+
+        pub fn clear_pins(self) {
+            with_cloth(self, |d| d.pins.clear());
+        }
+
+        /// Vertices in this object-space box stay put (a flag's edge on its pole).
+        pub fn set_pin_box(self, min: V3, max: V3) {
+            with_cloth(self, |d| d.pin_box = Some((min, max)));
+        }
+
+        pub fn clear_pin_box(self) {
+            with_cloth(self, |d| d.pin_box = None);
+        }
+
+        /// An object with a `SphereCollider` the cloth cannot pass through.
+        pub fn add_sphere_collider(self, object: ObjectId) {
+            with_cloth(self, |d| d.sphere_colliders.push(object));
+        }
+
+        /// An object with a `CapsuleCollider` the cloth cannot pass through.
+        pub fn add_capsule_collider(self, object: ObjectId) {
+            with_cloth(self, |d| d.capsule_colliders.push(object));
+        }
+
+        pub fn clear_colliders(self) {
+            with_cloth(self, |d| {
+                d.sphere_colliders.clear();
+                d.capsule_colliders.clear();
+            });
+        }
 """,
     ),
     dict(
@@ -604,14 +942,19 @@ def gen(c):
         w("}")
         w("")
         w("pub fn attach_%s(object: ObjectId) -> %s {" % (low, ref))
-        w("    %s.with(|v| {" % store)
+        w("    let r = %s.with(|v| {" % store)
         w("        let mut v = v.borrow_mut();")
         w("        v.push(Some(%s::new(object)));" % data)
         w("        %s(v.len() as u32)" % ref)
-        w("    })")
+        w("    });")
+        if c.get("attach_hook"):
+            w("    " + c["attach_hook"])
+        w("    r")
         w("}")
         w("")
         w("pub fn remove_%s(r: %s) {" % (low, ref))
+        if c.get("remove_hook"):
+            w("    " + c["remove_hook"])
     w("    %s.with(|v| {" % store)
     w("        if let Some(slot) = v.borrow_mut().get_mut((r.0 as usize).wrapping_sub(1)) {")
     w("            *slot = None;")
@@ -622,13 +965,9 @@ def gen(c):
     if not asset:
         w("/// Removes the `%ss` of a destroyed object." % name)
         w("pub fn remove_%ss_on(object: ObjectId) {" % low)
-        w("    %s.with(|v| {" % store)
-        w("        for slot in v.borrow_mut().iter_mut() {")
-        w("            if slot.as_ref().is_some_and(|d| d.object == object) {")
-        w("                *slot = None;")
-        w("            }")
-        w("        }")
-        w("    });")
+        w("    for r in %ss_on(object) {" % low)
+        w("        remove_%s(r);" % low)
+        w("    }")
         w("}")
         w("")
     w("pub fn reset_%ss() {" % low)
@@ -696,6 +1035,7 @@ def gen(c):
         hl.append("GameObject = ObjectId")
     hl += [HANDLES[k] for k in handles]
     hl += c.get("extra_handles", [])
+    hl = list(dict.fromkeys(hl))
     attr = 'namespace = "%s", handles(%s)' % (name, ", ".join(hl))
     if values:
         attr += ", values(%s)" % ", ".join(VALUES[k] for k in values)
@@ -799,12 +1139,22 @@ def gen(c):
         w("        on: Box::new(|o| {")
         w("            %ss_on(ObjectId::from_raw(o))" % low)
         w("                .into_iter()")
+        if c.get("kind_on_filter"):
+            w("                .filter(|r| %s)" % c["kind_on_filter"])
         w("                .map(|r| u64::from(r.0))")
         w("                .collect()")
         w("        }),")
         w("        save: Box::new(|h| save_%s(%s(h as u32)))," % (low, ref))
         w("        load: Box::new(|h, props| load_%s(%s(h as u32), props))," % (low, ref))
-        w("        awake: Box::new(|_| {}),")
+        if c.get("awake_hook"):
+            w("        awake: Box::new(|hs| {")
+            w("            for h in hs {")
+            w("                let r = %s(*h as u32);" % ref)
+            w("                " + c["awake_hook"])
+            w("            }")
+            w("        }),")
+        else:
+            w("        awake: Box::new(|_| {}),")
         w("        object: Box::new(|h| with_%s(%s(h as u32), |d| d.object.to_raw()))," % (low, ref))
         w("        destroy: Box::new(|h| remove_%s(%s(h as u32)))," % (low, ref))
         w("    }")

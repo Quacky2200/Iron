@@ -94,6 +94,66 @@ export function behaviours(): void {
   orbiter.addComponent(CameraOrbit, { center: new Vector3(0, 0, 0), distance: 4, yaw: 90, pitch: 0, autoRotate: 90 });
 }
 
+let stopped = 0;
+
+export function stoppedCount(): number {
+  return stopped;
+}
+
+export function particles(): string {
+  const go = new GameObject("Fire");
+  const ps = go.addComponent(ParticleSystem, {
+    duration: 2,
+    blendMode: "additive",
+    simulationSpace: "world",
+    shapeType: "sphere",
+    rateOverTime: 40,
+    playOnAwake: false,
+    stopAction: "destroy",
+  });
+  ps.setStartLifetimeRange(1, 2);
+  ps.startSpeed = 3;
+  ps.setStartColorRange(new Color(1, 0, 0, 1), new Color(1, 1, 0, 1));
+  ps.addBurst(0.5, 20);
+  ps.addSizeKey(0, 1);
+  ps.addSizeKey(1, 0);
+  ps.addColorKey(1, new Color(1, 1, 1, 0));
+  ps.setTextureSheet(4, 4);
+  ps.onStopped(() => {
+    stopped += 1;
+  });
+  const before = ps.isPlaying;
+  ps.play();
+  ps.emit(5);
+  const playing = ps.isPlaying;
+  ps.pause();
+  return `${ps.startLifetime}|${ps.startLifetimeMax}|${ps.burstCount}|${before}|${playing}|${ps.isPlaying}|${ps.isPaused}|${ps.startColorMax.g}`;
+}
+
+export function lines(): string {
+  const go = new GameObject("Rope");
+  const lr = go.addComponent(LineRenderer, { width: 0.2, sides: 6, smoothing: 1 });
+  lr.setPositions([new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(1, 1, 0)]);
+  lr.redraw();
+  return `${lr.positionCount}|${lr.positionAt(1).x}`;
+}
+
+export function cloth(): string {
+  const go = new GameObject("Flag");
+  go.addComponent(MeshRenderer, { mesh: "plane" });
+  const c = go.addComponent(Cloth, { bendingStiffness: 0.9, useGravity: false });
+  c.addPin(new Vector3(0, 0, 0));
+  c.setPinBox(new Vector3(-1, 0, -1), new Vector3(1, 0.1, -0.9));
+  c.rebuild();
+  return `${c.bendingStiffness}|${c.useGravity}`;
+}
+
+export function primitives(): string {
+  const cube = Primitives.create(PrimitiveType.Cube, { name: "Crate" });
+  const s = Primitives.create("sphere");
+  return `${cube.name}|${s.name}|${cube.getComponent(MeshRenderer).mesh.primitive}`;
+}
+
 export function others(): string {
   const go = new GameObject("Stuff");
   const mirror = go.addComponent(Mirror, { cullingMask: 6 });
