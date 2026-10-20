@@ -129,7 +129,6 @@ const flip: Act = {
 const dizzy: Act = {
   name: "dizzy",
   dur: DEFAULT_TIME,
-  cues: [[0.1, (c) => c.sfx("slide", 0.3, 1.5)]],
   at(t) {
     const m = still();
     const env = envelope(t / DEFAULT_TIME);

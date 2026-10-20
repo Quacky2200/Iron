@@ -12,12 +12,12 @@
 import { Camera, Color, Component, GameObject, input, LineRenderer2D, register, Screen, Shapes, Vector2, Vector3, WorldPanel } from "@iron/engine";
 import { createRoot } from "@iron/react";
 import { CAST, type Star } from "./cast.ts";
-import { GROUND, HEIGHT, LIGHT, PANEL, view } from "./config.ts";
+import { BIG, GROUND, HEIGHT, LIGHT, PANEL, view } from "./config.ts";
 import { Effects } from "./effects.tsx";
 import { ENTRANCES } from "./entrances.ts";
 import { EXITS } from "./exits.ts";
 import { Fx } from "./fx.ts";
-import { caption, eyes, Face, Hud, overlay, shown, wheel, type WheelState } from "./hud.tsx";
+import { caption, eyes, Face, Hud, overlay, rocket, shown, wheel, type WheelState } from "./hud.tsx";
 import type { Act, Ctx, Cue, Move } from "./moves.ts";
 import { POSES } from "./poses.ts";
 import { sfx } from "./sfx.ts";
@@ -45,7 +45,9 @@ const smoothstep = (t: number) => {
 function weighted<T extends { weight?: number }>(list: T[]): T {
   let r = Math.random() * list.reduce((n, a) => n + (a.weight ?? 1), 0);
   for (const a of list) {
-    r -= a.weight ?? 1;
+    const w = a.weight ?? 1;
+    if (w <= 0) continue;
+    r -= w;
     if (r <= 0) return a;
   }
   return list[0]!;
@@ -87,6 +89,7 @@ class Parade extends Component {
   private outSide = -1;
   private shownCode = "";
   private shownMirror = false;
+  private big = false;
 
   // Wheel.
   private items: Star[] = [];
@@ -146,7 +149,7 @@ class Parade extends Component {
         }
       },
       burst: (x, y, count) => self.burst(x, y, count),
-      smoke: (x, y, count, color) => self.smoke(x, y, count, color),
+      smoke: (x, y, count, color, size) => self.smoke(x, y, count, color, size),
       jolt: (amount) => void (self.jolt = Math.max(self.jolt, amount)),
       at: () => ({ x: self.px, y: GROUND + HEIGHT / 2 + self.py }),
       get scene() {
@@ -236,8 +239,10 @@ class Parade extends Component {
     this.star = star;
     this.enterAct = (special.enter && named(ENTRANCES, special.enter)) || weighted(ENTRANCES);
     this.exitAct = (special.exit && named(EXITS, special.exit)) || weighted(EXITS);
-    this.poseAct = POSES[special.pose ?? pick(star.poses)];
-    this.scene = special.scene ?? randomScene();
+    const pose = POSES[special.pose ?? pick(star.poses)];
+    // A longer stay repeats the pose.
+    this.poseAct = special.extra ? { ...pose, dur: pose.dur + special.extra, at: (t) => pose.at(t % pose.dur) } : pose;
+    this.scene = special.scene ?? (special.calm ? undefined : randomScene());
     this.reaction = special.react ?? randomReaction();
     this.reactAt = special.reactAt ?? 0.5;
     this.reacted = false;
@@ -249,7 +254,11 @@ class Parade extends Component {
     this.py = 0;
     this.shownCode = star.code;
     this.shownMirror = false;
-    shown.set({ code: star.code, look: star.look ?? null, mirror: false });
+    rocket.set({ turn: 0, flame: 0, power: 0, stars: 1 });
+    // The rocket gets a bigger panel (see config.ts).
+    this.big = star.code === "1f680";
+    this.panel.width = this.panel.height = this.big ? BIG : PANEL;
+    shown.set({ code: star.code, look: star.look ?? null, mirror: false, big: this.big });
     this.startPhase("enter", this.enterAct, -LEAD);
   }
 
@@ -453,9 +462,13 @@ class Parade extends Component {
     if (code !== this.shownCode || mirror !== this.shownMirror) {
       this.shownCode = code;
       this.shownMirror = mirror;
-      shown.set({ code, look: this.star.look ?? null, mirror });
+      shown.set({ code, look: this.star.look ?? null, mirror, big: this.big });
     }
     if (this.star.look) this.watch(x, m.y, dt);
+    if (m.rocket) {
+      const r = rocket.get();
+      if (Math.abs(r.turn - m.rocket.turn) + Math.abs(r.flame - m.rocket.flame) + Math.abs(r.power - m.rocket.power) + Math.abs(r.stars - m.rocket.stars) > 0.005) rocket.set(m.rocket);
+    }
 
     // Footsteps.
     if (m.stride !== undefined) {
@@ -547,7 +560,7 @@ class Parade extends Component {
   }
 
   /** Soft coloured puffs (fart clouds, tomato juice, smoke). */
-  private smoke(x: number, y: number, count: number, color: Rgba): void {
+  private smoke(x: number, y: number, count: number, color: Rgba, size = 1): void {
     for (let i = 0; i < count; i++) {
       this.fx.emit({
         x: x + rnd(-0.5, 0.5),
@@ -557,7 +570,7 @@ class Parade extends Component {
         life: rnd(0.8, 1.4),
         color,
         len: 0.01,
-        width: rnd(0.25, 0.55),
+        width: rnd(0.25, 0.55) * size,
         gravity: -0.4,
         drag: 1.2,
       });

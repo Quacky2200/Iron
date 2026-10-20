@@ -216,19 +216,28 @@ def s_clap():
 
 
 def s_cheer():
-    n = n_of(1.9)
-
-    def make(k):
-        base = rng.uniform(200, 300)
-        f0 = lambda i: base * (1 + 0.5 * min(1, i / SR / 0.9))
-        # "yay": from "ah" towards "ay"
-        vowel = lambda i: (700 - 330 * min(1, i / SR / 1.0), 1200 + 1000 * min(1, i / SR / 1.0), 2600)
-        v = voice(n, f0, vowel, breath=0.08)
-        return shape(v, [(0, 0), (0.12, 1), (1.3, 0.9), (1.9, 0)])
-
-    out = crowd(make, 6, 0.25)
-    claps = s_clap()[0][: n_of(1.6)]
-    mix_into(out, claps, 0.0, 0.25 * max(abs(v) for v in out) / max(1e-9, max(abs(v) for v in claps)))
+    """A crowd roar with a few whooping voices, whistles and claps."""
+    dur = 2.5
+    n = n_of(dur)
+    roar = filt(noise(n), "bp", 1400, 0.5)
+    low = filt(noise(n), "bp", 520, 0.6)
+    mod = [0.78 + 0.22 * math.sin(TAU * (5 + 2 * math.sin(i / SR * 1.7)) * i / SR) for i in range(n)]
+    out = [(a * 0.8 + b * 0.7) * m for a, b, m in zip(roar, low, mod)]
+    out = shape(out, [(0, 0), (0.15, 0.9), (0.45, 1), (1.8, 0.8), (dur, 0)])
+    for _ in range(6):
+        base = rng.uniform(250, 380)
+        length = rng.uniform(0.7, 1.0)
+        woo = voice(n_of(length), lambda i, b=base: b * (1 + 0.5 * min(1, i / SR / 0.45)), lambda i: (330, 900 - 150 * min(1, i / SR / 0.5), 2500), breath=0.06)
+        woo = shape(woo, [(0, 0), (0.08, 1), (length * 0.6, 0.9), (length, 0)])
+        mix_into(out, woo, rng.uniform(0.0, 0.9), 0.55)
+    for _ in range(2):
+        k = n_of(0.4)
+        f0 = rng.uniform(2200, 2800)
+        whistle = sine(lambda i, f0=f0: f0 * (1 + 0.3 * i / k), k)
+        mix_into(out, shape(whistle, [(0, 0), (0.05, 1), (0.3, 0.8), (0.4, 0)]), rng.uniform(0.2, 1.3), 0.12)
+    claps = s_clap()[0][: n_of(2.0)]
+    scale = 0.3 * max(abs(v) for v in out) / max(1e-9, max(abs(v) for v in claps))
+    mix_into(out, claps, 0.1, scale)
     return out, 0.8
 
 
@@ -443,27 +452,32 @@ def s_crash():
 
 
 def s_skid():
-    n = n_of(0.85)
-    squeal = sine(lambda i: 2300 - 1300 * (i / n) ** 0.8 + 60 * math.sin(TAU * 21 * i / SR), n)
-    harm = sine(lambda i: 4600 - 2600 * (i / n) ** 0.8, n)
-    rubber = filt(noise(n), "bp", 1500, 1.2)
-    x = [a * 0.8 + b * 0.25 + c * 0.45 for a, b, c in zip(squeal, harm, rubber)]
-    return shape(x, [(0, 0), (0.04, 1), (0.6, 0.8), (0.85, 0)]), 0.75
+    """A shoe or tyre skidding: mostly a scuff, with a short squeak that slides down (no wobble)."""
+    n = n_of(0.75)
+    scuff = filt(noise(n), "bp", 900, 0.7)
+    rub = filt(noise(n), "lp", 450, 0.8)
+    scuff = shape(scuff, [(0, 0), (0.03, 1), (0.25, 0.8), (0.75, 0)])
+    rub = shape(rub, [(0, 0), (0.04, 1), (0.5, 0.6), (0.75, 0)])
+    squeak = sine(lambda i: 1700 - 650 * min(1, i / (0.32 * SR)) ** 0.8, n)
+    squeak = shape(squeak, [(0, 0), (0.02, 1), (0.12, 0.5), (0.32, 0)])
+    return [a * 0.9 + b * 0.9 + c * 0.22 for a, b, c in zip(scuff, rub, squeak)], 0.75
 
 
 def s_scamper():
+    """Quick scurrying footsteps, left and right: soft thumps, nothing tonal."""
     out = [0.0] * n_of(1.3)
     t = 0.0
     k = 0
-    while t < 1.15:
-        f = 480 if k % 2 == 0 else 620
+    while t < 1.2:
         n = n_of(0.07)
-        blip = decay(sine(lambda i, f=f: f * (1 + 0.3 * math.exp(-i / SR * 60)), n), 0.018)
-        mix_into(out, blip, t, 0.9)
-        t += 0.058
+        cutoff = 900 if k % 2 == 0 else 700
+        shoe = decay(filt(noise(n), "lp", cutoff, 0.9), 0.02)
+        body = decay(sine(lambda i: 150 - 70 * min(1, i / n), n), 0.022)
+        mix_into(out, [a * 1.2 + b * 0.9 for a, b in zip(shoe, body)], t, 1.0 if k % 2 == 0 else 0.78)
+        t += rng.uniform(0.07, 0.088)
         k += 1
-    puff = shape(filt(noise(len(out)), "bp", 1200, 0.6), [(0, 0.1), (1.1, 0.25), (1.3, 0)])
-    return [a + 0.15 * b for a, b in zip(out, puff)], 0.7
+    air = shape(filt(noise(len(out)), "bp", 900, 0.5), [(0, 0.05), (0.2, 0.2), (1.1, 0.2), (1.3, 0)])
+    return [a + 0.2 * b for a, b in zip(out, air)], 0.65
 
 
 def s_whoosh():
@@ -612,6 +626,44 @@ def s_fuse():
     return out, 0.6
 
 
+def s_drag():
+    """Something heavy dragged across a floor: a rough scrape that catches and slips."""
+    dur = 3.4
+    n = n_of(dur)
+    scrape = filt(noise(n), "bp", 650, 0.7)
+    grit = filt(noise(n), "hp", 2600, 0.7)
+    rumble = filt(noise(n), "lp", 160, 0.8)
+    env = [0.0] * n
+    t = 0.0
+    while t < dur:
+        length = rng.uniform(0.12, 0.32)
+        amp = rng.uniform(0.55, 1.0)
+        for i in range(n_of(t), min(n, n_of(t + length))):
+            u = max(0.0, (i / SR - t) / length)
+            env[i] = amp * (0.25 + 0.75 * u ** 1.6)
+        t += length
+    out = [(a * 1.0 + b * 0.35 + c * 1.4) * e for a, b, c, e in zip(scrape, grit, rumble, env)]
+    for k in range(7):
+        thump = decay(sine(lambda i: 85 - 30 * min(1, i / n_of(0.15)), n_of(0.2)), 0.05)
+        mix_into(out, thump, 0.1 + k * 0.5 + rng.uniform(-0.05, 0.05), 0.35)
+    return shape(out, [(0, 0), (0.15, 1), (dur - 0.3, 1), (dur, 0)]), 0.8
+
+
+def s_beep():
+    n = n_of(0.22)
+    return shape(sine(880, n), [(0, 0), (0.01, 1), (0.16, 0.8), (0.22, 0)]), 0.55
+
+
+def s_poof():
+    """A soft puff of smoke: a muffled whump with a breathy tail, not a bang."""
+    n = n_of(0.6)
+    puff = decay(filt(noise(n), "bp", 700, 0.6), 0.12)
+    air = decay(filt(noise(n), "lp", 2200, 0.7), 0.08)
+    thump = decay(sine(lambda i: 75 + 70 * math.exp(-i / SR * 30), n), 0.07)
+    x = [a * 1.0 + b * 0.5 + c * 0.9 for a, b, c in zip(puff, air, thump)]
+    return shape(x, [(0, 0), (0.012, 1), (0.6, 0.6)]), 0.8
+
+
 SOUNDS = {
     "tick": s_tick, "ding": s_ding, "tada": s_tada, "drumroll": s_drumroll,
     "clap": s_clap, "cheer": s_cheer, "boo": s_boo, "aww": s_aww, "gasp": s_gasp, "laugh": s_laugh,
@@ -620,7 +672,7 @@ SOUNDS = {
     "rocket": s_rocket, "rumble": s_rumble, "splat": s_splat, "crash": s_crash, "skid": s_skid,
     "scamper": s_scamper, "whoosh": s_whoosh, "boing": s_boing, "thud": s_thud, "step": s_step,
     "zap": s_zap, "freeze": s_freeze, "sparkle": s_sparkle, "disco": s_disco,
-    "whistle": s_whistle, "boom": s_boom, "crackle": s_crackle, "explosion": s_explosion, "fuse": s_fuse,
+    "poof": s_poof, "drag": s_drag, "beep": s_beep, "whistle": s_whistle, "boom": s_boom, "crackle": s_crackle, "explosion": s_explosion, "fuse": s_fuse,
 }
 
 if __name__ == "__main__":

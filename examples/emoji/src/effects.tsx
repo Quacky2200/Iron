@@ -240,6 +240,14 @@ export class Effects {
     }
   }
 
+  /** Big text in the middle of the screen for a moment ("3", "2", "1", "LIFTOFF!"). */
+  countdown(text: string): void {
+    overlay.set({ ...overlay.get(), countdown: text });
+    this.later(1.1, () => {
+      if (overlay.get().countdown === text) overlay.set({ ...overlay.get(), countdown: null });
+    });
+  }
+
   /** A firework: a rocket climbs to (`x`, `y`) with a whistle and bursts. */
   firework(x: number, y: number, kind?: Rocket["kind"]): void {
     this.host.sfx("whistle", 0.6, rnd(0.9, 1.15));
@@ -306,7 +314,7 @@ export class Effects {
     this.timers = [];
     this.pending = 0;
     this.flash = 0;
-    overlay.set({ rain: false, storm: false, love: false, party: false, flash: 0 });
+    overlay.set({ rain: false, storm: false, love: false, party: false, flash: 0, countdown: null });
     this.rockets = [];
     for (const sh of this.shards) {
       sh.on = false;

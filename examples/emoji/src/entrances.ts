@@ -1,6 +1,6 @@
 // Ways on to the stage. Each is an `Act` over time `t`, ending still at the centre (apart from
 // `rollcrash`, which misses the show).
-import { GATHER, HEIGHT, view } from "./config.ts";
+import { GATHER, GROUND, HEIGHT, view } from "./config.ts";
 import { type Act, clamp01, type Cue, keys, lerp, line, smooth, still } from "./moves.ts";
 
 const walk: Act = {
@@ -88,7 +88,7 @@ const crawl: Act = {
   name: "crawl",
   dur: 8.5,
   weight: 6,
-  cues: [0.3, 1.9, 3.5, 5.1, 6.7].map((t): Cue => [t, (c) => c.sfx("skid", 0.3, 0.55)]),
+  cues: [0.3, 3.6, 6.9].map((t): Cue => [t, (c) => c.sfx("drag", 0.8)]),
   at(t) {
     const m = still();
     const u = clamp01(t / 8.5);
@@ -194,12 +194,17 @@ const roll: Act = {
   },
 };
 
-/** Appears where it stands in a burst of confetti, growing with a springy overshoot. */
+/** Appears in a poof of smoke, growing with a springy overshoot. */
 const pop: Act = {
   name: "pop",
   dur: 1.4,
   weight: 6,
-  cues: [[0, (c) => c.sfx("pop", 0.9)], [0.1, (c) => c.sfx("sparkle", 0.6)]],
+  cues: [[0, (c) => {
+    // It stands at x = 0, and the director hasn't placed it yet on this first frame.
+    c.sfx("poof", 1);
+    c.smoke(0, GROUND + HEIGHT / 2, 34, [0.88, 0.88, 0.9, 0.75], 2.2);
+    c.smoke(0, GROUND + HEIGHT / 2 - 1.2, 18, [0.7, 0.7, 0.74, 0.7], 2.6);
+  }]],
   at(t) {
     const m = still();
     m.x = 0;
@@ -208,9 +213,8 @@ const pop: Act = {
     const s = 1 + (c + 1) * (u - 1) ** 3 + c * (u - 1) ** 2;
     m.sx = s;
     m.sy = s;
-    m.alpha = clamp01(t / 0.12);
+    m.alpha = clamp01(t / 0.08);
     m.rot = 12 * Math.sin(t * 14) * Math.exp(-3 * t);
-    m.puff = t < 0.07;
     return m;
   },
 };
@@ -237,11 +241,11 @@ const fade: Act = {
   name: "fade",
   dur: 2.4,
   weight: 7,
-  cues: [[0, (c) => c.sfx("sparkle", 0.8)]],
+  cues: [[0.15, (c) => c.sfx("sparkle", 0.8)]],
   at(t) {
     const m = still();
     m.x = 0;
-    m.alpha = smooth(t / 1.7);
+    m.alpha = smooth(t / 1.2);
     const k = smooth(t / 2.2);
     m.y = 0.6 * (1 - k);
     m.sx = lerp(0.94, 1, k);

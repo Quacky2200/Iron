@@ -94,6 +94,59 @@ const plunge: Act = {
   },
 };
 
+/**
+ * The rocket's own launch: the flame goes out and it turns upright, a countdown from 3, then
+ * ignition with the NASA "liftoff" call, the flame roaring back, and up it goes.
+ */
+const launch: Act = {
+  name: "launch",
+  dur: 7.6,
+  weight: 0,
+  cues: [
+    [1.6, (c) => {
+      c.sfx("rumble", 0.7);
+      c.shake(0.03, 3.2);
+    }],
+    [1.8, (c) => {
+      c.sfx("beep", 0.8);
+      c.scene.countdown("3");
+    }],
+    [2.8, (c) => {
+      c.sfx("beep", 0.8);
+      c.scene.countdown("2");
+    }],
+    [3.8, (c) => {
+      c.sfx("beep", 0.8);
+      c.scene.countdown("1");
+    }],
+    [4.8, (c) => {
+      c.sfx("beep", 0.9, 1.6);
+      c.sfx("liftoff", 1);
+      c.sfx("rocket", 0.5);
+      c.scene.countdown("LIFTOFF!");
+      c.shake(0.14, 3);
+    }],
+  ],
+  at(t) {
+    const m = still();
+    m.x = 0;
+    const turn = smooth((t - 0.3) / 1.1);
+    const pre = clamp01((t - 1.6) / 3.2);
+    m.rot = (0.3 + 1.4 * pre) * Math.sin(t * 120) * (t < 4.8 ? 1 : 0.4);
+    if (t < 4.8) {
+      m.rocket = { turn, flame: 0, power: 0, stars: 1 - smooth((t - 0.3) / 1) };
+      return m;
+    }
+    const tau = t - 4.8;
+    m.rocket = { turn: 1, flame: smooth(tau / 0.25), power: 1, stars: 0 };
+    const go = Math.max(0, tau - 0.4);
+    m.y = 5.5 * go * go;
+    m.sy = 1 + 0.06 * clamp01(go * 2);
+    m.ground = tau < 1.6 ? 90 : 0;
+    return m;
+  },
+};
+
 /** Fades away where it stands, drifting up. */
 const fadeout: Act = {
   name: "fadeout",
@@ -226,4 +279,4 @@ const explode: Act = {
 };
 
 const back = ["walk", "hop", "rush", "crawl", "peek", "drop", "roll", "pop", "rise", "fade"];
-export const EXITS: Act[] = [...ENTRANCES.filter((a) => back.includes(a.name)).map(rewind), walkaway, blastoff, plunge, fadeout, zoom, rolloff, fireworks, explode];
+export const EXITS: Act[] = [...ENTRANCES.filter((a) => back.includes(a.name)).map(rewind), walkaway, blastoff, plunge, fadeout, zoom, rolloff, fireworks, explode, launch];

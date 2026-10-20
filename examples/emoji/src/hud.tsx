@@ -4,7 +4,7 @@
 import { addStyleSheet } from "@iron/engine";
 import { Image } from "@iron/react";
 import { useEffect, useState } from "react";
-import { PANEL } from "./config.ts";
+import { BIG, PANEL } from "./config.ts";
 
 function store<T>(init: T) {
   let value = init;
@@ -28,10 +28,10 @@ function store<T>(init: T) {
   };
 }
 
-export const shown = store<{ code: string; look: "eyes" | "googly" | null; mirror: boolean }>({ code: "1f600", look: null, mirror: false });
+export const shown = store<{ code: string; look: "eyes" | "googly" | null; mirror: boolean; big: boolean }>({ code: "1f600", look: null, mirror: false, big: false });
 export const caption = store<string | null>(null);
 /** Whole-stage overlays drawn over the emoji: rain, storm clouds, a white flash (lightning), the room blushing red, a party. */
-export const overlay = store({ rain: false, storm: false, love: false, party: false, flash: 0 });
+export const overlay = store<{ rain: boolean; storm: boolean; love: boolean; party: boolean; flash: number; countdown: string | null }>({ rain: false, storm: false, love: false, party: false, flash: 0, countdown: null });
 /** Tomato splats on the emoji, in the panel's pixels. */
 export interface Splat {
   x: number;
@@ -40,6 +40,8 @@ export interface Splat {
   rot: number;
 }
 export const splats = store<Splat[]>([]);
+/** The rocket emoji is drawn in two pieces so it can turn upright and its flame can go out, flicker and roar. */
+export const rocket = store({ turn: 0, flame: 0, power: 0, stars: 1 });
 /** Pupil offsets (-1..1 of how far they can move) and how shut the eyelids are (0..1). */
 export const eyes = store({ px: 0, py: 0, blink: 0 });
 
@@ -72,6 +74,10 @@ addStyleSheet(`
 }
 .drape-l { box-shadow: inset -26px 0 34px rgba(0,0,0,0.5); }
 .drape-r { box-shadow: inset 26px 0 34px rgba(0,0,0,0.5); }
+.flame { transform-origin: 30% 70%; animation: flicker 0.16s ease-in-out infinite alternate; }
+@keyframes flicker { from { transform: scale(0.94) rotate(-3deg); } to { transform: scale(1.1) rotate(3deg); } }
+.flame-big { transform-origin: 30% 70%; animation: roar 0.11s ease-in-out infinite alternate; }
+@keyframes roar { from { transform: scale(1.3) rotate(-6deg); } to { transform: scale(1.8) rotate(6deg); } }
 .drop { position: absolute; top: -140px; background-image: linear-gradient(180deg, rgba(190,210,255,0), rgba(225,236,255,0.9)); }
 @keyframes fall { from { transform: translateY(0px); } to { transform: translateY(940px); } }
 .storm-dark { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-image: linear-gradient(180deg, rgba(4,6,18,0.85) 0%, rgba(6,8,24,0.55) 45%, rgba(6,8,24,0.5) 100%); animation: fadein 1.2s ease-out both; }
@@ -111,10 +117,14 @@ addStyleSheet(`
 export const Face = () => {
   const s = shown.use();
   const marks = splats.use();
+  const side = s.big ? BIG : PANEL;
   return (
-    <box style={{ width: PANEL, height: PANEL }}>
+    <box style={{ width: side, height: side, alignItems: "center", justifyContent: "center" }}>
+     <box style={{ width: PANEL, height: PANEL }}>
       {s.look ? (
         <Eyed head={s.look === "googly"} />
+      ) : s.code === "1f680" ? (
+        <RocketArt />
       ) : (
         <Image src={`assets/emoji/${s.code}.svg`} style={{ width: PANEL, height: PANEL, transform: s.mirror ? "scaleX(-1)" : "none" }} />
       )}
@@ -133,9 +143,23 @@ export const Face = () => {
           }}
         />
       ))}
+     </box>
     </box>
   );
 };
+
+function RocketArt() {
+  const r = rocket.use();
+  const art = { position: "absolute" as const, left: 0, top: 0, width: PANEL, height: PANEL };
+  return (
+    <box style={{ width: PANEL, height: PANEL, transform: `translate(0px, ${-40 * r.turn}px) rotate(${-45 * r.turn}deg) scale(${1 - 0.1 * r.turn})` }}>
+      {/* The flame is behind the rocket, as in the original: the fins cover its root. */}
+      {r.flame > 0.01 && <Image src="assets/emoji/1f680-flame.svg" className={r.power > 0.5 ? "flame-big" : "flame"} style={{ ...art, opacity: r.flame }} />}
+      <Image src="assets/emoji/1f680-body.svg" style={art} />
+      {r.stars > 0.01 && <Image src="assets/emoji/1f680-stars.svg" style={{ ...art, opacity: r.stars }} />}
+    </box>
+  );
+}
 
 /** A fragment of the exploding emoji: the same picture, small. */
 export function Shard() {
@@ -353,6 +377,13 @@ export function Hud() {
       {ov.rain && <Rain />}
       {ov.love && <Love />}
       {ov.party && <Party />}
+      {ov.countdown && (
+        <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <text key={ov.countdown} className="caption" style={{ fontSize: ov.countdown.length > 1 ? 150 : 260, fontWeight: 900, color: "#fff7e0", letterSpacing: 6, textShadow: "0 6px 30px rgba(0,0,0,0.9)" }}>
+            {ov.countdown}
+          </text>
+        </box>
+      )}
       {ov.flash > 0.01 && <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, backgroundColor: "#ffffff", opacity: ov.flash }} />}
       <text style={{ position: "absolute", left: 28, top: 22, fontSize: 18, fontWeight: 800, color: "#e0b04a", letterSpacing: 7, textTransform: "uppercase", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
         ★ Emoji celebrity

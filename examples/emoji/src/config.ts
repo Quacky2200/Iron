@@ -6,6 +6,8 @@ export const GROUND = -3.7;
 export const HEIGHT = 5.2;
 /** The emoji panel's size in UI pixels. */
 export const PANEL = 480;
+/** The rocket's panel is bigger, so it has room to turn upright and for its flame (the picture is clipped to its panel). */
+export const BIG = 768;
 /** Where the spotlight lands. */
 export const LIGHT = { x: 0, y: 0.2 };
 /** Half the width the camera sees (it's 5 units tall), kept up to date by the director. */

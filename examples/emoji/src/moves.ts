@@ -40,6 +40,8 @@ export interface Move {
   thump: number;
   /** True for a moment as it appears in a burst of confetti. */
   puff: boolean;
+  /** The rocket's own animation: how far it has turned upright (0..1), its flame (0..1), how hard it burns (0..1) and its sparkles (0..1). */
+  rocket?: { turn: number; flame: number; power: number; stars: number };
   /** Dust per second kicked up at the floor under it. */
   ground?: number;
   fx?: { kind: "sparks" | "dust" | "streaks" | "fire"; rate: number };
@@ -53,7 +55,7 @@ export interface Ctx {
   shake(amount: number, seconds: number): void;
   /** Confetti shot out of a point. */
   burst(x: number, y: number, count: number): void;
-  smoke(x: number, y: number, count: number, color: [number, number, number, number]): void;
+  smoke(x: number, y: number, count: number, color: [number, number, number, number], size?: number): void;
   /** A knock: the emoji jolts and settles. */
   jolt(amount: number): void;
   /** Where the emoji is: x, and y at its middle. */

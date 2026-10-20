@@ -13,6 +13,10 @@ export interface Special {
   pose?: PoseName;
   scene?: Scene;
   react?: Reaction;
+  /** No random weather on top. */
+  calm?: boolean;
+  /** Extra seconds the pose carries on (it repeats). */
+  extra?: number;
   /** Seconds into the pose that the crowd reacts (0.5 by default). */
   reactAt?: number;
 }
@@ -26,15 +30,15 @@ export const SPECIAL: Record<string, Special> = {
   "1f618": love,
   "1f4a9": { pose: "fart", react: "boo", reactAt: 3 },
   "1f389": { enter: "pop", exit: "fireworks", pose: "party", react: "cheer", reactAt: 1.6 },
-  "1f973": { scene: "lights", exit: "fireworks", pose: "pump", react: "cheer" },
-  "1f984": { scene: "lights", exit: "fireworks", pose: "spin", react: "cheer" },
-  "1f60e": { scene: "ball", pose: "bow", react: "cheer" },
-  "1f929": { scene: "ball", pose: "pump", react: "cheer" },
+  "1f973": { scene: "lights", exit: "fireworks", pose: "pump", react: "cheer", extra: 5 },
+  "1f984": { scene: "lights", exit: "fireworks", pose: "spin", react: "cheer", extra: 5 },
+  "1f60e": { scene: "ball", pose: "bow", react: "cheer", extra: 5 },
+  "1f929": { scene: "ball", pose: "pump", react: "cheer", extra: 5 },
   "26a1": { pose: "zap", scene: "storm", react: "gasp", reactAt: 1.1 },
   "1f622": { scene: "rain", pose: "sway", react: "aww" },
   "1f62d": { scene: "storm", pose: "shake", react: "aww" },
   "1f976": { exit: "plunge", pose: "shake", react: "aww" },
-  "1f680": { exit: "blastoff", pose: "float", react: "cheer" },
+  "1f680": { exit: "launch", pose: "float", react: "cheer", calm: true },
   "1f480": { scene: "storm", react: "gasp" },
   "1f47b": { scene: "storm", react: "gasp" },
   "1f921": { react: "laugh" },

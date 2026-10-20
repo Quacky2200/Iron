@@ -10,23 +10,31 @@ export const NAMES = [
   "scamper", "whoosh", "boing", "thud", "step",
   "zap", "freeze", "sparkle", "disco",
   "whistle", "boom", "crackle", "explosion", "fuse",
+  "drag", "beep", "liftoff", "poof",
 ] as const;
 
 export type Sfx = (typeof NAMES)[number];
 
 const MASTER = 0.8;
+/** Files that aren't WAVs. */
+const FILE: Partial<Record<Sfx, string>> = { liftoff: "mp3" };
+/** Sounds that are cut off this many seconds in (the NASA clip goes on to a second announcement). */
+const CUT: Partial<Record<Sfx, number>> = { liftoff: 6 };
 const sounds = new Map<Sfx, Sound>();
 const loops = new Map<Sfx, Playback>();
 
 export const sfx = {
   /** Loads every sound up front, so the first play doesn't stutter. */
   preload(): void {
-    for (const n of NAMES) if (!sounds.has(n)) sounds.set(n, audio.load(`assets/sfx/${n}.wav`));
+    for (const n of NAMES) if (!sounds.has(n)) sounds.set(n, audio.load(`assets/sfx/${n}.${FILE[n] ?? "wav"}`));
   },
 
   play(name: Sfx, volume = 1, rate = 1): Playback {
     sfx.preload();
-    return sounds.get(name)!.play({ volume: volume * MASTER, rate });
+    const playback = sounds.get(name)!.play({ volume: volume * MASTER, rate });
+    const cut = CUT[name];
+    if (cut !== undefined) setTimeout(() => playback.stop(0.5), (cut * 1000) / rate);
+    return playback;
   },
 
   /** Plays on repeat until `stop`. */
