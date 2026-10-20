@@ -23,7 +23,7 @@ struct State {
     screen: Option<(u32, u32, u64)>,
     display: Option<String>,
     cursor_version: Option<u64>,
-    configured: bool,
+    root: Option<std::path::PathBuf>,
 }
 
 thread_local! {
@@ -36,6 +36,30 @@ fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 fn num(n: f64) -> Value {
     Value::Number(n)
+}
+
+/// The game's quality levels (`package.json`), the player's choice and the layer names: before
+/// the program runs, because its top level reads them. Again after a reload.
+pub fn configure_engine(root: &std::path::Path) {
+    st(|s| s.root = Some(root.to_path_buf()));
+    let manifest = info::Manifest::load(root);
+    iron_engine_api::screen::configure_quality(&manifest.quality);
+    iron_engine_api::screen::apply_default_quality();
+    // `iron.layers`: names of the layers above the built-in ones.
+    if let Some(layers) = manifest.layers.as_object() {
+        iron_engine_api::layers::set_game_layers(
+            layers
+                .iter()
+                .filter_map(|(k, v)| Some((k.parse().ok()?, v.as_str()?.to_string()))),
+        );
+    }
+}
+
+/// Configures again after a reload reset the engine's state (before the new program runs).
+pub fn reconfigure() {
+    if let Some(root) = st(|s| s.root.clone()) {
+        configure_engine(&root);
+    }
 }
 
 /// Particle counts the world renderer reports (`[id, count, alive, ...]`): `onStopped` runs and
@@ -57,7 +81,6 @@ pub fn report_particles(changed: &[f64], scene: &mut iron_scene::Scene) {
 impl App {
     /// Called before drawing each frame of a compiled game.
     pub(super) fn sync_native_render(&mut self) {
-        self.configure_quality_once();
         {
             // `CameraFollow` and `CameraOrbit` move their cameras after every `onLateUpdate`.
             let _scope = iron_scene::api::enter(&mut self.scene.scene);
@@ -90,16 +113,6 @@ impl App {
         self.cloth = cloth_sync::ClothSystem::default();
         self.world_view = world_view::WorldViews::default();
         (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
-    }
-
-    /// The game's quality levels (`package.json`) and the player's choice, once.
-    fn configure_quality_once(&mut self) {
-        if st(|s| std::mem::replace(&mut s.configured, true)) {
-            return;
-        }
-        let manifest = info::Manifest::load(&self.asset_root);
-        iron_engine_api::screen::configure_quality(&manifest.quality);
-        iron_engine_api::screen::apply_default_quality();
     }
 
     /// `addStyleSheet`, `removeStyleSheet` and `loadFont` from the game, on the screen and every

@@ -252,7 +252,10 @@ fn run() -> Result<()> {
     let game_css = load_game_css(&mut ui, &asset_root, &css_path);
     let game_css_source = game_css_source(&asset_root, &css_path);
     let native = match native_bundle {
-        Some(bundle) => Some(native::Native::load(bundle, &mut scene.scene, &mut ui)?),
+        Some(bundle) => {
+            native_render::configure_engine(&asset_root);
+            Some(native::Native::load(bundle, &mut scene.scene, &mut ui)?)
+        }
         None => None,
     };
 
