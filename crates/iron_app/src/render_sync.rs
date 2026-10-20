@@ -238,8 +238,8 @@ fn resources(views: &mut WorldViews, root: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::native::{Bundle, Native};
+    use super::*;
     use iron_ui::UiTree;
 
     // M9-API-620
