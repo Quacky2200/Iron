@@ -19,7 +19,7 @@ the app builds a flat `WorldView` per camera.
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
-  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines, strokes, fills, shapes }`.
+  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, fog, target_texture, grid, lines, strokes, fills, shapes }`.
   The viewport is normalized, from the top-left of the target. `target_texture` names a render texture
   to draw into instead of the screen (see Render textures). `grid` and `lines` are the editor's ground grid
   and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines and `fills` their filled shapes, and `shapes` the per-shape ranges of both (see Thick 2D lines).
@@ -358,6 +358,27 @@ has it, `FxaaPass` runs over the finished, tonemapped image: it finds edges by g
 and blends along them. It is cheaper than MSAA and smooths texture and shading edges too, a little
 blurrier. Its textures are cached per size.
 
+## Fog
+
+`RenderSettings.fog` (off by default) with `fogMode` (`"linear"`, `"exponential"`, `"exponentialSquared"`),
+`fogColor` (linear), `fogDensity` (per metre, for the exponential modes) and `fogStartDistance` /
+`fogEndDistance` (linear) send `render.fog`; the defaults are Unity's and the settings are saved with the
+scene. The app keeps one `Fog { mode, color, density, start, end }` and gives it to every `WorldView`
+whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default; off for a minimap).
+
+- **Shader.** `GpuGlobals` has `fog` (rgb colour, w mode: 0 none, 1 linear, 2 exponential, 3 squared),
+  `fog_params` (density, start, end) and `view_dir` (the camera's forward axis, w = 1 if orthographic).
+  `fog_amount(p)` is the share of fog between the camera and the world position `p`; `fogged(c, p)`
+  applies it to a premultiplied colour, so what a pixel covers turns to fog colour and light it only adds
+  (alpha 0: glows, beams) fades out. `fs_mesh`, `fs_quad`, `fs_shape` and `fs_stroke` call it, so sprites,
+  particles, panels, text and 2D shapes fog like meshes.
+- **Distance.** Perspective cameras measure straight to the point, so turning the camera doesn't move
+  the fog. Orthographic cameras use depth along the view, so a 2D scene fogs by layer.
+- **Left clear.** The background fill (colour or skybox), the editor grid and gizmo lines. Match the
+  camera's background colour to `fogColor` for a seamless horizon.
+
+`examples/fishtank` uses linear fog for its depth haze.
+
 ## Render textures
 
 A `RenderTexture(width, height)` ([textures.ts](../js/engine/src/textures.ts)) is a `Texture` that
@@ -419,6 +440,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end`, or `0 null` for clear air |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
@@ -712,6 +734,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).

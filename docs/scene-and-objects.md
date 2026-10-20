@@ -285,7 +285,7 @@ rest are tagged:
 | A `Mesh` from `Mesh.create`, a `Texture` loaded from a file | once in `assets`, used as `{ "$asset": "mesh1" }`, so users share one copy |
 
 Also saved: the active scene's `RenderSettings` (ambient light and mode, reflection intensity, skybox,
-bloom), applied when that scene becomes active.
+bloom, fog), applied when that scene becomes active.
 
 **Load order.** `loadObjects` runs in three passes, like Unity: (1) build every object and add every
 component *asleep* (`_addComponentAsleep`, no `onAwake`); (2) set every property, resolving
