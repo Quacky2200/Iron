@@ -60,6 +60,16 @@ impl<'a> Lowerer<'a> {
                 b.out.push(5);
                 self.json_desc(b, inner)?;
             }
+            Ty::Obj(sid)
+                if self.m.structs[*sid].fields.iter().all(|f| f.ty == Ty::Num)
+                    && self.value_structs.values().any(|v| v == sid) =>
+            {
+                // An engine value class stringifies as its numbers, `[x,y,z]`.
+                b.out.push(8);
+                b.out.push(self.m.structs[*sid].fields.len() as u8);
+                b.headers.push(b.out.len());
+                b.out.extend_from_slice(&(*sid as u64 + 1).to_le_bytes());
+            }
             Ty::Obj(sid) => {
                 // The class and every class that extends it: an object may be a subclass.
                 let mut family: Vec<StructId> = vec![*sid];

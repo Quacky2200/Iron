@@ -11,6 +11,7 @@
 //!        | 5 nullable: desc
 //!        | 6 object: n u32, (struct header u64, body offset u32)*   (the class and its subclasses)
 //!        | 7 map or set                                      (stringifies as {}; cannot be parsed)
+//!        | 8 value class: count u8, struct header u64        (an array of its numbers: [x,y,z])
 //! body  := n u32, field*                                     (offset is from the blob start)
 //! field := slot u32, omit-if-null u8, name len u32, name, desc
 //! blob  := total length u32, root desc offset u32, ...      (so a blob is passed as one pointer)
@@ -32,6 +33,7 @@ const D_LIT: u8 = 3;
 const D_ARR: u8 = 4;
 const D_NULLABLE: u8 = 5;
 const D_OBJ: u8 = 6;
+const D_VALUE: u8 = 8;
 
 /// The whole blob behind a pointer to it (its first word is its length).
 ///
@@ -67,6 +69,7 @@ fn desc_len(b: &[u8], o: usize) -> usize {
         D_ARR => 2 + desc_len(b, o + 2),
         D_NULLABLE => 1 + desc_len(b, o + 1),
         D_OBJ => 5 + 12 * u32_at(b, o + 1) as usize,
+        D_VALUE => 10,
         _ => 1,
     }
 }
@@ -216,6 +219,28 @@ impl<'a> Out<'a> {
                 } else {
                     self.value(d + 1, bits);
                 }
+            }
+            D_VALUE => {
+                // A value class (`Vector3`, `Color`, ...) is its numbers, compact: `[1,2,3]`.
+                if bits == 0 {
+                    self.s.extend_from_slice(b"null");
+                    return;
+                }
+                self.s.push(b'[');
+                for i in 0..b[d + 1] as usize {
+                    if i > 0 {
+                        self.s.push(b',');
+                    }
+                    // SAFETY: a value object has `count` number slots after its header.
+                    let x = f64::from_bits(unsafe { *((bits as *const u64).add(1 + i)) });
+                    if x.is_finite() {
+                        self.s
+                            .extend_from_slice(super::number_to_string(x).as_bytes());
+                    } else {
+                        self.s.extend_from_slice(b"null");
+                    }
+                }
+                self.s.push(b']');
             }
             D_OBJ => {
                 if bits == 0 {
@@ -616,6 +641,19 @@ impl Parser<'_, '_> {
         }
     }
 
+    /// A number value (inside a value class's array).
+    fn value_num(&mut self) -> Result<f64, PErr> {
+        self.ws();
+        match self.peek() {
+            Some(b'-' | b'0'..=b'9') => self.number(),
+            Some(b'"' | b'{' | b'[' | b't' | b'f' | b'n') => {
+                self.skip()?;
+                self.soft(type_err("expected a number")).map(|_| 0.0)
+            }
+            _ => Err(self.bad_start()),
+        }
+    }
+
     fn value(&mut self, d: usize) -> Result<u64, PErr> {
         self.ws();
         let b = self.b;
@@ -721,6 +759,46 @@ impl Parser<'_, '_> {
                     unsafe { super::ts_rt_arr_push(a, v) };
                 }
                 Ok(a as u64)
+            }
+            D_VALUE => {
+                if self.peek() != Some(b'[') {
+                    return match self.peek() {
+                        Some(b'{' | b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9') => {
+                            self.skip()?;
+                            self.soft(type_err("expected an array of numbers"))
+                        }
+                        _ => Err(self.bad_start()),
+                    };
+                }
+                self.p += 1;
+                let count = b[d + 1] as usize;
+                let mut nums: Vec<f64> = Vec::new();
+                self.ws();
+                if self.peek() == Some(b']') {
+                    self.p += 1;
+                } else {
+                    loop {
+                        nums.push(self.value_num()?);
+                        self.ws();
+                        match self.peek() {
+                            Some(b',') => self.p += 1,
+                            Some(b']') => {
+                                self.p += 1;
+                                break;
+                            }
+                            _ => return Err(syntax("Expected ']'")),
+                        }
+                    }
+                }
+                if nums.len() != count {
+                    return self.soft(type_err("the array has the wrong number of values"));
+                }
+                let o = new_obj(self.h, u64_at(b, d + 2), 8 + 8 * count);
+                for (i, x) in nums.iter().enumerate() {
+                    // SAFETY: just made, with `count` slots.
+                    unsafe { *((o as *mut f64).add(1 + i)) = *x };
+                }
+                Ok(o as u64)
             }
             D_OBJ => {
                 if self.peek() != Some(b'{') {

@@ -387,14 +387,24 @@ fn engine_objects_stringify_as_empty_objects() {
 
 // M9-TS-723
 //
-// Value classes stringify as plain objects of their fields, as the TypeScript classes do
-// (`{"x":1,"y":2,"z":3}`, `{"r":..,"g":..,"b":..,"a":..}`).
+// Value classes stringify compactly as their numbers (`[1,2,3]`, `[r,g,b,a]`): a difference to
+// the TypeScript classes, which give an object of fields.
 #[test]
 fn value_classes_stringify_as_their_fields() {
     in_every_gc_mode(|_| unsafe {
         assert_eq!(
             text(ts_scf_jsonOfVector(1.0, 2.0, 3.0)),
-            r#"{"v":{"x":1,"y":2,"z":3},"c":{"r":0.5,"g":0.25,"b":1,"a":1},"q":{"x":0,"y":0,"z":0,"w":1}}"#
+            r#"{"v":[1,2,3],"c":[0.5,0.25,1,1],"q":[0,0,0,1]}"#
         );
+    });
+}
+
+// M9-TS-724
+//
+// `JSON.parse` of a compact value class text builds the value.
+#[test]
+fn value_classes_parse_from_their_numbers() {
+    in_every_gc_mode(|_| unsafe {
+        assert_eq!(ts_scf_parseVector(s("[1,2,3]")), 321.0);
     });
 }
