@@ -428,7 +428,7 @@ pub fn late_update_camera_orbits(dt: f64) {
             _ => d.center,
         };
         let rotation = Q::euler(-pitch, yaw, 0.0);
-        let back = V3 { x: 0.0, y: 0.0, z: -1.0 };
+        let back = V3 { x: 0.0, y: 0.0, z: 1.0 };
         scene::set_position(d.object, center.add(rotation.rotate(back).scale(d.distance)));
         iron_scene::api::TransformRef(d.object).look_at(center);
     }

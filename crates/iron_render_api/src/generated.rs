@@ -2988,7 +2988,7 @@ pub fn late_update_camera_orbits(dt: f64) {
         let back = V3 {
             x: 0.0,
             y: 0.0,
-            z: -1.0,
+            z: 1.0,
         };
         scene::set_position(
             d.object,

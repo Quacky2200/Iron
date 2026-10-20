@@ -156,10 +156,10 @@ fn camera_follow_and_orbit_move_their_objects_when_the_host_runs_them() {
         // Smooth time 0: it sits at the target plus the offset.
         let f = pos("Follower");
         assert_eq!((f.x, f.y, f.z), (10.0, 2.0, 5.0));
-        // yaw 90 + 90 degrees a second for one second = 180: behind the centre at +z.
+        // yaw 90 + 90 degrees a second for one second = 180: behind the centre at -z (`Vector3.back` is +z: yaw 0 sits at +z).
         let o = pos("Orbiter");
         assert!(
-            (o.x).abs() < 1e-4 && (o.z - 4.0).abs() < 1e-4 && o.y.abs() < 1e-4,
+            (o.x).abs() < 1e-4 && (o.z + 4.0).abs() < 1e-4 && o.y.abs() < 1e-4,
             "{o:?}"
         );
     });

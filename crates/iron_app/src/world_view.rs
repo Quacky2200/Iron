@@ -729,6 +729,32 @@ impl WorldViews {
         self.skins.clear();
     }
 
+    /// Drops planes, sprites, 2D lines and mirrors whose ids a compiled game no longer has.
+    pub fn keep_components(
+        &mut self,
+        planes: &std::collections::HashSet<u32>,
+        sprites: &std::collections::HashSet<u32>,
+        strokes: &std::collections::HashSet<u32>,
+        mirrors: &std::collections::HashSet<u32>,
+    ) {
+        self.planes.retain(|id, _| planes.contains(id));
+        self.sprites.retain(|id, _| sprites.contains(id));
+        self.strokes.retain(|id, _| strokes.contains(id));
+        self.mirrors.retain(|id, _| mirrors.contains(id));
+    }
+
+    /// Drops probes, LOD groups and particle systems a compiled game no longer has.
+    pub fn keep_more(
+        &mut self,
+        probes: &std::collections::HashSet<u32>,
+        lods: &std::collections::HashSet<u32>,
+        particles: &std::collections::HashSet<u32>,
+    ) {
+        self.probes.retain(|id, _| probes.contains(id));
+        self.lod_groups.retain(|id, _| lods.contains(id));
+        self.particles.retain(|id, _| particles.contains(id));
+    }
+
     /// Runs one `render.*` op.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         let num = |i: usize| -> Result<f32, String> {

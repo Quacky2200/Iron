@@ -23,6 +23,7 @@ mod lifecycle;
 mod logging;
 pub(crate) mod models;
 mod native;
+mod native_render;
 mod panels;
 pub(crate) mod particles;
 mod physics_sync;
@@ -291,6 +292,7 @@ fn run() -> Result<()> {
         components,
         native,
         native_events: Vec::new(),
+        native_panel_events: Vec::new(),
         scene,
         scene_events,
         world_view: world_view::WorldViews::default(),
@@ -469,6 +471,8 @@ struct App {
     native: Option<native::Native>,
     /// UI events a native game has yet to receive.
     native_events: Vec<UiEvent>,
+    /// UI events of world panels a native game has yet to receive.
+    native_panel_events: Vec<(u32, UiEvent)>,
     ui: UiTree,
     asset_root: PathBuf,
     gfx: Option<Gfx>,
@@ -666,6 +670,7 @@ impl App {
         let result = n.reload(bundle, &mut self.scene.scene, &mut self.ui);
         // The scene was replaced: the renderer's script ids pointed into the old one.
         self.scene.clear_ids();
+        self.reset_native_render();
         match result {
             Ok(()) => tracing::info!(
                 "reloaded {} in {:.1} ms",
@@ -807,6 +812,9 @@ impl App {
         self.apply_script_output();
         let dt = self.components.frame_dt() as f32;
         let changed = self.world_view.update_particles(dt, &self.scene);
+        if self.native.is_some() {
+            native_render::report_particles(&changed, &mut self.scene.scene);
+        }
         // `__iron_particles([id, count, alive, ...])` for systems that changed.
         if !changed.is_empty()
             && let Err(e) = self.scripts.call_global(
@@ -1333,9 +1341,10 @@ impl App {
                 let Some(p) = self.panels.map.get_mut(&id) else {
                     return;
                 };
+                let panel_events = &mut self.native_panel_events;
                 p.interaction.handle(&mut p.tree, input, &mut |event| {
                     if native {
-                        native_events.push(event.clone());
+                        panel_events.push((id, event.clone()));
                         return false;
                     }
                     dispatch(scripts, ui_events, event)
@@ -1363,6 +1372,7 @@ impl App {
 
     /// Hands the UI events collected while handling input to the compiled game.
     fn deliver_native_events(&mut self) {
+        self.deliver_panel_events();
         if self.native_events.is_empty() {
             return;
         }
@@ -2041,7 +2051,7 @@ impl PlatformApp for App {
         if !self.lifecycle.paused() {
             if let Some(n) = self.native.as_mut() {
                 n.pre_render(&mut self.scene.scene, &mut self.ui);
-                render_sync::sync(&mut self.world_view, &mut self.scene, &self.asset_root);
+                self.sync_native_render();
             }
             let scene = &self.scene;
             self.components

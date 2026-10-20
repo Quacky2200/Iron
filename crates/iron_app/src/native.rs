@@ -139,6 +139,9 @@ pub struct Native {
     generation: u32,
     /// Components whose hook list changed in a reload: they start over, the others keep state.
     remount: Option<Vec<u32>>,
+    /// `createRoot(panel).render(..)` calls: the panel's handle and its root element, for the
+    /// app (each panel has its own tree and runtime).
+    panel_mounts: Vec<(u64, iron_ui_native::Element)>,
     #[allow(dead_code)]
     pub bundle: Bundle,
 }
@@ -176,6 +179,7 @@ impl Native {
             screen_root,
             generation,
             remount: None,
+            panel_mounts: Vec::new(),
             bundle,
         };
         n.spawn_starting_components(scene);
@@ -241,8 +245,13 @@ impl Native {
         log_faults(self.host.settle());
     }
 
+    /// The world panel roots the program mounted since the last call.
+    pub fn take_panel_mounts(&mut self) -> Vec<(u64, iron_ui_native::Element)> {
+        std::mem::take(&mut self.panel_mounts)
+    }
+
     /// What follows any call into the program: mounts, queued component work, microtasks.
-    fn after_script(&mut self, scene: &mut Scene, ui: &mut UiTree) {
+    pub fn after_script(&mut self, scene: &mut Scene, ui: &mut UiTree) {
         let _scope = iron_scene::api::enter(scene);
         ts_rt_microtasks_run();
         log_faults(self.host.settle());
@@ -260,7 +269,7 @@ impl Native {
                     tracing::warn!(target: "ui", "{e}");
                 }
             } else {
-                tracing::warn!(target: "ui", "world panels are not wired to compiled games yet");
+                self.panel_mounts.push((target, element));
             }
         }
         for e in self.rt.flush(ui) {
@@ -307,22 +316,9 @@ impl Native {
     /// UI events the interaction layer produced, delivered to the handlers.
     pub fn ui_events(&mut self, scene: &mut Scene, ui: &mut UiTree, events: &[UiEvent]) {
         for e in events {
-            let Some(&target) = e.path.first() else {
+            let Some(mut ev) = to_event(e) else {
                 continue;
             };
-            let mut ev = Event::new(e.kind.name(), target);
-            ev.bubbles = !matches!(e.kind, EventKind::PointerEnter | EventKind::PointerLeave);
-            ev.data = e.script_args().get(2).map_or_else(Vec::new, |v| match v {
-                iron_core::Value::Array(a) => {
-                    a.iter().filter_map(iron_core::Value::as_f64).collect()
-                }
-                _ => Vec::new(),
-            });
-            if matches!(e.kind, EventKind::KeyDown | EventKind::KeyUp) {
-                ev.strings = vec![e.key.clone(), e.code.clone()];
-            } else if let Some(v) = &e.value {
-                ev.strings = vec![v.clone()];
-            }
             {
                 let _scope = iron_scene::api::enter(scene);
                 self.rt.dispatch(&mut ev, ui);
@@ -437,6 +433,23 @@ impl Native {
         self.remount = None;
         Ok(())
     }
+}
+
+/// A UI event of the interaction layer as the native reconciler's event.
+pub fn to_event(e: &UiEvent) -> Option<Event> {
+    let &target = e.path.first()?;
+    let mut ev = Event::new(e.kind.name(), target);
+    ev.bubbles = !matches!(e.kind, EventKind::PointerEnter | EventKind::PointerLeave);
+    ev.data = e.script_args().get(2).map_or_else(Vec::new, |v| match v {
+        iron_core::Value::Array(a) => a.iter().filter_map(iron_core::Value::as_f64).collect(),
+        _ => Vec::new(),
+    });
+    if matches!(e.kind, EventKind::KeyDown | EventKind::KeyUp) {
+        ev.strings = vec![e.key.clone(), e.code.clone()];
+    } else if let Some(v) = &e.value {
+        ev.strings = vec![v.clone()];
+    }
+    Some(ev)
 }
 
 /// The program's `__uiSignatures()` text (`Name:ID:hook,hook;...`), empty when it has no UI.

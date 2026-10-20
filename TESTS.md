@@ -1273,3 +1273,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-616 | Integration | A reload that does not compile keeps the old game running. |
 | M9-API-617 | Unit | The `dist/.iron-reload` note of a failed build gives its error. |
 | M9-API-620 | Integration | A compiled game's camera, light and cube reach the renderer's views through `render_sync` (no GPU). |
+| M9-API-700 | Integration | `render_sync` turns planes, `RenderSettings` (skybox, bloom, tonemapping) and quality into the renderer's views, and a second sync leaves them as they were (no GPU). |
