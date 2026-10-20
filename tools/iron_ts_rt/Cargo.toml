@@ -7,7 +7,6 @@ publish.workspace = true
 [dependencies]
 iron_api = { path = "../../crates/iron_api", default-features = false }
 iron_kinds = { path = "../../crates/iron_kinds" }
-iron_api = { path = "../../crates/iron_api" }
 iron_physics_api = { path = "../../crates/iron_physics_api" }
 serde_json = "1"
 regress = { version = "0.12.0", features = ["utf16"] }
