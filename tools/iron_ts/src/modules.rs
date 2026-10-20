@@ -32,6 +32,35 @@ pub struct Bundle {
     pub css: Vec<String>,
     /// `@iron/*` / `react` names the program imports (module, name), sorted and distinct.
     pub library_imports: Vec<(String, String)>,
+    /// For each file: the 0-based line of `source` where its text starts, and its path.
+    pub starts: Vec<(usize, String)>,
+}
+
+impl Bundle {
+    /// The file and line (1-based) that line `line` (1-based) of `source` came from.
+    pub fn locate(&self, line: usize) -> Option<(&str, usize)> {
+        let at = line.checked_sub(1)?;
+        let (start, file) = self.starts.iter().rev().find(|(s, _)| *s <= at)?;
+        Some((file, at - start + 1))
+    }
+
+    /// `message` with every `line N` (a line of the bundled source) rewritten as `file:line`.
+    pub fn locate_in(&self, message: &str) -> String {
+        let mut out = String::new();
+        let mut rest = message;
+        while let Some(i) = rest.find("line ") {
+            out.push_str(&rest[..i]);
+            let after = &rest[i + 5..];
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            match digits.parse::<usize>().ok().and_then(|n| self.locate(n)) {
+                Some((file, l)) => out.push_str(&format!("{file}:{l}")),
+                None => out.push_str(&format!("line {digits}")),
+            }
+            rest = &after[digits.len()..];
+        }
+        out.push_str(rest);
+        out
+    }
 }
 
 /// Reads a file by its normalised path; `None` when it does not exist.
@@ -411,6 +440,7 @@ impl Graph {
             Res::Lib(n) => n.clone(),
         };
         let mut out = String::new();
+        let mut starts: Vec<(usize, String)> = Vec::new();
         let tsx = self.mods.iter().any(|m| m.tsx);
         let mut css = self.css.clone();
         css.dedup();
@@ -479,9 +509,8 @@ impl Graph {
                     ));
                 }
             }
-            if mi != entry {
-                out.push_str(&format!("// ---- {}\n", m.path));
-            }
+            out.push_str(&format!("// ---- {}\n", m.path));
+            starts.push((out.matches('\n').count(), m.path.clone()));
             out.push_str(&text);
             if !text.ends_with('\n') {
                 out.push('\n');
@@ -500,6 +529,7 @@ impl Graph {
                 .collect(),
             css,
             library_imports: libs,
+            starts,
         })
     }
 
@@ -914,6 +944,16 @@ mod tests {
         assert!(!b.source.contains("import"), "{}", b.source);
         assert!(b.source.contains("export function g"));
         assert!(!b.source.contains("export function f"));
+        // Lines of the bundle map back to their files.
+        let line_of = |needle: &str| {
+            b.source[..b.source.find(needle).unwrap()]
+                .matches('\n')
+                .count()
+                + 1
+        };
+        assert_eq!(b.locate(line_of("function f")), Some(("src/a.ts", 1)));
+        assert_eq!(b.locate(line_of("function g")), Some(("src/main.ts", 2)));
+        assert_eq!(b.locate_in("x line 2: bad"), "x src/a.ts:1: bad");
     }
 
     // M9-TS-1801

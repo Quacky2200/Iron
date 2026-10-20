@@ -10,6 +10,7 @@ pub mod manifest;
 pub mod modules;
 pub mod sroa;
 pub mod throws;
+pub mod types_dts;
 
 /// What a compile produced.
 pub struct Output {
