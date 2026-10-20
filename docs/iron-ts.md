@@ -999,6 +999,7 @@ when `cond` is false.
   is expected). `IronStyle` is a list of entries: `const card: IronStyle = { width: 100, padding: "4px" }` builds it,
   `{ ...card, ...style, flexGrow: 1 }` concatenates (a later entry wins, `undefined` values apply nothing) and `style={card}` applies
   it. The `.d.ts` (`iron_ts::lower::AMBIENT_DTS`) declares the same names, the `react` and `@iron/react` modules and `JSX` for `tsc`.
+- **Tuples and records.** A tuple whose elements share one type (`[number, number]`) is an array of it; `Record<Weather, V>` over a numeric enum is an array indexed by the enum value (`{ [Weather.Rain]: v }` builds it); `Record<string, unknown>` is an `IronStyle` when the ambient types are there. `createRoot(t).render(el)` is `UiRoot.mount(t, el)` (a `WorldPanel` target uses `ts_ui_mount_panel`); top-level expression statements run in `init` in source order. A `const` arrow with annotated parameters and no value return may call itself; a top-level `let f = () => ..` is a variable.
 - **Language.** Parameter types come from their defaults (`phase = 0`); a program class or interface shadows an engine name
   (`class Scene`); `static get x()` reads as `Class.x`; a function with fewer parameters passes for one with more.
 - **Limits.** The updater form `setN(n => n + 1)`; an inline object literal returned from a callback needs a type annotation

@@ -72,6 +72,25 @@ impl<'a> Lowerer<'a> {
                 TSLiteral::BooleanLiteral(_) => Ty::Bool,
                 _ => bail!("unsupported literal type"),
             },
+            // `[number, number]`: a tuple of one element type is an array of it.
+            TSType::TSTupleType(t) => {
+                let mut tys = Vec::new();
+                for el in &t.element_types {
+                    let Some(et) = el.as_ts_type() else {
+                        bail!("optional and rest tuple elements are not supported")
+                    };
+                    tys.push(self.ty(et, hint)?);
+                }
+                match tys.first() {
+                    Some(first) if tys.iter().all(|t| t == first) => {
+                        Ty::Arr(Box::new(first.clone()))
+                    }
+                    _ => bail!(
+                        "a tuple needs one element type (`[number, number]`); \
+                         use an object type for mixed fields"
+                    ),
+                }
+            }
             TSType::TSUnionType(u) => self.union(&u.types, hint)?,
             TSType::TSTypeLiteral(l) => {
                 let fields = self.members(&l.members, hint)?;
@@ -189,6 +208,20 @@ impl<'a> Lowerer<'a> {
                     }
                     // `Record<"a" | "b", V>`: a struct with one field per member.
                     "Record" if args.len() == 2 => {
+                        // `Record<Weather, V>` over a numeric enum: an array indexed by the value.
+                        if let TSType::TSTypeReference(k) = args[0]
+                            && let TSTypeName::IdentifierReference(kid) = &k.type_name
+                            && self.enums.contains_key(kid.name.as_str())
+                        {
+                            return Ok(Ty::Arr(Box::new(self.ty(args[1], hint)?)));
+                        }
+                        // `Record<string, unknown>` (a bag of style properties) is an `IronStyle`.
+                        if matches!(args[0], TSType::TSStringKeyword(_))
+                            && matches!(args[1], TSType::TSUnknownKeyword(_))
+                            && self.class_decls.contains_key("StyleEntry")
+                        {
+                            return self.named_type("IronStyle");
+                        }
                         let Some(keys) = self.lit_members(args[0]) else {
                             bail!(
                                 "Record needs a union of string literals as its keys; \

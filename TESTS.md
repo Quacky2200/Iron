@@ -1216,3 +1216,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1613 | Integration | `static get twice()` reads like a field. |
 | M9-TS-1614 | Integration | A component with `return null` and `return <box/>`. |
 | M9-TS-1615 | Integration | `createRoot().render(<App />);` as a top-level statement lowers to `UiRoot.mount(0, el)` in the init function (imports `ts_ui_mount`); top-level expression statements run in source order. |
+| M9-TS-1616 | Integration | `[number, number]` and `[number, number][]` are arrays (`react_front.rs`). |
+| M9-TS-1617 | Integration | `Record<NumericEnum, V>` with computed enum keys is an array indexed by the enum. |
+| M9-TS-1618 | Integration | A `const` arrow that calls itself (`setTimeout(loop, 16)`) and a top-level `let` arrow that is reassigned. |

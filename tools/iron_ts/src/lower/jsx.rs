@@ -1062,7 +1062,34 @@ fn declared_names(src: &str) -> (HashSet<String>, HashSet<String>) {
             _ => {}
         }
     }
+    // Functions anywhere in the program: `useState(read)` with a local `const read = () => ..`.
+    let mut all = AllFns(HashSet::new());
+    all.visit_program(&ret.program);
+    fns.extend(all.0);
     (out, fns)
+}
+
+/// Names bound to a function expression, an arrow or a function declaration, at any depth.
+struct AllFns(HashSet<String>);
+
+impl<'a> Visit<'a> for AllFns {
+    fn visit_variable_declarator(&mut self, d: &VariableDeclarator<'a>) {
+        if let BindingPattern::BindingIdentifier(id) = &d.id
+            && matches!(
+                &d.init,
+                Some(Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_))
+            )
+        {
+            self.0.insert(id.name.to_string());
+        }
+        walk::walk_variable_declarator(self, d);
+    }
+    fn visit_function(&mut self, f: &Function<'a>, flags: oxc_syntax::scope::ScopeFlags) {
+        if let Some(id) = &f.id {
+            self.0.insert(id.name.to_string());
+        }
+        walk::walk_function(self, f, flags);
+    }
 }
 
 fn setter_names(src: &str) -> HashSet<String> {

@@ -663,6 +663,8 @@ impl<'a> Lowerer<'a> {
                 Some(Expression::ArrowFunctionExpression(a)),
                 None,
             ) = (&d.id, &d.init, &d.type_annotation)
+                // A `let` may be assigned another function later: it is a variable.
+                && is_const
             {
                 let body = match &a.body {
                     ArrowFunctionBody::FunctionBody(b) => FnBody::Block(b),

@@ -788,6 +788,16 @@ impl<'a> Lowerer<'a> {
                 Some(a) => Some(self.ty(&a.type_annotation, id.name.as_str())?),
                 None => None,
             };
+            // `const loop = () => { ..; setTimeout(loop, 16) }`: no annotation, but the arrow's
+            // parameters are annotated and it returns nothing, so its type is known up front.
+            let ann = match (&ann, &d.init) {
+                (None, Some(Expression::ArrowFunctionExpression(a)))
+                    if self.captured.contains(id.name.as_str()) =>
+                {
+                    self.self_ref_arrow_ty(a)?
+                }
+                _ => ann,
+            };
             // A closure that refers to its own name: the cell exists before the closure.
             let mut prebound = None;
             if self.captured.contains(id.name.as_str())
@@ -845,6 +855,37 @@ impl<'a> Lowerer<'a> {
         Ok(())
     }
 
+    /// The type of an arrow function a program names and calls from inside itself, when its
+    /// parameters are annotated and it returns no value (or says what it returns).
+    fn self_ref_arrow_ty(&mut self, a: &'a ArrowFunctionExpression<'a>) -> R<Option<Ty>> {
+        let mut params = Vec::new();
+        for p in &a.params.items {
+            let Some(ann) = &p.type_annotation else {
+                return Ok(None);
+            };
+            let ty = self.ty(&ann.type_annotation, "closure")?;
+            params.push(if p.optional { ty.nullable() } else { ty });
+        }
+        if a.params.rest.is_some() {
+            return Ok(None);
+        }
+        let ret = match &a.return_type {
+            Some(r) => self.ty(&r.type_annotation, "closure")?,
+            None => match &a.body {
+                ArrowFunctionBody::FunctionBody(b) => {
+                    let mut scan = ValueReturns(false);
+                    oxc_ast_visit::Visit::visit_function_body(&mut scan, b);
+                    if scan.0 {
+                        return Ok(None);
+                    }
+                    Ty::Void
+                }
+                _ => return Ok(None),
+            },
+        };
+        Ok(Some(Ty::Fn(Box::new(FnTy { params, ret }))))
+    }
+
     /// An expression statement: assignments and updates need no value.
     fn lower_effect(&mut self, e: &'a Expression<'a>, out: &mut Vec<Stmt>) -> R<()> {
         match e {
@@ -864,4 +905,17 @@ impl<'a> Lowerer<'a> {
         }
         Ok(())
     }
+}
+
+/// Does a function body `return value;` (not counting the functions inside it)?
+struct ValueReturns(bool);
+
+impl<'a> oxc_ast_visit::Visit<'a> for ValueReturns {
+    fn visit_return_statement(&mut self, r: &ReturnStatement<'a>) {
+        if r.argument.is_some() {
+            self.0 = true;
+        }
+    }
+    fn visit_function(&mut self, _: &Function<'a>, _: oxc_syntax::scope::ScopeFlags) {}
+    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
 }

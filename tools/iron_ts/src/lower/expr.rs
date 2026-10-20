@@ -1678,6 +1678,16 @@ impl<'a> Lowerer<'a> {
             Some(Ty::Obj(s)) => Some(*s),
             _ => None,
         };
+        // `{ [Weather.Rain]: "Rain" }` where a `Record<Weather, string>` (an array) is expected.
+        if let Some(Ty::Arr(el)) = exp.map(|t| t.strip())
+            && o.properties
+                .iter()
+                .all(|p| matches!(p, ObjectPropertyKind::ObjectProperty(p) if p.computed))
+            && !o.properties.is_empty()
+        {
+            let el = (**el).clone();
+            return self.lower_enum_record(o, el);
+        }
         // `{ width: 10, ...other }` where an `IronStyle` (a list of `StyleEntry`) is expected.
         if let Some(Ty::Arr(el)) = exp.map(|t| t.strip())
             && let Ty::Obj(esid) = el.strip()
@@ -1717,7 +1727,11 @@ impl<'a> Lowerer<'a> {
                             .map(|i| self.m.structs[s].fields[i].ty.clone()),
                         None => record.cloned(),
                     };
-                    let v = self.lower_expr(&p.value, want.as_ref())?;
+                    let mut v = self.lower_expr(&p.value, want.as_ref())?;
+                    // A property of a fresh object is a `string`, not the literal it was written as.
+                    if exp_sid.is_none() && record.is_none() {
+                        v = self.widen_lit(v);
+                    }
                     items.push(Item::Prop(name, v));
                 }
             }
@@ -1827,6 +1841,39 @@ impl<'a> Lowerer<'a> {
             }
         }
         Ok(mk(ExprKind::Seq(stmts, Box::new(t)), Ty::Obj(sid)))
+    }
+
+    /// `{ [Weather.Rain]: v, ... }` as an array indexed by the enum values; keys nobody gave hold the
+    /// element type's zero.
+    fn lower_enum_record(&mut self, o: &'a ObjectExpression<'a>, el: Ty) -> R<Expr> {
+        let mut slots: Vec<Option<Expr>> = Vec::new();
+        for p in &o.properties {
+            let ObjectPropertyKind::ObjectProperty(p) = p else {
+                unreachable!("checked")
+            };
+            let Some(k) = p.key.as_expression() else {
+                bail!("{}: a computed key", self.loc(p.span.start))
+            };
+            let key = self.lower_expr(k, None)?;
+            let ExprKind::Num(n) = key.kind else {
+                bail!(
+                    "{}: a key of a record over an enum must be an enum member",
+                    self.loc(p.span.start)
+                )
+            };
+            let i = n as usize;
+            let v = self.lower_expr(&p.value, Some(&el))?;
+            let v = self.coerce(v, &el)?;
+            if slots.len() <= i {
+                slots.resize(i + 1, None);
+            }
+            slots[i] = Some(v);
+        }
+        let elems = slots
+            .into_iter()
+            .map(|s| Elem::One(s.unwrap_or_else(|| self.default_value(&el))))
+            .collect();
+        self.build_array(elems, el)
     }
 
     /// An object literal as an `IronStyle`: a `StyleEntry` per property, spreads concatenated, so

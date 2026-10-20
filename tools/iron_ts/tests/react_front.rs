@@ -225,3 +225,52 @@ createRoot().render(<App />);",
         "the object imports ts_ui_mount"
     );
 }
+
+// M9-TS-1616
+#[test]
+fn tuples_of_one_type_are_arrays() {
+    ok(r#"
+function wave(n: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < n; i++) out.push([i, i * 2]);
+  return out;
+}
+export function f(): number { const w = wave(3); return w.length + w[1]![1]!; }
+"#);
+}
+
+// M9-TS-1617
+#[test]
+fn a_record_over_a_numeric_enum_is_indexed_by_the_enum() {
+    ok(r#"
+enum Weather { Clear, Rain, Stormy }
+const NAMES: Record<Weather, string> = {
+  [Weather.Clear]: "Clear",
+  [Weather.Rain]: "Rain",
+  [Weather.Stormy]: "Stormy",
+};
+export function name(w: Weather): string { return NAMES[w]!; }
+"#);
+}
+
+// M9-TS-1618
+#[test]
+fn a_const_arrow_may_call_itself_and_a_let_arrow_may_be_replaced() {
+    ok(r#"
+let refresh = () => {};
+function App(): UiElement {
+  const [n, setN] = useState(0);
+  refresh = () => setN((c) => c + 1);
+  useEffect(() => {
+    let id = 0;
+    const loop = () => {
+      setN((c) => c + 1);
+      id = setTimeout(loop, 16);
+    };
+    id = setTimeout(loop, 16);
+    return () => clearTimeout(id);
+  }, []);
+  return <box onClick={() => refresh()}>{n}</box>;
+}
+"#);
+}

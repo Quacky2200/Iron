@@ -106,6 +106,30 @@ Measured with `compile_check` on `main.ts(x)`, one block per commit.
 | text | ok: 43192 bytes of object code |
 | world | error: line 57: type mismatch: tag where handle:Sound is expected |
 
+**After commit 3 (top-level statements, createRoot, tuples, enum records, self-calling arrows)**
+
+| Example | First error |
+|---|---|
+| animation | error: line 43: type mismatch: [[f64]] where [obj#20] is expected |
+| arcade | error: line 668: cannot use fn(0 params)->void as void |
+| boxes | ok: 44455 bytes of object code |
+| classics | error: line 40: unknown name `RenderSettings` |
+| cloth | error: line 54: unknown name `RenderSettings` |
+| cornell | error: line 32: GameObject has no property `scale` to set |
+| css | error: line 41: call to unknown function `addStyleSheet` |
+| form | error: line 97: input has no function `gamepads` |
+| hello | ok: 3175 bytes of object code |
+| layers | error: line 157: Camera has no property `horizontalFieldOfView` |
+| materials | error: line 42: unknown name `RenderSettings` |
+| physics | error: line 90: type mismatch: obj#11 where obj#7 is expected |
+| platformer | error: unknown type Collider |
+| quality | error: line 105: an effect returns nothing or a cleanup function, not f64 |
+| raindrop-demo | error: line 97: Sprite.create: 4 arguments, 2 expected |
+| scenes | error: line 104: no property `name` on str |
+| sine-circle-demo | error: unknown type Tween |
+| text | error: line 10: call to unknown function `loadFont` |
+| world | error: line 221: call to unknown function `addStyleSheet` |
+
 ## 2. Per-example table
 
 Imports: E = `@iron/engine` names, R = `@iron/react` names, H = `react` names. Every example also `import`s nothing relative except
