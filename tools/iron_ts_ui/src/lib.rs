@@ -499,7 +499,12 @@ pub unsafe extern "C" fn ts_ui_child_arr(h: u64, items: *const Array) -> u64 {
         // SAFETY: a script array of handles: `len` 8-byte elements.
         let list: Vec<u64> = unsafe {
             let a = &*items;
-            std::slice::from_raw_parts(a.data as *const u64, a.len as usize).to_vec()
+            // An empty array may have no buffer (a null pointer is not a valid slice).
+            if a.len == 0 || a.data.is_null() {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(a.data as *const u64, a.len as usize).to_vec()
+            }
         };
         for c in list {
             push_child(h, c);

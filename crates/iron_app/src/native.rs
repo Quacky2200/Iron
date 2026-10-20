@@ -474,6 +474,26 @@ impl Native {
         r
     }
 
+    /// The game closes: everything that holds closures of the program is dropped here, in an
+    /// order that does not depend on the order thread-local destructors run in.
+    pub fn shutdown(mut self) {
+        drop(std::mem::replace(
+            &mut self.host,
+            NativeHost::new(Vec::new()),
+        ));
+        iron_engine_api::input::reset();
+        iron_engine_api::assets::reset();
+        iron_engine_api::app::reset();
+        iron_engine_api::screen::reset();
+        iron_engine_api::audio::reset();
+        iron_engine_api::audio_components::reset();
+        iron_engine_api::animation::reset();
+        iron_engine_api::camera::reset();
+        iron_render_api::reset();
+        iron_physics_api::reset();
+        iron_scenes::reset();
+    }
+
     /// The class names of the running game.
     #[allow(dead_code)]
     pub fn classes(&self) -> Vec<&'static str> {

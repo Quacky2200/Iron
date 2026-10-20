@@ -2294,6 +2294,11 @@ impl PlatformApp for App {
 impl Drop for App {
     /// The player's settings are written when the game closes, like Unity's.
     fn drop(&mut self) {
+        // The program's closures go while the engine's per-thread state is still alive.
+        native_render::clear_state();
+        if let Some(n) = self.native.take() {
+            n.shutdown();
+        }
         self.prefs.save();
     }
 }

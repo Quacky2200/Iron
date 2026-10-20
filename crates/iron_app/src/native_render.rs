@@ -55,6 +55,12 @@ pub fn configure_engine(root: &std::path::Path) {
     }
 }
 
+/// The panels' reconcilers hold closures of the program: they are dropped while the program's
+/// heap is alive (thread-local destructors run in no fixed order).
+pub fn clear_state() {
+    st(|s| *s = State::default());
+}
+
 /// Configures again after a reload reset the engine's state (before the new program runs).
 pub fn reconfigure() {
     if let Some(root) = st(|s| s.root.clone()) {
