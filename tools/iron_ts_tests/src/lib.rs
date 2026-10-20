@@ -285,6 +285,9 @@ pub fn engine_api_anchor() -> usize {
         iron_engine_api::audio::audio_api::iron_audio_load as *const () as usize,
         iron_scenes::scene_manager_api::iron_SceneManager_loadScene as *const () as usize,
         iron_physics_api::physics_api::iron_Physics_step as *const () as usize,
+        iron_physics_api::components::components_api::iron_Rigidbody_attach as *const () as usize,
+        iron_physics_api::joints::joints_api::iron_FixedJoint_attach as *const () as usize,
+        iron_physics_api::physics2d::physics2d_api::iron_Rigidbody2D_attach as *const () as usize,
     ]
     .iter()
     .fold(0, |a, p| a ^ p)
@@ -1246,4 +1249,16 @@ pub mod contacts_t {
 )]
 pub mod comp_api_t {
     include!(concat!(env!("OUT_DIR"), "/comp_api_bindings.rs"));
+}
+
+/// Physics components from compiled code (`bench/physics_comp.ts`), prefix `phc_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod physics_comp_t {
+    include!(concat!(env!("OUT_DIR"), "/physics_comp_bindings.rs"));
 }

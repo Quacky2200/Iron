@@ -1240,9 +1240,12 @@ dependencies = [
  "glam 0.34.1",
  "iron_api",
  "iron_core",
+ "iron_engine_api",
+ "iron_kinds",
  "iron_math",
  "iron_physics",
  "iron_scene",
+ "serde_json",
 ]
 
 [[package]]
@@ -1326,6 +1329,7 @@ dependencies = [
  "iron_demo_api",
  "iron_engine_api",
  "iron_kinds",
+ "iron_physics",
  "iron_physics_api",
  "iron_scene",
  "iron_scenes",

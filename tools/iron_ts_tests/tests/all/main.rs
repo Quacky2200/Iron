@@ -51,6 +51,7 @@ mod nullbool;
 mod numfmt;
 mod params;
 mod physics;
+mod physics_comp;
 mod prefs;
 mod promises;
 mod props;

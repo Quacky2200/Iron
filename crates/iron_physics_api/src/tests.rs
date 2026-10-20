@@ -1,0 +1,401 @@
+//! Unit tests of the physics components (`M9-API-200..`): they work on `comp.rs` and the kinds
+//! directly; the compiled-program tests are in `tools/iron_ts_tests/tests/all/physics.rs`.
+
+use crate::comp::{self, ColShape};
+use crate::{add_collider, reset, step, take_contacts};
+use glam::{Quat, Vec3};
+use iron_api::Handle;
+use iron_math::{V2, V3};
+use iron_scene::{ObjectId, Scene};
+use serde_json::{Map, json};
+
+fn make(name: &str) -> ObjectId {
+    iron_scene::api::with_scene(|s| s.create(name)).unwrap()
+}
+
+fn place(o: ObjectId, x: f32, y: f32, z: f32) {
+    iron_scene::api::with_scene(|s| s.set_world(o, Vec3::new(x, y, z), Quat::IDENTITY));
+}
+
+fn pos(o: ObjectId) -> Vec3 {
+    iron_scene::api::with_scene(|s| s.world(o).position).unwrap()
+}
+
+fn run(n: usize) {
+    for _ in 0..n {
+        step();
+    }
+}
+
+fn floor() {
+    add_collider(0, "box", vec![10.0, 0.5, 10.0], None);
+}
+
+fn unit_box() -> ColShape {
+    ColShape::Box {
+        size: V3 {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        },
+    }
+}
+
+/// A fresh world and scene for one test.
+fn setup() -> Scene {
+    reset();
+    Scene::new()
+}
+
+// M9-API-200
+//
+// A Rigidbody with a BoxCollider falls under gravity, rests on a floor and carries its object.
+#[test]
+fn a_rigidbody_with_a_box_rests_on_the_floor() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    floor();
+    let o = make("box");
+    place(o, 0.0, 4.0, 0.0);
+    comp::rb_attach(o, false);
+    comp::col_attach(o, unit_box());
+    run(240);
+    let y = pos(o).y;
+    assert!((y - 1.0).abs() < 0.05, "rests at {y}");
+}
+
+// M9-API-201
+//
+// Moving the GameObject of a kinematic body from a script carries the body there.
+#[test]
+fn moving_a_kinematic_object_moves_its_body() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let o = make("platform");
+    let rb = comp::rb_attach(o, false);
+    comp::rb_set_kind(rb, "kinematic");
+    comp::col_attach(o, unit_box());
+    place(o, 3.0, 2.0, 0.0);
+    run(3);
+    let body = comp::body_of(o);
+    let (p, _) = crate::st(|s| s.physics.pose(body)).unwrap();
+    assert!(
+        (p[0] - 3.0).abs() < 0.01 && (p[1] - 2.0).abs() < 0.01,
+        "{p:?}"
+    );
+    // The object is where the script put it.
+    assert!((pos(o).x - 3.0).abs() < 0.01);
+}
+
+// M9-API-202
+//
+// A collider is remade at the object's world scale when the scale changes.
+#[test]
+fn colliders_follow_the_object_scale() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let o = make("wall");
+    comp::col_attach(o, unit_box());
+    run(1);
+    let ray = |x: f64| {
+        crate::do_raycast(
+            V3 { x, y: 5.0, z: 0.0 },
+            V3 {
+                x: 0.0,
+                y: -1.0,
+                z: 0.0,
+            },
+            20.0,
+        )
+    };
+    assert_eq!(ray(1.2), 0, "a 1 m box is not at x = 1.2");
+    iron_scene::api::with_scene(|s| {
+        let t = s.local(o).unwrap();
+        s.set_local(
+            o,
+            iron_scene::Transform {
+                scale: Vec3::splat(3.0),
+                ..t
+            },
+        );
+    });
+    run(1);
+    assert_ne!(ray(1.2), 0, "a 3 m box is");
+}
+
+// M9-API-203
+//
+// A collider's center offsets the shape; a trigger reports a sensor contact that maps back to its
+// component and object.
+#[test]
+fn centers_and_triggers_report_through_collider_info() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    floor();
+    let zone = make("zone");
+    place(zone, 0.0, 2.0, 0.0);
+    let zc = comp::col_attach(zone, unit_box());
+    comp::col_set_sensor(zc, true);
+    comp::col_set_center(
+        zc,
+        V3 {
+            x: 4.0,
+            y: 0.0,
+            z: 0.0,
+        },
+    );
+    let ball = make("ball");
+    place(ball, 4.0, 6.0, 0.0);
+    comp::rb_attach(ball, false);
+    comp::col_attach(ball, ColShape::Sphere { radius: 0.3 });
+    run(120);
+    let contacts = take_contacts();
+    let enter = contacts
+        .iter()
+        .find(|c| c.started && c.sensor)
+        .expect("the ball entered the trigger");
+    let sides: Vec<_> = [enter.a, enter.b]
+        .iter()
+        .filter_map(|c| comp::collider_info(*c))
+        .collect();
+    assert!(
+        sides
+            .iter()
+            .any(|i| i.object == zone && i.class == "BoxCollider")
+    );
+    assert!(
+        sides
+            .iter()
+            .any(|i| i.object == ball && i.class == "SphereCollider" && i.rigidbody != 0)
+    );
+    assert!(crate::object_of_collider(enter.a).is_some());
+}
+
+// M9-API-204
+//
+// A fixed joint holds a body where it hangs; a rope joint stops it at its length.
+#[test]
+fn joints_hold_bodies() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let anchor = make("anchor");
+    place(anchor, 0.0, 5.0, 0.0);
+    let arb = comp::rb_attach(anchor, false);
+    comp::rb_set_kind(arb, "kinematic");
+    comp::col_attach(anchor, unit_box());
+
+    let held = make("held");
+    place(held, 0.0, 3.5, 0.0);
+    comp::rb_attach(held, false);
+    comp::col_attach(held, ColShape::Sphere { radius: 0.2 });
+    let j = comp::add_comp(held, comp::Data::Joint(comp::Jt::new("fixed")));
+    comp::with_joint(j, |j| j.connected = arb);
+    comp::joint_build(j);
+
+    let swing = make("swing");
+    place(swing, 3.0, 5.0, 0.0);
+    let srb = comp::rb_attach(swing, false);
+    let _ = srb;
+    comp::col_attach(swing, ColShape::Sphere { radius: 0.2 });
+    let anchor2 = make("anchor2");
+    place(anchor2, 3.0, 5.0, 0.0);
+    let a2 = comp::rb_attach(anchor2, false);
+    comp::rb_set_kind(a2, "kinematic");
+    comp::col_attach(anchor2, ColShape::Sphere { radius: 0.1 });
+    let rj = comp::add_comp(swing, comp::Data::Joint(comp::Jt::new("rope")));
+    comp::with_joint(rj, |j| {
+        j.connected = a2;
+        j.max_distance = 1.0;
+    });
+    comp::joint_build(rj);
+
+    run(180);
+    assert!((pos(held).y - 3.5).abs() < 0.05, "held at {}", pos(held).y);
+    let d = (pos(swing) - pos(anchor2)).length();
+    assert!(d < 1.1, "rope length {d}");
+    assert!(pos(swing).y < 4.2, "it hangs: {}", pos(swing).y);
+}
+
+// M9-API-205
+//
+// A Rope makes its links on the first step and hangs from where it is.
+#[test]
+fn a_rope_hangs_from_its_object() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let o = make("rope");
+    place(o, 0.0, 5.0, 0.0);
+    let r = comp::add_comp(o, comp::Data::Rope(comp::rope_new()));
+    comp::with_rope(r, |r| {
+        r.length = 2.0;
+        r.segments = 4.0;
+    });
+    run(60);
+    let pts = comp::rope_points(r);
+    assert_eq!(pts.len(), 5);
+    assert!((pts[0].y - 5.0).abs() < 0.05, "{:?}", pts[0]);
+    assert!((pts[4].y - 3.0).abs() < 0.3, "{:?}", pts[4]);
+    comp::rope_destroy(r);
+    assert!(comp::rope_points(r).is_empty());
+}
+
+// M9-API-206
+//
+// A character controller drops onto the floor, reports grounded and carries its object.
+#[test]
+fn a_character_walks_on_the_floor() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    floor();
+    let o = make("hero");
+    place(o, 0.0, 3.0, 0.0);
+    let c = crate::components::character_attach(o);
+    for _ in 0..90 {
+        crate::components::character_move(
+            c,
+            V3 {
+                x: 0.02,
+                y: -0.1,
+                z: 0.0,
+            },
+        );
+        step();
+    }
+    assert!(crate::components::is_grounded(c));
+    let p = pos(o);
+    assert!((p.y - 1.5).abs() < 0.1, "{p:?}");
+    assert!(p.x > 1.0, "{p:?}");
+}
+
+// M9-API-207
+//
+// 2D bodies fall in the XY plane (z stays) and rest on a 2D floor; a 2D ray names the object hit.
+#[test]
+fn two_d_bodies_keep_their_z() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let ground = make("ground");
+    comp::col_attach(
+        ground,
+        ColShape::Box2D {
+            size: V2 { x: 20.0, y: 1.0 },
+        },
+    );
+    let o = make("ball");
+    place(o, 0.0, 5.0, 0.7);
+    comp::rb_attach(o, true);
+    comp::col_attach(o, ColShape::Circle2D { radius: 0.5 });
+    run(240);
+    let p = pos(o);
+    assert!((p.y - 1.0).abs() < 0.06, "rests at {p:?}");
+    assert!((p.z - 0.7).abs() < 1e-3, "z locked: {p:?}");
+    let hit = crate::do_raycast(
+        V3 {
+            x: 5.0,
+            y: 5.0,
+            z: 0.0,
+        },
+        V3 {
+            x: 0.0,
+            y: -1.0,
+            z: 0.0,
+        },
+        100.0,
+    );
+    assert_ne!(hit, 0);
+    let cid = crate::st(|s| s.hits[hit as usize - 1].collider);
+    assert_eq!(comp::collider_info(cid).map(|i| i.object), Some(ground));
+    assert!(comp::collider_info(cid).unwrap().two_d);
+}
+
+// M9-API-208
+//
+// Component kinds save and load their properties and list what is on an object.
+#[test]
+fn kinds_save_and_load_physics_components() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    iron_kinds::clear();
+    crate::register_kinds();
+    let a = make("a");
+    let b = make("b");
+    let bx = iron_kinds::get("BoxCollider").unwrap();
+    let h = (bx.create)(a.to_raw()).unwrap();
+    let mut props = Map::new();
+    props.insert(
+        "size".into(),
+        json!({ "$type": "Vector3", "value": [2.0, 1.0, 4.0] }),
+    );
+    props.insert("isTrigger".into(), json!(true));
+    props.insert(
+        "material".into(),
+        json!({ "dynamicFriction": 0.2, "bounciness": 0.7 }),
+    );
+    assert!((bx.load)(h, &props).is_empty());
+    let saved = (bx.save)(h);
+    assert_eq!(saved["size"]["value"], json!([2.0, 1.0, 4.0]));
+    assert_eq!(saved["isTrigger"], json!(true));
+    assert_eq!(saved["material"]["bounciness"], json!(0.7));
+    // Copy to another object.
+    let h2 = (bx.create)(b.to_raw()).unwrap();
+    assert!((bx.load)(h2, &saved).is_empty());
+    assert_eq!((bx.save)(h2), saved);
+    assert_eq!((bx.on)(b.to_raw()), vec![h2]);
+
+    // A joint's reference to a Rigidbody keeps its placeholder.
+    let rb = iron_kinds::get("Rigidbody").unwrap();
+    let r = (rb.create)(a.to_raw()).unwrap();
+    let hinge = iron_kinds::get("HingeJoint").unwrap();
+    let j = (hinge.create)(b.to_raw()).unwrap();
+    let mut jp = Map::new();
+    jp.insert(
+        "connectedBody".into(),
+        json!({ "$ref": "Component", "kind": "Rigidbody", "handle": r }),
+    );
+    jp.insert("limits".into(), json!({ "min": -30.0, "max": 45.0 }));
+    jp.insert("useLimits".into(), json!(true));
+    assert!((hinge.load)(j, &jp).is_empty());
+    let js = (hinge.save)(j);
+    assert_eq!(js["connectedBody"]["handle"], json!(r));
+    assert_eq!(js["limits"]["max"], json!(45.0));
+
+    // Destroying a component through its kind removes its collider.
+    (bx.destroy)(h);
+    assert!((bx.on)(a.to_raw()).is_empty());
+}
+
+// M9-API-209
+//
+// Destroying an object's physics removes its body and colliders from the world.
+#[test]
+fn destroying_an_object_removes_its_physics() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let o = make("rock");
+    comp::rb_attach(o, false);
+    comp::col_attach(o, unit_box());
+    let down = |_: ()| {
+        crate::do_raycast(
+            V3 {
+                x: 0.0,
+                y: 5.0,
+                z: 0.0,
+            },
+            V3 {
+                x: 0.0,
+                y: -1.0,
+                z: 0.0,
+            },
+            50.0,
+        )
+    };
+    assert_ne!(down(()), 0);
+    crate::object_destroyed(o);
+    assert_eq!(down(()), 0);
+    // An object removed from the scene loses its physics at the next step.
+    let p = make("pebble");
+    comp::col_attach(p, unit_box());
+    iron_scene::api::with_scene(|s| s.destroy(p));
+    run(1);
+    assert_eq!(down(()), 0);
+}

@@ -14,6 +14,17 @@ use iron_scene::ObjectId;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+mod comp;
+pub mod components;
+pub mod joints;
+mod kinds;
+pub mod physics2d;
+#[cfg(test)]
+mod tests;
+
+pub use comp::{ColliderInfo, object_destroyed, start_pending};
+pub use kinds::register_kinds;
+
 macro_rules! number_handle {
     ($($name:ident),*) => {$(
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,13 +41,37 @@ macro_rules! number_handle {
 }
 
 // 0 is "none" in each (a script's `Body | null`).
-number_handle!(BodyRef, ColliderRef, HitRef);
+number_handle!(
+    BodyRef,
+    ColliderRef,
+    HitRef,
+    JointRef,
+    RigidbodyRef,
+    BoxColliderRef,
+    SphereColliderRef,
+    CapsuleColliderRef,
+    MeshColliderRef,
+    CharacterControllerRef,
+    FixedJointRef,
+    CharacterJointRef,
+    HingeJointRef,
+    SpringJointRef,
+    RopeJointRef,
+    RopeRef,
+    Rigidbody2DRef,
+    BoxCollider2DRef,
+    CircleCollider2DRef,
+    CapsuleCollider2DRef,
+    PolygonCollider2DRef,
+    EdgeCollider2DRef,
+    Hit2DRef
+);
 
-struct HitData {
-    collider: u32,
-    distance: f64,
-    point: V3,
-    normal: V3,
+pub(crate) struct HitData {
+    pub collider: u32,
+    pub distance: f64,
+    pub point: V3,
+    pub normal: V3,
 }
 
 struct State {
@@ -45,14 +80,27 @@ struct State {
     next_collider: u32,
     /// The GameObject each body moves.
     attached: HashMap<u32, ObjectId>,
+    /// The pose each attached object had when the world last wrote it (or read it): the object
+    /// moved by a script when it differs.
+    synced: HashMap<u32, (glam::Vec3, glam::Quat)>,
     /// Bodies whose character controller ended its last move on the ground.
     grounded: HashSet<u32>,
     /// The colliders of each body (the body's removal drops them).
     owner: HashMap<u32, u32>,
     kinds: HashMap<u32, String>,
     /// Ray hits handed out since the last step.
-    hits: Vec<HitData>,
+    pub(crate) hits: Vec<HitData>,
     contacts: Vec<Contact>,
+    /// Physics components (a handle is the place plus one).
+    comps: Vec<Option<comp::Comp>>,
+    /// The body, Rigidbody and colliders of each GameObject with physics components.
+    objects: HashMap<ObjectId, comp::ObjPhys>,
+    /// The collider component of each rapier collider it made.
+    col_owner: HashMap<u32, u32>,
+    next_joint: u32,
+    /// How deep 2D colliders are along z (`Physics2D.depth`).
+    depth_2d: f64,
+    gravity_2d: [f64; 2],
 }
 
 impl State {
@@ -62,11 +110,18 @@ impl State {
             next_body: 1,
             next_collider: 1,
             attached: HashMap::new(),
+            synced: HashMap::new(),
             grounded: HashSet::new(),
             owner: HashMap::new(),
             kinds: HashMap::new(),
             hits: Vec::new(),
             contacts: Vec::new(),
+            comps: Vec::new(),
+            objects: HashMap::new(),
+            col_owner: HashMap::new(),
+            next_joint: 0,
+            depth_2d: 10.0,
+            gravity_2d: [0.0, -9.81],
         }
     }
 }
@@ -75,7 +130,7 @@ thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::new());
 }
 
-fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
+pub(crate) fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
     STATE.with(|s| f(&mut s.borrow_mut()))
 }
 
@@ -85,22 +140,26 @@ pub fn reset() {
 }
 
 /// Runs a `physics.*` op; a bad one is reported and ignored (a script cannot do anything with it).
-fn op(name: &str, args: Vec<Value>) {
+pub(crate) fn op(name: &str, args: Vec<Value>) {
     if let Err(e) = st(|s| s.physics.apply(name, &args)) {
         eprintln!("physics.{name}: {e}");
     }
 }
 
-fn num(x: f64) -> Value {
+pub(crate) fn num(x: f64) -> Value {
     Value::Number(x)
 }
 
-fn v3(v: V3) -> Value {
+pub(crate) fn v3(v: V3) -> Value {
     Value::Array(vec![num(v.x), num(v.y), num(v.z)])
 }
 
 fn quat(q: Q) -> Value {
     Value::Array(vec![num(q.x), num(q.y), num(q.z), num(q.w)])
+}
+
+pub(crate) fn v3_from_f32(a: [f32; 3]) -> V3 {
+    from3(a)
 }
 
 fn from3(a: [f32; 3]) -> V3 {
@@ -111,29 +170,78 @@ fn from3(a: [f32; 3]) -> V3 {
     }
 }
 
+/// Casts a ray at once; the number is the hit (0: none), read through the `RaycastHit` handle.
+pub(crate) fn do_raycast(origin: V3, direction: V3, max_distance: f64) -> u32 {
+    let hit = st(|s| {
+        s.physics.raycast_now(
+            [origin.x as f32, origin.y as f32, origin.z as f32],
+            [direction.x as f32, direction.y as f32, direction.z as f32],
+            max_distance as f32,
+        )
+    });
+    let Some((collider, distance, normal)) = hit else {
+        return 0;
+    };
+    let len =
+        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    let d = f64::from(distance);
+    let point = V3 {
+        x: origin.x + direction.x / len * d,
+        y: origin.y + direction.y / len * d,
+        z: origin.z + direction.z / len * d,
+    };
+    st(|s| {
+        s.hits.push(HitData {
+            collider,
+            distance: d,
+            point,
+            normal: from3(normal),
+        });
+        s.hits.len() as u32
+    })
+}
+
+/// A `force` op on a body: `"force"`, `"impulse"`, `"torque"`, `"torqueImpulse"` or `"impulseAt"`
+/// (with the world point).
+pub(crate) fn force_op(body: u32, what: &str, v: V3, point: Option<V3>) {
+    let mut args = vec![num(f64::from(body)), Value::String(what.into()), v3(v)];
+    if let Some(p) = point {
+        args.push(v3(p));
+    }
+    op("force", args);
+}
+
 /// Advances the world one fixed tick, moves the objects bodies are attached to, and keeps the
 /// contacts for [`take_contacts`].
 pub fn step() {
+    comp::start_pending();
+    comp::sync_from_scene();
     let (moves, grounded_now, contacts) = st(|s| {
         s.hits.clear();
         s.physics.step();
         let batch = s.physics.take_batch();
-        let moves: Vec<(ObjectId, [f32; 3], [f32; 4])> = batch
+        let moves: Vec<(u32, ObjectId, [f32; 3], [f32; 4])> = batch
             .bodies
             .iter()
-            .filter_map(|b| Some((*s.attached.get(&b.id)?, b.position, b.rotation)))
+            .filter_map(|b| Some((b.id, *s.attached.get(&b.id)?, b.position, b.rotation)))
             .collect();
         (moves, batch.characters, batch.contacts)
     });
-    iron_scene::api::with_scene(|scene| {
-        for (o, p, r) in moves {
-            scene.set_world(
-                o,
+    let written = iron_scene::api::with_scene(|scene| {
+        let mut written = Vec::new();
+        for (body, o, p, r) in moves {
+            let (p, r) = (
                 glam::Vec3::from_array(p),
                 glam::Quat::from_xyzw(r[0], r[1], r[2], r[3]),
             );
+            scene.set_world(o, p, r);
+            let w = scene.world(o);
+            written.push((body, (w.position, w.rotation)));
         }
-    });
+        written
+    })
+    .unwrap_or_default();
+    st(|s| s.synced.extend(written));
     st(|s| {
         for (id, g) in grounded_now {
             if g {
@@ -144,6 +252,7 @@ pub fn step() {
         }
         s.contacts.extend(contacts);
     });
+    comp::after_step();
 }
 
 /// The contacts since the last call, by collider number.
@@ -159,40 +268,71 @@ pub fn object_of_collider(collider: u32) -> Option<ObjectId> {
     })
 }
 
-fn add_collider(body: u32, shape: &str, dims: Vec<f64>, indices: Option<Vec<f64>>) -> ColliderRef {
+fn add_collider(
+    body: u32,
+    shape: &'static str,
+    dims: Vec<f64>,
+    indices: Option<Vec<f64>>,
+) -> ColliderRef {
+    ColliderRef(comp::add_collider_full(comp::ColliderArgs {
+        body,
+        name: shape,
+        dims,
+        indices,
+        position: V3::ZERO,
+        rotation: Q::IDENTITY,
+        friction: 0.5,
+        restitution: 0.0,
+        sensor: false,
+    }))
+}
+
+/// A new body of that kind at the origin.
+pub(crate) fn new_body(kind: &str) -> u32 {
     let id = st(|s| {
-        let id = s.next_collider;
-        s.next_collider += 1;
+        let id = s.next_body;
+        s.next_body += 1;
+        s.kinds.insert(id, kind.to_owned());
         id
     });
-    let opts = vec![
-        num(0.5),
-        num(0.0),
-        num(1.0),
-        Value::Bool(false),
-        Value::Bool(true),
-        indices
-            .map(|i| Value::Array(i.into_iter().map(num).collect()))
-            .unwrap_or(Value::Null),
-    ];
     op(
-        "collider",
+        "body",
         vec![
             num(f64::from(id)),
-            if body == 0 {
-                Value::Null
-            } else {
-                num(f64::from(body))
-            },
-            Value::String(shape.to_owned()),
-            Value::Array(dims.into_iter().map(num).collect()),
+            Value::String(kind.to_owned()),
             Value::Array(vec![num(0.0); 3]),
             Value::Array(vec![num(0.0), num(0.0), num(0.0), num(1.0)]),
-            Value::Array(opts),
+            Value::Array(vec![num(0.0); 3]),
+            Value::Array(vec![
+                num(1.0),
+                num(0.0),
+                num(0.0),
+                Value::Bool(false),
+                Value::Bool(false),
+            ]),
         ],
     );
-    st(|s| s.owner.insert(id, body));
-    ColliderRef(id)
+    id
+}
+
+/// Drops a body and its colliders.
+pub(crate) fn remove_body(id: u32) {
+    st(|s| {
+        s.attached.remove(&id);
+        s.kinds.remove(&id);
+        s.grounded.remove(&id);
+        let gone: Vec<u32> = s
+            .owner
+            .iter()
+            .filter(|(_, b)| **b == id)
+            .map(|(c, _)| *c)
+            .collect();
+        for c in gone {
+            s.owner.remove(&c);
+            s.col_owner.remove(&c);
+        }
+    });
+    op("removeBody", vec![num(f64::from(id))]);
 }
 
 fn flat(points: &[V3]) -> Vec<f64> {
@@ -202,7 +342,7 @@ fn flat(points: &[V3]) -> Vec<f64> {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[iron_api(
     namespace = "Physics",
-    handles(Body = BodyRef, Collider = ColliderRef, RaycastHit = HitRef, GameObject = ObjectId),
+    handles(PhysicsBody = BodyRef, PhysicsCollider = ColliderRef, RaycastHit = HitRef, PhysicsJoint = JointRef, GameObject = ObjectId),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]
 pub mod physics_api {
@@ -220,30 +360,7 @@ pub mod physics_api {
 
     /// A body: `"dynamic"` (simulated), `"fixed"` (never moves) or `"kinematic"` (moved by script).
     pub fn create_body(kind: &str) -> BodyRef {
-        let id = st(|s| {
-            let id = s.next_body;
-            s.next_body += 1;
-            s.kinds.insert(id, kind.to_owned());
-            id
-        });
-        op(
-            "body",
-            vec![
-                num(f64::from(id)),
-                Value::String(kind.to_owned()),
-                Value::Array(vec![num(0.0); 3]),
-                Value::Array(vec![num(0.0), num(0.0), num(0.0), num(1.0)]),
-                Value::Array(vec![num(0.0); 3]),
-                Value::Array(vec![
-                    num(1.0),
-                    num(0.0),
-                    num(0.0),
-                    Value::Bool(false),
-                    Value::Bool(false),
-                ]),
-            ],
-        );
-        BodyRef(id)
+        BodyRef(new_body(kind))
     }
 
     /// A box collider on the world itself (floors, walls): half extents.
@@ -263,34 +380,25 @@ pub mod physics_api {
     /// Casts a ray at once and answers the first collider hit within `maxDistance`, or no hit.
     #[optional(max_distance = 1000)]
     pub fn raycast(origin: V3, direction: V3, max_distance: f64) -> HitRef {
-        let hit = st(|s| {
-            s.physics.raycast_now(
-                [origin.x as f32, origin.y as f32, origin.z as f32],
-                [direction.x as f32, direction.y as f32, direction.z as f32],
-                max_distance as f32,
-            )
-        });
-        let Some((collider, distance, normal)) = hit else {
-            return HitRef(0);
-        };
-        let len =
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt();
-        let d = f64::from(distance);
-        let point = V3 {
-            x: origin.x + direction.x / len * d,
-            y: origin.y + direction.y / len * d,
-            z: origin.z + direction.z / len * d,
-        };
-        st(|s| {
-            s.hits.push(HitData {
-                collider,
-                distance: d,
-                point,
-                normal: from3(normal),
-            });
-            HitRef(s.hits.len() as u32)
-        })
+        HitRef(do_raycast(origin, direction, max_distance))
+    }
+
+    /// Joins two bodies (`b` 0: to the world). Kinds and `params`: `"fixed"`; `"ball"` (turns
+    /// freely about the anchor); `"hinge"` [axis x y z, use limits (0/1), min, max (degrees),
+    /// use motor (0/1), speed (degrees per second), strength]; `"spring"` [rest length,
+    /// stiffness, damping]; `"rope"` [max length]. Anchors are in each body's space (the
+    /// world's for no body). Joined bodies do not collide with each other.
+    pub fn create_joint(
+        kind: &str,
+        a: BodyRef,
+        b: BodyRef,
+        anchor_a: V3,
+        anchor_b: V3,
+        params: &[f64],
+    ) -> JointRef {
+        JointRef(comp::create_joint_raw(
+            kind, a.0, b.0, anchor_a, anchor_b, params,
+        ))
     }
 
     /// Advances the world one fixed tick (the host does this once per tick).
@@ -620,12 +728,7 @@ pub mod physics_api {
 
         /// Removes the body and its colliders.
         pub fn remove(self) {
-            st(|s| {
-                s.attached.remove(&self.0);
-                s.kinds.remove(&self.0);
-                s.owner.retain(|_, b| *b != self.0);
-            });
-            op("removeBody", vec![num(f64::from(self.0))]);
+            remove_body(self.0);
         }
     }
 
@@ -672,8 +775,14 @@ pub mod physics_api {
         }
 
         pub fn remove(self) {
-            st(|s| s.owner.remove(&self.0));
-            op("removeCollider", vec![num(f64::from(self.0))]);
+            comp::remove_collider_id(self.0);
+        }
+    }
+
+    impl JointRef {
+        /// Removes the joint.
+        pub fn remove(self) {
+            comp::remove_joint_id(self.0);
         }
     }
 
@@ -726,5 +835,19 @@ pub mod physics_api {
 
 /// The manifests of this crate's script API.
 pub fn manifests() -> Vec<String> {
-    vec![physics_api::MANIFEST.to_json()]
+    vec![
+        physics_api::MANIFEST.to_json(),
+        components::components_api::MANIFEST.to_json(),
+        components::force_mode_api::MANIFEST.to_json(),
+        components::constraints_api::MANIFEST.to_json(),
+        joints::joints_api::MANIFEST.to_json(),
+        physics2d::physics2d_api::MANIFEST.to_json(),
+    ]
+}
+
+/// A body `set` op with no value (`"sleep"`, `"wake"`) or one.
+pub(crate) fn body_set(body: u32, what: &str, value: Option<Value>) {
+    let mut args = vec![num(f64::from(body)), Value::String(what.into())];
+    args.extend(value);
+    op("set", args);
 }

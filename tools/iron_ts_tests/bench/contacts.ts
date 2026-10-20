@@ -2,7 +2,7 @@
 // Stay and onTriggerEnter / Exit / Stay by name on the components of both objects.
 
 let log = "";
-let ball: Body | null = null;
+let ball: PhysicsBody | null = null;
 
 class Probe extends Component {
   onCollisionEnter(c: Collision): void {

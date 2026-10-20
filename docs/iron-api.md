@@ -363,3 +363,23 @@ Differences: the components of one object are saved kind by kind, not in the ord
 request (`request_load` / `take_load_requests` / `finish_load`); scene events are read with `take_events()` until closure APIs
 exist; compiled programs do not keep state across a hot reload (they restart); `$asset`, `Material` and `Texture` values are not
 loaded yet.
+
+## Physics components (`iron_physics_api`)
+
+`crates/iron_physics_api` declares physics for compiled scripts: the low-level `Physics` namespace (`createBody`,
+world colliders, `raycast` that answers at once, `createJoint`, `step`) and the components of `physics-components.ts` and
+`physics2d.ts` as handle classes over the GameObject (`go.addComponent(Rigidbody, { mass: 2 })`,
+`go.getComponent(BoxCollider)` through the static `findOn`). Layout: `comp.rs` (component data, the one body per
+GameObject shared by its Rigidbody and colliders, joints, rope, per-step sync), `components.rs`, `joints.rs`,
+`physics2d.rs` (the generated-looking class impls: same members repeated per class), `kinds.rs` (`register_kinds()`
+puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
+
+- **Every property change reaches the rapier world at once.** A collider is remade when its shape changes.
+- **`step()`** (`Physics.step()`): builds pending joints and ropes (`start_pending`), moves bodies to where scripts put their
+  objects (pose differs by more than 1e-4 m), remakes colliders whose object was scaled, steps the world, writes the moved
+  bodies back into the scene and keeps the contacts. Objects that are gone from the scene lose their physics.
+- **For the host:** `take_contacts()` (collider numbers, `speed`, `sensor`), `collider_info(collider)` (the object, the
+  collider class name, its component handle, `two_d`, the Rigidbody component) to dispatch `onCollisionEnter` /
+  `onTriggerEnter` (and the `2D` names), `object_destroyed(object)` for destroyed GameObjects, `register_kinds()`.
+- Differences to the TypeScript are listed in `tools/iron_ts/TODO.md` ("Physics components"). Tests `M9-API-200..209`,
+  `M9-TS-1100..1105`.
