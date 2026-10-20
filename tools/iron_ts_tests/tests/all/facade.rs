@@ -166,10 +166,7 @@ fn array_literals_of_mixed_types_are_tuples() {
 #[test]
 fn closure_parameters_with_defaults_may_be_left_out() {
     in_every_gc_mode(|| unsafe {
-        assert_eq!(
-            text(ts_fac_defaultedClosureParams()),
-            "1a0.75t|2b2t|3c3z"
-        );
+        assert_eq!(text(ts_fac_defaultedClosureParams()), "1a0.75t|2b2t|3c3z");
     });
 }
 

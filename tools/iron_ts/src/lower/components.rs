@@ -136,6 +136,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
     }
     let mut classes: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
     let mut registered: Vec<(String, (u32, u32))> = Vec::new();
+    let mut abstract_classes: Vec<String> = Vec::new();
     // (class, method) -> the type its first parameter names.
     let mut param_types: HashMap<(String, String), String> = HashMap::new();
     for st in &ret.program.body {
@@ -181,6 +182,9 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
                     }
                 }
             }
+            if c.r#abstract {
+                abstract_classes.push(id.name.to_string());
+            }
             classes.insert(id.name.to_string(), (parent, methods));
         }
         if let Statement::ExpressionStatement(es) = st
@@ -215,18 +219,53 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
     }
     let mut out = src.to_string();
     let mut tail = String::from("\n");
-    for (name, (a, b)) in &registered {
+    // Every other component class is still creatable (`go.addComponent(Turntable)`): it gets
+    // the same thunks and an `iron_noreg_<Class>` marker, so the host does not start it.
+    let mut unregistered: Vec<String> = Vec::new();
+    let mut names: Vec<&String> = classes.keys().collect();
+    names.sort();
+    for n in names {
+        if abstract_classes.contains(n) || registered.iter().any(|(r, _)| r == n) {
+            continue;
+        }
+        let mut cur = classes[n].0.clone();
+        let mut guard = 0;
+        while let Some(p) = cur {
+            guard += 1;
+            if p == "Component" {
+                unregistered.push(n.clone());
+                break;
+            }
+            if guard > 64 {
+                break;
+            }
+            cur = classes.get(&p).and_then(|c| c.0.clone());
+        }
+    }
+    let todo: Vec<(String, Option<(u32, u32)>)> = registered
+        .iter()
+        .map(|(n, sp)| (n.clone(), Some(*sp)))
+        .chain(unregistered.iter().map(|n| (n.clone(), None)))
+        .collect();
+    for (name, span) in &todo {
         let Some(_) = classes.get(name) else {
             return Err(format!(
                 "register({name}): `{name}` is not a class of this program"
             ));
         };
-        // Blank the call, keeping its newlines.
-        let blank: String = src[*a as usize..*b as usize]
-            .chars()
-            .map(|c| if c == '\n' { '\n' } else { ' ' })
-            .collect();
-        out.replace_range(*a as usize..*b as usize, &blank);
+        match span {
+            // Blank the call, keeping its newlines.
+            Some((a, b)) => {
+                let blank: String = src[*a as usize..*b as usize]
+                    .chars()
+                    .map(|c| if c == '\n' { '\n' } else { ' ' })
+                    .collect();
+                out.replace_range(*a as usize..*b as usize, &blank);
+            }
+            None => {
+                tail += &format!("export function iron_noreg_{name}(): number {{ return 0; }}\n");
+            }
+        }
         let go = if has_game_object {
             ", go: GameObject | null"
         } else {

@@ -202,3 +202,31 @@ fn the_runtime_symbol_table_lists_its_exports() {
         assert!(t.iter().any(|(n, a)| *n == want && *a != 0), "{want}");
     }
 }
+
+// M9-TS-2009
+//
+// A component class that no `register(..)` names is still in the class table (so
+// `addComponent(Class)` finds it) and is marked as not registered.
+#[test]
+fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
+    let _serial = iron_ts_tests::serial();
+    let src = "class Started extends Component { n: number = 1; onUpdate(dt: number): void { this.n++; } }\n\
+               class OnlyAdded extends Started { m: number = 2; }\n\
+               register({ Started });\n";
+    let game = compile_and_load(
+        src,
+        &JitOptions {
+            prefix: "jit5_",
+            struct_base: 94_000,
+            manifests: &scene_manifests(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let meta: Vec<_> = game
+        .class_meta()
+        .iter()
+        .map(|c| (c.name.as_str(), c.registered))
+        .collect();
+    assert_eq!(meta, [("Started", true), ("OnlyAdded", false)]);
+}
