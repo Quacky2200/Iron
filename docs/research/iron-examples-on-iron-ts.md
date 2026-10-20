@@ -59,6 +59,21 @@ Counts by class: language 7 (animation, cornell, quality, platformer, arcade, ra
 (sine-circle-demo), JSX 3 (css, form, text), ambient types 1 (boxes), engine facade 6 (classics, cloth, materials, physics, world,
 scenes), ok 1 (hello): 19.
 
+### 1a. After the engine facade (agent E, items 7 to 10; measured 2026-10-20)
+
+First error of each `main.ts(x)` as written, and the first error once the example's JSX components and `createRoot` lines are stripped and the language gaps (L) patched mechanically in a scratch copy (`tools/probe/strip.py`, not committed): the second column is what is left on the engine side.
+
+| Example | As written | Engine side (scratch copy) |
+|---|---|---|
+| classics, cloth | ok (engine part) / language | compiles |
+| cornell, layers, platformer, world | language (defaults, `Scene` shadowing, `createRoot`) | compiles |
+| arcade | static accessors | compiles (after patching `static get`, `Record`, mixed tuples, `useState(fn)`) |
+| animation | defaults, tuple types | compiles (tuples patched to `Vector2`; `AnimationCurve.fromPoints([[t, v]])` needs L's tuples + a pair overload) |
+| scenes | handler arity (language) | `loadSceneAsync` / `serialize()` shapes done |
+| css, form, text, boxes | JSX / ambient types | `addStyleSheet`, `removeStyleSheet`, `loadFont`, `input.gamepads()` / `input.on` done |
+| quality, materials, raindrop-demo, sine-circle-demo | language / module graph | not reached |
+| physics | retired `physics` object | rewrite later |
+
 ### Chains (what comes after the first fix, measured)
 
 | Example | After the first fix the next errors are |
