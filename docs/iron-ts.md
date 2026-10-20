@@ -943,8 +943,15 @@ Tests `M9-TS-562..574` (all bun-compared except the error cases).
 
 TSX components compile against the `Ui` namespace of [iron_ts_ui](../tools/iron_ts_ui/src/lib.rs) and are rendered by
 [iron_ui_native](ui-native.md); no JavaScript engine. Source rewrite: [jsx.rs](../tools/iron_ts/src/lower/jsx.rs) (runs
-first, only when the manifest has the `Ui` namespace); the generic hooks and the event class are the prelude
+first, whenever the source uses JSX or hooks); the generic hooks and the event class are the prelude
 [ui.ts](../tools/iron_ts/src/lower/ui.ts).
+
+JSX is part of the compiler: when the source uses JSX or hooks and the caller's manifests lack the `Ui` namespace,
+`iron_ts` adds its embedded copy (`ui_manifest.json`; the test `M9-TS-1511` in `iron_ts_ui` checks that it equals
+`iron_ts_ui::manifest_json()`, regenerate with `cargo run -p iron_ts_ui --example manifest`). The compiled code calls
+`ts_ui_*` symbols, so a host that compiles JSX must link `iron_ts_ui`; without it the link fails. A JSX syntax error
+is reported by the TSX parser with its line (`parse error (line 4): ...`). `{cond && <x/>}` renders an empty fragment
+when `cond` is false.
 
 - **Elements.** `<box style={{ width: 10 }} onClick={f} className="x" key="k">` becomes builder calls
   (`Ui.begin`, `Ui.style`, `Ui.attr`, `Ui.on`, `Ui.key`, `Ui.child`). A `Ui` function with several versions

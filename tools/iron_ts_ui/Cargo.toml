@@ -11,3 +11,6 @@ iron_ui = { path = "../../crates/iron_ui" }
 iron_core = { path = "../../crates/iron_core" }
 iron_api = { path = "../../crates/iron_api" }
 serde_json = "1"
+
+[dev-dependencies]
+iron_ts = { path = "../iron_ts" }

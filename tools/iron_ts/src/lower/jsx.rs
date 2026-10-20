@@ -25,6 +25,10 @@ use std::collections::{HashMap, HashSet};
 /// The prelude: the event class, the handler wrapper and the generic hooks.
 pub const UI_PRELUDE: &str = include_str!("ui.ts");
 
+/// The `Ui` namespace (`iron_ts_ui::manifest_json()`), embedded so that JSX needs no manifest from
+/// the caller. Regenerate with `cargo run -p iron_ts_ui --example manifest`.
+pub const UI_MANIFEST: &str = include_str!("ui_manifest.json");
+
 /// Does the program use JSX or the hooks?
 pub fn wanted(src: &str) -> bool {
     src.contains("</")
@@ -291,7 +295,21 @@ impl<'s> Finder<'s> {
                 JSXChild::ExpressionContainer(c) => match &c.expression {
                     JSXExpression::EmptyExpression(_) => {}
                     e => {
-                        let t = self.slice(e.span()).to_string();
+                        let mut t = self.slice(e.span()).to_string();
+                        // `{cond && <x/>}`: no element when false (an empty fragment), as in React.
+                        if let Some(Expression::LogicalExpression(l)) = e.as_expression()
+                            && l.operator == LogicalOperator::And
+                            && matches!(
+                                l.right.get_inner_expression(),
+                                Expression::JSXElement(_) | Expression::JSXFragment(_)
+                            )
+                        {
+                            t = format!(
+                                "(({}) ? {} : Ui.fragment())",
+                                self.slice(l.left.span()),
+                                self.slice(l.right.span())
+                            );
+                        }
                         *out = format!("Ui.child({out}, {t})");
                     }
                 },
@@ -506,11 +524,12 @@ impl<'a> Visit<'a> for Finder<'_> {
                     text += &format!(" const __up_{s} = {tmp}.update;");
                 }
             }
-            // The declaration's span has no `;`; a trailing one in the source stays harmless.
+            // The declaration's span may or may not include its `;`: the text ends with one either
+            // way (a second one in the source is an empty statement).
             self.edits.push(Edit {
                 start: d.span.start as usize,
                 end: d.span.end as usize,
-                text: text.trim_end_matches(';').to_string(),
+                text,
             });
             return;
         }
@@ -691,8 +710,24 @@ fn desugar_passes(src: &str) -> R<Option<String>> {
         let alloc = Allocator::default();
         let ret = Parser::new(&alloc, &cur, SourceType::tsx()).parse();
         if !ret.diagnostics.is_empty() {
-            // The ordinary parse reports it with its line.
-            return Ok(if changed { Some(cur) } else { None });
+            // Plain TypeScript that is not TSX (`<T>x`) and merely mentions `</` is fine.
+            let ts = Parser::new(&alloc, &cur, SourceType::ts()).parse();
+            if ts.diagnostics.is_empty() {
+                return Ok(if changed { Some(cur) } else { None });
+            }
+            // Otherwise it is a JSX error: report the TSX parser's, with its line in the user's
+            // source (the passes keep the line count).
+            let d = &ret.diagnostics[0];
+            return Err(match d.labels.first() {
+                Some(l) => {
+                    let line = cur[..(l.offset() as usize).min(cur.len())]
+                        .matches(char::from(10))
+                        .count()
+                        + 1;
+                    format!("parse error (line {line}): {d}")
+                }
+                None => format!("parse error: {d}"),
+            });
         }
         let mut finder = Finder {
             src: &cur,

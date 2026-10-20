@@ -1372,6 +1372,7 @@ version = "0.1.0"
 dependencies = [
  "iron_api",
  "iron_core",
+ "iron_ts",
  "iron_ts_rt",
  "iron_ui",
  "iron_ui_native",

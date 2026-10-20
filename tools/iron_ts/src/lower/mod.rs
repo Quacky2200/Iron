@@ -25,6 +25,7 @@ mod intl;
 mod iter;
 mod json;
 mod jsx;
+pub use jsx::UI_MANIFEST;
 mod maps;
 mod object;
 mod prelude;
@@ -248,7 +249,12 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         manifest.add_json(m)?;
     }
     // JSX and hooks become calls of the `Ui` namespace (first: the other rewrites parse plain TS).
-    let wants_ui = manifest.namespaces.contains_key("Ui") && jsx::wanted(src);
+    // The compiler brings the `Ui` namespace itself when the caller did not pass it (the host links
+    // the `ts_ui_*` symbols; `iron_ts_ui` checks that this copy equals its own).
+    let wants_ui = jsx::wanted(src);
+    if wants_ui && !manifest.namespaces.contains_key("Ui") {
+        manifest.add_json(jsx::UI_MANIFEST)?;
+    }
     let rewritten_ui = if wants_ui { jsx::desugar(src)? } else { None };
     let src = rewritten_ui.as_deref().unwrap_or(src);
     // `Task.delay(..)` is a class of TypeScript appended to the program.
