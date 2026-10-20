@@ -62,3 +62,11 @@ simulates everything. What is left is the script surface, and three pieces of bo
 Open: the shape of the `Collision` argument (a value type `Collision { other, collider, speed, sensor }`, recommended, or two
 loose parameters), and how value-class `@property` fields are written back once values are on the stack (a fresh value, not
 in place).
+
+## 7. More decisions (user, 2026-10-20)
+
+- Physics is all native: no op-based path stays next to it.
+- `Rigidbody2D` and the 2D colliders stay separate classes (same registry, z locked).
+- Handles in QuickJS: whatever the compiled side treats as internal (engine ids, handles) is exported to QuickJS as an opaque
+  internal value, like V8's internal fields; QuickJS encodes plain data (numbers, strings, arrays, value classes) and anything
+  that touches the engine goes through those opaque handles. Details to confirm when QuickJS handle classes are built.
