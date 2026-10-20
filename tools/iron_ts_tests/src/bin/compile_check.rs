@@ -15,6 +15,8 @@ fn main() {
     manifests.extend(iron_scenes::manifests());
     manifests.extend(iron_physics_api::manifests());
     manifests.extend(iron_render_api::manifests());
+    // The native UI (JSX is rewritten when this namespace is present).
+    manifests.push(iron_ts_ui::manifest_json());
 
     // Lowering and code generation both (set IRON_TS_TRACE=1 to see each function as it is built).
     match iron_ts::compile_with_manifests(&src, "speed", "chk_", 40000, &manifests) {
