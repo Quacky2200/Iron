@@ -1016,6 +1016,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let mut class_order: Vec<String> = Vec::new();
     let mut class_entries: Vec<Vec<TokenStream2>> = Vec::new();
     let mut shims = Vec::new();
+    // `("iron_X_f", iron_X_f as usize)` for each shim: the table a JIT resolves imports from.
+    let mut symbol_entries: Vec<TokenStream2> = Vec::new();
     let mut js_sets = Vec::new();
     // Namespace functions by script name: a name with several versions (overloads) dispatches by
     // the number of arguments.
@@ -1046,6 +1048,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             .unwrap_or_else(|| ns.clone());
         let symbol = format!("iron_{owner}_{}", a.stem);
         let symbol_ident = format_ident!("{}", symbol);
+        symbol_entries.push(quote!((#symbol, #symbol_ident as *const () as usize)));
         let doc = &a.doc;
         let has_receiver = a.class.is_some()
             && matches!(a.tag, Tag::Method | Tag::Get | Tag::Set)
@@ -1630,6 +1633,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
 
             /// What this namespace exports to scripts.
             pub const MANIFEST: ::iron_api::Namespace = ::iron_api::Namespace {
+                symbols: ::iron_api::SymbolTable(iron_symbols),
                 name: #ns,
                 handles: &[ #( #handle_names ),* ],
                 values: &[ #( #value_defs ),* ],
@@ -1638,6 +1642,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             };
 
             #( #shims )*
+
+            /// The shims' names and addresses, for a JIT.
+            pub fn iron_symbols() -> Vec<(&'static str, usize)> {
+                vec![ #( #symbol_entries ),* ]
+            }
 
             #quickjs
         }

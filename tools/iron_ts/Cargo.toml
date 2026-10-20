@@ -6,10 +6,13 @@ publish.workspace = true
 
 [dependencies]
 iron_ts_rt = { path = "../iron_ts_rt" }
+iron_api = { path = "../../crates/iron_api", default-features = false }
 cranelift-codegen = "0.136.3"
 cranelift-frontend = "0.136.3"
 cranelift-module = "0.136.3"
 cranelift-object = "0.136.3"
+cranelift-jit = "0.136.3"
+cranelift-native = "0.136.3"
 oxc_allocator = "0.154.0"
 oxc_ast = "0.154.0"
 oxc_ast_visit = "0.154.0"

@@ -160,8 +160,55 @@ pub struct ClassDef {
     pub functions: &'static [Function],
 }
 
+/// The addresses of a namespace's `extern "C"` shims by symbol name (what `#[iron_api]` emits as
+/// `iron_symbols`). A JIT resolves a compiled program's imports through [`symbol`].
+#[derive(Clone, Copy)]
+pub struct SymbolTable(pub fn() -> Vec<(&'static str, usize)>);
+
+impl std::fmt::Debug for SymbolTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SymbolTable")
+    }
+}
+
+impl PartialEq for SymbolTable {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 as usize == other.0 as usize
+    }
+}
+
+type Registry = std::sync::Mutex<std::collections::HashMap<&'static str, usize>>;
+
+fn symbol_registry() -> &'static Registry {
+    static R: std::sync::OnceLock<Registry> = std::sync::OnceLock::new();
+    R.get_or_init(Default::default)
+}
+
+/// Adds symbols (name, address) to the process-wide table.
+pub fn register_symbols(symbols: impl IntoIterator<Item = (&'static str, usize)>) {
+    let mut r = symbol_registry().lock().unwrap_or_else(|e| e.into_inner());
+    r.extend(symbols);
+}
+
+/// The address of an engine shim or runtime function, if its namespace was registered. Reading a
+/// namespace's manifest (`Namespace::to_json`, so every crate's `manifests()`) registers it.
+pub fn symbol(name: &str) -> Option<usize> {
+    let r = symbol_registry().lock().unwrap_or_else(|e| e.into_inner());
+    r.get(name).copied()
+}
+
+/// How many symbols are registered.
+pub fn symbol_count() -> usize {
+    symbol_registry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .len()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Namespace {
+    /// The shims' addresses.
+    pub symbols: SymbolTable,
     pub name: &'static str,
     /// The handle types it mentions: `(TypeScript name)`.
     pub handles: &'static [&'static str],
@@ -570,6 +617,7 @@ impl Namespace {
     ///
     /// Class functions list the receiver first, as a parameter named `this`.
     pub fn to_json(&self) -> String {
+        register_symbols((self.symbols.0)());
         let handles: Vec<String> = self.handles.iter().map(|h| json_str(h)).collect();
         let values: Vec<String> = self
             .values

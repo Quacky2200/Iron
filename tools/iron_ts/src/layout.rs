@@ -58,7 +58,7 @@ fn rust_ty(m: &Module, t: &Ty, in_struct: bool) -> String {
 }
 
 /// The type of a `@property` field, as a short name a host can switch on.
-fn prop_kind(m: &Module, t: &Ty) -> String {
+pub(crate) fn prop_kind(m: &Module, t: &Ty) -> String {
     let base = match t.strip() {
         Ty::Num => "number".to_string(),
         Ty::Bool => "boolean".to_string(),

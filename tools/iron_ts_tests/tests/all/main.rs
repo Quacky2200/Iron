@@ -42,6 +42,7 @@ mod inputs2;
 mod intl;
 mod intl4;
 mod iterators;
+mod jit;
 mod json;
 mod layers;
 mod locale;

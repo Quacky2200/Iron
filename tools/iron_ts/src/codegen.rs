@@ -13,8 +13,9 @@ use cranelift_codegen::ir::{
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
+use cranelift_module::Module as ClifModule;
 use cranelift_module::{
-    DataDescription, DataId, FuncId as CFuncId, Linkage, Module as _, default_libcall_names,
+    DataDescription, DataId, FuncId as CFuncId, Linkage, default_libcall_names,
 };
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
@@ -51,7 +52,7 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
 }
 
 /// Defines a static string object: header (a string, no heap), lengths, flags, cursor, bytes.
-fn define_static_str(module: &mut ObjectModule, name: &str, bytes: &[u8]) -> R<DataId> {
+fn define_static_str(module: &mut impl ClifModule, name: &str, bytes: &[u8]) -> R<DataId> {
     let id = module
         .declare_data(name, Linkage::Local, true, false)
         .map_err(|e| e.to_string())?;
@@ -102,23 +103,46 @@ pub struct Compiled {
     pub object: Vec<u8>,
 }
 
-/// Compiles a module. `opt` is Cranelift's `opt_level`: "none", "speed" or "speed_and_size".
-pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
+/// The host's instruction set with the settings both back ends share. `native` asks the CPU for
+/// its features (the JIT runs here; an object file must run on any machine of the triple).
+pub(crate) fn host_isa(
+    opt: &str,
+    native: bool,
+) -> R<std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>> {
     let mut flags = settings::builder();
     flags.set("opt_level", opt).map_err(|e| e.to_string())?;
     flags.set("is_pic", "false").map_err(|e| e.to_string())?;
     flags
         .set("unwind_info", "false")
         .map_err(|e| e.to_string())?;
-    let isa = cranelift_codegen::isa::lookup(target_lexicon::Triple::host())
+    let flags = settings::Flags::new(flags);
+    if native {
+        let b = cranelift_native::builder().map_err(|e| e.to_string())?;
+        return b.finish(flags).map_err(|e| e.to_string());
+    }
+    cranelift_codegen::isa::lookup(target_lexicon::Triple::host())
         .map_err(|e| e.to_string())?
-        .finish(settings::Flags::new(flags))
-        .map_err(|e| e.to_string())?;
-    let call_conv = isa.default_call_conv();
-    let fcfg = isa.frontend_config();
+        .finish(flags)
+        .map_err(|e| e.to_string())
+}
+
+/// Compiles a module. `opt` is Cranelift's `opt_level`: "none", "speed" or "speed_and_size".
+pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
+    let isa = host_isa(opt, false)?;
     let mut module = ObjectModule::new(
         ObjectBuilder::new(isa, "iron_ts", default_libcall_names()).map_err(|e| e.to_string())?,
     );
+    generate(&mut module, m)?;
+    let object = module.finish().emit().map_err(|e| e.to_string())?;
+    Ok(Compiled { object })
+}
+
+/// Defines every function and datum of `m` in `module`. Returns the exported functions by symbol
+/// name. The same code drives the object writer and the JIT.
+pub(crate) fn generate<M: ClifModule>(module: &mut M, m: &Module) -> R<Vec<(String, CFuncId)>> {
+    let call_conv = module.isa().default_call_conv();
+    let fcfg = module.isa().frontend_config();
+    let mut exports: Vec<(String, CFuncId)> = Vec::new();
 
     // Functions: declare all first so calls can be forward references.
     let mut cfuncs: Vec<CFuncId> = Vec::new();
@@ -134,11 +158,13 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         } else {
             (format!("iron_ts_local_{}", f.name), Linkage::Local)
         };
-        cfuncs.push(
-            module
-                .declare_function(&name, linkage, &sig)
-                .map_err(|e| e.to_string())?,
-        );
+        let id = module
+            .declare_function(&name, linkage, &sig)
+            .map_err(|e| e.to_string())?;
+        if f.exported {
+            exports.push((name, id));
+        }
+        cfuncs.push(id);
     }
     // Engine functions the module calls: imports, with the C ABI of the manifest.
     let mut ext_funcs: Vec<CFuncId> = Vec::new();
@@ -226,7 +252,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
     let mut sdata: Vec<DataId> = Vec::new();
     for (i, text) in m.strs.iter().enumerate() {
         sdata.push(define_static_str(
-            &mut module,
+            module,
             &format!("ts_s_{}{}", m.prefix, i),
             text,
         )?);
@@ -260,7 +286,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         let mut tag_strs = Vec::new();
         for (i, text) in m.tags.iter().enumerate() {
             tag_strs.push(define_static_str(
-                &mut module,
+                module,
                 &format!("ts_t_{}{}", m.prefix, i),
                 text.as_bytes(),
             )?);
@@ -327,7 +353,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
                 b,
                 mf_t,
                 mf_p,
-                module: &mut module,
+                module: &mut *module,
                 m,
                 f,
                 vars,
@@ -357,8 +383,7 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
             .map_err(|e| format!("{}: {e:?}", f.name))?;
         module.clear_context(&mut ctx);
     }
-    let object = module.finish().emit().map_err(|e| e.to_string())?;
-    Ok(Compiled { object })
+    Ok(exports)
 }
 
 fn zero(b: &mut FunctionBuilder, t: ir::Type) -> Value {
@@ -369,7 +394,7 @@ fn zero(b: &mut FunctionBuilder, t: ir::Type) -> Value {
     }
 }
 
-struct Cg<'a, 'b> {
+struct Cg<'a, 'b, M: ClifModule> {
     b: FunctionBuilder<'b>,
     /// The shadow-stack frame (see `frames.rs`): pointer locals are mirrored here.
     frame_slot: Option<StackSlot>,
@@ -378,7 +403,7 @@ struct Cg<'a, 'b> {
     n_slots: u32,
     mf_t: MemFlagsData,
     mf_p: MemFlagsData,
-    module: &'a mut ObjectModule,
+    module: &'a mut M,
     m: &'a Module,
     f: &'a Func,
     vars: Vec<Variable>,
@@ -401,7 +426,7 @@ struct Cg<'a, 'b> {
     call_conv: CallConv,
 }
 
-impl Cg<'_, '_> {
+impl<M: ClifModule> Cg<'_, '_, M> {
     fn null_num(&mut self) -> Value {
         self.b.ins().f64const(f64::from_bits(NULL_NUM_BITS))
     }

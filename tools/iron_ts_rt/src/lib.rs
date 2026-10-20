@@ -1071,6 +1071,8 @@ pub unsafe extern "C" fn ts_rt_arr_sort(a: *mut Array, cmp: *mut Closure, mode: 
     }
 }
 
+include!(concat!(env!("OUT_DIR"), "/symbols.rs"));
+
 // ---- strings: see string.rs ----
 
 mod bigint;

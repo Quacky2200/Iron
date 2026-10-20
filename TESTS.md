@@ -1245,3 +1245,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1852 | Integration | A build writes `game.irbundle`, `game.css`, the named assets and `.meta`; a compile error fails the build. |
 | M9-TS-1860 | Unit | `dist/.iron-reload` holds `{seq, ok}` or `{seq, ok:false, error}`. |
 | M9-TS-1861 | Unit | The watch fingerprint changes with sources, not with `dist/`. |
+| M9-TS-1900 | Integration | The object writer's output (size and hash of three programs) is unchanged by the generic code generation. |
+| M9-TS-1901 | Integration | A program compiled in process (`jit::compile_and_load`) runs: exported functions called through their addresses. |
+| M9-TS-1902 | Integration | JIT code uses the runtime (strings, arrays, `Math`) through the generated `ts_rt_*` symbol table. |
+| M9-TS-1903 | Integration | An engine function the host does not provide is an error naming its symbol, before any code runs. |
+| M9-TS-1904 | Integration | A JIT-compiled component program: the class table is read at run time and `NativeHost` drives it over the real scene. |
+| M9-API-600 | Integration | Reading the manifests registers the shim addresses: every manifest function symbol resolves with no hand-kept list. |
+| M9-API-601 | Unit | The runtime's generated symbol table lists its `extern "C"` exports. |

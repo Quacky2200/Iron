@@ -1050,3 +1050,5 @@ pub fn manifest_json() -> String {
     })];
     json!({ "namespace": "Ui", "functions": functions, "classes": classes }).to_string()
 }
+
+include!(concat!(env!("OUT_DIR"), "/symbols.rs"));
