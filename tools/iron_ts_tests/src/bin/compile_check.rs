@@ -12,6 +12,9 @@ fn main() {
     let src = std::fs::read_to_string(&path).expect("read the file");
     let mut manifests = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
     manifests.extend(iron_engine_api::manifests());
+    manifests.extend(iron_scenes::manifests());
+    manifests.extend(iron_physics_api::manifests());
+    manifests.extend(iron_render_api::manifests());
 
     // Lowering and code generation both (set IRON_TS_TRACE=1 to see each function as it is built).
     match iron_ts::compile_with_manifests(&src, "speed", "chk_", 40000, &manifests) {
