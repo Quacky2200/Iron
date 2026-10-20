@@ -1200,3 +1200,18 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-143 | Integration | `Model.load` / `instantiate` with optional values left out. |
 | M9-API-144 | Integration | Every component class with `attach` (and assets with `create()`): each get/set property round-trips its own value (265 properties, `surface.rs`). |
 | M9-API-145 | Integration | GC stress: tiny collection threshold, thousands of handle objects and 200 engine-held callbacks stay correct. |
+| M9-TS-1600 | Integration | An effect whose cleanup is an arrow around a void call (`return () => clearTimeout(id)`) and a setter inside the timer compile (`tools/iron_ts/tests/react_front.rs`; was a Cranelift verifier error). |
+| M9-TS-1601 | Integration | Parameter types come from their default values (`phase = 0`, `name = "x"`, `on = false`). |
+| M9-TS-1602 | Integration | A program class named like an engine handle (`class Scene`) shadows it (was a panic). |
+| M9-TS-1603 | Integration | `Text`, `Span`, `Input`, `TextArea`, `Image` are the intrinsic elements. |
+| M9-TS-1604 | Integration | A program component named `Text` keeps its meaning. |
+| M9-TS-1605 | Integration | Text, numbers, lists and `cond && <x/>` are children of a user component (`children?: ReactNode`). |
+| M9-TS-1606 | Integration | `key={4}` and boolean children. |
+| M9-TS-1607 | Integration | `onClick={f}` with a 0-parameter function, `undefined` handlers, an optional `onPress` prop, `<Btn />` for all-optional props. |
+| M9-TS-1608 | Integration | `style` values that are `number \| string`, or `undefined` (`cursor: on ? "pointer" : undefined`). |
+| M9-TS-1609 | Integration | `useState(() => 5)`, `useState(read)`, `useState<number[]>([])` and setters inside an effect. |
+| M9-TS-1610 | Integration | `IronStyle` constants and spreads, `React.ReactNode`, a function returning `IronStyle`. |
+| M9-TS-1611 | Integration | Event fields `shiftKey`, `ctrlKey`, `code`, `deltaY`, `scrollTop`, `target.value`. |
+| M9-TS-1612 | Integration | `useRef<IronElement>(null)` with `.focus()`, `.blur()`, `.scrollTo(x, y)`. |
+| M9-TS-1613 | Integration | `static get twice()` reads like a field. |
+| M9-TS-1614 | Integration | A component with `return null` and `return <box/>`. |

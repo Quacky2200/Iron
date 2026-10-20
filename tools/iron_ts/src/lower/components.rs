@@ -55,7 +55,7 @@ pub fn prelude(has_game_object: bool, has_collider: bool) -> String {
             "number"
         };
         format!(
-            "class Collision {{\n  other: GameObject | null;\n  collider: {ct};\n  speed: number;\n  sensor: boolean;\n  constructor(other: GameObject | null, collider: {ct}, speed: number, sensor: boolean) {{\n    this.other = other;\n    this.collider = collider;\n    this.speed = speed;\n    this.sensor = sensor;\n  }}\n  get gameObject(): GameObject | null {{\n    return this.other;\n  }}\n  get relativeSpeed(): number {{\n    return this.speed;\n  }}\n}}\n"
+            "class Collision {{\n  other: GameObject | null;\n  collider: {ct};\n  speed: number;\n  sensor: boolean;\n  constructor(other: GameObject | null, collider: {ct}, speed: number, sensor: boolean) {{\n    this.other = other;\n    this.collider = collider;\n    this.speed = speed;\n    this.sensor = sensor;\n  }}\n  get gameObject(): GameObject | null {{\n    return this.other;\n  }}\n  get relativeSpeed(): number {{\n    return this.speed;\n  }}\n}}\ntype Collision2D = Collision;\n"
         )
     } else {
         String::new()

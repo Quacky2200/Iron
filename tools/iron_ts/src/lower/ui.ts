@@ -1,9 +1,34 @@
+class UiTarget {
+  id: number = Ui.evTarget();
+  value: string = Ui.evStr(0);
+}
+
 class UiEvent {
   type: string = Ui.evKind();
-  target: number = Ui.evTarget();
+  target: UiTarget = new UiTarget();
   clientX: number = Ui.evNum(0);
   clientY: number = Ui.evNum(1);
+  x: number = Ui.evNum(0);
+  y: number = Ui.evNum(1);
+  button: number = Ui.evNum(2);
+  buttons: number = Ui.evNum(3);
+  detail: number = Ui.evNum(4);
+  deltaX: number = Ui.evNum(5);
+  deltaY: number = Ui.evNum(6);
+  shiftKey: boolean = (Ui.evNum(7) & 1) !== 0;
+  ctrlKey: boolean = (Ui.evNum(7) & 2) !== 0;
+  altKey: boolean = (Ui.evNum(7) & 4) !== 0;
+  metaKey: boolean = (Ui.evNum(7) & 8) !== 0;
+  repeat: boolean = Ui.evNum(8) === 1;
+  scrollLeft: number = Ui.evNum(10);
+  scrollTop: number = Ui.evNum(11);
+  scrollWidth: number = Ui.evNum(12);
+  scrollHeight: number = Ui.evNum(13);
+  clientWidth: number = Ui.evNum(14);
+  clientHeight: number = Ui.evNum(15);
+  pointerId: number = 1;
   key: string = Ui.evStr(0);
+  code: string = Ui.evStr(1);
   value: string = Ui.evStr(0);
   stopPropagation(): void {
     Ui.evStop();
@@ -13,9 +38,12 @@ class UiEvent {
   }
 }
 
-function __handler(f: (e: UiEvent) => void): () => void {
+// A handler may be missing (`onClick={cond ? undefined : f}`) and may take no parameter.
+function __handler(f: ((e: UiEvent) => void) | undefined): () => void {
   return (): void => {
-    f(new UiEvent());
+    if (f) {
+      f(new UiEvent());
+    }
   };
 }
 
@@ -29,6 +57,24 @@ class State<T> {
 function useState<T>(init: T): State<T> {
   const s = new State<T>();
   s.slot = Ui.stateNew(init);
+  s.value = Ui.load<T>(s.slot);
+  const slot = s.slot;
+  s.set = (v: T): void => {
+    Ui.store(slot, v);
+  };
+  s.update = (f: (prev: T) => T): void => {
+    Ui.store(slot, f(Ui.load<T>(slot)));
+  };
+  return s;
+}
+
+// `useState(() => init)`: the initial value is computed on the first render only.
+function useStateLazy<T>(init: () => T): State<T> {
+  const s = new State<T>();
+  s.slot = Ui.stateSlot();
+  if (Ui.stateEmpty(s.slot)) {
+    Ui.store(s.slot, init());
+  }
   s.value = Ui.load<T>(s.slot);
   const slot = s.slot;
   s.set = (v: T): void => {

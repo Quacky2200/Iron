@@ -375,6 +375,20 @@ pub extern "C" fn ts_ui_key(h: u64, k: *const u8) -> u64 {
     h
 }
 
+/// `key={3}`: a number key is its text.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_key_num(h: u64, k: f64) -> u64 {
+    let k = format_number(k);
+    with_built(h, |b| match b {
+        Built::Host { key, .. }
+        | Built::Fragment { key, .. }
+        | Built::Component { key, .. }
+        | Built::Provider { key, .. } => *key = Some(k),
+        Built::Text(_) => {}
+    });
+    h
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_on(h: u64, kind: *const u8, f: *mut Closure) -> u64 {
     let name = text(kind);
@@ -468,6 +482,12 @@ pub extern "C" fn ts_ui_child_num(h: u64, n: f64) -> u64 {
     push_child(h, t)
 }
 
+/// `{flag}` as a child renders nothing (`true`, `false`), as in React.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_child_bool(h: u64, _b: bool) -> u64 {
+    h
+}
+
 #[unsafe(no_mangle)]
 /// # Safety
 /// `items` is null or a script array of handles.
@@ -533,6 +553,46 @@ pub extern "C" fn ts_ui_ref(h: u64, obj: u64) -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_node_id(n: u64) -> f64 {
     n.wrapping_sub(1) as f64
+}
+
+/// What a script asked of a node it holds a ref to (`ref.current?.focus()`). The host that owns
+/// the `UiTree` and its interaction state applies them (see `take_node_commands`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NodeCommand {
+    Focus(u32),
+    Blur(u32),
+    /// Scroll the node's content to this offset.
+    ScrollTo(u32, f64, f64),
+}
+
+thread_local! {
+    static NODE_COMMANDS: RefCell<Vec<NodeCommand>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The node commands since the last call, in order.
+pub fn take_node_commands() -> Vec<NodeCommand> {
+    NODE_COMMANDS.with(|c| std::mem::take(&mut *c.borrow_mut()))
+}
+
+fn node_command(n: u64, f: impl FnOnce(u32) -> NodeCommand) {
+    if n != 0 {
+        NODE_COMMANDS.with(|c| c.borrow_mut().push(f((n - 1) as u32)));
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_focus(n: u64) {
+    node_command(n, NodeCommand::Focus);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_blur(n: u64) {
+    node_command(n, NodeCommand::Blur);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_scroll_to(n: u64, x: f64, y: f64) {
+    node_command(n, |id| NodeCommand::ScrollTo(id, x, y));
 }
 
 // ---- context ----
@@ -620,6 +680,18 @@ fn state_new(kind: u8, bits: u64) -> f64 {
         cell.set(kind, bits);
     }
     cell.id.get() as f64
+}
+
+/// `useState(() => init)`: the hook's slot, made before the initial value is computed.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_state_slot() -> f64 {
+    next_cell().id.get() as f64
+}
+
+/// Has the slot never been given a value (the first render)?
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_state_empty(slot: f64) -> bool {
+    cell_of(slot).kind.get() == 0
 }
 
 #[unsafe(no_mangle)]
@@ -756,6 +828,13 @@ pub fn link_anchor() -> usize {
         ts_ui_fragment as *const () as usize,
         ts_ui_component as *const () as usize,
         ts_ui_key as *const () as usize,
+        ts_ui_key_num as *const () as usize,
+        ts_ui_child_bool as *const () as usize,
+        ts_ui_node_focus as *const () as usize,
+        ts_ui_node_blur as *const () as usize,
+        ts_ui_node_scroll_to as *const () as usize,
+        ts_ui_state_slot as *const () as usize,
+        ts_ui_state_empty as *const () as usize,
         ts_ui_on as *const () as usize,
         ts_ui_style_num as *const () as usize,
         ts_ui_style_str as *const () as usize,
@@ -825,6 +904,7 @@ pub fn manifest_json() -> String {
             el,
         ),
         f("key", "ts_ui_key", &[("h", el), ("key", "string")], el),
+        f("key", "ts_ui_key_num", &[("h", el), ("key", "f64")], el),
         f(
             "on",
             "ts_ui_on",
@@ -870,6 +950,7 @@ pub fn manifest_json() -> String {
         ),
         f("child", "ts_ui_child_num", &[("h", el), ("n", "f64")], el),
         f("child", "ts_ui_child_arr", &[("h", el), ("items", els)], el),
+        f("child", "ts_ui_child_bool", &[("h", el), ("b", "bool")], el),
         f("ref", "ts_ui_ref", &[("h", el), ("r", "ptr")], el),
         f("nodeId", "ts_ui_node_id", &[("n", "handle:UiNode")], "f64"),
         f(
@@ -897,6 +978,13 @@ pub fn manifest_json() -> String {
         f("dep", "ts_ui_dep_bool", &[("v", "bool")], "void"),
         f("dep", "ts_ui_dep_str", &[("v", "string")], "void"),
         f("dep", "ts_ui_dep_ptr", &[("v", "ptr")], "void"),
+        f("stateSlot", "ts_ui_state_slot", &[], "f64"),
+        f(
+            "stateEmpty",
+            "ts_ui_state_empty",
+            &[("slot", "f64")],
+            "bool",
+        ),
         f("stateNew", "ts_ui_state_num", &[("init", "f64")], "f64"),
         f("stateNew", "ts_ui_state_bool", &[("init", "bool")], "f64"),
         f("stateNew", "ts_ui_state_ptr", &[("init", "ptr")], "f64"),
@@ -944,5 +1032,21 @@ pub fn manifest_json() -> String {
             el,
         ),
     ];
-    json!({ "namespace": "Ui", "functions": functions }).to_string()
+    // Methods of a node a `ref` holds (`ref.current?.focus()`).
+    let node = |name: &str, symbol: &str, extra: &[(&str, &str)]| {
+        let mut params = vec![("this", "handle:UiNode")];
+        params.extend_from_slice(extra);
+        let mut v = f(name, symbol, &params, "void");
+        v["kind"] = json!("method");
+        v
+    };
+    let classes = vec![json!({
+        "name": "UiNode",
+        "functions": [
+            node("focus", "ts_ui_node_focus", &[]),
+            node("blur", "ts_ui_node_blur", &[]),
+            node("scrollTo", "ts_ui_node_scroll_to", &[("x", "f64"), ("y", "f64")]),
+        ],
+    })];
+    json!({ "namespace": "Ui", "functions": functions, "classes": classes }).to_string()
 }

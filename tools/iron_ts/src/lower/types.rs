@@ -2,7 +2,24 @@
 
 use super::*;
 
+/// Can `a` stand for `g` because the caller's extra arguments are ignored?
+fn fn_ignores_extra(a: &FnTy, g: &FnTy) -> bool {
+    a.params.len() < g.params.len()
+        && (a.ret == g.ret || g.ret == Ty::Void)
+        && a.params.iter().zip(&g.params).all(|(x, y)| x == y)
+}
+
+fn b_strip_owned(t: &Ty) -> Ty {
+    t.strip().clone()
+}
+
 impl<'a> Lowerer<'a> {
+    /// Is `t` the prelude's `StyleValue` (what `number | string` means)?
+    pub(crate) fn is_style_value(&self, t: &Ty) -> bool {
+        matches!(t, Ty::Obj(s) if self.m.structs[*s].name == "StyleValue")
+            && self.fids.contains_key("__sv_num")
+    }
+
     pub(crate) fn key_name(&self, k: &PropertyKey<'a>) -> R<String> {
         match k {
             PropertyKey::StaticIdentifier(i) => Ok(i.name.to_string()),
@@ -96,6 +113,12 @@ impl<'a> Lowerer<'a> {
                     && matches!(&q.left, TSTypeName::IdentifierReference(l) if l.name == "Intl")
                 {
                     return self.named_type(&format!("Intl_{}", q.right.name));
+                }
+                // `React.ReactNode` is `ReactNode`.
+                if let TSTypeName::QualifiedName(q) = &r.type_name
+                    && matches!(&q.left, TSTypeName::IdentifierReference(l) if l.name == "React")
+                {
+                    return self.named_type(q.right.name.as_str());
                 }
                 let TSTypeName::IdentifierReference(id) = &r.type_name else {
                     bail!("qualified type name")
@@ -317,14 +340,16 @@ impl<'a> Lowerer<'a> {
         if let Some(t) = self.named.get(name) {
             return Ok(t.clone());
         }
-        if self.manifest.values.contains_key(name) {
-            return Ok(Ty::Obj(self.value_struct(name)));
-        }
-        if self.manifest.handles.contains(name) {
-            return Ok(Ty::Handle(name.to_string()));
-        }
+        // The program's own declarations shadow the engine's names (`class Scene extends Component`).
         if self.class_decls.contains_key(name) {
             return self.class_type(name);
+        }
+        let own = self.ifaces.contains_key(name) || self.aliases.contains_key(name);
+        if !own && self.manifest.values.contains_key(name) {
+            return Ok(Ty::Obj(self.value_struct(name)));
+        }
+        if !own && self.manifest.handles.contains(name) {
+            return Ok(Ty::Handle(name.to_string()));
         }
         if let Some(i) = self.ifaces.get(name).copied() {
             if !i.extends.is_empty() {
@@ -383,6 +408,12 @@ impl<'a> Lowerer<'a> {
                 Ty::Null
             } else if tys.iter().all(|t| *t == tys[0]) {
                 tys.swap_remove(0)
+            } else if self.class_decls.contains_key("StyleValue")
+                && tys.contains(&Ty::Num)
+                && tys.iter().all(|t| matches!(t, Ty::Num | Ty::Str | Ty::Lit))
+            {
+                // `number | string`: the prelude's `StyleValue` (CSS lengths and keywords).
+                self.named_type("StyleValue")?
             } else {
                 bail!(
                     "unsupported union of {:?}",
@@ -444,6 +475,54 @@ impl<'a> Lowerer<'a> {
                 kind: ExprKind::Cast(Box::new(e)),
                 ty: to.clone(),
             }),
+            // A function that takes fewer parameters where more are given (`onClick={() => ..}` for
+            // `(e) => void`): the extra arguments are ignored, as in JavaScript. The caller cleans
+            // the argument registers, so the same closure works unchanged.
+            (a, b)
+                if matches!((a.strip(), b.strip()), (Ty::Fn(x), Ty::Fn(g)) if fn_ignores_extra(x, g))
+                    && (b.is_nullable() || !a.is_nullable()) =>
+            {
+                Ok(Expr {
+                    kind: ExprKind::Cast(Box::new(e)),
+                    ty: to.clone(),
+                })
+            }
+            // A component that may return nothing (`return null`) where an element is expected: a
+            // null handle renders nothing.
+            (Ty::Nullable(inner), Ty::Handle(n))
+                if n == "UiElement" && matches!(&**inner, Ty::Handle(m) if m == n) =>
+            {
+                Ok(Expr {
+                    kind: ExprKind::Cast(Box::new(e)),
+                    ty: to.clone(),
+                })
+            }
+            // A number or a string where a `number | string` (`StyleValue`) goes.
+            (Ty::Num | Ty::Str | Ty::Lit, b) if self.is_style_value(b.strip()) => {
+                let (f, e) = match &e.ty {
+                    Ty::Num => ("__sv_num", e),
+                    Ty::Str => ("__sv_str", e),
+                    _ => (
+                        "__sv_str",
+                        Expr {
+                            kind: ExprKind::TagStr(Box::new(e)),
+                            ty: Ty::Str,
+                        },
+                    ),
+                };
+                let call = Expr {
+                    kind: ExprKind::Call(self.fids[f], vec![e]),
+                    ty: b_strip_owned(to),
+                };
+                if to.is_nullable() {
+                    Ok(Expr {
+                        kind: ExprKind::Cast(Box::new(call)),
+                        ty: to.clone(),
+                    })
+                } else {
+                    Ok(call)
+                }
+            }
             // A subclass object where its base class is expected: the same pointer.
             (a, b) if self.assignable(a.strip(), b.strip()) => Ok(Expr {
                 kind: ExprKind::Cast(Box::new(e)),

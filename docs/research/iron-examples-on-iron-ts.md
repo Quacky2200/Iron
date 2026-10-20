@@ -78,6 +78,34 @@ scenes), ok 1 (hello): 19.
 | world (285) | `playOneShot(path, v)` path-or-handle -> `Camera.main`, `Model.load({colliders})`, `Sprite.grid`, `RenderSettings.bloom`, `WorldPanel` + `createRoot(panel)` -> `Collision.relativeSpeed` (prelude `Collision` has `speed`) |
 | hello (13) | compiles as is (3,175 bytes) |
 
+### 1b. First errors after each language/UI commit (agent L)
+
+Measured with `compile_check` on `main.ts(x)`, one block per commit.
+
+**After commit 1 (JSX front end, hooks, ambient types, defaults, shadowing, static getters)**
+
+| Example | First error |
+|---|---|
+| animation | error: line 37: unsupported type annotation |
+| arcade | error: Record needs a union of string literals as its keys; use Map<string, V> for other keys |
+| boxes | ok: 44155 bytes of object code |
+| classics | error: line 40: unknown name `RenderSettings` |
+| cloth | error: line 54: unknown name `RenderSettings` |
+| cornell | error: line 32: GameObject has no property `scale` to set |
+| css | error: line 41: call to unknown function `addStyleSheet` |
+| form | error: line 97: input has no function `gamepads` |
+| hello | ok: 3175 bytes of object code |
+| layers | error: line 33: GameObject has no property `scale` to set |
+| materials | error: line 42: unknown name `RenderSettings` |
+| physics | error: line 25: unknown name `physics` |
+| platformer | error: unknown type Collider |
+| quality | error: line 37: unknown name `QualitySettings` |
+| raindrop-demo | error: Record needs a union of string literals as its keys; use Map<string, V> for other keys |
+| scenes | error: line 84: type mismatch: f64 where handle:Scene? is expected |
+| sine-circle-demo | error: unknown type Tween |
+| text | ok: 43192 bytes of object code |
+| world | error: line 57: type mismatch: tag where handle:Sound is expected |
+
 ## 2. Per-example table
 
 Imports: E = `@iron/engine` names, R = `@iron/react` names, H = `react` names. Every example also `import`s nothing relative except

@@ -122,6 +122,23 @@ impl<'a> Lowerer<'a> {
         }
         match val {
             Some(v) => {
+                // A function whose return type is inferred may return `null` and an object (a
+                // component that renders nothing): its type is then the nullable one.
+                if self.cur.ret_inferred
+                    && let Some(t) = self.cur.ret.clone()
+                    && !t.is_nullable()
+                    && v.ty == Ty::Null
+                    && (t.is_ptr() || matches!(t, Ty::Handle(_)))
+                {
+                    self.cur.ret = Some(t.nullable());
+                }
+                if self.cur.ret_inferred
+                    && self.cur.ret == Some(Ty::Null)
+                    && v.ty != Ty::Null
+                    && (v.ty.is_ptr() || matches!(v.ty, Ty::Handle(_)))
+                {
+                    self.cur.ret = Some(v.ty.clone().nullable());
+                }
                 let v = match self.cur.ret.clone() {
                     Some(t) => self.coerce(v, &t)?,
                     None => {

@@ -959,13 +959,17 @@ when `cond` is false.
   may be an element, a string, a number or an array of elements. Elements are `UiElement` handles. `style={{ width: 10 }}` is a literal; `style={obj}` (or a literal with spread) uses the typed object's fields (`Ui.styleObj`: numbers
   and strings, optional fields left out when null); `{...obj}` on a host element does the same for attributes
   (`Ui.attrObj`: numbers, strings, booleans; handlers are written as `onX`), and `{...props}` on a component spreads into its props
-  (not with `memo`).  Text children of a component are an error that says so.
+  (not with `memo`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@iron/react`) are the intrinsic elements unless
+  the program declares a component of that name. A key may be a number; `{flag}` renders nothing; a style value may be undefined.
 - **Components** `function Counter(props: P): UiElement`: `<Counter a={1} />` becomes `Ui.component(ID, () => Counter({ a: 1 }))`,
   `ID` a hash of the name (it says which state belongs to which component). With no attributes the call is `Counter()`.
-  Element children of a component arrive as `props.children: UiElement[]`.
+  Children of a component arrive as `props.children: ReactNode` (= `UiElement[]`): elements, text, numbers and lists; text and
+  numbers are wrapped into elements (`Ui.child(Ui.fragment(), x)`). `<Btn />` for a component whose props are all optional passes an
+  empty object. A component may `return null` (its type is then `UiElement | null`; a null handle renders nothing).
 - **Events.** `onClick`, `onPointerDown`, ... become handlers of the lowercase kind (`"click"`, `"pointerdown"`;
   `onXCapture` is `"x:capture"`, `onChange` is `"input"`). The handler receives a `UiEvent` (`type`, `target`, `clientX`,
-  `clientY`, `key`, `value`, `stopPropagation()`, `preventDefault()`).
+  `clientY`, `button`, `buttons`, `detail`, `deltaX`, `deltaY`, `shiftKey`, `ctrlKey`, `altKey`, `metaKey`, `repeat`, `scrollLeft`/`Top`/`Width`/`Height`, `clientWidth`/`Height`, `key`, `code`,
+  `value`, `target.id`, `target.value`, `stopPropagation()`, `preventDefault()`). A handler may take no parameter, or be undefined.
 - **Hooks.** `const [n, setN] = useState(0)` (generic `useState<T>`; numbers, booleans, and script pointers such as strings,
   arrays and objects), `useRef`, `useMemo`, `useCallback`, `useEffect(f, [deps])` (`f` may return a cleanup function; no
   list means every render; a list is rewritten into `Ui.dep(..)` calls, so it may mix types). Setting state from a handler
@@ -985,6 +989,18 @@ when `cond` is false.
   dependencies, so equal props skip the render (a prop expression is evaluated twice: keep them free of side effects).
   `const Box = forwardRef((props, ref) => ...)` becomes `function Box(props, ref)`; `<Box ref={r} />` passes `r` (or `null`) as
   the second argument. A component that is not a `forwardRef` gets `ref` as an ordinary prop.
+- **Lazy state, node methods.** `useState(() => init)` and `useState(read)` (an arrow, or a top-level function) compute the first
+  value once (`useStateLazy`); state may be an array of numbers. `ref.current?.focus()`, `.blur()`, `.scrollTo(x, y)` queue a
+  `NodeCommand` that the host applies to its tree (`iron_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
+- **Ambient types** ([ambient.ts](../tools/iron_ts/src/lower/ambient.ts) prelude, written with
+  [gen_ambient.py](../tools/iron_ts/scripts/gen_ambient.py) together with [ambient.d.ts](../tools/iron_ts/src/lower/ambient.d.ts)):
+  `ReactNode`, `React.ReactNode`, `IronElement`, `IronKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
+  `Collision2D` (= `Collision`) and `IronStyle`. `number | string` is the class `StyleValue` (a number or a string converts where it
+  is expected). `IronStyle` is a list of entries: `const card: IronStyle = { width: 100, padding: "4px" }` builds it,
+  `{ ...card, ...style, flexGrow: 1 }` concatenates (a later entry wins, `undefined` values apply nothing) and `style={card}` applies
+  it. The `.d.ts` (`iron_ts::lower::AMBIENT_DTS`) declares the same names, the `react` and `@iron/react` modules and `JSX` for `tsc`.
+- **Language.** Parameter types come from their defaults (`phase = 0`); a program class or interface shadows an engine name
+  (`class Scene`); `static get x()` reads as `Class.x`; a function with fewer parameters passes for one with more.
 - **Limits.** The updater form `setN(n => n + 1)`; an inline object literal returned from a callback needs a type annotation
   when another argument names the type (`(): Api => ({ ... })`); `string | null` state works as a pointer, `number | null`
   as a number.

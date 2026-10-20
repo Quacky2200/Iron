@@ -81,7 +81,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// A field's type: its annotation, or the type of a literal initialiser.
-    fn field_ty(
+    pub(crate) fn field_ty(
         &mut self,
         ann: Option<&'a TSTypeAnnotation<'a>>,
         optional: bool,
@@ -658,7 +658,18 @@ impl<'a> Lowerer<'a> {
                     self.declare_fn(&fname, src)?;
                     info.setters.insert(key, fname);
                 }
-                _ => bail!("class {name}: static accessors are not supported"),
+                (MethodDefinitionKind::Get | MethodDefinitionKind::Set, true) => {
+                    // `static get current()`: a free function read as `Class.current`.
+                    let getter = m.kind == MethodDefinitionKind::Get;
+                    let fname =
+                        format!("{name}.static {} {key}", if getter { "get" } else { "set" });
+                    src.kind = FnKind::Free;
+                    self.declare_fn(&fname, src)?;
+                    info.statics.insert(
+                        format!("{} {key}", if getter { "get" } else { "set" }),
+                        fname,
+                    );
+                }
             }
         }
         if !has_ctor {

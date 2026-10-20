@@ -197,7 +197,29 @@ impl<'a> Lowerer<'a> {
                 let test = self.lower_cond(&c.test)?;
                 let a = self.lower_expr(&c.consequent, exp)?;
                 let b = self.lower_expr(&c.alternate, exp)?;
-                let ty = self.unify(&a.ty, &b.ty)?;
+                // `on ? "pointer" : undefined` with no union expected is a `string | undefined`.
+                let (a, b) = if (a.ty == Ty::Null || b.ty == Ty::Null)
+                    && exp.is_none_or(|t| t.strip() != &Ty::Lit)
+                {
+                    (self.widen_lit(a), self.widen_lit(b))
+                } else {
+                    (a, b)
+                };
+                // `big ? 100 : "50%"` where a `number | string` is expected: both go to the union.
+                let ty = match exp.map(|t| t.strip()) {
+                    Some(sv) if self.is_style_value(sv) && a.ty != b.ty => {
+                        if a.ty.is_nullable()
+                            || b.ty.is_nullable()
+                            || a.ty == Ty::Null
+                            || b.ty == Ty::Null
+                        {
+                            sv.clone().nullable()
+                        } else {
+                            sv.clone()
+                        }
+                    }
+                    _ => self.unify(&a.ty, &b.ty)?,
+                };
                 let (a, b) = (self.coerce(a, &ty)?, self.coerce(b, &ty)?);
                 Ok(mk(
                     ExprKind::Cond(Box::new(test), Box::new(a), Box::new(b)),
@@ -319,6 +341,14 @@ impl<'a> Lowerer<'a> {
             && self.lookup(id.name.as_str()).is_none()
             && self.classes.contains_key(id.name.as_str())
         {
+            // `static get current()`
+            if let Some(f) = self.classes[id.name.as_str()]
+                .statics
+                .get(&format!("get {prop}"))
+                .cloned()
+            {
+                return self.call_declared(&f, &[], None);
+            }
             return match self.consts.get(&format!("{}.{prop}", id.name)).cloned() {
                 Some(ConstInfo::Inline(e)) => Ok(e),
                 Some(ConstInfo::Global(g, ty, false)) => Ok(mk(ExprKind::Global(g), ty)),
@@ -651,6 +681,18 @@ impl<'a> Lowerer<'a> {
         if ns == "Ui" && (name == "styleObj" || name == "attrObj") {
             return self.lower_ui_fields(name == "attrObj", c);
         }
+        if ns == "Ui"
+            && name == "child"
+            && let Some(e) = self.lower_ui_child_opt(c)?
+        {
+            return Ok(e);
+        }
+        if ns == "Ui"
+            && (name == "style" || name == "attr")
+            && let Some(e) = self.lower_ui_set(name == "attr", c)?
+        {
+            return Ok(e);
+        }
         if let Some(cands) = self
             .manifest
             .overloads
@@ -695,6 +737,11 @@ impl<'a> Lowerer<'a> {
             Ty::Nullable(inner) => match &**inner {
                 Ty::Num => ExtTy::F64,
                 Ty::Handle(n) => ExtTy::Handle(n.clone()),
+                // A list that may be missing (`children?: ReactNode`): null is an empty list.
+                Ty::Arr(e) if matches!(&**e, Ty::Handle(_)) => {
+                    let Ty::Handle(n) = &**e else { unreachable!() };
+                    ExtTy::HandleArr(n.clone())
+                }
                 other if other.is_ptr() => ExtTy::Ptr,
                 _ => return None,
             },
@@ -728,6 +775,19 @@ impl<'a> Lowerer<'a> {
             let v = self.lower_expr(e, None)?;
             vals.push(self.widen_lit(v));
         }
+        let at = self.loc(c.span.start);
+        self.pick_overload(ns, name, cands, vals, &at)
+    }
+
+    /// The version of a boundary function whose parameters take the (lowered) argument types.
+    fn pick_overload(
+        &mut self,
+        ns: &str,
+        name: &str,
+        cands: &[ExternFn],
+        vals: Vec<Expr>,
+        at: &str,
+    ) -> R<Expr> {
         let classes: Vec<Option<ExtTy>> = vals.iter().map(|v| self.ext_class(&v.ty)).collect();
         for f in cands {
             if f.params.len() == vals.len()
@@ -743,7 +803,9 @@ impl<'a> Lowerer<'a> {
         let loose: Vec<Option<ExtTy>> = classes
             .iter()
             .map(|c| match c {
-                Some(ExtTy::Str | ExtTy::HandleArr(_)) => Some(ExtTy::Ptr),
+                Some(ExtTy::Str | ExtTy::HandleArr(_) | ExtTy::F64Arr | ExtTy::ValueArr(_)) => {
+                    Some(ExtTy::Ptr)
+                }
                 other => other.clone(),
             })
             .collect();
@@ -758,11 +820,7 @@ impl<'a> Lowerer<'a> {
             }
         }
         let have: Vec<String> = vals.iter().map(|v| v.ty.to_string()).collect();
-        bail!(
-            "{}: {ns}.{name} has no version for ({})",
-            self.loc(c.span.start),
-            have.join(", ")
-        )
+        bail!("{at}: {ns}.{name} has no version for ({})", have.join(", "))
     }
 
     /// `Ui.load<T>(slot)`: reads a hook slot as a `T` (a number, a boolean or a script pointer).
@@ -810,7 +868,22 @@ impl<'a> Lowerer<'a> {
             bail!("{at}: Ui.styleObj(h, obj)")
         };
         let h = self.lower_expr(he, None)?;
-        let o = self.lower_expr(oe, None)?;
+        // `style={..}` is an `IronStyle` (a list of property entries) when the ambient types are there.
+        let bag = if !attr && self.fids.contains_key("__apply_style") {
+            Some(Ty::Arr(Box::new(self.named_type("StyleEntry")?)))
+        } else {
+            None
+        };
+        let o = self.lower_expr(oe, bag.as_ref())?;
+        if let Some(bag) = &bag
+            && o.ty.strip() == bag
+        {
+            let o = self.coerce(o, &bag.clone().nullable())?;
+            return Ok(mk(
+                ExprKind::Call(self.fids["__apply_style"], vec![h, o]),
+                Ty::Handle("UiElement".into()),
+            ));
+        }
         let Ty::Obj(sid) = o.ty.strip().clone() else {
             bail!(
                 "{at}: {what} needs an object with known fields, not {}",
@@ -826,47 +899,191 @@ impl<'a> Lowerer<'a> {
                 ExprKind::Field(Box::new(self.var_expr(to)), sid, i),
                 f.ty.clone(),
             );
-            let mut plain = field.clone();
-            plain.ty = f.ty.strip().clone();
-            let plain = self.widen_lit(plain);
-            let key = self.str_lit(&f.name);
+            let set = self.ui_set_stmts(th, &f.name, field, attr, &at, what)?;
+            stmts.extend(set);
+        }
+        let result = self.var_expr(th);
+        let ty = result.ty.clone();
+        Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
+    }
+
+    /// The statements that set one style property or attribute `key` of the element in `th` to
+    /// `field` (a pure expression): a number, a string, a boolean (attributes), a `number | string`
+    /// (`StyleValue`), or any of those that may be null, which leaves the property out.
+    pub(crate) fn ui_set_stmts(
+        &mut self,
+        th: VarId,
+        key: &str,
+        field: Expr,
+        attr: bool,
+        at: &str,
+        what: &str,
+    ) -> R<Vec<Stmt>> {
+        let element = || ExtTy::Handle("UiElement".into());
+        let ext = |symbol: &str, vt: ExtTy| ExternFn {
+            optional_from: usize::MAX,
+            defaults: Vec::new(),
+            symbol: symbol.into(),
+            params: vec![
+                ("h".into(), element()),
+                ("key".into(), ExtTy::Str),
+                ("v".into(), vt),
+            ],
+            ret: element(),
+        };
+        let mut plain = mk(
+            ExprKind::Cast(Box::new(field.clone())),
+            field.ty.strip().clone(),
+        );
+        plain = self.widen_lit(plain);
+        let mut out = Vec::new();
+        if let Ty::Obj(sid) = plain.ty.clone()
+            && self.is_style_value(&plain.ty)
+        {
+            // `n`, `s`, `isStr` are fields 0, 1, 2 of the prelude class.
+            let tv = self.new_local(plain.ty.clone());
+            out.push(Stmt::Assign(tv, plain));
+            let get = |s: &Self, i: usize, ty: Ty| {
+                mk(ExprKind::Field(Box::new(s.var_expr(tv)), sid, i), ty)
+            };
+            let (n, st, is_str) = (
+                get(self, 0, Ty::Num),
+                get(self, 1, Ty::Str),
+                get(self, 2, Ty::Bool),
+            );
+            let (num_sym, str_sym) = if attr {
+                ("ts_ui_attr_num", "ts_ui_attr_str")
+            } else {
+                ("ts_ui_style_num", "ts_ui_style_str")
+            };
+            let hv = self.var_expr(th);
+            let k = self.str_lit(key);
+            let cn = self.emit_extern(&ext(num_sym, ExtTy::F64), vec![hv, k, n]);
+            let hv = self.var_expr(th);
+            let k = self.str_lit(key);
+            let cs = self.emit_extern(&ext(str_sym, ExtTy::Str), vec![hv, k, st]);
+            out.push(Stmt::If(is_str, vec![Stmt::Eval(cs)], vec![Stmt::Eval(cn)]));
+        } else {
             let (symbol, vt) = match (&plain.ty, attr) {
                 (Ty::Num, false) => ("ts_ui_style_num", ExtTy::F64),
                 (Ty::Str, false) => ("ts_ui_style_str", ExtTy::Str),
                 (Ty::Num, true) => ("ts_ui_attr_num", ExtTy::F64),
                 (Ty::Str, true) => ("ts_ui_attr_str", ExtTy::Str),
                 (Ty::Bool, true) => ("ts_ui_attr_bool", ExtTy::Bool),
-                (other, _) => bail!(
-                    "{at}: {what}: field `{}` has type {other}, which cannot be set this way",
-                    f.name
-                ),
-            };
-            let ext = ExternFn {
-                optional_from: usize::MAX,
-                defaults: Vec::new(),
-                symbol: symbol.into(),
-                params: vec![
-                    ("h".into(), ExtTy::Handle("UiElement".into())),
-                    ("key".into(), ExtTy::Str),
-                    ("v".into(), vt),
-                ],
-                ret: ExtTy::Handle("UiElement".into()),
+                (other, _) => {
+                    bail!("{at}: {what}: `{key}` has type {other}, which cannot be set this way")
+                }
             };
             let hv = self.var_expr(th);
-            let call = self.emit_extern(&ext, vec![hv, key, plain]);
-            if f.ty.is_nullable() {
-                stmts.push(Stmt::If(
-                    mk(ExprKind::IsNull(Box::new(field)), Ty::Bool),
-                    vec![],
-                    vec![Stmt::Eval(call)],
-                ));
-            } else {
-                stmts.push(Stmt::Eval(call));
-            }
+            let k = self.str_lit(key);
+            let call = self.emit_extern(&ext(symbol, vt), vec![hv, k, plain]);
+            out.push(Stmt::Eval(call));
         }
+        Ok(if field.ty.is_nullable() {
+            vec![Stmt::If(
+                mk(ExprKind::IsNull(Box::new(field)), Ty::Bool),
+                vec![],
+                out,
+            )]
+        } else {
+            out
+        })
+    }
+
+    /// `Ui.child(h, x)` where `x` may be undefined (`{error}` for `error?: string`): nothing is
+    /// added then. `None` when `x` is not a nullable string or number.
+    fn lower_ui_child_opt(&mut self, c: &'a CallExpression<'a>) -> R<Option<Expr>> {
+        let at = self.loc(c.span.start);
+        let [h, v] = c.arguments.as_slice() else {
+            return Ok(None);
+        };
+        let (Some(h), Some(v)) = (h.as_expression(), v.as_expression()) else {
+            return Ok(None);
+        };
+        let ve = self.lower_expr(v, None)?;
+        if !matches!(&ve.ty, Ty::Nullable(inner) if matches!(&**inner, Ty::Str | Ty::Num | Ty::Lit))
+        {
+            // Not ours: lower again through the plain path with the value already lowered.
+            let he = self.lower_expr(h, None)?;
+            let cands = self
+                .manifest
+                .overloads
+                .get(&("Ui".to_string(), "child".to_string()))
+                .cloned()
+                .unwrap_or_default();
+            let vals = vec![he, self.widen_lit(ve)];
+            return self
+                .pick_overload("Ui", "child", &cands, vals, &at)
+                .map(Some);
+        }
+        let he = self.lower_expr(h, None)?;
+        let th = self.new_local(he.ty.clone());
+        let tv = self.new_local(ve.ty.clone());
+        let plain = mk(
+            ExprKind::Cast(Box::new(self.var_expr(tv))),
+            ve.ty.strip().clone(),
+        );
+        let plain = self.widen_lit(plain);
+        let cands = self
+            .manifest
+            .overloads
+            .get(&("Ui".to_string(), "child".to_string()))
+            .cloned()
+            .unwrap_or_default();
+        let call =
+            self.pick_overload("Ui", "child", &cands, vec![self.var_expr(th), plain], &at)?;
+        let stmts = vec![
+            Stmt::Assign(th, he),
+            Stmt::Assign(tv, ve),
+            Stmt::If(
+                mk(ExprKind::IsNull(Box::new(self.var_expr(tv))), Ty::Bool),
+                vec![],
+                vec![Stmt::Eval(call)],
+            ),
+        ];
         let result = self.var_expr(th);
         let ty = result.ty.clone();
-        Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
+        Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
+    }
+
+    /// `Ui.style(h, key, v)` / `Ui.attr(h, key, v)` whose value has no version of its own: a
+    /// `number | string`, or a value that may be undefined (`cursor: on ? "pointer" : undefined`).
+    fn lower_ui_set(&mut self, attr: bool, c: &'a CallExpression<'a>) -> R<Option<Expr>> {
+        let at = self.loc(c.span.start);
+        let [h, k, v] = c.arguments.as_slice() else {
+            return Ok(None);
+        };
+        let (Some(h), Some(k), Some(v)) = (h.as_expression(), k.as_expression(), v.as_expression())
+        else {
+            return Ok(None);
+        };
+        let Expression::StringLiteral(key) = k else {
+            return Ok(None);
+        };
+        // Lower the value once: if it needs no special path, the plain call is built from it.
+        let ve = self.lower_expr(v, None)?;
+        let special = ve.ty.is_nullable() || self.is_style_value(ve.ty.strip());
+        let he = self.lower_expr(h, None)?;
+        let fname = if attr { "attr" } else { "style" };
+        if !special {
+            let cands = self
+                .manifest
+                .overloads
+                .get(&("Ui".to_string(), fname.to_string()))
+                .cloned()
+                .unwrap_or_default();
+            let vals = vec![he, self.str_lit(key.value.as_str()), self.widen_lit(ve)];
+            return self.pick_overload("Ui", fname, &cands, vals, &at).map(Some);
+        }
+        let th = self.new_local(he.ty.clone());
+        let tv = self.new_local(ve.ty.clone());
+        let mut stmts = vec![Stmt::Assign(th, he), Stmt::Assign(tv, ve)];
+        let value = self.var_expr(tv);
+        let set = self.ui_set_stmts(th, key.value.as_str(), value, attr, &at, "Ui")?;
+        stmts.extend(set);
+        let result = self.var_expr(th);
+        let ty = result.ty.clone();
+        Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
     }
 
     /// `Ui.runEffect(f)`: calls an effect function; a function it returns is its cleanup.
@@ -1461,6 +1678,14 @@ impl<'a> Lowerer<'a> {
             Some(Ty::Obj(s)) => Some(*s),
             _ => None,
         };
+        // `{ width: 10, ...other }` where an `IronStyle` (a list of `StyleEntry`) is expected.
+        if let Some(Ty::Arr(el)) = exp.map(|t| t.strip())
+            && let Ty::Obj(esid) = el.strip()
+            && self.m.structs[*esid].name == "StyleEntry"
+            && self.fids.contains_key("__se_num")
+        {
+            return self.lower_style_bag(o, exp.expect("checked").strip().clone());
+        }
         // Lower every value first (with the field type as context when the struct is known), in
         // source order: a later spread or property wins.
         enum Item {
@@ -1532,9 +1757,20 @@ impl<'a> Lowerer<'a> {
                     }
                 }
                 let single_spread = items.len() == 1 && matches!(items[0], Item::Spread(_));
+                // `{ ...base, name }`: the type of `base` when it already has every property.
+                let covers = only_spread.filter(|s| {
+                    !self.class_of_sid.contains_key(s)
+                        && items.iter().all(|it| match it {
+                            Item::Spread(e) => matches!(e.ty.strip(), Ty::Obj(t) if t == s),
+                            Item::Prop(n, v) => self.m.structs[*s].field(n).is_some_and(|i| {
+                                self.m.structs[*s].fields[i].ty.strip() == v.ty.strip()
+                            }),
+                        })
+                });
                 match only_spread {
                     // `{ ...a }` is a copy with the type of `a`.
                     Some(s) if single_spread => s,
+                    Some(_) if covers.is_some() => covers.expect("checked"),
                     _ => self.anon_struct("Anon", fields),
                 }
             }
@@ -1591,6 +1827,80 @@ impl<'a> Lowerer<'a> {
             }
         }
         Ok(mk(ExprKind::Seq(stmts, Box::new(t)), Ty::Obj(sid)))
+    }
+
+    /// An object literal as an `IronStyle`: a `StyleEntry` per property, spreads concatenated, so
+    /// a later entry of the same name wins when they are applied. A value that may be undefined
+    /// makes an entry that applies nothing.
+    fn lower_style_bag(&mut self, o: &'a ObjectExpression<'a>, aty: Ty) -> R<Expr> {
+        let Ty::Arr(ety) = aty.clone() else {
+            unreachable!("checked")
+        };
+        let mut elems = Vec::new();
+        for p in &o.properties {
+            match p {
+                ObjectPropertyKind::SpreadProperty(s) => {
+                    let e = self.lower_expr(&s.argument, Some(&aty))?;
+                    let e = if e.ty.is_nullable() {
+                        // Spreading `undefined` adds nothing.
+                        let tmp = self.new_local(e.ty.clone());
+                        let empty = self.build_array(vec![], (*ety).clone())?;
+                        let isnull = mk(ExprKind::IsNull(Box::new(self.var_expr(tmp))), Ty::Bool);
+                        let plain = mk(ExprKind::Cast(Box::new(self.var_expr(tmp))), aty.clone());
+                        mk(
+                            ExprKind::Seq(
+                                vec![Stmt::Assign(tmp, e)],
+                                Box::new(mk(
+                                    ExprKind::Cond(
+                                        Box::new(isnull),
+                                        Box::new(empty),
+                                        Box::new(plain),
+                                    ),
+                                    aty.clone(),
+                                )),
+                            ),
+                            aty.clone(),
+                        )
+                    } else {
+                        e
+                    };
+                    elems.push(Elem::Spread(self.coerce(e, &aty)?));
+                }
+                ObjectPropertyKind::ObjectProperty(p) => {
+                    if p.computed || p.method {
+                        bail!("{}: computed or method property", self.loc(p.span.start));
+                    }
+                    let name = self.key_name(&p.key)?;
+                    let v = self.lower_expr(&p.value, None)?;
+                    let v = self.widen_lit(v);
+                    let (f, v) = match v.ty.clone() {
+                        Ty::Null => continue,
+                        Ty::Num => ("__se_num", v),
+                        Ty::Str => ("__se_str", v),
+                        Ty::Nullable(inner) if *inner == Ty::Num => ("__se_onum", v),
+                        Ty::Nullable(inner) if *inner == Ty::Str => ("__se_ostr", v),
+                        t if self.is_style_value(t.strip()) => (
+                            if t.is_nullable() {
+                                "__se_osv"
+                            } else {
+                                "__se_sv"
+                            },
+                            v,
+                        ),
+                        t => bail!(
+                            "{}: style property `{name}` has type {t}; a style takes numbers and strings",
+                            self.loc(p.span.start)
+                        ),
+                    };
+                    let key = self.str_lit(&name);
+                    elems.push(Elem::One(mk(
+                        ExprKind::Call(self.fids[f], vec![key, v]),
+                        (*ety).clone(),
+                    )));
+                }
+            }
+        }
+        self.build_array(elems, (*ety).clone())
     }
 
     fn lower_array_lit(&mut self, a: &'a ArrayExpression<'a>, exp: Option<&Ty>) -> R<Expr> {
@@ -1816,6 +2126,12 @@ impl<'a> Lowerer<'a> {
                     && self.classes.contains_key(id.name.as_str())
                 {
                     let key = format!("{}.{}", id.name, m.property.name);
+                    if self.classes[id.name.as_str()]
+                        .statics
+                        .contains_key(&format!("set {}", m.property.name))
+                    {
+                        bail!("assignment to the static accessor `{key}` is not supported yet");
+                    }
                     return match self.consts.get(&key) {
                         Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
                         Some(_) => bail!("assignment to the readonly static `{key}`"),
@@ -2151,6 +2467,23 @@ impl<'a> Lowerer<'a> {
                     self.coerce(r?, pty)?
                 } else if p.optional {
                     self.coerce(mk(ExprKind::Null, Ty::Null), pty)?
+                } else if let Ty::Obj(sid) = pty.strip()
+                    && !self.class_of_sid.contains_key(sid)
+                    && self.m.structs[*sid]
+                        .fields
+                        .iter()
+                        .all(|f| f.ty.is_nullable())
+                {
+                    // `<Btn />` for `props: { onPress?: () => void }`: an object with nothing set.
+                    let sid = *sid;
+                    let tmp = self.new_local(pty.clone());
+                    let t = self.var_expr(tmp);
+                    let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), pty.clone()))];
+                    for i in 0..self.m.structs[sid].fields.len() {
+                        let fty = self.m.structs[sid].fields[i].ty.clone();
+                        stmts.push(Stmt::StoreField(t.clone(), sid, i, mk(ExprKind::Null, fty)));
+                    }
+                    mk(ExprKind::Seq(stmts, Box::new(t)), pty.clone())
                 } else {
                     bail!("{name}: {} arguments, {n_fixed} expected", args.len())
                 };
@@ -2210,7 +2543,12 @@ impl<'a> Lowerer<'a> {
                 if self.lookup(name).is_some()
                     || matches!(self.consts.get(name), Some(ConstInfo::Global(..)))
                 {
-                    let callee = self.lower_ident(name)?;
+                    let mut callee = self.lower_ident(name)?;
+                    // A function that may be missing, tested by the caller (`if (f) f()`).
+                    if callee.ty.is_nullable() && matches!(callee.ty.strip(), Ty::Fn(_)) {
+                        let plain = callee.ty.strip().clone();
+                        callee = mk(ExprKind::Cast(Box::new(callee)), plain);
+                    }
                     let Ty::Fn(sig) = callee.ty.clone() else {
                         bail!("`{name}` is not callable")
                     };

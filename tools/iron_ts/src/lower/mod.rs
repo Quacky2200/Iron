@@ -38,6 +38,10 @@ mod temporal;
 mod typed;
 mod types;
 
+/// The `.d.ts` text of the ambient React/Iron types (`ReactNode`, `IronStyle`, `JSX`, the
+/// `react` and `@iron/react` modules), for a type check without `node_modules`.
+pub use jsx::AMBIENT_DTS;
+
 use crate::ir::*;
 use classes::Which;
 use oxc_allocator::Allocator;
@@ -162,6 +166,8 @@ pub(crate) struct FnCtx {
     pub ret: Option<Ty>,
     /// The return type is inferred for a callback: a string literal is a `string`.
     pub widen_ret: bool,
+    /// The function has no return annotation: `return null` and `return obj` make it nullable.
+    pub ret_inferred: bool,
     pub next_label: u32,
     /// Enclosing loops, switches and labelled statements, innermost last.
     pub loops: Vec<LoopLabels>,
@@ -350,6 +356,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if wants_ui {
         head += jsx::UI_PRELUDE;
+        head += jsx::AMBIENT_PRELUDE;
     }
     if wants_temporal {
         head += temporal::TEMPORAL;
@@ -694,10 +701,18 @@ impl<'a> Lowerer<'a> {
             ptys.push(Ty::Obj(sid));
         }
         for p in &src.params.items {
-            let Some(ann) = &p.type_annotation else {
-                bail!("{name}: parameter without a type")
+            // `phase = 0`, `color = Color.white`: the type of the default value.
+            let ty = match (&p.type_annotation, &p.initializer) {
+                (Some(ann), _) => self.ty(&ann.type_annotation, name)?,
+                (None, Some(init)) => {
+                    self.field_ty(None, false, Some(init), name).map_err(|_| {
+                        format!(
+                            "{name}: parameter without a type (its default value is not a literal)"
+                        )
+                    })?
+                }
+                (None, None) => bail!("{name}: parameter without a type"),
             };
-            let ty = self.ty(&ann.type_annotation, name)?;
             // `x?: T` without a default is `T | undefined` inside.
             ptys.push(if p.optional && p.initializer.is_none() {
                 ty.nullable()
@@ -790,6 +805,7 @@ impl<'a> Lowerer<'a> {
         };
         let exp_ret = self.fsig[id].1.clone();
         self.cur = FnCtx {
+            ret_inferred: exp_ret.is_none(),
             ret: exp_ret,
             cls: match kind {
                 FnKind::Method(s) | FnKind::Ctor(s, _) => Some((self.class_of_sid[&s].clone(), s)),
@@ -896,7 +912,9 @@ impl<'a> Lowerer<'a> {
             FnBody::Expr(e) => {
                 let exp = self.cur.ret.clone();
                 let ex = self.lower_expr(e, exp.as_ref())?;
-                if exp == Some(Ty::Void) {
+                if exp == Some(Ty::Void) || (exp.is_none() && ex.ty == Ty::Void) {
+                    // A void call as the body of an arrow whose return type is inferred.
+                    self.cur.ret = Some(Ty::Void);
                     stmts.push(Stmt::Eval(ex));
                 } else {
                     let ex = match exp {
