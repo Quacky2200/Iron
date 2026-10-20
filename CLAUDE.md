@@ -130,7 +130,7 @@ cargo run -p iron_app -- examples/world --cook
 - **Hot reload and module state:** restored components get `onReload`, not `onAwake`, and the new
   code's module-level variables start empty: rebuild caches (textures, singletons) in `onReload`.
 
-## Status (2026-10-19)
+## Status (2026-10-20)
 - **Done:**
   - M1 scaffold
   - M2 React → Taffy → boxes
@@ -227,7 +227,7 @@ cargo run -p iron_app -- examples/world --cook
     music credited in `assets/CREDITS.md`), `shapes`, `splines`, `clock` (twelve faces: analog,
     dials, meter, a 3D sundial, sand timer, lava lamp after a CodePen by Corevision, underwater,
     chandelier, rainbow, morphing, flip, alarm clock), `fishtank` (an aquarium-channel look,
-    depth haze by colour steps since there's no fog yet). The VB zombie game was ported, then
+    depth haze, now linear fog). The VB zombie game was ported, then
     moved to its own repository (zombie-horders, branch `iron`); history purged from this repo.
   - Script overhead (2026-10-18): transforms batched into one `scene.locals` op per script
     turn (`__iron_flush` after every call into JS), lifecycle hooks run in one `__iron_run`
@@ -237,6 +237,10 @@ cargo run -p iron_app -- examples/world --cook
     size); plane-locked bodies keep their friction (`M4-PHY-07`, rapier PR above);
     `examples/physics` keeps its bodies in the plane; an inline `svg`'s own opacity and
     transform apply once, not also in its markup (`M3-SVG-04`).
+  - Fog (2026-10-20, TODO.md M7): distance fog (linear / exponential / squared, `RenderSettings.fog*`,
+    `Camera.fog`), exponential height fog (`heightFog`, also over the background) and volumetric
+    light shafts (`volumetricFog`, `Light.volumetricIntensity`: a jittered march per fogged pixel
+    through hard shadow maps). `examples/fishtank` uses linear fog. Tests `M7-FOG-01`..`05`.
   - iron_ts (another session, branch `claude/recursing-wright-856ffa`, ~106 commits ahead):
     an AOT compiler from TypeScript to native code (oxc → Iron IR → Cranelift) with a precise
     GC and closures; the zombie sim and the whole SineDemo compile and run natively (M9.b2).
@@ -245,9 +249,7 @@ cargo run -p iron_app -- examples/world --cook
   1. Merge iron_ts back (from `claude/recursing-wright-856ffa`; history has been rewritten, so
      check its base first; bring it in as linear commits, no merge commits, as with other
      agents' work).
-  2. Fog (TODO.md M7): linear, exponential and exponential-squared, then height fog and
-     volumetric shafts; the fish tank's depth haze can then use it.
-  3. The editor (M5.e): the manual check of the Scene view controls, an Inspector bound to
+  2. The editor (M5.e): the manual check of the Scene view controls, an Inspector bound to
      the scene (`@property` fields), undo/redo, accessibility; then M6 (Script IO).
   - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
     cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture
