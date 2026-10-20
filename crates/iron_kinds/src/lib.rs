@@ -77,6 +77,81 @@ pub fn all() -> Vec<Rc<Kind>> {
 /// Forgets every kind (tests).
 pub fn clear() {
     KINDS.with(|k| k.borrow_mut().clear());
+    ASSET_KINDS.with(|k| k.borrow_mut().clear());
+}
+
+/// An asset kind: a value that lives outside components and is shared by them (`Texture`, `Mesh`,
+/// `Material`). A component kind saves one as the placeholder `{"$handle":"Texture","id":N}` (null
+/// for none) and loads it the same way; the scene loader and saver translate:
+///
+/// - a **shared** kind goes into the scene file's `assets` table (`{"$asset":"texture1"}` in the
+///   property, the table entry `{"type":"Texture", ...}`); one handle is one entry however many
+///   components use it;
+/// - an **inline** kind is written in the property itself as `{"$type":"Material", ...}`.
+///
+/// The `def` is the JSON the file holds (for a shared kind the entry, whose `type` is the kind's
+/// name); a definition may itself contain `$handle` placeholders for other assets.
+/// Makes an asset from its definition (the handle).
+pub type AssetCreateFn = Box<dyn Fn(&Value) -> Result<u64, String>>;
+/// The definition of an asset handle (`None`: it cannot be saved).
+pub type AssetDescribeFn = Box<dyn Fn(u64) -> Option<Value>>;
+
+pub struct AssetKind {
+    pub name: String,
+    /// Other `type` names in definitions that this kind makes too (`RenderTexture`).
+    pub also: Vec<String>,
+    /// Shared (assets table) or inline (`$type`).
+    pub shared: bool,
+    /// Makes the asset from its definition.
+    pub create: AssetCreateFn,
+    /// The definition of an asset, or `None` when it cannot be saved (a texture made from pixels).
+    pub describe: AssetDescribeFn,
+}
+
+thread_local! {
+    static ASSET_KINDS: RefCell<Vec<Rc<AssetKind>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Registers an asset kind, replacing one of the same name.
+pub fn register_asset(kind: AssetKind) {
+    ASSET_KINDS.with(|k| {
+        let mut k = k.borrow_mut();
+        let kind = Rc::new(kind);
+        match k.iter().position(|x| x.name == kind.name) {
+            Some(i) => k[i] = kind,
+            None => k.push(kind),
+        }
+    });
+}
+
+/// The asset kind of that name.
+pub fn get_asset(name: &str) -> Option<Rc<AssetKind>> {
+    ASSET_KINDS.with(|k| {
+        k.borrow()
+            .iter()
+            .find(|x| x.name == name || x.also.iter().any(|a| a == name))
+            .cloned()
+    })
+}
+
+/// A placeholder for an asset of a kind (`null` for no asset, handle 0).
+pub fn asset_ref(kind: &str, handle: u64) -> Value {
+    if handle == 0 {
+        Value::Null
+    } else {
+        serde_json::json!({ "$handle": kind, "id": handle })
+    }
+}
+
+/// The handle in an asset placeholder of that kind (`Some(0)` for null).
+pub fn asset_handle(value: &Value, kind: &str) -> Option<u64> {
+    match value {
+        Value::Null => Some(0),
+        Value::Object(o) if o.get("$handle").and_then(Value::as_str) == Some(kind) => {
+            o.get("id").and_then(Value::as_u64)
+        }
+        _ => None,
+    }
 }
 
 /// A placeholder for a GameObject.

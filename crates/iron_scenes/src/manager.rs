@@ -295,6 +295,10 @@ pub fn serialize(scene: u32) -> Option<String> {
     {
         data["renderSettings"] = r;
     }
+    let assets = saver.take_assets();
+    if !assets.is_empty() {
+        data["assets"] = Value::Object(assets);
+    }
     Some(data.to_string())
 }
 
@@ -344,7 +348,8 @@ pub fn load_scene(text: &str, additive: bool) -> Result<u32, String> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    load_objects(&objects, None, handle);
+    let assets = data.get("assets").and_then(Value::as_object);
+    load_objects(&objects, None, handle, assets);
     if !additive {
         set_active(handle);
     }
@@ -482,13 +487,15 @@ pub fn instantiate(
     } else {
         tag_of(original)
     };
-    load_objects(&[data], parent, tag).into_iter().next()
+    load_objects(&[data], parent, tag, None).into_iter().next()
 }
 
 /// Captures an object and everything under it as it is now. References to objects outside it are
 /// dropped. Returns the prefab's number (1-based), 0 if the object cannot be a prefab.
 pub fn prefab_from_object(object: ObjectId) -> u32 {
+    // Assets stay live handles in a prefab made in memory (it is not a file).
     let mut saver = Saver::new(false);
+    saver.keep_assets_live();
     saver.number(&[object]);
     let Some(mut root) = saver.save_object(object) else {
         warn("parts of a model cannot be prefabs on their own; use the model's root");
@@ -571,5 +578,7 @@ pub fn instantiate_prefab(
         })
     })?;
     place(&mut root, position, rotation);
-    load_objects(&[root], parent, active()).into_iter().next()
+    load_objects(&[root], parent, active(), None)
+        .into_iter()
+        .next()
 }

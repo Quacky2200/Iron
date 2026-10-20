@@ -111,6 +111,7 @@ fn main() {
         ("physics_comp", "phc_", 5420),
         ("callbacks", "cbk_", 7000),
         ("audio_native", "aud_", 7100),
+        ("render_native", "rdn_", 7200),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
@@ -123,7 +124,7 @@ fn main() {
             | "clock" | "inputs" | "inputs2" | "timespan" | "datetime" | "mathf" | "vectors"
             | "rotations" | "shapes" | "anim_clips" | "anim_player" | "anim_animator"
             | "scene_objects" | "comp_query" | "comp_life" | "scenes" | "physics" | "contacts"
-            | "comp_api" | "physics_comp" | "callbacks" | "audio_native" => engine_manifests(),
+            | "comp_api" | "physics_comp" | "callbacks" | "audio_native" | "render_native" => engine_manifests(),
             "scene" | "components" | "components2" | "sine_demo" => {
                 let mut v = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
                 v.extend(iron_engine_api::iron_math::manifests());
@@ -155,5 +156,6 @@ fn engine_manifests() -> Vec<String> {
     all.extend(iron_engine_api::manifests());
     all.extend(iron_scenes::manifests());
     all.extend(iron_physics_api::manifests());
+    all.extend(iron_render_api::manifests());
     all
 }

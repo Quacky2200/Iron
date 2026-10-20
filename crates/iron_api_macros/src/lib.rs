@@ -1082,10 +1082,12 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let abi_ret = abi_ty(&a.ret);
             let body = to_abi(&a.ret, call);
             // A string parameter is a pointer to a script string: the shim is unsafe to call.
-            if a.params
-                .iter()
-                .any(|(_, k)| matches!(k, Kind::Str(_) | Kind::Callback(_)))
-            {
+            if a.params.iter().any(|(_, k)| {
+                matches!(
+                    k,
+                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Values(_)
+                )
+            }) {
                 shims.push(quote! {
                     /// # Safety
                     /// String arguments are live script strings (or null).

@@ -16,7 +16,7 @@ const ARENA: &str = r#"{"format":"iron.scene","version":1,"name":"Arena","object
   "children":[{"id":5,"name":"Pal","enabled":false,"components":[
     {"id":6,"type":"Spinner","properties":{"speed":7}},
     {"id":7,"type":"Bobber","properties":{"height":1.5}},
-    {"id":8,"type":"Light","properties":{"intensity":2}}]}]}
+    {"id":8,"type":"Hologram","properties":{"intensity":2}}]}]}
 ]}"#;
 
 const OTHER: &str = r#"{"format":"iron.scene","version":1,"name":"Other","objects":[
@@ -105,12 +105,12 @@ fn a_scene_file_loads_into_objects_and_components() {
         assert_eq!(ts_scf_bobHeight(pal.to_raw()), 1.5);
         assert_eq!(ts_scf_buddyObject(hero.to_raw()), pal.to_raw());
         assert_eq!(ts_scf_targetObject(hero.to_raw()), pal.to_raw());
-        // The Light is not a kind of this game.
+        // Hologram is not a kind of this game.
         let warnings = iron_scenes::take_warnings();
         assert!(
             warnings
                 .iter()
-                .any(|w| w.contains("unknown component Light")),
+                .any(|w| w.contains("unknown component Hologram")),
             "{warnings:?}"
         );
         // Components wake with the host.
@@ -339,16 +339,13 @@ fn the_example_scene_files_load() {
             .unwrap();
         assert_eq!(ts_scf_bobHeight(first_orb.to_raw()), expected);
         let warnings = iron_scenes::take_warnings();
+        // The engine's own rendering components load now (M9-TS-1226); only the game's are unknown.
         assert!(
-            warnings
+            !warnings
                 .iter()
-                .any(|w| w.contains("unknown component MeshRenderer")),
+                .any(|w| w.contains("unknown component MeshRenderer")
+                    || w.contains("unknown component Light")),
             "{warnings:?}"
-        );
-        assert!(
-            warnings
-                .iter()
-                .any(|w| w.contains("unknown component Light"))
         );
         // The camera came with its saved field of view.
         let cam = (0..root_count)

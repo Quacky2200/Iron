@@ -1012,6 +1012,11 @@ impl<'a> Lowerer<'a> {
                     ExtTy::F64 | ExtTy::F32 if i >= opt_from => num(f64::NAN),
                     ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
                     ExtTy::Handle(_) if i >= opt_from => mk(ExprKind::Null, self.ext_ir(pt)),
+                    // An optional array is empty.
+                    ExtTy::F64Arr | ExtTy::ValueArr(_) | ExtTy::HandleArr(_) if i >= opt_from => {
+                        let ty = self.ext_ir(pt);
+                        mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty)
+                    }
                     other => bail!("{at}: {what}: parameter `{pname}` ({other:?}) has no default"),
                 });
                 continue;
@@ -1036,9 +1041,27 @@ impl<'a> Lowerer<'a> {
             {
                 v.ty = want.clone();
             }
-            args.push(self.coerce(v, &want)?);
+            args.push(self.coerce_ext(v, &want)?);
         }
         Ok(self.emit_extern(&f, args))
+    }
+
+    /// `coerce` for an argument of the engine API: a string where a handle is expected becomes
+    /// the handle's `fromString` (`mesh: "cube"` is `Mesh.fromString("cube")`).
+    pub(crate) fn coerce_ext(&mut self, v: Expr, want: &Ty) -> R<Expr> {
+        if let Ty::Handle(class) = want.strip()
+            && matches!(v.ty.strip(), Ty::Str | Ty::Lit)
+            && let Some(from) = self
+                .manifest
+                .classes
+                .get(class.as_str())
+                .and_then(|k| k.statics.get("fromString"))
+                .cloned()
+        {
+            let s = self.coerce(v, &Ty::Str)?;
+            return Ok(self.emit_extern(&from, vec![s]));
+        }
+        self.coerce(v, want)
     }
 
     /// The call of a boundary function with arguments already lowered to the script types. A
@@ -2325,6 +2348,17 @@ impl<'a> Lowerer<'a> {
                     return Ok(e);
                 }
                 if let Expression::Identifier(id) = &m.object
+                    && method == "create"
+                    && self.lookup(id.name.as_str()).is_none()
+                    && self.is_create_with_options(id.name.as_str(), c)
+                {
+                    return self.lower_new_handle_args(
+                        id.name.as_str(),
+                        &c.arguments,
+                        c.span.start,
+                    );
+                }
+                if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()
                     && self.manifest.namespaces.contains_key(id.name.as_str())
                 {
@@ -2339,6 +2373,13 @@ impl<'a> Lowerer<'a> {
                         .and_then(|k| k.statics.get(method))
                         .cloned()
                 {
+                    if method == "create" && self.is_create_with_options(id.name.as_str(), c) {
+                        return self.lower_new_handle_args(
+                            id.name.as_str(),
+                            &c.arguments,
+                            c.span.start,
+                        );
+                    }
                     return self.call_ext_fn(f, None, &format!("{}.{method}", id.name), c);
                 }
                 if let Expression::Identifier(id) = &m.object

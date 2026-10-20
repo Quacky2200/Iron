@@ -13,6 +13,7 @@ iron_scene = { path = "../../crates/iron_scene" }
 iron_scenes = { path = "../../crates/iron_scenes" }
 iron_physics = { path = "../../crates/iron_physics" }
 iron_physics_api = { path = "../../crates/iron_physics_api" }
+iron_render_api = { path = "../../crates/iron_render_api" }
 iron_kinds = { path = "../../crates/iron_kinds" }
 iron_engine_api = { path = "../../crates/iron_engine_api" }
 iron_animation = { path = "../../crates/iron_animation" }
@@ -36,3 +37,4 @@ iron_demo_api = { path = "../iron_demo_api" }
 iron_scene = { path = "../../crates/iron_scene" }
 iron_scenes = { path = "../../crates/iron_scenes" }
 iron_physics_api = { path = "../../crates/iron_physics_api" }
+iron_render_api = { path = "../../crates/iron_render_api" }

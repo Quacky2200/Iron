@@ -25,6 +25,12 @@ fn color(v: &Value) -> Option<Rgba> {
     })
 }
 
+fn rect(v: &Value) -> Option<[f64; 4]> {
+    let a = v.get("value")?.as_array()?;
+    let n = |i: usize| a.get(i).and_then(Value::as_f64);
+    Some([n(0)?, n(1)?, n(2)?, n(3)?])
+}
+
 fn camera_kind() -> Kind {
     Kind {
         name: "Camera".into(),
@@ -54,6 +60,16 @@ fn camera_kind() -> Kind {
                     "orthographicSize".into(),
                     json!(f64::from(d.orthographic_size)),
                 );
+                m.insert("clearFlags".into(), json!(d.clear_flags));
+                m.insert("rect".into(), json!({ "$type": "Rect", "value": d.rect }));
+                m.insert("cullingMask".into(), json!(d.culling_mask));
+                m.insert("layerCullDistances".into(), json!(d.layer_cull_distances));
+                m.insert("layerCullSpherical".into(), json!(d.layer_cull_spherical));
+                m.insert("antialiasing".into(), json!(d.antialiasing));
+                m.insert(
+                    "targetTexture".into(),
+                    iron_kinds::asset_ref("Texture", u64::from(d.target_texture.0)),
+                );
             });
             m
         }),
@@ -69,6 +85,24 @@ fn camera_kind() -> Kind {
                         "depth" => number(v).map(|x| d.depth = x),
                         "orthographic" => v.as_bool().map(|x| d.orthographic = x),
                         "orthographicSize" => number(v).map(|x| d.orthographic_size = x),
+                        "clearFlags" => v
+                            .as_str()
+                            .filter(|s| ["solidColor", "skybox"].contains(s))
+                            .map(|s| d.clear_flags = s.to_string()),
+                        "rect" => rect(v).map(|r| d.rect = r),
+                        "cullingMask" => v.as_f64().map(|x| d.culling_mask = x as i64 as u32),
+                        "layerCullDistances" => v.as_array().map(|a| {
+                            for (i, x) in d.layer_cull_distances.iter_mut().enumerate() {
+                                *x = a.get(i).and_then(Value::as_f64).unwrap_or(0.0).max(0.0);
+                            }
+                        }),
+                        "layerCullSpherical" => v.as_bool().map(|x| d.layer_cull_spherical = x),
+                        "antialiasing" => v
+                            .as_str()
+                            .filter(|s| ["none", "fxaa"].contains(s))
+                            .map(|s| d.antialiasing = s.to_string()),
+                        "targetTexture" => iron_kinds::asset_handle(v, "Texture")
+                            .map(|h| d.target_texture = camera::TextureRef(h as u32)),
                         other => {
                             warnings.push(format!("no property `{other}` yet; dropped"));
                             continue;
@@ -119,6 +153,7 @@ fn bare(
 pub fn register_engine_kinds() {
     iron_kinds::register(camera_kind());
     iron_engine_api::audio_components::register_kinds();
+    iron_render_api::register_kinds();
     iron_kinds::register(bare(
         "Animation",
         |o| AnimationRef::attach(o).0,

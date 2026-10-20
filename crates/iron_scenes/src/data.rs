@@ -79,14 +79,72 @@ enum Key {
 pub(crate) struct Saver {
     /// `instantiate`: things outside what is saved stay live references, else they become null.
     keep_external: bool,
+    /// Assets stay live placeholders (the copy shares the handles) instead of going to the
+    /// `assets` table: `instantiate` and prefabs made in memory.
+    live_assets: bool,
     ids: HashMap<Key, u64>,
+    /// The `assets` table of the file being saved, and the table id of each shared asset.
+    assets: RefCell<Map<String, Value>>,
+    asset_ids: RefCell<HashMap<(String, u64), String>>,
 }
 
 impl Saver {
     pub fn new(keep_external: bool) -> Self {
         Saver {
             keep_external,
+            live_assets: keep_external,
             ids: HashMap::new(),
+            assets: RefCell::new(Map::new()),
+            asset_ids: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// Keeps asset placeholders live (a prefab in memory).
+    pub fn keep_assets_live(&mut self) {
+        self.live_assets = true;
+    }
+
+    /// The `assets` table collected while saving (empty when no shared asset was used).
+    pub fn take_assets(&self) -> Map<String, Value> {
+        std::mem::take(&mut *self.assets.borrow_mut())
+    }
+
+    /// An asset placeholder as the file holds it: a table id (shared kinds) or the inline
+    /// definition. A kind that does not exist, or an asset that cannot be saved, is null.
+    fn asset(&self, kind_name: &str, handle: u64) -> Value {
+        let Some(kind) = iron_kinds::get_asset(kind_name) else {
+            warn(format!("no asset kind {kind_name}; value dropped"));
+            return Value::Null;
+        };
+        if kind.shared
+            && let Some(id) = self.asset_ids.borrow().get(&(kind_name.to_owned(), handle))
+        {
+            return json!({ "$asset": id });
+        }
+        let Some(def) = (kind.describe)(handle) else {
+            warn(format!(
+                "a {kind_name} that was not loaded from a file cannot be saved; value dropped"
+            ));
+            return Value::Null;
+        };
+        if kind.shared {
+            let id = format!(
+                "{}{}",
+                kind_name.to_lowercase(),
+                self.asset_ids.borrow().len() + 1
+            );
+            self.asset_ids
+                .borrow_mut()
+                .insert((kind_name.to_owned(), handle), id.clone());
+            let def = self.value(&def);
+            self.assets.borrow_mut().insert(id.clone(), def);
+            json!({ "$asset": id })
+        } else {
+            let mut def = self.value(&def);
+            if let Some(m) = def.as_object_mut() {
+                m.insert("$type".into(), json!(kind_name));
+            }
+            def
         }
     }
 
@@ -119,6 +177,11 @@ impl Saver {
     fn value(&self, v: &Value) -> Value {
         match v {
             Value::Array(a) => Value::Array(a.iter().map(|x| self.value(x)).collect()),
+            Value::Object(o) if o.contains_key("$handle") && !self.live_assets => {
+                let kind = o.get("$handle").and_then(Value::as_str).unwrap_or_default();
+                let id = o.get("id").and_then(Value::as_u64).unwrap_or(0);
+                self.asset(kind, id)
+            }
             Value::Object(o) => match o.get("$ref").and_then(Value::as_str) {
                 Some("GameObject") => {
                     let raw = o.get("object").and_then(Value::as_u64).unwrap_or(0);
@@ -229,8 +292,15 @@ fn number_of(v: &Value, i: usize) -> f32 {
 
 /// Builds objects (under `parent`, or as roots tagged `tag`), sets their components' properties,
 /// then wakes the components: Unity's order, so components can refer to each other in any order.
-pub(crate) fn load_objects(list: &[Value], parent: Option<ObjectId>, tag: u32) -> Vec<ObjectId> {
+pub(crate) fn load_objects(
+    list: &[Value],
+    parent: Option<ObjectId>,
+    tag: u32,
+    assets: Option<&Map<String, Value>>,
+) -> Vec<ObjectId> {
     let mut loader = Loader {
+        assets: assets.cloned().unwrap_or_default(),
+        asset_cache: RefCell::new(HashMap::new()),
         things: HashMap::new(),
         pending: Vec::new(),
         woken: Vec::new(),
@@ -276,6 +346,9 @@ pub(crate) fn load_objects(list: &[Value], parent: Option<ObjectId>, tag: u32) -
 }
 
 struct Loader {
+    /// The file's `assets` table, and the handle each entry became (one per entry).
+    assets: Map<String, Value>,
+    asset_cache: RefCell<HashMap<String, u64>>,
     things: HashMap<u64, Thing>,
     pending: Vec<(Rc<Kind>, u64, Map<String, Value>)>,
     /// Components whose properties are set, waiting to wake.
@@ -363,10 +436,61 @@ impl Loader {
         object
     }
 
+    /// An `assets` table entry made into an asset: its placeholder (null when it cannot be made).
+    fn shared_asset(&self, id: &str) -> Value {
+        let Some(def) = self.assets.get(id) else {
+            warn(format!("unknown asset {id}"));
+            return Value::Null;
+        };
+        let type_name = def.get("type").and_then(Value::as_str).unwrap_or_default();
+        let Some(kind) = iron_kinds::get_asset(type_name) else {
+            warn(format!("asset {id}: unknown type {type_name:?}"));
+            return Value::Null;
+        };
+        if let Some(h) = self.asset_cache.borrow().get(id) {
+            return iron_kinds::asset_ref(&kind.name, *h);
+        }
+        match (kind.create)(&self.resolve(def)) {
+            Ok(h) => {
+                self.asset_cache.borrow_mut().insert(id.to_owned(), h);
+                iron_kinds::asset_ref(&kind.name, h)
+            }
+            Err(e) => {
+                warn(format!("asset {id}: {e}"));
+                Value::Null
+            }
+        }
+    }
+
     /// File ids in a property value back to placeholders for the kinds.
     fn resolve(&self, v: &Value) -> Value {
         match v {
             Value::Array(a) => Value::Array(a.iter().map(|x| self.resolve(x)).collect()),
+            Value::Object(o) if o.get("$asset").is_some_and(Value::is_string) => {
+                self.shared_asset(o["$asset"].as_str().unwrap_or_default())
+            }
+            Value::Object(o)
+                if o.get("$type")
+                    .and_then(Value::as_str)
+                    .and_then(iron_kinds::get_asset)
+                    .is_some_and(|k| !k.shared) =>
+            {
+                let name = o["$type"].as_str().unwrap_or_default();
+                let kind = iron_kinds::get_asset(name).expect("checked");
+                let def = Value::Object(
+                    o.iter()
+                        .filter(|(k, _)| *k != "$type")
+                        .map(|(k, x)| (k.clone(), self.resolve(x)))
+                        .collect(),
+                );
+                match (kind.create)(&def) {
+                    Ok(h) => iron_kinds::asset_ref(&kind.name, h),
+                    Err(e) => {
+                        warn(format!("{name}: {e}"));
+                        Value::Null
+                    }
+                }
+            }
             Value::Object(o) => {
                 let Some(what) = o.get("$ref").and_then(Value::as_str) else {
                     return Value::Object(

@@ -1,0 +1,83 @@
+// The native rendering data API from compiled code: lights, meshes, materials, textures,
+// sprites, mesh renderers, LOD groups and the camera extras. The Rust test
+// (tests/all/render_native.rs) reads the registries the renderer would.
+
+export function light(): string {
+  const go = new GameObject("Sun");
+  const l = go.addComponent(Light, {
+    type: "spot",
+    intensity: 2.5,
+    color: new Color(1, 0.5, 0.25, 1),
+    spotAngle: 40,
+    shadows: "soft",
+    cullingMask: 5,
+  });
+  l.range = 20;
+  l.type = "bogus";
+  return `${l.type}|${l.intensity}|${l.color.g}|${l.spotAngle}|${l.shadows}|${l.cullingMask}|${l.range}|${go.getComponent(Light) === l}`;
+}
+
+export function meshes(): string {
+  const go = new GameObject("Box");
+  const mat = new Material({ color: new Color(1, 0, 0, 1), metallic: 1, smoothness: 0.9, renderingMode: "cutout" });
+  const r = go.addComponent(MeshRenderer, { mesh: "sphere", material: mat, shadowCastingMode: "off" });
+  const tri = Mesh.create({
+    vertices: [new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0)],
+    triangles: [0, 1, 2],
+  });
+  const r2 = new GameObject("Tri").addComponent(MeshRenderer, { mesh: tri });
+  const plain = new GameObject("Plain").addComponent(MeshRenderer);
+  r2.material = mat.copy();
+  r2.material.metallic = 0.25;
+  return `${r.mesh.primitive}|${r2.mesh.vertexCount}|${r.material.metallic}|${r.material.renderingMode}|${r.shadowCastingMode}|${plain.mesh.primitive}|${plain.material.smoothness}|${r2.material.metallic}`;
+}
+
+export function textures(): string {
+  const a = Texture.load("img/a.png", { filterMode: "point", anisoLevel: 4 });
+  const b = Texture.create(2, 1, [new Color(1, 0, 0, 1), new Color(0, 0, 1, 0.5)]);
+  const rt = Texture.createRenderTexture(64, 32);
+  const cam = new GameObject("Cam").addComponent(Camera, { targetTexture: rt, clearFlags: "skybox", cullingMask: 3 });
+  cam.setRect(0.5, 0, 0.5, 1);
+  cam.setLayerCullDistance(4, 30);
+  const mat = Material.create({ mainTexture: a });
+  return `${a.filterMode}|${a.anisoLevel}|${a.isLoaded}|${b.width}x${b.height}|${rt.isRenderTexture}|${rt.width}|${cam.targetTexture.width}|${cam.clearFlags}|${cam.cullingMask}|${cam.rectX}|${cam.layerCullDistance(4)}|${mat.mainTexture.src}`;
+}
+
+export function sprites(): string {
+  const px: Color[] = [];
+  for (let i = 0; i < 16; i++) px.push(new Color(1, 1, 1, 1));
+  const t = Texture.create(4, 4, px);
+  const s = Sprite.create(t, 50);
+  s.pivot = new Vector2(0, 0);
+  const cell = Sprite.gridCell(t, 2, 2, 3);
+  const go = new GameObject("Sprite");
+  const r = go.addComponent(SpriteRenderer, { sprite: s, flipX: true, sortingOrder: 3.7 });
+  return `${s.size.x}|${cell.size.y}|${r.flipX}|${r.sortingOrder}|${r.sprite === s}`;
+}
+
+export function lods(): string {
+  const go = new GameObject("Tree");
+  const near = new GameObject("Near").addComponent(MeshRenderer);
+  const far = new GameObject("Far").addComponent(MeshRenderer, { mesh: "cube" });
+  const lod = go.addComponent(LODGroup, { size: 3 });
+  lod.addLod(0.6);
+  lod.addLod(0.2);
+  lod.addLod(0.5);
+  lod.addLodRenderer(0, near);
+  lod.addLodRenderer(1, far);
+  lod.forceLod(1);
+  return `${lod.lodCount}|${lod.lodHeight(1)}|${lod.lodRendererCount(0)}|${lod.lodRendererAt(1, 0) === far}`;
+}
+
+export function others(): string {
+  const go = new GameObject("Stuff");
+  const mirror = go.addComponent(Mirror, { cullingMask: 6 });
+  const probe = go.addComponent(ReflectionProbe, { resolution: 256, refreshMode: "everyFrame" });
+  probe.renderProbe();
+  probe.renderProbe();
+  const plane = go.addComponent(PlaneRenderer, { size: new Vector2(4, 2) });
+  const panel = go.addComponent(WorldPanel, { width: 400 });
+  const stroke = go.addComponent(LineRenderer2D, { width: 0.2 });
+  stroke.setPoints([new Vector2(0, 0), new Vector2(1, 1)]);
+  return `${mirror.cullingMask}|${probe.resolution}|${probe.refreshMode}|${plane.size.x}|${panel.worldWidth.toFixed(1)}|${stroke.pointCount}|${stroke.pointAt(1).y}`;
+}

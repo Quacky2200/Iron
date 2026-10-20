@@ -1667,6 +1667,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_render_api"
+version = "0.1.0"
+dependencies = [
+ "iron_api",
+ "iron_engine_api",
+ "iron_kinds",
+ "iron_math",
+ "iron_scene",
+ "serde_json",
+]
+
+[[package]]
 name = "iron_scene"
 version = "0.1.0"
 dependencies = [
@@ -1687,6 +1699,7 @@ dependencies = [
  "iron_api",
  "iron_engine_api",
  "iron_kinds",
+ "iron_render_api",
  "iron_scene",
  "serde_json",
 ]

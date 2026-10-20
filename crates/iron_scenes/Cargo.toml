@@ -9,5 +9,6 @@ glam = "0.34.1"
 serde_json = "1"
 iron_api = { path = "../iron_api", default-features = false, features = ["glam"] }
 iron_engine_api = { path = "../iron_engine_api" }
+iron_render_api = { path = "../iron_render_api" }
 iron_kinds = { path = "../iron_kinds" }
 iron_scene = { path = "../iron_scene" }

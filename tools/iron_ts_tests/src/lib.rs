@@ -288,6 +288,9 @@ pub fn engine_api_anchor() -> usize {
         iron_physics_api::components::components_api::iron_Rigidbody_attach as *const () as usize,
         iron_physics_api::joints::joints_api::iron_FixedJoint_attach as *const () as usize,
         iron_physics_api::physics2d::physics2d_api::iron_Rigidbody2D_attach as *const () as usize,
+        iron_render_api::mesh_api::iron_Mesh_create as *const () as usize,
+        iron_render_api::texture_api::iron_Texture_load as *const () as usize,
+        iron_render_api::light_api::iron_Light_attach as *const () as usize,
     ]
     .iter()
     .fold(0, |a, p| a ^ p)
@@ -796,6 +799,18 @@ pub mod prefs_t {
 )]
 pub mod assets_t {
     include!(concat!(env!("OUT_DIR"), "/assets_bindings.rs"));
+}
+
+/// `bench/render_native.ts`, prefix `rdn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod render_native_t {
+    include!(concat!(env!("OUT_DIR"), "/render_native_bindings.rs"));
 }
 
 /// `bench/audio_native.ts`, prefix `aud_`.

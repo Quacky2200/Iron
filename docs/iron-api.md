@@ -404,6 +404,38 @@ path is `src.clipPath = "x"` and `src.playOneShotPath("x")` (calls are not chose
 `AudioListener.volume` is `AudioListener.getVolume()` / `setVolume(v)`; `outputBus` is none (0) for the main mix; `audio.masterVolume`
 and `audio.soundCount` are read-only properties; `createEmitter` takes a `Vector3`.
 
+## Rendering data (`iron_render_api`)
+
+[iron_render_api](../crates/iron_render_api/src/lib.rs) is `rendering.ts`, `textures.ts` (and, below, `particles.ts` ...) as data: nothing
+draws, the app reads per-thread registries and a command queue. **No change to `iron_render` or `iron_app` yet**: wiring is theirs.
+
+- **Components** (engine components like `Camera`: static `attach` / `findOn`, `gameObject`, one property per field, and a scene-file
+  kind each): `Light`, `PlaneRenderer`, `MeshRenderer`, `SkinnedMeshRenderer`, `Mirror`, `ReflectionProbe`, `LODGroup`, `WorldPanel`,
+  `SpriteRenderer`, `LineRenderer2D`. The host reads them with `iron_render_api::lights()`, `mesh_renderers()`, ... (`Vec<(Ref, Data)>`)
+  and removes the components of destroyed objects with `iron_render_api::destroyed(&objects)`. `Camera` gains `clearFlags`, `rect`,
+  `cullingMask`, `layerCullDistance(i)`, `layerCullSpherical`, `antialiasing`, `targetTexture`, `sceneGrid`.
+- **Assets** (handles with asset kinds): `Texture` (`Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })`,
+  `Texture.create(w, h, colors)`, `Texture.createRenderTexture(w, h)`), `Mesh` (`Mesh.create({ vertices, triangles, normals?, uv? })`,
+  built-in meshes by name), `Material` (`new Material({ color, metallic, ... })` or `Material.create({ .. })`, `copy()`, `withColor(c)`),
+  `Sprite`. The host takes `take_commands()` (`Texture(t)` upload, `Mesh(m)`, ... removals), reads `texture_info(t)` / `mesh_info(m)`
+  and reports file loads with `texture_loaded(t, w, h)`.
+- **Generated code.** `gen/gen_components.py` writes `src/generated.rs` from field tables (type, default, doc, hooks); run it after
+  editing the tables. Hand-written parts are `resources.rs`.
+- **Scene files.** `iron_kinds::AssetKind` (shared kinds go into the file's `assets` table as `{"$asset":"texture1"}`, inline kinds
+  such as `Material` / `Sprite` are `{"$type":"Material",..}`); components save assets as `{"$handle":"Texture","id":N}` placeholders
+  and the saver / loader (`iron_scenes::data`) translate, one handle per table entry. `instantiate` and in-memory prefabs keep the
+  handles. `mesh: "cube"` is saved as the string. The example `level1.scene.json` loads completely.
+- **Compiler help.** A string where a handle is expected calls the class's `fromString` (`mesh: "sphere"` is `Mesh.fromString`); an
+  optional array parameter left out is empty; `Class.create({ .. })` on a class whose `create` takes nothing is `new Class({ .. })`;
+  an optional handle left out is a zero handle.
+- **Differences from the TypeScript.** `Material` is mutable (a shared handle, like Unity's `sharedMaterial`; `with(..)` is
+  `copy()`); `Texture.load` mipmaps / linear given as their defaults let the importer decide; `RenderTexture` is a `Texture`
+  (`createRenderTexture`, `isRenderTexture`); `whenLoaded()` promises are not there (read `isLoaded`); `Sprite.create(texture, ppu?)`
+  with `pivot` / `setRect(..)` setters and `Sprite.gridCell(texture, columns, rows, index)` instead of `grid`; a `SkinnedMeshRenderer` is not
+  found by `getComponent(MeshRenderer)`; arrays of objects are `addBone(b)` / `addLod(..)` style calls (`bones`, `lods`, `points`);
+  `Mirror.normal` has a `hasNormal` flag; `specularColor = null` is `clearSpecularColor()`; enum-like strings (`Light.type`) ignore
+  unknown names instead of storing them.
+
 ## Closures given to the engine (`iron_api::callback`)
 
 A parameter of type `Callback<(A, B)>` (elements `f64`, `i32`, `u32`, `bool`, `String` or `HandleArg<T>` for a declared handle) is a

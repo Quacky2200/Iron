@@ -21,7 +21,28 @@ impl<'a> Lowerer<'a> {
 
     /// `new GameObject(name?, options?)`.
     pub(crate) fn lower_new_handle(&mut self, class: &str, n: &'a NewExpression<'a>) -> R<Expr> {
-        let at = self.loc(n.span.start);
+        self.lower_new_handle_args(class, &n.arguments, n.span.start)
+    }
+
+    /// `Class.create({ .. })` on a class whose `create` takes nothing: the same as
+    /// `new Class({ .. })`, the object's keys set as properties.
+    pub(crate) fn is_create_with_options(&self, class: &str, c: &CallExpression<'_>) -> bool {
+        self.manifest
+            .classes
+            .get(class)
+            .and_then(|k| k.statics.get("create"))
+            .is_some_and(|f| f.params.is_empty())
+            && matches!(c.arguments.as_slice(), [Argument::ObjectExpression(_)])
+    }
+
+    /// `new Class(args)` over the arguments (also `Class.create({ .. })`).
+    pub(crate) fn lower_new_handle_args(
+        &mut self,
+        class: &str,
+        arguments: &'a [Argument<'a>],
+        start: u32,
+    ) -> R<Expr> {
+        let at = self.loc(start);
         let k = self.manifest.classes[class].clone();
         let create = k.statics["create"].clone();
         let ty = Ty::Handle(class.to_string());
@@ -30,7 +51,7 @@ impl<'a> Lowerer<'a> {
             // A trailing `{ key: value }` after the required parameters sets properties once the
             // object is made (`new AnimationTransition("A", "B", { duration: 0.2 })`), unless its
             // keys are parameters of `create` (then call_ext_args maps them by name).
-            let args: &'a [Argument<'a>] = &n.arguments;
+            let args: &'a [Argument<'a>] = arguments;
             let required = create.optional_from.min(create.params.len());
             let options = match args.last() {
                 Some(Argument::ObjectExpression(o))
@@ -50,13 +71,8 @@ impl<'a> Lowerer<'a> {
             } else {
                 args
             };
-            let mut e = self.call_ext_args(
-                create,
-                None,
-                &format!("new {class}"),
-                n.span.start,
-                positional,
-            )?;
+            let mut e =
+                self.call_ext_args(create, None, &format!("new {class}"), start, positional)?;
             e.ty = ty.clone();
             let Some(o) = options else {
                 return Ok(e);
@@ -70,12 +86,12 @@ impl<'a> Lowerer<'a> {
         let tmp = self.new_local(ty.clone());
         let made = self.emit_extern(&create, vec![]);
         let mut stmts = vec![Stmt::Assign(tmp, made)];
-        for (i, a) in n.arguments.iter().enumerate() {
+        for (i, a) in arguments.iter().enumerate() {
             let Some(e) = a.as_expression() else {
                 bail!("{at}: new {class}: spread argument")
             };
             match e {
-                Expression::ObjectExpression(o) if i > 0 || n.arguments.len() == 1 => {
+                Expression::ObjectExpression(o) if i > 0 || arguments.len() == 1 => {
                     self.apply_options(class, tmp, o, &mut stmts, &at)?;
                 }
                 _ if i == 0 => {
@@ -402,7 +418,7 @@ impl<'a> Lowerer<'a> {
             if let Some(setter) = own {
                 let want = self.ext_ir(&setter.params[1].1);
                 let v = self.lower_expr(&p.value, Some(&want))?;
-                let v = self.coerce(v, &want)?;
+                let v = self.coerce_ext(v, &want)?;
                 let h = self.var_expr(tmp);
                 stmts.push(Stmt::Eval(self.emit_extern(&setter, vec![h, v])));
                 continue;

@@ -60,6 +60,7 @@ mod props;
 mod random;
 mod regexp;
 mod regexp2;
+mod render_native;
 mod resolved;
 mod rotations;
 mod rounding;
