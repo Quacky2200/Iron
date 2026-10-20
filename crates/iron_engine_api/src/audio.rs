@@ -1,40 +1,59 @@
-//! `audio`: load a sound, play it, pause and resume the playback. This slice records what scripts
-//! ask for as [`AudioCommand`]s; the host takes them with [`take_commands`] and drives the mixer
-//! (`iron_audio`). Options are trailing parameters: `audio.load(path, { stream: true })` and
-//! `sound.play({ loop: true })` pass `stream` and `loop` (left out: false).
+//! `audio`: sounds, playbacks, buses, emitters and the listener, as `js/engine/src/audio.ts` has
+//! them. Scripts hold handles; every change is recorded as an [`AudioCommand`] that the host takes
+//! with [`take_commands`] and runs on the mixer (`iron_audio`): [`AudioCommand::to_op`] gives the
+//! `audio.*` op name and arguments `Mixer::apply` takes (a `Load` needs the file's bytes, so the
+//! host reads the file itself). When playbacks finish the host calls [`ended`].
+//!
+//! Options of `play` are trailing parameters, written as an object:
+//! `sound.play({ volume: 0.5, loop: true, bus: music })`. Differences from the TypeScript: `on:
+//! Bus | Emitter` is `bus` and `emitter`; `playback.onEnded = f` is `playback.onEnded(f)`; the
+//! `Sound` has `unload()` as before.
+//!
+//! The Unity-style components over these (`AudioSource`, `AudioListener`) are in
+//! [`crate::audio_components`].
 
-use iron_api::{Handle, iron_api};
+use crate::assets;
+use iron_api::{Callback, Handle, iron_api};
+use iron_math::{Q, V3};
+use serde_json::{Value, json};
 use std::cell::RefCell;
+use std::collections::HashMap;
 
-/// A loaded sound (1-based; 0 is "no sound").
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SoundRef(pub u32);
+macro_rules! numbered_handle {
+    ($(#[$m:meta])* $name:ident) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub struct $name(pub u32);
 
-/// A playing (or paused) sound (1-based).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PlaybackRef(pub u32);
-
-impl Handle for SoundRef {
-    fn to_raw(self) -> u64 {
-        u64::from(self.0)
-    }
-
-    fn from_raw(raw: u64) -> Self {
-        SoundRef(raw as u32)
-    }
+        impl Handle for $name {
+            fn to_raw(self) -> u64 {
+                u64::from(self.0)
+            }
+            fn from_raw(raw: u64) -> Self {
+                $name(raw as u32)
+            }
+        }
+    };
 }
 
-impl Handle for PlaybackRef {
-    fn to_raw(self) -> u64 {
-        u64::from(self.0)
-    }
+numbered_handle!(
+    /// A loaded sound (1-based; 0 is "no sound").
+    SoundRef
+);
+numbered_handle!(
+    /// A playing (or paused) sound (1-based).
+    PlaybackRef
+);
+numbered_handle!(
+    /// A mixer bus (1-based, numbered with the emitters: a track id).
+    BusRef
+);
+numbered_handle!(
+    /// A point sounds play from (1-based, numbered with the buses: a track id).
+    EmitterRef
+);
 
-    fn from_raw(raw: u64) -> Self {
-        PlaybackRef(raw as u32)
-    }
-}
-
-/// What a script asked the audio system to do.
+/// What a script asked the audio system to do. The numbers are the ids scripts see.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AudioCommand {
     Load {
@@ -42,116 +61,714 @@ pub enum AudioCommand {
         path: String,
         stream: bool,
     },
+    Unload(SoundRef),
     Play {
         sound: SoundRef,
         playback: PlaybackRef,
-        looped: bool,
+        /// The bus or emitter (a track id) it plays on.
+        track: Option<u32>,
+        options: PlayOptions,
     },
-    Pause(PlaybackRef),
-    Resume(PlaybackRef),
-    Stop(PlaybackRef),
+    /// `volume`, `rate` or `pan`, over `fade` seconds.
+    Set {
+        playback: PlaybackRef,
+        property: &'static str,
+        value: f64,
+        fade: f64,
+    },
+    Pause(PlaybackRef, f64),
+    Resume(PlaybackRef, f64),
+    Stop(PlaybackRef, f64),
+    Seek(PlaybackRef, f64),
+    Bus {
+        bus: BusRef,
+        parent: Option<u32>,
+        volume: f64,
+    },
+    Emitter {
+        emitter: EmitterRef,
+        position: [f64; 3],
+        distances: [f64; 2],
+        bus: Option<u32>,
+    },
+    /// `None` is the master volume.
+    TrackVolume {
+        track: Option<u32>,
+        volume: f64,
+        fade: f64,
+    },
+    TrackPause(u32, f64),
+    TrackResume(u32, f64),
+    EmitterPosition {
+        emitter: EmitterRef,
+        position: [f64; 3],
+        glide: f64,
+    },
+    RemoveTrack(u32),
+    Listener {
+        position: [f64; 3],
+        rotation: [f64; 4],
+    },
+}
+
+impl AudioCommand {
+    /// The `audio.*` op for `Mixer::apply` (the name without `audio.`), or `None` for `Load`,
+    /// which the host does itself.
+    pub fn to_op(&self) -> Option<(&'static str, Vec<Value>)> {
+        let id = |t: Option<u32>| t.map_or(Value::Null, |t| json!(t));
+        Some(match self {
+            AudioCommand::Load { .. } => return None,
+            AudioCommand::Unload(s) => ("unload", vec![json!(s.0)]),
+            AudioCommand::Play {
+                sound,
+                playback,
+                track,
+                options: o,
+            } => (
+                "play",
+                vec![
+                    json!(playback.0),
+                    json!(sound.0),
+                    id(*track),
+                    json!([o.volume, o.rate, o.pan, o.looped, o.fade_in, o.start]),
+                ],
+            ),
+            AudioCommand::Set {
+                playback,
+                property,
+                value,
+                fade,
+            } => (
+                "set",
+                vec![
+                    json!(playback.0),
+                    json!(property),
+                    json!(value),
+                    json!(fade),
+                ],
+            ),
+            AudioCommand::Pause(p, f) => ("pause", vec![json!(p.0), json!(f)]),
+            AudioCommand::Resume(p, f) => ("resume", vec![json!(p.0), json!(f)]),
+            AudioCommand::Stop(p, f) => ("stop", vec![json!(p.0), json!(f)]),
+            AudioCommand::Seek(p, s) => ("seek", vec![json!(p.0), json!(s)]),
+            AudioCommand::Bus {
+                bus,
+                parent,
+                volume,
+            } => ("bus", vec![json!(bus.0), id(*parent), json!(volume)]),
+            AudioCommand::Emitter {
+                emitter,
+                position,
+                distances,
+                bus,
+            } => (
+                "emitter",
+                vec![
+                    json!(emitter.0),
+                    json!(position),
+                    json!(distances),
+                    id(*bus),
+                ],
+            ),
+            AudioCommand::TrackVolume {
+                track,
+                volume,
+                fade,
+            } => ("trackVolume", vec![id(*track), json!(volume), json!(fade)]),
+            AudioCommand::TrackPause(t, f) => ("trackPause", vec![json!(t), json!(f)]),
+            AudioCommand::TrackResume(t, f) => ("trackResume", vec![json!(t), json!(f)]),
+            AudioCommand::EmitterPosition {
+                emitter,
+                position,
+                glide,
+            } => (
+                "emitterPosition",
+                vec![json!(emitter.0), json!(position), json!(glide)],
+            ),
+            AudioCommand::RemoveTrack(t) => ("removeTrack", vec![json!(t)]),
+            AudioCommand::Listener { position, rotation } => {
+                ("listener", vec![json!(position), json!(rotation)])
+            }
+        })
+    }
+}
+
+/// How a playback starts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayOptions {
+    /// Linear gain.
+    pub volume: f64,
+    /// Speed and pitch.
+    pub rate: f64,
+    /// -1 left, 0 centre, 1 right.
+    pub pan: f64,
+    pub looped: bool,
+    /// Seconds to fade in over.
+    pub fade_in: f64,
+    /// Seconds into the sound to start.
+    pub start: f64,
+    pub bus: Option<BusRef>,
+    pub emitter: Option<EmitterRef>,
+}
+
+impl Default for PlayOptions {
+    fn default() -> Self {
+        PlayOptions {
+            volume: 1.0,
+            rate: 1.0,
+            pan: 0.0,
+            looped: false,
+            fade_in: 0.0,
+            start: 0.0,
+            bus: None,
+            emitter: None,
+        }
+    }
+}
+
+struct SoundData {
+    path: String,
+}
+
+struct PlaybackData {
+    sound: SoundRef,
+    playing: bool,
+    paused: bool,
+    on_ended: Vec<Callback<()>>,
 }
 
 #[derive(Default)]
 struct State {
-    sounds: Vec<String>,
-    playbacks: Vec<(SoundRef, bool)>,
+    sounds: Vec<SoundData>,
+    playbacks: Vec<PlaybackData>,
+    next_track: u32,
     commands: Vec<AudioCommand>,
+    /// `audio.play(path)` loads a path once.
+    cache: HashMap<String, SoundRef>,
+    master: f64,
+    listener: Option<([f64; 3], [f64; 4])>,
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State::default());
+    static STATE: RefCell<State> = RefCell::new(State { master: 1.0, ..State::default() });
+}
+
+fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
+    STATE.with(|s| f(&mut s.borrow_mut()))
 }
 
 /// The commands since the last call, in order.
 pub fn take_commands() -> Vec<AudioCommand> {
-    STATE.with(|s| std::mem::take(&mut s.borrow_mut().commands))
+    st(|s| std::mem::take(&mut s.commands))
 }
 
+/// Forgets every sound, playback and command (a test, or a reload).
 pub fn reset() {
     STATE.with(|s| *s.borrow_mut() = State::default());
+    st(|s| s.master = 1.0);
+    crate::audio_components::reset();
 }
 
-#[iron_api(namespace = "audio", handles(Sound = SoundRef, Playback = PlaybackRef))]
-pub mod audio_api {
-    use super::{AudioCommand, PlaybackRef, STATE, SoundRef};
+/// Playbacks that finished (played out or were stopped), as `Mixer::poll` reports them:
+/// `onEnded` callbacks run, and the `AudioSource`s forget them.
+pub fn ended(ids: &[PlaybackRef]) {
+    let mut callbacks = Vec::new();
+    st(|s| {
+        for id in ids {
+            if let Some(p) = s.playbacks.get_mut((id.0 as usize).wrapping_sub(1))
+                && p.playing
+            {
+                p.playing = false;
+                callbacks.extend(std::mem::take(&mut p.on_ended));
+            }
+        }
+    });
+    crate::audio_components::playbacks_ended(ids);
+    crate::audio_components::finished_temp(ids);
+    for c in callbacks {
+        c.call(());
+    }
+}
 
-    /// Loads a sound from a path inside the game folder.
-    pub fn load(path: &str, stream: bool) -> SoundRef {
-        STATE.with(|s| {
-            let mut s = s.borrow_mut();
-            s.sounds.push(path.to_string());
-            let sound = SoundRef(s.sounds.len() as u32);
-            s.commands.push(AudioCommand::Load {
-                sound,
-                path: path.to_string(),
-                stream,
-            });
-            sound
+/// Where the sound came from, whether it is a GUID or a path.
+fn source_of(src: &str) -> String {
+    assets::resolve(src)
+}
+
+/// Loads a sound (a GUID source becomes its path; the file's `.meta` can ask for streaming).
+pub fn load_sound(src: &str, stream: Option<bool>) -> SoundRef {
+    let path = source_of(src);
+    let stream = stream.unwrap_or_else(|| {
+        serde_json::from_str::<Value>(&assets_importer(&path))
+            .ok()
+            .and_then(|v| v.get("stream").and_then(Value::as_bool))
+            .unwrap_or(false)
+    });
+    st(|s| {
+        s.sounds.push(SoundData { path: path.clone() });
+        let sound = SoundRef(s.sounds.len() as u32);
+        s.commands.push(AudioCommand::Load {
+            sound,
+            path,
+            stream,
+        });
+        sound
+    })
+}
+
+fn assets_importer(path: &str) -> String {
+    assets::assets_api::importer(path)
+}
+
+/// A path loaded once and shared (what `audio.play(path)` and an `AudioSource` clip path use).
+pub fn cached_sound(path: &str) -> SoundRef {
+    if let Some(s) = st(|s| s.cache.get(path).copied()) {
+        return s;
+    }
+    let sound = load_sound(path, None);
+    st(|s| s.cache.insert(path.to_string(), sound));
+    sound
+}
+
+/// The path of a sound ("" for none).
+pub fn sound_path(sound: SoundRef) -> String {
+    st(|s| {
+        s.sounds
+            .get((sound.0 as usize).wrapping_sub(1))
+            .map(|d| d.path.clone())
+            .unwrap_or_default()
+    })
+}
+
+pub fn sound_exists(sound: SoundRef) -> bool {
+    sound.0 != 0 && st(|s| (sound.0 as usize) <= s.sounds.len())
+}
+
+/// Starts a sound.
+pub fn play_sound(sound: SoundRef, o: PlayOptions) -> PlaybackRef {
+    st(|s| {
+        s.playbacks.push(PlaybackData {
+            sound,
+            playing: true,
+            paused: false,
+            on_ended: Vec::new(),
+        });
+        let playback = PlaybackRef(s.playbacks.len() as u32);
+        // An emitter wins over a bus when both are given.
+        let track = o.emitter.map(|e| e.0).or(o.bus.map(|b| b.0));
+        s.commands.push(AudioCommand::Play {
+            sound,
+            playback,
+            track,
+            options: o,
+        });
+        playback
+    })
+}
+
+/// Whether the playback is still playing (paused counts as playing, as in the TypeScript).
+pub fn is_playing(p: PlaybackRef) -> bool {
+    st(|s| {
+        s.playbacks
+            .get((p.0 as usize).wrapping_sub(1))
+            .is_some_and(|d| d.playing)
+    })
+}
+
+pub fn is_paused(p: PlaybackRef) -> bool {
+    st(|s| {
+        s.playbacks
+            .get((p.0 as usize).wrapping_sub(1))
+            .is_some_and(|d| d.paused)
+    })
+}
+
+pub fn set_playback(p: PlaybackRef, property: &'static str, value: f64, fade: f64) {
+    st(|s| {
+        s.commands.push(AudioCommand::Set {
+            playback: p,
+            property,
+            value,
+            fade,
         })
+    });
+}
+
+pub fn pause_playback(p: PlaybackRef, fade: f64) {
+    st(|s| {
+        if let Some(d) = s.playbacks.get_mut((p.0 as usize).wrapping_sub(1)) {
+            d.paused = true;
+            s.commands.push(AudioCommand::Pause(p, fade));
+        }
+    });
+}
+
+pub fn resume_playback(p: PlaybackRef, fade: f64) {
+    st(|s| {
+        if let Some(d) = s.playbacks.get_mut((p.0 as usize).wrapping_sub(1)) {
+            d.paused = false;
+            s.commands.push(AudioCommand::Resume(p, fade));
+        }
+    });
+}
+
+pub fn stop_playback(p: PlaybackRef, fade: f64) {
+    st(|s| s.commands.push(AudioCommand::Stop(p, fade)));
+}
+
+pub fn create_bus(volume: f64, parent: Option<BusRef>) -> BusRef {
+    st(|s| {
+        s.next_track += 1;
+        let bus = BusRef(s.next_track);
+        s.commands.push(AudioCommand::Bus {
+            bus,
+            parent: parent.map(|p| p.0),
+            volume,
+        });
+        bus
+    })
+}
+
+pub fn create_emitter(
+    position: [f64; 3],
+    min_distance: f64,
+    max_distance: f64,
+    bus: Option<BusRef>,
+) -> EmitterRef {
+    st(|s| {
+        s.next_track += 1;
+        let emitter = EmitterRef(s.next_track);
+        s.commands.push(AudioCommand::Emitter {
+            emitter,
+            position,
+            distances: [min_distance, max_distance],
+            bus: bus.map(|b| b.0),
+        });
+        emitter
+    })
+}
+
+pub fn move_emitter(e: EmitterRef, position: [f64; 3], glide: f64) {
+    st(|s| {
+        s.commands.push(AudioCommand::EmitterPosition {
+            emitter: e,
+            position,
+            glide,
+        })
+    });
+}
+
+pub fn remove_track(track: u32) {
+    st(|s| s.commands.push(AudioCommand::RemoveTrack(track)));
+}
+
+pub fn set_listener(position: [f64; 3], rotation: [f64; 4]) {
+    st(|s| {
+        s.listener = Some((position, rotation));
+        s.commands
+            .push(AudioCommand::Listener { position, rotation });
+    });
+}
+
+pub fn set_master_volume(volume: f64, fade: f64) {
+    st(|s| {
+        s.master = volume;
+        s.commands.push(AudioCommand::TrackVolume {
+            track: None,
+            volume,
+            fade,
+        });
+    });
+}
+
+fn opt<T: Handle>(h: T) -> Option<T> {
+    (h.to_raw() != 0).then_some(h)
+}
+
+fn arr3(v: V3) -> [f64; 3] {
+    [v.x, v.y, v.z]
+}
+
+#[iron_api(
+    namespace = "audio",
+    handles(Sound = SoundRef, Playback = PlaybackRef, Bus = BusRef, Emitter = EmitterRef),
+    values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
+)]
+pub mod audio_api {
+    use super::*;
+
+    /// Loads a sound from a path inside the game folder (or a `guid:` source). `stream` decodes
+    /// while playing instead of up front: for music and long ambience (a `.meta` can ask for it).
+    pub fn load(path: &str, stream: bool) -> SoundRef {
+        super::load_sound(path, stream.then_some(true))
+    }
+
+    /// Plays a file, loading it the first time (handy for UI clicks and one-off effects).
+    #[optional(
+        volume = 1,
+        rate = 1,
+        pan = 0,
+        r#loop,
+        fade_in = 0,
+        start = 0,
+        bus,
+        emitter
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn play(
+        src: &str,
+        volume: f64,
+        rate: f64,
+        pan: f64,
+        r#loop: bool,
+        fade_in: f64,
+        start: f64,
+        bus: BusRef,
+        emitter: EmitterRef,
+    ) -> PlaybackRef {
+        super::play_sound(
+            super::cached_sound(src),
+            PlayOptions {
+                volume,
+                rate,
+                pan,
+                looped: r#loop,
+                fade_in,
+                start,
+                bus: opt(bus),
+                emitter: opt(emitter),
+            },
+        )
+    }
+
+    /// A mixer bus: its volume and pause apply to everything on it (and on its sub-buses).
+    #[optional(volume = 1, parent)]
+    pub fn create_bus(volume: f64, parent: BusRef) -> BusRef {
+        super::create_bus(volume, opt(parent))
+    }
+
+    /// A point in the world sounds play from: they pan and fade with its distance and direction
+    /// from the listener. Full volume within `minDistance` (1), silent beyond `maxDistance` (50).
+    #[optional(min_distance = 1, max_distance = 50, bus)]
+    pub fn create_emitter(
+        position: V3,
+        min_distance: f64,
+        max_distance: f64,
+        bus: BusRef,
+    ) -> EmitterRef {
+        super::create_emitter(arr3(position), min_distance, max_distance, opt(bus))
+    }
+
+    /// Where the player hears from (usually the camera).
+    pub fn set_listener(position: V3, rotation: Q) {
+        super::set_listener(
+            arr3(position),
+            [rotation.x, rotation.y, rotation.z, rotation.w],
+        );
+    }
+
+    /// The volume of everything, over `fade` seconds.
+    #[optional(fade = 0)]
+    pub fn set_master_volume(volume: f64, fade: f64) {
+        super::set_master_volume(volume, fade);
+    }
+
+    /// The volume set by `setMasterVolume` (linear).
+    #[property]
+    pub fn master_volume() -> f64 {
+        st(|s| s.master)
+    }
+
+    /// Sounds loaded so far.
+    #[property]
+    pub fn sound_count() -> f64 {
+        st(|s| s.sounds.len() as f64)
     }
 
     impl SoundRef {
         /// Starts the sound and returns the playback.
-        pub fn play(self, r#loop: bool) -> PlaybackRef {
-            STATE.with(|s| {
-                let mut s = s.borrow_mut();
-                s.playbacks.push((self, false));
-                let playback = PlaybackRef(s.playbacks.len() as u32);
-                s.commands.push(AudioCommand::Play {
-                    sound: self,
-                    playback,
+        #[optional(
+            volume = 1,
+            rate = 1,
+            pan = 0,
+            r#loop,
+            fade_in = 0,
+            start = 0,
+            bus,
+            emitter
+        )]
+        #[allow(clippy::too_many_arguments)]
+        pub fn play(
+            self,
+            volume: f64,
+            rate: f64,
+            pan: f64,
+            r#loop: bool,
+            fade_in: f64,
+            start: f64,
+            bus: BusRef,
+            emitter: EmitterRef,
+        ) -> PlaybackRef {
+            super::play_sound(
+                self,
+                PlayOptions {
+                    volume,
+                    rate,
+                    pan,
                     looped: r#loop,
-                });
-                playback
-            })
+                    fade_in,
+                    start,
+                    bus: opt(bus),
+                    emitter: opt(emitter),
+                },
+            )
         }
 
+        /// The sound's path in the game folder.
         #[property]
         pub fn path(self) -> String {
-            STATE.with(|s| {
-                s.borrow()
-                    .sounds
-                    .get((self.0 as usize).wrapping_sub(1))
-                    .cloned()
-                    .unwrap_or_default()
-            })
+            super::sound_path(self)
+        }
+
+        /// The same as `path` (the TypeScript's name).
+        #[property]
+        pub fn src(self) -> String {
+            super::sound_path(self)
+        }
+
+        /// Frees the sound's data. Playing copies finish first.
+        pub fn unload(self) {
+            st(|s| s.commands.push(AudioCommand::Unload(self)));
         }
     }
 
     impl PlaybackRef {
-        pub fn pause(self) {
-            STATE.with(|s| {
-                let mut s = s.borrow_mut();
-                if let Some(p) = s.playbacks.get_mut((self.0 as usize).wrapping_sub(1)) {
-                    p.1 = true;
-                    s.commands.push(AudioCommand::Pause(self));
-                }
-            });
+        /// Changes the volume (linear gain), over `fade` seconds.
+        #[optional(fade = 0)]
+        pub fn set_volume(self, volume: f64, fade: f64) {
+            super::set_playback(self, "volume", volume, fade);
         }
 
-        pub fn resume(self) {
-            STATE.with(|s| {
-                let mut s = s.borrow_mut();
-                if let Some(p) = s.playbacks.get_mut((self.0 as usize).wrapping_sub(1)) {
-                    p.1 = false;
-                    s.commands.push(AudioCommand::Resume(self));
-                }
-            });
+        /// Speed and pitch.
+        #[optional(fade = 0)]
+        pub fn set_rate(self, rate: f64, fade: f64) {
+            super::set_playback(self, "rate", rate, fade);
         }
 
-        pub fn stop(self) {
-            STATE.with(|s| s.borrow_mut().commands.push(AudioCommand::Stop(self)));
+        /// -1 left, 0 centre, 1 right.
+        #[optional(fade = 0)]
+        pub fn set_pan(self, pan: f64, fade: f64) {
+            super::set_playback(self, "pan", pan, fade);
+        }
+
+        #[optional(fade = 0)]
+        pub fn pause(self, fade: f64) {
+            super::pause_playback(self, fade);
+        }
+
+        #[optional(fade = 0)]
+        pub fn resume(self, fade: f64) {
+            super::resume_playback(self, fade);
+        }
+
+        /// Stops it (fading out over `fade` seconds); `onEnded` follows.
+        #[optional(fade = 0)]
+        pub fn stop(self, fade: f64) {
+            super::stop_playback(self, fade);
+        }
+
+        /// Jumps to `seconds` into the sound.
+        pub fn seek(self, seconds: f64) {
+            st(|s| s.commands.push(AudioCommand::Seek(self, seconds)));
+        }
+
+        /// False once it has finished (played out or stopped).
+        #[property]
+        pub fn playing(self) -> bool {
+            super::is_playing(self)
         }
 
         #[property]
         pub fn paused(self) -> bool {
-            STATE.with(|s| {
-                s.borrow()
-                    .playbacks
+            super::is_paused(self)
+        }
+
+        /// The sound it plays.
+        #[property]
+        pub fn sound(self) -> SoundRef {
+            st(|s| {
+                s.playbacks
                     .get((self.0 as usize).wrapping_sub(1))
-                    .is_some_and(|p| p.1)
+                    .map_or(SoundRef(0), |d| d.sound)
             })
+        }
+
+        /// Calls `f()` when it finishes. A playback that has already finished calls it at once.
+        pub fn on_ended(self, f: Callback<()>) {
+            let done = st(
+                |s| match s.playbacks.get_mut((self.0 as usize).wrapping_sub(1)) {
+                    Some(d) if d.playing => {
+                        d.on_ended.push(f.clone());
+                        false
+                    }
+                    _ => true,
+                },
+            );
+            if done {
+                f.call(());
+            }
+        }
+    }
+
+    impl BusRef {
+        #[optional(fade = 0)]
+        pub fn set_volume(self, volume: f64, fade: f64) {
+            st(|s| {
+                s.commands.push(AudioCommand::TrackVolume {
+                    track: Some(self.0),
+                    volume,
+                    fade,
+                })
+            });
+        }
+
+        #[optional(fade = 0)]
+        pub fn pause(self, fade: f64) {
+            st(|s| s.commands.push(AudioCommand::TrackPause(self.0, fade)));
+        }
+
+        #[optional(fade = 0)]
+        pub fn resume(self, fade: f64) {
+            st(|s| s.commands.push(AudioCommand::TrackResume(self.0, fade)));
+        }
+
+        /// Removes the bus; sounds on it stop.
+        pub fn remove(self) {
+            super::remove_track(self.0);
+        }
+    }
+
+    impl EmitterRef {
+        /// Moves the emitter, gliding over `glide` seconds.
+        #[optional(glide = 0)]
+        pub fn set_position(self, position: V3, glide: f64) {
+            super::move_emitter(self, arr3(position), glide);
+        }
+
+        #[optional(fade = 0)]
+        pub fn set_volume(self, volume: f64, fade: f64) {
+            st(|s| {
+                s.commands.push(AudioCommand::TrackVolume {
+                    track: Some(self.0),
+                    volume,
+                    fade,
+                })
+            });
+        }
+
+        /// Removes the emitter; sounds on it stop.
+        pub fn remove(self) {
+            super::remove_track(self.0);
         }
     }
 }

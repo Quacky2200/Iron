@@ -798,6 +798,18 @@ pub mod assets_t {
     include!(concat!(env!("OUT_DIR"), "/assets_bindings.rs"));
 }
 
+/// `bench/audio_native.ts`, prefix `aud_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod audio_native_t {
+    include!(concat!(env!("OUT_DIR"), "/audio_native_bindings.rs"));
+}
+
 /// `bench/callbacks.ts`, prefix `cbk_`.
 #[allow(
     dead_code,

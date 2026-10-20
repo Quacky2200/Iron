@@ -12,6 +12,7 @@ iron_api = { path = "../iron_api", default-features = false, features = ["glam",
 iron_animation = { path = "../iron_animation" }
 iron_math = { path = "../iron_math" }
 iron_scene = { path = "../iron_scene" }
+iron_kinds = { path = "../iron_kinds" }
 
 [dev-dependencies]
 rquickjs = "0.14.0"

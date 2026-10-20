@@ -383,6 +383,27 @@ puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
   `onTriggerEnter` (and the `2D` names), `object_destroyed(object)` for destroyed GameObjects, `register_kinds()`.
 - Differences to the TypeScript are listed in `tools/iron_ts/TODO.md` ("Physics components"). Tests `M9-API-200..209`,
   `M9-TS-1100..1105`.
+## Audio (`audio`, `AudioSource`, `AudioListener`)
+
+`audio.rs` is `js/engine/src/audio.ts`: `audio.load(path, stream?)`, `audio.play(path, {..})`, `Sound.play({ volume, rate, pan, loop,
+fadeIn, start, bus, emitter })`, `Playback` (`setVolume/Rate/Pan(v, fade?)`, `pause/resume/stop(fade?)`, `seek`, `playing`, `paused`,
+`onEnded(f)`), `Bus` (`audio.createBus({ volume, parent })`), `Emitter` (`audio.createEmitter(position, { minDistance, maxDistance, bus })`),
+`audio.setListener`, `audio.setMasterVolume`. Each change is an `AudioCommand`; the host takes them with `audio::take_commands()` and
+runs `command.to_op()` on `iron_audio::Mixer::apply` (a `Load` carries the path and stream flag: the host reads the file and calls
+`Mixer::load`). When `Mixer::poll` reports finished playbacks the host calls `audio::ended(&[PlaybackRef])` (runs `onEnded`).
+
+`audio_components.rs` is `audio-components.ts`: `AudioSource` and `AudioListener` are engine components (static `attach` / `findOn`, so
+`go.addComponent(AudioSource, { clip, spatialBlend: 1 })` and `getComponent` work), with scene-file kinds `AudioSource`
+(`clip` as `{"$type":"Sound","src","guid"}` or a path, `playOnAwake`, `spatialBlend`, `minDistance`, `maxDistance`, `volume`, `pitch`,
+`panStereo`, `mute`, `loop`) and `AudioListener`; registered by `iron_scenes` (`audio_components::register_kinds`). The host calls
+`audio_components::pre_render()` once a frame after transforms are final (emitters follow their objects, the listener follows its object;
+only real moves are sent). `objects::process_destroyed` removes the components of destroyed objects.
+
+Differences from the TypeScript: `on: Bus | Emitter` is `bus` and `emitter`; `playback.onEnded = f` is `playback.onEnded(f)`; a clip given as a
+path is `src.clipPath = "x"` and `src.playOneShotPath("x")` (calls are not chosen by argument type for handle classes); the static
+`AudioListener.volume` is `AudioListener.getVolume()` / `setVolume(v)`; `outputBus` is none (0) for the main mix; `audio.masterVolume`
+and `audio.soundCount` are read-only properties; `createEmitter` takes a `Vector3`.
+
 ## Closures given to the engine (`iron_api::callback`)
 
 A parameter of type `Callback<(A, B)>` (elements `f64`, `i32`, `u32`, `bool`, `String` or `HandleArg<T>` for a declared handle) is a

@@ -79,7 +79,7 @@ fn keys_start_the_music_change_the_formula_and_show_the_centre() {
     let cmds = audio::take_commands();
     assert!(
         cmds.iter()
-            .any(|c| matches!(c, AudioCommand::Play { looped: true, .. })),
+            .any(|c| matches!(c, AudioCommand::Play { options, .. } if options.looped)),
         "{cmds:?}"
     );
     // Space is handled at the end of the update: the next frame is the first one that runs.

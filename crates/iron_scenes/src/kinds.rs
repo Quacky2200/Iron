@@ -118,6 +118,7 @@ fn bare(
 /// Registers the engine's kinds on this thread (a later registration replaces an earlier one).
 pub fn register_engine_kinds() {
     iron_kinds::register(camera_kind());
+    iron_engine_api::audio_components::register_kinds();
     iron_kinds::register(bare(
         "Animation",
         |o| AnimationRef::attach(o).0,

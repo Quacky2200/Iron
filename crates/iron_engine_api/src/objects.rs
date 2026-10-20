@@ -11,6 +11,7 @@ pub fn process_destroyed() -> Vec<ObjectId> {
     let list = iron_scene::api::take_destroyed();
     for o in &list {
         crate::camera::remove_on(*o);
+        crate::audio_components::remove_on(*o);
     }
     list
 }

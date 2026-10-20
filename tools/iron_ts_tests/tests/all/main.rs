@@ -4,6 +4,7 @@ mod anim_player;
 mod app;
 mod arraylib;
 mod assets;
+mod audio_native;
 mod bigint;
 mod buffers;
 mod callbacks;

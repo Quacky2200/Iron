@@ -1011,7 +1011,7 @@ impl<'a> Lowerer<'a> {
                     // An optional number is NaN: the function tells "left out" from 0.
                     ExtTy::F64 | ExtTy::F32 if i >= opt_from => num(f64::NAN),
                     ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
-                    ExtTy::Handle(_) if i >= opt_from => mk(ExprKind::Num(0.0), self.ext_ir(pt)),
+                    ExtTy::Handle(_) if i >= opt_from => mk(ExprKind::Null, self.ext_ir(pt)),
                     other => bail!("{at}: {what}: parameter `{pname}` ({other:?}) has no default"),
                 });
                 continue;

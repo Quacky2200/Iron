@@ -14,6 +14,7 @@ pub mod animator;
 pub mod app;
 pub mod assets;
 pub mod audio;
+pub mod audio_components;
 pub mod camera;
 pub mod clock;
 pub mod color;
@@ -59,6 +60,8 @@ pub fn manifests() -> Vec<String> {
         screen::screen_api::MANIFEST.to_json(),
         screen::quality_api::MANIFEST.to_json(),
         audio::audio_api::MANIFEST.to_json(),
+        audio_components::audio_source_api::MANIFEST.to_json(),
+        audio_components::audio_listener_api::MANIFEST.to_json(),
         random::rng_api::MANIFEST.to_json(),
         random::random_api::MANIFEST.to_json(),
         layers::layer_mask_api::MANIFEST.to_json(),
