@@ -205,7 +205,7 @@ for maps, chosen per binding. A texture's `srgb` flag (false for `linear` textur
 mip chain average in linear space. Samplers are keyed by filter, wrap and anisotropy (`SamplerKey`).
 
 **Lights from scripts.** `Light` sends `render.light component object type [r g b] intensity range
-spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength`. Colour is
+spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask volumetricIntensity`. Colour is
 multiplied by intensity before it reaches `Light`. A light shines along its object's -z, like
 Unity's. `RenderSettings.ambientLight` sends `render.ambient` (the default is a dim blue-grey).
 
@@ -384,6 +384,18 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
 - **Background.** Distance fog leaves the background fill (colour or skybox) clear. `fs_fill` applies height
   fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
   to `fogColor` for a seamless horizon with distance fog alone.
+- **Light shafts.** `RenderSettings.volumetricFog` (`{ intensity, anisotropy, steps, distance }`, defaults
+  1, 0.4, 16, 50; `null` by default, used only while `fog` is on, saved with scenes) sends an eighth
+  `render.fog` argument (anisotropy clamped to +-0.95, steps to 1..64) and sets `Fog.volumetric:
+  Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
+  `shafts(p, px, distance)` marches from the eye to `min(length, reach)` in `steps` steps. Each step's
+  share of fog (the drop in `fog_clear`) is lit by `scattered(x, dir)` at a point jittered per pixel
+  (`jitter`, interleaved gradient noise). Fog past the reach is lit as at its middle. `scattered` sums
+  every light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): falloff, spot cone and a hard
+  shadow (`sun_shadow` / `local_shadow` with PCF radius 0), times `phase(cos)` (Henyey-Greenstein,
+  isotropic = 1). The result is scaled by `intensity` and the pixel's alpha. `fs_fill` adds shafts to the
+  background only when height fog is on. Cost: a march per fogged fragment with a shadow lookup per light
+  per step, so overdraw multiplies it.
 - **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze.
@@ -449,7 +461,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
-| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null`, or `0 null` for clear air |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance]\|null`, or `0 null` for clear air |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
@@ -743,7 +755,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
