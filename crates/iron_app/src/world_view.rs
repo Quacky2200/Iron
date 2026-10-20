@@ -720,6 +720,15 @@ impl WorldViews {
         Ok(Some((id, width, height)))
     }
 
+    /// Drops the cameras, lights and mesh renderers: a compiled game's are rebuilt every frame
+    /// from its registries (`render_sync`).
+    pub fn clear_components(&mut self) {
+        self.cameras.clear();
+        self.lights.clear();
+        self.renderers.clear();
+        self.skins.clear();
+    }
+
     /// Runs one `render.*` op.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         let num = |i: usize| -> Result<f32, String> {

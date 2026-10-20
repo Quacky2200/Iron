@@ -84,6 +84,25 @@ impl ScriptScene {
         id
     }
 
+    /// The script id of an object made outside scripts (a compiled game's), giving it one on the
+    /// first call. The renderer looks objects up by script id.
+    pub fn adopt(&mut self, id: ObjectId) -> ScriptObject {
+        if let Some(s) = self.scripts.get(&id) {
+            return *s;
+        }
+        let script = self.next_engine_id;
+        self.next_engine_id += 1;
+        self.ids.insert(script, id);
+        self.scripts.insert(id, script);
+        script
+    }
+
+    /// Forgets every id (the scene was replaced: a compiled game reloaded).
+    pub fn clear_ids(&mut self) {
+        self.ids.clear();
+        self.scripts.clear();
+    }
+
     /// Creates a root object for the engine's own use (the starting components'),
     /// returning the id scripts know it by.
     pub fn create_engine_object(&mut self, name: &str) -> ScriptObject {

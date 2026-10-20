@@ -17,6 +17,12 @@ pub extern "C" fn ts_ui_mount(target: f64, element: u64) {
     MOUNTS.with(|m| m.borrow_mut().push((target as u64, element)));
 }
 
+/// `UiRoot.mount(panel, element)`: the root of a world panel, by the panel's raw handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_mount_panel(panel: u64, element: u64) {
+    MOUNTS.with(|m| m.borrow_mut().push((panel, element)));
+}
+
 /// The mount requests since the last call: (target, element handle for `element_from`).
 pub fn take_mounts() -> Vec<(u64, u64)> {
     MOUNTS.with(|m| std::mem::take(&mut *m.borrow_mut()))
@@ -31,6 +37,14 @@ pub fn root_manifest_json() -> String {
             "symbol": "ts_ui_mount",
             "params": [
                 {"name": "target", "type": "f64"},
+                {"name": "element", "type": "handle:UiElement"},
+            ],
+            "returns": "void",
+        }, {
+            "name": "mount",
+            "symbol": "ts_ui_mount_panel",
+            "params": [
+                {"name": "panel", "type": "handle:WorldPanel"},
                 {"name": "element", "type": "handle:UiElement"},
             ],
             "returns": "void",

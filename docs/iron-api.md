@@ -598,3 +598,11 @@ saved scenes load again (`load_scene`: components come back on their objects wit
 program get a starting object). The UI keeps its hook state through `Runtime::refresh`, except components whose `__uiSignatures`
 hook list changed. Differences to QuickJS: no `onReload` hook, non-`@property` fields start over, module variables of objects the
 top level made hold removed objects, component references between components are not restored.
+
+**3D from a native game** (`crates/iron_app/src/render_sync.rs`): each frame `sync` takes the resource commands
+(`iron_render_api::take_commands`: textures from files or pixels through `WorldViews::texture_op`, then `texture_loaded`; script meshes
+through the `mesh` op), clears the renderer's cameras, lights and mesh renderers, and rebuilds them from `iron_engine_api::camera::cameras()`,
+`iron_render_api::lights()` and `mesh_renderers()` (with `with_material`) by calling `WorldViews::apply` with the same arguments the
+QuickJS `render.*` ops carry, so there is one renderer path. Native objects get script ids with `ScriptScene::adopt`. Cameras look along
+-z (as in the QuickJS path, unlike Unity). Not wired: sprites, line renderers, particles, cloth, models, planes, world panels, mirrors,
+probes, render textures, `RenderSettings` (sky, bloom, ambient: the cube test shows the default dim light), gizmos.

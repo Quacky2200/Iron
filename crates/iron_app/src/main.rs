@@ -29,6 +29,7 @@ mod physics_sync;
 mod prefs;
 mod project;
 pub(crate) mod reload;
+mod render_sync;
 mod ui_scale;
 pub(crate) mod world_view;
 
@@ -662,7 +663,10 @@ impl App {
         let Some(n) = self.native.as_mut() else {
             return;
         };
-        match n.reload(bundle, &mut self.scene.scene, &mut self.ui) {
+        let result = n.reload(bundle, &mut self.scene.scene, &mut self.ui);
+        // The scene was replaced: the renderer's script ids pointed into the old one.
+        self.scene.clear_ids();
+        match result {
             Ok(()) => tracing::info!(
                 "reloaded {} in {:.1} ms",
                 self.bundle_name,
@@ -2037,6 +2041,7 @@ impl PlatformApp for App {
         if !self.lifecycle.paused() {
             if let Some(n) = self.native.as_mut() {
                 n.pre_render(&mut self.scene.scene, &mut self.ui);
+                render_sync::sync(&mut self.world_view, &mut self.scene, &self.asset_root);
             }
             let scene = &self.scene;
             self.components
