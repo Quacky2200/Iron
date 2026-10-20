@@ -1,4 +1,4 @@
-// Emoji celebrity: a spinner wheel picks an emoji, the red curtain opens and it comes on in one
+// Emoji parade: a spinner wheel picks an emoji, the red curtain opens and it comes on in one
 // of thirteen ways, strikes a pose in the spotlight while its name appears, the crowd reacts
 // (applause and cheers with cannons and balloons, boos and thrown tomatoes, gasps, aws, laughs), and it leaves in one of
 // eighteen. Some have a show of their own (a heart blushes the room red with a heartbeat, the
@@ -20,9 +20,10 @@ import { Fx } from "./fx.ts";
 import { caption, eyes, Face, Hud, overlay, rocket, shown, wheel, type WheelState } from "./hud.tsx";
 import type { Act, Ctx, Cue, Move } from "./moves.ts";
 import { POSES } from "./poses.ts";
+import { SIGNATURES } from "./signatures.ts";
 import { sfx } from "./sfx.ts";
 import { randomReaction, randomScene, type Reaction, type Scene, SPECIAL } from "./specials.ts";
-import { buildStage, Curtain, Mote } from "./stage.tsx";
+import { buildStage, Curtain, Mote, type Stage } from "./stage.tsx";
 
 type Phase = "wheel" | "enter" | "pose" | "exit" | "miss" | "close";
 
@@ -68,6 +69,7 @@ class Parade extends Component {
   private fx!: Fx;
   private curtain!: Curtain;
   private effects!: Effects;
+  private stage!: Stage;
   private ctx!: Ctx;
 
   private phase: Phase = "wheel";
@@ -125,8 +127,8 @@ class Parade extends Component {
   override onAwake(): void {
     view.half = 5 * Screen.aspect;
     this.cam = new GameObject("Main Camera", { position: new Vector3(0, 0, 10) });
-    this.cam.addComponent(Camera, { orthographic: true, orthographicSize: 5, backgroundColor: Color.hex("#04050a") });
-    buildStage();
+    const camera = this.cam.addComponent(Camera, { orthographic: true, orthographicSize: 5, backgroundColor: Color.hex("#04050a") });
+    this.stage = buildStage(camera);
     sfx.preload();
 
     this.shadow = new GameObject("Shadow", { position: new Vector3(0, GROUND, 0.1) });
@@ -157,7 +159,7 @@ class Parade extends Component {
         return self.effects;
       },
     };
-    this.effects = new Effects(this.fx, this.ctx);
+    this.effects = new Effects(this.fx, this.ctx, this.stage);
     createRoot().render(<Hud />);
     this.beginWheel();
   }
@@ -243,7 +245,8 @@ class Parade extends Component {
     this.reaction = special.react ?? randomReaction();
     // Plain applause and cheering are for taking a bow.
     const plain = this.reaction === "applause" || this.reaction === "cheer";
-    const pose = POSES[special.pose ?? (plain ? "bow" : pick(star.poses))];
+    const poseName = special.pose ?? (plain ? "bow" : pick(star.poses));
+    const pose = (POSES as Record<string, Act>)[poseName] ?? SIGNATURES[poseName] ?? POSES.bow;
     // A longer stay repeats the pose.
     this.poseAct = special.extra ? { ...pose, dur: pose.dur + special.extra, at: (t) => pose.at(t % pose.dur) } : pose;
     this.scene = special.scene ?? (special.calm ? undefined : randomScene());
@@ -290,6 +293,15 @@ class Parade extends Component {
         break;
       case "ball":
         this.effects.disco("ball");
+        break;
+      case "night":
+        this.effects.night(true);
+        break;
+      case "haunt":
+        this.effects.haunt(true);
+        break;
+      case "fashion":
+        this.effects.fashion(true);
         break;
     }
   }
@@ -374,6 +386,9 @@ class Parade extends Component {
           this.effects.weather("none");
           this.effects.love(false);
           this.effects.disco(null);
+          this.effects.night(false);
+          this.effects.fashion(false);
+          this.effects.haunt(false);
           this.heading = -this.outSide;
           this.startPhase("exit", this.exitAct);
         }
@@ -450,7 +465,9 @@ class Parade extends Component {
     // Dim outside the light (the dark is drawn behind panels, so the emoji does it itself);
     // a flash of lightning lights it up.
     const spot = Math.exp(-((x - LIGHT.x) * (x - LIGHT.x)) / 9);
-    const lit = Math.min(1.4, 0.3 + 0.7 * spot + 0.9 * overlay.get().flash);
+    // At night there is no spotlight to dim it.
+    const dim = 0.3 + 0.7 * spot;
+    const lit = Math.min(1.4, dim + (0.95 - dim) * this.effects.nightLevel + 0.9 * overlay.get().flash);
     const tint = m.tint ?? [1, 1, 1];
     const key = `${lit.toFixed(2)}|${tint.join(",")}|${m.alpha.toFixed(2)}`;
     if (key !== this.litKey) {

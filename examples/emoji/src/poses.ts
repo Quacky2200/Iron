@@ -1,7 +1,7 @@
 // What an emoji does in the spotlight. Every pose starts and ends at rest.
 import type { PoseName } from "./cast.ts";
 import { GROUND, HEIGHT } from "./config.ts";
-import { type Act, clamp01, envelope, lerp, smooth, still } from "./moves.ts";
+import { type Act, clamp01, type Cue, envelope, keys, lerp, smooth, still } from "./moves.ts";
 
 const DEFAULT_TIME = 3.8;
 
@@ -257,4 +257,24 @@ const zap: Act = {
   },
 };
 
-export const POSES: Record<PoseName, Act> = { bow, wink, spin, pump, sway, shake, float, flip, dizzy, watch, beat, fart, party, zap };
+/** A model on the runway: a new pose every second, a burst of camera flashes on each. */
+const model: Act = {
+  name: "model",
+  dur: 5.8,
+  cues: [0.4, 1.4, 2.4, 3.4, 4.4].map((t): Cue => [t, (c) => c.scene.photos(3)]),
+  at(t) {
+    const m = still();
+    m.rot = keys(t, [
+      [0, 0], [0.4, 0], [0.52, -10], [1.4, -10], [1.52, 8], [2.4, 8], [2.52, -6], [3.4, -6], [3.52, 11], [4.4, 11], [4.52, -4], [5.2, -4], [5.5, 0], [5.8, 0],
+    ]);
+    // Each pose lands with a small pop.
+    let pop = 0;
+    for (const s of [0.4, 1.4, 2.4, 3.4, 4.4]) if (t > s) pop += Math.exp(-(t - s) * 12) * (t - s < 1 ? 1 : 0);
+    m.sy = 1 + 0.05 * pop;
+    m.sx = 1 - 0.025 * pop;
+    m.y = 0.15 * pop;
+    return m;
+  },
+};
+
+export const POSES: Record<PoseName, Act> = { model, bow, wink, spin, pump, sway, shake, float, flip, dizzy, watch, beat, fart, party, zap };

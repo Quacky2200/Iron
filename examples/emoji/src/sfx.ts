@@ -11,6 +11,11 @@ export const NAMES = [
   "zap", "freeze", "sparkle", "disco",
   "whistle", "boom", "crackle", "explosion", "fuse",
   "drag", "beep", "liftoff", "poof",
+  "hoot", "crickets", "shutter", "runway",
+  "dink", "crack", "tinkle", "bark", "meow", "ribbit", "oink", "roar", "monkey", "snore", "growl", "scream", "honk", "squeak",
+  "bleep", "ufo", "servo", "sizzle", "squirt", "evil", "wail", "bones", "ting", "harp", "blip", "hum",
+  "chatter", "sob", "gulp", "ooh",
+  "witch", "organ",
 ] as const;
 
 export type Sfx = (typeof NAMES)[number];

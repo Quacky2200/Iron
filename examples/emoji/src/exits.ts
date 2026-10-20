@@ -147,6 +147,53 @@ const launch: Act = {
   },
 };
 
+/** Floats up and away like the party's balloons, swaying, until it's out of the top of the stage. */
+const balloonaway: Act = {
+  name: "balloonaway",
+  dur: 6,
+  weight: 0,
+  cues: [[0, (c) => c.sfx("squeak", 0.7, 0.8)], [0.3, (c) => c.sfx("whoosh", 0.4, 0.5)]],
+  at(t) {
+    const m = still();
+    m.centre = 1;
+    m.x = 0.9 * Math.sin(t * 2.2) * smooth(t / 1.2);
+    m.y = 0.6 * t + 0.9 * t ** 1.9;
+    m.rot = 7 * Math.sin(t * 2.2 + 1);
+    m.sx = m.sy = lerp(1, 0.85, smooth(t / 5));
+    return m;
+  },
+};
+
+/**
+ * The spotlight turns into a blue beam and the emoji zooms up it to the top, shrinking; the beam
+ * snaps shut into a thin V as a saucer drops into view and zooms off.
+ */
+const abduct: Act = {
+  name: "abduct",
+  dur: 5.6,
+  weight: 0,
+  cues: [
+    [0, (c) => {
+      c.sfx("ufo", 0.9);
+      c.scene.ufo();
+    }],
+    [3.4, (c) => c.sfx("zap", 0.7, 1.8)],
+    [3.5, (c) => c.sfx("whoosh", 0.9, 1.3)],
+  ],
+  at(t) {
+    const m = still();
+    // The saucer drops in by 0.7 s;
+    // It is drawn up the beam as the saucer arrives and is absorbed into it before the beam thins.
+    const up = smooth((t - 0.9) / 1.9);
+    m.centre = 1;
+    m.y = 4.2 * up;
+    m.sx = m.sy = lerp(1, 0.1, up);
+    m.tint = [1 - 0.25 * up, 1 - 0.05 * up, 1 + 0.1 * up];
+    m.alpha = 1 - smooth((t - 2.6) / 0.25);
+    return m;
+  },
+};
+
 /** Fades away where it stands, drifting up. */
 const fadeout: Act = {
   name: "fadeout",
@@ -279,4 +326,4 @@ const explode: Act = {
 };
 
 const back = ["walk", "hop", "rush", "crawl", "peek", "drop", "roll", "pop", "rise", "fade"];
-export const EXITS: Act[] = [...ENTRANCES.filter((a) => back.includes(a.name)).map(rewind), walkaway, blastoff, plunge, fadeout, zoom, rolloff, fireworks, explode, launch];
+export const EXITS: Act[] = [...ENTRANCES.filter((a) => back.includes(a.name)).map(rewind), walkaway, blastoff, plunge, fadeout, zoom, rolloff, fireworks, explode, launch, balloonaway, abduct];

@@ -664,6 +664,502 @@ def s_poof():
     return shape(x, [(0, 0), (0.012, 1), (0.6, 0.6)]), 0.8
 
 
+def s_hoot():
+    """An owl: a long hoo, a short one and a long falling one."""
+    out = [0.0] * n_of(2.3)
+    for at, f0, f1, d in ((0.0, 410, 350, 0.55), (0.85, 395, 375, 0.28), (1.2, 385, 300, 0.95)):
+        n = n_of(d)
+        fn = lambda i, a=f0, b=f1, n=n: a + (b - a) * i / n
+        hoo = voice(n, fn, lambda i: (320, 720, 2400), breath=0.05, vib=3.5)
+        tone = sine(fn, n)
+        note = [a * 0.5 + b * 1.2 for a, b in zip(hoo, tone)]
+        mix_into(out, shape(note, [(0, 0), (0.07, 1), (d - 0.18, 0.8), (d, 0)]), at)
+    return out, 0.7
+
+
+def s_crickets():
+    """Night crickets: three of them chirping in groups of four, quietly (it loops)."""
+    n = n_of(3.0)
+    out = [0.0] * n
+    for k in range(3):
+        f = rng.uniform(4100, 4700)
+        t = rng.uniform(0.0, 0.3)
+        while t < 2.4:
+            for p in range(4):
+                pulse = shape(sine(f, n_of(0.02)), [(0, 0), (0.006, 1), (0.014, 1), (0.02, 0)])
+                mix_into(out, pulse, t + p * 0.032, 0.5)
+            t += rng.uniform(0.45, 0.65)
+    return out, 0.35
+
+
+def s_shutter():
+    """A camera click, twice: open, close."""
+    out = [0.0] * n_of(0.2)
+    for at, f, amp in ((0.0, 3500, 1.0), (0.05, 2200, 0.8)):
+        click = decay(filt(noise(n_of(0.05)), "bp", f, 1.2), 0.007)
+        thud = decay(sine(180, n_of(0.05)), 0.01)
+        mix_into(out, [a + 0.5 * b for a, b in zip(click, thud)], at, amp)
+    return out, 0.7
+
+
+def s_runway():
+    """A fashion-show groove at 124 bpm: four on the floor, offbeat hats, claps, a bass and a plucked arpeggio."""
+    beat = 60 / 124
+    out = [0.0] * n_of(beat * 8)
+    for b in range(8):
+        t = b * beat
+        mix_into(out, decay(sine(lambda i: 52 + 120 * math.exp(-i / SR * 32), n_of(0.3)), 0.1), t, 1.0)
+        mix_into(out, decay(filt(noise(n_of(0.07)), "hp", 5500, 0.7), 0.016), t + beat / 2, 0.4)
+        if b % 2 == 1:
+            mix_into(out, decay(filt(noise(n_of(0.2)), "bp", 1700, 0.8), 0.045), t, 0.55)
+    bass = (33, 33, 0, 33, 36, 0, 33, 31)
+    step = beat / 2
+    for k in range(16):
+        m = bass[k % 8]
+        if m:
+            note = filt(saw(hz(m + 12), n_of(0.2)), "lp", 500, 1.3)
+            mix_into(out, decay(note, 0.1), k * step, 0.8)
+    arp = (69, 72, 76, 72, 74, 77, 81, 77)
+    for k in range(32):
+        note = filt(saw(hz(arp[k % 8]), n_of(0.14)), "lp", 2400, 1.0)
+        mix_into(out, decay(note, 0.05), k * beat / 4, 0.22)
+    return out, 0.7
+
+
+def ping(f, n, tau, ratios=((1.0, 1.0), (2.76, 0.5), (5.4, 0.25), (8.93, 0.12))):
+    """A struck, inharmonic metallic tone: partials that die faster the higher they are."""
+    out = [0.0] * n
+    for k, (m, a) in enumerate(ratios):
+        part = sine(f * m, n)
+        t = tau / (1 + 0.8 * k)
+        for i in range(n):
+            out[i] += a * part[i] * math.exp(-i / SR / t)
+    return out
+
+
+def click(n, lo, hi, tau, q=1.0):
+    """A dry little click: noise through a band-pass, dying quickly."""
+    return decay(filt(noise(n), "bp", rng.uniform(lo, hi), q), tau)
+
+
+def breathy(n, vowel, lo=1.0):
+    """Noise through formant filters: a whispered vowel."""
+    src = noise(n)
+    out = [0.0] * n
+    for k, w in enumerate((1.0, 0.7, 0.4)):
+        band = filt(src, "bp", lambda s, k=k: vowel(s)[k], 3.0)
+        for i in range(n):
+            out[i] += w * band[i] * lo
+    return out
+
+
+def s_dink():
+    """A pickaxe tapping a gem: a bright metallic ping."""
+    n = n_of(0.5)
+    x = ping(2300, n, 0.14)
+    tap = click(n_of(0.02), 4000, 6000, 0.003)
+    mix_into(x, tap, 0.0, 0.6)
+    return shape(x, [(0, 0), (0.001, 1), (0.5, 1)]), 0.7
+
+
+def s_crack():
+    """Ice or glass cracking: a few crisp snaps and a crunchy tail."""
+    out = [0.0] * n_of(0.7)
+    for at, a in ((0.0, 1.0), (0.09, 0.7), (0.17, 0.85), (0.33, 0.5), (0.41, 0.35)):
+        snap = click(n_of(0.05), 2500, 5500, 0.006, 0.8)
+        zing = decay(sine(rng.uniform(3200, 5200), n_of(0.1)), 0.02)
+        mix_into(out, [s + 0.25 * z for s, z in zip(snap, zing[: len(snap)] + [0.0] * len(snap))], at, a)
+    for _ in range(14):
+        mix_into(out, click(n_of(0.012), 1500, 4500, 0.003), rng.uniform(0.0, 0.6), rng.uniform(0.1, 0.35))
+    return out, 0.7
+
+
+def s_tinkle():
+    """Many tiny glass shards falling: high short pings scattered in time."""
+    out = [0.0] * n_of(1.4)
+    for _ in range(70):
+        t = rng.uniform(0.0, 1.15) ** 1.15
+        f = rng.uniform(2800, 7500)
+        k = n_of(0.16)
+        mix_into(out, decay(sine(f, k), rng.uniform(0.015, 0.05)), t, rng.uniform(0.15, 0.6) * (1.2 - t / 1.4))
+    return out, 0.55
+
+
+def s_bark():
+    """A dog: two short woofs, each a quick pitch drop through an open vowel."""
+    out = [0.0] * n_of(0.95)
+    for at, base, d in ((0.0, 340, 0.3), (0.45, 310, 0.34)):
+        n = n_of(d)
+        f0 = lambda i, b=base, n=n: b * (1 - 0.45 * min(1, i / n * 1.6))
+        vowel = lambda i, n=n: (650 - 100 * i / n, 1050, 2500)
+        w = voice(n, f0, vowel, breath=0.25, vib=0.5)
+        w = filt(w, "lp", 3500, 0.7)
+        out_w = shape(w, [(0, 0), (0.012, 1), (d * 0.45, 0.7), (d, 0)])
+        mix_into(out, out_w, at)
+    return out, 0.75
+
+
+def s_meow():
+    """A cat: a nasal glide up then down."""
+    n = n_of(0.8)
+    f0 = lambda i: 380 + 520 * math.sin(math.pi * min(1.0, i / n) ** 0.8) ** 1.1
+    vowel = lambda i: (420 + 380 * math.sin(math.pi * i / n), 1700 - 600 * i / n, 2700)
+    w = voice(n, f0, vowel, breath=0.04, vib=6)
+    nasal = filt(w, "bp", 1100, 2.0)
+    x = [a + 0.8 * b for a, b in zip(w, nasal)]
+    return shape(x, [(0, 0), (0.06, 1), (0.4, 1), (0.8, 0)]), 0.75
+
+
+def s_ribbit():
+    """A frog: a quick two-part croak, rib-bit."""
+    out = [0.0] * n_of(0.65)
+    for at, f, d in ((0.0, 150, 0.22), (0.3, 125, 0.3)):
+        n = n_of(d)
+        buzz = saw(lambda i, f=f: f * (1 + 0.15 * math.exp(-i / SR * 12)), n)
+        flutter = [0.4 + 0.6 * (0.5 + 0.5 * math.sin(TAU * 48 * i / SR)) for i in range(n)]
+        croak = [a * b for a, b in zip(buzz, flutter)]
+        croak = filt(croak, "bp", lambda s, n=n: 450 + 350 * s / n, 1.6)
+        croak = shape(croak, [(0, 0), (0.02, 1), (d * 0.6, 0.9), (d, 0)])
+        mix_into(out, croak, at)
+    return [v * 3 for v in out], 0.75
+
+
+def s_oink():
+    """A pig: a low grunt that turns into a short nasal squeal."""
+    n = n_of(0.5)
+    f0 = lambda i: 125 if i < 0.15 * SR else 125 + 330 * math.sin(math.pi * min(1.0, (i / SR - 0.15) / 0.35) * 0.8)
+    vowel = lambda i: (460, 900, 2500) if i < 0.15 * SR else (600, 1900, 2700)
+    w = voice(n, f0, vowel, breath=0.15, vib=2)
+    rough = [0.6 + 0.4 * math.sin(TAU * 38 * i / SR) for i in range(n)]
+    x = [a * b for a, b in zip(w, rough)]
+    return shape(x, [(0, 0), (0.03, 1), (0.35, 0.9), (0.5, 0)]), 0.75
+
+
+def s_roar():
+    """A big animal: a low rough growl that swells then falls."""
+    dur = 1.6
+    n = n_of(dur)
+    f0 = lambda i: 85 + 40 * math.sin(math.pi * i / n) - 15 * i / n
+    vowel = lambda i: (550 + 250 * math.sin(math.pi * i / n), 950, 2300)
+    w = voice(n, f0, vowel, breath=0.35, vib=9)
+    rough = [0.55 + 0.45 * math.sin(TAU * (28 + 6 * math.sin(i / SR * 3)) * i / SR) for i in range(n)]
+    x = [a * b for a, b in zip(w, rough)]
+    x = filt(x, "lp", 3000, 0.7)
+    return shape(x, [(0, 0), (0.35, 0.9), (0.7, 1), (1.2, 0.8), (dur, 0)]), 0.8
+
+
+def s_monkey():
+    """A chimp: ooh ooh, ah ah."""
+    out = [0.0] * n_of(1.55)
+    calls = ((0.0, 0.26, 420, (330, 850)), (0.32, 0.26, 470, (330, 850)),
+             (0.72, 0.28, 620, (820, 1250)), (1.02, 0.3, 560, (820, 1250)))
+    for at, d, base, (f1, f2) in calls:
+        n = n_of(d)
+        f0 = lambda i, b=base, n=n: b * (1 + 0.45 * math.sin(math.pi * min(1.0, i / n) ** 0.8))
+        w = voice(n, f0, lambda i, f1=f1, f2=f2: (f1, f2, 2600), breath=0.15, vib=7)
+        mix_into(out, shape(w, [(0, 0), (0.03, 1), (d * 0.6, 0.9), (d, 0)]), at)
+    return out, 0.75
+
+
+def s_snore():
+    """A sleeper: two slow rasping snores, in and out."""
+    out = [0.0] * n_of(2.2)
+    for at in (0.0, 1.1):
+        n_in, n_out = n_of(0.5), n_of(0.45)
+        rasp = noise(n_in)
+        flap = [0.3 + 0.7 * max(0.0, math.sin(TAU * 26 * i / SR)) ** 2 for i in range(n_in)]
+        inhale = filt([a * b for a, b in zip(rasp, flap)], "bp", lambda s: 350 + 500 * s / n_in, 1.0)
+        inhale = shape(inhale, [(0, 0), (0.35, 1), (0.5, 0.2)])
+        flap2 = [0.3 + 0.7 * max(0.0, math.sin(TAU * 20 * i / SR)) ** 2 for i in range(n_out)]
+        low = saw(lambda i: 70 - 15 * i / n_out, n_out)
+        exhale = filt([(a + 0.6 * b) * c for a, b, c in zip(noise(n_out), low, flap2)], "bp", 330, 0.9)
+        exhale = shape(exhale, [(0, 0), (0.06, 1), (0.25, 0.8), (0.45, 0)])
+        mix_into(out, [v * 1.5 for v in inhale], at)
+        mix_into(out, [v * 2.2 for v in exhale], at + 0.55)
+    return out, 0.7
+
+
+def s_growl():
+    """An angry grrr: a low voice shaken fast."""
+    dur = 1.1
+    n = n_of(dur)
+    f0 = lambda i: 105 - 25 * i / n + 8 * math.sin(TAU * 11 * i / SR)
+    w = voice(n, f0, lambda i: (500, 850, 2300), breath=0.3, vib=7)
+    rough = [0.45 + 0.55 * (0.5 + 0.5 * math.sin(TAU * 42 * i / SR)) for i in range(n)]
+    x = filt([a * b for a, b in zip(w, rough)], "lp", 2800, 0.7)
+    return shape(x, [(0, 0), (0.15, 1), (0.8, 0.9), (dur, 0)]), 0.75
+
+
+def s_scream():
+    """A high shaking wail."""
+    dur = 1.2
+    n = n_of(dur)
+    f0 = lambda i: (760 + 280 * min(1.0, i / SR / 0.25)) * (1 + 0.05 * math.sin(TAU * 8.5 * i / SR)) * (1 - 0.1 * i / n)
+    w = voice(n, f0, lambda i: (850, 1350, 2800), breath=0.08, vib=6)
+    w = filt(w, "lp", 5000, 0.7)
+    return shape(w, [(0, 0), (0.05, 1), (0.9, 0.9), (dur, 0)]), 0.7
+
+
+def s_honk():
+    """A clown horn: a reedy blat."""
+    n = n_of(0.45)
+    f = lambda i: 330 * (1 - 0.04 * max(0.0, i / n - 0.7))
+    a = saw(f, n)
+    b = saw(lambda i: f(i) * 1.012, n)
+    x = [p + q for p, q in zip(a, b)]
+    x = filt(filt(x, "bp", 1100, 1.0), "lp", 3500, 0.7)
+    x = [v * (0.8 + 0.2 * math.sin(TAU * 90 * i / SR)) for i, v in enumerate(x)]
+    return shape(x, [(0, 0), (0.015, 1), (0.36, 0.95), (0.45, 0)]), 0.75
+
+
+def s_squeak():
+    """A rubber squeaky toy: a quick chirp up and a bit back."""
+    n = n_of(0.3)
+    f = lambda i: 1400 + 1500 * math.sin(math.pi * min(1.0, i / (0.27 * SR))) ** 0.7 * (1 + 0.04 * math.sin(TAU * 40 * i / SR))
+    x = sine(f, n)
+    h = sine(lambda i: 2 * f(i), n)
+    x = [a + 0.35 * b for a, b in zip(x, h)]
+    return shape(x, [(0, 0), (0.02, 1), (0.22, 0.9), (0.3, 0)]), 0.6
+
+
+def s_bleep():
+    """A censor beep: a steady 1 kHz sine."""
+    return shape(sine(1000, n_of(0.6)), [(0, 0), (0.005, 1), (0.595, 1), (0.6, 0)]), 0.6
+
+
+def s_ufo():
+    """An alien tractor beam: warbling tones with vibrato. Whole cycles, so it loops cleanly."""
+    dur = 2.5
+    n = n_of(dur)
+    t = lambda i: i / SR
+    a = sine(lambda i: 700 + 300 * math.sin(TAU * 2 * t(i) / dur) + 40 * math.sin(TAU * 8 * t(i)), n)
+    b = sine(lambda i: 1050 + 450 * math.sin(TAU * 2 * t(i) / dur + 1.0) + 50 * math.sin(TAU * 8 * t(i)), n)
+    c = sine(lambda i: 176 + 60 * math.sin(TAU * 4 * t(i) / dur), n)
+    trem = [0.75 + 0.25 * math.sin(TAU * 4 * t(i)) for i in range(n)]
+    x = [(p * 0.5 + q * 0.3 + r * 0.6) * m for p, q, r, m in zip(a, b, c, trem)]
+    return x, 0.6
+
+
+def s_servo():
+    """Robot motors whirring, then two beeps."""
+    out = [0.0] * n_of(0.8)
+    for at, d, f1, f2 in ((0.0, 0.3, 180, 520), (0.3, 0.2, 520, 260)):
+        n = n_of(d)
+        w = saw(lambda i, a=f1, b=f2, n=n: a + (b - a) * i / n, n)
+        w = filt(w, "bp", lambda s, a=f1, b=f2, n=n: 2.2 * (a + (b - a) * s / n), 1.5)
+        w = [v + 0.1 * r for v, r in zip(w, noise(n))]
+        mix_into(out, shape(w, [(0, 0), (0.03, 1), (d - 0.04, 1), (d, 0)]), at, 1.5)
+    for at, f in ((0.54, 1500), (0.66, 1900)):
+        mix_into(out, shape(sine(f, n_of(0.09)), [(0, 0), (0.005, 1), (0.07, 0.8), (0.09, 0)]), at, 0.5)
+    return out, 0.65
+
+
+
+
+
+
+def s_sizzle():
+    """Frying or steam hissing, with little pops."""
+    dur = 1.6
+    n = n_of(dur)
+    hiss = filt(filt(noise(n), "hp", 3000, 0.7), "lp", 9000, 0.7)
+    out = shape([v * 0.5 for v in hiss], [(0, 0), (0.1, 1), (1.2, 0.85), (dur, 0)])
+    for _ in range(90):
+        mix_into(out, click(n_of(0.01), 2000, 6000, 0.0025), rng.uniform(0, 1.5), rng.uniform(0.2, 0.9))
+    return out, 0.6
+
+
+def s_squirt():
+    """A water-pistol squirt: a short wet burst."""
+    n = n_of(0.5)
+    jet = filt(noise(n), "bp", lambda s: 2600 + 1800 * s / n, 1.2)
+    drops = filt(noise(n), "hp", 5000, 0.7)
+    x = [a + 0.3 * b for a, b in zip(jet, drops)]
+    x = [v * (0.75 + 0.25 * math.sin(TAU * 70 * i / SR)) for i, v in enumerate(x)]
+    return shape(x, [(0, 0), (0.02, 1), (0.32, 0.85), (0.5, 0)]), 0.7
+
+
+def s_evil():
+    """An evil mwa-ha-ha-ha laugh, low."""
+    out = [0.0] * n_of(2.0)
+    n = n_of(0.45)
+    w = voice(n, lambda i: 105 + 55 * min(1.0, i / n), lambda i: (330 + 450 * min(1.0, i / n), 900 + 300 * min(1.0, i / n), 2400), breath=0.1, vib=5)
+    mix_into(out, shape(w, [(0, 0), (0.05, 1), (0.35, 1), (0.45, 0)]), 0.0)
+    for k, at in enumerate((0.55, 0.85, 1.15, 1.45)):
+        d = 0.22
+        n2 = n_of(d)
+        ha = voice(n2, lambda i, k=k: 175 - 12 * k, lambda i: (780, 1150, 2500), breath=0.25, vib=4)
+        mix_into(out, shape(ha, [(0, 0), (0.02, 1), (0.14, 0.6), (d, 0)]), at, 1.0 - 0.05 * k)
+    n3 = n_of(0.35)
+    last = voice(n3, lambda i: 160 - 60 * i / n3, lambda i: (700, 1100, 2400), breath=0.2, vib=5)
+    mix_into(out, shape(last, [(0, 0), (0.03, 1), (0.2, 0.7), (0.35, 0)]), 1.7)
+    return out, 0.75
+
+
+def s_wail():
+    """A ghost: ooOOoo, the pitch falling and rising."""
+    dur = 2.0
+    n = n_of(dur)
+    f0 = lambda i: 430 + 160 * math.cos(TAU * 1.0 * i / n * 1.0) - 40 * i / n
+    vowel = lambda i: (310 + 170 * math.sin(math.pi * i / n) ** 2, 760 + 200 * math.sin(math.pi * i / n) ** 2, 2400)
+    w = voice(n, f0, vowel, breath=0.18, vib=5.5)
+    w = shape(w, [(0, 0), (0.45, 0.7), (1.0, 1), (1.6, 0.7), (dur, 0)])
+    out = list(w)
+    mix_into(out, w, 0.22, 0.35)
+    return out, 0.7
+
+
+def s_bones():
+    """A skeleton rattling: lots of dry clacks in bunches."""
+    out = [0.0] * n_of(1.2)
+    t = 0.0
+    while t < 1.05:
+        for _ in range(rng.randint(3, 6)):
+            f = rng.uniform(900, 2600)
+            clack = decay(sine(f, n_of(0.03)), 0.006)
+            tap = click(n_of(0.02), 2500, 4500, 0.003)
+            mix_into(out, [a + 0.8 * b for a, b in zip(clack, tap)], t, rng.uniform(0.3, 1.0))
+            t += rng.uniform(0.012, 0.04)
+        t += rng.uniform(0.03, 0.09)
+    return out, 0.65
+
+
+def s_ting():
+    """A small bright sparkle ting."""
+    n = n_of(0.5)
+    x = ping(3500, n, 0.16, ((1.0, 1.0), (1.5, 0.3), (2.76, 0.2)))
+    return shape(x, [(0, 0), (0.002, 1), (0.5, 1)]), 0.55
+
+
+def s_harp():
+    """A magical harp glissando up."""
+    out = [0.0] * n_of(1.4)
+    scale = (0, 2, 4, 7, 9)
+    for k in range(14):
+        m = 60 + 12 * (k // 5) + scale[k % 5]
+        n = n_of(0.8)
+        f = hz(m)
+        pluck = [a + 0.3 * b + 0.1 * c for a, b, c in zip(sine(f, n), sine(2 * f, n), sine(3 * f, n))]
+        pluck = shape(decay(pluck, 0.25), [(0, 0), (0.003, 1), (0.8, 1)])
+        mix_into(out, pluck, 0.055 * k, 0.5 + 0.03 * k)
+    return out, 0.65
+
+
+def s_blip():
+    """A retro arcade laser pew."""
+    n = n_of(0.2)
+    x = pulse(lambda i: 2000 * math.exp(-i / n * 2.4) + 250, n, 0.5)
+    x = filt(x, "lp", 4000, 0.7)
+    return shape(x, [(0, 0), (0.004, 1), (0.14, 0.8), (0.2, 0)]), 0.55
+
+
+def s_hum():
+    """A thoughtful hmm: a nasal hum that rises a little."""
+    dur = 0.9
+    n = n_of(dur)
+    f0 = lambda i: 130 + 35 * min(1.0, i / n) ** 1.5
+    w = voice(n, f0, lambda i: (260, 1100, 2250), breath=0.02, vib=4)
+    nasal = filt(w, "bp", 950, 3.0)
+    x = [a + b for a, b in zip(w, nasal)]
+    return shape(x, [(0, 0), (0.12, 1), (0.7, 0.9), (dur, 0)]), 0.7
+
+
+def s_chatter():
+    """Teeth chattering from cold: fast dry clicks."""
+    out = [0.0] * n_of(1.0)
+    t = 0.0
+    while t < 0.92:
+        tap = click(n_of(0.02), 2000, 3600, 0.004, 1.2)
+        tone = decay(sine(rng.uniform(1100, 1500), n_of(0.03)), 0.006)
+        mix_into(out, [a + 0.6 * b for a, b in zip(tap, tone)], t, rng.uniform(0.5, 1.0))
+        t += rng.uniform(0.04, 0.075) * (1.3 if int(t * 7) % 3 == 2 else 1.0)
+    return shape(out, [(0, 0), (0.08, 1), (0.8, 1), (1.0, 0)]), 0.65
+
+
+def s_sob():
+    """Sobbing with hiccups: breath in, a falling cry, again."""
+    out = [0.0] * n_of(1.6)
+    for k, at in enumerate((0.0, 0.55, 1.05)):
+        n_in = n_of(0.16)
+        inhale = filt(noise(n_in), "bp", lambda s: 900 + 1200 * s / n_in, 1.0)
+        mix_into(out, shape(inhale, [(0, 0), (0.12, 1), (0.16, 0)]), at, 0.8)
+        d = 0.36 - 0.04 * k
+        n = n_of(d)
+        top = 330 - 25 * k
+        cry = voice(n, lambda i, top=top, n=n: top * (1 - 0.3 * i / n), lambda i: (520, 1500, 2600), breath=0.3, vib=7)
+        mix_into(out, shape(cry, [(0, 0), (0.03, 1), (d * 0.6, 0.7), (d, 0)]), at + 0.17)
+    for at in (1.42, 1.52):
+        hic = voice(n_of(0.06), lambda i: 260, lambda i: (500, 1500, 2600), breath=0.3)
+        mix_into(out, shape(hic, [(0, 0), (0.01, 1), (0.06, 0)]), at, 0.5)
+    return out, 0.7
+
+
+def s_gulp():
+    """A nervous gulp: a wet glottal drop."""
+    out = [0.0] * n_of(0.3)
+    n = n_of(0.14)
+    g = decay(sine(lambda i: 160 + 360 * math.exp(-i / n * 4), n), 0.05)
+    wet = decay(filt(noise(n), "bp", 700, 1.5), 0.02)
+    mix_into(out, [a + 0.7 * b for a, b in zip(g, wet)], 0.0)
+    n2 = n_of(0.1)
+    mix_into(out, decay(sine(lambda i: 140 + 140 * math.exp(-i / n2 * 4), n2), 0.03), 0.17, 0.6)
+    return out, 0.7
+
+
+
+
+
+
+def s_ooh():
+    """An awed crowd: ooooh, rising a little."""
+    n = n_of(1.4)
+
+    def make(k):
+        base = rng.uniform(210, 330)
+        f0 = lambda i: base * (1 + 0.25 * min(1.0, i / n) ** 0.8)
+        v = voice(n, f0, lambda i: (330, 780, 2500), breath=0.06, vib=5.3)
+        return shape(v, [(0, 0), (0.25, 1), (0.9, 0.9), (1.4, 0)])
+
+    return crowd(make, 6, 0.2), 0.75
+
+
+def s_witch():
+    """A witch's cackle: shrill 'hee hee hee heh', each syllable a quick rise and fall."""
+    out = [0.0] * n_of(2.4)
+    t = 0.0
+    for k in range(7):
+        d = 0.2 if k < 6 else 0.45
+        n = n_of(d)
+        base = 520 + 90 * math.sin(k * 1.3) + (60 if k == 6 else 0)
+        fn = lambda i, b=base, n=n: b * (1 + 0.35 * math.sin(math.pi * i / n) - (0.25 if k == 6 else 0) * i / n)
+        hee = voice(n, fn, lambda i: (330, 2200, 3000), breath=0.12, vib=9)
+        mix_into(out, shape(hee, [(0, 0), (0.02, 1), (d * 0.7, 0.8), (d, 0)]), t)
+        t += d + 0.06
+    return out, 0.7
+
+
+def s_organ():
+    """A haunted pipe organ: slow minor chords over a pedal note, with a creeping top line (it loops)."""
+    chord_len = 2.0
+    out = [0.0] * n_of(chord_len * 4)
+    # (pedal, chord notes) in MIDI: Dm, Gm, A, Dm
+    prog = ((38, (50, 53, 57)), (43, (50, 55, 58)), (45, (52, 57, 61)), (38, (50, 53, 57)))
+    for k, (pedal, notes) in enumerate(prog):
+        n = n_of(chord_len + 0.15)
+        voiceless = [0.0] * n
+        for m in (pedal - 12 + 12, *notes, *(x + 12 for x in notes)):
+            part = saw(lambda i, m=m: hz(m) * (1 + 0.004 * math.sin(TAU * 5.5 * i / SR)), n)
+            voiceless = [a + b * (1.0 if m == pedal else 0.35) for a, b in zip(voiceless, part)]
+        voiceless = filt(voiceless, "lp", 1500, 0.9)
+        voiceless = shape(voiceless, [(0, 0), (0.12, 1), (chord_len - 0.1, 0.9), (chord_len + 0.15, 0)])
+        mix_into(out, voiceless, k * chord_len)
+    motif = (74, 73, 74, 77, 76, 74, 73, 74)
+    for j in range(32):
+        note = filt(saw(hz(motif[j % 8] + (0 if j < 16 else -2)), n_of(0.22)), "lp", 2200, 1.0)
+        mix_into(out, shape(note, [(0, 0), (0.02, 1), (0.22, 0)]), j * 0.25, 0.25)
+    return out, 0.65
+
+
 SOUNDS = {
     "tick": s_tick, "ding": s_ding, "tada": s_tada, "drumroll": s_drumroll,
     "clap": s_clap, "cheer": s_cheer, "boo": s_boo, "aww": s_aww, "gasp": s_gasp, "laugh": s_laugh,
@@ -672,7 +1168,12 @@ SOUNDS = {
     "rocket": s_rocket, "rumble": s_rumble, "splat": s_splat, "crash": s_crash, "skid": s_skid,
     "scamper": s_scamper, "whoosh": s_whoosh, "boing": s_boing, "thud": s_thud, "step": s_step,
     "zap": s_zap, "freeze": s_freeze, "sparkle": s_sparkle, "disco": s_disco,
-    "poof": s_poof, "drag": s_drag, "beep": s_beep, "whistle": s_whistle, "boom": s_boom, "crackle": s_crackle, "explosion": s_explosion, "fuse": s_fuse,
+    "poof": s_poof, "witch": s_witch, "organ": s_organ, "hoot": s_hoot, "crickets": s_crickets, "shutter": s_shutter, "runway": s_runway, "drag": s_drag, "beep": s_beep, "whistle": s_whistle, "boom": s_boom, "crackle": s_crackle, "explosion": s_explosion, "fuse": s_fuse,
+    "dink": s_dink, "crack": s_crack, "tinkle": s_tinkle, "bark": s_bark, "meow": s_meow, "ribbit": s_ribbit,
+    "oink": s_oink, "roar": s_roar, "monkey": s_monkey, "snore": s_snore, "growl": s_growl, "scream": s_scream,
+    "honk": s_honk, "squeak": s_squeak, "bleep": s_bleep, "ufo": s_ufo, "servo": s_servo, "sizzle": s_sizzle, "squirt": s_squirt, "evil": s_evil, "wail": s_wail, "bones": s_bones,
+    "ting": s_ting, "harp": s_harp, "blip": s_blip, "hum": s_hum, "chatter": s_chatter, "sob": s_sob,
+    "gulp": s_gulp, "ooh": s_ooh,
 }
 
 if __name__ == "__main__":

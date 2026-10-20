@@ -6,7 +6,7 @@ import { Image } from "@iron/react";
 import { useEffect, useState } from "react";
 import { BIG, PANEL } from "./config.ts";
 
-function store<T>(init: T) {
+export function store<T>(init: T) {
   let value = init;
   const listeners = new Set<() => void>();
   return {
@@ -31,7 +31,7 @@ function store<T>(init: T) {
 export const shown = store<{ code: string; look: "eyes" | "googly" | null; mirror: boolean; big: boolean }>({ code: "1f600", look: null, mirror: false, big: false });
 export const caption = store<string | null>(null);
 /** Whole-stage overlays drawn over the emoji: rain, storm clouds, a white flash (lightning), the room blushing red, a party. */
-export const overlay = store<{ rain: boolean; storm: boolean; love: boolean; party: boolean; flash: number; countdown: string | null }>({ rain: false, storm: false, love: false, party: false, flash: 0, countdown: null });
+export const overlay = store<{ rain: boolean; storm: boolean; love: boolean; party: boolean; flash: number; tint: string; countdown: string | null }>({ rain: false, storm: false, love: false, party: false, flash: 0, tint: "#ffffff", countdown: null });
 /** Tomato splats on the emoji, in the panel's pixels. */
 export interface Splat {
   x: number;
@@ -41,6 +41,16 @@ export interface Splat {
 }
 export const splats = store<Splat[]>([]);
 /** The rocket emoji is drawn in two pieces so it can turn upright and its flame can go out, flicker and roar. */
+/** Camera flashes on the screen (fashion shoot): a few at a time, each gone after a moment. */
+export interface Photo {
+  id: number;
+  left: string;
+  top: string;
+  size: number;
+}
+export const photos = store<Photo[]>([]);
+/** How cracked the picture is: 0 whole, up to 3 (a diamond tapped with a pickaxe). */
+export const cracks = store(0);
 export const rocket = store({ turn: 0, flame: 0, power: 0, stars: 1 });
 /** Pupil offsets (-1..1 of how far they can move) and how shut the eyelids are (0..1). */
 export const eyes = store({ px: 0, py: 0, blink: 0 });
@@ -78,6 +88,8 @@ addStyleSheet(`
 @keyframes flicker { from { transform: scale(0.94) rotate(-3deg); } to { transform: scale(1.1) rotate(3deg); } }
 .flame-big { transform-origin: 30% 70%; animation: roar 0.11s ease-in-out infinite alternate; }
 @keyframes roar { from { transform: scale(1.3) rotate(-6deg); } to { transform: scale(1.8) rotate(6deg); } }
+.cam-flash { position: absolute; border-radius: 50%; background-image: radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0.7) 30%, rgba(255,255,255,0) 70%); animation: camflash 0.28s ease-out both; }
+@keyframes camflash { from { opacity: 1; transform: scale(0.4); } to { opacity: 0; transform: scale(1.25); } }
 .drop { position: absolute; top: -140px; background-image: linear-gradient(180deg, rgba(190,210,255,0), rgba(225,236,255,0.9)); }
 @keyframes fall { from { transform: translateY(0px); } to { transform: translateY(940px); } }
 .storm-dark { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-image: linear-gradient(180deg, rgba(4,6,18,0.85) 0%, rgba(6,8,24,0.55) 45%, rgba(6,8,24,0.5) 100%); animation: fadein 1.2s ease-out both; }
@@ -128,6 +140,7 @@ export const Face = () => {
       ) : (
         <Image src={`assets/emoji/${s.code}.svg`} style={{ width: PANEL, height: PANEL, transform: s.mirror ? "scaleX(-1)" : "none" }} />
       )}
+      <Cracks />
       {marks.map((m, i) => (
         <box
           key={i}
@@ -147,6 +160,34 @@ export const Face = () => {
     </box>
   );
 };
+
+// Crack lines over the picture, in the panel's 480 px: each stage adds more.
+const CRACKS: string[][] = [
+  ["250,150 238,195 262,235 244,270"],
+  ["238,195 205,215 190,250", "262,235 300,250 322,285", "250,150 280,125 305,130"],
+  ["244,270 222,310 232,345", "205,215 170,200 150,170", "300,250 335,235 365,250", "190,250 160,275 150,310", "322,285 345,320 340,355"],
+];
+
+function Cracks() {
+  const stage = cracks.use();
+  if (stage <= 0) return null;
+  const lines = CRACKS.slice(0, stage).flat();
+  return (
+    <svg viewBox="0 0 480 480" style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL }}>
+      {/* The diamond's outline, so no crack runs outside it. */}
+      <defs>
+        <clipPath id="gem">
+          <polygon points="26,178 91,85 168,47 312,47 389,85 453,178 240,429" />
+        </clipPath>
+      </defs>
+      <g clipPath="url(#gem)">
+        {lines.map((p, i) => (
+          <polyline key={i} points={p} fill="none" stroke="#2f93e0" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+      </g>
+    </svg>
+  );
+}
 
 function RocketArt() {
   const r = rocket.use();
@@ -300,7 +341,7 @@ const BALLOONS = Array.from({ length: 10 }, (_, i) => ({ left: `${3 + i * 10 + M
 const FLAGS = Array.from({ length: 26 }, (_, i) => {
   const u = (i + 0.5) / 26;
   const swag = Math.sin(3 * Math.PI * u);
-  return { left: `${u * 100}%`, top: 140 + 26 * Math.abs(swag), rot: 18 * Math.cos(3 * Math.PI * u) * Math.sign(swag), colour: PARTY_COLOURS[i % PARTY_COLOURS.length]! };
+  return { left: `${u * 100}%`, top: 108 + 22 * Math.abs(swag), rot: 18 * Math.cos(3 * Math.PI * u) * Math.sign(swag), colour: PARTY_COLOURS[i % PARTY_COLOURS.length]! };
 });
 function pick<T>(list: T[]): T {
   return list[Math.floor(Math.random() * list.length)]!;
@@ -371,12 +412,16 @@ function Love() {
 export function Hud() {
   const name = caption.use();
   const ov = overlay.use();
+  const shots = photos.use();
   return (
     <box style={{ width: "100%", height: "100%", pointerEvents: "none" }}>
       {ov.storm && <Storm />}
       {ov.rain && <Rain />}
       {ov.love && <Love />}
       {ov.party && <Party />}
+      {shots.map((p) => (
+        <box key={p.id} className="cam-flash" style={{ left: p.left, top: p.top, width: p.size, height: p.size }} />
+      ))}
       {ov.countdown && (
         <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
           <text key={ov.countdown} className="caption" style={{ fontSize: ov.countdown.length > 1 ? 150 : 260, fontWeight: 900, color: "#fff7e0", letterSpacing: 6, textShadow: "0 6px 30px rgba(0,0,0,0.9)" }}>
@@ -384,9 +429,9 @@ export function Hud() {
           </text>
         </box>
       )}
-      {ov.flash > 0.01 && <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, backgroundColor: "#ffffff", opacity: ov.flash }} />}
-      <text style={{ position: "absolute", left: 28, top: 22, fontSize: 18, fontWeight: 800, color: "#e0b04a", letterSpacing: 7, textTransform: "uppercase", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
-        ★ Emoji celebrity
+      {ov.flash > 0.01 && <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, backgroundColor: ov.tint, opacity: ov.flash }} />}
+      <text style={{ position: "absolute", left: 0, right: 0, top: 14, textAlign: "center", fontSize: 18, fontWeight: 800, color: "#e0b04a", letterSpacing: 7, textTransform: "uppercase", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
+        ★   Emoji parade   ★
       </text>
       <Wheel />
       {name && (

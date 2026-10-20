@@ -6,9 +6,11 @@ import { Color, GameObject, LineRenderer2D, Shapes, Vector2, Vector3, WorldPanel
 import { createRoot, Image } from "@iron/react";
 import { GROUND, view } from "./config.ts";
 import type { Fx } from "./fx.ts";
-import { overlay, Shard, splats } from "./hud.tsx";
+import { cracks, overlay, type Photo, photos, Shard, splats } from "./hud.tsx";
 import type { Ctx } from "./moves.ts";
 import { sfx } from "./sfx.ts";
+import { Sprites } from "./sprites.tsx";
+import type { Stage } from "./stage.tsx";
 
 type Host = Pick<Ctx, "sfx" | "shake" | "smoke" | "jolt">;
 type Rgba = [number, number, number, number];
@@ -65,11 +67,19 @@ interface Tomato {
 export class Effects {
   private fx: Fx;
   private host: Host;
+  private stage: Stage;
+  private clock = 0;
+  /** Emoji flying about as particles and props. */
+  readonly sprites = new Sprites(48);
+  private abductT = -1;
+
   private timers: { t: number; run: () => void }[] = [];
   private flash = 0;
 
   // Weather.
   private storm = false;
+  /** Haunted: purple flashes and bolts, and an organ playing. */
+  private purple = false;
   private nextStrike = 0;
   private bolts: LineRenderer2D[] = [];
   private boltLife = 0;
@@ -100,9 +110,33 @@ export class Effects {
   private poolT = -1;
   private poolX = 0;
 
-  constructor(fx: Fx, host: Host) {
+  // Night.
+  /** 0 spotlit stage .. 1 night sky; the director dims the emoji by it. */
+  nightLevel = 0;
+  private nightTarget = 0;
+  private moon: GameObject;
+  private moonHalo: LineRenderer2D[] = [];
+  private moonT = -1;
+  private moonOut = 0;
+
+  // Fashion shoot.
+  private shoot = false;
+  private nextPhoto = 0;
+  private photoId = 0;
+
+  constructor(fx: Fx, host: Host, stage: Stage) {
     this.fx = fx;
     this.host = host;
+    this.stage = stage;
+
+    this.moon = new GameObject("Moon", { position: new Vector3(5.3, 9, -0.6) });
+    this.moon.enabled = false;
+    const moonPanel = this.moon.addComponent(WorldPanel, { width: 320, height: 320, pixelsPerMeter: 100, resolution: 1, interactive: false });
+    createRoot(moonPanel).render(<Image src="assets/emoji/1f319.svg" style={{ width: 320, height: 320 }} />);
+    for (const r of [2.0, 2.8, 3.7]) {
+      const halo = new GameObject(`Moon halo ${r}`, { parent: this.moon, position: new Vector3(0, 0, -0.1) });
+      this.moonHalo.push(fill(halo, Shapes.circle(Vector2.zero, r, 40), new Color(1, 0.95, 0.7, 0)));
+    }
 
     for (let i = 0; i < 2; i++) {
       const go = new GameObject(`Bolt ${i}`, { position: new Vector3(0, 0, -0.8) });
@@ -194,12 +228,32 @@ export class Effects {
       b.points = points;
       b.gameObject.enabled = true;
     }
+    this.bolts[0]!.color = this.purple ? new Color(0.85, 0.6, 1, 1) : new Color(1, 1, 0.95, 1);
+    this.bolts[1]!.color = this.purple ? new Color(0.6, 0.3, 0.95, 0.35) : new Color(0.7, 0.8, 1, 0.3);
+    overlay.set({ ...overlay.get(), tint: this.purple ? "#b45cff" : "#ffffff" });
     this.boltLife = 0.22;
     this.flash = 0.9;
     this.host.shake(0.1, 0.5);
     if (x !== undefined) this.host.sfx("zap", 0.8);
     this.later(0.12, () => (this.flash = 0.8));
     this.later(0.35, () => this.host.sfx("thunder", 1));
+  }
+
+  /** A haunted storm: rain, dark clouds, purple lightning and thunder, and a pipe organ. */
+  haunt(on: boolean): void {
+    this.purple = on;
+    this.weather(on ? "storm" : "none");
+    if (on) {
+      this.nextStrike = 0.4;
+      sfx.loop("organ", 0.55);
+    } else {
+      sfx.stop("organ", 0.8);
+    }
+  }
+
+  /** A quick white flash over everything (a jump scare). */
+  flashNow(level: number): void {
+    this.flash = Math.max(this.flash, level);
   }
 
   love(on: boolean): void {
@@ -305,8 +359,136 @@ export class Effects {
     }
   }
 
+  /** The picture breaks into pieces that fall away (the glassy cousin of `explode`). */
+  shatter(x: number, y: number): void {
+    for (const sh of this.shards) {
+      const a = rnd(0.3, Math.PI - 0.3);
+      const sp = rnd(2, 5);
+      Object.assign(sh, { on: true, t: 0, x: x + rnd(-0.6, 0.6), y: y + rnd(-0.6, 0.6), vx: Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1), vy: Math.sin(a) * sp + 1, spin: rnd(-400, 400), size: rnd(0.35, 0.6) });
+      sh.go.enabled = true;
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = rnd(0, Math.PI * 2);
+      const sp = rnd(2, 6);
+      this.sprites.emit({ code: "2728", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 1.2, scale: [0.3, 0.6], life: rnd(0.6, 1.1) });
+    }
+  }
+
+  /**
+   * Where the saucer is at `T` seconds into an abduction (null once it's gone): it drops in
+   * (high, so the emoji rising to meet it doesn't overlap it), hangs level, then flies off,
+   * tipping from level to its flight angle as it goes. Its picture is drawn tilted about 14
+   * degrees clockwise, which the 14 here takes out.
+   */
+  private shipAt(T: number): { x: number; y: number; scale: number; rot: number } | null {
+    if (T > 4.5) return null;
+    const drop = 1 - (1 - Math.min(1, T / 0.7)) ** 3;
+    const go = Math.min(1, Math.max(0, (T - 3.4) / 0.9));
+    const tip = go * go * (3 - 2 * go);
+    return { x: 15 * go * go, y: 5.8 - 2.6 * drop + 0.05 * Math.sin(T * 4) + 3 * go * go, scale: 0.8 + 1.8 * drop, rot: 14 - 26 * tip };
+  }
+
+  /**
+   * An abduction (about five seconds): a flying saucer drops into view and its blue beam hangs
+   * from its underside down over the emoji; when the emoji is in, the beam thins to a column and
+   * is absorbed back into the saucer as it flies off; the spotlight then comes back.
+   */
+  ufo(): void {
+    this.abductT = 0;
+    this.sprites.emit({
+      code: "1f6f8-ship",
+      x: 0,
+      y: 5.5,
+      scale: 0.8,
+      life: 5,
+      z: -0.2,
+      anim: (t) => {
+        const p = this.shipAt(t);
+        return p ? { x: p.x, y: p.y, scale: p.scale, rot: p.rot } : null;
+      },
+    });
+  }
+
+  private updateAbduct(dt: number): void {
+    if (this.abductT < 0) return;
+    this.abductT += dt;
+    const T = this.abductT;
+    const sm = (v: number) => {
+      const c = Math.min(1, Math.max(0, v));
+      return c * c * (3 - 2 * c);
+    };
+    const ship = this.shipAt(T);
+    if (ship) {
+      // Hangs from the saucer's underside (a little left of the middle of its picture).
+      const arrive = sm(T / 0.7);
+      const from = { x: ship.x - 0.03 * ship.scale, y: ship.y - 0.11 * ship.scale, top: 0.7 + (0.35 * ship.scale - 0.7) * arrive };
+      const blue = sm(T / 0.9) * (1 - sm((T - 4) / 0.4));
+      // Opens as it drops in, snaps to a thin column as the saucer leaves, and is drawn up into it.
+      const width = (1 - 0.35 * arrive) * (T < 3.4 ? 1 : 1 - 0.85 * sm((T - 3.4) / 0.15));
+      const reach = T < 3.55 ? 1 : 1 - sm((T - 3.55) / 0.75);
+      this.stage.setBeam(blue, width, from, reach);
+    } else {
+      // The saucer has gone: the spotlight comes back.
+      this.stage.setBeam(0, sm((T - 4.6) / 0.5));
+    }
+    if (T > 5.2) {
+      this.stage.setBeam(0, 1);
+      this.abductT = -1;
+    }
+  }
+
+  /** The spotlight fades away into a night sky: stars, a moon that pops down, crickets and an owl's hoot. */
+  night(on: boolean): void {
+    this.nightTarget = on ? 1 : 0;
+    if (on) {
+      this.moonT = 0;
+      this.moonOut = 0;
+      this.moon.enabled = true;
+      sfx.loop("crickets", 0.35);
+      this.later(0.55, () => this.host.sfx("boing", 0.6, 1.5));
+      this.later(1.2, () => this.host.sfx("hoot", 0.9));
+      this.later(4.2, () => this.host.sfx("hoot", 0.7, 0.93));
+    } else {
+      this.moonOut = 1;
+      sfx.stop("crickets", 1);
+    }
+  }
+
+  /** A fashion shoot: a groove and camera flashes popping all over (more when `shots` is asked for). */
+  fashion(on: boolean): void {
+    this.shoot = on;
+    this.nextPhoto = 0.6;
+    if (on) sfx.loop("runway", 0.5);
+    else sfx.stop("runway", 0.8);
+  }
+
+  /** `n` flashes in quick succession: the shutter, a white flash and starbursts on the screen. */
+  photos(n: number): void {
+    for (let i = 0; i < n; i++) {
+      this.later(i * 0.08, () => {
+        this.host.sfx("shutter", 0.6, rnd(0.92, 1.12));
+        this.flash = Math.max(this.flash, 0.16);
+        const shot: Photo = { id: ++this.photoId, left: `${rnd(3, 90)}%`, top: `${rnd(12, 80)}%`, size: rnd(140, 260) };
+        photos.set([...photos.get(), shot]);
+        this.later(0.35, () => photos.set(photos.get().filter((p) => p.id !== shot.id)));
+      });
+    }
+  }
+
   /** Everything off, ready for the next act. */
   clear(): void {
+    this.sprites.clear();
+    cracks.set(0);
+    this.abductT = -1;
+    this.stage.setBeam(0, 1);
+    this.night(false);
+    this.nightLevel = 0;
+    this.nightTarget = 0;
+    this.moon.enabled = false;
+    this.moonT = -1;
+    this.stage.setNight(0, 0);
+    this.fashion(false);
+    photos.set([]);
     this.weather("none");
     this.love(false);
     this.disco(null);
@@ -314,7 +496,8 @@ export class Effects {
     this.timers = [];
     this.pending = 0;
     this.flash = 0;
-    overlay.set({ rain: false, storm: false, love: false, party: false, flash: 0, countdown: null });
+    overlay.set({ rain: false, storm: false, love: false, party: false, flash: 0, tint: "#ffffff", countdown: null });
+    this.purple = false;
     this.rockets = [];
     for (const sh of this.shards) {
       sh.on = false;
@@ -365,7 +548,7 @@ export class Effects {
       this.nextStrike -= dt;
       if (this.nextStrike <= 0) {
         this.strike();
-        this.nextStrike = rnd(2, 4.5);
+        this.nextStrike = this.purple ? rnd(1.2, 2.6) : rnd(2, 4.5);
       }
     }
     if (this.boltLife > 0) {
@@ -383,6 +566,41 @@ export class Effects {
     this.updatePool(dt);
     this.updateRockets(dt);
     this.updateBlast(dt);
+    this.updateNight(dt);
+    this.sprites.update(dt);
+    this.updateAbduct(dt);
+    if (this.shoot) {
+      this.nextPhoto -= dt;
+      if (this.nextPhoto <= 0) {
+        this.photos(1 + Math.floor(Math.random() * 3));
+        this.nextPhoto = rnd(0.35, 1.1);
+      }
+    }
+  }
+
+  private updateNight(dt: number): void {
+    this.clock += dt;
+    const was = this.nightLevel;
+    const step = dt / 1.4;
+    this.nightLevel = was < this.nightTarget ? Math.min(this.nightTarget, was + step) : Math.max(this.nightTarget, was - step);
+    if (this.nightLevel > 0 || was > 0) this.stage.setNight(this.nightLevel, this.clock);
+    if (!this.moon.enabled) return;
+
+    // The moon pops down on to the sky with a bounce, and goes back up when the day returns.
+    let y: number;
+    if (this.moonOut) {
+      y = this.moon.transform.position.y + dt * 7;
+      if (y > 9) this.moon.enabled = false;
+    } else {
+      this.moonT += dt;
+      const f = Math.min(1, Math.max(0, (this.moonT - 0.5) / 0.9));
+      const settle = f >= 1 ? -0.4 * Math.exp(-(this.moonT - 1.4) * 3) * Math.sin((this.moonT - 1.4) * 11) : 0;
+      y = 1.7 + 7.3 * (1 - f) ** 2 + settle;
+    }
+    this.moon.transform.position = new Vector3(5.3, y, -0.6);
+    this.moon.transform.localEulerAngles = new Vector3(0, 0, 6 * Math.sin(this.clock * 1.1));
+    const glow = this.nightLevel;
+    this.moonHalo.forEach((h, i) => (h.fillColor = new Color(1, 0.95, 0.7, glow * [0.08, 0.06, 0.04][i]!)));
   }
 
   private updateRockets(dt: number): void {
