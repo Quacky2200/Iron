@@ -231,7 +231,7 @@ impl Native {
     fn spawn_starting_components(&mut self, scene: &mut Scene) {
         let classes: Vec<&'static str> = self
             .host
-            .class_names()
+            .registered_class_names()
             .into_iter()
             .filter(|c| !self.no_spawn.iter().any(|n| n == c))
             .collect();
@@ -390,6 +390,7 @@ impl Native {
         let Some(mut ev) = to_event(e) else {
             return false;
         };
+        set_target_kind(self.rt.host_kind(ev.target));
         let _scope = iron_scene::api::enter(scene);
         self.rt.dispatch_handlers(&mut ev)
     }
@@ -493,7 +494,7 @@ impl Native {
         // Nothing is touched until this works.
         let game = Self::compile(&bundle, generation)?;
         let old_sigs = parse_signatures(&signatures_of(&self.game));
-        let old_classes = self.host.class_names();
+        let old_classes = self.host.registered_class_names();
         let (saved, active) = {
             let _scope = iron_scene::api::enter(scene);
             let n = iron_scenes::scene_count();
@@ -564,7 +565,7 @@ impl Native {
         // Classes that are new in this program get their starting object.
         let fresh: Vec<&'static str> = self
             .host
-            .class_names()
+            .registered_class_names()
             .into_iter()
             .filter(|c| !old_classes.contains(c) && !self.no_spawn.iter().any(|n| n == c))
             .collect();
@@ -582,6 +583,17 @@ impl Native {
         self.remount = None;
         Ok(())
     }
+}
+
+thread_local! {
+    static TARGET_KIND: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// The element kind of the target of the event about to be dispatched (what `e.target.type`
+/// answers: the compiled side asks for the current event's target only).
+pub fn set_target_kind(kind: Option<String>) {
+    iron_ts_ui::set_target_kind_resolver(|_| TARGET_KIND.with(|k| k.borrow().clone()));
+    TARGET_KIND.with(|k| *k.borrow_mut() = kind.unwrap_or_default());
 }
 
 /// A UI event of the interaction layer as the native reconciler's event.
@@ -1056,5 +1068,48 @@ mod tests {
         });
         assert_eq!(scene.local(go).unwrap().scale.x, 5.0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M9-API-808
+    #[test]
+    fn only_registered_classes_start_and_an_event_target_knows_its_kind() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Helper extends Component {\n\
+               onStart(): void {\n\
+                 this.gameObject!.transform.localPosition = new Vector3(9, 0, 0);\n\
+               }\n\
+             }\n\
+             class Boss extends Component {\n\
+               onStart(): void {\n\
+                 this.gameObject!.addComponent(Helper);\n\
+               }\n\
+             }\n\
+             register(Boss);\n\
+             function App(): UiElement {\n\
+               return <box style={{ width: 100 }} onClick={(e: UiEvent) => {\n\
+                 if (e.target.type === \"box\") { UiRoot.mount(0, <text>box</text>); }\n\
+               }}><text>x</text></box>;\n\
+             }\n\
+             function boot(): number {\n\
+               UiRoot.mount(0, <App />);\n\
+               return 0;\n\
+             }\n\
+             const booted = boot();",
+        );
+        assert!(
+            scene.find("Helper").is_none(),
+            "unregistered: no starting object"
+        );
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        let go = scene.find("Boss").unwrap();
+        assert_eq!(
+            scene.local(go).unwrap().position.x,
+            9.0,
+            "addComponent works"
+        );
+        let target = ui.children(ROOT)[0];
+        let click = UiEvent::new(EventKind::Click, vec![target], Modifiers::default());
+        n.ui_events(&mut scene, &mut ui, &[click]);
+        assert_eq!(dump(&ui, ROOT), "root(text(text:box))");
     }
 }

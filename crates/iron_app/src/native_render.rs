@@ -308,9 +308,10 @@ pub(super) fn panel_event(scene: &mut iron_scene::Scene, id: u32, e: &iron_ui::U
     };
     let _scope = iron_scene::api::enter(scene);
     st(|s| {
-        s.runtimes
-            .get_mut(&id)
-            .is_some_and(|(rt, _)| rt.dispatch_handlers(&mut ev))
+        s.runtimes.get_mut(&id).is_some_and(|(rt, _)| {
+            native::set_target_kind(rt.host_kind(ev.target));
+            rt.dispatch_handlers(&mut ev)
+        })
     })
 }
 

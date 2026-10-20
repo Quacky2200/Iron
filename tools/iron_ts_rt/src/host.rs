@@ -359,6 +359,16 @@ impl NativeHost {
         self.classes.iter().map(|c| c.name).collect()
     }
 
+    /// The classes a `register(..)` names (the others only exist for `addComponent`): the ones
+    /// that get a starting object.
+    pub fn registered_class_names(&self) -> Vec<&'static str> {
+        self.classes
+            .iter()
+            .filter(|c| c.registered)
+            .map(|c| c.name)
+            .collect()
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }

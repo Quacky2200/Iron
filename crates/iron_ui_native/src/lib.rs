@@ -260,6 +260,14 @@ impl Runtime {
         prevented
     }
 
+    /// The element kind (`"input"`, `"box"`, ..) of a host node this runtime made.
+    pub fn host_kind(&self, node: NodeId) -> Option<String> {
+        match &self.inst(*self.by_node.get(&node)?).kind {
+            Kind::Host { ty, .. } => Some(ty.clone()),
+            _ => None,
+        }
+    }
+
     /// Like [`Runtime::dispatch`] without the tree: the handlers run and the default action's
     /// answer comes back at once, so a host that holds the tree (an interaction layer deciding
     /// what the default action is) can use it. Call [`Runtime::settle`] afterwards.

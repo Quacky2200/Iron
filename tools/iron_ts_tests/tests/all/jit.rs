@@ -232,6 +232,11 @@ fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
     let mut scene = Scene::new();
     let _scope = iron_scene::api::enter(&mut scene);
     game.init().unwrap();
-    let flags: Vec<_> = game.classes().unwrap().iter().map(|c| c.registered).collect();
+    let flags: Vec<_> = game
+        .classes()
+        .unwrap()
+        .iter()
+        .map(|c| c.registered)
+        .collect();
     assert_eq!(flags, [true, false]);
 }

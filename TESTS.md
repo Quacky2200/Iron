@@ -1280,5 +1280,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-805 | Unit | `{ spawn: false }` is read from the `register(..)` calls of the source. |
 | M9-API-806 | Integration | `loadSceneAsync` of a compiled game reads the file from the game folder and `onSceneLoaded` runs; `Assets.onChanged` closures run on the host's changes. |
 | M9-API-807 | Manual | `iron-build dev` writes `dist/.iron-reload`; a screenshot run with `IRON_RELOAD_AT_FRAME` after a source edit and rebuild reloads the native game and draws the new code (checked with a boxes copy: colour change shows after the reload). |
+| M9-API-808 | Integration | Only `register()`ed classes get a starting object (`NativeClass.registered`), `addComponent` works for the others, and `e.target.type` is the element kind of the event's target. |
 | M9-API-620 | Integration | A compiled game's camera, light and cube reach the renderer's views through `render_sync` (no GPU). |
 | M9-API-700 | Integration | `render_sync` turns planes, `RenderSettings` (skybox, bloom, tonemapping) and quality into the renderer's views, and a second sync leaves them as they were (no GPU). |
