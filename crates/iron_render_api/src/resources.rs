@@ -25,6 +25,8 @@ pub enum RenderCommand {
     /// Upload a mesh: read it with [`mesh_info`].
     Mesh(MeshRef),
     MeshRemove(MeshRef),
+    /// Read a glTF model: [`model_src`] is the file; answer with [`model_loaded`].
+    Model(ModelRef),
 }
 
 /// A texture: loaded from a file or made from pixels or a render target.
@@ -186,6 +188,28 @@ fn new_texture(info: TextureInfo) -> TextureRef {
         let t = TextureRef(s.textures.len() as u32);
         s.commands.push(RenderCommand::Texture(t));
         t
+    })
+}
+
+pub(crate) fn push_command(c: RenderCommand) {
+    st(|s| s.commands.push(c));
+}
+
+/// A texture the host made (a model's): loaded, the size known.
+pub(crate) fn new_loaded_texture(width: u32, height: u32) -> TextureRef {
+    new_texture(TextureInfo {
+        src: None,
+        filter_mode: "bilinear".into(),
+        wrap_mode: "repeat".into(),
+        mipmaps: true,
+        aniso_level: 1,
+        linear: false,
+        width,
+        height,
+        loaded: true,
+        failed: false,
+        pixels: None,
+        render_texture: false,
     })
 }
 

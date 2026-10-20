@@ -78,6 +78,7 @@ pub fn all() -> Vec<Rc<Kind>> {
 pub fn clear() {
     KINDS.with(|k| k.borrow_mut().clear());
     ASSET_KINDS.with(|k| k.borrow_mut().clear());
+    OBJECT_EXTRAS.with(|k| k.borrow_mut().clear());
 }
 
 /// An asset kind: a value that lives outside components and is shared by them (`Texture`, `Mesh`,
@@ -132,6 +133,41 @@ pub fn get_asset(name: &str) -> Option<Rc<AssetKind>> {
             .find(|x| x.name == name || x.also.iter().any(|a| a == name))
             .cloned()
     })
+}
+
+/// Something an object itself carries in a scene file besides its transform and components
+/// (an instantiated model: `"model": { "src": .. }`). The saver asks `save` for each object and
+/// leaves out objects `hidden` says are parts of something else (a model's nodes); the loader
+/// calls `load` when an object's data has the key.
+/// Applies an object's saved extra to it.
+pub type ExtraLoadFn = Box<dyn Fn(u64, &Value)>;
+
+pub struct ObjectExtra {
+    pub key: String,
+    pub save: Box<dyn Fn(u64) -> Option<Value>>,
+    pub load: ExtraLoadFn,
+    pub hidden: Box<dyn Fn(u64) -> bool>,
+}
+
+thread_local! {
+    static OBJECT_EXTRAS: RefCell<Vec<Rc<ObjectExtra>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Registers an object extra, replacing one with the same key.
+pub fn register_object_extra(extra: ObjectExtra) {
+    OBJECT_EXTRAS.with(|k| {
+        let mut k = k.borrow_mut();
+        let extra = Rc::new(extra);
+        match k.iter().position(|x| x.key == extra.key) {
+            Some(i) => k[i] = extra,
+            None => k.push(extra),
+        }
+    });
+}
+
+/// Every object extra, in registration order.
+pub fn object_extras() -> Vec<Rc<ObjectExtra>> {
+    OBJECT_EXTRAS.with(|k| k.borrow().clone())
 }
 
 /// A placeholder for an asset of a kind (`null` for no asset, handle 0).

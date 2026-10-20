@@ -439,6 +439,13 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `Primitives.create(kind, { name })` with `PrimitiveType.Cube` ... (`set_primitive_collider_hook` lets the physics side add the
   collider). Differences: `Cloth` rebuilds on a scene load or an explicit `rebuild()`, not on `onStart`; `LineRenderer.positions`
   and the other arrays are call-style (`setPositions`, `addPin`, `addSphereCollider`).
+- **Models** (`models.rs`): `Model.load(path)` (once per file; queues `RenderCommand::Model`), `isLoaded` / `failed`, `materialCount` /
+  `materialAt(i)`, `meshCount` / `meshAt(i)`, `instantiate({ position, rotation, scale, parent, colliders })`. The host reads the file,
+  makes its meshes and textures with `engine_mesh()` / `engine_texture(w, h)` and reports the TypeScript's description JSON with
+  `model_loaded(model, Some(json))` (`None`: it failed); copies asked for earlier are built then (a GameObject per node, a mesh renderer
+  per primitive, or child objects when a node has several; skinned nodes get a `SkinnedMeshRenderer` with bones and bind poses; glTF
+  materials). `colliders: "mesh" | "convex"` goes through `set_model_collider_hook`. Scene files carry a copy as the object's `"model"`
+  (`iron_kinds::ObjectExtra`: the model's own nodes are left out and built again on load). Not built: glTF animations.
 - **Screen, QualitySettings, Gizmos** (`iron_engine_api`): `Screen` has `scale`, `aspect`, `fullScreenMode`, `setResolution(w, h, { mode,
   refreshRate })`, `windowWidth` / `windowHeight`, `resolutionCount` + `resolutionWidth(i)` ..., `currentResolution...`,
   `supportedFullScreenModeCount` / `...At(i)` and `onChange(f)` (token, `offChange`). The host feeds it with `screen::update(w, h,

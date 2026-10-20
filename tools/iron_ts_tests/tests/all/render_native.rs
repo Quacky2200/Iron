@@ -436,6 +436,110 @@ fn quality_levels_validate_remember_and_tell_listeners() {
     });
 }
 
+// M9-TS-1239
+//
+// A model asked for before the host read its file gets its nodes when the host reports the
+// description: one GameObject per node, a renderer per primitive (child objects when a node has
+// several), materials from the glTF, and colliders through the physics hook. A scene file saves
+// the copy as `"model"` without its nodes and builds them again on load.
+#[test]
+fn a_model_builds_its_nodes_when_loaded_and_scene_files_keep_only_the_root() {
+    in_every_gc_mode(|| unsafe {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let s2 = seen.clone();
+        render::set_model_collider_hook(Some(std::rc::Rc::new(move |_, _, convex| {
+            s2.borrow_mut().push(convex)
+        })));
+        assert_eq!(text(ts_rdn_model()), "false|ship|ship|true|models/ship.glb");
+        let cmds = render::take_commands();
+        assert_eq!(
+            cmds.iter()
+                .filter(|c| matches!(c, render::RenderCommand::Model(_)))
+                .count(),
+            1,
+            "one file, read once"
+        );
+        let find_root = |i: usize| iron_scene::api::with_scene(|sc| sc.roots()[i]).unwrap();
+        let first_root = find_root(0);
+        assert_eq!(
+            iron_scene::api::with_scene(|sc| sc.children(first_root).len()),
+            Some(0)
+        );
+        let (m1, m2, m3) = (
+            render::engine_mesh(),
+            render::engine_mesh(),
+            render::engine_mesh(),
+        );
+        let tex = render::engine_texture(4, 4);
+        let description = format!(
+            r#"{{"nodes":[
+              {{"name":"Body","position":[0,1,0],"rotation":[0,0,0,1],"scale":[1,1,1],"children":[1],
+               "primitives":[{{"mesh":{},"material":0,"bounds":[[0,0,0],[1,1,1]]}}]}},
+              {{"name":"Wheel","position":[1,0,0],"rotation":[0,0,0,1],"scale":[1,1,1],"children":[],
+               "primitives":[{{"mesh":{},"material":null,"bounds":[[0,0,0],[1,1,1]]}},{{"mesh":{},"material":0,"bounds":[[0,0,0],[1,1,1]]}}]}}],
+             "roots":[0],
+             "materials":[{{"name":"Paint","color":[1,0,0,1],"emission":[0,0,0],"smoothness":0.3,"metallic":0.5,
+               "unlit":false,"texture":[{},4,4],"alpha":"mask","alphaCutoff":0.4,"doubleSided":true,
+               "normal":[{},0.8],"metallicRoughness":null,"occlusion":null,"emissive":null}}]}}"#,
+            m1.0, m2.0, m3.0, tex.0, tex.0
+        );
+        let model = render::ModelRef(1);
+        render::model_loaded(model, Some(&description));
+        // Each of the two copies: root > Body > Wheel > two child objects with a renderer each.
+        let root = find_root(0);
+        let body = iron_scene::api::with_scene(|sc| sc.children(root)[0]).unwrap();
+        let wheel = iron_scene::api::with_scene(|sc| sc.children(body)[0]).unwrap();
+        let names = iron_scene::api::with_scene(|sc| {
+            (
+                sc.name(body).unwrap().to_owned(),
+                sc.children(wheel)
+                    .iter()
+                    .map(|c| sc.name(*c).unwrap().to_owned())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .unwrap();
+        assert_eq!(names.0, "Body");
+        assert_eq!(names.1, ["Wheel 0", "Wheel 1"]);
+        let r = render::mesh_renderers_on(body)[0];
+        let (mesh, mat) = render::with_mesh_renderer(r, |d| (d.mesh, d.material)).unwrap();
+        assert_eq!(mesh, m1.0);
+        let paint = render::with_material(render::MaterialRef(mat), |d| {
+            (
+                d.rendering_mode.clone(),
+                d.alpha_cutoff,
+                d.double_sided,
+                d.metallic,
+                d.normal_scale,
+                d.gltf_packing,
+            )
+        })
+        .unwrap();
+        assert_eq!(paint, ("cutout".to_string(), 0.4, true, 0.5, 0.8, true));
+        // Colliders were asked for the first copy only, one per primitive: 3 (convex).
+        assert_eq!(*seen.borrow(), [true, true, true]);
+        // The scene saves each copy as its root with the model, not the nodes.
+        let handle = iron_scenes::active();
+        let first = iron_scenes::serialize(handle).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&first).unwrap();
+        let objects = saved["objects"].as_array().unwrap();
+        assert_eq!(objects.len(), 2);
+        assert_eq!(objects[0]["model"]["src"], "models/ship.glb");
+        assert_eq!(objects[0]["model"]["colliders"], "convex");
+        assert!(objects[0].get("children").is_none(), "nodes are not saved");
+        // Loading what was saved builds the nodes again (the model is loaded already).
+        iron_scenes::load_scene(&first, true).expect("loads");
+        let roots = iron_scene::api::with_scene(|sc| sc.roots().len()).unwrap();
+        assert_eq!(roots, 4);
+        let last = find_root(roots - 2);
+        assert_eq!(
+            iron_scene::api::with_scene(|sc| sc.children(last).len()),
+            Some(1)
+        );
+        render::set_model_collider_hook(None);
+    });
+}
+
 // M9-TS-1226
 //
 // The example game's scene file loads its Light, MeshRenderer (primitive mesh, inline Material)

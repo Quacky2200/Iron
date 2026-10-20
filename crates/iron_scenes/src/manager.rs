@@ -280,6 +280,7 @@ pub fn roots(scene: u32) -> Vec<ObjectId> {
 
 /// Everything in a scene as `SceneData` JSON text.
 pub fn serialize(scene: u32) -> Option<String> {
+    crate::ensure_kinds();
     let info = info(scene)?;
     let mut saver = Saver::new(false);
     let roots = roots(scene);

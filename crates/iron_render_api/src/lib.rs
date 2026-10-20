@@ -42,11 +42,13 @@ mod effects;
     clippy::let_and_return
 )]
 mod generated;
+mod models;
 mod render_settings;
 mod resources;
 
 pub use effects::*;
 pub use generated::*;
+pub use models::*;
 pub use render_settings::*;
 pub use resources::*;
 
@@ -127,6 +129,7 @@ pub fn destroyed(objects: &[ObjectId]) {
     for o in objects {
         remove_generated_on(*o);
     }
+    models::forget_objects(objects);
 }
 
 /// Forgets every render component, asset and queued command (a test, or a reload).
@@ -135,6 +138,7 @@ pub fn reset() {
     reset_resources();
     render_settings::reset_render_settings();
     effects::reset_effects();
+    models::reset_models();
 }
 
 /// The manifests of this crate's script API, for the compiler.
@@ -143,6 +147,7 @@ pub fn manifests() -> Vec<String> {
     all.extend(resources::resource_manifests());
     all.push(render_settings::render_settings_api::MANIFEST.to_json());
     all.extend(effects::effect_manifests());
+    all.extend(models::model_manifests());
     all
 }
 
@@ -150,4 +155,5 @@ pub fn manifests() -> Vec<String> {
 pub fn register_kinds() {
     register_generated_kinds();
     register_resource_kinds();
+    models::register_model_extra();
 }

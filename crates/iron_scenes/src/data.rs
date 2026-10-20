@@ -63,6 +63,9 @@ pub(crate) fn components_of(raw: u64) -> Vec<(Rc<Kind>, u64)> {
 
 fn unsaved(object: ObjectId) -> bool {
     sc(|s| s.hide_flags(object) & DONT_SAVE != 0).unwrap_or(true)
+        || iron_kinds::object_extras()
+            .iter()
+            .any(|e| (e.hidden)(object.to_raw()))
 }
 
 fn children(object: ObjectId) -> Vec<ObjectId> {
@@ -251,6 +254,11 @@ impl Saver {
         if layer != 0 {
             d.insert("layer".into(), json!(layer));
         }
+        for extra in iron_kinds::object_extras() {
+            if let Some(v) = (extra.save)(object.to_raw()) {
+                d.insert(extra.key.clone(), v);
+            }
+        }
         if let Some(path) = prefab_of(object) {
             d.insert("prefab".into(), json!(path));
         }
@@ -390,6 +398,11 @@ impl Loader {
         }
         if let Some(id) = d.get("id").and_then(Value::as_u64) {
             self.things.insert(id, Thing::Object(object));
+        }
+        for extra in iron_kinds::object_extras() {
+            if let Some(v) = d.get(&extra.key) {
+                (extra.load)(object.to_raw(), v);
+            }
         }
         if let Some(path) = d.get("prefab").and_then(Value::as_str) {
             set_prefab(object, path);

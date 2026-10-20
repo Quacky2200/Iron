@@ -198,6 +198,14 @@ export function quality(): string {
   return `${low}|${QualitySettings.antiAliasing}|${QualitySettings.getQualityLevel()}|${QualitySettings.levelName(1)}|${QualitySettings.levelCount}|${QualitySettings.shadows}`;
 }
 
+export function model(): string {
+  const m = Model.load("models/ship.glb");
+  const again = Model.load("models/ship.glb");
+  const a = m.instantiate({ position: new Vector3(1, 2, 3), colliders: "convex" });
+  const b = m.instantiate();
+  return `${m.isLoaded}|${a.name}|${b.name}|${m === again}|${m.src}`;
+}
+
 export function others(): string {
   const go = new GameObject("Stuff");
   const mirror = go.addComponent(Mirror, { cullingMask: 6 });

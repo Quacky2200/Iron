@@ -949,7 +949,17 @@ impl<'a> Lowerer<'a> {
         let mut options: Option<&'a ObjectExpression<'a>> = None;
         if let Some(Expression::ObjectExpression(o)) = given.last().copied()
             && given.len() <= params.len()
-            && !matches!(params[given.len() - 1].1, ExtTy::Value(_))
+            // An object where a value class goes is the value (`{ x, y }`) unless its keys are
+            // parameter names and not the value's fields.
+            && match &params[given.len() - 1].1 {
+                ExtTy::Value(vn) => !o.properties.iter().any(|p| {
+                    matches!(p, ObjectPropertyKind::ObjectProperty(p)
+                        if matches!(&p.key, PropertyKey::StaticIdentifier(k)
+                            if self.manifest.values.get(vn.as_str())
+                                .is_some_and(|f| f.iter().any(|(n, _)| n == k.name.as_str()))))
+                }),
+                _ => true,
+            }
             && o.properties.iter().all(|p| {
                 matches!(p, ObjectPropertyKind::ObjectProperty(p)
                     if matches!(&p.key, PropertyKey::StaticIdentifier(k)
@@ -1012,6 +1022,20 @@ impl<'a> Lowerer<'a> {
                     ExtTy::F64 | ExtTy::F32 if i >= opt_from => num(f64::NAN),
                     ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
                     ExtTy::Handle(_) if i >= opt_from => mk(ExprKind::Null, self.ext_ir(pt)),
+                    // An optional value class has NaN in every field: the function tells "left
+                    // out" from a value.
+                    ExtTy::Value(vn) if i >= opt_from => {
+                        let sid = self.value_struct(vn);
+                        let nf = self.m.structs[sid].fields.len();
+                        let ty = Ty::Obj(sid);
+                        let tmp = self.new_local(ty.clone());
+                        let mut stmts =
+                            vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), ty.clone()))];
+                        for k in 0..nf {
+                            stmts.push(Stmt::StoreField(self.var_expr(tmp), sid, k, num(f64::NAN)));
+                        }
+                        mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty)
+                    }
                     // An optional array is empty.
                     ExtTy::F64Arr | ExtTy::ValueArr(_) | ExtTy::HandleArr(_) if i >= opt_from => {
                         let ty = self.ext_ir(pt);
