@@ -151,10 +151,43 @@ impl<'a> Lowerer<'a> {
         Ok(mk(ExprKind::Seq(pre, Box::new(call)), ret))
     }
 
+    /// `setPoints(this, points)` as the setter of `points` (`{ points: [..] }`, `line.positions = ..`):
+    /// a method named `set<Prop>` taking the receiver and one value.
+    pub(crate) fn set_method(&self, class: &str, prop: &str) -> Option<crate::manifest::ExternFn> {
+        let mut cap = prop.to_string();
+        cap[..1].make_ascii_uppercase();
+        self.manifest
+            .classes
+            .get(class)?
+            .methods
+            .get(&format!("set{cap}"))
+            .filter(|f| f.params.len() == 2)
+            .cloned()
+    }
+
     /// `obj.prop` through a facade getter.
     pub(crate) fn ext_getter(&mut self, class: &str, prop: &str, obj: &Expr) -> R<Option<Expr>> {
         let name = Self::x_name("g", class, prop);
         if !self.fids.contains_key(&name) {
+            // `camera.transform`: a component's object's transform.
+            if prop == "transform"
+                && class != "GameObject"
+                && let Some(go) = self
+                    .manifest
+                    .classes
+                    .get(class)
+                    .and_then(|k| k.getters.get("gameObject"))
+                    .cloned()
+                && let Some(tr) = self
+                    .manifest
+                    .classes
+                    .get("GameObject")
+                    .and_then(|k| k.getters.get("transform"))
+                    .cloned()
+            {
+                let owner = self.emit_extern(&go, vec![obj.clone()]);
+                return Ok(Some(self.emit_extern(&tr, vec![owner])));
+            }
             return Ok(None);
         }
         self.call_helper(&name, vec![obj.clone()]).map(Some)

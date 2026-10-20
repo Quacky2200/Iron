@@ -54,7 +54,7 @@ export function sceneCount(): number {
 }
 
 export function saved(): string {
-  return SceneManager.getActiveScene().serialize();
+  return SceneManager.getActiveScene().serialize$n();
 }
 
 export function rootCount(): number {

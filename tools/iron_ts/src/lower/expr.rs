@@ -2272,6 +2272,7 @@ impl<'a> Lowerer<'a> {
             let k = self.manifest.classes.get(&class);
             let getter = k.and_then(|k| k.getters.get(prop)).cloned();
             let setter = k.and_then(|k| k.setters.get(prop)).cloned();
+            let setter = setter.or_else(|| self.set_method(&class, prop));
             let Some(setter) = setter else {
                 bail!("{class}.{prop} cannot be assigned")
             };

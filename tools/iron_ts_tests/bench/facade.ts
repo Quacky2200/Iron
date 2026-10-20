@@ -76,3 +76,30 @@ export function sprites(): string {
   const grid = Sprite.grid(tex, 2, 1, undefined, 10);
   return `${s.pixelsPerUnit}|${s.hasRect}|${grid.length}|${grid[1]!.pixelsPerUnit}`;
 }
+
+export function uiResources(): string {
+  const a = addStyleSheet(".a { color: red }");
+  loadFont({ family: "Charm", src: "fonts/x.ttf", weight: 700 });
+  removeStyleSheet(a);
+  const update = () => {};
+  const stop = input.on("gamepadconnected", update);
+  stop();
+  return `${a}|${input.gamepads().length}`;
+}
+
+export function particlesAndPoints(): string {
+  const go = new GameObject("p");
+  const ps = go.addComponent(ParticleSystem, {
+    startLifetime: [1.2, 1.8],
+    startSpeed: 3,
+    startColor: [new Color(1, 0, 0, 1), new Color(0, 0, 1, 1)],
+    bursts: [{ time: 0, count: 40, cycles: 0, interval: 2 }, { time: 1, count: 5 }],
+    shape: { type: "cone", angle: 14, radius: 0.08 },
+    colorOverLifetime: [{ time: 0, color: Color.white }, { time: 1, color: new Color(1, 1, 1, 0) }],
+    sizeOverLifetime: [{ time: 0, value: 1 }, { time: 1, value: 0 }],
+  });
+  const edge = go.addComponent(EdgeCollider2D, { points: [new Vector2(0, 0), new Vector2(1, 1), new Vector2(2, 1)] });
+  const line = new GameObject("l").addComponent(LineRenderer, { positions: [Vector3.zero, Vector3.one], width: 0.1 });
+  const sprite = new GameObject("s").addComponent(SpriteRenderer, { sprite: null });
+  return `${ps.startLifetime}|${ps.startLifetimeMax}|${ps.startSpeed}|${ps.burstCount}|${ps.shapeType}|${ps.shapeAngle}|${edge.pointCount}|${line.positionCount}|${sprite.sprite === null}`;
+}

@@ -430,7 +430,15 @@ impl<'a> Lowerer<'a> {
             if class == "GameObject" && self.game_object_option(tmp, key, &p.value, stmts, at)? {
                 continue;
             }
-            if let Some((fid, want)) = self.ext_setter(class, key)? {
+            // `startLifetime: [min, max]` is the `$a` variant of the setter.
+            let array_key = format!("{key}$a");
+            let ext = match &p.value {
+                Expression::ArrayExpression(_) => self
+                    .ext_setter(class, &array_key)?
+                    .or(self.ext_setter(class, key)?),
+                _ => self.ext_setter(class, key)?,
+            };
+            if let Some((fid, want)) = ext {
                 let v = self.lower_expr(&p.value, Some(&want))?;
                 let v = self.coerce(v, &want)?;
                 let h = self.var_expr(tmp);
@@ -441,7 +449,11 @@ impl<'a> Lowerer<'a> {
                 )));
                 continue;
             }
-            let own = self.manifest.classes[class].setters.get(key).cloned();
+            let own = self.manifest.classes[class]
+                .setters
+                .get(key)
+                .cloned()
+                .or_else(|| self.set_method(class, key));
             if let Some(setter) = own {
                 let want = self.ext_ir(&setter.params[1].1);
                 let v = self.lower_expr(&p.value, Some(&want))?;

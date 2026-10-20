@@ -586,6 +586,17 @@ pub mod audio_api {
     }
 
     impl SoundRef {
+        /// A sound by path (what `playOneShot("assets/thud.wav")` means): the one already loaded
+        /// from it, or a new one.
+        pub fn from_string(path: &str) -> SoundRef {
+            let src = super::source_of(path);
+            let known = super::st(|s| s.sounds.iter().position(|d| d.path == src));
+            match known {
+                Some(i) => SoundRef(i as u32 + 1),
+                None => super::load_sound(path, None),
+            }
+        }
+
         /// Starts the sound and returns the playback.
         #[optional(
             volume = 1,

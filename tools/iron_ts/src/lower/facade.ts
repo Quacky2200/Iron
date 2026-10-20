@@ -280,3 +280,150 @@ function __xm_Texture_whenLoaded(self: Texture): Promise<Texture> {
 function __xm_Model_whenLoaded(self: Model): Promise<Model> {
   return new Promise<Model>((resolve) => { __poll_model(self, resolve); });
 }
+
+//# when .serialize()
+interface SceneObjectData {
+  name: string;
+}
+interface SceneData {
+  name: string;
+  objects: SceneObjectData[];
+}
+function __xm_Scene_serialize(self: Scene): SceneData {
+  const d: SceneData = JSON.parse(self.serialize$n());
+  return d;
+}
+
+//# when ParticleSystem
+function __xs_ParticleSystem_startLifetime$a(self: ParticleSystem, v: number[]): void {
+  self.setStartLifetimeRange(v[0]!, v[1]!);
+}
+function __xs_ParticleSystem_startSpeed$a(self: ParticleSystem, v: number[]): void {
+  self.setStartSpeedRange(v[0]!, v[1]!);
+}
+function __xs_ParticleSystem_startSize$a(self: ParticleSystem, v: number[]): void {
+  self.setStartSizeRange(v[0]!, v[1]!);
+}
+function __xs_ParticleSystem_startRotation$a(self: ParticleSystem, v: number[]): void {
+  self.setStartRotationRange(v[0]!, v[1]!);
+}
+function __xs_ParticleSystem_angularVelocity$a(self: ParticleSystem, v: number[]): void {
+  self.setAngularVelocityRange(v[0]!, v[1]!);
+}
+function __xs_ParticleSystem_startColor$a(self: ParticleSystem, v: Color[]): void {
+  self.setStartColorRange(v[0]!, v[1]!);
+}
+interface ParticleBurst {
+  time: number;
+  count: number;
+  cycles?: number;
+  interval?: number;
+}
+function __xs_ParticleSystem_bursts(self: ParticleSystem, v: ParticleBurst[]): void {
+  self.clearBursts();
+  for (let i = 0; i < v.length; i++) {
+    const b = v[i]!;
+    self.addBurst(b.time, b.count, b.cycles ?? 1, b.interval ?? 0.01);
+  }
+}
+interface ParticleShapeSpec {
+  type: string;
+  angle?: number;
+  radius?: number;
+  size?: Vector3;
+}
+function __xs_ParticleSystem_shape(self: ParticleSystem, s: ParticleShapeSpec): void {
+  self.shapeType = s.type;
+  if (s.angle !== undefined) self.shapeAngle = s.angle;
+  if (s.radius !== undefined) self.shapeRadius = s.radius;
+  if (s.size !== undefined) self.shapeSize = s.size;
+}
+interface ColorKey {
+  time: number;
+  color: Color;
+}
+function __xs_ParticleSystem_colorOverLifetime(self: ParticleSystem, v: ColorKey[]): void {
+  self.clearColorOverLifetime();
+  for (let i = 0; i < v.length; i++) self.addColorKey(v[i]!.time, v[i]!.color);
+}
+interface SizeKey {
+  time: number;
+  value: number;
+}
+function __xs_ParticleSystem_sizeOverLifetime(self: ParticleSystem, v: SizeKey[]): void {
+  self.clearSizeOverLifetime();
+  for (let i = 0; i < v.length; i++) self.addSizeKey(v[i]!.time, v[i]!.value);
+}
+
+//# when Mesh.create({
+interface MeshData {
+  vertices: Vector3[];
+  triangles: number[];
+  normals?: Vector3[];
+  uv?: Vector2[];
+  boneWeights?: { indices: number[]; weights: number[] }[];
+  bindposes?: Matrix4x4[];
+}
+function __xt_Mesh_create$o(o: MeshData): Mesh {
+  const m = Mesh.create(o.vertices, o.triangles, o.normals ?? [], o.uv ?? []);
+  if (o.boneWeights) {
+    const joints: number[] = [];
+    const weights: number[] = [];
+    for (let i = 0; i < o.boneWeights.length; i++) {
+      const b = o.boneWeights[i]!;
+      for (let k = 0; k < 4; k++) {
+        joints.push(k < b.indices.length ? b.indices[k]! : 0);
+        weights.push(k < b.weights.length ? b.weights[k]! : 0);
+      }
+    }
+    m.setBoneWeights(joints, weights);
+  }
+  if (o.bindposes) {
+    const flat: number[] = [];
+    for (let i = 0; i < o.bindposes.length; i++) {
+      const p = o.bindposes[i]!;
+      for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) flat.push(p.get(r, c));
+    }
+    m.setBindposes(flat);
+  }
+  return m;
+}
+
+//# when addStyleSheet(|removeStyleSheet(
+function addStyleSheet(css: string): number {
+  return UiResources.addStyleSheet(css);
+}
+function removeStyleSheet(id: number): void {
+  UiResources.removeStyleSheet(id);
+}
+
+//# when loadFont(
+interface FontFace {
+  family: string;
+  src: string;
+  weight?: number;
+  style?: string;
+}
+function loadFont(face: FontFace): void {
+  UiResources.loadFont(face.family, face.src, face.weight ?? 0, face.style ?? "");
+}
+
+//# when input.gamepads()|input.on(
+interface Gamepad {
+  id: number;
+  name: string;
+  connected: boolean;
+}
+function __xt_input_gamepads(): Gamepad[] {
+  const out: Gamepad[] = [];
+  const n = input.gamepadCount();
+  for (let i = 0; i < n; i++) {
+    const id = input.gamepadId(i);
+    out.push({ id, name: input.gamepadName(id), connected: input.gamepadConnected(id) });
+  }
+  return out;
+}
+function __xt_input_on(type: string, fn: () => void): () => void {
+  const token = type === "gamepaddisconnected" ? input.onGamepadDisconnected((id: number) => { fn(); }) : input.onGamepadConnected((id: number) => { fn(); });
+  return () => { input.off(token); };
+}

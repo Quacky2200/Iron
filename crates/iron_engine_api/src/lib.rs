@@ -29,6 +29,7 @@ pub mod prefs;
 pub mod random;
 pub mod screen;
 pub mod time;
+pub mod ui_resources;
 
 /// The manifests (JSON) of every namespace this crate declares, for the compiler to check calls
 /// against. The scene's (`iron_scene::api::scene_api`) is separate.
@@ -76,6 +77,7 @@ pub fn manifests() -> Vec<String> {
         assets::assets_api::MANIFEST.to_json(),
         app::application_api::MANIFEST.to_json(),
         app::system_info_api::MANIFEST.to_json(),
+        ui_resources::ui_resources_api::MANIFEST.to_json(),
     ]);
     all
 }
@@ -120,6 +122,7 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     assets::assets_api::register_quickjs(ctx)?;
     app::application_api::register_quickjs(ctx)?;
     app::system_info_api::register_quickjs(ctx)?;
+    ui_resources::ui_resources_api::register_quickjs(ctx)?;
     random::random_api::register_quickjs(ctx)?;
     random::rng_api::register_quickjs(ctx)?;
     audio::audio_api::register_quickjs(ctx)?;

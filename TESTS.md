@@ -1226,3 +1226,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1704 | Integration | `lod.setLODs([..])`, Cloth `pins` / `sphereColliders` / `pinBox` options, `scene.getRootGameObjects()`. |
 | M9-TS-1705 | Integration | The `AnimatorController` builder (`addParameter`, `addState` with a blend-tree object and options, `addTransition` with conditions) over the native controller; `animator.getCurrentAnimatorStateInfo()`. |
 | M9-TS-1706 | Integration | `Sprite.create(texture, rect, pivot, ppu)` and `Sprite.grid(texture, columns, rows, pivot?, ppu?)`. |
+| M9-TS-1707 | Integration | `addStyleSheet` / `removeStyleSheet` / `loadFont({ family, src, weight })` queue requests for the host (`UiResources`); `input.gamepads()` and `input.on("gamepadconnected" / "gamepaddisconnected", fn)` return an unsubscribe function. |
+| M9-TS-1708 | Integration | ParticleSystem options (`[min, max]` ranges, `bursts`, `shape`, `colorOverLifetime`, `sizeOverLifetime`), `points` / `positions` lists (`setPoints` / `setPositions` as setters), `sprite: null`. |
+| M9-API-500 | Unit | `UiResources` requests come out in order with stylesheet ids; the queue is emptied by `take_requests`. |

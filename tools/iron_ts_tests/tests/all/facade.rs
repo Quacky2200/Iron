@@ -102,3 +102,29 @@ fn sprite_create_with_a_rect_and_sprite_grid() {
         assert_eq!(text(ts_fac_sprites()), "40|true|2|10");
     });
 }
+
+// M9-TS-1707
+#[test]
+fn style_sheets_fonts_and_gamepad_wrappers_go_through_the_ui_resources_queue() {
+    in_every_gc_mode(|| unsafe {
+        iron_engine_api::ui_resources::reset();
+        assert_eq!(text(ts_fac_uiResources()), "1|0");
+        let r = iron_engine_api::ui_resources::take_requests();
+        assert_eq!(r.len(), 3);
+        assert!(matches!(
+            r[1],
+            iron_engine_api::ui_resources::UiRequest::LoadFont { weight, .. } if weight == 700.0
+        ));
+    });
+}
+
+// M9-TS-1708
+#[test]
+fn particle_ranges_bursts_shape_keys_and_point_lists_are_options() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_particlesAndPoints()),
+            "1.2|1.8|3|2|cone|14|3|2|true"
+        );
+    });
+}

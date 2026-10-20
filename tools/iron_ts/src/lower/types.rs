@@ -504,6 +504,11 @@ impl<'a> Lowerer<'a> {
                 kind: ExprKind::Null,
                 ty: to.clone(),
             }),
+            // `sprite = null`: an engine handle that is "none" (tsc has checked the declared type).
+            (Ty::Null, Ty::Handle(_)) => Ok(Expr {
+                kind: ExprKind::Null,
+                ty: to.clone(),
+            }),
             (a, b) if a.strip() == b.strip() => Ok(Expr {
                 kind: ExprKind::Cast(Box::new(e)),
                 ty: to.clone(),
