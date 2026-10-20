@@ -16,7 +16,255 @@ fn split_rule(ns: &str, prop: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
+const FACADE_TS: &str = include_str!("facade.ts");
+
+/// `old` as a whole word (not part of a longer name).
+fn replace_word(src: &str, old: &str, new: &str) -> String {
+    let word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut out = String::with_capacity(src.len());
+    let mut rest = src;
+    while let Some(i) = rest.find(old) {
+        let before = rest[..i].chars().next_back();
+        let after = rest[i + old.len()..].chars().next();
+        out.push_str(&rest[..i]);
+        if before.is_some_and(word) || after.is_some_and(word) {
+            out.push_str(old);
+        } else {
+            out.push_str(new);
+        }
+        rest = &rest[i + old.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The program with the TypeScript names that are another name natively (`AnimatorController` is
+/// `AnimationController`) renamed, and the facade chunks it needs appended.
+pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<String> {
+    let mut out = src.to_string();
+    if manifest.classes.contains_key("AnimationController") && src.contains("AnimatorController") {
+        out = replace_word(&out, "AnimatorController", "AnimationController");
+    }
+    // The chunks the program names: only when the engine API has the classes they are written over.
+    let mut extra = String::new();
+    for chunk in FACADE_TS.split("//# when ").skip(1) {
+        let (triggers, body) = chunk.split_once('\n').unwrap_or((chunk, ""));
+        if triggers.split('|').any(|t| src.contains(t.trim_end())) {
+            extra.push_str(body);
+        }
+    }
+    if !extra.is_empty() {
+        out.push('\n');
+        out.push_str(&extra);
+    }
+    (out != src).then_some(out)
+}
+
+// The facade: members of the TypeScript `@iron/engine` that the native API has in another shape
+// are written once in TypeScript (`facade.ts`, appended to a program that names them) as
+// functions called `__x<kind>_<Class>_<member>`:
+//
+//   __xm_  method          `__xm_Cloth_foo(self: Cloth, a: number)`      for `cloth.foo(a)`
+//   __xg_  property read   `__xg_Camera_rect(self: Camera): Rect`         for `cam.rect`
+//   __xs_  property write  `__xs_Camera_rect(self: Camera, v: Rect)`      for `cam.rect = r`, `{ rect: r }`
+//   __xt_  static call     `__xt_Sprite_grid(texture: Texture, ..)`        for `Sprite.grid(..)`
+//   __xp_  static read     `__xp_Screen_windowSize(): Size`               for `Screen.windowSize`
+//
+// A method also has an object-argument variant `__xm_..$o` used when a call passes an object
+// literal. These win over the native member of the same name.
 impl<'a> Lowerer<'a> {
+    fn x_name(kind: &str, class: &str, member: &str) -> String {
+        format!("__x{kind}_{class}_{member}")
+    }
+
+    /// `recv.m(args)` through a facade method.
+    pub(crate) fn ext_method_call(
+        &mut self,
+        class: &str,
+        m: &str,
+        recv: &Expr,
+        c: &'a CallExpression<'a>,
+    ) -> R<Option<Expr>> {
+        let mut name = Self::x_name("m", class, m);
+        let obj_variant = format!("{name}$o");
+        if self.fids.contains_key(&obj_variant)
+            && c.arguments
+                .iter()
+                .any(|a| matches!(a, Argument::ObjectExpression(_)))
+        {
+            name = obj_variant;
+        }
+        if !self.fids.contains_key(&name) {
+            return Ok(None);
+        }
+        self.call_with_receiver(&name, recv.clone(), &c.arguments)
+            .map(Some)
+    }
+
+    /// A call of the facade function `name(self, ..)` with `recv` as `self`: the arguments fill
+    /// the parameters after it (a missing one takes its default, or null for `x?: T`).
+    fn call_with_receiver(&mut self, name: &str, recv: Expr, args: &'a [Argument<'a>]) -> R<Expr> {
+        let fid = self.fids[name];
+        self.ensure_lowered(name)?;
+        let (ptys, ret) = self.fsig[fid].clone();
+        let Some(ret) = ret else {
+            bail!("{name}: return type unknown")
+        };
+        let fp: &'a FormalParameters<'a> = self.fsrc[name].params;
+        let n_fixed = fp.items.len() - 1;
+        if args.len() > n_fixed {
+            bail!(
+                "{name}: {} arguments, at most {n_fixed} expected",
+                args.len()
+            );
+        }
+        let t = self.new_local(recv.ty.clone());
+        let mut pre = vec![Stmt::Assign(t, recv)];
+        let mut vals = vec![self.var_expr(t)];
+        let mut names: HashMap<String, Binding> = HashMap::new();
+        for i in 0..n_fixed {
+            let (p, pty) = (&fp.items[i + 1], ptys[i + 1].clone());
+            let v = if let Some(a) = args.get(i) {
+                let Some(e) = a.as_expression() else {
+                    bail!("{name}: spread argument")
+                };
+                let v = self.lower_expr(e, Some(&pty))?;
+                self.coerce(v, &pty)?
+            } else if let Some(init) = &p.initializer {
+                let saved = std::mem::replace(&mut self.cur.scopes, vec![names.clone()]);
+                let r = self.lower_expr(init, Some(&pty));
+                self.cur.scopes = saved;
+                self.coerce(r?, &pty)?
+            } else if p.optional {
+                self.coerce(mk(ExprKind::Null, Ty::Null), &pty)?
+            } else {
+                bail!("{name}: {} arguments, {n_fixed} expected", args.len())
+            };
+            let tmp = self.new_local(pty);
+            pre.push(Stmt::Assign(tmp, v));
+            vals.push(self.var_expr(tmp));
+            if let BindingPattern::BindingIdentifier(b) = &p.pattern {
+                names.insert(b.name.to_string(), Binding::Direct(tmp));
+            }
+        }
+        let call = Self::target_call(&classes::Target::Direct(fid), vals, ret.clone());
+        Ok(mk(ExprKind::Seq(pre, Box::new(call)), ret))
+    }
+
+    /// `obj.prop` through a facade getter.
+    pub(crate) fn ext_getter(&mut self, class: &str, prop: &str, obj: &Expr) -> R<Option<Expr>> {
+        let name = Self::x_name("g", class, prop);
+        if !self.fids.contains_key(&name) {
+            return Ok(None);
+        }
+        self.call_helper(&name, vec![obj.clone()]).map(Some)
+    }
+
+    /// The facade function that sets `obj.prop`, and the type of the value it takes.
+    pub(crate) fn ext_setter(&mut self, class: &str, prop: &str) -> R<Option<(FuncId, Ty)>> {
+        let name = Self::x_name("s", class, prop);
+        let Some(&fid) = self.fids.get(&name) else {
+            return Ok(None);
+        };
+        self.ensure_lowered(&name)?;
+        let ty = self.fsig[fid].0[1].clone();
+        Ok(Some((fid, ty)))
+    }
+
+    /// `Class.m(args)` through a facade static function.
+    pub(crate) fn ext_static_call(
+        &mut self,
+        class: &str,
+        m: &str,
+        c: &'a CallExpression<'a>,
+    ) -> R<Option<Expr>> {
+        if class == "GameObject" && m == "createPrimitive" {
+            return self.lower_create_primitive(c);
+        }
+        if m.ends_with("$n") {
+            return Ok(None);
+        }
+        let mut name = Self::x_name("t", class, m);
+        let argc_variant = format!("{name}${}", c.arguments.len());
+        if self.fids.contains_key(&argc_variant) {
+            name = argc_variant;
+        }
+        let obj_variant = format!("{name}$o");
+        if self.fids.contains_key(&obj_variant)
+            && c.arguments
+                .iter()
+                .any(|a| matches!(a, Argument::ObjectExpression(_)))
+        {
+            name = obj_variant;
+        }
+        if !self.fids.contains_key(&name) {
+            return Ok(None);
+        }
+        self.call_declared(&name, &c.arguments, None).map(Some)
+    }
+
+    /// `GameObject.createPrimitive("cube", { position, scale, .. })`: `Primitives.create(kind)`,
+    /// then the options as for `new GameObject`.
+    fn lower_create_primitive(&mut self, c: &'a CallExpression<'a>) -> R<Option<Expr>> {
+        let at = self.loc(c.span.start);
+        let Some(create) = self
+            .manifest
+            .namespaces
+            .get("Primitives")
+            .and_then(|n| n.get("create"))
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let Some(kind) = c.arguments.first().and_then(|a| a.as_expression()) else {
+            bail!("{at}: createPrimitive takes a kind")
+        };
+        let kind = self.lower_expr(kind, Some(&Ty::Str))?;
+        let kind = self.coerce(kind, &Ty::Str)?;
+        let ty = Ty::Handle("GameObject".to_string());
+        let tmp = self.new_local(ty.clone());
+        let none = mk(ExprKind::Null, Ty::Str.nullable());
+        let made = self.emit_extern(&create, vec![kind, none]);
+        let mut stmts = vec![Stmt::Assign(tmp, made)];
+        match c.arguments.get(1).and_then(|a| a.as_expression()) {
+            Some(Expression::ObjectExpression(o)) => {
+                self.apply_options("GameObject", tmp, o, &mut stmts, &at)?
+            }
+            Some(_) => bail!("{at}: createPrimitive options are an object literal"),
+            None => {}
+        }
+        let result = self.var_expr(tmp);
+        Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
+    }
+
+    /// `Class.prop` through a facade static getter, or a static function of the engine API that
+    /// takes nothing (`Camera.main`).
+    pub(crate) fn ext_static_prop(&mut self, class: &str, prop: &str) -> R<Option<Expr>> {
+        let name = Self::x_name("p", class, prop);
+        if self.fids.contains_key(&name) {
+            return self.call_helper(&name, vec![]).map(Some);
+        }
+        let native = self
+            .manifest
+            .classes
+            .get(class)
+            .and_then(|k| k.statics.get(prop))
+            .filter(|f| f.params.is_empty() && f.ret != ExtTy::Void)
+            .cloned();
+        match native {
+            Some(f) => {
+                let ty = self.ext_ir(&f.ret);
+                let mut e = self.emit_extern(&f, vec![]);
+                // A handle that may be none (`Camera.main`).
+                if matches!(ty, Ty::Handle(_)) {
+                    e.ty = ty.nullable();
+                }
+                Ok(Some(e))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// A `new GameObject(name, { .. })` option the plain setter lookup would not find: `parent`
     /// (`setParent(p, false)`), and `position` / `rotation` / `scale`, which are local to the
     /// parent (`localPosition`, ...). `Ok(false)` leaves the key to the default path.

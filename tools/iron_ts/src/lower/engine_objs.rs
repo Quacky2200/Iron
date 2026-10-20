@@ -43,6 +43,13 @@ impl<'a> Lowerer<'a> {
         start: u32,
     ) -> R<Expr> {
         let at = self.loc(start);
+        // `new Material(color, emission, smoothness)`: positional arguments are a facade constructor.
+        if !arguments.is_empty()
+            && !matches!(arguments.first(), Some(Argument::ObjectExpression(_)))
+            && self.fids.contains_key(&format!("__xn_{class}"))
+        {
+            return self.call_declared(&format!("__xn_{class}"), arguments, None);
+        }
         let k = self.manifest.classes[class].clone();
         let create = k.statics["create"].clone();
         let ty = Ty::Handle(class.to_string());
@@ -398,7 +405,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// The setters for `{ key: value, .. }` on the handle in `tmp`.
-    fn apply_options(
+    pub(crate) fn apply_options(
         &mut self,
         class: &str,
         tmp: VarId,
@@ -421,6 +428,17 @@ impl<'a> Lowerer<'a> {
             };
             let key = key.name.as_str();
             if class == "GameObject" && self.game_object_option(tmp, key, &p.value, stmts, at)? {
+                continue;
+            }
+            if let Some((fid, want)) = self.ext_setter(class, key)? {
+                let v = self.lower_expr(&p.value, Some(&want))?;
+                let v = self.coerce(v, &want)?;
+                let h = self.var_expr(tmp);
+                stmts.push(Stmt::Eval(Self::target_call(
+                    &classes::Target::Direct(fid),
+                    vec![h, v],
+                    Ty::Void,
+                )));
                 continue;
             }
             let own = self.manifest.classes[class].setters.get(key).cloned();

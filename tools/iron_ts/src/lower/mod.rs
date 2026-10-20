@@ -257,6 +257,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     for m in manifests {
         manifest.add_json(m)?;
     }
+    // Members of the TypeScript engine API that are written over the native one (`facade.ts`).
+    let with_facade = facade::extend_source(src, &manifest);
+    let src = with_facade.as_deref().unwrap_or(src);
     // JSX and hooks become calls of the `Ui` namespace (first: the other rewrites parse plain TS).
     // The compiler brings the `Ui` namespace itself when the caller did not pass it (the host links
     // the `ts_ui_*` symbols; `iron_ts_ui` checks that this copy equals its own).

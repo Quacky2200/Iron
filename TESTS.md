@@ -1221,3 +1221,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1618 | Integration | A `const` arrow that calls itself (`setTimeout(loop, 16)`) and a top-level `let` arrow that is reassigned. |
 | M9-TS-1700 | Integration | `RenderSettings.skybox = { .. }` and `.bloom = { .. }` (and `= null`) compile to the per-field setters: off, on with the defaults, then each key (`sunDirection: null` is `skyHasSun = false`); `bench/facade.ts`. |
 | M9-TS-1701 | Integration | `new GameObject(name, { parent, position, rotation, scale, layer, active })`: `parent` first (`null` is no parent), `position` / `rotation` / `scale` are local to the parent. |
+| M9-TS-1702 | Integration | `Camera` `rect`, `layerCullDistances` (read, element write, assign), `horizontalFieldOfView`, `Camera.main` (a static function with no arguments read as a property), `Screen.windowSize`, `QualitySettings.names`: facade members written in TypeScript (`lower/facade.ts`). |
+| M9-TS-1703 | Integration | `new Color(r, g, b)`, `new Material(color, emission, smoothness, unlit)`, `material.withTexture(t)`, `GameObject.createPrimitive(kind, { position, scale, name })`. |
+| M9-TS-1704 | Integration | `lod.setLODs([..])`, Cloth `pins` / `sphereColliders` / `pinBox` options, `scene.getRootGameObjects()`. |
+| M9-TS-1705 | Integration | The `AnimatorController` builder (`addParameter`, `addState` with a blend-tree object and options, `addTransition` with conditions) over the native controller; `animator.getCurrentAnimatorStateInfo()`. |
+| M9-TS-1706 | Integration | `Sprite.create(texture, rect, pivot, ppu)` and `Sprite.grid(texture, columns, rows, pivot?, ppu?)`. |

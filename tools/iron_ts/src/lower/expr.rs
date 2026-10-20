@@ -290,6 +290,14 @@ impl<'a> Lowerer<'a> {
         {
             return Ok(self.emit_extern(&g, vec![]));
         }
+        // `Camera.main`, `Screen.windowSize`: a facade getter, or a static function with no arguments.
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && !self.classes.contains_key(id.name.as_str())
+            && let Some(e) = self.ext_static_prop(id.name.as_str(), prop)?
+        {
+            return Ok(e);
+        }
         if let Expression::Identifier(id) = &m.object
             && id.name == "Math"
             && self.lookup("Math").is_none()
@@ -434,6 +442,9 @@ impl<'a> Lowerer<'a> {
             // `m.groups.year`: a regular expression's named groups are read by name.
             Ty::Map(k, v) if *k == Ty::Str && v.is_ptr() => self.map_prop(obj, prop),
             Ty::Handle(class) => {
+                if let Some(e) = self.ext_getter(&class, prop, &obj)? {
+                    return Ok(e);
+                }
                 let getter = self
                     .manifest
                     .classes
@@ -641,6 +652,22 @@ impl<'a> Lowerer<'a> {
         }
         let sid = self.value_struct(name);
         let n = self.m.structs[sid].fields.len();
+        // `new Color(r, g, b)`: opaque.
+        if name == "Color" && args.len() == 3 {
+            let ty = Ty::Obj(sid);
+            let tmp = self.new_local(ty.clone());
+            let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), ty.clone()))];
+            for (i, a) in args.iter().enumerate() {
+                let Some(e) = a.as_expression() else {
+                    bail!("new {name}: spread argument")
+                };
+                let v = self.lower_expr(e, Some(&Ty::Num))?;
+                let v = self.as_num(v)?;
+                stmts.push(Stmt::StoreField(self.var_expr(tmp), sid, i, v));
+            }
+            stmts.push(Stmt::StoreField(self.var_expr(tmp), sid, 3, num(1.0)));
+            return Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty));
+        }
         if args.len() != n {
             bail!(
                 "{}: new {name}: {} arguments, {n} expected",
@@ -666,6 +693,8 @@ impl<'a> Lowerer<'a> {
     /// the arguments checked against the manifest and numbers converted at the call. A value
     /// class argument is passed as its fields; a value class result is written into a new object.
     fn lower_extern_call(&mut self, ns: &str, name: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        // `X.name$n(..)` inside the facade is the native function of that name.
+        let name = name.strip_suffix("$n").unwrap_or(name);
         if ns == "GameObject"
             && name == "findObjectOfType"
             && let Some(e) = self.lower_find_object_of_type(c)?
@@ -2227,6 +2256,19 @@ impl<'a> Lowerer<'a> {
     /// `obj.prop` as an assignment target: a field, or a property with a setter.
     fn field_place(&mut self, obj: Expr, prop: &str, pre: &mut Vec<Stmt>) -> R<Place> {
         if let Ty::Handle(class) = obj.ty.strip().clone() {
+            if let Some((fid, ty)) = self.ext_setter(&class, prop)? {
+                let getter = self.ext_getter(&class, prop, &obj)?;
+                let tmp = self.new_local(obj.ty.clone());
+                pre.push(Stmt::Assign(tmp, obj));
+                // A facade getter, if any, is called when the old value is read (`+=`).
+                let _ = getter;
+                return Ok(Place::Accessor(
+                    self.var_expr(tmp),
+                    None,
+                    classes::Target::Direct(fid),
+                    ty,
+                ));
+            }
             let k = self.manifest.classes.get(&class);
             let getter = k.and_then(|k| k.getters.get(prop)).cloned();
             let setter = k.and_then(|k| k.setters.get(prop)).cloned();
@@ -2773,6 +2815,12 @@ impl<'a> Lowerer<'a> {
                         &c.arguments,
                         c.span.start,
                     );
+                }
+                if let Expression::Identifier(id) = &m.object
+                    && self.lookup(id.name.as_str()).is_none()
+                    && let Some(e) = self.ext_static_call(id.name.as_str(), method, c)?
+                {
+                    return Ok(e);
                 }
                 if let Expression::Identifier(id) = &m.object
                     && self.lookup(id.name.as_str()).is_none()

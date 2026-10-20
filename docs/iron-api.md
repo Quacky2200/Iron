@@ -565,3 +565,5 @@ handles `null`. Methods of one class with the same script name (`#[js_name]`) ar
    installed again by `install`). Handle objects do not survive a reload; the Rust state does.
 5. The old `__iron_op("scene.*" / "physics.*" / "audio.*")` paths and these native globals both exist: a game bundle should use the
    native globals **or** the `@iron/engine` classes, not hand ids between them.
+
+- **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/iron_ts/TODO.md` and `tools/iron_ts/src/lower/facade.ts`. `Camera.main()` is a native static (`CameraRef::main`).

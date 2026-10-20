@@ -60,7 +60,18 @@ pub fn prelude(has_game_object: bool, has_collider: bool) -> String {
     } else {
         String::new()
     };
-    format!("{collision}class Component {{\n  id: number = 0;\n{go}}}\n")
+    // `Collision2D` is the same data; a trigger hook that names `Collider` gets one holding the object.
+    let extra = if has_game_object {
+        let collider = if has_collider {
+            ""
+        } else {
+            "class Collider {\n  gameObject: GameObject;\n  constructor(gameObject: GameObject) {\n    this.gameObject = gameObject;\n  }\n}\n"
+        };
+        format!("type Collision2D = Collision;\n{collider}")
+    } else {
+        String::new()
+    };
+    format!("{collision}{extra}class Component {{\n  id: number = 0;\n{go}}}\n")
 }
 
 /// Helper functions for `getComponentInChildren(Class)` calls: one per class named, appended to
@@ -125,6 +136,8 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
     }
     let mut classes: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
     let mut registered: Vec<(String, (u32, u32))> = Vec::new();
+    // (class, method) -> the type its first parameter names.
+    let mut param_types: HashMap<(String, String), String> = HashMap::new();
     for st in &ret.program.body {
         let class = match st {
             Statement::ClassDeclaration(c) => Some(c),
@@ -149,6 +162,23 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
                     && let PropertyKey::StaticIdentifier(k) = &m.key
                 {
                     methods.push(k.name.to_string());
+                    // The type its first parameter names (`other: Collider`).
+                    let ann = m
+                        .value
+                        .params
+                        .items
+                        .first()
+                        .and_then(|p| p.type_annotation.as_ref())
+                        .and_then(|t| match &t.type_annotation {
+                            TSType::TSTypeReference(r) => match &r.type_name {
+                                TSTypeName::IdentifierReference(i) => Some(i.name.to_string()),
+                                _ => None,
+                            },
+                            _ => None,
+                        });
+                    if let Some(a) = ann {
+                        param_types.insert((id.name.to_string(), k.name.to_string()), a);
+                    }
                 }
             }
             classes.insert(id.name.to_string(), (parent, methods));
@@ -213,6 +243,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
         // The hooks the class or an ancestor defines.
         let mut chain = Some(name.clone());
         let mut have: Vec<&str> = Vec::new();
+        let mut contact_impl: HashMap<&str, (String, Option<String>)> = HashMap::new();
         let mut guard = 0;
         while let Some(cn) = chain {
             guard += 1;
@@ -226,9 +257,18 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
                             have.push(h);
                         }
                     }
+                    // `onCollisionEnter2D` is the same slot as `onCollisionEnter`.
                     for h in CONTACT_HOOKS {
-                        if methods.iter().any(|m| m == h) && !have.contains(&h) {
+                        let two_d = format!("{h}2D");
+                        let found = [h.to_string(), two_d]
+                            .into_iter()
+                            .find(|n| methods.iter().any(|m| m == n));
+                        if let Some(n) = found
+                            && !have.contains(&h)
+                        {
                             have.push(h);
+                            let ty = param_types.get(&(cn.clone(), n.clone())).cloned();
+                            contact_impl.insert(h, (n, ty));
                         }
                     }
                     chain = parent.clone();
@@ -239,7 +279,8 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
         if has_game_object {
             for h in CONTACT_HOOKS {
                 if have.contains(&h) {
-                    tail += &contact_thunk(name, h, has_collider);
+                    let (method, ty) = contact_impl[h].clone();
+                    tail += &contact_thunk(name, h, &method, ty.as_deref(), has_collider);
                 }
             }
         }
@@ -265,13 +306,25 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
 
 /// The thunk of a contact hook: the host passes the other object, its collider, the speed and
 /// the sensor flag as plain values and the thunk builds the `Collision`.
-fn contact_thunk(name: &str, h: &str, has_collider: bool) -> String {
+fn contact_thunk(
+    name: &str,
+    h: &str,
+    method: &str,
+    param: Option<&str>,
+    has_collider: bool,
+) -> String {
     let ct = if has_collider {
         "Collider | null"
     } else {
         "number"
     };
+    // A hook that takes the other `Collider` (a trigger's `other`) gets it; the rest a `Collision`.
+    let arg = if param == Some("Collider") && !has_collider {
+        "new Collider(other!)"
+    } else {
+        "new Collision(other, collider, speed, sensor !== 0)"
+    };
     format!(
-        "export function iron_hook_{name}_{h}(c: {name}, other: GameObject | null, collider: {ct}, speed: number, sensor: number): void {{ c.{h}(new Collision(other, collider, speed, sensor !== 0)); }}\n"
+        "export function iron_hook_{name}_{h}(c: {name}, other: GameObject | null, collider: {ct}, speed: number, sensor: number): void {{ c.{method}({arg}); }}\n"
     )
 }

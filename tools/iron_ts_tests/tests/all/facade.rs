@@ -59,3 +59,46 @@ fn game_object_options_are_local_to_the_parent_and_null_is_no_parent() {
         );
     });
 }
+
+// M9-TS-1702
+#[test]
+fn camera_rect_cull_distances_main_camera_and_screen_getters() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_cameraAndScreen()),
+            "0.25|0.25|14|0|true|60|true|true"
+        );
+    });
+}
+
+// M9-TS-1703
+#[test]
+fn positional_constructors_with_texture_and_create_primitive_options() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_constructors()), "1|0.25|true|4|1|Ball|2|2");
+    });
+}
+
+// M9-TS-1704
+#[test]
+fn lod_levels_cloth_options_and_root_objects_go_through_the_element_wise_api() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_structured()), "2|1|0|true|true");
+    });
+}
+
+// M9-TS-1705
+#[test]
+fn the_animator_controller_builder_takes_object_options() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_animatorController()), "2|2|2|Locomotion");
+    });
+}
+
+// M9-TS-1706
+#[test]
+fn sprite_create_with_a_rect_and_sprite_grid() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_sprites()), "40|true|2|10");
+    });
+}

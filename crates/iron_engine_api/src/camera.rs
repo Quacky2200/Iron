@@ -170,6 +170,18 @@ pub mod camera_api {
             })
         }
 
+        /// The main camera (`Camera.main`): the first active one that draws to the screen; none
+        /// without one.
+        pub fn main() -> CameraRef {
+            super::cameras()
+                .into_iter()
+                .find(|(_, d)| {
+                    d.target_texture.0 == 0
+                        && iron_scene::api::with_scene(|s| s.active(d.object)).unwrap_or(true)
+                })
+                .map_or(CameraRef(0), |(c, _)| c)
+        }
+
         /// The camera on an object, or none (what `go.getComponent(Camera)` does).
         pub fn find_on(object: ObjectId) -> CameraRef {
             super::camera_on(object).unwrap_or(CameraRef(0))

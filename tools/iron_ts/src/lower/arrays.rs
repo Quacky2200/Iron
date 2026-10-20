@@ -490,6 +490,14 @@ impl<'a> Lowerer<'a> {
                     return Ok(self.lower_remove_component(v));
                 }
             }
+            // `x.name$n(..)` inside the facade is the native method of that name.
+            let (m, native_only) = match m.strip_suffix("$n") {
+                Some(base) => (base, true),
+                None => (m, false),
+            };
+            if !native_only && let Some(e) = self.ext_method_call(class, m, &recv, c)? {
+                return Ok(e);
+            }
             let f = self
                 .manifest
                 .classes

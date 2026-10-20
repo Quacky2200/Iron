@@ -23,6 +23,7 @@ iron_script = { path = "../../crates/iron_script" }
 iron_ts_ui = { path = "../iron_ts_ui" }
 iron_ui = { path = "../../crates/iron_ui" }
 iron_ui_native = { path = "../../crates/iron_ui_native" }
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [dev-dependencies]
 iron_api = { path = "../../crates/iron_api" }
