@@ -439,6 +439,15 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `Primitives.create(kind, { name })` with `PrimitiveType.Cube` ... (`set_primitive_collider_hook` lets the physics side add the
   collider). Differences: `Cloth` rebuilds on a scene load or an explicit `rebuild()`, not on `onStart`; `LineRenderer.positions`
   and the other arrays are call-style (`setPositions`, `addPin`, `addSphereCollider`).
+- **Screen, QualitySettings, Gizmos** (`iron_engine_api`): `Screen` has `scale`, `aspect`, `fullScreenMode`, `setResolution(w, h, { mode,
+  refreshRate })`, `windowWidth` / `windowHeight`, `resolutionCount` + `resolutionWidth(i)` ..., `currentResolution...`,
+  `supportedFullScreenModeCount` / `...At(i)` and `onChange(f)` (token, `offChange`). The host feeds it with `screen::update(w, h,
+  scale)` (runs the listeners) and `set_display(..)` and takes the window changes scripts asked for with `take_requests()`.
+  `QualitySettings` has the named levels (`levelCount`, `levelName(i)`, `levelJson(i)`, `getQualityLevel()`, `setQualityLevel(i)` /
+  `setQualityLevelByName(name)`, `onLevelChanged(f)`) and every setting with the TypeScript's validation (unknown names ignored,
+  numbers clamped). The game's `iron.quality` manifest goes through `screen::configure_quality(&json)`, the player's saved choice
+  (`iron.quality` in PlayerPrefs) through `apply_default_quality()`; the renderer reads `quality()` when `quality_version()` changed.
+  `Gizmos` has `drawRay`, `drawWireCube`, `drawWireDisc`, `drawWireSphere`, `drawFrustum`, `matrix` and `lineCount`.
 - **Settings and behaviours.** `RenderSettings` (namespace properties: `ambientLight`, `ambientMode`, `reflectionIntensity`,
   `skyboxEnabled` + `skyZenith` / `skyHorizon` / `skyGround` / `skySunDirection` / `skyHasSun` / `skySunColor` / `skySunSize`,
   `bloomEnabled` + `bloomThreshold` / `bloomIntensity` / `bloomScatter`, `tonemapping`, `postExposure`; the host reads

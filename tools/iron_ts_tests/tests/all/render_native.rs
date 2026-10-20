@@ -349,6 +349,93 @@ fn effect_components_round_trip_through_scene_files() {
     reset();
 }
 
+// M9-TS-1236
+#[test]
+fn gizmo_shapes_go_through_the_matrix_and_count_their_lines() {
+    in_every_gc_mode(|| unsafe {
+        // 12 box edges + 1 ray + 3 circles of 48 + 12 frustum edges.
+        assert_eq!(ts_rdn_gizmos(), 169.0);
+        let before = iron_engine_api::gizmos::take_frame();
+        assert!(before.is_none(), "nothing was presented");
+    });
+}
+
+// M9-TS-1237
+#[test]
+fn screen_requests_go_to_the_host_and_change_listeners_run() {
+    in_every_gc_mode(|| unsafe {
+        use iron_engine_api::screen;
+        screen::reset();
+        assert_eq!(
+            text(ts_rdn_screenApi()),
+            "1280|true|FullScreenWindow|1.78|0"
+        );
+        assert_eq!(
+            screen::take_requests(),
+            [
+                screen::ScreenRequest {
+                    mode: "FullScreenWindow".into(),
+                    width: 0,
+                    height: 0,
+                    refresh_rate: 0.0
+                },
+                screen::ScreenRequest {
+                    mode: "FullScreenWindow".into(),
+                    width: 800,
+                    height: 600,
+                    refresh_rate: 60.0
+                },
+            ]
+        );
+        screen::update(1024, 768, 2.0);
+        screen::set_size(640, 480);
+        assert_eq!(ts_rdn_screenChangeCount(), 2.0);
+        assert_eq!(screen::state().scale, 2.0);
+        screen::set_display(
+            "Windowed",
+            (900, 700),
+            Vec::new(),
+            screen::Resolution::default(),
+            Vec::new(),
+        );
+        assert!(!screen::state().full_screen);
+        screen::reset();
+    });
+}
+
+// M9-TS-1238
+#[test]
+fn quality_levels_validate_remember_and_tell_listeners() {
+    in_every_gc_mode(|| unsafe {
+        use iron_engine_api::{prefs, screen};
+        screen::reset();
+        prefs::reset();
+        screen::configure_quality(&serde_json::json!({
+            "default": "Medium",
+            "levels": { "Low": { "renderScale": 0.6 } }
+        }));
+        assert_eq!(screen::quality().name, "Medium");
+        assert_eq!(text(ts_rdn_quality()), "1|8|3|Medium|4|all");
+        // Switching to Low (0 + 1) and to Ultra (3 + 1) tells the listener; "bogus" shadows are ignored.
+        assert_eq!(ts_rdn_levelChangeCount(), 1.0 + 4.0);
+        let q = screen::quality();
+        assert_eq!(
+            (q.name.as_str(), q.anti_aliasing, q.shadow_resolution),
+            ("Ultra", 8, 4096)
+        );
+        assert!(prefs::json("iron.quality").unwrap().contains("Ultra"));
+        // The saved choice comes back; the default applies without a save.
+        screen::configure_quality(&serde_json::json!({ "default": "Low" }));
+        assert_eq!(screen::quality().name, "Low");
+        screen::apply_default_quality();
+        assert_eq!(screen::quality().name, "Ultra");
+        let low = screen::quality_version();
+        assert!(low > 0);
+        screen::reset();
+        prefs::reset();
+    });
+}
+
 // M9-TS-1226
 //
 // The example game's scene file loads its Light, MeshRenderer (primitive mesh, inline Material)

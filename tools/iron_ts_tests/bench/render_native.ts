@@ -154,6 +154,50 @@ export function primitives(): string {
   return `${cube.name}|${s.name}|${cube.getComponent(MeshRenderer).mesh.primitive}`;
 }
 
+export function gizmos(): number {
+  Gizmos.clear();
+  Gizmos.color = new Color(1, 0, 0, 1);
+  Gizmos.drawWireCube(new Vector3(0, 0, 0), new Vector3(2, 2, 2));
+  Gizmos.drawRay(new Vector3(0, 0, 0), new Vector3(0, 1, 0));
+  Gizmos.matrix = Matrix4x4.trs(new Vector3(5, 0, 0), Quaternion.identity, new Vector3(1, 1, 1));
+  Gizmos.drawWireSphere(new Vector3(0, 0, 0), 1);
+  Gizmos.drawFrustum(new Vector3(0, 0, 0), 60, 10, 1, 1.5);
+  return Gizmos.lineCount;
+}
+
+let screenChanges = 0;
+
+export function screenChangeCount(): number {
+  return screenChanges;
+}
+
+export function screenApi(): string {
+  Screen.onChange(() => {
+    screenChanges += 1;
+  });
+  Screen.fullScreenMode = "FullScreenWindow";
+  Screen.setResolution(800, 600, { refreshRate: 60 });
+  return `${Screen.width}|${Screen.fullScreen}|${Screen.fullScreenMode}|${Screen.aspect.toFixed(2)}|${Screen.resolutionCount}`;
+}
+
+let levelChanges = 0;
+
+export function levelChangeCount(): number {
+  return levelChanges;
+}
+
+export function quality(): string {
+  QualitySettings.onLevelChanged((level: number) => {
+    levelChanges += level + 1;
+  });
+  QualitySettings.setQualityLevelByName("Low");
+  const low = QualitySettings.antiAliasing;
+  QualitySettings.antiAliasing = 3;
+  QualitySettings.shadows = "bogus";
+  QualitySettings.setQualityLevel(3);
+  return `${low}|${QualitySettings.antiAliasing}|${QualitySettings.getQualityLevel()}|${QualitySettings.levelName(1)}|${QualitySettings.levelCount}|${QualitySettings.shadows}`;
+}
+
 export function others(): string {
   const go = new GameObject("Stuff");
   const mirror = go.addComponent(Mirror, { cullingMask: 6 });
