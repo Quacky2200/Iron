@@ -240,11 +240,13 @@ class Parade extends Component {
     this.star = star;
     this.enterAct = (special.enter && named(ENTRANCES, special.enter)) || weighted(ENTRANCES);
     this.exitAct = (special.exit && named(EXITS, special.exit)) || weighted(EXITS);
-    const pose = POSES[special.pose ?? pick(star.poses)];
+    this.reaction = special.react ?? randomReaction();
+    // Plain applause and cheering are for taking a bow.
+    const plain = this.reaction === "applause" || this.reaction === "cheer";
+    const pose = POSES[special.pose ?? (plain ? "bow" : pick(star.poses))];
     // A longer stay repeats the pose.
     this.poseAct = special.extra ? { ...pose, dur: pose.dur + special.extra, at: (t) => pose.at(t % pose.dur) } : pose;
     this.scene = special.scene ?? (special.calm ? undefined : randomScene());
-    this.reaction = special.react ?? randomReaction();
     this.reactAt = special.reactAt ?? 0.5;
     this.reacted = false;
     this.side = Math.random() < 0.5 ? 1 : -1;
@@ -298,9 +300,12 @@ class Parade extends Component {
     switch (kind) {
       case "applause":
         sfx.play("clap", 0.9);
-        this.effects.celebrate(false);
         break;
       case "cheer":
+        sfx.play("cheer", 0.9);
+        sfx.play("clap", 0.5);
+        break;
+      case "party":
         sfx.play("cheer", 0.9);
         sfx.play("clap", 0.5);
         this.burst(x, y, 40);
