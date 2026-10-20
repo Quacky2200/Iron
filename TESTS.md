@@ -1143,3 +1143,5 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-719 | Integration | An engine object (handle) stringifies as `{}`; script fields beside it are kept. |
 | M9-TS-720..722 | Integration | Stack values (`iron_ts::sroa`): a vector built, combined and read in one function is not allocated; one that is returned or stored stays an object; aliases that change stay one object. |
 | M9-TS-723..725 | Integration | Value classes (`Vector3`, `Color`, `Quaternion`, ...) stringify compactly as their numbers (`[1,2,3]`) and parse back from that or from the object form (`{"x":1,..}`, left-out fields 0, alpha 1) (a difference to the TypeScript classes, by decision). |
+| M9-TS-726 | Integration | A `Vector2[]` is passed to the engine in place (`AnimationCurve.fromPoints(points, mode?)`; modes linear / step; default linear). |
+| M9-API-48 | Unit | `script_f64s` reads a script `number[]` in place; null and empty give an empty slice. |

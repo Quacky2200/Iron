@@ -38,6 +38,10 @@ pub enum Ty {
     /// [`script_str`]) and a result goes out through [`return_string`]. The Rust types are `&str`
     /// and `String`.
     Str,
+    /// `number[]`, passed as the script array.
+    F64s,
+    /// An array of a value class (its TypeScript name, and that name with `[]`).
+    Values(&'static str, &'static str),
 }
 
 impl Ty {
@@ -49,6 +53,8 @@ impl Ty {
             Ty::F64 | Ty::F32 | Ty::I32 | Ty::U32 => "number",
             Ty::Handle(name) | Ty::Value(name) => name,
             Ty::Str => "string",
+            Ty::F64s => "number[]",
+            Ty::Values(_, arr) => arr,
         }
     }
 
@@ -64,6 +70,8 @@ impl Ty {
             Ty::Handle(n) => format!("handle:{n}"),
             Ty::Value(n) => format!("value:{n}"),
             Ty::Str => "string".into(),
+            Ty::F64s => "f64s".into(),
+            Ty::Values(n, _) => format!("values:{n}"),
         }
     }
 }
@@ -216,6 +224,62 @@ pub struct ScriptStr {
 }
 
 const SCRIPT_STR_WELL_FORMED: u64 = 2;
+
+/// The numbers of a script `number[]`, in place. A null array is empty.
+///
+/// # Safety
+/// `p` must be null or a live script array of numbers that stays alive and unchanged while the
+/// slice is used.
+pub unsafe fn script_f64s<'a>(p: *const u8) -> &'a [f64] {
+    if p.is_null() {
+        return &[];
+    }
+    // SAFETY: by contract: header, length, capacity, then the data pointer of 8-byte slots.
+    unsafe {
+        let a = &*(p as *const ScriptArray);
+        if a.len <= 0 || a.data.is_null() {
+            return &[];
+        }
+        std::slice::from_raw_parts(a.data as *const f64, a.len as usize)
+    }
+}
+
+/// The elements of a script array of value-class objects (`Vector3[]`), read into `T`s.
+///
+/// # Safety
+/// `p` must be null or a live script array whose elements are live objects of the value class
+/// (a header word and `N` number fields).
+pub unsafe fn script_values<const N: usize, T: ValueType<N>>(p: *const u8) -> Vec<T> {
+    if p.is_null() {
+        return Vec::new();
+    }
+    // SAFETY: by contract.
+    unsafe {
+        let a = &*(p as *const ScriptArray);
+        if a.len <= 0 || a.data.is_null() {
+            return Vec::new();
+        }
+        (0..a.len as usize)
+            .map(|i| {
+                let obj = *(a.data as *const *const f64).add(i);
+                let mut parts = [0.0f64; N];
+                for (k, part) in parts.iter_mut().enumerate() {
+                    *part = if obj.is_null() { 0.0 } else { *obj.add(1 + k) };
+                }
+                T::from_parts(parts)
+            })
+            .collect()
+    }
+}
+
+/// The layout of a script array (`iron_ts_rt::Array`).
+#[repr(C)]
+struct ScriptArray {
+    header: u64,
+    len: i64,
+    cap: i64,
+    data: *mut u8,
+}
 
 /// A script string as Rust text, borrowed when it has no lone surrogates (the normal case, no
 /// copy) and otherwise copied with U+FFFD for each lone surrogate. A null pointer is "".
@@ -628,4 +692,31 @@ pub fn camel(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod array_tests {
+    use super::*;
+
+    // M9-API-48
+    #[test]
+    fn a_script_number_array_is_read_in_place() {
+        let mut data = [1.5f64, 2.5, 3.5];
+        let a = ScriptArray {
+            header: 0,
+            len: 3,
+            cap: 3,
+            data: data.as_mut_ptr() as *mut u8,
+        };
+        let s = unsafe { script_f64s(&a as *const ScriptArray as *const u8) };
+        assert_eq!(s, [1.5, 2.5, 3.5]);
+        assert!(unsafe { script_f64s(std::ptr::null()) }.is_empty());
+        let empty = ScriptArray {
+            header: 0,
+            len: 0,
+            cap: 0,
+            data: std::ptr::null_mut(),
+        };
+        assert!(unsafe { script_f64s(&empty as *const ScriptArray as *const u8) }.is_empty());
+    }
 }

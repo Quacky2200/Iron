@@ -173,6 +173,10 @@ enum Kind {
     Value(usize),
     /// `&str` (a parameter) or `String` (a result); the flag is true for `String`.
     Str(bool),
+    /// `&[f64]`: a script `number[]`, read in place.
+    F64s,
+    /// `&[V]` for a declared value type (index into `Args::values`): a script `Vector3[]`.
+    Values(usize),
 }
 
 fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
@@ -186,6 +190,26 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
         && rust_name_of(&r.elem).as_deref() == Some("str")
     {
         return Ok(Kind::Str(false));
+    }
+    if let Type::Reference(r) = ty
+        && r.mutability.is_none()
+        && let Type::Slice(s) = &*r.elem
+    {
+        let elem = rust_name_of(&s.elem);
+        if elem.as_deref() == Some("f64") {
+            return Ok(Kind::F64s);
+        }
+        if let Some(i) = args
+            .values
+            .iter()
+            .position(|v| rust_name_of(&v.rust).as_deref() == elem.as_deref())
+        {
+            return Ok(Kind::Values(i));
+        }
+        return Err(syn::Error::new(
+            ty.span(),
+            "a slice parameter is `&[f64]` or `&[V]` for a type declared in `values(..)`",
+        ));
     }
     let Some(name) = rust_name_of(ty) else {
         return Err(syn::Error::new(
@@ -255,6 +279,12 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
             let ts = &args.values[*i].ts;
             quote!(::iron_api::Ty::Value(#ts))
         }
+        Kind::F64s => quote!(::iron_api::Ty::F64s),
+        Kind::Values(i) => {
+            let ts = &args.values[*i].ts;
+            let arr = format!("{ts}[]");
+            quote!(::iron_api::Ty::Values(#ts, #arr))
+        }
     }
 }
 
@@ -268,7 +298,7 @@ fn abi_ty(k: &Kind) -> TokenStream2 {
         Kind::I32 => quote!(i32),
         Kind::U32 => quote!(u32),
         Kind::Handle(..) => quote!(u64),
-        Kind::Str(_) => quote!(*const u8),
+        Kind::Str(_) | Kind::F64s | Kind::Values(_) => quote!(*const u8),
     }
 }
 
@@ -693,6 +723,19 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
                 quote!(&*unsafe { ::iron_api::script_str(#name) })
             };
             (vec![quote!(#name: *const u8)], conv)
+        }
+        Kind::F64s => (
+            vec![quote!(#name: *const u8)],
+            quote!(unsafe { ::iron_api::script_f64s(#name) }),
+        ),
+        Kind::Values(i) => {
+            let v = &args.values[*i];
+            let n = v.fields.len();
+            let rust = &v.rust;
+            (
+                vec![quote!(#name: *const u8)],
+                quote!(&unsafe { ::iron_api::script_values::<#n, #rust>(#name) }),
+            )
         }
         other => {
             let t = abi_ty(other);

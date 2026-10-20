@@ -415,6 +415,10 @@ pub enum ExtTy {
     Ptr,
     /// An array of handles of this type; the engine reads the 64-bit ids.
     HandleArr(String),
+    /// A `number[]`, read in place by the engine.
+    F64Arr,
+    /// An array of a value class (`Vector3[]`): the engine reads each element's fields.
+    ValueArr(String),
 }
 
 impl ExtTy {
@@ -428,6 +432,9 @@ impl ExtTy {
             ExtTy::Str => Ty::Str,
             ExtTy::Ptr => Ty::JsValue,
             ExtTy::HandleArr(n) => Ty::Arr(Box::new(Ty::Handle(n.clone()))),
+            ExtTy::F64Arr => Ty::Arr(Box::new(Ty::Num)),
+            // The element struct is made by the lowering (it knows the struct ids).
+            ExtTy::ValueArr(_) => Ty::JsValue,
             ExtTy::Fn(r) => Ty::Fn(Box::new(FnTy {
                 params: vec![],
                 ret: r.to_ir(),

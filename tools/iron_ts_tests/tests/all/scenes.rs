@@ -422,3 +422,16 @@ fn value_classes_parse_from_objects_too() {
         assert_eq!(ts_scf_parseColorAlpha(s(r#"{"a":0.25}"#)), 0.25);
     });
 }
+
+// M9-TS-726
+//
+// A `Vector2[]` crosses the boundary in place: `AnimationCurve.fromPoints(points, mode)`.
+#[test]
+fn a_vector_array_reaches_the_engine() {
+    in_every_gc_mode(|_| unsafe {
+        assert_eq!(ts_scf_curveFromPoints(s("linear"), 0.5), 5.0);
+        assert_eq!(ts_scf_curveFromPoints(s("linear"), 1.5), 5.0);
+        assert_eq!(ts_scf_curveFromPoints(s("step"), 0.5), 0.0);
+        assert_eq!(ts_scf_curveDefaultMode(1.0), 2.0);
+    });
+}

@@ -70,6 +70,10 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
         other => {
             if other == "ptr" {
                 ExtTy::Ptr
+            } else if other == "f64s" {
+                ExtTy::F64Arr
+            } else if let Some(n) = other.strip_prefix("values:") {
+                ExtTy::ValueArr(n.to_string())
             } else if let Some(n) = other.strip_prefix("handles:") {
                 ExtTy::HandleArr(n.to_string())
             } else if let Some(inner) = other.strip_prefix("fn:") {

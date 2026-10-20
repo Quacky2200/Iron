@@ -582,6 +582,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn ext_ir(&mut self, t: &ExtTy) -> Ty {
         match t {
             ExtTy::Value(n) => Ty::Obj(self.value_struct(n)),
+            ExtTy::ValueArr(n) => Ty::Arr(Box::new(Ty::Obj(self.value_struct(n)))),
             other => other.to_ir(),
         }
     }
@@ -672,6 +673,14 @@ impl<'a> Lowerer<'a> {
             Ty::Arr(e) if matches!(&**e, Ty::Handle(_)) => {
                 let Ty::Handle(n) = &**e else { unreachable!() };
                 ExtTy::HandleArr(n.clone())
+            }
+            Ty::Arr(e) if **e == Ty::Num => ExtTy::F64Arr,
+            Ty::Arr(e)
+                if matches!(&**e, Ty::Obj(sid)
+                    if self.manifest.values.contains_key(&self.m.structs[*sid].name)) =>
+            {
+                let Ty::Obj(sid) = &**e else { unreachable!() };
+                ExtTy::ValueArr(self.m.structs[*sid].name.clone())
             }
             Ty::Nullable(inner) => match &**inner {
                 Ty::Num => ExtTy::F64,

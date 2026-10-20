@@ -44,7 +44,9 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
         | ExtTy::Str
         | ExtTy::Fn(_)
         | ExtTy::Ptr
-        | ExtTy::HandleArr(_) => types::I64,
+        | ExtTy::HandleArr(_)
+        | ExtTy::F64Arr
+        | ExtTy::ValueArr(_) => types::I64,
     }
 }
 

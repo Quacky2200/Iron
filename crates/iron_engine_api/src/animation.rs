@@ -76,9 +76,12 @@ pub mod keyframe_api {
 }
 
 #[iron_api(namespace = "AnimationCurve", handles(AnimationCurve = CurveRef), values(
-    Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64]))]
+    Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64],
+    Vector2 = V2 [x: f64, y: f64]))]
 pub mod animation_curve_api {
     use super::{Curve, CurveRef, Keyframe, WrapMode, new_curve, with_world, zero_if_nan};
+    use iron_animation::PointMode;
+    use iron_math::V2;
 
     impl CurveRef {
         /// An empty curve (add keys with `addKey`).
@@ -99,6 +102,20 @@ pub mod animation_curve_api {
         /// `value` from t0 to t1.
         pub fn constant(t0: f64, t1: f64, value: f64) -> CurveRef {
             new_curve(Curve::constant(t0, t1, value))
+        }
+
+        /// Keys through points (x is the time, y the value) with tangents made to match: `"linear"`
+        /// (the default), `"smooth"` or `"step"`. A difference to the TypeScript class, which takes
+        /// `[time, value]` pairs.
+        #[optional(mode)]
+        pub fn from_points(points: &[V2], mode: &str) -> CurveRef {
+            let pts: Vec<(f64, f64)> = points.iter().map(|p| (p.x, p.y)).collect();
+            let mode = if mode.is_empty() {
+                PointMode::Linear
+            } else {
+                PointMode::parse(mode).unwrap_or(PointMode::Linear)
+            };
+            new_curve(Curve::from_points(&pts, mode))
         }
 
         /// Adds a key (flat tangents), keeping them in time order; returns its index. For

@@ -152,3 +152,14 @@ export function parseColorAlpha(text: string): number {
   const c = JSON.parse(text) as Color;
   return c.a;
 }
+
+export function curveFromPoints(mode: string, t: number): number {
+  const pts: Vector2[] = [new Vector2(0, 0), new Vector2(1, 10), new Vector2(2, 0)];
+  const c = AnimationCurve.fromPoints(pts, mode);
+  return c.evaluate(t);
+}
+
+export function curveDefaultMode(t: number): number {
+  const pts: Vector2[] = [new Vector2(0, 0), new Vector2(2, 4)];
+  return AnimationCurve.fromPoints(pts).evaluate(t);
+}
