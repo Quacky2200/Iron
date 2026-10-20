@@ -374,8 +374,17 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   particles, panels, text and 2D shapes fog like meshes.
 - **Distance.** Perspective cameras measure straight to the point, so turning the camera doesn't move
   the fog. Orthographic cameras use depth along the view, so a 2D scene fogs by layer.
-- **Left clear.** The background fill (colour or skybox), the editor grid and gizmo lines. Match the
-  camera's background colour to `fogColor` for a seamless horizon.
+- **Height fog.** `RenderSettings.heightFog` (`{ density, baseHeight, falloff }`, `null` by default, used
+  only while `fog` is on) sends a seventh `render.fog` argument and sets `Fog.height: Option<HeightFog>`
+  and `GpuGlobals.fog_height` (x density, y base height, z falloff, w on). The density is `density` per
+  metre at `baseHeight`, thinning by e every `1 / falloff` metres above it and thickening below.
+  `height_clear(a, b)` integrates it exactly along a segment, and `fog_amount` multiplies it into the
+  distance fog's transmittance. Orthographic views measure from the camera plane. For height fog alone,
+  use the exponential mode with `fogDensity` 0.
+- **Background.** Distance fog leaves the background fill (colour or skybox) clear. `fs_fill` applies height
+  fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
+  to `fogColor` for a seamless horizon with distance fog alone.
+- **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze.
 
@@ -440,7 +449,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
-| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end`, or `0 null` for clear air |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null`, or `0 null` for clear air |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
@@ -734,7 +743,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
