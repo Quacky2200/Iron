@@ -11,12 +11,18 @@ use crate::{
     Value, tracing_log_sink,
 };
 
+/// Installs a native API into a context: what `#[iron_api(.., quickjs)]` generates as
+/// `register_quickjs` (for example `iron_scene::api::scene_api::register_quickjs`).
+pub type NativeInit = for<'js> fn(&Ctx<'js>) -> rquickjs::Result<()>;
+
 /// The QuickJS backend (via `rquickjs`). Interpreter only, so it also works on iOS.
 pub struct QuickJsRuntime {
     // Field order matters: the context must drop before its runtime.
     context: Context,
     runtime: Runtime,
     shared: Rc<RefCell<Shared>>,
+    /// Native APIs to install again in every new context (`reset()`).
+    natives: Vec<NativeInit>,
 }
 
 /// State the native functions write into; survives `reset()` (but is cleared by it).
@@ -36,12 +42,23 @@ impl QuickJsRuntime {
             errors: Vec::new(),
             log: tracing_log_sink(),
         }));
-        let (runtime, context) = new_context(&shared);
+        let (runtime, context) = new_context(&shared, &[]);
         Self {
             context,
             runtime,
             shared,
+            natives: Vec::new(),
         }
+    }
+
+    /// Installs a native API (`register_quickjs` of an `#[iron_api(.., quickjs)]` module) in the
+    /// current context, and again in every context `reset()` makes. Engine handles in these APIs
+    /// are opaque objects (see `iron_api::qjs`). Register the value classes' modules
+    /// (`iron_math`) before the ones that use them.
+    pub fn add_native(&mut self, init: NativeInit) -> Result<(), ScriptError> {
+        self.natives.push(init);
+        self.context
+            .with(|ctx| init(&ctx).map_err(|e| to_script_error(&ctx, e)))
     }
 
     /// Runs pending promise jobs and microtasks until the queue is empty.
@@ -147,7 +164,7 @@ impl ScriptRuntime for QuickJsRuntime {
             shared.commits.clear();
             shared.errors.clear();
         }
-        let (runtime, context) = new_context(&self.shared);
+        let (runtime, context) = new_context(&self.shared, &self.natives);
         // Assign the context first so the old context drops before the old runtime.
         self.context = context;
         self.runtime = runtime;
@@ -158,7 +175,7 @@ impl ScriptRuntime for QuickJsRuntime {
     }
 }
 
-fn new_context(shared: &Rc<RefCell<Shared>>) -> (Runtime, Context) {
+fn new_context(shared: &Rc<RefCell<Shared>>, natives: &[NativeInit]) -> (Runtime, Context) {
     let runtime = Runtime::new().expect("QuickJS runtime");
     let context = Context::full(&runtime).expect("QuickJS context");
     context.with(|ctx| {
@@ -168,6 +185,11 @@ fn new_context(shared: &Rc<RefCell<Shared>>) -> (Runtime, Context) {
         ctx.eval_with_options::<(), _>(PRELUDE, opts)
             .map_err(|e| to_script_error(&ctx, e))
             .expect("Iron prelude");
+        for init in natives {
+            init(&ctx)
+                .map_err(|e| to_script_error(&ctx, e))
+                .expect("native API");
+        }
     });
     (runtime, context)
 }

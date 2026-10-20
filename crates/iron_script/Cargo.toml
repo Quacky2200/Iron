@@ -11,6 +11,7 @@ thiserror = "2.0.21"
 tracing = "0.1.44"
 
 [dev-dependencies]
+iron_api = { path = "../iron_api" }
 criterion = "0.8.2"
 
 [[bench]]

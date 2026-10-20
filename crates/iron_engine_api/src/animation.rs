@@ -75,7 +75,7 @@ pub mod keyframe_api {
     }
 }
 
-#[iron_api(namespace = "AnimationCurve", handles(AnimationCurve = CurveRef), values(
+#[iron_api(namespace = "AnimationCurve", quickjs, handles(AnimationCurve = CurveRef), values(
     Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64],
     Vector2 = V2 [x: f64, y: f64]))]
 pub mod animation_curve_api {
@@ -211,7 +211,7 @@ pub mod animation_curve_api {
     }
 }
 
-#[iron_api(namespace = "AnimationClip", handles(
+#[iron_api(namespace = "AnimationClip", quickjs, handles(
     AnimationClip = ClipRef, AnimationCurve = CurveRef, GameObject = ObjectId))]
 pub mod animation_clip_api {
     use super::{
@@ -508,7 +508,7 @@ pub fn reset() {
     EVENTS.with(|e| e.borrow_mut().clear());
 }
 
-#[iron_api(namespace = "Animation", handles(
+#[iron_api(namespace = "Animation", quickjs, handles(
     Animation = AnimationRef, AnimationState = StateRef, AnimationClip = ClipRef, GameObject = ObjectId))]
 pub mod animation_component_api {
     use super::{
@@ -632,7 +632,7 @@ pub mod animation_component_api {
     }
 }
 
-#[iron_api(namespace = "AnimationState", handles(AnimationState = StateRef, AnimationClip = ClipRef))]
+#[iron_api(namespace = "AnimationState", quickjs, handles(AnimationState = StateRef, AnimationClip = ClipRef))]
 pub mod animation_state_api {
     use super::{ClipRef, StateRef, state};
     use iron_animation::WrapMode;
@@ -717,7 +717,7 @@ pub mod animation_state_api {
     }
 }
 
-#[iron_api(namespace = "Animations")]
+#[iron_api(namespace = "Animations", quickjs)]
 pub mod animations_api {
     use super::{EVENTS, update};
 

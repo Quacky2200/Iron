@@ -56,7 +56,7 @@ fn nan_or(x: Option<f64>) -> f64 {
     x.unwrap_or(f64::NAN)
 }
 
-#[iron_api(namespace = "AnimationParameter", handles(AnimationParameter = ParameterRef))]
+#[iron_api(namespace = "AnimationParameter", quickjs, handles(AnimationParameter = ParameterRef))]
 pub mod animation_parameter_api {
     use super::*;
 
@@ -116,7 +116,7 @@ pub mod animation_parameter_api {
     }
 }
 
-#[iron_api(namespace = "AnimationCondition", handles(AnimationCondition = ConditionRef))]
+#[iron_api(namespace = "AnimationCondition", quickjs, handles(AnimationCondition = ConditionRef))]
 pub mod animation_condition_api {
     use super::*;
 
@@ -183,7 +183,7 @@ fn transition<R>(t: TransitionRef, f: impl FnOnce(&mut Transition) -> R) -> Opti
     with_world(|w| w.graphs.transition_mut(TransitionId(t.0 as u32)).map(f))
 }
 
-#[iron_api(namespace = "AnimationTransition", handles(
+#[iron_api(namespace = "AnimationTransition", quickjs, handles(
     AnimationTransition = TransitionRef, AnimationCondition = ConditionRef))]
 pub mod animation_transition_api {
     use super::*;
@@ -279,7 +279,7 @@ pub mod animation_transition_api {
     }
 }
 
-#[iron_api(namespace = "AnimationBlendTree", handles(
+#[iron_api(namespace = "AnimationBlendTree", quickjs, handles(
     AnimationBlendTree = BlendRef, AnimationClip = ClipRef))]
 pub mod animation_blend_tree_api {
     use super::*;
@@ -337,7 +337,7 @@ fn node<R>(n: NodeRef, f: impl FnOnce(&mut Node) -> R) -> Option<R> {
     with_world(|w| w.graphs.node_mut(NodeId(n.0 as u32)).map(f))
 }
 
-#[iron_api(namespace = "AnimationNode", handles(
+#[iron_api(namespace = "AnimationNode", quickjs, handles(
     AnimationNode = NodeRef, AnimationClip = ClipRef, AnimationBlendTree = BlendRef))]
 pub mod animation_node_api {
     use super::*;
@@ -424,7 +424,7 @@ fn controller<R>(c: ControllerRef, f: impl FnOnce(&mut Controller) -> R) -> Opti
     with_world(|w| w.graphs.controller_mut(ControllerId(c.0 as u32)).map(f))
 }
 
-#[iron_api(namespace = "AnimationController", handles(
+#[iron_api(namespace = "AnimationController", quickjs, handles(
     AnimationController = ControllerRef, AnimationParameter = ParameterRef,
     AnimationNode = NodeRef, AnimationTransition = TransitionRef, AnimationBuilder = BuilderRef))]
 pub mod animation_controller_api {
@@ -559,7 +559,7 @@ fn builder<R>(b: BuilderRef, f: impl FnOnce(&mut BuilderState) -> R) -> Option<R
     })
 }
 
-#[iron_api(namespace = "AnimationBuilder", handles(
+#[iron_api(namespace = "AnimationBuilder", quickjs, handles(
     AnimationBuilder = BuilderRef, AnimationController = ControllerRef, AnimationClip = ClipRef))]
 pub mod animation_builder_api {
     use super::*;
@@ -706,7 +706,7 @@ fn animator<R>(
     })
 }
 
-#[iron_api(namespace = "Animator", handles(
+#[iron_api(namespace = "Animator", quickjs, handles(
     Animator = AnimatorRef, AnimationController = ControllerRef, GameObject = ObjectId))]
 pub mod animator_api {
     use super::*;

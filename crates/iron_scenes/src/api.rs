@@ -31,6 +31,7 @@ pub fn manifests() -> Vec<String> {
 
 #[iron_api(
     namespace = "SceneManager",
+    quickjs,
     handles(Scene = SceneRef, Prefab = PrefabRef, GameObject = ObjectId)
 )]
 pub mod scene_manager_api {

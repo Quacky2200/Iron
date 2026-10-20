@@ -166,10 +166,17 @@ fn quickjs_gets_typed_functions_under_the_namespace() {
         assert_eq!(sum, 3.5);
         let big: bool = ctx.eval("Demo.isBig(1000)").unwrap();
         assert!(big);
-        let parent: f64 = ctx.eval("Demo.parentOf(7)").unwrap();
-        assert_eq!(parent, 8.0);
+        // Handles are opaque objects (see handles_quickjs.rs); the host makes one from an id.
+        for (name, raw) in [("o3", 3), ("o3b", 3), ("o4", 4), ("o7", 7)] {
+            let h = iron_api::qjs::handle_new(&ctx, "GameObject", raw).unwrap();
+            ctx.globals().set(name, h).unwrap();
+        }
+        let parent: String = ctx
+            .eval("JSON.stringify([Demo.parentOf(o7) instanceof GameObject, Demo.parentOf(o7)])")
+            .unwrap();
+        assert_eq!(parent, "[true,{}]");
         let same: bool = ctx
-            .eval("Demo.sameObject(3, 3) && !Demo.sameObject(3, 4)")
+            .eval("Demo.sameObject(o3, o3b) && !Demo.sameObject(o3, o4)")
             .unwrap();
         assert!(same);
         ctx.eval::<(), _>("Demo.setTimeScale(0.25)").unwrap();

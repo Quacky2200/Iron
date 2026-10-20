@@ -17,6 +17,8 @@ pub mod callback;
 pub use callback::Callback;
 #[cfg(feature = "quickjs")]
 pub use rquickjs;
+#[cfg(feature = "quickjs")]
+pub mod qjs;
 
 /// A type that can cross the boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

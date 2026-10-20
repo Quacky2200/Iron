@@ -136,8 +136,7 @@ Rust newtype: `Transform` is `TransformRef(ObjectId)` and shares the object's ra
 - **Shims.** `iron_<Class>_<jsName>` with `this: u64` first: `iron_Transform_setPosition(this, x, y, z)`
   (a value result still goes through a trailing out pointer). A setter is `set` plus the capitalised
   property name. Namespace functions keep `iron_<Namespace>_<jsName>`.
-- **QuickJS.** Bindings are generated only for namespace functions; classes are not available there
-  (a handle is a plain number).
+- **QuickJS.** A class is a JS class whose instances are opaque handle objects; see "Handles in QuickJS".
 
 ## What the macro adds
 
@@ -161,10 +160,11 @@ generic; `self` is allowed only in a handle class's `impl`, by value.
 | `i32` / `u32` | `number` | `i32` / `u32` | `i32` / `u32` |
 | `bool` | `boolean` | `bool` | `bool` |
 | `()` | `void` | `()` | `()` |
-| declared handle | `number & { readonly __handle: "Name" }` | `u64` (`Handle::to_raw`) | `f64` number, cast to `u64` for `from_raw` |
-| declared value class | a class with the declared fields (`new Vector3(1, 2, 3)`) | one scalar per field as parameters (`v_0, v_1, v_2`); a result through a trailing out pointer to room for the fields | not available: `quickjs` together with `values(..)` is a compile error |
+| declared handle | `number & { readonly __handle: "Name" }` (a class: `Name`) | `u64` (`Handle::to_raw`) | an opaque `Name` object, `null` for 0 |
+| declared value class | a class with the declared fields (`new Vector3(1, 2, 3)`) | one scalar per field as parameters (`v_0, v_1, v_2`); a result through a trailing out pointer to room for the fields | a `Vector3` instance (an object with the fields; arrays are accepted as arguments) |
 
-| `&str` / `String` | `string` | a parameter: `*const u8` to the script string object; a result: `*const u8` plus a trailing `out_len: *mut i64` | not available: a string in a `quickjs` namespace is a compile error |
+| `&str` / `String` | `string` | a parameter: `*const u8` to the script string object; a result: `*const u8` plus a trailing `out_len: *mut i64` | a JS string |
+| `&[f64]` / `&[V]` | `number[]` / `Vector3[]` | `*const u8` to the script array | a JS array (elements: instances, objects or arrays) |
 
 Any other type is a compile error that lists the supported ones. Names follow `snake_case` to
 `camelCase` (`set_time_scale` is `setTimeScale`), done by `camel` in both crates.
@@ -236,7 +236,7 @@ app calls it yet. The `iron_ts` compiler reads the JSON manifest and calls the s
 (`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value
 classes (`Vector3`) with methods and getters (`a.add(b)`), handle classes (`GameObject`, `Transform`)
 and the engine context exist, and so do strings across the boundary (`GameObject.name` and `find`);
-static functions and operators on value classes, classes, values and strings in the QuickJS bindings and annotating the other engine crates (physics, audio) are not built.
+static functions and operators on value classes are not built.
 
 Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
 150 ns per call through the typed function and about 245 ns through a simplified `__iron_op` (a name,
@@ -250,8 +250,8 @@ is for compiled code, which calls the shim directly.
 a string or a value class (they used to be a macro error). A `&str` or `String` is a JS string; a value class (`Vector3`) is
 a plain object with the fields' names (`{ x, y, z }`): an argument is read field by field (a missing field is a JS exception
 the script can catch) and a result is a new object. Every generated function returns `rquickjs::Result`. Handle classes
-(`GameObject.name`, `transform.position`) and value-class methods are still not in the QuickJS bindings; scripts there call the
-namespace functions (`Scene.setLocalPosition(go, v)`). `iron_scene`'s `Scene` namespace has `quickjs` on, so the same API
+(`GameObject.name`, `transform.position`) are now in the QuickJS bindings, see "Handles in QuickJS"; the namespace functions
+(`Scene.setLocalPosition(go, v)`) still work with handle objects. `iron_scene`'s `Scene` namespace has `quickjs` on, so the same API
 runs from QuickJS and from compiled code. Tests `M9-API-23..26`.
 
 ## Namespace properties and value classes in QuickJS
@@ -491,3 +491,46 @@ The closure returns nothing.
   `input.onKeyDown` gets `(code, repeat)` (no layout `key`); gamepad events get the id as a number. `Assets.onChanged` gets the paths as
   one string, one per line. Scene events get the `Scene` handle and the mode as `"single"` / `"additive"`. Listeners are called at once
   (`SceneManager` after the load or unload finished); `take_events()` still works.
+## Handles in QuickJS
+
+The decision (user, 2026-10-20, `research/iron-native-physics.md` section 7): whatever the compiled side treats as internal (engine
+ids, handles) reaches QuickJS as an **opaque internal value**, like a V8 internal field. Plain data (numbers, strings, arrays,
+value classes) is encoded normally.
+
+- **The object.** A handle is an instance of a Rust class (`iron_api::qjs::HandleBox { raw, class }`) given the prototype of the
+  handle's JS class (`GameObject.prototype`). The id is in the engine-side slot, not a property: it has no own properties,
+  `JSON.stringify(go)` is `{}`, `Object.prototype.toString.call(go)` is `[object GameObject]` (`Symbol.toStringTag`), and only
+  properties the script sets are own. Id 0 is `null` going out; `null` / `undefined` are 0 coming in.
+- **The class.** `register_quickjs` makes, for each name in `handles(..)`, a global JS class once (`Scene.GameObject` is the same
+  object). Modules that declare the same handle share it and each adds its members. Statics (`GameObject.create()`) are properties
+  of the class (overloads by argument count work for them); methods and `#[property]` accessors (with the setter) are
+  non-enumerable properties of the prototype; `new Class(args)` calls the static `create`; a class without `create` throws.
+  A namespace named like its class (`AnimationCurve`) is the class itself. If a namespace object and a class have the same name
+  (`Scene` helper functions and the scene class), they are merged in either order and the class wins (`install_namespace`).
+- **Checks.** A handle argument must be an instance of exactly that class (`Transform` where `GameObject` goes is a
+  `TypeError: expected a GameObject, got a Transform`); a method with a non-handle `this` throws.
+- **Host side.** `iron_api::qjs::handle_new(ctx, "GameObject", raw)` makes the object and `handle_arg` reads the id back (for the
+  app's own bindings, tests).
+- **No identity.** Every read makes a new object, so `a === b` is false for the same id (listed in `tools/iron_ts/TODO.md`).
+- **Value classes.** Each QuickJS value class has `toJSON()` (the compact array of numbers, as compiled code stringifies) and a static
+  `X.fromJSON(v)` taking that array (exactly the fields' count) or the object form (left-out fields 0, `a` 1). A function
+  parameter of a value type accepts an instance, the object form (all fields) or the array.
+- **Arrays.** `&[f64]` reads a JS array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array
+  results are not built.
+- Code: `crates/iron_api/src/qjs.rs`, the macro's `handle_class` branch. Tests `M9-API-100..113`.
+
+### Installing the APIs (`iron_script`)
+
+`QuickJsRuntime::add_native(register_quickjs)` runs a generated `register_quickjs` in the current context and again in each new
+context (`reset()` on a hot reload). `iron_engine_api::register_quickjs(ctx)` installs the math classes, the scene
+(`GameObject`, `Transform`) and every QuickJS-enabled namespace of the engine (Camera, animation, Time, Color, input, ...);
+`iron_scenes::register_quickjs(ctx)` adds `SceneManager` (after the first). `Rng`, `audio` and `Physics` have no `quickjs` flag yet.
+
+**Hand-over for `iron_app`** (not done here, the area is the lead's): (1) where the app builds its `QuickJsRuntime`, call
+`rt.add_native(iron_engine_api::register_quickjs)?` and `rt.add_native(iron_scenes::register_quickjs)?` once before loading the
+bundle (both are `fn(&Ctx) -> Result<()>`, so they are valid `NativeInit`s); (2) wrap script execution (load, tick, event
+callbacks) in `iron_scene::api::enter(&mut scene)` so `GameObject.create()` and friends have a current scene, and keep the
+per-thread engine state (`time::advance`, `input::*`, `camera::reset`, `gizmos::take_frame`) fed as in the engine API section;
+(3) the old `__iron_op("scene.*")` path and these APIs both exist, so a game bundle must use the `@iron/engine` classes **or**
+the native globals, not mix handles between them; (4) hot reload drops every handle object (the engine state lives in Rust and is
+kept), so scripts re-find objects (`GameObject.find`) in `onReload`.

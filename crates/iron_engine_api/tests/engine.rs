@@ -115,15 +115,15 @@ fn gizmos_collect_lines_and_present_them_to_a_camera() {
     let cam = camera::camera_api::iron_Camera_attach(iron_api::Handle::to_raw(go));
     assert_ne!(cam, 0);
     with_js(|ctx| {
+        // The camera is an opaque handle object in QuickJS; the host makes one from the id.
+        let handle = iron_api::qjs::handle_new(ctx, "Camera", cam).unwrap();
+        ctx.globals().set("cam", handle).unwrap();
         ctx.eval::<(), _>(
-            format!(
-                r#"Gizmos.clear(); Gizmos.color = Color.red;
-               Gizmos.drawLine({{x:0,y:0,z:0}}, {{x:1,y:2,z:3}});
+            r#"Gizmos.clear(); Gizmos.color = Color.red;
+               Gizmos.drawLine({x:0,y:0,z:0}, {x:1,y:2,z:3});
                Gizmos.color = Color.blue;
-               Gizmos.drawLine({{x:1,y:2,z:3}}, {{x:4,y:5,z:6}});
-               Gizmos.present({cam});"#
-            )
-            .as_str(),
+               Gizmos.drawLine({x:1,y:2,z:3}, {x:4,y:5,z:6});
+               Gizmos.present(cam);"#,
         )
         .unwrap();
     });

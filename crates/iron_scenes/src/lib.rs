@@ -28,3 +28,9 @@ pub(crate) fn ensure_kinds() {
         register_engine_kinds();
     }
 }
+
+/// Installs `SceneManager` (with its `Scene` and `Prefab` classes) in a QuickJS context. Install
+/// `iron_engine_api::register_quickjs` first (the math classes, `GameObject`).
+pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+    api::scene_manager_api::register_quickjs(ctx)
+}
