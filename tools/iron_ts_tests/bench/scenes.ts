@@ -147,3 +147,8 @@ export function parseVector(text: string): number {
   const v = JSON.parse(text) as Vector3;
   return v.x + v.y * 10 + v.z * 100;
 }
+
+export function parseColorAlpha(text: string): number {
+  const c = JSON.parse(text) as Color;
+  return c.a;
+}

@@ -12,7 +12,7 @@
 //!        | 6 object: n u32, (struct header u64, body offset u32)*   (the class and its subclasses)
 //!        | 7 map or set                                      (stringifies as {}; cannot be parsed)
 //!        | 8 value class: count u8, struct header u64, (len u8, name)*   (stringifies as [x,y,z];
-//!          parses that or {"x":..,"y":..,"z":..}, left-out fields are 0)
+//!          parses that or {"x":..,"y":..,"z":..}, left-out fields are 0, alpha 1)
 //! body  := n u32, field*                                     (offset is from the blob start)
 //! field := slot u32, omit-if-null u8, name len u32, name, desc
 //! blob  := total length u32, root desc offset u32, ...      (so a blob is passed as one pointer)
@@ -777,7 +777,11 @@ impl Parser<'_, '_> {
                     names.push(&b[p + 1..p + 1 + len]);
                     p += 1 + len;
                 }
-                let mut nums = vec![0.0f64; count];
+                // Left-out fields are 0, except alpha (`a`), which is 1: an opaque color.
+                let mut nums: Vec<f64> = names
+                    .iter()
+                    .map(|n| if *n == b"a" { 1.0 } else { 0.0 })
+                    .collect();
                 self.p += 1;
                 self.ws();
                 if self.peek() == Some(b'}') {
