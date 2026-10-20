@@ -585,7 +585,7 @@ QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both se
   mounts (`iron_ts_ui::take_mounts`, `UiRoot.mount(target, element)`), `Runtime::flush`, script faults and UI errors to the log.
   Every call runs inside `iron_scene::api::enter(&mut app.scene.scene)`.
 - **Console.** `console.log` goes to the `script` log target through `ts_rt_set_console`.
-- **Not wired yet:** world panels, the 3D renderer from the `iron_render_api` registries, audio, texture and model completion,
+- **Not wired yet:** audio,
   `Screen` / `QualitySettings` change closures, input listeners, hot reload (see `tools/iron_ts/TODO.md`).
 
 **Hot reload of a native game** (`Native::reload`, triggered by a change of `dist/game.irbundle` or `dist/.iron-reload`,
@@ -604,5 +604,25 @@ top level made hold removed objects, component references between components are
 through the `mesh` op), clears the renderer's cameras, lights and mesh renderers, and rebuilds them from `iron_engine_api::camera::cameras()`,
 `iron_render_api::lights()` and `mesh_renderers()` (with `with_material`) by calling `WorldViews::apply` with the same arguments the
 QuickJS `render.*` ops carry, so there is one renderer path. Native objects get script ids with `ScriptScene::adopt`. Cameras look along
--z (as in the QuickJS path, unlike Unity). Not wired: sprites, line renderers, particles, cloth, models, planes, world panels, mirrors,
-probes, render textures, `RenderSettings` (sky, bloom, ambient: the cube test shows the default dim light), gizmos.
+-z (as in the QuickJS path, unlike Unity).
+
+Round 2 (render side): `sync` also turns sprite renderers, `LineRenderer2D`, planes, mirrors, reflection probes (sent when new or
+changed; `probeRender` on a new render request), LOD groups, skinned mesh renderers (ids from `1 << 24`; bind poses from the mesh or from
+the model's skins), line renderers (`pre_render_lines` makes their tube meshes, which are plain mesh renderers), particle systems
+(settings as the TypeScript's `[key, value, ...]` pairs when they change, then `take_particle_controls`; `world_view.update_particles`
+results go back through `native_render::report_particles` into `report_particles`, so `onStopped` and `stopAction` work), models
+(`RenderCommand::Model` -> `WorldViews::model_op` -> `model_loaded`; model meshes and textures keep the host's ids from `1 << 30`, which
+`mesh_arg` passes straight through), render textures (`renderTexture` op), gizmos (`take_frame`, re-applied every frame after the cameras),
+`RenderSettings` (ambient, sky, bloom, post) and `QualitySettings` (quality, shadow settings) whenever their version counters change.
+Mesh renderer ids are the registry handles, so `LODGroup` renderer lists match. A cloth starts when the host first sees it with a mesh
+renderer on its object (`rebuild()`), and its `cloth.*` ops go to `ClothSystem` through `Extras`.
+
+The app side is `crates/iron_app/src/native_render.rs` (`impl App`, called from `frame()` through `sync_native_render`):
+`CameraFollow` / `CameraOrbit` late updates and `iron_engine_api::animation::update`, the quality levels from `package.json`
+(`configure_quality` and `apply_default_quality`, once), `UiResources` requests (`addStyleSheet`, `removeStyleSheet`, `loadFont` through
+the same code as the QuickJS ops, on the screen and every panel), `Cursor` (version counter) and `Screen` (window requests, the display
+state and size changes), and world panels: `Native::take_panel_mounts` hands over `createRoot(panel).render(..)` roots; each panel has its
+own `UiTree` (`panels.rs`) and its own `iron_ui_native::Runtime` (flushed every frame); pointer and key events of a panel
+(`App::native_panel_events`) go to that runtime. `WorldPanel` components give the panel's size, density and tint through `Panels::apply`.
+Not done: glTF animation clips (`Model.animations`) are not turned into clips; animation events are not delivered to components;
+colliders of models (`colliders: "mesh"`) need the physics hook (agent H).

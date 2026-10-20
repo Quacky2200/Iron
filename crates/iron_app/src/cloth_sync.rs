@@ -180,14 +180,16 @@ fn world_of(scene: &ScriptScene, object: u32) -> Option<Mat4> {
 fn collider(v: &Value) -> Option<ColliderRef> {
     let Value::Array(a) = v else { return None };
     let num = |i: usize| a.get(i).and_then(Value::as_f64).map(|x| x as f32);
+    // Ids through `f64`: engine ids (2^30 up) do not fit in `f32`.
+    let object = |i: usize| a.get(i).and_then(Value::as_f64).map(|x| x as u32);
     match a.first().and_then(Value::as_str)? {
         "sphere" => Some(ColliderRef::Sphere {
-            object: num(1)? as u32,
+            object: object(1)?,
             radius: num(2)?,
             center: vec3(a.get(3)),
         }),
         "capsule" => Some(ColliderRef::Capsule {
-            object: num(1)? as u32,
+            object: object(1)?,
             radius: num(2)?,
             height: num(3)?,
             center: vec3(a.get(4)),

@@ -618,6 +618,13 @@ fn particles(views: &mut WorldViews, scene: &mut ScriptScene, kept: &mut Kept) {
 
 /// Cloth: a `cloth` op for every new or rebuilt one, `remove` for the ones that are gone.
 fn cloths(scene: &mut ScriptScene, extras: &mut Extras) {
+    // A cloth a program made starts when the host first sees it (the TypeScript's `onStart`),
+    // once its object has a mesh renderer.
+    for (r, d) in iron_render_api::cloths() {
+        if d.simulated_mesh == 0 && !iron_render_api::mesh_renderers_on(d.object).is_empty() {
+            r.rebuild();
+        }
+    }
     let live = iron_render_api::cloths();
     let ids: HashSet<u32> = live.iter().map(|(r, _)| r.0).collect();
     let gone: Vec<u32> = cache(|c| {

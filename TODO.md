@@ -1617,3 +1617,12 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     ignores
   - [ ] `d` path morphing between paths with different commands (normalize both to cubic curves
     with matching segment counts before interpolating)
+
+## Native backend, render side (round 2, agent R)
+
+- [x] Registries to the renderer: sprites, 2D lines, planes, mirrors, probes, LOD groups, skins, line renderers, particles, models, render textures, gizmos, `RenderSettings`, `QualitySettings`.
+- [x] World panels (`createRoot(panel)`), `UiResources`, cursor, `Screen` requests, cloth, camera follow/orbit, animation update.
+- [ ] glTF animation clips (`Model.animations`) as `iron_animation` clips; animation events to components.
+- [ ] Model colliders (`colliders: "mesh"`) need the physics hook; cloth over a model mesh needs the mesh data under the host's id.
+- [ ] Panel events are untested without a window (a unit test of the routing would need an `App`).
+- Differences seen in the screenshots: the timer of the world example is ahead of the QuickJS one (real time, not a render difference); the rope of `world` waits for the physics wiring.

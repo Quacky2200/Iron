@@ -62,6 +62,9 @@ impl App {
             // `CameraFollow` and `CameraOrbit` move their cameras after every `onLateUpdate`.
             let _scope = iron_scene::api::enter(&mut self.scene.scene);
             let dt = iron_engine_api::time::state().delta_time;
+            // `Animation` and `Animator` components pose their objects (events are not
+            // delivered to components yet).
+            iron_engine_api::animation::update(dt, None);
             iron_render_api::late_update_camera_follows(dt);
             iron_render_api::late_update_camera_orbits(dt);
         }
