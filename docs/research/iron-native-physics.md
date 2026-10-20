@@ -1,6 +1,6 @@
 # Physics in Rust for compiled scripts: design note
 
-Status: **proposal, waits for review** (2026-10-19). Next after scenes in the order the user gave (components, math, physics,
+Status: **decisions taken, two questions open** (2026-10-20). Next after scenes in the order the user gave (components, math, physics,
 audio, rendering). `physics.ts` (bodies, colliders, joints, raycasts), `physics-components.ts` (Rigidbody, the collider
 components, CharacterController, joints, Rope) and `physics2d.ts` are 1,860 lines over `crates/iron_physics`, which already
 simulates everything. What is left is the script surface, and three pieces of boundary the compiler does not have yet.
@@ -38,3 +38,27 @@ simulates everything. What is left is the script surface, and three pieces of bo
 - A raycast that answers at once changes when a script sees a hit (same tick instead of the next). Keep the one-tick delay for
   compatibility, or take the simpler answer?
 - Should `Collision` be a handle class (`collision.other`, `collision.speed`) or the two numbers `(otherObject, speed)`?
+
+## 5. Decisions (user, 2026-10-20)
+
+- `raycast` is synchronous and returns the hit (or none): no Promise, no one-tick delay on the native path.
+- Arrays are stored natively (typed arrays and `Vector3[]` are real arrays in the engine and in compiled code), not copied into
+  QuickJS-style lists. `points` of a shape is such an array.
+- Vectors and points live on the stack: value classes (`Vector3`, `Quaternion`, `Color`, ...) stop being heap objects in compiled
+  code (scalar replacement; passed and returned in registers or in a caller-owned slot). This is its own compiler step, done
+  before physics because every physics call passes them.
+- JSON is as native as possible: `JSON.parse` / `stringify` in compiled code are Rust (they already are); on the QuickJS side
+  the bridge copies once per call and gets a native-speed path later with rquickjs work.
+- Contact events are component hooks called by name (`onCollisionEnter`, `onCollisionExit`, `onTriggerEnter`, `onTriggerExit`,
+  plus `onCollisionStay`).
+
+## 6. Order now
+
+1. Stack value classes in the compiler (with a benchmark against the heap version).
+2. Native arrays across the boundary.
+3. Collision hooks in `NativeHost`.
+4. Rigidbody, colliders and `Physics` queries; then joints, character controller, 2D; then kinds for scene files.
+
+Open: the shape of the `Collision` argument (a value type `Collision { other, collider, speed, sensor }`, recommended, or two
+loose parameters), and how value-class `@property` fields are written back once values are on the stack (a fresh value, not
+in place).
