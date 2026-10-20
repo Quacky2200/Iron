@@ -369,6 +369,15 @@ impl NativeHost {
         self.entries.iter().map(|e| e.id).collect()
     }
 
+    /// The live components in creation order: id, class name and the object each is on. A hot
+    /// reload reads this to carry components over to the new program.
+    pub fn components(&self) -> Vec<(u32, &'static str, Option<u64>)> {
+        self.entries
+            .iter()
+            .map(|e| (e.id, self.classes[e.class].name, e.object))
+            .collect()
+    }
+
     pub fn contains(&self, id: u32) -> bool {
         self.entries.iter().any(|e| e.id == id)
     }

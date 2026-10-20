@@ -587,3 +587,14 @@ QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both se
 - **Console.** `console.log` goes to the `script` log target through `ts_rt_set_console`.
 - **Not wired yet:** world panels, the 3D renderer from the `iron_render_api` registries, audio, texture and model completion,
   `Screen` / `QualitySettings` change closures, input listeners, hot reload (see `tools/iron_ts/TODO.md`).
+
+**Hot reload of a native game** (`Native::reload`, triggered by a change of `dist/game.irbundle` or `dist/.iron-reload`,
+`IRON_RELOAD_AT_FRAME=N` in screenshot runs; about 30 ms for hello): the new source is compiled first (a failure, or a
+`{"ok":false,"error"}` note from `iron-build dev`, keeps the old game). Then the scenes are saved with `iron_scenes::serialize`
+(compiled components through their `@property` tables), the old `NativeHost` is dropped without `onDestroy`, the engine's per-thread
+state is reset (`input`, `assets`, `app`, `screen`, `audio`, `animation`, `camera`, `iron_render_api`, `iron_physics_api`,
+`iron_scenes`) because it holds the old code's closures, the new program's top level runs, the objects it made are removed and the
+saved scenes load again (`load_scene`: components come back on their objects with their fields, `onAwake` runs; classes new in this
+program get a starting object). The UI keeps its hook state through `Runtime::refresh`, except components whose `__uiSignatures`
+hook list changed. Differences to QuickJS: no `onReload` hook, non-`@property` fields start over, module variables of objects the
+top level made hold removed objects, component references between components are not restored.

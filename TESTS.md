@@ -1257,3 +1257,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-612 | Integration | Timers of a compiled game run from the frame's clock. |
 | M9-API-613 | Integration | A mounted root is drawn into the screen's `UiTree` and a click reaches its handler. |
 | M9-API-614 | Unit | A game that does not compile is an error naming the compile step, not a panic. |
+| M9-API-615 | Integration | A hot reload of a compiled game keeps the objects, the `@property` fields of components and the UI's hook state, with the new code running. |
+| M9-API-616 | Integration | A reload that does not compile keeps the old game running. |
+| M9-API-617 | Unit | The `dist/.iron-reload` note of a failed build gives its error. |

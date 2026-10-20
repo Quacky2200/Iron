@@ -261,6 +261,8 @@ fn run() -> Result<()> {
             bundle_path.clone(),
             css_path.clone(),
             bundle_path.with_file_name("vendor.js"),
+            // `iron-build dev` writes this after the bundle (or with the error of a failed build).
+            bundle_path.with_file_name(".iron-reload"),
         ])
         .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
         .ok(),
@@ -645,6 +647,11 @@ impl App {
 
     /// Hot reload of a compiled game: the bundle is compiled again; a failure keeps the old one.
     fn reload_native(&mut self, started: Instant) {
+        // A failed build leaves the old bundle: say why and keep running it.
+        if let Some(error) = native::failed_build(&self.bundle_path) {
+            tracing::error!("build failed, keeping the old code: {error}");
+            return;
+        }
         let bundle = match native::Bundle::read(&self.bundle_path) {
             Ok(b) => b,
             Err(e) => {
