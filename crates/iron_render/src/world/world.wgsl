@@ -34,6 +34,8 @@ struct Globals {
     // Height fog: x density at the base height (y), thinning by e every 1 / z metres
     // above it; w: 1 when on.
     fog_height: vec4<f32>,
+    // Light shafts: x intensity, y anisotropy, z steps, w how far they reach (0: off).
+    fog_volume: vec4<f32>,
 };
 
 struct Quad {
@@ -86,7 +88,7 @@ struct Light {
     position: vec4<f32>,
     // xyz: the direction it shines; w: range (point and spot).
     direction: vec4<f32>,
-    // rgb: colour × intensity; w unused.
+    // rgb: colour × intensity; w: how strongly it lights fog (light shafts).
     color: vec4<f32>,
     // x, y: cosines of the spot's inner and outer half-angles.
     spot: vec4<f32>,
@@ -169,34 +171,43 @@ fn fs_quad(in: VsOut) -> @location(0) vec4<f32> {
     if (c.a <= 0.002 && max(c.r, max(c.g, c.b)) <= 0.002) {
         discard;
     }
-    return fogged(c, in.world);
+    return fogged(c, in.world, in.pos.xy);
 }
 
-// How much of the fog lies between the camera and `p`: 0 none, 1 only fog. Perspective
+// Where the fog on the way to `p` starts: the camera, or for orthographic views the
+// camera's plane (they look along parallel rays).
+fn fog_eye(p: vec3<f32>) -> vec3<f32> {
+    if (g.view_dir.w > 0.5) {
+        return p - g.view_dir.xyz * max(dot(p - g.camera.xyz, g.view_dir.xyz), 0.0);
+    }
+    return g.camera.xyz;
+}
+
+// How much of what's at `p` shows through the fog (1: all, 0: only fog). Perspective
 // cameras measure straight to the point (turning doesn't move the fog); orthographic
-// ones by depth along their view, so a 2D scene fogs by layer.
-fn fog_amount(p: vec3<f32>) -> f32 {
+// ones by depth along their view, so a 2D scene fogs by layer. Without `distance` (the
+// background) only height fog counts.
+fn fog_clear(p: vec3<f32>, distance: bool) -> f32 {
     let mode = g.fog.w;
     if (mode < 0.5) {
-        return 0.0;
+        return 1.0;
     }
-    let to = p - g.camera.xyz;
-    let ortho = g.view_dir.w > 0.5;
-    let d = select(length(to), max(dot(to, g.view_dir.xyz), 0.0), ortho);
-    var clear: f32;
-    if (mode < 1.5) {
-        let start = g.fog_params.y;
-        let end = g.fog_params.z;
-        clear = clamp((end - d) / max(end - start, 1e-4), 0.0, 1.0);
-    } else if (mode < 2.5) {
-        clear = exp(-g.fog_params.x * d);
-    } else {
-        let x = g.fog_params.x * d;
-        clear = exp(-x * x);
+    let eye = fog_eye(p);
+    var clear = 1.0;
+    if (distance) {
+        let d = length(p - eye);
+        if (mode < 1.5) {
+            let start = g.fog_params.y;
+            let end = g.fog_params.z;
+            clear = clamp((end - d) / max(end - start, 1e-4), 0.0, 1.0);
+        } else if (mode < 2.5) {
+            clear = exp(-g.fog_params.x * d);
+        } else {
+            let x = g.fog_params.x * d;
+            clear = exp(-x * x);
+        }
     }
-    // Orthographic views look from their camera's plane, not its position.
-    let eye = select(g.camera.xyz, p - g.view_dir.xyz * d, ortho);
-    return 1.0 - clear * height_clear(eye, p);
+    return clear * height_clear(eye, p);
 }
 
 // How much light gets through height fog on the way from `a` to `b` (1: all of it). The
@@ -214,11 +225,102 @@ fn height_clear(a: vec3<f32>, b: vec3<f32>) -> f32 {
     return exp(-g.fog_height.x * length(b - a) * at_eye * along);
 }
 
-// A premultiplied colour at `p` seen through the fog: what it covers turns to fog colour,
-// and light it adds (alpha 0) fades out.
-fn fogged(c: vec4<f32>, p: vec3<f32>) -> vec4<f32> {
-    let f = fog_amount(p);
-    return vec4<f32>(c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f), c.a);
+// A premultiplied colour at `p` (pixel `px`) seen through the fog: what it covers turns
+// to fog colour, light it adds (alpha 0) fades out, and lit fog in front adds light.
+fn fogged(c: vec4<f32>, p: vec3<f32>, px: vec2<f32>) -> vec4<f32> {
+    if (g.fog.w < 0.5) {
+        return c;
+    }
+    let f = 1.0 - fog_clear(p, true);
+    var rgb = c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f);
+    if (g.fog_volume.w > 0.0 && c.a > 0.002) {
+        rgb += shafts(p, px, true) * c.a;
+    }
+    return vec4<f32>(rgb, c.a);
+}
+
+// Interleaved gradient noise (Jimenez): a different offset per pixel, so a few steps
+// along the ray read as fine grain rather than bands.
+fn jitter(px: vec2<f32>) -> f32 {
+    return fract(52.9829189 * fract(dot(px, vec2<f32>(0.06711056, 0.00583715))));
+}
+
+// Henyey-Greenstein, scaled so scattering evenly (anisotropy 0) gives 1.
+fn phase(cos_theta: f32) -> f32 {
+    let k = g.fog_volume.y;
+    let d = 1.0 + k * k - 2.0 * k * cos_theta;
+    return (1.0 - k * k) / (d * sqrt(d));
+}
+
+// The light that fog at `x` scatters back along the view ray `dir`: every light that
+// lights fog, with its falloff, cone and (hard) shadow.
+fn scattered(x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+    var sum = vec3<f32>(0.0);
+    let count = u32(g.ambient.w);
+    for (var i = 0u; i < count; i++) {
+        let light = lights[i];
+        var strength = light.color.w;
+        if (strength <= 0.0) {
+            continue;
+        }
+        // Which way its light travels at `x`.
+        var travel: vec3<f32>;
+        if (light.position.w < 0.5) {
+            travel = normalize(light.direction.xyz);
+        } else {
+            let from_light = x - light.position.xyz;
+            let d = length(from_light);
+            travel = from_light / max(d, 1e-4);
+            // As on surfaces: zero at the range.
+            let r = clamp(d / max(light.direction.w, 1e-4), 0.0, 1.0);
+            let fade = 1.0 - r * r * r * r;
+            strength *= fade * fade / (1.0 + d * d);
+            if (light.position.w > 1.5) {
+                strength *= smoothstep(light.spot.y, light.spot.x, dot(travel, normalize(light.direction.xyz)));
+            }
+        }
+        if (strength <= 0.0) {
+            continue;
+        }
+        if (light.shadow.x >= 0.0) {
+            if (light.position.w < 0.5) {
+                strength *= sun_shadow(light, x, vec3<f32>(0.0), 0);
+            } else {
+                strength *= local_shadow(light, x, vec3<f32>(0.0), 0);
+            }
+        }
+        // Looking straight at a light, its light travels back along the view.
+        sum += light.color.rgb * strength * phase(dot(travel, -dir));
+    }
+    return sum;
+}
+
+// Light the fog between the camera and `p` sends to the camera: the view ray marched in
+// steps out to the reach, each step's share of the fog lit as `scattered` finds it at a
+// jittered point; the fog beyond the reach is lit as at its middle.
+fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
+    let eye = fog_eye(p);
+    let len = length(p - eye);
+    if (len < 1e-4) {
+        return vec3<f32>(0.0);
+    }
+    let dir = (p - eye) / len;
+    let reach = min(len, g.fog_volume.w);
+    let steps = i32(g.fog_volume.z);
+    let step = reach / f32(steps);
+    let j = jitter(px);
+    var clear = 1.0;
+    var sum = vec3<f32>(0.0);
+    for (var i = 0; i < steps; i++) {
+        let next = fog_clear(eye + dir * (step * f32(i + 1)), distance);
+        sum += (clear - next) * scattered(eye + dir * (step * (f32(i) + j)), dir);
+        clear = next;
+    }
+    if (len > reach) {
+        let rest = clear - fog_clear(p, distance);
+        sum += rest * scattered(eye + dir * (0.5 * (reach + len)), dir);
+    }
+    return sum * g.fog_volume.x;
 }
 
 // A camera's background over its viewport, at the far plane: it clears colour and
@@ -242,12 +344,14 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         c = vec4<f32>(textureSampleLevel(env_map, env_samp, dir, 0.0).rgb * g.env.y, 1.0);
     }
     // Distance fog leaves the background alone (Unity's); height fog covers it out to the
-    // far plane, so the horizon sinks into it.
+    // far plane, so the horizon sinks into it (and shafts reach into the sky).
     if (g.fog.w > 0.5 && g.fog_height.w > 0.5) {
-        let near4 = g.inv_view_proj * vec4<f32>(ndc, 0.0, 1.0);
-        let eye = select(g.camera.xyz, near4.xyz / near4.w, g.view_dir.w > 0.5);
-        let f = 1.0 - height_clear(eye, far);
-        c = vec4<f32>(c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f), c.a);
+        let f = 1.0 - fog_clear(far, false);
+        var rgb = c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f);
+        if (g.fog_volume.w > 0.0) {
+            rgb += shafts(far, pos.xy, false) * c.a;
+        }
+        c = vec4<f32>(rgb, c.a);
     }
     return c;
 }
@@ -404,7 +508,7 @@ fn vs_shape(@location(0) position: vec3<f32>, @location(1) color: vec4<f32>) -> 
 
 @fragment
 fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
-    return fogged(in.color, in.world);
+    return fogged(in.color, in.world, in.pos.xy);
 }
 
 // Strokes (`LineRenderer2D`): each instance is a segment `width` world units wide, drawn as a
@@ -482,7 +586,7 @@ fn fs_stroke(in: StrokeOut) -> @location(0) vec4<f32> {
     let q = vec2<f32>(in.local.x - clamp(in.local.x, 0.0, len), in.local.y);
     let d = length(q) - in.shape.y;
     let aa = max(fwidth(d), 1e-6);
-    return fogged(in.color * clamp(0.5 - d / aa, 0.0, 1.0), in.world);
+    return fogged(in.color * clamp(0.5 - d / aa, 0.0, 1.0), in.world, in.pos.xy);
 }
 
 struct MeshOut {
@@ -705,10 +809,10 @@ fn shadow_coords(m: mat4x4<f32>, p: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(uv, ndc.z, select(-1.0, 1.0, inside));
 }
 
-// How much of the sun reaches `world` (normal `n`): the first cascade holding it.
-fn sun_shadow(light: Light, world: vec3<f32>, n: vec3<f32>) -> f32 {
+// How much of the sun reaches `world` (normal `n`): the first cascade holding it, filtered
+// over radius `r`.
+fn sun_shadow(light: Light, world: vec3<f32>, n: vec3<f32>, r: i32) -> f32 {
     let count = min(i32(g.shadow.x), MAX_CASCADES);
-    let r = i32(light.shadow.z + 0.5);
     for (var c = 0; c < count; c++) {
         // Pushed off the surface by a texel or two, against acne.
         let s = shadow_coords(shadow_matrices[c], world + n * g.cascade_texels[c] * 1.5);
@@ -720,8 +824,8 @@ fn sun_shadow(light: Light, world: vec3<f32>, n: vec3<f32>) -> f32 {
 }
 
 // How much of a spot or point light reaches `world`: its map, or a point light's cube
-// face towards `world`.
-fn local_shadow(light: Light, world: vec3<f32>, n: vec3<f32>) -> f32 {
+// face towards `world`, filtered over radius `r`.
+fn local_shadow(light: Light, world: vec3<f32>, n: vec3<f32>, r: i32) -> f32 {
     var index = i32(light.shadow.x);
     let to = world - light.position.xyz;
     if (light.position.w < 1.5) {
@@ -741,7 +845,6 @@ fn local_shadow(light: Light, world: vec3<f32>, n: vec3<f32>) -> f32 {
     if (s.w < 0.0) {
         return 1.0;
     }
-    let r = i32(light.shadow.z + 0.5);
     return mix(1.0, pcf(local_shadows, index - MAX_CASCADES, s.xy, s.z, r), light.shadow.y);
 }
 
@@ -791,12 +894,12 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
             let along = clamp(in.uv.y, 0.0, 1.0);
             light *= e2 * e2 * (1.0 - along) * (1.0 - along) * smoothstep(0.0, 0.08, along);
         }
-        return fogged(vec4<f32>(light, 0.0), in.world);
+        return fogged(vec4<f32>(light, 0.0), in.world, in.pos.xy);
     }
     let out_alpha = select(alpha, 1.0, mode == 1u);
     if (m.params.x > 0.5) {
         let unlit = base + emission;
-        return fogged(vec4<f32>(unlit * out_alpha, out_alpha), in.world);
+        return fogged(vec4<f32>(unlit * out_alpha, out_alpha), in.world, in.pos.xy);
     }
     var n = normalize(in.normal);
     var tangent = in.tangent.xyz;
@@ -878,10 +981,11 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
             }
         }
         if (light.shadow.x >= 0.0) {
+            let r = i32(light.shadow.z + 0.5);
             if (light.position.w < 0.5) {
-                strength *= sun_shadow(light, in.world, n);
+                strength *= sun_shadow(light, in.world, n, r);
             } else {
-                strength *= local_shadow(light, in.world, n);
+                strength *= local_shadow(light, in.world, n, r);
             }
         }
         let ndl = max(dot(n, l), 0.0);
@@ -916,8 +1020,8 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         // don't, and what's reflected covers what's behind (Unity's Standard).
         let reflectivity = max(f0.r, max(f0.g, f0.b));
         let a = 1.0 - (1.0 - alpha) * (1.0 - reflectivity);
-        return fogged(vec4<f32>(diffuse * alpha + specular + emission, a), in.world);
+        return fogged(vec4<f32>(diffuse * alpha + specular + emission, a), in.world, in.pos.xy);
     }
     let lit = diffuse + specular + emission;
-    return fogged(vec4<f32>(lit * out_alpha, out_alpha), in.world);
+    return fogged(vec4<f32>(lit * out_alpha, out_alpha), in.world, in.pos.xy);
 }

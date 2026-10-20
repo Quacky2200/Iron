@@ -377,6 +377,7 @@ fn lit_primitives_with_lights() {
             range: 0.0,
             shadows: None,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
         Light {
             kind: LightKind::Point,
@@ -386,6 +387,7 @@ fn lit_primitives_with_lights() {
             range: 4.0,
             shadows: None,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
     ];
     WorldRenderer::new(&gpu).render_views(&gpu, &rt, &[v], &[]);
@@ -565,6 +567,7 @@ fn textured_meshes_and_sprites() {
         range: 0.0,
         shadows: None,
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -699,6 +702,7 @@ fn glows_bloom_and_spot_beams() {
         range: 6.0,
         shadows: None,
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     let mut world = WorldRenderer::new(&gpu);
     world.bloom = Some(Bloom {
@@ -797,6 +801,7 @@ fn directional_shadows() {
             strength: 0.9,
         }),
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     let mut world = WorldRenderer::new(&gpu);
     world.shadow_distance = 14.0;
@@ -877,6 +882,7 @@ fn pbr_material_grid_under_a_sky() {
         range: 0.0,
         shadows: None,
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     let mut world = WorldRenderer::new(&gpu);
     world.set_sky(Some(Sky::default()));
@@ -998,6 +1004,7 @@ fn planar_mirror() {
         range: 0.0,
         shadows: None,
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     let mut world = WorldRenderer::new(&gpu);
     world.set_sky(Some(Sky::default()));
@@ -1100,6 +1107,7 @@ fn reflection_probe_in_a_room() {
         range: 8.0,
         shadows: None,
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     v.probes = vec![ReflectionProbe {
         id: 1,
@@ -1179,6 +1187,7 @@ fn quality_low_and_high() {
                 strength: 0.85,
             }),
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         }];
         v
     };
@@ -1326,6 +1335,7 @@ fn light_and_mirror_culling_masks() {
                 strength: 0.9,
             }),
             culling_mask: 0b011,
+            volumetric: 1.0,
         },
         Light {
             kind: LightKind::Point,
@@ -1335,6 +1345,7 @@ fn light_and_mirror_culling_masks() {
             range: 6.0,
             shadows: None,
             culling_mask: 0b100,
+            volumetric: 1.0,
         },
     ];
     let mut world = WorldRenderer::new(&gpu);
@@ -1424,6 +1435,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
                 strength: 1.0,
             }),
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
         // Out of reach of the view.
         Light {
@@ -1434,6 +1446,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
             range: 5.0,
             shadows: None,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
     ];
     let mut world = WorldRenderer::new(&gpu);
@@ -1789,6 +1802,7 @@ fn material_maps_and_rendering_modes() {
             strength: 0.9,
         }),
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -1859,6 +1873,7 @@ fn tonemapping_exposure_and_fxaa() {
             range: 0.0,
             shadows: None,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         }];
         v
     };
@@ -1984,6 +1999,7 @@ fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
         range: 0.0,
         shadows: None,
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     let look = |eye: Vec3, at: Vec3| {
         iron_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse()
@@ -2101,6 +2117,7 @@ fn cascaded_sun_spot_and_point_light_shadows() {
             range: 0.0,
             shadows,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
         Light {
             kind: LightKind::Spot {
@@ -2113,6 +2130,7 @@ fn cascaded_sun_spot_and_point_light_shadows() {
             range: 8.0,
             shadows,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
         Light {
             kind: LightKind::Point,
@@ -2122,6 +2140,7 @@ fn cascaded_sun_spot_and_point_light_shadows() {
             range: 6.0,
             shadows,
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         },
     ];
     let mut world = WorldRenderer::new(&gpu);
@@ -2238,6 +2257,7 @@ fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
             strength: 1.0,
         }),
         culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
     }];
     world.render_views(&gpu, &rt, &[v], &[]);
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -2868,6 +2888,142 @@ fn height_fog_lies_low_and_covers_the_horizon() {
     let near_floor = at(Vec3::new(0.0, 0.0, -8.0));
     assert!(foggy(near_floor) > 60, "the near floor: {near_floor:?}");
     assert_golden("M7-FOG-04", size.0, size.1, &pixels, 3);
+}
+
+// M7-FOG-05
+#[test]
+fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
+    use iron_render::{
+        Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
+        primitive_id, viewport_size,
+    };
+    let gpu = shared_gpu();
+    let size = (320, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let cube = |model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model,
+        color,
+        cast_shadows: true,
+        ..Default::default()
+    };
+    let box_at = |centre: Vec3, extent: Vec3| {
+        Mat4::from_scale_rotation_translation(extent, Quat::IDENTITY, centre)
+    };
+    let mut meshes = vec![
+        // The floor and a back wall the view rays end on.
+        cube(
+            box_at(Vec3::new(0.0, -0.1, 0.0), Vec3::new(30.0, 0.2, 20.0)),
+            [0.5, 0.5, 0.5, 1.0],
+        ),
+        cube(
+            box_at(Vec3::new(0.0, 4.0, -6.5), Vec3::new(30.0, 8.0, 1.0)),
+            [0.5, 0.5, 0.5, 1.0],
+        ),
+    ];
+    // The roof: slats 1.2 m wide with 0.8 m gaps, running front to back.
+    for k in -6..=6 {
+        meshes.push(cube(
+            box_at(
+                Vec3::new(k as f32 * 2.0, 6.0, 0.0),
+                Vec3::new(1.2, 0.2, 14.0),
+            ),
+            [0.3, 0.3, 0.3, 1.0],
+        ));
+    }
+    let sun = Light {
+        kind: LightKind::Directional,
+        color: [3.0, 2.85, 2.6],
+        position: Vec3::ZERO,
+        direction: Vec3::new(0.35, -1.0, 0.0).normalize(),
+        range: 0.0,
+        shadows: Some(Shadows {
+            soft: false,
+            strength: 1.0,
+        }),
+        culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
+    };
+    let rects = [[0.0, 0.0, 0.5, 1.0], [0.5, 0.0, 0.5, 1.0]];
+    let fog = Fog {
+        mode: FogMode::Exponential,
+        color: [0.01, 0.012, 0.02],
+        density: 0.06,
+        ..Default::default()
+    };
+    let views: Vec<WorldView> = rects
+        .iter()
+        .enumerate()
+        .map(|(k, &rect)| {
+            let camera = WorldCamera::perspective(
+                iron_core::glam::camera::rh::view::look_at_mat4(
+                    Vec3::new(0.0, 1.5, 8.0),
+                    Vec3::new(0.0, 3.0, 0.0),
+                    Vec3::Y,
+                )
+                .inverse(),
+                60.0,
+                0.1,
+                60.0,
+                viewport_size(rect, size),
+                Color::rgb(0.0, 0.0, 0.0),
+            );
+            let mut v = WorldView::new(camera, rect);
+            v.ambient = [0.03, 0.03, 0.035];
+            v.meshes = meshes.clone();
+            v.lights = vec![sun];
+            v.fog = Some(Fog {
+                volumetric: (k == 1).then(|| VolumetricFog {
+                    intensity: 0.35,
+                    steps: 32,
+                    distance: 30.0,
+                    ..Default::default()
+                }),
+                ..fog
+            });
+            v
+        })
+        .collect();
+    let view_projs: Vec<Mat4> = views.iter().map(|v| v.camera.view_proj).collect();
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 30.0;
+    world.render_views(&gpu, &rt, &views, &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    // Green along a row of the back wall, 3 m up, seen through the air under the roof.
+    let row = |k: usize| -> Vec<i32> {
+        (-30..=30)
+            .map(|i| {
+                let c = view_projs[k].project_point3(Vec3::new(i as f32 * 0.1, 3.0, -6.0));
+                let r = rects[k];
+                let x = (r[0] + (c.x + 1.0) / 2.0 * r[2]) * size.0 as f32;
+                let y = (1.0 - c.y) / 2.0 * size.1 as f32;
+                pixels[(y as usize * size.0 as usize + x as usize) * 4 + 1] as i32
+            })
+            .collect()
+    };
+    let spread = |r: &[i32]| r.iter().max().unwrap() - r.iter().min().unwrap();
+    let mean = |r: &[i32]| r.iter().sum::<i32>() / r.len() as i32;
+    let (plain, lit) = (row(0), row(1));
+    // Without shafts the wall (the sun only grazes it) is evenly dim; with them the air
+    // in front glows, in bands where the sun comes through the gaps.
+    assert!(spread(&plain) < 12, "plain fog is even: {plain:?}");
+    assert!(
+        mean(&lit) > mean(&plain) + 20,
+        "lit fog is brighter: {lit:?}"
+    );
+    assert!(
+        spread(&lit) > 25,
+        "shafts and shadows between them: {lit:?}"
+    );
+    assert_golden("M7-FOG-05", size.0, size.1, &pixels, 6);
 }
 
 // M7-FOG-02

@@ -172,6 +172,7 @@ export {
   type BloomSettings,
   type FogMode,
   type HeightFogSettings,
+  type VolumetricFogSettings,
   RenderSettings,
   type ProceduralSky,
   type LightShadows,

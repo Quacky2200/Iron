@@ -1002,6 +1002,7 @@ export class Light extends Component {
   private _shadows: LightShadows = "none";
   private _shadowStrength = 1;
   private _cullingMask = 0xffffffff;
+  private _volumetricIntensity = 1;
   private started = false;
 
   @property
@@ -1115,6 +1116,19 @@ export class Light extends Component {
     this.send();
   }
 
+  /**
+   * How strongly it lights the fog for light shafts (`RenderSettings.volumetricFog`): 1
+   * as brightly as it lights surfaces, 0 not at all (HDRP's volumetric multiplier).
+   */
+  @property
+  get volumetricIntensity(): number {
+    return this._volumetricIntensity;
+  }
+  set volumetricIntensity(v: number) {
+    this._volumetricIntensity = Math.max(0, v);
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -1133,6 +1147,7 @@ export class Light extends Component {
       this._shadows,
       this._shadowStrength,
       this._cullingMask,
+      this._volumetricIntensity,
     );
   }
 
@@ -1210,13 +1225,34 @@ export interface HeightFogSettings {
 
 let heightFog: HeightFogSettings | null = null;
 
+/**
+ * Light shafts (volumetric fog): lights shining through the fog light it up, cut by their
+ * shadows, so the sun shows in beams through gaps and spot lights as cones. Every field is
+ * optional. It costs a march along each pixel's view ray with a shadow lookup per light
+ * per step; lights opt out with `Light.volumetricIntensity = 0`.
+ */
+export interface VolumetricFogSettings {
+  /** Scales the scattered light (1 by default). */
+  intensity?: number;
+  /** -1 to 1: positive scatters forward, so looking towards a light shows more (0.4). */
+  anisotropy?: number;
+  /** Samples along each ray, 1 to 64 (16). */
+  steps?: number;
+  /** How far the march reaches in metres (50); fog beyond counts as lit. */
+  distance?: number;
+}
+
+let volumetricFog: VolumetricFogSettings | null = null;
+
 function sendFog(): void {
   if (!fog) {
     __iron_op("render.fog", 0, null);
     return;
   }
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
-  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h);
+  const v = volumetricFog;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 16, v.distance ?? 50] : null;
+  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts);
 }
 
 let skybox: ProceduralSky | null = null;
@@ -1371,6 +1407,14 @@ export const RenderSettings = {
   },
   set heightFog(h: HeightFogSettings | null) {
     heightFog = h ? { ...h } : null;
+    if (fog) sendFog();
+  },
+  /** Light shafts in the fog, while `fog` is on (`null`: none, the default). */
+  get volumetricFog(): VolumetricFogSettings | null {
+    return volumetricFog;
+  },
+  set volumetricFog(v: VolumetricFogSettings | null) {
+    volumetricFog = v ? { ...v } : null;
     if (fog) sendFog();
   },
 };

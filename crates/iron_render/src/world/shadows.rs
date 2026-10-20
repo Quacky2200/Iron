@@ -262,6 +262,7 @@ mod tests {
                 strength: 1.0,
             }),
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         }
     }
 

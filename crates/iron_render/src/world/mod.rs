@@ -295,6 +295,9 @@ pub struct Light {
     /// The layers it lights (and whose objects cast its shadows), a bit each (Unity's
     /// `cullingMask`).
     pub culling_mask: u32,
+    /// How strongly it lights fog with volumetric fog on ([`Fog::volumetric`]): 1 as
+    /// bright as it lights surfaces, 0 not at all (HDRP's volumetric multiplier).
+    pub volumetric: f32,
 }
 
 /// Which shadows are drawn at all (Unity's `QualitySettings.shadows`).
@@ -532,6 +535,36 @@ pub struct Fog {
     pub end: f32,
     /// Fog lying low as well, in the same colour.
     pub height: Option<HeightFog>,
+    /// Lights shining through the fog: light shafts.
+    pub volumetric: Option<VolumetricFog>,
+}
+
+/// Light scattered by the fog towards the camera, cut by shadows: shafts where the sun
+/// comes through gaps, cones under spot lights. Each fragment marches its view ray in
+/// `steps` (jittered per pixel) out to `distance`, sampling every light's (hard) shadow
+/// map; the fog beyond that counts as lit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolumetricFog {
+    /// Scales the scattered light (1: fog lit as brightly as a white surface would be).
+    pub intensity: f32,
+    /// -1 to 1: positive scatters forward, so looking towards a light shows more (the
+    /// Henyey-Greenstein `g`).
+    pub anisotropy: f32,
+    /// Samples along each ray (1 to 64).
+    pub steps: u32,
+    /// How far the march reaches, in metres.
+    pub distance: f32,
+}
+
+impl Default for VolumetricFog {
+    fn default() -> Self {
+        Self {
+            intensity: 1.0,
+            anisotropy: 0.4,
+            steps: 16,
+            distance: 50.0,
+        }
+    }
 }
 
 impl Default for Fog {
@@ -544,6 +577,7 @@ impl Default for Fog {
             start: 0.0,
             end: 300.0,
             height: None,
+            volumetric: None,
         }
     }
 }
@@ -758,6 +792,8 @@ struct GpuGlobals {
     view_dir: [f32; 4],
     /// Height fog: x density, y base height, z falloff, w 1 when on.
     fog_height: [f32; 4],
+    /// Light shafts: x intensity, y anisotropy, z steps, w the march's reach (0: off).
+    fog_volume: [f32; 4],
 }
 
 impl GpuGlobals {
@@ -775,6 +811,14 @@ impl GpuGlobals {
         self.fog_params = [f.density.max(0.0), f.start, f.end, 0.0];
         if let Some(h) = f.height {
             self.fog_height = [h.density.max(0.0), h.base_height, h.falloff.max(1e-4), 1.0];
+        }
+        if let Some(v) = f.volumetric {
+            self.fog_volume = [
+                v.intensity.max(0.0),
+                v.anisotropy.clamp(-0.95, 0.95),
+                v.steps.clamp(1, 64) as f32,
+                v.distance.max(1e-3),
+            ];
         }
     }
 }
@@ -3052,7 +3096,7 @@ impl WorldRenderer {
                 GpuLight {
                     position: [l.position.x, l.position.y, l.position.z, kind],
                     direction: [l.direction.x, l.direction.y, l.direction.z, l.range],
-                    color: [l.color[0], l.color[1], l.color[2], 0.0],
+                    color: [l.color[0], l.color[1], l.color[2], l.volumetric.max(0.0)],
                     spot,
                     mask: [l.culling_mask, 0, 0, 0],
                     shadow: self.shadow_plan.slot(l).map_or([-1.0, 0.0, 0.0, 0.0], |s| {

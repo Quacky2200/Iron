@@ -1445,7 +1445,13 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [x] Height fog (2026-10-20): exponential in height, integrated exactly along each view
     ray (`RenderSettings.heightFog`: density, base height, falloff); it covers the background
     out to the far plane, so the horizon sinks into it (`M7-FOG-04`)
-  - [ ] Volumetric light shafts: the sun (and spot lights) lighting the fog, cut by shadows
+  - [x] Volumetric light shafts (2026-10-20): each pixel marches its view ray (jittered,
+    `RenderSettings.volumetricFog`: intensity, anisotropy, steps, reach), each step's share
+    of the fog lit by every light that opts in (`Light.volumetricIntensity`) through its hard
+    shadow map, Henyey-Greenstein phase (`M7-FOG-05`)
+  - [ ] Follow-ups: a froxel volume (march once per froxel instead of per fragment, cheaper
+    under overdraw); blur or temporal accumulation of the jitter's grain; shafts in the sky
+    without height fog; `examples/fog` showing all of it in one scene
 
 ## M8 — Multiplayer
 

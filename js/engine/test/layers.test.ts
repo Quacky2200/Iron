@@ -65,10 +65,10 @@ describe("layers", () => {
   test("lights send their culling mask", () => {
     const light = new GameObject("lamp").addComponent(Light, { type: "point" });
     const last = () => ops.filter((o) => o[0] === "render.light").at(-1)!;
-    expect(last().at(-1)).toBe(0xffffffff);
+    expect(last()[13]).toBe(0xffffffff);
     light.cullingMask = ~LayerMask.getMask("UI");
     expect(light.cullingMask).toBe(0xffffffdf);
-    expect(last().at(-1)).toBe(0xffffffdf);
+    expect(last()[13]).toBe(0xffffffdf);
   });
 
   test("cameras send their culling mask and cull distances", () => {

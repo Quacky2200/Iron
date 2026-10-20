@@ -13,8 +13,8 @@ use iron_render::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog, FogMode,
     GizmoLine, Grading, HeightFog, Light, LightKind, MaterialMaps, MeshData, MeshGlow,
     MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows,
-    ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, WorldCamera,
-    WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog,
+    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -312,6 +312,8 @@ struct LightComponent {
     beam: f32,
     shadows: Option<Shadows>,
     culling_mask: u32,
+    /// How strongly it lights the fog (`Light.volumetricIntensity`).
+    volumetric: f32,
 }
 
 pub struct WorldViews {
@@ -963,7 +965,8 @@ impl WorldViews {
                 self.strokes.insert(id, stroke);
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
-            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask`
+            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask
+            // volumetricIntensity`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
@@ -991,6 +994,7 @@ impl WorldViews {
                         _ => None,
                     },
                     culling_mask: mask(args.get(12)),
+                    volumetric: num(13).unwrap_or(1.0).max(0.0),
                 };
                 self.lights.insert(id, light);
             }
@@ -1174,7 +1178,8 @@ impl WorldViews {
                 };
             }
             // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end
-            // [heightDensity baseHeight falloff]|null`; `fog 0 null` clears the air.
+            // [heightDensity baseHeight falloff]|null [intensity anisotropy steps distance]|null`;
+            // `fog 0 null` clears the air.
             "fog" => {
                 self.fog = match args.get(1) {
                     Some(Value::Null) | None => None,
@@ -1196,6 +1201,14 @@ impl WorldViews {
                                 falloff: falloff.max(1e-4),
                             }
                         }),
+                        volumetric: nums::<4>(args.get(7)).map(
+                            |[intensity, anisotropy, steps, distance]| VolumetricFog {
+                                intensity: intensity.max(0.0),
+                                anisotropy: anisotropy.clamp(-0.95, 0.95),
+                                steps: steps.clamp(1.0, 64.0) as u32,
+                                distance: distance.max(0.1),
+                            },
+                        ),
                     }),
                 };
             }
@@ -1516,6 +1529,7 @@ impl WorldViews {
                     range: l.range,
                     shadows: l.shadows,
                     culling_mask: l.culling_mask,
+                    volumetric: l.volumetric,
                 })
             })
             .collect();
@@ -2236,6 +2250,7 @@ mod tests {
                 start: 10.0,
                 end: 80.0,
                 height: None,
+                volumetric: None,
             })
         );
         // Height fog comes as a seventh argument (M7-FOG-04).
@@ -2260,6 +2275,32 @@ mod tests {
                 density: 0.1,
                 base_height: -2.0,
                 falloff: 0.5,
+            })
+        );
+        // Light shafts come as an eighth, clamped (M7-FOG-05).
+        let shafts = Value::Array(vec![n(2.0), n(1.5), n(200.0), n(40.0)]);
+        views
+            .apply(
+                "fog",
+                &[
+                    n(0.0),
+                    "exponential".into(),
+                    color.clone(),
+                    n(0.01),
+                    n(0.0),
+                    n(0.0),
+                    Value::Null,
+                    shafts,
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            fog(&views).and_then(|f| f.volumetric),
+            Some(VolumetricFog {
+                intensity: 2.0,
+                anisotropy: 0.95,
+                steps: 64,
+                distance: 40.0,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();
