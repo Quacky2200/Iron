@@ -408,3 +408,15 @@ fn value_classes_parse_from_their_numbers() {
         assert_eq!(ts_scf_parseVector(s("[1,2,3]")), 321.0);
     });
 }
+
+// M9-TS-725
+//
+// The object form parses too: fields by name, unknown keys skipped, left-out fields 0.
+#[test]
+fn value_classes_parse_from_objects_too() {
+    in_every_gc_mode(|_| unsafe {
+        assert_eq!(ts_scf_parseVector(s(r#"{"x":1,"y":2,"z":3}"#)), 321.0);
+        assert_eq!(ts_scf_parseVector(s(r#"{"z":3,"w":9,"x":1}"#)), 301.0);
+        assert_eq!(ts_scf_parseVector(s("{}")), 0.0);
+    });
+}

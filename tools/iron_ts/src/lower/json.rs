@@ -69,6 +69,10 @@ impl<'a> Lowerer<'a> {
                 b.out.push(self.m.structs[*sid].fields.len() as u8);
                 b.headers.push(b.out.len());
                 b.out.extend_from_slice(&(*sid as u64 + 1).to_le_bytes());
+                for f in &self.m.structs[*sid].fields {
+                    b.out.push(f.name.len() as u8);
+                    b.out.extend_from_slice(f.name.as_bytes());
+                }
             }
             Ty::Obj(sid) => {
                 // The class and every class that extends it: an object may be a subclass.

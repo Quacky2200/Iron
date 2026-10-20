@@ -11,7 +11,8 @@
 //!        | 5 nullable: desc
 //!        | 6 object: n u32, (struct header u64, body offset u32)*   (the class and its subclasses)
 //!        | 7 map or set                                      (stringifies as {}; cannot be parsed)
-//!        | 8 value class: count u8, struct header u64        (an array of its numbers: [x,y,z])
+//!        | 8 value class: count u8, struct header u64, (len u8, name)*   (stringifies as [x,y,z];
+//!          parses that or {"x":..,"y":..,"z":..}, left-out fields are 0)
 //! body  := n u32, field*                                     (offset is from the blob start)
 //! field := slot u32, omit-if-null u8, name len u32, name, desc
 //! blob  := total length u32, root desc offset u32, ...      (so a blob is passed as one pointer)
@@ -69,7 +70,13 @@ fn desc_len(b: &[u8], o: usize) -> usize {
         D_ARR => 2 + desc_len(b, o + 2),
         D_NULLABLE => 1 + desc_len(b, o + 1),
         D_OBJ => 5 + 12 * u32_at(b, o + 1) as usize,
-        D_VALUE => 10,
+        D_VALUE => {
+            let mut p = o + 10;
+            for _ in 0..b[o + 1] {
+                p += 1 + b[p] as usize;
+            }
+            p - o
+        }
         _ => 1,
     }
 }
@@ -760,10 +767,63 @@ impl Parser<'_, '_> {
                 }
                 Ok(a as u64)
             }
+            D_VALUE if self.peek() == Some(b'{') => {
+                // The object form: fields by name; unknown keys are skipped, missing ones are 0.
+                let count = b[d + 1] as usize;
+                let mut names: Vec<&[u8]> = Vec::new();
+                let mut p = d + 10;
+                for _ in 0..count {
+                    let len = b[p] as usize;
+                    names.push(&b[p + 1..p + 1 + len]);
+                    p += 1 + len;
+                }
+                let mut nums = vec![0.0f64; count];
+                self.p += 1;
+                self.ws();
+                if self.peek() == Some(b'}') {
+                    self.p += 1;
+                } else {
+                    let mut first = true;
+                    loop {
+                        self.ws();
+                        if self.peek() != Some(b'"') {
+                            return Err(self.bad_key(first));
+                        }
+                        first = false;
+                        let key = self.string()?;
+                        self.ws();
+                        if self.peek() != Some(b':') {
+                            return Err(syntax(
+                                "Expected ':' before value in object property definition",
+                            ));
+                        }
+                        self.p += 1;
+                        match names.iter().position(|n| *n == &key[..]) {
+                            Some(i) => nums[i] = self.value_num()?,
+                            None => self.skip()?,
+                        }
+                        self.ws();
+                        match self.peek() {
+                            Some(b',') => self.p += 1,
+                            Some(b'}') => {
+                                self.p += 1;
+                                break;
+                            }
+                            _ => return Err(syntax("Expected '}'")),
+                        }
+                    }
+                }
+                let o = new_obj(self.h, u64_at(b, d + 2), 8 + 8 * count);
+                for (i, x) in nums.iter().enumerate() {
+                    // SAFETY: just made, with `count` slots.
+                    unsafe { *((o as *mut f64).add(1 + i)) = *x };
+                }
+                Ok(o as u64)
+            }
             D_VALUE => {
                 if self.peek() != Some(b'[') {
                     return match self.peek() {
-                        Some(b'{' | b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9') => {
+                        Some(b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9') => {
                             self.skip()?;
                             self.soft(type_err("expected an array of numbers"))
                         }
