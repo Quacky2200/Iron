@@ -40,6 +40,7 @@ fn fold_bits(op: BinOp, a: f64, b: f64) -> f64 {
 }
 
 /// One piece of an array being built: a value, or an array whose elements are spread in.
+#[derive(Clone)]
 pub(crate) enum Elem {
     One(Expr),
     Spread(Expr),
@@ -218,9 +219,16 @@ impl<'a> Lowerer<'a> {
                             sv.clone()
                         }
                     }
-                    _ => self.unify(&a.ty, &b.ty)?,
+                    _ => match self.unify(&a.ty, &b.ty) {
+                        Ok(t) => t,
+                        // `show ? points.map(..) : []`: both go to the type the context wants.
+                        Err(e) => match exp {
+                            Some(t) => t.clone(),
+                            None => return Err(e),
+                        },
+                    },
                 };
-                let (a, b) = (self.coerce(a, &ty)?, self.coerce(b, &ty)?);
+                let (a, b) = (self.coerce_ext(a, &ty)?, self.coerce_ext(b, &ty)?);
                 Ok(mk(
                     ExprKind::Cond(Box::new(test), Box::new(a), Box::new(b)),
                     ty,
@@ -468,8 +476,18 @@ impl<'a> Lowerer<'a> {
             && Some(sid) != self.match_sid()
             && !m.optional
         {
+            // `pair[1]` on a tuple.
+            if self.is_tuple(sid)
+                && let Expression::NumericLiteral(n) = &m.expression
+                && n.value >= 0.0
+                && (n.value as usize) < self.m.structs[sid].fields.len()
+            {
+                let i = n.value as usize;
+                let ty = self.m.structs[sid].fields[i].ty.clone();
+                return Ok(mk(ExprKind::Field(Box::new(arr), sid, i), ty));
+            }
             let key = self.lower_expr(&m.expression, None)?;
-            if key.ty == Ty::Lit && !self.m.structs[sid].fields.is_empty() {
+            if matches!(key.ty, Ty::Lit | Ty::Str) && !self.m.structs[sid].fields.is_empty() {
                 return Ok(self.record_index(arr, sid, key));
             }
             bail!("cannot index an object by {}", key.ty)
@@ -496,18 +514,24 @@ impl<'a> Lowerer<'a> {
     fn record_index(&mut self, obj: Expr, sid: StructId, key: Expr) -> Expr {
         let fields = self.m.structs[sid].fields.clone();
         let ty = fields[0].ty.clone();
-        let (to, tk) = (self.new_local(obj.ty.clone()), self.new_local(Ty::Lit));
+        let by_str = key.ty.strip() == &Ty::Str;
+        let (to, tk) = (
+            self.new_local(obj.ty.clone()),
+            self.new_local(if by_str { Ty::Str } else { Ty::Lit }),
+        );
         let (ov, kv) = (self.var_expr(to), self.var_expr(tk));
         let field = |i: usize| mk(ExprKind::Field(Box::new(ov.clone()), sid, i), ty.clone());
         let mut acc = field(fields.len() - 1);
         for i in (0..fields.len() - 1).rev() {
-            let t = self.tag(&fields[i].name);
+            let name = fields[i].name.clone();
+            let want = if by_str {
+                self.str_lit(&name)
+            } else {
+                let t = self.tag(&name);
+                mk(ExprKind::Tag(t), Ty::Lit)
+            };
             let is = mk(
-                ExprKind::Cmp(
-                    CmpOp::Eq,
-                    Box::new(kv.clone()),
-                    Box::new(mk(ExprKind::Tag(t), Ty::Lit)),
-                ),
+                ExprKind::Cmp(CmpOp::Eq, Box::new(kv.clone()), Box::new(want)),
                 Ty::Bool,
             );
             acc = mk(
@@ -604,6 +628,14 @@ impl<'a> Lowerer<'a> {
             UnaryOperator::UnaryPlus => self.as_num(a),
             // ~x is ToInt32(x) ^ -1.
             UnaryOperator::BitwiseNot => self.arith(BinOp::BitXor, a, num(-1.0)),
+            // `void f()`: the call, then nothing.
+            UnaryOperator::Void => {
+                let unit = mk(ExprKind::Bool(false), Ty::Void);
+                Ok(mk(
+                    ExprKind::Seq(vec![Stmt::Eval(a)], Box::new(unit)),
+                    Ty::Void,
+                ))
+            }
             _ => bail!("{}: unsupported unary operator", self.loc(u.span.start)),
         }
     }
@@ -1335,7 +1367,76 @@ impl<'a> Lowerer<'a> {
         if matches!(want.strip(), Ty::Handle(_)) && matches!(v.ty.strip(), Ty::Null) {
             return Ok(mk(ExprKind::Null, want.clone()));
         }
+        // `{ x, y }` objects (or an array of them) where a value class (`Vector2`) is expected:
+        // a copy with the fields it names.
+        match (v.ty.strip().clone(), want.strip().clone()) {
+            (Ty::Obj(a), Ty::Obj(b)) if a != b && self.can_copy_fields(a, b) => {
+                return Ok(self.copy_fields(v, a, b));
+            }
+            (Ty::Arr(ea), Ty::Arr(eb)) => {
+                if let (Ty::Obj(a), Ty::Obj(b)) = (ea.strip().clone(), eb.strip().clone())
+                    && a != b
+                    && self.can_copy_fields(a, b)
+                {
+                    let src = self.new_local(v.ty.clone());
+                    let out_ty = want.strip().clone();
+                    let out = self.new_local(out_ty.clone());
+                    let mut stmts = vec![
+                        Stmt::Assign(src, v),
+                        Stmt::Assign(
+                            out,
+                            mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), out_ty.clone()),
+                        ),
+                    ];
+                    let it = self.begin_iter(self.var_expr(src))?;
+                    stmts.extend(it.pre);
+                    let x = self.var_expr(it.elem);
+                    let copy = self.copy_fields(x, a, b);
+                    let mut body = it.head;
+                    body.push(Stmt::Eval(mk(
+                        ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(out), copy]),
+                        Ty::Void,
+                    )));
+                    stmts.push(Stmt::Loop(it.label, body));
+                    return Ok(mk(
+                        ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
+                        out_ty,
+                    ));
+                }
+            }
+            _ => {}
+        }
         self.coerce(v, want)
+    }
+
+    /// Every field of `to` is a field of `from` with the same type.
+    fn can_copy_fields(&self, from: StructId, to: StructId) -> bool {
+        if self.class_of_sid.contains_key(&from) || self.class_of_sid.contains_key(&to) {
+            return false;
+        }
+        let (f, t) = (&self.m.structs[from], &self.m.structs[to]);
+        !t.fields.is_empty()
+            && t.fields
+                .iter()
+                .all(|tf| f.field(&tf.name).is_some_and(|i| f.fields[i].ty == tf.ty))
+    }
+
+    fn copy_fields(&mut self, v: Expr, from: StructId, to: StructId) -> Expr {
+        let src = self.new_local(v.ty.clone());
+        let ty = Ty::Obj(to);
+        let dst = self.new_local(ty.clone());
+        let mut stmts = vec![
+            Stmt::Assign(src, v),
+            Stmt::Assign(dst, mk(ExprKind::NewObj(to), ty.clone())),
+        ];
+        for i in 0..self.m.structs[to].fields.len() {
+            let name = self.m.structs[to].fields[i].name.clone();
+            let j = self.m.structs[from].field(&name).expect("checked");
+            let fty = self.m.structs[to].fields[i].ty.clone();
+            let read = mk(ExprKind::Field(Box::new(self.var_expr(src)), from, j), fty);
+            stmts.push(Stmt::StoreField(self.var_expr(dst), to, i, read));
+        }
+        mk(ExprKind::Seq(stmts, Box::new(self.var_expr(dst))), ty)
     }
 
     /// The call of a boundary function with arguments already lowered to the script types. A
@@ -1984,10 +2085,28 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_array_lit(&mut self, a: &'a ArrayExpression<'a>, exp: Option<&Ty>) -> R<Expr> {
+        // `[1, "a"]` where a tuple type (an object with fields `0`, `1`, ..) is expected.
+        if let Some(Ty::Obj(sid)) = exp.map(|t| t.strip())
+            && self.is_tuple(*sid)
+            && a.elements.len() == self.m.structs[*sid].fields.len()
+        {
+            let sid = *sid;
+            let mut vals = Vec::new();
+            for (i, item) in a.elements.iter().enumerate() {
+                let Some(e) = item.as_expression() else {
+                    bail!("{}: spread in a tuple", self.loc(a.span.start))
+                };
+                let want = self.m.structs[sid].fields[i].ty.clone();
+                let v = self.lower_expr(e, Some(&want))?;
+                vals.push(self.coerce(v, &want)?);
+            }
+            return self.build_tuple(sid, vals);
+        }
         let mut el = match exp.map(|t| t.strip()) {
             Some(Ty::Arr(e)) => Some((**e).clone()),
             _ => None,
         };
+        let el_given = el.is_some();
         let mut elems = Vec::new();
         for item in &a.elements {
             if let ArrayExpressionElement::SpreadElement(sp) = item {
@@ -2024,7 +2143,57 @@ impl<'a> Lowerer<'a> {
             }
             elems.push(Elem::One(v));
         }
+        // `[0, 1.5, false]` with mixed element types is a tuple: an object with fields `0`, `1`, ..
+        let tupleable =
+            !el_given && elems.len() >= 2 && elems.iter().all(|e| matches!(e, Elem::One(_)));
+        if tupleable {
+            match self.build_array(elems.clone(), el.clone().unwrap_or(Ty::Num)) {
+                Ok(e) => return Ok(e),
+                Err(_) => {
+                    let vals: Vec<Expr> = elems
+                        .into_iter()
+                        .map(|e| match e {
+                            Elem::One(v) => v,
+                            Elem::Spread(v) => v,
+                        })
+                        .collect();
+                    let fields: Vec<Field> = vals
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| Field {
+                            name: i.to_string(),
+                            ty: v.ty.clone(),
+                            optional: false,
+                        })
+                        .collect();
+                    let sid = self.anon_struct("Tuple", fields);
+                    return self.build_tuple(sid, vals);
+                }
+            }
+        }
         self.build_array(elems, el.unwrap_or(Ty::Num))
+    }
+
+    /// A tuple type: an anonymous object whose fields are named `0`, `1`, ..
+    pub(crate) fn is_tuple(&self, sid: StructId) -> bool {
+        let d = &self.m.structs[sid];
+        d.name == "Tuple"
+            && d.fields
+                .iter()
+                .enumerate()
+                .all(|(i, f)| f.name == i.to_string())
+    }
+
+    fn build_tuple(&mut self, sid: StructId, vals: Vec<Expr>) -> R<Expr> {
+        let ty = Ty::Obj(sid);
+        let tmp = self.new_local(ty.clone());
+        let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), ty.clone()))];
+        for (i, v) in vals.into_iter().enumerate() {
+            let fty = self.m.structs[sid].fields[i].ty.clone();
+            let v = self.coerce(v, &fty)?;
+            stmts.push(Stmt::StoreField(self.var_expr(tmp), sid, i, v));
+        }
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty))
     }
 
     /// A new array of `el` from values and spread arrays, in order:
@@ -2406,7 +2575,7 @@ impl<'a> Lowerer<'a> {
         );
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;
-            self.coerce(v, &pty)?
+            self.coerce_ext(v, &pty)?
         } else if a.operator == A::Addition && Self::is_stringy(&pty) {
             let r = self.lower_expr(&a.right, None)?;
             let old = self.place_read(&place);
@@ -2528,13 +2697,25 @@ impl<'a> Lowerer<'a> {
         let fp: &'a FormalParameters<'a> = self.fsrc[name].params;
         let n_fixed = fp.items.len();
         let rest_ty = fp.rest.as_ref().map(|_| ptys[n_fixed].clone());
-        if rest_ty.is_none() && args.len() > n_fixed {
-            bail!(
-                "{name}: {} arguments, at most {n_fixed} expected",
-                args.len()
-            );
-        }
         let given = args.len().min(n_fixed);
+        // JavaScript evaluates and drops the arguments a function does not name.
+        let mut dropped = Vec::new();
+        if rest_ty.is_none() && args.len() > n_fixed {
+            // tsc rejects this in user code; the component hook thunks pass `dt` to every hook.
+            if !matches!(self.fsrc[name].kind, FnKind::Method(_)) {
+                bail!(
+                    "{name}: {} arguments, at most {n_fixed} expected",
+                    args.len()
+                );
+            }
+            for a in &args[n_fixed..] {
+                let Some(e) = a.as_expression() else {
+                    bail!("{name}: a spread argument past the parameters")
+                };
+                let v = self.lower_expr(e, None)?;
+                dropped.push(Stmt::Eval(v));
+            }
+        }
         let mut vals: Vec<Expr> = Vec::new();
         for (a, p) in args[..given].iter().zip(ptys) {
             let Some(e) = a.as_expression() else {
@@ -2544,7 +2725,7 @@ impl<'a> Lowerer<'a> {
             let v = self.temporal_arg(v, p)?;
             vals.push(self.coerce(v, p)?);
         }
-        let mut pre = Vec::new();
+        let mut pre = dropped;
         if given < n_fixed {
             // The defaults may use earlier parameters: give those names to temporaries.
             let mut names: HashMap<String, Binding> = HashMap::new();

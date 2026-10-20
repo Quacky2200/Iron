@@ -85,10 +85,19 @@ impl<'a> Lowerer<'a> {
                     Some(first) if tys.iter().all(|t| t == first) => {
                         Ty::Arr(Box::new(first.clone()))
                     }
-                    _ => bail!(
-                        "a tuple needs one element type (`[number, number]`); \
-                         use an object type for mixed fields"
-                    ),
+                    // Mixed element types: an object with fields `0`, `1`, ..
+                    _ => {
+                        let fields = tys
+                            .iter()
+                            .enumerate()
+                            .map(|(i, t)| Field {
+                                name: i.to_string(),
+                                ty: t.clone(),
+                                optional: false,
+                            })
+                            .collect();
+                        Ty::Obj(self.anon_struct("Tuple", fields))
+                    }
                 }
             }
             TSType::TSUnionType(u) => self.union(&u.types, hint)?,

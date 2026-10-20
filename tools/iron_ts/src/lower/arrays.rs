@@ -139,6 +139,15 @@ impl<'a> Lowerer<'a> {
                 {
                     self.cur.ret = Some(v.ty.clone().nullable());
                 }
+                // `if (x) return; ... return cleanup;`: a callback that first returned nothing and
+                // now returns a pointer value is nullable.
+                if self.cur.bare_returns
+                    && self.cur.ret == Some(Ty::Void)
+                    && (v.ty.is_ptr() || matches!(v.ty, Ty::Handle(_)))
+                    && !v.ty.is_nullable()
+                {
+                    self.cur.ret = Some(v.ty.clone().nullable());
+                }
                 let v = match self.cur.ret.clone() {
                     Some(t) => self.coerce(v, &t)?,
                     None => {
@@ -156,6 +165,21 @@ impl<'a> Lowerer<'a> {
             None => {
                 if self.cur.ret.is_none() {
                     self.cur.ret = Some(Ty::Void);
+                    self.cur.bare_returns = true;
+                }
+                // The type was inferred from a value earlier: this return gives null.
+                if let Some(t) = self.cur.ret.clone()
+                    && t != Ty::Void
+                    && (self.cur.widen_ret || self.cur.ret_inferred)
+                    && (t.is_ptr() || matches!(t, Ty::Handle(_)))
+                {
+                    let t = t.nullable();
+                    self.cur.ret = Some(t.clone());
+                    out.push(Stmt::Return(Some(Expr {
+                        kind: ExprKind::Null,
+                        ty: t,
+                    })));
+                    return Ok(());
                 }
                 out.push(Stmt::Return(None));
             }

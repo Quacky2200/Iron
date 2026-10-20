@@ -64,10 +64,17 @@ function __xp_Screen_resolutions(): Resolution[] {
 }
 
 //# when Screen.supportedFullScreenModes
-function __xp_Screen_supportedFullScreenModes(): string[] {
-  const out: string[] = [];
+type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
+function __full_screen_mode(s: string): FullScreenMode {
+  if (s === "ExclusiveFullScreen") return "ExclusiveFullScreen";
+  if (s === "FullScreenWindow") return "FullScreenWindow";
+  if (s === "MaximizedWindow") return "MaximizedWindow";
+  return "Windowed";
+}
+function __xp_Screen_supportedFullScreenModes(): FullScreenMode[] {
+  const out: FullScreenMode[] = [];
   const n = Screen.supportedFullScreenModeCount;
-  for (let i = 0; i < n; i++) out.push(Screen.supportedFullScreenModeAt(i));
+  for (let i = 0; i < n; i++) out.push(__full_screen_mode(Screen.supportedFullScreenModeAt(i)));
   return out;
 }
 
@@ -255,7 +262,7 @@ function __sprite_make(texture: Texture, rect: Rect | null, pivot: Vector2 | und
 function __xt_SceneManager_loadSceneAsync(path: string, mode?: string): Promise<Scene> {
   return new Promise<Scene>((resolve) => {
     let token = 0;
-    token = SceneManager.onSceneLoaded((scene: Scene, m: string) => {
+    token = SceneManager.onSceneLoaded$n((scene: Scene, m: string) => {
       if (scene.path === path) {
         SceneManager.offSceneEvent(token);
         resolve(scene);
@@ -426,4 +433,49 @@ function __xt_input_gamepads(): Gamepad[] {
 function __xt_input_on(type: string, fn: () => void): () => void {
   const token = type === "gamepaddisconnected" ? input.onGamepadDisconnected((id: number) => { fn(); }) : input.onGamepadConnected((id: number) => { fn(); });
   return () => { input.off(token); };
+}
+
+//# when AnimationCurve.fromPoints
+function __xt_AnimationCurve_fromPoints(points: number[][], mode?: string): AnimationCurve {
+  const v: Vector2[] = [];
+  for (let i = 0; i < points.length; i++) v.push(new Vector2(points[i]![0]!, points[i]![1]!));
+  return AnimationCurve.fromPoints$n(v, mode ?? "linear");
+}
+
+//# when QualitySettings.onLevelChanged
+function __xt_QualitySettings_onLevelChanged(fn: (level: number) => void): () => void {
+  const token = QualitySettings.onLevelChanged$n(fn);
+  return () => { QualitySettings.offLevelChanged(token); };
+}
+
+//# when Screen.onChange
+function __xt_Screen_onChange(fn: () => void): () => void {
+  const token = Screen.onChange$n(fn);
+  return () => { Screen.offChange(token); };
+}
+
+//# when Assets.onChanged
+function __xt_Assets_onChanged(fn: (path: string) => void): () => void {
+  const token = Assets.onChanged$n(fn);
+  return () => { Assets.offChanged(token); };
+}
+
+//# when Application.onFocusChanged
+function __xt_Application_onFocusChanged(fn: (focused: boolean) => void): () => void {
+  const token = Application.onFocusChanged$n(fn);
+  return () => { Application.offFocusChanged(token); };
+}
+
+//# when SceneManager.onSceneLoaded|SceneManager.onSceneUnloaded|SceneManager.onActiveSceneChanged
+function __xt_SceneManager_onSceneLoaded(fn: (scene: Scene, mode: string) => void): () => void {
+  const token = SceneManager.onSceneLoaded$n(fn);
+  return () => { SceneManager.offSceneEvent(token); };
+}
+function __xt_SceneManager_onSceneUnloaded(fn: (scene: Scene) => void): () => void {
+  const token = SceneManager.onSceneUnloaded$n(fn);
+  return () => { SceneManager.offSceneEvent(token); };
+}
+function __xt_SceneManager_onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void {
+  const token = SceneManager.onActiveSceneChanged$n(fn);
+  return () => { SceneManager.offSceneEvent(token); };
 }

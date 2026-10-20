@@ -1228,6 +1228,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1706 | Integration | `Sprite.create(texture, rect, pivot, ppu)` and `Sprite.grid(texture, columns, rows, pivot?, ppu?)`. |
 | M9-TS-1707 | Integration | `addStyleSheet` / `removeStyleSheet` / `loadFont({ family, src, weight })` queue requests for the host (`UiResources`); `input.gamepads()` and `input.on("gamepadconnected" / "gamepaddisconnected", fn)` return an unsubscribe function. |
 | M9-TS-1708 | Integration | ParticleSystem options (`[min, max]` ranges, `bursts`, `shape`, `colorOverLifetime`, `sizeOverLifetime`), `points` / `positions` lists (`setPoints` / `setPositions` as setters), `sprite: null`. |
+| M9-TS-2000 | Integration | `AnimationCurve.fromPoints([[t, v], ..])` pairs (facade) next to the native `Vector2[]` form. |
+| M9-TS-2001 | Integration | `QualitySettings.onLevelChanged` (and the other subscribe calls) return an unsubscribe function; a `Record<FullScreenMode, string>` is indexed by `Screen.supportedFullScreenModes`. |
+| M9-TS-2002 | Integration | A callback that returns nothing on one path and a function on another (an effect with an early `return;`) is nullable. |
+| M9-TS-2003 | Integration | Array literals of mixed element types are tuples (objects with fields `0`, `1`, ..): `as const` rows, destructuring in `for-of`, `t[1]`. |
+| M9-TS-2004 | Integration | Closure parameters with defaults and no annotation (`scale = 0.75`) may be left out. |
+| M9-TS-2005 | Integration | `void expr` evaluates and yields nothing. |
+| M9-TS-2006 | Integration | A `Record<union, V>` is indexed by a `string` from the engine. |
+| M9-TS-2007 | Integration | `{ x, y }[]` goes where `Vector2[]` is expected (setter, `cond ? list : []`). |
+| M9-TS-2008 | Integration | `for (const t of [a, b])` over unrelated types runs the body per element. |
 | M9-API-500 | Unit | `UiResources` requests come out in order with stylesheet ids; the queue is emptied by `take_requests`. |
 | M9-TS-1800 | Unit | A relative import pulls the file in before the importer; `export` is dropped from non-entry files. |
 | M9-TS-1801 | Unit | `@iron/*` and `react` imports are erased; an aliased name is renamed to the real one. |

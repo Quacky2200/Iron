@@ -128,3 +128,79 @@ fn particle_ranges_bursts_shape_keys_and_point_lists_are_options() {
         );
     });
 }
+
+// M9-TS-2000
+#[test]
+fn curve_from_point_pairs_and_a_pairs_literal() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_curveFromPairs()), "5|3|2");
+    });
+}
+
+// M9-TS-2001
+#[test]
+fn subscriptions_return_an_unsubscribe_function_and_modes_index_a_record() {
+    in_every_gc_mode(|| unsafe {
+        let s = text(ts_fac_unsubscribers());
+        assert!(s.starts_with("function|true|true|"), "{s}");
+    });
+}
+
+// M9-TS-2002
+#[test]
+fn a_callback_returning_nothing_then_a_function_is_nullable() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_bareReturnThenCleanup()), "true|true|7");
+    });
+}
+
+// M9-TS-2003
+#[test]
+fn array_literals_of_mixed_types_are_tuples() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_tuples()), "0:-2.5:4:F,1:2.5:8:T,8|three");
+    });
+}
+
+// M9-TS-2004
+#[test]
+fn closure_parameters_with_defaults_may_be_left_out() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_defaultedClosureParams()),
+            "1a0.75t|2b2t|3c3z"
+        );
+    });
+}
+
+// M9-TS-2005
+#[test]
+fn void_operator_evaluates_and_yields_nothing() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_voidAndExtraArguments()), "2|2");
+    });
+}
+
+// M9-TS-2006
+#[test]
+fn a_record_is_indexed_by_a_string_from_the_engine() {
+    in_every_gc_mode(|| unsafe {
+        assert!(!text(ts_fac_recordByEngineString()).is_empty());
+    });
+}
+
+// M9-TS-2007
+#[test]
+fn plain_xy_objects_go_where_value_vectors_are_expected() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_plainPointsToValues()), "4|2");
+    });
+}
+
+// M9-TS-2008
+#[test]
+fn for_of_over_an_array_of_unrelated_types_runs_the_body_for_each() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_unrolledMixedLoop()), "3|a2|2");
+    });
+}

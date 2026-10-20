@@ -171,6 +171,9 @@ pub(crate) struct FnCtx {
     pub widen_ret: bool,
     /// The function has no return annotation: `return null` and `return obj` make it nullable.
     pub ret_inferred: bool,
+    /// An inferred return type met a bare `return;`: if a value is returned elsewhere, the bare
+    /// ones return null.
+    pub bare_returns: bool,
     pub next_label: u32,
     /// Enclosing loops, switches and labelled statements, innermost last.
     pub loops: Vec<LoopLabels>,
@@ -809,7 +812,13 @@ impl<'a> Lowerer<'a> {
         self.tenv = saved_env;
         self.captured = saved_captured;
         self.cur = saved;
-        r?;
+        r.map_err(|e| {
+            if std::env::var_os("IRON_TS_TRACE_FN").is_some() {
+                format!("{e} [in {name}]")
+            } else {
+                e
+            }
+        })?;
         self.fstate[id] = 2;
         Ok(())
     }
@@ -944,6 +953,32 @@ impl<'a> Lowerer<'a> {
             }
         }
         let ret = self.cur.ret.clone().unwrap_or(Ty::Void);
+        if ret != Ty::Void && self.cur.bare_returns {
+            // `if (x) return; ... return cleanup;`: the bare returns hand back null.
+            fn patch(stmts: &mut [Stmt], ret: &Ty) {
+                for s in stmts {
+                    match s {
+                        Stmt::Return(r @ None) => {
+                            *r = Some(Expr {
+                                kind: ExprKind::Null,
+                                ty: ret.clone(),
+                            });
+                        }
+                        Stmt::If(_, a, b) => {
+                            patch(a, ret);
+                            patch(b, ret);
+                        }
+                        Stmt::Block(_, b) | Stmt::Loop(_, b) => patch(b, ret),
+                        Stmt::Try(a, _, b) => {
+                            patch(a, ret);
+                            patch(b, ret);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            patch(&mut stmts, &ret);
+        }
         if ret == Ty::Void {
             stmts.push(Stmt::Return(None));
         } else {

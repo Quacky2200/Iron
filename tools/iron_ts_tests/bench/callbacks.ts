@@ -44,13 +44,13 @@ export function upCount(): number {
 }
 
 export function subscribeAssets(): number {
-  return Assets.onChanged((paths: string) => {
+  return Assets.onChanged$n((paths: string) => {
     log += "assets:" + paths.split("\n").join(",") + ";";
   });
 }
 
 export function subscribeFocus(): number {
-  return Application.onFocusChanged((focused: boolean) => {
+  return Application.onFocusChanged$n((focused: boolean) => {
     log += focused ? "focus;" : "blur;";
   });
 }
@@ -60,13 +60,13 @@ export function offFocus(token: number): boolean {
 }
 
 export function subscribeScenes(): number {
-  SceneManager.onSceneUnloaded((scene: Scene) => {
+  SceneManager.onSceneUnloaded$n((scene: Scene) => {
     log += "unloaded;";
   });
-  SceneManager.onActiveSceneChanged((previous: Scene, next: Scene) => {
+  SceneManager.onActiveSceneChanged$n((previous: Scene, next: Scene) => {
     log += "active:" + previous.name + ">" + next.name + ";";
   });
-  return SceneManager.onSceneLoaded((scene: Scene, mode: string) => {
+  return SceneManager.onSceneLoaded$n((scene: Scene, mode: string) => {
     log += "loaded:" + scene.name + ":" + mode + ";";
   });
 }

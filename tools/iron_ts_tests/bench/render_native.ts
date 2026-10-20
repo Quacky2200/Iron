@@ -172,7 +172,7 @@ export function screenChangeCount(): number {
 }
 
 export function screenApi(): string {
-  Screen.onChange(() => {
+  Screen.onChange$n(() => {
     screenChanges += 1;
   });
   Screen.fullScreenMode = "FullScreenWindow";
@@ -187,7 +187,7 @@ export function levelChangeCount(): number {
 }
 
 export function quality(): string {
-  QualitySettings.onLevelChanged((level: number) => {
+  QualitySettings.onLevelChanged$n((level: number) => {
     levelChanges += level + 1;
   });
   QualitySettings.setQualityLevelByName("Low");

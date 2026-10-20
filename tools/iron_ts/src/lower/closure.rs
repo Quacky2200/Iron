@@ -63,13 +63,23 @@ impl<'a> Lowerer<'a> {
                 Some(a) => self.ty(&a.type_annotation, "closure")?,
                 None => match exp_fn.as_ref().and_then(|f| f.params.get(i)) {
                     Some(t) => t.clone(),
-                    None => bail!(
-                        "{}: closure parameter needs a type annotation",
-                        self.loc(start)
-                    ),
+                    // `(scale = 0.75) => ..`: the default's literal gives the type.
+                    None => match p.initializer.as_deref() {
+                        Some(Expression::NumericLiteral(_)) => Ty::Num,
+                        Some(Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) => {
+                            Ty::Str
+                        }
+                        Some(Expression::BooleanLiteral(_)) => Ty::Bool,
+                        _ => bail!(
+                            "{}: closure parameter needs a type annotation",
+                            self.loc(start)
+                        ),
+                    },
                 },
             };
-            ptys.push(if p.optional && p.initializer.is_none() {
+            // A parameter with a default may be left out: it is null, and the body replaces it.
+            let defaulted = p.initializer.is_some() && (ty.is_ptr() || ty == Ty::Num);
+            ptys.push(if (p.optional && p.initializer.is_none()) || defaulted {
                 ty.nullable()
             } else {
                 ty
@@ -210,7 +220,25 @@ impl<'a> Lowerer<'a> {
         for (p, ty) in params.items.iter().zip(ptys.by_ref()) {
             let v = self.new_local(ty.clone());
             pvars.push(v);
-            self.bind_param(&p.pattern, v, &mut pro)?;
+            match &p.initializer {
+                Some(init) if ty.is_nullable() && !p.optional => {
+                    let base = ty.strip().clone();
+                    let t = self.var_expr(v);
+                    let d = self.lower_expr(init, Some(&base))?;
+                    let d = self.coerce(d, &base)?;
+                    let have = mk(ExprKind::Cast(Box::new(t.clone())), base.clone());
+                    let picked = mk(
+                        ExprKind::Cond(
+                            Box::new(mk(ExprKind::IsNull(Box::new(t)), Ty::Bool)),
+                            Box::new(d),
+                            Box::new(have),
+                        ),
+                        base,
+                    );
+                    self.bind_pattern(&p.pattern, picked, &mut pro)?;
+                }
+                _ => self.bind_param(&p.pattern, v, &mut pro)?,
+            }
         }
         if let (Some(r), Some(ty)) = (&params.rest, ptys.next()) {
             let v = self.new_local(ty.clone());

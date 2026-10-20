@@ -217,6 +217,15 @@ impl<'a> Lowerer<'a> {
         if m.ends_with("$n") {
             return Ok(None);
         }
+        // `AnimationCurve.fromPoints([[t, v], ..])` is the facade's; a `Vector2[]` is the native one.
+        if class == "AnimationCurve"
+            && m == "fromPoints"
+            && let Some(first) = c.arguments.first().and_then(|a| a.as_expression())
+            && let Ok(v) = self.lower_expr(first, None)
+            && matches!(v.ty.strip(), Ty::Arr(e) if matches!(e.strip(), Ty::Obj(_)))
+        {
+            return Ok(None);
+        }
         let mut name = Self::x_name("t", class, m);
         let argc_variant = format!("{name}${}", c.arguments.len());
         if self.fids.contains_key(&argc_variant) {

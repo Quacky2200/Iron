@@ -778,7 +778,13 @@ pub extern "C" fn ts_ui_effect(f: *mut Closure) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_set_cleanup(f: *mut Closure) {
-    CLEANUP.with(|c| *c.borrow_mut() = Some(Rooted::new(f)));
+    CLEANUP.with(|c| {
+        *c.borrow_mut() = if f.is_null() {
+            None
+        } else {
+            Some(Rooted::new(f))
+        }
+    });
 }
 
 // ---- events ----

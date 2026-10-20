@@ -85,6 +85,14 @@ impl<'a> Lowerer<'a> {
                 {
                     return self.lower_for_object_entries(f, call, pat, out);
                 }
+                if mode.is_empty()
+                    && let Expression::ArrayExpression(lit) = source
+                    && lit.elements.len() >= 2
+                    && lit.elements.iter().all(|e| e.as_expression().is_some())
+                    && self.lower_for_unrolled(f, pat, lit, out)?
+                {
+                    return Ok(());
+                }
                 let arr = self.lower_expr(source, None)?;
                 let arr = self.match_view(arr);
                 if matches!(arr.ty.strip(), Ty::Map(..) | Ty::Set(_)) {
@@ -276,6 +284,65 @@ impl<'a> Lowerer<'a> {
             out.push(Stmt::If(is_it, take, vec![]));
         }
         Ok(())
+    }
+
+    /// `for (const t of [a, b, c]) body` where the elements have unrelated types (`Tween<number>`,
+    /// `Tween<Color>`): the body once per element, each with its own type. `Ok(false)` when the
+    /// elements share a type (the plain loop handles them).
+    fn lower_for_unrolled(
+        &mut self,
+        f: &'a ForOfStatement<'a>,
+        pat: &'a BindingPattern<'a>,
+        lit: &'a ArrayExpression<'a>,
+        out: &mut Vec<Stmt>,
+    ) -> R<bool> {
+        let mut vals = Vec::new();
+        for item in &lit.elements {
+            let Some(e) = item.as_expression() else {
+                return Ok(false);
+            };
+            match self.lower_expr(e, None) {
+                Ok(v) => vals.push(v),
+                Err(_) => return Ok(false),
+            }
+        }
+        let mixed = vals
+            .iter()
+            .skip(1)
+            .any(|v| v.ty.strip() != vals[0].ty.strip() && self.unify(&vals[0].ty, &v.ty).is_err());
+        if !mixed {
+            return Ok(false);
+        }
+        let name = self.cur.pending_label.take();
+        let brk = self.new_label();
+        let mut tmps = Vec::new();
+        let mut pre = Vec::new();
+        for v in vals {
+            let t = self.new_local(v.ty.clone());
+            pre.push(Stmt::Assign(t, v));
+            tmps.push(t);
+        }
+        let mut blocks = Vec::new();
+        for t in tmps {
+            let cont = self.new_label();
+            self.cur.scopes.push(HashMap::new());
+            let mut bind = Vec::new();
+            self.bind_param(pat, t, &mut bind)?;
+            self.cur.loops.push(LoopLabels {
+                name: name.clone(),
+                brk,
+                cont: Some(cont),
+                unlabeled_break: true,
+            });
+            let body = self.scoped(&f.body);
+            self.cur.loops.pop();
+            self.cur.scopes.pop();
+            bind.extend(body?);
+            blocks.push(Stmt::Block(cont, bind));
+        }
+        pre.extend(blocks);
+        out.push(Stmt::Block(brk, pre));
+        Ok(true)
     }
 
     /// `for (const [k, v] of Object.entries(o)) body`: a loop over the keys with the value read
@@ -724,6 +791,26 @@ impl<'a> Lowerer<'a> {
                 if let Some(r) = &o.rest {
                     let rest = self.object_rest(&self.var_expr(tmp), &taken)?;
                     self.bind_pattern(&r.argument, rest, out)?;
+                }
+            }
+            BindingPattern::ArrayPattern(a) if matches!(value.ty.strip(), Ty::Obj(sid) if self.is_tuple(*sid)) =>
+            {
+                let Ty::Obj(sid) = value.ty.strip().clone() else {
+                    unreachable!("checked")
+                };
+                if a.rest.is_some() || a.elements.len() > self.m.structs[sid].fields.len() {
+                    bail!(
+                        "a tuple pattern names at most its {} elements",
+                        self.m.structs[sid].fields.len()
+                    )
+                }
+                let tmp = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(tmp, value));
+                for (i, p) in a.elements.iter().enumerate() {
+                    let Some(p) = p else { continue };
+                    let ty = self.m.structs[sid].fields[i].ty.clone();
+                    let part = mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), ty);
+                    self.bind_pattern(p, part, out)?;
                 }
             }
             BindingPattern::ArrayPattern(a) => {

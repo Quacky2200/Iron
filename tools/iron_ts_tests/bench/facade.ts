@@ -103,3 +103,106 @@ export function particlesAndPoints(): string {
   const sprite = new GameObject("s").addComponent(SpriteRenderer, { sprite: null });
   return `${ps.startLifetime}|${ps.startLifetimeMax}|${ps.startSpeed}|${ps.burstCount}|${ps.shapeType}|${ps.shapeAngle}|${edge.pointCount}|${line.positionCount}|${sprite.sprite === null}`;
 }
+
+// ---- round 2: the shapes the remaining examples use (M9-TS-2000..) ----
+
+export function curveFromPairs(): string {
+  const pts: number[][] = [];
+  for (let i = 0; i <= 4; i++) pts.push([i, i * 2]);
+  const c = AnimationCurve.fromPoints(pts, "linear");
+  const d = AnimationCurve.fromPoints([[0, 0], [2, 4]]);
+  return `${c.length}|${c.evaluate(1.5)}|${d.evaluate(1)}`;
+}
+
+export function unsubscribers(): string {
+  let calls = 0;
+  const off = QualitySettings.onLevelChanged(() => {
+    calls++;
+  });
+  QualitySettings.setQualityLevel(0);
+  const first = calls;
+  off();
+  QualitySettings.setQualityLevel(QualitySettings.levelCount - 1);
+  QualitySettings.setQualityLevel(0);
+  const modes = Screen.supportedFullScreenModes;
+  const names: Record<FullScreenMode, string> = { ExclusiveFullScreen: "x", FullScreenWindow: "b", MaximizedWindow: "m", Windowed: "w" };
+  const label = modes.length > 0 ? names[modes[0]!] : "none";
+  return `${typeof off}|${first >= 0}|${calls === first}|${label.length}`;
+}
+
+export function bareReturnThenCleanup(): string {
+  const effect = (skip: boolean) => {
+    if (skip) return;
+    return () => 7;
+  };
+  const a = effect(true);
+  const b = effect(false);
+  return `${a === null}|${b !== null}|${b ? b() : 0}`;
+}
+
+export function tuples(): string {
+  const rows = [
+    [0, -2.5, 4, false],
+    [1, 2.5, 8, true],
+  ] as const;
+  let out = "";
+  for (const [x, z, length, turn] of rows) out += `${x}:${z}:${length}:${turn ? "T" : "F"},`;
+  const pair = [3, "three"];
+  return `${out}${rows[1][2]}|${pair[1]}`;
+}
+
+export function defaultedClosureParams(): string {
+  const row = (x: number, name: string, scale = 0.75, tag = "t") => `${x}${name}${scale}${tag}`;
+  return `${row(1, "a")}|${row(2, "b", 2)}|${row(3, "c", 3, "z")}`;
+}
+
+export function voidAndExtraArguments(): string {
+  let n = 0;
+  const bump = () => {
+    n++;
+  };
+  const f = () => void bump();
+  f();
+  f();
+  const g = (a: number) => a + 1;
+  return `${n}|${g(1)}`;
+}
+
+export function recordByEngineString(): string {
+  const names: Record<"disable" | "hardOnly" | "all", string> = { disable: "off", hardOnly: "hard", all: "soft" };
+  return names[QualitySettings.shadows as "all"];
+}
+
+export function plainPointsToValues(): string {
+  const mk = (n: number): { x: number; y: number }[] => Array.from({ length: n }, (_, i) => ({ x: i, y: i * 2 }));
+  const go = new GameObject("e");
+  const edge = go.addComponent(EdgeCollider2D);
+  edge.points = mk(4);
+  const a = edge.pointCount;
+  edge.points = a > 3 ? mk(2) : [];
+  return `${a}|${edge.pointCount}`;
+}
+
+class Box1 {
+  v = 1;
+  step(d: number): void {
+    this.v += d;
+  }
+}
+class Box2 {
+  s = "a";
+  step(d: number): void {
+    this.s += d;
+  }
+}
+
+export function unrolledMixedLoop(): string {
+  const a = new Box1();
+  const b = new Box2();
+  let seen = 0;
+  for (const t of [a, b]) {
+    t.step(2);
+    seen++;
+  }
+  return `${a.v}|${b.s}|${seen}`;
+}

@@ -15,6 +15,10 @@ fn ident(s: &str) -> String {
             }
         })
         .collect();
+    // Tuple fields are named `0`, `1`, ..
+    if id.starts_with(|c: char| c.is_ascii_digit()) {
+        return format!("f{id}");
+    }
     match id.as_str() {
         "type" | "match" | "fn" | "use" | "mod" | "loop" | "ref" | "self" | "in" | "as" => {
             format!("r#{id}")
@@ -87,7 +91,7 @@ pub fn rust_bindings(m: &Module) -> String {
     // `string` values also become tags: `","` and `")"` would both be `TAG__`).
     let mut seen = std::collections::HashSet::new();
     for (i, t) in m.tags.iter().enumerate() {
-        let id = ident(t);
+        let id = ident(t).replace("r#", "");
         if t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && seen.insert(id.clone()) {
             s += &format!("pub const TAG_{id}: u32 = {i};\n");
         }
