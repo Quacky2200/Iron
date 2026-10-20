@@ -36,6 +36,30 @@ pub fn script_args(id: u32, event: &GamepadEvent) -> Vec<Value> {
     }
 }
 
+/// Applies a `__iron_input` argument list to the native `input` state (and so to the listeners
+/// compiled code registered). The scene must be current.
+pub fn apply_native(args: &[Value]) {
+    use iron_engine_api::input as i;
+    let Some(kind) = args.first().and_then(Value::as_str) else {
+        return;
+    };
+    let s = |n: usize| args.get(n).and_then(Value::as_str).unwrap_or("");
+    let f = |n: usize| args.get(n).and_then(Value::as_f64).unwrap_or(0.0);
+    match kind {
+        "keydown" => i::key_down(s(1), matches!(args.get(3), Some(Value::Bool(true)))),
+        "keyup" => i::key_up_event(s(1)),
+        "mousemove" => i::mouse_move(f(1) as f32, f(2) as f32),
+        "mousedelta" => i::mouse_delta(f(1), f(2)),
+        "wheel" => i::wheel(f(1), f(2)),
+        "blur" => i::blur(),
+        "gamepadconnected" => i::gamepad_connected(f(1) as i64, s(2)),
+        "gamepaddisconnected" => i::gamepad_disconnected(f(1) as i64),
+        "gamepadbutton" => i::gamepad_button(f(1) as i64, s(2), f(3)),
+        "gamepadaxis" => i::gamepad_axis(f(1) as i64, s(2), f(3)),
+        _ => {}
+    }
+}
+
 /// Turns gamepad events into UI navigation.
 #[derive(Debug, Default)]
 pub struct GamepadNav {

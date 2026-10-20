@@ -297,34 +297,32 @@ impl App {
             }
         }
     }
+}
 
-    /// UI events of world panels, to the panel's reconciler.
-    pub(super) fn deliver_panel_events(&mut self) {
-        if self.native_panel_events.is_empty() {
-            return;
-        }
-        let events = std::mem::take(&mut self.native_panel_events);
-        let Some(native) = self.native.as_mut() else {
-            return;
-        };
-        for (id, e) in events {
-            let Some(mut ev) = native::to_event(&e) else {
-                continue;
-            };
-            let Some(panel) = self.panels.map.get_mut(&id) else {
-                continue;
-            };
-            {
-                let _scope = iron_scene::api::enter(&mut self.scene.scene);
-                let prevented = st(|s| {
-                    s.runtimes
-                        .get_mut(&id)
-                        .map(|(rt, _)| rt.dispatch(&mut ev, &mut panel.tree))
-                });
-                let _ = prevented;
-            }
-            // Handlers may have queued component work (setters of other trees too).
-            native.after_script(&mut self.scene.scene, &mut self.ui);
-        }
+/// A UI event of a world panel through the handlers of its reconciler, while the panel's
+/// interaction layer handles the input; says whether a handler prevented the default action.
+/// Follow with [`panel_settle`].
+pub(super) fn panel_event(scene: &mut iron_scene::Scene, id: u32, e: &iron_ui::UiEvent) -> bool {
+    let Some(mut ev) = native::to_event(e) else {
+        return false;
+    };
+    let _scope = iron_scene::api::enter(scene);
+    st(|s| {
+        s.runtimes
+            .get_mut(&id)
+            .is_some_and(|(rt, _)| rt.dispatch_handlers(&mut ev))
+    })
+}
+
+/// Commits what the handlers of a panel's events changed.
+pub(super) fn panel_settle(id: u32, tree: &mut UiTree) {
+    let errors = st(|s| {
+        s.runtimes
+            .get_mut(&id)
+            .map(|(rt, _)| rt.settle(tree))
+            .unwrap_or_default()
+    });
+    for e in errors {
+        tracing::warn!(target: "ui", "{e}");
     }
 }

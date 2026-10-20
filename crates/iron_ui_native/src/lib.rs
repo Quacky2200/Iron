@@ -102,6 +102,8 @@ pub struct Runtime {
     by_node: HashMap<NodeId, usize>,
     /// What a text field holds as far as we know: its `value` prop, or what was typed since.
     field_text: HashMap<usize, String>,
+    /// Fields whose `input` handlers ran and whose value prop is yet to be put back.
+    pending_restore: Vec<usize>,
     /// Ops applied so far (for tests and statistics).
     ops_total: usize,
     /// During a `refresh`: components (by id) that start over, and whether `memo` is ignored.
@@ -138,6 +140,7 @@ impl Runtime {
             next_node: first_node,
             by_node: HashMap::new(),
             field_text: HashMap::new(),
+            pending_restore: Vec::new(),
             ops_total: 0,
             remount: HashSet::new(),
             force: false,
@@ -252,6 +255,15 @@ impl Runtime {
     /// Dispatches an event from `event.target`: capture handlers from the outermost component-tree
     /// ancestor in, then bubble handlers back out. Returns whether a handler prevented the default.
     pub fn dispatch(&mut self, event: &mut Event, tree: &mut UiTree) -> bool {
+        let prevented = self.dispatch_handlers(event);
+        self.settle(tree);
+        prevented
+    }
+
+    /// Like [`Runtime::dispatch`] without the tree: the handlers run and the default action's
+    /// answer comes back at once, so a host that holds the tree (an interaction layer deciding
+    /// what the default action is) can use it. Call [`Runtime::settle`] afterwards.
+    pub fn dispatch_handlers(&mut self, event: &mut Event) -> bool {
         let Some(&start) = self.by_node.get(&event.target) else {
             return false;
         };
@@ -304,12 +316,20 @@ impl Runtime {
                 }
             }
         }
-        // A discrete event commits before it returns.
-        self.flush(tree);
         if is_field && event.kind == "input" {
-            self.restore_controlled(start, tree);
+            self.pending_restore.push(start);
         }
         event.prevented
+    }
+
+    /// Commits what [`Runtime::dispatch_handlers`] changed (a discrete event commits before it
+    /// returns) and puts controlled fields back.
+    pub fn settle(&mut self, tree: &mut UiTree) -> Vec<UiError> {
+        let errors = self.flush(tree);
+        for i in std::mem::take(&mut self.pending_restore) {
+            self.restore_controlled(i, tree);
+        }
+        errors
     }
 
     /// A field with a `value` prop shows that value: if the handlers did not accept what was

@@ -294,8 +294,6 @@ fn run() -> Result<()> {
         scripts,
         components,
         native,
-        native_events: Vec::new(),
-        native_panel_events: Vec::new(),
         scene,
         scene_events,
         world_view: world_view::WorldViews::default(),
@@ -472,10 +470,6 @@ struct App {
     /// A compiled game, when the folder has a native bundle (then `scripts` and
     /// `components` stay empty).
     native: Option<native::Native>,
-    /// UI events a native game has yet to receive.
-    native_events: Vec<UiEvent>,
-    /// UI events of world panels a native game has yet to receive.
-    native_panel_events: Vec<(u32, UiEvent)>,
     ui: UiTree,
     asset_root: PathBuf,
     gfx: Option<Gfx>,
@@ -806,6 +800,7 @@ impl App {
                 elapsed.min(MAX_FRAME_DT),
                 now_ms,
             );
+            self.apply_node_commands();
         }
         let scene = &self.scene;
         self.components
@@ -1327,14 +1322,14 @@ impl App {
     /// scripts, then updates the IME and the OS cursor.
     fn handle_on(&mut self, surface: Surface, input: Input) {
         let (scripts, ui_events) = (&mut self.scripts, self.ui_events);
-        // A compiled game gets the events after the interaction layer is done with them.
-        let (native, native_events) = (self.native.is_some(), &mut self.native_events);
+        // A compiled game runs its handlers inside the interaction layer's dispatch, so
+        // `preventDefault()` reaches the default actions.
+        let (native, scene) = (&mut self.native, &mut self.scene.scene);
         let clipboard = match surface {
             Surface::Screen => {
                 self.interaction.handle(&mut self.ui, input, &mut |event| {
-                    if native {
-                        native_events.push(event.clone());
-                        return false;
+                    if let Some(n) = native.as_mut() {
+                        return n.ui_event(scene, event);
                     }
                     dispatch(scripts, ui_events, event)
                 });
@@ -1344,11 +1339,9 @@ impl App {
                 let Some(p) = self.panels.map.get_mut(&id) else {
                     return;
                 };
-                let panel_events = &mut self.native_panel_events;
                 p.interaction.handle(&mut p.tree, input, &mut |event| {
-                    if native {
-                        panel_events.push((id, event.clone()));
-                        return false;
+                    if native.is_some() {
+                        return native_render::panel_event(scene, id, event);
                     }
                     dispatch(scripts, ui_events, event)
                 });
@@ -1368,20 +1361,41 @@ impl App {
             }
             None => {}
         }
-        self.deliver_native_events();
+        if let Some(n) = self.native.as_mut() {
+            if let Surface::Panel(id) = surface
+                && let Some(p) = self.panels.map.get_mut(&id)
+            {
+                native_render::panel_settle(id, &mut p.tree);
+            }
+            n.settle(&mut self.scene.scene, &mut self.ui);
+            self.apply_node_commands();
+        }
         self.update_ime();
         self.update_cursor();
     }
 
-    /// Hands the UI events collected while handling input to the compiled game.
-    fn deliver_native_events(&mut self) {
-        self.deliver_panel_events();
-        if self.native_events.is_empty() {
-            return;
-        }
-        let events = std::mem::take(&mut self.native_events);
-        if let Some(n) = self.native.as_mut() {
-            n.ui_events(&mut self.scene.scene, &mut self.ui, &events);
+    /// Applies what compiled code asked of nodes it holds refs to (`focus()`, `blur()`,
+    /// `scrollTo()`).
+    fn apply_node_commands(&mut self) {
+        use iron_ts_ui::NodeCommand;
+        for c in iron_ts_ui::take_node_commands() {
+            let (id, input) = match c {
+                NodeCommand::Focus(id) => (id, Input::Focus(iron_core::NodeId(id))),
+                NodeCommand::Blur(id) => (id, Input::Blur(iron_core::NodeId(id))),
+                NodeCommand::ScrollTo(id, x, y) => (
+                    id,
+                    Input::ScrollTo {
+                        id: iron_core::NodeId(id),
+                        x: x as f32,
+                        y: y as f32,
+                    },
+                ),
+            };
+            let surface = self.surface_of(iron_core::NodeId(id));
+            if matches!(c, NodeCommand::Focus(_)) {
+                self.keys_on = surface;
+            }
+            self.handle_on(surface, input);
         }
     }
 
@@ -1609,6 +1623,10 @@ impl App {
 
     /// Sends an input event to the game's `input` API (@iron/engine).
     fn send_game_input(&mut self, args: &[iron_core::Value]) {
+        if let Some(n) = self.native.as_mut() {
+            n.game_input(&mut self.scene.scene, &mut self.ui, args);
+            return;
+        }
         if !self.game_input {
             return;
         }

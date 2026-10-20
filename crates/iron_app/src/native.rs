@@ -18,9 +18,8 @@
 //! Every call runs with the app's scene made current (`iron_scene::api::enter`), because compiled
 //! code reaches the scene through a per-thread pointer, not through an argument.
 //!
-//! Differences from the QuickJS path (also in `tools/iron_ts/TODO.md`): UI events reach handlers
-//! after the interaction layer finished its default actions, so `preventDefault()` does not stop
-//! them; the 3D renderer is not fed from the compiled programs' registries yet.
+//! UI events run through the handlers while the interaction layer handles the input, so
+//! `preventDefault()` stops default actions as in the QuickJS path.
 
 use anyhow::{Context, Result, anyhow, bail};
 use iron_scene::Scene;
@@ -313,18 +312,42 @@ impl Native {
         self.after_script(scene, ui);
     }
 
-    /// UI events the interaction layer produced, delivered to the handlers.
+    /// Runs one UI event through the handlers and says whether one prevented its default action
+    /// (the interaction layer asks while it handles the input). Follow with [`Native::settle`].
+    pub fn ui_event(&mut self, scene: &mut Scene, e: &UiEvent) -> bool {
+        let Some(mut ev) = to_event(e) else {
+            return false;
+        };
+        let _scope = iron_scene::api::enter(scene);
+        self.rt.dispatch_handlers(&mut ev)
+    }
+
+    /// Commits what the event handlers changed and runs what they queued.
+    pub fn settle(&mut self, scene: &mut Scene, ui: &mut UiTree) {
+        for e in self.rt.settle(ui) {
+            tracing::warn!(target: "ui", "{e}");
+        }
+        self.after_script(scene, ui);
+    }
+
+    /// UI events delivered after the fact (tests; the app asks [`Native::ui_event`] while its
+    /// interaction layer handles the input).
+    #[allow(dead_code)]
     pub fn ui_events(&mut self, scene: &mut Scene, ui: &mut UiTree, events: &[UiEvent]) {
         for e in events {
-            let Some(mut ev) = to_event(e) else {
-                continue;
-            };
-            {
-                let _scope = iron_scene::api::enter(scene);
-                self.rt.dispatch(&mut ev, ui);
-            }
-            self.after_script(scene, ui);
+            self.ui_event(scene, e);
+            self.settle(scene, ui);
         }
+    }
+
+    /// An input event for the game's `input` API, in the argument form `__iron_input` takes
+    /// (`keydown code key repeat`, `mousemove x y`, `gamepadbutton id name value`, ...).
+    pub fn game_input(&mut self, scene: &mut Scene, ui: &mut UiTree, args: &[iron_core::Value]) {
+        {
+            let _scope = iron_scene::api::enter(scene);
+            super::game_input::apply_native(args);
+        }
+        self.after_script(scene, ui);
     }
 
     /// The class names of the running game.
@@ -672,5 +695,80 @@ mod tests {
         let go = scene.find("Counter").unwrap();
         assert_eq!(scene.local(go).unwrap().position.x, 1.0);
         assert_eq!(dump(&ui, ROOT), "root(box(text(text:n0)))");
+    }
+
+    // M9-API-800
+    #[test]
+    fn keys_reach_the_input_state_and_the_listeners_of_compiled_code() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Pad extends Component {
+               hits = 0;
+               onStart(): void {
+                 input.onKeyDown((code: string, repeat: boolean) => { this.hits += 1; });
+               }
+               onUpdate(dt: number): void {
+                 let x = this.hits;
+                 if (input.getKeyDown(\"Space\")) x += 10;
+                 this.gameObject!.transform.localPosition = new Vector3(x, 0, 0);
+               }
+             }
+             register(Pad);",
+        );
+        let go = scene.find("Pad").unwrap();
+        n.frame(&mut scene, &mut ui, 0.016, 8.0); // onStart registers the listener
+        let key = |k: &str| vec!["keydown".into(), k.into(), "".into(), false.into()];
+        n.game_input(&mut scene, &mut ui, &key("Space"));
+        n.game_input(&mut scene, &mut ui, &key("KeyA"));
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        assert_eq!(scene.local(go).unwrap().position.x, 12.0);
+        n.frame(&mut scene, &mut ui, 0.016, 32.0);
+        assert_eq!(
+            scene.local(go).unwrap().position.x,
+            2.0,
+            "pressed for one frame"
+        );
+    }
+
+    // M9-API-801
+    #[test]
+    fn prevent_default_in_a_handler_reaches_the_interaction_layer() {
+        let (mut n, mut scene, mut ui) = start(
+            "function App(): UiElement {
+               return <box style={{ width: 100 }} onClick={(e: UiEvent) => { e.preventDefault(); }}><text>x</text></box>;
+             }
+             function boot(): number {
+               UiRoot.mount(0, <App />);
+               return 0;
+             }
+             const booted = boot();",
+        );
+        let target = ui.children(ROOT)[0];
+        let click = UiEvent::new(EventKind::Click, vec![target], Modifiers::default());
+        assert!(n.ui_event(&mut scene, &click));
+        n.settle(&mut scene, &mut ui);
+        let other = UiEvent::new(EventKind::DblClick, vec![target], Modifiers::default());
+        assert!(!n.ui_event(&mut scene, &other));
+    }
+
+    // M9-API-802
+    #[test]
+    fn fixed_ticks_step_physics_and_move_the_objects() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Drop extends Component {
+               onStart(): void {
+                 const ball = new GameObject(\"ball\", { position: new Vector3(0, 5, 0) });
+                 ball.addComponent(SphereCollider, { radius: 0.5 });
+                 ball.addComponent(Rigidbody, { mass: 1 });
+               }
+             }
+             register(Drop);",
+        );
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        for _ in 0..30 {
+            n.fixed_tick(&mut scene, &mut ui, 1.0 / 60.0);
+        }
+        let ball = scene.find("ball").expect("the ball");
+        let y = scene.world(ball).position.y;
+        assert!(y < 4.9 && y > 0.0, "the ball fell: {y}");
     }
 }
