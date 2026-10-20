@@ -190,6 +190,7 @@ fn children(e: &Expr) -> Vec<&Expr> {
         ExprKind::Call(_, args)
         | ExprKind::CallVirtual(_, args)
         | ExprKind::CallExtern(_, args)
+        | ExprKind::CallExternOut(_, args, _)
         | ExprKind::Rt(_, args) => args.iter().collect(),
         ExprKind::CallClosure(c, args) => std::iter::once(&**c).chain(args.iter()).collect(),
         ExprKind::CallExternInto(_, args, dest) => {
@@ -208,6 +209,7 @@ fn count_expr(e: &Expr, n: &mut u32) {
         | ExprKind::CallVirtual(_, args)
         | ExprKind::CallExtern(_, args)
         | ExprKind::CallExternInto(_, args, _)
+        | ExprKind::CallExternOut(_, args, _)
         | ExprKind::Rt(_, args) => {
             *n += n_spills(&args.iter().collect::<Vec<_>>());
         }

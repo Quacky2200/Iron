@@ -1011,3 +1011,12 @@ runs when the calling hook returns (the QuickJS host runs it immediately). `getC
 instances. Tests `M9-TS-601..604`.
 
 `Task.delay(ms)`, `Task.delaySeconds(s)` and `Task.frame()` are a class of TypeScript appended to the program (`prelude::TASK`) over `setTimeout`; the host advances the timers with engine time (`ts_rt_timers_advance`). Test `M9-TS-651`.
+
+## Stack values
+
+Value-class objects (`Vector3`, ...) are made by the lowering as heap objects. `iron_ts::sroa` runs on the module before code
+generation and turns every local of such a type whose object never escapes its function into one number local per field: field
+reads and writes become variable reads and writes, `new Vector3(..)` becomes assignments, and an engine call with a value result
+(`CallExternInto`) becomes `CallExternOut`, which reads the result from the call's stack buffer straight into the locals. A local
+stays an object when it is passed to a script function, returned, stored in a field, array or closure, or when two names for it
+exist and either is changed. `JSON.stringify` of an engine handle gives `{}`.

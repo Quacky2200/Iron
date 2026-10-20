@@ -367,3 +367,20 @@ fn the_example_scene_files_load() {
         let _ = api::count();
     });
 }
+
+// M9-TS-719
+//
+// An engine object stringifies as `{}` (its members are not own properties, as with host
+// objects in a browser); script-made fields beside it are kept.
+#[test]
+fn engine_objects_stringify_as_empty_objects() {
+    in_every_gc_mode(|host| unsafe {
+        ts_scf_loadScene(s(ARENA));
+        host.settle();
+        let hero = obj(ts_scf_rootAt(1.0));
+        assert_eq!(
+            text(ts_scf_jsonOfHandle(hero.to_raw())),
+            r#"{"object":{},"n":1}"#
+        );
+    });
+}

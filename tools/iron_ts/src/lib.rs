@@ -7,6 +7,7 @@ pub mod ir;
 pub mod layout;
 pub mod lower;
 pub mod manifest;
+pub mod sroa;
 pub mod throws;
 
 /// What a compile produced.
@@ -73,6 +74,7 @@ fn compile_inner(
     let mut module = lower::lower_source_with(src, manifests)?;
     module.prefix = prefix.to_string();
     module.struct_base = struct_base;
+    sroa::run(&mut module);
     let lower_time = t0.elapsed();
     let t1 = std::time::Instant::now();
     let compiled = codegen::compile(&module, opt)?;

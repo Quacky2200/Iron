@@ -85,7 +85,9 @@ impl<'a> Lowerer<'a> {
                     }
                 }
             }
-            Ty::Map(..) | Ty::Set(_) => b.out.push(7),
+            // Engine objects (GameObject, Camera, ...) stringify as `{}` like host objects in a
+            // browser: their members are not own properties. They cannot be parsed.
+            Ty::Map(..) | Ty::Set(_) | Ty::Handle(_) => b.out.push(7),
             t => bail!("JSON of {t} values is not supported"),
         }
         Ok(())

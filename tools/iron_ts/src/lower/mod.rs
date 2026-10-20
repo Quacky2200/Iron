@@ -425,6 +425,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     };
     l.lower_program(&program)?;
     let mut m = l.m;
+    m.value_structs = l.value_structs.values().copied().collect();
+    m.value_structs.sort_unstable();
     crate::throws::analyze(&mut m);
     Ok(m)
 }

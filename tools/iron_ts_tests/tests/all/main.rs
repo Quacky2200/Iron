@@ -64,6 +64,7 @@ mod segmenter;
 mod shapes;
 mod sim_port;
 mod sine_demo_full;
+mod sroa;
 mod stdlib;
 mod strings;
 mod switches;

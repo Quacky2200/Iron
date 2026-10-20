@@ -134,3 +134,7 @@ export function keep(go: GameObject): void {
 export function sceneOfName(go: GameObject): string {
   return SceneManager.sceneOf(go).name;
 }
+
+export function jsonOfHandle(go: GameObject): string {
+  return JSON.stringify({ object: go, n: 1 });
+}

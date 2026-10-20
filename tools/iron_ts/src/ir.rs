@@ -335,6 +335,9 @@ pub enum ExprKind {
     /// Like `CallExtern` for a function with a value result: the result's scalars are written
     /// into the fields of the object the last operand evaluates to (a fresh struct).
     CallExternInto(usize, Vec<Expr>, Box<Expr>),
+    /// Like `CallExternInto`, with the result's scalars going into these number locals (a value
+    /// that never became an object: see `sroa.rs`).
+    CallExternOut(usize, Vec<Expr>, Vec<VarId>),
     /// Is the object (a class instance, or null) an instance of one of the structs in
     /// `Module::itables[i]`?
     InstanceOf(Box<Expr>, usize),
@@ -500,6 +503,8 @@ pub struct Module {
     /// Added to struct ids in object headers, so modules linked into one program (sharing one
     /// heap) never use the same header. Give each module a range of its own.
     pub struct_base: u32,
+    /// The structs of the engine's value classes (`Vector3`, ...): all `number` fields.
+    pub value_structs: Vec<StructId>,
 }
 
 // ---- A readable dump (for `iron_ts --dump-ir` and the doc) ----
@@ -643,6 +648,10 @@ fn ex(e: &Expr) -> String {
             "calle#{i}({}) -> {}",
             a.iter().map(ex).collect::<Vec<_>>().join(", "),
             ex(d)
+        ),
+        ExprKind::CallExternOut(i, a, vs) => format!(
+            "calle#{i}({}) -> {vs:?}",
+            a.iter().map(ex).collect::<Vec<_>>().join(", ")
         ),
         ExprKind::CallVirtual(t, a) => format!(
             "callv#{t}({})",
