@@ -1,0 +1,1 @@
+{"namespace":"UiRoot","functions":[{"name":"mount","symbol":"ts_ui_mount","params":[{"name":"target","type":"f64"},{"name":"element","type":"handle:UiElement"}],"returns":"void"}]}

@@ -205,3 +205,23 @@ function Maybe(props: { on: boolean }) {
 export function App(): UiElement { return <box><Maybe on={true} /></box>; }
 "#);
 }
+
+// M9-TS-1615
+#[test]
+fn create_root_render_mounts_the_element_from_a_top_level_statement() {
+    let out = iron_ts::compile_with_manifests(
+        "function App(): UiElement { return <box>hi</box>; }
+createRoot().render(<App />);",
+        "speed",
+        "rf_",
+        100,
+        &[],
+    )
+    .expect("compiles");
+    // The init function calls the host's mount function.
+    let needle = b"ts_ui_mount";
+    assert!(
+        out.object.windows(needle.len()).any(|w| w == needle),
+        "the object imports ts_ui_mount"
+    );
+}

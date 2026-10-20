@@ -1215,3 +1215,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1612 | Integration | `useRef<IronElement>(null)` with `.focus()`, `.blur()`, `.scrollTo(x, y)`. |
 | M9-TS-1613 | Integration | `static get twice()` reads like a field. |
 | M9-TS-1614 | Integration | A component with `return null` and `return <box/>`. |
+| M9-TS-1615 | Integration | `createRoot().render(<App />);` as a top-level statement lowers to `UiRoot.mount(0, el)` in the init function (imports `ts_ui_mount`); top-level expression statements run in source order. |

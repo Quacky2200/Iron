@@ -37,11 +37,16 @@ pub const AMBIENT_DTS: &str = include_str!("ambient.d.ts");
 /// the caller. Regenerate with `cargo run -p iron_ts_ui --example manifest`.
 pub const UI_MANIFEST: &str = include_str!("ui_manifest.json");
 
+/// `UiRoot.mount(target, element)`: what `createRoot(target).render(element)` becomes (the host takes
+/// the mounted roots; symbol `ts_ui_mount`).
+pub const UI_ROOT_MANIFEST: &str = include_str!("ui_root_manifest.json");
+
 /// Does the program use JSX or the hooks?
 pub fn wanted(src: &str) -> bool {
     src.contains("</")
         || src.contains("/>")
         || src.contains("<>")
+        || src.contains("createRoot(")
         || [
             "useState",
             "useEffect",
@@ -618,6 +623,26 @@ impl<'a> Visit<'a> for Finder<'_> {
     }
 
     fn visit_call_expression(&mut self, c: &CallExpression<'a>) {
+        // `createRoot(target?).render(el)` hands the element to the host: `UiRoot.mount(target ?? 0, el)`.
+        if let Expression::StaticMemberExpression(m) = &c.callee
+            && m.property.name == "render"
+            && let Expression::CallExpression(root) = &m.object
+            && matches!(&root.callee, Expression::Identifier(f) if f.name == "createRoot")
+            && let [el] = c.arguments.as_slice()
+            && let Some(el) = el.as_expression()
+        {
+            let target = match root.arguments.first().and_then(|a| a.as_expression()) {
+                Some(t) => self.slice(t.span()).to_string(),
+                None => "0".to_string(),
+            };
+            let el = self.slice(el.span()).to_string();
+            self.edits.push(Edit {
+                start: c.span.start as usize,
+                end: c.span.end as usize,
+                text: format!("UiRoot.mount({target}, {el})"),
+            });
+            return;
+        }
         // `useRef<HTMLElement>(null)` holds a node or nothing: `useRef<T | null>(null)`.
         if let Expression::Identifier(f) = &c.callee
             && f.name == "useRef"

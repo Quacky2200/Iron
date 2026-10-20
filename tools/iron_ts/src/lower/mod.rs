@@ -94,6 +94,8 @@ pub(crate) enum Binding {
 enum TopItem<'a> {
     Var(&'a VariableDeclarator<'a>, bool, bool),
     Class(&'a Class<'a>),
+    /// A statement like `createRoot().render(<App />);` or `console.log("x");`.
+    Expr(&'a Expression<'a>),
 }
 
 #[derive(Clone)]
@@ -260,6 +262,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let wants_ui = jsx::wanted(src);
     if wants_ui && !manifest.namespaces.contains_key("Ui") {
         manifest.add_json(jsx::UI_MANIFEST)?;
+    }
+    if wants_ui && !manifest.namespaces.contains_key("UiRoot") {
+        manifest.add_json(jsx::UI_ROOT_MANIFEST)?;
     }
     let rewritten_ui = if wants_ui { jsx::desugar(src)? } else { None };
     let src = rewritten_ui.as_deref().unwrap_or(src);
@@ -512,6 +517,7 @@ impl<'a> Lowerer<'a> {
                 Statement::ExportDeclaration(e) => self.collect(&e.declaration, true, &mut vars)?,
                 Statement::VariableDeclaration(d) => self.collect_vars(d, false, &mut vars)?,
                 Statement::FunctionDeclaration(f) => self.collect_fn(f, false)?,
+                Statement::ExpressionStatement(es) => vars.push(TopItem::Expr(&es.expression)),
                 Statement::ClassDeclaration(c) if c.type_parameters.is_some() => {}
                 Statement::ClassDeclaration(c) => {
                     self.collect_class(c)?;
@@ -550,6 +556,10 @@ impl<'a> Lowerer<'a> {
                     self.lower_top_var(decl, is_const, &mut init_body)?
                 }
                 TopItem::Class(c) => self.lower_class_statics(c, &mut init_body)?,
+                TopItem::Expr(e) => {
+                    let v = self.lower_expr(e, None)?;
+                    init_body.push(Stmt::Eval(v));
+                }
             }
         }
         init_body.push(Stmt::Return(None));
