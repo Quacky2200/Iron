@@ -7,6 +7,7 @@ pub mod ir;
 pub mod layout;
 pub mod lower;
 pub mod manifest;
+pub mod modules;
 pub mod sroa;
 pub mod throws;
 
@@ -28,6 +29,20 @@ pub fn compile_source(src: &str, opt: &str) -> Result<Output, String> {
 /// Like `compile_source`, naming exported symbols `ts_<prefix><name>`.
 pub fn compile_with_prefix(src: &str, opt: &str, prefix: &str) -> Result<Output, String> {
     compile_with(src, opt, prefix, 0)
+}
+
+/// Bundles the program that starts at `entry` (see `modules`), then compiles it like
+/// `compile_with_manifests`. Returns the bundle too (its CSS list, files and source text).
+pub fn compile_program(
+    entry: &std::path::Path,
+    opt: &str,
+    prefix: &str,
+    struct_base: u32,
+    manifests: &[String],
+) -> Result<(Output, modules::Bundle), String> {
+    let bundle = modules::bundle(entry)?;
+    let out = compile_with_manifests(&bundle.source, opt, prefix, struct_base, manifests)?;
+    Ok((out, bundle))
 }
 
 /// Like `compile_with_prefix`, with object headers numbered from `struct_base`. Modules that

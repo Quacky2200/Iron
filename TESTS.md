@@ -1229,3 +1229,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1707 | Integration | `addStyleSheet` / `removeStyleSheet` / `loadFont({ family, src, weight })` queue requests for the host (`UiResources`); `input.gamepads()` and `input.on("gamepadconnected" / "gamepaddisconnected", fn)` return an unsubscribe function. |
 | M9-TS-1708 | Integration | ParticleSystem options (`[min, max]` ranges, `bursts`, `shape`, `colorOverLifetime`, `sizeOverLifetime`), `points` / `positions` lists (`setPoints` / `setPositions` as setters), `sprite: null`. |
 | M9-API-500 | Unit | `UiResources` requests come out in order with stylesheet ids; the queue is emptied by `take_requests`. |
+| M9-TS-1800 | Unit | A relative import pulls the file in before the importer; `export` is dropped from non-entry files. |
+| M9-TS-1801 | Unit | `@iron/*` and `react` imports are erased; an aliased name is renamed to the real one. |
+| M9-TS-1802 | Unit | Colliding top-level names are renamed (`name_2`) in the dependency, references included. |
+| M9-TS-1803 | Unit | Imports through re-exports (`export { x as y } from`, `export *`) and aliases reach the declaration. |
+| M9-TS-1804 | Unit | A renamed shorthand property keeps its key (`{ count: n_2 }`). |
+| M9-TS-1805 | Unit | `import "./x.css"` is listed, not read; a missing module or export is an error naming it. |
+| M9-TS-1806 | Unit | `export default <expression>` gets a generated name that importers use. |
