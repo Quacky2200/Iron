@@ -141,6 +141,11 @@ pub struct Native {
     /// `createRoot(panel).render(..)` calls: the panel's handle and its root element, for the
     /// app (each panel has its own tree and runtime).
     panel_mounts: Vec<(u64, iron_ui_native::Element)>,
+    /// Sets the engine state the program reads at start (`Application`, quality levels, layers):
+    /// runs before the program's top level, at load and again after a reload's resets.
+    env: Box<dyn Fn()>,
+    /// Classes registered with `{ spawn: false }`: no starting object.
+    no_spawn: Vec<String>,
     #[allow(dead_code)]
     pub bundle: Bundle,
 }
@@ -159,13 +164,26 @@ fn log_faults(faults: Vec<iron_ts_rt::Fault>) {
 impl Native {
     /// Compiles and starts the game. The starting components are one GameObject per registered
     /// class, named after it.
+    #[cfg(test)]
     pub fn load(bundle: Bundle, scene: &mut Scene, ui: &mut UiTree) -> Result<Native> {
+        Self::load_with(bundle, scene, ui, Box::new(|| {}))
+    }
+
+    /// [`Native::load`] with `env` run before the program's top level (and before it again after
+    /// every reload).
+    pub fn load_with(
+        bundle: Bundle,
+        scene: &mut Scene,
+        ui: &mut UiTree,
+        env: Box<dyn Fn()>,
+    ) -> Result<Native> {
         let generation = 0;
         iron_ts_rt::ts_rt_set_console(Some(console_hook));
         register_kinds();
         let game = Self::compile(&bundle, generation)?;
         let mut rt = Runtime::new(FIRST_NODE);
         let screen_root = rt.create_root(iron_ui::ROOT);
+        env();
         let host = {
             let _scope = iron_scene::api::enter(scene);
             game.init().map_err(|e| anyhow!("{e}"))?;
@@ -179,6 +197,8 @@ impl Native {
             generation,
             remount: None,
             panel_mounts: Vec::new(),
+            env,
+            no_spawn: no_spawn_classes(&bundle.source),
             bundle,
         };
         n.spawn_starting_components(scene);
@@ -206,7 +226,12 @@ impl Native {
     }
 
     fn spawn_starting_components(&mut self, scene: &mut Scene) {
-        let classes = self.host.class_names();
+        let classes: Vec<&'static str> = self
+            .host
+            .class_names()
+            .into_iter()
+            .filter(|c| !self.no_spawn.iter().any(|n| n == c))
+            .collect();
         self.spawn_classes(scene, &classes);
     }
 
@@ -214,7 +239,6 @@ impl Native {
         use iron_api::Handle;
         let _scope = iron_scene::api::enter(scene);
         for &class in classes {
-            // `register(.., { spawn: false })` is not expressible yet: every class starts.
             let go = iron_scene::ObjectId::create();
             go.set_name(class);
             if let Err(e) = self.host.spawn(class, Some(go.to_raw())) {
@@ -366,6 +390,44 @@ impl Native {
         self.after_script(scene, ui);
     }
 
+    /// Focus or pause changed: `Application.onFocusChanged` closures and the components'
+    /// `onApplicationFocus` / `onApplicationPause`.
+    pub fn focus_changed(
+        &mut self,
+        scene: &mut Scene,
+        ui: &mut UiTree,
+        focused: bool,
+        paused: bool,
+    ) {
+        {
+            let _scope = iron_scene::api::enter(scene);
+            let change = iron_engine_api::app::set_focus(focused, paused);
+            if change.focus_changed {
+                log_faults(self.host.application_focus(focused, &active));
+            }
+            if change.pause_changed {
+                log_faults(self.host.application_pause(paused, &active));
+            }
+        }
+        self.after_script(scene, ui);
+    }
+
+    /// Runs `f` with the scene current, then what follows a call into the program.
+    #[allow(dead_code)]
+    pub fn with_scene<R>(
+        &mut self,
+        scene: &mut Scene,
+        ui: &mut UiTree,
+        f: impl FnOnce() -> R,
+    ) -> R {
+        let r = {
+            let _scope = iron_scene::api::enter(scene);
+            f()
+        };
+        self.after_script(scene, ui);
+        r
+    }
+
     /// The class names of the running game.
     #[allow(dead_code)]
     pub fn classes(&self) -> Vec<&'static str> {
@@ -417,10 +479,12 @@ impl Native {
         *scene = Scene::new();
         self.game = game;
         self.generation = generation;
+        self.no_spawn = no_spawn_classes(&bundle.source);
         self.bundle = bundle;
         {
             let _scope = iron_scene::api::enter(scene);
             iron_engine_api::time::reset();
+            (self.env)();
             self.game.init().map_err(|e| anyhow!("{e}"))?;
             let host = NativeHost::new(self.game.classes().map_err(|e| anyhow!("{e}"))?);
             // The stand-in's `Drop` would wipe the registry the new host just filled.
@@ -457,7 +521,7 @@ impl Native {
             .host
             .class_names()
             .into_iter()
-            .filter(|c| !old_classes.contains(c))
+            .filter(|c| !old_classes.contains(c) && !self.no_spawn.iter().any(|n| n == c))
             .collect();
         self.spawn_classes(scene, &fresh);
         // Components of the UI whose hooks changed start over.
@@ -490,6 +554,52 @@ pub fn to_event(e: &UiEvent) -> Option<Event> {
         ev.strings = vec![v.clone()];
     }
     Some(ev)
+}
+
+/// Classes the program registers with `{ spawn: false }` (they get no starting object): the
+/// compiler erases `register(..)`, so the options are read from the source text.
+fn no_spawn_classes(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = source[at..].find("register(") {
+        let start = at + i + "register(".len();
+        at = start;
+        // The call ends at its matching parenthesis.
+        let mut depth = 1;
+        let mut end = start;
+        for (j, c) in source[start..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = start + j;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let args = &source[start..end];
+        let compact: String = args.chars().filter(|c| !c.is_whitespace()).collect();
+        if !compact.contains("spawn:false") {
+            continue;
+        }
+        // `{ A, B }, { spawn: false }`: the names of the first object.
+        if args.trim_start().starts_with('{')
+            && let (Some(a), Some(b)) = (args.find('{'), args.find('}'))
+        {
+            for name in args[a + 1..b].split(',') {
+                let name = name.split(':').next().unwrap_or("").trim();
+                if !name.is_empty() {
+                    out.push(name.to_string());
+                }
+            }
+        } else if let Some(name) = args.split(',').next() {
+            out.push(name.trim().to_string());
+        }
+    }
+    out
 }
 
 /// The program's `__uiSignatures()` text (`Name:ID:hook,hook;...`), empty when it has no UI.
@@ -817,5 +927,54 @@ mod tests {
         assert_eq!(scene.local(go).unwrap().position.x, 0.0);
         n.audio_ended(&mut scene, &mut ui, &[play, PlaybackRef(99)]);
         assert_eq!(scene.local(go).unwrap().position.x, 5.0);
+    }
+
+    // M9-API-804
+    #[test]
+    fn screen_quality_and_focus_closures_run_and_spawn_false_classes_get_no_object() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Watch extends Component {\n\
+               onStart(): void {\n\
+                 Screen.onChange(() => {\n\
+                   this.gameObject!.transform.localPosition = new Vector3(Screen.width, 0, 0);\n\
+                 });\n\
+                 QualitySettings.onLevelChanged((level: number) => {\n\
+                   this.gameObject!.transform.localScale = new Vector3(level + 1, 1, 1);\n\
+                 });\n\
+                 Application.onFocusChanged((focused: boolean) => {\n\
+                   this.gameObject!.transform.localPosition = new Vector3(focused ? 1 : 2, 3, 0);\n\
+                 });\n\
+               }\n\
+             }\n\
+             class Quiet extends Component {}\n\
+             register(Quiet, { spawn: false });\n\
+             register(Watch);",
+        );
+        assert!(scene.find("Quiet").is_none(), "spawn: false");
+        assert!(scene.find("Watch").is_some());
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        let go = scene.find("Watch").unwrap();
+        n.with_scene(&mut scene, &mut ui, || {
+            iron_engine_api::screen::update(800, 600, 1.0)
+        });
+        assert_eq!(scene.local(go).unwrap().position.x, 800.0);
+        n.with_scene(&mut scene, &mut ui, || {
+            iron_engine_api::screen::quality_api::set_quality_level(2.0)
+        });
+        assert_eq!(scene.local(go).unwrap().scale.x, 3.0);
+        n.focus_changed(&mut scene, &mut ui, false, true);
+        assert_eq!(scene.local(go).unwrap().position.x, 2.0);
+    }
+
+    // M9-API-805
+    #[test]
+    fn spawn_false_is_read_from_the_register_calls() {
+        assert_eq!(
+            no_spawn_classes(
+                "register({ A, B }, { spawn: false });\nregister(C);\nregister(D, {spawn:false});"
+            ),
+            ["A", "B", "D"]
+        );
+        assert!(no_spawn_classes("register(A);").is_empty());
     }
 }

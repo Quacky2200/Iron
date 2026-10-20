@@ -1,9 +1,14 @@
 //! What compiled games hand to the app each frame, apart from drawing: audio commands for the
-//! mixer, and the finished sounds going back (`iron_engine_api::audio`).
+//! mixer and the finished sounds going back, `Application` requests,
+//! and `PlayerPrefs` (`iron_engine_api::{audio, app, prefs}`). The window, quality and cursor are
+//! `native_render.rs`.
 
 use super::App;
+use super::{info, prefs};
 use iron_core::Value;
+use iron_engine_api::app::{AppInfo, Request, SystemInfo};
 use iron_engine_api::audio::{AudioCommand, PlaybackRef};
+use iron_engine_api::prefs::{Change, Pref};
 
 impl App {
     /// Applies the audio commands compiled code queued to the mixer. The mixer opens on the first
@@ -43,6 +48,78 @@ impl App {
             n.audio_ended(&mut self.scene.scene, &mut self.ui, &ids);
         }
     }
+
+    /// What the program asked of `Application` and `PlayerPrefs`, applied. Runs after each call into the program.
+    pub(super) fn native_requests(&mut self) {
+        if self.native.is_none() {
+            return;
+        }
+        for r in iron_engine_api::app::take_requests() {
+            match r {
+                Request::Quit => self.done = true,
+                Request::TargetFrameRate(fps) => self.target_frame_rate = fps,
+                Request::RunInBackground(on) => {
+                    self.lifecycle.run_in_background = on;
+                    self.sync_lifecycle();
+                }
+            }
+        }
+        for c in iron_engine_api::prefs::take_changes() {
+            match c {
+                Change::Set(k, Pref::Num(n)) => self.prefs.set(&k, serde_json::json!(n)),
+                Change::Set(k, Pref::Str(s)) => self.prefs.set(&k, serde_json::json!(s)),
+                Change::Delete(k) => self.prefs.delete(&k),
+                Change::DeleteAll => self.prefs.delete_all(),
+                Change::Save => self.prefs.save(),
+            }
+        }
+    }
+}
+
+/// The saved settings as the engine's `PlayerPrefs` start out. Once, before the first load.
+pub fn seed_prefs(saved: &prefs::Prefs) {
+    iron_engine_api::prefs::load(saved.all().iter().filter_map(|(k, v)| {
+        let pref = match v {
+            serde_json::Value::Number(n) => Pref::Num(n.as_f64()?),
+            serde_json::Value::String(s) => Pref::Str(s.clone()),
+            serde_json::Value::Bool(b) => Pref::Num(f64::from(u8::from(*b))),
+            _ => return None,
+        };
+        Some((k.clone(), pref))
+    }));
+}
+
+/// What the program reads at start and after each reload: `Application`, `SystemInfo`, the
+/// layer names, and the quality levels (the manifest's, then the player's saved choice).
+pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
+    iron_engine_api::app::set_app(AppInfo {
+        name: manifest.name.clone(),
+        product_name: manifest.title.clone(),
+        version: manifest.version.clone(),
+        company_name: manifest.company.clone(),
+        identifier: manifest.identifier.clone(),
+        engine_version: env!("CARGO_PKG_VERSION").into(),
+        is_editor: false,
+        run_in_background: manifest.run_in_background,
+        target_frame_rate: -1,
+    });
+    let sys = info.0.get("system").cloned().unwrap_or_default();
+    let text = |k: &str| sys[k].as_str().unwrap_or_default().to_owned();
+    let num = |k: &str| sys[k].as_f64().unwrap_or(0.0) as u32;
+    iron_engine_api::app::set_system(SystemInfo {
+        operating_system: text("operatingSystem"),
+        operating_system_family: text("operatingSystemFamily"),
+        operating_system_version: text("operatingSystemVersion"),
+        device_type: text("deviceType"),
+        device_name: text("deviceName"),
+        processor_type: text("processorType"),
+        processor_count: num("processorCount").max(1),
+        system_memory_size: num("systemMemorySize"),
+        architecture: text("architecture"),
+        language: text("language"),
+        touch_supported: sys["touchSupported"].as_bool().unwrap_or(false),
+        ..SystemInfo::default()
+    });
 }
 
 /// The engine API's JSON values as the values ops carry.

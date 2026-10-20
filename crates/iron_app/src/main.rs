@@ -255,7 +255,14 @@ fn run() -> Result<()> {
     let native = match native_bundle {
         Some(bundle) => {
             native_render::configure_engine(&asset_root);
-            Some(native::Native::load(bundle, &mut scene.scene, &mut ui)?)
+            native_pump::seed_prefs(&prefs);
+            let (m, i) = (manifest.clone(), info.clone());
+            Some(native::Native::load_with(
+                bundle,
+                &mut scene.scene,
+                &mut ui,
+                Box::new(move || native_pump::configure_engine(&m, &i)),
+            )?)
         }
         None => None,
     };
@@ -669,6 +676,7 @@ impl App {
         // The scene was replaced: the renderer's script ids pointed into the old one.
         self.scene.clear_ids();
         self.reset_native_render();
+        self.native_after();
         match result {
             Ok(()) => tracing::info!(
                 "reloaded {} in {:.1} ms",
@@ -731,6 +739,10 @@ impl App {
             }
         }
         if let Some((focused, paused)) = change.report {
+            if let Some(n) = self.native.as_mut() {
+                n.focus_changed(&mut self.scene.scene, &mut self.ui, focused, paused);
+                self.native_after();
+            }
             // Games without @iron/engine's Application don't have the hook.
             let has = self
                 .scripts
@@ -769,6 +781,7 @@ impl App {
         for _ in 0..ticks {
             if let Some(n) = self.native.as_mut() {
                 n.fixed_tick(&mut self.scene.scene, &mut self.ui, TICK);
+                self.native_after();
             }
             let scene = &self.scene;
             self.components
@@ -801,7 +814,7 @@ impl App {
                 elapsed.min(MAX_FRAME_DT),
                 now_ms,
             );
-            self.apply_node_commands();
+            self.native_after();
         }
         let scene = &self.scene;
         self.components
@@ -1376,10 +1389,17 @@ impl App {
                 native_render::panel_settle(id, &mut p.tree);
             }
             n.settle(&mut self.scene.scene, &mut self.ui);
-            self.apply_node_commands();
+            self.native_after();
         }
         self.update_ime();
         self.update_cursor();
+    }
+
+    /// After a call into a compiled game: its node commands, window, `Application`,
+    /// `PlayerPrefs` and quality requests.
+    fn native_after(&mut self) {
+        self.apply_node_commands();
+        self.native_requests();
     }
 
     /// Applies what compiled code asked of nodes it holds refs to (`focus()`, `blur()`,
@@ -1633,6 +1653,7 @@ impl App {
     fn send_game_input(&mut self, args: &[iron_core::Value]) {
         if let Some(n) = self.native.as_mut() {
             n.game_input(&mut self.scene.scene, &mut self.ui, args);
+            self.native_after();
             return;
         }
         if !self.game_input {
@@ -2080,6 +2101,7 @@ impl PlatformApp for App {
         if !self.lifecycle.paused() {
             if let Some(n) = self.native.as_mut() {
                 n.pre_render(&mut self.scene.scene, &mut self.ui);
+                self.native_after();
                 self.native_audio_commands();
                 self.sync_native_render();
             }

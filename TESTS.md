@@ -1276,5 +1276,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-801 | Integration | `preventDefault()` in a compiled handler is the answer the interaction layer gets (`Native::ui_event`). |
 | M9-API-802 | Integration | `Native::fixed_tick` steps the physics world and the compiled Rigidbody's object falls in the scene. |
 | M9-API-803 | Integration | Audio commands of a compiled game come out of `take_commands`, and `Native::audio_ended` runs its `onEnded` closures. |
+| M9-API-804 | Integration | `Screen.onChange`, `QualitySettings.onLevelChanged` and `Application.onFocusChanged` closures of a compiled game run from the host calls; a `spawn: false` class gets no starting object. |
+| M9-API-805 | Unit | `{ spawn: false }` is read from the `register(..)` calls of the source. |
 | M9-API-620 | Integration | A compiled game's camera, light and cube reach the renderer's views through `render_sync` (no GPU). |
 | M9-API-700 | Integration | `render_sync` turns planes, `RenderSettings` (skybox, bloom, tonemapping) and quality into the renderer's views, and a second sync leaves them as they were (no GPU). |
