@@ -1322,14 +1322,25 @@ export interface VolumetricFogSettings {
   albedo?: Color;
   /**
    * God rays: within this many metres of the camera the sun's shafts are worked out per
-   * pixel from its shadow map, so beams through window bars, roof gaps and leaves keep sharp
-   * edges (0, the default: off; the volume's cells blur them). Costs `sharpSamples` shadow
-   * lookups per fogged pixel.
+   * pixel from its shadow map, finding each beam's edges exactly (0, the default: off).
+   * Suits large openings (a canopy, a roof hole); shadows thinner than its sample spacing,
+   * such as window bars, alias into a hatch. For those, a finer `resolution` is the cleaner
+   * way to sharpen beams. Costs `sharpSamples` shadow lookups per fogged pixel.
    */
   sharpDistance?: number;
   /** Samples per pixel for the sharp part, 4 to 128 (32). */
   sharpSamples?: number;
+  /**
+   * How fine the light-shaft volume is (`high` by default): `low` 160 × 90 cells by 48 depth
+   * slices, `medium` 240 × 135 × 64, `high` 320 × 180 × 96, `ultra` 480 × 270 × 128. Finer
+   * is sharper (beams through bars and gaps) and costs more to fill each frame.
+   */
+  resolution?: VolumeDetail;
 }
+
+/** The light-shaft volume's detail levels. */
+export type VolumeDetail = "low" | "medium" | "high" | "ultra";
+const VOLUME_DETAILS: VolumeDetail[] = ["low", "medium", "high", "ultra"];
 
 let volumetricFog: VolumetricFogSettings | null = null;
 
@@ -1341,7 +1352,7 @@ function sendFog(): void {
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
   const v = volumetricFog;
   const a = v?.albedo;
-  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32] : null;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high"))] : null;
   __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
 }
 

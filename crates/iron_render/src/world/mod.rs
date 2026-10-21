@@ -620,6 +620,8 @@ pub struct VolumetricFog {
     pub sharp_distance: f32,
     /// Samples per pixel for the sharp part (closer together nearer the camera).
     pub sharp_samples: u32,
+    /// The volume's detail: 0 low, 1 medium, 2 high, 3 ultra (see `volume::SIZES`).
+    pub detail: u8,
 }
 
 impl Default for VolumetricFog {
@@ -632,6 +634,7 @@ impl Default for VolumetricFog {
             albedo: [1.0; 3],
             sharp_distance: 0.0,
             sharp_samples: 32,
+            detail: 2,
         }
     }
 }
@@ -3505,11 +3508,12 @@ impl WorldRenderer {
             .iter()
             .enumerate()
             .map(|(i, view)| {
-                view.fog.and_then(|f| f.volumetric).map(|_| {
+                view.fog.and_then(|f| f.volumetric).map(|v| {
                     self.volume.encode(
                         gpu,
                         &mut encoder,
                         i,
+                        volume::SIZES[usize::from(v.detail.min(3))],
                         &globals_groups[i],
                         (self.stride * i as u64) as u32,
                         &shadow_group,

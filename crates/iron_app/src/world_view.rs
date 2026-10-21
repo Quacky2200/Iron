@@ -1228,6 +1228,7 @@ impl WorldViews {
                                 sharp_distance: v.get(7).copied().unwrap_or(0.0).max(0.0),
                                 sharp_samples: v.get(8).copied().unwrap_or(32.0).clamp(4.0, 128.0)
                                     as u32,
+                                detail: v.get(9).copied().unwrap_or(2.0).clamp(0.0, 3.0) as u8,
                             }
                         }),
                         cull: !matches!(args.get(8), Some(Value::Bool(false))),
@@ -2383,6 +2384,7 @@ mod tests {
                 albedo: [1.0; 3],
                 sharp_distance: 0.0,
                 sharp_samples: 32,
+                detail: 2,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();

@@ -2,8 +2,8 @@
 // long diagonal beams cross the soft lilac haze and land in bright patches on the mossy floor
 // among ferns, rocks, fallen logs and small flowers. The canopy is built from many
 // overlapping leaf clumps, so the sun's hard shadow map is full of holes the beams pass
-// through; near the camera the beams are worked out per pixel (`sharpDistance`), so they keep
-// crisp edges. Dust motes drift in the air. The camera walks slowly round a path at head
+// through. G works the beams near the camera out per pixel (`sharpDistance`) for crisper
+// edges; the light volume alone is the default. Dust motes drift in the air. The camera walks slowly round a path at head
 // height, always looking partly towards the sun, where forward scattering makes the beams
 // brightest. The menu (or keys) switches the sharp god rays (G) and the fog (F); Space pauses
 // the walk.
@@ -53,7 +53,7 @@ const SHAFTS: VolumetricFogSettings = {
 };
 
 /** What the menu shows and changes; `apply` sends it to `RenderSettings`. */
-const state = { sharp: true, fog: true, walking: true };
+const state = { sharp: false, fog: true, walking: true };
 let refreshMenu = () => {};
 
 function apply(): void {

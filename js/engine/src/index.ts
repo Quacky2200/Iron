@@ -176,6 +176,7 @@ export {
   FogVolume,
   type HeightFogSettings,
   type VolumetricFogSettings,
+  type VolumeDetail,
   RenderSettings,
   RenderStats,
   type ProceduralSky,

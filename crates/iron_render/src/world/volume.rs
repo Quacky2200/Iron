@@ -6,8 +6,14 @@
 
 use crate::Gpu;
 
-/// Screen cells across and down, and depth slices.
-pub const SIZE: (u32, u32, u32) = (240, 135, 64);
+/// Screen cells across and down, and depth slices, for each detail level (low, medium,
+/// high, ultra): finer volumes make sharper beams and cost more to fill.
+pub const SIZES: [(u32, u32, u32); 4] = [
+    (160, 90, 48),
+    (240, 135, 64),
+    (320, 180, 96),
+    (480, 270, 128),
+];
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub struct VolumePass {
@@ -18,8 +24,8 @@ pub struct VolumePass {
     sampler: wgpu::Sampler,
     /// A black 1-texel volume for views without shafts.
     empty: wgpu::BindGroup,
-    /// One volume per view slot, made on first use.
-    volumes: Vec<wgpu::TextureView>,
+    /// One volume per view slot, made on first use (and remade when its size changes).
+    volumes: Vec<(wgpu::TextureView, (u32, u32, u32))>,
 }
 
 fn volume_texture(device: &wgpu::Device, size: (u32, u32, u32)) -> wgpu::TextureView {
@@ -147,21 +153,26 @@ impl VolumePass {
         &self.empty
     }
 
-    /// Fills slot `slot`'s volume for the view whose globals are at `offset` in
-    /// `globals`, and returns the group its draws read it through.
+    /// Fills slot `slot`'s volume (`size` cells) for the view whose globals are at `offset`
+    /// in `globals`, and returns the group its draws read it through.
+    #[allow(clippy::too_many_arguments)]
     pub fn encode(
         &mut self,
         gpu: &Gpu,
         encoder: &mut wgpu::CommandEncoder,
         slot: usize,
+        size: (u32, u32, u32),
         globals: &wgpu::BindGroup,
         offset: u32,
         lighting: &wgpu::BindGroup,
     ) -> wgpu::BindGroup {
         while self.volumes.len() <= slot {
-            self.volumes.push(volume_texture(&gpu.device, SIZE));
+            self.volumes.push((volume_texture(&gpu.device, size), size));
         }
-        let view = &self.volumes[slot];
+        if self.volumes[slot].1 != size {
+            self.volumes[slot] = (volume_texture(&gpu.device, size), size);
+        }
+        let view = &self.volumes[slot].0;
         let write = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("fog volume (write)"),
             layout: &self.write_layout,
@@ -179,7 +190,7 @@ impl VolumePass {
             pass.set_bind_group(0, globals, &[offset]);
             pass.set_bind_group(2, lighting, &[]);
             pass.set_bind_group(3, &write, &[]);
-            pass.dispatch_workgroups(SIZE.0.div_ceil(8), SIZE.1.div_ceil(8), 1);
+            pass.dispatch_workgroups(size.0.div_ceil(8), size.1.div_ceil(8), 1);
         }
         Self::read_group(&gpu.device, &self.read_layout, view, &self.sampler)
     }

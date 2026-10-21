@@ -1,10 +1,10 @@
 // God rays: the cell. A medieval basement prison cell of rough stone, lit only by daylight
 // through a small barred window high in the back wall. The sun slants down through the
-// dusty air in crisp beams, the bars' shadows striping the beams and the pool of light on
+// dusty air in beams from a fine light volume (`VolumetricFogSettings.resolution`), the bars' shadows striping the beams and the pool of light on
 // the flagstones; dust motes drift through the dark and flare up where the sun catches them.
 // A heavy door, a straw pallet, a bucket and chains on the wall; a drain grate in the
 // ceiling. The camera sways slowly inside the cell, looking across the beams to the window.
-// The menu (or keys) switches the sharp god rays (G), the fog (F), the dust (D) and the
+// The menu (or keys) switches the volume's detail (G: high or ultra), the fog (F), the dust (D) and the
 // sunlight's tint (T: warm or teal).
 import {
   Camera,
@@ -66,7 +66,7 @@ const SUN_INTENSITY = 6;
 const FOG_COLOR = new Color(0.006, 0.006, 0.007, 1);
 
 /** What the menu shows and changes; `apply` sends it to the engine. */
-const state = { godRays: true, fog: true, dust: true, tint: "warm" as Tint };
+const state = { ultra: true, fog: true, dust: true, tint: "warm" as Tint };
 let refreshMenu = () => {};
 let scene: Cell | null = null;
 
@@ -82,8 +82,7 @@ function apply(): void {
     steps: 8,
     distance: 20,
     albedo: tint.albedo,
-    sharpDistance: state.godRays ? 10 : 0,
-    sharpSamples: 128,
+    resolution: state.ultra ? "ultra" : "high",
   };
   scene?.applyTint(tint);
   if (scene) scene.dust.enabled = state.dust;
@@ -187,7 +186,19 @@ interface Mote {
   vz: number;
   phase: number;
   lit: boolean;
+  /** Which of `MOTE_KINDS`, and how bright in the sun (an index into `MOTE_LEVELS`). */
+  kind: number;
+  level: number;
 }
+
+/** Golden dust, silvery grit and white fluff: their tint and size range (metres). */
+const MOTE_KINDS = [
+  { tint: new Color(1, 0.82, 0.55, 1), size: [0.004, 0.01] },
+  { tint: new Color(0.88, 0.88, 0.9, 1), size: [0.004, 0.009] },
+  { tint: new Color(1, 1, 1, 1), size: [0.012, 0.028] },
+] as const;
+/** A lit mote's brightness: never darker than the beam it's in; most at the low end. */
+const MOTE_LEVELS = [0.5, 0.75, 1.1, 1.7];
 
 /** Whether the sun reaches `p` through the window, between the bars. */
 function inSun(x: number, y: number, z: number): boolean {
@@ -214,7 +225,8 @@ class Cell extends Component {
   dust!: GameObject;
   private motes: Mote[] = [];
   private moteDim!: Material;
-  private moteLit: Record<Tint, Material> = {} as Record<Tint, Material>;
+  /** Lit motes' materials, by tint, kind and brightness level. */
+  private moteLit: Record<Tint, Material[][]> = {} as Record<Tint, Material[][]>;
 
   override onStart() {
     scene = this;
@@ -406,16 +418,38 @@ class Cell extends Component {
     }
   }
 
-  /** Dust motes: tiny unlit specks, dim in the dark and bright where the sun catches them. */
+  /**
+   * Dust motes: unlit specks, near-invisible in the dark and lit where the sun catches them.
+   * Mostly warm dust, some grey grit and a few bigger, paler fluffs; most are tiny and faint,
+   * only the odd one glints.
+   */
   private buildDust() {
     this.dust = new GameObject("Dust");
     this.moteDim = Material.create({ color: Color.black, emission: new Color(0.012, 0.011, 0.01, 1), unlit: true });
-    this.moteLit.warm = Material.create({ color: Color.black, emission: TINTS.warm.mote, unlit: true });
-    this.moteLit.teal = Material.create({ color: Color.black, emission: TINTS.teal.mote, unlit: true });
-    for (let i = 0; i < 120; i++) {
-      const go = shape("Mote", "sphere", Vector3.zero, Vector3.one.scale(Random.range(0.008, 0.016)), this.moteDim, this.dust);
+    for (const tint of ["warm", "teal"] as Tint[]) {
+      const sun = TINTS[tint].mote;
+      this.moteLit[tint] = MOTE_KINDS.map((kind) =>
+        MOTE_LEVELS.map((level) =>
+          Material.create({
+            color: Color.black,
+            emission: new Color(sun.r * kind.tint.r * level, sun.g * kind.tint.g * level, sun.b * kind.tint.b * level, 1),
+            unlit: true,
+          }),
+        ),
+      );
+    }
+    for (let i = 0; i < 260; i++) {
+      const roll = Random.value;
+      const kind = roll < 0.6 ? 0 : roll < 0.85 ? 1 : 2;
+      const [lo, hi] = MOTE_KINDS[kind]!.size;
+      // Most motes small and faint: sizes and brightness skewed low.
+      const size = lo + (hi - lo) * Random.value ** 2;
+      const b = Random.value;
+      const level = b < 0.45 ? 0 : b < 0.75 ? 1 : b < 0.93 ? 2 : 3;
+      const go = shape("Mote", "sphere", Vector3.zero, Vector3.one.scale(size), this.moteDim, this.dust);
       go.getComponent(MeshRenderer)!.shadowCastingMode = "off";
-      const m: Mote = { go, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, phase: Random.range(0, 100), lit: false };
+      go.enabled = false;
+      const m: Mote = { go, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, phase: Random.range(0, 100), lit: false, kind, level };
       this.spawn(m, i % 5 < 3);
       this.motes.push(m);
     }
@@ -443,12 +477,12 @@ class Cell extends Component {
     this.sun.color = tint.sun;
     this.bounce.color = tint.bounce;
     this.camera.backgroundColor = tint.sky;
-    for (const m of this.motes) if (m.lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[state.tint];
+    for (const m of this.motes) if (m.lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[state.tint][m.kind]![m.level]!;
   }
 
   override onUpdate(dt: number) {
     this.t += dt;
-    if (input.getKeyDown("KeyG")) toggle("godRays");
+    if (input.getKeyDown("KeyG")) toggle("ultra");
     if (input.getKeyDown("KeyF")) toggle("fog");
     if (input.getKeyDown("KeyD")) toggle("dust");
     if (input.getKeyDown("KeyT")) cycleTint();
@@ -472,13 +506,16 @@ class Cell extends Component {
       const sunny = inSun(m.x, m.y, m.z);
       if (sunny !== m.lit) {
         m.lit = sunny;
-        m.go.getComponent(MeshRenderer)!.material = sunny ? lit : this.moteDim;
+        // Dust only shows where the light catches it: in shadow it's hidden, not black
+        // (a dark speck against the lit beam behind it looked wrong).
+        m.go.enabled = sunny;
+        if (sunny) m.go.getComponent(MeshRenderer)!.material = lit[m.kind]![m.level]!;
       }
     }
   }
 }
 
-function toggle(key: "godRays" | "fog" | "dust") {
+function toggle(key: "ultra" | "fog" | "dust") {
   state[key] = !state[key];
   apply();
 }
@@ -511,7 +548,7 @@ function Menu() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 20, 0.72)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the cell</text>
-        <Button label="God rays" value={state.godRays ? "Sharp (per pixel)" : "Soft (volume only)"} on={state.godRays} keyName="G" onClick={() => toggle("godRays")} />
+        <Button label="Beam detail" value={state.ultra ? "Ultra" : "High"} on={state.ultra} keyName="G" onClick={() => toggle("ultra")} />
         <Button label="Fog" value={state.fog ? "On" : "Off"} on={state.fog} keyName="F" onClick={() => toggle("fog")} />
         <Button label="Dust" value={state.dust ? "On" : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />
         <Button label="Sunlight" value={state.tint === "warm" ? "Warm" : "Teal"} keyName="T" onClick={cycleTint} />

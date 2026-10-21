@@ -519,30 +519,71 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 }
 
-// Interleaved gradient noise (Jimenez): a fixed offset per pixel in 0..1.
-fn pixel_offset(px: vec2<f32>) -> f32 {
-    return fract(52.9829189 * fract(dot(floor(px), vec2<f32>(0.06711056, 0.00583715))));
+// How much of the sun reaches `x` (1: lit, 0: in shadow), from its shadow map, softened
+// over a few texels: the sun isn't a point, so the shadows of bars and leaves have soft
+// edges, and perfectly hard ones made beams look like stacked blocks.
+fn sun_visible(light: Light, x: vec3<f32>) -> f32 {
+    if (light.shadow.x < 0.0) {
+        return 1.0;
+    }
+    return sun_shadow(light, x, vec3<f32>(0.0), 1);
 }
 
+// Steps of the search for where a beam starts or ends inside one sample step.
+const EDGE_SEARCH: i32 = 6;
+
 // God rays: the sun's light the fog sends back from the first `g.fog_sharp.x` metres of the
-// view ray, worked out per pixel (closer together near the camera) with hard shadow
-// lookups, so a beam's edges are as sharp as what casts them. Each sample sits at a point
-// offset per pixel within its step: at the same points for every pixel, a thin beam lit
-// up shell by shell, in stacked slabs; offset, they blur into fine grain.
+// view ray, worked out per pixel. The ray is sampled at fixed points (closer together near
+// the camera); wherever two neighbours disagree (one lit, one in shadow) the step is searched
+// for the exact point the light starts or stops, and only the lit length counts. So beam
+// edges fall exactly where bars and gaps put them, with no grain to shimmer as the camera
+// moves and no slabs. A shadow thinner than a step, wholly between two samples, can be
+// missed: more samples (`fog_sharp.y`) catch finer ones.
 fn sharp_sun(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool, px: vec2<f32>) -> vec3<f32> {
     let reach = min(len, g.fog_sharp.x);
     let n = i32(g.fog_sharp.y);
-    let j = pixel_offset(px);
-    var t0 = 0.0;
-    var clear = 1.0;
     var sum = vec3<f32>(0.0);
-    for (var i = 0; i < n; i++) {
-        let w = f32(i + 1) / f32(n);
-        let t1 = reach * w * w;
-        let next = media_clear(eye, dir, t1, distance);
-        sum += (clear - next) * scattered_all(eye + dir * mix(t0, t1, j), dir);
-        clear = next;
-        t0 = t1;
+    let count = u32(g.ambient.w);
+    for (var l = 0u; l < count; l++) {
+        let light = lights[l];
+        if (light.color.w <= 0.0 || light.position.w > 0.5) {
+            continue;
+        }
+        // The sun's light is the same all along the ray, but for its shadow.
+        let travel = normalize(light.direction.xyz);
+        let lit_light = light.color.rgb * light.color.w * phase(dot(travel, -dir));
+        var t0 = 0.0;
+        var v0 = sun_visible(light, eye);
+        var clear = 1.0;
+        var lit_fog = 0.0;
+        for (var i = 0; i < n; i++) {
+            let w = f32(i + 1) / f32(n);
+            let t1 = reach * w * w;
+            let v1 = sun_visible(light, eye + dir * t1);
+            let next = media_clear(eye, dir, t1, distance);
+            var share = 0.5 * (v0 + v1);
+            if (abs(v1 - v0) > 0.5) {
+                // A beam's edge in this step: find it.
+                var lo = t0;
+                var hi = t1;
+                let start_lit = v0 > 0.5;
+                for (var k = 0; k < EDGE_SEARCH; k++) {
+                    let mid = 0.5 * (lo + hi);
+                    if ((sun_visible(light, eye + dir * mid) > 0.5) == start_lit) {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                let edge = (0.5 * (lo + hi) - t0) / max(t1 - t0, 1e-6);
+                share = select(1.0 - edge, edge, start_lit);
+            }
+            lit_fog += (clear - next) * share;
+            clear = next;
+            t0 = t1;
+            v0 = v1;
+        }
+        sum += lit_fog * lit_light;
     }
     return sum;
 }

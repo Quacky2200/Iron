@@ -1,6 +1,6 @@
 // God rays: a derelict hall on a late afternoon. The sun pours in through a tall window with a
 // cross mullion, through the louvres of a half-shuttered window and through a broken patch of
-// the roof, in crisp beams (`VolumetricFogSettings.sharpDistance`) that land as bright shapes on
+// the roof, in beams (the light volume; G adds `VolumetricFogSettings.sharpDistance`) that land as bright shapes on
 // the floorboards, a table, a sheet-covered armchair and a stack of crates. A few hundred dust
 // motes drift in the air and glow where they cross the sunlight. The camera drifts along the far
 // wall at eye height, looking across the beams towards the window. The menu (or keys) switches
@@ -48,13 +48,21 @@ const SLAT_STEP = 0.2;
 const MISSING_SLATS = new Set([3, 7]);
 const HOLE = { x0: -5.5, x1: -2.5, z0: 1.4, z1: 5.6 };
 
-const DUST_COUNT = 400;
+const DUST_COUNT = 500;
+/** Golden dust, silvery grit and white fluff: their tint and size range (metres). */
+const MOTE_KINDS = [
+  { tint: new Color(1, 0.82, 0.55, 1), size: [0.005, 0.012] },
+  { tint: new Color(0.88, 0.88, 0.9, 1), size: [0.004, 0.01] },
+  { tint: new Color(1, 1, 1, 1), size: [0.014, 0.03] },
+] as const;
+/** A lit mote's brightness, times the sun's colour: never darker than the beam, the odd one glints. */
+const MOTE_LEVELS = [0.5, 0.75, 1.1, 1.7];
 const GOD_RAYS = { intensity: 1.2, anisotropy: 0.5, steps: 4, distance: 30, albedo: new Color(1, 0.86, 0.68, 1), sharpSamples: 96 };
 const SHARP_DISTANCE = 22;
 const FOG_COLOR = new Color(0.055, 0.046, 0.036, 1);
 
 /** What the menu shows and changes; `apply` sends it to the engine. */
-const state = { sharp: true, fog: true, dust: true };
+const state = { sharp: false, fog: true, dust: true };
 let refreshMenu = () => {};
 let dustRoot: GameObject | null = null;
 
@@ -138,7 +146,9 @@ class Hall extends Component {
   private life = new Float32Array(DUST_COUNT);
   private size = new Float32Array(DUST_COUNT);
   private lit = new Int8Array(DUST_COUNT).fill(-1);
-  private bright: Material[] = [];
+  private kind = new Int8Array(DUST_COUNT);
+  private level = new Int8Array(DUST_COUNT);
+  private bright: Material[][] = [];
   private dim!: Material;
   private roof: Material[] = [];
 
@@ -394,14 +404,29 @@ class Hall extends Component {
   private buildDust() {
     dustRoot = new GameObject("Dust");
     this.dim = Material.create({ color: Color.black, emission: new Color(0.035, 0.03, 0.024, 1), unlit: true });
-    this.bright = [1.6, 2.4, 3.6].map((k) => Material.create({ color: Color.black, emission: new Color(SUN_COLOR.r * k, SUN_COLOR.g * k, SUN_COLOR.b * k, 1), unlit: true }));
+    this.bright = MOTE_KINDS.map((kind) =>
+      MOTE_LEVELS.map((k) =>
+        Material.create({
+          color: Color.black,
+          emission: new Color(SUN_COLOR.r * kind.tint.r * k, SUN_COLOR.g * kind.tint.g * k, SUN_COLOR.b * kind.tint.b * k, 1),
+          unlit: true,
+        }),
+      ),
+    );
     for (let i = 0; i < DUST_COUNT; i++) {
       const go = new GameObject("Mote", { parent: dustRoot });
       const r = go.addComponent(MeshRenderer, { mesh: "sphere", material: this.dim });
       r.shadowCastingMode = "off";
       this.motes.push(go);
       this.renderers.push(r);
-      this.size[i] = Random.range(0.01, 0.026);
+      // Mostly dust, some grit, a few fluffs; small and faint far more often than not.
+      const roll = Random.value;
+      const kind = roll < 0.6 ? 0 : roll < 0.85 ? 1 : 2;
+      const [lo, hi] = MOTE_KINDS[kind]!.size;
+      this.kind[i] = kind;
+      const b = Random.value;
+      this.level[i] = b < 0.45 ? 0 : b < 0.75 ? 1 : b < 0.93 ? 2 : 3;
+      this.size[i] = lo + (hi - lo) * Random.value ** 2;
       this.spawn(i);
       this.age[i] = Random.range(0, this.life[i]!);
     }
@@ -441,10 +466,12 @@ class Hall extends Component {
       tr.localPosition = new Vector3(x, y, z);
       const s = this.size[i]! * Math.min(1, a / fade, (life - a) / fade);
       tr.localScale = new Vector3(s, s, s);
-      const lit = sunlit(x, y, z) ? 1 + (i % 3) : 0;
+      const lit = sunlit(x, y, z) ? 1 : 0;
       if (lit !== this.lit[i]) {
         this.lit[i] = lit;
-        this.renderers[i]!.material = lit ? this.bright[lit - 1]! : this.dim;
+        // Dust only shows where the light catches it: in shadow it's hidden, not dark.
+        this.motes[i]!.enabled = lit === 1;
+        if (lit) this.renderers[i]!.material = this.bright[this.kind[i]!]![this.level[i]!]!;
       }
     }
   }
