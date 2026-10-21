@@ -1708,7 +1708,8 @@ export const RenderSettings = {
   },
   /**
    * Seconds auto exposure takes to blend in when it's turned on and out (to the manual
-   * exposure) when it's turned off (0, the default: at once).
+   * exposure) when it's turned off, and a change of `fixedExposure` takes to ease to the
+   * new value (0, the default: at once).
    */
   get exposureTransition(): number {
     return exposureTransition;

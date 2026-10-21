@@ -49,6 +49,11 @@ struct View {
     hold: u32,
     // What the world was pre-exposed by on its way into the HDR image (1 outside HD).
     pre: f32,
+    // The manual exposure's stops, eased towards `Params::fixed_stops` over the transition.
+    fixed: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
 };
 
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -211,9 +216,9 @@ fn up(uv: vec2<f32>) -> vec3<f32> {
 // What the camera's exposure multiplies the light by: the manual exposure blended with auto
 // exposure's (by how far it has faded in), before the post exposure.
 fn auto_scale() -> f32 {
-    let adapted = select(p.fixed_stops, meter.x, meter.y > 0.5);
+    let adapted = select(view.fixed, meter.x, meter.y > 0.5);
     // The world came in pre-exposed: divide that back out.
-    return exp2(mix(p.fixed_stops, adapted, view.weight)) / view.pre;
+    return exp2(mix(view.fixed, adapted, view.weight)) / view.pre;
 }
 
 // The threshold applies to light as auto exposure shows it, so what blooms is what looks

@@ -141,7 +141,8 @@ pub struct Grading {
     /// blended with it while it fades in or out. None: light as it is (EV100 -log2(1.2)).
     pub fixed_ev: Option<f32>,
     /// Seconds auto exposure takes to blend in when it's turned on, and out (back to the
-    /// manual exposure) when it's turned off; 0: at once.
+    /// manual exposure) when it's turned off, and a change of `fixed_ev` takes to ease to
+    /// the new value; 0: at once.
     pub transition: f32,
     /// Seconds since the last frame, for auto exposure to adapt by.
     pub delta_time: f32,
@@ -223,6 +224,9 @@ struct ViewParams {
     hold: u32,
     /// What the world was multiplied by on its way in (pre-exposure; 1 outside HD).
     pre: f32,
+    /// The manual exposure's stops, as eased so far towards `Grading::fixed_ev`.
+    fixed: f32,
+    _pad: [f32; 3],
 }
 
 /// One camera's exposure state.
@@ -243,6 +247,13 @@ struct Eye {
     last_used: u64,
     /// The pre-exposure this frame's world was drawn with (see `pre_exposure`).
     pre: f32,
+    /// The manual exposure (stops): where it is now, and the ease it's on (from, to, and how
+    /// far along, 0..1): a change to `fixed_ev` takes the transition's time, as turning auto
+    /// exposure on or off does.
+    fixed: f32,
+    fixed_from: f32,
+    fixed_to: f32,
+    fixed_t: f32,
 }
 
 /// A view in this frame's image: whose exposure it uses and where it is (pixels).
@@ -531,8 +542,8 @@ impl BloomPass {
 
     /// Reads back what finished mapping: each eye's stops and metered EV.
     fn collect(&mut self) {
-        let fixed = fixed_stops(self.last.fixed_ev);
         for eye in self.eyes.values_mut() {
+            let fixed = eye.fixed;
             if eye.reading && eye.ready.swap(false, Ordering::Acquire) {
                 if let Ok(data) = eye.staging.slice(..).get_mapped_range() {
                     let v: &[f32] = bytemuck::cast_slice(&data[..16]);
@@ -589,6 +600,10 @@ impl BloomPass {
                 reading_value: None,
                 last_used: 0,
                 pre: 1.0,
+                fixed: f32::NAN,
+                fixed_from: 0.0,
+                fixed_to: 0.0,
+                fixed_t: 1.0,
             }
         })
     }
@@ -690,6 +705,18 @@ impl BloomPass {
             } else {
                 (eye.weight - step).max(goal)
             };
+            // The manual exposure eases to a new value over the transition (a new camera
+            // starts there).
+            let target = fixed_stops(grading.fixed_ev);
+            if eye.fixed.is_nan() {
+                (eye.fixed, eye.fixed_from, eye.fixed_to, eye.fixed_t) =
+                    (target, target, target, 1.0);
+            } else if target != eye.fixed_to {
+                (eye.fixed_from, eye.fixed_to, eye.fixed_t) = (eye.fixed, target, 0.0);
+            }
+            eye.fixed_t = (eye.fixed_t + step).min(1.0);
+            let u = eye.fixed_t * eye.fixed_t * (3.0 - 2.0 * eye.fixed_t);
+            eye.fixed = eye.fixed_from + (eye.fixed_to - eye.fixed_from) * u;
             let [x, y, w, h] = v.rect;
             let (sw, sh) = (size.0.max(1) as f32, size.1.max(1) as f32);
             let params = ViewParams {
@@ -698,6 +725,8 @@ impl BloomPass {
                 snap: u32::from(eye.snap),
                 hold: u32::from(auto.hold),
                 pre: eye.pre,
+                fixed: eye.fixed,
+                _pad: [0.0; 3],
             };
             gpu.queue
                 .write_buffer(&eye.view, 0, bytemuck::bytes_of(&params));

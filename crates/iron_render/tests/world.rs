@@ -3972,6 +3972,42 @@ fn turning_cameras_beams_stay_close_to_a_still_cameras() {
     );
 }
 
+// M7-EXP-07
+#[test]
+fn a_change_of_manual_exposure_eases_over_the_transition() {
+    let size = (64, 48);
+    let views = [flat_view(0.05, [0.0, 0.0, 1.0, 1.0], 0)];
+    let mut world = WorldRenderer::new(&shared_gpu());
+    world.grading = iron_render::Grading {
+        fixed_ev: Some(0.0),
+        transition: 1.0,
+        delta_time: 1.0 / 60.0,
+        ..Default::default()
+    };
+    let before = exposure_frames(&mut world, size, &views, 5)[0];
+    // Two stops darker: half a second in it's partway, after the second it's there.
+    world.grading.fixed_ev = Some(2.0);
+    let halfway = exposure_frames(&mut world, size, &views, 30)[0];
+    let after = exposure_frames(&mut world, size, &views, 40)[0];
+    let target = {
+        let mut w = WorldRenderer::new(&shared_gpu());
+        w.grading = iron_render::Grading {
+            fixed_ev: Some(2.0),
+            ..Default::default()
+        };
+        exposure_frames(&mut w, size, &views, 2)[0]
+    };
+    assert!(before > target + 20, "before {before}, target {target}");
+    assert!(
+        halfway < before - 5 && halfway > target + 5,
+        "halfway {halfway} between {before} and {target}"
+    );
+    assert!(
+        (after - target).abs() <= 1,
+        "after {after}, target {target}"
+    );
+}
+
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
