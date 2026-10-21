@@ -3509,11 +3509,19 @@ impl WorldRenderer {
             .enumerate()
             .map(|(i, view)| {
                 view.fog.and_then(|f| f.volumetric).map(|v| {
+                    let camera = volume::VolumeCamera {
+                        view_proj: view.camera.view_proj,
+                        position: view.camera.position,
+                        forward: view.camera.forward,
+                        orthographic: view.camera.orthographic,
+                        distance: v.distance.max(1e-3),
+                    };
                     self.volume.encode(
                         gpu,
                         &mut encoder,
                         i,
                         volume::SIZES[usize::from(v.detail.min(3))],
+                        camera,
                         &globals_groups[i],
                         (self.stride * i as u64) as u32,
                         &shadow_group,

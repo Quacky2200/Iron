@@ -370,6 +370,24 @@ fn scattered(light: Light, x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 @group(3) @binding(0) var volume: texture_3d<f32>;
 @group(3) @binding(2) var volume_samp: sampler;
 @group(3) @binding(1) var volume_out: texture_storage_3d<rgba16float, write>;
+// The lit cells (see `cs_volume_light`): last frame's, this frame's being written, and this
+// frame's read back while adding up.
+@group(3) @binding(3) var light_history: texture_3d<f32>;
+@group(3) @binding(5) var light_in: texture_3d<f32>;
+@group(3) @binding(6) var light_out: texture_storage_3d<rgba16float, write>;
+
+// What `cs_volume_light` needs of last frame, and where to sample this frame.
+struct VolumeFrame {
+    prev_view_proj: mat4x4<f32>,
+    // xyz: last frame's camera; w: 1 if it was orthographic.
+    prev_camera: vec4<f32>,
+    // xyz: its forward axis; w: how far its volume reached.
+    prev_view_dir: vec4<f32>,
+    // xyz: where in each cell to sample (0..1); w: how much of this frame to keep (1: all,
+    // no history).
+    jitter: vec4<f32>,
+};
+@group(3) @binding(4) var<uniform> frame: VolumeFrame;
 
 
 // How far along the view ray slice `w` (0..1 across the slices) reaches.
@@ -485,9 +503,62 @@ fn local_shafts(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec
     return sum;
 }
 
+// The middle of a volume cell's stretch of the view ray at `f` (0..1 across the screen,
+// down it and out through the slices): the point, and the ray's direction.
+struct CellPoint {
+    x: vec3<f32>,
+    dir: vec3<f32>,
+};
+
+fn cell_point(f: vec3<f32>) -> CellPoint {
+    let far4 = g.inv_view_proj * vec4<f32>(f.x * 2.0 - 1.0, 1.0 - f.y * 2.0, 1.0, 1.0);
+    let far = far4.xyz / far4.w;
+    let eye = fog_eye(far);
+    let dir = normalize(far - eye);
+    return CellPoint(eye + dir * slice_distance(f.z), dir);
+}
+
+// Where `x` was in last frame's volume (0..1 on each axis; outside: it wasn't).
+fn last_cell(x: vec3<f32>) -> vec3<f32> {
+    let c = frame.prev_view_proj * vec4<f32>(x, 1.0);
+    if (c.w <= 0.0) {
+        return vec3<f32>(-1.0);
+    }
+    let ndc = c.xy / c.w;
+    let to = x - frame.prev_camera.xyz;
+    let d = select(length(to), dot(to, frame.prev_view_dir.xyz), frame.prev_camera.w > 0.5);
+    return vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, sqrt(max(d, 0.0) / frame.prev_view_dir.w));
+}
+
+// Lights one volume cell: the light the fog scatters towards the camera at a point inside
+// the cell that moves from frame to frame (`frame.jitter`), blended with the cell's light
+// last frame, found where the cell's middle was then. Over a few frames each cell holds its
+// average over its whole extent, so a bar's shadow edge crossing it shades it partly
+// instead of all or nothing: smooth beams, no stair steps.
+@compute @workgroup_size(4, 4, 4)
+fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
+    let size = textureDimensions(light_out);
+    if (any(id >= size)) {
+        return;
+    }
+    let cell = vec3<f32>(id);
+    let n = vec3<f32>(size);
+    let at = cell_point((cell + frame.jitter.xyz) / n);
+    var light = scattered_all(at.x, at.dir);
+    let blend = frame.jitter.w;
+    if (blend < 1.0) {
+        let was = last_cell(cell_point((cell + 0.5) / n).x);
+        if (all(was >= vec3<f32>(0.0)) && all(was <= vec3<f32>(1.0))) {
+            let history = textureSampleLevel(light_history, volume_samp, was, 0.0).rgb;
+            light = mix(history, light, blend);
+        }
+    }
+    textureStore(light_out, vec3<i32>(id), vec4<f32>(light, 1.0));
+}
+
 // Fills one column of the volume: the view ray through this screen cell, its fog's share
-// in each sub-step lit as `scattered_all` finds it at the sub-step's middle, added up; each
-// slice stores the total out to its centre.
+// in each sub-step lit as the lit cells (`cs_volume_light`) have it at the sub-step's
+// middle, added up; each slice stores the total out to its centre.
 @compute @workgroup_size(8, 8, 1)
 fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
     let size = textureDimensions(volume_out);
@@ -500,7 +571,6 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
     let eye = fog_eye(far);
     let dir = normalize(far - eye);
     let slices = i32(size.z);
-    // Samples per slice: more keep a thin cone near its tip sampled.
     let substeps = i32(g.fog_volume.z);
     var t = 0.0;
     var clear = 1.0;
@@ -511,7 +581,9 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
         for (var i = 0; i < substeps; i++) {
             let at = eye + dir * (t + step);
             let next = fog_clear(at, true) * local_clear(eye, at);
-            sum += (clear - next) * scattered_all(eye + dir * (t + 0.5 * step), dir);
+            let w = sqrt((t + 0.5 * step) / g.fog_volume.w);
+            let lit = textureSampleLevel(light_in, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+            sum += (clear - next) * lit;
             clear = next;
             t += step;
         }

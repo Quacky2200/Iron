@@ -3,8 +3,11 @@
 // the roof, in beams (the light volume; G adds `VolumetricFogSettings.sharpDistance`) that land as bright shapes on
 // the floorboards, a table, a sheet-covered armchair and a stack of crates. A few hundred dust
 // motes drift in the air and glow where they cross the sunlight. The camera drifts along the far
-// wall at eye height, looking across the beams towards the window. The menu (or keys) switches
-// the sharp god rays (G), the fog and its shafts (F) and the dust (D).
+// wall at eye height, looking across the beams towards the window. A day passes: the sun
+// swings from high in the south-west to a low orange sunset in the north-west, so the beams
+// turn and stretch across the floor, then it starts over. The menu (or keys) switches the
+// day passing (T: else a fixed late afternoon), the sharp god rays (G), the fog and its
+// shafts (F) and the dust (D).
 import {
   Camera,
   Color,
@@ -34,9 +37,35 @@ const PLANK_W = 0.5;
 const PLANKS_X = (ROOM_X * 2) / PLANK_W;
 const PLANKS_Z = (ROOM_Z * 2) / RAFTER_STEP;
 
-// Where sunlight travels: from the north-west, about 34 degrees above the horizon.
-const SUN = new Vector3(0.75, -0.55, -0.35).normalized;
-const SUN_COLOR = new Color(1, 0.74, 0.46, 1);
+// Where sunlight travels: the late afternoon from the north-west, about 34 degrees above the
+// horizon; while a day passes, `daylight` moves it.
+const LATE_SUN = new Vector3(0.75, -0.55, -0.35).normalized;
+const LATE_COLOR = new Color(1, 0.74, 0.46, 1);
+let SUN = LATE_SUN;
+const SUN_COLOR = LATE_COLOR;
+const SUN_INTENSITY = 3.2;
+/** Seconds from the afternoon to sunset, and how many colour steps the dust takes on the way. */
+const DAY_LENGTH = 75;
+const DAY_STEPS = 12;
+
+/**
+ * The sun `u` of the way (0..1) from early afternoon to sunset: where its light travels, its
+ * colour (warmer as it sinks) and how strong it is (fading in at the start and out at the end).
+ */
+function daylight(u: number): { dir: Vector3; color: Color; strength: number } {
+  const lerp = (a: number, b: number) => a + (b - a) * u;
+  const elevation = (lerp(58, 3) * Math.PI) / 180;
+  // From the south-west round to the north-west (west is -x, north +z).
+  const azimuth = (lerp(-35, 40) * Math.PI) / 180;
+  const toSun = new Vector3(-Math.cos(elevation) * Math.cos(azimuth), Math.sin(elevation), Math.cos(elevation) * Math.sin(azimuth));
+  const warm = u ** 1.5;
+  const color = new Color(1, 0.93 - 0.48 * warm, 0.82 - 0.62 * warm, 1);
+  const smooth = (e0: number, e1: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  return { dir: toSun.scale(-1).normalized, color, strength: smooth(0, 0.04, u) * smooth(1, 0.9, u) };
+}
 
 // The openings. The tall window (cross mullion at MULLION_Z / TRANSOM_Y) and the shuttered one
 // sit in the west wall; the roof hole is a set of missing roof plank cells.
@@ -62,7 +91,7 @@ const SHARP_DISTANCE = 22;
 const FOG_COLOR = new Color(0.055, 0.046, 0.036, 1);
 
 /** What the menu shows and changes; `apply` sends it to the engine. */
-const state = { sharp: false, fog: true, dust: true };
+const state = { day: true, sharp: false, fog: true, dust: true };
 let refreshMenu = () => {};
 let dustRoot: GameObject | null = null;
 
@@ -148,7 +177,11 @@ class Hall extends Component {
   private lit = new Int8Array(DUST_COUNT).fill(-1);
   private kind = new Int8Array(DUST_COUNT);
   private level = new Int8Array(DUST_COUNT);
-  private bright: Material[][] = [];
+  /** Lit motes' materials: by day step (the last one is the fixed late afternoon), kind and level. */
+  private bright: Material[][][] = [];
+  private step = -1;
+  private sun!: Light;
+  private sky!: Color;
   private dim!: Material;
   private roof: Material[] = [];
 
@@ -162,7 +195,7 @@ class Hall extends Component {
     RenderSettings.bloom = { threshold: 1.1, intensity: 0.55, scatter: 0.6 };
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
-    sun.addComponent(Light, { type: "directional", color: SUN_COLOR, intensity: 3.2, shadows: "hard" });
+    this.sun = sun.addComponent(Light, { type: "directional", color: SUN_COLOR, intensity: SUN_INTENSITY, shadows: "hard" });
 
     Random.initState(7);
     this.buildRoom();
@@ -172,7 +205,8 @@ class Hall extends Component {
 
     const eye = new GameObject("Main Camera", { position: new Vector3(4.6, 1.65, -4) });
     // The outdoors, seen through the openings: a hazy, overexposed afternoon.
-    this.camera = eye.addComponent(Camera, { fieldOfView: 60, backgroundColor: new Color(2.4, 2.0, 1.5, 1), farClipPlane: 100 });
+    this.sky = new Color(2.4, 2.0, 1.5, 1);
+    this.camera = eye.addComponent(Camera, { fieldOfView: 60, backgroundColor: this.sky, farClipPlane: 100 });
     apply();
   }
 
@@ -197,14 +231,14 @@ class Hall extends Component {
     const plaster = mat("#b5a68c", 0.05);
     const T = 0.3;
     const W = -ROOM_X - T;
-    slab("Wall E", ROOM_X, 0, -ROOM_Z - T, ROOM_X + T, WALL_H, ROOM_Z + T, plaster);
-    slab("Wall N", -ROOM_X - T, 0, ROOM_Z, ROOM_X + T, WALL_H, ROOM_Z + T, plaster);
-    slab("Wall S", -ROOM_X - T, 0, -ROOM_Z - T, ROOM_X + T, WALL_H, -ROOM_Z, plaster);
-    slab("Wall W", W, 0, -ROOM_Z, -ROOM_X, WALL_H, SHUT.z0, plaster);
-    slab("Wall W", W, 0, SHUT.z1, -ROOM_X, WALL_H, WIN.z0, plaster);
-    slab("Wall W", W, 0, WIN.z1, -ROOM_X, WALL_H, ROOM_Z, plaster);
+    slab("Wall E", ROOM_X, -0.2, -ROOM_Z - T, ROOM_X + T, WALL_H, ROOM_Z + T, plaster);
+    slab("Wall N", -ROOM_X - T, -0.2, ROOM_Z, ROOM_X + T, WALL_H, ROOM_Z + T, plaster);
+    slab("Wall S", -ROOM_X - T, -0.2, -ROOM_Z - T, ROOM_X + T, WALL_H, -ROOM_Z, plaster);
+    slab("Wall W", W, -0.2, -ROOM_Z, -ROOM_X, WALL_H, SHUT.z0, plaster);
+    slab("Wall W", W, -0.2, SHUT.z1, -ROOM_X, WALL_H, WIN.z0, plaster);
+    slab("Wall W", W, -0.2, WIN.z1, -ROOM_X, WALL_H, ROOM_Z, plaster);
     for (const o of [WIN, SHUT]) {
-      slab("Sill wall", W, 0, o.z0, -ROOM_X, o.y0, o.z1, plaster);
+      slab("Sill wall", W, -0.2, o.z0, -ROOM_X, o.y0, o.z1, plaster);
       slab("Lintel", W, o.y1, o.z0, -ROOM_X, WALL_H, o.z1, plaster);
     }
     // Worn patches: damp stains, newer plaster, bare brick.
@@ -404,13 +438,21 @@ class Hall extends Component {
   private buildDust() {
     dustRoot = new GameObject("Dust");
     this.dim = Material.create({ color: Color.black, emission: new Color(0.035, 0.03, 0.024, 1), unlit: true });
-    this.bright = MOTE_KINDS.map((kind) =>
-      MOTE_LEVELS.map((k) =>
-        Material.create({
-          color: Color.black,
-          emission: new Color(SUN_COLOR.r * kind.tint.r * k, SUN_COLOR.g * kind.tint.g * k, SUN_COLOR.b * kind.tint.b * k, 1),
-          unlit: true,
-        }),
+    // Each step of the day lights the dust in that step's sunlight.
+    const lights = Array.from({ length: DAY_STEPS }, (_, i) => {
+      const d = daylight((i + 0.5) / DAY_STEPS);
+      return new Color(d.color.r * d.strength, d.color.g * d.strength, d.color.b * d.strength, 1);
+    });
+    lights.push(LATE_COLOR);
+    this.bright = lights.map((sun) =>
+      MOTE_KINDS.map((kind) =>
+        MOTE_LEVELS.map((k) =>
+          Material.create({
+            color: Color.black,
+            emission: new Color(sun.r * kind.tint.r * k, sun.g * kind.tint.g * k, sun.b * kind.tint.b * k, 1),
+            unlit: true,
+          }),
+        ),
       ),
     );
     for (let i = 0; i < DUST_COUNT; i++) {
@@ -471,16 +513,45 @@ class Hall extends Component {
         this.lit[i] = lit;
         // Dust only shows where the light catches it: in shadow it's hidden, not dark.
         this.motes[i]!.enabled = lit === 1;
-        if (lit) this.renderers[i]!.material = this.bright[this.kind[i]!]![this.level[i]!]!;
+        if (lit) this.renderers[i]!.material = this.bright[this.step]![this.kind[i]!]![this.level[i]!]!;
       }
+    }
+  }
+
+  /** Moves the sun through the day (or holds the late afternoon), with the sky and dust. */
+  private updateSun() {
+    let step = DAY_STEPS;
+    if (state.day) {
+      const u = (this.t % DAY_LENGTH) / DAY_LENGTH;
+      const d = daylight(u);
+      SUN = d.dir;
+      this.sun.color = d.color;
+      this.sun.intensity = SUN_INTENSITY * d.strength;
+      // The overexposed outdoors dims and warms with the sun, never quite black.
+      const k = 0.08 + 0.92 * d.strength;
+      this.camera.backgroundColor = new Color(this.sky.r * k * d.color.r, this.sky.g * k * d.color.g, this.sky.b * k * d.color.b, 1);
+      step = Math.min(DAY_STEPS - 1, Math.floor(u * DAY_STEPS));
+    } else if (this.step !== DAY_STEPS) {
+      SUN = LATE_SUN;
+      this.sun.color = LATE_COLOR;
+      this.sun.intensity = SUN_INTENSITY;
+      this.camera.backgroundColor = this.sky;
+    }
+    this.sun.transform.rotation = Quaternion.lookRotation(SUN);
+    if (step !== this.step) {
+      this.step = step;
+      // Every lit mote picks up the new step's colour.
+      this.lit.fill(-1);
     }
   }
 
   override onUpdate(dt: number) {
     this.t += dt;
+    if (input.getKeyDown("KeyT")) toggle("day");
     if (input.getKeyDown("KeyG")) toggle("sharp");
     if (input.getKeyDown("KeyF")) toggle("fog");
     if (input.getKeyDown("KeyD")) toggle("dust");
+    this.updateSun();
     if (state.dust) this.updateDust(Math.min(dt, 0.05));
     // A slow walk along the east side, looking across the beams towards the window.
     const t = this.t;
@@ -520,6 +591,7 @@ function Menu() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(20, 15, 10, 0.72)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the room</text>
+        <Button label="Time" value={state.day ? "Day passing" : "Late afternoon"} on={state.day} keyName="T" onClick={() => toggle("day")} />
         <Button label="God rays" value={state.sharp ? `Sharp (${SHARP_DISTANCE} m)` : "Soft (volume only)"} on={state.sharp} keyName="G" onClick={() => toggle("sharp")} />
         <Button label="Fog" value={state.fog ? "On" : "Off"} on={state.fog} keyName="F" onClick={() => toggle("fog")} />
         <Button label="Dust" value={state.dust ? `${DUST_COUNT} motes` : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />

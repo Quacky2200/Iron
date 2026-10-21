@@ -1,8 +1,18 @@
-//! Light shafts' froxel volume: a 3D texture over each view's frustum (screen cells by depth
-//! slices) holding the light the fog scatters towards the camera, added up from the eye
-//! out to each slice. A compute pass (`cs_volume` in world.wgsl) fills it once per view;
-//! everything the view draws then reads it with trilinear filtering, so shafts are smooth
-//! (no per-pixel noise or banding) and cost the same however much overdraw there is.
+//! Light shafts' froxel volume: 3D textures over each view's frustum (screen cells by depth
+//! slices). Two compute passes fill them once per view:
+//! - `cs_volume_light` lights each cell: the light the fog there scatters towards the camera,
+//!   taken at a point that moves around inside the cell from frame to frame and blended
+//!   with what the cell held last frame (found by reprojecting it). Over a few frames each
+//!   cell holds its average over its whole extent, so beams through bars and leaves come out
+//!   smooth instead of in stair steps, for one shadow lookup per cell per frame.
+//! - `cs_volume` adds the lit fog up from the eye out to each slice, with the fog's
+//!   transmittance, into the volume draws read.
+//!
+//! Everything the view draws then reads it with trilinear filtering, so shafts cost the same
+//! however much overdraw there is.
+
+use bytemuck::{Pod, Zeroable};
+use iron_core::glam::{Mat4, Vec3};
 
 use crate::Gpu;
 
@@ -15,17 +25,78 @@ pub const SIZES: [(u32, u32, u32); 4] = [
     (480, 270, 128),
 ];
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+/// How much of each new frame goes into a cell: about the last 1 / BLEND frames count.
+const BLEND: f32 = 0.1;
+/// Where in its cell each frame samples: a Halton (2, 3, 5) sequence, so any run of frames
+/// spreads its samples evenly over the cell. Frame 0 takes the middle.
+const JITTER: usize = 16;
+
+fn halton(mut i: usize, base: usize) -> f32 {
+    let (mut f, mut r) = (1.0, 0.0);
+    while i > 0 {
+        f /= base as f32;
+        r += f * (i % base) as f32;
+        i /= base;
+    }
+    r
+}
+
+fn jitter(frame: u64) -> [f32; 3] {
+    let i = (frame % JITTER as u64) as usize;
+    if i == 0 {
+        return [0.5; 3];
+    }
+    [halton(i, 2), halton(i, 3), halton(i, 5)]
+}
+
+/// The camera a volume is filled for, to reproject the next frame's cells into it.
+#[derive(Clone, Copy, PartialEq)]
+pub struct VolumeCamera {
+    pub view_proj: Mat4,
+    pub position: Vec3,
+    pub forward: Vec3,
+    pub orthographic: bool,
+    /// How far the volume reaches, in metres.
+    pub distance: f32,
+}
+
+/// `VolumeFrame` in world.wgsl.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GpuFrame {
+    prev_view_proj: [[f32; 4]; 4],
+    prev_camera: [f32; 4],
+    prev_view_dir: [f32; 4],
+    jitter: [f32; 4],
+}
+
+/// One view slot's textures and what it last held.
+struct Slot {
+    size: (u32, u32, u32),
+    /// Lit cells, this frame's and last frame's (swapped every frame).
+    light: [wgpu::TextureView; 2],
+    /// The added-up volume draws read.
+    volume: wgpu::TextureView,
+    frame: wgpu::Buffer,
+    /// Which of `light` holds last frame's cells.
+    current: usize,
+    /// The camera last frame's cells were lit for (none: start over).
+    last: Option<VolumeCamera>,
+    frames: u64,
+}
 
 pub struct VolumePass {
     /// What draws read: the volume and its sampler (group 3).
     pub read_layout: wgpu::BindGroupLayout,
-    write_layout: wgpu::BindGroupLayout,
-    pipeline: wgpu::ComputePipeline,
+    light_layout: wgpu::BindGroupLayout,
+    sum_layout: wgpu::BindGroupLayout,
+    light_pipeline: wgpu::ComputePipeline,
+    sum_pipeline: wgpu::ComputePipeline,
     sampler: wgpu::Sampler,
     /// A black 1-texel volume for views without shafts.
     empty: wgpu::BindGroup,
-    /// One volume per view slot, made on first use (and remade when its size changes).
-    volumes: Vec<(wgpu::TextureView, (u32, u32, u32))>,
+    /// One set per view slot, made on first use (and remade when its size changes).
+    slots: Vec<Option<Slot>>,
 }
 
 fn volume_texture(device: &wgpu::Device, size: (u32, u32, u32)) -> wgpu::TextureView {
@@ -47,6 +118,40 @@ fn volume_texture(device: &wgpu::Device, size: (u32, u32, u32)) -> wgpu::Texture
         .create_view(&Default::default())
 }
 
+fn view(binding: u32, v: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
+    wgpu::BindGroupEntry {
+        binding,
+        resource: wgpu::BindingResource::TextureView(v),
+    }
+}
+
+fn entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty,
+        count: None,
+    }
+}
+
+fn sampled() -> wgpu::BindingType {
+    wgpu::BindingType::Texture {
+        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        view_dimension: wgpu::TextureViewDimension::D3,
+        multisampled: false,
+    }
+}
+
+fn storage() -> wgpu::BindingType {
+    wgpu::BindingType::StorageTexture {
+        access: wgpu::StorageTextureAccess::WriteOnly,
+        format: FORMAT,
+        view_dimension: wgpu::TextureViewDimension::D3,
+    }
+}
+
+const SAMPLER: wgpu::BindingType = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering);
+
 impl VolumePass {
     pub fn new(
         device: &wgpu::Device,
@@ -60,54 +165,61 @@ impl VolumePass {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        multisampled: false,
-                    },
+                    ty: sampled(),
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: SAMPLER,
                     count: None,
                 },
             ],
         });
-        // The compute pass writes at another binding: one module can't bind two variables
-        // to the same slot.
-        let write_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("fog volume (write)"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: FORMAT,
-                    view_dimension: wgpu::TextureViewDimension::D3,
-                },
-                count: None,
-            }],
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("fog volume"),
-            bind_group_layouts: &[
-                Some(globals_layout),
-                None,
-                Some(shadow_layout),
-                Some(&write_layout),
+        // The compute passes bind at other numbers: one module can't bind two variables to
+        // the same slot.
+        let light_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("fog volume (light)"),
+            entries: &[
+                entry(2, SAMPLER),
+                entry(3, sampled()),
+                entry(
+                    4,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                ),
+                entry(6, storage()),
             ],
-            immediate_size: 0,
         });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("fog volume"),
-            layout: Some(&layout),
-            module,
-            entry_point: Some("cs_volume"),
-            compilation_options: Default::default(),
-            cache: None,
+        let sum_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("fog volume (sum)"),
+            entries: &[entry(1, storage()), entry(2, SAMPLER), entry(5, sampled())],
         });
+        let pipeline = |label: &str, entry_point: &str, layout: &wgpu::BindGroupLayout| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(label),
+                bind_group_layouts: &[
+                    Some(globals_layout),
+                    None,
+                    Some(shadow_layout),
+                    Some(layout),
+                ],
+                immediate_size: 0,
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                module,
+                entry_point: Some(entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        let light_pipeline = pipeline("fog volume (light)", "cs_volume_light", &light_layout);
+        let sum_pipeline = pipeline("fog volume (sum)", "cs_volume", &sum_layout);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("fog volume"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -118,11 +230,13 @@ impl VolumePass {
         let empty = Self::read_group(device, &read_layout, &black, &sampler);
         Self {
             read_layout,
-            write_layout,
-            pipeline,
+            light_layout,
+            sum_layout,
+            light_pipeline,
+            sum_pipeline,
             sampler,
             empty,
-            volumes: Vec::new(),
+            slots: Vec::new(),
         }
     }
 
@@ -154,7 +268,7 @@ impl VolumePass {
     }
 
     /// Fills slot `slot`'s volume (`size` cells) for the view whose globals are at `offset`
-    /// in `globals`, and returns the group its draws read it through.
+    /// in `globals`, seen by `camera`, and returns the group its draws read it through.
     #[allow(clippy::too_many_arguments)]
     pub fn encode(
         &mut self,
@@ -162,36 +276,101 @@ impl VolumePass {
         encoder: &mut wgpu::CommandEncoder,
         slot: usize,
         size: (u32, u32, u32),
+        camera: VolumeCamera,
         globals: &wgpu::BindGroup,
         offset: u32,
         lighting: &wgpu::BindGroup,
     ) -> wgpu::BindGroup {
-        while self.volumes.len() <= slot {
-            self.volumes.push((volume_texture(&gpu.device, size), size));
+        let device = &gpu.device;
+        while self.slots.len() <= slot {
+            self.slots.push(None);
         }
-        if self.volumes[slot].1 != size {
-            self.volumes[slot] = (volume_texture(&gpu.device, size), size);
+        if self.slots[slot].as_ref().is_none_or(|s| s.size != size) {
+            self.slots[slot] = Some(Slot {
+                size,
+                light: [volume_texture(device, size), volume_texture(device, size)],
+                volume: volume_texture(device, size),
+                frame: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("fog volume frame"),
+                    size: size_of::<GpuFrame>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                current: 0,
+                last: None,
+                frames: 0,
+            });
         }
-        let view = &self.volumes[slot].0;
-        let write = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("fog volume (write)"),
-            layout: &self.write_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(view),
-            }],
+        let s = self.slots[slot].as_mut().expect("made above");
+        let [jx, jy, jz] = jitter(s.frames);
+        // Without last frame's cells, this frame's stand alone.
+        let (prev, blend) = match s.last {
+            Some(last) => (last, BLEND),
+            None => (camera, 1.0),
+        };
+        let p = prev.position;
+        let f = prev.forward;
+        let frame = GpuFrame {
+            prev_view_proj: prev.view_proj.to_cols_array_2d(),
+            prev_camera: [p.x, p.y, p.z, f32::from(u8::from(prev.orthographic))],
+            prev_view_dir: [f.x, f.y, f.z, prev.distance],
+            jitter: [jx, jy, jz, blend],
+        };
+        gpu.queue
+            .write_buffer(&s.frame, 0, bytemuck::bytes_of(&frame));
+        let (history, lit) = (&s.light[s.current], &s.light[1 - s.current]);
+        let sampler = wgpu::BindGroupEntry {
+            binding: 2,
+            resource: wgpu::BindingResource::Sampler(&self.sampler),
+        };
+        let light_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fog volume (light)"),
+            layout: &self.light_layout,
+            entries: &[
+                sampler.clone(),
+                view(3, history),
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: s.frame.as_entire_binding(),
+                },
+                view(6, lit),
+            ],
+        });
+        let sum_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fog volume (sum)"),
+            layout: &self.sum_layout,
+            entries: &[view(1, &s.volume), sampler, view(5, lit)],
         });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("fog volume"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, globals, &[offset]);
             pass.set_bind_group(2, lighting, &[]);
-            pass.set_bind_group(3, &write, &[]);
+            pass.set_pipeline(&self.light_pipeline);
+            pass.set_bind_group(3, &light_group, &[]);
+            pass.dispatch_workgroups(size.0.div_ceil(4), size.1.div_ceil(4), size.2.div_ceil(4));
+            pass.set_pipeline(&self.sum_pipeline);
+            pass.set_bind_group(3, &sum_group, &[]);
             pass.dispatch_workgroups(size.0.div_ceil(8), size.1.div_ceil(8), 1);
         }
-        Self::read_group(&gpu.device, &self.read_layout, view, &self.sampler)
+        s.current = 1 - s.current;
+        s.last = Some(camera);
+        s.frames += 1;
+        Self::read_group(device, &self.read_layout, &s.volume, &self.sampler)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jitter_starts_in_the_middle_and_spreads_over_the_cell() {
+        assert_eq!(jitter(0), [0.5; 3]);
+        let mean: f32 = (0..JITTER as u64).map(|i| jitter(i)[0]).sum::<f32>() / JITTER as f32;
+        assert!((mean - 0.5).abs() < 0.05, "{mean}");
+        assert!((1..JITTER as u64).all(|i| jitter(i).iter().all(|v| (0.0..1.0).contains(v))));
     }
 }

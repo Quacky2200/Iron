@@ -3164,23 +3164,13 @@ fn god_rays_keep_a_grates_thin_shadows_sharp() {
     assert_golden("M7-FOG-10", size.0, size.1, &pixels, 6);
 }
 
-// M7-FOG-11
-#[test]
-fn a_finer_light_volume_keeps_a_grates_beams_sharper() {
+/// A grate of thin bars for a roof, a floor and a back wall in exponential fog, lit by a
+/// sun tilted `tilt` degrees from straight down (towards +x), seen from under the roof
+/// through a low light volume: `WorldView`s for `size`, and their cameras.
+fn grate_view(size: (u32, u32), tilt: f32) -> iron_render::WorldView {
     use iron_render::{
         Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
-        primitive_id, viewport_size,
-    };
-    let gpu = shared_gpu();
-    let size = (320, 160);
-    let target =
-        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
-    let view = target.view().unwrap();
-    let rt = RenderTarget {
-        view: &view,
-        format: target.format(),
-        size,
-        scale: 1.0,
+        primitive_id,
     };
     let cube = |model: Mat4, color: [f32; 4]| MeshInstance {
         mesh: primitive_id("cube").unwrap(),
@@ -3193,7 +3183,6 @@ fn a_finer_light_volume_keeps_a_grates_beams_sharper() {
         Mat4::from_scale_rotation_translation(extent, Quat::IDENTITY, centre)
     };
     let mut meshes = vec![
-        // The floor and a back wall the view rays end on.
         cube(
             box_at(Vec3::new(0.0, -0.1, 0.0), Vec3::new(30.0, 0.2, 20.0)),
             [0.5, 0.5, 0.5, 1.0],
@@ -3203,7 +3192,6 @@ fn a_finer_light_volume_keeps_a_grates_beams_sharper() {
             [0.5, 0.5, 0.5, 1.0],
         ),
     ];
-    // A grate for a roof: bars 0.12 m wide every 0.4 m, finer than the volume's cells.
     for k in -40..=40 {
         meshes.push(cube(
             box_at(
@@ -3213,11 +3201,12 @@ fn a_finer_light_volume_keeps_a_grates_beams_sharper() {
             [0.3, 0.3, 0.3, 1.0],
         ));
     }
+    let t = tilt.to_radians();
     let sun = Light {
         kind: LightKind::Directional,
         color: [3.0, 2.85, 2.6],
         position: Vec3::ZERO,
-        direction: Vec3::new(0.35, -1.0, 0.0).normalize(),
+        direction: Vec3::new(t.sin(), -t.cos(), 0.0),
         range: 0.0,
         shadows: Some(Shadows {
             soft: false,
@@ -3226,72 +3215,114 @@ fn a_finer_light_volume_keeps_a_grates_beams_sharper() {
         culling_mask: ALL_LAYERS,
         volumetric: 1.0,
     };
-    let rects = [[0.0, 0.0, 0.5, 1.0], [0.5, 0.0, 0.5, 1.0]];
-    let fog = Fog {
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(
+            Vec3::new(0.0, 1.5, 8.0),
+            Vec3::new(0.0, 3.0, 0.0),
+            Vec3::Y,
+        )
+        .inverse(),
+        60.0,
+        0.1,
+        60.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.03, 0.03, 0.035];
+    v.meshes = meshes;
+    v.lights = vec![sun];
+    v.fog = Some(Fog {
         mode: FogMode::Exponential,
         color: [0.2, 0.21, 0.24],
         density: 0.06,
+        volumetric: Some(VolumetricFog {
+            intensity: 0.25,
+            distance: 30.0,
+            detail: 0,
+            ..Default::default()
+        }),
         ..Default::default()
-    };
-    let views: Vec<WorldView> = rects
-        .iter()
-        .enumerate()
-        .map(|(k, &rect)| {
-            let camera = WorldCamera::perspective(
-                iron_core::glam::camera::rh::view::look_at_mat4(
-                    Vec3::new(0.0, 1.5, 8.0),
-                    Vec3::new(0.0, 3.0, 0.0),
-                    Vec3::Y,
-                )
-                .inverse(),
-                60.0,
-                0.1,
-                60.0,
-                viewport_size(rect, size),
-                Color::rgb(0.0, 0.0, 0.0),
-            );
-            let mut v = WorldView::new(camera, rect);
-            v.ambient = [0.03, 0.03, 0.035];
-            v.meshes = meshes.clone();
-            v.lights = vec![sun];
-            v.fog = Some(Fog {
-                volumetric: Some(VolumetricFog {
-                    intensity: 0.25,
-                    distance: 30.0,
-                    detail: if k == 1 { 3 } else { 0 },
-                    ..Default::default()
-                }),
-                ..fog
-            });
-            v
+    });
+    v
+}
+
+/// Green along a row of `grate_view`'s back wall, 3 m up, seen through the air under the roof.
+fn grate_row(view: &iron_render::WorldView, size: (u32, u32), pixels: &[u8]) -> Vec<i32> {
+    (-30..=30)
+        .map(|i| {
+            let c = view
+                .camera
+                .view_proj
+                .project_point3(Vec3::new(i as f32 * 0.1, 3.0, -6.0));
+            let x = (c.x + 1.0) / 2.0 * size.0 as f32;
+            let y = (1.0 - c.y) / 2.0 * size.1 as f32;
+            pixels[(y as usize * size.0 as usize + x as usize) * 4 + 1] as i32
         })
-        .collect();
-    let view_projs: Vec<Mat4> = views.iter().map(|v| v.camera.view_proj).collect();
+        .collect()
+}
+
+/// The same grate rendered by a new renderer for `frames` frames, the sun at `tilt`.
+fn grate_render(size: (u32, u32), tilts: &[f32]) -> Vec<u8> {
+    let gpu = shared_gpu();
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
     let mut world = WorldRenderer::new(&gpu);
     world.shadow_distance = 30.0;
-    world.render_views(&gpu, &rt, &views, &[]);
-    let pixels = target.read_pixels(&gpu).unwrap();
-    // Green along a row of the back wall, 3 m up, seen through the air under the roof.
-    let row = |k: usize| -> Vec<i32> {
-        (-30..=30)
-            .map(|i| {
-                let c = view_projs[k].project_point3(Vec3::new(i as f32 * 0.1, 3.0, -6.0));
-                let r = rects[k];
-                let x = (r[0] + (c.x + 1.0) / 2.0 * r[2]) * size.0 as f32;
-                let y = (1.0 - c.y) / 2.0 * size.1 as f32;
-                pixels[(y as usize * size.0 as usize + x as usize) * 4 + 1] as i32
-            })
-            .collect()
-    };
-    // How much the row ripples (the sum of steps between neighbours): the coarse volume's
-    // cells blur the thin beams together.
+    for &tilt in tilts {
+        world.render_views(&gpu, &rt, &[grate_view(size, tilt)], &[]);
+    }
+    target.read_pixels(&gpu).unwrap()
+}
+
+// M7-FOG-11
+#[test]
+fn the_light_volume_averages_its_cells_over_frames_into_smooth_beams() {
+    let size = (320, 160);
+    let view = grate_view(size, 20.0);
+    // How much the row ripples (the sum of steps between neighbours). One sample per cell
+    // turns bars' shadows into all-or-nothing cells, stair steps; averaged over frames each
+    // cell is shaded by how much of it is lit.
     let ripple = |r: &[i32]| r.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<i32>();
-    let (low, ultra) = (row(0), row(1));
+    let one = grate_row(&view, size, &grate_render(size, &[20.0]));
+    let many = grate_row(&view, size, &grate_render(size, &[20.0; 32]));
     assert!(
-        ripple(&ultra) > ripple(&low) * 11 / 10,
-        "thin beams: {} against {} ({ultra:?} / {low:?})",
-        ripple(&ultra),
-        ripple(&low)
+        ripple(&many) < ripple(&one),
+        "averaged {} against one frame {} ({many:?} / {one:?})",
+        ripple(&many),
+        ripple(&one)
+    );
+}
+
+// M7-FOG-12
+#[test]
+fn the_light_volume_follows_a_turning_sun_without_trailing_its_old_beams() {
+    let size = (320, 160);
+    // A day passing quickly: the sun turns 0.25 degrees a frame, 15 degrees in all.
+    let turning: Vec<f32> = (0..=60).map(|i| 5.0 + i as f32 * 0.25).collect();
+    let moving = grate_render(size, &turning);
+    // The same sun held still at the end: where the beams should be.
+    let still = grate_render(size, &[20.0; 32]);
+    let diff = |a: &[u8], b: &[u8]| {
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| (*x as i32 - *y as i32).abs())
+            .sum::<i32>() as f32
+            / a.len() as f32
+    };
+    let lag = diff(&moving, &still);
+    // Against the sun 2.5 degrees (10 frames) back, to scale it.
+    let behind = diff(&grate_render(size, &[17.5; 32]), &still);
+    assert!(
+        lag < behind * 0.5,
+        "moving sun differs by {lag} a channel, a sun 2.5 degrees back by {behind}"
     );
 }
 
