@@ -257,4 +257,3 @@ fn bloom_settings_from_a_variable_go_through_the_facade_write() {
         assert_eq!(text(ts_fac_bloomFromAVariable()), "true|1.5|0.6|false");
     });
 }
-
