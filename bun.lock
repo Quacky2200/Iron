@@ -129,6 +129,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/fog": {
+      "name": "fog",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/form": {
       "name": "form",
       "version": "0.1.0",
@@ -355,6 +367,8 @@
     "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
 
     "fishtank": ["fishtank@workspace:examples/fishtank"],
+
+    "fog": ["fog@workspace:examples/fog"],
 
     "form": ["form@workspace:examples/form"],
 

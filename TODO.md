@@ -1451,7 +1451,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     shadow map, Henyey-Greenstein phase (`M7-FOG-05`)
   - [ ] Follow-ups: a froxel volume (march once per froxel instead of per fragment, cheaper
     under overdraw); blur or temporal accumulation of the jitter's grain; shafts in the sky
-    without height fog; `examples/fog` showing all of it in one scene
+    without height fog
+  - [x] `examples/fog` (2026-10-21): every kind of fog in one misty clearing, switched from a
+    menu
 
 ## M8 — Multiplayer
 
