@@ -2,7 +2,8 @@
 // paths curve between lawns edged with low hoop-top railings; a pond with lily pads and
 // reeds narrows under an arched green footbridge; big clumpy trees and two weeping willows,
 // benches facing the water, a bandstand, gas lamps, flower beds and an entrance gate. Beyond
-// the trees a city skyline (towers, spires, a dome) sinks into linear distance fog.
+// the trees old London (terraced streets, chimney stacks, spires, a dome) sinks into linear
+// distance fog.
 // Two moods (N): a misty morning, with soft round mist lying on the pond (ellipsoid fog
 // volumes) under an overcast sky, and night, when the gas lamps' spot lights make glowing
 // cones in the mist (light shafts). The camera strolls the loop path at head height, over
@@ -172,7 +173,10 @@ const REED = [mat("#6b7f3a"), mat("#8a8f4a")];
 const BULRUSH = mat("#5a3e26");
 const FLOWERS = [mat("#f2c12e"), mat("#f2c12e"), mat("#e8a321"), mat("#c73a2c")];
 const STALK = mat("#3f6d2f");
-const CITY = [mat("#8f9caa"), mat("#9aa6b1"), mat("#84909e")];
+// Old London in the haze: soot-dark brick, stone and slate (the fog turns them blue-grey).
+const CITY = [mat("#5e5550"), mat("#6b625b"), mat("#7a736b")];
+const BRICK_ROW = [mat("#6e4f42"), mat("#5f463b"), mat("#7a5b4a"), mat("#8a7f70")];
+const SLATE = mat("#4a4f57", 0.2);
 const TERRACE = mat("#d8ccb0", 0.1);
 const TERRACE_ROOF = mat("#7c8590", 0.1);
 const GLASS = Material.create({ color: hex("#d9dccb"), smoothness: 0.9 });
@@ -754,20 +758,35 @@ function bed(cx: number, cz: number, ax: number, az: number): void {
   hoops(ellipse(cx, cz, ax + 0.35, az + 0.35));
 }
 
+/** A terraced row along `dir` from `at`: brick fronts, a pitched slate roof, chimney stacks. */
+function terraceRow(at: Vector3, dir: number, length: number): void {
+  const h = Random.range(9, 15);
+  const depth = Random.range(8, 11);
+  const yaw = Quaternion.euler(0, dir, 0);
+  const along = yawDir(dir + 90);
+  const brick = pick(BRICK_ROW);
+  shape("Terrace", "cube", at.add(v(0, h / 2, 0)), v(depth, h, length), brick, yaw);
+  // The roof: a box turned 45° about the row's length, half of it showing as a gable.
+  const r = depth / Math.SQRT2;
+  shape("Roof", "cube", at.add(v(0, h, 0)), v(r, r, length), SLATE, Quaternion.euler(0, dir, 0).mul(Quaternion.euler(0, 0, 45)));
+  // Chimney stacks along the ridge, each with a row of pots.
+  for (let d = -length / 2 + 3; d < length / 2 - 2; d += Random.range(5, 8)) {
+    const c = at.add(along.scale(d)).add(v(0, h + depth / 2 - 0.3, 0));
+    shape("Chimney stack", "cube", c, v(1.1, 2.4, 2.2), brick, yaw);
+    for (const o of [-0.6, 0, 0.6]) shape("Chimney pot", "cylinder", c.add(along.scale(o)).add(v(0, 1.5, 0)), v(0.35, 0.35, 0.35), SLATE);
+  }
+}
+
 function skyline(): void {
-  // Most of the city lies north, beyond the park's far trees; some all round.
-  for (let i = 0; i < 95; i++) {
-    const a = Random.range(0, 1) < 0.75 ? -Math.PI / 2 + Random.range(-1.25, 1.25) : Random.range(0, Math.PI * 2);
-    const r = Random.range(100, 135);
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    const w = Random.range(7, 16);
-    const d = Random.range(7, 16);
-    const h = Random.range(0, 1) < 0.15 ? Random.range(34, 48) : Random.range(10, 30);
-    const yaw = Quaternion.euler(0, Random.range(0, 90), 0);
-    const m = pick(CITY);
-    shape("Building", "cube", v(x, h / 2, z), v(w, h, d), m, yaw);
-    if (Random.range(0, 1) < 0.3) shape("Chimneys", "cube", v(x + Random.range(-w, w) * 0.3, h + 1.5, z), v(2.5, 3, 1.2), m, yaw);
+  // Victorian London beyond the park: low terraced streets, mostly north, the landmarks
+  // rising above them.
+  for (let i = 0; i < 34; i++) {
+    const a = Random.range(0, 1) < 0.8 ? -Math.PI / 2 + Random.range(-1.3, 1.3) : Random.range(0, Math.PI * 2);
+    const r = Random.range(95, 140);
+    const at = v(Math.cos(a) * r, 0, Math.sin(a) * r);
+    // Rows run across the view (roughly square to the line from the park).
+    const facing = (Math.atan2(at.x, at.z) * 180) / Math.PI;
+    terraceRow(at, facing + Random.range(-20, 20), Random.range(22, 46));
   }
   const city = CITY[0]!;
   // A great dome on a drum, with a lantern and two towers in front.
@@ -801,7 +820,7 @@ function skyline(): void {
   for (let i = 0; i < 5; i++) {
     const z = -24 + i * 13;
     shape("Terrace", "cube", v(92, 7, z), v(12, 14, 12.6), TERRACE);
-    shape("Terrace roof", "cube", v(92, 14.6, z), v(10, 1.2, 12.2), TERRACE_ROOF);
+    shape("Terrace roof", "cube", v(92, 14, z), v(8.5, 8.5, 12.6), TERRACE_ROOF, Quaternion.euler(0, 0, 45));
   }
 }
 
