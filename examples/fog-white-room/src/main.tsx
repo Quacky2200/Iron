@@ -534,9 +534,10 @@ class WhiteRoom extends Component {
 
   /** The village keeps its distance, centred under the camera, standing on the floor. */
   private placeVillage() {
-    // Four-fifths of the way into the fog's fade, whichever distance it's at.
+    // Deep in the fog's fade, whichever distance it's at: its front rows about two-thirds
+    // faded, the back ones lost in the white (close, it would look like a model).
     const f = FOGS[state.fog]!;
-    const k = (f.start + 0.8 * (f.end - f.start)) / VILLAGE_R;
+    const k = (f.start + 0.82 * (f.end - f.start)) / VILLAGE_R;
     const c = this.camera.transform.position;
     // Only when the fog distance changes: rescaling walks every child.
     if (Math.abs(this.village.transform.localScale.x - k) > 1e-6) this.village.transform.localScale = Vector3.one.scale(k);
@@ -577,7 +578,9 @@ function buildVillage(): GameObject {
     const across = new Vector3(-Math.sin(a), 0, Math.cos(a));
     const houses = 10 + Math.floor(Random.value * 10);
     for (let i = 0; i < houses; i++) {
-      const at = centre.add(across.scale(Random.range(-60, 60))).add(new Vector3(Math.cos(a), 0, Math.sin(a)).scale(Random.range(-25, 25)));
+      // Spread deep through the fog: the front rows fairly clear, the back ones melting
+      // into the white, so the village has distance rather than one flat ring.
+      const at = centre.add(across.scale(Random.range(-70, 70))).add(new Vector3(Math.cos(a), 0, Math.sin(a)).scale(Random.range(-0.15, 0.3) * VILLAGE_R));
       const w = Random.range(6, 12);
       const d = Random.range(6, 10);
       const h = Random.range(6, 14);
@@ -590,7 +593,7 @@ function buildVillage(): GameObject {
     }
     // A tower or two.
     for (let t = 0; t < 1 + Math.floor(Random.value * 2); t++) {
-      const at = centre.add(across.scale(Random.range(-40, 40)));
+      const at = centre.add(across.scale(Random.range(-40, 40))).add(new Vector3(Math.cos(a), 0, Math.sin(a)).scale(Random.range(-0.1, 0.25) * VILLAGE_R));
       const h = Random.range(28, 45);
       part("Tower", "cube", at.add(new Vector3(0, h / 2, 0)), new Vector3(6, h, 6), 0);
       part("Spire", "cube", at.add(new Vector3(0, h + 3, 0)), new Vector3(4.2, 4.2, 4.2), 45, 0);
