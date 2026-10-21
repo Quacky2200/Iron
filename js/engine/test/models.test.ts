@@ -136,6 +136,39 @@ describe("skinned models and animations", () => {
     expect(root.findChild("Worm")!.transform.localPosition.x).toBe(2);
   });
 
+  // M5-SKN-03
+  test("rotation keys on opposite sides (q and -q) are flipped to agree, so poses don't fly", () => {
+    // A quarter turn about z, then the same turn stored negated, then a little further.
+    const s = Math.SQRT1_2;
+    const arm = {
+      roots: [0],
+      materials: [],
+      nodes: [{ name: "Arm", position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], children: [], primitives: [] }],
+      animations: [
+        {
+          name: "swing",
+          channels: [{ node: 0, path: "rotation", interpolation: "linear", times: [0, 1, 2], values: [0, 0, s, s, 0, 0, -s, -s, 0, 0, -0.7934, -0.6088] }],
+        },
+      ],
+    };
+    const m = Model.load("arm.glb");
+    const root = m.instantiate();
+    globalThis.__iron_models([m.id, JSON.stringify(arm)]);
+    const clip = m.animations[0]!;
+    clip.wrapMode = "clampForever";
+    // Halfway between the first two keys: still the quarter turn (it summed to zero before,
+    // and normalizing nothing gave any rotation at all).
+    clip.sampleAnimation(root, 0.5);
+    const q = root.findChild("Arm")!.transform.localRotation;
+    expect(Math.abs(q.z)).toBeCloseTo(s, 3);
+    expect(Math.abs(q.w)).toBeCloseTo(s, 3);
+    // And on towards the third key, the same way round.
+    clip.sampleAnimation(root, 1.5);
+    const r = root.findChild("Arm")!.transform.localEulerAngles.z;
+    expect(r).toBeGreaterThan(90);
+    expect(r).toBeLessThan(110);
+  });
+
   test("script meshes carry bone weights and bind poses", () => {
     const mesh = Mesh.create({
       vertices: [Vector3.zero, Vector3.right, Vector3.up],

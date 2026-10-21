@@ -7404,8 +7404,9 @@ ${err.stack}` : ""}`);
           if (path === undefined)
             continue;
           const [property, size] = ch.path === "translation" ? ["localPosition", 3] : ch.path === "rotation" ? ["localRotation", 4] : ["localScale", 3];
+          const values = ch.path === "rotation" ? continuous(ch.values, ch.interpolation === "cubic") : ch.values;
           for (let k = 0;k < size; k++) {
-            const curve = ch.interpolation === "cubic" ? cubic(ch.times, ch.values, size, k) : AnimationCurve.fromPoints(ch.times.map((t, i) => [t, ch.values[i * size + k]]), ch.interpolation === "step" ? "step" : "linear");
+            const curve = ch.interpolation === "cubic" ? cubic(ch.times, values, size, k) : AnimationCurve.fromPoints(ch.times.map((t, i) => [t, values[i * size + k]]), ch.interpolation === "step" ? "step" : "linear");
             clip.setCurve(path, "Transform", `${property}.${"xyzw"[k]}`, curve);
           }
         }
@@ -7455,6 +7456,20 @@ ${err.stack}` : ""}`);
       m?._loaded(typeof json === "string" ? JSON.parse(json) : null);
     }
   };
+  function continuous(values, cubicKeys) {
+    const out = [...values];
+    const stride = cubicKeys ? 12 : 4;
+    const at = cubicKeys ? 4 : 0;
+    for (let i = stride;i + stride <= out.length; i += stride) {
+      let dot = 0;
+      for (let c = 0;c < 4; c++)
+        dot += out[i - stride + at + c] * out[i + at + c];
+      if (dot < 0)
+        for (let c = 0;c < stride; c++)
+          out[i + c] = -out[i + c];
+    }
+    return out;
+  }
   function cubic(times, values, size, k) {
     const keys = times.map((t, i) => {
       const at = (part) => values[(i * 3 + part) * size + k];
