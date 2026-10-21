@@ -153,8 +153,8 @@
         "@types/react": "19.3.0",
       },
     },
-    "examples/fog-ps1": {
-      "name": "fog-ps1",
+    "examples/fog-raider": {
+      "name": "fog-raider",
       "version": "0.1.0",
       "dependencies": {
         "@iron/engine": "workspace:*",
@@ -408,7 +408,7 @@
 
     "fog-blocks": ["fog-blocks@workspace:examples/fog-blocks"],
 
-    "fog-ps1": ["fog-ps1@workspace:examples/fog-ps1"],
+    "fog-raider": ["fog-raider@workspace:examples/fog-raider"],
 
     "fog-teapots": ["fog-teapots@workspace:examples/fog-teapots"],
 

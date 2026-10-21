@@ -1,5 +1,5 @@
 {
-  "name": "fog-ps1",
+  "name": "fog-raider",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,8 +18,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "iron": {
-    "title": "Iron - PS1 fog",
+    "title": "Iron - Fog raider",
     "company": "Iron examples",
-    "identifier": "dev.iron.examples.fog-ps1"
+    "identifier": "dev.iron.examples.fog-raider"
   }
 }
