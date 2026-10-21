@@ -14,10 +14,10 @@
 //! its creator, until [`end_frame`].
 
 use crate::log::{Level, emit as log_emit};
-use iron_api::callback::{Listeners, emit};
+use iron_api::callback::{HandleArg, Listeners, emit};
 use iron_api::{Callback, Handle, iron_api};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 /// A window handle: 1 is the main window, then 2, 3, ... never reused in a run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -198,6 +198,11 @@ pub struct Opened {
     pub platform: String,
 }
 
+/// The most a message may weigh: UTF-8 bytes of its JSON.
+pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
+/// How long a request waits for its reply when the caller gives no timeout.
+pub const DEFAULT_REQUEST_TIMEOUT_MS: f64 = 10_000.0;
+
 pub const MIN_SIZE: f64 = 1.0;
 pub const MAX_SIZE: f64 = 16384.0;
 
@@ -209,6 +214,47 @@ struct WindowListeners {
     moved: Listeners<(f64, f64)>,
     focus: Listeners<(bool,)>,
     scale: Listeners<(f64,)>,
+    message: Listeners<(HandleArg<WindowRef>, String)>,
+    request: Listeners<(HandleArg<WindowRef>, String, f64)>,
+}
+
+/// One message in a domain's queue: a message (`request` 0, `reply_to` 0), a request (`request`
+/// is its id) or a reply to the request `reply_to` (`error` set when it failed).
+struct Message {
+    from: WindowRef,
+    to: WindowRef,
+    text: String,
+    request: u64,
+    reply_to: u64,
+    error: String,
+}
+
+/// A request that has not been answered yet.
+struct PendingRequest {
+    to: WindowRef,
+    deadline_ms: f64,
+    /// The domain whose `onReplyJson` listeners get the answer.
+    sender_domain: DomainId,
+    /// A reply (or a failure) is on its way.
+    replied: bool,
+}
+
+/// Listeners of a domain (`Window.onMessage` and friends).
+#[derive(Default)]
+struct DomainListeners {
+    focus: Listeners<(bool, bool)>,
+    message: Listeners<(HandleArg<WindowRef>, String)>,
+    request: Listeners<(HandleArg<WindowRef>, String, f64)>,
+    reply: Listeners<(f64, String, String)>,
+}
+
+impl DomainListeners {
+    fn remove(&mut self, token: u32) -> bool {
+        self.focus.remove(token)
+            || self.message.remove(token)
+            || self.request.remove(token)
+            || self.reply.remove(token)
+    }
 }
 
 impl WindowListeners {
@@ -219,6 +265,8 @@ impl WindowListeners {
             || self.moved.remove(token)
             || self.focus.remove(token)
             || self.scale.remove(token)
+            || self.message.remove(token)
+            || self.request.remove(token)
     }
 }
 
@@ -240,7 +288,13 @@ struct State {
     setup: BTreeMap<WindowRef, DomainId>,
     /// (focused, paused) per domain, as the host last said.
     domain_focus: BTreeMap<DomainId, (bool, bool)>,
-    domain_listeners: BTreeMap<DomainId, Listeners<(bool, bool)>>,
+    domain_listeners: BTreeMap<DomainId, DomainListeners>,
+    /// Messages waiting for each domain's next delivery, in posting order.
+    queues: BTreeMap<DomainId, VecDeque<Message>>,
+    pending: BTreeMap<u64, PendingRequest>,
+    next_request: u64,
+    /// The latest `now_ms` the host gave `deliver`; request deadlines count from it.
+    now_ms: f64,
 }
 
 fn main_state() -> WindowState {
@@ -283,6 +337,10 @@ impl State {
             setup: BTreeMap::new(),
             domain_focus: BTreeMap::new(),
             domain_listeners: BTreeMap::new(),
+            queues: BTreeMap::new(),
+            pending: BTreeMap::new(),
+            next_request: 1,
+            now_ms: 0.0,
         }
     }
 
@@ -626,7 +684,7 @@ pub fn domain_focus_changed(d: DomainId, focused: bool, paused: bool) {
         s.domain_focus.insert(d, (focused, paused));
         s.domain_listeners
             .get(&d)
-            .map(|l| l.snapshot())
+            .map(|l| l.focus.snapshot())
             .unwrap_or_default()
     });
     let _g = enter_domain(d);
@@ -647,6 +705,140 @@ pub fn run_queued(d: DomainId) -> usize {
         c.call(());
     }
     cbs.len()
+}
+
+/// Messages waiting for `d` (tests, the phase B channel).
+pub fn pending(d: DomainId) -> usize {
+    with(|s| s.queues.get(&d).map_or(0, |q| q.len()))
+}
+
+/// Delivers what is queued for `d` (call it with `d` current; it enters `d` itself otherwise): first
+/// the `run` callbacks, then the messages and requests that were queued **before** the call (what
+/// listeners post meanwhile waits for the next delivery) to the target's listeners and then the
+/// domain's, then replies to `onReplyJson`, then the requests of `d` that expired (`"timed out"`) or
+/// whose target closed (`"window closed"`). A request nobody listens to fails with
+/// `"no request listener"`.
+pub fn deliver(d: DomainId, now_ms: f64) {
+    run_queued(d);
+    let batch: Vec<Message> = with(|s| {
+        if now_ms > s.now_ms {
+            s.now_ms = now_ms;
+        }
+        s.queues
+            .get_mut(&d)
+            .map(|q| q.drain(..).collect())
+            .unwrap_or_default()
+    });
+    let _g = enter_domain(d);
+    let (replies, incoming): (Vec<Message>, Vec<Message>) =
+        batch.into_iter().partition(|m| m.reply_to != 0);
+    for m in incoming {
+        deliver_one(d, m);
+    }
+    for m in replies {
+        let cbs = with(|s| {
+            s.pending.remove(&m.reply_to)?;
+            Some(
+                s.domain_listeners
+                    .get(&d)
+                    .map(|l| l.reply.snapshot())
+                    .unwrap_or_default(),
+            )
+        });
+        if let Some(cbs) = cbs {
+            emit(&cbs, (m.reply_to as f64, m.text, m.error));
+        }
+    }
+    // Requests of this domain that ran out of time or lost their target.
+    let failed: Vec<(u64, &'static str)> = with(|s| {
+        let now = s.now_ms;
+        let mut out = Vec::new();
+        for (id, p) in &s.pending {
+            if p.sender_domain != d || p.replied {
+                continue;
+            }
+            if p.deadline_ms <= now {
+                out.push((*id, "timed out"));
+            } else if !s.windows.get(&p.to).is_some_and(|st| st.open) {
+                out.push((*id, "window closed"));
+            }
+        }
+        for (id, _) in &out {
+            s.pending.remove(id);
+        }
+        out
+    });
+    if !failed.is_empty() {
+        let cbs = with(|s| {
+            s.domain_listeners
+                .get(&d)
+                .map(|l| l.reply.snapshot())
+                .unwrap_or_default()
+        });
+        for (id, err) in failed {
+            emit(&cbs, (id as f64, String::new(), err.to_string()));
+        }
+    }
+}
+
+/// One message or request to its target window's listeners, then the domain's.
+fn deliver_one(d: DomainId, m: Message) {
+    let (open, win_msg, dom_msg, win_req, dom_req) = with(|s| {
+        let open = s.windows.get(&m.to).is_some_and(|st| st.open);
+        let wl = s.listeners.get(&m.to);
+        let dl = s.domain_listeners.get(&d);
+        (
+            open,
+            wl.map(|l| l.message.snapshot()).unwrap_or_default(),
+            dl.map(|l| l.message.snapshot()).unwrap_or_default(),
+            wl.map(|l| l.request.snapshot()).unwrap_or_default(),
+            dl.map(|l| l.request.snapshot()).unwrap_or_default(),
+        )
+    });
+    // A message to a window that closed on the way is dropped (a request fails in its sender's
+    // domain when it sees the closed target).
+    if !open {
+        return;
+    }
+    let _c = enter_current(m.to);
+    if m.request == 0 {
+        for cb in win_msg.iter().chain(&dom_msg) {
+            cb.call((HandleArg(m.from), m.text.clone()));
+        }
+        return;
+    }
+    if win_req.is_empty() && dom_req.is_empty() {
+        reject(m.request, "no request listener");
+        return;
+    }
+    for cb in win_req.iter().chain(&dom_req) {
+        cb.call((HandleArg(m.from), m.text.clone(), m.request as f64));
+        if with(|s| s.pending.get(&m.request).is_none_or(|p| p.replied)) {
+            break;
+        }
+    }
+}
+
+/// Fails the request `id` in its sender's domain (a reply message with an error).
+fn reject(id: u64, error: &str) {
+    with(|s| {
+        let Some(p) = s.pending.get_mut(&id) else {
+            return;
+        };
+        if p.replied {
+            return;
+        }
+        p.replied = true;
+        let (to, d) = (p.to, p.sender_domain);
+        s.queues.entry(d).or_default().push_back(Message {
+            from: to,
+            to: d.root(),
+            text: String::new(),
+            request: 0,
+            reply_to: id,
+            error: error.to_string(),
+        });
+    });
 }
 
 /// Whether the running domain may set `w` up: it is in `w`'s domain, or it made `w` this frame.
@@ -706,6 +898,53 @@ fn effective_position(s: &State, w: WindowRef) -> (f64, f64) {
         pp.0 + (parent.size.0 - st.size.0) / 2.0 + off,
         pp.1 + (parent.size.1 - st.size.1) / 2.0 + off,
     )
+}
+
+/// Queues a message (or, with a timeout, a request) for the domain of `to`; the request id, or 0 for
+/// a plain message, on success.
+fn post(to: WindowRef, text: &str, request_timeout: Option<f64>) -> Option<u64> {
+    if text.len() > MAX_MESSAGE_BYTES {
+        warn(&format!(
+            "Window.postMessage: the message is over {MAX_MESSAGE_BYTES} bytes as JSON; refused"
+        ));
+        return None;
+    }
+    with(|s| {
+        if !s.windows.get(&to).is_some_and(|st| st.open) {
+            warn(&format!(
+                "Window.postMessage: window {} is closed; the message is dropped",
+                to.0
+            ));
+            return None;
+        }
+        let from = s.current.unwrap_or(s.domain.root());
+        let d = s.domain_of(to);
+        let mut request = 0;
+        if let Some(timeout) = request_timeout {
+            request = s.next_request;
+            s.next_request += 1;
+            let sender_domain = s.domain;
+            let deadline_ms = s.now_ms + timeout;
+            s.pending.insert(
+                request,
+                PendingRequest {
+                    to,
+                    deadline_ms,
+                    sender_domain,
+                    replied: false,
+                },
+            );
+        }
+        s.queues.entry(d).or_default().push_back(Message {
+            from,
+            to,
+            text: text.to_string(),
+            request,
+            reply_to: 0,
+            error: String::new(),
+        });
+        Some(request)
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1097,7 +1336,97 @@ pub mod window_api {
         pub fn on_domain_focus_changed(f: Callback<(bool, bool)>) -> u32 {
             with(|s| {
                 let d = s.domain;
-                s.domain_listeners.entry(d).or_default().add(f)
+                s.domain_listeners.entry(d).or_default().focus.add(f)
+            })
+        }
+
+        /// Messages to any window of the current domain (after the per-window listeners of the target).
+        /// The wire form is JSON text; the typed `onMessage<T>` wraps this.
+        #[js_name = "onMessageJson"]
+        pub fn on_message_json_all(f: Callback<(HandleArg<WindowRef>, String)>) -> u32 {
+            with(|s| {
+                let d = s.domain;
+                s.domain_listeners.entry(d).or_default().message.add(f)
+            })
+        }
+
+        /// Requests to any window of the current domain; `replyJson(id, text)` answers the sender's
+        /// promise (once).
+        #[js_name = "onRequestJson"]
+        pub fn on_request_json_all(f: Callback<(HandleArg<WindowRef>, String, f64)>) -> u32 {
+            with(|s| {
+                let d = s.domain;
+                s.domain_listeners.entry(d).or_default().request.add(f)
+            })
+        }
+
+        /// The sender side of `request`: called with (request id, reply JSON, error text; one of the two
+        /// empty) in the domain that sent it.
+        pub fn on_reply_json(f: Callback<(f64, String, String)>) -> u32 {
+            with(|s| {
+                let d = s.domain;
+                s.domain_listeners.entry(d).or_default().reply.add(f)
+            })
+        }
+
+        /// Answers request `request` (once; later calls are false) with JSON text.
+        pub fn reply_json(request: f64, text: &str) -> bool {
+            if request.is_nan() || request < 1.0 {
+                return false;
+            }
+            if text.len() > MAX_MESSAGE_BYTES {
+                warn("Window.reply: the reply is over 1 MiB; refused");
+                return false;
+            }
+            let id = request as u64;
+            with(|s| {
+                let Some(p) = s.pending.get_mut(&id) else {
+                    return false;
+                };
+                if p.replied {
+                    return false;
+                }
+                p.replied = true;
+                let (to, d) = (p.to, p.sender_domain);
+                s.queues.entry(d).or_default().push_back(Message {
+                    from: to,
+                    to: d.root(),
+                    text: text.to_string(),
+                    request: 0,
+                    reply_to: id,
+                    error: String::new(),
+                });
+                true
+            })
+        }
+
+        /// Posts JSON text to the root window of every other family. Returns how many were queued.
+        pub fn broadcast_json(text: &str) -> u32 {
+            if text.len() > MAX_MESSAGE_BYTES {
+                warn("Window.broadcast: the message is over 1 MiB; refused");
+                return 0;
+            }
+            with(|s| {
+                let from = s.current.unwrap_or(s.domain.root());
+                let me = s.domain;
+                let roots: Vec<DomainId> = s
+                    .open_in_order()
+                    .into_iter()
+                    .filter(|w| s.windows[w].parent.is_none())
+                    .map(|w| DomainId(w.0))
+                    .filter(|d| *d != me)
+                    .collect();
+                for d in &roots {
+                    s.queues.entry(*d).or_default().push_back(Message {
+                        from,
+                        to: d.root(),
+                        text: text.to_string(),
+                        request: 0,
+                        reply_to: 0,
+                        error: String::new(),
+                    });
+                }
+                roots.len() as u32
             })
         }
 
@@ -1414,6 +1743,35 @@ pub mod window_api {
 
         pub fn on_scale_changed(self, f: Callback<(f64,)>) -> u32 {
             add_listener(self, f, |l| &mut l.scale)
+        }
+
+        /// A message posted to this window, as JSON text. Runs in this window's domain.
+        pub fn on_message_json(self, f: Callback<(HandleArg<WindowRef>, String)>) -> u32 {
+            add_listener(self, f, |l| &mut l.message)
+        }
+
+        /// A request posted to this window: `(from, JSON text, request id)`; answer with
+        /// `Window.replyJson(id, text)`.
+        pub fn on_request_json(self, f: Callback<(HandleArg<WindowRef>, String, f64)>) -> u32 {
+            add_listener(self, f, |l| &mut l.request)
+        }
+
+        /// Queues JSON text for this window's domain; delivered at the start of that domain's next
+        /// dispatch, in order per sender. False (and a warning) when the text is over 1 MiB or the
+        /// window is closed.
+        pub fn post_message_json(self, text: &str) -> bool {
+            post(self, text, None).is_some()
+        }
+
+        /// Posts `text` as a request and returns its id (0: refused). The reply, a failure or the
+        /// timeout (default 10000 ms) arrives through `Window.onReplyJson` in the sender's domain.
+        pub fn post_request_json(self, text: &str, timeout_ms: f64) -> f64 {
+            let timeout = if timeout_ms.is_finite() && timeout_ms > 0.0 {
+                timeout_ms
+            } else {
+                DEFAULT_REQUEST_TIMEOUT_MS
+            };
+            post(self, text, Some(timeout)).map_or(0.0, |id| id as f64)
         }
 
         /// Removes any of the listeners above by token.
