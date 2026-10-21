@@ -1,5 +1,5 @@
 //! The engine's script API beyond the scene, declared with `#[iron_api]`: `Color`, `Time`, `input`,
-//! `Gizmos`, `Camera`, `Screen` and `QualitySettings`. Each module keeps its state per thread and
+//! `Gizmos`, `Camera`, `Screen`, `QualitySettings` and `Window`. Each module keeps its state per thread and
 //! has plain Rust functions for the host (the app) to feed or read; scripts, compiled or in
 //! QuickJS, only see the generated API. The names and behaviour follow `js/engine`.
 //!
@@ -30,6 +30,7 @@ pub mod random;
 pub mod screen;
 pub mod time;
 pub mod ui_resources;
+pub mod window;
 
 /// The manifests (JSON) of every namespace this crate declares, for the compiler to check calls
 /// against. The scene's (`iron_scene::api::scene_api`) is separate.
@@ -78,6 +79,7 @@ pub fn manifests() -> Vec<String> {
         app::application_api::MANIFEST.to_json(),
         app::system_info_api::MANIFEST.to_json(),
         ui_resources::ui_resources_api::MANIFEST.to_json(),
+        window::window_api::MANIFEST.to_json(),
     ]);
     all
 }
@@ -130,5 +132,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     audio_components::audio_listener_api::register_quickjs(ctx)?;
     cursor::cursor_api::register_quickjs(ctx)?;
     cursor::cursor_lock_mode_api::register_quickjs(ctx)?;
+    window::window_api::register_quickjs(ctx)?;
     Ok(())
 }

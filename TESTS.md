@@ -1397,3 +1397,20 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1407 | Unit | A parent that would make a cycle is dropped. |
 | M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
 | M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
+| M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/iron_engine_api/tests/window.rs`). |
+| M9-API-1411 | Unit | Setting a title queues `Title(w, ..)` and reads back at once. |
+| M9-API-1412 | Unit | `create` returns a handle at once (2, 3, never reused), queues one `Create`, and the window is not `created` yet. |
+| M9-API-1413 | Unit | `create` fills defaults per style: a tool's parent is the main window, a normal window has none, NaN size is 400 x 300, popups do not take focus, sizes clamp to 1..16384, a pending window reads a centred cascade position. |
+| M9-API-1414 | Unit | Unknown styles fall back to normal; `child` cannot be set or unset after creation. |
+| M9-API-1415 | Unit | Setters of one field coalesce (last value wins) while `Create` and `Close` keep their place; a second `close()` queues nothing. |
+| M9-API-1416 | Unit | `opened` fills the native handle, platform, position, scale and the size the OS gave; setting a size keeps the old value until `resized`. |
+| M9-API-1417 | Unit | Resize, move, focus and scale events reach their listeners once per change. |
+| M9-API-1418 | Unit | An `onCloseRequested` listener can cancel the close; the cancel does not stick. |
+| M9-API-1419 | Unit | `cancelClose` outside (or for another window's) close request does nothing. |
+| M9-API-1420 | Unit | `closed` runs `onClosed` once and drops the listeners; a closed window takes no new ones. |
+| M9-API-1421 | Unit | A closed window reads its last values and ignores setters, `focus` and `close`. |
+| M9-API-1422 | Unit | `count` and `at` list open windows main first; `find(key)` and `byHandle`; a taken key still creates the window. |
+| M9-API-1423 | Unit | `parent`, `isChild`, `childCount`, `childAt`; a closed parent is ignored. |
+| M9-API-1424 | Unit | `Window.current` is the window whose event is being dispatched, else the main window; guards nest. |
+| M9-API-1425 | Unit | `off` removes any listener by token, once. |
+| M9-API-1426 | Unit | `Window.main.close()` asks to quit (`Application.quit`) and queues no `Close`. |

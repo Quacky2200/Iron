@@ -43,7 +43,9 @@ fn every_manifest_function_exists_in_quickjs() {
                     let name = f["name"].as_str().unwrap();
                     let kind = f["kind"].as_str().unwrap();
                     count += 1;
-                    let target = if kind == "static" {
+                    // A getter or setter without `this` is a static property of the class.
+                    let has_this = f["params"][0]["name"].as_str() == Some("this");
+                    let target = if kind == "static" || (!has_this && kind != "method") {
                         class.to_string()
                     } else {
                         format!("{class}.prototype")
