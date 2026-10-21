@@ -395,8 +395,8 @@ struct VolumeFrame {
     // xyz: where in each cell to sample (0..1); w: how much of this frame to keep (1: all,
     // no history).
     jitter: vec4<f32>,
-    // x: shadow samples per cell this frame; y: for cells whose view moved; z: 1 when a
-    // spot or point light in the volume moved or changed this frame.
+    // x: shadow samples per cell this frame; y: for cells whose view moved; z: how far
+    // (metres) the furthest-moved spot or point light's beam swept since last frame.
     samples: vec4<f32>,
 };
 @group(3) @binding(4) var<uniform> frame: VolumeFrame;
@@ -566,6 +566,8 @@ fn history_at(p: vec3<f32>) -> vec3<f32> {
 
 // How much more of each new frame a light-volume cell takes per cell its history moved.
 const MOTION_TRUST: f32 = 0.15;
+// How much more each metre a light's beam swept counts fresh samples (see `light_fresh`).
+const LIGHT_TRUST: f32 = 8.0;
 
 // Three numbers in 0..1 that look random, from a volume cell's coordinates (PCG-style).
 fn cell_hash(id: vec3<u32>) -> vec3<f32> {
@@ -625,7 +627,10 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
     // whose view moved (or that have no history) take the motion count: that's when their
     // history counts least, so fresh samples are what they show.
     let base = max(1, i32(frame.samples.x));
-    let lights_moved = frame.samples.z > 0.5;
+    // A sweeping beam would leave its old places behind in a long history, a trail about
+    // 1 / LIGHT_TRUST metres long at most: the further it swept, the more fresh samples count.
+    let light_fresh = min(0.5, frame.samples.z * LIGHT_TRUST);
+    let lights_moved = light_fresh > blend;
     let count = select(base, max(base, i32(frame.samples.y)), moved > 0.25 || !has_history || lights_moved);
     var light = vec3<f32>(0.0);
     for (var k = 0; k < count; k++) {
@@ -639,9 +644,7 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
         // The further the history has moved, the less it's trusted: each reprojection
         // blurs it a little, and with a long history that piles up into smeared beams
         // while the camera moves. Still, it's trusted fully.
-        // A light that moved (a sweeping beam) would leave its old beams behind in a long
-        // history: that frame, the history counts for half.
-        let fresh = max(max(blend, min(0.5, moved * MOTION_TRUST)), select(0.0, 0.5, lights_moved));
+        let fresh = max(max(blend, min(0.5, moved * MOTION_TRUST)), light_fresh);
         light = mix(history, light, fresh);
     }
     textureStore(light_out, vec3<i32>(id), vec4<f32>(light, 1.0));

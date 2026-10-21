@@ -3638,6 +3638,7 @@ impl WorldRenderer {
                     .and_then(|f| f.volumetric)
                     .filter(|_| shafts)
                     .map(|v| {
+                        let (poses, local_count) = local_poses(&view.lights);
                         let camera = volume::VolumeCamera {
                             view_proj: view.camera.view_proj,
                             position: view.camera.position,
@@ -3659,7 +3660,8 @@ impl WorldRenderer {
                                     k.wrapping_mul(4)
                                         .wrapping_add(1 + u64::from(l.shadows.is_some()))
                                 }),
-                            local_lights: local_light_pose(&view.lights),
+                            local_poses: poses,
+                            local_count,
                         };
                         self.volume.encode(
                             gpu,
@@ -3866,32 +3868,25 @@ impl WorldRenderer {
     }
 }
 
-/// A hash of where the shadowed spot and point lights are, which way they point and how bright
-/// they are (to a millimetre / a thousandth): the light volume trusts its history less when it
-/// changes.
-fn local_light_pose(lights: &[Light]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
+/// The shadowed spot and point lights the light volume shows, and how many there are: it trusts
+/// its history less as they move.
+fn local_poses(lights: &[Light]) -> ([volume::LocalPose; volume::LOCAL_POSES], usize) {
+    let mut poses = [volume::LocalPose::default(); volume::LOCAL_POSES];
+    let mut n = 0;
     for l in lights
         .iter()
         .filter(|l| l.kind != LightKind::Directional && l.shadows.is_some() && l.volumetric > 0.0)
     {
-        let q = |v: f32| (v * 1000.0).round() as i64;
-        for v in [
-            l.position.x,
-            l.position.y,
-            l.position.z,
-            l.direction.x,
-            l.direction.y,
-            l.direction.z,
-            l.color[0],
-            l.color[1],
-            l.color[2],
-        ] {
-            q(v).hash(&mut h);
+        if let Some(p) = poses.get_mut(n) {
+            *p = volume::LocalPose {
+                position: l.position,
+                direction: l.direction,
+                range: l.range,
+            };
         }
+        n += 1;
     }
-    h.finish()
+    (poses, n)
 }
 
 /// `view` seen in `mirror`: the camera reflected in its plane, and everything behind the

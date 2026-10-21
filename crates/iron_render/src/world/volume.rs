@@ -68,9 +68,37 @@ pub struct VolumeCamera {
     /// Shadow samples per cell each frame, and for cells whose view moved.
     pub samples: u32,
     pub motion_samples: u32,
-    /// Where the spot and point lights in the volume are, which way they point and how
-    /// bright they are, hashed: when it changes (a sweeping beam) the history counts less.
-    pub local_lights: u64,
+    /// The spot and point lights in the volume (up to `LOCAL_POSES`): where they are, which
+    /// way they point and their range. When one moves (a sweeping beam) the history counts
+    /// less, by how far its beam moved.
+    pub local_poses: [LocalPose; LOCAL_POSES],
+    pub local_count: usize,
+}
+
+/// How many moving lights the volume follows; any more count as moving a long way.
+pub const LOCAL_POSES: usize = 4;
+
+/// A spot or point light's place in the volume, to tell how far its beam moved.
+#[derive(Clone, Copy, PartialEq, Default)]
+pub struct LocalPose {
+    pub position: Vec3,
+    pub direction: Vec3,
+    pub range: f32,
+}
+
+/// How far (metres) the furthest-moved light's beam swept since `last`: its move plus its
+/// turn at the end of its range. A light more or less counts as a long way.
+fn light_shift(last: &VolumeCamera, now: &VolumeCamera) -> f32 {
+    if last.local_count != now.local_count || now.local_count > LOCAL_POSES {
+        return 1.0;
+    }
+    (0..now.local_count)
+        .map(|i| {
+            let (a, b) = (last.local_poses[i], now.local_poses[i]);
+            let turn = a.direction.dot(b.direction).clamp(-1.0, 1.0).acos();
+            (a.position - b.position).length() + turn * b.range
+        })
+        .fold(0.0, f32::max)
 }
 
 /// `VolumeFrame` in world.wgsl.
@@ -339,10 +367,7 @@ impl VolumePass {
             samples: [
                 camera.samples.max(1) as f32,
                 camera.motion_samples as f32,
-                f32::from(u8::from(
-                    s.last
-                        .is_some_and(|l| l.local_lights != camera.local_lights),
-                )),
+                s.last.map_or(0.0, |l| light_shift(&l, &camera)),
                 0.0,
             ],
         };

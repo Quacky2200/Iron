@@ -229,9 +229,9 @@ class Flat extends Component {
       const busy = Random.value;
       let last = false;
       for (let flat = 0; flat < BLOCK / 2; flat++) {
-        const lit = Random.value < 0.06 + 0.22 * busy + (last ? 0.2 : 0);
-        last = lit;
-        if (!lit) continue;
+        const on: boolean = Random.value < 0.06 + 0.22 * busy + (last ? 0.2 : 0);
+        last = on;
+        if (!on) continue;
         const b = Random.range(0.55, 1);
         const c = Random.value < 0.2 ? new Color(0.8 * b, 0.88 * b, b, 1) : new Color(b, 0.85 * b, 0.62 * b, 1);
         // Mostly both windows, sometimes just one room.

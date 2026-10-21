@@ -41,13 +41,43 @@ const BEAMS = {
 };
 type Beam = keyof typeof BEAMS;
 
-const state = { beam: "green" as Beam, dust: true, paused: false };
+const state = { beam: "green" as Beam, dust: true, paused: false, haze: 0, beamHaze: 0 };
+
+/**
+ * The haze's quality (`RenderSettings.volumetricFog`): the finest volume, its noise cleaned
+ * up more or less (the plank gaps' thin blades are the hard case).
+ */
+const HAZE = [
+  { name: "Smooth (4 samples, 0.95)", denoising: "both", historyWeight: 0.95, samples: 4, motionSamples: 6 },
+  { name: "Default (1 sample, 0.9)", denoising: "both", historyWeight: 0.9, samples: 1, motionSamples: 2 },
+  { name: "Reprojection only", denoising: "reprojection", historyWeight: 0.9, samples: 1, motionSamples: 2 },
+  { name: "None (steps)", denoising: "none", historyWeight: 0.9, samples: 1, motionSamples: 1 },
+] as const;
+
+/** How much haze the beam lights (`Light.volumetricIntensity`), not how bright it is. */
+const BEAM_HAZE = [1, 0.6, 0.3];
 let refreshMenu = () => {};
 
 function apply(): void {
   RenderSettings.fog = state.dust;
+  const h = HAZE[state.haze]!;
+  RenderSettings.volumetricFog = {
+    intensity: 1.6,
+    anisotropy: 0.3,
+    steps: 6,
+    distance: 14,
+    resolution: "ultra",
+    denoising: h.denoising,
+    historyWeight: h.historyWeight,
+    samples: h.samples,
+    motionSamples: h.motionSamples,
+  };
+  if (scanner) scanner.volumetricIntensity = BEAM_HAZE[state.beamHaze]!;
   refreshMenu();
 }
+
+/** The scanning beam, for `apply`. */
+let scanner: Light | null = null;
 
 function shape(name: string, mesh: "cube" | "sphere" | "cylinder", at: Vector3, scale: Vector3, material: Material, parent?: GameObject, rotation?: Quaternion) {
   const go = new GameObject(name, { position: at, scale, parent, rotation });
@@ -103,7 +133,6 @@ class Shed extends Component {
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogColor = new Color(0, 0, 0, 1);
     RenderSettings.fogDensity = 0.12;
-    RenderSettings.volumetricFog = { intensity: 1.6, anisotropy: 0.3, steps: 6, distance: 14, resolution: "ultra" };
     RenderSettings.autoExposure = { minEV: -6, maxEV: 10, compensation: -1, speedDarkToLight: 2, speedLightToDark: 0.8 };
 
     // Moonlight through the planks' gaps: faint, blue.
@@ -214,7 +243,9 @@ class Shed extends Component {
     // A faint glow round the craft lighting the lawn and the shed's face.
     const glow = new GameObject("Craft glow", { position: CRAFT.add(new Vector3(0, -0.5, 0)) });
     this.glow = glow.addComponent(Light, { type: "point", range: 8, intensity: 1.5, volumetricIntensity: 0.3 });
+    scanner = this.scanner;
     this.setBeam();
+    apply();
   }
 
   private setBeam() {
@@ -231,6 +262,8 @@ class Shed extends Component {
       apply();
     }
     if (input.getKeyDown("KeyF")) toggle("dust");
+    if (input.getKeyDown("KeyG")) cycle("haze", HAZE.length);
+    if (input.getKeyDown("KeyB")) cycle("beamHaze", BEAM_HAZE.length);
     if (input.getKeyDown("Space")) toggle("paused");
     if (!state.paused) this.t += dt;
     const { target, lock } = scanAt(this.t);
@@ -254,6 +287,11 @@ class Shed extends Component {
 
 function toggle(key: "dust" | "paused") {
   state[key] = !state[key];
+  apply();
+}
+
+function cycle(key: "haze" | "beamHaze", n: number) {
+  state[key] = (state[key] + 1) % n;
   apply();
 }
 
@@ -292,6 +330,8 @@ function Menu() {
           }}
         />
         <Button label="Dust" value={state.dust ? "In the air" : "Off"} on={state.dust} keyName="F" onClick={() => toggle("dust")} />
+        <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={() => cycle("haze", HAZE.length)} />
+        <Button label="Beam haze" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="B" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
         <Button label="Scan" value={state.paused ? "Paused" : "Scanning"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
       </box>
     </box>
