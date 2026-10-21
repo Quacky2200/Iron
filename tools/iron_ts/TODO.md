@@ -163,6 +163,20 @@ Next, in order:
   - Done (2026-10-20): `resolvedOptions()` of `Intl.DateTimeFormat` (locale, calendar, numberingSystem, timeZone) and `Intl.NumberFormat` (locale, numberingSystem, style, currency, notation, signDisplay, integer/fraction/significant digits); the other fields (`year`, `hour12`, `roundingMode`, `useGrouping`...) are not in the result (`M9-TS-550..555`).
   - Tier 4 (the user listed these; `NaN`, `Infinity`, `isNaN`, `isFinite` already work): iterators / generators and `Symbol` (`Symbol.iterator`, `asyncIterator`, `toPrimitive`...), typed arrays: `Int8Array`..`Float64Array` and `Uint8ClampedArray` done (`M9-TS-313..359`: `Ty::Typed(kind)`, `lower/typed.rs`, `iron_ts_rt/src/typed.rs`); open: `ArrayBuffer`, `DataView`, views that share memory (`subarray`, `buffer`, `new X(buffer, offset, length)`), `BigInt64Array`, `Array.from(typed)`, `X.of`, `copyWithin`, a read past the end gives 0 instead of undefined, `Temporal` (jiff has the model), real `WeakRef` / `FinalizationRegistry` (WeakMap/WeakSet are strong now), `Promise`/`async`/timers, `structuredClone`, `globalThis`.
 
+## Asset packs (design 2026-10-21)
+
+Design `docs/research/iron-asset-packs.md`, steps `docs/research/iron-asset-packs-plan.md`. Done: `crates/iron_pack` (the `.irpk`
+container, LZ4 block codec, writer, reader, `Vfs` with `DirSource`/`PackSource`; `M9-API-1100..1112`). Next: step 1 (manifest), then
+`iron-build pack` (steps 2 to 5), then the `iron_app` seam (step 6). Waiting for the user: codec (LZ4 assumed), DLC and mods policy,
+unreferenced assets, both forms for code-literal textures, one shared pack, the cooker's RGBA8 fallback; encryption is out of scope.
+Differences to keep in mind:
+
+- [ ] Release builds read assets only from packs: dynamic asset paths built at run time need `resources/` or `iron.pack.include`.
+- [ ] A cooked texture's GUID differs from its source's (`Assets.pathToGuid` answers the source GUID).
+- [ ] Packs hold `IRTX` v1 (largest mip first) until step 12; no mip streaming before that.
+- [ ] `iron-build pack` needs a built `iron_app` for cooking until `crates/iron_cook` (step 15).
+- [ ] The in-crate LZ4 decoder reads at 0.9 to 1.9 GB/s; `lz4_flex` (same format, a new crate) would be about twice that.
+
 ## Backlog
 
 The full list with sub-tasks, sizes and STOP gates is `TODO.md` M9.b2. Open top-level items: type
