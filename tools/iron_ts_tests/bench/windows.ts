@@ -218,3 +218,26 @@ export function familyInfo(h: number): string {
   if (w === undefined) return "none";
   return `${w.root.handle}|${w.isIsolated}|${w.domain}|${Window.domainFocused}`;
 }
+
+let failures: string[] = [];
+
+export function createAndWatchOpen(): number {
+  failures = [];
+  const w = Window.create({ title: "Doomed" });
+  w.onOpenFailed((e: string) => {
+    failures.push(e);
+  });
+  return w.handle;
+}
+
+/** `failure count|first failure|isSupported|main has no error`. */
+export function openReport(): string {
+  return `${failures.length}|${failures[0] ?? "-"}|${Window.isSupported}|${Window.main.openError === null}`;
+}
+
+/** The open error of the second open window, or "gone" when there is none (a failed window closed). */
+export function openErrorOfSecond(): string {
+  const w = Window.at(1);
+  if (w === undefined) return "gone";
+  return `${w.openError}`;
+}

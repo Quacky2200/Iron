@@ -562,6 +562,49 @@ fn off_removes_any_listener_by_token() {
     assert_eq!(n.get(), 1);
 }
 
+// M9-API-1453
+#[test]
+fn a_failed_open_sets_open_error_runs_on_open_failed_once_and_leaves_the_main_window_alone() {
+    fresh();
+    assert!(WindowRef::is_supported());
+    window::set_supported(false);
+    assert!(!WindowRef::is_supported());
+    let w = create_tool();
+    assert_eq!(w.open_error_text(), "");
+    let seen = Rc::new(RefCell::new(Vec::<String>::new()));
+    let s = seen.clone();
+    assert_ne!(
+        w.on_open_failed(Callback::from_fn(move |(e,): (String,)| {
+            s.borrow_mut().push(e)
+        })),
+        0
+    );
+    let error = "Cannot open Window due to platform restrictions (platform: android)";
+    window::open_failed(w, error);
+    // A second report (the window is gone) does nothing.
+    window::open_failed(w, error);
+    assert_eq!(*seen.borrow(), vec![error.to_string()]);
+    assert_eq!(w.open_error_text(), error);
+    assert!(!w.is_open());
+    assert!(MAIN.is_open() && MAIN.open_error_text().is_empty());
+    window::reset();
+    assert!(WindowRef::is_supported());
+}
+
+// M9-API-1454
+#[test]
+fn on_opened_runs_with_the_size_and_scale_when_the_host_makes_the_window() {
+    fresh();
+    let w = create_tool();
+    let seen = Rc::new(RefCell::new(Vec::<(f64, f64, f64)>::new()));
+    let s = seen.clone();
+    w.on_opened(Callback::from_fn(move |(a, b, c): (f64, f64, f64)| {
+        s.borrow_mut().push((a, b, c))
+    }));
+    opened(w, (230.0, 330.0));
+    assert_eq!(*seen.borrow(), vec![(230.0, 330.0, 1.5)]);
+}
+
 // M9-API-1426
 #[test]
 fn closing_the_main_window_from_script_asks_to_quit() {

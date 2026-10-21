@@ -120,11 +120,40 @@ pub enum Os {
     X11,
     Wayland,
     Other,
+    /// Platforms where a game has one screen: secondary windows cannot exist at all.
+    Ios,
+    Android,
+    Web,
 }
 
 impl Os {
+    /// Whether secondary windows can exist (false on iOS, Android and the web).
+    pub fn supports_windows(self) -> bool {
+        !matches!(self, Os::Ios | Os::Android | Os::Web)
+    }
+
+    /// The lowercase platform name used in error texts.
+    pub fn name(self) -> &'static str {
+        match self {
+            Os::Windows => "windows",
+            Os::MacOs => "macos",
+            Os::X11 => "x11",
+            Os::Wayland => "wayland",
+            Os::Other => "other",
+            Os::Ios => "ios",
+            Os::Android => "android",
+            Os::Web => "web",
+        }
+    }
+
     pub fn current() -> Os {
-        if cfg!(windows) {
+        if cfg!(target_os = "ios") {
+            Os::Ios
+        } else if cfg!(target_os = "android") {
+            Os::Android
+        } else if cfg!(target_arch = "wasm32") {
+            Os::Web
+        } else if cfg!(windows) {
             Os::Windows
         } else if cfg!(target_os = "macos") {
             Os::MacOs
@@ -164,6 +193,17 @@ pub struct NativePlan {
     /// "utility", "dialog" or "popupmenu".
     pub x11_type: Option<&'static str>,
     pub warning: Option<String>,
+    /// Set where secondary windows cannot exist at all (iOS, Android, web): the window must not be
+    /// opened; the text is for `window_open_failed` and the log.
+    pub error: Option<String>,
+}
+
+/// The start of every platform-restriction message.
+pub const RESTRICTED: &str = "Cannot open Window due to platform restrictions";
+
+/// The error for platforms with no secondary windows.
+pub fn unsupported_error(os: Os) -> String {
+    format!("{RESTRICTED} (platform: {})", os.name())
 }
 
 fn os_name(os: Os) -> &'static str {
@@ -173,6 +213,9 @@ fn os_name(os: Os) -> &'static str {
         Os::X11 => "X11",
         Os::Wayland => "Wayland",
         Os::Other => "this platform",
+        Os::Ios => "iOS",
+        Os::Android => "Android",
+        Os::Web => "the web",
     }
 }
 
@@ -180,6 +223,19 @@ fn os_name(os: Os) -> &'static str {
 pub fn plan(spec: &WindowSpec, os: Os) -> NativePlan {
     let mut kind = spec.kind;
     let mut warning = None;
+    let error = (!os.supports_windows()).then(|| unsupported_error(os));
+    // Owned windows are plain top-level windows on Wayland (winit 0.30 has no parents there).
+    if os == Os::Wayland
+        && matches!(
+            kind,
+            WindowKind::Tool | WindowKind::Dialog | WindowKind::Popup
+        )
+    {
+        warning = Some(format!(
+            "{RESTRICTED}: {} windows are not supported on Wayland",
+            kind.name()
+        ));
+    }
     if kind == WindowKind::Child && !matches!(os, Os::Windows | Os::X11) {
         kind = WindowKind::Tool;
         warning = Some(format!(
@@ -202,6 +258,7 @@ pub fn plan(spec: &WindowSpec, os: Os) -> NativePlan {
         resizable: spec.resizable,
         x11_type: None,
         warning,
+        error,
     };
     match kind {
         WindowKind::Normal => p.buttons = (spec.closable, spec.minimizable, spec.maximizable),
@@ -446,6 +503,12 @@ fn open_window<A: PlatformApp, B: Backend>(
         return;
     }
     let mut plan = plan(spec, os);
+    if let Some(e) = plan.error.take() {
+        // The app logs the error (`Window::open_failed`), once.
+        tracing::debug!("window {}: {e}", key.0);
+        app.window_open_failed(key, e);
+        return;
+    }
     if let Some(w) = &plan.warning {
         tracing::warn!("window {}: {w}", key.0);
     }

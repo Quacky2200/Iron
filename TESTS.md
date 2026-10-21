@@ -1404,6 +1404,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1446 | Unit | Title, size, position, kind, flags and minimise reach the window; the plan is recomputed and the OS's `Resized` / `Moved` answers are sent. |
 | M9-API-1447 | Unit | `attributes(spec, plan, ..)`: title, inner size, decorations, window level, buttons, hidden start, `active` follow the plan (`iron_platform::windows`). |
 | M9-API-1448 | Unit | Focus moves between windows with `Focused(false)` then `Focused(true)`; `events_done` runs once per step. |
+| M9-API-1450 | Unit | iOS, Android and the web fail `Open` with `window_open_failed(key, "Cannot open Window due to platform restrictions (platform: android\|ios\|web)")`; the window never opens and the main window is unaffected (`FakePlatform::os`). |
+| M9-API-1451 | Unit | Windows, macOS, X11, Wayland and other desktops open windows without errors (`plan(..).error` is `None`). |
+| M9-API-1452 | Unit | A tool window on Wayland still opens, as a plain window, with the warning `Cannot open Window due to platform restrictions: tool windows are not supported on Wayland`. |
+| M9-API-1453 | Unit | `window::open_failed` stores `openError`, runs `onOpenFailed` once with the text, leaves `isOpen` false and the main window alone; `Window.isSupported` follows `set_supported` (`crates/iron_engine_api/tests/window.rs`). |
+| M9-API-1454 | Unit | `onOpened` runs from `window::opened` with the client size and scale. |
+| M9-API-1455 | Unit | QuickJS: `openError` is `null` until a failure then the text, `Window.isSupported`, `onOpenFailed` (`crates/iron_native/tests/window.rs`). |
+| M9-API-1456 | Integration | Compiled code: `w.openError` (`string \| null`, facade over `openErrorText`), `onOpenFailed`, `Window.isSupported`, with every GC mode (`tools/iron_ts_tests/tests/all/windows.rs`). |
 | M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
 | M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
 | M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/iron_engine_api/tests/window.rs`). |

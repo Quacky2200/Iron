@@ -480,6 +480,12 @@ function __xt_SceneManager_onActiveSceneChanged(fn: (from: Scene, to: Scene) => 
   return () => { SceneManager.offSceneEvent(token); };
 }
 
+//# when openError
+function __xg_Window_openError(self: Window): string | null {
+  const text = self.openErrorText;
+  return text === "" ? null : text;
+}
+
 //# when postMessage|onMessage|onRequest|.request<|.request(|broadcast
 // Messages between windows travel as JSON of the static type (the compiler refuses handles in it).
 function __xm_Window_postMessage<T>(self: Window, data: T): boolean {

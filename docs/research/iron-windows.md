@@ -927,6 +927,18 @@ content with `createRoot(win)`; docking back closes the window. Keys keep floati
 PlayerPrefs (`editor.layout`) can store their rectangles. Drag-out (a tab dragged outside the window) needs the cursor position
 outside the window: `cursor_in_window` exists for Windows. Not in this plan.
 
+## 11a. Platform support
+
+| Platform | Secondary windows | What `Window.create` does |
+|---|---|---|
+| Windows, macOS, X11 | yes | opens the window |
+| Wayland | yes, as plain top-level windows | `tool`, `dialog`, `popup` open without an owner and log `Cannot open Window due to platform restrictions: tool windows are not supported on Wayland` as a warning; `child` becomes `tool` |
+| iOS, Android, web | no | `Window.create` returns a handle at once (it never throws: opening is asynchronous); the platform's `plan` carries the error and the host calls `window_open_failed(key, "Cannot open Window due to platform restrictions (platform: android)")` (`ios`, `web`) |
+
+A failed open is logged once as an ERROR; the window has `openError` (`string | null`, the text), `isOpen` false, and `win.onOpenFailed((error) => ..)`
+fires once (token and `off`). `Window.isSupported` is false where secondary windows cannot exist, so games can check before creating. The
+main window is never affected. `win.onOpened((width, height, scale) => ..)` fires from the host's `opened`.
+
 ## 12. Out of scope
 
 - Fullscreen secondary windows, per-window `Screen`/display modes, multiple monitors' selection (`docs/platform.md` limit).

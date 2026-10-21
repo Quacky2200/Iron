@@ -83,6 +83,34 @@ fn window_listeners_run_from_quickjs_and_can_cancel_a_close() {
     });
 }
 
+// M9-API-1455
+#[test]
+fn quickjs_reads_open_error_is_supported_and_on_open_failed() {
+    with_world(|ctx| {
+        window::set_supported(false);
+        let _: () = js(
+            ctx,
+            "globalThis.w = Window.create({ title: 'F' });\
+             globalThis.log = [];\
+             w.onOpenFailed((e) => log.push(e));\
+             globalThis.before = w.openError;",
+        );
+        window::open_failed(
+            WindowRef(2),
+            "Cannot open Window due to platform restrictions (platform: web)",
+        );
+        let r: String = js(
+            ctx,
+            "[before, w.openError, log.length, log[0], Window.isSupported, w.isOpen, Window.main.openError].join('|')",
+        );
+        assert_eq!(
+            r,
+            "|Cannot open Window due to platform restrictions (platform: web)|1|Cannot open Window due to platform restrictions (platform: web)|false|false|"
+        );
+        window::set_supported(true);
+    });
+}
+
 // ---- Messages (step M3) ----------------------------------------------------------------------
 
 fn run_jobs(ctx: &rquickjs::Ctx<'_>) {

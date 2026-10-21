@@ -141,6 +141,8 @@ pub struct WindowState {
     /// The host made the OS (or offscreen) window.
     pub created: bool,
     pub open: bool,
+    /// Why the host could not open it (`openError`).
+    pub open_error: Option<String>,
     /// Drawn inside its parent's client area (set by the host, [`set_embedded`]).
     pub embedded: bool,
     /// Roots of isolated families: keep the domain's timers running while it is unfocused.
@@ -208,6 +210,8 @@ pub const MAX_SIZE: f64 = 16384.0;
 
 #[derive(Default)]
 struct WindowListeners {
+    opened: Listeners<(f64, f64, f64)>,
+    open_failed: Listeners<(String,)>,
     close_requested: Listeners<()>,
     closed: Listeners<()>,
     resized: Listeners<(f64, f64)>,
@@ -259,7 +263,9 @@ impl DomainListeners {
 
 impl WindowListeners {
     fn remove(&mut self, token: u32) -> bool {
-        self.close_requested.remove(token)
+        self.opened.remove(token)
+            || self.open_failed.remove(token)
+            || self.close_requested.remove(token)
             || self.closed.remove(token)
             || self.resized.remove(token)
             || self.moved.remove(token)
@@ -295,6 +301,8 @@ struct State {
     next_request: u64,
     /// The latest `now_ms` the host gave `deliver`; request deadlines count from it.
     now_ms: f64,
+    /// Whether the platform can open secondary windows (the host says; true until told).
+    supported: bool,
 }
 
 fn main_state() -> WindowState {
@@ -313,6 +321,7 @@ fn main_state() -> WindowState {
         focused: false,
         created: true,
         open: true,
+        open_error: None,
         embedded: false,
         run_in_background: true,
         native_handle: 0,
@@ -341,6 +350,7 @@ impl State {
             pending: BTreeMap::new(),
             next_request: 1,
             now_ms: 0.0,
+            supported: true,
         }
     }
 
@@ -464,21 +474,54 @@ pub fn open_windows() -> Vec<WindowRef> {
 
 /// The host made the window `w` (an OS window, or an offscreen one).
 pub fn opened(w: WindowRef, info: Opened) {
-    with(|s| {
-        if let Some(st) = s.windows.get_mut(&w).filter(|st| st.open) {
-            st.created = true;
-            st.position = Some(info.position);
-            st.size = info.size;
-            st.scale = info.scale;
-            st.native_handle = info.native_handle;
-            st.platform = info.platform;
-        }
+    let calls = with(|s| {
+        let st = s.windows.get_mut(&w).filter(|st| st.open)?;
+        st.created = true;
+        st.position = Some(info.position);
+        st.size = info.size;
+        st.scale = info.scale;
+        st.native_handle = info.native_handle;
+        st.platform = info.platform;
+        let args = (st.size.0, st.size.1, st.scale);
+        Some((s.listeners.get(&w)?.opened.snapshot(), args))
     });
+    if let Some((cbs, args)) = calls {
+        emit_in(w, &cbs, args);
+    }
 }
 
-/// The host could not make the window: logs, then as [`closed`].
+/// The host says whether the platform can open secondary windows (`Window.isSupported`).
+pub fn set_supported(supported: bool) {
+    with(|s| s.supported = supported);
+}
+
+/// The host could not make the window: logs an error (once), stores it as `openError`, runs
+/// `onOpenFailed`, then as [`closed`]. `Window.create` has long returned, so nothing throws.
 pub fn open_failed(w: WindowRef, error: &str) {
-    warn(&format!("window {} could not be opened: {error}", w.0));
+    let calls = with(|s| {
+        let st = s.windows.get_mut(&w).filter(|st| st.open)?;
+        st.open_error = Some(error.to_string());
+        Some(
+            s.listeners
+                .get(&w)
+                .map(|l| l.open_failed.snapshot())
+                .unwrap_or_default(),
+        )
+    });
+    if calls.is_none() {
+        return;
+    }
+    if error.starts_with("Cannot open Window") {
+        log_emit(Level::Error, error);
+    } else {
+        log_emit(
+            Level::Error,
+            &format!("window {} could not be opened: {error}", w.0),
+        );
+    }
+    if let Some(cbs) = calls {
+        emit_in(w, &cbs, (error.to_string(),));
+    }
     closed(w);
 }
 
@@ -1043,6 +1086,7 @@ fn create_window(
                 focused: false,
                 created: false,
                 open: true,
+                open_error: None,
                 embedded: false,
                 run_in_background,
                 native_handle: 0,
@@ -1111,6 +1155,10 @@ pub const QUICKJS_PRELUDE: &str = r#"
   const requestListener = (f) => (from, text, id) =>
     f(from, JSON.parse(text), (answer) => { W.replyJson(id, toJson(answer)); });
 
+  Object.defineProperty(W.prototype, 'openError', {
+    get() { const t = this.openErrorText; return t === '' ? null : t; },
+    configurable: true,
+  });
   def(W.prototype, 'postMessage', function (data) { return this.postMessageJson(toJson(data)); });
   def(W.prototype, 'onMessage', function (f) {
     return this.onMessageJson((from, text) => f(from, JSON.parse(text)));
@@ -1821,6 +1869,32 @@ pub mod window_api {
         /// It closed, by `close()`, the user, or its parent closing. Called once.
         pub fn on_closed(self, f: Callback<()>) -> u32 {
             add_listener(self, f, |l| &mut l.closed)
+        }
+
+        /// The host made the window: called with its client size (UI pixels) and scale. Register it
+        /// right after `create`; it fires at the end of the frame.
+        pub fn on_opened(self, f: Callback<(f64, f64, f64)>) -> u32 {
+            add_listener(self, f, |l| &mut l.opened)
+        }
+
+        /// The window could not be opened (see `openError`): called once with the error text. The
+        /// window is then closed (`isOpen` false). `Window.create` itself never throws.
+        pub fn on_open_failed(self, f: Callback<(String,)>) -> u32 {
+            add_listener(self, f, |l| &mut l.open_failed)
+        }
+
+        /// Why the window could not be opened, "" when it could (compiled and QuickJS code read it as
+        /// `openError`: a string, or null when fine).
+        #[property]
+        pub fn open_error_text(self) -> String {
+            read(self, |s| s.open_error.clone().unwrap_or_default()).unwrap_or_default()
+        }
+
+        /// Whether the platform can open secondary windows at all (false on iOS, Android and the
+        /// web). Check it before `create` where the game must work there.
+        #[property]
+        pub fn is_supported() -> bool {
+            with(|s| s.supported)
         }
 
         pub fn on_resized(self, f: Callback<(f64, f64)>) -> u32 {

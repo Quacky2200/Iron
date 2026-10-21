@@ -376,3 +376,24 @@ fn broadcast_and_the_domain_listener_receive_messages() {
         assert_eq!(window::pending(window::DomainId(h as u32)), 1);
     });
 }
+
+// M9-API-1456
+#[test]
+fn compiled_code_sees_open_failures_open_error_and_is_supported() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createAndWatchOpen();
+        assert_eq!(h, 2.0);
+        // Before the host answers: no error, supported.
+        assert_eq!(text(ts_win_openErrorOfSecond()), "null");
+        assert_eq!(text(ts_win_openReport()), "0|-|true|true");
+        window::set_supported(false);
+        let error = "Cannot open Window due to platform restrictions (platform: ios)";
+        window::open_failed(WindowRef(2), error);
+        assert_eq!(text(ts_win_openReport()), format!("1|{error}|false|true"));
+        assert_eq!(
+            window::state(WindowRef(2)).unwrap().open_error.as_deref(),
+            Some(error)
+        );
+        assert_eq!(text(ts_win_openErrorOfSecond()), "gone");
+    });
+}

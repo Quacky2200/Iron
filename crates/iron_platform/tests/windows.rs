@@ -307,3 +307,60 @@ fn focus_moves_between_windows_and_events_done_runs_once_per_step() {
     assert_eq!(p.app().frames - frames, 2);
     assert_eq!(p.app().events_done - done, 2);
 }
+
+// M9-API-1450
+#[test]
+fn platforms_without_secondary_windows_fail_the_open_with_the_exact_error() {
+    for (os, name) in [(Os::Android, "android"), (Os::Ios, "ios"), (Os::Web, "web")] {
+        let mut p = platform().os(os);
+        p.app()
+            .commands
+            .push(WindowCommand::Open(k(2), spec(WindowKind::Tool, None)));
+        p.step();
+        let want = format!("Cannot open Window due to platform restrictions (platform: {name})");
+        assert_eq!(p.app().failed, vec![(k(2), want)]);
+        // Never opened; the main window is untouched.
+        assert!(p.window(k(2)).is_none());
+        assert!(p.window(WindowKey::MAIN).is_some());
+        assert_eq!(p.app().opened.len(), 1);
+        assert!(!os.supports_windows());
+    }
+}
+
+// M9-API-1451
+#[test]
+fn desktop_platforms_open_windows_without_errors() {
+    for os in [Os::Windows, Os::MacOs, Os::X11, Os::Wayland, Os::Other] {
+        assert!(os.supports_windows());
+        let mut p = platform().os(os);
+        p.app()
+            .commands
+            .push(WindowCommand::Open(k(2), spec(WindowKind::Normal, None)));
+        p.step();
+        assert!(p.app().failed.is_empty(), "{os:?}");
+        assert!(p.window(k(2)).is_some());
+        assert!(
+            iron_platform::plan(&spec(WindowKind::Normal, None), os)
+                .error
+                .is_none()
+        );
+    }
+}
+
+// M9-API-1452
+#[test]
+fn a_tool_window_on_wayland_opens_as_a_plain_window_with_a_specific_warning() {
+    let mut p = platform().os(Os::Wayland);
+    p.app()
+        .commands
+        .push(WindowCommand::Open(k(2), spec(WindowKind::Tool, None)));
+    p.step();
+    assert!(p.app().failed.is_empty());
+    let w = p.window(k(2)).unwrap();
+    assert_eq!(
+        w.plan.warning.as_deref(),
+        Some(
+            "Cannot open Window due to platform restrictions: tool windows are not supported on Wayland"
+        )
+    );
+}

@@ -231,6 +231,9 @@ interface Window {
   style: WindowStyle;
   /** The owner or embedding parent; undefined for the main window and unowned windows. */
   readonly parent: Window | undefined;
+  /** Why the window could not be opened ("Cannot open Window due to platform restrictions (platform: android)"),
+   *  null when it could. `isOpen` is false then, and `onOpenFailed` has run. */
+  readonly openError: string | null;
   /** Queues `data` (structured values only: no handles, functions, Map or Set) for this window's domain; delivered at
    *  the start of that domain's next dispatch, in order per sender. False when the data is over 1 MiB as JSON or the
    *  window is closed. */
