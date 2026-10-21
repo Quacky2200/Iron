@@ -61,6 +61,7 @@ let refreshMenu = () => {};
 function apply(): void {
   // Dust in the air, or settled: thinner haze (with none, there'd be nothing for the beam to
   // light at all).
+  RenderSettings.fog = true;
   RenderSettings.fogDensity = state.dust ? 0.12 : 0.04;
   const h = HAZE[state.haze]!;
   RenderSettings.volumetricFog = {
