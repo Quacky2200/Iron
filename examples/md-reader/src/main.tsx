@@ -457,7 +457,16 @@ function App() {
           <Text>{"→"}</Text>
         </box>
         <box className="button" onClick={() => go(HOME, null)}>
-          <Text>Home</Text>
+          <svg viewBox="0 0 24 24" style={{ width: 18, height: 18 }}>
+            <path
+              d="M3 11 L12 3.5 L21 11 M5.5 9 V20 H10 V14 H14 V20 H18.5 V9"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </box>
         <Text className="crumbs">
           {entry.path.split("/").map((part, i, all) => (
