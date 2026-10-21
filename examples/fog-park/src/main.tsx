@@ -388,10 +388,22 @@ function gravel(p: Path, width: number): void {
  * A round tube swept along a path in the YZ plane (`sides` around): smooth iron rod for
  * railings, as one mesh.
  */
+interface Arrays {
+  positions: number[];
+  normals: number[];
+  triangles: number[];
+}
+
 function tube(path: Vector3[], radius: number, sides: number): Mesh {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const triangles: number[] = [];
+  const a: Arrays = { positions: [], normals: [], triangles: [] };
+  addTube(a, path, radius, sides);
+  return Mesh.createFlat(a);
+}
+
+/** Adds a tube along `path` (not along x) to `a`. */
+function addTube(a: Arrays, path: Vector3[], radius: number, sides: number): void {
+  const { positions, normals, triangles } = a;
+  const first = positions.length / 3;
   const across = v(1, 0, 0);
   path.forEach((p, i) => {
     const t = path[Math.min(i + 1, path.length - 1)]!.sub(path[Math.max(i - 1, 0)]!).normalized;
@@ -403,14 +415,38 @@ function tube(path: Vector3[], radius: number, sides: number): Mesh {
       normals.push(d.x, d.y, d.z);
     }
     if (i === 0) return;
-    const r0 = (i - 1) * sides;
-    const r1 = i * sides;
+    const r0 = first + (i - 1) * sides;
+    const r1 = first + i * sides;
     for (let k = 0; k < sides; k++) {
       const k1 = (k + 1) % sides;
       triangles.push(r0 + k, r1 + k, r1 + k1, r0 + k, r1 + k1, r0 + k1);
     }
   });
-  return Mesh.createFlat({ positions, normals, triangles });
+}
+
+/** Spacing of the boundary's brick piers. */
+const BAY = 12;
+const PLINTH = 0.55;
+
+/**
+ * One bay of spear-top railings, as one mesh: round bars every 0.22 m with knobbed tops,
+ * between a bottom and a top rail, running along local z.
+ */
+let railingPanel: Mesh | null = null;
+function panel(): Mesh {
+  if (railingPanel) return railingPanel;
+  const a: Arrays = { positions: [], normals: [], triangles: [] };
+  const L = BAY - 0.7;
+  const H = 1.45;
+  for (let z = -L / 2 + 0.11; z < L / 2; z += 0.22) {
+    addTube(a, [v(0, 0, z), v(0, H, z)], 0.016, 6);
+    // The spear's knob and point.
+    addTube(a, [v(0, H, z), v(0, H + 0.05, z)], 0.032, 6);
+    addTube(a, [v(0, H + 0.05, z), v(0, H + 0.13, z)], 0.012, 6);
+  }
+  for (const y of [0.1, H - 0.12]) addTube(a, [v(0, y, -L / 2), v(0, y, L / 2)], 0.022, 6);
+  railingPanel = Mesh.createFlat(a);
+  return railingPanel;
 }
 
 /** One hoop: two legs into the ground and a round arch, along local z. */
@@ -728,14 +764,23 @@ function gate(G: Vector3): void {
       shape("Gate bar", "cylinder", v(0, hk / 2, -s * (0.06 + k * 0.155)), v(0.035, hk / 2, 0.035), IRON, id, leaf);
     }
     for (const y of [0.15, 1.0, 1.9]) shape("Gate rail", "cylinder", v(0, y, -s * 0.92), v(0.05, 0.93, 0.05), IRON, Quaternion.euler(90, 0, 0), leaf);
-    // Spear-top railings running off along the boundary, a hedge behind them.
-    for (let d = 2.75; d < 12; d += 0.3) {
-      shape("Railing", "cylinder", G.add(v(0, 0.85, s * d)), v(0.035, 0.85, 0.035), IRON);
-      // A small spear tip on each bar.
-      shape("Railing tip", "capsule", G.add(v(0, 1.74, s * d)), v(0.05, 0.06, 0.05), IRON);
+    // The boundary, right along that side of the park: a low brick wall with brick piers
+    // every bay, spear-top railings on it, and a hedge behind.
+    const mesh = panel();
+    for (let k = 0; k < 6; k++) {
+      const start = 2.75 + k * BAY;
+      const mid = start + BAY / 2;
+      shape("Boundary wall", "cube", G.add(v(0, PLINTH / 2, s * mid)), v(0.45, PLINTH, BAY), BRICK);
+      shape("Wall coping", "cube", G.add(v(0, PLINTH + 0.04, s * mid)), v(0.55, 0.08, BAY), STONE);
+      const rail = new GameObject("Railing", { position: G.add(v(0, PLINTH + 0.08, s * mid)) });
+      rail.addComponent(MeshRenderer, { mesh, material: IRON });
+      meshes++;
+      const pier = G.add(v(0, 0, s * (start + BAY)));
+      shape("Pier", "cube", pier.add(v(0, 1.0, 0)), v(0.62, 2.0, 0.62), BRICK);
+      shape("Pier cap", "cube", pier.add(v(0, 2.06, 0)), v(0.76, 0.12, 0.76), STONE);
+      shape("Pier ball", "sphere", pier.add(v(0, 2.3, 0)), Vector3.one.scale(0.34), STONE);
     }
-    for (const y of [0.2, 1.55]) shape("Railing rail", "cylinder", G.add(v(0, y, s * 7.35)), v(0.045, 4.65, 0.045), IRON, Quaternion.euler(90, 0, 0));
-    shape("Hedge", "cube", G.add(v(1.2, 0.95, s * 7.5)), v(1.2, 1.9, 9.6), SHRUB[0]!);
+    shape("Hedge", "cube", G.add(v(1.3, 0.95, s * (2.75 + 3 * BAY))), v(1.2, 1.9, 6 * BAY), SHRUB[0]!);
   }
 }
 
