@@ -5,27 +5,6 @@
 //
 // Model: the Utah teapot from the Newell teaset (Martin Newell, University of Utah, 1975),
 // converted to .glb by examples/classics/tools/make_models.py.
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  input,
-  Light,
-  Material,
-  MeshRenderer,
-  Mirror,
-  Model,
-  Quaternion,
-  RenderSettings,
-  Texture,
-  Vector2,
-  Vector3,
-  register,
-  type FogMode,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 const GREY = new Color(0.47, 0.47, 0.47, 1);
 const MODES: (FogMode | "off")[] = ["linear", "exponential", "exponentialSquared", "off"];
@@ -126,7 +105,9 @@ function collect(go: GameObject): MeshRenderer[] {
 }
 
 function cycleMode() {
-  state.mode = MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]!;
+  let i = 0;
+  for (let k = 0; k < MODES.length; k++) if (MODES[k] === state.mode) i = k;
+  state.mode = MODES[(i + 1) % MODES.length]!;
   apply();
 }
 function moveEnd(by: number) {
@@ -151,7 +132,7 @@ function Button(props: { label: string; value: string; on?: boolean; keyName: st
   );
 }
 
-const MODE_NAMES: Record<string, string> = { linear: "Linear", exponential: "Exponential", exponentialSquared: "Exponential squared", off: "Off" };
+const MODE_NAMES: Record<FogMode | "off", string> = { linear: "Linear", exponential: "Exponential", exponentialSquared: "Exponential squared", off: "Off" };
 
 function Menu() {
   const [, setTick] = useState(0);

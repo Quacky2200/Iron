@@ -4,24 +4,6 @@
 // air to the fields and woods below. The clouds drift slowly, so the beams sweep and shift,
 // opening and closing as gaps pass the sun. The menu (or keys) switches the haze and its
 // beams (F), auto exposure (A) and pauses the clouds (Space).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 /**
  * Where sunlight travels: the sun is ahead, a little to the right (15 degrees from the view)
@@ -194,8 +176,10 @@ class Clouds extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
-  state[key] = !state[key];
+function toggle(key: "haze" | "auto" | "paused") {
+  if (key === "haze") state.haze = !state.haze;
+  else if (key === "auto") state.auto = !state.auto;
+  else state.paused = !state.paused;
   apply();
 }
 

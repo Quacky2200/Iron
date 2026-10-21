@@ -3,25 +3,6 @@
 // mist; height fog lies in the valley and swallows the horizon. The camera drifts slowly.
 // The menu (or keys) switches the distance fog's mode (F), height fog (H), light shafts (L)
 // and the shafts' samples per slice (Q).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  input,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  register,
-  type FogMode,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 const MIST = new Color(0.3, 0.33, 0.4, 1);
 const MODES: (FogMode | "off")[] = ["exponentialSquared", "exponential", "linear", "off"];
@@ -128,11 +109,14 @@ class Clearing extends Component {
 }
 
 function cycleMode() {
-  state.mode = MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]!;
+  let i = 0;
+  for (let k = 0; k < MODES.length; k++) if (MODES[k] === state.mode) i = k;
+  state.mode = MODES[(i + 1) % MODES.length]!;
   apply();
 }
 function toggle(key: "height" | "shafts") {
-  state[key] = !state[key];
+  if (key === "height") state.height = !state.height;
+  else state.shafts = !state.shafts;
   apply();
 }
 function cycleSteps() {
@@ -157,7 +141,7 @@ function Button(props: { label: string; value: string; on?: boolean; keyName: st
   );
 }
 
-const MODE_NAMES: Record<string, string> = { exponentialSquared: "Exponential squared", exponential: "Exponential", linear: "Linear (4–70 m)", off: "Off" };
+const MODE_NAMES: Record<FogMode | "off", string> = { exponentialSquared: "Exponential squared", exponential: "Exponential", linear: "Linear (4–70 m)", off: "Off" };
 
 function Menu() {
   const [, setTick] = useState(0);

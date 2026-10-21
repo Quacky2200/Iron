@@ -165,8 +165,8 @@ function Menu() {
         {row("Shadows", shadowNames[QualitySettings.shadows], () => {
           QualitySettings.shadows = next(["disable", "hardOnly", "all"] as const, QualitySettings.shadows);
         })}
-        {row("Soft shadows", { low: "Low (3x3)", medium: "Medium (5x5)", high: "High (7x7)" }[QualitySettings.softShadowQuality], () => {
-          QualitySettings.softShadowQuality = ({ low: "medium", medium: "high", high: "low" } as const)[QualitySettings.softShadowQuality];
+        {row("Soft shadows", softShadowName(QualitySettings.softShadowQuality), () => {
+          QualitySettings.softShadowQuality = nextSoftShadows(QualitySettings.softShadowQuality);
         })}
         {row("Shadow map", `${QualitySettings.shadowResolution}`, () => {
           QualitySettings.shadowResolution = next([512, 1024, 2048, 4096], QualitySettings.shadowResolution);
@@ -174,6 +174,13 @@ function Menu() {
       </box>
     </box>
   );
+}
+
+function softShadowName(q: string): string {
+  return q === "low" ? "Low (3x3)" : q === "medium" ? "Medium (5x5)" : "High (7x7)";
+}
+function nextSoftShadows(q: string): string {
+  return q === "low" ? "medium" : q === "medium" ? "high" : "low";
 }
 
 createRoot().render(<Menu />);

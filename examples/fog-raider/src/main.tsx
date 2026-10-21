@@ -6,9 +6,6 @@
 // and anti-aliasing off for the chunky low-res look.
 // Keys: Up/Down (or +/-) move the fog's end by 1 m (the start follows at 20%), P toggles
 // the low-res look, F toggles the fog.
-import { Camera, Color, Component, GameObject, input, Light, Material, MeshRenderer, QualitySettings, Quaternion, Random, RenderSettings, Texture, Vector3, register } from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 const DARK = new Color(0.008, 0.005, 0.003, 1);
 const START_RATIO = 0.2;
@@ -34,7 +31,8 @@ function setEnd(end: number) {
   apply();
 }
 function toggle(key: "fog" | "lowRes") {
-  state[key] = !state[key];
+  if (key === "fog") state.fog = !state.fog;
+  else state.lowRes = !state.lowRes;
   apply();
 }
 

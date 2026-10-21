@@ -6,23 +6,6 @@
 // open for a while, close, and the corridor sinks back into the dark. Then the lift comes
 // again. The menu (or keys) switches the dust in the air (F), auto exposure (A) and pauses
 // the lift (Space).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The corridor runs along z from 0 (the lift at its end) to LENGTH, x from -HALF to HALF, H tall.
 const LENGTH = 16;
@@ -202,8 +185,10 @@ class Corridor extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
-  state[key] = !state[key];
+function toggle(key: "dust" | "auto" | "paused") {
+  if (key === "dust") state.dust = !state.dust;
+  else if (key === "auto") state.auto = !state.auto;
+  else state.paused = !state.paused;
   apply();
 }
 

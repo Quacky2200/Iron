@@ -8,26 +8,6 @@
 // and the hall goes black; Space pauses the walk.
 //
 // The project chooses its light units in its package.json: "iron": { "lightUnits": "physical" }.
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  GraphicsSettings,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  Texture,
-  physics,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 /** Where sunlight travels: high, from the south-west, behind the camera as it walks in. */
 const SUN = new Vector3(0.35, -0.8, -0.45).normalized;
@@ -85,11 +65,7 @@ function slab(name: string, x0: number, y0: number, z0: number, x1: number, y1: 
 }
 /** A slab with a collider, so the light meter's rays (`Light.measureIlluminance`) stop at it. */
 function solid(name: string, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, material: Material) {
-  slab(name, x0, y0, z0, x1, y1, z1, material);
-  physics.addCollider({
-    shape: { box: { x: Math.abs(x1 - x0) / 2, y: Math.abs(y1 - y0) / 2, z: Math.abs(z1 - z0) / 2 } },
-    position: { x: (x0 + x1) / 2, y: (y0 + y1) / 2, z: (z0 + z1) / 2 },
-  });
+  slab(name, x0, y0, z0, x1, y1, z1, material).addComponent(BoxCollider);
 }
 const mat = (hex: string, smoothness = 0.1) => Material.create({ color: Color.hex(hex), smoothness });
 

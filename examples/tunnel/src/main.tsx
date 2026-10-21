@@ -5,27 +5,6 @@
 // out into the sun dazzles for a moment, then the hills, trees and sky settle into view.
 // Then round again. The menu (or keys) switches auto exposure (A: else a fixed exposure set
 // for daylight), the haze and its light shafts (F) and pauses the drive (Space).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  ReflectionProbe,
-  RenderSettings,
-  Texture,
-  Vector2,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The road runs along -z. The tunnel goes from its entrance at z = 0 to its exit at
 // z = -TUNNEL_LENGTH, HALF_W either side of the middle and HEIGHT tall.
@@ -159,14 +138,14 @@ class Drive extends Component {
     // Three unbroken stretches (in, through, out), the texture every 2 m. The same tarmac
     // throughout: a slight sheen in the open, damp (shinier) and shut off from the sky
     // through the tunnel.
-    const road = (z0: number, z1: number, occlusion: Texture | null) => {
+    const road = (z0: number, z1: number, occlusion?: Texture) => {
       const length = z0 - z1;
       const m = Material.create({ color: Color.white, mainTexture: surface, mainTextureScale: new Vector2(HALF_W, length / 2), smoothness: occlusion ? 0.5 : 0.25, occlusionMap: occlusion });
       slab("Road", -HALF_W, -0.1, z1, HALF_W, 0, z0, m);
     };
-    road(START_Z + 30, 0, null);
+    road(START_Z + 30, 0);
     road(0, -TUNNEL_LENGTH, shut(0.25));
-    road(-TUNNEL_LENGTH, END_Z - 20, null);
+    road(-TUNNEL_LENGTH, END_Z - 20);
     const paint = Material.create({ color: Color.hex("#e8e4d8"), smoothness: 0.2 });
     for (let z = START_Z + 28; z > END_Z - 18; z -= 9) slab("Dash", -0.08, 0, z - 3, 0.08, 0.012, z, paint);
     for (const x of [-HALF_W + 0.4, HALF_W - 0.4]) slab("Edge line", x - 0.06, 0, END_Z - 20, x + 0.06, 0.012, START_Z + 30, paint);
@@ -286,8 +265,10 @@ class Drive extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
-  state[key] = !state[key];
+function toggle(key: "auto" | "haze" | "paused") {
+  if (key === "auto") state.auto = !state.auto;
+  else if (key === "haze") state.haze = !state.haze;
+  else state.paused = !state.paused;
   apply();
 }
 
