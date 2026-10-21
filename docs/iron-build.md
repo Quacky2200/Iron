@@ -157,6 +157,11 @@ ranges* of the originals (comments and JSX stay as written; erased statements ke
   `const __default_<path> = ...`.
 - Top-level names that two files declare are renamed in the dependency (`helper` -> `helper_2`); the entry's names win.
   Shorthand properties keep their key (`{ count }` -> `{ count: n_2 }`).
+- Top-level statements run in source order in the program's `init`, together with the top-level `const`/`let` and expression
+  statements: `if`/`else`, `for`, `for-in`, `for-of`, `while`, `do-while`, `switch`, `try`/`catch`/`finally`, labelled statements,
+  `throw` and bare blocks (block-scoped `let`/`const` work; functions declared later in the file are hoisted). This holds for
+  imported modules too. `return` at the top level is a parse error; any other statement kind the compiler cannot lower is an error
+  `unsupported top-level statement: <kind>` with its line, never dropped silently.
 - `import "./x.css"` is not read; it is listed in `Bundle::css` for the build tool.
 - Not supported (an error naming the file): `import * as ns` of a project file, `export * as ns`, anonymous `export default function`
   or `class`, bare package imports other than `react` and `@iron/*`.

@@ -235,19 +235,15 @@ function App() {
   );
 }
 
-function start(): void {
-  createRoot().render(<App />);
-  Window.main.title = "Iron - Windows";
-  if (Window.isSupported) {
-    openPalette();
-    openCounter();
-    openInspector();
-  } else {
-    // Creating a window never throws; on a phone or in a browser it just fails to open.
-    const probe = Window.create({ title: "Probe", key: "probe" });
-    probe.onOpenFailed((e) => note(e));
-    note("windows unsupported: " + String(probe.openError));
-  }
+createRoot().render(<App />);
+Window.main.title = "Iron - Windows";
+if (Window.isSupported) {
+  openPalette();
+  openCounter();
+  openInspector();
+} else {
+  // Creating a window never throws; on a phone or in a browser it just fails to open.
+  const probe = Window.create({ title: "Probe", key: "probe" });
+  probe.onOpenFailed((e) => note(e));
+  note("windows unsupported: " + String(probe.openError));
 }
-
-start();
