@@ -385,20 +385,28 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
   to `fogColor` for a seamless horizon with distance fog alone.
 - **Light shafts.** `RenderSettings.volumetricFog` (`{ intensity, anisotropy, steps, distance }`, defaults
-  1, 0.4, 16, 50; `null` by default, used only while `fog` is on, saved with scenes) sends an eighth
-  `render.fog` argument (anisotropy clamped to +-0.95, steps to 1..64) and sets `Fog.volumetric:
+  1, 0.4, 4, 50; `null` by default, used only while `fog` is on, saved with scenes) sends an eighth
+  `render.fog` argument (anisotropy clamped to +-0.95, steps to 1..16) and sets `Fog.volumetric:
   Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
-  `shafts(p, px, distance)` marches from the eye to `min(length, reach)` in `steps` steps. Each step's
-  share of fog (the drop in `fog_clear`) is lit by `scattered(x, dir)` at a point jittered per pixel
-  (`jitter`, interleaved gradient noise). Fog past the reach is lit as at its middle. `scattered` sums
-  every light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): falloff, spot cone and a hard
+  `volume.rs` (`VolumePass`) owns a 160x90x64 `Rgba16Float` 3D texture per view slot. Once per view with
+  shafts, before the render pass, the compute entry `cs_volume` (8x8 workgroups, one thread per screen
+  cell) walks the cell's view ray. Slices are spaced by the square of their index out to the reach
+  (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in
+  `fog_clear` times `scattered_all` and the running total is stored at each slice centre. `scattered_all`
+  sums every light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): falloff, spot cone, a hard
   shadow (`sun_shadow` / `local_shadow` with PCF radius 0), times `phase(cos)` (Henyey-Greenstein,
-  isotropic = 1). The result is scaled by `intensity` and the pixel's alpha. `fs_fill` adds shafts to the
-  background only when height fog is on. Cost: a march per fogged fragment with a shadow lookup per light
-  per step, so overdraw multiplies it.
+  isotropic = 1). The pass binds the view's globals (dynamic offset), the lighting group and a write-only
+  storage texture at group 3 binding 1, so the globals and shadow group layouts are visible to COMPUTE.
+  Draws read the volume through group 3 (binding 0 `texture_3d`, binding 2 a linear sampler; the world
+  pipeline layout has this fourth group) in `shafts(p, px, distance)`: a sample at the screen uv and
+  `sqrt(min(len, last) / reach)`. Past the last slice the sun lights the rest of the fog as at its middle.
+  The result is tinted by the fog colour (its albedo) and scaled by `intensity`. Views without shafts bind
+  `VolumePass::empty()`, a black 1-texel volume. `fs_fill` adds shafts to the background only when height
+  fog is on. The cost doesn't depend on overdraw.
 - **Left clear.** The editor grid and gizmo lines.
 
-`examples/fishtank` uses linear fog for its depth haze.
+`examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
+and a lamp post, showing every kind of fog (menu or keys F, H, L, Q).
 
 ## Render textures
 
@@ -755,7 +763,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
