@@ -10,24 +10,6 @@
 // (V), pause (Space), vsync (Q); auto exposure (X), the manual EV (- and =), metering (N),
 // the histogram band (H), the soft floor (F), the curve (K), adaptation speed (Y), hold (L)
 // and the transition (T).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The shed: x from -W to W, z from -D (the window wall) to D, walls up to H, a pitched roof
 // up to RIDGE.
@@ -527,12 +509,17 @@ class Shed extends Component {
 }
 
 function toggle(key: "rays" | "dust" | "paused") {
-  state[key] = !state[key];
+  if (key === "rays") state.rays = !state.rays;
+  else if (key === "dust") state.dust = !state.dust;
+  else state.paused = !state.paused;
   apply();
 }
 
 function flip(key: "band" | "soft" | "curve" | "hold") {
-  state[key] = !state[key];
+  if (key === "band") state.band = !state.band;
+  else if (key === "soft") state.soft = !state.soft;
+  else if (key === "curve") state.curve = !state.curve;
+  else state.hold = !state.hold;
   apply();
 }
 
@@ -542,7 +529,12 @@ function toggleVSync() {
 }
 
 function cycle(key: "haze" | "beamHaze" | "scan" | "metering" | "speed" | "transition", n: number) {
-  state[key] = (state[key] + 1) % n;
+  if (key === "haze") state.haze = (state.haze + 1) % n;
+  else if (key === "beamHaze") state.beamHaze = (state.beamHaze + 1) % n;
+  else if (key === "scan") state.scan = (state.scan + 1) % n;
+  else if (key === "metering") state.metering = (state.metering + 1) % n;
+  else if (key === "speed") state.speed = (state.speed + 1) % n;
+  else state.transition = (state.transition + 1) % n;
   // Auto exposure would undo a change in the rays' strength within a second.
   if (key === "beamHaze") holdExposure();
   apply();

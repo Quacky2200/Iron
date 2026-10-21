@@ -9,32 +9,8 @@
 // cones in the mist (light shafts). The camera strolls the loop path at head height, over
 // the bridge. The menu (or keys) switches the pond mist (M), the distance fog (D), the light
 // shafts (L) and the mood (N).
-import {
-  Camera,
-  Color,
-  Component,
-  Debug,
-  FogVolume,
-  GameObject,
-  input,
-  Light,
-  Material,
-  Mesh,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  register,
-  type BloomSettings,
-  type HeightFogSettings,
-  type VolumetricFogSettings,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
-const hex = Color.hex;
+const hex = (s: string) => Color.hex(s);
 
 // ---------------------------------------------------------------------------------------
 // Moods and toggles
@@ -98,12 +74,13 @@ const state = { mist: true, distance: true, shafts: true, mood: "morning" as Moo
 let refreshMenu = () => {};
 
 /** The scene's parts that change with the mood. */
-const world = {
-  camera: null as Camera | null,
-  sun: null as { go: GameObject; light: Light } | null,
-  lamps: [] as { light: Light; glass: MeshRenderer }[],
-  mists: [] as { volume: FogVolume; density: number }[],
-};
+interface World {
+  camera: Camera | null;
+  sun: { go: GameObject; light: Light } | null;
+  lamps: { light: Light; glass: MeshRenderer }[];
+  mists: { volume: FogVolume; density: number }[];
+}
+const world: World = { camera: null, sun: null, lamps: [], mists: [] };
 
 function apply(): void {
   const m = MOODS[state.mood];
@@ -391,11 +368,12 @@ function gravel(p: Path, width: number): void {
 interface Arrays {
   positions: number[];
   normals: number[];
+  uv: number[];
   triangles: number[];
 }
 
 function tube(path: Vector3[], radius: number, sides: number): Mesh {
-  const a: Arrays = { positions: [], normals: [], triangles: [] };
+  const a: Arrays = { positions: [], normals: [], uv: [], triangles: [] };
   addTube(a, path, radius, sides);
   return Mesh.createFlat(a);
 }
@@ -437,7 +415,7 @@ const PLINTH = 0.55;
 let railingPanel: Mesh | null = null;
 function panel(): Mesh {
   if (railingPanel) return railingPanel;
-  const a: Arrays = { positions: [], normals: [], triangles: [] };
+  const a: Arrays = { positions: [], normals: [], uv: [], triangles: [] };
   const L = BAY - 0.7;
   const H = 1.45;
   for (let z = -L / 2 + 0.11; z < L / 2; z += 0.22) {
@@ -672,7 +650,7 @@ function willow(x: number, z: number, lean: Vector3): void {
   rod("Willow trunk", base, fork, 0.8, bark);
   const top = base.add(lean.scale(1.6)).add(v(0, 5.4, 0));
   // Boughs arching up and out from the fork.
-  const boughs: Arrays = { positions: [], normals: [], triangles: [] };
+  const boughs: Arrays = { positions: [], normals: [], uv: [], triangles: [] };
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * Math.PI * 2 + Random.range(-0.3, 0.3);
     const out = v(Math.cos(a), 0, Math.sin(a));
@@ -694,8 +672,8 @@ function willow(x: number, z: number, lean: Vector3): void {
   }
   // Fronds: thin, curving out from under the crown's edge, then hanging down.
   const fronds: Arrays[] = [
-    { positions: [], normals: [], triangles: [] },
-    { positions: [], normals: [], triangles: [] },
+    { positions: [], normals: [], uv: [], triangles: [] },
+    { positions: [], normals: [], uv: [], triangles: [] },
   ];
   for (let k = 0; k < 220; k++) {
     const a = Random.range(0, Math.PI * 2);
@@ -1029,7 +1007,9 @@ class Park extends Component {
 }
 
 function toggle(key: "mist" | "distance" | "shafts") {
-  state[key] = !state[key];
+  if (key === "mist") state.mist = !state.mist;
+  else if (key === "distance") state.distance = !state.distance;
+  else state.shafts = !state.shafts;
   apply();
 }
 function toggleMood() {

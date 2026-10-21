@@ -6,26 +6,6 @@
 // sparkles, then the afternoon comes round again. Auto exposure follows it all. The menu (or
 // keys) switches the day passing (T: else held at golden hour), the blinds (B), the haze and
 // its shafts (F) and auto exposure (A).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Texture,
-  Vector2,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The flat: its floor FLOOR metres up, x from -W to W, z from -D (the window wall, facing
 // west, -z) to D, H tall.
@@ -224,7 +204,8 @@ class Flat extends Component {
     // Flats are two bays wide. About a fifth are lit, in clusters: some floors are busy and
     // some asleep, and a lit flat makes its neighbour likelier. Most are warm, a few cool
     // (LED, a television), some dimmer behind curtains.
-    const lights: (Color | null)[] = Array.from({ length: BLOCK * BLOCK }, () => null);
+    const lights: (Color | null)[] = [];
+    for (let i = 0; i < BLOCK * BLOCK; i++) lights.push(null);
     for (let floor = 0; floor < BLOCK; floor++) {
       const busy = Random.value;
       let last = false;
@@ -335,8 +316,11 @@ class Flat extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
-  state[key] = !state[key];
+function toggle(key: "day" | "blinds" | "haze" | "auto") {
+  if (key === "day") state.day = !state.day;
+  else if (key === "blinds") state.blinds = !state.blinds;
+  else if (key === "haze") state.haze = !state.haze;
+  else state.auto = !state.auto;
   apply();
 }
 

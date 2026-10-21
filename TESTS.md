@@ -1571,3 +1571,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2881 | Integration | `Mesh.createFlat(..)` / `mesh.setFlat(..)` take typed arrays or `number[]` (copied at the engine boundary), and `Random.pick(list)` is a random item or undefined. |
 | M9-TS-2882 | Integration | `Light.illuminanceAt` sums each light's lux on a point (directional head-on, point and spot in lumens over 4 pi); `Light.count()`. |
 | M9-TS-2883 | Integration | An optional `rotation?: Quaternion` passed into `new GameObject(name, { position, rotation })` is left alone when missing, and `props.on === false` on an optional boolean is false for a missing one. |
+| M9-TS-2884 | Integration | `RenderSettings.bloom = b` with `b: BloomSettings | null` (not a literal) goes through the facade write; the examples of the fog and god rays family build and render (checked by eye, `tests/output`). |

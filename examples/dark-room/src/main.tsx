@@ -23,24 +23,6 @@
 // curve (C), which stop the
 // exposure short of the dark on purpose, so dark places still look dark (the graph shows
 // the gap). Restart the cycle with R, pause with Space.
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The room: x from -W to W, z from -D (the window wall) to D, H tall.
 const W = 4;
@@ -128,7 +110,25 @@ function applyHaze(): void {
 /** The layer the garden is on: only the sky's light (a fill light on this layer) reaches it. */
 const OUTSIDE = 9;
 
-const state = {
+interface State {
+  haze: number;
+  clouds: boolean;
+  lamp: boolean;
+  tv: boolean;
+  auto: boolean;
+  paused: boolean;
+  hold: boolean;
+  metering: number;
+  band: boolean;
+  soft: boolean;
+  curve: boolean;
+  transition: number;
+  manual: number;
+  speed: number;
+  /** Set by freezing: the manual exposure is wherever the eyes were. */
+  frozenAt: number | null;
+}
+const state: State = {
   haze: 0,
   clouds: true,
   lamp: true,
@@ -141,10 +141,9 @@ const state = {
   soft: false,
   curve: false,
   transition: 0,
-  manual: 0 as number,
+  manual: 0,
   speed: 0,
-  /** Set by freezing: the manual exposure is wherever the eyes were. */
-  frozenAt: null as number | null,
+  frozenAt: null,
 };
 let refreshMenu = () => {};
 
@@ -513,7 +512,14 @@ class Bedroom extends Component {
 }
 
 function toggle(key: "paused" | "hold" | "band" | "soft" | "curve" | "clouds" | "lamp" | "tv") {
-  state[key] = !state[key];
+  if (key === "paused") state.paused = !state.paused;
+  else if (key === "hold") state.hold = !state.hold;
+  else if (key === "band") state.band = !state.band;
+  else if (key === "soft") state.soft = !state.soft;
+  else if (key === "curve") state.curve = !state.curve;
+  else if (key === "clouds") state.clouds = !state.clouds;
+  else if (key === "lamp") state.lamp = !state.lamp;
+  else state.tv = !state.tv;
   apply();
 }
 
@@ -529,7 +535,9 @@ function stepManual(stops: number) {
 }
 
 function cycle(key: "transition" | "metering" | "speed", n: number) {
-  state[key] = (state[key] + 1) % n;
+  if (key === "transition") state.transition = (state.transition + 1) % n;
+  else if (key === "metering") state.metering = (state.metering + 1) % n;
+  else state.speed = (state.speed + 1) % n;
   apply();
 }
 
@@ -589,17 +597,28 @@ function Button(props: { label: string; value: string; on: boolean; keyName: str
 function Graph() {
   const W = 300;
   const H = 96;
-  const values = history.flatMap((h) => (Number.isFinite(h.scene) ? [h.exposure, h.scene] : [h.exposure]));
-  const lo = Math.floor(Math.min(-4, ...values) - 0.5);
-  const hi = Math.ceil(Math.max(4, ...values) + 0.5);
+  let low = -4;
+  let high = 4;
+  for (const h of history) {
+    low = Math.min(low, h.exposure);
+    high = Math.max(high, h.exposure);
+    if (Number.isFinite(h.scene)) {
+      low = Math.min(low, h.scene);
+      high = Math.max(high, h.scene);
+    }
+  }
+  const lo = Math.floor(low - 0.5);
+  const hi = Math.ceil(high + 0.5);
   const x = (i: number) => (i / (GRAPH_SECONDS * GRAPH_RATE - 1)) * W;
   const y = (v: number) => H - ((v - lo) / (hi - lo)) * H;
-  const line = (pick: (h: { exposure: number; scene: number }) => number) =>
-    history
-      .map((h, i) => [i, pick(h)] as const)
-      .filter(([, v]) => Number.isFinite(v))
-      .map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
-      .join(" ");
+  const line = (pick: (h: { exposure: number; scene: number }) => number) => {
+    let out = "";
+    for (let i = 0; i < history.length; i++) {
+      const v = pick(history[i]!);
+      if (Number.isFinite(v)) out += `${out === "" ? "" : " "}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+    }
+    return out;
+  };
   const scene = line((h) => h.scene);
   const exposure = line((h) => h.exposure);
   return (

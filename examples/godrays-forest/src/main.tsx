@@ -7,29 +7,8 @@
 // height, always looking partly towards the sun, where forward scattering makes the beams
 // brightest. The menu (or keys) switches the sharp god rays (G) and the fog (F); Space pauses
 // the walk.
-import {
-  Camera,
-  Color,
-  Component,
-  Debug,
-  GameObject,
-  input,
-  Light,
-  Material,
-  MeshRenderer,
-  ParticleSystem,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  register,
-  type VolumetricFogSettings,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
-const hex = Color.hex;
+const hex = (s: string) => Color.hex(s);
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 
 // ---------------------------------------------------------------------------------------
@@ -352,8 +331,10 @@ class Forest extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
-  state[key] = !state[key];
+function toggle(key: "sharp" | "fog" | "walking") {
+  if (key === "sharp") state.sharp = !state.sharp;
+  else if (key === "fog") state.fog = !state.fog;
+  else state.walking = !state.walking;
   apply();
 }
 

@@ -757,3 +757,19 @@ type VolumeDetail = "low" | "medium" | "high" | "ultra";
 
 //# when PrimitiveMesh
 type PrimitiveMesh = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
+
+//# when BloomSettings
+interface BloomSettings {
+  threshold: number;
+  intensity: number;
+  scatter: number;
+}
+function __xw_RenderSettings_bloom(b: BloomSettings | null): void {
+  RenderSettings.bloomEnabled = false;
+  if (b !== null) {
+    RenderSettings.bloomEnabled = true;
+    RenderSettings.bloomThreshold = b.threshold;
+    RenderSettings.bloomIntensity = b.intensity;
+    RenderSettings.bloomScatter = b.scatter;
+  }
+}

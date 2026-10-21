@@ -442,3 +442,39 @@ Dependencies at a glance: 1 -> 2, 4, 10; 3 independent; 5 and 6 independent; 7 -
 - A `compiled-as-is` goal conflicts with only two things: the `physics` object API (retired by design) and `Record<string, unknown>`
   dynamic style bags (arcade). Everything else is a missing feature, not a style the examples use against the grain.
 - `iron_app` is another session's area (`CLAUDE.md` of the compiler notes); items 12, 13 and 15 touch it.
+
+## 10. The fog, god rays and exposure family (2026-10-21)
+
+`main` added `fog`, `fog-blocks`, `fog-park`, `fog-raider`, `fog-teapots`, `fog-world`, `godrays-cell` / `-clouds` / `-forest` / `-lift` /
+`-room` / `-shed` / `-sunset`, `tunnel`, `dark-room`, `light-units` and an updated `quality`, written for the QuickJS path. All 17 build
+with `iron-build` and render (`tests/output/<name>.png` checked by eye: fog bands, height fog, light shafts and sun cones, god rays
+through bars and slats, bloom, auto exposure with its read-outs, light units, fog volumes, `RenderStats`).
+
+**Survey: the native API they needed** (every `tsc` error of the first build, grouped; all done, see `docs/iron-api.md` "Fog, light
+shafts and exposure in native games"): `RenderSettings` fog / height fog / volumetric fog / auto exposure / `fixedExposure` /
+`exposureTransition` / `freezeExposure()` / `fogCulling`, `FogMode`, `HeightFogSettings`, `VolumetricFogSettings`; `Camera.fog` /
+`exposure` / `sceneBrightness` / `resetExposure()` / `aperture` / `shutterSpeed` / `iso` / `physicalExposure`; `Light.volumetricIntensity`
+/ `spotShape` / `aspectRatio` / `illuminanceAt` / `measureIlluminance`; `FogVolume`; `RenderStats`; `GraphicsSettings.lightUnits`;
+`QualitySettings` pipeline fields; `Mesh.createFlat` / `setFlat` (and `NumberList`, `FlatMeshData`); `Random.pick`; the types
+`PrimitiveMesh` and `BloomSettings`; the SVG attributes of `<svg>` elements in `IronProps`. Replaced in the source: `physics.addCollider`
+(a `BoxCollider` on the slab).
+
+**What the compiler did not take, and the source edits** (the same few patterns in many examples):
+
+| Pattern | Edit |
+|---|---|
+| `state[key] = !state[key]` with a literal-union key (`keyof typeof state`) | an `if` chain over the keys |
+| `MODES.indexOf(x)` on an array of string literals, `Record<string, V>` | a loop with `===`; `Record<FogMode \| "off", V>` |
+| `const hex = Color.hex` (a static function as a value) | `(s: string) => Color.hex(s)` |
+| `null as T \| null` in an object literal, `[] as T[]` | an interface and a typed const |
+| `new Array(n).fill(x)`, `Array.from({ length }, f)`, `arr[arr.length] = x` | a loop with `push` (an indexed write at the length is out of bounds and crashed the program) |
+| `private a = new Float32Array(n)` | `private a: Float32Array = ..` |
+| `Math.min(a, ...list)`, `(x[i]! += d)`, `.flat()`, closures over a destructured `const [a, b]` | loops and plain assignments |
+| a table indexed by a tag (`TINTS[state.tint]`), `typeof TINTS[Tint]` | an array and an index |
+
+Compiler fixes made for it: `props.on === false` on an optional boolean, an optional `rotation?: Quaternion` passed into
+`new GameObject(name, { rotation })`, a typed array where the engine takes `number[]`, and the facade static write (`__xw_`).
+
+**Not ported**: scene-file keys for fog and exposure (the QuickJS `scenes.ts` saves them; `iron_scenes` keeps the older keys),
+`Light.measureIlluminance` waiting for the next physics tick (it answers at once), and `Mesh.createFlat` taking a data object with only
+some of its lists (a compiled game gives all four).

@@ -6,25 +6,6 @@
 // ceiling. The camera sways slowly inside the cell, looking across the beams to the window.
 // The menu (or keys) switches the volume's detail (G: high or ultra), the rays (R: the dusty air and its light shafts), the dust (D) and the
 // sunlight's tint (T: warm or teal).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  input,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  register,
-  type PrimitiveMesh,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The cell's inside: x -3..3, z -4..4, floor at y 0, ceiling at y 4; walls 0.5 thick.
 const HX = 3;
@@ -44,23 +25,30 @@ const DOOR = { z0: 1.25, z1: 2.35, y1: 2.15 };
 const SUN_DIR = new Vector3(0.25, -0.55, -0.8).normalized;
 const TO_SUN = SUN_DIR.scale(-1);
 
-const TINTS = {
-  warm: {
+interface TintSet {
+  sun: Color;
+  sky: Color;
+  albedo: Color;
+  bounce: Color;
+  mote: Color;
+}
+/** The two sunlights, warm (0) and teal (1). */
+const TINTS: TintSet[] = [
+  {
     sun: new Color(1, 0.86, 0.68, 1),
     sky: new Color(19, 17.4, 14.4, 1),
     albedo: new Color(1, 0.94, 0.86, 1),
     bounce: new Color(1, 0.8, 0.6, 1),
     mote: new Color(3, 2.6, 2, 1),
   },
-  teal: {
+  {
     sun: new Color(0.55, 0.88, 1, 1),
     sky: new Color(9.6, 16.2, 19.2, 1),
     albedo: new Color(0.8, 1, 1, 1),
     bounce: new Color(0.45, 0.8, 0.9, 1),
     mote: new Color(1.6, 2.8, 3.2, 1),
   },
-};
-type Tint = keyof typeof TINTS;
+];
 
 const SUN_INTENSITY = 6;
 const FOG_COLOR = new Color(0.006, 0.006, 0.007, 1);
@@ -69,12 +57,12 @@ const FOG_COLOR = new Color(0.006, 0.006, 0.007, 1);
 /** Auto exposure's compensation: the cell stays dim, as the eyes see it. */
 const CELL_EXPOSURE = -4.5;
 
-const state = { ultra: true, fog: true, dust: true, tint: "warm" as Tint };
+const state = { ultra: true, fog: true, dust: true, tint: 0 };
 let refreshMenu = () => {};
 let scene: Cell | null = null;
 
 function apply(): void {
-  const tint = TINTS[state.tint];
+  const tint = TINTS[state.tint]!;
   RenderSettings.fog = state.fog;
   RenderSettings.fogMode = "exponential";
   RenderSettings.fogColor = FOG_COLOR;
@@ -229,7 +217,7 @@ class Cell extends Component {
   private motes: Mote[] = [];
   private moteDim!: Material;
   /** Lit motes' materials, by tint, kind and brightness level. */
-  private moteLit: Record<Tint, Material[][]> = {} as Record<Tint, Material[][]>;
+  private moteLit: Material[][][] = [];
 
   override onStart() {
     scene = this;
@@ -246,12 +234,12 @@ class Cell extends Component {
     Random.initState(1347);
 
     const sunGo = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN_DIR) });
-    this.sun = sunGo.addComponent(Light, { type: "directional", color: TINTS.warm.sun, intensity: SUN_INTENSITY, shadows: "hard" });
+    this.sun = sunGo.addComponent(Light, { type: "directional", color: TINTS[0]!.sun, intensity: SUN_INTENSITY, shadows: "hard" });
     // A faint glow off the pool of light on the floor, standing in for bounced light; it
     // stays out of the fog so the beams are the sun's alone.
     const pool = new Vector3(1.4, 0.35, -0.5);
     const bounceGo = new GameObject("Bounce", { position: pool });
-    this.bounce = bounceGo.addComponent(Light, { type: "point", color: TINTS.warm.bounce, intensity: 2.5, range: 6, shadows: "none", volumetricIntensity: 0 });
+    this.bounce = bounceGo.addComponent(Light, { type: "point", color: TINTS[0]!.bounce, intensity: 2.5, range: 6, shadows: "none", volumetricIntensity: 0 });
 
     this.buildShell();
     this.buildWindow();
@@ -262,7 +250,7 @@ class Cell extends Component {
     this.buildDust();
 
     const eye = new GameObject("Main Camera", { position: new Vector3(-2, 1.6, -3.3) });
-    this.camera = eye.addComponent(Camera, { fieldOfView: 70, backgroundColor: TINTS.warm.sky, farClipPlane: 60, nearClipPlane: 0.05 });
+    this.camera = eye.addComponent(Camera, { fieldOfView: 70, backgroundColor: TINTS[0]!.sky, farClipPlane: 60, nearClipPlane: 0.05 });
     apply();
   }
 
@@ -432,9 +420,9 @@ class Cell extends Component {
   private buildDust() {
     this.dust = new GameObject("Dust");
     this.moteDim = Material.create({ color: Color.black, emission: new Color(0.012, 0.011, 0.01, 1), unlit: true });
-    for (const tint of ["warm", "teal"] as Tint[]) {
-      const sun = TINTS[tint].mote;
-      this.moteLit[tint] = MOTE_KINDS.map((kind) =>
+    for (let tint = 0; tint < TINTS.length; tint++) {
+      const sun = TINTS[tint]!.mote;
+      this.moteLit.push(MOTE_KINDS.map((kind) =>
         MOTE_LEVELS.map((level) =>
           Material.create({
             color: Color.black,
@@ -442,7 +430,7 @@ class Cell extends Component {
             unlit: true,
           }),
         ),
-      );
+      ));
     }
     for (let i = 0; i < 260; i++) {
       const roll = Random.value;
@@ -479,11 +467,11 @@ class Cell extends Component {
     m.vz = Random.range(-0.03, 0.03);
   }
 
-  applyTint(tint: (typeof TINTS)[Tint]) {
+  applyTint(tint: TintSet) {
     this.sun.color = tint.sun;
     this.bounce.color = tint.bounce;
     this.camera.backgroundColor = tint.sky;
-    for (const m of this.motes) if (m.lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[state.tint][m.kind]![m.level]!;
+    for (const m of this.motes) if (m.lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[state.tint]![m.kind]![m.level]!;
   }
 
   override onUpdate(dt: number) {
@@ -501,7 +489,7 @@ class Cell extends Component {
     cam.rotation = Quaternion.lookRotation(target.sub(cam.position));
 
     if (!state.dust) return;
-    const lit = this.moteLit[state.tint];
+    const lit = this.moteLit[state.tint]!;
     for (const m of this.motes) {
       // Drift on a slow wander, a little swirl on top.
       m.x += (m.vx + Math.sin(t * 0.31 + m.phase) * 0.02) * dt;
@@ -522,11 +510,13 @@ class Cell extends Component {
 }
 
 function toggle(key: "ultra" | "fog" | "dust") {
-  state[key] = !state[key];
+  if (key === "ultra") state.ultra = !state.ultra;
+  else if (key === "fog") state.fog = !state.fog;
+  else state.dust = !state.dust;
   apply();
 }
 function cycleTint() {
-  state.tint = state.tint === "warm" ? "teal" : "warm";
+  state.tint = state.tint === 0 ? 1 : 0;
   apply();
 }
 
@@ -557,7 +547,7 @@ function Menu() {
         <Button label="Beam detail" value={state.ultra ? "Ultra" : "High"} on={state.ultra} keyName="G" onClick={() => toggle("ultra")} />
         <Button label="Rays" value={state.fog ? "On" : "Off"} on={state.fog} keyName="R" onClick={() => toggle("fog")} />
         <Button label="Dust" value={state.dust ? "On" : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />
-        <Button label="Sunlight" value={state.tint === "warm" ? "Warm" : "Teal"} keyName="T" onClick={cycleTint} />
+        <Button label="Sunlight" value={state.tint === 0 ? "Warm" : "Teal"} keyName="T" onClick={cycleTint} />
       </box>
     </box>
   );

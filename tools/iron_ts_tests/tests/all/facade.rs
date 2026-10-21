@@ -249,3 +249,12 @@ fn an_optional_rotation_passed_on_is_left_alone_and_an_optional_bool_compares_wi
         );
     });
 }
+
+// M9-TS-2884
+#[test]
+fn bloom_settings_from_a_variable_go_through_the_facade_write() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_bloomFromAVariable()), "true|1.5|0.6|false");
+    });
+}
+

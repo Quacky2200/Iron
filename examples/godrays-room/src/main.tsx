@@ -8,24 +8,6 @@
 // turn and stretch across the floor, then it starts over. The menu (or keys) switches the
 // day passing (T: else a fixed late afternoon), the sharp god rays (G), the fog and its
 // shafts (F) and the dust (D).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  input,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 // The room: x -6..6 (the window wall at -6), z -7..7, floor at 0, roof planks from 5.2.
 const ROOM_X = 6;
@@ -121,7 +103,8 @@ const mat = (hex: string, smoothness = 0.1) => Material.create({ color: Color.he
 const pick = <T,>(list: T[]): T => list[Random.rangeInt(0, list.length)]!;
 
 // Roof cells (plank across x, segment between rafters along z) that are gone.
-const missing: boolean[] = new Array(PLANKS_X * PLANKS_Z).fill(false);
+const missing: boolean[] = [];
+for (let i = 0; i < PLANKS_X * PLANKS_Z; i++) missing.push(false);
 const cellOf = (x: number, z: number) => {
   const i = Math.floor((x + ROOM_X) / PLANK_W);
   const j = Math.floor((z + ROOM_Z) / RAFTER_STEP);
@@ -172,14 +155,14 @@ class Hall extends Component {
   // Dust: positions, velocities, ages and lifetimes, and which material each mote shows.
   private motes: GameObject[] = [];
   private renderers: MeshRenderer[] = [];
-  private pos = new Float32Array(DUST_COUNT * 3);
-  private vel = new Float32Array(DUST_COUNT * 3);
-  private age = new Float32Array(DUST_COUNT);
-  private life = new Float32Array(DUST_COUNT);
-  private size = new Float32Array(DUST_COUNT);
-  private lit = new Int8Array(DUST_COUNT).fill(-1);
-  private kind = new Int8Array(DUST_COUNT);
-  private level = new Int8Array(DUST_COUNT);
+  private pos: Float32Array = new Float32Array(DUST_COUNT * 3);
+  private vel: Float32Array = new Float32Array(DUST_COUNT * 3);
+  private age: Float32Array = new Float32Array(DUST_COUNT);
+  private life: Float32Array = new Float32Array(DUST_COUNT);
+  private size: Float32Array = new Float32Array(DUST_COUNT);
+  private lit: Int8Array = new Int8Array(DUST_COUNT).fill(-1);
+  private kind: Int8Array = new Int8Array(DUST_COUNT);
+  private level: Int8Array = new Int8Array(DUST_COUNT);
   /** Lit motes' materials: by day step (the last one is the fixed late afternoon), kind and level. */
   private bright: Material[][][] = [];
   private step = -1;
@@ -501,7 +484,8 @@ class Hall extends Component {
     const damp = Math.max(0, 1 - 0.7 * dt);
     const fade = 1.5;
     for (let i = 0; i < DUST_COUNT; i++) {
-      const a = (this.age[i]! += dt);
+      this.age[i] = this.age[i]! + dt;
+      const a = this.age[i]!;
       const life = this.life[i]!;
       const o = i * 3;
       // Brownian wander, a slow settle and a faint draught away from the window.
@@ -573,8 +557,11 @@ class Hall extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
-  state[key] = !state[key];
+function toggle(key: "day" | "sharp" | "fog" | "dust") {
+  if (key === "day") state.day = !state.day;
+  else if (key === "sharp") state.sharp = !state.sharp;
+  else if (key === "fog") state.fog = !state.fog;
+  else state.dust = !state.dust;
   apply();
 }
 

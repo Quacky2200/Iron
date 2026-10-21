@@ -8,27 +8,6 @@
 // area), [ and ] fine-tune the distance, C toggles fog culling, F the fog, V vsync, Space
 // pauses the flight. Every 300 frames the log gets the preset, what was drawn and culled
 // and the average frame time, to compare them.
-import {
-  Camera,
-  Color,
-  Component,
-  Debug,
-  GameObject,
-  input,
-  Light,
-  Material,
-  Mesh,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  RenderStats,
-  Texture,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 const CHUNK = 16;
 const WATER = 11;
@@ -164,37 +143,46 @@ function atlas(): Texture {
 /** The six faces: outward normal and corners (wound so they face out), with each corner's
  * place across the face (u) and up it (v). */
 interface Face {
-  n: [number, number, number];
-  corners: [number, number, number][];
-  uv: [number, number][];
+  n: number[];
+  corners: number[][];
+  uv: number[][];
 }
 
-const FACES: Face[] = (() => {
+function faceCorner(axis: number, fixed: number, ua: number, va: number, u: number, v: number): number[] {
+  const p = [0, 0, 0];
+  p[axis] = fixed;
+  p[ua] = u;
+  p[va] = v;
+  return p;
+}
+
+function makeFaces(): Face[] {
   const out: Face[] = [];
-  const dirs: [number, number, number][] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  const dirs: number[][] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
   for (const n of dirs) {
-    const axis = n.findIndex((c) => c !== 0);
+    let axis = 0;
+    for (let k = 0; k < 3; k++) if (n[k] !== 0) axis = k;
     // Across and up: sides use y as up; tops and bottoms use x and z.
-    const [ua, va] = axis === 1 ? [0, 2] : [axis === 0 ? 2 : 0, 1];
+    const ua = axis === 1 ? 0 : axis === 0 ? 2 : 0;
+    const va = axis === 1 ? 2 : 1;
     const fixed = n[axis]! > 0 ? 1 : 0;
-    let quad: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
-    const corner = ([u, v]: [number, number]) => {
-      const p: [number, number, number] = [0, 0, 0];
-      p[axis] = fixed;
-      p[ua] = u;
-      p[va] = v;
-      return p;
-    };
+    let quad: number[][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
     // Wind counter-clockwise seen from outside: flip if the first triangle faces in.
-    const [a, b, c] = [corner(quad[0]!), corner(quad[1]!), corner(quad[2]!)];
-    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    const e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const a = faceCorner(axis, fixed, ua, va, quad[0]![0]!, quad[0]![1]!);
+    const b = faceCorner(axis, fixed, ua, va, quad[1]![0]!, quad[1]![1]!);
+    const c = faceCorner(axis, fixed, ua, va, quad[2]![0]!, quad[2]![1]!);
+    const e1 = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!];
+    const e2 = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!];
     const cross = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
-    if (cross[0]! * n[0] + cross[1]! * n[1] + cross[2]! * n[2] < 0) quad = [quad[0]!, quad[3]!, quad[2]!, quad[1]!];
-    out.push({ n, corners: quad.map(corner), uv: quad });
+    if (cross[0]! * n[0]! + cross[1]! * n[1]! + cross[2]! * n[2]! < 0) quad = [quad[0]!, quad[3]!, quad[2]!, quad[1]!];
+    const corners: number[][] = [];
+    for (const q of quad) corners.push(faceCorner(axis, fixed, ua, va, q[0]!, q[1]!));
+    out.push({ n, corners, uv: quad });
   }
   return out;
-})();
+}
+
+const FACES: Face[] = makeFaces();
 
 interface ChunkMesh {
   positions: Float32Array;
@@ -205,15 +193,23 @@ interface ChunkMesh {
 }
 
 /** Each face's corners (x, y, z four times), normal, and corners' places on the tile. */
-const FACE_CORNERS = FACES.map((f) => new Float32Array(f.corners.flat()));
-const FACE_UV = FACES.map((f) => new Float32Array(f.uv.flat()));
+const FACE_CORNERS: Float32Array[] = [];
+const FACE_UV: Float32Array[] = [];
+for (const f of FACES) {
+  const c: number[] = [];
+  for (const p of f.corners) c.push(p[0]!, p[1]!, p[2]!);
+  FACE_CORNERS.push(new Float32Array(c));
+  const t: number[] = [];
+  for (const p of f.uv) t.push(p[0]!, p[1]!);
+  FACE_UV.push(new Float32Array(t));
+}
 const SIDES = [0, 1, 4, 5];
 
 /**
  * Growable buffers a chunk's faces are written into, reused from chunk to chunk (writing by
  * index into typed arrays is far quicker in QuickJS than pushing onto plain arrays).
  */
-const buf = {
+const buf: { pos: Float32Array; nrm: Float32Array; uv: Float32Array; tri: Uint32Array; faces: number } = {
   pos: new Float32Array(4096 * 12),
   nrm: new Float32Array(4096 * 12),
   uv: new Float32Array(4096 * 8),
@@ -221,16 +217,21 @@ const buf = {
   faces: 0,
 };
 
+function growFloats(a: Float32Array): Float32Array {
+  const b = new Float32Array(a.length * 2);
+  b.set(a);
+  return b;
+}
+function growInts(a: Uint32Array): Uint32Array {
+  const b = new Uint32Array(a.length * 2);
+  b.set(a);
+  return b;
+}
 function grow(): void {
-  const more = <T extends Float32Array | Uint32Array>(a: T): T => {
-    const b = new (a.constructor as new (n: number) => T)(a.length * 2);
-    b.set(a);
-    return b;
-  };
-  buf.pos = more(buf.pos);
-  buf.nrm = more(buf.nrm);
-  buf.uv = more(buf.uv);
-  buf.tri = more(buf.tri);
+  buf.pos = growFloats(buf.pos);
+  buf.nrm = growFloats(buf.nrm);
+  buf.uv = growFloats(buf.uv);
+  buf.tri = growInts(buf.tri);
 }
 
 function face(f: number, x: number, y: number, z: number, tile: number): void {
@@ -246,9 +247,9 @@ function face(f: number, x: number, y: number, z: number, tile: number): void {
     buf.pos[o] = x + c[i * 3]!;
     buf.pos[o + 1] = y + c[i * 3 + 1]!;
     buf.pos[o + 2] = z + c[i * 3 + 2]!;
-    buf.nrm[o] = n[0];
-    buf.nrm[o + 1] = n[1];
-    buf.nrm[o + 2] = n[2];
+    buf.nrm[o] = n[0]!;
+    buf.nrm[o + 1] = n[1]!;
+    buf.nrm[o + 2] = n[2]!;
     // Inset a hair so neighbouring tiles never bleed in.
     buf.uv[p2 + i * 2] = (tile + 0.02 + t[i * 2]! * 0.96) / TILES;
     buf.uv[p2 + i * 2 + 1] = 0.01 + t[i * 2 + 1]! * 0.98;
@@ -304,7 +305,7 @@ function buildChunk(cx: number, cz: number): ChunkMesh {
       for (let s = 0; s < 4; s++) {
         const f = SIDES[s]!;
         const n = FACES[f]!.n;
-        const nh = hs[(z + n[2] + 1) * W + (x + n[0] + 1)]!;
+        const nh = hs[(z + n[2]! + 1) * W + (x + n[0]! + 1)]!;
         for (let y = nh > 0 ? nh : 0; y < h; y++) {
           const depth = h - 1 - y;
           face(f, x, y, z, sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : depth === 0 ? Tile.GrassSide : Tile.Dirt);
@@ -325,7 +326,7 @@ function buildChunk(cx: number, cz: number): ChunkMesh {
     blocks++;
     for (let f = 0; f < 6; f++) {
       const n = FACES[f]!.n;
-      if (!solid(x + n[0], y + n[1], z + n[2])) face(f, x, y, z, tile);
+      if (!solid(x + n[0]!, y + n[1]!, z + n[2]!)) face(f, x, y, z, tile);
     }
   }
   const verts = buf.faces * 4;
@@ -532,7 +533,8 @@ function setPreset(i: number) {
   applyFog();
 }
 function toggle(key: "culling" | "fog") {
-  state[key] = !state[key];
+  if (key === "culling") state.culling = !state.culling;
+  else state.fog = !state.fog;
   applyFog();
 }
 

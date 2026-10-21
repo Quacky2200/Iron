@@ -276,3 +276,12 @@ export function optionalValuesPassedOn(): string {
   return `${a.transform.localPosition.y}|${Math.round(a.transform.localRotation.w * 100)}|${Math.round(b.transform.localRotation.w * 100)}|${paint({})}|${paint({ on: false })}|${paint({ on: true })}`;
 }
 
+export function bloomFromAVariable(): string {
+  const b: BloomSettings | null = { threshold: 1.5, intensity: 0.4, scatter: 0.6 };
+  RenderSettings.bloom = b;
+  const a = `${RenderSettings.bloomEnabled}|${RenderSettings.bloomThreshold}|${RenderSettings.bloomScatter}`;
+  const off: BloomSettings | null = null;
+  RenderSettings.bloom = off;
+  return `${a}|${RenderSettings.bloomEnabled}`;
+}
+
