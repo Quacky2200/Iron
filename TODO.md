@@ -1463,6 +1463,18 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     distance fog is opaque aren't drawn (`RenderSettings.fogCulling`, on by default), counted
     in `WorldStats::fog_culled`; scripts read the renderer's stats as `RenderStats`
     (`M7-FOG-07`)
+  - [x] Spot and point lights' shafts worked out per pixel (2026-10-21): each view ray's stretch
+    inside the light's range and cone found exactly, so cones have sharp edges and lanterns a
+    round glow; the volume keeps the sun; lit fog goes on after fog volumes, so mist glows
+    under a lamp (`M7-FOG-08`)
+  - [ ] God rays (asked for 2026-10-21): crisp, high-contrast sun beams cutting through fog and
+    cloud where light comes through gaps (skylights, a broken roof, a tree canopy), as in
+    Unreal's volumetric fog and painted-style games. The froxel volume makes the sun's shafts
+    soft; options: a screen-space radial blur from the sun's position over an occlusion mask
+    (Crytek / GPU Gems 3 light shafts, cheap, works for the sky too), or a per-pixel sun march
+    with the shadow map (like the spot cones now, sharper, costlier), maybe mixed with the
+    volume (volume for broad haze, per pixel near the camera). An example: a ruined hall or a
+    forest clearing with beams through the roof or canopy, with dust motes catching the light
   - [ ] `examples/fog-world`: an endless, streamed block world whose render distance is the fog
   - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
     2026-10-21): a third-person character on a bright white floor of glowing grid tiles under

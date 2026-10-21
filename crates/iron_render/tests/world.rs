@@ -3247,6 +3247,121 @@ fn fog_culls_what_it_hides_and_counts_it() {
     assert_eq!(stats(Some(thin)).fog_culled, 0);
 }
 
+// M7-FOG-08
+#[test]
+fn spot_and_point_lights_light_the_fog_with_sharp_cones_and_round_glows() {
+    use iron_render::{
+        Fog, FogMode, Light, LightKind, Projection, VolumetricFog, WorldView, viewport_size,
+    };
+    let gpu = shared_gpu();
+    let size = (320, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // Dark fog, nothing but lights: a spot shining down on the left, a point glowing on the
+    // right.
+    let camera = WorldCamera::new(
+        Mat4::from_translation(Vec3::new(0.0, 1.5, 8.0)),
+        Projection::Perspective {
+            fov_y_degrees: 50.0,
+        },
+        0.1,
+        60.0,
+        viewport_size([0.0, 0.0, 1.0, 1.0], size),
+        Color::rgb(0.01, 0.01, 0.02),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.0; 3];
+    // A black wall behind, for the view rays to end on.
+    v.meshes = vec![iron_render::MeshInstance {
+        mesh: iron_render::primitive_id("cube").unwrap(),
+        model: Mat4::from_scale_rotation_translation(
+            Vec3::new(40.0, 20.0, 0.2),
+            Quat::IDENTITY,
+            Vec3::new(0.0, 0.0, -5.0),
+        ),
+        color: [0.0, 0.0, 0.0, 1.0],
+        unlit: true,
+        ..Default::default()
+    }];
+    v.lights = vec![
+        Light {
+            kind: LightKind::Spot {
+                inner_degrees: 36.0,
+                outer_degrees: 40.0,
+            },
+            color: [30.0, 30.0, 30.0],
+            position: Vec3::new(-2.5, 3.0, 0.0),
+            direction: Vec3::NEG_Y,
+            range: 6.0,
+            shadows: None,
+            culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
+        },
+        Light {
+            kind: LightKind::Point,
+            color: [4.0, 4.0, 4.0],
+            position: Vec3::new(2.5, 2.0, 0.0),
+            direction: Vec3::NEG_Y,
+            range: 4.0,
+            shadows: None,
+            culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
+        },
+    ];
+    v.fog = Some(Fog {
+        mode: FogMode::Exponential,
+        color: [0.01, 0.01, 0.02],
+        density: 0.08,
+        volumetric: Some(VolumetricFog {
+            intensity: 1.0,
+            anisotropy: 0.0,
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let mut world = WorldRenderer::new(&gpu);
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let green = |p: Vec3| {
+        let c = view_proj.project_point3(p);
+        let x = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let y = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        pixels[(y * size.0 as usize + x) * 4 + 1] as i32
+    };
+    // The cone, 2 m below the spot, is about 1.46 m across (a 20° half angle): lit fog
+    // inside, dark just outside, with a sharp edge.
+    let inside = green(Vec3::new(-2.5 + 0.4, 1.0, 0.0));
+    let outside = green(Vec3::new(-2.5 + 1.1, 1.0, 0.0));
+    assert!(inside > outside + 60, "inside {inside}, outside {outside}");
+    let edge = |x: f32| green(Vec3::new(-2.5 + x, 1.0, 0.0));
+    assert!(
+        edge(0.62) > edge(0.82) + 40,
+        "a sharp edge: {} then {}",
+        edge(0.62),
+        edge(0.82)
+    );
+    // Above the spot there's no light; the point glows all round, brightest at its middle.
+    assert!(green(Vec3::new(-2.5, 3.6, 0.0)) < 30, "above the spot");
+    let (centre, near, far) = (
+        green(Vec3::new(2.5, 2.0, 0.0)),
+        green(Vec3::new(2.5, 3.0, 0.0)),
+        green(Vec3::new(2.5, 4.5, 0.0)),
+    );
+    assert!(
+        centre > near && near > far,
+        "the glow falls off: {centre} {near} {far}"
+    );
+    assert_golden("M7-FOG-08", size.0, size.1, &pixels, 4);
+}
+
 // M7-FOG-02
 #[test]
 fn orthographic_fog_goes_by_depth_and_covers_quads_shapes_and_strokes() {

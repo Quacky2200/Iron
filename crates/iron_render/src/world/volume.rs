@@ -7,7 +7,7 @@
 use crate::Gpu;
 
 /// Screen cells across and down, and depth slices.
-pub const SIZE: (u32, u32, u32) = (160, 90, 64);
+pub const SIZE: (u32, u32, u32) = (240, 135, 64);
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub struct VolumePass {

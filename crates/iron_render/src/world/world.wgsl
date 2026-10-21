@@ -307,14 +307,15 @@ fn fogged(c: vec4<f32>, p: vec3<f32>, px: vec2<f32>) -> vec4<f32> {
     var out = c;
     if (g.fog.w > 0.5) {
         let f = 1.0 - fog_clear(p, true);
-        var rgb = c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f);
-        if (g.fog_volume.w > 0.0 && c.a > 0.002) {
-            rgb += shafts(p, px, true) * c.a;
-        }
-        out = vec4<f32>(rgb, c.a);
+        out = vec4<f32>(c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f), c.a);
     }
     if (g.fog_local.x > 0.5) {
         out = through_volumes(out, fog_eye(p), p);
+    }
+    // Lit fog last: the shafts already count what the fog and the volumes in front of them
+    // hide, so a lamp glows in its mist rather than behind it.
+    if (g.fog.w > 0.5 && g.fog_volume.w > 0.0 && c.a > 0.002) {
+        out = vec4<f32>(out.rgb + shafts(p, px, true) * c.a, c.a);
     }
     return out;
 }
@@ -373,14 +374,109 @@ fn slice_distance(w: f32) -> f32 {
     return g.fog_volume.w * w * w;
 }
 
-// Every light that lights fog, scattering at `x` back along the view ray `dir`.
+// Every directional light that lights fog, scattering at `x` back along the view ray
+// `dir`. Spot and point lights are worked out per pixel (`local_shafts`): their cones are
+// too sharp for the volume's cells.
 fn scattered_all(x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     let count = u32(g.ambient.w);
     for (var l = 0u; l < count; l++) {
         let light = lights[l];
-        if (light.color.w > 0.0) {
+        if (light.color.w > 0.0 && light.position.w < 0.5) {
             sum += scattered(light, x, dir);
+        }
+    }
+    return sum;
+}
+
+// How much of what's `t` along the view ray from `eye` shows through all the fog.
+fn media_clear(eye: vec3<f32>, dir: vec3<f32>, t: f32, distance: bool) -> f32 {
+    let x = eye + dir * t;
+    return fog_clear(x, distance) * local_clear(eye, x);
+}
+
+// Samples across each stretch of a view ray inside a spot or point light.
+const LOCAL_SHAFT_SAMPLES: i32 = 12;
+
+// Light the fog sends to the camera from spot and point lights, between `eye` and `len`
+// along `dir`. Each light's stretch of the ray is found exactly: inside its range's sphere
+// and, for a spot light, its cone (a quadratic), so the cone's edges are sharp. Fixed
+// samples across that stretch light the fog there; the fog's transmittance is taken at the
+// stretch's ends and shared out evenly between the samples.
+fn local_shafts(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec3<f32> {
+    var sum = vec3<f32>(0.0);
+    let count = u32(g.ambient.w);
+    for (var l = 0u; l < count; l++) {
+        let light = lights[l];
+        if (light.color.w <= 0.0 || light.position.w < 0.5) {
+            continue;
+        }
+        let o = eye - light.position.xyz;
+        let r = light.direction.w;
+        let b = dot(o, dir);
+        let disc = b * b - (dot(o, o) - r * r);
+        if (disc <= 0.0) {
+            continue;
+        }
+        let root = sqrt(disc);
+        let s0 = max(-b - root, 0.0);
+        let s1 = min(-b + root, len);
+        if (s1 <= s0) {
+            continue;
+        }
+        // Where the ray crosses the cone's surface (none for point lights).
+        var c0 = s1;
+        var c1 = s1;
+        let spot = light.position.w > 1.5;
+        let axis = normalize(light.direction.xyz);
+        let cos2 = light.spot.y * light.spot.y;
+        if (spot) {
+            let dd = dot(dir, axis);
+            let od = dot(o, axis);
+            let qa = dd * dd - cos2;
+            let qb = 2.0 * (dd * od - cos2 * dot(dir, o));
+            let qc = od * od - cos2 * dot(o, o);
+            if (abs(qa) < 1e-6) {
+                if (abs(qb) > 1e-6) {
+                    c0 = -qc / qb;
+                    c1 = c0;
+                }
+            } else {
+                let qd = qb * qb - 4.0 * qa * qc;
+                if (qd >= 0.0) {
+                    let sq = sqrt(qd);
+                    let r0 = (-qb - sq) / (2.0 * qa);
+                    let r1 = (-qb + sq) / (2.0 * qa);
+                    c0 = min(r0, r1);
+                    c1 = max(r0, r1);
+                }
+            }
+            c0 = clamp(c0, s0, s1);
+            c1 = clamp(c1, s0, s1);
+        }
+        // Up to three stretches: [s0, c0], [c0, c1], [c1, s1]; lit where inside the cone.
+        let ends = array<f32, 4>(s0, c0, c1, s1);
+        for (var k = 0; k < 3; k++) {
+            let ta = ends[k];
+            let tb = ends[k + 1];
+            if (tb - ta < 1e-4) {
+                continue;
+            }
+            if (spot) {
+                let q = eye + dir * (0.5 * (ta + tb)) - light.position.xyz;
+                let along = dot(q, axis);
+                if (along <= 0.0 || along * along < cos2 * dot(q, q)) {
+                    continue;
+                }
+            }
+            let share = (media_clear(eye, dir, ta, distance) - media_clear(eye, dir, tb, distance))
+                / f32(LOCAL_SHAFT_SAMPLES);
+            let step = (tb - ta) / f32(LOCAL_SHAFT_SAMPLES);
+            var light_sum = vec3<f32>(0.0);
+            for (var i = 0; i < LOCAL_SHAFT_SAMPLES; i++) {
+                light_sum += scattered(light, eye + dir * (ta + (f32(i) + 0.5) * step), dir);
+            }
+            sum += light_sum * share;
         }
     }
     return sum;
@@ -435,6 +531,7 @@ fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
     let uv = (px - g.viewport.xy) / g.viewport.zw;
     let w = sqrt(min(len, last) / g.fog_volume.w);
     var sum = textureSampleLevel(volume, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+    sum += local_shafts(eye, dir, len, distance);
     if (len > last) {
         let rest = fog_clear(eye + dir * last, distance) - fog_clear(p, distance);
         let x = eye + dir * (0.5 * (last + len));
@@ -471,16 +568,16 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     }
     // Distance fog leaves the background alone (Unity's); height fog covers it out to the
     // far plane, so the horizon sinks into it (and shafts reach into the sky).
-    if (g.fog.w > 0.5 && g.fog_height.w > 0.5) {
+    let heavy = g.fog.w > 0.5 && g.fog_height.w > 0.5;
+    if (heavy) {
         let f = 1.0 - fog_clear(far, false);
-        var rgb = c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f);
-        if (g.fog_volume.w > 0.0) {
-            rgb += shafts(far, pos.xy, false) * c.a;
-        }
-        c = vec4<f32>(rgb, c.a);
+        c = vec4<f32>(c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f), c.a);
     }
     if (g.fog_local.x > 0.5) {
         c = through_volumes(c, fog_eye(far), far);
+    }
+    if (heavy && g.fog_volume.w > 0.0) {
+        c = vec4<f32>(c.rgb + shafts(far, pos.xy, false) * c.a, c.a);
     }
     return c;
 }

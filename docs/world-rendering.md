@@ -388,7 +388,7 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   1, 0.4, 4, 50; `null` by default, used only while `fog` is on, saved with scenes) sends an eighth
   `render.fog` argument (anisotropy clamped to +-0.95, steps to 1..16) and sets `Fog.volumetric:
   Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
-  `volume.rs` (`VolumePass`) owns a 160x90x64 `Rgba16Float` 3D texture per view slot. Once per view with
+  `volume.rs` (`VolumePass`) owns a 240x135x64 `Rgba16Float` 3D texture per view slot. Once per view with
   shafts, before the render pass, the compute entry `cs_volume` (8x8 workgroups, one thread per screen
   cell) walks the cell's view ray. Slices are spaced by the square of their index out to the reach
   (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in

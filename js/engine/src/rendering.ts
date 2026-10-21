@@ -1251,7 +1251,7 @@ let fogCulling = true;
 /**
  * Light shafts (volumetric fog): lights shining through the fog light it up, cut by their
  * shadows, so the sun shows in beams through gaps and spot lights as cones, tinted by
- * `albedo`. Every field is optional. A froxel volume over each camera's view (160 × 90
+ * `albedo`. Every field is optional. A froxel volume over each camera's view (240 × 135
  * cells, 64 depth slices) is filled once a frame, with a shadow lookup per light per
  * sample; lights opt out with `Light.volumetricIntensity = 0`.
  */
