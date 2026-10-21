@@ -213,6 +213,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/godrays-forest": {
+      "name": "godrays-forest",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/hello": {
       "name": "hello",
       "version": "0.1.0",
@@ -441,6 +453,8 @@
     "fog-world": ["fog-world@workspace:examples/fog-world"],
 
     "form": ["form@workspace:examples/form"],
+
+    "godrays-forest": ["godrays-forest@workspace:examples/godrays-forest"],
 
     "hello": ["hello@workspace:examples/hello"],
 
