@@ -389,16 +389,22 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   `fog` is on, saved with scenes) sends an eighth `render.fog` argument, `[intensity anisotropy steps
   distance r g b sharpDistance sharpSamples detail]` (albedo and the last three optional; `detail` 0..3 is `Fog.volumetric.detail`; anisotropy clamped to +-0.95, steps to 1..16, sharpSamples to 4..128), and sets `Fog.volumetric:
   Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
-  `volume.rs` (`VolumePass`) owns an `Rgba16Float` 3D texture per view slot, sized by `volume::SIZES` (`VolumetricFog.detail`: low 160x90x48, medium 240x135x64, high 320x180x96, ultra 480x270x128; finer means sharper beams and a dearer fill). `encode` takes the size and remakes the slot's texture when it changes. Once per view with
-  shafts, before the render pass, the compute entry `cs_volume` (8x8 workgroups, one thread per screen
-  cell) walks the cell's view ray. Slices are spaced by the square of their index out to the reach
+  `volume.rs` (`VolumePass`) owns an `Rgba16Float` 3D texture per view slot, sized by `volume::SIZES` (`VolumetricFog.detail`: low 160x90x48, medium 240x135x64, high 320x180x96, ultra 480x270x128; finer means sharper beams and a dearer fill). `encode` takes the size and remakes the slot's texture when it changes. The pass is temporal. Per slot it also keeps two
+  "lit cell" 3D textures (ping-pong), a uniform buffer (`GpuFrame` / WGSL `VolumeFrame`: previous
+  `view_proj`, previous camera and ortho flag, previous forward and distance, jitter xyz, blend w) and the
+  last `VolumeCamera`. Once per view with shafts, before the render pass, `cs_volume_light` (4x4x4
+  workgroups) lights every cell with one `scattered_all` sample at a Halton(2,3,5) point inside the cell
+  (16-frame cycle, frame 0 = the cell middle), reprojects the cell's middle into last frame's lit cells
+  (`last_cell`) and blends with `BLEND` = 0.1 (1.0 with no history: the first frame or after a size
+  change). Cells so average over their whole extent, so bars' shadows don't come out in stair steps, for
+  about an eighth of the shadow lookups. Then the compute entry `cs_volume` (8x8 workgroups, one thread per
+  screen cell) walks the cell's view ray and reads the lit cells (trilinear). Slices are spaced by the square of their index out to the reach
   (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in
-  `fog_clear` times `scattered_all` and the running total is stored at each slice centre. `scattered_all`
+  `fog_clear` times the lit cell (`scattered_all`, above) and the running total is stored at each slice centre. `scattered_all`
   sums every directional light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): a hard
   shadow (`sun_shadow` / `local_shadow` with PCF radius 0), times `phase(cos)` (Henyey-Greenstein,
   isotropic = 1). Only directional lights are in the volume: spot and point lights are worked out per pixel
-  (below). The pass binds the view's globals (dynamic offset), the lighting group and a write-only
-  storage texture at group 3 binding 1, so the globals and shadow group layouts are visible to COMPUTE.
+  (below). The pass binds the view's globals (dynamic offset), the lighting group and group 3 bindings 1 (`volume_out`, write-only), 3 (`light_history`), 4 (frame uniform), 5 (`light_in`) and 6 (`light_out`), so the globals and shadow group layouts are visible to COMPUTE.
   Draws read the volume through group 3 (binding 0 `texture_3d`, binding 2 a linear sampler; the world
   pipeline layout has this fourth group) in `shafts(p, px, distance)`: a sample at the screen uv and
   `sqrt(min(len, last) / reach)`. Past the last slice the sun lights the rest of the fog as at its middle.
@@ -819,7 +825,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
