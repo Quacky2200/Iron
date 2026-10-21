@@ -11468,36 +11468,61 @@ ${err.stack}` : ""}`);
     }
     static illuminanceAt(point, normal) {
       let sum = 0;
-      for (const l of allLights) {
-        if (!l.gameObject.activeInHierarchy)
-          continue;
-        const forward = l.transform.forward;
-        if (l._type === "directional") {
-          const cos = normal ? Math.max(0, -(normal.x * forward.x + normal.y * forward.y + normal.z * forward.z)) : 1;
-          sum += l._intensity * cos;
-          continue;
-        }
-        const p = l.transform.position;
-        const dx = point.x - p.x;
-        const dy = point.y - p.y;
-        const dz = point.z - p.z;
-        const d = Math.hypot(dx, dy, dz);
-        if (d >= l._range || d === 0)
-          continue;
-        const x = d / l._range;
-        const fade = (1 - x ** 4) ** 2;
-        let candela = l._intensity / (4 * Math.PI);
-        if (l._type === "spot") {
-          const c = (dx * forward.x + dy * forward.y + dz * forward.z) / d;
-          const outer = Math.cos(l._spotAngle / 2 * Math.PI / 180);
-          const inner = Math.cos(l._innerSpotAngle / 2 * Math.PI / 180);
-          const t = Math.min(1, Math.max(0, (c - outer) / Math.max(inner - outer, 0.0001)));
-          candela *= t * t * (3 - 2 * t);
-        }
-        const cos = normal ? Math.max(0, -(normal.x * dx + normal.y * dy + normal.z * dz) / d) : 1;
-        sum += candela * fade / (d * d) * cos;
-      }
+      for (const l of allLights)
+        sum += l.illuminanceFrom(point, normal);
       return sum;
+    }
+    static async measureIlluminance(point, normal) {
+      const parts = [...allLights].map(async (l) => {
+        const lux = l.illuminanceFrom(point, normal);
+        if (lux <= 0)
+          return 0;
+        let dir;
+        let distance;
+        if (l._type === "directional") {
+          const f = l.transform.forward;
+          dir = { x: -f.x, y: -f.y, z: -f.z };
+          distance = 1e4;
+        } else {
+          const p = l.transform.position;
+          dir = { x: p.x - point.x, y: p.y - point.y, z: p.z - point.z };
+          distance = Math.hypot(dir.x, dir.y, dir.z) - 0.05;
+        }
+        const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
+        const from = { x: point.x + dir.x / len * 0.02, y: point.y + dir.y / len * 0.02, z: point.z + dir.z / len * 0.02 };
+        const hit = await physics.raycast(from, dir, distance);
+        return hit ? 0 : lux;
+      });
+      return (await Promise.all(parts)).reduce((a, b) => a + b, 0);
+    }
+    illuminanceFrom(point, normal) {
+      const l = this;
+      if (!l.gameObject.activeInHierarchy)
+        return 0;
+      const forward = l.transform.forward;
+      if (l._type === "directional") {
+        const cos = normal ? Math.max(0, -(normal.x * forward.x + normal.y * forward.y + normal.z * forward.z)) : 1;
+        return l._intensity * cos;
+      }
+      const p = l.transform.position;
+      const dx = point.x - p.x;
+      const dy = point.y - p.y;
+      const dz = point.z - p.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d >= l._range || d === 0)
+        return 0;
+      const x = d / l._range;
+      const fade = (1 - x ** 4) ** 2;
+      let candela = l._intensity / (4 * Math.PI);
+      if (l._type === "spot") {
+        const c = (dx * forward.x + dy * forward.y + dz * forward.z) / d;
+        const outer = Math.cos(l._spotAngle / 2 * Math.PI / 180);
+        const inner = Math.cos(l._innerSpotAngle / 2 * Math.PI / 180);
+        const t = Math.min(1, Math.max(0, (c - outer) / Math.max(inner - outer, 0.0001)));
+        candela *= t * t * (3 - 2 * t);
+      }
+      const cos = normal ? Math.max(0, -(normal.x * dx + normal.y * dy + normal.z * dz) / d) : 1;
+      return candela * fade / (d * d) * cos;
     }
   }
   var allLights = new Set;
@@ -11534,7 +11559,7 @@ ${err.stack}` : ""}`);
     autoExposure.maxEV ?? 20,
     autoExposure.compensation ?? 0,
     autoExposure.speedDarkToLight ?? 3,
-    autoExposure.speedLightToDark ?? 1,
+    autoExposure.speedLightToDark ?? 3,
     METERING[autoExposure.metering ?? "centerWeighted"],
     autoExposure.lowPercent ?? 0,
     autoExposure.highPercent ?? 100,

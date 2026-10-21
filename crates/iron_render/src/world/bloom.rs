@@ -83,7 +83,9 @@ pub struct AutoExposure {
     /// Stops added after metering (positive: brighter).
     pub compensation: f32,
     /// How fast it adapts (per second, roughly the share of the way covered) when the
-    /// view gets brighter, and when it gets darker. Eyes adapt to light faster.
+    /// view gets brighter, and when it gets darker. Both 3 by default: about a second for a
+    /// big change, as games do (eyes take far longer to see in the dark, which is frustrating
+    /// to wait for).
     pub speed_dark_to_light: f32,
     pub speed_light_to_dark: f32,
     pub metering: Metering,
@@ -114,7 +116,7 @@ impl Default for AutoExposure {
             max_ev: 20.0,
             compensation: 0.0,
             speed_dark_to_light: 3.0,
-            speed_light_to_dark: 1.0,
+            speed_light_to_dark: 3.0,
             metering: Metering::CenterWeighted,
             low_percent: 0.0,
             high_percent: 100.0,

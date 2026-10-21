@@ -135,7 +135,7 @@ describe("meshes and lights", () => {
     RenderSettings.autoExposure = { minEV: -2, speedLightToDark: 0.5 };
     expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces", [-2, 20, 0, 3, 0.5, 1, 0, 100, 0, 1, 5, 0], null, 0]);
     RenderSettings.autoExposure = { metering: "spot", lowPercent: 40, highPercent: 90, darkAdaptation: 0.5, darkBelow: 3, curve: [[-2, -1.5], [6, 0]], hold: true };
-    expect(renderOps().at(-1)![4]).toEqual([-10, 20, 0, 3, 1, 2, 40, 90, 1, 0.5, 3, 2, -2, -1.5, 6, 0]);
+    expect(renderOps().at(-1)![4]).toEqual([-10, 20, 0, 3, 3, 2, 40, 90, 1, 0.5, 3, 2, -2, -1.5, 6, 0]);
     // The manual exposure and the blend (M7-EXP-04).
     RenderSettings.fixedExposure = 2;
     RenderSettings.exposureTransition = 3;
