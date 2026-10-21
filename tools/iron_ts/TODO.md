@@ -198,7 +198,7 @@ key })`, `title`, `style`, `parent`, `isChild`, `handle`, `nativeHandle`, `close
 window with its own UI root (`createRoot(win)`), multi-window `iron_platform` with a fake backend, secondary windows offscreen in
 screenshot runs, `examples/windows`.
 
-- [ ] Step 1: `iron_platform::windows` pure types, `plan`, `place`, `WindowTree`.
+- [x] Step 1: `iron_platform::windows` pure types, `plan`, `place`, `WindowTree`.
 - [ ] Step 2: `iron_engine_api::window` (Rust tests).
 - [ ] Step 3: `#[options]`: QuickJS options objects for optional parameters.
 - [ ] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.

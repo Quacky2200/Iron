@@ -1382,3 +1382,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1110 | Unit | The VFS answers from the last mounted source, a patch tombstone hides an asset, `guid:` and `data:` sources work, unmounting restores the old answer (`vfs.rs`). |
 | M9-API-1111 | Unit | A game folder (`DirSource`, `.meta` GUIDs) and a pack answer the same calls with the same bytes, info and GUIDs; paths outside the game are refused. |
 | M9-API-1112 | Unit | A path's cooked form is found beside its source form. |
+
+## M9.b — Windows API (`docs/research/iron-windows-plan.md`)
+
+| ID | Kind | What it checks |
+|---|---|---|
+| M9-API-1400 | Unit | Window kinds parse and name round-trip; "Tool" and "" do not parse (`iron_platform::windows`). |
+| M9-API-1401 | Unit | `plan(tool, Windows)`: owner MAIN, small caption, no taskbar button, close button only. |
+| M9-API-1402 | Unit | `plan(tool, MacOs)`: owner MAIN, no tool caption or taskbar rules. |
+| M9-API-1403 | Unit | An embedded `child` keeps `embed_in` on Windows and X11, becomes a tool window with a warning on macOS, Wayland and others. |
+| M9-API-1404 | Unit | Popups have no decorations and never take focus. |
+| M9-API-1405 | Unit | `place` centres on the parent and cascades 24 px per axis, wrapping after 8. |
+| M9-API-1406 | Unit | `WindowTree::close_order` lists children deepest first. |
+| M9-API-1407 | Unit | A parent that would make a cycle is dropped. |
