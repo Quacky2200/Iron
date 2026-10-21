@@ -653,6 +653,7 @@ pub mod window_api {
         /// Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the
         /// frame. Until then its size and position are the ones asked for. Every option is optional:
         /// `Window.create({ title: "Palette", style: "tool", width: 220, height: 320, key: "palette" })`.
+        #[options]
         #[optional(
             title,
             width,

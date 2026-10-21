@@ -1414,3 +1414,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1424 | Unit | `Window.current` is the window whose event is being dispatched, else the main window; guards nest. |
 | M9-API-1425 | Unit | `off` removes any listener by token, once. |
 | M9-API-1426 | Unit | `Window.main.close()` asks to quit (`Application.quit`) and queues no `Close`. |
+| M9-API-1430 | Unit | A QuickJS call with one options object fills the `#[options]` function's optional parameters by camelCase name (`crates/iron_api/tests/options.rs`). |
+| M9-API-1431 | Unit | Left-out, `undefined` and `null` keys take the declared defaults (NaN, empty, false, the `= value`). |
+| M9-API-1432 | Unit | Positional calls still work; plain objects are options objects, arrays, functions, dates, class and value-class instances are not. |
+| M9-API-1433 | Unit | `Window.create({ title, style: "tool", width })` in QuickJS: `Window.main` and `Window.count` are properties, `isChild`, `parent.handle`, flags through the object (`crates/iron_native/tests/window.rs`). |
+| M9-API-1434 | Unit | Window listeners run from QuickJS; `w.onCloseRequested(() => w.cancelClose())` makes `close_requested(w)` false; a closed handle keeps its last values. |

@@ -292,6 +292,13 @@ code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen`
   `optional`, the declaration writes `seed?: number`, and the function sees a default: **NaN** for a
   number (so `seed.is_nan()` means "left out"), an empty string, `false` or a zero handle. A compiled
   call fills them in; QuickJS treats a missing or `undefined` argument the same way.
+- `#[options]` (with `#[optional(..)]`) lets QuickJS pass the optional parameters as one plain object, by camelCase name:
+  `Window.create({ title: "Palette", style: "tool", minWidth: 200 })`. It applies when the call has exactly one argument past
+  the required ones and that argument is a plain object (`Object.prototype`, not an array, function, handle or value-class
+  instance: `iron_api::qjs::options_object`); a key that is missing, `undefined` or `null` is left out and takes the declared
+  default. Positional calls keep working. The manifest and the `.d.ts` do not change: compiled code already maps a trailing
+  object literal onto the optional parameters by name (`call_ext_args`). A function with `#[options]` cannot have optional
+  value-class parameters (a value is itself a plain object). Tests `M9-API-1430..1434`.
 - `new Rng(seed)`: a handle class whose static `create` has parameters is constructed with them
   (`new Class(args)` calls `create(args)`).
 - `#[js_name = "graphicsDeviceVendorID"]` gives the script name when `snake_case` to `camelCase` does not

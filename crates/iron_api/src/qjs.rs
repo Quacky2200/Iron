@@ -55,6 +55,26 @@ pub fn handle_arg<'js>(ctx: &Ctx<'js>, v: &Value<'js>, class: &'static str) -> R
     ))
 }
 
+/// The value as an options object (`Window.create({ title: "T" })`): a plain object whose prototype
+/// is `Object.prototype` (or none), not an array, not a function, not a handle or value-class
+/// instance (those have their class's prototype).
+pub fn options_object<'js>(ctx: &Ctx<'js>, v: &Value<'js>) -> Option<Object<'js>> {
+    let o = v.as_object()?;
+    if o.is_array() || o.is_function() {
+        return None;
+    }
+    let Some(proto) = o.get_prototype() else {
+        return Some(o.clone());
+    };
+    let object_proto: Object = ctx
+        .globals()
+        .get::<_, Object>("Object")
+        .ok()?
+        .get("prototype")
+        .ok()?;
+    (proto.as_value() == object_proto.as_value()).then(|| o.clone())
+}
+
 /// Like [`handle_arg`] for the receiver of a method, which must be an object of the class.
 pub fn recv_arg<'js>(ctx: &Ctx<'js>, v: &Value<'js>, class: &'static str) -> Result<u64> {
     if v.is_null() || v.is_undefined() {

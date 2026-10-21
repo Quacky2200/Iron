@@ -17,6 +17,7 @@ pub fn with_world<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
     iron_engine_api::app::reset();
     iron_engine_api::screen::reset();
     iron_engine_api::animation::reset();
+    iron_engine_api::window::reset();
     iron_scenes::reset();
     let mut scene = Scene::new();
     let _scope = enter(&mut scene);
@@ -40,6 +41,7 @@ impl Drop for Release {
         iron_engine_api::screen::reset();
         iron_engine_api::audio::reset();
         iron_engine_api::audio_components::reset();
+        iron_engine_api::window::reset();
         iron_render_api::reset();
         iron_scenes::reset();
     }

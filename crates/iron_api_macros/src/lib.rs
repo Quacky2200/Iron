@@ -623,9 +623,11 @@ fn camel(s: &str) -> String {
 
 /// The attributes this macro reads from a function (they are removed from the output).
 fn is_ours(a: &syn::Attribute) -> bool {
-    ["property", "optional", "method", "getter", "js_name"]
-        .iter()
-        .any(|n| a.path().is_ident(n))
+    [
+        "property", "optional", "method", "getter", "js_name", "options",
+    ]
+    .iter()
+    .any(|n| a.path().is_ident(n))
 }
 
 /// `#[js_name = "graphicsDeviceVendorID"]`: the script name when `snake_case` to `camelCase` does
@@ -688,6 +690,8 @@ struct Api {
     optional: Vec<String>,
     /// The defaults given (`b = 1.5`; a flag is 0 or 1).
     defaults: Vec<(String, f64)>,
+    /// `#[options]`: QuickJS may pass the optional parameters as one object, by camelCase name.
+    options: bool,
     ret: Kind,
 }
 
@@ -775,6 +779,23 @@ fn api_of(
             "#[optional(..)] parameters must be the last ones",
         ));
     }
+    let options = attrs.iter().any(|a| a.path().is_ident("options"));
+    if options && optional.is_empty() {
+        return Err(syn::Error::new(
+            sig.span(),
+            "#[options] needs #[optional(..)] parameters to read from the object",
+        ));
+    }
+    if options
+        && params
+            .iter()
+            .any(|(p, k)| optional.contains(&p.to_string()) && matches!(k, Kind::Value(_)))
+    {
+        return Err(syn::Error::new(
+            sig.span(),
+            "#[options] cannot have optional value-class parameters (a value is itself a plain object)",
+        ));
+    }
     Ok(Api {
         name: sig.ident.clone(),
         doc: doc_of(attrs),
@@ -787,6 +808,7 @@ fn api_of(
         params,
         optional,
         defaults,
+        options,
         ret,
     })
 }
@@ -1272,19 +1294,55 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let js_body = js_result(&a.ret, quote!(#call_path( #( #js_args ),* )), &args);
             // rquickjs takes a few typed parameters; a function with more reads its arguments from
             // the rest list one by one.
-            let closure = if all_params.len() + usize::from(has_receiver) > 4 {
+            let first_opt = all_params
+                .iter()
+                .position(|(n, _)| is_opt(n))
+                .unwrap_or(all_params.len());
+            // `#[options]`: a call with exactly one argument past the required ones, a plain object,
+            // gives the optional parameters by name. Positional calls keep working.
+            let opts_prelude = if a.options {
+                quote! {
+                    let __opts: ::std::option::Option<::iron_api::rquickjs::Object<'js>> =
+                        if rest.0.len() == #first_opt + 1 {
+                            ::iron_api::qjs::options_object(&ctx, &rest.0[#first_opt])
+                        } else {
+                            None
+                        };
+                }
+            } else {
+                quote!()
+            };
+            let closure = if all_params.len() + usize::from(has_receiver) > 4 || a.options {
                 let binds: Vec<TokenStream2> = all_params
                     .iter()
                     .enumerate()
                     .map(|(i, (n, k))| {
                         let t = js_param_ty(k);
+                        // The argument at this position, or (an options call) the property of the
+                        // object; undefined and null mean "left out".
+                        let slot = if a.options {
+                            let key = camel(&n.to_string());
+                            quote! {
+                                match &__opts {
+                                    Some(o) => {
+                                        let v: ::iron_api::rquickjs::Value<'js> = o.get(#key)?;
+                                        if v.is_undefined() || v.is_null() { None } else { Some(v) }
+                                    }
+                                    None => rest.0.get(#i).filter(|v| !v.is_undefined() && !v.is_null()).cloned(),
+                                }
+                            }
+                        } else {
+                            quote! {
+                                rest.0.get(#i).filter(|v| !v.is_undefined() && !v.is_null()).cloned()
+                            }
+                        };
                         if is_opt(n) && matches!(k, Kind::Value(_)) {
                             quote! {
-                                let #n: ::std::option::Option<#t> = match rest.0.get(#i) {
-                                    Some(v) if !v.is_undefined() && !v.is_null() => {
-                                        Some(::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?)
+                                let #n: ::std::option::Option<#t> = match #slot {
+                                    Some(v) => {
+                                        Some(::iron_api::rquickjs::FromJs::from_js(&ctx, v)?)
                                     }
-                                    _ => None,
+                                    None => None,
                                 };
                             }
                         } else if is_opt(n) {
@@ -1293,11 +1351,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                                 None => js_default(k),
                             };
                             quote! {
-                                let #n: #t = match rest.0.get(#i) {
-                                    Some(v) if !v.is_undefined() && !v.is_null() => {
-                                        ::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?
+                                let #n: #t = match #slot {
+                                    Some(v) => {
+                                        ::iron_api::rquickjs::FromJs::from_js(&ctx, v)?
                                     }
-                                    _ => #d,
+                                    None => #d,
                                 };
                             }
                         } else {
@@ -1321,6 +1379,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                       rest: ::iron_api::rquickjs::function::Rest<::iron_api::rquickjs::Value<'js>> |
                         -> ::iron_api::rquickjs::Result<#js_ret> {
                         #recv_bind
+                        #opts_prelude
                         #( #binds )*
                         #js_body
                     }
