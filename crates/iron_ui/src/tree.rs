@@ -381,12 +381,21 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     text: TextEngine,
     /// Parley layouts of text blocks, rebuilt when a block is dirty.
     text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
+    /// The content width each text block's lines were last broken at for drawing; a
+    /// relayout that leaves it unchanged (a scroll, say) skips breaking them again.
+    /// Measuring or re-shaping a block forgets it.
+    finished: HashMap<NodeId, f32>,
+    /// What each node and its descendants may paint over, as of the last layout (see
+    /// [`Self::compute_ink`]); drawing skips subtrees outside the clips around them.
+    ink: HashMap<NodeId, Rect>,
     /// `…` laid out in the style of text blocks with `text-overflow: ellipsis`.
     ellipses: HashMap<NodeId, parley::Layout<Brush>>,
     /// Nodes whose list marker may need adding, removing or renumbering.
     markers_dirty: HashSet<NodeId>,
     /// How many text blocks have been shaped (for tests and profiling).
     text_builds: u64,
+    /// How many times layout has measured a text block (for tests and profiling).
+    text_measures: u64,
     /// The text each block laid out (white space collapsed), which selections index.
     layout_texts: HashMap<NodeId, String>,
     /// Selected static text: the text block and Parley's selection in it.
@@ -485,6 +494,8 @@ impl<L: LayoutEngine> UiTree<L> {
             next_generated: FIRST_GENERATED_ID,
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
+            finished: HashMap::default(),
+            ink: HashMap::default(),
             layout_texts: HashMap::default(),
             text_selection: None,
             pseudo_styles: HashMap::default(),
@@ -507,6 +518,7 @@ impl<L: LayoutEngine> UiTree<L> {
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
+            text_measures: 0,
         }
     }
 
@@ -2305,6 +2317,12 @@ impl<L: LayoutEngine> UiTree<L> {
         self.text_builds
     }
 
+    /// How many times layout has measured a text block (broken its lines for a width)
+    /// since the tree was created.
+    pub fn text_measure_count(&self) -> u64 {
+        self.text_measures
+    }
+
     /// Text blocks changed since the last call (clears the set).
     pub fn take_dirty_text(&mut self) -> Vec<NodeId> {
         let dirty: Vec<NodeId> = self.dirty_text.drain().collect();
@@ -2902,6 +2920,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.text_selection = None;
             }
             self.text_layouts.insert(root, layout);
+            self.finished.remove(&root);
             self.layout_texts.insert(root, laid_out);
             self.layout.mark_dirty(root);
         }
@@ -2912,6 +2931,8 @@ impl<L: LayoutEngine> UiTree<L> {
             nodes,
             image_sizes,
             size,
+            text_measures,
+            finished,
             ..
         } = self;
         layout.compute(
@@ -2919,7 +2940,11 @@ impl<L: LayoutEngine> UiTree<L> {
             size.0,
             size.1,
             &mut |id, known, available| match text_layouts.get_mut(&id) {
-                Some(l) => text::measure(l, known.0, available),
+                Some(l) => {
+                    *text_measures += 1;
+                    finished.remove(&id);
+                    text::measure(l, known.0, available)
+                }
                 None => match editors.get(&id) {
                     Some(e) => e.intrinsic_size(known.0),
                     None => {
@@ -2957,10 +2982,13 @@ impl<L: LayoutEngine> UiTree<L> {
             if self.text_layouts.contains_key(&id) {
                 // Final line breaking and alignment at the block's real content width.
                 let content_width =
-                    l.width - l.border[1] - l.border[3] - l.padding[1] - l.padding[3];
-                let align = self.computed_text(id).text_align;
-                if let Some(layout) = self.text_layouts.get_mut(&id) {
-                    text::finish(layout, content_width.max(0.0), align);
+                    (l.width - l.border[1] - l.border[3] - l.padding[1] - l.padding[3]).max(0.0);
+                if self.finished.get(&id) != Some(&content_width) {
+                    let align = self.computed_text(id).text_align;
+                    if let Some(layout) = self.text_layouts.get_mut(&id) {
+                        text::finish(layout, content_width, align);
+                    }
+                    self.finished.insert(id, content_width);
                 }
             }
             if let Some(node) = self.nodes.get(&id)
@@ -2987,9 +3015,88 @@ impl<L: LayoutEngine> UiTree<L> {
                 }));
             }
         }
+        self.compute_ink();
         self.refresh_editors();
         self.needs_layout = false;
         true
+    }
+
+    /// Fills [`Self::ink`]: each laid-out node's rect (and its text, which may run past
+    /// it) joined with its children's ink. A node that can paint beyond its box in ways
+    /// rects don't show (transforms, filters, shadows, outlines, animations, SVG,
+    /// inherited text shadows) gets an unbounded area, and so does every ancestor.
+    fn compute_ink(&mut self) {
+        const UNBOUNDED: Rect = Rect {
+            x: -UNCLIPPED,
+            y: -UNCLIPPED,
+            width: 2.0 * UNCLIPPED,
+            height: 2.0 * UNCLIPPED,
+        };
+        self.ink.clear();
+        // Pre-order (parent before children), with each node's parent and whether a
+        // text shadow is inherited there.
+        let mut order: Vec<(NodeId, Option<NodeId>)> = Vec::with_capacity(self.rects.len());
+        let mut stack = vec![(ROOT, None, false)];
+        while let Some((id, parent, shadowed)) = stack.pop() {
+            let Some(node) = self.nodes.get(&id) else {
+                continue;
+            };
+            let shadowed = node
+                .visual
+                .text
+                .text_shadow
+                .as_ref()
+                .map_or(shadowed, |s| !s.is_empty());
+            let v = &node.visual;
+            let unbounded = v.transform.is_some()
+                || v.filter_blur > 0.0
+                || !v.drop_shadows.is_empty()
+                || v.backdrop_blur > 0.0
+                || !v.shadows.is_empty()
+                || (v.outline_width > 0.0 && v.outline_style != BorderStyle::None)
+                || v.border_image.is_some()
+                || !v.transitions.specs().is_empty()
+                || !v.animations.specs().is_empty()
+                || node.kind == SVG
+                || self.leaving.contains_key(&id)
+                || (shadowed && is_inline_container(&node.kind));
+            let own = if unbounded {
+                Some(UNBOUNDED)
+            } else if is_contents(node) {
+                None
+            } else {
+                self.rects.get(&id).map(|&rect| {
+                    match (self.text_layouts.get(&id), self.content_box(id)) {
+                        (Some(text), Some(content)) => rect.union(Rect::new(
+                            content.x,
+                            content.y,
+                            text.width().max(text.full_width()),
+                            text.height(),
+                        )),
+                        _ => rect,
+                    }
+                })
+            };
+            if let Some(own) = own {
+                self.ink.insert(id, own);
+            }
+            order.push((id, parent));
+            // Inline content is drawn by its text block; fixed nodes paint on their own.
+            if !is_inline_container(&node.kind) {
+                for c in &node.children {
+                    if !self.nodes.get(c).is_some_and(|n| is_fixed(*c, n)) {
+                        stack.push((*c, Some(id), shadowed));
+                    }
+                }
+            }
+        }
+        for (id, parent) in order.into_iter().rev() {
+            let (Some(parent), Some(ink)) = (parent, self.ink.get(&id).copied()) else {
+                continue;
+            };
+            let joined = self.ink.get(&parent).map_or(ink, |p| p.union(ink));
+            self.ink.insert(parent, joined);
+        }
     }
 
     /// Restyles, resizes and re-lays out text fields after layout.
@@ -3776,6 +3883,7 @@ impl<L: LayoutEngine> UiTree<L> {
             ROOT,
             &ComputedText::default(),
             TransformContext::ROOT,
+            None,
             &mut out,
         );
         // Fixed nodes paint last, outside their ancestors' clips and layers.
@@ -3784,7 +3892,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 Some(p) => self.computed_text(p),
                 None => ComputedText::default(),
             };
-            self.collect(id, &text, TransformContext::ROOT, &mut out);
+            self.collect(id, &text, TransformContext::ROOT, None, &mut out);
         }
         self.collect_drag_image(&mut out);
         out
@@ -3830,7 +3938,7 @@ impl<L: LayoutEngine> UiTree<L> {
             shadows: Vec::new(),
         });
         let content = out.len();
-        self.collect(id, &text, xf, out);
+        self.collect(id, &text, xf, None, out);
         if out.len() == content {
             out.truncate(start);
             return;
@@ -3846,13 +3954,21 @@ impl<L: LayoutEngine> UiTree<L> {
         out.push(DrawCmd::PopTransform);
     }
 
+    /// `cull`, when set, is the area the clips around `id` leave visible, in its layout
+    /// space: a subtree whose ink lies outside it isn't drawn.
     fn collect(
         &self,
         id: NodeId,
         inherited: &ComputedText,
         xf: TransformContext,
+        cull: Option<Rect>,
         out: &mut Vec<DrawCmd>,
     ) {
+        if let (Some(cull), Some(ink)) = (cull, self.ink.get(&id))
+            && !overlaps(*ink, cull)
+        {
+            return;
+        }
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
@@ -3864,7 +3980,7 @@ impl<L: LayoutEngine> UiTree<L> {
             let text = inherited.child(&v.text);
             for child in self.paint_order(node).iter() {
                 if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
-                    self.collect(*child, &text, xf, out);
+                    self.collect(*child, &text, xf, cull, out);
                 }
             }
             return;
@@ -4110,6 +4226,14 @@ impl<L: LayoutEngine> UiTree<L> {
             out.push(DrawCmd::PushClip(clip.clone()));
         }
         let overflow_clip = overflow_clip(v, rect, &l, radii);
+        // Children are culled against this node's overflow clip too, unless a transform
+        // puts them in another space.
+        let child_cull = match (&overflow_clip, cull) {
+            _ if transformed => None,
+            (Some(clip), Some(c)) => Some(c.intersect(clip.rect)),
+            (Some(clip), None) => Some(clip.rect),
+            (None, c) => c,
+        };
 
         if text.visible && (v.backdrop_blur > 0.0 || v.backdrop_matrix.is_some()) {
             out.push(DrawCmd::BackdropBlur {
@@ -4153,7 +4277,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 shadows,
             });
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, child_xf, out);
+            self.collect_children(node, &text, overflow_clip, child_xf, child_cull, out);
             self.collect_scrollbars(id, out);
             out.extend(outline);
             // The layer must cover everything drawn into it, plus the blur's spread.
@@ -4188,7 +4312,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
             }
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, child_xf, out);
+            self.collect_children(node, &text, overflow_clip, child_xf, child_cull, out);
             self.collect_scrollbars(id, out);
             if let Some(mut outline) = outline {
                 if v.opacity < 1.0 {
@@ -4211,6 +4335,7 @@ impl<L: LayoutEngine> UiTree<L> {
         text: &ComputedText,
         clip: Option<ClipShape>,
         xf: TransformContext,
+        cull: Option<Rect>,
         out: &mut Vec<DrawCmd>,
     ) {
         if node.children.is_empty() {
@@ -4222,7 +4347,7 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         for child in self.paint_order(node).iter() {
             if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
-                self.collect(*child, text, xf, out);
+                self.collect(*child, text, xf, cull, out);
             }
         }
         if clipped {
@@ -4570,6 +4695,19 @@ const SCROLLBAR_THUMB: Rgba = Rgba {
 
 /// Far enough to never matter: the clip edge on an axis that doesn't clip.
 const UNCLIPPED: f32 = 1.0e7;
+
+/// Drawing culls subtrees this far outside the visible area, not just outside it, for
+/// glyph overhangs and other small spills past an element's box.
+const CULL_MARGIN: f32 = 64.0;
+
+/// Whether `ink` comes within [`CULL_MARGIN`] of `visible` (edges touching count).
+fn overlaps(ink: Rect, visible: Rect) -> bool {
+    let v = visible.expand(CULL_MARGIN);
+    ink.x <= v.x + v.width
+        && v.x <= ink.x + ink.width
+        && ink.y <= v.y + v.height
+        && v.y <= ink.y + ink.height
+}
 
 /// The clip `overflow` puts on an element's children: its padding box with inner
 /// corner radii. An axis that doesn't clip (`overflow: clip visible`) is unbounded.

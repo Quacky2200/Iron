@@ -663,3 +663,65 @@ fn overscroll_contain_stops_scroll_chaining() {
         }
     }
 }
+
+/// The tops of the text drawn, in window space.
+fn text_tops(tree: &mut UiTree) -> Vec<f32> {
+    tree.draw_list()
+        .iter()
+        .filter_map(|c| match c {
+            DrawCmd::Text(t) => Some(t.bounds.y),
+            _ => None,
+        })
+        .collect()
+}
+
+// M2-DRW-09
+#[test]
+fn content_scrolled_out_of_view_is_not_drawn() {
+    let mut d = Dom::new();
+    let scroller = d.add(
+        0,
+        "box",
+        &[
+            ("height", px(200.0)),
+            ("width", px(300.0)),
+            ("flexDirection", "column".into()),
+            ("overflowY", "auto".into()),
+        ],
+    );
+    // A page between the scroller and its rows: culling reaches past direct children.
+    let page = d.add(
+        scroller,
+        "box",
+        &[("flexDirection", "column".into()), ("flexShrink", px(0.0))],
+    );
+    for i in 0..60 {
+        let style: &[(&str, iron_core::Value)] = if i == 40 {
+            // Far below the view, but a shadow could reach anywhere: the row is drawn.
+            &[("height", px(20.0)), ("boxShadow", "0 0 4px black".into())]
+        } else {
+            &[("height", px(20.0))]
+        };
+        let row = d.add(page, "box", style);
+        let label = d.add(row, "text", &[]);
+        d.text(label, &format!("Row {i}"));
+    }
+    let mut tree = d.build("");
+
+    let tops = text_tops(&mut tree);
+    assert!(tops.contains(&0.0), "the first row");
+    assert!(!tops.contains(&600.0), "a row well below the view");
+    // The view (200px) and a margin around it.
+    assert!(tops.len() < 20, "{} rows drawn of 60", tops.len());
+    let shadows = tree
+        .draw_list()
+        .iter()
+        .filter(|c| matches!(c, DrawCmd::BoxShadow(_)))
+        .count();
+    assert_eq!(shadows, 1, "the shadowed row");
+
+    tree.scroll_to(NodeId(scroller), 0.0, 1000.0, false);
+    let tops = text_tops(&mut tree);
+    assert!(tops.contains(&0.0), "row 50 at the top of the view");
+    assert!(!tops.contains(&-1000.0), "the first row, scrolled away");
+}

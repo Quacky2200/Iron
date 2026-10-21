@@ -78,10 +78,42 @@ struct NodeData {
     /// takes it off that list too (a cached layout would otherwise still visit it).
     hoisted_by: Option<taffy::NodeId>,
     cache: Cache,
+    /// Size queries kept beyond Taffy's cache: exact inputs and their results. Taffy
+    /// keeps nine and drops one for each new query, and intrinsic sizing through a few
+    /// nested containers (a scroller in a row, say) asks a node more ways than that, so
+    /// each pass would measure whole subtrees again.
+    sizes: Vec<(LayoutInput, LayoutOutput)>,
     detailed: DetailedLayoutInfo,
 }
 
+/// Most size queries kept per node in [`NodeData::sizes`].
+const MAX_SIZES: usize = 32;
+
 impl NodeData {
+    fn cache_get(&mut self, input: &LayoutInput) -> Option<LayoutOutput> {
+        self.cache.get(input).or_else(|| {
+            let found = self.sizes.iter().find(|(i, _)| i == input);
+            found.map(|(_, output)| output.clone())
+        })
+    }
+
+    fn cache_store(&mut self, input: &LayoutInput, output: LayoutOutput) {
+        if input.run_mode == RunMode::ComputeSize && !self.sizes.iter().any(|(i, _)| i == input) {
+            if self.sizes.len() == MAX_SIZES {
+                self.sizes.remove(0);
+            }
+            self.sizes.push((*input, output.clone()));
+        }
+        self.cache.store(input, output);
+    }
+
+    /// Clears both caches; false if they were already empty.
+    fn clear_caches(&mut self) -> bool {
+        let sizes = !self.sizes.is_empty();
+        self.sizes.clear();
+        !matches!(self.cache.clear(), ClearState::AlreadyEmpty) | sizes
+    }
+
     fn new(style: Style) -> Self {
         Self {
             style,
@@ -93,6 +125,7 @@ impl NodeData {
             hoisted: Vec::new(),
             hoisted_by: None,
             cache: Cache::new(),
+            sizes: Vec::new(),
             detailed: DetailedLayoutInfo::None,
         }
     }
@@ -125,7 +158,7 @@ impl TaffyLayout {
             let Some(node) = self.nodes.get_mut(&u64::from(n)) else {
                 return;
             };
-            if matches!(node.cache.clear(), ClearState::AlreadyEmpty) {
+            if !node.clear_caches() {
                 return;
             }
             at = node.parent;
@@ -427,15 +460,15 @@ impl LayoutContainingBlock for View<'_, '_> {
 
 impl CacheTree for View<'_, '_> {
     fn cache_get(&mut self, node_id: taffy::NodeId, input: &LayoutInput) -> Option<LayoutOutput> {
-        self.layout.node_mut(node_id).cache.get(input)
+        self.layout.node_mut(node_id).cache_get(input)
     }
 
     fn cache_store(&mut self, node_id: taffy::NodeId, input: &LayoutInput, output: LayoutOutput) {
-        self.layout.node_mut(node_id).cache.store(input, output)
+        self.layout.node_mut(node_id).cache_store(input, output)
     }
 
     fn cache_clear(&mut self, node_id: taffy::NodeId) {
-        self.layout.node_mut(node_id).cache.clear();
+        self.layout.node_mut(node_id).clear_caches();
     }
 }
 

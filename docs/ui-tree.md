@@ -172,7 +172,12 @@ work. `TaffyLayout` instead holds a map of `NodeData` (style, children, parent, 
 unrounded/final layout, hoisted out-of-flow children, cache) and a per-pass `View` that implements
 Taffy's tree traits, mirroring `TaffyTree`'s own view: dirty propagation up the parents
 (`mark_dirty_up`, stopping at an already-clear cache), `compute_cached_layout` caching, `round_layout`
-rounding, and hoisting of out-of-flow (absolute) children. `View` resolves calc handles through
+rounding, and hoisting of out-of-flow (absolute) children. Besides Taffy's `Cache` (nine measure
+entries, evicting), each node keeps `sizes`: up to `MAX_SIZES` (32) exact `ComputeSize` inputs with their
+results, oldest dropped. Intrinsic sizing through nested containers (a scroller inside a row flex) asks one
+node more ways than nine, so every pass re-measured whole subtrees (appending a child to a long column
+re-measured every sibling's text). `cache_get` tries Taffy's cache, then `sizes`; `clear_caches` clears
+both (`M2-LAY-07`). `View` resolves calc handles through
 `crate::calc::resolve`, for containers (`resolve_calc_value`) and for measured leaves
 (`compute_leaf_layout`; the measure callback sizes text content).
 
@@ -198,7 +203,14 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
    `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset.
    `display: contents` nodes get a zero rect at the parent origin; `position: fixed` nodes are placed
    from (0,0), ignoring ancestor scroll. For
-   text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`.
+   text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`;
+   `finished` remembers that width, and the pass skips `finish` when it is unchanged (a scroll only
+   moves things). Measuring or re-shaping a block forgets it. `text_measure_count()` counts measures.
+5. `compute_ink()` fills `ink`: each node's rect (joined with its text layout's extent) unioned bottom-up
+   with its children's. Nodes that can paint outside their box get an unbounded rect, and so do their
+   ancestors: transform, filter blur, drop shadows, backdrop blur, box shadows, outline, border-image,
+   transitions/animations, SVG, `:outro` leavers, and text blocks inheriting a text shadow.
+   `display: contents` nodes have no own ink; inline content and fixed nodes aren't walked.
 
 `NodeLayout` also carries resolved `border`, `padding` and `scroll_max` (Taffy's scrollable
 overflow), used for clipping, scrollbars and event data.
@@ -364,6 +376,12 @@ CSS painting order: `PushTransform` if the element has a transform (see [Transfo
 `Quad` (or `Border`/`BorderImage` when the border needs them), inset shadows, text shadows then text (a text field draws its [editor content](#text-fields) here), then the children, scrollbars and `PopLayer`/`PopClip`/`PopTransform`.
 `collect` skips `position: fixed` children and paints only the children of a `display: contents`
 node. `draw_list` paints the fixed nodes after the root (see below).
+
+**Culling.** `collect` and `collect_children` take `cull: Option<Rect>`, the area the clips around the
+node leave visible (layout space). `collect` returns early when the node's `ink` doesn't come within
+`CULL_MARGIN` (64 px, for glyph overhangs) of it, so a long scroller only emits what shows. Children get
+`cull` intersected with the node's overflow clip rect, or `None` below a transformed node (another
+space). `draw_list` (root and fixed nodes) and the drag image pass `None` (`M2-DRW-09`).
 
 ### Backgrounds, borders and blending
 

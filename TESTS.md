@@ -105,6 +105,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-LAY-04 | Unit | Layout only recomputes when something is dirty: a second `compute` with no changes does no work. |
 | M2-LAY-05 | Unit | The same fixtures pass through the `LayoutEngine` trait, so a Yoga backend can run them later. |
 | M2-LAY-06 | Integration | A React render error unmounts the UI (with absolutely positioned boxes in it) and the tree still lays out: removing a node takes it off its containing block's out-of-flow list, so no cached layout visits it. |
+| M2-LAY-07 | Integration | Appending a child to a long column measures only the new text: the cost doesn't grow with the column's length, alone or inside a row flex item sized from its content. |
 
 ### Drawing
 | ID | Kind | Checks |
@@ -117,6 +118,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-06 | Golden | Outer and inset box shadows with blur and spread, including on rounded boxes. |
 | M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
 | M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
+| M2-DRW-09 | Integration | Drawing skips subtrees scrolled out of a clipping container (beyond a margin), also below intermediate boxes; scrolling brings them back; a far-off box with a shadow is still drawn. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

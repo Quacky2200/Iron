@@ -133,7 +133,7 @@ Run it with `cargo bench -p iron_scene --bench reload`.
 | `M1-RND` | Headless GPU, clear, 0x0 resize | `iron_render/tests/headless.rs`, `tests/golden/M1-RND-02.png` |
 | `M1-SCR`, `M1-CMP` | Script runtime, components | `iron_script/src/conformance.rs`, `iron_script/tests`, `js/engine/test` |
 | `M2-REC` | React reconciler ops | `js/react/test/reconciler.test.tsx` |
-| `M2-UI`, `M2-STY`, `M2-VIS`, `M2-LAY` | Tree, styles, visuals, layout | `iron_ui/tests/{tree,layout_fixtures}.rs`, unit tests in `style.rs`/`paint.rs`/`calc.rs` |
+| `M2-UI`, `M2-STY`, `M2-VIS`, `M2-LAY` | Tree, styles, visuals, layout | `iron_ui/tests/{tree,layout_fixtures,layout_cache}.rs` (`M2-LAY-07`: size-query cache, text measure counts), `scroll.rs` (`M2-DRW-09`: draw culling), unit tests in `style.rs`/`paint.rs`/`calc.rs` |
 | `M2-DRW` | Renderer | `iron_render/tests/ui.rs` + `tests/golden/M2-DRW-*` |
 | `M2-INT`, `M2-SCR` | React in QuickJS driving the tree | `iron_ui/tests/react_quickjs.rs` |
 | `M3-TXT`, `M3-FNT` | Text and fonts; right-to-left `direction`/`dir` (`M3-TXT-09`) | `iron_ui/tests/text.rs`, `iron_ui/tests/direction.rs` (plus rtl cases in `editor.rs`), `text_props.rs` (`M3-TXT-10..15`), `ui.rs` goldens `M3-TXT-*` |
