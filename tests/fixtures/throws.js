@@ -819,7 +819,28 @@
       return len > 0 ? new Quaternion(this.x / len, this.y / len, this.z / len, this.w / len) : Quaternion.identity;
     }
     slerp(q, t) {
-      const k = Mathf.clamp01(t);
+      return this.slerpBy(q, Mathf.clamp01(t));
+    }
+    static slerp(a, b, t) {
+      return Quaternion.from(a).slerpBy(b, Mathf.clamp01(t));
+    }
+    static slerpUnclamped(a, b, t) {
+      return Quaternion.from(a).slerpBy(b, t);
+    }
+    static lerp(a, b, t) {
+      return Quaternion.lerpUnclamped(a, b, Mathf.clamp01(t));
+    }
+    static lerpUnclamped(a, b, t) {
+      const s = Quaternion.dot(a, b) < 0 ? -1 : 1;
+      return new Quaternion(a.x + (s * b.x - a.x) * t, a.y + (s * b.y - a.y) * t, a.z + (s * b.z - a.z) * t, a.w + (s * b.w - a.w) * t).normalized;
+    }
+    static rotateTowards(from, to, maxDegrees) {
+      return Quaternion.from(from).rotateTowards(to, maxDegrees);
+    }
+    static dot(a, b) {
+      return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    }
+    slerpBy(q, k) {
       let { x, y, z, w } = q;
       let cos = this.x * x + this.y * y + this.z * z + this.w * w;
       if (cos < 0) {
