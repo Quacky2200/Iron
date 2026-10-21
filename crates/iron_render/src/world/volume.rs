@@ -29,7 +29,7 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const BLEND: f32 = 0.1;
 /// Where in its cell each frame samples: a Halton (2, 3, 5) sequence, so any run of frames
 /// spreads its samples evenly over the cell. Frame 0 takes the middle.
-const JITTER: usize = 16;
+const JITTER: usize = 64;
 
 fn halton(mut i: usize, base: usize) -> f32 {
     let (mut f, mut r) = (1.0, 0.0);

@@ -628,6 +628,9 @@ pub struct VolumetricFog {
     pub sharp_samples: u32,
     /// The volume's detail: 0 low, 1 medium, 2 high, 3 ultra (see `volume::SIZES`).
     pub detail: u8,
+    /// Filters the volume over a cell's width as it's added up (four reads for one), so
+    /// fine patterns (blinds, grates) leave no grain; off saves the reads.
+    pub smoothing: bool,
 }
 
 impl Default for VolumetricFog {
@@ -641,6 +644,7 @@ impl Default for VolumetricFog {
             sharp_distance: 0.0,
             sharp_samples: 32,
             detail: 2,
+            smoothing: true,
         }
     }
 }
@@ -933,7 +937,7 @@ impl GpuGlobals {
             self.fog_sharp = [
                 v.sharp_distance.max(0.0),
                 v.sharp_samples.clamp(4, 128) as f32,
-                0.0,
+                f32::from(u8::from(v.smoothing)),
                 0.0,
             ];
         }

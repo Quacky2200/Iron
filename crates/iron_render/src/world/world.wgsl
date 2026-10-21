@@ -40,7 +40,7 @@ struct Globals {
     // rgb: how much of each colour of light the fog scatters into shafts.
     fog_albedo: vec4<f32>,
     // God rays: x how far from the camera the sun's shafts are worked out per pixel (0: off),
-    // y samples.
+    // y samples; z: 1 to smooth the light volume (`lit_at`).
     fog_sharp: vec4<f32>,
     // x: how many fog volumes `local_fogs` holds.
     fog_local: vec4<f32>,
@@ -527,6 +527,19 @@ fn cell_point(f: vec3<f32>) -> CellPoint {
     return CellPoint(eye + dir * slice_distance(f.z), dir);
 }
 
+// Three numbers in 0..1 that look random, from a volume cell's coordinates (PCG-style).
+fn cell_hash(id: vec3<u32>) -> vec3<f32> {
+    var v = id * vec3<u32>(1664525u, 1013904223u, 2654435769u) + vec3<u32>(1013904223u, 1664525u, 22695477u);
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> vec3<u32>(16u);
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return vec3<f32>(v) / 4294967296.0;
+}
+
 // Where `x` was in last frame's volume (0..1 on each axis; outside: it wasn't).
 fn last_cell(x: vec3<f32>) -> vec3<f32> {
     let c = frame.prev_view_proj * vec4<f32>(x, 1.0);
@@ -552,9 +565,15 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let cell = vec3<f32>(id);
     let n = vec3<f32>(size);
-    let at = cell_point((cell + frame.jitter.xyz) / n);
-    var light = scattered_all(at.x, at.dir);
     let blend = frame.jitter.w;
+    // Each cell's samples are the frame's offset shifted by a hash of the cell (a
+    // Cranley-Patterson rotation): with every cell sampling alike, a regular pattern (a
+    // blind's slats, a grate) left the same error in neighbouring cells, which lined up into
+    // moire bands; shifted, it's grain the blending smooths. The first frame (no history)
+    // samples each cell's middle.
+    let shift = select(vec3<f32>(0.0), cell_hash(id), blend < 1.0);
+    let at = cell_point((cell + fract(frame.jitter.xyz + shift)) / n);
+    var light = scattered_all(at.x, at.dir);
     if (blend < 1.0) {
         let was = last_cell(cell_point((cell + 0.5) / n).x);
         if (all(was >= vec3<f32>(0.0)) && all(was <= vec3<f32>(1.0))) {
@@ -563,6 +582,22 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
     textureStore(light_out, vec3<i32>(id), vec4<f32>(light, 1.0));
+}
+
+// The lit cells at `uv` (screen) and `w` (depth), filtered over a cell's width across the
+// screen (four taps half a cell out, as HDRP filters its volume): each cell's own sampling
+// leaves a little grain, which this smooths without visibly softening the beams.
+fn lit_at(uv: vec2<f32>, w: f32) -> vec3<f32> {
+    // Smoothing off (`fog_sharp.z`): one read.
+    if (g.fog_sharp.z < 0.5) {
+        return textureSampleLevel(light_in, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+    }
+    let h = 0.5 / vec2<f32>(textureDimensions(light_in).xy);
+    var sum = textureSampleLevel(light_in, volume_samp, vec3<f32>(uv + vec2<f32>(-h.x, -h.y), w), 0.0).rgb;
+    sum += textureSampleLevel(light_in, volume_samp, vec3<f32>(uv + vec2<f32>(h.x, -h.y), w), 0.0).rgb;
+    sum += textureSampleLevel(light_in, volume_samp, vec3<f32>(uv + vec2<f32>(-h.x, h.y), w), 0.0).rgb;
+    sum += textureSampleLevel(light_in, volume_samp, vec3<f32>(uv + vec2<f32>(h.x, h.y), w), 0.0).rgb;
+    return sum * 0.25;
 }
 
 // Fills one column of the volume: the view ray through this screen cell, its fog's share
@@ -591,7 +626,7 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
             let at = eye + dir * (t + step);
             let next = fog_clear(at, true) * local_clear(eye, at);
             let w = sqrt((t + 0.5 * step) / g.fog_volume.w);
-            let lit = textureSampleLevel(light_in, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+            let lit = lit_at(uv, w);
             sum += (clear - next) * lit;
             clear = next;
             t += step;
