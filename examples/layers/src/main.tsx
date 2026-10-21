@@ -51,7 +51,7 @@ class Walker extends Component {
   }
 }
 
-class Scene extends Component {
+class LayersDemo extends Component {
   override onStart() {
     RenderSettings.skybox = { sunDirection: new Vector3(-0.4, 0.7, 0.3) };
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(new Vector3(0.4, -0.7, -0.3)) });
@@ -116,7 +116,7 @@ class Scene extends Component {
   }
 }
 
-register({ Scene });
+register({ LayersDemo });
 
 function Toggle(props: { layer: string }) {
   const [, setTick] = useState(0);

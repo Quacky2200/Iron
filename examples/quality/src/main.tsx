@@ -44,7 +44,7 @@ function box(name: string, at: Vector3, size: Vector3, material: Material, rotat
   return go;
 }
 
-class Scene extends Component {
+class QualityDemo extends Component {
   override onStart() {
     const cam = new GameObject("Main Camera", { position: new Vector3(0, 1.7, 6.2), rotation: Quaternion.euler(-10, 0, 0) });
     cam.addComponent(Camera, { fieldOfView: 50, clearFlags: "skybox" });
@@ -97,7 +97,7 @@ class Scene extends Component {
   }
 }
 
-register({ Scene });
+register({ QualityDemo });
 
 /** Re-renders when the level changes (or when asked to, after a single setting). */
 function useQuality() {
