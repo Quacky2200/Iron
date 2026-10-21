@@ -1,6 +1,5 @@
 // Sparks, dust, speed lines and confetti: a pool of short LineRenderer2D capsules.
 // A particle's length and width are set when it's emitted; after that it only moves and fades.
-import { Color, GameObject, LineRenderer2D, Vector2, Vector3 } from "@iron/engine";
 
 interface Particle {
   go: GameObject;
@@ -12,7 +11,7 @@ interface Particle {
   vy: number;
   age: number;
   life: number;
-  color: [number, number, number, number];
+  color: number[];
   gravity: number;
   drag: number;
 }
@@ -23,7 +22,7 @@ export interface Emit {
   vx: number;
   vy: number;
   life: number;
-  color: [number, number, number, number];
+  color: number[];
   /** Capsule length; near 0 makes a round dot. */
   len?: number;
   width?: number;
@@ -37,7 +36,7 @@ export interface Emit {
 
 export class Fx {
   private pool: Particle[] = [];
-  private next = 0;
+  private next: number = 0;
 
   constructor(count: number) {
     for (let i = 0; i < count; i++) {
@@ -64,7 +63,7 @@ export class Fx {
     p.drag = e.drag ?? 0;
     p.line.points = [new Vector2(-(e.len ?? 0.2), 0), Vector2.zero];
     p.line.width = e.width ?? 0.05;
-    p.line.color = new Color(...e.color);
+    p.line.color = new Color(e.color[0]!, e.color[1]!, e.color[2]!, e.color[3]!);
     const heading = e.vx === 0 && e.vy === 0 ? (e.angle ?? 0) : (Math.atan2(e.vy, e.vx) * 180) / Math.PI;
     p.go.transform.localEulerAngles = new Vector3(0, 0, heading);
     p.go.transform.position = new Vector3(p.x, p.y, 0.3);
@@ -87,8 +86,7 @@ export class Fx {
       p.y += p.vy * dt;
       p.go.transform.position = new Vector3(p.x, p.y, 0.3);
       if (p.gravity !== 0) p.go.transform.localEulerAngles = new Vector3(0, 0, (Math.atan2(p.vy, p.vx) * 180) / Math.PI);
-      const [r, g, b, a] = p.color;
-      p.line.color = new Color(r, g, b, a * (1 - p.age / p.life));
+      p.line.color = new Color(p.color[0]!, p.color[1]!, p.color[2]!, p.color[3]! * (1 - p.age / p.life));
     }
   }
 }

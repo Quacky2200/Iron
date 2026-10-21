@@ -8,7 +8,14 @@
 // ever looks flattened. Rotation is "lean forward": the director flips it to the way the
 // emoji is heading.
 import type { Effects } from "./effects.tsx";
+import type { RocketState } from "./hud.tsx";
 import type { Sfx } from "./sfx.ts";
+
+/** A particle effect an act asks for: `sparks`, `dust`, `streaks` or `fire`, this many a second. */
+export interface FxMove {
+  kind: string;
+  rate: number;
+}
 
 export interface Move {
   /** Progress along the way in from the edge (0) to the centre (1); above 1 it carries on out the far side. Ignored when `x` is set. */
@@ -41,13 +48,21 @@ export interface Move {
   /** True for a moment as it appears in a burst of confetti. */
   puff: boolean;
   /** The rocket's own animation: how far it has turned upright (0..1), its flame (0..1), how hard it burns (0..1) and its sparkles (0..1). */
-  rocket?: { turn: number; flame: number; power: number; stars: number };
+  rocket?: RocketState;
   /** Dust per second kicked up at the floor under it. */
   ground?: number;
-  fx?: { kind: "sparks" | "dust" | "streaks" | "fire"; rate: number };
+  fx?: FxMove;
 }
 
-export const still = (): Move => ({ d: 1, y: 0, sx: 1, sy: 1, rot: 0, spin: 1, centre: 0, alpha: 1, thump: 0, puff: false });
+export function still(): Move {
+  return { d: 1, y: 0, sx: 1, sy: 1, rot: 0, spin: 1, centre: 0, alpha: 1, thump: 0, puff: false };
+}
+
+/** A point on the stage. */
+export interface Pt {
+  x: number;
+  y: number;
+}
 
 /** What cues can ask of the show. */
 export interface Ctx {
@@ -61,7 +76,7 @@ export interface Ctx {
   /** A knock: the emoji jolts and settles. */
   jolt(amount: number): void;
   /** Where the emoji is: x, and y at its middle. */
-  at(): { x: number; y: number };
+  at(): Pt;
   scene: Effects;
 }
 
@@ -90,28 +105,28 @@ export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const envelope = (u: number, edge = 0.15) => smooth(u / edge) * (1 - smooth((u - (1 - edge)) / edge));
 
 /** Keyframes [time, value], eased with a cosine between each pair. */
-export function keys(t: number, frames: [number, number][]): number {
+export function keys(t: number, frames: number[][]): number {
   const first = frames[0]!;
-  if (t <= first[0]) return first[1];
+  if (t <= first[0]!) return first[1]!;
   for (let i = 1; i < frames.length; i++) {
-    const [t1, v1] = frames[i]!;
-    const [t0, v0] = frames[i - 1]!;
-    if (t <= t1) return lerp(v0, v1, smooth((t - t0) / (t1 - t0)));
+    const f1 = frames[i]!;
+    const f0 = frames[i - 1]!;
+    if (t <= f1[0]!) return lerp(f0[1]!, f1[1]!, smooth((t - f0[0]!) / (f1[0]! - f0[0]!)));
   }
-  return frames[frames.length - 1]![1];
+  return frames[frames.length - 1]![1]!;
 }
 
 /** Keyframes joined by straight lines (for steady running). */
-export function line(t: number, frames: [number, number][]): number {
+export function line(t: number, frames: number[][]): number {
   const first = frames[0]!;
-  if (t <= first[0]) return first[1];
+  if (t <= first[0]!) return first[1]!;
   for (let i = 1; i < frames.length; i++) {
-    const [t1, v1] = frames[i]!;
-    const [t0, v0] = frames[i - 1]!;
-    if (t <= t1) return lerp(v0, v1, (t - t0) / (t1 - t0));
+    const f1 = frames[i]!;
+    const f0 = frames[i - 1]!;
+    if (t <= f1[0]!) return lerp(f0[1]!, f1[1]!, (t - f0[0]!) / (f1[0]! - f0[0]!));
   }
-  return frames[frames.length - 1]![1];
+  return frames[frames.length - 1]![1]!;
 }
 
 /** An act played backwards, for leaving the way it came (its cues don't replay). */
-export const rewind = (a: Act): Act => ({ name: `${a.name} (back)`, dur: a.dur, at: (t) => a.at(Math.max(0, a.dur - t)), weight: a.weight, land: a.land });
+export const rewind = (a: Act): Act => ({ name: `${a.name} (back)`, dur: a.dur, at: (t: number) => a.at(Math.max(0, a.dur - t)), weight: a.weight, land: a.land });

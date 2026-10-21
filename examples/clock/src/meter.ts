@@ -3,9 +3,8 @@
 // round all the time, as on a water meter. Digits fade as they turn away from the front, and
 // they're brighter than white, so they glow through bloom. Each drum rests a couple of degrees
 // off true. Seen through a perspective camera.
-import { type Camera, Color, type DateTime, GameObject, Quaternion, RenderSettings, type TextMesh, Vector3 } from "@iron/engine";
 
-import { type Face, label, obj, perspective, two, under } from "./common.ts";
+import { Face, label, obj, perspective, two, under } from "./common.ts";
 
 const R = 1.15;
 const WIDTH = 0.9;
@@ -24,10 +23,10 @@ class Drum {
   private digits: TextMesh[] = [];
   /** Each digit's last fade, so only changes are sent. */
   private fades: number[] = [];
-  private shown = Number.NaN;
+  private shown: number = Number.NaN;
   private from = 0;
   private to = 0;
-  private at = -Infinity;
+  private at: number = -Infinity;
 
   constructor(
     name: string,
@@ -83,14 +82,15 @@ class Drum {
   }
 }
 
-export class MeterFace implements Face {
+export class MeterFace extends Face {
   readonly name = "Meter";
-  readonly root = new GameObject("Meter face");
+  readonly root: GameObject = new GameObject("Meter face");
   private drums: Drum[] = [];
   private restore: (() => void) | null = null;
   private background: Color | null = null;
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 
@@ -107,14 +107,14 @@ export class MeterFace implements Face {
     }
   }
 
-  show(camera: Camera): void {
+  override show(camera: Camera): void {
     this.restore = perspective(camera);
     this.background = camera.backgroundColor;
     camera.backgroundColor = BLACK;
     RenderSettings.bloom = { threshold: 1.0, intensity: 1.1, scatter: 0.7 };
   }
 
-  hide(camera: Camera): void {
+  override hide(camera: Camera): void {
     this.restore?.();
     this.restore = null;
     if (this.background) camera.backgroundColor = this.background;
@@ -129,11 +129,11 @@ export class MeterFace implements Face {
     const hh = two(carry.hour);
     const mm = two(carry.minute);
     const ss = two(carry.second);
-    this.drums[0]!.set(Number(hh[0]), t);
-    this.drums[1]!.set(Number(hh[1]), t);
-    this.drums[2]!.set(Number(mm[0]), t);
-    this.drums[3]!.set(Number(mm[1]), t);
-    this.drums[4]!.set(Number(ss[0]), t);
+    this.drums[0]!.set(Number(hh.charAt(0)), t);
+    this.drums[1]!.set(Number(hh.charAt(1)), t);
+    this.drums[2]!.set(Number(mm.charAt(0)), t);
+    this.drums[3]!.set(Number(mm.charAt(1)), t);
+    this.drums[4]!.set(Number(ss.charAt(0)), t);
     // The last drum creeps round all the time, like a water meter's.
     this.drums[5]!.set((now.second % 10) + now.millisecond / 1000, t, true);
   }

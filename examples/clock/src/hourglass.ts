@@ -4,9 +4,8 @@
 // through the neck with grains in it (they speed up as they fall, then roll off the mound;
 // a few slide down the top's funnel into the neck), and the whole timer turns over with an
 // ease. Turning a full bottom over gives a full top, so the swap is seamless.
-import { Color, type DateTime, GameObject, type LineRenderer2D, Quaternion, Shapes, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { DIM, easeInOutCubic, type Face, INK, label, obj, shape, two, under } from "./common.ts";
+import { DIM, easeInOutCubic, Face, INK, label, obj, shape, two, under } from "./common.ts";
 
 /** Half the glass's height (centre to rim). */
 const H = 2.9;
@@ -58,9 +57,9 @@ function sandBetween(bottom: number, top: number, dip: number, mound: number): V
   return [...right, ...surface, ...left];
 }
 
-export class HourglassFace implements Face {
+export class HourglassFace extends Face {
   readonly name = "Sand timer";
-  readonly root = new GameObject("Sand timer face");
+  readonly root: GameObject = new GameObject("Sand timer face");
   private timer!: GameObject;
   private topSand!: LineRenderer2D;
   private bottomSand!: LineRenderer2D;
@@ -72,10 +71,11 @@ export class HourglassFace implements Face {
   private time!: TextMesh;
   private left!: TextMesh;
   private lastMinute = -1;
-  private flipAt = -Infinity;
+  private flipAt: number = -Infinity;
   private shown = "";
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 

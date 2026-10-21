@@ -1,9 +1,7 @@
 // Sprite particles and props: a pool of small world panels, each showing one Noto emoji, that
 // the effects and signature acts fly around (hearts, tears, bubbles, notes, snowflakes, a swung
 // pickaxe, a banana...). Unlike the line particles in fx.ts they have shapes and can be props.
-import { Color, GameObject, Vector3, WorldPanel } from "@iron/engine";
-import { createRoot, Image } from "@iron/react";
-import { store } from "./hud.tsx";
+import { Store } from "./hud.tsx";
 
 export interface SpriteOpts {
   /** The Noto file (codepoint) to show. */
@@ -20,8 +18,9 @@ export interface SpriteOpts {
   rot?: number;
   /** Degrees per second. */
   spin?: number;
-  /** Size in world units, or from the first to the second over its life. */
-  scale?: number | [number, number];
+  /** Size in world units (`scaleTo`: grows or shrinks to that over its life). */
+  scale?: number;
+  scaleTo?: number;
   life?: number;
   fadeIn?: number;
   fadeOut?: number;
@@ -30,13 +29,24 @@ export interface SpriteOpts {
   /** Depth: in front of the emoji by default; negative goes behind it. */
   z?: number;
   /** Takes over the motion: where it is at `t` seconds, or null when it's done. */
-  anim?: (t: number) => { x: number; y: number; rot?: number; scale?: number; alpha?: number; sx?: number; sy?: number } | null;
+  anim?: (t: number) => SpriteAt | null;
+}
+
+/** Where a sprite is when `anim` takes over its motion. */
+export interface SpriteAt {
+  x: number;
+  y: number;
+  rot?: number;
+  scale?: number;
+  alpha?: number;
+  sx?: number;
+  sy?: number;
 }
 
 interface Slot {
   go: GameObject;
   panel: WorldPanel;
-  code: ReturnType<typeof store<string>>;
+  code: Store<string>;
   on: boolean;
   o: SpriteOpts;
   t: number;
@@ -48,18 +58,22 @@ interface Slot {
   seed: number;
 }
 
+function SpritePic(props: { code: Store<string> }) {
+  const code = props.code.use();
+  return <Image src={`assets/emoji/${code}.svg`} style={{ width: 128, height: 128 }} />;
+}
+
 export class Sprites {
   private slots: Slot[] = [];
   private next = 0;
 
-  constructor(count = 48) {
+  constructor(count: number = 48) {
     for (let i = 0; i < count; i++) {
       const go = new GameObject(`Sprite ${i}`, { position: new Vector3(99, 0, 0.5) });
       go.enabled = false;
       const panel = go.addComponent(WorldPanel, { width: 128, height: 128, pixelsPerMeter: 128, resolution: 1, interactive: false });
-      const code = store<string>("2728");
-      const Pic = () => <Image src={`assets/emoji/${code.use()}.svg`} style={{ width: 128, height: 128 }} />;
-      createRoot(panel).render(<Pic />);
+      const code = new Store<string>("2728");
+      createRoot(panel).render(<SpritePic code={code} />);
       this.slots.push({ go, panel, code, on: false, o: { code: "2728", x: 0, y: 0 }, t: 0, x: 0, y: 0, vx: 0, vy: 0, alpha: -1, seed: 0 });
     }
   }
@@ -87,7 +101,11 @@ export class Sprites {
     let x = s.x;
     let y = s.y;
     let rot = (o.rot ?? 0) + (o.spin ?? 0) * s.t;
-    let size = typeof o.scale === "number" ? o.scale : o.scale ? o.scale[0] + (o.scale[1] - o.scale[0]) * Math.min(1, s.t / (o.life ?? 1)) : 1;
+    let size = 1;
+    if (o.scale !== undefined) {
+      size = o.scale;
+      if (o.scaleTo !== undefined) size = o.scale + (o.scaleTo - o.scale) * Math.min(1, s.t / (o.life ?? 1));
+    }
     let alpha = 1;
     let sxm = 1;
     let sym = 1;

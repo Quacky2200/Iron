@@ -2,9 +2,8 @@
 // seconds hand) hung in front of an ornament: two spirograph rosettes turning slowly against
 // each other, curling gold arms ending in flickering candle flames, and crystal drops swinging
 // on their chains. The gold and the flames are brighter than white, so they glow.
-import { Color, type Camera, type DateTime, GameObject, type LineRenderer2D, Quaternion, RenderSettings, Shapes, Spline, Vector2, Vector3 } from "@iron/engine";
 
-import { easeOutBack, type Face, label, mix, obj, shape, under } from "./common.ts";
+import { easeOutBack, Face, label, mix, obj, shape, under } from "./common.ts";
 
 const CENTRE = new Vector3(0, 0.2, 0);
 const GOLD = new Color(1.15, 0.82, 0.33, 1);
@@ -51,9 +50,9 @@ function hand(length: number, width: number): Vector2[] {
   return s.sample(8).map((p) => new Vector2(p.x, p.y));
 }
 
-export class ChandelierFace implements Face {
+export class ChandelierFace extends Face {
   readonly name = "Chandelier";
-  readonly root = new GameObject("Chandelier face");
+  readonly root: GameObject = new GameObject("Chandelier face");
   private rosettes: GameObject[] = [];
   private flames: { line: LineRenderer2D; phase: number }[] = [];
   private drops: { pivot: GameObject; phase: number; speed: number }[] = [];
@@ -65,6 +64,7 @@ export class ChandelierFace implements Face {
   private background: Color | null = null;
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 
@@ -125,13 +125,13 @@ export class ChandelierFace implements Face {
     shape("hub", { points: Shapes.circle(Vector2.zero, 0.07, 16), loop: true, width: 0.02, color: GOLD, fillColor: GOLD, sortingOrder: 15 }, CENTRE);
   }
 
-  show(camera: Camera): void {
+  override show(camera: Camera): void {
     this.background = camera.backgroundColor;
     camera.backgroundColor = NAVY;
     RenderSettings.bloom = { threshold: 1.0, intensity: 0.8, scatter: 0.7 };
   }
 
-  hide(camera: Camera): void {
+  override hide(camera: Camera): void {
     if (this.background) camera.backgroundColor = this.background;
     RenderSettings.bloom = null;
   }

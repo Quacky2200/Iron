@@ -8,25 +8,6 @@
 // and flee the pointer. Click to feed (the nearest fish race for the food and grow),
 // right-click adds a fish, Space taps the glass. The readout fades in only while the mouse
 // moves. V toggles vsync.
-import {
-  addStyleSheet,
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  input,
-  LineRenderer2D,
-  QualitySettings,
-  Quaternion,
-  register,
-  RenderSettings,
-  Shapes,
-  Spline,
-  Vector2,
-  Vector3,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 // ---- The water ----
 
@@ -57,13 +38,30 @@ const unfogged = (c: Color) => {
   return new Color(back(c.r, HAZE.r), back(c.g, HAZE.g), back(c.b, HAZE.b), c.a);
 };
 
-function shape(name: string, look: Partial<LineRenderer2D>, at = Vector3.zero, parent?: GameObject): LineRenderer2D {
-  const go = new GameObject(name, parent ? { position: at, parent } : { position: at });
-  return go.addComponent(LineRenderer2D, { width: 0.04, color: Color.white, ...look });
+/** What a shape is drawn with. */
+interface Look {
+  points?: Vector2[];
+  loop?: boolean;
+  width?: number;
+  color?: Color;
+  fillColor?: Color;
+  sortingOrder?: number;
+}
+
+function shape(name: string, look: Look, at: Vector3 = Vector3.zero, parent?: GameObject): LineRenderer2D {
+  const go = parent !== undefined ? new GameObject(name, { position: at, parent: parent }) : new GameObject(name, { position: at });
+  const r = go.addComponent(LineRenderer2D);
+  r.width = look.width !== undefined ? look.width : 0.04;
+  r.color = look.color !== undefined ? look.color : Color.white;
+  if (look.points !== undefined) r.points = look.points;
+  if (look.loop !== undefined) r.loop = look.loop;
+  if (look.fillColor !== undefined) r.fillColor = look.fillColor;
+  if (look.sortingOrder !== undefined) r.sortingOrder = look.sortingOrder;
+  return r;
 }
 
 /** A shape lying flat on the floor (its XY plane turned to face up). */
-function flat(name: string, look: Partial<LineRenderer2D>, at: Vector3, parent: GameObject): LineRenderer2D {
+function flat(name: string, look: Look, at: Vector3, parent: GameObject): LineRenderer2D {
   const line = shape(name, look, at, parent);
   line.transform.rotation = Quaternion.euler(-90, 0, 0);
   return line;
@@ -99,14 +97,17 @@ function body(length: number): Vector2[] {
     ],
     { closed: true },
   );
-  return s.sample(8).map((p) => new Vector2(p.x, p.y));
+  const out: Vector2[] = [];
+  const samples = s.sample(8);
+  for (let i = 0; i < samples.length; i++) out.push(new Vector2(samples[i]!.x, samples[i]!.y));
+  return out;
 }
 
 class Fish {
   readonly go: GameObject;
   private readonly tail: GameObject;
   private parts: LineRenderer2D[] = [];
-  private shownOrder = NaN;
+  private shownOrder: number = NaN;
   pos: Vector3;
   vel: Vector3;
   grown = 1;
@@ -124,7 +125,7 @@ class Fish {
     this.vel = new Vector3(Math.cos(a), Math.sin(a) * 0.2, (Math.random() - 0.5) * 0.3).scale(kind.speed * 0.5);
     this.go = new GameObject(kind.name, { position: at, parent: tank });
     const edge = mix(kind.body, Color.black, 0.35);
-    const part = (name: string, look: Partial<LineRenderer2D>, parent: GameObject) => {
+    const part = (name: string, look: Look, parent: GameObject) => {
       this.parts.push(shape(name, look, Vector3.zero, parent));
     };
     this.tail = new GameObject("tail", { position: new Vector3(-0.38 * kind.length, 0, 0), parent: this.go });
@@ -237,9 +238,7 @@ class Fish {
     const order = Math.round(this.pos.z * 10) * 10;
     if (order !== this.shownOrder) {
       this.shownOrder = order;
-      this.parts.forEach((p, i) => {
-        p.sortingOrder = order + i;
-      });
+      for (let i = 0; i < this.parts.length; i++) this.parts[i]!.sortingOrder = order + i;
     }
   }
 }
@@ -257,19 +256,53 @@ interface Pellet {
   drift: number;
 }
 
+/** What the flock knows about itself this frame. */
+class Flock {
+  cells: Map<number, number[]> = new Map<number, number[]>();
+  data: Float64Array = new Float64Array(0);
+  kinds: Species[] = [];
+}
+
+interface Plant {
+  line: LineRenderer2D;
+  base: Vector3;
+  height: number;
+  phase: number;
+}
+
+interface Caustic {
+  line: LineRenderer2D;
+  centre: Vector2;
+  size: number;
+  phase: number;
+}
+
+interface Speck {
+  go: GameObject;
+  pos: Vector3;
+  phase: number;
+}
+
+interface Bubble {
+  go: GameObject;
+  pos: Vector3;
+  speed: number;
+  phase: number;
+}
+
 class Tank extends Component {
   fish: Fish[] = [];
   /** This frame's fish, by grid cell: positions, velocities and sizes (7 numbers each). */
-  flock = { cells: new Map<number, number[]>(), data: new Float64Array(0), kinds: [] as Species[] };
+  flock: Flock = new Flock();
   private food: Pellet[] = [];
   private camera!: Camera;
-  private plants: { line: LineRenderer2D; base: Vector3; height: number; phase: number }[] = [];
-  private caustics: { line: LineRenderer2D; centre: Vector2; size: number; phase: number }[] = [];
-  private snow: { go: GameObject; pos: Vector3; phase: number }[] = [];
-  private bubbles: { go: GameObject; pos: Vector3; speed: number; phase: number }[] = [];
+  private plants: Plant[] = [];
+  private caustics: Caustic[] = [];
+  private snow: Speck[] = [];
+  private bubbles: Bubble[] = [];
   private shafts: GameObject[] = [];
-  private tapAt = -Infinity;
-  private tapFrom = Vector3.zero;
+  private tapAt: number = -Infinity;
+  private tapFrom: Vector3 = new Vector3(0, 0, 0);
   private mouse: Vector3 | null = null;
   private lastMouse = new Vector2(-1, -1);
   private t = 0;
@@ -298,15 +331,19 @@ class Tank extends Component {
     }
     // Distant rock silhouettes, then nearer rocks.
     const rock = Color.hex("#3d4a52");
-    const rocks: [number, number, number, number][] = [
+    const rocks: number[][] = [
       [-12, -8.5, 3.2, 2.6], [-5, -8.5, 2.2, 1.6], [3, -8.5, 3.6, 2.2], [11, -8.5, 2.8, 3.0],
       [-7, -4.5, 1.6, 1.0], [5.5, -4.5, 1.9, 1.3], [-2.5, -2.5, 0.9, 0.6],
       [7.2, 1.2, 1.2, 0.8], [-6.8, 1.6, 1.0, 0.65],
     ];
-    rocks.forEach(([x, z, w, h], i) => {
+    for (let i = 0; i < rocks.length; i++) {
+      const x = rocks[i]![0]!;
+      const z = rocks[i]![1]!;
+      const w = rocks[i]![2]!;
+      const h = rocks[i]![3]!;
       const c = mix(rock, Color.hex("#6c7780"), (i % 3) / 3);
       shape(`rock ${i}`, { points: Shapes.ellipse(Vector2.zero, w, h, 24), loop: true, width: 0, fillColor: c, sortingOrder: Math.round(z * 100) }, new Vector3(x, FLOOR + h * 0.4, z), root);
-    });
+    }
     // The floor: strips of sand from the front to the back.
     for (let z = NEAR + 3; z > -11; z -= 1) {
       flat(`sand ${z}`, { points: Shapes.rectangle(-30, -0.5, 60, 1.04), loop: true, width: 0, fillColor: SAND, sortingOrder: -900 }, new Vector3(0, FLOOR, z), root);
@@ -329,7 +366,9 @@ class Tank extends Component {
       this.shafts.push(go);
     }
     // Kelp at several depths.
-    const greens = ["#2f8a4e", "#45a35c", "#277042", "#5bbf6f", "#3a9b7a"].map((h) => Color.hex(h));
+    const greens: Color[] = [];
+    const greenHex = ["#2f8a4e", "#45a35c", "#277042", "#5bbf6f", "#3a9b7a"];
+    for (let i = 0; i < greenHex.length; i++) greens.push(Color.hex(greenHex[i]!));
     for (let i = 0; i < 18; i++) {
       const z = [-6.5, -4, -1.5, 1.5][i % 4]!;
       const x = -11 + ((i * 5.3) % 22);
@@ -355,10 +394,11 @@ class Tank extends Component {
       this.bubbles.push({ go, pos: new Vector3(stone.x, FLOOR + (i / 24) * 9, stone.z), speed: 1.1 + (i % 5) * 0.25, phase: i * 0.7 });
     }
 
-    SPECIES.forEach((kind, i) => {
+    for (let i = 0; i < SPECIES.length; i++) {
+      const kind = SPECIES[i]!;
       const n = kind.name === "neon" ? 10 : kind.name === "angelfish" ? 3 : 5;
       for (let j = 0; j < n; j++) this.addFish(kind, new Vector3(-6 + i * 3.5 + Math.random(), -1 + Math.random() * 3, -5 + Math.random() * 6));
-    });
+    }
   }
 
   addFish(kind: Species, at: Vector3): void {
@@ -370,7 +410,8 @@ class Tank extends Component {
     f.cells.clear();
     if (f.data.length < this.fish.length * 7) f.data = new Float64Array(this.fish.length * 14);
     f.kinds.length = this.fish.length;
-    this.fish.forEach((fish, i) => {
+    for (let i = 0; i < this.fish.length; i++) {
+      const fish = this.fish[i]!;
       const b = i * 7;
       f.data[b] = fish.pos.x;
       f.data[b + 1] = fish.pos.y;
@@ -384,7 +425,7 @@ class Tank extends Component {
       const cell = f.cells.get(key);
       if (cell) cell.push(i);
       else f.cells.set(key, [i]);
-    });
+    }
   }
 
   nearestFood(p: Vector3): Pellet | null {
@@ -402,7 +443,9 @@ class Tank extends Component {
 
   eat(p: Pellet): void {
     p.go.destroy();
-    this.food = this.food.filter((f) => f !== p);
+    const kept: Pellet[] = [];
+    for (const f of this.food) if (f !== p) kept.push(f);
+    this.food = kept;
     eaten++;
   }
 
@@ -458,16 +501,25 @@ class Tank extends Component {
     }
 
     this.buildFlock();
-    this.fish.forEach((f, i) => f.step(step, this, i));
+    for (let i = 0; i < this.fish.length; i++) this.fish[i]!.step(step, this, i);
 
     for (const p of this.food) {
       p.age += dt;
       if (p.pos.y > FLOOR + 0.1) p.pos = new Vector3(p.pos.x + Math.sin(this.t * 2 + p.drift) * 0.1 * dt, p.pos.y - 0.32 * dt, p.pos.z);
       p.go.transform.position = p.pos;
     }
-    const stale = this.food.filter((p) => p.age > 25);
-    for (const p of stale) p.go.destroy();
-    if (stale.length) this.food = this.food.filter((p) => p.age <= 25);
+    let anyStale = false;
+    for (const p of this.food) {
+      if (p.age > 25) {
+        p.go.destroy();
+        anyStale = true;
+      }
+    }
+    if (anyStale) {
+      const fresh: Pellet[] = [];
+      for (const p of this.food) if (p.age <= 25) fresh.push(p);
+      this.food = fresh;
+    }
 
     for (const pl of this.plants) {
       const pts: Vector2[] = [];
@@ -497,9 +549,9 @@ class Tank extends Component {
       if (b.pos.y > TOP + 4) b.pos = new Vector3(b.pos.x, FLOOR + 0.2, b.pos.z);
       b.go.transform.position = new Vector3(b.pos.x + Math.sin(this.t * 3 + b.phase) * 0.1, b.pos.y, b.pos.z);
     }
-    this.shafts.forEach((s, i) => {
-      s.transform.position = new Vector3(-8 + i * 4 + Math.sin(this.t * 0.15 + i) * 0.9, 9, -6 + i * 1.2);
-    });
+    for (let i = 0; i < this.shafts.length; i++) {
+      this.shafts[i]!.transform.position = new Vector3(-8 + i * 4 + Math.sin(this.t * 0.15 + i) * 0.9, 9, -6 + i * 1.2);
+    }
     if (Math.floor(this.t * 4) !== Math.floor((this.t - dt) * 4)) notify();
   }
 }

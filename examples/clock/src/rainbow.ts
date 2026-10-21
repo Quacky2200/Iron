@@ -2,9 +2,8 @@
 // ticks run round the hue wheel and light up as the seconds pass, the hands slowly cycle
 // through the colours, confetti orbits the dial, and each character of the time below has a
 // colour of its own.
-import { Color, type DateTime, GameObject, type LineRenderer2D, Quaternion, Shapes, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { type Face, label, obj, shape, two, under } from "./common.ts";
+import { Face, label, obj, shape, two, under } from "./common.ts";
 
 const CENTRE = new Vector3(0, 0.4, 0);
 const BANDS = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#00c7be", "#007aff", "#af52de"].map((h) => Color.hex(h));
@@ -17,9 +16,9 @@ function hue(h: number, s = 0.9, l = 0.6): Color {
   return new Color(f(0), f(8), f(4), 1);
 }
 
-export class RainbowFace implements Face {
+export class RainbowFace extends Face {
   readonly name = "Rainbow";
-  readonly root = new GameObject("Rainbow face");
+  readonly root: GameObject = new GameObject("Rainbow face");
   private bands: LineRenderer2D[] = [];
   private ticks: LineRenderer2D[] = [];
   private tickState: number[] = [];
@@ -31,6 +30,7 @@ export class RainbowFace implements Face {
   private shown = "";
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 
@@ -106,8 +106,8 @@ export class RainbowFace implements Face {
     if (text !== this.shown) {
       this.shown = text;
       this.chars.forEach((c, i) => {
-        c.text = text[i]!;
-        c.color = text[i] === ":" ? Color.hex("#8a8fa3") : hue((i / 8 + t * 0.02) % 1, 0.95, 0.62);
+        c.text = text.charAt(i);
+        c.color = text.charAt(i) === ":" ? Color.hex("#8a8fa3") : hue((i / 8 + t * 0.02) % 1, 0.95, 0.62);
       });
     }
   }

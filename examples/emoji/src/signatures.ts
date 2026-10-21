@@ -4,18 +4,24 @@
 // emoji flying about), line particles, tints and the sounds in assets/sfx.
 import { cracks } from "./hud.tsx";
 import { GROUND, HEIGHT } from "./config.ts";
-import { type Act, clamp01, type Ctx, type Cue, envelope, keys, lerp, type Move, smooth, still } from "./moves.ts";
+import { type Act, clamp01, type Ctx, type Cue, envelope, keys, lerp, type Move, type Pt, smooth, still } from "./moves.ts";
 import { POSES } from "./poses.ts";
+import type { SpriteAt } from "./sprites.tsx";
 import type { Sfx } from "./sfx.ts";
 
 const R = HEIGHT;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+/** A random number in `range`, or between `a` and `b` when it is not given. */
+const rr = (range: number[] | undefined, a: number, b: number): number => (range === undefined ? rnd(a, b) : rnd(range[0]!, range[1]!));
+/** `n` times, `step` apart from `start`. */
+function seq(n: number, start: number, step: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) out.push(start + i * step);
+  return out;
+}
 const RAD = Math.PI / 180;
 
-interface P {
-  x: number;
-  y: number;
-}
+type P = Pt;
 const head = (c: Ctx): P => ({ x: c.at().x, y: c.at().y + R * 0.46 });
 const eyes = (c: Ctx): [P, P] => {
   const p = c.at();
@@ -29,7 +35,8 @@ interface Spray {
   angle?: [number, number];
   speed?: [number, number];
   gravity?: number;
-  scale?: number | [number, number];
+  scale?: number;
+  scaleTo?: number;
   life?: [number, number];
   spin?: number;
   drag?: number;
@@ -40,8 +47,8 @@ interface Spray {
 /** Throws `n` sprites of `code` out of a point. */
 function spray(c: Ctx, code: string, n: number, from: P, o: Spray = {}): void {
   for (let i = 0; i < n; i++) {
-    const a = rnd(...(o.angle ?? [0, 360])) * RAD;
-    const s = rnd(...(o.speed ?? [2, 5]));
+    const a = rr(o.angle, 0, 360) * RAD;
+    const s = rr(o.speed, 2, 5);
     c.scene.sprites.emit({
       code,
       x: from.x + rnd(-0.1, 0.1),
@@ -52,7 +59,8 @@ function spray(c: Ctx, code: string, n: number, from: P, o: Spray = {}): void {
       drag: o.drag,
       spin: o.spin === undefined ? undefined : rnd(-o.spin, o.spin),
       scale: o.scale ?? 0.4,
-      life: rnd(...(o.life ?? [1, 1.6])),
+      scaleTo: o.scaleTo,
+      life: rr(o.life, 1, 1.6),
       sway: o.sway,
       z: o.z,
     });
@@ -60,15 +68,26 @@ function spray(c: Ctx, code: string, n: number, from: P, o: Spray = {}): void {
 }
 
 /** Sprites that drift up from around a point. */
-function drift(c: Ctx, code: string, n: number, from: P, o: { width?: number; rise?: [number, number]; scale?: number | [number, number]; life?: [number, number]; sway?: number; spin?: number } = {}): void {
+interface Drift {
+  width?: number;
+  rise?: number[];
+  scale?: number;
+  scaleTo?: number;
+  life?: number[];
+  sway?: number;
+  spin?: number;
+}
+
+function drift(c: Ctx, code: string, n: number, from: P, o: Drift = {}): void {
   for (let i = 0; i < n; i++) {
     c.scene.sprites.emit({
       code,
       x: from.x + rnd(-(o.width ?? 1), o.width ?? 1),
       y: from.y + rnd(-0.2, 0.2),
-      vy: rnd(...(o.rise ?? [1, 2])),
+      vy: rr(o.rise, 1, 2),
       scale: o.scale ?? 0.45,
-      life: rnd(...(o.life ?? [1.8, 2.6])),
+      scaleTo: o.scaleTo,
+      life: rr(o.life, 1.8, 2.6),
       sway: o.sway ?? 0.3,
       spin: o.spin === undefined ? undefined : rnd(-o.spin, o.spin),
     });
@@ -76,7 +95,13 @@ function drift(c: Ctx, code: string, n: number, from: P, o: { width?: number; ri
 }
 
 /** Things raining down from the top of the stage over the emoji. */
-function rain(c: Ctx, code: string, n: number, o: { scale?: number; spin?: number; gravity?: number } = {}): void {
+interface Rain {
+  scale?: number;
+  spin?: number;
+  gravity?: number;
+}
+
+function rain(c: Ctx, code: string, n: number, o: Rain = {}): void {
   for (let i = 0; i < n; i++) {
     c.scene.sprites.emit({
       code,
@@ -92,8 +117,17 @@ function rain(c: Ctx, code: string, n: number, o: { scale?: number; spin?: numbe
   }
 }
 
-const times = (list: number[], run: (c: Ctx, i: number) => void): Cue[] => list.map((t, i): Cue => [t, (c) => run(c, i)]);
-const sound = (t: number, name: Sfx, volume = 1, rate = 1): Cue => [t, (c) => c.sfx(name, volume, rate)];
+function times(list: number[], run: (c: Ctx, i: number) => void): Cue[] {
+  const out: Cue[] = [];
+  for (let i = 0; i < list.length; i++) out.push(timed(list[i]!, i, run));
+  return out;
+}
+function timed(t: number, i: number, run: (c: Ctx, i: number) => void): Cue {
+  return [t, (c: Ctx) => run(c, i)];
+}
+function sound(t: number, name: Sfx, volume: number = 1, rate: number = 1): Cue {
+  return [t, (c: Ctx) => c.sfx(name, volume, rate)];
+}
 
 /** An act from a motion function, which fills in a move for time `t` (`u` is 0..1 through it). */
 function act(name: string, dur: number, motion: (m: Move, t: number, u: number) => void, cues: Cue[] = []): Act {
@@ -123,8 +157,8 @@ const shiver = (m: Move, t: number, deg: number, hz: number, k = 1): void => {
 
 const tearsSpray = (c: Ctx): void => {
   const [l, r] = eyes(c);
-  spray(c, "1f4a7", 4, l, { angle: [100, 160], speed: [3, 6], gravity: 13, scale: [0.3, 0.4], life: [0.9, 1.2] });
-  spray(c, "1f4a7", 4, r, { angle: [20, 80], speed: [3, 6], gravity: 13, scale: [0.3, 0.4], life: [0.9, 1.2] });
+  spray(c, "1f4a7", 4, l, { angle: [100, 160], speed: [3, 6], gravity: 13, scale: 0.3, scaleTo: 0.4, life: [0.9, 1.2] });
+  spray(c, "1f4a7", 4, r, { angle: [20, 80], speed: [3, 6], gravity: 13, scale: 0.3, scaleTo: 0.4, life: [0.9, 1.2] });
 };
 
 const laughing = (m: Move, t: number, u: number): void => {
@@ -135,19 +169,19 @@ const laughing = (m: Move, t: number, u: number): void => {
 };
 
 const tears = act("tears", 4, laughing, [sound(0.1, "laugh"), ...times([0.2, 0.7, 1.2, 1.7, 2.2, 2.7], (c) => tearsSpray(c))]);
-const rofl = withCues(POSES.flip, [sound(0.1, "laugh"), ...times([0.3, 0.9, 1.5, 2.1], (c) => tearsSpray(c))], "rofl");
+const rofl = withCues(POSES.get("flip")!, [sound(0.1, "laugh"), ...times([0.3, 0.9, 1.5, 2.1], (c) => tearsSpray(c))], "rofl");
 
-const heartEyes = withCues(POSES.beat, [sound(0.3, "ooh", 0.6), ...times([0.3, 1.2, 2.2], (c) => {
+const heartEyes = withCues(POSES.get("beat")!, [sound(0.3, "ooh", 0.6), ...times([0.3, 1.2, 2.2], (c) => {
   const [l, r] = eyes(c);
-  spray(c, "2764", 3, l, { angle: [90, 160], speed: [2, 4], gravity: -0.5, scale: [0.25, 0.5], life: [1.1, 1.6], spin: 120 });
-  spray(c, "2764", 3, r, { angle: [20, 90], speed: [2, 4], gravity: -0.5, scale: [0.25, 0.5], life: [1.1, 1.6], spin: 120 });
+  spray(c, "2764", 3, l, { angle: [90, 160], speed: [2, 4], gravity: -0.5, scale: 0.25, scaleTo: 0.5, life: [1.1, 1.6], spin: 120 });
+  spray(c, "2764", 3, r, { angle: [20, 90], speed: [2, 4], gravity: -0.5, scale: 0.25, scaleTo: 0.5, life: [1.1, 1.6], spin: 120 });
 })], "heartpop");
 
 const sobbing = act("sobbing", 4.4, (m, t, u) => {
   const env = envelope(u, 0.1);
   shiver(m, t, 4, 5, env);
   m.y = 0.12 * Math.abs(Math.sin(Math.PI * 2.5 * t)) * env;
-}, [sound(0.1, "sob"), ...times(Array.from({ length: 14 }, (_, i) => 0.2 + i * 0.28), (c) => tearsSpray(c))]);
+}, [sound(0.1, "sob"), ...times(seq(14, 0.2, 0.28), (c) => tearsSpray(c))]);
 
 const angry = act("angry", 3.8, (m, t, u) => {
   const env = envelope(u, 0.1);
@@ -174,7 +208,7 @@ const swearing = act("swearing", 3.8, (m, t, u) => {
   ...times([0.4, 1.0, 1.7], (c, i) => {
     c.sfx("bleep", 0.8, 1 + 0.1 * i);
     const p = head(c);
-    spray(c, "1f4a2", 1, p, { angle: [60, 120], speed: [1, 2], scale: [0.5, 0.8], life: [0.7, 1] });
+    spray(c, "1f4a2", 1, p, { angle: [60, 120], speed: [1, 2], scale: 0.5, scaleTo: 0.8, life: [0.7, 1] });
   }),
 ]);
 
@@ -189,7 +223,7 @@ const scream = act("scream", 3.6, (m, t, u) => {
     c.sfx("scream", 1);
     c.shake(0.08, 1);
     const p = head(c);
-    spray(c, "2757", 4, p, { angle: [50, 130], speed: [3, 6], gravity: 4, scale: [0.4, 0.7], life: [0.9, 1.3], spin: 60 });
+    spray(c, "2757", 4, p, { angle: [50, 130], speed: [3, 6], gravity: 4, scale: 0.4, scaleTo: 0.7, life: [0.9, 1.3], spin: 60 });
   }],
 ]);
 
@@ -217,7 +251,7 @@ const sleeping = act("sleeping", 5, (m, t) => {
   m.sy = 1 + 0.03 * Math.sin(Math.PI * 2 * 0.45 * t);
   m.sx = 1 - 0.015 * Math.sin(Math.PI * 2 * 0.45 * t);
   m.rot = 2 * Math.sin(Math.PI * 2 * 0.2 * t);
-}, [sound(0.4, "snore", 0.8), sound(2.7, "snore", 0.8, 0.95), ...times([0.5, 1.4, 2.3, 3.2, 4.1], (c) => drift(c, "1f4a4", 1, { x: head(c).x + 1.2, y: head(c).y - 0.3 }, { width: 0.2, scale: [0.4, 0.9], life: [2.4, 3], rise: [0.9, 1.3], sway: 0.35 }))]);
+}, [sound(0.4, "snore", 0.8), sound(2.7, "snore", 0.8, 0.95), ...times([0.5, 1.4, 2.3, 3.2, 4.1], (c) => drift(c, "1f4a4", 1, { x: head(c).x + 1.2, y: head(c).y - 0.3 }, { width: 0.2, scale: 0.4, scaleTo: 0.9, life: [2.4, 3], rise: [0.9, 1.3], sway: 0.35 }))]);
 
 const thinking = act("thinking", 4.4, (m, t, u) => {
   m.rot = 5 * Math.sin(Math.PI * 2 * 0.4 * t) * envelope(u, 0.15);
@@ -232,7 +266,7 @@ const thinking = act("thinking", 4.4, (m, t, u) => {
     c.sfx("ting", 1);
     const p = head(c);
     c.scene.sprites.emit({ code: "1f4a1", x: p.x + 1.8, y: p.y + 0.6, life: 1.9, anim: (t) => ({ x: p.x + 1.8, y: p.y + 0.6, scale: 1.2 * (1 - Math.exp(-t * 10) * Math.cos(t * 18)), alpha: 1 - clamp01((t - 1.5) / 0.4) }) });
-    spray(c, "2728", 6, { x: p.x + 1.8, y: p.y + 0.6 }, { speed: [1, 3], scale: [0.2, 0.4], life: [0.5, 0.9] });
+    spray(c, "2728", 6, { x: p.x + 1.8, y: p.y + 0.6 }, { speed: [1, 3], scale: 0.2, scaleTo: 0.4, life: [0.5, 0.9] });
   }],
 ]);
 
@@ -248,8 +282,8 @@ const mindBlown = act("mindblown", 4, (m, t) => {
     c.shake(0.2, 0.7);
     const p = head(c);
     c.burst(p.x, p.y, 40);
-    spray(c, "1f4a5", 1, p, { speed: [0, 0], scale: [1.2, 2.2], life: [0.5, 0.6] });
-    spray(c, "1f525", 6, p, { angle: [60, 120], speed: [3, 6], gravity: 2, scale: [0.4, 0.7], life: [0.7, 1.1] });
+    spray(c, "1f4a5", 1, p, { speed: [0, 0], scale: 1.2, scaleTo: 2.2, life: [0.5, 0.6] });
+    spray(c, "1f525", 6, p, { angle: [60, 120], speed: [3, 6], gravity: 2, scale: 0.4, scaleTo: 0.7, life: [0.7, 1.1] });
     c.smoke(p.x, p.y, 14, [0.5, 0.5, 0.55, 0.6], 1.6);
   }],
 ]);
@@ -260,9 +294,9 @@ const devil = act("devil", 4, (m, t, u) => {
   shiver(m, t, 3, 9, env);
 }, [
   sound(0.2, "evil", 0.9),
-  ...times(Array.from({ length: 12 }, (_, i) => 0.2 + i * 0.3), (c) => {
+  ...times(seq(12, 0.2, 0.3), (c) => {
     const p = feet(c);
-    for (const dx of [-2.2, 2.2]) drift(c, "1f525", 1, { x: p.x + dx, y: p.y }, { width: 0.5, scale: [0.5, 0.9], life: [1.1, 1.5], rise: [1.5, 2.5], sway: 0.15 });
+    for (const dx of [-2.2, 2.2]) drift(c, "1f525", 1, { x: p.x + dx, y: p.y }, { width: 0.5, scale: 0.5, scaleTo: 0.9, life: [1.1, 1.5], rise: [1.5, 2.5], sway: 0.15 });
   }),
 ]);
 
@@ -317,7 +351,10 @@ const monkey = act("monkey", 4, (m, t, u) => {
       x: p.x + side * 5,
       y: p.y + 2,
       life: 2.4,
-      anim: (t) => (t < 0.9 ? { x: p.x + side * (5 - 3.2 * t / 0.9), y: p.y + 2 - 1.5 * (t / 0.9) + 1.8 * Math.sin(Math.PI * t / 0.9), scale: 0.9, rot: 600 * t } : { x: p.x + side * 1.8, y: p.y + 0.5 + 0.2 * Math.abs(Math.sin((t - 0.9) * 8)), scale: 0.9, rot: 20 * Math.sin((t - 0.9) * 8), alpha: 1 - clamp01((t - 1.9) / 0.5) }),
+      anim: (t: number): SpriteAt | null => {
+        if (t < 0.9) return { x: p.x + side * (5 - 3.2 * t / 0.9), y: p.y + 2 - 1.5 * (t / 0.9) + 1.8 * Math.sin(Math.PI * t / 0.9), scale: 0.9, rot: 600 * t };
+        return { x: p.x + side * 1.8, y: p.y + 0.5 + 0.2 * Math.abs(Math.sin((t - 0.9) * 8)), scale: 0.9, rot: 20 * Math.sin((t - 0.9) * 8), alpha: 1 - clamp01((t - 1.9) / 0.5) };
+      },
     });
   }],
   sound(1.2, "boing", 0.5, 1.4),
@@ -393,7 +430,9 @@ const pig = act("pig", 3.8, (m, t, u) => {
 
 const trex = act("trex", 4.2, (m, t, u) => {
   const env = envelope(u, 0.1);
-  m.y = [0.3, 0.9, 1.5].reduce((n, s) => n + 0.15 * Math.sin(Math.PI * clamp01((t - s) / 0.25)), 0);
+  let hop = 0;
+  for (const s of [0.3, 0.9, 1.5]) hop += 0.15 * Math.sin(Math.PI * clamp01((t - s) / 0.25));
+  m.y = hop;
   m.sy = 1 + 0.07 * Math.sin(Math.PI * clamp01((t - 1.9) / 1.4)) * env;
   shiver(m, t, 3, 12, Math.sin(Math.PI * clamp01((t - 1.9) / 1.6)) * env);
 }, [...times([0.4, 1.0, 1.6], (c) => {
@@ -430,7 +469,7 @@ const pistol = act("pistol", 3.6, (m, t) => {
 }, times([0.5, 1.1, 1.7], (c) => {
   c.sfx("squirt", 0.9, rnd(0.95, 1.1));
   const p = c.at();
-  spray(c, "1f4a7", 12, { x: p.x + R * 0.4, y: p.y + 0.5 }, { angle: [5, 25], speed: [6, 9], gravity: 6, scale: [0.25, 0.4], life: [0.8, 1.1] });
+  spray(c, "1f4a7", 12, { x: p.x + R * 0.4, y: p.y + 0.5 }, { angle: [5, 25], speed: [6, 9], gravity: 6, scale: 0.25, scaleTo: 0.4, life: [0.8, 1.1] });
 }));
 
 const fire = act("fire", 4, (m, t, u) => {
@@ -439,7 +478,46 @@ const fire = act("fire", 4, (m, t, u) => {
   tintTo(m, 1.3, 1.0, 0.65, env * flick);
   m.sy = 1 + 0.04 * Math.sin(t * 13) * env;
   m.sx = 1 - 0.02 * Math.sin(t * 13) * env;
-}, [sound(0.2, "crackle", 0.8), sound(1.5, "sizzle", 0.4), ...times(Array.from({ length: 10 }, (_, i) => 0.3 + i * 0.35), (c) => drift(c, "1f525", 1, feet(c), { width: 2, scale: [0.3, 0.6], life: [0.9, 1.4], rise: [1.5, 3], sway: 0.2 }))]);
+}, [sound(0.2, "crackle", 0.8), sound(1.5, "sizzle", 0.4), ...times(seq(10, 0.3, 0.35), (c) => drift(c, "1f525", 1, feet(c), { width: 2, scale: 0.3, scaleTo: 0.6, life: [0.9, 1.4], rise: [1.5, 3], sway: 0.2 }))]);
+
+/** The three taps of the pickaxe: its swing in, and the strike with its crack. */
+function diamondTaps(): Cue[] {
+  const out: Cue[] = [];
+  for (let i = 0; i < 3; i++) {
+    const s = 0.9 + i;
+    out.push(swingCue(s));
+    out.push(strikeCue(s, i));
+  }
+  return out;
+}
+
+function swingCue(s: number): Cue {
+  return [s - 0.55, (c: Ctx) => {
+    // The pickaxe swings in from the right, up and over, and strikes.
+    const p = c.at();
+    c.scene.sprites.emit({
+      code: "26cf",
+      x: p.x + 2.6,
+      y: p.y + 1.5,
+      life: 1.2,
+      anim: (t: number) => {
+        const swing = t < 0.35 ? smooth(t / 0.35) : t < 0.55 ? 1 - smooth((t - 0.35) / 0.2) * 1.5 : -0.5 + 0.5 * smooth((t - 0.55) / 0.3);
+        return { x: p.x + 2.1 - 0.5 * swing * 0, y: p.y + 1.1 - 0.4 * (swing < 0 ? swing : 0), scale: 2.4, rot: 40 - 100 * swing, alpha: 1 - clamp01((t - 0.9) / 0.3) };
+      },
+    });
+  }];
+}
+
+function strikeCue(s: number, i: number): Cue {
+  return [s, (c: Ctx) => {
+    c.sfx("dink", 1, 1 + 0.08 * i);
+    c.shake(0.04, 0.2);
+    const p = c.at();
+    cracks.set(i + 1);
+    spray(c, "2728", 5, { x: p.x + 0.2, y: p.y + 0.8 }, { speed: [2, 5], scale: 0.25, scaleTo: 0.5, life: [0.5, 0.9], drag: 1.5 });
+    if (i < 2) c.sfx("crack", 0.6, 1 + 0.2 * i);
+  }];
+}
 
 const diamond = act("diamond", 7.2, (m, t) => {
   // Three taps with a pickaxe; each shakes it. After the third it shatters and re-forms.
@@ -455,30 +533,7 @@ const diamond = act("diamond", 7.2, (m, t) => {
   }
 }, [
   [0.1, (c) => cracks.set(0)],
-  ...[0.9, 1.9, 2.9].flatMap((s, i): Cue[] => [
-    [s - 0.55, (c) => {
-      // The pickaxe swings in from the right, up and over, and strikes.
-      const p = c.at();
-      c.scene.sprites.emit({
-        code: "26cf",
-        x: p.x + 2.6,
-        y: p.y + 1.5,
-        life: 1.2,
-        anim: (t) => {
-          const swing = t < 0.35 ? smooth(t / 0.35) : t < 0.55 ? 1 - smooth((t - 0.35) / 0.2) * 1.5 : -0.5 + 0.5 * smooth((t - 0.55) / 0.3);
-          return { x: p.x + 2.1 - 0.5 * swing * 0, y: p.y + 1.1 - 0.4 * (swing < 0 ? swing : 0), scale: 2.4, rot: 40 - 100 * swing, alpha: 1 - clamp01((t - 0.9) / 0.3) };
-        },
-      });
-    }],
-    [s, (c) => {
-      c.sfx("dink", 1, 1 + 0.08 * i);
-      c.shake(0.04, 0.2);
-      const p = c.at();
-      cracks.set(i + 1);
-      spray(c, "2728", 5, { x: p.x + 0.2, y: p.y + 0.8 }, { speed: [2, 5], scale: [0.25, 0.5], life: [0.5, 0.9], drag: 1.5 });
-      if (i < 2) c.sfx("crack", 0.6, 1 + 0.2 * i);
-    }],
-  ]),
+  ...diamondTaps(),
   [3.3, (c) => {
     c.sfx("crack", 1);
     c.sfx("tinkle", 1);
@@ -489,7 +544,7 @@ const diamond = act("diamond", 7.2, (m, t) => {
   [5.2, (c) => {
     c.sfx("ting", 1, 1.3);
     c.sfx("harp", 0.5, 1.4);
-    spray(c, "2728", 12, c.at(), { speed: [2, 6], scale: [0.3, 0.7], life: [0.7, 1.2], drag: 1.2 });
+    spray(c, "2728", 12, c.at(), { speed: [2, 6], scale: 0.3, scaleTo: 0.7, life: [0.7, 1.2], drag: 1.2 });
   }],
 ]);
 
@@ -517,7 +572,7 @@ const genie = act("genie", 4.4, (m, t, u) => {
   m.rot = 8 * Math.sin(Math.PI * 2 * 0.5 * t) * env;
 }, [
   sound(0.2, "harp"),
-  ...times(Array.from({ length: 9 }, (_, i) => 0.2 + i * 0.4), (c) => {
+  ...times(seq(9, 0.2, 0.4), (c) => {
     c.smoke(feet(c).x + rnd(-0.6, 0.6), feet(c).y + 0.6, 5, [0.55, 0.35, 0.85, 0.5], 1.5);
     drift(c, "2728", 1, feet(c), { width: 1, scale: 0.35, life: [1.2, 1.8], rise: [1.2, 2.2] });
   }),
@@ -533,11 +588,11 @@ const wizard = act("wizard", 4, (m, t, u) => {
   }],
   [0.85, (c) => {
     c.sfx("harp", 0.9);
-    spray(c, "2728", 18, { x: c.at().x + 1.6, y: c.at().y + 2.1 }, { speed: [2, 6], scale: [0.25, 0.55], life: [0.8, 1.3], drag: 1.2 });
+    spray(c, "2728", 18, { x: c.at().x + 1.6, y: c.at().y + 2.1 }, { speed: [2, 6], scale: 0.25, scaleTo: 0.55, life: [0.8, 1.3], drag: 1.2 });
   }],
   [2.2, (c) => {
     c.sfx("ting", 0.8);
-    spray(c, "2728", 12, c.at(), { speed: [2, 5], scale: [0.25, 0.5], life: [0.8, 1.2], drag: 1.2 });
+    spray(c, "2728", 12, c.at(), { speed: [2, 5], scale: 0.25, scaleTo: 0.5, life: [0.8, 1.2], drag: 1.2 });
   }],
 ]);
 
@@ -559,7 +614,7 @@ const money = act("money", 4.2, (m, t, u) => {
   const env = envelope(u, 0.15);
   m.sx = m.sy = 1 + 0.05 * Math.abs(Math.sin(Math.PI * 2 * 1.4 * t)) * env;
 }, [
-  ...times(Array.from({ length: 10 }, (_, i) => 0.2 + i * 0.3), (c, i) => {
+  ...times(seq(10, 0.2, 0.3), (c, i) => {
     rain(c, "1f4b5", 3, { scale: 0.7, gravity: 2, spin: 150 });
     rain(c, "1fa99", 2, { scale: 0.45, gravity: 4, spin: 300 });
     if (i % 2 === 0) c.sfx("ting", 0.6, 0.9 + 0.1 * (i % 3));
@@ -599,7 +654,45 @@ const pumpkin = act("pumpkin", 5.2, (m, t, u) => {
   ...times([0.6, 2.0, 3.3], (c) => c.scene.strike()),
 ]);
 
-export const SIGNATURES: Record<string, Act> = {
-  tears, heartpop: heartEyes, sobbing, angry, swearing, scream, cold, sick, sleeping, thinking, mindblown: mindBlown, money, demon, ghost, skull, clown, robot, genie, wizard, hero,
-  invader, monkey, dog, cat, unicorn, frog, pig, octopus, trex, alien, pistol, fire, diamond, balloon, zombie, pumpkin,
-};
+function makeSignatures(): Map<string, Act> {
+  const m = new Map<string, Act>();
+  m.set("tears", tears);
+  m.set("heartpop", heartEyes);
+  m.set("sobbing", sobbing);
+  m.set("angry", angry);
+  m.set("swearing", swearing);
+  m.set("scream", scream);
+  m.set("cold", cold);
+  m.set("sick", sick);
+  m.set("sleeping", sleeping);
+  m.set("thinking", thinking);
+  m.set("mindblown", mindBlown);
+  m.set("money", money);
+  m.set("demon", demon);
+  m.set("ghost", ghost);
+  m.set("skull", skull);
+  m.set("clown", clown);
+  m.set("robot", robot);
+  m.set("genie", genie);
+  m.set("wizard", wizard);
+  m.set("hero", hero);
+  m.set("invader", invader);
+  m.set("monkey", monkey);
+  m.set("dog", dog);
+  m.set("cat", cat);
+  m.set("unicorn", unicorn);
+  m.set("frog", frog);
+  m.set("pig", pig);
+  m.set("octopus", octopus);
+  m.set("trex", trex);
+  m.set("alien", alien);
+  m.set("pistol", pistol);
+  m.set("fire", fire);
+  m.set("diamond", diamond);
+  m.set("balloon", balloon);
+  m.set("zombie", zombie);
+  m.set("pumpkin", pumpkin);
+  return m;
+}
+
+export const SIGNATURES: Map<string, Act> = makeSignatures();

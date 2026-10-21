@@ -1,21 +1,38 @@
 // Shapes: Iron's GDI-style 2D drawing in one place. Each shape is a LineRenderer2D (an
 // outline, a fill, or both) with points from `Shapes`, labelled with a TextMesh. The stars
 // show the two fill rules; the last shape turns to show outlines and fills follow their object.
-import { Camera, Color, Component, GameObject, LineRenderer2D, register, Shapes, TextMesh, Vector2, Vector3 } from "@iron/engine";
 
 const ink = Color.hex("#e8edf5");
 
+/** What a shape is drawn with, besides its points. */
+interface Look {
+  width?: number;
+  loop?: boolean;
+  fillColor?: Color;
+  fillRule?: string;
+}
+
 /** A shape with a label under it, `at` the centre of its cell. */
-function shape(name: string, at: Vector3, points: Vector2[], look: Partial<LineRenderer2D>): GameObject {
+function shape(name: string, at: Vector3, points: Vector2[], look: Look): GameObject {
   const go = new GameObject(name, { position: at });
-  go.addComponent(LineRenderer2D, { points, width: 0.06, color: ink, loop: true, ...look });
+  const line = go.addComponent(LineRenderer2D);
+  line.points = points;
+  line.width = look.width !== undefined ? look.width : 0.06;
+  line.color = ink;
+  line.loop = look.loop !== undefined ? look.loop : true;
+  if (look.fillColor !== undefined) line.fillColor = look.fillColor;
+  if (look.fillRule !== undefined) line.fillRule = look.fillRule;
   const label = new GameObject(`${name} label`, { position: at.add(new Vector3(0, -1.25, 0)) });
   label.addComponent(TextMesh, { text: name, fontSize: 26, color: Color.hex("#9fb0c8") });
   return go;
 }
 
 /** A five-pointed star drawn in one stroke, so its outline crosses itself. */
-const star = (r: number) => Array.from({ length: 5 }, (_, i) => new Vector2(Math.cos((90 + 144 * i) * (Math.PI / 180)) * r, Math.sin((90 + 144 * i) * (Math.PI / 180)) * r));
+function star(r: number): Vector2[] {
+  const out: Vector2[] = [];
+  for (let i = 0; i < 5; i++) out.push(new Vector2(Math.cos((90 + 144 * i) * (Math.PI / 180)) * r, Math.sin((90 + 144 * i) * (Math.PI / 180)) * r));
+  return out;
+}
 
 class Spin extends Component {
   override onUpdate(dt: number): void {

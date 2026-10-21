@@ -2,7 +2,7 @@
 // out (turning round and waddling away, blasting off, freezing and sinking into a pool, ...).
 import { HEIGHT } from "./config.ts";
 import { ENTRANCES } from "./entrances.ts";
-import { type Act, clamp01, type Cue, lerp, rewind, smooth, still } from "./moves.ts";
+import { type Act, clamp01, type Ctx, type Cue, lerp, rewind, smooth, still } from "./moves.ts";
 
 /** Turns its back and waddles off. */
 const walkaway: Act = {
@@ -266,6 +266,17 @@ const rolloff: Act = {
   },
 };
 
+function finaleCue(i: number): Cue {
+  return [4.0 + i * 0.12, (c: Ctx) => c.scene.firework(-7.5 + i * 1.9, 0.1 + (i % 3) * 1.0, i % 3 === 1 ? "ring" : undefined)];
+}
+
+/** Nine more rockets one after another. */
+function finale(): Cue[] {
+  const out: Cue[] = [];
+  for (let i = 0; i < 9; i++) out.push(finaleCue(i));
+  return out;
+}
+
 /** A firework finale: rockets, willows and a volley of bursts while it dances, then it fades into the smoke. */
 const fireworks: Act = {
   name: "fireworks",
@@ -284,7 +295,7 @@ const fireworks: Act = {
       c.scene.celebrate(true);
     }],
     [3.1, (c) => c.scene.firework(0, 2.1, "willow")],
-    ...Array.from({ length: 9 }, (_, i): Cue => [4.0 + i * 0.12, (c) => c.scene.firework(-7.5 + i * 1.9, 0.1 + (i % 3) * 1.0, i % 3 === 1 ? "ring" : undefined)]),
+    ...finale(),
   ],
   at(t) {
     const m = still();
@@ -326,4 +337,11 @@ const explode: Act = {
 };
 
 const back = ["walk", "hop", "rush", "crawl", "peek", "drop", "roll", "pop", "rise", "fade"];
-export const EXITS: Act[] = [...ENTRANCES.filter((a) => back.includes(a.name)).map(rewind), walkaway, blastoff, plunge, fadeout, zoom, rolloff, fireworks, explode, launch, balloonaway, abduct];
+function makeExits(): Act[] {
+  const out: Act[] = [];
+  for (const a of ENTRANCES) if (back.includes(a.name)) out.push(rewind(a));
+  for (const a of [walkaway, blastoff, plunge, fadeout, zoom, rolloff, fireworks, explode, launch, balloonaway, abduct]) out.push(a);
+  return out;
+}
+
+export const EXITS: Act[] = makeExits();

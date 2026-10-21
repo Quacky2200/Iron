@@ -9,9 +9,8 @@
 //
 // The blob look (outlines pushed by noise sampled in the scene, blobs growing from the ends and
 // merging) is after "Lava Lamp" by Corevision: https://codepen.io/corevision/pen/ZYzBqxx
-import { type Camera, Color, type DateTime, GameObject, input, type LineRenderer2D, RenderSettings, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { type Face, label, mix, shape, two, under } from "./common.ts";
+import { Face, label, mix, shape, two, under } from "./common.ts";
 
 const LAMP = new Vector3(-2.6, 0, 0);
 const GLASS_TOP = 3.4;
@@ -48,15 +47,20 @@ const inside = (x: number, y: number) => {
 
 // ---- Smooth 2D noise (gradient noise, -1 to 1) ----
 
-const PERM = (() => {
-  const p = Array.from({ length: 256 }, (_, i) => i);
+const PERM: number[] = (() => {
+  const p: number[] = [];
+  for (let i = 0; i < 256; i++) p.push(i);
   let seed = 1337;
   for (let i = 255; i > 0; i--) {
     seed = (seed * 16807) % 2147483647;
     const j = seed % (i + 1);
-    [p[i], p[j]] = [p[j]!, p[i]!];
+    const swap = p[i]!;
+    p[i] = p[j]!;
+    p[j] = swap;
   }
-  return [...p, ...p];
+  const doubled: number[] = [];
+  for (let k = 0; k < 2; k++) for (let i = 0; i < 256; i++) doubled.push(p[i]!);
+  return doubled;
 })();
 
 function noise(x: number, y: number): number {
@@ -137,15 +141,23 @@ function neck(ax: number, ay: number, ar: number, bx: number, by: number, br: nu
     return out;
   };
   // Down one side, back along the other, closed across each shape's inside.
-  return [...side(1), ...side(-1).reverse(), new Vector2(ax, ay)];
+  const first = side(1);
+  const second = side(-1);
+  const all: Vector2[] = [];
+  for (let i = 0; i < first.length; i++) all.push(first[i]!);
+  for (let i = second.length - 1; i >= 0; i--) all.push(second[i]!);
+  all.push(new Vector2(ax, ay));
+  return all;
 }
 
-export class LavaFace implements Face {
+export class LavaFace extends Face {
   readonly name = "Lava lamp";
-  readonly root = new GameObject("Lava lamp face");
+  readonly root: GameObject = new GameObject("Lava lamp face");
   private blobs: Blob[] = [];
   /** Shapes not in use by a blob. */
   private free: LineRenderer2D[] = [];
+  /** How many of `free` are in use as a stack (the rest of the array keeps its place). */
+  private freeTop = 0;
   private necks: LineRenderer2D[] = [];
   private budIn = 0;
   private pool!: LineRenderer2D;
@@ -156,6 +168,7 @@ export class LavaFace implements Face {
   private shown = "";
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 
@@ -166,16 +179,22 @@ export class LavaFace implements Face {
       const y = GLASS_BOTTOM + ((GLASS_TOP - GLASS_BOTTOM) * i) / 40;
       right.push(new Vector2(glassWidth(y), y));
     }
-    const outline = [...right, ...right.slice().reverse().map((p) => new Vector2(-p.x, p.y))];
+    const outline: Vector2[] = [];
+    for (let i = 0; i < right.length; i++) outline.push(right[i]!);
+    for (let i = right.length - 1; i >= 0; i--) outline.push(new Vector2(-right[i]!.x, right[i]!.y));
     shape("liquid", { points: outline, loop: true, width: 0.05, color: mix(LIQUID, LAVA_EDGE, 0.08), fillColor: LIQUID, sortingOrder: 0 }, LAMP);
     // The wax pooled at the bottom.
     this.pool = shape("pool", { loop: true, width: 0, fillColor: LAVA, sortingOrder: 1 }, LAMP);
     // Fill only: blobs that touch read as one shape.
     for (let i = 0; i < SLOTS; i++) this.free.push(shape(`blob ${i}`, { loop: true, width: 0, fillColor: LAVA, sortingOrder: 1 }, LAMP));
+    this.freeTop = SLOTS;
     for (let i = 0; i < SLOTS; i++) this.necks.push(shape(`neck ${i}`, { loop: true, width: 0, fillColor: LAVA, sortingOrder: 1 }, LAMP));
     // A lamp that's been on a while: blobs already up in the glass, rising and sinking.
-    const start: [number, number, number][] = [[0.6, 1.8, 0.9], [0.48, -0.6, 0.2], [0.4, 0.4, 0.7], [0.32, 2.6, 0.1], [0.27, -1.2, 0.95]];
-    start.forEach(([r, y, heat], i) => this.spawn((i % 2 ? 1 : -1) * 0.25, y, r, r, heat, "free"));
+    const start: number[][] = [[0.6, 1.8, 0.9], [0.48, -0.6, 0.2], [0.4, 0.4, 0.7], [0.32, 2.6, 0.1], [0.27, -1.2, 0.95]];
+    for (let i = 0; i < start.length; i++) {
+      const k = start[i]!;
+      this.spawn((i % 2 ? 1 : -1) * 0.25, k[1]!, k[0]!, k[0]!, k[2]!, "free");
+    }
     // The cap sits on the glass: as wide as its top, narrowing upward.
     const capBottom = glassWidth(GLASS_TOP) + 0.03;
     shape("cap", { points: [new Vector2(-capBottom, 0), new Vector2(capBottom, 0), new Vector2(capBottom * 0.62, 1.0), new Vector2(-capBottom * 0.62, 1.0)], loop: true, width: 0.04, color: METAL_EDGE, fillColor: METAL, sortingOrder: 5 }, LAMP.add(new Vector3(0, GLASS_TOP - 0.02, 0)));
@@ -184,28 +203,35 @@ export class LavaFace implements Face {
     this.seconds = label("seconds", { fontSize: 30, color: new Color(0.95, 0.3, 0.14, 1) }, new Vector3(2.4, -0.6, 0));
   }
 
-  show(camera: Camera): void {
+  override show(camera: Camera): void {
     this.camera = camera;
     this.background = camera.backgroundColor;
     camera.backgroundColor = BACK;
     RenderSettings.bloom = { threshold: 0.65, intensity: 1.3, scatter: 0.78 };
   }
 
-  hide(camera: Camera): void {
+  override hide(camera: Camera): void {
     if (this.background) camera.backgroundColor = this.background;
     RenderSettings.bloom = null;
   }
 
   private spawn(x: number, y: number, r: number, grow: number, heat: number, stage: Stage): void {
-    const line = this.free.pop();
-    if (!line) return;
+    if (this.freeTop === 0) return;
+    this.freeTop--;
+    const line = this.free[this.freeTop]!;
     this.blobs.push({ line, x, y, vx: 0, vy: 0, r, grow, heat, phase: Math.random() * 10, stage, into: null });
   }
 
   private retire(b: Blob): void {
     b.line.points = [];
-    this.free.push(b.line);
-    this.blobs.splice(this.blobs.indexOf(b), 1);
+    this.free[this.freeTop] = b.line;
+    this.freeTop++;
+    for (let i = 0; i < this.blobs.length; i++) {
+      if (this.blobs[i] === b) {
+        this.blobs.splice(i, 1);
+        break;
+      }
+    }
     for (const o of this.blobs) if (o.into === b) o.into = null;
   }
 
@@ -225,7 +251,8 @@ export class LavaFace implements Face {
     }
     // A new blob buds from the pool now and then, more often when few are about.
     this.budIn -= step;
-    const live = this.blobs.filter((b) => b.stage !== "melting").length;
+    let live = 0;
+    for (const b of this.blobs) if (b.stage !== "melting") live++;
     if (this.budIn <= 0 && live < 6) {
       const x = (Math.random() - 0.5) * 0.9;
       this.spawn(x, this.poolTop(x, t), 0.04, 0.3 + Math.random() * 0.28, 1, "budding");
@@ -239,7 +266,8 @@ export class LavaFace implements Face {
         if (a === b || a.stage !== "free" || b.stage !== "free") continue;
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d < (a.r + b.r) * 0.8 && Math.hypot(a.r, b.r) <= MAX_R) {
-          const [small, big] = a.r < b.r ? [a, b] : [b, a];
+          const small = a.r < b.r ? a : b;
+          const big = a.r < b.r ? b : a;
           small.stage = "merging";
           small.into = big;
         } else if (d < (a.r + b.r) * 1.05 && d > 1e-4) {
@@ -251,7 +279,7 @@ export class LavaFace implements Face {
       }
     }
 
-    for (const b of [...this.blobs]) {
+    for (const b of this.blobs.slice()) {
       if (b.stage === "budding") {
         // Growing out of the pool, half sunk in it, until it's big enough to lift off.
         b.r = Math.min(b.grow, b.r + 0.07 * step);
@@ -300,12 +328,16 @@ export class LavaFace implements Face {
         necks.push(neck(b.x, b.y, b.r * 0.95, b.into.x, b.into.y, b.into.r * 0.95, REACH));
       }
     }
-    this.necks.forEach((n, i) => {
-      const p = necks[i];
+    for (let i = 0; i < this.necks.length; i++) {
+      const n = this.necks[i]!;
       // Only change what changed: an empty neck stays empty.
-      if (p && p.length) n.points = p.map((q) => inside(q.x, q.y));
-      else if (n.points.length) n.points = [];
-    });
+      if (i < necks.length && necks[i]!.length > 0) {
+        const p = necks[i]!;
+        const moved: Vector2[] = [];
+        for (let k = 0; k < p.length; k++) moved.push(inside(p[k]!.x, p[k]!.y));
+        n.points = moved;
+      } else if (n.pointCount > 0) n.points = [];
+    }
 
     // The pool at the bottom, heaving with the same field.
     const pool: Vector2[] = [];
@@ -315,7 +347,8 @@ export class LavaFace implements Face {
       const x = -w + (2 * w * i) / 28;
       pool.push(new Vector2(x, this.poolTop(x, t)));
     }
-    pool.push(new Vector2(w * 0.95, base), new Vector2(-w * 0.95, base));
+    pool.push(new Vector2(w * 0.95, base));
+    pool.push(new Vector2(-w * 0.95, base));
     this.pool.points = pool;
 
     const text = `${two(now.hour)}:${two(now.minute)}`;

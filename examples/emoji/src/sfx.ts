@@ -1,7 +1,6 @@
 // Sound effects: the WAV files in assets/sfx, made by tools/make_sfx.py.
-import { audio, type Playback, type Sound } from "@iron/engine";
 
-export const NAMES = [
+export const NAMES: string[] = [
   "tick", "ding", "tada", "drumroll",
   "clap", "cheer", "boo", "aww", "gasp", "laugh",
   "fart", "wah", "slide", "slide_down", "kazoo", "pop",
@@ -16,56 +15,99 @@ export const NAMES = [
   "bleep", "ufo", "servo", "sizzle", "squirt", "evil", "wail", "bones", "ting", "harp", "blip", "hum",
   "chatter", "sob", "gulp", "ooh",
   "witch", "organ",
-] as const;
+];
 
-export type Sfx = (typeof NAMES)[number];
+/** A sound's name: the file `assets/sfx/<name>.wav`. */
+export type Sfx = string;
 
 const MASTER = 0.8;
-/** Files that aren't WAVs. */
-const FILE: Partial<Record<Sfx, string>> = { liftoff: "mp3" };
-/** Sounds that are cut off this many seconds in (the NASA clip goes on to a second announcement). */
-const CUT: Partial<Record<Sfx, number>> = { liftoff: 6 };
-const sounds = new Map<Sfx, Sound>();
-const loops = new Map<Sfx, Playback>();
-const active = new Map<Sfx, Set<Playback>>();
 
-export const sfx = {
+/** Files that are not WAVs. */
+function extension(name: string): string {
+  return name === "liftoff" ? "mp3" : "wav";
+}
+
+/** Sounds that are cut off this many seconds in (the NASA clip goes on to a second announcement); 0: not cut. */
+function cutAt(name: string): number {
+  return name === "liftoff" ? 6 : 0;
+}
+
+/** A loaded sound (engine handles are boxed to live in a Map). */
+class Loaded {
+  sound: Sound;
+  constructor(sound: Sound) {
+    this.sound = sound;
+  }
+}
+
+/** One playing copy of a sound. */
+class Voice {
+  playback: Playback;
+  done: boolean = false;
+  constructor(playback: Playback) {
+    this.playback = playback;
+  }
+}
+
+class SfxPlayer {
+  private sounds: Map<string, Loaded> = new Map<string, Loaded>();
+  private loops: Map<string, Voice> = new Map<string, Voice>();
+  private active: Map<string, Voice[]> = new Map<string, Voice[]>();
+
   /** Loads every sound up front, so the first play doesn't stutter. */
   preload(): void {
-    for (const n of NAMES) if (!sounds.has(n)) sounds.set(n, audio.load(`assets/sfx/${n}.${FILE[n] ?? "wav"}`));
-  },
+    for (const n of NAMES) {
+      if (!this.sounds.has(n)) this.sounds.set(n, new Loaded(audio.load(`assets/sfx/${n}.${extension(n)}`)));
+    }
+  }
 
-  play(name: Sfx, volume = 1, rate = 1): Playback {
-    sfx.preload();
-    const playback = sounds.get(name)!.play({ volume: volume * MASTER, rate });
-    const cut = CUT[name];
-    if (cut !== undefined) setTimeout(() => playback.stop(0.5), (cut * 1000) / rate);
+  play(name: string, volume: number = 1, rate: number = 1): Playback {
+    this.preload();
+    const playback = this.sounds.get(name)!.sound.play({ volume: volume * MASTER, rate: rate });
+    const cut = cutAt(name);
+    if (cut > 0) setTimeout(() => playback.stop(0.5), (cut * 1000) / rate);
     // Remembered while it plays, so `stopPlaying` can end it early.
-    const set = active.get(name) ?? new Set<Playback>();
-    active.set(name, set);
-    set.add(playback);
-    playback.onEnded = () => set.delete(playback);
+    let list = this.active.get(name);
+    if (list === undefined) {
+      list = [];
+      this.active.set(name, list);
+    }
+    const kept: Voice[] = [];
+    for (const v of list) if (!v.done) kept.push(v);
+    const voice = new Voice(playback);
+    kept.push(voice);
+    this.active.set(name, kept);
+    playback.onEnded(() => {
+      voice.done = true;
+    });
     return playback;
-  },
+  }
 
   /** Ends every copy of a one-shot sound still playing, fading out over `fade` seconds. */
-  stopPlaying(name: Sfx, fade = 0.3): void {
-    for (const p of active.get(name) ?? []) p.stop(fade);
-  },
+  stopPlaying(name: string, fade: number = 0.3): void {
+    const list = this.active.get(name);
+    if (list === undefined) return;
+    for (const v of list) if (!v.done) v.playback.stop(fade);
+  }
 
   /** Plays on repeat until `stop`. */
-  loop(name: Sfx, volume = 1): void {
-    if (loops.has(name)) return;
-    sfx.preload();
-    loops.set(name, sounds.get(name)!.play({ volume: volume * MASTER, loop: true }));
-  },
+  loop(name: string, volume: number = 1): void {
+    if (this.loops.has(name)) return;
+    this.preload();
+    this.loops.set(name, new Voice(this.sounds.get(name)!.sound.play({ volume: volume * MASTER, loop: true })));
+  }
 
-  stop(name: Sfx, fade = 0.4): void {
-    loops.get(name)?.stop(fade);
-    loops.delete(name);
-  },
+  stop(name: string, fade: number = 0.4): void {
+    const v = this.loops.get(name);
+    if (v !== undefined) v.playback.stop(fade);
+    this.loops.delete(name);
+  }
 
-  stopAll(fade = 0.4): void {
-    for (const n of [...loops.keys()]) sfx.stop(n, fade);
-  },
-};
+  stopAll(fade: number = 0.4): void {
+    const names: string[] = [];
+    for (const n of this.loops.keys()) names.push(n);
+    for (const n of names) this.stop(n, fade);
+  }
+}
+
+export const sfx = new SfxPlayer();

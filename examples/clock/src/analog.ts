@@ -2,9 +2,8 @@
 // round-capped strokes) and unwind when they come full circle; the hands are closed splines
 // (leaf shapes, filled) turned by their objects; the second hand ticks with a little overshoot,
 // the current second's tick flares, and an aura (a closed spline) pulses each second.
-import { Color, type DateTime, GameObject, type LineRenderer2D, Quaternion, Shapes, Spline, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { BG, DIM, easeOutBack, easeOutCubic, type Face, INK, label, mix, obj, shape, under } from "./common.ts";
+import { BG, DIM, easeOutBack, easeOutCubic, Face, INK, label, mix, obj, shape, under } from "./common.ts";
 
 const FACE = Color.hex("#161e2a");
 const SECONDS = Color.hex("#ff6b6b");
@@ -33,7 +32,7 @@ function handShape(length: number, width: number): Vector2[] {
 class Ring {
   private line: LineRenderer2D;
   private last = -1;
-  private wrapAt = -Infinity;
+  private wrapAt: number = -Infinity;
   constructor(
     name: string,
     private readonly radius: number,
@@ -62,9 +61,9 @@ class Ring {
   }
 }
 
-export class AnalogFace implements Face {
+export class AnalogFace extends Face {
   readonly name = "Analog";
-  readonly root = new GameObject("Analog face");
+  readonly root: GameObject = new GameObject("Analog face");
   private seconds!: Ring;
   private minutes!: Ring;
   private hours!: Ring;
@@ -82,6 +81,7 @@ export class AnalogFace implements Face {
   private shownTime = "";
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 

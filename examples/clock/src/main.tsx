@@ -16,13 +16,10 @@
 //
 // The 2D faces are GameObjects under one root each; switching turns roots on and off.
 // V toggles vsync (the FPS readout is top right).
-import { addStyleSheet, Camera, Component, DateTime, GameObject, input, QualitySettings, register, type TextMesh, Vector3 } from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 import { AnalogFace } from "./analog.ts";
 import { ChandelierFace } from "./chandelier.ts";
-import { BG, DIM, type Face, label, two } from "./common.ts";
+import { BG, DIM, Face, label, two } from "./common.ts";
 import { DialsFace } from "./dials.ts";
 import { FlipClock } from "./flip.tsx";
 import { HourglassFace } from "./hourglass.ts";
@@ -35,9 +32,9 @@ import { SundialFace } from "./sundial.ts";
 import { UnderwaterFace } from "./underwater.ts";
 
 /** The flip face has no objects: Iron's UI draws it (see `Hud`). */
-class FlipFace implements Face {
+class FlipFace extends Face {
   readonly name = "Flip";
-  readonly root = new GameObject("Flip face");
+  readonly root: GameObject = new GameObject("Flip face");
   update(): void {}
 }
 
@@ -63,7 +60,7 @@ class Clocks extends Component {
     this.faces.forEach((f, i) => {
       f.root.enabled = i === this.current;
     });
-    this.faces[this.current]!.show?.(this.camera);
+    this.faces[this.current]!.show(this.camera);
     notify();
   }
 
@@ -73,12 +70,12 @@ class Clocks extends Component {
     const next = ((i % n) + n) % n;
     if (next === this.current) return;
     const old = this.faces[this.current]!;
-    old.hide?.(this.camera);
+    old.hide(this.camera);
     old.root.enabled = false;
     this.current = next;
     const face = this.faces[next]!;
     face.root.enabled = true;
-    face.show?.(this.camera);
+    face.show(this.camera);
     notify();
   }
 
@@ -125,6 +122,7 @@ function useClocks() {
 addStyleSheet(`
   .dot { background-color: rgba(255, 255, 255, 0.28); }
   .dot:hover { background-color: rgba(255, 255, 255, 0.65); }
+  .dot.on { background-color: #ffffff; }
   .arrow-lit { opacity: 0; transition: opacity 0.1s; }
   .arrow:hover .arrow-lit { opacity: 1; }
 `);
@@ -132,21 +130,26 @@ addStyleSheet(`
 /** A chevron at one side of the window, faint until the pointer is over it, then white. */
 function Arrow(props: { side: "left" | "right"; onClick: () => void }) {
   const left = props.side === "left";
-  const chevron = (stroke: string, className?: string, extra: object = {}) => (
-    <svg className={className} viewBox="0 0 24 48" style={{ width: 26, height: 52, ...extra }}>
+  const chevron = (stroke: string, lit: boolean) => (
+    <svg
+      className={lit ? "arrow-lit" : undefined}
+      viewBox="0 0 24 48"
+      style={lit ? { width: 26, height: 52, position: "absolute", left: 19, top: 44 } : { width: 26, height: 52 }}
+    >
       <polyline points={left ? "18,4 6,24 18,44" : "6,4 18,24 6,44"} fill="none" stroke={stroke} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
-  return (
-    <box
-      style={{ position: "absolute", top: 0, bottom: 0, [props.side]: 8, width: 72, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
-    >
-      <box className="arrow" style={{ width: 64, height: 140, alignItems: "center", justifyContent: "center", pointerEvents: "auto", cursor: "pointer" }} onClick={props.onClick}>
-        {chevron("rgba(255, 255, 255, 0.4)")}
-        {/* The white copy on top, centred over the faint one. */}
-        {chevron("#ffffff", "arrow-lit", { position: "absolute", left: 19, top: 44 })}
-      </box>
+  const inner = (
+    <box className="arrow" style={{ width: 64, height: 140, alignItems: "center", justifyContent: "center", pointerEvents: "auto", cursor: "pointer" }} onClick={props.onClick}>
+      {chevron("rgba(255, 255, 255, 0.4)", false)}
+      {/* The white copy on top, centred over the faint one. */}
+      {chevron("#ffffff", true)}
     </box>
+  );
+  return left ? (
+    <box style={{ position: "absolute", top: 0, bottom: 0, left: 8, width: 72, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>{inner}</box>
+  ) : (
+    <box style={{ position: "absolute", top: 0, bottom: 0, right: 8, width: 72, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>{inner}</box>
   );
 }
 
@@ -170,8 +173,8 @@ function Hud() {
             {c.faces.map((f, i) => (
               <box
                 key={f.name}
-                className="dot"
-                style={{ width: 8, height: 8, borderRadius: 4, pointerEvents: "auto", cursor: "pointer", ...(i === c.current ? { backgroundColor: "#ffffff" } : {}) }}
+                className={i === c.current ? "dot on" : "dot"}
+                style={{ width: 8, height: 8, borderRadius: 4, pointerEvents: "auto", cursor: "pointer" }}
                 onClick={() => c.select(i)}
               />
             ))}

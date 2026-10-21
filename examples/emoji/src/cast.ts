@@ -2,7 +2,7 @@
 // Art is Noto Emoji (assets/emoji/<codepoint>.svg). Two performers are drawn in code instead,
 // because their eyes follow the mouse.
 
-export type PoseName = "bow" | "wink" | "spin" | "pump" | "sway" | "shake" | "float" | "flip" | "dizzy" | "watch" | "beat" | "fart" | "party" | "zap" | "model";
+export type PoseName = string;
 
 export interface Star {
   /** The Noto file (its codepoint), or a stand-in id for the performers drawn in code. */
@@ -11,13 +11,13 @@ export interface Star {
   /** Poses to pick from when it has no signature one. */
   poses: PoseName[];
   /** Drawn in code, with eyes that follow the mouse. */
-  look?: "eyes" | "googly";
+  look?: string;
   /** The picture on the spinner wheel. */
   chip: string;
 }
 
 // [file, name]
-const ROWS: [string, string][] = [
+const ROWS: string[][] = [
   // Faces
   ["1f602", "Tears of joy"],
   ["1f60d", "Heart eyes"],
@@ -72,8 +72,12 @@ const ROWS: [string, string][] = [
   ["1f319", "Moon"],
 ];
 
-export const CAST: Star[] = [
-  ...ROWS.map(([code, name]): Star => ({ code, name, poses: ["bow", "pump"], chip: code })),
-  { code: "eyes", name: "Eyes", poses: ["watch"], look: "eyes", chip: "1f440" },
-  { code: "googly", name: "Googly", poses: ["watch", "bow"], look: "googly", chip: "1f92a" },
-];
+function makeCast(): Star[] {
+  const out: Star[] = [];
+  for (const row of ROWS) out.push({ code: row[0]!, name: row[1]!, poses: ["bow", "pump"], chip: row[0]! });
+  out.push({ code: "eyes", name: "Eyes", poses: ["watch"], look: "eyes", chip: "1f440" });
+  out.push({ code: "googly", name: "Googly", poses: ["watch", "bow"], look: "googly", chip: "1f92a" });
+  return out;
+}
+
+export const CAST: Star[] = makeCast();

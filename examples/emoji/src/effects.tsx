@@ -2,26 +2,39 @@
 // emoji; lightning is a bolt behind it plus a flash over everything), the room blushing red with
 // a heartbeat, disco lights and a dropping disco ball, tomatoes thrown from the audience, and a
 // pool of water to fall into. The director starts and stops them; `update` runs them.
-import { Color, GameObject, LineRenderer2D, Shapes, Vector2, Vector3, WorldPanel } from "@iron/engine";
-import { createRoot, Image } from "@iron/react";
 import { GROUND, view } from "./config.ts";
 import type { Fx } from "./fx.ts";
 import { cracks, overlay, type Photo, photos, Shard, splats } from "./hud.tsx";
-import type { Ctx } from "./moves.ts";
+import type { Pt } from "./moves.ts";
 import { sfx } from "./sfx.ts";
-import { Sprites } from "./sprites.tsx";
-import type { Stage } from "./stage.tsx";
+import { type SpriteAt, Sprites } from "./sprites.tsx";
+import type { BeamFrom, Stage } from "./stage.tsx";
 
-type Host = Pick<Ctx, "sfx" | "shake" | "smoke" | "jolt">;
+/** What the effects ask of the show. */
+export interface Host {
+  sfx(name: string, volume?: number, rate?: number): void;
+  shake(amount: number, seconds: number): void;
+  smoke(x: number, y: number, count: number, color: number[], size?: number): void;
+  jolt(amount: number): void;
+}
 type Rgba = [number, number, number, number];
 
 const FIRE: Rgba[] = [[1, 0.85, 0.3, 1], [1, 0.55, 0.12, 1], [1, 0.28, 0.05, 0.9]];
 const CONFETTI: Rgba[] = [[1, 0.35, 0.4, 1], [1, 0.85, 0.3, 1], [0.3, 0.8, 1, 1], [0.5, 1, 0.5, 1], [1, 0.5, 0.9, 1], [1, 1, 1, 1]];
-const pickOf = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)]!;
+function pickOf<T>(list: T[]): T {
+  return list[Math.floor(Math.random() * list.length)]!;
+}
 const colour = (hue: number, sat = 0.75): Rgba => {
   const c = hsv(((hue % 1) + 1) % 1, sat, 1, 1);
   return [c.r, c.g, c.b, 1];
 };
+
+interface Ship {
+  x: number;
+  y: number;
+  scale: number;
+  rot: number;
+}
 
 interface Rocket {
   x: number;
@@ -29,7 +42,7 @@ interface Rocket {
   ty: number;
   t: number;
   hue: number;
-  kind: "peony" | "ring" | "willow" | "double";
+  kind: string;
 }
 
 interface Shard3 {
@@ -85,7 +98,7 @@ export class Effects {
   private boltLife = 0;
 
   // Disco.
-  private mode: "lights" | "ball" | null = null;
+  private mode: string | null = null;
   private discoT = 0;
   private beams: { go: GameObject; line: LineRenderer2D; hue: number }[] = [];
   private ball: GameObject;
@@ -205,7 +218,7 @@ export class Effects {
 
   // ---- Starting and stopping ----
 
-  weather(kind: "none" | "rain" | "storm"): void {
+  weather(kind: string): void {
     const rain = kind !== "none";
     this.storm = kind === "storm";
     this.nextStrike = rnd(0.8, 1.8);
@@ -262,7 +275,7 @@ export class Effects {
     else sfx.stop("heartbeat", 0.6);
   }
 
-  disco(mode: "lights" | "ball" | null): void {
+  disco(mode: string | null): void {
     this.mode = mode;
     this.discoT = 0;
     if (mode) sfx.loop("disco", 0.55);
@@ -303,9 +316,9 @@ export class Effects {
   }
 
   /** A firework: a rocket climbs to (`x`, `y`) with a whistle and bursts. */
-  firework(x: number, y: number, kind?: Rocket["kind"]): void {
+  firework(x: number, y: number, kind?: string): void {
     this.host.sfx("whistle", 0.6, rnd(0.9, 1.15));
-    this.rockets.push({ x: x + rnd(-1, 1), tx: x, ty: y, t: 0, hue: Math.random(), kind: kind ?? pickOf<Rocket["kind"]>(["peony", "ring", "willow", "double"]) });
+    this.rockets.push({ x: x + rnd(-1, 1), tx: x, ty: y, t: 0, hue: Math.random(), kind: kind ?? pickOf(["peony", "ring", "willow", "double"]) });
   }
 
   /** Cannons at both sides of the stage fire confetti and streamers; a big one also brings balloons and bunting. */
@@ -354,7 +367,14 @@ export class Effects {
     for (const sh of this.shards) {
       const a = rnd(0.2, Math.PI - 0.2);
       const sp = rnd(4, 9);
-      Object.assign(sh, { on: true, t: 0, x, y, vx: Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1), vy: Math.sin(a) * sp + 3, spin: rnd(-700, 700), size: rnd(0.45, 0.8) });
+      sh.on = true;
+      sh.t = 0;
+      sh.x = x;
+      sh.y = y;
+      sh.vx = Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1);
+      sh.vy = Math.sin(a) * sp + 3;
+      sh.spin = rnd(-700, 700);
+      sh.size = rnd(0.45, 0.8);
       sh.go.enabled = true;
     }
   }
@@ -364,13 +384,20 @@ export class Effects {
     for (const sh of this.shards) {
       const a = rnd(0.3, Math.PI - 0.3);
       const sp = rnd(2, 5);
-      Object.assign(sh, { on: true, t: 0, x: x + rnd(-0.6, 0.6), y: y + rnd(-0.6, 0.6), vx: Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1), vy: Math.sin(a) * sp + 1, spin: rnd(-400, 400), size: rnd(0.35, 0.6) });
+      sh.on = true;
+      sh.t = 0;
+      sh.x = x + rnd(-0.6, 0.6);
+      sh.y = y + rnd(-0.6, 0.6);
+      sh.vx = Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1);
+      sh.vy = Math.sin(a) * sp + 1;
+      sh.spin = rnd(-400, 400);
+      sh.size = rnd(0.35, 0.6);
       sh.go.enabled = true;
     }
     for (let i = 0; i < 16; i++) {
       const a = rnd(0, Math.PI * 2);
       const sp = rnd(2, 6);
-      this.sprites.emit({ code: "2728", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 1.2, scale: [0.3, 0.6], life: rnd(0.6, 1.1) });
+      this.sprites.emit({ code: "2728", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 1.2, scale: 0.3, scaleTo: 0.6, life: rnd(0.6, 1.1) });
     }
   }
 
@@ -380,7 +407,7 @@ export class Effects {
    * tipping from level to its flight angle as it goes. Its picture is drawn tilted about 14
    * degrees clockwise, which the 14 here takes out.
    */
-  private shipAt(T: number): { x: number; y: number; scale: number; rot: number } | null {
+  private shipAt(T: number): Ship | null {
     if (T > 4.5) return null;
     const drop = 1 - (1 - Math.min(1, T / 0.7)) ** 3;
     const go = Math.min(1, Math.max(0, (T - 3.4) / 0.9));
@@ -402,9 +429,10 @@ export class Effects {
       scale: 0.8,
       life: 5,
       z: -0.2,
-      anim: (t) => {
+      anim: (t: number): SpriteAt | null => {
         const p = this.shipAt(t);
-        return p ? { x: p.x, y: p.y, scale: p.scale, rot: p.rot } : null;
+        if (p === null) return null;
+        return { x: p.x, y: p.y, scale: p.scale, rot: p.rot };
       },
     });
   }
@@ -421,7 +449,7 @@ export class Effects {
     if (ship) {
       // Hangs from the saucer's underside (a little left of the middle of its picture).
       const arrive = sm(T / 0.7);
-      const from = { x: ship.x - 0.03 * ship.scale, y: ship.y - 0.11 * ship.scale, top: 0.7 + (0.35 * ship.scale - 0.7) * arrive };
+      const from: BeamFrom = { x: ship.x - 0.03 * ship.scale, y: ship.y - 0.11 * ship.scale, top: 0.7 + (0.35 * ship.scale - 0.7) * arrive };
       const blue = sm(T / 0.9) * (1 - sm((T - 4) / 0.4));
       // Opens as it drops in, snaps to a thin column as the saucer leaves, and is drawn up into it.
       const width = (1 - 0.35 * arrive) * (T < 3.4 ? 1 : 1 - 0.85 * sm((T - 3.4) / 0.15));
@@ -470,7 +498,11 @@ export class Effects {
         this.flash = Math.max(this.flash, 0.16);
         const shot: Photo = { id: ++this.photoId, left: `${rnd(3, 90)}%`, top: `${rnd(12, 80)}%`, size: rnd(140, 260) };
         photos.set([...photos.get(), shot]);
-        this.later(0.35, () => photos.set(photos.get().filter((p) => p.id !== shot.id)));
+        this.later(0.35, () => {
+          const kept: Photo[] = [];
+          for (const p of photos.get()) if (p.id !== shot.id) kept.push(p);
+          photos.set(kept);
+        });
       });
     }
   }
@@ -524,9 +556,15 @@ export class Effects {
   }
 
   private launch(): void {
-    const tomato = this.tomatoes.find((x) => !x.on);
+    let tomato: Tomato | null = null;
+    for (const x of this.tomatoes) {
+      if (!x.on) {
+        tomato = x;
+        break;
+      }
+    }
     this.pending--;
-    if (!tomato) return;
+    if (tomato === null) return;
     const side = Math.random() < 0.5 ? -1 : 1;
     tomato.on = true;
     tomato.t = 0;
@@ -535,11 +573,16 @@ export class Effects {
     tomato.go.enabled = true;
   }
 
-  update(dt: number, at: { x: number; y: number }): void {
-    for (const t of [...this.timers]) {
+  update(dt: number, at: Pt): void {
+    for (const t of this.timers.slice()) {
       t.t -= dt;
       if (t.t <= 0) {
-        this.timers.splice(this.timers.indexOf(t), 1);
+        for (let k = 0; k < this.timers.length; k++) {
+          if (this.timers[k] === t) {
+            this.timers.splice(k, 1);
+            break;
+          }
+        }
         t.run();
       }
     }
@@ -600,11 +643,12 @@ export class Effects {
     this.moon.transform.position = new Vector3(5.3, y, -0.6);
     this.moon.transform.localEulerAngles = new Vector3(0, 0, 6 * Math.sin(this.clock * 1.1));
     const glow = this.nightLevel;
-    this.moonHalo.forEach((h, i) => (h.fillColor = new Color(1, 0.95, 0.7, glow * [0.08, 0.06, 0.04][i]!)));
+    const halos: number[] = [0.08, 0.06, 0.04];
+    for (let i = 0; i < this.moonHalo.length; i++) this.moonHalo[i]!.fillColor = new Color(1, 0.95, 0.7, glow * halos[i]!);
   }
 
   private updateRockets(dt: number): void {
-    for (const r of [...this.rockets]) {
+    for (const r of this.rockets.slice()) {
       r.t += dt / 0.65;
       const e = 1 - (1 - Math.min(1, r.t)) ** 2;
       const x = r.x + (r.tx - r.x) * e;
@@ -613,7 +657,12 @@ export class Effects {
         this.fx.emit({ x, y, vx: rnd(-0.5, 0.5), vy: rnd(-2.5, -0.5), life: 0.4, color: [1, 0.85, 0.5, 0.9], len: 0.12, width: 0.07, gravity: 2 });
       }
       if (r.t >= 1) {
-        this.rockets.splice(this.rockets.indexOf(r), 1);
+        for (let k = 0; k < this.rockets.length; k++) {
+          if (this.rockets[k] === r) {
+            this.rockets.splice(k, 1);
+            break;
+          }
+        }
         this.burstRocket(r);
       }
     }
@@ -638,12 +687,12 @@ export class Effects {
         });
       }
     };
-    if (r.kind === "peony") spray(72, [5, 8.5], [1.3, 1.9], 3.5, 1.1, r.hue);
-    else if (r.kind === "ring") spray(46, [7.2, 7.2], [1.3, 1.8], 3.5, 1.1, r.hue, true);
+    if (r.kind === "peony") spray(72, [5, 8.5], [1.3, 1.9], 3.5, 1.1, r.hue, false, false);
+    else if (r.kind === "ring") spray(46, [7.2, 7.2], [1.3, 1.8], 3.5, 1.1, r.hue, true, false);
     else if (r.kind === "willow") spray(64, [2.5, 6], [2.2, 3], 2, 0.5, 0, false, true);
     else {
-      spray(56, [5, 8], [1.3, 1.9], 3.5, 1.1, r.hue);
-      spray(34, [4.2, 4.2], [1.3, 1.8], 3.5, 1.1, r.hue + 0.5, true);
+      spray(56, [5, 8], [1.3, 1.9], 3.5, 1.1, r.hue, false, false);
+      spray(34, [4.2, 4.2], [1.3, 1.8], 3.5, 1.1, r.hue + 0.5, true, false);
     }
     this.host.sfx("boom", 0.85, rnd(0.9, 1.1));
     this.later(0.3, () => this.host.sfx("crackle", 0.5, rnd(0.9, 1.2)));
@@ -699,13 +748,14 @@ export class Effects {
     const t = this.discoT;
     const beat = (t % 0.5) / 0.5;
     if (this.mode === "lights") {
-      this.beams.forEach((b, i) => {
+      for (let i = 0; i < this.beams.length; i++) {
+        const b = this.beams[i]!;
         const on = t > i * 0.5 + 0.1;
         b.go.enabled = on;
-        if (!on) return;
+        if (!on) continue;
         b.go.transform.localEulerAngles = new Vector3(0, 0, 18 * Math.sin(t * 0.9 + i * 1.3));
         b.line.fillColor = hsv((b.hue + t * 0.07) % 1, 1, 1, 0.14 + 0.3 * Math.exp(-beat * 6));
-      });
+      }
     }
     const showBall = this.mode === "ball";
     const dotsOn = showBall || (this.mode === "lights" && t > 1);
@@ -716,19 +766,19 @@ export class Effects {
       const settle = fall >= 1 ? -0.35 * Math.exp(-(t - 0.9) * 3) * Math.sin((t - 0.9) * 12) : 0;
       const y = 2.3 + 5.3 * (1 - fall) ** 2 + settle;
       this.ball.transform.position = new Vector3(0, y, -0.6);
-      this.facets.forEach((f, k) => (f.transform.localScale = new Vector3(Math.abs(Math.cos(t * 1.4 + (k * Math.PI) / 6)), 1, 1)));
+      for (let k = 0; k < this.facets.length; k++) this.facets[k]!.transform.localScale = new Vector3(Math.abs(Math.cos(t * 1.4 + (k * Math.PI) / 6)), 1, 1);
     }
     const baseY = showBall ? this.ball.transform.position.y : 3;
-    this.dots.forEach((d) => {
+    for (const d of this.dots) {
       d.go.enabled = dotsOn;
-      if (!dotsOn) return;
+      if (!dotsOn) continue;
       const a = d.angle + t * d.speed;
       d.go.transform.position = new Vector3(Math.cos(a) * d.radius, Math.max(-4.4, Math.min(4.8, baseY - 1 + Math.sin(a) * d.radius * 0.5)), -0.9);
       d.line.fillColor = hsv((d.hue + t * 0.1) % 1, 0.55, 1, 0.35 + 0.45 * Math.abs(Math.sin(t * 5 + d.angle * 9)));
-    });
+    }
   }
 
-  private updateTomatoes(dt: number, at: { x: number; y: number }): void {
+  private updateTomatoes(dt: number, at: Pt): void {
     for (const t of this.tomatoes) {
       if (!t.on) continue;
       t.t += dt / 0.7;
@@ -763,13 +813,14 @@ export class Effects {
     const k = 1 - (1 - grow) ** 3;
     this.water.transform.position = new Vector3(this.poolX, GROUND - 0.1, 0.25);
     this.water.transform.localScale = new Vector3(k, k, 1);
-    this.ripples.forEach((r, i) => {
+    for (let i = 0; i < this.ripples.length; i++) {
+      const r = this.ripples[i]!;
       const phase = (this.poolT * 0.5 + i / 3) % 1;
       r.go.enabled = this.poolT > 0.3;
       r.go.transform.position = new Vector3(this.poolX, GROUND - 0.1, 0.26);
       const s = 0.25 + 0.75 * phase;
       r.go.transform.localScale = new Vector3(s * k, s * k, 1);
       r.line.color = new Color(0.85, 0.95, 1, 0.8 * (1 - phase));
-    });
+    }
   }
 }

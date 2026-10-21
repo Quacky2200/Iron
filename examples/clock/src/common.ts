@@ -1,6 +1,5 @@
 // What the clock faces share: colours, easings, and builders that put everything a face makes
 // under that face's root object (so switching faces is turning one object on or off).
-import { type Camera, Color, type DateTime, GameObject, LineRenderer2D, TextMesh, Vector3 } from "@iron/engine";
 
 export const BG = Color.hex("#0e131b");
 export const INK = Color.hex("#e8edf5");
@@ -19,42 +18,82 @@ export const easeOutBack = (x: number) => {
 };
 
 /** A clock face: built under `root`, updated while it's shown. */
-export interface Face {
-  readonly name: string;
-  readonly root: GameObject;
+export abstract class Face {
+  abstract readonly name: string;
+  abstract readonly root: GameObject;
   /** `now` is the wall clock; `t` seconds since the app started. */
-  update(now: DateTime, t: number, dt: number): void;
-  show?(camera: Camera): void;
-  hide?(camera: Camera): void;
+  abstract update(now: DateTime, t: number, dt: number): void;
+  show(camera: Camera): void {}
+  hide(camera: Camera): void {}
 }
 
 let parent: GameObject | null = null;
 
 /** Runs `build` with new objects going under `root`. */
-export function under<T>(root: GameObject, build: () => T): T {
+export function under(root: GameObject, build: () => void): void {
   const before = parent;
   parent = root;
-  try {
-    return build();
-  } finally {
-    parent = before;
-  }
+  build();
+  parent = before;
 }
 
 /** A new object under the face being built (or under `inside`). */
 export function obj(name: string, at: Vector3 = Vector3.zero, inside?: GameObject): GameObject {
-  const p = inside ?? parent;
-  return new GameObject(name, p ? { position: at, parent: p } : { position: at });
+  const p = inside !== undefined ? inside : parent;
+  if (p !== null) return new GameObject(name, { position: at, parent: p });
+  return new GameObject(name, { position: at });
+}
+
+/** What a shape is made with (a LineRenderer2D's own settings). */
+export interface ShapeLook {
+  points?: Vector2[];
+  width?: number;
+  color?: Color;
+  loop?: boolean;
+  fillColor?: Color;
+  fillRule?: string;
+  sortingOrder?: number;
 }
 
 /** A LineRenderer2D on its own object. */
-export function shape(name: string, look: Partial<LineRenderer2D>, at: Vector3 = Vector3.zero, inside?: GameObject): LineRenderer2D {
-  return obj(name, at, inside).addComponent(LineRenderer2D, { width: 0.05, color: INK, ...look });
+export function shape(name: string, look: ShapeLook, at: Vector3 = Vector3.zero, inside?: GameObject): LineRenderer2D {
+  const r = obj(name, at, inside).addComponent(LineRenderer2D);
+  r.width = look.width !== undefined ? look.width : 0.05;
+  r.color = look.color !== undefined ? look.color : INK;
+  if (look.points !== undefined) r.points = look.points;
+  if (look.loop !== undefined) r.loop = look.loop;
+  if (look.fillColor !== undefined) r.fillColor = look.fillColor;
+  if (look.fillRule !== undefined) r.fillRule = look.fillRule;
+  if (look.sortingOrder !== undefined) r.sortingOrder = look.sortingOrder;
+  return r;
+}
+
+/** What a label is made with (a TextMesh's own settings). */
+export interface LabelLook {
+  text?: string;
+  fontSize?: number;
+  color?: Color;
+  font?: string;
+  fontWeight?: number;
+  alignment?: string;
+  maxWidth?: number;
+  pixelsPerUnit?: number;
+  resolution?: number;
 }
 
 /** A TextMesh on its own object. */
-export function label(name: string, look: Partial<TextMesh>, at: Vector3 = Vector3.zero, inside?: GameObject): TextMesh {
-  return obj(name, at, inside).addComponent(TextMesh, { fontSize: 24, color: INK, ...look });
+export function label(name: string, look: LabelLook, at: Vector3 = Vector3.zero, inside?: GameObject): TextMesh {
+  const t = obj(name, at, inside).addComponent(TextMesh);
+  t.fontSize = look.fontSize !== undefined ? look.fontSize : 24;
+  t.color = look.color !== undefined ? look.color : INK;
+  if (look.text !== undefined) t.text = look.text;
+  if (look.font !== undefined) t.font = look.font;
+  if (look.fontWeight !== undefined) t.fontWeight = look.fontWeight;
+  if (look.alignment !== undefined) t.alignment = look.alignment;
+  if (look.maxWidth !== undefined) t.maxWidth = look.maxWidth;
+  if (look.pixelsPerUnit !== undefined) t.pixelsPerUnit = look.pixelsPerUnit;
+  if (look.resolution !== undefined) t.resolution = look.resolution;
+  return t;
 }
 
 /**

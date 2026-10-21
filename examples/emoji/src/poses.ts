@@ -1,7 +1,7 @@
 // What an emoji does in the spotlight. Every pose starts and ends at rest.
 import type { PoseName } from "./cast.ts";
 import { GROUND, HEIGHT } from "./config.ts";
-import { type Act, clamp01, type Cue, envelope, keys, lerp, smooth, still } from "./moves.ts";
+import { type Act, clamp01, type Ctx, type Cue, envelope, keys, lerp, smooth, still } from "./moves.ts";
 
 const DEFAULT_TIME = 3.8;
 
@@ -257,11 +257,17 @@ const zap: Act = {
   },
 };
 
+function photoCues(): Cue[] {
+  const out: Cue[] = [];
+  for (const t of [0.4, 1.4, 2.4, 3.4, 4.4]) out.push([t, (c: Ctx) => c.scene.photos(3)]);
+  return out;
+}
+
 /** A model on the runway: a new pose every second, a burst of camera flashes on each. */
 const model: Act = {
   name: "model",
   dur: 5.8,
-  cues: [0.4, 1.4, 2.4, 3.4, 4.4].map((t): Cue => [t, (c) => c.scene.photos(3)]),
+  cues: photoCues(),
   at(t) {
     const m = still();
     m.rot = keys(t, [
@@ -277,4 +283,24 @@ const model: Act = {
   },
 };
 
-export const POSES: Record<PoseName, Act> = { model, bow, wink, spin, pump, sway, shake, float, flip, dizzy, watch, beat, fart, party, zap };
+function makePoses(): Map<string, Act> {
+  const m = new Map<string, Act>();
+  m.set("model", model);
+  m.set("bow", bow);
+  m.set("wink", wink);
+  m.set("spin", spin);
+  m.set("pump", pump);
+  m.set("sway", sway);
+  m.set("shake", shake);
+  m.set("float", float);
+  m.set("flip", flip);
+  m.set("dizzy", dizzy);
+  m.set("watch", watch);
+  m.set("beat", beat);
+  m.set("fart", fart);
+  m.set("party", party);
+  m.set("zap", zap);
+  return m;
+}
+
+export const POSES: Map<string, Act> = makePoses();

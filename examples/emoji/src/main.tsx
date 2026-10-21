@@ -9,23 +9,22 @@
 // (sounds and effects at set moments); this file is the director that turns a `Move` into
 // transforms, a shadow, particles and curtain moves, and runs the cues. Sounds are
 // synthesised by tools/make_sfx.py.
-import { Camera, Color, Component, GameObject, input, LineRenderer2D, register, Screen, Shapes, Vector2, Vector3, WorldPanel } from "@iron/engine";
-import { createRoot } from "@iron/react";
 import { CAST, type Star } from "./cast.ts";
 import { BIG, GROUND, HEIGHT, LIGHT, PANEL, view } from "./config.ts";
-import { Effects } from "./effects.tsx";
+import { Effects, type Host } from "./effects.tsx";
 import { ENTRANCES } from "./entrances.ts";
 import { EXITS } from "./exits.ts";
 import { Fx } from "./fx.ts";
 import { caption, eyes, Face, Hud, overlay, rocket, shown, wheel, type WheelState } from "./hud.tsx";
-import type { Act, Ctx, Cue, Move } from "./moves.ts";
+import { type Act, type Ctx, type Cue, type Move, still } from "./moves.ts";
 import { POSES } from "./poses.ts";
 import { SIGNATURES } from "./signatures.ts";
 import { sfx } from "./sfx.ts";
 import { randomReaction, randomScene, type Reaction, type Scene, SPECIAL } from "./specials.ts";
 import { buildStage, Curtain, Mote, type Stage } from "./stage.tsx";
 
-type Phase = "wheel" | "enter" | "pose" | "exit" | "miss" | "close";
+/** `wheel`, `enter`, `pose`, `exit`, `miss` or `close`. */
+type Phase = string;
 
 // Wheel timeline, seconds.
 const W_IN = 0.7;
@@ -37,14 +36,18 @@ const W_TOTAL = W_IN + W_SPIN + W_GLOW + W_OUT;
 const LEAD = 1;
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-const pick = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)]!;
+function pick<T>(list: T[]): T {
+  return list[Math.floor(Math.random() * list.length)]!;
+}
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smoothstep = (t: number) => {
   const c = clamp01(t);
   return c * c * (3 - 2 * c);
 };
-function weighted<T extends { weight?: number }>(list: T[]): T {
-  let r = Math.random() * list.reduce((n, a) => n + (a.weight ?? 1), 0);
+function weighted(list: Act[]): Act {
+  let total = 0;
+  for (const a of list) total += a.weight ?? 1;
+  let r = Math.random() * total;
   for (const a of list) {
     const w = a.weight ?? 1;
     if (w <= 0) continue;
@@ -53,7 +56,10 @@ function weighted<T extends { weight?: number }>(list: T[]): T {
   }
   return list[0]!;
 }
-const named = (list: Act[], name: string): Act | undefined => list.find((a) => a.name === name);
+function named(list: Act[], name: string): Act | null {
+  for (const a of list) if (a.name === name) return a;
+  return null;
+}
 
 type Rgba = [number, number, number, number];
 const SPARK: Rgba[] = [[1, 0.85, 0.3, 1], [1, 0.6, 0.15, 1], [1, 0.95, 0.7, 1]];
@@ -82,7 +88,7 @@ class Parade extends Component {
   private poseAct!: Act;
   private current!: Act;
   private cues: Cue[] = [];
-  private cueAt = 0;
+  private cueAt: number = 0;
   private scene: Scene | undefined;
   private reaction: Reaction = "none";
   private reactAt = 0.5;
@@ -109,7 +115,7 @@ class Parade extends Component {
   private groundCarry = 0;
   private wasThump = 0;
   private wasPuff = false;
-  private lastStride: number | null = null;
+  private lastStride: number = -1000;
   private litKey = "";
   private jolt = 0;
   private shakeAmount = 0;
@@ -142,29 +148,44 @@ class Parade extends Component {
     this.fx = new Fx(450);
     this.curtain = new Curtain();
     const self = this;
-    this.ctx = {
-      sfx: (name, volume = 1, rate = 1) => void sfx.play(name, volume, rate),
-      stop: (name, fade = 0.3) => sfx.stopPlaying(name, fade),
-      shake: (amount, seconds) => {
-        if (amount >= self.shakeAmount * (self.shakeLeft / self.shakeTotal)) {
-          self.shakeAmount = amount;
-          self.shakeLeft = self.shakeTotal = Math.max(0.01, seconds);
-        }
+    const host: Host = {
+      sfx: (name: string, volume?: number, rate?: number) => {
+        sfx.play(name, volume ?? 1, rate ?? 1);
       },
-      burst: (x, y, count) => self.burst(x, y, count),
-      smoke: (x, y, count, color, size) => self.smoke(x, y, count, color, size),
-      jolt: (amount) => void (self.jolt = Math.max(self.jolt, amount)),
-      at: () => ({ x: self.px, y: GROUND + HEIGHT / 2 + self.py }),
-      get scene() {
-        return self.effects;
+      shake: (amount: number, seconds: number) => self.shake(amount, seconds),
+      smoke: (x: number, y: number, count: number, color: number[], size?: number) => self.smoke(x, y, count, color, size ?? 1),
+      jolt: (amount: number) => {
+        self.jolt = Math.max(self.jolt, amount);
       },
     };
-    this.effects = new Effects(this.fx, this.ctx, this.stage);
+    this.effects = new Effects(this.fx, host, this.stage);
+    this.ctx = {
+      sfx: (name: string, volume?: number, rate?: number) => {
+        sfx.play(name, volume ?? 1, rate ?? 1);
+      },
+      stop: (name: string, fade?: number) => sfx.stopPlaying(name, fade ?? 0.3),
+      shake: (amount: number, seconds: number) => self.shake(amount, seconds),
+      burst: (x: number, y: number, count: number) => self.burst(x, y, count),
+      smoke: (x: number, y: number, count: number, color: number[], size?: number) => self.smoke(x, y, count, color, size ?? 1),
+      jolt: (amount: number) => {
+        self.jolt = Math.max(self.jolt, amount);
+      },
+      at: () => ({ x: self.px, y: GROUND + HEIGHT / 2 + self.py }),
+      scene: this.effects,
+    };
     createRoot().render(<Hud />);
     this.beginWheel();
   }
 
   // ---- The wheel ----
+
+  private shake(amount: number, seconds: number): void {
+    if (amount >= this.shakeAmount * (this.shakeLeft / this.shakeTotal)) {
+      this.shakeAmount = amount;
+      this.shakeTotal = Math.max(0.01, seconds);
+      this.shakeLeft = this.shakeTotal;
+    }
+  }
 
   private beginWheel(): void {
     this.phase = "wheel";
@@ -238,17 +259,26 @@ class Parade extends Component {
   // ---- The act ----
 
   private beginAct(star: Star): void {
-    const special = SPECIAL[star.code] ?? {};
+    const special = SPECIAL.get(star.code) ?? {};
     this.star = star;
-    this.enterAct = (special.enter && named(ENTRANCES, special.enter)) || weighted(ENTRANCES);
-    this.exitAct = (special.exit && named(EXITS, special.exit)) || weighted(EXITS);
+    let enter: Act | null = null;
+    if (special.enter !== undefined) enter = named(ENTRANCES, special.enter);
+    this.enterAct = enter !== null ? enter : weighted(ENTRANCES);
+    let leave: Act | null = null;
+    if (special.exit !== undefined) leave = named(EXITS, special.exit);
+    this.exitAct = leave !== null ? leave : weighted(EXITS);
     this.reaction = special.react ?? randomReaction();
     // Plain applause and cheering are for taking a bow.
     const plain = this.reaction === "applause" || this.reaction === "cheer";
     const poseName = special.pose ?? (plain ? "bow" : pick(star.poses));
-    const pose = (POSES as Record<string, Act>)[poseName] ?? SIGNATURES[poseName] ?? POSES.bow;
+    const pose = POSES.get(poseName) ?? SIGNATURES.get(poseName) ?? POSES.get("bow")!;
     // A longer stay repeats the pose.
-    this.poseAct = special.extra ? { ...pose, dur: pose.dur + special.extra, at: (t) => pose.at(t % pose.dur) } : pose;
+    this.poseAct = pose;
+    if (special.extra !== undefined) {
+      const base = pose;
+      const extra = special.extra;
+      this.poseAct = { name: base.name, dur: base.dur + extra, cues: base.cues, weight: base.weight, land: base.land, miss: base.miss, at: (t: number) => base.at(t % base.dur) };
+    }
     this.scene = special.scene ?? (special.calm ? undefined : randomScene());
     this.reactAt = special.reactAt ?? 0.5;
     this.reacted = false;
@@ -263,7 +293,8 @@ class Parade extends Component {
     rocket.set({ turn: 0, flame: 0, power: 0, stars: 1 });
     // The rocket gets a bigger panel (see config.ts).
     this.big = star.code === "1f680";
-    this.panel.width = this.panel.height = this.big ? BIG : PANEL;
+    this.panel.width = this.big ? BIG : PANEL;
+    this.panel.height = this.big ? BIG : PANEL;
     shown.set({ code: star.code, look: star.look ?? null, mirror: false, big: this.big });
     this.startPhase("enter", this.enterAct, -LEAD);
   }
@@ -274,7 +305,7 @@ class Parade extends Component {
     if (act) this.current = act;
     this.cues = act?.cues ?? [];
     this.cueAt = 0;
-    this.lastStride = null;
+    this.lastStride = -1000;
   }
 
   private startScene(): void {
@@ -308,7 +339,9 @@ class Parade extends Component {
 
   /** The crowd's reaction. */
   private react(kind: Reaction): void {
-    const { x, y } = this.ctx.at();
+    const at = this.ctx.at();
+    const x = at.x;
+    const y = at.y;
     switch (kind) {
       case "applause":
         sfx.play("clap", 0.9);
@@ -349,7 +382,7 @@ class Parade extends Component {
     this.effects.update(dt, { x: this.px, y: GROUND + HEIGHT / 2 + this.py });
     this.shakeCamera(dt);
 
-    let m: Move;
+    let m: Move = still();
     let side = this.side;
     switch (this.phase) {
       case "wheel":
@@ -468,11 +501,11 @@ class Parade extends Component {
     // At night there is no spotlight to dim it.
     const dim = 0.3 + 0.7 * spot;
     const lit = Math.min(1.4, dim + (0.95 - dim) * this.effects.nightLevel + 0.9 * overlay.get().flash);
-    const tint = m.tint ?? [1, 1, 1];
-    const key = `${lit.toFixed(2)}|${tint.join(",")}|${m.alpha.toFixed(2)}`;
+    const tint: number[] = m.tint ?? [1, 1, 1];
+    const key = `${lit.toFixed(2)}|${tint[0]!},${tint[1]!},${tint[2]!}|${m.alpha.toFixed(2)}`;
     if (key !== this.litKey) {
       this.litKey = key;
-      this.panel.tint = new Color(lit * tint[0], lit * tint[1], lit * tint[2], m.alpha);
+      this.panel.tint = new Color(lit * tint[0]!, lit * tint[1]!, lit * tint[2]!, m.alpha);
     }
 
     // The shadow shrinks as it leaves the floor.
@@ -481,7 +514,7 @@ class Parade extends Component {
     this.shadow.transform.localScale = new Vector3(spread, spread, 1);
 
     const code = m.swap ?? this.star.code;
-    const mirror = !!m.mirror;
+    const mirror = m.mirror === true;
     if (code !== this.shownCode || mirror !== this.shownMirror) {
       this.shownCode = code;
       this.shownMirror = mirror;
@@ -496,7 +529,7 @@ class Parade extends Component {
     // Footsteps.
     if (m.stride !== undefined) {
       const step = Math.floor(m.stride);
-      if (this.lastStride !== null && step !== this.lastStride) sfx.play("step", 0.35, rnd(0.9, 1.1));
+      if (this.lastStride !== -1000 && step !== this.lastStride) sfx.play("step", 0.35, rnd(0.9, 1.1));
       this.lastStride = step;
     }
     this.emitFx(m, x, dir, dt);
@@ -583,7 +616,7 @@ class Parade extends Component {
   }
 
   /** Soft coloured puffs (fart clouds, tomato juice, smoke). */
-  private smoke(x: number, y: number, count: number, color: Rgba, size = 1): void {
+  private smoke(x: number, y: number, count: number, color: number[], size: number = 1): void {
     for (let i = 0; i < count; i++) {
       this.fx.emit({
         x: x + rnd(-0.5, 0.5),

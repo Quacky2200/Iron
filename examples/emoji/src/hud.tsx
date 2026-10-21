@@ -1,37 +1,74 @@
 // The React side: what the emoji panel shows (a Noto SVG, or a face drawn in code whose eyes
 // follow the mouse), the caption, the spinner wheel and the curtains. The director writes to
 // small stores; components read them.
-import { addStyleSheet } from "@iron/engine";
-import { Image } from "@iron/react";
-import { useEffect, useState } from "react";
 import { BIG, PANEL } from "./config.ts";
 
-export function store<T>(init: T) {
-  let value = init;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => value,
-    set(next: T) {
-      value = next;
-      listeners.forEach((f) => f());
-    },
-    use(): T {
-      const [v, setV] = useState(value);
-      useEffect(() => {
-        const f = () => setV(value);
-        listeners.add(f);
-        f();
-        return () => void listeners.delete(f);
-      }, []);
-      return v;
-    },
-  };
+/** A value the director writes and components read (`use()` re-renders them on a change). */
+export class Store<T> {
+  private value: T;
+  private listeners: Set<() => void> = new Set<() => void>();
+
+  constructor(init: T) {
+    this.value = init;
+  }
+
+  get(): T {
+    return this.value;
+  }
+
+  set(next: T): void {
+    this.value = next;
+    for (const f of this.listeners) f();
+  }
+
+  use(): T {
+    const [v, setV] = useState(this.value);
+    useEffect(() => {
+      const f = () => setV(this.value);
+      this.listeners.add(f);
+      f();
+      return () => {
+        this.listeners.delete(f);
+      };
+    }, []);
+    return v;
+  }
 }
 
-export const shown = store<{ code: string; look: "eyes" | "googly" | null; mirror: boolean; big: boolean }>({ code: "1f600", look: null, mirror: false, big: false });
-export const caption = store<string | null>(null);
+export interface Shown {
+  code: string;
+  look: string | null;
+  mirror: boolean;
+  big: boolean;
+}
+
+export interface Overlay {
+  rain: boolean;
+  storm: boolean;
+  love: boolean;
+  party: boolean;
+  flash: number;
+  tint: string;
+  countdown: string | null;
+}
+
+export interface RocketState {
+  turn: number;
+  flame: number;
+  power: number;
+  stars: number;
+}
+
+export interface EyeState {
+  px: number;
+  py: number;
+  blink: number;
+}
+
+export const shown = new Store<Shown>({ code: "1f600", look: null, mirror: false, big: false });
+export const caption = new Store<string | null>(null);
 /** Whole-stage overlays drawn over the emoji: rain, storm clouds, a white flash (lightning), the room blushing red, a party. */
-export const overlay = store<{ rain: boolean; storm: boolean; love: boolean; party: boolean; flash: number; tint: string; countdown: string | null }>({ rain: false, storm: false, love: false, party: false, flash: 0, tint: "#ffffff", countdown: null });
+export const overlay = new Store<Overlay>({ rain: false, storm: false, love: false, party: false, flash: 0, tint: "#ffffff", countdown: null });
 /** Tomato splats on the emoji, in the panel's pixels. */
 export interface Splat {
   x: number;
@@ -39,7 +76,7 @@ export interface Splat {
   size: number;
   rot: number;
 }
-export const splats = store<Splat[]>([]);
+export const splats = new Store<Splat[]>([]);
 /** The rocket emoji is drawn in two pieces so it can turn upright and its flame can go out, flicker and roar. */
 /** Camera flashes on the screen (fashion shoot): a few at a time, each gone after a moment. */
 export interface Photo {
@@ -48,12 +85,12 @@ export interface Photo {
   top: string;
   size: number;
 }
-export const photos = store<Photo[]>([]);
+export const photos = new Store<Photo[]>([]);
 /** How cracked the picture is: 0 whole, up to 3 (a diamond tapped with a pickaxe). */
-export const cracks = store(0);
-export const rocket = store({ turn: 0, flame: 0, power: 0, stars: 1 });
+export const cracks = new Store<number>(0);
+export const rocket = new Store<RocketState>({ turn: 0, flame: 0, power: 0, stars: 1 });
 /** Pupil offsets (-1..1 of how far they can move) and how shut the eyelids are (0..1). */
-export const eyes = store({ px: 0, py: 0, blink: 0 });
+export const eyes = new Store<EyeState>({ px: 0, py: 0, blink: 0 });
 
 export interface WheelState {
   /** The Noto files on the wheel, clockwise from the top. */
@@ -67,7 +104,7 @@ export interface WheelState {
   fade: number;
   winner: number;
 }
-export const wheel = store<WheelState | null>(null);
+export const wheel = new Store<WheelState | null>(null);
 
 addStyleSheet(`
 .caption { animation: caption-in 0.45s cubic-bezier(0.2, 1.7, 0.4, 1) both; }
@@ -171,7 +208,8 @@ const CRACKS: string[][] = [
 function Cracks() {
   const stage = cracks.use();
   if (stage <= 0) return null;
-  const lines = CRACKS.slice(0, stage).flat();
+  const lines: string[] = [];
+  for (let k = 0; k < stage && k < CRACKS.length; k++) for (const l of CRACKS[k]!) lines.push(l);
   return (
     <svg viewBox="0 0 480 480" style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL }}>
       {/* The diamond's outline, so no crack runs outside it. */}
@@ -191,13 +229,12 @@ function Cracks() {
 
 function RocketArt() {
   const r = rocket.use();
-  const art = { position: "absolute" as const, left: 0, top: 0, width: PANEL, height: PANEL };
   return (
     <box style={{ width: PANEL, height: PANEL, transform: `translate(0px, ${-40 * r.turn}px) rotate(${-45 * r.turn}deg) scale(${1 - 0.1 * r.turn})` }}>
       {/* The flame is behind the rocket, as in the original: the fins cover its root. */}
-      {r.flame > 0.01 && <Image src="assets/emoji/1f680-flame.svg" className={r.power > 0.5 ? "flame-big" : "flame"} style={{ ...art, opacity: r.flame }} />}
-      <Image src="assets/emoji/1f680-body.svg" style={art} />
-      {r.stars > 0.01 && <Image src="assets/emoji/1f680-stars.svg" style={{ ...art, opacity: r.stars }} />}
+      {r.flame > 0.01 && <Image src="assets/emoji/1f680-flame.svg" className={r.power > 0.5 ? "flame-big" : "flame"} style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL, opacity: r.flame }} />}
+      <Image src="assets/emoji/1f680-body.svg" style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL }} />
+      {r.stars > 0.01 && <Image src="assets/emoji/1f680-stars.svg" style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL, opacity: r.stars }} />}
     </box>
   );
 }
@@ -276,7 +313,12 @@ const WHEEL = 215;
 const CHIP = 84;
 const COLOURS = ["#e63946", "#f4a261", "#2a9d8f", "#7b2cbf"];
 // A gradient holds eight stops, so four colours (two stops each) repeat round the wheel.
-const CONIC = `repeating-conic-gradient(from -22.5deg, ${COLOURS.slice(0, 4).map((c, i) => `${c} ${i * 45}deg ${(i + 1) * 45}deg`).join(", ")})`;
+function conic(): string {
+  let stops = "";
+  for (let i = 0; i < 4; i++) stops += `${i > 0 ? ", " : ""}${COLOURS[i]!} ${i * 45}deg ${(i + 1) * 45}deg`;
+  return `repeating-conic-gradient(from -22.5deg, ${stops})`;
+}
+const CONIC = conic();
 
 function Wheel() {
   const w = wheel.use();
@@ -323,34 +365,95 @@ function Wheel() {
 }
 
 // Fixed random positions, so a re-render doesn't scatter them again.
-const DROPS = Array.from({ length: 130 }, (_, i) => {
-  const near = i % 2 === 0;
-  return {
-    left: `${Math.random() * 104 - 2}%`,
-    width: near ? 3 : 2,
-    height: near ? 70 + Math.random() * 60 : 40 + Math.random() * 30,
-    dur: near ? 0.26 + Math.random() * 0.1 : 0.38 + Math.random() * 0.15,
-    delay: -Math.random(),
-    alpha: near ? 0.95 : 0.6,
-  };
-});
-const HEARTS = Array.from({ length: 12 }, (_, i) => ({ left: `${4 + i * 8 + Math.random() * 5}%`, delay: -Math.random() * 4.5, size: 40 + Math.random() * 40 }));
+interface Drop {
+  left: string;
+  width: number;
+  height: number;
+  dur: number;
+  delay: number;
+  alpha: number;
+}
+interface Heart {
+  left: string;
+  delay: number;
+  size: number;
+}
+interface Piece {
+  left: string;
+  dur: number;
+  delay: number;
+  colour: string;
+}
+interface Balloon {
+  left: string;
+  size: number;
+  delay: number;
+  dur: number;
+}
+interface Flag {
+  left: string;
+  top: number;
+  rot: number;
+  colour: string;
+}
+interface Cloud {
+  left: number;
+  top: number;
+  scale: number;
+}
 const PARTY_COLOURS = ["#ff4d6d", "#ffd166", "#4cc9f0", "#80ed99", "#f72585", "#b5179e", "#ffffff", "#ff9f1c"];
-const PIECES = Array.from({ length: 80 }, () => ({ left: `${Math.random() * 100}%`, dur: 2.4 + Math.random() * 1.6, delay: -Math.random() * 4, colour: pick(PARTY_COLOURS) }));
-const BALLOONS = Array.from({ length: 10 }, (_, i) => ({ left: `${3 + i * 10 + Math.random() * 4}%`, size: 90 + Math.random() * 40, delay: -Math.random() * 6.5, dur: 5.5 + Math.random() * 2 }));
-const FLAGS = Array.from({ length: 26 }, (_, i) => {
-  const u = (i + 0.5) / 26;
-  const swag = Math.sin(3 * Math.PI * u);
-  return { left: `${u * 100}%`, top: 108 + 22 * Math.abs(swag), rot: 18 * Math.cos(3 * Math.PI * u) * Math.sign(swag), colour: PARTY_COLOURS[i % PARTY_COLOURS.length]! };
-});
-function pick<T>(list: T[]): T {
+function pick(list: string[]): string {
   return list[Math.floor(Math.random() * list.length)]!;
 }
-const CLOUDS = [
+function makeDrops(): Drop[] {
+  const out: Drop[] = [];
+  for (let i = 0; i < 130; i++) {
+    const near = i % 2 === 0;
+    out.push({
+      left: `${Math.random() * 104 - 2}%`,
+      width: near ? 3 : 2,
+      height: near ? 70 + Math.random() * 60 : 40 + Math.random() * 30,
+      dur: near ? 0.26 + Math.random() * 0.1 : 0.38 + Math.random() * 0.15,
+      delay: -Math.random(),
+      alpha: near ? 0.95 : 0.6,
+    });
+  }
+  return out;
+}
+function makeHearts(): Heart[] {
+  const out: Heart[] = [];
+  for (let i = 0; i < 12; i++) out.push({ left: `${4 + i * 8 + Math.random() * 5}%`, delay: -Math.random() * 4.5, size: 40 + Math.random() * 40 });
+  return out;
+}
+function makePieces(): Piece[] {
+  const out: Piece[] = [];
+  for (let i = 0; i < 80; i++) out.push({ left: `${Math.random() * 100}%`, dur: 2.4 + Math.random() * 1.6, delay: -Math.random() * 4, colour: pick(PARTY_COLOURS) });
+  return out;
+}
+function makeBalloons(): Balloon[] {
+  const out: Balloon[] = [];
+  for (let i = 0; i < 10; i++) out.push({ left: `${3 + i * 10 + Math.random() * 4}%`, size: 90 + Math.random() * 40, delay: -Math.random() * 6.5, dur: 5.5 + Math.random() * 2 });
+  return out;
+}
+function makeFlags(): Flag[] {
+  const out: Flag[] = [];
+  for (let i = 0; i < 26; i++) {
+    const u = (i + 0.5) / 26;
+    const swag = Math.sin(3 * Math.PI * u);
+    out.push({ left: `${u * 100}%`, top: 108 + 22 * Math.abs(swag), rot: 18 * Math.cos(3 * Math.PI * u) * Math.sign(swag), colour: PARTY_COLOURS[i % PARTY_COLOURS.length]! });
+  }
+  return out;
+}
+const DROPS: Drop[] = makeDrops();
+const HEARTS: Heart[] = makeHearts();
+const PIECES: Piece[] = makePieces();
+const BALLOONS: Balloon[] = makeBalloons();
+const FLAGS: Flag[] = makeFlags();
+const CLOUDS: Cloud[] = [
   { left: -60, top: -80, scale: 1.2 }, { left: 140, top: -40, scale: 1.0 }, { left: 320, top: -90, scale: 1.3 }, { left: 520, top: -50, scale: 1.1 },
   { left: 700, top: -90, scale: 1.25 }, { left: 900, top: -40, scale: 1.0 }, { left: 1090, top: -80, scale: 1.2 },
 ];
-const PUFFS: [number, number, number][] = [[0, 70, 150], [80, 20, 190], [190, 0, 200], [280, 40, 170], [240, 95, 150], [110, 85, 170], [30, 100, 120]];
+const PUFFS: number[][] = [[0, 70, 150], [80, 20, 190], [190, 0, 200], [280, 40, 170], [240, 95, 150], [110, 85, 170], [30, 100, 120]];
 
 function Rain() {
   return (
@@ -370,8 +473,8 @@ function Storm() {
       {CLOUDS.map((c, i) => (
         <box key={i} className="cloud-in" style={{ left: c.left, top: c.top, transform: `scale(${c.scale})` }}>
           <box className="cloud" style={{ animationDelay: `${-i * 2.3}s` }}>
-            {PUFFS.map(([x, y, size], k) => (
-              <box key={k} className="puff" style={{ left: x, top: y, width: size, height: size * 0.8 }} />
+            {PUFFS.map((pf, k) => (
+              <box key={k} className="puff" style={{ left: pf[0]!, top: pf[1]!, width: pf[2]!, height: pf[2]! * 0.8 }} />
             ))}
           </box>
         </box>
@@ -424,7 +527,7 @@ export function Hud() {
       ))}
       {ov.countdown && (
         <box style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-          <text key={ov.countdown} className="caption" style={{ fontSize: ov.countdown.length > 1 ? 150 : 260, fontWeight: 900, color: "#fff7e0", letterSpacing: 6, textShadow: "0 6px 30px rgba(0,0,0,0.9)" }}>
+          <text key={ov.countdown ?? ""} className="caption" style={{ fontSize: ov.countdown.length > 1 ? 150 : 260, fontWeight: 900, color: "#fff7e0", letterSpacing: 6, textShadow: "0 6px 30px rgba(0,0,0,0.9)" }}>
             {ov.countdown}
           </text>
         </box>
@@ -436,7 +539,7 @@ export function Hud() {
       <Wheel />
       {name && (
         <box style={{ position: "absolute", left: 0, right: 0, bottom: 34, alignItems: "center", flexDirection: "column" }}>
-          <text key={name} className="caption" style={{ fontSize: 46, fontWeight: 800, color: "#f6f1e2", letterSpacing: 4, textTransform: "uppercase", textShadow: "0 3px 12px rgba(0,0,0,0.85)" }}>
+          <text key={name ?? ""} className="caption" style={{ fontSize: 46, fontWeight: 800, color: "#f6f1e2", letterSpacing: 4, textTransform: "uppercase", textShadow: "0 3px 12px rgba(0,0,0,0.85)" }}>
             {name}
           </text>
         </box>
@@ -446,7 +549,9 @@ export function Hud() {
 }
 
 /** One half of the curtain: folds (a repeating gradient) that squash up as it's drawn back. */
-export const Drape = ({ side }: { side: "l" | "r" }) => <box className={`drape drape-${side}`} />;
+export function Drape(props: { side: string }) {
+  return <box className={`drape drape-${props.side}`} />;
+}
 
 /** The gold-edged swag along the top. */
 export function Valance({ width }: { width: number }) {

@@ -6,23 +6,8 @@
 // the time zone, summer time and the equation of time move a little. The sky follows the sun's
 // height, from day through dusk to night. At night there's no shadow to read, so it shows a day
 // passing instead; D does that by day too (D again to stop).
-import {
-  type Camera,
-  Color,
-  type DateTime,
-  GameObject,
-  input,
-  Light,
-  Material,
-  Mesh,
-  MeshRenderer,
-  Quaternion,
-  RenderSettings,
-  type TextMesh,
-  Vector3,
-} from "@iron/engine";
 
-import { type Face, label, obj, two, under } from "./common.ts";
+import { Face, label, obj, two, under } from "./common.ts";
 
 const LATITUDE = 51.5;
 const DEG = Math.PI / 180;
@@ -101,9 +86,9 @@ function solid(name: string, mesh: "cube" | "cylinder" | "sphere" | "plane", mat
   return go;
 }
 
-export class SundialFace implements Face {
+export class SundialFace extends Face {
   readonly name = "Sundial";
-  readonly root = new GameObject("Sundial face");
+  readonly root: GameObject = new GameObject("Sundial face");
   private sun!: Light;
   private plaque!: TextMesh;
   private lapse = false;
@@ -113,6 +98,7 @@ export class SundialFace implements Face {
   private saved: (() => void) | null = null;
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 
@@ -152,7 +138,7 @@ export class SundialFace implements Face {
     bushes.forEach(([x, z, s], i) => solid(`bush ${i}`, "sphere", LEAVES, new Vector3(x, s * 0.4, z), new Vector3(s * 1.2, s * 0.9, s * 1.2)));
   }
 
-  show(camera: Camera): void {
+  override show(camera: Camera): void {
     const t = camera.transform;
     const before = {
       ortho: camera.orthographic,
@@ -183,7 +169,7 @@ export class SundialFace implements Face {
     };
   }
 
-  hide(): void {
+  override hide(): void {
     this.saved?.();
     this.saved = null;
   }

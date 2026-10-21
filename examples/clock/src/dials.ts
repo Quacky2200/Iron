@@ -1,9 +1,8 @@
 // The dials face: three rings (hours, minutes, seconds) carry their numbers round and turn to
 // bring the time under a window at twelve o'clock, like a car's odometer laid flat. Seconds
 // step with a small overshoot, minutes ease round when they change, hours glide.
-import { Color, type DateTime, GameObject, Quaternion, Shapes, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { DIM, easeInOutCubic, easeOutBack, type Face, label, mix, obj, shape, two, under } from "./common.ts";
+import { DIM, easeInOutCubic, easeOutBack, Face, label, mix, obj, shape, two, under } from "./common.ts";
 
 const CENTRE = new Vector3(0, -0.35, 0);
 const ACCENT = Color.hex("#ffc04d");
@@ -29,7 +28,7 @@ const DIALS: DialSpec[] = [
 class Turn {
   current = 0;
   private from = 0;
-  private to = Number.NaN;
+  private to: number = Number.NaN;
   private at = 0;
 
   /** Heads for `target` degrees the short way round, over `seconds` with `ease`. */
@@ -52,15 +51,16 @@ class Turn {
   }
 }
 
-export class DialsFace implements Face {
+export class DialsFace extends Face {
   readonly name = "Dials";
-  readonly root = new GameObject("Dials face");
+  readonly root: GameObject = new GameObject("Dials face");
   private pivots: GameObject[] = [];
-  private turns = DIALS.map(() => new Turn());
+  private turns: Turn[] = DIALS.map(() => new Turn());
   private readout!: TextMesh;
   private shown = "";
 
   constructor() {
+    super();
     under(this.root, () => this.build());
     // Seen flat, the rings fill the view: a little smaller leaves room for the readout.
     this.root.transform.localScale = new Vector3(0.84, 0.84, 1);

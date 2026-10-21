@@ -1,9 +1,8 @@
 // The underwater face: a brass porthole clock lying on the sea bed, slightly tilted, its second
 // hand dragging as if through water. Light shafts drift down through blue water, kelp sways,
 // bubbles wobble up to the surface, and fish (spline bodies) swim past, turning at the edges.
-import { Color, type Camera, type DateTime, GameObject, type LineRenderer2D, Quaternion, Shapes, Spline, type TextMesh, Vector2, Vector3 } from "@iron/engine";
 
-import { type Face, label, mix, obj, shape, two, under } from "./common.ts";
+import { Face, label, mix, obj, shape, two, under } from "./common.ts";
 
 const SURFACE = Color.hex("#1f6fa8");
 const DEEP = Color.hex("#061a33");
@@ -33,9 +32,9 @@ interface Swimmer {
   phase: number;
 }
 
-export class UnderwaterFace implements Face {
+export class UnderwaterFace extends Face {
   readonly name = "Underwater";
-  readonly root = new GameObject("Underwater face");
+  readonly root: GameObject = new GameObject("Underwater face");
   private shafts: GameObject[] = [];
   private kelp: { line: LineRenderer2D; base: Vector2; height: number; phase: number }[] = [];
   private bubbles: { go: GameObject; x: number; y: number; speed: number; phase: number }[] = [];
@@ -43,12 +42,13 @@ export class UnderwaterFace implements Face {
   private hourHand!: GameObject;
   private minuteHand!: GameObject;
   private secondHand!: GameObject;
-  private secondAngle = Number.NaN;
+  private secondAngle: number = Number.NaN;
   private time!: TextMesh;
   private shown = "";
   private background: Color | null = null;
 
   constructor() {
+    super();
     under(this.root, () => this.build());
   }
 
@@ -129,12 +129,12 @@ export class UnderwaterFace implements Face {
     this.time = label("time", { fontSize: 42, fontWeight: 700, color: Color.hex("#d8f3ff") }, new Vector3(-5.6, 3.6, 0));
   }
 
-  show(camera: Camera): void {
+  override show(camera: Camera): void {
     this.background = camera.backgroundColor;
     camera.backgroundColor = DEEP;
   }
 
-  hide(camera: Camera): void {
+  override hide(camera: Camera): void {
     if (this.background) camera.backgroundColor = this.background;
   }
 

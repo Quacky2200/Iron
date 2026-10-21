@@ -2,7 +2,6 @@
 // changes, the top flap (the old digit's top half) folds down on its hinge, then the new
 // digit's bottom half folds down into place, in 3D (`perspective`, `rotateX`). Each half clips
 // a full-height digit (`overflow: hidden`), so a flap shows exactly half of it.
-import { useRef } from "react";
 
 const FLIP = 0.6;
 const TOP = "#2c2d33";
@@ -10,7 +9,7 @@ const BOTTOM = "#24252a";
 const TEXT = "#f2f2f2";
 
 /** One half of a card showing `digit`: the top or bottom half of a full-height digit. */
-function Half(props: { digit: string; half: "top" | "bottom"; w: number; h: number; style?: object; shade?: number }) {
+function Half(props: { digit: string; half: "top" | "bottom"; w: number; h: number; origin?: string; transform?: string; shade?: number }) {
   const { w, h } = props;
   const top = props.half === "top";
   return (
@@ -27,7 +26,8 @@ function Half(props: { digit: string; half: "top" | "bottom"; w: number; h: numb
         borderTopRightRadius: top ? 10 : 0,
         borderBottomLeftRadius: top ? 0 : 10,
         borderBottomRightRadius: top ? 0 : 10,
-        ...props.style,
+        transformOrigin: props.origin,
+        transform: props.transform,
       }}
     >
       <box style={{ position: "absolute", left: 0, top: top ? 0 : -h / 2, width: w, height: h, alignItems: "center", justifyContent: "center" }}>
@@ -68,7 +68,8 @@ function Card(props: { digit: string; now: number; w: number; h: number }) {
           w={w}
           h={h}
           shade={fall * 0.45}
-          style={{ transformOrigin: "50% 100%", transform: `rotateX(${-fall * 90}deg)` }}
+          origin="50% 100%"
+          transform={`rotateX(${-fall * 90}deg)`}
         />
       ) : null}
       {flipping && !first ? (
@@ -78,7 +79,8 @@ function Card(props: { digit: string; now: number; w: number; h: number }) {
           w={w}
           h={h}
           shade={(1 - fall) * 0.45}
-          style={{ transformOrigin: "50% 0%", transform: `rotateX(${(1 - fall) * 90}deg)` }}
+          origin="50% 0%"
+          transform={`rotateX(${(1 - fall) * 90}deg)`}
         />
       ) : null}
       {/* The hinge. */}
@@ -90,8 +92,8 @@ function Card(props: { digit: string; now: number; w: number; h: number }) {
 function Pair(props: { value: string; now: number; w: number; h: number }) {
   return (
     <box style={{ flexDirection: "row", gap: props.w * 0.08 }}>
-      <Card digit={props.value[0]!} now={props.now} w={props.w} h={props.h} />
-      <Card digit={props.value[1]!} now={props.now} w={props.w} h={props.h} />
+      <Card digit={props.value.charAt(0)} now={props.now} w={props.w} h={props.h} />
+      <Card digit={props.value.charAt(1)} now={props.now} w={props.w} h={props.h} />
     </box>
   );
 }
