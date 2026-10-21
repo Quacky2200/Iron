@@ -190,6 +190,24 @@ Differences to keep in mind:
   DirectStorage needs the DX12 backend while Iron defaults to Vulkan on Windows (decide the default, or Vulkan's
   `VK_EXT_memory_decompression` GDeflate path instead); redistribute `dstorage.dll` / `dstoragecore.dll` under the SDK licence.
 
+## Windows API (design 2026-10-21)
+
+Design `docs/research/iron-windows.md`, steps `docs/research/iron-windows-plan.md` (tests `M9-API-1400..1499`, `M9-TS-2800..2899`).
+A `Window` handle class in `iron_engine_api::window` (`Window.main`, `Window.create({ title, width, height, style: "tool", parent,
+key })`, `title`, `style`, `parent`, `isChild`, `handle`, `nativeHandle`, `close()`, `onCloseRequested` + `cancelClose()`, ...), each
+window with its own UI root (`createRoot(win)`), multi-window `iron_platform` with a fake backend, secondary windows offscreen in
+screenshot runs, `examples/windows`.
+
+- [ ] Step 1: `iron_platform::windows` pure types, `plan`, `place`, `WindowTree`.
+- [ ] Step 2: `iron_engine_api::window` (Rust tests).
+- [ ] Step 3: `#[options]`: QuickJS options objects for optional parameters.
+- [ ] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
+- [ ] Steps 5 to 10: platform runner, `Gpu::create_window_surface`, `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
+- [ ] Step 11: `examples/windows`. Step 12: docs.
+- [ ] Waiting for the user: U1..U6 and D1..D5 (design section 14).
+- Differences to review: QuickJS has `Window.main()` / `focused()` / `current()` / `count()` as functions (no static properties on
+  handle classes in QuickJS, as `AudioListener.volume`); compiled code reads them as properties.
+
 ## Backlog
 
 The full list with sub-tasks, sizes and STOP gates is `TODO.md` M9.b2. Open top-level items: type
