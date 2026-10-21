@@ -84,7 +84,7 @@ const OPEN_ANGLE = 105;
 /** The choices the menu cycles through. */
 const METERING = ["centerWeighted", "average", "spot"] as const;
 const METERING_NAMES = { centerWeighted: "Centre-weighted", average: "Average", spot: "Spot" };
-const TRANSITIONS = [2, 6, 0];
+const TRANSITIONS = [1, 3, 0];
 /** The manual exposure's range (EV100), stepped a stop at a time. */
 const MANUAL_MIN = -6;
 const MANUAL_MAX = 10;
