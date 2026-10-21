@@ -623,9 +623,49 @@ export class Quaternion implements QuaternionLike {
     return len > 0 ? new Quaternion(this.x / len, this.y / len, this.z / len, this.w / len) : Quaternion.identity;
   }
 
-  /** Spherical interpolation, the short way round. */
+  /** Spherical interpolation, the short way round (`t` clamped to 0..1). */
   slerp(q: QuaternionLike, t: number): Quaternion {
-    const k = Mathf.clamp01(t);
+    return this.slerpBy(q, Mathf.clamp01(t));
+  }
+
+  /** Spherical interpolation from `a` to `b` by `t` (clamped to 0..1), the short way round (Unity's `Quaternion.Slerp`). */
+  static slerp(a: QuaternionLike, b: QuaternionLike, t: number): Quaternion {
+    return Quaternion.from(a).slerpBy(b, Mathf.clamp01(t));
+  }
+
+  /** As `slerp`, but `t` isn't clamped: past 1 it carries on turning the same way. */
+  static slerpUnclamped(a: QuaternionLike, b: QuaternionLike, t: number): Quaternion {
+    return Quaternion.from(a).slerpBy(b, t);
+  }
+
+  /** Linear interpolation, normalised (cheaper than `slerp`, not at constant speed); `t` clamped to 0..1. */
+  static lerp(a: QuaternionLike, b: QuaternionLike, t: number): Quaternion {
+    return Quaternion.lerpUnclamped(a, b, Mathf.clamp01(t));
+  }
+
+  /** As `lerp`, but `t` isn't clamped. */
+  static lerpUnclamped(a: QuaternionLike, b: QuaternionLike, t: number): Quaternion {
+    // The short way round: flip `b` when it's on the other side.
+    const s = Quaternion.dot(a, b) < 0 ? -1 : 1;
+    return new Quaternion(
+      a.x + (s * b.x - a.x) * t,
+      a.y + (s * b.y - a.y) * t,
+      a.z + (s * b.z - a.z) * t,
+      a.w + (s * b.w - a.w) * t,
+    ).normalized;
+  }
+
+  /** Turns `from` towards `to` by at most `maxDegrees`. */
+  static rotateTowards(from: QuaternionLike, to: QuaternionLike, maxDegrees: number): Quaternion {
+    return Quaternion.from(from).rotateTowards(to, maxDegrees);
+  }
+
+  /** The dot product of two rotations (1 or -1: the same rotation). */
+  static dot(a: QuaternionLike, b: QuaternionLike): number {
+    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  }
+
+  private slerpBy(q: QuaternionLike, k: number): Quaternion {
     let { x, y, z, w } = q;
     let cos = this.x * x + this.y * y + this.z * z + this.w * w;
     if (cos < 0) {

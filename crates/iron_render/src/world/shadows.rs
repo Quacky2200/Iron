@@ -62,6 +62,8 @@ pub(crate) struct PlanSettings {
     pub resolution: u32,
     pub local_resolution: u32,
     pub cascades: u32,
+    /// Whether spot and point lights get shadows (URP: off by default).
+    pub local_lights: bool,
 }
 
 /// Which lights cast shadows this frame, as seen from `camera` with `lights`.
@@ -96,6 +98,7 @@ pub(crate) fn plan(camera: &WorldCamera, lights: &[Light], s: PlanSettings) -> S
         .iter()
         .filter(casting)
         .filter(|l| l.kind != LightKind::Directional)
+        .filter(|_| s.local_lights)
         .filter(|l| frustum.sphere(l.position, l.range))
         .collect();
     locals.sort_by(|a, b| {
@@ -108,11 +111,12 @@ pub(crate) fn plan(camera: &WorldCamera, lights: &[Light], s: PlanSettings) -> S
         let near = 0.05;
         let far = l.range.max(near + 0.1);
         let (faces, fov): (Vec<(Vec3, Vec3)>, f32) = match l.kind {
-            LightKind::Spot { outer_degrees, .. } => {
+            LightKind::Spot { .. } | LightKind::Pyramid { .. } => {
                 let dir = l.direction.normalize_or(Vec3::NEG_Z);
                 let up = if dir.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
-                // A little wider than the cone, so its soft edge has a map under it.
-                let fov = (outer_degrees * 1.1 + 2.0).clamp(2.0, 170.0);
+                // A little wider than the cone (round a pyramid's corners), so its soft edge
+                // has a map under it.
+                let fov = (l.kind.bounding_degrees() * 1.1 + 2.0).clamp(2.0, 170.0);
                 (vec![(dir, up)], fov)
             }
             _ => ((0..6).map(environment::face_camera).collect(), 90.0),
@@ -262,6 +266,7 @@ mod tests {
                 strength: 1.0,
             }),
             culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
         }
     }
 
@@ -286,6 +291,7 @@ mod tests {
             resolution: 2048,
             local_resolution: 1024,
             cascades: 4,
+            local_lights: true,
         };
         let mut lights = vec![light(LightKind::Directional, Vec3::ZERO)];
         // Five point lights (6 layers each) in view: only four fit in 24 layers.

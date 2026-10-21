@@ -11,7 +11,7 @@ Design background: [DESIGN.md](../DESIGN.md) section 3 and 4.
 Engine objects are numeric ids ([ids.rs](../crates/iron_core/src/ids.rs): `EntityId`,
 `ComponentId`, `NodeId`). `from_js`/`to_js` in
 [quickjs.rs](../crates/iron_script/src/quickjs.rs) convert; anything that is not bool, number,
-string or array becomes `Null`.
+string or array becomes `Null`. Typed arrays (`Float32Array`, `Float64Array`, `Uint32Array`, `Int32Array`, `Uint16Array`, `Int16Array`, `Uint8Array`, `Int8Array`, `subarray` views included) arrive as number lists: `typed_numbers` reads their bytes directly, with no per-element JS calls (`M7-FOG-09`).
 
 ## `ScriptRuntime`
 
@@ -50,7 +50,7 @@ backend must pass via `runtime_conformance_tests!`.
     `drain_targeted_commits()` returns `(target, Commit)` pairs.
   - `__iron_report_error(e)` -> pushes onto `Shared.errors` (used by the prelude).
 - **Microtasks**: every entry point (`load_bundle`, `eval`, `call_global`) ends with `run_jobs()`,
-  draining pending promise jobs. React 19 relies on microtasks, so "jobs run before returning to
+  draining pending promise jobs, then calling the global `__iron_flush` if defined (it sends queued transforms, see [scene-and-objects.md](scene-and-objects.md#transform-batching)); an error from it goes to `Shared.errors`. React 19 relies on microtasks, so "jobs run before returning to
   Rust" is part of the contract. A job that throws is kept in `Shared.errors` and returned by the
   next `tick`.
 - Bundles are evaluated non-strict with the bundle name as the filename, so stack traces point at
@@ -103,10 +103,16 @@ Rust side: [components.rs](../crates/iron_script/src/components.rs). `ComponentH
 | `spawn_on(class, object, name)` (`spawn` has no object) | `__iron_create(class, id, object, name)` |
 | first run of a component | `__iron_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
 | `update_active(dt, active)` | `__iron_tick(dt)` (script `Time`; returns the scaled `dt`), then `__iron_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
-| `fixed_update(dt, active)` | `__iron_dispatch(id, "onFixedUpdate", dt)` |
-| `pre_render(active)` | `__iron_dispatch(id, "onPreRender")` |
+| `fixed_update(dt, active)` | `onFixedUpdate`, batched the same way |
+| `pre_render(active)` | `onPreRender`, batched the same way |
 | `remove`, `remove_on_objects`, and on error | `onDestroy` (not after an error), then `__iron_destroy(id)` |
 | `adopt(id, class, object)` | none: takes over a component a script made with `addComponent` |
+
+`run` batches a hook: one `__iron_run(method, ids, ...args)` call covers each run of consecutive components,
+instead of one `__iron_dispatch` per component. A new component's `onStart` flushes the batch first, so the
+order is unchanged. If a call throws, JS has set `__iron_run_at` to the index that failed; the host disables
+that component (`fail`) and goes on with the rest. A bundle without `__iron_run` falls back to `run_each`
+(one `__iron_dispatch(id, method, ...args)` per component).
 
 `onStart` runs once before any other hook. Each hook only runs on components that define it and whose
 GameObject is active (the `active` closure). A component that throws is
@@ -138,7 +144,7 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
   `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio`, and the scene hooks below). It is hand-written for now (a generated `.d.ts` is planned).
 
 The scene globals, installed by `@iron/engine` and called by Rust: `__iron_registered`,
-`__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_destroy`,
+`__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_run(method, ids, ...args)`, `__iron_flush()`, `__iron_destroy`,
 `__iron_tick(dt)` (script `Time`, once per frame), `__iron_scene(moved)` (engine moves of objects, see
 [scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__iron_screen(width, height, scale)`
 (the screen size in UI pixels, when it changes). `__iron_animate(dt)` poses animated objects between `onUpdate`
@@ -358,6 +364,16 @@ benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 componen
 
 **Limits.**
 
+- **A reload restores objects; it doesn't rebuild them.** What `onStart` (or `onAwake`) built comes
+  back from the saved state, and `onStart` doesn't run again, so a change to what it builds
+  (geometry, materials, colours, lights) doesn't show after a reload, only changed behaviour
+  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `iron` again).
+  There's no key or option to force a fresh start yet; a reload starts over only when a saved
+  component class isn't registered any more (the fallback above). Code at the bundle's top level
+  runs again on every reload (module-level variables start fresh), and `onReload` runs on restored
+  components: rebuild caches there.
+- Textures made with `Texture.create` are saved with their pixels and options (filter, wrap,
+  mipmaps), so materials using them come back the same (M4-HOT-11).
 - Not kept: physics velocities and other body state beyond the saved properties, playing sounds,
   particles in flight, module-level variables in the bundle (they start fresh; keep state in
   component fields), React state (the new bundle renders its UI from scratch; only the in-place

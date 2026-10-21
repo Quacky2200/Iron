@@ -1,8 +1,12 @@
 // Rendering quality (Unity's `QualitySettings`): named levels (Low / Medium / High /
 // Ultra) that set anti-aliasing, render scale and shadows together, and each setting on
-// its own. A game's `package.json` can choose the default level and change the levels:
+// its own. Each level also carries the render pipeline's settings (Unity 7's URP asset per
+// quality level): light shafts, HDR, additional lights and their shadows, auto exposure.
+// Low is the phones' tier (no light shafts, 8 additional lights without shadows). A game's
+// `package.json` can choose the default level, per platform too, and change the levels:
 //
-//   "iron": { "quality": { "default": "Medium", "levels": { "Low": { "renderScale": 0.6 } } } }
+//   "iron": { "quality": { "default": { "Android": "Low", "iOS": "Low", "default": "High" },
+//                          "levels": { "Low": { "renderScale": 0.6 } } } }
 //
 // The default level is applied when the engine loads.
 
@@ -18,8 +22,11 @@ export interface QualityLevel {
   /** The world's resolution relative to the window (0.25 to 2); UI stays sharp. */
   renderScale: number;
   shadows: ShadowQualityMode;
-  /** Soft shadows' filter: `low` (3 × 3 samples) or `high` (5 × 5). */
-  softShadowQuality: "low" | "high";
+  /**
+   * Soft shadows' filter (Unity URP's soft shadow quality): `low` (3 × 3 samples), `medium`
+   * (5 × 5) or `high` (7 × 7): wider is smoother, costlier.
+   */
+  softShadowQuality: "low" | "medium" | "high";
   /** The shadow map's size in texels. */
   shadowResolution: number;
   /** How far shadows reach from the camera (metres). */
@@ -34,20 +41,34 @@ export interface QualityLevel {
   anisotropicFiltering: AnisotropicFiltering;
   /** Top mip levels skipped (Unity's texture quality): 0 full size, 1 half, 2 quarter, 3 eighth. */
   globalTextureMipmapLimit: number;
+  /**
+   * Lets the game's auto exposure (`RenderSettings.autoExposure`) run: a player's option.
+   * Off, it blends to the game's manual exposure as if the game had turned it off.
+   */
+  autoExposure: boolean;
+  /** Light shafts and god rays (`RenderSettings.volumetricFog`): off, fog is drawn without them. */
+  volumetricFog: boolean;
+  /** Rendering in HDR: off, colours clip at white and bloom, exposure and tonemapping are skipped. */
+  hdr: boolean;
+  /** How many lights besides the main one a camera draws, the nearest (-1: no limit). */
+  additionalLights: number;
+  /** Whether spot and point lights cast shadows (the main light always may). */
+  additionalLightShadows: boolean;
 }
 
 /** Unity's `AnisotropicFiltering`. */
 export type AnisotropicFiltering = "disable" | "enable" | "forceEnable";
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 0, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 0, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 0, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true, volumetricFog: false, hdr: true, additionalLights: 8, additionalLightShadows: false },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: 32, additionalLightShadows: false },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "medium", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 0, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
 ];
 
 interface ManifestQuality {
-  default?: string;
+  /** A level's name, or names by platform (`Application.platform`) with a `default`. */
+  default?: string | Record<string, string>;
   levels?: Record<string, Partial<Omit<QualityLevel, "name">>>;
 }
 
@@ -63,12 +84,38 @@ function buildLevels(): QualityLevel[] {
 }
 
 let levels = buildLevels();
-let levelIndex = Math.max(0, levels.findIndex((l) => l.name === (manifest().default ?? "High")));
+/** The default level's name: the manifest's, for this platform if it names one. */
+function defaultLevel(): string {
+  const d = manifest().default;
+  if (typeof d === "string") return d;
+  if (d && typeof d === "object") {
+    const platform = (globalThis as { __iron_info?: { system?: { operatingSystemFamily?: string } } }).__iron_info?.system?.operatingSystemFamily ?? "";
+    return d[platform] ?? d.default ?? "High";
+  }
+  return "High";
+}
+
+let levelIndex = Math.max(0, levels.findIndex((l) => l.name === defaultLevel()));
 let current: QualityLevel = { ...levels[levelIndex]! };
 
 function sendQuality(): void {
   const c = current;
-  __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit);
+  __iron_op(
+    "render.quality",
+    0,
+    c.antiAliasing,
+    c.renderScale,
+    c.shadows,
+    c.softShadowQuality === "high" ? 3 : c.softShadowQuality === "medium" ? 2 : 1,
+    c.lodBias,
+    c.vSyncCount,
+    c.anisotropicFiltering,
+    c.globalTextureMipmapLimit,
+    c.volumetricFog ?? true,
+    c.hdr ?? true,
+    c.additionalLights ?? -1,
+    c.additionalLightShadows ?? true,
+  );
   remember();
 }
 
@@ -85,6 +132,13 @@ function remember(): void {
 let restoring = false;
 
 const listeners = new Set<(level: number) => void>();
+
+/** Resends `render.post` when the player's auto exposure option changes (set by rendering.ts). */
+let postHook: (() => void) | null = null;
+/** @internal */
+export function _setPostHook(f: () => void): void {
+  postHook = f;
+}
 
 export const QualitySettings = {
   /** The levels' names, lowest first. */
@@ -107,10 +161,12 @@ export const QualitySettings = {
     const i = typeof level === "number" ? level : levels.findIndex((l) => l.name === level);
     const l = levels[i];
     if (!l) throw new Error(`no quality level ${level}`);
+    const autoWas = current.autoExposure ?? true;
     levelIndex = i;
     current = { ...l };
     sendQuality();
     sendShadows();
+    if ((current.autoExposure ?? true) !== autoWas) postHook?.();
     for (const f of listeners) f(i);
   },
 
@@ -145,10 +201,10 @@ export const QualitySettings = {
     sendQuality();
   },
 
-  get softShadowQuality(): "low" | "high" {
+  get softShadowQuality(): "low" | "medium" | "high" {
     return current.softShadowQuality;
   },
-  set softShadowQuality(q: "low" | "high") {
+  set softShadowQuality(q: "low" | "medium" | "high") {
     current.softShadowQuality = q;
     sendQuality();
   },
@@ -195,6 +251,55 @@ export const QualitySettings = {
   },
   set globalTextureMipmapLimit(n: number) {
     current.globalTextureMipmapLimit = Math.min(3, Math.max(0, Math.round(n)));
+    sendQuality();
+  },
+
+  /**
+   * The player's switch for auto exposure (on by default): off, the game's auto exposure
+   * blends out to its manual exposure (over `RenderSettings.exposureTransition`).
+   */
+  get autoExposure(): boolean {
+    return current.autoExposure ?? true;
+  },
+  set autoExposure(on: boolean) {
+    current.autoExposure = on;
+    remember();
+    postHook?.();
+  },
+
+  /** Light shafts and god rays on this level (off on Low, the phones' tier). */
+  get volumetricFog(): boolean {
+    return current.volumetricFog ?? true;
+  },
+  set volumetricFog(on: boolean) {
+    current.volumetricFog = on;
+    sendQuality();
+  },
+
+  /** Rendering in HDR (off: colours clip at white; bloom, exposure and tonemapping skipped). */
+  get hdr(): boolean {
+    return current.hdr ?? true;
+  },
+  set hdr(on: boolean) {
+    current.hdr = on;
+    sendQuality();
+  },
+
+  /** Additional lights a camera draws besides the main one, the nearest (-1: no limit). */
+  get additionalLights(): number {
+    return current.additionalLights ?? -1;
+  },
+  set additionalLights(n: number) {
+    current.additionalLights = n < 0 ? -1 : Math.min(256, Math.round(n));
+    sendQuality();
+  },
+
+  /** Whether spot and point lights cast shadows on this level. */
+  get additionalLightShadows(): boolean {
+    return current.additionalLightShadows ?? true;
+  },
+  set additionalLightShadows(on: boolean) {
+    current.additionalLightShadows = on;
     sendQuality();
   },
 
@@ -254,7 +359,7 @@ export function _applyDefaultQuality(): void {
 /** Resets to the default levels and level. Only for tests. */
 export function _resetQualityForTests() {
   levels = buildLevels();
-  levelIndex = Math.max(0, levels.findIndex((l) => l.name === (manifest().default ?? "High")));
+  levelIndex = Math.max(0, levels.findIndex((l) => l.name === defaultLevel()));
   current = { ...levels[levelIndex]! };
   listeners.clear();
 }

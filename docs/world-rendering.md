@@ -19,10 +19,10 @@ the app builds a flat `WorldView` per camera.
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
-  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, target_texture, grid, lines, strokes }`.
+  Vec<MeshInstance>, lights: Vec<Light>, ambient, skybox, clip_plane, probes, fxaa, fog, target_texture, grid, lines, strokes, fills, shapes }`.
   The viewport is normalized, from the top-left of the target. `target_texture` names a render texture
   to draw into instead of the screen (see Render textures). `grid` and `lines` are the editor's ground grid
-  and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines (see Thick 2D lines).
+  and gizmo lines (see Editor grid and gizmo lines). `strokes` are thick 2D lines and `fills` their filled shapes, and `shapes` the per-shape ranges of both (see Thick 2D lines).
 - `WorldCamera { view_proj, position, forward, orthographic, clear }`. `WorldCamera::new(world,
   projection, near, far, size, clear)` builds it from the camera's world matrix and a viewport `size`
   in pixels (for the aspect). `Projection` is `Perspective { fov_y_degrees }` or `Orthographic {
@@ -74,9 +74,26 @@ Consecutive items with the same mesh or texture and kind draw in one call.
 world units. They come from `LineRenderer2D` through `render.stroke`. One instance per segment: `vs_stroke`
 lays a quad along the segment, square to the camera's forward axis, a pixel wider than the line (the pixel
 size comes from unprojecting at each end). `fs_stroke` cuts a capsule by signed distance, so edges are
-smooth without MSAA and joins and caps are round. Strokes are depth-tested and blended after the
-see-through things and before the gizmo lines (`M5-RND-24`). Known limits: where see-through segments
-overlap they look darker; the width is not scaled by the object; there are no fills yet.
+smooth without MSAA and joins and caps are round. Strokes are depth-tested and blended before the
+see-through things (so sprites, text and panels show over them) and before the gizmo lines (`M5-RND-24`). Known limits: where see-through segments
+overlap they look darker; the width is not scaled by the object.
+
+**Fills.** `WorldView.fills: Vec<FillVertex { position, color }>` holds triangles (three vertices each) in
+world space ([fill.rs](../crates/iron_render/src/world/fill.rs)). `tessellate_fill(points, FillRule)` turns a
+closed outline into triangles with lyon. Points that are not finite are skipped, and fewer than three
+leave nothing. `FillRule` is `EvenOdd` (the default, GDI's `Alternate`: a crossing star's middle is a hole)
+or `NonZero` (GDI's `Winding`: the star is solid). `WorldViews` tessellates when the `render.stroke` op
+arrives (in the object's local space) and moves the triangles through the object's matrix each frame. The
+fills are drawn by `vs_shape` / `fs_shape` with the strokes, each fill just before its outline, so an outline sits on its fill. Fill
+edges are only as smooth as MSAA makes them (an outline hides them). A stroke `width` of 0 draws no
+outline, only the fill (`M5-RND-25`).
+
+**Draw order.** `WorldView.shapes: Vec<ShapeRun { fills, strokes }>` gives each shape's range of `fills`
+(vertices) and `strokes` (segments). Shapes draw one at a time in that order, each fill then its outline, so a
+later shape covers an earlier one whole. Empty `shapes` draws every fill, then every stroke. All of it comes
+before the see-through things and after the opaque meshes (still depth-tested). `render.stroke` takes a
+final `sortingOrder`; `WorldViews::views` sorts shapes by it, then by component id (creation order), and
+builds one run per shape for each camera (`M5-RND-25`).
 
 ### Editor grid and gizmo lines
 
@@ -134,8 +151,14 @@ like Unity's Standard shader:
   distribution) times `smith` (Schlick geometry, Unreal's k for direct light) times `fresnel`
   (Schlick) over `4 N.V N.L`; `kd = (1 - fresnel) * albedo`. Diffuse is not divided by pi (light
   intensities are Unity's), so the specular is scaled up by pi to match.
-- `LightKind::Directional` (parallel rays along `direction`), `Point` (fades out at `range`) and `Spot`
-  (a cone with soft edges between an inner and outer angle) feed that sum.
+- `LightKind::Directional` (parallel rays along `direction`), `Point` (fades out at `range`), `Spot`
+  (a cone with soft edges between an inner and outer angle) and `Pyramid` feed that sum. A `Pyramid` is
+  HDRP's pyramid spot: `outer_degrees` across its height, `aspect` times as wide (in tangent), edges
+  softened from `inner_degrees`, its width along `right` (the light object's +x, set by the app). A thin
+  wide one is a sheet of light (a scanner, a slot). `spot_falloff` in `world.wgsl` gives the cone or
+  pyramid falloff, `spot_bound_cos` the cone round it, and `spot_axes` the two axes across the direction
+  (the same in `mod.rs`) that the pyramid's turn is measured from. `GpuLight.spot` carries cosines in x/y,
+  the aspect in z (0: a cone) and the turn in w.
 - Light from all around comes from the environment (below): `albedo * ambient_light(n)` for the diffuse
   and `env_brdf_approx(f0, roughness, N.V) * reflected` for the specular. `env_brdf_approx` is Karis's
   analytic fit of the split-sum environment BRDF, so there is no lookup texture.
@@ -188,7 +211,7 @@ for maps, chosen per binding. A texture's `srgb` flag (false for `linear` textur
 mip chain average in linear space. Samplers are keyed by filter, wrap and anisotropy (`SamplerKey`).
 
 **Lights from scripts.** `Light` sends `render.light component object type [r g b] intensity range
-spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength`. Colour is
+spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask volumetricIntensity spotShape(cone|pyramid) aspectRatio`. `Light.spotShape` and `aspectRatio` (default 1) make a spot light a pyramid, `spotAngle` high. Colour is
 multiplied by intensity before it reaches `Light`. A light shines along its object's -z, like
 Unity's. `RenderSettings.ambientLight` sends `render.ambient` (the default is a dim blue-grey).
 
@@ -297,7 +320,7 @@ offset.
   `shadow_distance` is split into slices that grow with distance, each fitted with a sphere and an
   orthographic map, moved in whole texels so edges do not crawl. One cascade is a single sphere that
   distance across in front of the camera.
-- **Spot and point lights.** A spot light gets one perspective map (a little wider than its cone), a
+- **Spot and point lights.** A spot light gets one perspective map (a little wider than its cone; for a pyramid, than the cone round its corners, `bounding_degrees`), a
   point light a cube of six 90 degree maps (faces +x, -x, +y, -y, +z, -z). They share a second array at
   half the sun's resolution with at most `MAX_LOCAL_LAYERS` (24) layers. Lights are taken nearest the
   camera first and a light that no longer fits goes without. The maps reach the light's `range`.
@@ -336,10 +359,200 @@ by 2 to the stops. `RenderSettings.tonemapping` (`"none"`, `"neutral"`, `"aces"`
 -10 to 10) send `render.post 0 postExposure tonemapping`; the app sets `WorldRenderer::grading`. A
 non-identity grading also draws through the HDR texture.
 
+**Auto exposure.** `Grading.auto_exposure: Option<AutoExposure>` (`min_ev` -10, `max_ev` 20, `compensation` 0,
+`speed_dark_to_light` 3, `speed_light_to_dark` 1) adapts the exposure to the view, like HDRP's Automatic mode.
+The HDRP-style settings are in `AutoExposure`; the state is per camera.
+
+- **Per camera.** Each `WorldView` has an `exposure_key`; the app sets it to the camera's id. `BloomPass` keeps
+  `eyes: HashMap<u32, Eye>`. An `Eye` has a 16-byte `meter` storage buffer (x: the adapted exposure in stops,
+  y: 1 once set, z: the metered EV100), a `ViewParams` uniform (`rect` in uv, `weight`, `snap`, `hold`), a
+  `MAP_READ` staging buffer for read-back and a blend `weight` (0..1). `encode` takes an `ExposureView { key,
+  rect }` per view: the biggest first (drawn over everything), the others with scissor rects. The meter
+  compute runs once per view over its own rect; the prefilter and the composite draw per view with that
+  view's eye. An eye unused for 600 frames is dropped. HDR textures are still cached per size, but no longer
+  hold the meter. Split screens each adapt to what they show. Test `M7-EXP-02`.
+- **Metering.** `cs_meter` (one workgroup of 256) bins the log2 luminance of a 64x64 grid of the view's rect
+  into a 256-bin histogram (-16..+16). Samples are weighted by `Metering`: `Average` (all alike),
+  `CenterWeighted` (`exp(-|d|^2*6)`, the default) or `Spot` (a circle of radius 0.12 in the middle). The
+  average is taken between `low_percent` and `high_percent` of the histogram (0 and 100 by default). That
+  becomes EV100 (+3), clamped to `min_ev..max_ev`, and gives the target stops `-ev - log2(1.2) +
+  compensation` (HDRP's `1/(1.2*2^EV100)`). Test `M7-EXP-03`.
+- **Soft floor and curve.** Below `dark_below` (EV100, 5) the metered EV becomes `dark_below + (ev -
+  dark_below) * dark_adaptation` (1 by default: no change), so a dark place brightens only part of the way
+  instead of hitting `min_ev`'s wall. The compensation curve has up to `MAX_CURVE_POINTS` (8) points of
+  (EV100, stops), joined by straight lines, flat past the ends, and is added to `compensation`. Test
+  `M7-EXP-06`.
+- **Adapting.** The first use snaps to the target (so does a per-eye `snap`, set for new cameras and
+  `reset_exposure`); after that the meter eases with `1 - exp(-dt*speed)`, using `speed_dark_to_light` when the
+  target is lower (the view got brighter). `hold` keeps the adapted value as it is. `Grading.delta_time` is set
+  by the app from the frame time; the pass caps it at 1/15 s.
+- **Blending.** `Grading.fixed_ev: Option<f32>` is a manual exposure in EV100 (`None`: x1), and
+  `Grading.transition` is the seconds auto exposure takes to blend in and out. Each eye's `weight` moves
+  towards 1 while auto is on and 0 while it is off, by `dt / transition` (at once for 0). The shader multiplies
+  by `exposure * exp2(mix(fixed_stops, adapted, weight))` (`auto_scale()`). A change of `fixed_ev` also
+  eases over `transition` (smoothstep): each eye keeps `fixed`, `fixed_from`, `fixed_to` and `fixed_t`
+  (a new camera starts at the target), and the shader reads the eased `fixed`, not `fixed_ev`. `BloomPass::fading()` keeps the post
+  pass running while a weight fades out after auto is switched off. Test `M7-EXP-04`.
+- **Bloom.** The prefilter threshold is applied to the light times `auto_scale()`, not to post exposure, so
+  what blooms is what looks bright now.
+- **Read-back.** After submit, `after_submit` maps each eye's staging buffer (`device.poll(Poll)`); `collect`
+  reads them next frame into `ExposureReading { ev, scene_ev }` (the EV100 in use, and how bright it metered;
+  NaN before the first). `WorldRenderer::exposure(key)` and `reset_exposure(key)` expose them. When a camera's
+  values change, the app calls `__iron_exposure(id, ev, sceneEv|null)`, which sets `Camera.exposure` and
+  `Camera.sceneBrightness`. `Camera.resetExposure()` sends `render.exposureReset id`; `WorldViews` queues it
+  and the app applies it. Test `M7-EXP-05`.
+- **Script settings.** `RenderSettings.autoExposure` is `{ minEV, maxEV, compensation, speedDarkToLight,
+  speedLightToDark, metering ("average" | "centerWeighted" | "spot"), lowPercent, highPercent, darkAdaptation,
+  darkBelow, curve: [ev, stops][], hold }` or `null` (the default). `RenderSettings.fixedExposure` (EV100 or
+  `null`) and `exposureTransition` (seconds) go with it, and `freezeExposure()` turns auto off after copying
+  the main camera's `exposure` into `fixedExposure`, so nothing changes on screen.
+  `QualitySettings.autoExposure` (on by default, saved with quality) is the player's switch: off, the
+  game's `auto` is sent as null, so it blends out to the manual exposure. All of it rides on `render.post`.
+  Test `M7-EXP-01`.
+
 **FXAA.** `Camera.antialiasing = "fxaa"` (camera op argument 14) sets `WorldView.fxaa`. If the main view
 has it, `FxaaPass` runs over the finished, tonemapped image: it finds edges by gamma-space luma contrast
 and blends along them. It is cheaper than MSAA and smooths texture and shading edges too, a little
 blurrier. Its textures are cached per size.
+
+## Fog
+
+`RenderSettings.fog` (off by default) with `fogMode` (`"linear"`, `"exponential"`, `"exponentialSquared"`),
+`fogColor` (linear), `fogDensity` (per metre, for the exponential modes) and `fogStartDistance` /
+`fogEndDistance` (linear) send `render.fog`; the defaults are Unity's and the settings are saved with the
+scene. The app keeps one `Fog { mode, color, density, start, end }` and gives it to every `WorldView`
+whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default; off for a minimap).
+
+- **Shader.** `GpuGlobals` has `fog` (rgb colour, w mode: 0 none, 1 linear, 2 exponential, 3 squared),
+  `fog_params` (density, start, end) and `view_dir` (the camera's forward axis, w = 1 if orthographic).
+  `fog_amount(p)` is the share of fog between the camera and the world position `p`; `fogged(c, p)`
+  applies it to a premultiplied colour, so what a pixel covers turns to fog colour and light it only adds
+  (alpha 0: glows, beams) fades out. `fs_mesh`, `fs_quad`, `fs_shape` and `fs_stroke` call it, so sprites,
+  particles, panels, text and 2D shapes fog like meshes.
+- **Distance.** Perspective cameras measure straight to the point, so turning the camera doesn't move
+  the fog. Orthographic cameras use depth along the view, so a 2D scene fogs by layer.
+- **Height fog.** `RenderSettings.heightFog` (`{ density, baseHeight, falloff }`, `null` by default, used
+  only while `fog` is on) sends a seventh `render.fog` argument and sets `Fog.height: Option<HeightFog>`
+  and `GpuGlobals.fog_height` (x density, y base height, z falloff, w on). The density is `density` per
+  metre at `baseHeight`, thinning by e every `1 / falloff` metres above it and thickening below.
+  `height_clear(a, b)` integrates it exactly along a segment, and `fog_amount` multiplies it into the
+  distance fog's transmittance. Orthographic views measure from the camera plane. For height fog alone,
+  use the exponential mode with `fogDensity` 0.
+- **Background.** Distance fog leaves the background fill (colour or skybox) clear. `fs_fill` applies height
+  fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
+  to `fogColor` for a seamless horizon with distance fog alone.
+- **Light shafts.** `RenderSettings.volumetricFog` (`{ intensity, anisotropy, steps, distance }`, defaults
+  1, 0.4, 4, 50, plus an optional `albedo` colour, white by default, `sharpDistance` / `sharpSamples`, below, and `resolution` (`"low"|"medium"|"high"|"ultra"`, `high` by default); `null` by default, used only while
+  `fog` is on, saved with scenes) sends an eighth `render.fog` argument, `[intensity anisotropy steps
+  distance r g b sharpDistance sharpSamples detail]` (albedo and the last three optional; `detail` 0..3 is `Fog.volumetric.detail`; anisotropy clamped to +-0.95, steps to 1..16, sharpSamples to 4..128), and sets `Fog.volumetric:
+  Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
+  `volume.rs` (`VolumePass`) owns an `Rgba16Float` 3D texture per view slot, sized by `volume::SIZES` (`VolumetricFog.detail`: low 160x90x48, medium 240x135x64, high 320x180x96, ultra 480x270x128; finer means sharper beams and a dearer fill). `encode` takes the size and remakes the slot's texture when it changes. The pass is temporal. Per slot it also keeps two
+  "lit cell" 3D textures (ping-pong), a uniform buffer (`GpuFrame` / WGSL `VolumeFrame`: previous
+  `view_proj`, previous camera and ortho flag, previous forward and distance, jitter xyz, blend w) and the
+  last `VolumeCamera`. `VolumeCamera.lights` is a key of which directional lights light the fog, which of them
+  have shadows and the sun's cascade count; when it changes the history is dropped (blend 1) instead of blended out. Once per view with shafts, before the render pass, `cs_volume_light` (4x4x4
+  workgroups) lights every cell with one `scattered_all` sample at a Halton(2,3,5) point inside the cell
+  (64 points, `JITTER`; frame 0 = the cell middle), reprojects the cell's middle into last frame's lit cells
+  (`last_cell`) and blends with `1 - history_weight` (1.0 with no history: the first frame or after a size
+  change; clamped to 0.02..1). Cells so average over their whole extent, so bars' shadows don't come out in stair steps, for
+  about an eighth of the shadow lookups. Then the compute entry `cs_volume` (8x8 workgroups, one thread per
+  screen cell) walks the cell's view ray and reads the lit cells (trilinear). Slices are spaced by the square of their index out to the reach
+  (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in
+  `fog_clear` times the lit cell (`scattered_all`, above) and the running total is stored at each slice centre. `scattered_all`
+  sums every directional light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): a hard
+  shadow (`sun_shadow` / `local_shadow` with PCF radius 0), times `phase(cos)` (Henyey-Greenstein,
+  isotropic = 1). `in_volume(light)` says which lights are in the volume: directional lights, and spot and
+  point lights with shadows (their beams are cut into blades by bars, slats and planks, finer than a
+  pixel's ray samples can follow). Spot and point lights without shadows are worked out per pixel
+  (below). The pass binds the view's globals (dynamic offset), the lighting group and group 3 bindings 1 (`volume_out`, write-only), 3 (`light_history`), 4 (frame uniform), 5 (`light_in`) and 6 (`light_out`), so the globals and shadow group layouts are visible to COMPUTE.
+  Draws read the volume through group 3 (binding 0 `texture_3d`, binding 2 a linear sampler; the world
+  pipeline layout has this fourth group) in `shafts(p, px, distance)`: a sample at the screen uv and
+  `sqrt(min(len, last) / reach)`. Past the last slice the sun lights the rest of the fog as at its middle.
+  The result is tinted by `albedo` (`VolumetricFog.albedo`, `GpuGlobals.fog_albedo`) and scaled by
+  `intensity`. The albedo is separate from the fog colour, which is how the fog looks in ambient light: a
+  night fog can be dark yet glow white under a lamp. Views without shafts bind
+  `VolumePass::empty()`, a black 1-texel volume. `fs_fill` adds shafts to the background only when height
+  fog is on. The cost doesn't depend on overdraw.
+- **Denoising.** `volumetricFog.denoising` (`"none" | "reprojection" | "gaussian" | "both"`, `both` by
+  default; HDRP's modes) is `Denoising` on `VolumetricFog`, sent as the 11th `render.fog` number
+  (0..3). `temporal()` (reprojection) blends with last frame's cells; without it every cell is sampled at
+  its middle and stands alone. `spatial()` (gaussian) makes `lit_at` read four taps half a cell out across
+  the screen as the volume is added up (`GpuGlobals.fog_sharp.z` = 1) so each cell's grain is smoothed
+  without softening beams; `reprojection` alone saves those reads (slower GPUs). Other settings:
+  `historyWeight` (0.9, up to 0.98; 12th number), `samples` (1..8 shadow samples per cell per frame; 13th)
+  and `motionSamples` (1..8, default 2; 14th), see motion below.
+- **Grain, moire and motion.** Each cell shifts the frame's Halton offset by `cell_hash(id)` (a
+  Cranley-Patterson rotation), so a regular pattern (blind slats, a grate) leaves grain the blending
+  smooths, not moire bands from neighbouring cells all erring alike. The first frame, with no history,
+  samples cell middles. History is read by `history_at`, a 5-tap Catmull-Rom filter (the bilinear
+  trick, corners left out, clamped at zero), so reprojecting each frame doesn't blur it. A cell whose
+  history moved by some cells takes more of the new frame (`MOTION_TRUST` 0.15 per cell). Extra samples
+  follow an R3 sequence; cells whose view moved, or that have no history, take `motionSamples`
+  (`VolumeFrame.samples` x/y), so the cost is paid only while the camera moves.
+- **Moving lights.** `VolumeCamera.local_poses` (up to `LOCAL_POSES` = 4 shadowed spot or point lights:
+  position, direction, range) tell `light_shift` how far the furthest light's beam swept since last
+  frame (its move plus its turn times range; more lights than that count as 1 m). `VolumeFrame.samples.z`
+  carries it. The further it swept, the more of the new frame counts (`LIGHT_TRUST` 4 per metre), capped
+  at a quarter (`light_fresh`), so a sweeping beam leaves a short trail, not smeared old places.
+- **Depth bias.** `volume_to(uv, depth)` reads the volume a slice and a half short of a surface (as
+  Unreal does): cells at a surface's depth reach behind it, and a wall would show the beam on its far
+  side as a disc of haze (`M7-FOG-15`).
+- **God rays.** The volume's cells blur beams finer than themselves (window bars, grates, leaves). With
+  `volumetricFog.sharpDistance` > 0 (default 0, off; `VolumetricFog.sharp_distance`, `GpuGlobals.fog_sharp` x)
+  the directional lights' shafts within that distance are worked out per pixel by `sharp_sun` in `world.wgsl`:
+  `sharpSamples` (default 32, `fog_sharp` y) points on the ray, spaced by the square of their index, so
+  closer together near the eye, are tested with `sun_visible` (the sun's shadow map, PCF radius 1). Where
+  two neighbouring points disagree (one lit, one shadowed), the step is binary-searched (`EDGE_SEARCH` = 6)
+  for the exact edge and only the lit length counts. There is no per-pixel dither, so beams don't shimmer
+  or lens as the camera moves. It suits large openings (a canopy, a roof hole); a shadow thinner than a
+  step, wholly between two samples, is missed and thin bars alias into a hatch: use a finer `resolution`
+  for those, or more samples.
+  then supplies only what lies beyond: `shafts` adds `sharp_sun` minus `volume_to(uv, near)` (the volume's
+  light out to a distance) to the volume's total. It costs `sharpSamples` shadow lookups per fogged pixel.
+- **Spot and point shafts.** The volume's cells are several pixels wide, which blurred spot cones, so
+  spot and point lights without shadows light the fog per pixel (shadowed ones go through the volume,
+  above). `local_shafts(eye, dir, len, distance)` finds each such
+  light's stretch of the view ray: inside its range sphere and, for a spot, its cone (a quadratic), so the
+  cone has sharp edges up to its tip and a point light a round glow. Up to three stretches (before, inside
+  and after the cone) are tested at their middles; each lit one gets 12 fixed samples
+  (`LOCAL_SHAFT_SAMPLES`). The fog's transmittance (`media_clear`: distance and height fog and the
+  volumes) is taken at the stretch's ends and shared evenly between the samples. `shafts` adds the result
+  to the volume's.
+- **Fog volumes.** `FogVolume` (a component; size default 10x2x10, `density` 0.5, `color` (0.75, 0.78, 0.82),
+  `blendDistance` 1) is a box of fog in its own colour: mist over a pond, smoke in a room. It sends
+  `render.fogVolume` and follows its object's position and scale (world-aligned; rotation is ignored).
+  Each camera gets the 8 nearest volumes (`MAX_FOG_VOLUMES`) its layers show, none when `Camera.fog` is
+  off, as `WorldView.fog_volumes: Vec<FogVolume { centre, half_extents, density, color, blend }>`.
+  `render.remove` and destroyed objects drop them. `GpuGlobals.fog_local` (x count) and `local_fogs`
+  (`GpuFogVolume`: centre + density, half extents + blend, colour; colour w = 1 for an ellipsoid) carry
+  them to the shader. `shape` (`"box"` by default, or `"ellipsoid"`; `render.fogVolume` seventh argument,
+  `FogVolume.ellipsoid`) makes a soft round blob inside the box, with the edge fade measured in from the
+  ellipsoid's surface.
+  `local_fog_clear(a, b, i)` finds with a slab test where the view segment crosses the box, then takes 8
+  fixed samples of `density` times a smoothstep edge fade over `blend` metres, so it is smooth from pixel
+  to pixel. `local_clear` multiplies the volumes together, and `through_volumes` applies each in its own
+  colour after the global fog in `fogged`, and in `fs_fill` for the background. Lit fog (the shafts)
+  is added last, after the volumes, so a lamp glows in its mist rather than being darkened by it. They work without
+  `RenderSettings.fog`. `cs_volume` multiplies `local_clear` into its transmittance, so light shafts
+  light the volumes.
+- **Culling.** `Fog.cull` (`RenderSettings.fogCulling`, default on; the ninth `render.fog` argument)
+  skips what the distance fog hides completely. `Fog::cull_distance()` is the linear end, `ln(255) /
+  density` (exponential) or `sqrt(ln 255) / density` (squared): under one 8-bit step gets through.
+  `cull::FogReach` tests a world box against it: perspective cameras by the distance to the box's nearest
+  point, orthographic ones by depth. Meshes, quads and point/spot lights wholly past it are skipped and
+  counted in `WorldStats::fog_culled`. Height fog and fog volumes never cull. With a background unlike the
+  fog colour, culled things would have been fog-coloured silhouettes, so turn culling off there.
+  Scripts read `RenderStats` (`meshes`, `culledMeshes`, `quads`, `culledQuads`, `fogCulled`, `lights`,
+  `culledLights`, `shadowMaps`); `main.rs` calls `__iron_render_stats` with them each frame they change.
+- **Left clear.** The editor grid and gizmo lines.
+
+`examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
+and a lamp post, showing every kind of fog (menu or keys F, H, L, Q). `examples/fog-teapots` (teapots
+fading into fog), `fog-raider` (a PS1-style scene, renamed from `fog-ps1`), `fog-blocks` (a block hill in
+fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes. `godrays-cell` (a barred prison window, dust; keys G/F/D/T), `godrays-room` (a broken roof, mullioned window and shutters; G/F/D) and `godrays-forest` (canopy beams; G/F/Space) show god rays. `fog-world` is an endless streamed block
+world: 16x16-column chunk meshes, recycled around a wandering camera, with linear fog as the render
+distance and a spare ring of chunks past the fog to show fog culling. In a release build with vsync off,
+culling drew 45-50 meshes against 65-73 (16-20 hidden by fog), about 2.2 against 2.7 ms a frame. It has presets on 1-4 (very small, 2 chunks; medium, 6; large, 10; far: no fog, 14), Space to pause, a time budget for chunk building, and log lines with chunks, meshes drawn and culled and a pop-in count (chunks missing inside the fog). Chunks are built into reused typed arrays and `WorldStats` counts what the fog hid during culling itself.
 
 ## Render textures
 
@@ -393,7 +606,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 |---|---|
 | `render.camera` | `component object fov near far [r g b a] depth orthographic orthographicSize [x y w h] clearFlags(skybox\|color) cullingMask [32 cull distances]\|null cullSpherical antialiasing targetTexture\|null grid` (`grid` is `Camera.sceneGrid`) |
 | `render.gizmos` | `camera [ax ay az bx by bz r g b a ...]` (10 floats per line segment, world space; the camera shows them until replaced, and a later `render.camera` keeps them; non-finite lines are dropped) |
-| `render.stroke` | `component object width [r g b a] closed [x0 y0 x1 y1 ...]` (points on the object's local XY plane; `views()` turns them into world segments through the object's matrix, skips them by the camera's culling mask, and `render.remove` or destroying the object drops them) |
+| `render.stroke` | `component object width [r g b a] closed [x0 y0 x1 y1 ...] [fill r g b a]\|null evenodd\|nonzero sortingOrder` (the last three are optional: a fill colour and rule make the points a closed, filled shape; `sortingOrder` is the draw order among shapes; width 0 draws the fill alone; points on the object's local XY plane; `views()` turns them into world segments through the object's matrix, skips them by the camera's culling mask, and `render.remove` or destroying the object drops them) |
 | `render.plane` | `component object [w h] [r g b a]` |
 | `render.mesh` | `id [positions] [normals] [uvs] [indices] [joints, 4 per vertex] [weights, 4 per vertex]` (a script mesh; `id null` removes it) |
 | `render.meshRenderer` | `component object mesh(name \| id) [r g b a] [er eg eb] smoothness unlit texture\|null [scale x y, offset x y] castShadows metallic ... [bone objects]\|null [bind poses, 16 each]` (the last two for `SkinnedMeshRenderer`) |
@@ -402,15 +615,20 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance [r g b [sharpDistance sharpSamples [detail]]]]\|null cull`, or `0 null` for clear air |
+| `render.fogVolume` | `component object [sx sy sz] density [r g b] blendDistance shape(box\|ellipsoid)` |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
 | `render.bloom` | `0 threshold intensity scatter`, or `0 null` for off |
-| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount` (see Quality settings) |
+| `render.post` | `0 exposureStops tonemapping auto fixedEV transition`; `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark, metering(0 average, 1 centre, 2 spot), lowPercent, highPercent, hold, darkAdaptation, darkBelow, curvePoints, ev0, stops0, ...]` or null; `fixedEV` is EV100 or null |
+| `render.exposureReset` | `cameraId` (that camera's auto exposure jumps to what it sees) |
+| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount anisotropic mipLimit volumetricFog hdr additionalLights(-1: all) additionalLightShadows` (see Quality settings) |
 | `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
 | `render.panel` | `component object [w h] pixelsPerMeter resolution [r g b a] interactive` (handled by `Panels`) |
-| `render.remove` | `component` (removes a camera, plane, mesh renderer, light, sprite, particle system, mirror, probe or panel) |
+| `render.text` | `component object text [r g b a] fontSize fontFamily\|null fontWeight align maxWidth pixelsPerUnit resolution` (a `TextMesh`; handled by `Panels::apply_text`, see World panels) |
+| `render.remove` | `component` (removes a camera, plane, mesh renderer, light, sprite, particle system, mirror, probe, panel or text mesh) |
 
 The component re-sends its op when a property changes. The defaults are a dark clear colour, `depth`
 0 and a full-screen `rect`. A bad op (unknown primitive, mesh with bad indices) logs a warning.
@@ -418,7 +636,7 @@ The component re-sends its op when a property changes. The defaults are a dark c
 `MeshRenderer` takes a primitive name or a `Mesh` and a `Material` (`color`, `emission`, `smoothness`,
 `metallic`, `unlit`, `mainTexture`, tiling; `Material.create` and `with` take named settings, and
 `withColor` and `withTexture` make copies; see [assets-and-models.md](assets-and-models.md#materials-and-meshes)). `Mesh.create` sends script
-data. `GameObject.createPrimitive(type)` ([primitives.ts](../js/engine/src/primitives.ts)) makes an
+data (`Mesh.createFlat` does too, from flat arrays). `GameObject.createPrimitive(type)` ([primitives.ts](../js/engine/src/primitives.ts)) makes an
 object with the matching mesh and collider.
 
 `WorldViews::views(scene, size, extra)` runs every frame, after `update_world`:
@@ -448,8 +666,30 @@ and presents it each frame (see [editor.md](editor.md#the-scene-view)). `Camera.
 object has `HideFlags.HideInHierarchy`.
 
 `LineRenderer2D` ([lines.ts](../js/engine/src/lines.ts)) draws thick lines on the object's local XY plane:
-`points`, `width`, `color` and `loop`. It sends the points flat at most once per frame (in `onPreRender`)
-and sends `render.remove` when destroyed.
+`points`, `width`, `color` and `loop`, plus `fillColor` (null: no fill), `fillRule` (`evenodd` by default,
+or `nonzero`) and `sortingOrder` (higher draws over lower, equal ones in creation order; sprites and text show over shapes). A fill always closes the shape, and a `width` of 0 leaves just the fill. It sends the points
+flat at most once per frame (in `onPreRender`) and sends `render.remove` when destroyed.
+
+`Shapes` ([shapes.ts](../js/engine/src/shapes.ts)) makes points for `LineRenderer2D`, after GDI's drawing calls:
+`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
+`bezier`, and the cardinal splines `curve` and `closedCurve` (tension 0.5 is Catmull-Rom). They lie on the XY
+plane with y up, and angles are in degrees counter-clockwise from +x. Closed shapes do not repeat the first
+point: set `loop`, or add a `fillColor`.
+
+`Spline` and `SplineAnimate` ([spline.ts](../js/engine/src/spline.ts)) are the core of Unity's Splines (`M5-SPL-01`). A
+`Spline` is a list of knots (`position`, `tangentIn`, `tangentOut`, `mode`); every segment is a cubic Bezier.
+A knot's `TangentMode` is `auto` (a cardinal spline through its neighbours: a third of `tension` times the chord
+across the knot, so 0.5 is Catmull-Rom like GDI's curves), `bezier` (its own handles, relative to the knot) or
+`linear` (a third of the way to each neighbour, so straight runs keep an even speed). `closed` joins the last
+knot to the first. `addKnot`, `insertKnot`, `removeKnot`, `setPosition`, `setTangents` (makes the knot
+`bezier`) and `setMode` edit it; `version` goes up on every change. `evaluate(t)` and `tangent(t)` take `t` 0 to 1
+by distance, through a length table (32 samples per segment, rebuilt after a change), so speed is steady.
+The control points are cached in a `Float64Array` (12 numbers per segment, cleared on change) and evaluated with plain numbers (`pointInto`), for lengths and `nearest` too. `segmentPoint(i, u)` uses a segment's own parameter. `length`, `sample(perSegment)` (points for
+`LineRenderer2D`) and `nearest(p)` (`t`, point, distance) read it. `SplineAnimate` moves its object along
+`spline` (set from code, not saved) over `duration` seconds: `loopMode` is `loop`, `pingPong` or `once`,
+`alignment` `path` turns the object to face along the spline (z rotation on a flat one, else a look rotation),
+`container` puts the spline in another object's space, `playing` pauses it, and `elapsed` jumps. `place()`
+moves it now.
 
 `CameraFollow` and `CameraOrbit` are script components that move a camera object in `onLateUpdate`.
 They have no Rust side.
@@ -494,7 +734,20 @@ arrive before `WorldPanel.onStart` sends `render.panel`).
 - Size, `pixelsPerMeter` (default 500), `resolution` (default 2, clamped 0.25 to 4) and `tint` come
   from `render.panel`. Size is clamped to at least 1 UI pixel.
 
-**Textures.** `Panels::render` runs every frame before the world pass. For each active panel it sets
+**TextMesh.** A `TextMesh` ([text-mesh.ts](../js/engine/src/text-mesh.ts)) is text in the world with no React
+root: `text`, `fontSize`, `color`, `font`, `fontWeight`, `alignment`, `maxWidth`, `pixelsPerUnit` (default 100)
+and `resolution`. It sends `render.text` at most once per frame and `render.remove` when destroyed.
+`Panels::apply_text` makes a panel (not interactive) and builds its UI tree in Rust: one absolutely
+positioned `text` element, so it shrink-wraps its text. The text is white and the colour is the panel's
+tint, like a sprite. `whiteSpace` is `pre`, or `pre-wrap` when `maxWidth` is above 0, with `maxWidth` set as
+the element's max width. The tree is laid out with room to spare, then the panel is fitted to the text's
+content box (at least 1 pixel) and drawn centred on its object (`M5-TXT-01`). The panel remembers what it
+laid out (`text_key`: text, font size, family, weight, alignment, max width). A new colour or scale alone only
+changes the quad's tint and skips layout, and the texture is redrawn only after a new layout (`drawn`). Other
+panels are redrawn every frame (a TODO in TODO.md).
+
+**Textures.** `Panels::render` runs every frame before the world pass. For each active panel (a TextMesh whose
+layout is already drawn at the same size keeps its texture and skips the rest) it sets
 the tree size and clock, loads images, builds the draw list and draws it with
 `UiRenderer::render` into the panel's own `Rgba8UnormSrgb` texture (cleared transparent). The texture
 is `size * resolution` pixels, capped at 4096, and is recreated when that changes. It returns one
@@ -602,14 +855,55 @@ engine loads; the app copies the values onto the renderer before each frame.
   which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
   frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `iron.quality`
   and restored at startup (except `vSyncCount`: a saved vsync is ignored).
-- **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 or 2):
+- **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 to 3: `QualitySettings.softShadowQuality` `low`, `medium` or `high`):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
-  soft filter is a (2r + 1)^2 box of comparison samples (the radius is in `GpuLight.shadow`).
+  soft filter is a (2r + 1)^2 box of comparison samples (3x3, 5x5 or 7x7; the radius is in `GpuLight.shadow`).
 - **Texture quality** (`anisotropicFiltering`: `disable`, `enable`, `forceEnable`; `globalTextureMipmapLimit`
   0 to 3): `QualitySettings` sends them in `render.quality` (`M5-QUA-02`). `Anisotropic` sets how
   each texture's `anisoLevel` (a Texture option, 1 to 16, trilinear only) is honoured: `Disable` makes it 1,
   `Enable` uses the texture's level, `ForceEnable` uses at least 9. The mip limit drops that many top
   levels of every texture. Samplers are cached per filter, wrap and anisotropy.
+
+### Render pipeline
+
+Iron has one render pipeline, as Unity 7 does (it keeps URP; HDRP and the Built-in pipeline go
+away). `PipelineAsset` (`world/pipeline.rs`, Unity's URP asset) is plain settings, all on by
+default: `volumetric_fog`, `max_additional_lights`, `additional_light_shadows` and `hdr`. Each frame
+the app copies the quality level's asset onto `WorldRenderer.pipeline` (`world_view::Quality.pipeline`,
+parsed from `render.quality` arguments 9 to 12; a light count of -1 means no cap). What they do:
+
+- **No `volumetric_fog`:** the fog's light shafts and god rays are dropped; fog is drawn without them.
+- **`max_additional_lights`:** a view gets the main light (the brightest directional) plus the nearest N others.
+- **No `additional_light_shadows`:** the shadow plan has no spot or point light maps (the main light still casts).
+- **No `hdr`:** no post pass, so no bloom, exposure or tonemapping; colours clip at white.
+
+The quality levels set them: Low (the phones' tier) has no shafts, 8 additional lights and no local
+shadows; Medium 32 lights and no local shadows; High and Ultra everything. `QualitySettings` has
+`volumetricFog`, `hdr`, `additionalLights` and `additionalLightShadows` (and `autoExposure`).
+`iron.quality.default` in `package.json` is a level name, or a map by `operatingSystemFamily` with a
+`default` key (`{ "Android": "Low", "default": "High" }`). `iron.renderPipeline` and
+`renderPipelineSettings` no longer pick anything: they log a warning. (History: a Built-in /
+Universal / HD choice existed briefly before this.) Tests `M7-RP-01` to `M7-RP-03`.
+
+### Real-world light units
+
+`iron.lightUnits` in `package.json` is `"physical"` or `"legacy"` (the default: Iron's own units);
+scripts read it as `GraphicsSettings.lightUnits`. It is a project switch, not a pipeline
+(`Manifest.physical_units` in `info.rs`, passed to `WorldViews::with_physical_units` and
+`WorldRenderer.physical_units`). With `physical`:
+
+- Light intensity is read as lux for directional lights (divided by pi into the renderer's units) and
+  as lumens for spot and point lights (divided by 4 pi squared: lumens to candela over a sphere,
+  then by pi). The app does this when it handles the light op.
+- **Pre-exposure:** in the final pass everything drawn is multiplied by each camera's last exposure,
+  so real-world values (a 200000 nit view is past fp16's 65504) fit the HDR target, and the post pass
+  divides it out. Test `M7-HD-01`.
+- `Camera.aperture`, `shutterSpeed` and `iso` (defaults f/16, 1/200 s, ISO 200, HDRP's) give
+  `physicalExposure` = log2(N^2 / t) - log2(ISO / 100), an EV100 to use as `RenderSettings.fixedExposure`.
+- `Light.illuminanceAt(point, normal?)` is a light meter: the lux from every light (lumens to candela over
+  4 pi, inverse square, cosine), ignoring shadows. `Light.measureIlluminance` also counts shadows with
+  physics rays (walls need colliders) and resolves after the next physics tick. Test `M7-HD-02`;
+  `examples/light-units` is the manual check.
 
 ## Cooked texture uploads
 
@@ -626,7 +920,7 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
 
 - Only the first directional light with shadows casts sun shadows; spot and point lights share 24 layers,
   nearest first. Casters come from the main screen view's opaque and cutout meshes (no transparent casters).
-- Bloom, exposure and tonemapping are one setting for every camera; FXAA follows the main view's camera.
+- Bloom, exposure settings and tonemapping are one setting for every camera (auto exposure's adapted state is per camera); FXAA follows the main view's camera.
   Mirrors, probes and render textures are ungraded.
 - Mirrors are flat, rendered only for the main view, show no mirrors inside mirrors, and cost a full
   extra scene render each. Other views see the sky in them.
@@ -638,7 +932,7 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
   renderer's bones are rebuilt every frame for each view.
 - Frustum culling is conservative: meshes are tested by the bounding box of their mesh, quads by the unit
   quad, and nothing is occlusion culled. Cull distances are per layer, not per object.
-- Panels re-render every frame while visible, with no dirty tracking.
+- Panels re-render every frame while visible, with no dirty tracking; only TextMesh panels skip it until their text changes.
 - Panels are not occluded by other world quads for hit testing: the nearest interactive panel wins.
 - Plane quads are not hit tested.
 - Pointer events on a panel use UI pixels of the panel, not the screen scale.
@@ -654,11 +948,15 @@ procedural sky, with the skybox as background), `M5-RND-12` (a planar mirror: re
 and screen-space sampling) and `M5-RND-13` (a box-projected reflection probe in a room). Later goldens: `M5-RND-17` (material maps and
 rendering modes under a sky), `-18` (tonemapping, exposure and FXAA), `-19` (a render texture shown on a
 monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count), and `-21`
-(a tube skinned to two bones, bent, with a bent shadow), `-22` (the ground grid: axes, fade, hidden by a box) `-23` (gizmo lines: constant width, faint behind a mesh) and `-24` (thick 2D strokes: round joins and caps, soft edges, a 2-pixel line, hidden behind a cube). Cooked textures are tested with cooking
+(a tube skinned to two bones, bent, with a bent shadow), `-22` (the ground grid: axes, fade, hidden by a box) `-23` (gizmo lines: constant width, faint behind a mesh) `-24` (thick 2D strokes: round joins and caps, soft edges, a 2-pixel line, hidden behind a cube) and `-25` (filled shapes: tessellation units, both fill rules, a golden, the `world_view` unit and JS units). Cooked textures are tested with cooking
 (`M5-AST-06`, see [assets-and-models.md](assets-and-models.md#tests)).
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
+Render pipeline and light units: `M7-RP-01`..`03`, `M7-HD-01`, `M7-HD-02`.
+Auto exposure: `M7-EXP-01` (adapts to the view), `-02` (per camera, split screens), `-03` (metering modes and percentiles), `-04` (fixed exposure, blending, hold, freeze), `-05` (read-back, `Camera.exposure`, reset), `-06` (soft floor and compensation curve).
+
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing) and `M7-FOG-13` (the volume's noise settings and denoising modes) and `M7-FOG-14` (a turning camera's beams: motion trust, Catmull-Rom history, `motionSamples`) and `M7-FOG-15` (depth bias; shadowed local lights in the volume; light motion). Pyramid spot lights: `M7-SPOT-01` (a wide, thin rectangle, turned with its object) and `M7-SPOT-02` (`spotShape` and `aspectRatio` in the light op, JS unit).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).

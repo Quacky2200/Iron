@@ -88,6 +88,21 @@ pub fn is_svg_prop(prop: &str) -> bool {
     SVG_PROPS.contains(&prop)
 }
 
+/// Mirrored properties the `svg` element's own box already applies (its layer, transform,
+/// visibility, clip and mask): written on the root they would apply twice.
+pub fn box_applies(prop: &str) -> bool {
+    matches!(
+        prop,
+        "opacity"
+            | "transform"
+            | "transformOrigin"
+            | "visibility"
+            | "display"
+            | "clipPath"
+            | "mask"
+    )
+}
+
 /// Whether `prop`'s written value is kept for SVG output.
 pub fn keeps_raw(prop: &str) -> bool {
     is_svg_prop(prop) || MIRRORED.contains(&prop)

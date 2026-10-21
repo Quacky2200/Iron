@@ -27,7 +27,11 @@ Physics ops: `gravity`, `timestep`, `body`, `collider`, `removeBody`, `removeCol
 (`friction`, `restitution`, `sensor`, `offset`), `joint`, `removeJoint` and `attach`.
 `set` also takes `targetRotation`, `enabled`, `kind` (change the body type), `mass`, `gravityScale`,
 `linearDamping`, `angularDamping`, `ccd`, `constraints` (six bools: translations then rotations
-allowed), `sleep` and `wake`. Colliders are boxes, balls, capsules, cylinders, convex hulls and
+allowed), `sleep` and `wake`. A movement axis locked together with both turns across it (a body
+kept in a plane, as every Rigidbody2D is) isn't locked in rapier: rapier 0.36's 3D friction solve
+would drop all friction for it (`docs/upstream/rapier-plane-locked-friction/`). `set_constraints`
+leaves that axis free and `hold_pins` puts it back, with no speed along it, before and after each
+step; `position` moves where it's held. Colliders are boxes, balls, capsules, cylinders, convex hulls and
 triangle meshes (`mesh`, static geometry). A collider whose shape is `renderMesh` is rewritten by the
 app into a `mesh` or `convex` one from a render mesh's data
 ([assets-and-models.md](assets-and-models.md#materials-and-meshes)).

@@ -25,7 +25,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_engine_api` | `#[iron_api]` declarations of `Color`, `Time`, `TimeSince`, `TimeSpan` / `DateTime`, `input`, `Random`, `LayerMask`, `Debug` / `Log`, `PlayerPrefs`, `Assets`, `Application` / `SystemInfo`, `Gizmos`, `Camera`, `Screen`, `Window` (windows, families, messages), `QualitySettings`, audio (state per thread, host functions); see `docs/iron-api.md` |
 | `crates/iron_render` | wgpu renderer for the draw list: quads, SDF rounded boxes, shadows, blur layers, gradients, images, glyph atlas (swash); `render_overlay` blends UI over the 3D world. `world/` is the 3D pass (`WorldRenderer`, `WorldCamera`, `WorldQuad`). `testing.rs` has golden helpers and a shared test GPU |
 | `crates/iron_scene` | GameObjects: generational `ObjectId`s, names, enabled/active, parent/children, local `Transform` (glam) and cached world matrices, `take_moved()`; `ScriptScene` runs `scene.*` ops (script ids, engine ids from 2^30) and batches engine moves for `__iron_scene` |
-| `crates/iron_physics` | rapier world driven by `physics.*` ops (script-chosen body/collider IDs); `step()` per fixed tick, `take_batch()` → `__iron_physics(moved, contacts, rays, characters)` |
+| `crates/iron_physics` | rapier world driven by `physics.*` ops (script-chosen body/collider IDs); `step()` per fixed tick, `take_batch()` → `__iron_physics(moved, contacts, rays, characters)`. Plane locks (a locked axis plus both turns across it, e.g. every Rigidbody2D) are pinned by Iron (`set_constraints`, `hold_pins`), not rapier: see Gotchas |
 | `crates/iron_physics_api` | Native physics API for compiled scripts (`Physics`, `Body`, `Collider`, `RaycastHit`) over `iron_physics`; `step()` moves attached GameObjects and queues contacts |
 | `crates/iron_audio` | kira mixer driven by `audio.*` ops: sounds (decoded or streamed), playbacks, buses, spatial emitters; `Mixer` trait over a device or `OfflineBackend`; finished sounds → `__iron_audio(ended)` |
 | `crates/iron_app` (panels) | `panels.rs`: world panels (a UI tree + interaction + texture each), camera rays and panel hits; `world_view.rs`: cameras and planes from `render.*` ops; `main.rs` routes the pointer and keys between the screen and panels (`Surface`) |
@@ -35,12 +35,12 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_native` | `register_quickjs` / `install`: every native `#[iron_api]` namespace (math, scene, engine services, scenes, physics, rendering data) installed in a QuickJS context |
 | `crates/iron_pack` | Asset packs (`.irpk`): `PackWriter`, `Pack`, `Vfs` over loose folders and packs; design `docs/research/iron-asset-packs.md` |
 | `crates/iron_app` | The `iron` binary: `iron [game folder] [--screenshot out.png] [--frames N] [--fps|--no-fps]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `IRON_FPS=0` or `"fps": false` in `project.json`). Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer. `iron_editor` is a second binary of the same code that runs `editor/` |
-| `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random` |
+| `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random`; 2D shapes: `LineRenderer2D` (SDF strokes, fills, `sortingOrder`) and `Shapes` (lines.ts), `TextMesh`, `Spline`/`SplineAnimate` (spline.ts), `Gizmos` (gizmos.ts). Transforms reach Rust batched (`flushTransforms` → one `scene.locals` op per script turn) |
 | `js/editor-ui` | `@iron/editor-ui`: editor components drawn by Iron's UI (`MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`), logic in plain modules (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) |
 | `editor/` | The editor's UI, run by `iron_editor` (`crates/iron_app/src/bin/iron_editor.rs`, `editor.rs`); see `docs/editor.md` |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (built with `iron-build build`; each is just a `project.json`, `tsconfig.json` and `src/`, no `package.json`) |
-| `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `sine-circle-demo` and `raindrop-demo` (MiniGameEngine ports), `shapes`, `splines`, `clock` (twelve faces), `fishtank`, `fog` (distance, height fog and light shafts in a misty clearing), `fog-teapots` (the classic distance-fog picture: teapots on a mirrored checkerboard), `fog-raider` (a PS1 tomb with fog a few metres away, its distance on keys), `fog-blocks` (a Minecraft-like hill in sky-blue fog under a cloud deck), `fog-park` (a Victorian London park: pond mist by morning, gas lanterns glowing in the fog by night), `fog-world` (an endless streamed block world: the fog is the render distance, fog culling skips the spare ring), `godrays-forest` (god rays through a forest canopy), `godrays-cell` (god rays through a barred prison window, with dust), `godrays-room` (god rays through a broken roof, a window and shutters into a dusty room, a day passing), `godrays-sunset` (a 25th-floor flat over a city as the sun sets: beams through mullions and blinds, the city's windows lighting up), `godrays-shed` (a craft's green or red scanning beam sweeping a dusty garden shed through its window and plank gaps), `godrays-lift` (a dark hotel corridor: the lift's doors open and its light floods out), `godrays-clouds` (crepuscular rays: the sun through gaps in a high cloud layer over patchwork fields), `light-units` (real-world light units: a 100000 lux courtyard and a lamplit hall, light meter and physical camera), `tunnel` (auto exposure: a road tunnel, dark inside, the exit a white blaze, dazzling on the way out), `dark-room` (eye adaptation: louvred shutters open on a dim bedroom, blinding, then settling, and close again), `emoji` (a spinner wheel picks one of 50 Noto SVG emoji, each with its own show: entrance, signature pose with sprite particles and props, scene, crowd reaction and exit; sounds synthesised by `tools/make_sfx.py`) `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (built with `iron-build build`; each is just a `project.json`, `tsconfig.json` and `src/`, no `package.json`; the `main` ones await porting). `examples/topdown-zombie-game` is not in this repo: it's a git worktree of the user's zombie-horders clone (branch `iron`), ignored via `.git/info/exclude` |
+| `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md`. `docs/upstream/` holds reports for upstream projects (the rapier friction issue and PR) |
 | `tools/iron_build` | `iron-build` (build/types/assets/dev/check/package): module graph (`iron_ts::modules`) -> `dist/game.irbundle` + `game.css` + assets for a game compiled by iron_ts, no bun; see `docs/iron-build.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
@@ -146,8 +146,22 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
   - Larger ones are copied with hashed names, and their `url()` is relative to the CSS file. The engine rebases them.
 - **Library versions:** cssparser 0.38, selectors 0.41, parley 0.12, taffy 0.15, rquickjs 0.14, edition 2024, Rust 1.99. APIs differ from older docs.
 - **Parley fonts:** after registering a font, Parley needs a fresh `LayoutContext`, or its resolver cache keeps the old fonts.
+- **Screenshot runs open a real window** for a moment, and it takes the user's clicks (a probe in
+  `examples/physics` once got 60 extra bodies). Tell the user when a batch of runs is going.
+- **rapier plane locks:** rapier 0.36.1 drops all friction for a body that can't move along an
+  axis nor turn across it (its 3D friction solve inverts a singular 2×2 matrix). Iron pins such
+  axes itself instead (`iron_physics` `set_constraints` / `hold_pins`, `M4-PHY-07`). Reported as
+  dimforge/rapier#1047, fixed by #1048; drop the pins once a rapier release has it.
+- **The zombie game's worktree** (`examples/topdown-zombie-game`) makes `bun install` add it to
+  `bun.lock`: leave that `bun.lock` change out of Iron's commits. Its commits go to its own repo.
+- **Fixed-size windows:** a game's manifest can set `iron.display.resizable: false`; its window
+  then opens at the manifest's size, ignores saved sizes, and can't be resized or maximized.
+- **Hot reload and module state:** restored components get `onReload`, not `onAwake`, and the new
+  code's module-level variables start empty: rebuild caches (textures, singletons) in `onReload`.
+  A reload restores objects rather than rebuilding them, so changes to what `onStart` builds
+  (geometry, materials) only show after a restart.
 
-## Status (2026-10-17)
+## Status (2026-10-20)
 - **Done:**
   - M1 scaffold
   - M2 React → Taffy → boxes
@@ -232,16 +246,50 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
     binary over main.rs, `editor.rs`), `@iron/editor-ui` (menubar, docking, virtual
     list, tree view, console with code links, project browser) and the `editor/` app;
     UI drag and drop (`dnd.rs`) with files dropped from the OS. See `docs/editor.md`.
-- **Next (in this order, see TODO.md):** the editor's Scene view (TODO.md M5.e "Next: the
-  Scene view": an editor camera in the panel, a ground grid drawn by the renderer, the
-  x/y/z orientation gizmo, SceneIcons for cameras / lights / other objects, wire gizmos on
-  the selection), then the rest of M5.e (manual checks in the window, inspector, live
-  hierarchy, undo/redo, accessibility), then M6 (Script IO).
+  - The editor's Scene view (2026-10-17/18, another session): an editor camera in the panel,
+    the renderer's ground grid (`M5-RND-22`), the x/y/z orientation gizmo, SceneIcons, wire
+    gizmos on the selection (`Gizmos`, `M5-RND-23`), move / rotate / scale handles
+    (`M5-EDT-24`). The controls still need a manual check in the window (`M5-EDT-23`).
+  - 2D drawing (2026-10-18): thick 2D lines as instanced SDF capsules (`LineRenderer2D`),
+    filled shapes (lyon), GDI-style `Shapes` helpers, per-shape draw order (`sortingOrder`),
+    `TextMesh` (world text without a UI panel, redrawn only when its text changes), `Spline`
+    (auto / bezier / linear knots, by distance) and `SplineAnimate`.
+  - Examples (2026-10-18): `sine-circle-demo` and `raindrop-demo` (MiniGameEngine ports, CC0
+    music credited in `assets/CREDITS.md`), `shapes`, `splines`, `clock` (twelve faces: analog,
+    dials, meter, a 3D sundial, sand timer, lava lamp after a CodePen by Corevision, underwater,
+    chandelier, rainbow, morphing, flip, alarm clock), `fishtank` (an aquarium-channel look,
+    depth haze, now linear fog). The VB zombie game was ported, then
+    moved to its own repository (zombie-horders, branch `iron`); history purged from this repo.
+  - Script overhead (2026-10-18): transforms batched into one `scene.locals` op per script
+    turn (`__iron_flush` after every call into JS), lifecycle hooks run in one `__iron_run`
+    call per hook, identity-parent fast paths, scalar `Spline` maths. 123 fish went from ~40 ms
+    to ~16 ms a frame (release).
+  - Fixes (2026-10-18/19): fixed-size windows (`iron.display.resizable`, scripts told the real
+    size); plane-locked bodies keep their friction (`M4-PHY-07`, rapier PR above);
+    `examples/physics` keeps its bodies in the plane; an inline `svg`'s own opacity and
+    transform apply once, not also in its markup (`M3-SVG-04`).
+  - Fog (2026-10-20, TODO.md M7): distance fog (linear / exponential / squared, `RenderSettings.fog*`,
+    `Camera.fog`), exponential height fog (`heightFog`, also over the background) and volumetric
+    light shafts (`volumetricFog`, `Light.volumetricIntensity`: a jittered march per fogged pixel
+    through hard shadow maps). `examples/fishtank` uses linear fog. Tests `M7-FOG-01`..`05`.
+  - iron_ts (another session, branch `claude/recursing-wright-856ffa`, ~106 commits ahead):
+    an AOT compiler from TypeScript to native code (oxc → Iron IR → Cranelift) with a precise
+    GC and closures; the zombie sim and the whole SineDemo compile and run natively (M9.b2).
+    Not merged yet.
+- **Next (in this order, see TODO.md):**
+  1. Merge iron_ts back (from `claude/recursing-wright-856ffa`; history has been rewritten, so
+     check its base first; bring it in as linear commits, no merge commits, as with other
+     agents' work).
+  2. The editor (M5.e): the manual check of the Scene view controls, an Inspector bound to
+     the scene (`@property` fields), undo/redo, accessibility; then M6 (Script IO).
   - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
     cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture
     formats, ...): later.
-  - "Optimisation fixes" in TODO.md (backdrop blur cost, the reload benchmark) wait until
+  - "Optimisation fixes" in TODO.md (backdrop blur cost, the reload benchmark, QuickJS
+    allocation in hot maths, batching hundreds of 2D shapes, the rest of the frame) wait until
     they're picked.
+  - Also in TODO.md: a canvas UI element embedding the 3D engine in React UI (an Electron
+    replacement); the zombie game's multiplayer (waits on M6 / M8).
   - Also open in TODO.md: the rest of M6 file IO, more classic test scenes (downloads
     need the user's OK first).
   - API names and units follow Unity/s&box (degrees for Euler angles). Decided: own wgpu

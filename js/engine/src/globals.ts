@@ -36,6 +36,8 @@ declare global {
   var __iron_registered: () => string[];
   var __iron_create: (className: string, id: number, objectId?: number, objectName?: string) => void;
   var __iron_dispatch: (id: number, method: string, ...args: unknown[]) => unknown;
+  var __iron_run: (method: string, ids: number[], ...args: unknown[]) => void;
+  var __iron_run_at: number;
   var __iron_destroy: (id: number) => void;
   var __iron_hooks: (id: number) => string[];
   // Once per fixed tick, before components update: advances `Time`, returns the scaled dt.
@@ -48,8 +50,12 @@ declare global {
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
   // The screen size in UI pixels and the scale (screen.ts).
   var __iron_screen: (width: number, height: number, scale: number) => void;
+  var __iron_render_stats: (...counts: number[]) => void;
+  // Each camera's exposure read back: EV100 in use and how bright it metered (rendering.ts).
+  var __iron_exposure: (id: number, ev: number, scene: number | null) => void;
   // Objects the engine moved (scene.ts).
   var __iron_scene: (moved: number[]) => void;
+  var __iron_flush: () => void;
   // Playing sounds that finished (audio.ts).
   var __iron_audio: (ended: number[]) => void;
   // Textures the engine loaded: [id, width, height], 0 × 0 when it failed (textures.ts).

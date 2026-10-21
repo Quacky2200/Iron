@@ -87,8 +87,12 @@ and `class` selectors written inside SVG markup are not read; Iron stylesheets s
   `currentColor` and `em` units work. For each element it writes: `id`, the `attrs.svg` pairs
   (the root's own `width`, `height`, `xmlns` and `color` are skipped), CSS `width`/`height` of
   shapes as attributes, then `svg_props`. `transform` goes through `svg_transform` (units dropped),
-  `transform-origin` loses `px`, and `display` is only emitted when `none`. Generated `::before`
-  and `::after` nodes are skipped; text nodes are escaped.
+  `transform-origin` loses `px`, and `display` is only emitted when `none`. On the root `svg`
+  element the mirrored properties its box already applies (`opacity`, `transform`,
+  `transform-origin`, `visibility`, `display`, `clip-path`, `mask`: `svg::box_applies`) are not
+  written, or they would apply twice (an `opacity` transition on an `svg` faded through 0.64 at
+  its midpoint, not 0.8). Generated `::before` and `::after` nodes are skipped; text nodes are
+  escaped.
 - Drawing: `data_url(markup)` makes a `data:image/svg+xml` URL and the svg is pushed as a `Quad`
   with one image fill sized to the content box (no repeat). From there it is the image path above.
   The element still gets its background, border, radius, clip and opacity as a box.

@@ -239,10 +239,15 @@ fn run() -> Result<()> {
         Some(_) => prefs::Prefs::in_memory(),
         None => prefs::Prefs::load(&manifest),
     };
-    let display_settings = display::from_json(
-        prefs.get("iron.display"),
-        display::from_json(Some(&manifest.display), Default::default()),
-    );
+    // A game that keeps a fixed size (`iron.display.resizable: false`) always gets its own
+    // settings: saved ones would tell its scripts about a window size it never has.
+    let resizable = manifest.display["resizable"].as_bool().unwrap_or(true);
+    let defaults = display::from_json(Some(&manifest.display), Default::default());
+    let display_settings = if resizable {
+        display::from_json(prefs.get("iron.display"), defaults)
+    } else {
+        defaults
+    };
     if let Some(path) = prefs.path() {
         tracing::info!("player prefs: {}", path.display());
     }
@@ -359,7 +364,7 @@ fn run() -> Result<()> {
         native,
         scene,
         scene_events,
-        world_view: world_view::WorldViews::default(),
+        world_view: world_view::WorldViews::with_physical_units(manifest.physical_units),
         panels: panels::Panels::default(),
         windows: windows::AppWindows::new(),
         domains: windows::Domains::default(),
@@ -374,6 +379,8 @@ fn run() -> Result<()> {
         sheet_sources: game_css_source.into_iter().collect(),
         font_sources: Vec::new(),
         screen: (0.0, 0.0, 0.0),
+        render_stats: iron_render::WorldStats::default(),
+        exposure_sent: HashMap::new(),
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
@@ -402,6 +409,8 @@ fn run() -> Result<()> {
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, args.screenshot.is_some()),
+        physical_units: manifest.physical_units,
+        pipeline_warned: false,
         frames: 0,
         fps_on: fps::enabled(
             args.fps
@@ -422,7 +431,8 @@ fn run() -> Result<()> {
         .icon
         .as_deref()
         .and_then(|path| info::load_icon(&code_root, path));
-    // A window opens at the saved window size; fullscreen modes are applied once it exists.
+    // A window opens at the saved window size (a fixed one at its own); fullscreen modes are
+    // applied once it exists.
     let (width, height) = (
         display_settings.window_width,
         display_settings.window_height,
@@ -436,6 +446,7 @@ fn run() -> Result<()> {
             width,
             height,
             virtual_windows,
+            resizable,
         },
         app,
     )?;
@@ -522,6 +533,10 @@ struct App {
     scene_events: bool,
     /// The screen size in UI pixels and the UI scale, as last told to scripts.
     screen: (f32, f32, f32),
+    /// The world renderer's last stats, as last told to scripts (`RenderStats`).
+    render_stats: iron_render::WorldStats,
+    /// Each camera's exposure as last sent to scripts (`Camera.exposure`).
+    exposure_sent: HashMap<u32, (f32, f32)>,
     /// React UI on planes in the world (`WorldPanel`s), each with its own tree.
     panels: panels::Panels,
     /// Secondary windows (`Window.create`), each with its own tree, and which windows have focus.
@@ -607,6 +622,10 @@ struct App {
     custom_cursor: Option<CustomCursorRequest>,
     /// The game's manifest and the machine, as scripts see them (`__iron_info`).
     info: info::Info,
+    /// Real-world light units (`iron.lightUnits`), and whether the quality level has warned
+    /// about leaving out light shafts the game asked for yet.
+    physical_units: bool,
+    pipeline_warned: bool,
     /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
     script_cursor: ScriptCursor,
     /// Whether the window has focus (raw mouse motion only counts then).
@@ -726,7 +745,7 @@ impl App {
         (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
         self.ui_scale = ui_scale::UiScale::None;
         self.scene = scene;
-        self.world_view = world_view::WorldViews::default();
+        self.world_view = world_view::WorldViews::with_physical_units(self.physical_units);
         // Tell the new scripts the screen size on the next frame.
         self.screen = (0.0, 0.0, 0.0);
         self.physics = iron_physics::Physics::new();
@@ -935,6 +954,8 @@ impl App {
             });
         self.apply_script_output();
         let dt = self.components.frame_dt() as f32;
+        // Auto exposure adapts by the frame's time.
+        self.world_view.grading.delta_time = dt;
         let changed = self.world_view.update_particles(dt, &self.scene);
         if self.native.is_some() {
             native_render::report_particles(&changed, &mut self.scene.scene);
@@ -1272,6 +1293,16 @@ impl App {
                         .apply(&op.args, || new_panel_tree(root, fonts, sheets))
                     {
                         tracing::warn!("render.panel: {e}");
+                    }
+                }
+                "render.text" => {
+                    let (root, fonts, sheets) =
+                        (&self.asset_root, &self.font_sources, &self.sheet_sources);
+                    if let Err(e) = self
+                        .panels
+                        .apply_text(&op.args, || new_panel_tree(root, fonts, sheets))
+                    {
+                        tracing::warn!("render.text: {e}");
                     }
                 }
                 name if name.starts_with("render.") => {
@@ -1993,6 +2024,10 @@ impl App {
         }
         gfx.world.bloom = self.world_view.bloom;
         gfx.world.grading = self.world_view.grading;
+        for id in self.world_view.exposure_resets.drain(..) {
+            gfx.world.reset_exposure(id);
+        }
+        warn_pipeline(&mut self.pipeline_warned, &self.world_view);
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -2007,6 +2042,7 @@ impl App {
         gfx.world.soft_shadow_radius = q.soft_radius;
         gfx.world.anisotropic = q.anisotropic;
         gfx.world.texture_mip_limit = q.texture_mip_limit;
+        gfx.world.pipeline = q.pipeline;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
@@ -2155,7 +2191,11 @@ impl PlatformApp for App {
                 }
                 let mut renderer = UiRenderer::new(&gpu);
                 renderer.set_asset_root(&self.asset_root);
-                let world = WorldRenderer::new(&gpu);
+                let mut world = WorldRenderer::new(&gpu);
+                world.physical_units = self.physical_units;
+                if self.physical_units {
+                    tracing::info!("real-world light units");
+                }
                 // `Window.main` learns the real size and scale (its title may be the game's own).
                 let dpi = window.scale_factor();
                 let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
@@ -2470,6 +2510,49 @@ impl PlatformApp for App {
             // Games without @iron/engine's Screen don't have the hook.
             let _ = self.scripts.call_global("__iron_screen", &args);
         }
+        // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
+        let stats = gfx.world.stats();
+        if self.render_stats != stats {
+            self.render_stats = stats;
+            let args = [
+                stats.meshes,
+                stats.culled_meshes,
+                stats.quads,
+                stats.culled_quads,
+                stats.fog_culled,
+                stats.lights,
+                stats.culled_lights,
+                stats.shadow_maps,
+            ]
+            .map(|v| iron_core::Value::Number(v as f64));
+            let _ = self.scripts.call_global("__iron_render_stats", &args);
+        }
+        // Each camera's exposure (EV100 in use, and how bright it metered), when it changes.
+        for id in self.world_view.camera_ids() {
+            let Some(r) = gfx.world.exposure(id) else {
+                continue;
+            };
+            let now = (r.ev, r.scene_ev);
+            let moved = self.exposure_sent.get(&id).is_none_or(|&(ev, scene)| {
+                (ev - now.0).abs() > 0.01
+                    || (scene - now.1).abs() > 0.01
+                    || scene.is_nan() != now.1.is_nan()
+            });
+            if moved {
+                self.exposure_sent.insert(id, now);
+                let scene = if now.1.is_nan() {
+                    iron_core::Value::Null
+                } else {
+                    iron_core::Value::Number(now.1.into())
+                };
+                let args = [
+                    iron_core::Value::Number(id.into()),
+                    iron_core::Value::Number(now.0.into()),
+                    scene,
+                ];
+                let _ = self.scripts.call_global("__iron_exposure", &args);
+            }
+        }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
         let dark = gfx.window.theme() == Some(iron_platform::Theme::Dark);
         self.ui.set_media_env(iron_ui::media::MediaEnv {
@@ -2490,6 +2573,10 @@ impl PlatformApp for App {
         }
         gfx.world.bloom = self.world_view.bloom;
         gfx.world.grading = self.world_view.grading;
+        for id in self.world_view.exposure_resets.drain(..) {
+            gfx.world.reset_exposure(id);
+        }
+        warn_pipeline(&mut self.pipeline_warned, &self.world_view);
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -2504,6 +2591,7 @@ impl PlatformApp for App {
         gfx.world.soft_shadow_radius = q.soft_radius;
         gfx.world.anisotropic = q.anisotropic;
         gfx.world.texture_mip_limit = q.texture_mip_limit;
+        gfx.world.pipeline = q.pipeline;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
@@ -2873,6 +2961,15 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
         load_font(ui, root, &face.family, &face.src, face.weight, face.italic);
     }
     added.id
+}
+
+/// Says once in the log when the game asks for light shafts its quality level leaves out
+/// (`volumetricFog: false`, a phone's level, say), as Unity does.
+fn warn_pipeline(warned: &mut bool, world: &world_view::WorldViews) {
+    if !*warned && !world.quality.pipeline.volumetric_fog && world.uses_volumetric_fog() {
+        *warned = true;
+        tracing::warn!("RenderSettings.volumetricFog: this quality level has light shafts off");
+    }
 }
 
 #[cfg(test)]

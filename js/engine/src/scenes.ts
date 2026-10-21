@@ -156,6 +156,19 @@ function fromGuid(guid: unknown, src: unknown): string {
   return (typeof guid === "string" && Assets.guidToPath(guid)) || String(src);
 }
 
+/** Bytes as a hex string: half the size of a JSON number array, and quick to read back. */
+function toHex(bytes: readonly number[]): string {
+  let out = "";
+  for (const b of bytes) out += (b < 16 ? "0" : "") + b.toString(16);
+  return out;
+}
+
+function fromHex(hex: string): number[] {
+  const out: number[] = new Array(hex.length >> 1);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
 const warn = (message: string) => console.warn(`scene: ${message}`);
 
 /** What `Saver.value` gives for values it can't save, in reload mode (the field is left out). */
@@ -271,12 +284,14 @@ class Saver {
       return this.asset(v, "texture", () => ({ type: "RenderTexture", width: v.width, height: v.height }));
     }
     if (v instanceof Texture) {
-      if (!v.src) return this.cannot(`${where}: only textures loaded from files are saved`);
+      const bytes = v._bytes;
+      if (!v.src && !bytes) return this.cannot(`${where}: only textures loaded from files or made with Texture.create are saved`);
       const t = v as unknown as { _mipmaps: boolean };
-      const guid = Assets.pathToGuid(v.src);
+      const guid = v.src ? Assets.pathToGuid(v.src) : null;
       return this.asset(v, "texture", () => ({
         type: "Texture",
-        src: v.src,
+        // From a file, or its pixels (sRGB bytes, top row first, as hex) when made with `Texture.create`.
+        ...(v.src ? { src: v.src } : { width: v.width, height: v.height, pixels: toHex(bytes!) }),
         ...(guid ? { guid } : {}),
         filterMode: v.filterMode,
         wrapMode: v.wrapMode,
@@ -333,14 +348,18 @@ class Loader {
     if (a?.type === "RenderTexture") {
       made = new RenderTexture(Number(a.width), Number(a.height));
     } else if (a?.type === "Texture") {
-      // By GUID when its file is known, so renamed files are still found.
-      made = Texture.load(fromGuid(a.guid, a.src), {
+      const options = {
         filterMode: a.filterMode as never,
         wrapMode: a.wrapMode as never,
         mipmaps: a.mipmaps as boolean | undefined,
         anisoLevel: a.anisoLevel as number | undefined,
         linear: a.linear as boolean | undefined,
-      });
+      };
+      made =
+        typeof a.pixels === "string"
+          ? Texture._fromBytes(Number(a.width), Number(a.height), fromHex(a.pixels), options)
+          : // By GUID when its file is known, so renamed files are still found.
+            Texture.load(fromGuid(a.guid, a.src), options);
     } else if (a?.type === "Mesh") {
       const flat = (k: string) => (a[k] as number[] | undefined) ?? [];
       const v3 = (f: number[]) => Array.from({ length: f.length / 3 }, (_, i) => new Vector3(f[i * 3], f[i * 3 + 1], f[i * 3 + 2]));
@@ -631,6 +650,15 @@ function saveRenderSettings(saver: Saver): Record<string, unknown> {
       reflectionIntensity: RenderSettings.reflectionIntensity,
       skybox: RenderSettings.skybox,
       bloom: RenderSettings.bloom,
+      fog: RenderSettings.fog,
+      fogMode: RenderSettings.fogMode,
+      fogColor: RenderSettings.fogColor,
+      fogDensity: RenderSettings.fogDensity,
+      fogStartDistance: RenderSettings.fogStartDistance,
+      fogEndDistance: RenderSettings.fogEndDistance,
+      heightFog: RenderSettings.heightFog,
+      volumetricFog: RenderSettings.volumetricFog,
+      fogCulling: RenderSettings.fogCulling,
     },
     "renderSettings",
   ) as Record<string, unknown>;
@@ -643,6 +671,16 @@ function applyRenderSettings(saved: Record<string, unknown>): void {
   if (typeof s.reflectionIntensity === "number") RenderSettings.reflectionIntensity = s.reflectionIntensity;
   if ("skybox" in s) RenderSettings.skybox = (s.skybox as never) ?? null;
   if ("bloom" in s) RenderSettings.bloom = (s.bloom as never) ?? null;
+  // The fog's settings before its switch, so turning it on sends them all.
+  if (s.fogMode === "linear" || s.fogMode === "exponential" || s.fogMode === "exponentialSquared") RenderSettings.fogMode = s.fogMode;
+  if (s.fogColor instanceof Color) RenderSettings.fogColor = s.fogColor;
+  if (typeof s.fogDensity === "number") RenderSettings.fogDensity = s.fogDensity;
+  if (typeof s.fogStartDistance === "number") RenderSettings.fogStartDistance = s.fogStartDistance;
+  if (typeof s.fogEndDistance === "number") RenderSettings.fogEndDistance = s.fogEndDistance;
+  if ("heightFog" in s) RenderSettings.heightFog = (s.heightFog as never) ?? null;
+  if ("volumetricFog" in s) RenderSettings.volumetricFog = (s.volumetricFog as never) ?? null;
+  if (typeof s.fogCulling === "boolean") RenderSettings.fogCulling = s.fogCulling;
+  if (typeof s.fog === "boolean") RenderSettings.fog = s.fog;
 }
 
 export type LoadSceneMode = "single" | "additive";

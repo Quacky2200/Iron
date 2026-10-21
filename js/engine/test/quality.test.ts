@@ -27,7 +27,7 @@ describe("QualitySettings", () => {
     // The choice is also saved (prefs.set), checked in display.test.ts.
     ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
-      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1],
+      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1, false, true, 8, false],
       ["render.shadowSettings", 0, 20, 1024, 1],
     ]);
     expect(heard).toBe(0);
@@ -36,15 +36,15 @@ describe("QualitySettings", () => {
     QualitySettings.renderScale = 5;
     ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
-      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1],
-      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4, 1, "disable", 1],
+      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1, false, true, 8, false],
+      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4, 1, "disable", 1, false, true, 8, false],
     ]);
     QualitySettings.lodBias = 3;
     expect(ops.filter((o) => o[0] === "render.quality").at(-1)![6]).toBe(3);
     // Texture quality (M5-QUA-02): anisotropic filtering and the mip limit.
     QualitySettings.anisotropicFiltering = "forceEnable";
     QualitySettings.globalTextureMipmapLimit = 7;
-    expect(ops.filter((o) => o[0] === "render.quality").at(-1)!.slice(8)).toEqual(["forceEnable", 3]);
+    expect(ops.filter((o) => o[0] === "render.quality").at(-1)!.slice(8, 10)).toEqual(["forceEnable", 3]);
     expect(() => QualitySettings.setQualityLevel("Potato")).toThrow("Potato");
   });
 
@@ -65,5 +65,30 @@ describe("QualitySettings", () => {
     expect(QualitySettings.getQualityLevel()).toBe(0);
     expect(QualitySettings.renderScale).toBe(0.5);
     expect(QualitySettings.levels[0]!.renderScale).toBe(0.5);
+  });
+
+  // M7-RP-03
+  test("each level carries the render pipeline's settings, and the default can go by platform", () => {
+    // Low is the phones' tier; High has everything.
+    expect(QualitySettings.volumetricFog).toBe(true);
+    expect(QualitySettings.additionalLights).toBe(-1);
+    QualitySettings.setQualityLevel("Low");
+    expect(QualitySettings.volumetricFog).toBe(false);
+    expect(QualitySettings.additionalLights).toBe(8);
+    expect(QualitySettings.additionalLightShadows).toBe(false);
+    QualitySettings.additionalLights = 500;
+    QualitySettings.hdr = false;
+    expect(ops.filter((o) => o[0] === "render.quality").at(-1)!.slice(10)).toEqual([false, false, 256, false]);
+    const on = (platform: string) => {
+      globalThis.__iron_info = {
+        app: { quality: { default: { Android: "Low", iOS: "Medium", default: "Ultra" } } } as never,
+        system: { operatingSystemFamily: platform } as never,
+      };
+      _resetQualityForTests();
+      return QualitySettings.names[QualitySettings.getQualityLevel()];
+    };
+    expect(on("Android")).toBe("Low");
+    expect(on("iOS")).toBe("Medium");
+    expect(on("Windows")).toBe("Ultra");
   });
 });

@@ -267,7 +267,11 @@ export class PhysicsBody {
     __iron_op("physics.set", this.id, "ccd", on);
   }
 
-  /** Which axes it may move along and turn about: [x, y, z] translations, then rotations. */
+  /**
+   * Which axes it may move along and turn about: [x, y, z] translations, then rotations.
+   * `[true, true, false], [false, false, true]` keeps it in the x-y plane (a 2D scene seen
+   * from the side), with friction as usual.
+   */
   setAllowedAxes(translation: [boolean, boolean, boolean], rotation: [boolean, boolean, boolean]): void {
     __iron_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
   }

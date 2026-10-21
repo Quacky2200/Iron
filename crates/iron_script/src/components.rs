@@ -4,7 +4,8 @@ use crate::{ScriptError, ScriptRuntime, Value};
 
 /// Drives script components through the JS-side host installed by `@iron/engine`:
 /// `__iron_registered()`, `__iron_create(class, id, object, name)`, `__iron_hooks(id)`,
-/// `__iron_dispatch(id, method, ...args)`, `__iron_destroy(id)` and, once per frame,
+/// `__iron_dispatch(id, method, ...args)`, `__iron_run(method, ids, ...args)` (one hook
+/// on many components in one call), `__iron_destroy(id)` and, once per frame,
 /// `__iron_tick(dt)` (which advances script `Time` and returns the scaled `dt`).
 ///
 /// The lifecycle follows Unity / s&box: `onStart` once before anything else, then
@@ -25,6 +26,8 @@ pub struct ComponentHost {
     tick_hook: Option<bool>,
     /// Whether the bundle has `__iron_animate` (animation players).
     animate_hook: Option<bool>,
+    /// Whether the bundle has `__iron_run` (hooks batched into one call each).
+    run_hook: Option<bool>,
     /// The last frame's scaled length (`frame_dt`).
     frame_dt: f64,
 }
@@ -255,7 +258,101 @@ impl ComponentHost {
     /// Calls `method` on every enabled component on an active object, starting new
     /// ones first. Components added while this runs (`addComponent` in a script) are
     /// adopted when the ops are applied, so the list doesn't change under us.
+    ///
+    /// With `__iron_run`, one call runs the method on a whole run of components (a call
+    /// into JS per component cost more than many hooks do); a new component's `onStart`
+    /// ends the run, so everything still happens in the same order.
     fn run(
+        &mut self,
+        rt: &mut dyn ScriptRuntime,
+        method: &str,
+        args: &[Value],
+        active: &dyn Fn(u32) -> bool,
+    ) -> Vec<(ComponentId, ScriptError)> {
+        let batched = *self.run_hook.get_or_insert_with(|| {
+            rt.eval("typeof __iron_run === 'function'")
+                .is_ok_and(|v| v == Value::Bool(true))
+        });
+        if !batched {
+            return self.run_each(rt, method, args, active);
+        }
+        let mut errors = Vec::new();
+        let mut batch: Vec<usize> = Vec::new();
+        for i in 0..self.components.len() {
+            let entry = &mut self.components[i];
+            if !entry.enabled || entry.object.is_some_and(|o| !active(o)) {
+                continue;
+            }
+            let h = *entry.hooks.get_or_insert_with(|| hooks(rt, entry.id));
+            if !self.components[i].started {
+                self.run_batch(rt, method, args, &mut batch, &mut errors);
+                self.components[i].started = true;
+                if h.start
+                    && let Err(e) = dispatch(rt, self.components[i].id, "onStart", &[])
+                {
+                    self.fail(rt, i, e, &mut errors);
+                    continue;
+                }
+            }
+            if h.has(method) {
+                batch.push(i);
+            }
+        }
+        self.run_batch(rt, method, args, &mut batch, &mut errors);
+        errors
+    }
+
+    /// Calls `method` on the components at these indices in one `__iron_run`; one that
+    /// throws is disabled and the rest after it still run.
+    fn run_batch(
+        &mut self,
+        rt: &mut dyn ScriptRuntime,
+        method: &str,
+        args: &[Value],
+        batch: &mut Vec<usize>,
+        errors: &mut Vec<(ComponentId, ScriptError)>,
+    ) {
+        let mut from = 0;
+        while from < batch.len() {
+            let ids = batch[from..]
+                .iter()
+                .map(|&i| self.components[i].id.raw().into())
+                .collect();
+            let mut all = Vec::with_capacity(args.len() + 2);
+            all.push(method.into());
+            all.push(Value::Array(ids));
+            all.extend_from_slice(args);
+            let Err(e) = rt.call_global("__iron_run", &all) else {
+                break;
+            };
+            let at = match rt.eval("globalThis.__iron_run_at") {
+                Ok(Value::Number(n)) if n >= 0.0 && (from + n as usize) < batch.len() => n as usize,
+                // Not a component's throw (the call itself failed): blame the first.
+                _ => 0,
+            };
+            self.fail(rt, batch[from + at], e, errors);
+            from += at + 1;
+        }
+        batch.clear();
+    }
+
+    /// Reports a component's error and disables it.
+    fn fail(
+        &mut self,
+        rt: &mut dyn ScriptRuntime,
+        i: usize,
+        e: ScriptError,
+        errors: &mut Vec<(ComponentId, ScriptError)>,
+    ) {
+        let entry = &mut self.components[i];
+        tracing::error!(component = %entry.id, class = %entry.class, "{e}; component disabled");
+        entry.enabled = false;
+        let _ = rt.call_global("__iron_destroy", &[entry.id.raw().into()]);
+        errors.push((entry.id, e));
+    }
+
+    /// [`Self::run`] one component at a time, for bundles without `__iron_run`.
+    fn run_each(
         &mut self,
         rt: &mut dyn ScriptRuntime,
         method: &str,

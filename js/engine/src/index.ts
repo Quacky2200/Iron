@@ -70,6 +70,7 @@ export {
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export { Cursor, CursorLockMode } from "./cursor.ts";
 export { type QualityLevel, QualitySettings, type ShadowQualityMode } from "./quality.ts";
+export { GraphicsSettings, type LightUnits } from "./graphics.ts";
 export { type InstantiateOptions, Model } from "./models.ts";
 export { LayerMask } from "./layers.ts";
 export { _loadingGame, _onHotEnd } from "./hot.ts";
@@ -85,6 +86,9 @@ export {
   SceneManager,
 } from "./scenes.ts";
 export { LineRenderer, LineRenderer2D } from "./lines.ts";
+export { Shapes } from "./shapes.ts";
+export { Spline, SplineAnimate, type SplineKnot, type TangentMode } from "./spline.ts";
+export { type TextAlignment, TextMesh } from "./text-mesh.ts";
 export { Application, type DeviceType, type OperatingSystemFamily, SystemInfo } from "./app.ts";
 export {
   Bounds,
@@ -160,6 +164,8 @@ export {
   type BoneWeight,
   Mesh,
   type MeshData,
+  type FlatMeshData,
+  type NumberList,
   MeshRenderer,
   SkinnedMeshRenderer,
   Mirror,
@@ -167,7 +173,14 @@ export {
   PlaneRenderer,
   type PrimitiveMesh,
   type BloomSettings,
+  type FogMode,
+  FogVolume,
+  type HeightFogSettings,
+  type VolumetricFogSettings,
+  type AutoExposureSettings,
+  type VolumeDetail,
   RenderSettings,
+  RenderStats,
   type ProceduralSky,
   type LightShadows,
   WorldPanel,

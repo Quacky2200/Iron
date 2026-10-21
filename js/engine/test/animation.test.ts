@@ -92,7 +92,9 @@ describe("AnimationClip", () => {
     expect(light.color.g).toBeCloseTo(0.5);
     expect(light.color).toBeInstanceOf(Color);
     // One op per animated transform.
-    expect(ops.filter((o) => o[0] === "scene.local" && o[1] === hand.id).length).toBe(1);
+    globalThis.__iron_flush();
+    const sent = ops.filter((o) => o[0] === "scene.locals").flatMap((o) => o[1] as number[]);
+    expect(sent.filter((v, i) => i % 11 === 0 && v === hand.id).length).toBe(1);
     // Replacing a curve, and saving and loading.
     clip.setCurve("Arm/Hand", Light, "intensity", null);
     expect(clip.curves.length).toBe(4);

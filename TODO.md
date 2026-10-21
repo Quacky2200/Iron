@@ -830,7 +830,39 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     width in world units, a colour, `loop`) sends one `render.stroke` op per change; Rust
     draws one instanced SDF capsule per segment (`WorldView.strokes`, `vs_stroke` /
     `fs_stroke`): smooth edges without MSAA, round joins and caps — `M5-RND-24`
-    - [ ] Later: fills (`FillClosedCurve`), e.g. stencil-then-cover for self-crossing shapes
+    - [x] Fills (`FillPolygon` / `FillClosedCurve`): `LineRenderer2D.fillColor` and `fillRule`
+      (`evenodd`, GDI's default `Alternate`, or `nonzero`), tessellated with lyon when the
+      points change (`tessellate_fill`, `WorldView.fills`), drawn under the outline; a
+      `width` of 0 leaves just the fill — `M5-RND-25`
+    - [x] `Shapes` (GDI's outlines): rectangle, rounded rectangle, ellipse, circle, arc, pie,
+      regular polygon, polygon, triangle, Bézier, cardinal `curve` / `closedCurve` — `M5-RND-25`
+    - [x] `TextMesh` (GDI's `DrawString`, Unity's `TextMesh`): text on its object's XY plane, laid
+      out by a one-element UI tree that `render.text` builds in Rust (any `loadFont` font, line
+      breaks, `maxWidth` wrapping, alignment), sized to fit and tinted like a sprite;
+      `examples/shapes` shows every shape, both fill rules and labels — `M5-TXT-01`
+      - [x] A text's texture is redrawn only when its text or look changes; a new colour is just
+        the quad's tint (other panels still draw every frame) — `M5-TXT-01`
+    - [x] Draw order: each shape's fill, then its outline, by `sortingOrder` and then the order
+      they were made (`WorldView.shapes`); 2D shapes draw before the see-through things, so
+      sprites and text show over them — `M5-RND-25`
+    - [x] `Spline` (Unity's Splines, the core): knots with auto (cardinal; 0.5 is
+      Catmull-Rom), Bézier or linear tangents, open or closed, positions by distance
+      (`evaluate`), tangents, length, `sample`, `nearest`, editing; `SplineAnimate` moves an
+      object along one (loop, ping-pong, once; facing along it; in a container's space) —
+      `M5-SPL-01`. `examples/splines`: splines that move and one to edit with the mouse
+    - [x] `examples/clock`: twelve faces built on these (analog rings and spline hands, turning
+      dials, a glowing rolling meter, a 3D sundial whose shadow tells the time under a sun
+      placed for the date, a sand timer, a reactive lava lamp, an underwater porthole clock, a
+      chandelier, a rainbow, Material-style morphing digits, a flip clock in Iron's UI, a
+      seven-segment alarm clock with bloom), switched with side arrows and dots
+    - [x] `examples/fishtank`: an aquarium-channel view into deep water: a slowly drifting
+      perspective camera, a hazy back wall, rocks and kelp at several depths, a sand floor
+      fading into the blue, light shafts, caustics, marine snow, a vignette; four species
+      school in 3D, swim level, keep inside and flee the pointer; click to feed (the nearest fish
+      race for the food and grow), right-click adds a fish, Space taps the glass; the readout
+      shows only while the mouse moves
+    - [ ] Later: pen options (flat / square caps, miter / bevel joins, dashes), gradient and
+      texture brushes, smooth fill edges without MSAA, clipping
     - [ ] Later: see-through strokes without darker overlaps at the joins (a layer)
     - [ ] Later: points as one `Float32Array` if the op's number conversion shows up
   - [x] The Cornell box (`examples/cornell`): built from primitives with the original's
@@ -1035,6 +1067,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   read. Now, when the UI has a backdrop filter or blend mode (`needs_backdrop`), the world is
   drawn into a sampleable texture (`backdrop_target`) and the UI canvas starts as a copy of it
   (`render_over`); other frames are unchanged — `M5-RND-16`; the arcade's frosted HUD
+- [x] **Ported examples (2026-10-18)**: `examples/sine-circle-demo` and `examples/raindrop-demo`
+  (MiniGameEngine's SineDemo and RaindropDemo: the original's transitions, all four sine
+  formulas drawn every degree with `LineRenderer2D`, the weather's ripples, the music, an FPS
+  readout with a vsync toggle) and the 2014 VB.NET Zombie Horders (the rules in `sim.ts`,
+  tested with `bun test`; the original's menu, pause and death screens with a backdrop blur;
+  zombies a little faster up to level 3; the single-player spawn bug fixed). The zombie game
+  moved to its own repository (2026-10-18): zombie-horders, branch `iron`, built by cloning it
+  into `examples/topdown-zombie-game`
+  - [ ] The zombie game's multiplayer: the sim already takes a list of players and inputs;
+    it waits on networking (M6 Script IO, M8)
 - [ ] **Optimisation fixes** (found 2026-10-17 with `examples/arcade`; not scheduled yet):
   - [x] Reflection probes redrew the shadow map six times: shadow maps are now drawn once
     a frame from the main view and shared by probe faces, mirrors and render textures
@@ -1047,6 +1089,33 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     (10–25% of the arcade's uncapped frame rate): blur only the panels' areas at a lower
     resolution, and skip the copy when no panel overlaps the world.
   - [ ] Reload benchmark under 100 ms (`M4-HOT-07`, ~146 ms): see "Hot reload, part 2".
+  - [x] Script overhead with many objects (found 2026-10-18 with `examples/fishtank`: 123
+    fish ran at ~40 ms a frame in release, ~32 ms of it QuickJS; now ~16 ms):
+    - [x] Transforms go to the engine in one `scene.locals` op per script turn
+      (`flushTransforms`, `__iron_flush` after every call into JS), not one op per setter
+    - [x] Lifecycle hooks run in one `__iron_run(method, ids)` call per hook, not one call
+      per component (every `LineRenderer2D` has `onPreRender`)
+    - [x] World setters and getters under an identity parent skip the parent maths, and
+      the parent's world transform is one walk up, not three per level
+    - [x] `Spline` evaluates from cached control points in plain numbers
+    - [x] The fish tank flocks over a spatial grid in plain numbers
+  - [ ] QuickJS allocation: every `Vector3` / `Quaternion` op allocates. Scalar or
+    in-place variants for hot paths (`addInPlace`, `set`), or a faster engine later (M9.a)
+  - [ ] 2D shapes: check draw calls and re-tessellation with hundreds of shapes, and batch
+    them where it helps
+  - [ ] Profile the rest of the frame (~6 ms engine and render with 123 fish, ~800 shapes)
+- [x] **Physics: locked axes switch friction off** (found 2026-10-18 with `examples/physics`):
+  a body that can't move along one axis and can't turn about the other two (`setAllowedAxes`
+  with z movement and x/y turns locked, the usual way to keep bodies in a plane) slid as if
+  on ice. rapier 0.36.1's 3D friction solve (`contact_constraint_element.rs`) inverts the
+  2×2 tangent mass matrix; the locked direction has zero mass, the determinant is 0,
+  `simd_inv(0)` gives 0, and every friction impulse becomes 0. Worked around in Iron
+  (2026-10-19): that combination isn't given to rapier as a lock; `iron_physics` pins the axis
+  itself each step (`set_constraints`, `hold_pins`) — `M4-PHY-07`
+  - [ ] Upstream: reported as dimforge/rapier#1047, fixed by dimforge/rapier#1048 (branch
+    `fix/plane-locked-friction` on Quacky2200/rapier; the material is in
+    `docs/upstream/rapier-plane-locked-friction/`). Once a rapier release has it, drop the pins
+    and lock the axis in rapier again
 - [x] **M5.c** Rendering depth: a basic cube scene end to end, better shadows, materials
   (done 2026-10-17; the unticked items below are follow-ups for later)
   - [x] Materials (asked for 2026-10-17), Unity Standard / URP Lit style: PBR, the sky and
@@ -1366,6 +1435,156 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   lights (`Light.bounceIntensity`, Unity's): baked with the lightmaps first, then a realtime
   approximation (virtual point lights from shadow-map hits, or probe volumes); the Cornell
   box is the test scene (asked for 2026-10-17)
+- [ ] Fog (Unity's `RenderSettings.fog`, asked for 2026-10-18)
+  - [x] Distance fog (2026-10-20): linear, exponential and exponential squared in a colour
+    (`RenderSettings.fog` / `fogMode` / `fogColor` / `fogDensity` / `fogStartDistance` /
+    `fogEndDistance`, saved with scenes), in the world shader for meshes, quads (sprites,
+    particles, panels, text) and 2D shapes alike; glows fade out; the background stays clear
+    (Unity's); per camera on or off (`Camera.fog`); orthographic cameras fog by depth.
+    `examples/fishtank` uses it instead of mixing its colours by depth (`M7-FOG-01`..`03`)
+  - [x] Height fog (2026-10-20): exponential in height, integrated exactly along each view
+    ray (`RenderSettings.heightFog`: density, base height, falloff); it covers the background
+    out to the far plane, so the horizon sinks into it (`M7-FOG-04`)
+  - [x] Volumetric light shafts (2026-10-20): each pixel marches its view ray (jittered,
+    `RenderSettings.volumetricFog`: intensity, anisotropy, steps, reach), each step's share
+    of the fog lit by every light that opts in (`Light.volumetricIntensity`) through its hard
+    shadow map, Henyey-Greenstein phase (`M7-FOG-05`)
+  - [x] Follow-ups (2026-10-21): a froxel volume (lit once per cell, then added up along each
+    view ray) and temporal accumulation of its jitter's grain (see the light volume below)
+  - [ ] Shafts in the sky without height fog
+  - [x] Fog volumes (2026-10-21): `FogVolume`, a world-aligned box of fog in its own colour
+    with soft edges (mist over a pond, a cloud layer), integrated along each view ray at fixed
+    points, over the background too, lit by light shafts; 8 per camera (`M7-FOG-06`)
+  - [x] `examples/fog` (2026-10-21): every kind of fog in one misty clearing, switched from a
+    menu
+  - [x] Light shafts' albedo (`volumetricFog.albedo`, separate from `fogColor`, so dark night
+    fog still glows under a lamp) and ellipsoid fog volumes (`FogVolume.shape`) (2026-10-21)
+  - [x] Fog culling (2026-10-21): meshes, quads and local lights wholly past where the
+    distance fog is opaque aren't drawn (`RenderSettings.fogCulling`, on by default), counted
+    in `WorldStats::fog_culled`; scripts read the renderer's stats as `RenderStats`
+    (`M7-FOG-07`)
+  - [x] Spot and point lights' shafts worked out per pixel (2026-10-21): each view ray's stretch
+    inside the light's range and cone found exactly, so cones have sharp edges and lanterns a
+    round glow; the volume keeps the sun; lit fog goes on after fog volumes, so mist glows
+    under a lamp (`M7-FOG-08`)
+  - [x] God rays, engine (2026-10-21): within `volumetricFog.sharpDistance` of the camera
+    the sun's shafts are worked out per pixel from its shadow map (fixed samples, closer
+    nearer the eye), the volume covering the rest, so beams through bars and gaps stay sharp
+    (`M7-FOG-10`)
+  - [x] God-ray examples (2026-10-21): `godrays-forest`, `godrays-cell` (dust motes),
+    `godrays-room`, `godrays-sunset`, `godrays-shed` (a scanning beam: partial or full scans,
+    dust motes, haze and exposure pages), `godrays-lift`, `godrays-clouds`; reviewed in the
+    window
+  - [x] The light volume's quality (2026-10-21): no moire or grain through blinds (each
+    cell's jitter shifted by a hash, 64 Halton points, a spatial filter); HDRP's denoising
+    modes (`volumetricFog.denoising`), Unreal's `historyWeight` and `samples` per cell;
+    history read through a 5-tap Catmull-Rom filter and trusted less the further it moved
+    (no smear while turning); `motionSamples` for cells whose view moved (`M7-FOG-11`..`14`)
+  - [x] Shadowed spot and point lights shaft through the volume (2026-10-21): their beams cut
+    by planks and bars made arcs and moire per pixel; a moving one's history fades by how far
+    its beam swept (capped at a quarter a frame). Unshadowed ones keep exact per-pixel cones.
+    The volume is read a slice and a half short of surfaces (Unreal's depth bias), so a beam
+    behind a wall shows no disc of haze on it (`M7-FOG-15`)
+  - [x] Pyramid spot lights (2026-10-21, HDRP's spot shape): `Light.spotShape = "pyramid"`
+    and `aspectRatio`; a thin, wide one is a sheet of light (the shed's full scan)
+    (`M7-SPOT-01`, `02`)
+  - [ ] Blades finer than the volume's cells (a beam through 1 cm plank gaps, seen towards
+    the light) average into a soft disc of haze: work shadowed spot lights near the camera
+    out per pixel too, edges found exactly as the sun's sharp shafts are (without bringing
+    back the per-pixel arcs), the volume covering the rest
+  - [ ] A moving light's sweep is measured at the end of its range, overstating it for nearer
+    haze (more noise than needed); measure it where its beam meets the view, or per cell.
+    Only four moving lights are followed (more count as moving a long way)
+  - [ ] HDRP's third spot shape, Box (parallel light from a rectangle), and the beam glow
+    mesh (`beamIntensity`) for pyramids
+  - [x] Hot reload of a release build keeps the old scene (2026-10-21): with a game's
+    window open, rebuilding `dist/` reloaded it in place, but scenes built in `onStart` came
+    back from the saved state, so changed geometry (fog-raider's corridor fix) didn't show,
+    and the low-res look (`QualitySettings.renderScale`) looked blurrier than before. Check
+    what a reload should rebuild versus restore, and re-apply quality settings once.
+    Done: the blur was textures made with `Texture.create` (fog-raider's point-filtered
+    speckle) being dropped by the save, so materials came back untextured; they are now
+    saved with their pixels and options (`M4-HOT-11`). Quality was already restored once.
+    Restoring rather than rebuilding objects is by design (docs/scripting.md "Limits"):
+    changes to what `onStart` builds show after a restart
+  - [x] God rays, first notes (2026-10-21, done as the mix: the volume for broad haze, the
+    sun per pixel near the camera; the screen-space radial blur wasn't needed): crisp, high-contrast sun beams cutting through fog and
+    cloud where light comes through gaps (skylights, a broken roof, a tree canopy), as in
+    Unreal's volumetric fog and painted-style games. The froxel volume makes the sun's shafts
+    soft; options: a screen-space radial blur from the sun's position over an occlusion mask
+    (Crytek / GPU Gems 3 light shafts, cheap, works for the sky too), or a per-pixel sun march
+    with the shadow map (like the spot cones now, sharper, costlier), maybe mixed with the
+    volume (volume for broad haze, per pixel near the camera). An example: a ruined hall or a
+    forest clearing with beams through the roof or canopy, with dust motes catching the light
+  - [x] `examples/fog-world` (2026-10-21): an endless, streamed block world whose render
+    distance is the fog: seeded noise terrain built per 16×16 chunk as one textured mesh of
+    visible faces (`Mesh.createFlat` / `setFlat`), chunks recycled around the camera, a spare
+    ring past the fog for fog culling to skip; the HUD reads `RenderStats`
+  - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
+    2026-10-21): a third-person character on a bright white floor of glowing grid tiles under
+    a grey cloudy sky, everything fading into white fog a few tiles away. The floor moves with
+    the player like a treadmill (tiles recycled around them), so the area never ends: no walls
+    to reach, no edge to fall off. The player can run and jump with gravity (a
+    CharacterController on a floor collider that follows them). Lighting: soft, bright, the
+    tiles' grid lines glowing; fog close and white, height fog where the floor meets the sky
+- [ ] Auto exposure (eye adaptation)
+  - [x] `RenderSettings.autoExposure` (2026-10-21): metered HDR image, eased exposure,
+    min/max EV, compensation, two speeds; bloom thresholds on exposed light (`M7-EXP-01`);
+    examples tunnel, dark-room and the god-ray scenes
+  - [x] Per camera, HDRP metering, blending, scripts (2026-10-21): each camera adapts on its
+    own, split screens included (`M7-EXP-02`); a histogram with low/high percentiles and
+    average / centre-weighted / spot metering (`M7-EXP-03`); a manual exposure
+    (`fixedExposure`, EV100) blended with auto over `exposureTransition`, `hold`, and
+    `freezeExposure()` to turn it off unseen (`M7-EXP-04`); `Camera.exposure` /
+    `sceneBrightness` read back and `Camera.resetExposure()` (`M7-EXP-05`); a soft floor
+    (`darkAdaptation` / `darkBelow`) and a compensation curve instead of `minEV`'s wall
+    (`M7-EXP-06`); `QualitySettings.autoExposure`, the player's switch
+  - [x] A change of manual exposure eases over `exposureTransition` too (2026-10-21);
+    `QualitySettings.softShadowQuality` low / medium / high (3x3, 5x5, 7x7) softens beams'
+    patches on floors; dark-room and shed have tabbed exposure pages, FPS, quality and vsync
+- [ ] One render pipeline, as Unity 7 (asked for 2026-10-21, needed for iOS / Android). Unity
+  is keeping only URP (HDRP deprecated in 7.0, removed after the first 7 LTS; Built-in removed
+  in 7.0) and moving HDRP's features into it, scaled per quality level and platform
+  - [x] Built-in / Universal / HD pipelines first built after Unity 6's split (b123848..d59281c),
+    then folded into one (2026-10-21): each quality level carries a `PipelineAsset` (light
+    shafts, HDR, additional lights and their shadows; auto exposure via
+    `QualitySettings.autoExposure`); Low is the phones' tier; the manifest's default level can
+    go by platform; `iron.renderPipeline` only warns now (`M7-RP-01`..`03`)
+  - [ ] More per-level switches as features land: shadow cascades and resolution caps per
+    platform, MSAA and texture defaults, the light volume's detail, post effects
+  - [ ] Mobile GPU limits: fewer storage buffers, no compute where it's missing (auto exposure
+    and the light volume fall back or switch off), checked on an iOS / Android device
+- [x] Real-world light units (2026-10-21, required): `iron.lightUnits: "physical"` (a
+  project-wide switch, as Unity 7 brings them into URP): the sun in lux, spot and point lights
+  in lumens, emissive surfaces and the sky in nits; pre-exposure by each camera's last exposure;
+  a physical camera (`Camera.aperture` / `shutterSpeed` / `iso` → `physicalExposure`); a light
+  meter (`Light.illuminanceAt`, `measureIlluminance`); `examples/light-units` (`M7-HD-01`, `02`).
+  Old projects keep Iron's own units (`legacy`, the default)
+- [ ] Post-processing (asked for 2026-10-21; today: bloom, exposure and tonemapping, FXAA,
+  render scale, fog and light shafts, and CSS filter / backdrop-filter / blend modes for
+  screen UI only)
+  - [ ] Crisp pixel upscale: a point-filtered choice for `QualitySettings.renderScale`'s
+    upscale (it's bilinear, so a low render scale looks soft, not like real low-res pixels);
+    `examples/fog-raider`'s PS1 look uses it
+  - [ ] Custom post-process passes: a `PostProcess` API where a game supplies a WGSL fragment
+    function (scene colour and UV in, colour out; depth and normals once available) and named
+    float / colour parameters; passes run in order after the world (decide where against
+    bloom, tonemapping and FXAA), compiled once, errors to the log
+  - [ ] Built-in effects on that API: pixelate, vignette, colour grading (lift / gamma /
+    gain, saturation, a LUT later), CRT scanlines and curvature, film grain, chromatic
+    aberration
+  - [ ] Depth of field, like a real camera's focus: a focal distance (or a target object the
+    camera auto-focuses on, with a smooth pull), an aperture (f-stop) and focal length
+    setting how quickly things blur away from the focal plane, bokeh-shaped highlights
+    (hexagonal or round), near and far blur done separately so foreground edges don't bleed;
+    tilt-shift as a variant. Needs the scene's depth readable after the world pass (a
+    resolve of the multisampled depth, or a depth copy)
+  - [ ] Ink outlines like Borderlands: dark lines along silhouettes and creases, found from
+    jumps in depth and normals (a Sobel-style edge pass), thickness easing off with
+    distance, per-object opt-out (layers), and a cel / toon shading option for materials
+    (banded light) to pair with it. Needs depth and view-space normals after the world pass
+    (a normals target, or normals rebuilt from depth)
+  - [ ] `examples/postfx`: a scene with keys toggling each effect
 
 ## M8 — Multiplayer
 
@@ -1614,6 +1833,18 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 
 ## Later
 
+- [ ] A canvas UI element that embeds the 3D engine (a `<canvas>` / 3D view element for React UI):
+  a box that shows a camera's view of a world (or its own world) and passes the pointer and keys
+  through, so window apps written mostly in React can put live 3D anywhere in the layout — Iron as
+  an Electron replacement for desktop apps (one native binary, no browser, the same React UI).
+  - [ ] The element: a camera (by id) rendered into a texture sized to the box at the device
+    scale, drawn by the UI renderer in place, resized with layout, hidden views not rendered
+  - [ ] Input: pointer and wheel in the box go to that view (camera rays, panel hits, the editor's
+    Scene view uses the same idea), focus and keys while it's focused
+  - [ ] Several views at once, each its own scene or a shared one; a 2D canvas mode for
+    `LineRenderer2D` / `Shapes` / `TextMesh` drawing without a scene of your own
+  - [ ] App shell for UI-first apps: no scene needed, window chrome and menus, file dialogs and
+    tray (with M6 Script IO), packaging (M9)
 - [ ] SVG on the GPU ("native" SVG): tessellate fills and strokes (e.g. lyon) into triangles drawn
   by the UI renderer, instead of rasterizing every change on the CPU with resvg (M3d 5.1), so
   animated and large SVGs stay cheap; per-shape hit testing (`pointer-events` on shapes). Then:

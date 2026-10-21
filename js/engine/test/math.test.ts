@@ -108,6 +108,25 @@ describe("rotations", () => {
     expect(Quaternion.angle(Quaternion.identity, step)).toBeCloseTo(30, 3);
     expect(near(q.mul(q.inverse()).rotate(Vector3.right), Vector3.right)).toBe(true);
   });
+
+  test("static slerp, lerp and rotateTowards, as Unity's", () => {
+    const a = Quaternion.identity;
+    const b = Quaternion.euler(0, 90, 0);
+    expect(Quaternion.angle(Quaternion.slerp(a, b, 0.5), Quaternion.euler(0, 45, 0))).toBeLessThan(1e-3);
+    // Clamped, unless asked not to be.
+    expect(Quaternion.angle(Quaternion.slerp(a, b, 2), b)).toBeLessThan(1e-3);
+    expect(Quaternion.angle(Quaternion.slerpUnclamped(a, b, 1.5), Quaternion.euler(0, 135, 0))).toBeLessThan(1e-3);
+    // Lerp lands on the ends and stays unit length between them.
+    const l = Quaternion.lerp(a, b, 0.3);
+    expect(Math.hypot(l.x, l.y, l.z, l.w)).toBeCloseTo(1, 6);
+    expect(Quaternion.angle(Quaternion.lerp(a, b, 1), b)).toBeLessThan(1e-3);
+    // The short way round, even from the other hemisphere's sign.
+    const flipped = new Quaternion(-b.x, -b.y, -b.z, -b.w);
+    expect(Quaternion.angle(Quaternion.slerp(a, flipped, 0.5), Quaternion.euler(0, 45, 0))).toBeLessThan(1e-3);
+    expect(Quaternion.angle(Quaternion.lerp(a, flipped, 0.5), Quaternion.euler(0, 45, 0))).toBeLessThan(1e-3);
+    expect(Quaternion.angle(a, Quaternion.rotateTowards(a, b, 30))).toBeCloseTo(30, 3);
+    expect(Math.abs(Quaternion.dot(b, flipped))).toBeCloseTo(1, 6);
+  });
 });
 
 // M5-MTH-03

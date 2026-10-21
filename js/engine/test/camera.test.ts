@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, CameraFollow, CameraOrbit, GameObject, Matrix4x4, Quaternion, Rect, RenderTexture, Vector3 } from "../src/index.ts";
+import { Camera, CameraFollow, CameraOrbit, GameObject, Light, Matrix4x4, QualitySettings, Quaternion, Rect, RenderSettings, RenderTexture, Vector3 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 import { _setScreenForTests } from "../src/screen.ts";
@@ -70,7 +70,7 @@ describe("Camera conversions", () => {
     const a = cam.screenPointToRay({ x: 450, y: 50 });
     const b = cam.screenPointToRay({ x: 750, y: 550 });
     expect(near(a.direction, b.direction)).toBe(true);
-    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false, "none", null, false]);
+    expect(ops.at(-1)).toEqual(["render.camera", cam.id, cam.gameObject.id, 60, 0.1, 1000, [0.05, 0.06, 0.09, 1], 0, true, 5, [0.5, 0, 0.5, 1], "color", 0xffffffff, null, false, "none", null, false, true]);
     // Post anti-aliasing (M5-RND-18).
     cam.antialiasing = "fxaa";
     expect(ops.at(-1)![15]).toBe("fxaa");
@@ -86,12 +86,12 @@ describe("Camera conversions", () => {
     const security = camera(new Vector3(5, 5, 5));
     security.targetTexture = rt;
     expect(ops.at(-1)![0]).toBe("render.camera");
-    expect(ops.at(-1)!.at(-2)).toBe(rt.id);
+    expect(ops.at(-1)![16]).toBe(rt.id);
     expect(Camera.main).toBe(screen);
     rt.setSize(64, 64);
     expect(ops.at(-1)).toEqual(["render.renderTexture", rt.id, 64, 64]);
     security.targetTexture = null;
-    expect(ops.at(-1)!.at(-2)).toBeNull();
+    expect(ops.at(-1)![16]).toBeNull();
   });
 
   test("main camera and draw order", () => {
@@ -117,5 +117,63 @@ describe("Camera conversions", () => {
     // The camera starts behind the target (+z); yaw 90° turns that offset to +x.
     expect(near(orbiter.transform.position, new Vector3(14, 0, 0))).toBe(true);
     expect(near(orbiter.transform.forward, new Vector3(-1, 0, 0))).toBe(true);
+  });
+});
+
+// M7-EXP-05
+describe("exposure", () => {
+  test("cameras learn their exposure from the engine and can reset it", () => {
+    const cam = camera(Vector3.zero);
+    expect(Number.isNaN(cam.exposure)).toBe(true);
+    globalThis.__iron_exposure(cam.id, 3.5, 2.25);
+    expect(cam.exposure).toBe(3.5);
+    expect(cam.sceneBrightness).toBe(2.25);
+    globalThis.__iron_exposure(cam.id, 1, null);
+    expect(Number.isNaN(cam.sceneBrightness)).toBe(true);
+    cam.resetExposure();
+    expect(ops.at(-1)).toEqual(["render.exposureReset", cam.id]);
+  });
+
+  test("freezing keeps the main camera's exposure as the manual one", () => {
+    const cam = camera(Vector3.zero);
+    RenderSettings.autoExposure = {};
+    globalThis.__iron_exposure(cam.id, 4, 4);
+    RenderSettings.freezeExposure();
+    const post = ops.filter((o) => o[0] === "render.post").at(-1)!;
+    expect(post[4]).toBe(null);
+    expect(post[5]).toBe(4);
+    RenderSettings.fixedExposure = null;
+  });
+
+  test("the player's quality option turns auto exposure off and on", () => {
+    RenderSettings.autoExposure = { minEV: 1 };
+    QualitySettings.autoExposure = false;
+    expect(ops.filter((o) => o[0] === "render.post").at(-1)![4]).toBe(null);
+    QualitySettings.autoExposure = true;
+    expect((ops.filter((o) => o[0] === "render.post").at(-1)![4] as number[])[0]).toBe(1);
+    RenderSettings.autoExposure = null;
+  });
+});
+
+// M7-HD-02
+describe("real-world light", () => {
+  test("a physical camera's exposure and a light meter", () => {
+    const cam = camera(Vector3.zero);
+    // HDRP's defaults: f/16, 1/200 s, ISO 200.
+    expect(cam.physicalExposure).toBeCloseTo(Math.log2((16 * 16) / (1 / 200)) - 1, 6);
+    cam.aperture = 2.8;
+    cam.shutterSpeed = 1 / 60;
+    cam.iso = 800;
+    expect(cam.physicalExposure).toBeCloseTo(Math.log2(2.8 * 2.8 * 60) - 3, 6);
+    // A sun of 100000 lux straight down, and an 800 lumen bulb 2 m above the point.
+    const sun = new GameObject("sun", { rotation: Quaternion.lookRotation(new Vector3(0, -1, 0)) });
+    sun.addComponent(Light, { type: "directional", intensity: 100000 });
+    const bulb = new GameObject("bulb", { position: new Vector3(0, 2, 0) });
+    bulb.addComponent(Light, { type: "point", intensity: 800, range: 1000 });
+    const up = new Vector3(0, 1, 0);
+    const lux = Light.illuminanceAt(Vector3.zero, up);
+    expect(lux).toBeCloseTo(100000 + 800 / (4 * Math.PI) / 4, 0);
+    // Facing away, neither lights it.
+    expect(Light.illuminanceAt(Vector3.zero, new Vector3(0, -1, 0))).toBe(0);
   });
 });

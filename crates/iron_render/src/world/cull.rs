@@ -44,6 +44,43 @@ impl Frustum {
     }
 }
 
+/// How far a camera's fog reaches before hiding everything: boxes wholly past it are
+/// culled. Perspective cameras measure straight from the eye, orthographic ones by depth
+/// along the view, as the shader's fog does.
+#[derive(Clone, Copy, Debug)]
+pub struct FogReach {
+    eye: Vec3,
+    forward: Vec3,
+    orthographic: bool,
+    distance: f32,
+}
+
+impl FogReach {
+    pub fn new(camera: &super::WorldCamera, distance: f32) -> Self {
+        Self {
+            eye: camera.position,
+            forward: camera.forward,
+            orthographic: camera.orthographic,
+            distance,
+        }
+    }
+
+    /// Whether all of the world-space box is past the fog's reach.
+    pub fn hides(&self, (min, max): (Vec3, Vec3)) -> bool {
+        if self.orthographic {
+            // The box's nearest depth along the view.
+            let centre = (min + max) * 0.5;
+            let half = (max - min) * 0.5;
+            let depth = (centre - self.eye).dot(self.forward) - half.dot(self.forward.abs());
+            depth > self.distance
+        } else {
+            // The box's nearest point to the eye.
+            let nearest = self.eye.clamp(min, max);
+            nearest.distance_squared(self.eye) > self.distance * self.distance
+        }
+    }
+}
+
 /// A box around a local box after a transform (Arvo's method: centre plus the
 /// absolute matrix times the half extents).
 pub fn transform_aabb(min: Vec3, max: Vec3, model: Mat4) -> (Vec3, Vec3) {
@@ -117,6 +154,29 @@ mod tests {
         let f = Frustum::from_view_proj(ortho * view);
         assert!(f.transformed(unit, Mat4::from_translation(Vec3::new(1.8, 0.0, -30.0))));
         assert!(!f.transformed(unit, Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0))));
+    }
+
+    // M7-FOG-07
+    #[test]
+    fn fog_reach_hides_boxes_wholly_past_it() {
+        let cam = |orthographic: bool| super::super::WorldCamera {
+            view_proj: Mat4::IDENTITY,
+            position: Vec3::ZERO,
+            forward: Vec3::NEG_Z,
+            orthographic,
+            clear: crate::Color::rgb(0.0, 0.0, 0.0),
+        };
+        let unit = |at: Vec3| (at - Vec3::splat(0.5), at + Vec3::splat(0.5));
+        let r = FogReach::new(&cam(false), 10.0);
+        assert!(!r.hides(unit(Vec3::new(0.0, 0.0, -9.0))), "inside");
+        assert!(!r.hides(unit(Vec3::new(0.0, 0.0, -10.4))), "straddling");
+        assert!(r.hides(unit(Vec3::new(0.0, 0.0, -11.0))), "past");
+        // Perspective goes by distance: off to the side counts too.
+        assert!(r.hides(unit(Vec3::new(9.0, 0.0, -6.0))));
+        // Orthographic goes by depth: off to the side doesn't.
+        let o = FogReach::new(&cam(true), 10.0);
+        assert!(!o.hides(unit(Vec3::new(9.0, 0.0, -6.0))));
+        assert!(o.hides(unit(Vec3::new(0.0, 0.0, -11.0))));
     }
 
     #[test]

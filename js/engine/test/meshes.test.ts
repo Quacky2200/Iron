@@ -83,6 +83,19 @@ describe("meshes and lights", () => {
     expect((renderOps().at(-1)!.at(-1) as unknown[])[10]).toBe("fade");
   });
 
+  test("flat meshes send their arrays as they are, UVs flipped", () => {
+    const quad = Mesh.createFlat({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], triangles: [0, 1, 2], uv: [0, 0, 1, 0, 0, 1] });
+    expect(renderOps()[0]).toEqual(["render.mesh", quad.id, [0, 0, 0, 1, 0, 0, 0, 1, 0], [], new Float32Array([0, 1, 1, 1, 0, 0]), [0, 1, 2]]);
+    // Saved with scenes as plain arrays, made when asked for.
+    expect(quad._data).toEqual({ vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0], triangles: [0, 1, 2], normals: [], uv: [0, 0, 1, 0, 0, 1] });
+    // Typed arrays go as they are.
+    const typed = new Float32Array([1, 2, 3]);
+    quad.setFlat({ positions: typed, triangles: new Uint32Array(0) });
+    expect(renderOps().at(-1)![2]).toBe(typed);
+    quad.setFlat({ positions: [1, 1, 1], triangles: [] });
+    expect(renderOps().at(-1)).toEqual(["render.mesh", quad.id, [1, 1, 1], [], new Float32Array(0), []]);
+  });
+
   test("script meshes send flat arrays", () => {
     const tri = Mesh.create({ vertices: [Vector3.zero, Vector3.right, Vector3.up], triangles: [0, 1, 2] });
     expect(renderOps()[0]).toEqual(["render.mesh", tri.id, [0, 0, 0, 1, 0, 0, 0, 1, 0], [], [], [0, 1, 2]]);
@@ -96,7 +109,7 @@ describe("meshes and lights", () => {
   test("lights and ambient", () => {
     const sun = new GameObject("sun");
     const l = sun.addComponent(Light, { type: "spot", intensity: 2, range: 15, spotAngle: 40 });
-    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0, 0, "none", 1, 0xffffffff]);
+    expect(renderOps().at(-1)).toEqual(["render.light", l.id, sun.id, "spot", [1, 1, 1], 2, 15, 40, 21.8, 0, 0, "none", 1, 0xffffffff, 1, "cone", 1]);
     RenderSettings.ambientLight = new Color(0.1, 0.1, 0.1);
     expect(renderOps().at(-1)).toEqual(["render.ambient", 0, [0.1, 0.1, 0.1]]);
     l.haloSize = 1;
@@ -117,7 +130,19 @@ describe("meshes and lights", () => {
     // Exposure and tonemapping (M5-RND-18).
     RenderSettings.tonemapping = "aces";
     RenderSettings.postExposure = 1.5;
-    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces"]);
+    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces", null, null, 0]);
+    // Auto exposure (M7-EXP-01), its metering, soft floor and curve (M7-EXP-03, 06).
+    RenderSettings.autoExposure = { minEV: -2, speedLightToDark: 0.5 };
+    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces", [-2, 20, 0, 3, 0.5, 1, 0, 100, 0, 1, 5, 0], null, 0]);
+    RenderSettings.autoExposure = { metering: "spot", lowPercent: 40, highPercent: 90, darkAdaptation: 0.5, darkBelow: 3, curve: [[-2, -1.5], [6, 0]], hold: true };
+    expect(renderOps().at(-1)![4]).toEqual([-10, 20, 0, 3, 3, 2, 40, 90, 1, 0.5, 3, 2, -2, -1.5, 6, 0]);
+    // The manual exposure and the blend (M7-EXP-04).
+    RenderSettings.fixedExposure = 2;
+    RenderSettings.exposureTransition = 3;
+    expect(renderOps().at(-1)!.slice(5)).toEqual([2, 3]);
+    RenderSettings.autoExposure = null;
+    RenderSettings.fixedExposure = null;
+    RenderSettings.exposureTransition = 0;
     RenderSettings.skybox = { zenith: new Color(0, 0, 1, 1), sunDirection: null };
     expect(renderOps().at(-1)).toEqual(["render.sky", 0, [0, 0, 1], [0.62, 0.72, 0.82], [0.22, 0.2, 0.18], null, [20, 18, 15], 1.5, 1, true]);
     RenderSettings.ambientMode = "color";

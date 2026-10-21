@@ -58,6 +58,7 @@ Scripts change the scene with ops. `App::tick` matches the `scene.` prefix and c
 | `scene.destroy` | `id` | Destroys the subtree. Unknown ids are ignored. |
 | `scene.parent` | `id parent\|null` | Re-parents and keeps the **local** transform. Scripts that keep the world position send `scene.local` after. A cycle is an error. |
 | `scene.local` | `id [p] [q] [s]` | Sets the local transform. Missing parts are identity. A zero quaternion is an error. |
+| `scene.locals` | flat array, 11 numbers per object | Sets many local transforms: `id px py pz qx qy qz qw sx sy sz` each, local. Unknown or destroyed ids are skipped, the quaternion is normalized, and a degenerate one becomes identity. |
 | `scene.enabled` | `id bool` | |
 | `scene.name` | `id name` | |
 | `scene.layer` | `id 0..31` | Sets the render layer (an error outside 0 to 31). Stored on the object, default 0; `ScriptScene::layer(id)` reads it. Cameras, lights, mirrors and probes filter on it (see [world-rendering.md](world-rendering.md#layers-and-culling)). |
@@ -89,7 +90,7 @@ skips the call when the batch is empty or the bundle has no `__iron_scene` (prob
 after a reload as `scene_events`). Script-made changes are never echoed back. The JS side updates the
 mirror without queueing ops.
 
-The other direction is `ScriptScene::take_script_moved`. Every `scene.local`, `scene.parent` and
+The other direction is `ScriptScene::take_script_moved`. Every `scene.local`, `scene.locals`, `scene.parent` and
 `scene.create` with a transform records the object in `script_moved`. The call returns those objects and
 all their descendants (as script ids, once each) and empties the list. Physics calls it before each step
 so attached bodies follow objects that scripts moved
@@ -143,6 +144,15 @@ functions (`Vector3.zero`) yet.
   and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..161`; the math methods are
   `M9-TS-159..161`, the macro side `M9-API-20` in `iron_api`; names and `find` are `M9-TS-183..186`).
 
+## Transform batching
+
+`Transform` setters do not send an op each. They queue the transform in `pendingTransforms`, and
+`flushTransforms()` sends all of them in one `scene.locals` op. Every other `scene.*` op calls
+`flushTransforms()` first, so op order holds. It is exposed as `__iron_flush`; the runtime calls it at the end
+of `run_jobs()` (after `load_bundle`, `eval` and `call_global`). World `position` and `rotation` getters and
+setters skip the parent maths when the parent's world transform is identity, and `parentWorld()` is one
+recursive `world()` walk.
+
 ## Components and the lifecycle
 
 `ComponentHost` keeps `Entry { id, class, object, hooks, started, enabled }`.
@@ -158,7 +168,7 @@ functions (`Vector3.zero`) yet.
 **Hooks are looked up once.** On a component's first run the host calls `__iron_hooks(id)`, which
 returns the names of its lifecycle methods, and stores them. A missing hook costs nothing. If the
 bundle has no `__iron_hooks`, every hook is assumed present. Components on inactive objects are
-skipped. A component that throws is logged, disabled and destroyed; the others keep running.
+skipped. A component that throws is logged, disabled and destroyed; the others keep running. Hooks run in batches through `__iron_run` ([scripting.md](scripting.md#componenthost-and-ironengine)).
 
 **Order.** `App::tick` runs, per frame:
 
@@ -320,10 +330,10 @@ rest are tagged:
 | `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Color`, `Rect`, `RectInt` | `{ "$type": "Vector3", "value": [x, y, z] }` |
 | A `GameObject` or `Component` in the file | `{ "$ref": "GameObject" or "Component", "id": n }` |
 | `Material`, `Sprite`, `Sound` | `{ "$type": ... }` with their fields |
-| A `Mesh` from `Mesh.create`, a `Texture` loaded from a file | once in `assets`, used as `{ "$asset": "mesh1" }`, so users share one copy |
+| A `Mesh` from `Mesh.create`, a `Texture` loaded from a file or made with `Texture.create` | once in `assets`, used as `{ "$asset": "mesh1" }`, so users share one copy. A made texture keeps its `width`, `height` and `pixels` (sRGB bytes, top row first, as a hex string) with its options, so a point-filtered texture comes back point filtered |
 
 Also saved: the active scene's `RenderSettings` (ambient light and mode, reflection intensity, skybox,
-bloom), applied when that scene becomes active.
+bloom, fog), applied when that scene becomes active.
 
 **Load order.** `loadObjects` runs in three passes, like Unity: (1) build every object and add every
 component *asleep* (`_addComponentAsleep`, no `onAwake`); (2) set every property, resolving

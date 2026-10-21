@@ -27,13 +27,17 @@ pub struct Manifest {
     pub layers: Value,
     /// `iron.startScene`: a scene file scripts load at startup.
     pub start_scene: Option<String>,
-    /// `iron.display`: the window's default mode and size (`{ mode, width, height }`).
+    /// `iron.display`: the window's default mode and size (`{ mode, width, height }`);
+    /// `resizable: false` keeps the window at that size.
     pub display: Value,
     /// `iron.runInBackground`: keep running while the window is in the background
     /// (Unity's `Application.runInBackground`, off by default).
     pub run_in_background: bool,
     /// `iron.fps`: `false` turns the FPS counter off.
     pub fps: Option<bool>,
+    /// `iron.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
+    /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Iron's own).
+    pub physical_units: bool,
 }
 
 impl Manifest {
@@ -64,6 +68,7 @@ impl Manifest {
     }
 
     pub fn from_project(p: Project) -> Self {
+        let physical_units = light_units(&p.extra);
         Self {
             name: p.name,
             title: p.title,
@@ -77,6 +82,27 @@ impl Manifest {
             display: p.display,
             run_in_background: p.run_in_background,
             fps: p.fps,
+            physical_units,
+        }
+    }
+}
+
+/// `iron.lightUnits`, warning about the old pipeline settings: Iron has one render pipeline,
+/// as Unity 7 (its URP), whose settings come with the quality levels.
+fn light_units(iron: &serde_json::Map<String, Value>) -> bool {
+    if iron.contains_key("renderPipeline") || iron.contains_key("renderPipelineSettings") {
+        tracing::warn!(
+            "iron.renderPipeline: Iron has one render pipeline (as Unity 7): set its features \
+             per quality level (iron.quality.levels: volumetricFog, hdr, additionalLights, \
+             additionalLightShadows), and real-world light units with iron.lightUnits"
+        );
+    }
+    match iron.get("lightUnits").and_then(Value::as_str) {
+        None | Some("legacy") => false,
+        Some("physical") => true,
+        Some(other) => {
+            tracing::warn!("iron.lightUnits `{other}`: not physical or legacy");
+            false
         }
     }
 }
@@ -118,6 +144,7 @@ impl Info {
                 "layers": manifest.layers,
                 "startScene": manifest.start_scene,
                 "runInBackground": manifest.run_in_background,
+                "lightUnits": if manifest.physical_units { "physical" } else { "legacy" },
                 "targetFrameRate": -1,
                 "isEditor": super::editor::ENABLED,
                 "project": super::editor::project().map(|p| p.to_string_lossy().into_owned()),
@@ -277,6 +304,25 @@ mod tests {
             Some(false)
         );
         assert_eq!(Manifest::from_json(&Value::Null, "g").fps, None);
+    }
+
+    // M7-RP-01
+    #[test]
+    fn light_units_come_from_the_manifest_and_old_pipelines_are_gone() {
+        let units = |v: Value| Manifest::from_json(&json!({ "iron": v }), "g").physical_units;
+        assert!(units(json!({ "lightUnits": "physical" })));
+        assert!(!units(json!({ "lightUnits": "legacy" })));
+        assert!(!units(json!({})));
+        assert!(!units(json!({ "lightUnits": "candles" })));
+        // The old pipeline choice no longer picks anything (it only warns).
+        assert!(!units(json!({ "renderPipeline": "hd" })));
+        let script = Info::new(&Manifest::from_json(
+            &json!({ "iron": { "lightUnits": "physical" } }),
+            "g",
+        ))
+        .script();
+        assert!(script.contains("\"lightUnits\":\"physical\""));
+        assert!(!script.contains("renderPipeline"));
     }
 
     // M5-APP-09

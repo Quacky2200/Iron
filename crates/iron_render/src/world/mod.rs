@@ -12,11 +12,14 @@
 pub mod bloom;
 pub mod cull;
 pub mod environment;
+mod fill;
 mod fxaa;
 pub mod mesh;
+pub mod pipeline;
 mod shadows;
 pub mod texture;
 mod upscale;
+mod volume;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -25,9 +28,13 @@ use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
-pub use bloom::{Bloom, Grading, Tonemapping};
+pub use bloom::{
+    AutoExposure, Bloom, ExposureReading, Grading, MAX_CURVE_POINTS, Metering, Tonemapping,
+};
 pub use environment::Sky;
+pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
+pub use pipeline::PipelineAsset;
 use texture::SamplerKey;
 pub use texture::{
     Anisotropic, CookedTexture, TexelFormat, TextureData, TextureFilter, TextureWrap, mip_chain,
@@ -277,6 +284,42 @@ pub enum LightKind {
         inner_degrees: f32,
         outer_degrees: f32,
     },
+    /// A spot light shaped as a pyramid (HDRP's Pyramid shape): `outer_degrees` across
+    /// its height, `aspect` times as wide (in tangent), its edges softened from
+    /// `inner_degrees`. `right` is its width's direction (the light's object's +x). A thin,
+    /// wide one is a sheet of light: a scanner's, a laser level's, a light through a slot.
+    Pyramid {
+        inner_degrees: f32,
+        outer_degrees: f32,
+        aspect: f32,
+        right: Vec3,
+    },
+}
+
+impl LightKind {
+    /// The half-angle (degrees) of a cone round the light: a pyramid's corners.
+    pub fn bounding_degrees(self) -> f32 {
+        match self {
+            LightKind::Spot { outer_degrees, .. } => outer_degrees,
+            LightKind::Pyramid {
+                outer_degrees,
+                aspect,
+                ..
+            } => {
+                let t = (outer_degrees.to_radians() / 2.0).tan();
+                2.0 * (t * (1.0 + aspect * aspect).sqrt()).atan().to_degrees()
+            }
+            _ => 360.0,
+        }
+    }
+}
+
+/// The two axes across `dir` the shaders build too (`spot_axes` in world.wgsl): a pyramid's
+/// turn about its direction is measured from them.
+fn spot_axes(dir: Vec3) -> (Vec3, Vec3) {
+    let up = if dir.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+    let right = dir.cross(up).normalize_or(Vec3::X);
+    (right, right.cross(dir))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -293,6 +336,9 @@ pub struct Light {
     /// The layers it lights (and whose objects cast its shadows), a bit each (Unity's
     /// `cullingMask`).
     pub culling_mask: u32,
+    /// How strongly it lights fog with volumetric fog on ([`Fog::volumetric`]): 1 as
+    /// bright as it lights surfaces, 0 not at all (HDRP's volumetric multiplier).
+    pub volumetric: f32,
 }
 
 /// Which shadows are drawn at all (Unity's `QualitySettings.shadows`).
@@ -489,9 +535,217 @@ pub struct WorldView {
     /// Gizmo lines (the editor's wire shapes) drawn over everything, a constant width
     /// on screen, faint where something's in front of them.
     pub lines: Vec<GizmoLine>,
-    /// Thick lines (`LineRenderer2D`), depth-tested and blended after the see-through
-    /// things. A see-through stroke shows darker where its segments overlap.
+    /// Thick lines (`LineRenderer2D`), depth-tested and blended before the see-through
+    /// things (so sprites and text show over them). A see-through stroke shows darker where
+    /// its segments overlap.
     pub strokes: Vec<Stroke>,
+    /// Filled shapes as a triangle list ([`tessellate_fill`]), drawn just before the
+    /// strokes so outlines sit on top. Their edges are only as smooth as MSAA makes them.
+    pub fills: Vec<FillVertex>,
+    /// The shapes those fills and strokes belong to, in drawing order. Empty: all the
+    /// fills, then all the strokes.
+    pub shapes: Vec<ShapeRun>,
+    /// Fog over everything this view draws except its background and the editor's grid
+    /// and gizmos (`None`: clear air).
+    pub fog: Option<Fog>,
+    /// Boxes of fog in their own colours (mist over a pond, a cloud layer), whether or not
+    /// there's `fog`; the first [`MAX_FOG_VOLUMES`] count.
+    pub fog_volumes: Vec<FogVolume>,
+    /// Whose exposure the view uses (its camera's id): each camera adapts on its own.
+    pub exposure_key: u32,
+}
+
+/// How many fog volumes a view draws.
+pub const MAX_FOG_VOLUMES: usize = 8;
+
+/// A box of fog (HDRP's local volumetric fog), lined up with the world's axes: `density`
+/// per metre inside, thinning to nothing over `blend` metres in from its faces. It covers
+/// what's seen through it, the background too, and light shafts light it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FogVolume {
+    pub centre: Vec3,
+    pub half_extents: Vec3,
+    pub density: f32,
+    /// Linear RGB.
+    pub color: [f32; 3],
+    pub blend: f32,
+    /// An ellipsoid inside the box rather than the box itself (soft round mist).
+    pub ellipsoid: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GpuFogVolume {
+    /// xyz: centre; w: density.
+    centre: [f32; 4],
+    /// xyz: half extents; w: the soft edge's depth.
+    half: [f32; 4],
+    /// rgb: colour; w: 1 for an ellipsoid.
+    color: [f32; 4],
+}
+
+/// How fog thickens with distance (Unity's `FogMode`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FogMode {
+    /// None at `start`, total at `end`.
+    Linear,
+    /// `1 - e^(-density × distance)`.
+    Exponential,
+    /// `1 - e^(-(density × distance)²)`: clear nearby, then closing in (Unity's default).
+    #[default]
+    ExponentialSquared,
+}
+
+/// Fog (Unity's `RenderSettings.fog`): things fade towards `color` the farther they are
+/// from the camera. Additive light (glows, beams) fades out instead.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fog {
+    pub mode: FogMode,
+    /// Linear RGB.
+    pub color: [f32; 3],
+    /// The exponential modes' thickness, per metre.
+    pub density: f32,
+    /// Linear fog: where it begins and where it's total, in metres.
+    pub start: f32,
+    pub end: f32,
+    /// Fog lying low as well, in the same colour.
+    pub height: Option<HeightFog>,
+    /// Lights shining through the fog: light shafts.
+    pub volumetric: Option<VolumetricFog>,
+    /// Skip meshes, quads and lights wholly beyond [`Fog::cull_distance`]: the fog hides
+    /// them anyway (unless the background isn't the fog's colour: then they'd have shown
+    /// as fog-coloured silhouettes).
+    pub cull: bool,
+}
+
+/// Fog lets through less than this of what's behind it at its cull distance: under one
+/// step of an 8-bit colour.
+const FOG_OPAQUE: f32 = 1.0 / 255.0;
+
+impl Fog {
+    /// How far away the distance fog hides everything (`None`: it never does). Height fog
+    /// and fog volumes only add fog, so they never bring anything back.
+    pub fn cull_distance(&self) -> Option<f32> {
+        let clear = -FOG_OPAQUE.ln();
+        let d = match self.mode {
+            FogMode::Linear => (self.end > self.start).then_some(self.end)?,
+            FogMode::Exponential => clear / self.density,
+            FogMode::ExponentialSquared => clear.sqrt() / self.density,
+        };
+        (d.is_finite() && d > 0.0).then_some(d)
+    }
+}
+
+/// Light scattered by the fog towards the camera, cut by shadows: shafts where the sun
+/// comes through gaps, cones under spot lights. A froxel volume over the view (screen cells
+/// by depth slices out to `distance`) adds it up once per view, sampling every light's
+/// (hard) shadow map `steps` times per slice; draws read it smoothly filtered. The fog
+/// beyond `distance` counts as lit by the sun.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolumetricFog {
+    /// Scales the scattered light (1: fog lit as brightly as a white surface would be).
+    pub intensity: f32,
+    /// -1 to 1: positive scatters forward, so looking towards a light shows more (the
+    /// Henyey-Greenstein `g`).
+    pub anisotropy: f32,
+    /// Samples per depth slice (1 to 16): more keep thin cones sampled.
+    pub steps: u32,
+    /// How far the volume reaches, in metres.
+    pub distance: f32,
+    /// How much of each colour of light the fog scatters (white: all). It's separate from
+    /// the fog's colour, which is how the fog looks in the ambient light: a night fog is
+    /// dark, yet glows white under a lamp.
+    pub albedo: [f32; 3],
+    /// God rays: within this many metres of the camera the sun's shafts are worked out per
+    /// pixel from its shadow map, so beams through bars, gaps and leaves keep sharp edges
+    /// (the volume's cells would blur them). 0: off, the volume does it all.
+    pub sharp_distance: f32,
+    /// Samples per pixel for the sharp part (closer together nearer the camera).
+    pub sharp_samples: u32,
+    /// The volume's detail: 0 low, 1 medium, 2 high, 3 ultra (see `volume::SIZES`).
+    pub detail: u8,
+    /// How the volume's sampling noise is cleaned up (HDRP's denoising mode).
+    pub denoising: Denoising,
+    /// With reprojection, how much of each cell comes from earlier frames (Unreal's history
+    /// weight, 0.9): higher is smoother, slower to follow a moving sun or camera.
+    pub history_weight: f32,
+    /// Shadow samples per cell each frame (1 to 8): more is less noise, at that many times
+    /// the volume's lighting cost.
+    pub samples: u32,
+    /// Samples for cells whose view moved this frame (adaptive: the cost only while the
+    /// camera moves, when the history counts least).
+    pub motion_samples: u32,
+}
+
+/// How the light volume's sampling is cleaned up (HDRP's volumetric denoising mode).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Denoising {
+    /// Each frame stands alone, sampled at each cell's middle: cheapest, beams through fine
+    /// patterns step and shimmer.
+    None,
+    /// Each cell is sampled somewhere new each frame and blended with what it held last
+    /// frame (reprojected): smooth beams for one shadow lookup a cell.
+    Reprojection,
+    /// A blur over a cell's width as the volume is added up (four reads for one).
+    Gaussian,
+    /// Both: blinds and grates come out as clean haze (the default).
+    #[default]
+    Both,
+}
+
+impl Denoising {
+    pub fn temporal(self) -> bool {
+        matches!(self, Self::Reprojection | Self::Both)
+    }
+    pub fn spatial(self) -> bool {
+        matches!(self, Self::Gaussian | Self::Both)
+    }
+}
+
+impl Default for VolumetricFog {
+    fn default() -> Self {
+        Self {
+            intensity: 1.0,
+            anisotropy: 0.4,
+            steps: 4,
+            distance: 50.0,
+            albedo: [1.0; 3],
+            sharp_distance: 0.0,
+            sharp_samples: 32,
+            detail: 2,
+            denoising: Denoising::Both,
+            history_weight: 0.9,
+            samples: 1,
+            motion_samples: 2,
+        }
+    }
+}
+
+impl Default for Fog {
+    /// Unity's defaults.
+    fn default() -> Self {
+        Self {
+            mode: FogMode::ExponentialSquared,
+            color: [0.5, 0.5, 0.5],
+            density: 0.01,
+            start: 0.0,
+            end: 300.0,
+            height: None,
+            volumetric: None,
+            cull: true,
+        }
+    }
+}
+
+/// Exponential height fog (Unreal's): `density` per metre at `base_height`, thinning by a
+/// factor of e every `1 / falloff` metres above it and thickening below. Unlike distance
+/// fog it covers the background too, so the horizon sinks into it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeightFog {
+    pub density: f32,
+    pub base_height: f32,
+    /// Per metre.
+    pub falloff: f32,
 }
 
 /// A line segment in the world, for [`WorldView::lines`].
@@ -520,6 +774,27 @@ pub struct Stroke {
     pub color: [f32; 4],
 }
 
+/// A corner of a filled shape's triangle, for [`WorldView::fills`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
+pub struct FillVertex {
+    pub position: [f32; 3],
+    /// Linear RGBA, straight alpha.
+    pub color: [f32; 4],
+}
+
+const FILL_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
+
+/// One 2D shape's part of a view's [`WorldView::fills`] and [`WorldView::strokes`]: its fill
+/// triangles' vertices and its outline's segments. Shapes draw in order, each fill then its
+/// outline, so a later shape covers an earlier one whole.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShapeRun {
+    pub fills: Range<u32>,
+    pub strokes: Range<u32>,
+}
+
 const STROKE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32, 3 => Float32x4];
 
@@ -542,6 +817,11 @@ impl WorldView {
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
+            fills: Vec::new(),
+            shapes: Vec::new(),
+            fog: None,
+            fog_volumes: Vec::new(),
+            exposure_key: 0,
         }
     }
 }
@@ -661,6 +941,79 @@ struct GpuGlobals {
     flags: [f32; 4],
     /// Fragments where `dot(xyz, p) + w < 0` are dropped (zero: none).
     clip: [f32; 4],
+    /// rgb: the fog's colour; w: its mode (0 none, 1 linear, 2 exponential, 3 squared).
+    fog: [f32; 4],
+    /// x: density; y, z: linear fog's start and end.
+    fog_params: [f32; 4],
+    /// xyz: the camera's forward axis; w: 1 for orthographic.
+    view_dir: [f32; 4],
+    /// Height fog: x density, y base height, z falloff, w 1 when on.
+    fog_height: [f32; 4],
+    /// Light shafts: x intensity, y anisotropy, z samples per slice, w the volume's reach
+    /// (0: off).
+    fog_volume: [f32; 4],
+    /// rgb: the fog's albedo for light shafts.
+    fog_albedo: [f32; 4],
+    /// God rays: x how far the sun's shafts are worked out per pixel (0: off), y samples.
+    fog_sharp: [f32; 4],
+    /// x: how many fog volumes follow.
+    fog_local: [f32; 4],
+    /// x: pre-exposure (world.wgsl's `Globals::exposure`).
+    exposure: [f32; 4],
+    local_fogs: [GpuFogVolume; MAX_FOG_VOLUMES],
+}
+
+impl GpuGlobals {
+    fn set_fog_volumes(&mut self, volumes: &[FogVolume]) {
+        let n = volumes.len().min(MAX_FOG_VOLUMES);
+        for (gpu, v) in self.local_fogs.iter_mut().zip(&volumes[..n]) {
+            let (c, h) = (v.centre, v.half_extents.max(Vec3::splat(1e-3)));
+            *gpu = GpuFogVolume {
+                centre: [c.x, c.y, c.z, v.density.max(0.0)],
+                half: [h.x, h.y, h.z, v.blend.max(0.0)],
+                color: [
+                    v.color[0],
+                    v.color[1],
+                    v.color[2],
+                    f32::from(u8::from(v.ellipsoid)),
+                ],
+            };
+        }
+        self.fog_local = [n as f32, 0.0, 0.0, 0.0];
+    }
+
+    fn set_fog(&mut self, fog: Option<&Fog>) {
+        let Some(f) = fog else {
+            self.fog = [0.0; 4];
+            return;
+        };
+        let mode = match f.mode {
+            FogMode::Linear => 1.0,
+            FogMode::Exponential => 2.0,
+            FogMode::ExponentialSquared => 3.0,
+        };
+        self.fog = [f.color[0], f.color[1], f.color[2], mode];
+        self.fog_params = [f.density.max(0.0), f.start, f.end, 0.0];
+        if let Some(h) = f.height {
+            self.fog_height = [h.density.max(0.0), h.base_height, h.falloff.max(1e-4), 1.0];
+        }
+        if let Some(v) = f.volumetric {
+            self.fog_volume = [
+                v.intensity.max(0.0),
+                v.anisotropy.clamp(-0.95, 0.95),
+                v.steps.clamp(1, 16) as f32,
+                v.distance.max(1e-3),
+            ];
+            let [r, g, b] = v.albedo.map(|c| c.max(0.0));
+            self.fog_albedo = [r, g, b, 0.0];
+            self.fog_sharp = [
+                v.sharp_distance.max(0.0),
+                v.sharp_samples.clamp(4, 128) as f32,
+                f32::from(u8::from(v.denoising.spatial())),
+                0.0,
+            ];
+        }
+    }
 }
 
 #[repr(C)]
@@ -707,6 +1060,8 @@ pub struct WorldStats {
     pub culled_meshes: usize,
     pub quads: usize,
     pub culled_quads: usize,
+    /// Of the culled meshes and quads, those the fog hid ([`Fog::cull`]).
+    pub fog_culled: usize,
     pub lights: usize,
     pub culled_lights: usize,
     /// Shadow map layers drawn (once a frame, shared by every view).
@@ -729,6 +1084,8 @@ struct Pipelines {
     lines_hidden: wgpu::RenderPipeline,
     /// Thick world lines ([`WorldView::strokes`]).
     strokes: wgpu::RenderPipeline,
+    /// Filled shapes ([`WorldView::fills`]).
+    fills: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
     mesh_blend: wgpu::RenderPipeline,
     /// Double-sided materials: both faces drawn.
@@ -777,6 +1134,8 @@ pub struct WorldRenderer {
     pub msaa: u32,
     globals_layout: wgpu::BindGroupLayout,
     shadow_layout: wgpu::BindGroupLayout,
+    /// Light shafts' froxel volumes, one per view.
+    volume: volume::VolumePass,
     shadow_sampler: wgpu::Sampler,
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_cutout_pipeline: wgpu::RenderPipeline,
@@ -828,6 +1187,8 @@ pub struct WorldRenderer {
     lines: wgpu::Buffer,
     /// Every view's strokes (instances of the stroke pipeline).
     strokes: wgpu::Buffer,
+    /// Every view's fill triangles.
+    fills: wgpu::Buffer,
     meshes: HashMap<u32, MeshBuffers>,
     /// What the last frame drew and culled.
     stats: WorldStats,
@@ -857,6 +1218,11 @@ pub struct WorldRenderer {
     bloom_pass: Option<bloom::BloomPass>,
     /// Exposure and tonemapping over every view.
     pub grading: Grading,
+    /// Which features run (Unity's URP asset: set per quality level).
+    pub pipeline: PipelineAsset,
+    /// Lights in real-world units (lux, lumens, nits; a project-wide choice): the world is
+    /// pre-exposed by each camera's last exposure, so sunlight stays within the HDR target.
+    pub physical_units: bool,
     /// Made the first time a view asks for FXAA.
     fxaa: Option<fxaa::Fxaa>,
 }
@@ -940,7 +1306,9 @@ impl WorldRenderer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    // The fog volume's compute pass reads it too.
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT
+                        .union(wgpu::ShaderStages::COMPUTE),
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
@@ -952,7 +1320,10 @@ impl WorldRenderer {
                 },
                 storage_entry(1, wgpu::ShaderStages::VERTEX),
                 storage_entry(2, wgpu::ShaderStages::VERTEX_FRAGMENT),
-                storage_entry(3, wgpu::ShaderStages::FRAGMENT),
+                storage_entry(
+                    3,
+                    wgpu::ShaderStages::FRAGMENT.union(wgpu::ShaderStages::COMPUTE),
+                ),
                 // Skinned meshes' bone matrices.
                 storage_entry(4, wgpu::ShaderStages::VERTEX),
             ],
@@ -988,13 +1359,15 @@ impl WorldRenderer {
                 texture_entry(7),
             ],
         });
+        // Shadows and lights reach the fog volume's compute pass too.
+        let lit = wgpu::ShaderStages::FRAGMENT.union(wgpu::ShaderStages::COMPUTE);
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("world shadows"),
             entries: &[
                 // The sun's cascades.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -1005,7 +1378,7 @@ impl WorldRenderer {
                 // Spot and point lights' maps.
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -1014,17 +1387,17 @@ impl WorldRenderer {
                     count: None,
                 },
                 // Their matrices.
-                storage_entry(5, wgpu::ShaderStages::FRAGMENT),
+                storage_entry(5, lit),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
                 // The environment cube, for reflections, sky light and the skybox.
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::Cube,
@@ -1034,18 +1407,20 @@ impl WorldRenderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
+        let volume = volume::VolumePass::new(device, &module, &globals_layout, &shadow_layout);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("world"),
             bind_group_layouts: &[
                 Some(&globals_layout),
                 Some(&texture_layout),
                 Some(&shadow_layout),
+                Some(&volume.read_layout),
             ],
             immediate_size: 0,
         });
@@ -1242,6 +1617,7 @@ impl WorldRenderer {
             sky: None,
             sky_dirty: false,
             reflection_targets: Vec::new(),
+            volume,
             env_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("environment"),
                 mag_filter: wgpu::FilterMode::Linear,
@@ -1263,6 +1639,7 @@ impl WorldRenderer {
             mesh_instances: Self::storage::<GpuMesh>(gpu, "world meshes", 64),
             lines: Self::buffer(gpu, "world gizmo lines", 4096, wgpu::BufferUsages::VERTEX),
             strokes: Self::buffer(gpu, "world strokes", 4096, wgpu::BufferUsages::VERTEX),
+            fills: Self::buffer(gpu, "world fills", 4096, wgpu::BufferUsages::VERTEX),
             meshes: HashMap::new(),
             stats: WorldStats::default(),
             textures: HashMap::new(),
@@ -1283,6 +1660,8 @@ impl WorldRenderer {
             bloom: None,
             bloom_pass: None,
             grading: Grading::default(),
+            pipeline: PipelineAsset::default(),
+            physical_units: false,
             fxaa: None,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
@@ -1391,6 +1770,29 @@ impl WorldRenderer {
     /// What the last [`WorldRenderer::render_views`] drew and what culling skipped.
     pub fn stats(&self) -> WorldStats {
         self.stats
+    }
+
+    /// `fog` as the pipeline runs it: without its light shafts where they're not supported.
+    fn pipeline_fog(&self, fog: Option<Fog>) -> Option<Fog> {
+        let shafts = self.pipeline.volumetric_fog;
+        fog.map(|f| Fog {
+            volumetric: f.volumetric.filter(|_| shafts),
+            ..f
+        })
+    }
+
+    /// Camera `key`'s exposure as last read back from the GPU (a frame or two late; None
+    /// before the post pass has run for it).
+    pub fn exposure(&self, key: u32) -> Option<ExposureReading> {
+        self.bloom_pass.as_ref().and_then(|b| b.exposure(key))
+    }
+
+    /// Makes camera `key`'s auto exposure jump straight to what it sees next frame,
+    /// instead of easing there (after a cut or a scene load).
+    pub fn reset_exposure(&mut self, key: u32) {
+        if let Some(b) = self.bloom_pass.as_mut() {
+            b.reset_exposure(key);
+        }
     }
 
     pub fn has_mesh(&self, id: u32) -> bool {
@@ -1649,6 +2051,7 @@ impl WorldRenderer {
                     resolution: self.shadow_resolution,
                     local_resolution: (self.shadow_resolution / 2).max(256),
                     cascades: self.shadow_cascades,
+                    local_lights: self.pipeline.additional_light_shadows,
                 },
             ),
             _ => shadows::ShadowPlan {
@@ -1960,6 +2363,11 @@ impl WorldRenderer {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &LINE_ATTRIBUTES,
         };
+        let fill_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<FillVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &FILL_ATTRIBUTES,
+        };
         let stroke_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Stroke>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
@@ -2065,6 +2473,14 @@ impl WorldRenderer {
                     &[Some(line_layout.clone())],
                     None,
                     (wgpu::CompareFunction::Greater, false),
+                    blend,
+                ),
+                fills: make(
+                    "world fills",
+                    ("vs_shape", "fs_shape"),
+                    &[Some(fill_layout.clone())],
+                    None,
+                    (less_equal, false),
                     blend,
                 ),
                 strokes: make(
@@ -2594,14 +3010,24 @@ impl WorldRenderer {
         let bloom = self
             .bloom
             .filter(|b| b.intensity > 0.0)
-            .filter(|_| final_pass);
+            .filter(|_| final_pass && self.pipeline.hdr);
         let main = (0..views.len()).max_by(|&a, &b| {
             let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
             area(&views[a]).total_cmp(&area(&views[b]))
         });
         let fxaa = final_pass && main.is_some_and(|m| views[m].fxaa);
-        let grading = self.grading;
-        let post = final_pass && (bloom.is_some() || fxaa || !grading.is_identity());
+        let features = self.pipeline;
+        let mut grading = self.grading;
+        // Without HDR, light clips at white: no bloom, exposure or tonemapping.
+        if !features.hdr {
+            grading = Grading {
+                delta_time: grading.delta_time,
+                ..Grading::default()
+            };
+        }
+        // Auto exposure fading out keeps the pass going until it has.
+        let fading = self.bloom_pass.as_ref().is_some_and(|b| b.fading());
+        let post = final_pass && (bloom.is_some() || fxaa || fading || !grading.is_identity());
         let hdr = post.then(|| {
             self.bloom_pass
                 .get_or_insert_with(|| bloom::BloomPass::new(gpu))
@@ -2730,13 +3156,25 @@ impl WorldRenderer {
             };
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
             let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
+            // Past the fog's cull distance nothing shows (measured as the fog is).
+            let fog_reach = view
+                .fog
+                .filter(|f| f.cull)
+                .and_then(|f| f.cull_distance())
+                .map(|d| cull::FogReach::new(&view.camera, d));
+            // What the fog hid, counted as it's culled (in view, past the fog).
+            let fog_hid = std::cell::Cell::new(0usize);
+            let fogged = |b: (Vec3, Vec3), model: Mat4| {
+                let hid = fog_reach.is_some_and(|r| r.hides(cull::transform_aabb(b.0, b.1, model)));
+                fog_hid.set(fog_hid.get() + usize::from(hid));
+                hid
+            };
             // Skinned meshes move with their bones, away from their bounds: always drawn.
             let sees = |m: &MeshInstance| {
                 m.bones.is_some()
-                    || self
-                        .meshes
-                        .get(&m.mesh)
-                        .is_none_or(|b| frustum.transformed(b.bounds, m.model))
+                    || self.meshes.get(&m.mesh).is_none_or(|b| {
+                        frustum.transformed(b.bounds, m.model) && !fogged(b.bounds, m.model)
+                    })
             };
             // Opaque meshes, grouped by mesh and texture (instancing).
             let mut opaque: Vec<&MeshInstance> = view
@@ -2800,7 +3238,10 @@ impl WorldRenderer {
                 .chain(
                     view.quads
                         .iter()
-                        .filter(|q| frustum.transformed(cull::QUAD_BOUNDS, q.model))
+                        .filter(|q| {
+                            frustum.transformed(cull::QUAD_BOUNDS, q.model)
+                                && !fogged(cull::QUAD_BOUNDS, q.model)
+                        })
                         .map(|q| (q.order, depth_of(q.model), Item::Quad(q))),
                 )
                 .collect();
@@ -2871,15 +3312,45 @@ impl WorldRenderer {
                 }
             }
             // Point and spot lights whose range doesn't reach the view are left out.
-            let kept: Vec<usize> = view
+            let mut kept: Vec<usize> = view
                 .lights
                 .iter()
                 .enumerate()
                 .filter(|(_, l)| {
-                    l.kind == LightKind::Directional || frustum.sphere(l.position, l.range)
+                    l.kind == LightKind::Directional
+                        || (frustum.sphere(l.position, l.range)
+                            && !fog_reach.is_some_and(|r| {
+                                r.hides((
+                                    l.position - Vec3::splat(l.range),
+                                    l.position + Vec3::splat(l.range),
+                                ))
+                            }))
                 })
                 .map(|(i, _)| i)
                 .collect();
+            // The pipeline's cap (URP's): the main light (the brightest directional one) and
+            // the nearest others.
+            let cap = self.pipeline.max_additional_lights;
+            if kept.len() > cap.saturating_add(1) {
+                let strength = |k: &usize| view.lights[*k].color.iter().sum::<f32>();
+                let main = kept
+                    .iter()
+                    .copied()
+                    .filter(|&k| view.lights[k].kind == LightKind::Directional)
+                    .max_by(|a, b| strength(a).total_cmp(&strength(b)));
+                let eye = view.camera.position;
+                let mut others: Vec<usize> =
+                    kept.iter().copied().filter(|&k| Some(k) != main).collect();
+                others.sort_by(|&a, &b| {
+                    let d = |k: usize| match view.lights[k].kind {
+                        LightKind::Directional => 0.0,
+                        _ => view.lights[k].position.distance_squared(eye),
+                    };
+                    d(a).total_cmp(&d(b))
+                });
+                others.truncate(cap);
+                kept = main.into_iter().chain(others).collect();
+            }
             let drawn = opaque_runs
                 .iter()
                 .chain(blended.iter().filter(|(mesh, _)| *mesh).map(|(_, r)| r))
@@ -2895,6 +3366,7 @@ impl WorldRenderer {
             self.stats.culled_meshes += all_meshes - drawn;
             self.stats.quads += drawn_quads;
             self.stats.culled_quads += view.quads.len() - drawn_quads;
+            self.stats.fog_culled += fog_hid.get();
             self.stats.lights += kept.len();
             self.stats.culled_lights += view.lights.len() - kept.len();
             let first_light = lights.len() as u32;
@@ -2914,11 +3386,28 @@ impl WorldRenderer {
                             0.0,
                         ],
                     ),
+                    LightKind::Pyramid {
+                        inner_degrees,
+                        outer_degrees,
+                        aspect,
+                        right,
+                    } => {
+                        let (r0, u0) = spot_axes(l.direction.normalize_or(Vec3::NEG_Z));
+                        (
+                            2.0,
+                            [
+                                (inner_degrees.min(outer_degrees).to_radians() / 2.0).cos(),
+                                (outer_degrees.to_radians() / 2.0).cos(),
+                                aspect.max(1e-3),
+                                right.dot(u0).atan2(right.dot(r0)),
+                            ],
+                        )
+                    }
                 };
                 GpuLight {
                     position: [l.position.x, l.position.y, l.position.z, kind],
                     direction: [l.direction.x, l.direction.y, l.direction.z, l.range],
-                    color: [l.color[0], l.color[1], l.color[2], 0.0],
+                    color: [l.color[0], l.color[1], l.color[2], l.volumetric.max(0.0)],
                     spot,
                     mask: [l.culling_mask, 0, 0, 0],
                     shadow: self.shadow_plan.slot(l).map_or([-1.0, 0.0, 0.0, 0.0], |s| {
@@ -2960,6 +3449,28 @@ impl WorldRenderer {
             gpu.queue
                 .write_buffer(&self.lines, 0, bytemuck::cast_slice(&all_lines));
         }
+        // Fill triangles, the same way.
+        let mut fill_ranges = Vec::with_capacity(views.len());
+        let mut all_fills: Vec<FillVertex> = Vec::new();
+        for view in views {
+            let start = all_fills.len() as u32;
+            all_fills.extend_from_slice(&view.fills);
+            fill_ranges.push(start..all_fills.len() as u32);
+        }
+        if !all_fills.is_empty() {
+            let bytes = std::mem::size_of_val(all_fills.as_slice()) as u64;
+            if self.fills.size() < bytes {
+                self.fills = Self::buffer(
+                    gpu,
+                    "world fills",
+                    bytes.next_power_of_two(),
+                    wgpu::BufferUsages::VERTEX,
+                );
+            }
+            gpu.queue
+                .write_buffer(&self.fills, 0, bytemuck::cast_slice(&all_fills));
+        }
+        let shape_runs: Vec<Vec<ShapeRun>> = views.iter().map(|v| v.shapes.clone()).collect();
         // Strokes, the same way.
         let mut stroke_ranges = Vec::with_capacity(views.len());
         let mut all_strokes: Vec<Stroke> = Vec::new();
@@ -2998,11 +3509,23 @@ impl WorldRenderer {
             (self.env_map.mips - 1) as f32,
             f32::from(u8::from(has_env && self.ambient_from_sky)),
         ];
+        // Pre-exposure (real-world light units, the final pass): each camera's last exposure,
+        // so real-world light stays inside the HDR target's range; the post pass divides it out.
+        let hd = final_pass && self.physical_units;
+        let pres: Vec<f32> = views
+            .iter()
+            .map(|view| {
+                hd.then(|| self.bloom_pass.as_mut()?.pre_exposure(view.exposure_key))
+                    .flatten()
+                    .unwrap_or(1.0)
+            })
+            .collect();
         for (i, view) in views.iter().enumerate() {
             let c = view.camera.clear;
             let p = view.camera.position;
             let count = per_view[i].2.len() as f32;
-            let globals = GpuGlobals {
+            let f = view.camera.forward;
+            let mut globals = GpuGlobals {
                 view_proj: view.camera.view_proj.to_cols_array_2d(),
                 background: [
                     (c.r * c.a) as f32,
@@ -3025,7 +3548,12 @@ impl WorldRenderer {
                     f32::from(u8::from(view.grid)),
                 ],
                 clip: view.clip_plane.unwrap_or([0.0; 4]),
+                view_dir: [f.x, f.y, f.z, f32::from(u8::from(view.camera.orthographic))],
+                exposure: [pres[i], 0.0, 0.0, 0.0],
+                ..Zeroable::zeroed()
             };
+            globals.set_fog(self.pipeline_fog(view.fog).as_ref());
+            globals.set_fog_volumes(&view.fog_volumes);
             gpu.queue.write_buffer(
                 &self.globals,
                 self.stride * i as u64,
@@ -3153,6 +3681,54 @@ impl WorldRenderer {
             .map(|(id, map)| (*id, lighting_group(&map.cube)))
             .collect();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        // Views with light shafts fill their fog volumes first.
+        let shafts = self.pipeline.volumetric_fog;
+        let volume_groups: Vec<Option<wgpu::BindGroup>> = views
+            .iter()
+            .enumerate()
+            .map(|(i, view)| {
+                view.fog
+                    .and_then(|f| f.volumetric)
+                    .filter(|_| shafts)
+                    .map(|v| {
+                        let (poses, local_count) = local_poses(&view.lights);
+                        let camera = volume::VolumeCamera {
+                            view_proj: view.camera.view_proj,
+                            position: view.camera.position,
+                            forward: view.camera.forward,
+                            orthographic: view.camera.orthographic,
+                            distance: v.distance.max(1e-3),
+                            reprojection: v.denoising.temporal(),
+                            blend: 1.0 - v.history_weight.clamp(0.0, 0.98),
+                            samples: v.samples.clamp(1, 8),
+                            motion_samples: v.motion_samples.clamp(1, 8),
+                            lights: view
+                                .lights
+                                .iter()
+                                .filter(|l| {
+                                    l.volumetric > 0.0
+                                        && (l.kind == LightKind::Directional || l.shadows.is_some())
+                                })
+                                .fold(u64::from(self.shadow_plan.cascades), |k, l| {
+                                    k.wrapping_mul(4)
+                                        .wrapping_add(1 + u64::from(l.shadows.is_some()))
+                                }),
+                            local_poses: poses,
+                            local_count,
+                        };
+                        self.volume.encode(
+                            gpu,
+                            &mut encoder,
+                            i,
+                            volume::SIZES[usize::from(v.detail.min(3))],
+                            camera,
+                            &globals_groups[i],
+                            (self.stride * i as u64) as u32,
+                            &shadow_group,
+                        )
+                    })
+            })
+            .collect();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("world"),
@@ -3196,6 +3772,11 @@ impl WorldRenderer {
                 pass.set_bind_group(0, &globals_groups[i], &[(self.stride * i as u64) as u32]);
                 pass.set_bind_group(1, plain, &[]);
                 pass.set_bind_group(2, &shadow_group, &[]);
+                pass.set_bind_group(
+                    3,
+                    volume_groups[i].as_ref().unwrap_or(self.volume.empty()),
+                    &[],
+                );
                 pass.set_pipeline(&pipelines.fill);
                 pass.draw(0..3, 0..1);
 
@@ -3246,17 +3827,43 @@ impl WorldRenderer {
                     pass.set_pipeline(&pipelines.grid);
                     pass.draw(0..3, 0..1);
                 }
-                for (_, run) in blended {
-                    draw(&mut pass, run, true);
-                }
-                // Strokes after the see-through things, before the gizmo lines.
-                let range = stroke_ranges[i].clone();
-                if !range.is_empty() {
+                // 2D shapes before the see-through things (sprites and text show over them):
+                // each shape's fill then its outline, in order; without runs, every fill then
+                // every outline.
+                let (fills, strokes) = (fill_ranges[i].clone(), stroke_ranges[i].clone());
+                if !fills.is_empty() || !strokes.is_empty() {
                     pass.set_bind_group(1, plain, &[]);
                     pass.set_bind_group(2, &shadow_group, &[]);
-                    pass.set_vertex_buffer(0, self.strokes.slice(..));
-                    pass.set_pipeline(&pipelines.strokes);
-                    pass.draw(0..6, range);
+                    let whole = [ShapeRun {
+                        fills: 0..fills.len() as u32,
+                        strokes: 0..strokes.len() as u32,
+                    }];
+                    let runs = if shape_runs[i].is_empty() {
+                        &whole[..]
+                    } else {
+                        &shape_runs[i][..]
+                    };
+                    for run in runs {
+                        if !run.fills.is_empty() {
+                            pass.set_vertex_buffer(0, self.fills.slice(..));
+                            pass.set_pipeline(&pipelines.fills);
+                            pass.draw(
+                                fills.start + run.fills.start..fills.start + run.fills.end,
+                                0..1,
+                            );
+                        }
+                        if !run.strokes.is_empty() {
+                            pass.set_vertex_buffer(0, self.strokes.slice(..));
+                            pass.set_pipeline(&pipelines.strokes);
+                            pass.draw(
+                                0..6,
+                                strokes.start + run.strokes.start..strokes.start + run.strokes.end,
+                            );
+                        }
+                    }
+                }
+                for (_, run) in blended {
+                    draw(&mut pass, run, true);
                 }
                 // Gizmo lines last: hidden parts faint first, then the visible ones.
                 let range = line_ranges[i].clone();
@@ -3279,13 +3886,60 @@ impl WorldRenderer {
                 size,
                 scale: target.scale,
             };
-            pass.encode(gpu, &mut encoder, &out, bloom.as_ref(), grading);
+            // Each view with its camera's exposure, the biggest first (it covers the rest).
+            let mut order: Vec<usize> = (0..views.len()).collect();
+            if let Some(m) = main {
+                order.retain(|&i| i != m);
+                order.insert(0, m);
+            }
+            let exposure_views: Vec<bloom::ExposureView> = order
+                .iter()
+                .filter_map(|&i| {
+                    let rect = viewport_px(views[i].viewport, size)?;
+                    Some(bloom::ExposureView {
+                        key: views[i].exposure_key,
+                        rect,
+                    })
+                })
+                .collect();
+            pass.encode(
+                gpu,
+                &mut encoder,
+                &out,
+                bloom.as_ref(),
+                grading,
+                &exposure_views,
+            );
             if fxaa && let Some(f) = self.fxaa.as_mut() {
                 f.encode(gpu, &mut encoder, target.view, size, target.format);
             }
         }
         gpu.queue.submit([encoder.finish()]);
+        if post && let Some(pass) = self.bloom_pass.as_mut() {
+            pass.after_submit(gpu);
+        }
     }
+}
+
+/// The shadowed spot and point lights the light volume shows, and how many there are: it trusts
+/// its history less as they move.
+fn local_poses(lights: &[Light]) -> ([volume::LocalPose; volume::LOCAL_POSES], usize) {
+    let mut poses = [volume::LocalPose::default(); volume::LOCAL_POSES];
+    let mut n = 0;
+    for l in lights
+        .iter()
+        .filter(|l| l.kind != LightKind::Directional && l.shadows.is_some() && l.volumetric > 0.0)
+    {
+        if let Some(p) = poses.get_mut(n) {
+            *p = volume::LocalPose {
+                position: l.position,
+                direction: l.direction,
+                range: l.range,
+            };
+        }
+        n += 1;
+    }
+    (poses, n)
 }
 
 /// `view` seen in `mirror`: the camera reflected in its plane, and everything behind the

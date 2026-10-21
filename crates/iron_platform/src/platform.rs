@@ -6,7 +6,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{CustomCursor, Window, WindowId};
+use winit::window::{CustomCursor, Window, WindowButtons, WindowId};
 
 use crate::fake::VirtualBackend;
 use crate::gamepad::convert_gamepad;
@@ -34,6 +34,8 @@ pub struct WindowConfig {
     /// Windows other than the main one are not made by the OS: `Open` answers with an
     /// offscreen [`WindowHost::Virtual`] (screenshot runs).
     pub virtual_windows: bool,
+    /// Whether the player can resize the window (games drawn for one size turn it off).
+    pub resizable: bool,
 }
 
 impl Default for WindowConfig {
@@ -44,6 +46,7 @@ impl Default for WindowConfig {
             height: 720,
             icon: None,
             virtual_windows: false,
+            resizable: true,
         }
     }
 }
@@ -319,6 +322,13 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             .with_visible(false)
             .with_title(self.config.title.clone())
             .with_window_icon(icon)
+            .with_resizable(self.config.resizable)
+            // A fixed-size window can't be maximized either.
+            .with_enabled_buttons(if self.config.resizable {
+                WindowButtons::all()
+            } else {
+                WindowButtons::CLOSE | WindowButtons::MINIMIZE
+            })
             .with_inner_size(LogicalSize::new(self.config.width, self.config.height));
         match event_loop.create_window(attrs) {
             Ok(window) => {

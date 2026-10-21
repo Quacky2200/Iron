@@ -23,6 +23,9 @@ pixel data. Defaults: bilinear, repeat, mipmaps on, `anisoLevel` 1, `linear` fal
 trilinear only) sharpens grazing angles within what `QualitySettings.anisotropicFiltering` allows.
 `linear: true` marks data (normal maps, masks) rather than colours: the renderer reads it without sRGB
 decoding and averages its mips in linear space. `Texture.whenLoaded()` returns a promise.
+Scene files and hot reloads save both kinds with their options: a loaded one by its file, a made one
+with its pixels (`Texture._fromBytes` makes it again), so materials keep their textures after a reload.
+Only the engine's own textures (a model's) aren't saved on their own; they come back with their model.
 A `RenderTexture` is a texture cameras draw into (see [world-rendering.md](world-rendering.md#render-textures)).
 
 **Ids.** Scripts count textures up from 1. The engine's own (a model's) start at `1 << 30`
@@ -94,6 +97,10 @@ builds a `MeshData`, completes it (`complete`: smooth normals, zero UVs and tang
 (`is_valid`) and keeps a copy in `mesh_data` (for mesh colliders) as well as queueing the upload.
 `Mesh.set` replaces the data and `Mesh.destroy` removes it (`render.mesh id null`); renderers using a
 removed mesh draw nothing. The renderer also keeps a mesh's buffers by id (`set_mesh`, `remove_mesh`).
+
+`Mesh.createFlat({ positions, triangles, normals?, uv? })` and `mesh.setFlat(data)` take flat number lists, plain or typed arrays
+(x, y, z per vertex; u, v in Unity's bottom-up space, flipped for the engine). They send the same
+`render.mesh` op without making an object per vertex: the fast way for big, rebuilt meshes such as terrain chunks. `setFlat` passes typed arrays straight through to the op and only builds plain arrays when a scene saves the mesh (`Mesh._data` is a getter), so reused `Float32Array` / `Uint32Array` buffers upload cheaply (a chunk went from 1.7 to 0.6 ms).
 
 **Mesh colliders from render meshes.** A `MeshCollider` with `sharedMesh` sends a `physics.collider` op
 whose shape is `renderMesh [mesh id, convex 0/1, scale x y z]`. The app rewrites it in

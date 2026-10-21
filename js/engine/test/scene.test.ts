@@ -44,7 +44,8 @@ describe("GameObjects", () => {
     ops = [];
     gun.setParent(null);
     expect(near(gun.transform.localPosition, new Vector3(1, 1, 0))).toBe(true);
-    expect(ops.map((o) => o[0])).toEqual(["scene.parent", "scene.local", "scene.local"]);
+    globalThis.__iron_flush();
+    expect(ops.map((o) => o[0])).toEqual(["scene.parent", "scene.locals"]);
     expect(GameObject.roots).toEqual([ship, gun]);
 
     ship.destroy();

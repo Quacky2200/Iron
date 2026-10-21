@@ -172,6 +172,9 @@ pub struct Physics {
     characters: HashMap<ScriptId, (KinematicCharacterController, Option<Vector>)>,
     /// Joints by script id.
     joints: HashMap<ScriptId, ImpulseJointHandle>,
+    /// Movement axes Iron holds in place itself (the value each is held at), instead of
+    /// rapier's lock: see [`Self::set_constraints`].
+    pins: HashMap<ScriptId, [Option<f32>; 3]>,
     /// A fixed body for joints to the world (`null` for the second body), made when
     /// first needed.
     world_anchor: Option<RigidBodyHandle>,
@@ -202,6 +205,7 @@ impl Physics {
             characters: HashMap::new(),
             rays: Vec::new(),
             joints: HashMap::new(),
+            pins: HashMap::new(),
             world_anchor: None,
             dirty: false,
             batch: Batch::default(),
@@ -297,6 +301,7 @@ impl Physics {
             "removeBody" => {
                 let id = a.id(0)?;
                 self.characters.remove(&id);
+                self.pins.remove(&id);
                 if let Some(h) = self.bodies.remove(&id)
                     && let Some(body) = self.world.remove_body(h)
                 {
@@ -507,8 +512,21 @@ impl Physics {
     fn set(&mut self, a: &Args) -> Result<(), String> {
         let id = a.id(0)?;
         let flag = |i: usize| matches!(a.0.get(i), Some(Value::Bool(true)));
-        if a.str(1)? == "mass" {
-            return self.set_mass(id, a.num(2)?.max(0.0));
+        match a.str(1)? {
+            "mass" => return self.set_mass(id, a.num(2)?.max(0.0)),
+            "constraints" => return self.set_constraints(id, a.list(2)?),
+            _ => {}
+        }
+        if a.str(1)? == "position"
+            && let Some(pin) = self.pins.get_mut(&id)
+        {
+            // Moved on purpose: held where it was put.
+            let to = a.vec3(2)?.to_array();
+            for axis in 0..3 {
+                if pin[axis].is_some() {
+                    pin[axis] = Some(to[axis]);
+                }
+            }
         }
         let body = self.body_mut(id)?;
         match a.str(1)? {
@@ -532,12 +550,6 @@ impl Physics {
             "linearDamping" => body.set_linear_damping(a.num(2)?.max(0.0)),
             "angularDamping" => body.set_angular_damping(a.num(2)?.max(0.0)),
             "ccd" => body.enable_ccd(flag(2)),
-            "constraints" => {
-                let c = a.list(2)?;
-                let allow = |i: usize| !matches!(c.get(i), Some(Value::Bool(false)));
-                body.set_enabled_translations(allow(0), allow(1), allow(2), true);
-                body.set_enabled_rotations(allow(3), allow(4), allow(5), true);
-            }
             "sleep" => body.sleep(),
             "wake" => body.wake_up(true),
             other => return Err(format!("unknown body property `{other}`")),
@@ -706,12 +718,75 @@ impl Physics {
             .ok_or_else(|| format!("no body {id}"))
     }
 
+    /// `constraints`: which axes a body may move along and turn about (`[x y z]`
+    /// translations, then rotations; missing entries are allowed).
+    ///
+    /// A movement axis locked together with both turns across it (the usual way to keep a
+    /// body in a plane) isn't given to rapier as a lock: friction along that axis would have
+    /// no mass, and rapier 0.36's 3D friction solve then drops friction along the other
+    /// direction too, so the body slides as if on ice. Iron holds that axis in place itself
+    /// instead, after every step ([`Self::hold_pins`]).
+    fn set_constraints(&mut self, id: ScriptId, c: &[Value]) -> Result<(), String> {
+        let allow = |i: usize| !matches!(c.get(i), Some(Value::Bool(false)));
+        let moves = [allow(0), allow(1), allow(2)];
+        let turns = [allow(3), allow(4), allow(5)];
+        // Locked movement with both turns across it locked: pinned by Iron.
+        let pinned: [bool; 3] =
+            std::array::from_fn(|i| !moves[i] && !turns[(i + 1) % 3] && !turns[(i + 2) % 3]);
+        let body = self.body_mut(id)?;
+        let at = body.translation().to_array();
+        body.set_enabled_translations(
+            moves[0] || pinned[0],
+            moves[1] || pinned[1],
+            moves[2] || pinned[2],
+            true,
+        );
+        body.set_enabled_rotations(turns[0], turns[1], turns[2], true);
+        if pinned.contains(&true) {
+            self.pins
+                .insert(id, std::array::from_fn(|i| pinned[i].then_some(at[i])));
+        } else {
+            self.pins.remove(&id);
+        }
+        Ok(())
+    }
+
+    /// Puts pinned axes back where they're held, with no speed along them.
+    fn hold_pins(&mut self) {
+        for (id, pin) in &self.pins {
+            let Some(body) = self
+                .bodies
+                .get(id)
+                .and_then(|h| self.world.bodies.get_mut(*h))
+            else {
+                continue;
+            };
+            let mut p = body.translation().to_array();
+            let mut v = body.linvel().to_array();
+            let mut moved = false;
+            for axis in 0..3 {
+                if let Some(held) = pin[axis] {
+                    moved |= p[axis] != held || v[axis] != 0.0;
+                    p[axis] = held;
+                    v[axis] = 0.0;
+                }
+            }
+            // Untouched bodies stay asleep.
+            if moved {
+                body.set_translation(Vector::from_array(p), false);
+                body.set_linvel(Vector::from_array(v), false);
+            }
+        }
+    }
+
     /// Advances the world by one timestep (`physics.timestep`, 1/60 s by default):
     /// moves character controllers, steps, then answers raycasts and records what moved.
     pub fn step(&mut self) {
         self.move_characters();
+        self.hold_pins();
         let events = Events::default();
         self.world.step_with_events(&(), &events);
+        self.hold_pins();
 
         let script_id = |h: ColliderHandle| self.world.colliders.get(h).map(|c| c.user_data as u32);
         for (event, speed) in events.0.into_inner().unwrap_or_default() {

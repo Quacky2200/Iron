@@ -4,6 +4,8 @@
 // it starts and whenever a setting changes.
 
 import { property } from "./property.ts";
+import { QualitySettings, _setPostHook } from "./quality.ts";
+import { physics } from "./physics.ts";
 import {
   Color,
   Mathf,
@@ -48,8 +50,13 @@ export class Camera extends Component {
   private _layerCullSpherical = false;
   private _antialiasing: "none" | "fxaa" = "none";
   private _sceneGrid = false;
+  private _fog = true;
   private _targetTexture: RenderTexture | null = null;
   private started = false;
+  /** @internal The exposure last read back (`__iron_exposure`). */
+  _exposure = Number.NaN;
+  /** @internal How bright it last metered. */
+  _sceneBrightness = Number.NaN;
 
   /** Vertical field of view in degrees (perspective), 1 to 179. */
   @property
@@ -238,6 +245,16 @@ export class Camera extends Component {
     this.send();
   }
 
+  /** Shows `RenderSettings.fog` (on by default): turn it off for a minimap or a clear view. */
+  @property
+  get fog(): boolean {
+    return this._fog;
+  }
+  set fog(on: boolean) {
+    this._fog = on;
+    this.send();
+  }
+
   /** The camera's area of the screen in UI pixels. */
   get pixelRect(): Rect {
     return new Rect(this._rect.x * Screen.width, this._rect.y * Screen.height, this._rect.width * Screen.width, this._rect.height * Screen.height);
@@ -260,6 +277,48 @@ export class Camera extends Component {
         !c._targetTexture &&
         (c.gameObject.hideFlags & HideFlags.HideInHierarchy) === 0,
     );
+  }
+
+  /**
+   * The exposure this camera shows its view at, in EV100 (higher is darker, as a camera's
+   * EV setting): auto exposure's as it adapts, or the manual one. Read back from the GPU a
+   * frame or two late; NaN until the first.
+   */
+  get exposure(): number {
+    return this._exposure;
+  }
+
+  /** How bright auto exposure metered this camera's view, in EV100 (NaN until it has). */
+  get sceneBrightness(): number {
+    return this._sceneBrightness;
+  }
+
+  /**
+   * Makes auto exposure jump straight to what this camera sees next frame instead of
+   * easing there: after a cut, a teleport or a scene load.
+   */
+  resetExposure(): void {
+    __iron_op("render.exposureReset", this.id);
+  }
+
+  /**
+   * A physical camera's settings (HDRP's), for the manual exposure: the aperture's
+   * f-number, the shutter's time in seconds and the sensor's ISO. Their exposure is
+   * `physicalExposure`; use it as `RenderSettings.fixedExposure`. HDRP's defaults (f/16,
+   * 1/200 s, ISO 200) suit a sunny day in real-world light units (`iron.lightUnits: "physical"`).
+   */
+  aperture = 16;
+  shutterSpeed = 1 / 200;
+  iso = 200;
+
+  /** The EV100 the physical settings give: log2(N² / t) - log2(ISO / 100). */
+  get physicalExposure(): number {
+    return Math.log2((this.aperture * this.aperture) / Math.max(this.shutterSpeed, 1e-6)) - Math.log2(Math.max(this.iso, 1) / 100);
+  }
+
+  /** @internal By id, for `__iron_exposure`. */
+  static byId(id: number): Camera | undefined {
+    return cameras.find((c) => c.id === id);
   }
 
   /** Every active camera, in draw order. */
@@ -366,6 +425,7 @@ export class Camera extends Component {
       this._antialiasing,
       this._targetTexture?.id ?? null,
       this._sceneGrid,
+      this._fog,
     );
   }
 
@@ -799,10 +859,40 @@ export interface MeshData {
   bindposes?: readonly Matrix4x4[];
 }
 
+/** Numbers as a plain array or a typed array. */
+export type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
+
+/**
+ * A mesh as flat number lists (x, y, z per vertex; u, v per vertex in Unity's bottom-up
+ * space), for meshes made in bulk (terrain chunks): no object per vertex. Typed arrays
+ * (`Float32Array`, `Uint32Array`) cross to the engine fastest; don't change them after
+ * passing them.
+ */
+export interface FlatMeshData {
+  positions: NumberList;
+  triangles: NumberList;
+  normals?: NumberList;
+  uv?: NumberList;
+}
+
 export class Mesh {
   readonly id: number;
+  private _saved: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null = null;
+  /** Flat data not yet turned into plain arrays (only saving needs them). */
+  private _flat: FlatMeshData | null = null;
   /** @internal Its data as flat arrays (script meshes), for saving with scenes. */
-  _data: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null = null;
+  get _data(): { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null {
+    if (this._flat) {
+      const f = this._flat;
+      this._saved = { vertices: Array.from(f.positions), triangles: Array.from(f.triangles), normals: Array.from(f.normals ?? []), uv: Array.from(f.uv ?? []) };
+      this._flat = null;
+    }
+    return this._saved;
+  }
+  set _data(d) {
+    this._saved = d;
+    this._flat = null;
+  }
   /**
    * Each bone's inverse bind pose, for `SkinnedMeshRenderer`s (a model's skinned meshes
    * come with theirs).
@@ -853,6 +943,26 @@ export class Mesh {
       [...data.triangles],
       ...(joints.length ? [joints, weights] : []),
     );
+  }
+
+  /** A mesh from flat arrays (see `FlatMeshData`). */
+  static createFlat(data: FlatMeshData): Mesh {
+    const mesh = new Mesh(nextMesh++);
+    mesh.setFlat(data);
+    return mesh;
+  }
+
+  /** Replaces the mesh's data from flat lists: the fast way for big, rebuilt meshes. */
+  setFlat(data: FlatMeshData): void {
+    const uv = data.uv ?? [];
+    // Unity's UVs run bottom-up; the engine's top-down.
+    const flipped = new Float32Array(uv.length);
+    for (let i = 0; i < uv.length; i += 2) {
+      flipped[i] = uv[i]!;
+      flipped[i + 1] = 1 - uv[i + 1]!;
+    }
+    this._flat = data;
+    __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
   }
 
   /** Frees it (renderers still using it draw nothing). */
@@ -990,6 +1100,9 @@ export class Light extends Component {
   private _shadows: LightShadows = "none";
   private _shadowStrength = 1;
   private _cullingMask = 0xffffffff;
+  private _volumetricIntensity = 1;
+  private _spotShape: "cone" | "pyramid" = "cone";
+  private _aspectRatio = 1;
   private started = false;
 
   @property
@@ -1103,6 +1216,40 @@ export class Light extends Component {
     this.send();
   }
 
+  /**
+   * How strongly it lights the fog for light shafts (`RenderSettings.volumetricFog`): 1
+   * as brightly as it lights surfaces, 0 not at all (HDRP's volumetric multiplier).
+   */
+  @property
+  get volumetricIntensity(): number {
+    return this._volumetricIntensity;
+  }
+  set volumetricIntensity(v: number) {
+    this._volumetricIntensity = Math.max(0, v);
+    this.send();
+  }
+
+  /**
+   * A spot light's shape (HDRP's): a `cone`, or a `pyramid` `spotAngle` high and
+   * `aspectRatio` times as wide (in tangent), its width along the object's x. A thin, wide
+   * pyramid is a sheet of light: a scanner's, a laser level's, light through a slot.
+   */
+  get spotShape(): "cone" | "pyramid" {
+    return this._spotShape;
+  }
+  set spotShape(s: "cone" | "pyramid") {
+    this._spotShape = s;
+    this.send();
+  }
+  /** A pyramid spot light's width over its height (1). */
+  get aspectRatio(): number {
+    return this._aspectRatio;
+  }
+  set aspectRatio(a: number) {
+    this._aspectRatio = Math.max(0.001, a);
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -1121,20 +1268,122 @@ export class Light extends Component {
       this._shadows,
       this._shadowStrength,
       this._cullingMask,
+      this._volumetricIntensity,
+      this._spotShape,
+      this._aspectRatio,
     );
   }
 
   override onAwake(): void {
     this.started = true;
+    allLights.add(this);
     this.send();
   }
 
   override onDestroy(): void {
+    allLights.delete(this);
     __iron_op("render.remove", this.id);
+  }
+
+  /**
+   * A light meter: how much light falls on `point` from every light, in lux in the HD
+   * pipeline (where lights are in lux and lumens; elsewhere in Iron's own units). Facing
+   * `normal` if given (a surface's), else each light head-on. Shadows aren't counted: indoors
+   * it counts the sun through the roof. `measureIlluminance` does count them.
+   */
+  static illuminanceAt(point: Vector3Like, normal?: Vector3Like): number {
+    let sum = 0;
+    for (const l of allLights) sum += l.illuminanceFrom(point, normal);
+    return sum;
+  }
+
+  /**
+   * A light meter that counts shadows: as `illuminanceAt`, but each light only if a physics
+   * ray from `point` reaches it (so walls and roofs need colliders). Resolves after the next
+   * physics tick.
+   */
+  static async measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number> {
+    const parts = [...allLights].map(async (l) => {
+      const lux = l.illuminanceFrom(point, normal);
+      if (lux <= 0) return 0;
+      let dir: Vector3Like;
+      let distance: number;
+      if (l._type === "directional") {
+        const f = l.transform.forward;
+        dir = { x: -f.x, y: -f.y, z: -f.z };
+        distance = 10000;
+      } else {
+        const p = l.transform.position;
+        dir = { x: p.x - point.x, y: p.y - point.y, z: p.z - point.z };
+        distance = Math.hypot(dir.x, dir.y, dir.z) - 0.05;
+      }
+      // Start a little off the point, so the surface it's on doesn't block it.
+      const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
+      const from = { x: point.x + (dir.x / len) * 0.02, y: point.y + (dir.y / len) * 0.02, z: point.z + (dir.z / len) * 0.02 };
+      const hit = await physics.raycast(from, dir, distance);
+      return hit ? 0 : lux;
+    });
+    return (await Promise.all(parts)).reduce((a, b) => a + b, 0);
+  }
+
+  /** The light this light alone sheds on `point` (facing `normal`), shadows aside. */
+  private illuminanceFrom(point: Vector3Like, normal?: Vector3Like): number {
+    const l = this;
+    if (!l.gameObject.activeInHierarchy) return 0;
+    const forward = l.transform.forward;
+    if (l._type === "directional") {
+      const cos = normal ? Math.max(0, -(normal.x * forward.x + normal.y * forward.y + normal.z * forward.z)) : 1;
+      return l._intensity * cos;
+    }
+    const p = l.transform.position;
+    const dx = point.x - p.x;
+    const dy = point.y - p.y;
+    const dz = point.z - p.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d >= l._range || d === 0) return 0;
+    // As the renderer: a smooth fade to zero at the range.
+    const x = d / l._range;
+    const fade = (1 - x ** 4) ** 2;
+    // Lumens to candela, all round (HDRP's spots without "reflector").
+    let candela = l._intensity / (4 * Math.PI);
+    if (l._type === "spot") {
+      const c = (dx * forward.x + dy * forward.y + dz * forward.z) / d;
+      const outer = Math.cos(((l._spotAngle / 2) * Math.PI) / 180);
+      const inner = Math.cos(((l._innerSpotAngle / 2) * Math.PI) / 180);
+      const t = Math.min(1, Math.max(0, (c - outer) / Math.max(inner - outer, 1e-4)));
+      candela *= t * t * (3 - 2 * t);
+    }
+    const cos = normal ? Math.max(0, -(normal.x * dx + normal.y * dy + normal.z * dz) / d) : 1;
+    return ((candela * fade) / (d * d)) * cos;
   }
 }
 
+/** Every awake light, for `Light.illuminanceAt`. */
+const allLights = new Set<Light>();
+
 let ambient = new Color(0.2, 0.2, 0.22);
+
+/**
+ * What the world renderer drew and skipped in the last frame, over every camera, mirror and
+ * reflection probe (like Unity's rendering statistics). Read-only; the engine updates it.
+ */
+export const RenderStats = {
+  meshes: 0,
+  /** Meshes left out: outside a camera's view or hidden by fog. */
+  culledMeshes: 0,
+  quads: 0,
+  culledQuads: 0,
+  /** Of the culled meshes and quads, those `RenderSettings.fogCulling` skipped. */
+  fogCulled: 0,
+  lights: 0,
+  culledLights: 0,
+  /** Shadow map layers drawn. */
+  shadowMaps: 0,
+};
+
+globalThis.__iron_render_stats = (...n: number[]) => {
+  [RenderStats.meshes, RenderStats.culledMeshes, RenderStats.quads, RenderStats.culledQuads, RenderStats.fogCulled, RenderStats.lights, RenderStats.culledLights, RenderStats.shadowMaps] = n.map((v) => v ?? 0) as [number, number, number, number, number, number, number, number];
+};
 
 /** Unity's Bloom: bright things (emission, hot lights) glow onto their surroundings. */
 export interface BloomSettings {
@@ -1152,7 +1401,96 @@ let bloom: BloomSettings | null = null;
 export type TonemappingMode = "none" | "neutral" | "aces";
 let tonemapping: TonemappingMode = "none";
 let postExposure = 0;
-const sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping);
+
+/**
+ * Auto exposure (HDRP's Automatic mode): the view is metered, weighted towards its middle,
+ * and the exposure eases towards one that shows its average as mid grey, as eyes adapt. In
+ * a dark tunnel the opening ahead burns white; stepping out into daylight blinds for a
+ * moment, then settles. Pair it with bloom and tonemapping.
+ */
+export interface AutoExposureSettings {
+  /** The darkest average brightness it adapts to, in EV100 (-10): darker stays dark. */
+  minEV?: number;
+  /** The brightest, in EV100 (20): brighter stays bright. */
+  maxEV?: number;
+  /** Stops added after metering (0; positive is brighter). */
+  compensation?: number;
+  /** How fast it adapts when the view gets brighter (3, per second). */
+  speedDarkToLight?: number;
+  /** How fast it adapts when the view gets darker (3, per second: about a second for a big change). */
+  speedLightToDark?: number;
+  /**
+   * Which part of the view counts: `average` all alike, `centerWeighted` (the default) the
+   * middle most, `spot` only a small circle in the middle.
+   */
+  metering?: "average" | "centerWeighted" | "spot";
+  /**
+   * The part of the brightness histogram averaged, in percent from the darkest (0 and 100:
+   * everything, the default). HDRP suggests 40 and 90: then a little sun or a few black
+   * pixels can't swing it.
+   */
+  lowPercent?: number;
+  highPercent?: number;
+  /**
+   * A soft floor instead of `minEV`'s wall: below `darkBelow` (EV100, 5) the eyes adapt only
+   * `darkAdaptation` (0..1, default 1: fully) of the way, so a dark room brightens some but
+   * still reads as dark.
+   */
+  darkAdaptation?: number;
+  darkBelow?: number;
+  /**
+   * More stops by how bright the view is (HDRP's curve mapping): up to 8 points of
+   * [metered EV100, stops], joined by straight lines. [[-2, -1.5], [6, 0]] keeps dark
+   * places darker without touching bright ones.
+   */
+  curve?: [number, number][];
+  /** Stops adapting: the exposure holds where it is. */
+  hold?: boolean;
+}
+
+/** `metering` as the op sends it. */
+const METERING = { average: 0, centerWeighted: 1, spot: 2 } as const;
+/** Manual exposure (EV100), and the seconds auto exposure takes to blend in and out. */
+let fixedExposure: number | null = null;
+let exposureTransition = 0;
+
+/** @internal Each camera's exposure, read back: EV100 in use, and how bright it metered. */
+globalThis.__iron_exposure = (id: number, ev: number, scene: number | null) => {
+  const c = Camera.byId(id);
+  if (!c) return;
+  c._exposure = ev;
+  c._sceneBrightness = scene ?? Number.NaN;
+};
+
+let autoExposure: AutoExposureSettings | null = null;
+const sendPost = () =>
+  __iron_op(
+    "render.post",
+    0,
+    postExposure,
+    tonemapping,
+    autoExposure && QualitySettings.autoExposure
+      ? [
+          autoExposure.minEV ?? -10,
+          autoExposure.maxEV ?? 20,
+          autoExposure.compensation ?? 0,
+          autoExposure.speedDarkToLight ?? 3,
+          autoExposure.speedLightToDark ?? 3,
+          METERING[autoExposure.metering ?? "centerWeighted"],
+          autoExposure.lowPercent ?? 0,
+          autoExposure.highPercent ?? 100,
+          autoExposure.hold ? 1 : 0,
+          autoExposure.darkAdaptation ?? 1,
+          autoExposure.darkBelow ?? 5,
+          Math.min(8, autoExposure.curve?.length ?? 0),
+          ...(autoExposure.curve ?? []).slice(0, 8).flat(),
+        ]
+      : null,
+    fixedExposure,
+    exposureTransition,
+  );
+// The player's auto exposure option (QualitySettings) can turn it off.
+_setPostHook(sendPost);
 
 /**
  * A procedural sky (Unity's procedural skybox): gradients from the zenith to the horizon
@@ -1168,6 +1506,117 @@ export interface ProceduralSky {
   sunColor?: Color;
   /** The disc's size in degrees. */
   sunSize?: number;
+}
+
+/**
+ * How fog thickens with distance (Unity's `FogMode`): `linear` from `fogStartDistance`
+ * to `fogEndDistance`; `exponential` by `fogDensity` per metre; `exponentialSquared`
+ * clear nearby, then closing in.
+ */
+export type FogMode = "linear" | "exponential" | "exponentialSquared";
+
+let fog = false;
+let fogMode: FogMode = "exponentialSquared";
+let fogColor = new Color(0.5, 0.5, 0.5);
+let fogDensity = 0.01;
+let fogStart = 0;
+let fogEnd = 300;
+
+/**
+ * Fog lying low (Unreal's exponential height fog), in `fogColor`: `density` per metre at
+ * `baseHeight`, thinning by a factor of e every `1 / falloff` metres above it and
+ * thickening below. It covers the sky and background too, so the horizon sinks into it.
+ */
+export interface HeightFogSettings {
+  density: number;
+  baseHeight: number;
+  /** Per metre (larger: a thinner layer). */
+  falloff: number;
+}
+
+let heightFog: HeightFogSettings | null = null;
+let fogCulling = true;
+
+/**
+ * Light shafts (volumetric fog): lights shining through the fog light it up, cut by their
+ * shadows, so the sun shows in beams through gaps and spot lights as cones, tinted by
+ * `albedo`. Every field is optional. A froxel volume over each camera's view (240 × 135
+ * cells, 64 depth slices) is filled once a frame, with a shadow lookup per light per
+ * sample; lights opt out with `Light.volumetricIntensity = 0`.
+ */
+export interface VolumetricFogSettings {
+  /** Scales the scattered light (1 by default). */
+  intensity?: number;
+  /** -1 to 1: positive scatters forward, so looking towards a light shows more (0.4). */
+  anisotropy?: number;
+  /** Samples per depth slice, 1 to 16 (4): more keep thin cones sampled. */
+  steps?: number;
+  /** How far the volume reaches in metres (50); fog beyond counts as lit by the sun. */
+  distance?: number;
+  /**
+   * How much of each colour of light the fog scatters (white by default). It's separate
+   * from `fogColor`, which is how the fog looks in the ambient light: a night fog is dark,
+   * yet glows under a lamp.
+   */
+  albedo?: Color;
+  /**
+   * God rays: within this many metres of the camera the sun's shafts are worked out per
+   * pixel from its shadow map, finding each beam's edges exactly (0, the default: off).
+   * Suits large openings (a canopy, a roof hole); shadows thinner than its sample spacing,
+   * such as window bars, alias into a hatch. For those, a finer `resolution` is the cleaner
+   * way to sharpen beams. Costs `sharpSamples` shadow lookups per fogged pixel.
+   */
+  sharpDistance?: number;
+  /** Samples per pixel for the sharp part, 4 to 128 (32). */
+  sharpSamples?: number;
+  /**
+   * How fine the light-shaft volume is (`high` by default): `low` 160 × 90 cells by 48 depth
+   * slices, `medium` 240 × 135 × 64, `high` 320 × 180 × 96, `ultra` 480 × 270 × 128. Finer
+   * is sharper (beams through bars and gaps) and costs more to fill each frame.
+   */
+  resolution?: VolumeDetail;
+  /**
+   * How the light volume's sampling noise is cleaned up (HDRP's denoising mode): `both`
+   * (the default) blends each cell with last frame's (`reprojection`) and blurs it over a
+   * cell's width (`gaussian`), so a blind's slats or a grate come out as clean haze;
+   * `reprojection` alone saves three texture reads a step (slower GPUs, phones); `none`
+   * samples each frame afresh (beams through fine patterns step and shimmer).
+   */
+  denoising?: "none" | "reprojection" | "gaussian" | "both";
+  /**
+   * With reprojection, how much of each cell comes from earlier frames (0.9, Unreal's
+   * history weight): up to 0.98 is smoother still, but slower to follow a moving sun or
+   * camera.
+   */
+  historyWeight?: number;
+  /** Shadow samples per cell each frame, 1 to 8 (1): more is less noise, at that much the cost. */
+  samples?: number;
+  /**
+   * Samples for cells whose view moved this frame (2; adaptive): the camera moving is when the
+   * history counts least, so this takes the noise out of turning and walking at a cost only
+   * while it happens.
+   */
+  motionSamples?: number;
+}
+
+const DENOISING = { none: 0, reprojection: 1, gaussian: 2, both: 3 } as const;
+
+/** The light-shaft volume's detail levels. */
+export type VolumeDetail = "low" | "medium" | "high" | "ultra";
+const VOLUME_DETAILS: VolumeDetail[] = ["low", "medium", "high", "ultra"];
+
+let volumetricFog: VolumetricFogSettings | null = null;
+
+function sendFog(): void {
+  if (!fog) {
+    __iron_op("render.fog", 0, null);
+    return;
+  }
+  const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
+  const v = volumetricFog;
+  const a = v?.albedo;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"], v.historyWeight ?? 0.9, v.samples ?? 1, v.motionSamples ?? 2] : null;
+  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
 }
 
 let skybox: ProceduralSky | null = null;
@@ -1262,6 +1711,133 @@ export const RenderSettings = {
     postExposure = ev;
     sendPost();
   },
+  /** Adapts the exposure to the view (off: null, the default). See `AutoExposureSettings`. */
+  get autoExposure(): AutoExposureSettings | null {
+    return autoExposure;
+  },
+  set autoExposure(a: AutoExposureSettings | null) {
+    autoExposure = a ? { ...a, curve: a.curve?.map((p) => [p[0], p[1]] as [number, number]) } : null;
+    sendPost();
+  },
+  /**
+   * The manual exposure, in EV100 (HDRP's Fixed mode; higher is darker), used without auto
+   * exposure and blended with it while it fades in or out. null (the default): light as it
+   * is.
+   */
+  get fixedExposure(): number | null {
+    return fixedExposure;
+  },
+  set fixedExposure(ev: number | null) {
+    fixedExposure = ev;
+    sendPost();
+  },
+  /**
+   * Seconds auto exposure takes to blend in when it's turned on and out (to the manual
+   * exposure) when it's turned off, and a change of `fixedExposure` takes to ease to the
+   * new value (0, the default: at once).
+   */
+  get exposureTransition(): number {
+    return exposureTransition;
+  },
+  set exposureTransition(s: number) {
+    exposureTransition = Math.max(0, s);
+    sendPost();
+  },
+  /**
+   * Turns auto exposure off without anything changing on screen: the manual exposure is
+   * set to where the main camera's eyes are now. Fade it elsewhere later with
+   * `fixedExposure` (and `exposureTransition` for a slow, unnoticed blend).
+   */
+  freezeExposure(): void {
+    const ev = Camera.main?.exposure;
+    if (ev !== undefined && Number.isFinite(ev)) fixedExposure = ev;
+    autoExposure = null;
+    sendPost();
+  },
+  /**
+   * Fog (off by default): things fade towards `fogColor` with distance from the camera;
+   * glows fade out. Backgrounds and skies stay clear, so match the camera's background
+   * colour to the fog for a seamless horizon. Cameras can opt out (`Camera.fog`).
+   */
+  get fog(): boolean {
+    return fog;
+  },
+  set fog(on: boolean) {
+    fog = on;
+    sendFog();
+  },
+  get fogMode(): FogMode {
+    return fogMode;
+  },
+  set fogMode(m: FogMode) {
+    fogMode = m;
+    if (fog) sendFog();
+  },
+  /** The fog's colour (linear). */
+  get fogColor(): Color {
+    return fogColor;
+  },
+  set fogColor(c: Color) {
+    fogColor = c;
+    if (fog) sendFog();
+  },
+  /** How thick the exponential modes are, per metre. */
+  get fogDensity(): number {
+    return fogDensity;
+  },
+  set fogDensity(d: number) {
+    fogDensity = Math.max(0, d);
+    if (fog) sendFog();
+  },
+  /** Where linear fog begins, in metres from the camera. */
+  get fogStartDistance(): number {
+    return fogStart;
+  },
+  set fogStartDistance(d: number) {
+    fogStart = d;
+    if (fog) sendFog();
+  },
+  /** Where linear fog hides everything. */
+  get fogEndDistance(): number {
+    return fogEnd;
+  },
+  set fogEndDistance(d: number) {
+    fogEnd = d;
+    if (fog) sendFog();
+  },
+  /**
+   * Height fog on top of the distance fog, while `fog` is on (`null`: none, the default).
+   * For height fog alone, use `fogMode = "exponential"` with `fogDensity = 0`.
+   */
+  get heightFog(): HeightFogSettings | null {
+    return heightFog;
+  },
+  set heightFog(h: HeightFogSettings | null) {
+    heightFog = h ? { ...h } : null;
+    if (fog) sendFog();
+  },
+  /**
+   * Skip drawing what lies wholly past where the distance fog hides everything (on by
+   * default): linear fog's end, about 5.5 / density for exponential fog, 2.35 / density for
+   * squared. With the camera's background in `fogColor` nothing changes on screen; with
+   * another background, things past it would have shown as fog-coloured silhouettes.
+   * `RenderStats.fogCulled` counts what it saved.
+   */
+  get fogCulling(): boolean {
+    return fogCulling;
+  },
+  set fogCulling(on: boolean) {
+    fogCulling = on;
+    if (fog) sendFog();
+  },
+  /** Light shafts in the fog, while `fog` is on (`null`: none, the default). */
+  get volumetricFog(): VolumetricFogSettings | null {
+    return volumetricFog;
+  },
+  set volumetricFog(v: VolumetricFogSettings | null) {
+    volumetricFog = v ? { ...v } : null;
+    if (fog) sendFog();
+  },
 };
 
 /**
@@ -1328,6 +1904,85 @@ export class ReflectionProbe extends Component {
   }
 
   override onAwake(): void {
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}
+
+/**
+ * A box of fog in its own colour (HDRP's local volumetric fog): mist over a pond, smoke in
+ * a room, a cloud layer to fly through. It's centred on the object and lined up with the
+ * world's axes (the object's scale stretches it; its rotation doesn't turn it), thick
+ * inside and thinning over `blendDistance` from its faces. It works with or without
+ * `RenderSettings.fog`, covers the sky behind it too, and light shafts light it. Each camera
+ * draws the 8 nearest; `Camera.fog = false` hides them.
+ */
+export class FogVolume extends Component {
+  private _size: Vector3Like = new Vector3(10, 2, 10);
+  private _density = 0.5;
+  private _color = new Color(0.75, 0.78, 0.82, 1);
+  private _blend = 1;
+  private _shape: "box" | "ellipsoid" = "box";
+  private started = false;
+
+  /** The box's size in metres, before the object's scale. */
+  @property
+  get size(): Vector3Like {
+    return this._size;
+  }
+  set size(s: Vector3Like) {
+    this._size = { x: s.x, y: s.y, z: s.z };
+    this.send();
+  }
+  /** How thick it is inside, per metre (0.5: a metre of it hides 40% of what's behind). */
+  @property
+  get density(): number {
+    return this._density;
+  }
+  set density(d: number) {
+    this._density = Math.max(0, d);
+    this.send();
+  }
+  /** Its colour (linear). */
+  @property
+  get color(): Color {
+    return this._color;
+  }
+  set color(c: Color) {
+    this._color = c;
+    this.send();
+  }
+  /** How far in from its faces it fades in, in metres (0: hard edges). */
+  @property
+  get blendDistance(): number {
+    return this._blend;
+  }
+  set blendDistance(b: number) {
+    this._blend = Math.max(0, b);
+    this.send();
+  }
+  /** `box`, or `ellipsoid`: a soft round blob inside the box (mist over a pond). */
+  @property
+  get shape(): "box" | "ellipsoid" {
+    return this._shape;
+  }
+  set shape(s: "box" | "ellipsoid") {
+    this._shape = s;
+    this.send();
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    const s = this._size;
+    const c = this._color;
+    __iron_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend, this._shape);
+  }
+
+  override onAwake(): void {
+    this.started = true;
     this.send();
   }
 

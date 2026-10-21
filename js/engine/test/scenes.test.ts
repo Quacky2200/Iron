@@ -21,6 +21,7 @@ import {
 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
+import { _resetTexturesForTests } from "../src/textures.ts";
 
 let ops: unknown[][] = [];
 
@@ -287,5 +288,31 @@ describe("hide flags", () => {
     expect(saved.objects[0]!.children ?? []).toEqual([]);
     expect(Camera.main).toBe(game);
     expect(HideFlags.HideAndDontSave & HideFlags.HideInHierarchy).toBeTruthy();
+  });
+});
+
+// M4-HOT-11
+describe("hot reload of made textures", () => {
+  test("a texture made with Texture.create comes back with its pixels and options, and materials use it", () => {
+    const grey = new Color(0.5, 0.5, 0.5, 1);
+    const stone = Texture.create(2, 1, [grey, Color.white], { filterMode: "point", wrapMode: "clamp", mipmaps: false });
+    const go = new GameObject("Block");
+    go.addComponent(MeshRenderer, { mesh: "cube", material: Material.create({ color: new Color(1, 0.5, 0.2, 1), mainTexture: stone }) });
+    const sent = ops.find((o) => o[0] === "render.texture")!;
+    const json = globalThis.__iron_save_state!();
+
+    // The new code: a fresh scene and texture ids from 1, then the saved state.
+    _resetSceneForTests();
+    _resetTexturesForTests();
+    ops = [];
+    expect(globalThis.__iron_restore_state!(json)).toBe(true);
+
+    const material = GameObject.find("Block")!.getComponent(MeshRenderer)!.material;
+    const t = material.mainTexture!;
+    expect([t.width, t.height, t.filterMode, t.wrapMode, t.src]).toEqual([2, 1, "point", "clamp", null]);
+    // Re-sent exactly as `create` sent it: same bytes, point filtered, clamped, no mipmaps.
+    expect(ops.find((o) => o[0] === "render.texture")).toEqual(["render.texture", t.id, ...sent.slice(2)]);
+    const renderer = ops.filter((o) => o[0] === "render.meshRenderer").at(-1)!;
+    expect(renderer[8]).toBe(t.id);
   });
 });

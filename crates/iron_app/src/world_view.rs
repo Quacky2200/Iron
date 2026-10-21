@@ -10,10 +10,12 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, GizmoLine, Grading, Light, LightKind,
-    MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe,
-    RenderMode, ShadowQuality, Shadows, Sky, Stroke, TextureData, TextureFilter, TextureWrap,
-    Tonemapping, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, Denoising, FillRule,
+    FillVertex, Fog, FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind,
+    MAX_CURVE_POINTS, MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering,
+    Mirror, PipelineAsset, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows,
+    ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog,
+    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -45,6 +47,8 @@ struct Camera {
     target: Option<u32>,
     /// Draws the editor's ground grid (`Camera.sceneGrid`).
     grid: bool,
+    /// Shows `RenderSettings.fog` (`Camera.fog`).
+    fog: bool,
     /// Gizmo lines only this camera shows (`render.gizmos`, from `Gizmos`).
     lines: Vec<GizmoLine>,
 }
@@ -235,6 +239,8 @@ pub struct Quality {
     pub anisotropic: Anisotropic,
     /// Top mips skipped (`QualitySettings.globalTextureMipmapLimit`).
     pub texture_mip_limit: u32,
+    /// The level's pipeline settings (Unity's URP asset per quality level).
+    pub pipeline: PipelineAsset,
 }
 
 impl Default for Quality {
@@ -248,6 +254,7 @@ impl Default for Quality {
             vsync: false,
             anisotropic: Anisotropic::Enable,
             texture_mip_limit: 0,
+            pipeline: PipelineAsset::default(),
         }
     }
 }
@@ -289,6 +296,11 @@ struct Stroke2d {
     color: [f32; 4],
     /// Joins the last point back to the first.
     closed: bool,
+    /// The fill's colour and its triangles (in the object's space, tessellated when the
+    /// points change), if it's filled.
+    fill: Option<([f32; 4], Vec<[f32; 2]>)>,
+    /// Higher draws over lower; equal ones in the order they were made.
+    order: i32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -304,10 +316,24 @@ struct LightComponent {
     beam: f32,
     shadows: Option<Shadows>,
     culling_mask: u32,
+    /// How strongly it lights the fog (`Light.volumetricIntensity`).
+    volumetric: f32,
+}
+
+/// A `FogVolume`: a box of fog on its object, its size before the object's scale.
+#[derive(Clone, Copy, Debug)]
+struct FogBox {
+    object: ScriptObject,
+    size: Vec3,
+    density: f32,
+    color: [f32; 3],
+    blend: f32,
+    ellipsoid: bool,
 }
 
 pub struct WorldViews {
     cameras: BTreeMap<u32, Camera>,
+    fog_volumes: BTreeMap<u32, FogBox>,
     planes: BTreeMap<u32, Plane>,
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
@@ -330,10 +356,18 @@ pub struct WorldViews {
     pub quality: Quality,
     /// Exposure and tonemapping (`render.post`).
     pub grading: Grading,
+    /// Cameras whose auto exposure jumps to what they see next frame (`render.exposureReset`),
+    /// applied by the app.
+    pub exposure_resets: Vec<u32>,
+    /// Lights in real-world units (`iron.lightUnits: "physical"`, as Unity 7 and HDRP): directional lights' intensity
+    /// in lux, spot and point lights' in lumens.
+    pub physical_units: bool,
     /// The sky (`render.sky`), applied by the app before drawing.
     pub sky: Option<Sky>,
     /// Reflection / sky light intensity, and whether ambient light comes from the sky.
     pub environment: (f32, bool),
+    /// Fog for every camera that shows it (`render.fog`).
+    fog: Option<Fog>,
     /// `emit` requests waiting for the next particle update (which knows where objects are).
     pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
@@ -365,6 +399,7 @@ impl Default for WorldViews {
     fn default() -> Self {
         Self {
             cameras: BTreeMap::new(),
+            fog_volumes: BTreeMap::new(),
             planes: BTreeMap::new(),
             renderers: BTreeMap::new(),
             lights: BTreeMap::new(),
@@ -379,8 +414,11 @@ impl Default for WorldViews {
             shadow_settings: (25.0, 2048, 1),
             quality: Quality::default(),
             grading: Grading::default(),
+            exposure_resets: Vec::new(),
+            physical_units: false,
             sky: None,
             environment: (1.0, true),
+            fog: None,
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
@@ -570,6 +608,24 @@ impl WorldViews {
 
     /// A texture that failed to load: sprites using it draw the renderer's missing
     /// checker (an 8 × 8 texel image) in its place.
+    /// Whether the game asked for light shafts (`RenderSettings.volumetricFog`).
+    pub fn uses_volumetric_fog(&self) -> bool {
+        self.fog.is_some_and(|f| f.volumetric.is_some())
+    }
+
+    /// Empty, with lights in real-world units (`iron.lightUnits: "physical"`) or not.
+    pub fn with_physical_units(physical_units: bool) -> Self {
+        Self {
+            physical_units,
+            ..Default::default()
+        }
+    }
+
+    /// The ids of every camera, for reading their exposure back.
+    pub fn camera_ids(&self) -> Vec<u32> {
+        self.cameras.keys().copied().collect()
+    }
+
     pub fn mark_missing(&mut self, id: u32) {
         self.texture_sizes.insert(id, (8, 8));
     }
@@ -776,7 +832,8 @@ impl WorldViews {
         match name {
             // `camera component object fov near far [r g b a] depth orthographic
             // orthographicSize [x y w h] clearFlags(skybox|color) cullingMask
-            // [32 cull distances]|null cullSpherical antialiasing targetTexture|null grid`
+            // [32 cull distances]|null cullSpherical antialiasing targetTexture|null grid
+            // fog`
             "camera" => {
                 let orthographic = matches!(args.get(7), Some(Value::Bool(true)));
                 let projection = if orthographic {
@@ -806,6 +863,7 @@ impl WorldViews {
                         _ => Some(id_at(15)?),
                     },
                     grid: matches!(args.get(16), Some(Value::Bool(true))),
+                    fog: !matches!(args.get(17), Some(Value::Bool(false))),
                     // Kept from before: gizmos come separately.
                     lines: self
                         .cameras
@@ -959,15 +1017,25 @@ impl WorldViews {
                 self.sprites.insert(id, sprite);
             }
             // `stroke component object width [r g b a] closed [x0 y0 x1 y1 ...]`
+            // `... [fill r g b a]|null evenodd|nonzero sortingOrder`: the points as a closed,
+            // filled shape; higher orders draw over lower.
             "stroke" => {
                 let points = flat(args.get(5))
                     .ok_or("stroke needs [x, y, ...]")?
                     .as_chunks::<2>()
                     .0
                     .to_vec();
+                let rule = match args.get(7).and_then(Value::as_str) {
+                    Some("nonzero") => FillRule::NonZero,
+                    _ => FillRule::EvenOdd,
+                };
+                let fill = nums::<4>(args.get(6))
+                    .map(|color| (color, iron_render::tessellate_fill(&points, rule)));
                 let stroke = Stroke2d {
                     object: id_at(1)?,
                     points,
+                    fill,
+                    order: num(8).unwrap_or(0.0) as i32,
                     width: num(2)?.max(0.0),
                     color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
                     closed: matches!(args.get(4), Some(Value::Bool(true))),
@@ -975,11 +1043,20 @@ impl WorldViews {
                 self.strokes.insert(id, stroke);
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
-            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask`
+            // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask
+            // volumetricIntensity spotShape(cone|pyramid) aspectRatio`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
                     Some("point") => LightKind::Point,
+                    Some("spot") if args.get(14).and_then(Value::as_str) == Some("pyramid") => {
+                        LightKind::Pyramid {
+                            outer_degrees: num(6).unwrap_or(30.0),
+                            inner_degrees: num(7).unwrap_or(21.8),
+                            aspect: num(15).unwrap_or(1.0).max(1e-3),
+                            right: Vec3::X,
+                        }
+                    }
                     Some("spot") => LightKind::Spot {
                         outer_degrees: num(6).unwrap_or(30.0),
                         inner_degrees: num(7).unwrap_or(21.8),
@@ -987,7 +1064,17 @@ impl WorldViews {
                     other => return Err(format!("unknown light type {other:?}")),
                 };
                 let [r, g, b] = nums::<3>(args.get(3)).unwrap_or([1.0; 3]);
-                let intensity = num(4).unwrap_or(1.0);
+                let mut intensity = num(4).unwrap_or(1.0);
+                if self.physical_units {
+                    // Into the renderer's units (Unity Built-in's: diffuse light isn't divided
+                    // by pi): lux / pi for the sun; lumens to candela (/ 4 pi, all round, as
+                    // HDRP's spots without "reflector"), then / pi, for lamps.
+                    use std::f32::consts::PI;
+                    intensity /= match kind {
+                        LightKind::Directional => PI,
+                        _ => 4.0 * PI * PI,
+                    };
+                }
                 let light = LightComponent {
                     object: id_at(1)?,
                     kind,
@@ -1003,6 +1090,7 @@ impl WorldViews {
                         _ => None,
                     },
                     culling_mask: mask(args.get(12)),
+                    volumetric: num(13).unwrap_or(1.0).max(0.0),
                 };
                 self.lights.insert(id, light);
             }
@@ -1135,7 +1223,7 @@ impl WorldViews {
                         Some("hardOnly") => ShadowQuality::HardOnly,
                         _ => ShadowQuality::All,
                     },
-                    soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
+                    soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 3.0) as u32,
                     lod_bias: num(5).unwrap_or(1.0).max(0.01),
                     vsync: num(6).ok().is_some_and(|v| v >= 1.0),
                     anisotropic: match args.get(7).and_then(Value::as_str) {
@@ -1144,6 +1232,17 @@ impl WorldViews {
                         _ => Anisotropic::Enable,
                     },
                     texture_mip_limit: num(8).unwrap_or(0.0).clamp(0.0, 3.0) as u32,
+                    // The level's pipeline settings: light shafts, HDR, additional lights (-1:
+                    // no limit) and their shadows.
+                    pipeline: PipelineAsset {
+                        volumetric_fog: !matches!(args.get(9), Some(Value::Bool(false))),
+                        hdr: !matches!(args.get(10), Some(Value::Bool(false))),
+                        max_additional_lights: num(11)
+                            .ok()
+                            .filter(|n| *n >= 0.0)
+                            .map_or(usize::MAX, |n| n.min(256.0) as usize),
+                        additional_light_shadows: !matches!(args.get(12), Some(Value::Bool(false))),
+                    },
                 };
             }
             // `shadowSettings 0 distance resolution cascades` (Unity's quality settings).
@@ -1163,8 +1262,40 @@ impl WorldViews {
                 self.texture_sizes.insert(id, size);
                 self.render_texture_uploads.push((id, size));
             }
-            // `post 0 postExposure(stops) tonemapping(none|neutral|aces)`.
+            // `post 0 postExposure(stops) tonemapping(none|neutral|aces) auto fixedEV
+            // transition`: `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark,
+            // metering (0 average, 1 centre-weighted, 2 spot), lowPercent, highPercent, hold,
+            // darkAdaptation, darkBelow, curve points, ev0, stops0, ev1, stops1, ...]` or
+            // null; `fixedEV` the manual
+            // exposure (EV100) or null; `transition` seconds auto exposure blends in and out.
             "post" => {
+                let auto = flat(args.get(3)).filter(|v| v.len() >= 5).map(|v| {
+                    let at = |i: usize, d: f32| v.get(i).copied().unwrap_or(d);
+                    let mut curve = [[0.0; 2]; MAX_CURVE_POINTS];
+                    let points = (at(11, 0.0).max(0.0) as usize).min(MAX_CURVE_POINTS);
+                    for (k, p) in curve.iter_mut().take(points).enumerate() {
+                        *p = [at(12 + 2 * k, 0.0), at(13 + 2 * k, 0.0).clamp(-10.0, 10.0)];
+                    }
+                    AutoExposure {
+                        min_ev: v[0].clamp(-20.0, 30.0),
+                        max_ev: v[1].clamp(-20.0, 30.0),
+                        compensation: v[2].clamp(-10.0, 10.0),
+                        speed_dark_to_light: v[3].clamp(0.0, 100.0),
+                        speed_light_to_dark: v[4].clamp(0.0, 100.0),
+                        metering: match at(5, 1.0) as u32 {
+                            0 => Metering::Average,
+                            2 => Metering::Spot,
+                            _ => Metering::CenterWeighted,
+                        },
+                        low_percent: at(6, 0.0).clamp(0.0, 100.0),
+                        high_percent: at(7, 100.0).clamp(0.0, 100.0),
+                        hold: at(8, 0.0) > 0.5,
+                        dark_adaptation: at(9, 1.0).clamp(0.0, 1.0),
+                        dark_below: at(10, 5.0).clamp(-20.0, 30.0),
+                        curve,
+                        curve_points: points as u8,
+                    }
+                });
                 self.grading = Grading {
                     exposure: 2f32.powf(num(1).unwrap_or(0.0).clamp(-10.0, 10.0)),
                     tonemapping: match args.get(2).and_then(Value::as_str) {
@@ -1172,8 +1303,14 @@ impl WorldViews {
                         Some("aces") => Tonemapping::Aces,
                         _ => Tonemapping::None,
                     },
+                    auto_exposure: auto,
+                    fixed_ev: num(4).ok().map(|v| v.clamp(-20.0, 30.0)),
+                    transition: num(5).unwrap_or(0.0).clamp(0.0, 60.0),
+                    delta_time: self.grading.delta_time,
                 };
             }
+            // `exposureReset cameraId`: that camera's auto exposure jumps to what it sees.
+            "exposureReset" => self.exposure_resets.push(id),
             // `bloom 0 threshold intensity scatter`; `bloom 0 null` turns it off.
             "bloom" => {
                 self.bloom = match args.get(1) {
@@ -1185,12 +1322,83 @@ impl WorldViews {
                     }),
                 };
             }
+            // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end
+            // [heightDensity baseHeight falloff]|null [intensity anisotropy steps distance r g
+            // b]|null cull`; `fog 0 null` clears the air.
+            "fog" => {
+                self.fog = match args.get(1) {
+                    Some(Value::Null) | None => None,
+                    _ => Some(Fog {
+                        mode: match args.get(1).and_then(Value::as_str) {
+                            Some("linear") => FogMode::Linear,
+                            Some("exponential") => FogMode::Exponential,
+                            Some("exponentialSquared") => FogMode::ExponentialSquared,
+                            other => return Err(format!("unknown fog mode {other:?}")),
+                        },
+                        color: nums::<3>(args.get(2)).ok_or("fog needs [r, g, b]")?,
+                        density: num(3)?.max(0.0),
+                        start: num(4)?,
+                        end: num(5)?,
+                        height: nums::<3>(args.get(6)).map(|[density, base_height, falloff]| {
+                            HeightFog {
+                                density: density.max(0.0),
+                                base_height,
+                                falloff: falloff.max(1e-4),
+                            }
+                        }),
+                        volumetric: flat(args.get(7)).filter(|v| v.len() >= 4).map(|v| {
+                            VolumetricFog {
+                                intensity: v[0].max(0.0),
+                                anisotropy: v[1].clamp(-0.95, 0.95),
+                                steps: v[2].clamp(1.0, 16.0) as u32,
+                                distance: v[3].max(0.1),
+                                albedo: match v[4..] {
+                                    [r, g, b, ..] => [r, g, b].map(|c| c.max(0.0)),
+                                    _ => [1.0; 3],
+                                },
+                                sharp_distance: v.get(7).copied().unwrap_or(0.0).max(0.0),
+                                sharp_samples: v.get(8).copied().unwrap_or(32.0).clamp(4.0, 128.0)
+                                    as u32,
+                                detail: v.get(9).copied().unwrap_or(2.0).clamp(0.0, 3.0) as u8,
+                                denoising: match v.get(10).copied().unwrap_or(3.0) as u32 {
+                                    0 => Denoising::None,
+                                    1 => Denoising::Reprojection,
+                                    2 => Denoising::Gaussian,
+                                    _ => Denoising::Both,
+                                },
+                                history_weight: v.get(11).copied().unwrap_or(0.9).clamp(0.0, 0.98),
+                                samples: v.get(12).copied().unwrap_or(1.0).clamp(1.0, 8.0) as u32,
+                                motion_samples: v.get(13).copied().unwrap_or(2.0).clamp(1.0, 8.0)
+                                    as u32,
+                            }
+                        }),
+                        cull: !matches!(args.get(8), Some(Value::Bool(false))),
+                    }),
+                };
+            }
+            // `fogVolume component object [sx sy sz] density [r g b] blendDistance
+            // shape(box|ellipsoid)`
+            "fogVolume" => {
+                let [x, y, z] = nums::<3>(args.get(2)).ok_or("fogVolume needs [x, y, z]")?;
+                self.fog_volumes.insert(
+                    id,
+                    FogBox {
+                        object: id_at(1)?,
+                        size: Vec3::new(x, y, z).abs(),
+                        density: num(3)?.max(0.0),
+                        color: nums::<3>(args.get(4)).ok_or("fogVolume needs [r, g, b]")?,
+                        blend: num(5).unwrap_or(1.0).max(0.0),
+                        ellipsoid: args.get(6).and_then(Value::as_str) == Some("ellipsoid"),
+                    },
+                );
+            }
             // `ambient 0 [r g b]`
             "ambient" => {
                 self.ambient = nums::<3>(args.get(1)).ok_or("ambient needs [r, g, b]")?;
             }
             "remove" => {
                 self.cameras.remove(&id);
+                self.fog_volumes.remove(&id);
                 self.planes.remove(&id);
                 self.renderers.remove(&id);
                 self.skins.remove(&id);
@@ -1215,6 +1423,7 @@ impl WorldViews {
         let renderers = &self.renderers;
         self.skins.retain(|id, _| renderers.contains_key(id));
         self.lights.retain(|_, l| !objects.contains(&l.object));
+        self.fog_volumes.retain(|_, f| !objects.contains(&f.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
         self.strokes.retain(|_, s| !objects.contains(&s.object));
         self.mirrors.retain(|_, m| !objects.contains(&m.0));
@@ -1267,10 +1476,12 @@ impl WorldViews {
         extra: &[(ScriptObject, WorldQuad)],
     ) -> Vec<WorldView> {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
-        // Each `LineRenderer2D`'s points through its object, as world segments.
-        let strokes: Vec<Tagged<Vec<Stroke>>> = self
-            .strokes
-            .values()
+        // Each `LineRenderer2D`'s points through its object, as world segments, and its
+        // fill's triangles.
+        let mut shapes: Vec<&Stroke2d> = self.strokes.values().collect();
+        shapes.sort_by_key(|s| s.order);
+        let strokes: Vec<Tagged<(Vec<Stroke>, Vec<FillVertex>)>> = shapes
+            .into_iter()
             .filter(|s| scene.active(s.object) && s.points.len() >= 2)
             .filter_map(|s| {
                 let m = Mat4::from(world(s.object)?);
@@ -1280,7 +1491,12 @@ impl WorldViews {
                     .map(|&[x, y]| m.transform_point3(Vec3::new(x, y, 0.0)).into())
                     .collect();
                 let n = p.len();
-                let count = if s.closed { n } else { n - 1 };
+                // A zero width draws no outline (a fill on its own).
+                let count = match (s.width > 0.0, s.closed) {
+                    (false, _) => 0,
+                    (true, true) => n,
+                    (true, false) => n - 1,
+                };
                 let segments = (0..count)
                     .map(|i| Stroke {
                         a: p[i],
@@ -1289,7 +1505,16 @@ impl WorldViews {
                         color: s.color,
                     })
                     .collect();
-                Tagged::new(scene, s.object, segments)
+                let fill = s.fill.as_ref().map_or_else(Vec::new, |(color, triangles)| {
+                    triangles
+                        .iter()
+                        .map(|&[x, y]| FillVertex {
+                            position: m.transform_point3(Vec3::new(x, y, 0.0)).into(),
+                            color: *color,
+                        })
+                        .collect()
+                });
+                Tagged::new(scene, s.object, (segments, fill))
             })
             .collect();
         let quads: Vec<Tagged<WorldQuad>> = self
@@ -1478,7 +1703,21 @@ impl WorldViews {
             .filter_map(|l| {
                 let (_, rotation, position) = world(l.object)?.to_scale_rotation_translation();
                 Some(Light {
-                    kind: l.kind,
+                    // A pyramid's width runs along its object's +x.
+                    kind: match l.kind {
+                        LightKind::Pyramid {
+                            inner_degrees,
+                            outer_degrees,
+                            aspect,
+                            ..
+                        } => LightKind::Pyramid {
+                            inner_degrees,
+                            outer_degrees,
+                            aspect,
+                            right: rotation * Vec3::X,
+                        },
+                        kind => kind,
+                    },
                     color: l.color,
                     position,
                     // Lights shine along their object's forward (-z), like Unity's.
@@ -1486,18 +1725,41 @@ impl WorldViews {
                     range: l.range,
                     shadows: l.shadows,
                     culling_mask: l.culling_mask,
+                    volumetric: l.volumetric,
                 })
             })
             .collect();
-        let mut cameras: Vec<&Camera> = self
-            .cameras
+        // Fog volumes in the world: centred on their objects, stretched by their scale.
+        let fog_volumes: Vec<Tagged<FogVolume>> = self
+            .fog_volumes
             .values()
-            .filter(|c| scene.active(c.object))
+            .filter(|f| scene.active(f.object))
+            .filter_map(|f| {
+                let (scale, _, centre) = world(f.object)?.to_scale_rotation_translation();
+                Tagged::new(
+                    scene,
+                    f.object,
+                    FogVolume {
+                        centre,
+                        half_extents: f.size * scale.abs() * 0.5,
+                        density: f.density,
+                        color: f.color,
+                        blend: f.blend,
+                        ellipsoid: f.ellipsoid,
+                    },
+                )
+            })
             .collect();
-        cameras.sort_by(|a, b| a.depth.total_cmp(&b.depth));
+        let mut cameras: Vec<(u32, &Camera)> = self
+            .cameras
+            .iter()
+            .filter(|(_, c)| scene.active(c.object))
+            .map(|(&id, c)| (id, c))
+            .collect();
+        cameras.sort_by(|a, b| a.1.depth.total_cmp(&b.1.depth));
         cameras
             .into_iter()
-            .filter_map(|camera| {
+            .filter_map(|(camera_id, camera)| {
                 // Cameras ignore scale: only where they are and which way they face.
                 let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
                 let forward = rotation * Vec3::NEG_Z;
@@ -1573,6 +1835,18 @@ impl WorldViews {
                     b: b as f64,
                     a: a as f64,
                 };
+                // This camera's shapes, in order, each one's fill and outline together.
+                let (mut shown_strokes, mut shown_fills, mut shown_shapes) =
+                    (Vec::new(), Vec::new(), Vec::new());
+                for t in strokes.iter().filter(|t| shows(t.layer, t.at)) {
+                    let (f, s) = (shown_fills.len() as u32, shown_strokes.len() as u32);
+                    shown_strokes.extend_from_slice(&t.item.0);
+                    shown_fills.extend_from_slice(&t.item.1);
+                    shown_shapes.push(ShapeRun {
+                        fills: f..shown_fills.len() as u32,
+                        strokes: s..shown_strokes.len() as u32,
+                    });
+                }
                 Some(WorldView {
                     meshes: meshes
                         .iter()
@@ -1593,11 +1867,28 @@ impl WorldViews {
                     bones: bones.clone(),
                     grid: camera.grid,
                     lines: camera.lines.clone(),
-                    strokes: strokes
-                        .iter()
-                        .filter(|t| shows(t.layer, t.at))
-                        .flat_map(|t| t.item.iter().copied())
-                        .collect(),
+                    strokes: shown_strokes,
+                    fills: shown_fills,
+                    shapes: shown_shapes,
+                    fog: self.fog.filter(|_| camera.fog),
+                    exposure_key: camera_id,
+                    fog_volumes: if camera.fog {
+                        // The nearest ones the camera's layers show, up to the renderer's limit.
+                        let mut near: Vec<FogVolume> = fog_volumes
+                            .iter()
+                            .filter(|t| shows(t.layer, t.at))
+                            .map(|t| t.item)
+                            .collect();
+                        near.sort_by(|a, b| {
+                            a.centre
+                                .distance_squared(position)
+                                .total_cmp(&b.centre.distance_squared(position))
+                        });
+                        near.truncate(MAX_FOG_VOLUMES);
+                        near
+                    } else {
+                        Vec::new()
+                    },
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
@@ -1641,6 +1932,28 @@ mod tests {
         assert!(views.quality.vsync);
         views.apply("quality", &q(Some(0.0))).unwrap();
         assert!(!views.quality.vsync);
+    }
+
+    // M7-HD-01
+    #[test]
+    fn the_hd_pipeline_reads_lights_in_lux_and_lumens() {
+        let light = |physical: bool, kind: &str, intensity: f64| {
+            let mut views = WorldViews::with_physical_units(physical);
+            let args = [
+                Value::from(1.0),
+                Value::from(2.0),
+                Value::String(kind.into()),
+                Value::Array(vec![Value::from(1.0), Value::from(1.0), Value::from(1.0)]),
+                Value::from(intensity),
+            ];
+            views.apply("light", &args).unwrap();
+            views.lights[&1].color[0]
+        };
+        use std::f32::consts::PI;
+        // As it is outside HD; the sun's lux / pi, a lamp's lumens / 4 pi² in HD.
+        assert_eq!(light(false, "directional", 3.0), 3.0);
+        assert!((light(true, "directional", 100_000.0) - 100_000.0 / PI).abs() < 1.0);
+        assert!((light(true, "point", 800.0) - 800.0 / (4.0 * PI * PI)).abs() < 1e-3);
     }
 
     // M5-AST-01
@@ -1962,6 +2275,111 @@ mod tests {
         assert!(strokes(&views).is_empty());
     }
 
+    // M5-RND-25
+    #[test]
+    fn filled_shapes_send_their_triangles_through_their_object() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        let at = Value::Array(vec![n(10.0), n(0.0), n(-5.0)]);
+        scene
+            .apply("create", &[n(2.0), "square".into(), Value::Null, at])
+            .unwrap();
+        scene.scene.update_world();
+        let mut camera = vec![n(100.0), n(1.0), n(60.0), n(0.1), n(1000.0)];
+        camera.extend([Value::Null, n(0.0), Value::Bool(false), n(5.0)]);
+        views.apply("camera", &camera).unwrap();
+        let square = |width: f64, fill: Value| {
+            vec![
+                n(20.0),
+                n(2.0),
+                n(width),
+                Value::Array(vec![n(1.0); 4]),
+                Value::Bool(true),
+                Value::Array([0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0].map(n).to_vec()),
+                fill,
+                "evenodd".into(),
+            ]
+        };
+        let view = |views: &WorldViews| views.views(&scene, (64, 64), &[]).remove(0);
+        // Filled with no outline: two triangles, moved with the object, in the fill colour.
+        let green = Value::Array(vec![n(0.0), n(1.0), n(0.0), n(1.0)]);
+        views.apply("stroke", &square(0.0, green)).unwrap();
+        let v = view(&views);
+        assert!(v.strokes.is_empty());
+        assert_eq!(v.fills.len(), 6);
+        assert!(v.fills.iter().all(|f| f.color == [0.0, 1.0, 0.0, 1.0]));
+        assert!(v.fills.iter().any(|f| f.position == [11.0, 1.0, -5.0]));
+        // An outline and no fill.
+        views.apply("stroke", &square(0.1, Value::Null)).unwrap();
+        let v = view(&views);
+        assert_eq!((v.strokes.len(), v.fills.len()), (4, 0));
+    }
+
+    // M5-RND-25
+    #[test]
+    fn shapes_draw_by_sorting_order_each_fill_with_its_outline() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene
+            .apply("create", &[n(2.0), "shapes".into(), Value::Null])
+            .unwrap();
+        scene.scene.update_world();
+        let mut camera = vec![n(100.0), n(1.0), n(60.0), n(0.1), n(1000.0)];
+        camera.extend([Value::Null, n(0.0), Value::Bool(false), n(5.0)]);
+        views.apply("camera", &camera).unwrap();
+        // Made first but ordered on top: a filled, outlined triangle; then a plain line.
+        let shape = |id: f64, order: f64, fill: bool, points: &[f64]| {
+            vec![
+                n(id),
+                n(2.0),
+                n(0.1),
+                Value::Array(vec![n(1.0); 4]),
+                Value::Bool(fill),
+                Value::Array(points.iter().map(|&p| n(p)).collect()),
+                if fill {
+                    Value::Array(vec![n(1.0); 4])
+                } else {
+                    Value::Null
+                },
+                "evenodd".into(),
+                n(order),
+            ]
+        };
+        views
+            .apply(
+                "stroke",
+                &shape(20.0, 5.0, true, &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]),
+            )
+            .unwrap();
+        views
+            .apply("stroke", &shape(21.0, 0.0, false, &[0.0, 0.0, 2.0, 2.0]))
+            .unwrap();
+        let v = views.views(&scene, (64, 64), &[]).remove(0);
+        // The line (order 0) first, then the triangle's fill and its three sides.
+        assert_eq!(
+            v.shapes,
+            vec![
+                ShapeRun {
+                    fills: 0..0,
+                    strokes: 0..1
+                },
+                ShapeRun {
+                    fills: 0..3,
+                    strokes: 1..4
+                },
+            ]
+        );
+        assert_eq!(v.strokes[0].b, [2.0, 2.0, 0.0]);
+    }
+
     // M5-LOD-01
     #[test]
     fn lod_groups_show_one_level_by_screen_height() {
@@ -2053,5 +2471,213 @@ mod tests {
         group(&mut views, 1.0);
         assert_eq!(level(&mut scene, &views, -1.5), ["simple"]);
         assert_eq!(level(&mut scene, &views, -300.0), ["simple"]);
+    }
+
+    // M7-FOG-03
+    #[test]
+    fn fog_reaches_cameras_that_show_it() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene.scene.update_world();
+        let camera = |fog: Option<bool>| {
+            let mut args = vec![
+                n(100.0),
+                n(1.0),
+                n(60.0),
+                n(0.1),
+                n(1000.0),
+                Value::Null,
+                n(0.0),
+                Value::Bool(false),
+                n(5.0),
+                Value::Null,
+                "color".into(),
+                Value::Null,
+                Value::Null,
+                Value::Bool(false),
+                "none".into(),
+                Value::Null,
+                Value::Bool(false),
+            ];
+            args.extend(fog.map(Value::Bool));
+            args
+        };
+        let fog = |views: &WorldViews| views.views(&scene, (64, 64), &[])[0].fog;
+        views.apply("camera", &camera(None)).unwrap();
+        assert_eq!(fog(&views), None, "clear air by default");
+        let color = Value::Array(vec![n(0.5), n(0.6), n(0.7)]);
+        views
+            .apply(
+                "fog",
+                &[
+                    n(0.0),
+                    "linear".into(),
+                    color.clone(),
+                    n(0.02),
+                    n(10.0),
+                    n(80.0),
+                ],
+            )
+            .unwrap();
+        // Cameras show it unless they opt out.
+        assert_eq!(
+            fog(&views),
+            Some(Fog {
+                mode: FogMode::Linear,
+                color: [0.5, 0.6, 0.7],
+                density: 0.02,
+                start: 10.0,
+                end: 80.0,
+                height: None,
+                volumetric: None,
+                cull: true,
+            })
+        );
+        // Height fog comes as a seventh argument (M7-FOG-04).
+        let height = Value::Array(vec![n(0.1), n(-2.0), n(0.5)]);
+        views
+            .apply(
+                "fog",
+                &[
+                    n(0.0),
+                    "exponential".into(),
+                    color.clone(),
+                    n(0.0),
+                    n(0.0),
+                    n(0.0),
+                    height,
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            fog(&views).and_then(|f| f.height),
+            Some(HeightFog {
+                density: 0.1,
+                base_height: -2.0,
+                falloff: 0.5,
+            })
+        );
+        // Light shafts come as an eighth, clamped (M7-FOG-05).
+        let shafts = Value::Array(vec![n(2.0), n(1.5), n(200.0), n(40.0)]);
+        views
+            .apply(
+                "fog",
+                &[
+                    n(0.0),
+                    "exponential".into(),
+                    color.clone(),
+                    n(0.01),
+                    n(0.0),
+                    n(0.0),
+                    Value::Null,
+                    shafts,
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            fog(&views).and_then(|f| f.volumetric),
+            Some(VolumetricFog {
+                intensity: 2.0,
+                anisotropy: 0.95,
+                steps: 16,
+                distance: 40.0,
+                albedo: [1.0; 3],
+                sharp_distance: 0.0,
+                sharp_samples: 32,
+                detail: 2,
+                denoising: Denoising::Both,
+                history_weight: 0.9,
+                samples: 1,
+                motion_samples: 2,
+            })
+        );
+        views.apply("camera", &camera(Some(false))).unwrap();
+        assert_eq!(fog(&views), None);
+        views.apply("camera", &camera(Some(true))).unwrap();
+        assert!(fog(&views).is_some());
+        let bad = views.apply(
+            "fog",
+            &[n(0.0), "thick".into(), color, n(0.0), n(0.0), n(0.0)],
+        );
+        assert!(bad.is_err());
+        views.apply("fog", &[n(0.0), Value::Null]).unwrap();
+        assert_eq!(fog(&views), None);
+    }
+
+    // M7-FOG-06
+    #[test]
+    fn fog_volumes_follow_their_object_and_scale() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene
+            .apply("create", &[n(2.0), "mist".into(), Value::Null])
+            .unwrap();
+        // At (3, 1, -4), twice as wide.
+        let local = [2.0, 3.0, 1.0, -4.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0, 1.0];
+        scene
+            .apply("locals", &[Value::Array(local.map(n).to_vec())])
+            .unwrap();
+        scene.scene.update_world();
+        let camera = |fog: bool| {
+            vec![
+                n(100.0),
+                n(1.0),
+                n(60.0),
+                n(0.1),
+                n(1000.0),
+                Value::Null,
+                n(0.0),
+                Value::Bool(false),
+                n(5.0),
+                Value::Null,
+                "color".into(),
+                Value::Null,
+                Value::Null,
+                Value::Bool(false),
+                "none".into(),
+                Value::Null,
+                Value::Bool(false),
+                Value::Bool(fog),
+            ]
+        };
+        let volumes =
+            |views: &WorldViews| views.views(&scene, (64, 64), &[])[0].fog_volumes.clone();
+        views.apply("camera", &camera(true)).unwrap();
+        views
+            .apply(
+                "fogVolume",
+                &[
+                    n(20.0),
+                    n(2.0),
+                    Value::Array(vec![n(4.0), n(2.0), n(6.0)]),
+                    n(0.8),
+                    Value::Array(vec![n(0.7), n(0.7), n(0.8)]),
+                    n(0.5),
+                ],
+            )
+            .unwrap();
+        let v = volumes(&views);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].centre, Vec3::new(3.0, 1.0, -4.0));
+        assert_eq!(
+            (v[0].density, v[0].color, v[0].blend),
+            (0.8, [0.7, 0.7, 0.8], 0.5)
+        );
+        // Half the size, stretched by the object's scale.
+        assert_eq!(v[0].half_extents, Vec3::new(4.0, 1.0, 3.0));
+        // Cameras that hide fog hide these too; `remove` drops them.
+        views.apply("camera", &camera(false)).unwrap();
+        assert!(volumes(&views).is_empty());
+        views.apply("camera", &camera(true)).unwrap();
+        views.apply("remove", &[n(20.0)]).unwrap();
+        assert!(volumes(&views).is_empty());
     }
 }

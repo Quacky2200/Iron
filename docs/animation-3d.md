@@ -34,7 +34,7 @@ skinned meshes, turns bone objects into matrices for the GPU.
 Players do not write objects directly. Each frame a `Pose` collects every clip's contribution with its
 weight: transform channels are weighted sums, and rotations are sign-aligned (the short way round) and
 normalized. `apply()` then writes each object once: all of its transform channels go out in one
-`Transform._setLocal`, which sends a single `scene.local` op. Other properties are set on their
+`Transform._setLocal`, which queues one transform; the batch goes out as a `scene.locals` op. Other properties are set on their
 components, so setters run as usual.
 
 ## `Animation` (legacy player)

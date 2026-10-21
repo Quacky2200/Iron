@@ -16,12 +16,15 @@ pub use surface::WindowSurface;
 pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, needs_backdrop};
 pub use wgpu;
 pub use world::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, CookedTexture, DEFAULT_PARTICLE_TEXTURE, GizmoLine,
-    Grading, Light, LightKind, MISSING_TEXTURE, MaterialMaps, MeshData, MeshGlow, MeshInstance,
-    Mirror, PRIMITIVE_BASE, PRIMITIVES, Projection, RENDER_TEXTURE_FORMAT, ReflectionProbe,
-    RenderMode, ShadowQuality, Shadows, Sky, Stroke, TexelFormat, TextureData, TextureFilter,
-    TextureWrap, Tonemapping, WorldCamera, WorldQuad, WorldRenderer, WorldStats, WorldTexture,
-    WorldView, in_mask, mip_chain, primitive, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CookedTexture,
+    DEFAULT_PARTICLE_TEXTURE, Denoising, ExposureReading, FillRule, FillVertex, Fog, FogMode,
+    FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_CURVE_POINTS, MAX_FOG_VOLUMES,
+    MISSING_TEXTURE, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror,
+    PRIMITIVE_BASE, PRIMITIVES, PipelineAsset, Projection, RENDER_TEXTURE_FORMAT, ReflectionProbe,
+    RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TexelFormat, TextureData,
+    TextureFilter, TextureWrap, Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldRenderer,
+    WorldStats, WorldTexture, WorldView, in_mask, mip_chain, primitive, primitive_id,
+    tessellate_fill, viewport_size,
 };
 
 /// A linear RGBA colour.
