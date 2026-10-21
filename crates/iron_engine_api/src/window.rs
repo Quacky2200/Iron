@@ -220,6 +220,10 @@ struct WindowListeners {
     scale: Listeners<(f64,)>,
     message: Listeners<(HandleArg<WindowRef>, String)>,
     request: Listeners<(HandleArg<WindowRef>, String, f64)>,
+    /// Named events (`on`) and answers (`answer`) by name: a separate namespace from the raw
+    /// messages above; they get the payload text ("" without one).
+    event: BTreeMap<String, Listeners<(HandleArg<WindowRef>, String)>>,
+    answer: BTreeMap<String, Listeners<(HandleArg<WindowRef>, String, f64)>>,
 }
 
 /// One message in a domain's queue: a message (`request` 0, `reply_to` 0), a request (`request`
@@ -273,7 +277,23 @@ impl WindowListeners {
             || self.scale.remove(token)
             || self.message.remove(token)
             || self.request.remove(token)
+            || self.event.values_mut().any(|l| l.remove(token))
+            || self.answer.values_mut().any(|l| l.remove(token))
     }
+}
+
+/// The name and payload text of a named-event envelope `{"$e":<name>}` / `{"$e":<name>,"d":<payload>}`
+/// (the payload is "" when there is none); None for every other text, which is a raw message.
+pub fn parse_event(text: &str) -> Option<(String, &str)> {
+    let rest = text.strip_prefix("{\"$e\":")?;
+    let mut it = serde_json::Deserializer::from_str(rest).into_iter::<String>();
+    let name = it.next()?.ok()?;
+    let rest = &rest[it.byte_offset()..];
+    if rest == "}" {
+        return Some((name, ""));
+    }
+    let body = rest.strip_prefix(",\"d\":")?.strip_suffix('}')?;
+    Some((name, body))
 }
 
 struct State {
@@ -868,6 +888,11 @@ pub fn deliver(d: DomainId, now_ms: f64) {
 
 /// One message or request to its target window's listeners, then the domain's.
 fn deliver_one(d: DomainId, m: Message) {
+    // Named events are their own layer: only `on` / `answer` listeners of the name see them.
+    if let Some((name, body)) = parse_event(&m.text) {
+        deliver_event(&m, &name, body);
+        return;
+    }
     let (open, win_msg, dom_msg, win_req, dom_req) = with(|s| {
         let open = s.windows.get(&m.to).is_some_and(|st| st.open);
         let wl = s.listeners.get(&m.to);
@@ -898,6 +923,44 @@ fn deliver_one(d: DomainId, m: Message) {
     }
     for cb in win_req.iter().chain(&dom_req) {
         cb.call((HandleArg(m.from), m.text.clone(), m.request as f64));
+        if with(|s| s.pending.get(&m.request).is_none_or(|p| p.replied)) {
+            break;
+        }
+    }
+}
+
+/// A named event to the `on` listeners of its name, or a named request to the `answer` listeners;
+/// without any, a request fails at once with `no answer for "<name>"`.
+fn deliver_event(m: &Message, name: &str, body: &str) {
+    let (open, evs, answers) = with(|s| {
+        let open = s.windows.get(&m.to).is_some_and(|st| st.open);
+        let wl = s.listeners.get(&m.to);
+        (
+            open,
+            wl.and_then(|l| l.event.get(name))
+                .map(|l| l.snapshot())
+                .unwrap_or_default(),
+            wl.and_then(|l| l.answer.get(name))
+                .map(|l| l.snapshot())
+                .unwrap_or_default(),
+        )
+    });
+    if !open {
+        return;
+    }
+    let _c = enter_current(m.to);
+    if m.request == 0 {
+        for cb in &evs {
+            cb.call((HandleArg(m.from), body.to_string()));
+        }
+        return;
+    }
+    if answers.is_empty() {
+        reject(m.request, &format!("no answer for \"{name}\""));
+        return;
+    }
+    for cb in &answers {
+        cb.call((HandleArg(m.from), body.to_string(), m.request as f64));
         if with(|s| s.pending.get(&m.request).is_none_or(|p| p.replied)) {
             break;
         }
@@ -1348,8 +1411,8 @@ pub const QUICKJS_PRELUDE: &str = r#"
   def(W, 'broadcast', function (data) { return W.broadcastJson(toJson(data)); });
 
   // Named events: sugar over the raw messages. The wire form is `{"$e":<name>,"d":<payload>}` (no `d`
-  // without a payload), the same text the compiled code writes; a listener for a name ignores every
-  // other text without parsing it.
+  // without a payload), the same text the compiled code writes. The host routes envelopes to the
+  // `on` / `answer` listeners of their name only (raw listeners never see them).
   const eventHead = (name) => {
     if (typeof name !== 'string' || name === '') {
       throw new TypeError('Window event names must not be empty');
@@ -1360,29 +1423,16 @@ pub const QUICKJS_PRELUDE: &str = r#"
     const head = eventHead(name);
     return payload === undefined ? head + '}' : head + ',"d":' + toJson(payload) + '}';
   };
-  // The payload of event `head` in `text`: null when it is another text, '' without a payload.
-  const eventBody = (text, head) => {
-    if (!text.startsWith(head)) return null;
-    const rest = text.slice(head.length);
-    if (rest === '}') return '';
-    if (rest.startsWith(',"d":') && rest.endsWith('}')) return rest.slice(5, -1);
-    return null;
-  };
   const decode = (body) => (body === '' ? undefined : JSON.parse(body));
   def(W.prototype, 'emit', function (name, payload) { return this.postMessageJson(eventText(name, payload)); });
   def(W, 'emitAll', function (name, payload) { return W.broadcastJson(eventText(name, payload)); });
   def(W.prototype, 'on', function (name, f) {
-    const head = eventHead(name);
-    return this.onMessageJson((from, text) => {
-      const body = eventBody(text, head);
-      if (body !== null) f(decode(body), from);
-    });
+    eventHead(name);
+    return this.onEventJson(name, (from, body) => f(decode(body), from));
   });
   def(W.prototype, 'answer', function (name, f) {
-    const head = eventHead(name);
-    return this.onRequestJson((from, text, id) => {
-      const body = eventBody(text, head);
-      if (body === null) return;
+    eventHead(name);
+    return this.onAnswerJson(name, (from, body, id) => {
       const answer = f(decode(body), from);
       W.replyJson(id, toJson(answer === undefined ? null : answer));
     });
@@ -2158,6 +2208,31 @@ pub mod window_api {
         /// `Window.replyJson(id, text)`.
         pub fn on_request_json(self, f: Callback<(HandleArg<WindowRef>, String, f64)>) -> u32 {
             add_listener(self, f, |l| &mut l.request)
+        }
+
+        /// A named event `win.emit(name, payload)` sent to this window: `(from, payload JSON text or "")`.
+        /// Raw `onMessageJson` listeners never see events, and these never see raw messages.
+        pub fn on_event_json(self, name: &str, f: Callback<(HandleArg<WindowRef>, String)>) -> u32 {
+            if name.is_empty() {
+                return 0;
+            }
+            let name = name.to_string();
+            add_listener(self, f, move |l| l.event.entry(name).or_default())
+        }
+
+        /// A named request `win.ask(name, payload)` sent to this window: `(from, payload JSON text or
+        /// "", request id)`; answer with `Window.replyJson`. A request nobody answers fails at once
+        /// with `no answer for "<name>"`.
+        pub fn on_answer_json(
+            self,
+            name: &str,
+            f: Callback<(HandleArg<WindowRef>, String, f64)>,
+        ) -> u32 {
+            if name.is_empty() {
+                return 0;
+            }
+            let name = name.to_string();
+            add_listener(self, f, move |l| l.answer.entry(name).or_default())
         }
 
         /// Queues JSON text for this window's domain; delivered at the start of that domain's next

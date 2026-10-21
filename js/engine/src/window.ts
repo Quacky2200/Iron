@@ -129,7 +129,8 @@ export interface Window {
    *  ignored. Returns a token for `off`. Compiled code decodes the payload as the handler's parameter type. */
   on<T = unknown>(name: string, f: (payload: T, from: Window) => void): number;
   /** Asks event `name` and resolves with what the window's `answer(name, ..)` handler returned. Rejects like
-   *  `request` (window closed, no request listener, no reply within `timeoutMs`, default 10000). */
+   *  `request` (window closed, no reply within `timeoutMs`, default 10000), or at once with `no answer for "name"`
+   *  when the window has no `answer` for it. Events are a layer apart: raw `onMessage` / `onRequest` never see them. */
   ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;
   /** Answers the asks of event `name` with the handler's return value (JSON). Returns a token for `off`. */
   answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;

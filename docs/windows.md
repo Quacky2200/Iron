@@ -167,14 +167,19 @@ Window.main.emit("edit", { name: thing.name, y: 2 });
 - **Names:** any non-empty string (an empty one throws `Window event names must not be empty`). Events never collide with the
   built-in events (`onClosed`, `onResized`, ...): those stay `onX` methods, a custom name is only ever matched against other
   custom events.
-- **Behaviour is the raw layer's:** the same JSON limits (1 MiB, no handles; `emit` returns `false`, `ask` rejects with
-  `request refused`), asynchronous delivery per domain, the same rejection reasons for `ask` (window closed, no request listener,
-  timeout, default 10000 ms), and `off(token)`. An `ask` for a name the window has no `answer` for is not answered: it times out
-  (`no request listener` only when the domain has no request listener at all). Listeners ignore events of other names and
-  messages that are no events without parsing them.
-- **Wire form:** `{"$e":"name","d":payload}` (no `d` without a payload; compiled code sends `null` to a handler that decodes one).
-  A raw `onMessage` / `onRequest` listener of the same window sees these envelopes too; a sender that writes the same text by
-  hand is understood.
+- **Same transport, separate namespace:** the same JSON limits (1 MiB, no handles; `emit` returns `false`, `ask` rejects with
+  `request refused`), asynchronous delivery per domain, `off(token)`, and the rejection reasons `window closed` and `timed out`
+  (default 10000 ms) for `ask`. But events are a layer of their own: the host routes an envelope only to the `on` / `answer`
+  listeners of its name on the target window. Raw `onMessage` / `onRequest` / `Window.onMessage` / `Window.onRequest` listeners
+  never see events, and `on` / `answer` never see raw messages or `request`s (a `request` to a window that only has `answer`
+  listeners fails with `no request listener`).
+- **Fast fail:** an `ask` for a name the target window has no `answer` for rejects at once, at delivery, with
+  `no answer for "<name>"` (the window has no listener at all, only raw ones, or answers other names). The timeout stays for an
+  `answer` that never replies; a closed window gives `window closed`. An `emit` nobody listens for is dropped silently.
+- **Wire form:** `{"$e":"name","d":payload}` (no `d` without a payload; the `on` / `answer` callbacks get the payload text, `""`
+  without one, and compiled code decodes that as `null` for a handler that wants a value). Any text of exactly this shape is an
+  event, also one posted by hand with `postMessage`; anything else (including a malformed envelope) is a raw message
+  (`window::parse_event`).
 - **When to use the raw layer:** one message type for a whole window (a protocol with its own `kind` field), or a handler that
   must reply later or from a callback: `onRequest` gives you `reply`. `answer` replies once, with the handler's return value
   (`undefined` becomes `null` in QuickJS).

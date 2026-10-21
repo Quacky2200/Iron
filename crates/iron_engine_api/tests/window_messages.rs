@@ -270,3 +270,86 @@ fn requests_get_one_reply_or_time_out_and_broadcast_reaches_other_roots() {
     );
     assert_eq!(window::pending(DomainId(a.0)), 0);
 }
+
+// M9-TS-2866
+#[test]
+fn named_events_are_their_own_layer_and_unanswered_names_fail_at_once() {
+    fresh();
+    let w = make("normal", WindowRef::NONE);
+    let wd = DomainId(w.0);
+    let replies: Log = Rc::default();
+    reply_log(&replies);
+    let raw: Log = Rc::default();
+    w.on_message_json(logger(&raw, "raw"));
+    w.on_request_json(Callback::from_fn(
+        |(_, _, id): (HandleArg<WindowRef>, String, f64)| {
+            WindowRef::reply_json(id, "\"raw\"");
+        },
+    ));
+    let events: Log = Rc::default();
+    w.on_event_json("a", logger(&events, "a"));
+    w.on_event_json("b", logger(&events, "b"));
+    let tok = w.on_answer_json(
+        "q",
+        Callback::from_fn(|(_, body, id): (HandleArg<WindowRef>, String, f64)| {
+            WindowRef::reply_json(id, &format!("[{body}]"));
+        }),
+    );
+    assert_ne!(tok, 0);
+    assert_eq!(w.on_event_json("", logger(&events, "x")), 0, "empty name");
+
+    assert!(w.post_message_json("{\"$e\":\"a\",\"d\":{\"n\":1}}"));
+    assert!(w.post_message_json("{\"$e\":\"b\"}"));
+    assert!(w.post_message_json("{\"$e\":\"zzz\"}"));
+    assert!(w.post_message_json("{\"kind\":1}"));
+    assert!(w.post_message_json("{\"$e\":\"a\" oops"));
+    assert_eq!(w.post_request_json("{\"$e\":\"q\",\"d\":5}", f64::NAN), 1.0);
+    assert_eq!(w.post_request_json("{\"$e\":\"nope\"}", f64::NAN), 2.0);
+    assert_eq!(w.post_request_json("{\"plain\":true}", f64::NAN), 3.0);
+    window::deliver(wd, 0.0);
+    window::deliver(DomainId::MAIN, 1.0);
+    // Events go to their name's listeners; malformed envelopes and plain texts are raw messages.
+    assert_eq!(*events.borrow(), ["a:1:{\"n\":1}", "b:1:"]);
+    assert_eq!(
+        *raw.borrow(),
+        ["raw:1:{\"kind\":1}", "raw:1:{\"$e\":\"a\" oops"]
+    );
+    // An answer for `q`; `nope` fails at once; the plain request reaches the raw listener only.
+    assert_eq!(
+        *replies.borrow(),
+        ["1|[5]|", "2||no answer for \"nope\"", "3|\"raw\"|"]
+    );
+    // off(token) removes an answer: the name then fails like an unknown one.
+    assert!(w.off(f64::from(tok)));
+    replies.borrow_mut().clear();
+    assert_eq!(w.post_request_json("{\"$e\":\"q\"}", f64::NAN), 4.0);
+    window::deliver(wd, 2.0);
+    window::deliver(DomainId::MAIN, 3.0);
+    assert_eq!(*replies.borrow(), ["4||no answer for \"q\""]);
+}
+
+// M9-TS-2867
+#[test]
+fn parse_event_reads_the_envelope_and_nothing_else() {
+    use iron_engine_api::window::parse_event;
+    assert_eq!(parse_event("{\"$e\":\"x\"}"), Some(("x".into(), "")));
+    assert_eq!(
+        parse_event("{\"$e\":\"a\\\"b\",\"d\":{\"k\":[1,2]}}"),
+        Some(("a\"b".into(), "{\"k\":[1,2]}"))
+    );
+    assert_eq!(
+        parse_event("{\"$e\":\"x\",\"d\":null}"),
+        Some(("x".into(), "null"))
+    );
+    for not in [
+        "{\"kind\":1}",
+        "\"x\"",
+        "{\"$e\":1}",
+        "{\"$e\":\"x\"",
+        "{\"$e\":\"x\",\"d\":1",
+        "{\"$e\":\"x\",\"e\":1}",
+        "{\"d\":1,\"$e\":\"x\"}",
+    ] {
+        assert_eq!(parse_event(not), None, "{not}");
+    }
+}

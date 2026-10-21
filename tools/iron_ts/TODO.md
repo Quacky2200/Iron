@@ -226,8 +226,8 @@ screenshot runs, `examples/windows`.
   - [x] Typed replies (`M9-TS-2854`): `request<R>` with a program's interface or alias failed with `unknown type`, because the classes
     written per promise type sit in front of the program and name it; interfaces and aliases are now registered before any class
     is declared (`lower/mod.rs`, step 0).
-  - [x] Named events (`M9-TS-2855..2863`): `win.emit(name, payload?)`, `win.on(name, (payload: T, from) => ..)`, `win.ask<R>(name, payload?, timeoutMs?)`,
-    `win.answer(name, (payload: T, from) => R)` and `Window.emitAll`, over the raw messages with the envelope `{"$e":name,"d":payload}`
+  - [x] Named events (`M9-TS-2855..2867`): `win.emit(name, payload?)`, `win.on(name, (payload: T, from) => ..)`, `win.ask<R>(name, payload?, timeoutMs?)`,
+    `win.answer(name, (payload: T, from) => R)` and `Window.emitAll`, with the envelope `{"$e":name,"d":payload}` as a separate layer from the raw messages (the host routes envelopes to `onEventJson` / `onAnswerJson` listeners of the name; raw listeners never see them; an unanswered `ask` fails at once with `no answer for "name"`)
     (`facade.ts` chunk, `ASK_TEMPLATE` in `facade.rs`; a call without payload or a handler without parameters uses the `..0` facade
     variants with a dummy type argument). QuickJS: `QUICKJS_PRELUDE`. Open idea: a shared event-type map so one name fixes the payload type
     at both ends; `answer` handlers cannot return a promise yet.

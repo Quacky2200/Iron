@@ -286,22 +286,16 @@ fn quickjs_emit_reaches_on_by_name_and_off_removes_it() {
         assert_eq!(ok, "true,true,true,true");
         window::deliver(d, 0.0);
         let log: String = js(ctx, "log.join('|')");
-        // The raw listener sees the envelope of each event; unknown names and raw messages are ignored.
-        assert_eq!(
-            log,
-            "stats 3 a+b from 1|raw {\"$e\":\"stats\",\"d\":{\"n\":3,\"tags\":[\"a\",\"b\"]}}|\
-             ping undefined|raw {\"$e\":\"ping\"}|raw {\"$e\":\"other\",\"d\":1}|raw {\"kind\":5}"
-        );
+        // The raw listener sees the raw message only; events, even of unknown names, are not its
+        // business (M9-TS-2865).
+        assert_eq!(log, "stats 3 a+b from 1|ping undefined|raw {\"kind\":5}");
         let _: () = js(
             ctx,
             "log.length = 0; iso.off(tok); iso.emit('stats', { n: 1, tags: [] }); iso.emit('ping', null);",
         );
         window::deliver(d, 1.0);
         let log: String = js(ctx, "log.join('|')");
-        assert_eq!(
-            log,
-            "raw {\"$e\":\"stats\",\"d\":{\"n\":1,\"tags\":[]}}|ping null|raw {\"$e\":\"ping\",\"d\":null}"
-        );
+        assert_eq!(log, "ping null");
         // Across the domain boundary: the isolated window emits to the main window's listener.
         let _: () = js(
             ctx,
@@ -344,11 +338,11 @@ fn quickjs_ask_resolves_with_the_named_answer() {
         window::deliver(window::DomainId::MAIN, 10.0);
         run_jobs(ctx);
         let out: String = js(ctx, "out.join('|')");
-        assert_eq!(out, "stats 3 1|count 3|void null|mute no request listener");
-        window::deliver(window::DomainId::MAIN, 51.0);
-        run_jobs(ctx);
-        let out: String = js(ctx, "out.join('|')");
-        assert!(out.ends_with("|nobody timed out"), "{out}");
+        // Names nobody answers fail at delivery, not after the timeout (M9-TS-2866).
+        assert_eq!(
+            out,
+            "stats 3 1|count 3|void null|nobody no answer for \"nobody\"|mute no answer for \"stats\""
+        );
     });
 }
 
@@ -392,5 +386,24 @@ fn quickjs_events_reject_empty_names_handles_and_oversize_payloads() {
         run_jobs(ctx);
         let r: String = js(ctx, "globalThis.r");
         assert!(r.starts_with("request refused"), "{r}");
+    });
+}
+
+// M9-TS-2865
+#[test]
+fn quickjs_events_and_raw_messages_are_separate_layers() {
+    with_world(|ctx| {
+        let _: () = js(
+            ctx,
+            "globalThis.log = [];             globalThis.iso = Window.create({ title: 'Inspector' });             iso.onMessage((from, m) => log.push('raw ' + JSON.stringify(m)));             iso.on('hi', (p) => log.push('hi ' + JSON.stringify(p)));             iso.onRequest((from, r, reply) => { log.push('rawreq ' + JSON.stringify(r)); reply('raw'); });             iso.answer('q', () => { log.push('answer q'); return 'named'; });             globalThis.out = [];             iso.emit('hi', 1); iso.postMessage({ '$e': 'hi' }); iso.postMessage('hi');             iso.ask('q').then((r) => out.push('ask ' + r));             iso.request('q').then((r) => out.push('request ' + r));             iso.ask('nope').catch((e) => out.push(e.message));",
+        );
+        window::deliver(window::DomainId(2), 0.0);
+        window::deliver(window::DomainId::MAIN, 1.0);
+        run_jobs(ctx);
+        let log: String = js(ctx, "log.join('|')");
+        // A raw post that merely looks like an envelope is one (documented); `'hi'` is not.
+        assert_eq!(log, "hi 1|hi undefined|raw \"hi\"|answer q|rawreq \"q\"");
+        let out: String = js(ctx, "out.join('|')");
+        assert_eq!(out, "ask named|request raw|no answer for \"nope\"");
     });
 }

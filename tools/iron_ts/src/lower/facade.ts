@@ -526,20 +526,12 @@ function __xt_Window_broadcast<T>(data: T): number {
 
 //# when .emit(|.emit<|.on(|.on<|.ask(|.ask<|.answer(|.answer<|emitAll
 // Named events: sugar over the raw messages. The wire form is `{"$e":<name>,"d":<payload>}` (no `d`
-// without a payload); a listener for a name ignores every other text without parsing it.
+// without a payload). The host delivers envelopes only to the `on` / `answer` listeners of their name;
+// raw `onMessage` / `onRequest` listeners never see them.
 function __win_event_text(name: string, payload: string | null): string {
   if (name === "") throw new Error("Window event names must not be empty");
   const head = '{"$e":' + JSON.stringify(name);
   return payload === null ? head + "}" : head + ',"d":' + payload + "}";
-}
-/** The payload text when `text` is the event `name` ("null" for an event sent without one), else null. */
-function __win_event_payload(text: string, name: string): string | null {
-  const head = '{"$e":' + JSON.stringify(name);
-  if (!text.startsWith(head)) return null;
-  const rest = text.substring(head.length);
-  if (rest === "}") return "null";
-  if (rest.startsWith(',"d":') && rest.endsWith("}")) return rest.substring(5, rest.length - 1);
-  return null;
 }
 function __xm_Window_emit<T>(self: Window, name: string, payload: T): boolean {
   return self.postMessageJson(__win_event_text(name, JSON.stringify(payload)));
@@ -555,19 +547,15 @@ function __xt_Window_emitAll0<U>(name: string): number {
 }
 function __xm_Window_on<T>(self: Window, name: string, f: (payload: T, from: Window) => void): number {
   if (name === "") throw new Error("Window event names must not be empty");
-  return self.onMessageJson((from: Window, text: string) => {
-    const body = __win_event_payload(text, name);
-    if (body === null) return;
-    const data: T = JSON.parse(body);
+  return self.onEventJson(name, (from: Window, body: string) => {
+    const data: T = JSON.parse(body === "" ? "null" : body);
     f(data, from);
   });
 }
 function __xm_Window_answer<T, R>(self: Window, name: string, f: (payload: T, from: Window) => R): number {
   if (name === "") throw new Error("Window event names must not be empty");
-  return self.onRequestJson((from: Window, text: string, id: number) => {
-    const body = __win_event_payload(text, name);
-    if (body === null) return;
-    const data: T = JSON.parse(body);
+  return self.onAnswerJson(name, (from: Window, body: string, id: number) => {
+    const data: T = JSON.parse(body === "" ? "null" : body);
     const answer: R = f(data, from);
     Window.replyJson(id, JSON.stringify(answer));
   });
@@ -575,15 +563,13 @@ function __xm_Window_answer<T, R>(self: Window, name: string, f: (payload: T, fr
 // A handler without parameters (`win.on("ping", () => ..)`): there is no payload type to decode.
 function __xm_Window_on0<U>(self: Window, name: string, f: () => void): number {
   if (name === "") throw new Error("Window event names must not be empty");
-  return self.onMessageJson((from: Window, text: string) => {
-    if (__win_event_payload(text, name) === null) return;
+  return self.onEventJson(name, (from: Window, body: string) => {
     f();
   });
 }
 function __xm_Window_answer0<R>(self: Window, name: string, f: () => R): number {
   if (name === "") throw new Error("Window event names must not be empty");
-  return self.onRequestJson((from: Window, text: string, id: number) => {
-    if (__win_event_payload(text, name) === null) return;
+  return self.onAnswerJson(name, (from: Window, body: string, id: number) => {
     const answer: R = f();
     Window.replyJson(id, JSON.stringify(answer));
   });

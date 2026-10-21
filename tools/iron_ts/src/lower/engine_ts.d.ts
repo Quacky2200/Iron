@@ -251,7 +251,7 @@ interface Window {
   /** Runs `f(payload, from)` for each event `name` posted to this window, in its domain; other names are ignored.
    *  The handler's parameter type decodes the payload (a handler without parameters takes none). */
   on<T = unknown>(name: string, f: (payload: T, from: Window) => void): number;
-  /** Asks event `name`; resolves with what `answer(name, ..)` returned. Rejects like `request`. */
+  /** Asks event `name`; resolves with what `answer(name, ..)` returned. Rejects like `request`, or at once with `no answer for "name"` when the window has no `answer` for it. */
   ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;
   /** Answers the asks of event `name` with the handler's return value. */
   answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;

@@ -187,6 +187,24 @@ fn capture(w: WindowRef) -> std::rc::Rc<std::cell::RefCell<Vec<String>>> {
     log
 }
 
+/// Captures the named events `names` reach a window's `onEventJson` listeners, as `name:from:payload`.
+fn capture_events(w: WindowRef, names: &[&str]) -> std::rc::Rc<std::cell::RefCell<Vec<String>>> {
+    let log: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+    for name in names {
+        let l = log.clone();
+        let n = name.to_string();
+        w.on_event_json(
+            name,
+            iron_api::Callback::from_fn(
+                move |(from, body): (iron_api::callback::HandleArg<WindowRef>, String)| {
+                    l.borrow_mut().push(format!("{n}:{}:{body}", from.0.0))
+                },
+            ),
+        );
+    }
+    log
+}
+
 fn deliver(w: WindowRef, now: f64) {
     window::deliver(window::DomainId(w.0), now);
 }
@@ -522,6 +540,7 @@ fn emit_reaches_on_by_name_with_the_handlers_declared_type() {
         let h = ts_win_createInspector();
         let w = WindowRef(h as u32);
         let log = capture(w);
+        let wire = capture_events(w, &["ping", "tags"]);
         ts_win_listenEvents(h);
         ts_win_eventLogClear();
         let _ = iron_api::callback::take_errors();
@@ -537,10 +556,10 @@ fn emit_reaches_on_by_name_with_the_handlers_declared_type() {
             "stats 3|a,b|2.5|from 1;ping;tags 3;"
         );
         assert!(iron_api::callback::take_errors().is_empty());
-        // The wire form is the documented envelope; a raw listener sees it.
-        let seen = log.borrow().clone();
-        assert_eq!(seen[1], "1:{\"$e\":\"ping\"}", "no payload, no `d` key");
-        assert_eq!(seen[2], "1:{\"$e\":\"tags\",\"d\":[\"x\",\"y\",\"z\"]}");
+        // The raw listener sees the raw message only, never an event envelope (M9-TS-2864).
+        assert_eq!(*log.borrow(), ["1:{\"kind\":5}"]);
+        // The payload text reaches the event listeners ("" without one).
+        assert_eq!(*wire.borrow(), ["ping:1:", "tags:1:[\"x\",\"y\",\"z\"]"]);
         // off(token) removes just that listener.
         assert!(ts_win_stopStats(h));
         ts_win_eventLogClear();
@@ -575,28 +594,36 @@ fn ask_resolves_with_the_answer_of_the_named_handler() {
 
 // M9-TS-2857
 #[test]
-fn ask_of_a_name_nobody_answers_times_out_and_none_listening_is_reported() {
+fn ask_of_a_name_nobody_answers_fails_at_once() {
     in_every_gc_mode(|| unsafe {
         let h = ts_win_createInspector();
         let w = WindowRef(h as u32);
         ts_win_answerEvents(h);
         ts_win_eventLogClear();
         ts_win_askUnknown(h);
-        deliver(w, 0.0);
-        window::deliver(window::DomainId::MAIN, 49.0);
-        iron_ts_rt::ts_rt_microtasks_run();
-        assert_eq!(text(ts_win_eventLogText()), "");
-        window::deliver(window::DomainId::MAIN, 51.0);
-        iron_ts_rt::ts_rt_microtasks_run();
-        assert_eq!(text(ts_win_eventLogText()), "ask error timed out;");
-        // A window with no request listener at all.
-        let h2 = ts_win_createInspector();
-        ts_win_eventLogClear();
-        ts_win_askUnknown(h2);
-        round(WindowRef(h2 as u32), 100.0);
+        round(w, 0.0);
         assert_eq!(
             text(ts_win_eventLogText()),
-            "ask error no request listener;"
+            "ask error no answer for \"nobody\";",
+            "no waiting for the 50 ms timeout"
+        );
+        // A window with no listener at all, and one with only a raw request listener (M9-TS-2864):
+        // the same error.
+        let h2 = ts_win_createInspector();
+        ts_win_serveQuiet(h2);
+        for target in [h2, ts_win_createInspector()] {
+            ts_win_eventLogClear();
+            ts_win_askUnknown(target);
+            round(WindowRef(target as u32), 100.0);
+            assert_eq!(
+                text(ts_win_eventLogText()),
+                "ask error no answer for \"nobody\";"
+            );
+        }
+        assert_eq!(
+            text(ts_win_requestLog()),
+            "",
+            "the raw listener never saw it"
         );
     });
 }
@@ -632,14 +659,13 @@ fn emit_all_reaches_the_other_family_as_a_named_event() {
     in_every_gc_mode(|| unsafe {
         let h = ts_win_createInspector();
         let w = WindowRef(h as u32);
-        let log = capture(w);
+        let raw = capture(w);
+        let log = capture_events(w, &["hi", "bare"]);
         assert_eq!(ts_win_emitAllHi(), 1.0);
         assert_eq!(ts_win_emitAllBare(), 1.0);
         deliver(w, 0.0);
-        assert_eq!(
-            *log.borrow(),
-            ["1:{\"$e\":\"hi\",\"d\":{\"n\":7}}", "1:{\"$e\":\"bare\"}"]
-        );
+        assert_eq!(*log.borrow(), ["hi:1:{\"n\":7}", "bare:1:"]);
+        assert!(raw.borrow().is_empty(), "raw listeners never see events");
     });
 }
 
