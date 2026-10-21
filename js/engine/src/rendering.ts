@@ -1251,7 +1251,43 @@ let bloom: BloomSettings | null = null;
 export type TonemappingMode = "none" | "neutral" | "aces";
 let tonemapping: TonemappingMode = "none";
 let postExposure = 0;
-const sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping);
+
+/**
+ * Auto exposure (HDRP's Automatic mode): the view is metered, weighted towards its middle,
+ * and the exposure eases towards one that shows its average as mid grey, as eyes adapt. In
+ * a dark tunnel the opening ahead burns white; stepping out into daylight blinds for a
+ * moment, then settles. Pair it with bloom and tonemapping.
+ */
+export interface AutoExposureSettings {
+  /** The darkest average brightness it adapts to, in EV100 (-10): darker stays dark. */
+  minEV?: number;
+  /** The brightest, in EV100 (20): brighter stays bright. */
+  maxEV?: number;
+  /** Stops added after metering (0; positive is brighter). */
+  compensation?: number;
+  /** How fast it adapts when the view gets brighter (3, per second). */
+  speedDarkToLight?: number;
+  /** How fast it adapts when the view gets darker (1, per second): eyes take longer. */
+  speedLightToDark?: number;
+}
+
+let autoExposure: AutoExposureSettings | null = null;
+const sendPost = () =>
+  __iron_op(
+    "render.post",
+    0,
+    postExposure,
+    tonemapping,
+    autoExposure
+      ? [
+          autoExposure.minEV ?? -10,
+          autoExposure.maxEV ?? 20,
+          autoExposure.compensation ?? 0,
+          autoExposure.speedDarkToLight ?? 3,
+          autoExposure.speedLightToDark ?? 1,
+        ]
+      : null,
+  );
 
 /**
  * A procedural sky (Unity's procedural skybox): gradients from the zenith to the horizon
@@ -1446,6 +1482,14 @@ export const RenderSettings = {
   },
   set postExposure(ev: number) {
     postExposure = ev;
+    sendPost();
+  },
+  /** Adapts the exposure to the view (off: null, the default). See `AutoExposureSettings`. */
+  get autoExposure(): AutoExposureSettings | null {
+    return autoExposure;
+  },
+  set autoExposure(a: AutoExposureSettings | null) {
+    autoExposure = a ? { ...a } : null;
     sendPost();
   },
   /**

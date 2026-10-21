@@ -1,7 +1,8 @@
 //! Post-processing for the world pass: with bloom, exposure or tonemapping on, the world
 //! draws into an HDR texture ([`HDR_FORMAT`]), whose bright parts are blurred down and up
 //! a chain of half-size textures and added back as it's copied to the target, with
-//! exposure and tonemapping applied on the way.
+//! exposure and tonemapping applied on the way. With auto exposure on, a compute pass
+//! first meters the HDR image and eases the exposure towards it, like eyes adapting.
 
 use std::collections::HashMap;
 
@@ -45,12 +46,46 @@ pub enum Tonemapping {
     Aces,
 }
 
+/// Auto exposure (HDRP's Automatic mode): the image is metered, centre-weighted, and the
+/// exposure eases towards one that shows its average as mid grey. So a dark tunnel brightens
+/// until the opening at its end burns white, and stepping out into daylight is blinding
+/// for a moment, then settles.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AutoExposure {
+    /// The darkest and brightest average the exposure follows, in EV100: past them it
+    /// stops adapting (a dark cellar stays dark, the sun doesn't turn everything grey).
+    pub min_ev: f32,
+    pub max_ev: f32,
+    /// Stops added after metering (positive: brighter).
+    pub compensation: f32,
+    /// How fast it adapts (per second, roughly the share of the way covered) when the
+    /// view gets brighter, and when it gets darker. Eyes adapt to light faster.
+    pub speed_dark_to_light: f32,
+    pub speed_light_to_dark: f32,
+}
+
+impl Default for AutoExposure {
+    fn default() -> Self {
+        Self {
+            min_ev: -10.0,
+            max_ev: 20.0,
+            compensation: 0.0,
+            speed_dark_to_light: 3.0,
+            speed_light_to_dark: 1.0,
+        }
+    }
+}
+
 /// Exposure and tonemapping, applied after bloom.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Grading {
     /// Multiplies the light (2 to the post exposure's stops).
     pub exposure: f32,
     pub tonemapping: Tonemapping,
+    /// Adapts the exposure to the image (on top of `exposure`).
+    pub auto_exposure: Option<AutoExposure>,
+    /// Seconds since the last frame, for auto exposure to adapt by.
+    pub delta_time: f32,
 }
 
 impl Default for Grading {
@@ -58,6 +93,8 @@ impl Default for Grading {
         Self {
             exposure: 1.0,
             tonemapping: Tonemapping::None,
+            auto_exposure: None,
+            delta_time: 1.0 / 60.0,
         }
     }
 }
@@ -65,7 +102,9 @@ impl Default for Grading {
 impl Grading {
     /// Changes nothing, so no post pass is needed for it.
     pub fn is_identity(&self) -> bool {
-        self.tonemapping == Tonemapping::None && (self.exposure - 1.0).abs() < 1e-6
+        self.tonemapping == Tonemapping::None
+            && (self.exposure - 1.0).abs() < 1e-6
+            && self.auto_exposure.is_none()
     }
 }
 
@@ -77,7 +116,21 @@ struct Params {
     intensity: f32,
     exposure: f32,
     tonemap: u32,
-    _pad: [u32; 3],
+    auto: u32,
+    delta_time: f32,
+    compensation: f32,
+    min_ev: f32,
+    max_ev: f32,
+    dark_to_light: f32,
+    light_to_dark: f32,
+}
+
+/// The HDR image and blur levels for one target size, and auto exposure's state there.
+struct Targets {
+    hdr: wgpu::TextureView,
+    levels: Vec<wgpu::TextureView>,
+    /// x: the exposure adapted to so far, in stops; y: 1 once set.
+    meter: wgpu::Buffer,
 }
 
 /// The most half-size levels the blur goes down.
@@ -93,11 +146,13 @@ pub(crate) struct BloomPass {
     down: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
     composite: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
+    meter_layout: wgpu::BindGroupLayout,
+    meter: wgpu::ComputePipeline,
     /// Exposure and tonemapping alone, by target format.
     grade: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// The HDR image and the blur levels, by target size (the screen and render
     /// textures).
-    textures: HashMap<(u32, u32), (wgpu::TextureView, Vec<wgpu::TextureView>)>,
+    textures: HashMap<(u32, u32), Targets>,
 }
 
 fn pipeline(
@@ -171,7 +226,66 @@ impl BloomPass {
                     count: None,
                 },
                 texture(3),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
+        });
+        let meter_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("auto exposure"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let meter = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("auto exposure"),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("auto exposure"),
+                    bind_group_layouts: &[Some(&meter_layout)],
+                    immediate_size: 0,
+                }),
+            ),
+            module: &module,
+            entry_point: Some("cs_meter"),
+            compilation_options: Default::default(),
+            cache: None,
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("bloom"),
@@ -206,6 +320,8 @@ impl BloomPass {
             up: pipeline(gpu, &module, &layout, "fs_up", HDR_FORMAT, Some(mix)),
             composite: HashMap::new(),
             grade: HashMap::new(),
+            meter_layout,
+            meter,
             module,
             group_layout,
             layout,
@@ -248,9 +364,22 @@ impl BloomPass {
                 h /= 2;
                 levels.push(make(w, h));
             }
-            self.textures.insert(size, (make(size.0, size.1), levels));
+            let meter = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("auto exposure"),
+                size: 16,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            });
+            self.textures.insert(
+                size,
+                Targets {
+                    hdr: make(size.0, size.1),
+                    levels,
+                    meter,
+                },
+            );
         }
-        self.textures[&size].0.clone()
+        self.textures[&size].hdr.clone()
     }
 
     /// Blurs the HDR image's bright parts (with `settings`) and writes the image plus the
@@ -265,9 +394,10 @@ impl BloomPass {
         grading: Grading,
     ) {
         let (target, format, size) = (out.view, out.format, out.size);
-        let Some((hdr, levels)) = self.textures.get(&size) else {
+        let Some(Targets { hdr, levels, meter }) = self.textures.get(&size) else {
             return;
         };
+        let auto = grading.auto_exposure.unwrap_or_default();
         let bloom = settings.copied().unwrap_or(Bloom {
             intensity: 0.0,
             ..Default::default()
@@ -286,9 +416,40 @@ impl BloomPass {
                     Tonemapping::Neutral => 1,
                     Tonemapping::Aces => 2,
                 },
-                _pad: [0; 3],
+                auto: u32::from(grading.auto_exposure.is_some()),
+                // Capped: a hitch (loading, compiling shaders) mustn't swing it at once.
+                delta_time: grading.delta_time.clamp(0.0, 1.0 / 15.0),
+                compensation: auto.compensation,
+                min_ev: auto.min_ev,
+                max_ev: auto.max_ev.max(auto.min_ev),
+                dark_to_light: auto.speed_dark_to_light.max(0.0),
+                light_to_dark: auto.speed_light_to_dark.max(0.0),
             }),
         );
+        if grading.auto_exposure.is_some() {
+            let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("auto exposure"),
+                layout: &self.meter_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(hdr),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: meter.as_entire_binding(),
+                    },
+                ],
+            });
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&self.meter);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
         let (module, layout) = (&self.module, &self.layout);
         let composite = self
             .composite
@@ -318,6 +479,10 @@ impl BloomPass {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(hdr),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: meter.as_entire_binding(),
                     },
                 ],
             })

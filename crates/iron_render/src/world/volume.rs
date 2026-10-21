@@ -58,6 +58,10 @@ pub struct VolumeCamera {
     pub orthographic: bool,
     /// How far the volume reaches, in metres.
     pub distance: f32,
+    /// Which lights light the fog and which of them have shadows: when that changes (a
+    /// light turned on, shadows arriving on the first frames) last frame's cells are wrong
+    /// everywhere, so they're dropped rather than blended out over a second.
+    pub lights: u64,
 }
 
 /// `VolumeFrame` in world.wgsl.
@@ -305,8 +309,8 @@ impl VolumePass {
         let [jx, jy, jz] = jitter(s.frames);
         // Without last frame's cells, this frame's stand alone.
         let (prev, blend) = match s.last {
-            Some(last) => (last, BLEND),
-            None => (camera, 1.0),
+            Some(last) if last.lights == camera.lights => (last, BLEND),
+            _ => (camera, 1.0),
         };
         let p = prev.position;
         let f = prev.forward;

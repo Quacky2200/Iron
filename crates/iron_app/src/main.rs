@@ -737,6 +737,8 @@ impl App {
             });
         self.apply_script_output();
         let dt = self.components.frame_dt() as f32;
+        // Auto exposure adapts by the frame's time.
+        self.world_view.grading.delta_time = dt;
         let changed = self.world_view.update_particles(dt, &self.scene);
         // `__iron_particles([id, count, alive, ...])` for systems that changed.
         if !changed.is_empty()

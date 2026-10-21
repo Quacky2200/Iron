@@ -10,12 +10,12 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog, FogMode,
-    FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_FOG_VOLUMES, MaterialMaps,
-    MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode,
-    ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap,
-    Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id,
-    viewport_size,
+    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog,
+    FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_FOG_VOLUMES,
+    MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe,
+    RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData, TextureFilter,
+    TextureWrap, Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldTexture, WorldView,
+    primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -1169,8 +1169,18 @@ impl WorldViews {
                 self.texture_sizes.insert(id, size);
                 self.render_texture_uploads.push((id, size));
             }
-            // `post 0 postExposure(stops) tonemapping(none|neutral|aces)`.
+            // `post 0 postExposure(stops) tonemapping(none|neutral|aces) auto`, where `auto`
+            // is `[minEV, maxEV, compensation, darkToLight, lightToDark]` or null.
             "post" => {
+                let auto = flat(args.get(3))
+                    .filter(|v| v.len() >= 5)
+                    .map(|v| AutoExposure {
+                        min_ev: v[0].clamp(-20.0, 30.0),
+                        max_ev: v[1].clamp(-20.0, 30.0),
+                        compensation: v[2].clamp(-10.0, 10.0),
+                        speed_dark_to_light: v[3].clamp(0.0, 100.0),
+                        speed_light_to_dark: v[4].clamp(0.0, 100.0),
+                    });
                 self.grading = Grading {
                     exposure: 2f32.powf(num(1).unwrap_or(0.0).clamp(-10.0, 10.0)),
                     tonemapping: match args.get(2).and_then(Value::as_str) {
@@ -1178,6 +1188,8 @@ impl WorldViews {
                         Some("aces") => Tonemapping::Aces,
                         _ => Tonemapping::None,
                     },
+                    auto_exposure: auto,
+                    delta_time: self.grading.delta_time,
                 };
             }
             // `bloom 0 threshold intensity scatter`; `bloom 0 null` turns it off.

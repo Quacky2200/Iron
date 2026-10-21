@@ -130,7 +130,11 @@ describe("meshes and lights", () => {
     // Exposure and tonemapping (M5-RND-18).
     RenderSettings.tonemapping = "aces";
     RenderSettings.postExposure = 1.5;
-    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces"]);
+    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces", null]);
+    // Auto exposure (M7-EXP-01).
+    RenderSettings.autoExposure = { minEV: -2, speedLightToDark: 0.5 };
+    expect(renderOps().at(-1)).toEqual(["render.post", 0, 1.5, "aces", [-2, 20, 0, 3, 0.5]]);
+    RenderSettings.autoExposure = null;
     RenderSettings.skybox = { zenith: new Color(0, 0, 1, 1), sunDirection: null };
     expect(renderOps().at(-1)).toEqual(["render.sky", 0, [0, 0, 1], [0.62, 0.72, 0.82], [0.22, 0.2, 0.18], null, [20, 18, 15], 1.5, 1, true]);
     RenderSettings.ambientMode = "color";

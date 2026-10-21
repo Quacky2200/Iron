@@ -1890,6 +1890,7 @@ fn tonemapping_exposure_and_fxaa() {
             Grading {
                 exposure: 1.0,
                 tonemapping: Tonemapping::Neutral,
+                ..Default::default()
             },
             false,
         ),
@@ -1897,6 +1898,7 @@ fn tonemapping_exposure_and_fxaa() {
             Grading {
                 exposure: 0.5,
                 tonemapping: Tonemapping::Aces,
+                ..Default::default()
             },
             false,
         ),
@@ -1904,6 +1906,7 @@ fn tonemapping_exposure_and_fxaa() {
             Grading {
                 exposure: 0.5,
                 tonemapping: Tonemapping::Aces,
+                ..Default::default()
             },
             true,
         ),
@@ -3323,6 +3326,66 @@ fn the_light_volume_follows_a_turning_sun_without_trailing_its_old_beams() {
     assert!(
         lag < behind * 0.5,
         "moving sun differs by {lag} a channel, a sun 2.5 degrees back by {behind}"
+    );
+}
+
+// M7-EXP-01
+#[test]
+fn auto_exposure_adapts_dim_and_bright_views_to_the_same_grey_and_takes_time_to() {
+    use iron_render::{AutoExposure, Grading, WorldView};
+    let gpu = shared_gpu();
+    let size = (64, 48);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // An empty view of one flat brightness.
+    let lit = |level: f64| {
+        let camera = WorldCamera::perspective(
+            Mat4::IDENTITY,
+            60.0,
+            0.1,
+            10.0,
+            size,
+            Color::rgb(level, level, level),
+        );
+        WorldView::new(camera, [0.0, 0.0, 1.0, 1.0])
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    world.grading = Grading {
+        auto_exposure: Some(AutoExposure::default()),
+        delta_time: 1.0 / 60.0,
+        ..Default::default()
+    };
+    let mut middle = |level: f64, frames: usize| {
+        for _ in 0..frames {
+            world.render_views(&gpu, &rt, &[lit(level)], &[]);
+        }
+        let pixels = target.read_pixels(&gpu).unwrap();
+        pixels[((size.1 / 2 * size.0 + size.0 / 2) * 4) as usize] as i32
+    };
+    // Settled, a dim view and one twenty times brighter look alike.
+    let dim = middle(0.05, 300);
+    let first = middle(1.0, 1);
+    let later = middle(1.0, 20);
+    let bright = middle(1.0, 300);
+    assert!(
+        (dim - bright).abs() <= 4,
+        "settled: dim {dim}, bright {bright}"
+    );
+    // Stepping into the light dazzles, then eases off.
+    assert!(
+        first > bright + 60,
+        "dazzled {first} against settled {bright}"
+    );
+    assert!(
+        later < first && later > bright,
+        "{first} then {later} then {bright}"
     );
 }
 

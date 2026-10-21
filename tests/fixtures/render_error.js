@@ -11237,7 +11237,14 @@ ${err.stack}` : ""}`);
   var bloom = null;
   var tonemapping = "none";
   var postExposure = 0;
-  var sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping);
+  var autoExposure = null;
+  var sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping, autoExposure ? [
+    autoExposure.minEV ?? -10,
+    autoExposure.maxEV ?? 20,
+    autoExposure.compensation ?? 0,
+    autoExposure.speedDarkToLight ?? 3,
+    autoExposure.speedLightToDark ?? 1
+  ] : null);
   var fog = false;
   var fogMode = "exponentialSquared";
   var fogColor = new Color(0.5, 0.5, 0.5);
@@ -11325,6 +11332,13 @@ ${err.stack}` : ""}`);
     },
     set postExposure(ev) {
       postExposure = ev;
+      sendPost();
+    },
+    get autoExposure() {
+      return autoExposure;
+    },
+    set autoExposure(a) {
+      autoExposure = a ? { ...a } : null;
       sendPost();
     },
     get fog() {

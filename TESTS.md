@@ -498,6 +498,7 @@ layout pass):
 | M7-FOG-10 | Golden + JS unit | God rays (`VolumetricFog.sharp_distance`, `sharp_sun`): under a grate of thin bars, with the sun's shafts worked out per pixel near the camera the air ripples with thin beams the volume alone smooths away (the row's total variation at least 10% more); `volumetricFog.sharpDistance` / `sharpSamples` ride on `render.fog`. |
 | M7-FOG-11 | Integration + JS unit | Temporal light volume (`cs_volume_light`, `volume::SIZES`): each cell takes one jittered sample a frame blended with its reprojected history, so under a grate of thin bars a row through the averaged volume ripples less than a single frame's (no stair steps); `volumetricFog.resolution` (low, medium, high, ultra) rides on `render.fog` (index 9). |
 | M7-FOG-12 | Integration | The light volume follows a turning sun (0.25 degrees a frame, a fast day) without trailing its old beams: after 60 frames of turning it differs from the same sun held still by less than half as much as a sun 2.5 degrees (10 frames) back would. |
+| M7-EXP-01 | Integration + JS unit | Auto exposure (`AutoExposure`, `cs_meter` in bloom.wgsl): a dim view and one twenty times brighter settle to the same grey; switching from dim to bright dazzles on the first frame, then eases off over the next; `RenderSettings.autoExposure` rides on `render.post` (index 3). |
 
 ---
 

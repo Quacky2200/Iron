@@ -27,7 +27,7 @@ use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
-pub use bloom::{Bloom, Grading, Tonemapping};
+pub use bloom::{AutoExposure, Bloom, Grading, Tonemapping};
 pub use environment::Sky;
 pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
@@ -3515,6 +3515,14 @@ impl WorldRenderer {
                         forward: view.camera.forward,
                         orthographic: view.camera.orthographic,
                         distance: v.distance.max(1e-3),
+                        lights: view
+                            .lights
+                            .iter()
+                            .filter(|l| l.kind == LightKind::Directional && l.volumetric > 0.0)
+                            .fold(u64::from(self.shadow_plan.cascades), |k, l| {
+                                k.wrapping_mul(4)
+                                    .wrapping_add(1 + u64::from(l.shadows.is_some()))
+                            }),
                     };
                     self.volume.encode(
                         gpu,
