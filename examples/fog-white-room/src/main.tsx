@@ -2,7 +2,8 @@
 // bright white floor of grid tiles under a grey, cloudy sky, everything fading into white
 // fog a few tiles away. The floor moves with the player like a treadmill, so the room never
 // ends: no walls to reach, no edge to fall off. Tiles light up under footsteps and here and
-// there on their own; pale fragments drift up out of the floor.
+// there on their own; pale fragments drift up out of the floor; a low ceiling of grey cloud
+// drifts overhead.
 // The figure is Quaternius's mannequin (CC0, see assets/CREDITS.md), driven by an Animator:
 // idle, walk, jog and sprint blended by speed, and jumps and rolls.
 // Keys: WASD or arrows to move, Shift to sprint, Alt to walk, Space to jump, C to roll; hold a
@@ -37,8 +38,25 @@ import { useState } from "react";
 
 /** A floor tile's size, metres. */
 const TILE = 1.5;
-/** The floor's width (a whole, even number of tiles): it follows the player, snapped to tiles. */
-const FLOOR = 60 * TILE;
+/** Tiles across the floor texture's block (each tile its own shade). */
+const BLOCK_TILES = 8;
+const BLOCK = BLOCK_TILES * TILE;
+/** The floor's width (whole blocks): it follows the player, snapped to blocks. */
+const FLOOR = 8 * BLOCK;
+/** The cloud layers: height, how wide one repeat of the texture is, and drift (m/s). */
+const CLOUDS = [
+  { y: 9, repeat: 36, drift: new Vector3(0.6, 0, 0.25), grey: 0.62, alpha: 0.85 },
+  { y: 12.5, repeat: 54, drift: new Vector3(0.35, 0, 0.15), grey: 0.72, alpha: 0.7 },
+];
+/**
+ * The village on the horizon: built at full size (metres) about `VILLAGE_R` away, then shrunk
+ * into the fog's fading band, where it stays as the player walks (a
+ * backdrop, never reached). Shrunk, it looks just as it would far off, but the fog leaves it
+ * a faded grey silhouette instead of hiding it.
+ */
+const VILLAGE_R = 230;
+/** The cloud planes' width: past it, the fog has covered them. */
+const CLOUD_SPAN = 160;
 /** How far the player gets from the origin before everything shifts back (floats stay precise). */
 const RECENTRE = 240;
 const WHITE = new Color(0.93, 0.94, 0.96, 1);
@@ -52,7 +70,7 @@ const FOGS = [
   { name: "Medium", start: 10, end: 45 },
   { name: "Far", start: 14, end: 75 },
 ];
-const state = { fog: 0, heightFog: true, tiles: true };
+const state = { fog: 0, heightFog: true, tiles: true, village: true };
 let refreshHud = () => {};
 
 function apply(): void {
@@ -67,26 +85,70 @@ function apply(): void {
   refreshHud();
 }
 
-/** The floor: white tiles, grey grid lines; the lines glow faintly (the emission map). */
+/**
+ * The floor: a block of BLOCK_TILES x BLOCK_TILES white tiles, each its own shade, with grey
+ * grid lines and a bevel round each (the Animus floor's raised panels). The lines glow faintly
+ * (the emission map).
+ */
 function floorTextures(): { pane: Texture; glow: Texture } {
-  const N = 64;
+  const N = 48;
+  const M = N * BLOCK_TILES;
+  const shade = Array.from({ length: BLOCK_TILES * BLOCK_TILES }, () => 0.86 + 0.12 * Random.value);
   const pane: Color[] = [];
   const glow: Color[] = [];
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
-      const edge = Math.min(x, y, N - 1 - x, N - 1 - y);
-      const line = edge < 1 ? 1 : edge < 2 ? 0.5 : 0;
-      // A faint bevel inside each tile, as the Animus floor's raised panels.
-      const bevel = edge < 4 ? 0.97 : 1;
-      const v = (0.96 - 0.2 * line) * bevel;
-      pane.push(new Color(v, v, v * 1.01, 1));
+  for (let y = 0; y < M; y++) {
+    for (let x = 0; x < M; x++) {
+      const tx = x % N;
+      const ty = y % N;
+      const edge = Math.min(tx, ty, N - 1 - tx, N - 1 - ty);
+      const line = edge < 1 ? 1 : edge < 2 ? 0.45 : 0;
+      // Lit from above: the bevel's top and left edges a little lighter, bottom and right darker.
+      const bevel = edge >= 2 && edge < 5 ? (tx < 5 || ty < 5 ? 1.03 : 0.9) : 1;
+      const v = shade[Math.floor(y / N) * BLOCK_TILES + Math.floor(x / N)]! * bevel * (1 - 0.42 * line);
+      pane.push(new Color(v, v, v * 1.015, 1));
       glow.push(new Color(0.75 * line, 0.82 * line, 1 * line, 1));
     }
   }
   return {
-    pane: Texture.create(N, N, pane, { anisoLevel: 16 }),
-    glow: Texture.create(N, N, glow, { anisoLevel: 16 }),
+    pane: Texture.create(M, M, pane, { anisoLevel: 16 }),
+    glow: Texture.create(M, M, glow, { anisoLevel: 16 }),
   };
+}
+
+/**
+ * Soft grey clouds that tile: a few octaves of smooth value noise on a wrapping grid, its
+ * alpha the cloud's cover (thin at the edges), lighter where it's thick.
+ */
+function cloudTexture(grey: number, alpha: number): Texture {
+  const N = 256;
+  const lattice = (size: number) => Array.from({ length: size * size }, () => Random.value);
+  const octaves = [4, 8, 16, 32].map((size) => ({ size, v: lattice(size) }));
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const px: Color[] = [];
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      let n = 0;
+      let amp = 0.5;
+      for (const o of octaves) {
+        const fx = (x / N) * o.size;
+        const fy = (y / N) * o.size;
+        const x0 = Math.floor(fx);
+        const y0 = Math.floor(fy);
+        const at = (i: number, j: number) => o.v[((j + o.size) % o.size) * o.size + ((i + o.size) % o.size)]!;
+        const u = smooth(fx - x0);
+        const w = smooth(fy - y0);
+        const top = at(x0, y0) * (1 - u) + at(x0 + 1, y0) * u;
+        const bottom = at(x0, y0 + 1) * (1 - u) + at(x0 + 1, y0 + 1) * u;
+        n += amp * (top * (1 - w) + bottom * w);
+        amp /= 2;
+      }
+      // Cover: clear sky between the clouds, soft edges.
+      const c = Math.min(1, Math.max(0, (n - 0.42) / 0.3));
+      const g = grey * (0.85 + 0.25 * c);
+      px.push(new Color(g, g, g * 1.03, c * alpha));
+    }
+  }
+  return Texture.create(N, N, px);
 }
 
 /** A tile lit up: under a footstep, or on its own nearby. */
@@ -118,7 +180,9 @@ function shape(name: string, mesh: "cube" | "sphere", at: Vector3, scale: Vector
   return go;
 }
 
-const snap = (v: number) => Math.round(v / TILE) * TILE;
+/** The middle of the tile `v` is in (tiles run between multiples of TILE). */
+const tileCentre = (v: number) => (Math.floor(v / TILE) + 0.5) * TILE;
+const snapBlock = (v: number) => Math.round(v / BLOCK) * BLOCK;
 
 class WhiteRoom extends Component {
   private camera!: Camera;
@@ -127,6 +191,8 @@ class WhiteRoom extends Component {
   private body: GameObject | null = null;
   private animator: Animator | null = null;
   private floor!: GameObject;
+  private clouds: { go: GameObject; offset: Vector3; repeat: number; drift: Vector3 }[] = [];
+  private village!: GameObject;
   private glows: Glow[] = [];
   private glowMats: Material[] = [];
   private fragments: Fragment[] = [];
@@ -147,6 +213,8 @@ class WhiteRoom extends Component {
     RenderSettings.ambientMode = "color";
     RenderSettings.ambientLight = new Color(0.38, 0.4, 0.44, 1);
     RenderSettings.tonemapping = "neutral";
+    // A touch under: bright, but the whites not quite blown.
+    RenderSettings.postExposure = -0.3;
     RenderSettings.bloom = { threshold: 1.1, intensity: 0.35, scatter: 0.75 };
     RenderSettings.skybox = {
       zenith: new Color(0.7, 0.72, 0.76, 1),
@@ -164,7 +232,7 @@ class WhiteRoom extends Component {
     const floorMat = Material.create({
       color: new Color(0.9, 0.91, 0.93, 1),
       mainTexture: pane,
-      mainTextureScale: { x: FLOOR / TILE, y: FLOOR / TILE },
+      mainTextureScale: { x: FLOOR / BLOCK, y: FLOOR / BLOCK },
       emissionMap: glow,
       emission: new Color(0.22, 0.24, 0.27, 1),
       smoothness: 0.45,
@@ -172,6 +240,25 @@ class WhiteRoom extends Component {
     this.floor = new GameObject("Floor", { position: new Vector3(0, -0.1, 0), scale: new Vector3(FLOOR, 0.2, FLOOR) });
     this.floor.addComponent(MeshRenderer, { mesh: "cube", material: floorMat });
     this.floor.addComponent(BoxCollider);
+
+    // A low ceiling of grey cloud, two layers drifting: clear overhead, fading into the white
+    // towards the horizon as the fog takes them.
+    for (const layer of CLOUDS) {
+      const mat = Material.create({
+        color: Color.white,
+        mainTexture: cloudTexture(layer.grey, layer.alpha),
+        mainTextureScale: { x: CLOUD_SPAN / layer.repeat, y: CLOUD_SPAN / layer.repeat },
+        renderingMode: "fade",
+        unlit: true,
+        doubleSided: true,
+      });
+      const go = new GameObject("Clouds", { position: new Vector3(0, layer.y, 0), scale: new Vector3(CLOUD_SPAN, 0.01, CLOUD_SPAN) });
+      const r = go.addComponent(MeshRenderer, { mesh: "cube", material: mat });
+      r.shadowCastingMode = "off";
+      this.clouds.push({ go, offset: new Vector3(Random.range(0, layer.repeat), 0, Random.range(0, layer.repeat)), repeat: layer.repeat, drift: layer.drift });
+    }
+
+    this.village = buildVillage();
 
     // Lit tiles: a pool of thin panels laid on the floor, faded through brightness levels.
     this.glowMats = Array.from({ length: GLOW_LEVELS }, (_, i) => {
@@ -270,7 +357,7 @@ class WhiteRoom extends Component {
   private light(x: number, z: number, life: number, peak: number) {
     const g = this.glows.find((g) => !g.alive) ?? this.glows.reduce((a, b) => (a.age / a.life > b.age / b.life ? a : b));
     g.alive = true;
-    g.go.transform.position = new Vector3(snap(x), 0.003, snap(z));
+    g.go.transform.position = new Vector3(tileCentre(x), 0.003, tileCentre(z));
     g.age = 0;
     g.life = life;
     g.peak = peak;
@@ -285,6 +372,11 @@ class WhiteRoom extends Component {
       state.heightFog = !state.heightFog;
       apply();
     }
+    if (input.getKeyDown("KeyV")) {
+      state.village = !state.village;
+      this.village.enabled = state.village;
+      refreshHud();
+    }
     if (input.getKeyDown("KeyT")) {
       state.tiles = !state.tiles;
       if (!state.tiles) for (const g of this.glows) g.alive = g.go.enabled = false;
@@ -294,7 +386,9 @@ class WhiteRoom extends Component {
     this.movePlayer(dt);
     this.updateFloor(dt);
     this.updateFragments(dt);
+    this.updateClouds(dt);
     this.placeCamera(dt);
+    this.placeVillage();
     timing.frames++;
     timing.time += dt;
     if (timing.time >= 0.5) {
@@ -367,14 +461,15 @@ class WhiteRoom extends Component {
     }
     // Footsteps light the tile underfoot.
     const p = this.player.transform.position;
-    const tile = `${snap(p.x)},${snap(p.z)}`;
+    const tile = `${tileCentre(p.x)},${tileCentre(p.z)}`;
     if (state.tiles && grounded && tile !== this.lastTile) {
       this.light(p.x, p.z, 1.6, 0.75);
       this.lastTile = tile;
     }
     // Far from the origin: shift everything back by whole tiles, so the grid stays put.
     if (Math.abs(p.x) > RECENTRE || Math.abs(p.z) > RECENTRE) {
-      const shift = new Vector3(-snap(p.x), 0, -snap(p.z));
+      // Whole floor blocks, so the tiles' shades stay where they were.
+      const shift = new Vector3(-snapBlock(p.x), 0, -snapBlock(p.z));
       this.player.transform.position = p.add(shift);
       this.pivot = this.pivot.add(shift);
       for (const f of this.fragments) f.p = f.p.add(shift);
@@ -386,7 +481,7 @@ class WhiteRoom extends Component {
   private updateFloor(dt: number) {
     const p = this.player.transform.position;
     // Moved only when the player crosses into another tile: moving a collider teleports it.
-    const at = new Vector3(snap(p.x), -0.1, snap(p.z));
+    const at = new Vector3(snapBlock(p.x), -0.1, snapBlock(p.z));
     if (!at.equals(this.floor.transform.position)) this.floor.transform.position = at;
     for (const g of this.glows) {
       if (!g.alive) continue;
@@ -411,6 +506,21 @@ class WhiteRoom extends Component {
     }
   }
 
+  /**
+   * The clouds drift; each layer stays over the player, moved back a whole repeat of its
+   * texture when it has drifted that far, so the jump doesn't show.
+   */
+  private updateClouds(dt: number) {
+    const p = this.player.transform.position;
+    for (const c of this.clouds) {
+      c.offset = c.offset.add(c.drift.scale(dt));
+      const wrap = (v: number) => ((v % c.repeat) + c.repeat) % c.repeat;
+      c.offset = new Vector3(wrap(c.offset.x), 0, wrap(c.offset.z));
+      const y = c.go.transform.position.y;
+      c.go.transform.position = new Vector3(Math.round(p.x / c.repeat) * c.repeat + c.offset.x, y, Math.round(p.z / c.repeat) * c.repeat + c.offset.z);
+    }
+  }
+
   private updateFragments(dt: number) {
     const p = this.player.transform.position;
     for (const f of this.fragments) {
@@ -420,6 +530,17 @@ class WhiteRoom extends Component {
       f.go.transform.position = f.p;
       f.go.transform.rotation = Quaternion.euler(f.spin.x * f.p.y, f.spin.y * f.p.y, f.spin.z * f.p.y);
     }
+  }
+
+  /** The village keeps its distance, centred under the camera, standing on the floor. */
+  private placeVillage() {
+    // Four-fifths of the way into the fog's fade, whichever distance it's at.
+    const f = FOGS[state.fog]!;
+    const k = (f.start + 0.8 * (f.end - f.start)) / VILLAGE_R;
+    const c = this.camera.transform.position;
+    // Only when the fog distance changes: rescaling walks every child.
+    if (Math.abs(this.village.transform.localScale.x - k) > 1e-6) this.village.transform.localScale = Vector3.one.scale(k);
+    this.village.transform.position = new Vector3(c.x, 0, c.z);
   }
 
   /** Behind and above the player, looking at the shoulders; follows smoothly. */
@@ -433,6 +554,57 @@ class WhiteRoom extends Component {
     cam.position = this.pivot.add(back.scale(this.distance));
     cam.rotation = Quaternion.lookRotation(this.pivot.sub(cam.position));
   }
+}
+
+/**
+ * A grey village in clusters round the horizon: houses with pitched roofs, towers and, in one
+ * cluster, a cathedral's dome on its drum. Built at full size round the origin, then shrunk.
+ */
+function buildVillage(): GameObject {
+  const root = new GameObject("Village");
+  const greys = [0.42, 0.5, 0.58, 0.66].map((g) => Material.create({ color: new Color(g, g, g * 1.02, 1), smoothness: 0.1 }));
+  const grey = () => greys[Math.floor(Random.value * greys.length)]!;
+  const part = (name: string, mesh: "cube" | "sphere" | "cylinder", at: Vector3, scale: Vector3, yaw: number, roll = 0) => {
+    const go = new GameObject(name, { parent: root, position: at, scale, rotation: Quaternion.euler(0, yaw, roll) });
+    const r = go.addComponent(MeshRenderer, { mesh, material: grey() });
+    r.shadowCastingMode = "off";
+    return go;
+  };
+  const clusters = 7;
+  for (let k = 0; k < clusters; k++) {
+    const a = (k / clusters) * Math.PI * 2 + Random.range(-0.25, 0.25);
+    const centre = new Vector3(Math.cos(a) * VILLAGE_R, 0, Math.sin(a) * VILLAGE_R);
+    const across = new Vector3(-Math.sin(a), 0, Math.cos(a));
+    const houses = 10 + Math.floor(Random.value * 10);
+    for (let i = 0; i < houses; i++) {
+      const at = centre.add(across.scale(Random.range(-60, 60))).add(new Vector3(Math.cos(a), 0, Math.sin(a)).scale(Random.range(-25, 25)));
+      const w = Random.range(6, 12);
+      const d = Random.range(6, 10);
+      const h = Random.range(6, 14);
+      const yaw = Random.range(-20, 20) + (a * 180) / Math.PI;
+      part("House", "cube", at.add(new Vector3(0, h / 2, 0)), new Vector3(w, h, d), yaw);
+      // A pitched roof: a box turned 45 degrees along the ridge.
+      const r = d / Math.SQRT2;
+      part("Roof", "cube", at.add(new Vector3(0, h, 0)), new Vector3(w + 1, r, r), yaw, 0);
+      root.children.at(-1)!.transform.localRotation = Quaternion.euler(45, yaw, 0);
+    }
+    // A tower or two.
+    for (let t = 0; t < 1 + Math.floor(Random.value * 2); t++) {
+      const at = centre.add(across.scale(Random.range(-40, 40)));
+      const h = Random.range(28, 45);
+      part("Tower", "cube", at.add(new Vector3(0, h / 2, 0)), new Vector3(6, h, 6), 0);
+      part("Spire", "cube", at.add(new Vector3(0, h + 3, 0)), new Vector3(4.2, 4.2, 4.2), 45, 0);
+      root.children.at(-1)!.transform.localRotation = Quaternion.euler(35, 45, 35);
+    }
+    // One cluster has the cathedral: a drum and a dome, as Florence's.
+    if (k === 0) {
+      part("Nave", "cube", centre.add(new Vector3(0, 12, 0)), new Vector3(20, 24, 50), (a * 180) / Math.PI);
+      part("Drum", "cylinder", centre.add(new Vector3(0, 30, 0)), new Vector3(24, 6, 24), 0);
+      part("Dome", "sphere", centre.add(new Vector3(0, 36, 0)), new Vector3(24, 26, 24), 0);
+      part("Lantern", "cylinder", centre.add(new Vector3(0, 50, 0)), new Vector3(3, 3, 3), 0);
+    }
+  }
+  return root;
 }
 
 register({ WhiteRoom });
@@ -463,6 +635,7 @@ function Hud() {
         <Row label="Fog" value={FOGS[state.fog]!.name} keyName="F" />
         <Row label="Height fog" value={state.heightFog ? "On" : "Off"} keyName="H" />
         <Row label="Lit tiles" value={state.tiles ? "On" : "Off"} keyName="T" />
+        <Row label="Village" value={state.village ? "On the horizon" : "Off"} keyName="V" />
         <text style={{ color: "#5a6270", fontSize: 12, marginTop: 4 }}>
           WASD move · Shift sprint · Alt walk · Space jump · C roll · drag or Q/E turn · wheel zoom
         </text>
