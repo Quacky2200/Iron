@@ -3649,7 +3649,7 @@ fn the_universal_pipeline_leaves_out_auto_exposure_and_shafts_and_caps_lights() 
     let dim = [flat_view(0.01, [0.0, 0.0, 1.0, 1.0], 0)];
     let render = |pipeline: RenderPipeline, auto: bool| {
         let mut world = WorldRenderer::new(&shared_gpu());
-        world.pipeline = pipeline;
+        world.pipeline = pipeline.into();
         if auto {
             world.grading = auto_grading(AutoExposure::default());
         }
@@ -3688,12 +3688,66 @@ fn the_universal_pipeline_leaves_out_auto_exposure_and_shafts_and_caps_lights() 
     });
     let lights = |pipeline: RenderPipeline| {
         let mut world = WorldRenderer::new(&shared_gpu());
-        world.pipeline = pipeline;
+        world.pipeline = pipeline.into();
         exposure_frames(&mut world, size, std::slice::from_ref(&lit), 1);
         world.stats().lights
     };
     assert_eq!(lights(RenderPipeline::BuiltIn), 40);
     assert_eq!(lights(RenderPipeline::Universal), 32);
+}
+
+// M7-RP-03
+#[test]
+fn a_pipeline_assets_hdr_and_additional_light_shadows_settings_apply() {
+    use iron_render::{Light, LightKind, PipelineAsset, RenderPipeline, Shadows, Tonemapping};
+    let size = (64, 48);
+    // A bright view, past white: tonemapped it rolls off; without HDR it clips.
+    let bright = [flat_view(3.0, [0.0, 0.0, 1.0, 1.0], 0)];
+    let shade = |hdr: bool| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.pipeline = PipelineAsset {
+            pipeline: RenderPipeline::Universal,
+            hdr: Some(hdr),
+            ..Default::default()
+        };
+        world.grading.tonemapping = Tonemapping::Aces;
+        exposure_frames(&mut world, size, &bright, 1)[0]
+    };
+    assert!(shade(true) < 250, "tonemapped {}", shade(true));
+    assert_eq!(shade(false), 255);
+    // A spot light with shadows: URP gives it none unless its asset asks.
+    let mut lit = flat_view(0.0, [0.0, 0.0, 1.0, 1.0], 0);
+    lit.lights = vec![Light {
+        kind: LightKind::Spot {
+            inner_degrees: 20.0,
+            outer_degrees: 30.0,
+        },
+        color: [1.0, 1.0, 1.0],
+        position: Vec3::new(0.0, 0.0, -2.0),
+        direction: Vec3::NEG_Z,
+        range: 8.0,
+        shadows: Some(Shadows {
+            soft: false,
+            strength: 1.0,
+        }),
+        culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
+    }];
+    let maps = |asset: PipelineAsset| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.pipeline = asset;
+        exposure_frames(&mut world, size, std::slice::from_ref(&lit), 1);
+        world.stats().shadow_maps
+    };
+    assert_eq!(maps(RenderPipeline::Universal.into()), 0);
+    assert!(maps(RenderPipeline::BuiltIn.into()) > 0);
+    assert!(
+        maps(PipelineAsset {
+            pipeline: RenderPipeline::Universal,
+            additional_light_shadows: Some(true),
+            ..Default::default()
+        }) > 0
+    );
 }
 
 // M7-FOG-06

@@ -23,6 +23,17 @@ describe("GraphicsSettings", () => {
     setPipeline("hd");
     expect(GraphicsSettings.renderPipeline).toBe("hd");
     expect(GraphicsSettings.supportsVolumetricFog).toBe(true);
+    expect(GraphicsSettings.additionalLightShadows).toBe(true);
+    expect(GraphicsSettings.hdr).toBe(true);
+    setPipeline("universal");
+    expect(GraphicsSettings.additionalLightShadows).toBe(false);
+    // The pipeline asset's settings.
+    (globalThis as { __iron_info?: unknown }).__iron_info = {
+      app: { renderPipeline: "universal", renderPipelineSettings: { hdr: false, additionalLights: 8, additionalLightShadows: true } },
+    };
+    expect(GraphicsSettings.hdr).toBe(false);
+    expect(GraphicsSettings.maxAdditionalLights).toBe(8);
+    expect(GraphicsSettings.additionalLightShadows).toBe(true);
     setPipeline("nonsense");
     expect(GraphicsSettings.renderPipeline).toBe("builtin");
   });

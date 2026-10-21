@@ -62,6 +62,8 @@ pub(crate) struct PlanSettings {
     pub resolution: u32,
     pub local_resolution: u32,
     pub cascades: u32,
+    /// Whether spot and point lights get shadows (URP: off by default).
+    pub local_lights: bool,
 }
 
 /// Which lights cast shadows this frame, as seen from `camera` with `lights`.
@@ -96,6 +98,7 @@ pub(crate) fn plan(camera: &WorldCamera, lights: &[Light], s: PlanSettings) -> S
         .iter()
         .filter(casting)
         .filter(|l| l.kind != LightKind::Directional)
+        .filter(|_| s.local_lights)
         .filter(|l| frustum.sphere(l.position, l.range))
         .collect();
     locals.sort_by(|a, b| {
@@ -287,6 +290,7 @@ mod tests {
             resolution: 2048,
             local_resolution: 1024,
             cascades: 4,
+            local_lights: true,
         };
         let mut lights = vec![light(LightKind::Directional, Vec3::ZERO)];
         // Five point lights (6 layers each) in view: only four fit in 24 layers.

@@ -26,6 +26,48 @@ pub struct PipelineFeatures {
     pub auto_exposure: bool,
     /// How many lights besides the main (brightest directional) one a view gets: the nearest.
     pub max_additional_lights: usize,
+    /// Whether spot and point lights cast shadows (the main light always may).
+    pub additional_light_shadows: bool,
+    /// Rendering in HDR: light past white is kept for bloom, exposure and tonemapping. Off,
+    /// colours clip at white and those are skipped (an LDR URP project).
+    pub hdr: bool,
+}
+
+/// A pipeline and its settings (Unity's pipeline asset): `iron.renderPipelineSettings` in
+/// the manifest changes the pipeline's defaults.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PipelineAsset {
+    pub pipeline: RenderPipeline,
+    /// None: the pipeline's default.
+    pub hdr: Option<bool>,
+    pub max_additional_lights: Option<usize>,
+    pub additional_light_shadows: Option<bool>,
+}
+
+impl From<RenderPipeline> for PipelineAsset {
+    fn from(pipeline: RenderPipeline) -> Self {
+        Self {
+            pipeline,
+            ..Default::default()
+        }
+    }
+}
+
+impl PipelineAsset {
+    /// What runs: the pipeline's features with this asset's settings.
+    pub fn features(&self) -> PipelineFeatures {
+        let base = self.pipeline.features();
+        PipelineFeatures {
+            hdr: self.hdr.unwrap_or(base.hdr),
+            max_additional_lights: self
+                .max_additional_lights
+                .unwrap_or(base.max_additional_lights),
+            additional_light_shadows: self
+                .additional_light_shadows
+                .unwrap_or(base.additional_light_shadows),
+            ..base
+        }
+    }
 }
 
 impl RenderPipeline {
@@ -54,12 +96,17 @@ impl RenderPipeline {
                 volumetric_fog: true,
                 auto_exposure: true,
                 max_additional_lights: usize::MAX,
+                additional_light_shadows: true,
+                hdr: true,
             },
-            // URP's mobile default: 32 visible additional lights.
+            // URP's defaults: 32 visible additional lights (its mobile limit), their shadows
+            // off, HDR on.
             Self::Universal => PipelineFeatures {
                 volumetric_fog: false,
                 auto_exposure: false,
                 max_additional_lights: 32,
+                additional_light_shadows: false,
+                hdr: true,
             },
         }
     }

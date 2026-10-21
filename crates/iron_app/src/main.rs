@@ -489,7 +489,7 @@ struct App {
     info: info::Info,
     /// The project's render pipeline, and whether it has warned about a feature it lacks
     /// (light shafts, auto exposure) yet.
-    pipeline: iron_render::RenderPipeline,
+    pipeline: iron_render::PipelineAsset,
     pipeline_warned: (bool, bool),
     /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
     script_cursor: ScriptCursor,
@@ -1750,7 +1750,7 @@ impl PlatformApp for App {
                 renderer.set_asset_root(&self.asset_root);
                 let mut world = WorldRenderer::new(&gpu);
                 world.pipeline = self.pipeline;
-                tracing::info!(pipeline = self.pipeline.name(), "render pipeline");
+                tracing::info!(pipeline = self.pipeline.pipeline.name(), "render pipeline");
                 self.gfx = Some(Gfx {
                     gpu,
                     surface,
@@ -2430,12 +2430,12 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
 /// Says once in the log when the game asks for something its render pipeline doesn't run
 /// (URP has no light shafts or auto exposure): it's left out, as Unity does.
 fn warn_pipeline(
-    pipeline: iron_render::RenderPipeline,
+    pipeline: iron_render::PipelineAsset,
     warned: &mut (bool, bool),
     world: &world_view::WorldViews,
 ) {
     let features = pipeline.features();
-    let name = pipeline.name();
+    let name = pipeline.pipeline.name();
     if !features.volumetric_fog && !warned.0 && world.uses_volumetric_fog() {
         warned.0 = true;
         tracing::warn!("RenderSettings.volumetricFog: the {name} pipeline has no light shafts");

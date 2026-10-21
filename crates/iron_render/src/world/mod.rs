@@ -34,7 +34,7 @@ pub use bloom::{
 pub use environment::Sky;
 pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
-pub use pipeline::{PipelineFeatures, RenderPipeline};
+pub use pipeline::{PipelineAsset, PipelineFeatures, RenderPipeline};
 use texture::SamplerKey;
 pub use texture::{
     Anisotropic, CookedTexture, TexelFormat, TextureData, TextureFilter, TextureWrap, mip_chain,
@@ -1140,8 +1140,8 @@ pub struct WorldRenderer {
     bloom_pass: Option<bloom::BloomPass>,
     /// Exposure and tonemapping over every view.
     pub grading: Grading,
-    /// Which features run (Unity's render pipelines; the project's choice).
-    pub pipeline: RenderPipeline,
+    /// Which features run (Unity's render pipelines and their settings; the project's choice).
+    pub pipeline: PipelineAsset,
     /// Made the first time a view asks for FXAA.
     fxaa: Option<fxaa::Fxaa>,
 }
@@ -1579,7 +1579,7 @@ impl WorldRenderer {
             bloom: None,
             bloom_pass: None,
             grading: Grading::default(),
-            pipeline: RenderPipeline::BuiltIn,
+            pipeline: PipelineAsset::default(),
             fxaa: None,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
@@ -1969,6 +1969,7 @@ impl WorldRenderer {
                     resolution: self.shadow_resolution,
                     local_resolution: (self.shadow_resolution / 2).max(256),
                     cascades: self.shadow_cascades,
+                    local_lights: self.pipeline.features().additional_light_shadows,
                 },
             ),
             _ => shadows::ShadowPlan {
@@ -2927,16 +2928,24 @@ impl WorldRenderer {
         let bloom = self
             .bloom
             .filter(|b| b.intensity > 0.0)
-            .filter(|_| final_pass);
+            .filter(|_| final_pass && self.pipeline.features().hdr);
         let main = (0..views.len()).max_by(|&a, &b| {
             let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
             area(&views[a]).total_cmp(&area(&views[b]))
         });
         let fxaa = final_pass && main.is_some_and(|m| views[m].fxaa);
+        let features = self.pipeline.features();
         let mut grading = self.grading;
         // Pipelines without auto exposure (URP) keep the manual one.
-        if !self.pipeline.features().auto_exposure {
+        if !features.auto_exposure {
             grading.auto_exposure = None;
+        }
+        // Without HDR, light clips at white: no bloom, exposure or tonemapping.
+        if !features.hdr {
+            grading = Grading {
+                delta_time: grading.delta_time,
+                ..Grading::default()
+            };
         }
         // Auto exposure fading out keeps the pass going until it has.
         let fading = self.bloom_pass.as_ref().is_some_and(|b| b.fading());

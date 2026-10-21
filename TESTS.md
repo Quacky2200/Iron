@@ -506,6 +506,7 @@ layout pass):
 | M7-EXP-06 | Integration + JS unit | A soft floor (`dark_adaptation` / `dark_below`) and a compensation curve keep a very dark view darker than full adaptation; `QualitySettings.autoExposure` (the player's switch) turns auto exposure off and on. |
 | M7-RP-01 | Unit + JS unit | Render pipelines (Unity's): `iron.renderPipeline` in the manifest (`builtin`, `universal` / `urp`, `hd` / `hdrp`; missing or unknown: Built-in) reaches the renderer and scripts (`GraphicsSettings.renderPipeline`, `supportsVolumetricFog`, `supportsAutoExposure`, `maxAdditionalLights`). |
 | M7-RP-02 | Integration | The Universal pipeline leaves out auto exposure (a dim view stays as the manual exposure shows it) and light shafts, and draws the nearest 32 lights besides the main one where Built-in draws all 40. |
+| M7-RP-03 | Integration + Unit + JS unit | A pipeline asset's settings (`PipelineAsset`, `iron.renderPipelineSettings`): with HDR off a bright view clips at white instead of being tonemapped; URP gives spot lights no shadows unless `additionalLightShadows` asks, Built-in does; the manifest's settings reach scripts (`GraphicsSettings.hdr`, `additionalLightShadows`, `maxAdditionalLights`). |
 
 ---
 

@@ -33,8 +33,9 @@ pub struct Manifest {
     /// (Unity's `Application.runInBackground`, off by default).
     pub run_in_background: bool,
     /// `iron.renderPipeline` (Unity's render pipelines): `builtin` (the default),
-    /// `universal` / `urp` or `hd` / `hdrp`.
-    pub render_pipeline: iron_render::RenderPipeline,
+    /// `universal` / `urp` or `hd` / `hdrp`; with `iron.renderPipelineSettings` (its
+    /// pipeline asset: `hdr`, `additionalLights`, `additionalLightShadows`).
+    pub render_pipeline: iron_render::PipelineAsset,
 }
 
 impl Manifest {
@@ -75,12 +76,24 @@ impl Manifest {
             start_scene: text(&iron["startScene"]),
             display: iron["display"].clone(),
             run_in_background: iron["runInBackground"].as_bool().unwrap_or(false),
-            render_pipeline: match iron["renderPipeline"].as_str() {
-                None => iron_render::RenderPipeline::BuiltIn,
-                Some(p) => iron_render::RenderPipeline::parse(p).unwrap_or_else(|| {
-                    tracing::warn!("iron.renderPipeline `{p}`: not builtin, universal or hd");
-                    iron_render::RenderPipeline::BuiltIn
-                }),
+            render_pipeline: {
+                let settings = &iron["renderPipelineSettings"];
+                iron_render::PipelineAsset {
+                    pipeline: match iron["renderPipeline"].as_str() {
+                        None => iron_render::RenderPipeline::BuiltIn,
+                        Some(p) => iron_render::RenderPipeline::parse(p).unwrap_or_else(|| {
+                            tracing::warn!(
+                                "iron.renderPipeline `{p}`: not builtin, universal or hd"
+                            );
+                            iron_render::RenderPipeline::BuiltIn
+                        }),
+                    },
+                    hdr: settings["hdr"].as_bool(),
+                    max_additional_lights: settings["additionalLights"]
+                        .as_u64()
+                        .map(|n| n.min(256) as usize),
+                    additional_light_shadows: settings["additionalLightShadows"].as_bool(),
+                }
             },
             name,
         }
@@ -111,6 +124,13 @@ pub struct Info(pub Map<String, Value>);
 impl Info {
     pub fn new(manifest: &Manifest) -> Self {
         let mut map = Map::new();
+        let f = manifest.render_pipeline.features();
+        let pipeline_settings = json!({
+            "hdr": f.hdr,
+            // JSON has no infinity: -1 for no limit.
+            "additionalLights": if f.max_additional_lights == usize::MAX { -1 } else { f.max_additional_lights as i64 },
+            "additionalLightShadows": f.additional_light_shadows,
+        });
         map.insert(
             "app".into(),
             json!({
@@ -124,7 +144,8 @@ impl Info {
                 "layers": manifest.layers,
                 "startScene": manifest.start_scene,
                 "runInBackground": manifest.run_in_background,
-                "renderPipeline": manifest.render_pipeline.name(),
+                "renderPipeline": manifest.render_pipeline.pipeline.name(),
+                "renderPipelineSettings": pipeline_settings,
                 "targetFrameRate": -1,
                 "isEditor": super::editor::ENABLED,
                 "project": super::editor::project().map(|p| p.to_string_lossy().into_owned()),
@@ -242,15 +263,27 @@ mod tests {
     fn the_render_pipeline_comes_from_the_manifest() {
         use iron_render::RenderPipeline;
         let pipeline = |v: Value| {
-            Manifest::from_json(&json!({ "iron": { "renderPipeline": v } }), "g").render_pipeline
+            Manifest::from_json(&json!({ "iron": { "renderPipeline": v } }), "g")
+                .render_pipeline
+                .pipeline
         };
         assert_eq!(pipeline(json!("URP")), RenderPipeline::Universal);
         assert_eq!(pipeline(json!("hdrp")), RenderPipeline::HighDefinition);
         // Missing or unknown: Built-in.
         assert_eq!(
-            Manifest::from_json(&Value::Null, "g").render_pipeline,
+            Manifest::from_json(&Value::Null, "g")
+                .render_pipeline
+                .pipeline,
             RenderPipeline::BuiltIn
         );
+        // The pipeline asset's settings change its defaults.
+        let urp = Manifest::from_json(
+            &json!({ "iron": { "renderPipeline": "urp", "renderPipelineSettings": { "hdr": false, "additionalLights": 8 } } }),
+            "g",
+        )
+        .render_pipeline
+        .features();
+        assert!(!urp.hdr && urp.max_additional_lights == 8 && !urp.additional_light_shadows);
         assert_eq!(pipeline(json!("lwrp")), RenderPipeline::BuiltIn);
         let script = Info::new(&Manifest::from_json(
             &json!({ "iron": { "renderPipeline": "universal" } }),
