@@ -366,5 +366,5 @@ unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built 
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
 full build, `1860..1861` the dev status file and the change fingerprint. `bun run check:examples` (`iron-build check examples`)
-builds all 19 examples and prints a table; failures there are missing language or engine features, listed in
+builds all 20 examples and prints a table; failures there are missing language or engine features, listed in
 `docs/research/iron-examples-on-iron-ts.md`.

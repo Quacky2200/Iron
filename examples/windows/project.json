@@ -1,0 +1,7 @@
+{
+  "name": "windows",
+  "title": "Iron - Windows",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.windows",
+  "version": "0.1.0"
+}

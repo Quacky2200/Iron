@@ -204,8 +204,9 @@ screenshot runs, `examples/windows`.
 - [x] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
 - [x] Step 5: multi-window platform (`Backend`, `run_commands`, `FakePlatform`, winit runner, `docs/platform.md` "Multi-window"). Decisions: `RunnerBackend` (winit + virtual) instead of `WinitBackend`+`VirtualBackend` fields; `Backend::take_events` echoes virtual `Resized`/`Moved`; the main window still gets `CloseRequested` through `window_input` first.
 - [x] Step 6: `Gpu::create_window_surface` + `RenderError::Unsupported` (no test: needs a real window).
-- [ ] Steps 7 to 10: `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
-- [ ] Step 11: `examples/windows`. Step 12: docs.
+- [x] Steps 7 to 10: `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
+- [x] Step 11: `examples/windows` (native, TypeScript globals; a main window, owned tool windows, an isolated Inspector over messages).
+- [x] Step 12: docs (`docs/windows.md`, linked from `docs/README.md`). Optional leftovers, open: D1 embedded `child` style, D2 modal dialogs, D3 `Camera.targetWindow`, D4 transparent windows, D5 hidden main window in screenshot runs, `Application.wantsToQuit`; phases B and C of the event domains; a manual check of the winit runner on a real display.
 - [x] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).
 - [ ] Steps F1 to F4: window families and event domains (per-family input, focus, pause, timers, UI roots; one winit loop,
   per-domain queues; threads / processes per domain are later phases).

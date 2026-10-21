@@ -1,0 +1,20 @@
+{
+  "name": "windows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@iron/engine": "workspace:*",
+    "@iron/react": "workspace:*",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0"
+  },
+  "scripts": {
+    "build": "bun build src/main.tsx --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"production\"'",
+    "build:dev": "bun build src/main.tsx --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
+    "dev": "bun ../../scripts/dev.ts",
+    "typecheck": "tsc --noEmit -p ."
+  }
+}
