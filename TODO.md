@@ -1680,6 +1680,24 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
 
 ## Later
 
+- [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI (a first
+  editor-style app; the editor's docs browser can grow from it)
+  - [x] docs/ and the top-level .md files bundled at build time (`gen-docs.ts`), images copied
+    into the game folder
+  - [x] Markdown subset parser (headings, paragraphs, emphasis, code, links, images, lists with
+    tasks, quotes, GitHub tables, rules), drawn as `text` / `span` / `image` / grid boxes
+  - [x] File tree on the left, toggled from the top bar (Ctrl+B); back / forward (buttons,
+    Alt+Left / Alt+Right, mouse side buttons) keeping each page's scroll; links between docs
+    and to `#headings`; link targets in the status bar
+  - [x] Spans are hit-tested in `iron_ui` (`M3-EVT-07`), so inline links take clicks and `:hover`
+  - [ ] Long docs (TODO.md, TESTS.md) mount every block at once: ~3.5 s to open in a debug build.
+    Mount blocks lazily as they scroll into view
+  - [ ] Search across docs, an "on this page" outline, selectable/copyable text and code
+  - [ ] Open external links in the system browser (needs an app shell op, M6 / platform plan)
+- [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
+  SVG today (`The image format Gif is not supported`). Decode GIFs (the `image` crate's `gif`
+  feature in `iron_render`), then play animated ones with their frame timings (frames in the
+  image atlas, a redraw only when the frame changes, paused when off screen); WebP likewise.
 - [ ] A canvas UI element that embeds the 3D engine (a `<canvas>` / 3D view element for React UI):
   a box that shows a camera's view of a world (or its own world) and passes the pointer and keys
   through, so window apps written mostly in React can put live 3D anywhere in the layout — Iron as

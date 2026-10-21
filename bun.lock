@@ -268,6 +268,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/md-reader": {
+      "name": "md-reader",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/physics": {
       "name": "physics",
       "version": "0.1.0",
@@ -480,6 +492,7 @@
 
     "materials": ["materials@workspace:examples/materials"],
 
+    "md-reader": ["md-reader@workspace:examples/md-reader"],
     "physics": ["physics@workspace:examples/physics"],
 
     "platformer": ["platformer@workspace:examples/platformer"],
