@@ -11,11 +11,11 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog,
-    FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_FOG_VOLUMES,
-    MaterialMaps, MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe,
-    RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData, TextureFilter,
-    TextureWrap, Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldTexture, WorldView,
-    primitive_id, viewport_size,
+    FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_CURVE_POINTS,
+    MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror, Projection,
+    ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData,
+    TextureFilter, TextureWrap, Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldTexture,
+    WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -353,6 +353,9 @@ pub struct WorldViews {
     pub quality: Quality,
     /// Exposure and tonemapping (`render.post`).
     pub grading: Grading,
+    /// Cameras whose auto exposure jumps to what they see next frame (`render.exposureReset`),
+    /// applied by the app.
+    pub exposure_resets: Vec<u32>,
     /// The sky (`render.sky`), applied by the app before drawing.
     pub sky: Option<Sky>,
     /// Reflection / sky light intensity, and whether ambient light comes from the sky.
@@ -405,6 +408,7 @@ impl Default for WorldViews {
             shadow_settings: (25.0, 2048, 1),
             quality: Quality::default(),
             grading: Grading::default(),
+            exposure_resets: Vec::new(),
             sky: None,
             environment: (1.0, true),
             fog: None,
@@ -597,6 +601,11 @@ impl WorldViews {
 
     /// A texture that failed to load: sprites using it draw the renderer's missing
     /// checker (an 8 × 8 texel image) in its place.
+    /// The ids of every camera, for reading their exposure back.
+    pub fn camera_ids(&self) -> Vec<u32> {
+        self.cameras.keys().copied().collect()
+    }
+
     pub fn mark_missing(&mut self, id: u32) {
         self.texture_sizes.insert(id, (8, 8));
     }
@@ -1169,18 +1178,40 @@ impl WorldViews {
                 self.texture_sizes.insert(id, size);
                 self.render_texture_uploads.push((id, size));
             }
-            // `post 0 postExposure(stops) tonemapping(none|neutral|aces) auto`, where `auto`
-            // is `[minEV, maxEV, compensation, darkToLight, lightToDark]` or null.
+            // `post 0 postExposure(stops) tonemapping(none|neutral|aces) auto fixedEV
+            // transition`: `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark,
+            // metering (0 average, 1 centre-weighted, 2 spot), lowPercent, highPercent, hold,
+            // darkAdaptation, darkBelow, curve points, ev0, stops0, ev1, stops1, ...]` or
+            // null; `fixedEV` the manual
+            // exposure (EV100) or null; `transition` seconds auto exposure blends in and out.
             "post" => {
-                let auto = flat(args.get(3))
-                    .filter(|v| v.len() >= 5)
-                    .map(|v| AutoExposure {
+                let auto = flat(args.get(3)).filter(|v| v.len() >= 5).map(|v| {
+                    let at = |i: usize, d: f32| v.get(i).copied().unwrap_or(d);
+                    let mut curve = [[0.0; 2]; MAX_CURVE_POINTS];
+                    let points = (at(11, 0.0).max(0.0) as usize).min(MAX_CURVE_POINTS);
+                    for (k, p) in curve.iter_mut().take(points).enumerate() {
+                        *p = [at(12 + 2 * k, 0.0), at(13 + 2 * k, 0.0).clamp(-10.0, 10.0)];
+                    }
+                    AutoExposure {
                         min_ev: v[0].clamp(-20.0, 30.0),
                         max_ev: v[1].clamp(-20.0, 30.0),
                         compensation: v[2].clamp(-10.0, 10.0),
                         speed_dark_to_light: v[3].clamp(0.0, 100.0),
                         speed_light_to_dark: v[4].clamp(0.0, 100.0),
-                    });
+                        metering: match at(5, 1.0) as u32 {
+                            0 => Metering::Average,
+                            2 => Metering::Spot,
+                            _ => Metering::CenterWeighted,
+                        },
+                        low_percent: at(6, 0.0).clamp(0.0, 100.0),
+                        high_percent: at(7, 100.0).clamp(0.0, 100.0),
+                        hold: at(8, 0.0) > 0.5,
+                        dark_adaptation: at(9, 1.0).clamp(0.0, 1.0),
+                        dark_below: at(10, 5.0).clamp(-20.0, 30.0),
+                        curve,
+                        curve_points: points as u8,
+                    }
+                });
                 self.grading = Grading {
                     exposure: 2f32.powf(num(1).unwrap_or(0.0).clamp(-10.0, 10.0)),
                     tonemapping: match args.get(2).and_then(Value::as_str) {
@@ -1189,9 +1220,13 @@ impl WorldViews {
                         _ => Tonemapping::None,
                     },
                     auto_exposure: auto,
+                    fixed_ev: num(4).ok().map(|v| v.clamp(-20.0, 30.0)),
+                    transition: num(5).unwrap_or(0.0).clamp(0.0, 60.0),
                     delta_time: self.grading.delta_time,
                 };
             }
+            // `exposureReset cameraId`: that camera's auto exposure jumps to what it sees.
+            "exposureReset" => self.exposure_resets.push(id),
             // `bloom 0 threshold intensity scatter`; `bloom 0 null` turns it off.
             "bloom" => {
                 self.bloom = match args.get(1) {
@@ -1607,15 +1642,16 @@ impl WorldViews {
                 )
             })
             .collect();
-        let mut cameras: Vec<&Camera> = self
+        let mut cameras: Vec<(u32, &Camera)> = self
             .cameras
-            .values()
-            .filter(|c| scene.active(c.object))
+            .iter()
+            .filter(|(_, c)| scene.active(c.object))
+            .map(|(&id, c)| (id, c))
             .collect();
-        cameras.sort_by(|a, b| a.depth.total_cmp(&b.depth));
+        cameras.sort_by(|a, b| a.1.depth.total_cmp(&b.1.depth));
         cameras
             .into_iter()
-            .filter_map(|camera| {
+            .filter_map(|(camera_id, camera)| {
                 // Cameras ignore scale: only where they are and which way they face.
                 let (_, rotation, position) = world(camera.object)?.to_scale_rotation_translation();
                 let forward = rotation * Vec3::NEG_Z;
@@ -1727,6 +1763,7 @@ impl WorldViews {
                     fills: shown_fills,
                     shapes: shown_shapes,
                     fog: self.fog.filter(|_| camera.fog),
+                    exposure_key: camera_id,
                     fog_volumes: if camera.fog {
                         // The nearest ones the camera's layers show, up to the renderer's limit.
                         let mut near: Vec<FogVolume> = fog_volumes

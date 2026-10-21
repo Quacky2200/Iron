@@ -213,6 +213,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             shapes: Vec::new(),
             fog: None,
             fog_volumes: Vec::new(),
+            exposure_key: 0,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -243,6 +244,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             shapes: Vec::new(),
             fog: None,
             fog_volumes: Vec::new(),
+            exposure_key: 0,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -280,6 +282,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             shapes: Vec::new(),
             fog: None,
             fog_volumes: Vec::new(),
+            exposure_key: 0,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -3387,6 +3390,253 @@ fn auto_exposure_adapts_dim_and_bright_views_to_the_same_grey_and_takes_time_to(
         later < first && later > bright,
         "{first} then {later} then {bright}"
     );
+}
+
+/// Renders `views` (flat backgrounds, or a bright patch) for `frames` frames with `world`'s
+/// grading, and reads back the centre pixel of each view (green, 0..255).
+fn exposure_frames(
+    world: &mut WorldRenderer,
+    size: (u32, u32),
+    views: &[iron_render::WorldView],
+    frames: usize,
+) -> Vec<i32> {
+    let gpu = shared_gpu();
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    for _ in 0..frames {
+        world.render_views(&gpu, &rt, views, &[]);
+    }
+    let pixels = target.read_pixels(&gpu).unwrap();
+    views
+        .iter()
+        .map(|v| {
+            let x = ((v.viewport[0] + v.viewport[2] * 0.5) * size.0 as f32) as usize;
+            let y = ((v.viewport[1] + v.viewport[3] * 0.25) * size.1 as f32) as usize;
+            pixels[(y * size.0 as usize + x) * 4 + 1] as i32
+        })
+        .collect()
+}
+
+/// An empty view of one flat brightness over `viewport`, for camera `key`.
+fn flat_view(level: f64, viewport: [f32; 4], key: u32) -> iron_render::WorldView {
+    let size = (64, 48);
+    let camera = WorldCamera::perspective(
+        Mat4::IDENTITY,
+        60.0,
+        0.1,
+        10.0,
+        size,
+        Color::rgb(level, level, level),
+    );
+    let mut v = iron_render::WorldView::new(camera, viewport);
+    v.exposure_key = key;
+    v
+}
+
+/// A dim view with an emissive patch in its lower half (`patch`: its brightness).
+fn patch_view(dim: f64, patch: f32) -> iron_render::WorldView {
+    use iron_render::{MeshInstance, primitive_id};
+    let mut v = flat_view(dim, [0.0, 0.0, 1.0, 1.0], 0);
+    v.meshes.push(MeshInstance {
+        mesh: primitive_id("quad").unwrap(),
+        model: Mat4::from_scale_rotation_translation(
+            Vec3::new(4.0, 1.2, 1.0),
+            Quat::IDENTITY,
+            Vec3::new(0.0, -1.8, -4.0),
+        ),
+        color: [0.0, 0.0, 0.0, 1.0],
+        emission: [patch, patch, patch],
+        unlit: true,
+        ..Default::default()
+    });
+    v
+}
+
+fn auto_grading(auto: iron_render::AutoExposure) -> iron_render::Grading {
+    iron_render::Grading {
+        auto_exposure: Some(auto),
+        delta_time: 1.0 / 60.0,
+        ..Default::default()
+    }
+}
+
+// M7-EXP-02
+#[test]
+fn each_camera_adapts_on_its_own_even_on_one_screen() {
+    use iron_render::AutoExposure;
+    let size = (128, 48);
+    let mut world = WorldRenderer::new(&shared_gpu());
+    world.grading = auto_grading(AutoExposure::default());
+    // Split screen: a dim view on the left, one twenty times brighter on the right.
+    let views = [
+        flat_view(0.05, [0.0, 0.0, 0.5, 1.0], 1),
+        flat_view(1.0, [0.5, 0.0, 0.5, 1.0], 2),
+    ];
+    let settled = exposure_frames(&mut world, size, &views, 300);
+    // Each settles to the same grey (with one shared state, one would be far off).
+    assert!(
+        (settled[0] - settled[1]).abs() <= 4,
+        "left {} right {}",
+        settled[0],
+        settled[1]
+    );
+}
+
+// M7-EXP-03
+#[test]
+fn histogram_metering_ignores_a_small_bright_patch_between_its_percentiles() {
+    use iron_render::AutoExposure;
+    let size = (64, 48);
+    let render = |low: f32, high: f32| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.grading = auto_grading(AutoExposure {
+            metering: iron_render::Metering::Average,
+            low_percent: low,
+            high_percent: high,
+            ..Default::default()
+        });
+        exposure_frames(&mut world, size, &[patch_view(0.05, 400.0)], 300)[0]
+    };
+    // Averaging everything, the blazing patch darkens the rest; between 10% and 80% it's
+    // left out, and the dim background shows as it would alone.
+    let all = render(0.0, 100.0);
+    let middle = render(10.0, 80.0);
+    let alone = {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.grading = auto_grading(AutoExposure {
+            metering: iron_render::Metering::Average,
+            ..Default::default()
+        });
+        exposure_frames(
+            &mut world,
+            size,
+            &[flat_view(0.05, [0.0, 0.0, 1.0, 1.0], 0)],
+            300,
+        )[0]
+    };
+    assert!(
+        middle > all + 20,
+        "between percentiles {middle}, everything {all}"
+    );
+    assert!(
+        (middle - alone).abs() <= 6,
+        "between percentiles {middle}, without the patch {alone}"
+    );
+}
+
+// M7-EXP-04
+#[test]
+fn auto_exposure_blends_into_the_manual_exposure_over_its_transition() {
+    use iron_render::AutoExposure;
+    let size = (64, 48);
+    let views = [flat_view(0.01, [0.0, 0.0, 1.0, 1.0], 0)];
+    let mut world = WorldRenderer::new(&shared_gpu());
+    // The manual exposure leaves light as it is (EV100 -log2(1.2)): the dim view stays dim.
+    let fixed = -(1.2f32.log2());
+    world.grading = iron_render::Grading {
+        fixed_ev: Some(fixed),
+        transition: 1.0,
+        ..auto_grading(AutoExposure::default())
+    };
+    let adapted = exposure_frames(&mut world, size, &views, 300)[0];
+    world.grading.auto_exposure = None;
+    let halfway = exposure_frames(&mut world, size, &views, 30)[0];
+    let after = exposure_frames(&mut world, size, &views, 60)[0];
+    let manual = {
+        let mut w = WorldRenderer::new(&shared_gpu());
+        w.grading = iron_render::Grading {
+            fixed_ev: Some(fixed),
+            ..Default::default()
+        };
+        exposure_frames(&mut w, size, &views, 2)[0]
+    };
+    assert!(adapted > manual + 40, "adapted {adapted}, manual {manual}");
+    assert!(
+        halfway < adapted - 10 && halfway > manual + 10,
+        "halfway {halfway} between {adapted} and {manual}"
+    );
+    assert!(
+        (after - manual).abs() <= 2,
+        "after the transition {after}, manual {manual}"
+    );
+}
+
+// M7-EXP-05
+#[test]
+fn scripts_read_each_cameras_exposure_back_and_can_reset_it() {
+    use iron_render::AutoExposure;
+    let size = (64, 48);
+    let mut world = WorldRenderer::new(&shared_gpu());
+    world.grading = auto_grading(AutoExposure::default());
+    let dim = [flat_view(0.05, [0.0, 0.0, 1.0, 1.0], 7)];
+    exposure_frames(&mut world, size, &dim, 120);
+    let r = world.exposure(7).expect("read back");
+    // A flat 0.05 metres as EV100 log2(0.05 × 8) and is shown at that exposure.
+    let expected = (0.05f32 * 8.0).log2();
+    assert!(
+        (r.scene_ev - expected).abs() < 0.2,
+        "metered {} expected {expected}",
+        r.scene_ev
+    );
+    assert!(
+        (r.ev - expected).abs() < 0.2,
+        "exposure {} expected {expected}",
+        r.ev
+    );
+    assert!(world.exposure(8).is_none());
+    // A cut to a bright view: with a reset it shows settled at once, without one it dazzles.
+    let bright = [flat_view(1.0, [0.0, 0.0, 1.0, 1.0], 7)];
+    let mut other = WorldRenderer::new(&shared_gpu());
+    other.grading = world.grading;
+    exposure_frames(&mut other, size, &dim, 120);
+    let dazzled = exposure_frames(&mut other, size, &bright, 1)[0];
+    world.reset_exposure(7);
+    let reset = exposure_frames(&mut world, size, &bright, 1)[0];
+    let settled = exposure_frames(&mut world, size, &bright, 300)[0];
+    assert!(
+        dazzled > settled + 60,
+        "dazzled {dazzled}, settled {settled}"
+    );
+    assert!(
+        (reset - settled).abs() <= 4,
+        "reset {reset}, settled {settled}"
+    );
+}
+
+// M7-EXP-06
+#[test]
+fn a_soft_floor_and_a_curve_keep_dark_places_darker_than_full_adaptation() {
+    use iron_render::AutoExposure;
+    let size = (64, 48);
+    let views = [flat_view(0.005, [0.0, 0.0, 1.0, 1.0], 0)];
+    let render = |auto: AutoExposure| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.grading = auto_grading(auto);
+        exposure_frames(&mut world, size, &views, 300)[0]
+    };
+    let full = render(AutoExposure::default());
+    let soft = render(AutoExposure {
+        dark_adaptation: 0.5,
+        dark_below: 3.0,
+        ..Default::default()
+    });
+    let mut curve = [[0.0; 2]; iron_render::MAX_CURVE_POINTS];
+    curve[0] = [-4.0, -2.0];
+    curve[1] = [4.0, 0.0];
+    let curved = render(AutoExposure {
+        curve,
+        curve_points: 2,
+        ..Default::default()
+    });
+    assert!(soft < full - 20, "soft floor {soft}, full {full}");
+    assert!(curved < full - 20, "curve {curved}, full {full}");
 }
 
 // M7-FOG-06

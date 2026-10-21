@@ -27,7 +27,9 @@ use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 
 use crate::{Color, Gpu, RenderTarget};
-pub use bloom::{AutoExposure, Bloom, Grading, Tonemapping};
+pub use bloom::{
+    AutoExposure, Bloom, ExposureReading, Grading, MAX_CURVE_POINTS, Metering, Tonemapping,
+};
 pub use environment::Sky;
 pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
@@ -511,6 +513,8 @@ pub struct WorldView {
     /// Boxes of fog in their own colours (mist over a pond, a cloud layer), whether or not
     /// there's `fog`; the first [`MAX_FOG_VOLUMES`] count.
     pub fog_volumes: Vec<FogVolume>,
+    /// Whose exposure the view uses (its camera's id): each camera adapts on its own.
+    pub exposure_key: u32,
 }
 
 /// How many fog volumes a view draws.
@@ -739,6 +743,7 @@ impl WorldView {
             shapes: Vec::new(),
             fog: None,
             fog_volumes: Vec::new(),
+            exposure_key: 0,
         }
     }
 }
@@ -1678,6 +1683,20 @@ impl WorldRenderer {
     /// What the last [`WorldRenderer::render_views`] drew and what culling skipped.
     pub fn stats(&self) -> WorldStats {
         self.stats
+    }
+
+    /// Camera `key`'s exposure as last read back from the GPU (a frame or two late; None
+    /// before the post pass has run for it).
+    pub fn exposure(&self, key: u32) -> Option<ExposureReading> {
+        self.bloom_pass.as_ref().and_then(|b| b.exposure(key))
+    }
+
+    /// Makes camera `key`'s auto exposure jump straight to what it sees next frame,
+    /// instead of easing there (after a cut or a scene load).
+    pub fn reset_exposure(&mut self, key: u32) {
+        if let Some(b) = self.bloom_pass.as_mut() {
+            b.reset_exposure(key);
+        }
     }
 
     pub fn has_mesh(&self, id: u32) -> bool {
@@ -2901,7 +2920,9 @@ impl WorldRenderer {
         });
         let fxaa = final_pass && main.is_some_and(|m| views[m].fxaa);
         let grading = self.grading;
-        let post = final_pass && (bloom.is_some() || fxaa || !grading.is_identity());
+        // Auto exposure fading out keeps the pass going until it has.
+        let fading = self.bloom_pass.as_ref().is_some_and(|b| b.fading());
+        let post = final_pass && (bloom.is_some() || fxaa || fading || !grading.is_identity());
         let hdr = post.then(|| {
             self.bloom_pass
                 .get_or_insert_with(|| bloom::BloomPass::new(gpu))
@@ -3694,12 +3715,38 @@ impl WorldRenderer {
                 size,
                 scale: target.scale,
             };
-            pass.encode(gpu, &mut encoder, &out, bloom.as_ref(), grading);
+            // Each view with its camera's exposure, the biggest first (it covers the rest).
+            let mut order: Vec<usize> = (0..views.len()).collect();
+            if let Some(m) = main {
+                order.retain(|&i| i != m);
+                order.insert(0, m);
+            }
+            let exposure_views: Vec<bloom::ExposureView> = order
+                .iter()
+                .filter_map(|&i| {
+                    let rect = viewport_px(views[i].viewport, size)?;
+                    Some(bloom::ExposureView {
+                        key: views[i].exposure_key,
+                        rect,
+                    })
+                })
+                .collect();
+            pass.encode(
+                gpu,
+                &mut encoder,
+                &out,
+                bloom.as_ref(),
+                grading,
+                &exposure_views,
+            );
             if fxaa && let Some(f) = self.fxaa.as_mut() {
                 f.encode(gpu, &mut encoder, target.view, size, target.format);
             }
         }
         gpu.queue.submit([encoder.finish()]);
+        if post && let Some(pass) = self.bloom_pass.as_mut() {
+            pass.after_submit(gpu);
+        }
     }
 }
 

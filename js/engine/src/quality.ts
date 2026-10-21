@@ -34,16 +34,21 @@ export interface QualityLevel {
   anisotropicFiltering: AnisotropicFiltering;
   /** Top mip levels skipped (Unity's texture quality): 0 full size, 1 half, 2 quarter, 3 eighth. */
   globalTextureMipmapLimit: number;
+  /**
+   * Lets the game's auto exposure (`RenderSettings.autoExposure`) run: a player's option.
+   * Off, it blends to the game's manual exposure as if the game had turned it off.
+   */
+  autoExposure: boolean;
 }
 
 /** Unity's `AnisotropicFiltering`. */
 export type AnisotropicFiltering = "disable" | "enable" | "forceEnable";
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true },
 ];
 
 interface ManifestQuality {
@@ -86,6 +91,13 @@ let restoring = false;
 
 const listeners = new Set<(level: number) => void>();
 
+/** Resends `render.post` when the player's auto exposure option changes (set by rendering.ts). */
+let postHook: (() => void) | null = null;
+/** @internal */
+export function _setPostHook(f: () => void): void {
+  postHook = f;
+}
+
 export const QualitySettings = {
   /** The levels' names, lowest first. */
   get names(): string[] {
@@ -107,10 +119,12 @@ export const QualitySettings = {
     const i = typeof level === "number" ? level : levels.findIndex((l) => l.name === level);
     const l = levels[i];
     if (!l) throw new Error(`no quality level ${level}`);
+    const autoWas = current.autoExposure ?? true;
     levelIndex = i;
     current = { ...l };
     sendQuality();
     sendShadows();
+    if ((current.autoExposure ?? true) !== autoWas) postHook?.();
     for (const f of listeners) f(i);
   },
 
@@ -196,6 +210,19 @@ export const QualitySettings = {
   set globalTextureMipmapLimit(n: number) {
     current.globalTextureMipmapLimit = Math.min(3, Math.max(0, Math.round(n)));
     sendQuality();
+  },
+
+  /**
+   * The player's switch for auto exposure (on by default): off, the game's auto exposure
+   * blends out to its manual exposure (over `RenderSettings.exposureTransition`).
+   */
+  get autoExposure(): boolean {
+    return current.autoExposure ?? true;
+  },
+  set autoExposure(on: boolean) {
+    current.autoExposure = on;
+    remember();
+    postHook?.();
   },
 
   /** The sun's shadow cascades: 1, 2 or 4 (Unity's `shadowCascades`). */

@@ -284,6 +284,7 @@ fn run() -> Result<()> {
         font_sources: Vec::new(),
         screen: (0.0, 0.0, 0.0),
         render_stats: iron_render::WorldStats::default(),
+        exposure_sent: HashMap::new(),
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
@@ -418,6 +419,8 @@ struct App {
     screen: (f32, f32, f32),
     /// The world renderer's last stats, as last told to scripts (`RenderStats`).
     render_stats: iron_render::WorldStats,
+    /// Each camera's exposure as last sent to scripts (`Camera.exposure`).
+    exposure_sent: HashMap<u32, (f32, f32)>,
     /// React UI on planes in the world (`WorldPanel`s), each with its own tree.
     panels: panels::Panels,
     /// The surface under the pointer (or holding it while a button is down), and the one
@@ -1627,6 +1630,9 @@ impl App {
         }
         gfx.world.bloom = self.world_view.bloom;
         gfx.world.grading = self.world_view.grading;
+        for id in self.world_view.exposure_resets.drain(..) {
+            gfx.world.reset_exposure(id);
+        }
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -2003,6 +2009,32 @@ impl PlatformApp for App {
             .map(|v| iron_core::Value::Number(v as f64));
             let _ = self.scripts.call_global("__iron_render_stats", &args);
         }
+        // Each camera's exposure (EV100 in use, and how bright it metered), when it changes.
+        for id in self.world_view.camera_ids() {
+            let Some(r) = gfx.world.exposure(id) else {
+                continue;
+            };
+            let now = (r.ev, r.scene_ev);
+            let moved = self.exposure_sent.get(&id).is_none_or(|&(ev, scene)| {
+                (ev - now.0).abs() > 0.01
+                    || (scene - now.1).abs() > 0.01
+                    || scene.is_nan() != now.1.is_nan()
+            });
+            if moved {
+                self.exposure_sent.insert(id, now);
+                let scene = if now.1.is_nan() {
+                    iron_core::Value::Null
+                } else {
+                    iron_core::Value::Number(now.1.into())
+                };
+                let args = [
+                    iron_core::Value::Number(id.into()),
+                    iron_core::Value::Number(now.0.into()),
+                    scene,
+                ];
+                let _ = self.scripts.call_global("__iron_exposure", &args);
+            }
+        }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
         let dark = gfx.window.theme() == Some(iron_platform::Theme::Dark);
         self.ui.set_media_env(iron_ui::media::MediaEnv {
@@ -2023,6 +2055,9 @@ impl PlatformApp for App {
         }
         gfx.world.bloom = self.world_view.bloom;
         gfx.world.grading = self.world_view.grading;
+        for id in self.world_view.exposure_resets.drain(..) {
+            gfx.world.reset_exposure(id);
+        }
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,

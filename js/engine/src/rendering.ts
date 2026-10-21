@@ -4,6 +4,7 @@
 // it starts and whenever a setting changes.
 
 import { property } from "./property.ts";
+import { QualitySettings, _setPostHook } from "./quality.ts";
 import {
   Color,
   Mathf,
@@ -51,6 +52,10 @@ export class Camera extends Component {
   private _fog = true;
   private _targetTexture: RenderTexture | null = null;
   private started = false;
+  /** @internal The exposure last read back (`__iron_exposure`). */
+  _exposure = Number.NaN;
+  /** @internal How bright it last metered. */
+  _sceneBrightness = Number.NaN;
 
   /** Vertical field of view in degrees (perspective), 1 to 179. */
   @property
@@ -271,6 +276,33 @@ export class Camera extends Component {
         !c._targetTexture &&
         (c.gameObject.hideFlags & HideFlags.HideInHierarchy) === 0,
     );
+  }
+
+  /**
+   * The exposure this camera shows its view at, in EV100 (higher is darker, as a camera's
+   * EV setting): auto exposure's as it adapts, or the manual one. Read back from the GPU a
+   * frame or two late; NaN until the first.
+   */
+  get exposure(): number {
+    return this._exposure;
+  }
+
+  /** How bright auto exposure metered this camera's view, in EV100 (NaN until it has). */
+  get sceneBrightness(): number {
+    return this._sceneBrightness;
+  }
+
+  /**
+   * Makes auto exposure jump straight to what this camera sees next frame instead of
+   * easing there: after a cut, a teleport or a scene load.
+   */
+  resetExposure(): void {
+    __iron_op("render.exposureReset", this.id);
+  }
+
+  /** @internal By id, for `__iron_exposure`. */
+  static byId(id: number): Camera | undefined {
+    return cameras.find((c) => c.id === id);
   }
 
   /** Every active camera, in draw order. */
@@ -1269,7 +1301,48 @@ export interface AutoExposureSettings {
   speedDarkToLight?: number;
   /** How fast it adapts when the view gets darker (1, per second): eyes take longer. */
   speedLightToDark?: number;
+  /**
+   * Which part of the view counts: `average` all alike, `centerWeighted` (the default) the
+   * middle most, `spot` only a small circle in the middle.
+   */
+  metering?: "average" | "centerWeighted" | "spot";
+  /**
+   * The part of the brightness histogram averaged, in percent from the darkest (0 and 100:
+   * everything, the default). HDRP suggests 40 and 90: then a little sun or a few black
+   * pixels can't swing it.
+   */
+  lowPercent?: number;
+  highPercent?: number;
+  /**
+   * A soft floor instead of `minEV`'s wall: below `darkBelow` (EV100, 5) the eyes adapt only
+   * `darkAdaptation` (0..1, default 1: fully) of the way, so a dark room brightens some but
+   * still reads as dark.
+   */
+  darkAdaptation?: number;
+  darkBelow?: number;
+  /**
+   * More stops by how bright the view is (HDRP's curve mapping): up to 8 points of
+   * [metered EV100, stops], joined by straight lines. [[-2, -1.5], [6, 0]] keeps dark
+   * places darker without touching bright ones.
+   */
+  curve?: [number, number][];
+  /** Stops adapting: the exposure holds where it is. */
+  hold?: boolean;
 }
+
+/** `metering` as the op sends it. */
+const METERING = { average: 0, centerWeighted: 1, spot: 2 } as const;
+/** Manual exposure (EV100), and the seconds auto exposure takes to blend in and out. */
+let fixedExposure: number | null = null;
+let exposureTransition = 0;
+
+/** @internal Each camera's exposure, read back: EV100 in use, and how bright it metered. */
+globalThis.__iron_exposure = (id: number, ev: number, scene: number | null) => {
+  const c = Camera.byId(id);
+  if (!c) return;
+  c._exposure = ev;
+  c._sceneBrightness = scene ?? Number.NaN;
+};
 
 let autoExposure: AutoExposureSettings | null = null;
 const sendPost = () =>
@@ -1278,16 +1351,28 @@ const sendPost = () =>
     0,
     postExposure,
     tonemapping,
-    autoExposure
+    autoExposure && QualitySettings.autoExposure
       ? [
           autoExposure.minEV ?? -10,
           autoExposure.maxEV ?? 20,
           autoExposure.compensation ?? 0,
           autoExposure.speedDarkToLight ?? 3,
           autoExposure.speedLightToDark ?? 1,
+          METERING[autoExposure.metering ?? "centerWeighted"],
+          autoExposure.lowPercent ?? 0,
+          autoExposure.highPercent ?? 100,
+          autoExposure.hold ? 1 : 0,
+          autoExposure.darkAdaptation ?? 1,
+          autoExposure.darkBelow ?? 5,
+          Math.min(8, autoExposure.curve?.length ?? 0),
+          ...(autoExposure.curve ?? []).slice(0, 8).flat(),
         ]
       : null,
+    fixedExposure,
+    exposureTransition,
   );
+// The player's auto exposure option (QualitySettings) can turn it off.
+_setPostHook(sendPost);
 
 /**
  * A procedural sky (Unity's procedural skybox): gradients from the zenith to the horizon
@@ -1489,7 +1574,41 @@ export const RenderSettings = {
     return autoExposure;
   },
   set autoExposure(a: AutoExposureSettings | null) {
-    autoExposure = a ? { ...a } : null;
+    autoExposure = a ? { ...a, curve: a.curve?.map((p) => [p[0], p[1]] as [number, number]) } : null;
+    sendPost();
+  },
+  /**
+   * The manual exposure, in EV100 (HDRP's Fixed mode; higher is darker), used without auto
+   * exposure and blended with it while it fades in or out. null (the default): light as it
+   * is.
+   */
+  get fixedExposure(): number | null {
+    return fixedExposure;
+  },
+  set fixedExposure(ev: number | null) {
+    fixedExposure = ev;
+    sendPost();
+  },
+  /**
+   * Seconds auto exposure takes to blend in when it's turned on and out (to the manual
+   * exposure) when it's turned off (0, the default: at once).
+   */
+  get exposureTransition(): number {
+    return exposureTransition;
+  },
+  set exposureTransition(s: number) {
+    exposureTransition = Math.max(0, s);
+    sendPost();
+  },
+  /**
+   * Turns auto exposure off without anything changing on screen: the manual exposure is
+   * set to where the main camera's eyes are now. Fade it elsewhere later with
+   * `fixedExposure` (and `exposureTransition` for a slow, unnoticed blend).
+   */
+  freezeExposure(): void {
+    const ev = Camera.main?.exposure;
+    if (ev !== undefined && Number.isFinite(ev)) fixedExposure = ev;
+    autoExposure = null;
     sendPost();
   },
   /**

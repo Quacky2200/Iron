@@ -2075,6 +2075,210 @@ ${err.stack}` : ""}`);
     }
   };
 
+  // ../../js/engine/src/prefs.ts
+  var values = new Map(Object.entries(globalThis.__iron_info?.prefs ?? {}));
+  function set(key, value) {
+    values.set(key, value);
+    __iron_op("prefs.set", key, value);
+  }
+  function _loadJson(key) {
+    const v = values.get(key);
+    if (typeof v !== "string")
+      return null;
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  function _saveJson(key, value) {
+    set(key, JSON.stringify(value));
+  }
+
+  // ../../js/engine/src/quality.ts
+  var DEFAULT_LEVELS = [
+    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true },
+    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true },
+    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true },
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true }
+  ];
+  var manifest = () => {
+    const q = globalThis.__iron_info?.app?.quality;
+    return q && typeof q === "object" ? q : {};
+  };
+  function buildLevels() {
+    const overrides = manifest().levels ?? {};
+    return DEFAULT_LEVELS.map((l) => ({ ...l, ...overrides[l.name] ?? {}, name: l.name }));
+  }
+  var levels = buildLevels();
+  var levelIndex = Math.max(0, levels.findIndex((l) => l.name === (manifest().default ?? "High")));
+  var current = { ...levels[levelIndex] };
+  function sendQuality() {
+    const c = current;
+    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit);
+    remember();
+  }
+  function sendShadows() {
+    __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
+    remember();
+  }
+  function remember() {
+    if (restoring)
+      return;
+    _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
+  }
+  var restoring = false;
+  var listeners = new Set;
+  var postHook = null;
+  function _setPostHook(f) {
+    postHook = f;
+  }
+  var QualitySettings = {
+    get names() {
+      return levels.map((l) => l.name);
+    },
+    get levels() {
+      return levels.map((l) => ({ ...l }));
+    },
+    getQualityLevel() {
+      return levelIndex;
+    },
+    setQualityLevel(level) {
+      const i = typeof level === "number" ? level : levels.findIndex((l) => l.name === level);
+      const l = levels[i];
+      if (!l)
+        throw new Error(`no quality level ${level}`);
+      const autoWas = current.autoExposure ?? true;
+      levelIndex = i;
+      current = { ...l };
+      sendQuality();
+      sendShadows();
+      if ((current.autoExposure ?? true) !== autoWas)
+        postHook?.();
+      for (const f of listeners)
+        f(i);
+    },
+    onLevelChanged(f) {
+      listeners.add(f);
+      return () => listeners.delete(f);
+    },
+    get antiAliasing() {
+      return current.antiAliasing;
+    },
+    set antiAliasing(n) {
+      current.antiAliasing = n <= 1 ? 1 : n <= 2 ? 2 : n <= 4 ? 4 : 8;
+      sendQuality();
+    },
+    get renderScale() {
+      return current.renderScale;
+    },
+    set renderScale(s) {
+      current.renderScale = Math.min(2, Math.max(0.25, s));
+      sendQuality();
+    },
+    get shadows() {
+      return current.shadows;
+    },
+    set shadows(m) {
+      current.shadows = m;
+      sendQuality();
+    },
+    get softShadowQuality() {
+      return current.softShadowQuality;
+    },
+    set softShadowQuality(q) {
+      current.softShadowQuality = q;
+      sendQuality();
+    },
+    get shadowDistance() {
+      return current.shadowDistance;
+    },
+    set shadowDistance(d) {
+      current.shadowDistance = d;
+      sendShadows();
+    },
+    get vSyncCount() {
+      return current.vSyncCount;
+    },
+    set vSyncCount(n) {
+      current.vSyncCount = n > 0 ? 1 : 0;
+      sendQuality();
+    },
+    get lodBias() {
+      return current.lodBias;
+    },
+    set lodBias(b) {
+      current.lodBias = Math.max(0.01, b);
+      sendQuality();
+    },
+    get anisotropicFiltering() {
+      return current.anisotropicFiltering;
+    },
+    set anisotropicFiltering(a) {
+      current.anisotropicFiltering = a;
+      sendQuality();
+    },
+    get globalTextureMipmapLimit() {
+      return current.globalTextureMipmapLimit;
+    },
+    set globalTextureMipmapLimit(n) {
+      current.globalTextureMipmapLimit = Math.min(3, Math.max(0, Math.round(n)));
+      sendQuality();
+    },
+    get autoExposure() {
+      return current.autoExposure ?? true;
+    },
+    set autoExposure(on) {
+      current.autoExposure = on;
+      remember();
+      postHook?.();
+    },
+    get shadowCascades() {
+      return current.shadowCascades;
+    },
+    set shadowCascades(n) {
+      current.shadowCascades = n >= 4 ? 4 : n >= 2 ? 2 : 1;
+      sendShadows();
+    },
+    get shadowResolution() {
+      return current.shadowResolution;
+    },
+    set shadowResolution(r) {
+      current.shadowResolution = r;
+      sendShadows();
+    }
+  };
+  function _qualityState() {
+    return { level: levelIndex, current };
+  }
+  function _restoreQuality(state) {
+    const s = state;
+    if (!s?.current)
+      return;
+    levelIndex = Math.min(levels.length - 1, Math.max(0, s.level ?? levelIndex));
+    current = { ...levels[levelIndex], ...s.current };
+    sendQuality();
+    sendShadows();
+  }
+  function _applyDefaultQuality() {
+    const saved = _loadJson("iron.quality");
+    if (saved?.current) {
+      const i = levels.findIndex((l) => l.name === saved.level);
+      if (i >= 0)
+        levelIndex = i;
+      current = { ...levels[levelIndex], ...saved.current, name: levels[levelIndex].name };
+    }
+    restoring = true;
+    try {
+      sendQuality();
+      sendShadows();
+    } finally {
+      restoring = false;
+    }
+  }
+  if (typeof __iron_op === "function")
+    _applyDefaultQuality();
+
   // ../../js/engine/src/screen.ts
   var width = 1280;
   var height = 720;
@@ -2131,18 +2335,18 @@ ${err.stack}` : ""}`);
       return [...display().supportedModes ?? ["ExclusiveFullScreen", "FullScreenWindow", "MaximizedWindow", "Windowed"]];
     },
     onChange(fn) {
-      listeners.add(fn);
+      listeners2.add(fn);
       return () => {
-        listeners.delete(fn);
+        listeners2.delete(fn);
       };
     }
   };
-  var listeners = new Set;
+  var listeners2 = new Set;
   globalThis.__iron_screen = (w, h, s) => {
     width = w;
     height = h;
     scale = s;
-    for (const fn of listeners) {
+    for (const fn of listeners2) {
       try {
         fn();
       } catch (e) {
@@ -2192,6 +2396,8 @@ ${err.stack}` : ""}`);
     _fog = true;
     _targetTexture = null;
     started = false;
+    _exposure = Number.NaN;
+    _sceneBrightness = Number.NaN;
     get [(_dec = [
       property
     ], "fieldOfView")]() {
@@ -2358,6 +2564,18 @@ ${err.stack}` : ""}`);
     }
     static get main() {
       return cameras.find((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed && !c._targetTexture && (c.gameObject.hideFlags & HideFlags.HideInHierarchy) === 0);
+    }
+    get exposure() {
+      return this._exposure;
+    }
+    get sceneBrightness() {
+      return this._sceneBrightness;
+    }
+    resetExposure() {
+      __iron_op("render.exposureReset", this.id);
+    }
+    static byId(id) {
+      return cameras.find((c) => c.id === id);
     }
     static get allCameras() {
       return cameras.filter((c) => c.gameObject.activeInHierarchy && !c.gameObject.destroyed).sort((a, b) => a._depth - b._depth);
@@ -3086,14 +3304,33 @@ ${err.stack}` : ""}`);
   var bloom = null;
   var tonemapping = "none";
   var postExposure = 0;
+  var METERING = { average: 0, centerWeighted: 1, spot: 2 };
+  var fixedExposure = null;
+  var exposureTransition = 0;
+  globalThis.__iron_exposure = (id, ev, scene) => {
+    const c = Camera.byId(id);
+    if (!c)
+      return;
+    c._exposure = ev;
+    c._sceneBrightness = scene ?? Number.NaN;
+  };
   var autoExposure = null;
-  var sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping, autoExposure ? [
+  var sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping, autoExposure && QualitySettings.autoExposure ? [
     autoExposure.minEV ?? -10,
     autoExposure.maxEV ?? 20,
     autoExposure.compensation ?? 0,
     autoExposure.speedDarkToLight ?? 3,
-    autoExposure.speedLightToDark ?? 1
-  ] : null);
+    autoExposure.speedLightToDark ?? 1,
+    METERING[autoExposure.metering ?? "centerWeighted"],
+    autoExposure.lowPercent ?? 0,
+    autoExposure.highPercent ?? 100,
+    autoExposure.hold ? 1 : 0,
+    autoExposure.darkAdaptation ?? 1,
+    autoExposure.darkBelow ?? 5,
+    Math.min(8, autoExposure.curve?.length ?? 0),
+    ...(autoExposure.curve ?? []).slice(0, 8).flat()
+  ] : null, fixedExposure, exposureTransition);
+  _setPostHook(sendPost);
   var fog = false;
   var fogMode = "exponentialSquared";
   var fogColor = new Color(0.5, 0.5, 0.5);
@@ -3187,7 +3424,28 @@ ${err.stack}` : ""}`);
       return autoExposure;
     },
     set autoExposure(a) {
-      autoExposure = a ? { ...a } : null;
+      autoExposure = a ? { ...a, curve: a.curve?.map((p) => [p[0], p[1]]) } : null;
+      sendPost();
+    },
+    get fixedExposure() {
+      return fixedExposure;
+    },
+    set fixedExposure(ev) {
+      fixedExposure = ev;
+      sendPost();
+    },
+    get exposureTransition() {
+      return exposureTransition;
+    },
+    set exposureTransition(s) {
+      exposureTransition = Math.max(0, s);
+      sendPost();
+    },
+    freezeExposure() {
+      const ev = Camera.main?.exposure;
+      if (ev !== undefined && Number.isFinite(ev))
+        fixedExposure = ev;
+      autoExposure = null;
       sendPost();
     },
     get fog() {
@@ -4660,7 +4918,7 @@ ${err.stack}` : ""}`);
     }
   }
   // ../../js/engine/src/assets.ts
-  var listeners2 = new Set;
+  var listeners3 = new Set;
   var entries = () => globalThis.__iron_info?.assets ?? [];
   var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
   var Assets = {
@@ -4684,12 +4942,12 @@ ${err.stack}` : ""}`);
       return Assets.guidToPath(src.slice(5)) ?? src;
     },
     onChanged(fn) {
-      listeners2.add(fn);
-      return () => listeners2.delete(fn);
+      listeners3.add(fn);
+      return () => listeners3.delete(fn);
     }
   };
   globalThis.__iron_assets_changed = (paths) => {
-    for (const f of [...listeners2]) {
+    for (const f of [...listeners3]) {
       try {
         f(paths);
       } catch (e) {
@@ -6781,9 +7039,9 @@ ${err.stack}` : ""}`);
     Cancel: { keys: ["Escape"], pad: ["East"] }
   };
   var pads = new Map;
-  var listeners3 = {};
+  var listeners4 = {};
   function emit(type, event) {
-    for (const fn of listeners3[type] ?? []) {
+    for (const fn of listeners4[type] ?? []) {
       try {
         fn(event);
       } catch (e) {
@@ -6870,10 +7128,10 @@ ${err.stack}` : ""}`);
       return input.gamepads().some((p) => (p.buttons[button] ?? 0) > 0.5);
     },
     on(type, fn) {
-      let set = listeners3[type];
+      let set = listeners4[type];
       if (!set) {
         set = new Set;
-        listeners3[type] = set;
+        listeners4[type] = set;
       }
       set.add(fn);
       return () => set.delete(fn);
@@ -6952,90 +7210,6 @@ ${err.stack}` : ""}`);
       }
     }
   };
-  // ../../js/engine/src/prefs.ts
-  var values = new Map(Object.entries(globalThis.__iron_info?.prefs ?? {}));
-  function set(key, value) {
-    values.set(key, value);
-    __iron_op("prefs.set", key, value);
-  }
-  function _loadJson(key) {
-    const v = values.get(key);
-    if (typeof v !== "string")
-      return null;
-    try {
-      return JSON.parse(v);
-    } catch {
-      return null;
-    }
-  }
-  function _saveJson(key, value) {
-    set(key, JSON.stringify(value));
-  }
-
-  // ../../js/engine/src/quality.ts
-  var DEFAULT_LEVELS = [
-    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
-    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 }
-  ];
-  var manifest = () => {
-    const q = globalThis.__iron_info?.app?.quality;
-    return q && typeof q === "object" ? q : {};
-  };
-  function buildLevels() {
-    const overrides = manifest().levels ?? {};
-    return DEFAULT_LEVELS.map((l) => ({ ...l, ...overrides[l.name] ?? {}, name: l.name }));
-  }
-  var levels = buildLevels();
-  var levelIndex = Math.max(0, levels.findIndex((l) => l.name === (manifest().default ?? "High")));
-  var current = { ...levels[levelIndex] };
-  function sendQuality() {
-    const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit);
-    remember();
-  }
-  function sendShadows() {
-    __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
-    remember();
-  }
-  function remember() {
-    if (restoring)
-      return;
-    _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
-  }
-  var restoring = false;
-  var listeners4 = new Set;
-  function _qualityState() {
-    return { level: levelIndex, current };
-  }
-  function _restoreQuality(state) {
-    const s = state;
-    if (!s?.current)
-      return;
-    levelIndex = Math.min(levels.length - 1, Math.max(0, s.level ?? levelIndex));
-    current = { ...levels[levelIndex], ...s.current };
-    sendQuality();
-    sendShadows();
-  }
-  function _applyDefaultQuality() {
-    const saved = _loadJson("iron.quality");
-    if (saved?.current) {
-      const i = levels.findIndex((l) => l.name === saved.level);
-      if (i >= 0)
-        levelIndex = i;
-      current = { ...levels[levelIndex], ...saved.current, name: levels[levelIndex].name };
-    }
-    restoring = true;
-    try {
-      sendQuality();
-      sendShadows();
-    } finally {
-      restoring = false;
-    }
-  }
-  if (typeof __iron_op === "function")
-    _applyDefaultQuality();
   // ../../js/engine/src/models.ts
   var nextModel = 1;
   var models = new Map;

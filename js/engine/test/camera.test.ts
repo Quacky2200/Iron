@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, CameraFollow, CameraOrbit, GameObject, Matrix4x4, Quaternion, Rect, RenderTexture, Vector3 } from "../src/index.ts";
+import { Camera, CameraFollow, CameraOrbit, GameObject, Matrix4x4, QualitySettings, Quaternion, Rect, RenderSettings, RenderTexture, Vector3 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 import { _setScreenForTests } from "../src/screen.ts";
@@ -117,5 +117,40 @@ describe("Camera conversions", () => {
     // The camera starts behind the target (+z); yaw 90° turns that offset to +x.
     expect(near(orbiter.transform.position, new Vector3(14, 0, 0))).toBe(true);
     expect(near(orbiter.transform.forward, new Vector3(-1, 0, 0))).toBe(true);
+  });
+});
+
+// M7-EXP-05
+describe("exposure", () => {
+  test("cameras learn their exposure from the engine and can reset it", () => {
+    const cam = camera(Vector3.zero);
+    expect(Number.isNaN(cam.exposure)).toBe(true);
+    globalThis.__iron_exposure(cam.id, 3.5, 2.25);
+    expect(cam.exposure).toBe(3.5);
+    expect(cam.sceneBrightness).toBe(2.25);
+    globalThis.__iron_exposure(cam.id, 1, null);
+    expect(Number.isNaN(cam.sceneBrightness)).toBe(true);
+    cam.resetExposure();
+    expect(ops.at(-1)).toEqual(["render.exposureReset", cam.id]);
+  });
+
+  test("freezing keeps the main camera's exposure as the manual one", () => {
+    const cam = camera(Vector3.zero);
+    RenderSettings.autoExposure = {};
+    globalThis.__iron_exposure(cam.id, 4, 4);
+    RenderSettings.freezeExposure();
+    const post = ops.filter((o) => o[0] === "render.post").at(-1)!;
+    expect(post[4]).toBe(null);
+    expect(post[5]).toBe(4);
+    RenderSettings.fixedExposure = null;
+  });
+
+  test("the player's quality option turns auto exposure off and on", () => {
+    RenderSettings.autoExposure = { minEV: 1 };
+    QualitySettings.autoExposure = false;
+    expect(ops.filter((o) => o[0] === "render.post").at(-1)![4]).toBe(null);
+    QualitySettings.autoExposure = true;
+    expect((ops.filter((o) => o[0] === "render.post").at(-1)![4] as number[])[0]).toBe(1);
+    RenderSettings.autoExposure = null;
   });
 });

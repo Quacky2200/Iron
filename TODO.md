@@ -1501,6 +1501,32 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     to reach, no edge to fall off. The player can run and jump with gravity (a
     CharacterController on a floor collider that follows them). Lighting: soft, bright, the
     tiles' grid lines glowing; fog close and white, height fog where the floor meets the sky
+- [ ] Auto exposure (eye adaptation)
+  - [x] `RenderSettings.autoExposure` (2026-10-21): metered HDR image, eased exposure,
+    min/max EV, compensation, two speeds; bloom thresholds on exposed light (`M7-EXP-01`);
+    examples tunnel, dark-room and the god-ray scenes
+  - [x] Per camera, HDRP metering, blending, scripts (2026-10-21): each camera adapts on its
+    own, split screens included (`M7-EXP-02`); a histogram with low/high percentiles and
+    average / centre-weighted / spot metering (`M7-EXP-03`); a manual exposure
+    (`fixedExposure`, EV100) blended with auto over `exposureTransition`, `hold`, and
+    `freezeExposure()` to turn it off unseen (`M7-EXP-04`); `Camera.exposure` /
+    `sceneBrightness` read back and `Camera.resetExposure()` (`M7-EXP-05`); a soft floor
+    (`darkAdaptation` / `darkBelow`) and a compensation curve instead of `minEV`'s wall
+    (`M7-EXP-06`); `QualitySettings.autoExposure`, the player's switch
+- [ ] Render pipelines like Unity's URP / HDRP (asked for 2026-10-21, needed for iOS / Android):
+  a project setting (`iron.renderPipeline` in the manifest: `universal` or `high`) picking the
+  feature set and defaults. Universal: forward, cheap shadows, no froxel light volume (per-pixel
+  shafts off or reduced), simpler post (bloom, tonemapping, FXAA), lower texture and MSAA
+  defaults, mobile GPU limits (fewer storage buffers, no compute where it's missing). High:
+  everything (light volume, histogram auto exposure, physical light units). Quality levels
+  stay inside a pipeline; examples state which they need
+- [ ] Real-world light units (required, asked for 2026-10-21; HDRP's physical units): the sun
+  and sky in lux, spot and point lights in lumens or candela, emissive surfaces and the sky
+  in nits; a physical camera (aperture, shutter speed, ISO → EV100) for the manual exposure;
+  pre-exposure (lighting written to the HDR target already scaled by last frame's exposure,
+  since sunlit surfaces pass fp16's 65504 in real units); a light meter readout (lux at a
+  point, the scene's EV). Auto exposure already works in EV100. Old scenes keep working in
+  today's arbitrary units (a per-project switch, with the High pipeline)
 - [ ] Post-processing (asked for 2026-10-21; today: bloom, exposure and tonemapping, FXAA,
   render scale, fog and light shafts, and CSS filter / backdrop-filter / blend modes for
   screen UI only)

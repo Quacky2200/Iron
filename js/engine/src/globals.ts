@@ -51,6 +51,8 @@ declare global {
   // The screen size in UI pixels and the scale (screen.ts).
   var __iron_screen: (width: number, height: number, scale: number) => void;
   var __iron_render_stats: (...counts: number[]) => void;
+  // Each camera's exposure read back: EV100 in use and how bright it metered (rendering.ts).
+  var __iron_exposure: (id: number, ev: number, scene: number | null) => void;
   // Objects the engine moved (scene.ts).
   var __iron_scene: (moved: number[]) => void;
   var __iron_flush: () => void;
