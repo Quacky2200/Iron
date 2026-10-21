@@ -3,8 +3,9 @@
 // beam through the shed: a narrow cone of green (or red) light that slices into blades where
 // it passes the planks' gaps, crawls over the workbench, the tools and the lawnmower, and
 // lights the dust it goes through. Now and then it stops and locks on to something, pulsing,
-// then moves on. The menu (or keys) switches the beam's colour (C), the dust in the air (F)
-// and pauses the scan (Space).
+// then moves on, the dust motes in its path glinting. The menu (or keys) switches the beam's
+// colour (C), the rays (R), the dust motes (D), the haze's quality (G) and how strongly the
+// scanner lights it (V), and pauses the scan (Space).
 import {
   Camera,
   Color,
@@ -41,7 +42,7 @@ const BEAMS = {
 };
 type Beam = keyof typeof BEAMS;
 
-const state = { beam: "green" as Beam, dust: true, paused: false, haze: 0, beamHaze: 0 };
+const state = { beam: "green" as Beam, rays: true, dust: true, paused: false, haze: 0, beamHaze: 0 };
 
 /**
  * The haze's quality (`RenderSettings.volumetricFog`): the finest volume, its noise cleaned
@@ -54,18 +55,16 @@ const HAZE = [
   { name: "None (steps)", denoising: "none", historyWeight: 0.9, samples: 1, motionSamples: 1 },
 ] as const;
 
-/** How much haze the beam lights (`Light.volumetricIntensity`), not how bright it is. */
-const BEAM_HAZE = [1, 0.6, 0.3];
+/** How strongly the scanner lights the haze (`Light.volumetricIntensity`), not how bright it is. */
+const BEAM_HAZE = [1, 0.5, 0.25, 0.1];
 let refreshMenu = () => {};
 
 function apply(): void {
-  // Dust in the air, or settled: thinner haze (with none, there'd be nothing for the beam to
-  // light at all).
-  RenderSettings.fog = true;
-  RenderSettings.fogDensity = state.dust ? 0.12 : 0.04;
+  RenderSettings.fog = state.rays;
+  if (dust) dust.enabled = state.dust;
   const h = HAZE[state.haze]!;
   RenderSettings.volumetricFog = {
-    intensity: state.dust ? 1.6 : 0.5,
+    intensity: 1.6,
     anisotropy: 0.3,
     steps: 6,
     distance: 14,
@@ -81,6 +80,44 @@ function apply(): void {
 
 /** The scanning beam, for `apply`. */
 let scanner: Light | null = null;
+/** The dust motes' parent, for `apply`. */
+let dust: GameObject | null = null;
+
+interface Mote {
+  go: GameObject;
+  p: Vector3;
+  v: Vector3;
+  phase: number;
+  lit: boolean;
+  /** How bright in the beam: an index into `MOTE_LEVELS`. */
+  level: number;
+}
+/** A lit mote's brightness: most at the low end, the odd one glinting. */
+const MOTE_LEVELS = [0.6, 1, 1.6, 2.6];
+/** The scanner's place, under the craft's nose. */
+const SCANNER = CRAFT.add(new Vector3(0, -0.3, 0.9));
+const BOARD = 0.14;
+const GAP = 0.012;
+
+/**
+ * Whether the scan (pointing along `dir`) lights `p`: inside its cone, and its light reaching
+ * `p` through the window (between the frame's bars) or a gap between the window wall's boards.
+ */
+function inScan(p: Vector3, dir: Vector3): boolean {
+  const to = p.sub(SCANNER);
+  const len = to.magnitude;
+  if (to.dot(dir) < len * Math.cos((4.5 * Math.PI) / 180)) return false;
+  // Where the light crosses the window wall.
+  const t = (-D - 0.015 - SCANNER.z) / to.z;
+  if (t <= 0 || t >= 1) return false;
+  const x = SCANNER.x + to.x * t;
+  const y = SCANNER.y + to.y * t;
+  if (x > WIN.x0 && x < WIN.x1 && y > WIN.y0 && y < WIN.y1) {
+    return Math.abs(x) > 0.015 && Math.abs(y - (WIN.y0 + WIN.y1) / 2) > 0.015;
+  }
+  if (y < 0 || y > H || x < -W || x > W) return false;
+  return (x + W) % (BOARD + GAP) > BOARD;
+}
 /** Colours the beam, the craft's glow and its lights by `state.beam`. */
 let setBeam = () => {};
 
@@ -133,6 +170,11 @@ class Shed extends Component {
   private craftLights: MeshRenderer[] = [];
   private craftOn: Material[] = [];
   private craftOff!: Material;
+  private motes: Mote[] = [];
+  /** Lit motes' materials by brightness, in the beam's colour. */
+  private moteLit: Material[] = [];
+  /** Which way the scan points this frame. */
+  private scanDir = new Vector3(0, -0.2, 1).normalized;
 
   override onStart() {
     QualitySettings.shadowDistance = 20;
@@ -165,8 +207,8 @@ class Shed extends Component {
     const planks = [mat("#5a4430"), mat("#4e3b29"), mat("#634b34")];
     const floor = mat("#3d3025");
     slab("Floor", -W - 0.1, -0.1, -D - 0.1, W + 0.1, 0, D + 0.1, floor);
-    const gap = 0.012;
-    const board = 0.14;
+    const gap = GAP;
+    const board = BOARD;
     // Walls along x (the window wall at -z and the back at +z): vertical boards with gaps.
     for (const z of [-D, D]) {
       for (let x = -W; x < W - 0.01; x += board + gap) {
@@ -255,13 +297,74 @@ class Shed extends Component {
     const glow = new GameObject("Craft glow", { position: CRAFT.add(new Vector3(0, -0.5, 0)) });
     this.glow = glow.addComponent(Light, { type: "point", range: 8, intensity: 1.5, volumetricIntensity: 0.3 });
     scanner = this.scanner;
+    this.buildDust();
     setBeam = () => this.setBeam();
     this.setBeam();
     apply();
   }
 
+  /**
+   * Dust motes: specks drifting through the shed, hidden in the dark and glinting where the
+   * scan catches them. Most are tiny and faint.
+   */
+  private buildDust() {
+    dust = new GameObject("Dust");
+    for (let i = 0; i < 500; i++) {
+      const size = 0.004 + 0.012 * Random.value ** 2;
+      const b = Random.value;
+      const level = b < 0.45 ? 0 : b < 0.75 ? 1 : b < 0.93 ? 2 : 3;
+      const go = shape("Mote", "sphere", Vector3.zero, Vector3.one.scale(size), this.craftOff, dust);
+      go.getComponent(MeshRenderer)!.shadowCastingMode = "off";
+      go.enabled = false;
+      const m: Mote = { go, p: Vector3.zero, v: Vector3.zero, phase: Random.range(0, 100), lit: false, level };
+      this.spawn(m, Random.value < 0.6);
+      this.motes.push(m);
+    }
+  }
+
+  /** Puts a mote somewhere in the shed; `inBeam` puts it near where the scan points now. */
+  private spawn(m: Mote, inBeam: boolean) {
+    if (inBeam) {
+      // Along the scan, from the window wall to as far as the back wall.
+      const t0 = (-D - SCANNER.z) / this.scanDir.z;
+      const t1 = (D - SCANNER.z) / this.scanDir.z;
+      const c = SCANNER.add(this.scanDir.scale(Random.range(t0, t1)));
+      m.p = c.add(new Vector3(Random.range(-0.3, 0.3), Random.range(-0.3, 0.3), Random.range(-0.3, 0.3)));
+    } else {
+      m.p = new Vector3(Random.range(-W + 0.1, W - 0.1), Random.range(0.1, H - 0.1), Random.range(-D + 0.1, D - 0.1));
+    }
+    m.v = new Vector3(Random.range(-0.03, 0.03), Random.range(-0.015, 0.01), Random.range(-0.03, 0.03));
+  }
+
+  /** Drifts the motes and shows the ones the scan catches. */
+  private updateDust(dt: number) {
+    const t = this.t;
+    for (const m of this.motes) {
+      m.p = m.p.add(
+        new Vector3(
+          m.v.x + Math.sin(t * 0.31 + m.phase) * 0.02,
+          m.v.y + Math.sin(t * 0.23 + m.phase * 1.7) * 0.012,
+          m.v.z + Math.cos(t * 0.27 + m.phase * 0.6) * 0.02,
+        ).scale(dt),
+      );
+      const out = Math.abs(m.p.x) > W - 0.05 || m.p.y < 0.05 || m.p.y > H - 0.05 || Math.abs(m.p.z) > D - 0.05;
+      // Dust is everywhere, but only lit motes show: unseen ones drift back into the path of
+      // the scan now and then, so the beam always has some.
+      if (out || (!m.lit && Random.value < dt * 0.3)) this.spawn(m, !out || Random.value < 0.6);
+      const lit = inScan(m.p, this.scanDir);
+      if (lit !== m.lit) {
+        m.lit = lit;
+        m.go.enabled = lit;
+        if (lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[m.level]!;
+      }
+      if (lit) m.go.transform.position = m.p;
+    }
+  }
+
   private setBeam() {
     const c = BEAMS[state.beam];
+    this.moteLit = MOTE_LEVELS.map((k) => Material.create({ color: Color.black, emission: new Color(c.r * k * 3, c.g * k * 3, c.b * k * 3, 1), unlit: true }));
+    for (const m of this.motes) if (m.lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[m.level]!;
     this.scanner.color = c;
     this.glow.color = c;
     this.craftOn = [0.4, 1, 3].map((k) => Material.create({ color: Color.black, emission: new Color(c.r * k * 3, c.g * k * 3, c.b * k * 3, 1), unlit: true }));
@@ -269,14 +372,17 @@ class Shed extends Component {
 
   override onUpdate(dt: number) {
     if (input.getKeyDown("KeyC")) nextBeam();
-    if (input.getKeyDown("KeyF")) toggle("dust");
+    if (input.getKeyDown("KeyR")) toggle("rays");
+    if (input.getKeyDown("KeyD")) toggle("dust");
     if (input.getKeyDown("KeyG")) cycle("haze", HAZE.length);
-    if (input.getKeyDown("KeyB")) cycle("beamHaze", BEAM_HAZE.length);
+    if (input.getKeyDown("KeyV")) cycle("beamHaze", BEAM_HAZE.length);
     if (input.getKeyDown("Space")) toggle("paused");
     if (!state.paused) this.t += dt;
     const { target, lock } = scanAt(this.t);
     const eye = this.scanner.transform;
     eye.rotation = Quaternion.lookRotation(target.sub(eye.position));
+    this.scanDir = target.sub(eye.position).normalized;
+    if (state.dust) this.updateDust(dt);
     // Locked on: brighter, pulsing.
     this.scanner.intensity = 60 * (1 + lock * (0.6 + 0.4 * Math.sin(this.t * 18)));
     // The ring of lights chases round.
@@ -293,7 +399,7 @@ class Shed extends Component {
   }
 }
 
-function toggle(key: "dust" | "paused") {
+function toggle(key: "rays" | "dust" | "paused") {
   state[key] = !state[key];
   apply();
 }
@@ -334,9 +440,10 @@ function Menu() {
           keyName="C"
           onClick={nextBeam}
         />
-        <Button label="Dust" value={state.dust ? "In the air" : "Settled (thin)"} on={state.dust} keyName="F" onClick={() => toggle("dust")} />
+        <Button label="Rays" value={state.rays ? "On" : "Off"} on={state.rays} keyName="R" onClick={() => toggle("rays")} />
+        <Button label="Dust" value={state.dust ? "Motes in the air" : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />
         <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={() => cycle("haze", HAZE.length)} />
-        <Button label="Beam haze" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="B" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
+        <Button label="Ray strength" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="V" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
         <Button label="Scan" value={state.paused ? "Paused" : "Scanning"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
       </box>
     </box>
