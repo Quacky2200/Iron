@@ -1,0 +1,10 @@
+{
+  "name": "quality",
+  "title": "Iron - Quality settings",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.quality",
+  "version": "0.1.0",
+  "quality": {
+    "default": "High"
+  }
+}

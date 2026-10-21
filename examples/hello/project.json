@@ -1,0 +1,7 @@
+{
+  "name": "hello",
+  "title": "Iron - Hello",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.hello",
+  "version": "0.1.0"
+}

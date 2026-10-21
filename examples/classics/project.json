@@ -1,0 +1,7 @@
+{
+  "name": "classics",
+  "title": "Iron — Classic test models",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.classics",
+  "version": "0.1.0"
+}

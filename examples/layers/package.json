@@ -16,15 +16,5 @@
     "build:dev": "bun build src/main.tsx --outfile dist/game.js --format iife --target browser --define process.env.NODE_ENV='\"development\"'",
     "dev": "bun ../../scripts/dev.ts",
     "typecheck": "tsc --noEmit -p ."
-  },
-  "iron": {
-    "title": "Iron - Layers and culling",
-    "company": "Iron examples",
-    "identifier": "dev.iron.examples.layers",
-    "layers": {
-      "8": "Detail",
-      "9": "Player",
-      "10": "Minimap"
-    }
   }
 }

@@ -1,0 +1,7 @@
+{
+  "name": "sine-circle-demo",
+  "title": "Sine Circle Demo",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.sine-circle-demo",
+  "version": "0.1.0"
+}

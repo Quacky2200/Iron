@@ -1,0 +1,12 @@
+{
+  "name": "layers",
+  "title": "Iron - Layers and culling",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.layers",
+  "version": "0.1.0",
+  "layers": {
+    "8": "Detail",
+    "9": "Player",
+    "10": "Minimap"
+  }
+}

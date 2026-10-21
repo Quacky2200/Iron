@@ -1,0 +1,7 @@
+{
+  "name": "cornell",
+  "title": "Iron — Cornell box",
+  "company": "${firstName}'s Company",
+  "identifier": "dev.iron.cornell",
+  "version": "0.1.0"
+}
