@@ -98,12 +98,17 @@ function buildTomb(): void {
   const pale = palette(new Color(0.55, 0.44, 0.28, 1), tex);
   const tomb = new GameObject("Tomb");
 
-  // Corridor: 1 m floor tiles, wall columns and ceiling slabs.
+  // Corridor: 1 m floor tiles, wall columns and ceiling slabs. The last metre's walls and
+  // ceiling are the hall's front wall (its lintel and the blocks beside the mouth): building
+  // them twice made coplanar faces that flickered.
   for (let z = 0; z < CORRIDOR_END; z++) {
     for (let x = -1; x <= 1; x++) block(new Vector3(x, -0.5, z + 0.5), Vector3.one, pick(earth), tomb);
+    if (z === CORRIDOR_END - 1) continue;
     for (const x of [-2, 2]) block(new Vector3(x, 1.5, z + 0.5), new Vector3(1, 3, 1), pick(sand), tomb);
     block(new Vector3(0, 3.5, z + 0.5), new Vector3(3, 1, 1), pick(earth), tomb);
   }
+  // The mouth is 4 m wide under the lintel; narrow it to the corridor's 3 m.
+  for (const x of [-1.75, 1.75]) block(new Vector3(x, 1.5, CORRIDOR_END - 0.5), new Vector3(0.5, 3, 1), pick(sand), tomb);
   for (let x = -1; x <= 1; x++) block(new Vector3(x, 1.5, -0.5), new Vector3(1, 3, 1), pick(sand), tomb);
 
   // Hall: 2 m floor and ceiling slabs, with a hole for the pool.
@@ -215,7 +220,8 @@ class Tomb extends Component {
   private buildWalker() {
     const skin = Material.create({ color: new Color(0.6, 0.38, 0.26, 1), smoothness: 0.1 });
     const top = Material.create({ color: new Color(0.08, 0.28, 0.3, 1), smoothness: 0.1 });
-    const shorts = Material.create({ color: new Color(0.25, 0.16, 0.08, 1), smoothness: 0.1 });
+    // Dark khaki: clearly not skin, even in orange torchlight.
+    const shorts = Material.create({ color: new Color(0.09, 0.075, 0.04, 1), smoothness: 0.1 });
     const pack = Material.create({ color: new Color(0.14, 0.09, 0.05, 1), smoothness: 0.1 });
     const hair = Material.create({ color: new Color(0.1, 0.05, 0.02, 1), smoothness: 0.1 });
 
@@ -234,6 +240,8 @@ class Tomb extends Component {
     for (const side of [-1, 1]) {
       const hip = new GameObject("Hip", { position: new Vector3(side * 0.11, 0.8, 0), parent: root });
       part("cube", new Vector3(0, -0.4, 0), new Vector3(0.16, 0.8, 0.18), skin, hip);
+      // The shorts' legs, over the tops of the thighs (moving with them).
+      part("cube", new Vector3(0, -0.13, 0), new Vector3(0.19, 0.28, 0.21), shorts, hip);
       this.legs.push(hip);
       const shoulder = new GameObject("Shoulder", { position: new Vector3(side * 0.29, 1.38, 0), parent: root });
       part("cube", new Vector3(0, -0.3, 0), new Vector3(0.12, 0.6, 0.12), skin, shoulder);
