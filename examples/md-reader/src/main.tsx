@@ -4,7 +4,7 @@
 // headings, tables, code, task lists and images. gen-docs.ts bundles the files at build time.
 import "./reader.css";
 
-import { input } from "@iron/engine";
+import { input, PlayerPrefs } from "@iron/engine";
 import {
   createRoot,
   Image,
@@ -17,6 +17,7 @@ import {
 import { Fragment, memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DOCS, IMAGES } from "./docs.gen.ts";
+import { highlight } from "./highlight.ts";
 import { type Block, type Doc, type Inline, parse, plainText } from "./markdown.ts";
 
 const HOME = DOCS["docs/README.md"] !== undefined ? "docs/README.md" : Object.keys(DOCS)[0]!;
@@ -264,7 +265,17 @@ function BlockView({ block, ctx, joined = false }: { block: Block; ctx: Ctx; joi
       return (
         <box className="pre">
           {block.lang ? <Text className="lang">{block.lang}</Text> : null}
-          <Text className="pre-text">{block.text}</Text>
+          <Text className="pre-text">
+            {highlight(block.text, block.lang).map((t, i) =>
+              t.kind === "plain" ? (
+                t.text
+              ) : (
+                <Span key={i} className={`tok-${t.kind}`}>
+                  {t.text}
+                </Span>
+              ),
+            )}
+          </Text>
         </box>
       );
     case "rule":
@@ -316,6 +327,23 @@ function BlockView({ block, ctx, joined = false }: { block: Block; ctx: Ctx; joi
 }
 
 // --- The app ---------------------------------------------------------------------------
+
+/** The theme button's icon: a sun to switch to light, a moon to switch back to dark. */
+function ThemeIcon({ light }: { light: boolean }) {
+  const line = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" } as const;
+  return (
+    <svg viewBox="0 0 24 24" style={{ width: 18, height: 18 }}>
+      {light ? (
+        <path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" {...line} strokeLinejoin="round" />
+      ) : (
+        <>
+          <circle cx="12" cy="12" r="4" {...line} />
+          <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" {...line} />
+        </>
+      )}
+    </svg>
+  );
+}
 
 /** The folder at `path` in the file tree ("" is the top). */
 function folderAt(path: string): Folder | undefined {
@@ -488,6 +516,11 @@ function App() {
     index: 0,
   });
   const [sidebar, setSidebar] = useState(true);
+  const [light, setLight] = useState(() => PlayerPrefs.getString("theme") === "light");
+  const toggleTheme = () => {
+    PlayerPrefs.setString("theme", light ? "dark" : "light");
+    setLight(!light);
+  };
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(["docs"]));
   const [hovered, setHovered] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -598,7 +631,7 @@ function App() {
 
   return (
     <box
-      className="app"
+      className={light ? "app light" : "app"}
       onPointerDown={(e: IronPointerEvent) => {
         // The mouse's side buttons: 3 back, 4 forward.
         if (e.button === 3) step(-1);
@@ -648,6 +681,9 @@ function App() {
           })}
         </Text>
         <Text className="doc-title">{isFolder(entry.path) ? `${entry.path || "Iron"}/` : title(entry.path)}</Text>
+        <box className="button" onClick={toggleTheme}>
+          <ThemeIcon light={light} />
+        </box>
       </box>
       <box className="body">
         {sidebar ? (

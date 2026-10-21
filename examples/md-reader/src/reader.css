@@ -1,4 +1,5 @@
-/* The reader's look: a dark docs site. Bundled by Bun into dist/game.css. */
+/* The reader's look: a docs site, dark by default, light with `.app.light` (the sun /
+   moon button). Bundled by Bun into dist/game.css. */
 
 :root {
   --bg: #0f1218;
@@ -7,11 +8,62 @@
   --line: #262d3a;
   --text: #d9dee7;
   --muted: #8691a3;
+  --dim: #4a5262;
   --head: #f2f4f8;
   --accent: #6cb6ff;
+  --hover: #222a37;
+  --press: #2b3445;
+  --selected: #1f2d42;
+  --row-hover: #1d2430;
+  --th: #1a202a;
+  --odd: #12161d;
+  --edge: #3a4558;
+  --check: #5a6578;
   --code-bg: #1b212c;
   --code: #f0b47a;
   --mono: Consolas, "Cascadia Mono", "Courier New", monospace;
+  /* Code colours: Atom's One Dark theme (MIT). */
+  --tok-text: #abb2bf;
+  --tok-keyword: #c678dd;
+  --tok-string: #98c379;
+  --tok-comment: #7f848e;
+  --tok-number: #d19a66;
+  --tok-type: #e5c07b;
+  --tok-function: #61afef;
+  --tok-property: #e06c75;
+  --tok-operator: #56b6c2;
+}
+
+.app.light {
+  --bg: #ffffff;
+  --panel: #f6f8fa;
+  --bar: #f3f4f6;
+  --line: #d8dee4;
+  --text: #24292f;
+  --muted: #57606a;
+  --dim: #afb8c1;
+  --head: #1f2328;
+  --accent: #0969da;
+  --hover: #e7ebef;
+  --press: #d8dee4;
+  --selected: #ddf4ff;
+  --row-hover: #eef1f4;
+  --th: #f0f3f6;
+  --odd: #f8fafc;
+  --edge: #d0d7de;
+  --check: #8c959f;
+  --code-bg: #f6f8fa;
+  --code: #b35900;
+  /* Atom's One Light theme (MIT). */
+  --tok-text: #383a42;
+  --tok-keyword: #a626a4;
+  --tok-string: #50a14f;
+  --tok-comment: #a0a1a7;
+  --tok-number: #986801;
+  --tok-type: #c18401;
+  --tok-function: #4078f2;
+  --tok-property: #e45649;
+  --tok-operator: #0184bc;
 }
 
 .app {
@@ -47,10 +99,10 @@
   user-select: none;
   transition: background-color 0.12s;
 }
-.button:hover { background-color: #222a37; }
-.button:active { background-color: #2b3445; }
-.button.on { background-color: #1f2b3d; color: var(--accent); }
-.button:disabled { color: #4a5262; cursor: default; background-color: transparent; }
+.button:hover { background-color: var(--hover); }
+.button:active { background-color: var(--press); }
+.button.on { background-color: var(--selected); color: var(--accent); }
+.button:disabled { color: var(--dim); cursor: default; background-color: transparent; }
 
 .crumbs {
   margin-left: 10px;
@@ -62,10 +114,11 @@
 .crumb { cursor: pointer; }
 .crumb:hover { color: var(--accent); text-decoration: underline; }
 .crumb.last { color: var(--text); cursor: default; text-decoration: none; }
-.crumb-sep { color: #4a5262; }
+.crumb-sep { color: var(--dim); }
 
 .doc-title {
   margin-left: auto;
+  margin-right: 4px;
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
@@ -102,8 +155,8 @@
   cursor: pointer;
   user-select: none;
 }
-.tree-row:hover { background-color: #1d2430; }
-.tree-row.current { background-color: #1f2d42; }
+.tree-row:hover { background-color: var(--row-hover); }
+.tree-row.current { background-color: var(--selected); }
 .tree-row.current .tree-label { color: var(--accent); }
 .tree-row.folder .tree-label { color: var(--muted); font-weight: 600; }
 
@@ -223,8 +276,17 @@
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
-  color: #c9d4e3;
+  color: var(--tok-text);
 }
+
+.tok-keyword { color: var(--tok-keyword); }
+.tok-string { color: var(--tok-string); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-number, .tok-constant { color: var(--tok-number); }
+.tok-type { color: var(--tok-type); }
+.tok-function { color: var(--tok-function); }
+.tok-property, .tok-variable { color: var(--tok-property); }
+.tok-macro, .tok-operator, .tok-meta { color: var(--tok-operator); }
 
 .rule {
   height: 1px;
@@ -236,7 +298,7 @@
   flex-direction: column;
   padding: 4px 0 0 14px;
   margin-bottom: 12px;
-  border-left: 3px solid #3a4558;
+  border-left: 3px solid var(--edge);
   color: var(--muted);
 }
 
@@ -267,7 +329,7 @@
 .check {
   width: 13px;
   height: 13px;
-  border: 1.5px solid #5a6578;
+  border: 1.5px solid var(--check);
   border-radius: 3px;
   align-items: center;
   justify-content: center;
@@ -307,9 +369,9 @@
   border-right: 1px solid var(--line);
   min-width: 0;
 }
-.cell.head { background-color: #1a202a; }
+.cell.head { background-color: var(--th); }
 .cell.head .cell-text { font-weight: 700; color: var(--head); }
-.cell.odd { background-color: #12161d; }
+.cell.odd { background-color: var(--odd); }
 .cell-text { line-height: 1.45; font-size: 14px; }
 .cell-text.center { text-align: center; }
 .cell-text.right { text-align: right; }
@@ -332,7 +394,7 @@
   margin-bottom: 12px;
   padding: 8px 12px;
   border-radius: 6px;
-  border: 1px dashed #3a4558;
+  border: 1px dashed var(--edge);
   color: var(--muted);
   font-size: 13px;
 }

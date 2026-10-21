@@ -1680,30 +1680,15 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
 
 ## Later
 
-- [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI (a first
-  editor-style app; the editor's docs browser can grow from it)
-  - [x] docs/ and the top-level .md files bundled at build time (`gen-docs.ts`), images copied
-    into the game folder
-  - [x] Markdown subset parser (headings, paragraphs, emphasis, code, links, images, lists with
-    tasks, quotes, GitHub tables, rules), drawn as `text` / `span` / `image` / grid boxes
-  - [x] File tree on the left, toggled from the top bar (Ctrl+B); back / forward (buttons,
-    Alt+Left / Alt+Right, mouse side buttons) keeping each page's scroll; links between docs
-    and to `#headings`; link targets in the status bar
-  - [x] Spans are hit-tested in `iron_ui` (`M3-EVT-07`), so inline links take clicks and `:hover`
-  - [x] Long docs load progressively: a screenful at once, then a chunk a frame (memoized chunk
-    boxes, long lists cut between items); the parser scans without copying (TODO.md: first
-    paint ~150 ms instead of ~1 s in release)
-  - [x] The path bar works like Explorer's: each folder in it opens a listing of that folder
-  - [x] `iron_ui`: appending to a long column no longer re-measures the siblings (an exact size
-    cache beyond Taffy's nine entries, `M2-LAY-07`); drawing skips subtrees scrolled out of
-    their clips (`M2-DRW-09`); relayouts that keep a text block's width skip re-breaking its
-    lines. A scroll frame of TODO.md: ~21 ms to ~5 ms in release
-  - [ ] Scrolling still lays out again (rects, ink, hover restyle: two passes a wheel tick, ~55 ms
-    a frame in a debug build): move the scrolled subtree's rects instead
-  - [ ] Debug builds run `iron_ui` unoptimized (dependencies are `opt-level = 3`); consider
-    `[profile.dev.package.iron_ui] opt-level = 1`
-  - [ ] Search across docs, an "on this page" outline, selectable/copyable text and code
-  - [ ] Open external links in the system browser (needs an app shell op, M6 / platform plan)
+- [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI. Its own
+  plan and progress: [examples/md-reader/TODO.md](examples/md-reader/TODO.md). Engine work it
+  needs:
+  - [x] Spans hit-tested inside text (`M3-EVT-07`); an exact layout size cache (`M2-LAY-07`);
+    drawing culled to scroll clips (`M2-DRW-09`); unchanged line breaking skipped
+  - [ ] The first layout of freshly mounted content disagrees with the next one, so a jump made
+    right after mounting lands off (the reader works around it by jumping again a frame later)
+  - [ ] Scrolling lays out again on every wheel tick: move the scrolled subtree's rects instead
+  - [ ] Extra command-line arguments passed to scripts (`iron <game> -- --root x --goto y`)
 - [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
   SVG today (`The image format Gif is not supported`). Decode GIFs (the `image` crate's `gif`
   feature in `iron_render`), then play animated ones with their frame timings (frames in the
