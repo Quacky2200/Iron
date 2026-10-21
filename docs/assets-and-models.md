@@ -95,6 +95,10 @@ builds a `MeshData`, completes it (`complete`: smooth normals, zero UVs and tang
 `Mesh.set` replaces the data and `Mesh.destroy` removes it (`render.mesh id null`); renderers using a
 removed mesh draw nothing. The renderer also keeps a mesh's buffers by id (`set_mesh`, `remove_mesh`).
 
+`Mesh.createFlat({ positions, triangles, normals?, uv? })` and `mesh.setFlat(data)` take flat number arrays
+(x, y, z per vertex; u, v in Unity's bottom-up space, flipped for the engine). They send the same
+`render.mesh` op without making an object per vertex: the fast way for big, rebuilt meshes such as terrain chunks.
+
 **Mesh colliders from render meshes.** A `MeshCollider` with `sharedMesh` sends a `physics.collider` op
 whose shape is `renderMesh [mesh id, convex 0/1, scale x y z]`. The app rewrites it in
 `WorldViews::resolve_mesh_collider` into a `mesh` or `convex` shape holding that mesh's (scaled)

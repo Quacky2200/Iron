@@ -446,7 +446,10 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
 and a lamp post, showing every kind of fog (menu or keys F, H, L, Q). `examples/fog-teapots` (teapots
 fading into fog), `fog-raider` (a PS1-style scene, renamed from `fog-ps1`), `fog-blocks` (a block hill in
-fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes.
+fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes. `fog-world` is an endless streamed block
+world: 16x16-column chunk meshes, recycled around a wandering camera, with linear fog as the render
+distance and a spare ring of chunks past the fog to show fog culling. In a release build with vsync off,
+culling drew 45-50 meshes against 65-73 (16-20 hidden by fog), about 2.2 against 2.7 ms a frame.
 
 ## Render textures
 
@@ -528,7 +531,7 @@ The component re-sends its op when a property changes. The defaults are a dark c
 `MeshRenderer` takes a primitive name or a `Mesh` and a `Material` (`color`, `emission`, `smoothness`,
 `metallic`, `unlit`, `mainTexture`, tiling; `Material.create` and `with` take named settings, and
 `withColor` and `withTexture` make copies; see [assets-and-models.md](assets-and-models.md#materials-and-meshes)). `Mesh.create` sends script
-data. `GameObject.createPrimitive(type)` ([primitives.ts](../js/engine/src/primitives.ts)) makes an
+data (`Mesh.createFlat` does too, from flat arrays). `GameObject.createPrimitive(type)` ([primitives.ts](../js/engine/src/primitives.ts)) makes an
 object with the matching mesh and collider.
 
 `WorldViews::views(scene, size, extra)` runs every frame, after `update_world`:
