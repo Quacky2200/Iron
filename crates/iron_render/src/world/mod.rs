@@ -553,6 +553,46 @@ pub struct WorldView {
     pub fog_volumes: Vec<FogVolume>,
     /// Whose exposure the view uses (its camera's id): each camera adapts on its own.
     pub exposure_key: u32,
+    /// A deck of cloud drawn with the background (HDRP's cloud layer): behind everything, so
+    /// distance fog doesn't hide it (`None`: none).
+    pub clouds: Option<CloudLayer>,
+}
+
+/// A deck of cloud at an altitude, drawn with the background (HDRP's cloud layer): each pixel
+/// of sky looks up to where its ray meets the deck, so the clouds shift as the camera moves
+/// under them, and they thin out towards the horizon.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CloudLayer {
+    /// The deck's height in metres.
+    pub altitude: f32,
+    /// About how wide a cloud is, metres.
+    pub size: f32,
+    /// How much of the sky is cloud, 0 to 1.
+    pub coverage: f32,
+    pub opacity: f32,
+    /// How soft the clouds' edges are, 0 (hard) to 1.
+    pub softness: f32,
+    /// The clouds' colour (linear; their thick parts are a little darker underneath).
+    pub color: [f32; 3],
+    /// How far the wind has carried the clouds, metres (x, z).
+    pub offset: [f32; 2],
+    /// Over about this distance along a ray the clouds fade into the sky, metres.
+    pub fade: f32,
+}
+
+impl Default for CloudLayer {
+    fn default() -> Self {
+        Self {
+            altitude: 1500.0,
+            size: 2000.0,
+            coverage: 0.5,
+            opacity: 1.0,
+            softness: 0.3,
+            color: [0.8, 0.8, 0.82],
+            offset: [0.0; 2],
+            fade: 20000.0,
+        }
+    }
 }
 
 /// How many fog volumes a view draws.
@@ -822,6 +862,7 @@ impl WorldView {
             fog: None,
             fog_volumes: Vec::new(),
             exposure_key: 0,
+            clouds: None,
         }
     }
 }
@@ -960,10 +1001,32 @@ struct GpuGlobals {
     fog_local: [f32; 4],
     /// x: pre-exposure (world.wgsl's `Globals::exposure`).
     exposure: [f32; 4],
+    /// The cloud layer: x altitude, y size, z coverage, w opacity.
+    cloud: [f32; 4],
+    /// rgb: the clouds' colour; w: softness.
+    cloud_color: [f32; 4],
+    /// xy: the wind's offset; z: the fade distance; w: 1 when on.
+    cloud_move: [f32; 4],
     local_fogs: [GpuFogVolume; MAX_FOG_VOLUMES],
 }
 
 impl GpuGlobals {
+    fn set_clouds(&mut self, clouds: Option<&CloudLayer>) {
+        let Some(c) = clouds else {
+            self.cloud_move = [0.0; 4];
+            return;
+        };
+        self.cloud = [
+            c.altitude,
+            c.size.max(1e-3),
+            c.coverage.clamp(0.0, 1.0),
+            c.opacity.clamp(0.0, 1.0),
+        ];
+        let [r, g, b] = c.color.map(|v| v.max(0.0));
+        self.cloud_color = [r, g, b, c.softness.clamp(0.01, 1.0)];
+        self.cloud_move = [c.offset[0], c.offset[1], c.fade.max(1e-3), 1.0];
+    }
+
     fn set_fog_volumes(&mut self, volumes: &[FogVolume]) {
         let n = volumes.len().min(MAX_FOG_VOLUMES);
         for (gpu, v) in self.local_fogs.iter_mut().zip(&volumes[..n]) {
@@ -3553,6 +3616,7 @@ impl WorldRenderer {
                 ..Zeroable::zeroed()
             };
             globals.set_fog(self.pipeline_fog(view.fog).as_ref());
+            globals.set_clouds(view.clouds.as_ref());
             globals.set_fog_volumes(&view.fog_volumes);
             gpu.queue.write_buffer(
                 &self.globals,

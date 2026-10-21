@@ -3469,6 +3469,12 @@ ${err.stack}` : ""}`);
   var fogStart = 0;
   var fogEnd = 300;
   var heightFog = null;
+  var cloudLayer = null;
+  function sendClouds() {
+    const c = cloudLayer;
+    const t = c?.tint;
+    __iron_op("render.clouds", 0, c ? [c.altitude ?? 1500, c.size ?? 2000, c.coverage ?? 0.5, c.opacity ?? 1, c.softness ?? 0.3, t?.r ?? 0.8, t?.g ?? 0.8, t?.b ?? 0.82, c.windSpeed ?? 0, c.windDirection ?? 0, c.fadeDistance ?? 20000] : null);
+  }
   var fogCulling = true;
   var DENOISING = { none: 0, reprojection: 1, gaussian: 2, both: 3 };
   var VOLUME_DETAILS = ["low", "medium", "high", "ultra"];
@@ -3629,6 +3635,13 @@ ${err.stack}` : ""}`);
     },
     get heightFog() {
       return heightFog;
+    },
+    get cloudLayer() {
+      return cloudLayer;
+    },
+    set cloudLayer(c) {
+      cloudLayer = c ? { ...c } : null;
+      sendClouds();
     },
     set heightFog(h) {
       heightFog = h ? { ...h } : null;
@@ -7990,6 +8003,7 @@ ${err.stack}` : ""}`);
       fogStartDistance: RenderSettings.fogStartDistance,
       fogEndDistance: RenderSettings.fogEndDistance,
       heightFog: RenderSettings.heightFog,
+      cloudLayer: RenderSettings.cloudLayer,
       volumetricFog: RenderSettings.volumetricFog,
       fogCulling: RenderSettings.fogCulling
     }, "renderSettings");
@@ -8018,6 +8032,8 @@ ${err.stack}` : ""}`);
       RenderSettings.fogEndDistance = s.fogEndDistance;
     if ("heightFog" in s)
       RenderSettings.heightFog = s.heightFog ?? null;
+    if ("cloudLayer" in s)
+      RenderSettings.cloudLayer = s.cloudLayer ?? null;
     if ("volumetricFog" in s)
       RenderSettings.volumetricFog = s.volumetricFog ?? null;
     if (typeof s.fogCulling === "boolean")

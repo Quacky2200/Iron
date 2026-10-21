@@ -91,6 +91,15 @@ describe("fog", () => {
     expect(ops.filter((o) => o[0] === "render.light").at(-1)!.at(-3)).toBe(0);
   });
 
+  // M7-CLOUD-03
+  test("the cloud layer goes out with its defaults filled in", () => {
+    const last = () => ops.filter((o) => o[0] === "render.clouds").at(-1)!;
+    RenderSettings.cloudLayer = { altitude: 60, size: 40, tint: new Color(0.5, 0.5, 0.55), windSpeed: 2, windDirection: 90 };
+    expect(last()).toEqual(["render.clouds", 0, [60, 40, 0.5, 1, 0.3, 0.5, 0.5, 0.55, 2, 90, 20000]]);
+    RenderSettings.cloudLayer = null;
+    expect(last()).toEqual(["render.clouds", 0, null]);
+  });
+
   // M7-SPOT-02
   test("spot lights can be pyramids, an aspect ratio wide", () => {
     const l = new GameObject("scanner").addComponent(Light, { type: "spot" });

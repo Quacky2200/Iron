@@ -214,6 +214,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fog: None,
             fog_volumes: Vec::new(),
             exposure_key: 0,
+            clouds: None,
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -245,6 +246,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fog: None,
             fog_volumes: Vec::new(),
             exposure_key: 0,
+            clouds: None,
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -283,6 +285,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fog: None,
             fog_volumes: Vec::new(),
             exposure_key: 0,
+            clouds: None,
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -3880,6 +3883,67 @@ fn a_spot_light_behind_a_wall_puts_no_haze_in_front_of_it() {
     let middle = green(size.0 / 2, size.1 / 2);
     let aside = green(size.0 / 8, size.1 / 2);
     assert!(middle <= aside + 2, "middle {middle}, aside {aside}");
+}
+
+// M7-CLOUD-01
+#[test]
+fn a_cloud_layer_covers_the_sky_behind_the_distance_fog() {
+    use iron_render::{CloudLayer, Fog, FogMode, WorldView};
+    let size = (64, 48);
+    let gpu = shared_gpu();
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let tv = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &tv,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // Looking up at a blue background through dense red fog (which the background ignores).
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, -0.3),
+            Vec3::Z,
+        )
+        .inverse(),
+        60.0,
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.05, 0.1, 0.6),
+    );
+    let render = |clouds: Option<CloudLayer>| {
+        let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+        v.fog = Some(Fog {
+            mode: FogMode::Exponential,
+            color: [1.0, 0.0, 0.0],
+            density: 0.5,
+            ..Default::default()
+        });
+        v.clouds = clouds;
+        let mut world = WorldRenderer::new(&gpu);
+        world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+        let px = target.read_pixels(&gpu).unwrap();
+        let i = ((size.1 / 2 * size.0 + size.0 / 2) * 4) as usize;
+        [px[i] as i32, px[i + 1] as i32, px[i + 2] as i32]
+    };
+    let clear = render(None);
+    // Overcast: every bit of the deck is cloud, light grey.
+    let cloudy = render(Some(CloudLayer {
+        altitude: 50.0,
+        size: 30.0,
+        coverage: 1.0,
+        softness: 0.1,
+        color: [0.7, 0.7, 0.7],
+        ..Default::default()
+    }));
+    assert!(clear[2] > clear[0] + 60, "blue sky {clear:?}");
+    assert!(
+        (cloudy[0] - cloudy[2]).abs() < 30 && cloudy[0] > 120,
+        "grey cloud {cloudy:?}"
+    );
 }
 
 // M7-SPOT-01

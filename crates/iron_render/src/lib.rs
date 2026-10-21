@@ -16,7 +16,7 @@ pub use surface::WindowSurface;
 pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, needs_backdrop};
 pub use wgpu;
 pub use world::{
-    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CookedTexture,
+    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CloudLayer, CookedTexture,
     DEFAULT_PARTICLE_TEXTURE, Denoising, ExposureReading, FillRule, FillVertex, Fog, FogMode,
     FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_CURVE_POINTS, MAX_FOG_VOLUMES,
     MISSING_TEXTURE, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror,
