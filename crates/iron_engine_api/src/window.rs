@@ -17,7 +17,7 @@ use crate::log::{Level, emit as log_emit};
 use iron_api::callback::{HandleArg, Listeners, emit};
 use iron_api::{Callback, Handle, iron_api};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// A window handle: 1 is the main window, then 2, 3, ... never reused in a run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -303,6 +303,8 @@ struct State {
     now_ms: f64,
     /// Whether the platform can open secondary windows (the host says; true until told).
     supported: bool,
+    /// Keyed windows a hot reload kept that the new code has not claimed yet (`create` with their key).
+    unclaimed: BTreeSet<WindowRef>,
 }
 
 fn main_state() -> WindowState {
@@ -351,6 +353,7 @@ impl State {
             next_request: 1,
             now_ms: 0.0,
             supported: true,
+            unclaimed: BTreeSet::new(),
         }
     }
 
@@ -912,6 +915,46 @@ pub fn can_set_up(w: WindowRef) -> bool {
     with(|s| s.setup.get(&w) == Some(&s.domain) || s.domain_of(w) == s.domain)
 }
 
+/// Hot reload, before the old code goes: drops every listener (they hold the old code's closures),
+/// queued messages, pending requests and `run` callbacks, and returns the open windows without a key
+/// (not the main one): the host closes them (children first, no `onCloseRequested`; `onClosed` does
+/// not run, its listeners are gone). Windows with a key stay open and wait for the new code to claim
+/// them with `Window.create({ key })`; [`reload_end`] closes what nobody claimed.
+pub fn reload_begin() -> Vec<WindowRef> {
+    with(|s| {
+        s.listeners.clear();
+        s.domain_listeners.clear();
+        s.run_queue.clear();
+        s.queues.clear();
+        s.pending.clear();
+        s.setup.clear();
+        s.requests.clear();
+        s.current = None;
+        s.cancel = false;
+        s.in_close_request = None;
+        s.unclaimed = s
+            .windows
+            .iter()
+            .filter(|(w, st)| **w != MAIN && st.open && !st.key.is_empty())
+            .map(|(w, _)| *w)
+            .collect();
+        s.open_in_order()
+            .into_iter()
+            .filter(|w| *w != MAIN && s.windows[w].key.is_empty())
+            .collect()
+    })
+}
+
+/// Hot reload, after the new code's first frame: the keyed windows it did not claim, to close.
+pub fn reload_end() -> Vec<WindowRef> {
+    with(|s| {
+        std::mem::take(&mut s.unclaimed)
+            .into_iter()
+            .filter(|w| s.windows.get(w).is_some_and(|st| st.open))
+            .collect()
+    })
+}
+
 /// Tests: only the main window, no listeners, no requests.
 pub fn reset() {
     with(|s| *s = State::new());
@@ -1037,6 +1080,25 @@ fn create_window(
             Style::Normal
         })
     };
+    // After a hot reload, the key of a window that stayed open gives that window back.
+    if !key.is_empty()
+        && let Some(w) = with(|s| {
+            s.unclaimed
+                .iter()
+                .copied()
+                .find(|w| s.windows.get(w).is_some_and(|st| st.open && st.key == key))
+        })
+    {
+        return claim(
+            w,
+            title,
+            style_v,
+            parent,
+            &flags,
+            run_in_background,
+            style.is_empty(),
+        );
+    }
     with(|s| {
         // A parent must be an open window of the creating domain (or one it is setting up this
         // frame); none means the root of the creating domain for the styles that always have an
@@ -1123,6 +1185,59 @@ fn create_window(
             s.setup.insert(w, creator);
         }
         s.push(WindowRequest::Create(w));
+        w
+    })
+}
+
+/// `create` with the key of a window a reload kept: that window, with the new code's title, style
+/// and flags (its size and position stay: the player may have moved it). A different parent is
+/// ignored with a warning. The creator may set it up (`createRoot`, listeners, `run`) this frame.
+fn claim(
+    w: WindowRef,
+    title: &str,
+    style: Style,
+    parent: WindowRef,
+    flags: &Flags,
+    run_in_background: bool,
+    style_not_given: bool,
+) -> WindowRef {
+    with(|s| {
+        s.unclaimed.remove(&w);
+        let st = s.windows.get_mut(&w).expect("claimed windows exist");
+        let wanted_parent = Some(parent).filter(|p| *p != WindowRef::NONE);
+        if wanted_parent.is_some() && wanted_parent != st.parent {
+            warn(&format!(
+                "Window.create: window {} was kept by the reload with another parent; the new parent is ignored",
+                w.0
+            ));
+        }
+        let mut changed = Vec::new();
+        if st.title != title {
+            st.title = title.to_string();
+            changed.push(WindowRequest::Title(w, title.to_string()));
+        }
+        if !style_not_given
+            && st.style != style
+            && st.style != Style::Child
+            && style != Style::Child
+        {
+            st.style = style;
+            changed.push(WindowRequest::Style(w, style));
+        }
+        let mut flags = flags.clone();
+        flags.focus_on_show &= st.style != Style::Popup;
+        if st.flags != flags {
+            st.flags = flags;
+            changed.push(WindowRequest::Flags(w, st.flags.clone()));
+        }
+        st.run_in_background = run_in_background;
+        for r in changed {
+            s.push(r);
+        }
+        if s.domain_of(w) != s.domain {
+            let creator = s.domain;
+            s.setup.insert(w, creator);
+        }
         w
     })
 }

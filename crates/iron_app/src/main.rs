@@ -357,6 +357,7 @@ fn run() -> Result<()> {
         panels: panels::Panels::default(),
         windows: windows::AppWindows::new(),
         domains: windows::Domains::default(),
+        reload_claims_pending: false,
         window_commands: Vec::new(),
         windows_to_show: Vec::new(),
         main_focus_sent: None,
@@ -521,6 +522,8 @@ struct App {
     windows: windows::AppWindows,
     /// Isolated event domains (families of windows under a root other than the main window).
     domains: windows::Domains,
+    /// A reload happened: after the new code's first frame, keyed windows nobody claimed close.
+    reload_claims_pending: bool,
     /// Platform commands scripts' window requests became, and the windows drawn for the first time.
     window_commands: Vec<iron_platform::WindowCommand>,
     windows_to_show: Vec<iron_platform::WindowKey>,
@@ -654,6 +657,8 @@ impl App {
             }
             _ => None,
         };
+        // The old code's window listeners go; windows with a key stay for the new code to claim.
+        let unowned = iron_engine_api::window::reload_begin();
         let mut fresh = QuickJsRuntime::new();
         if let Err(e) = fresh.eval(&self.info.script()) {
             tracing::error!("reload: {e}");
@@ -695,6 +700,10 @@ impl App {
         // Everything the old scripts built. The new bundle's top level has already
         // queued its UI and ops; they apply after this.
         self.ui.clear_script_nodes();
+        for w in self.windows.map.values_mut() {
+            w.tree.clear_script_nodes();
+        }
+        self.reload_windows_closed(unowned.into_iter().map(|w| w.0).collect());
         for (_, sheet) in self.sheets.drain() {
             self.ui.remove_stylesheet(sheet);
         }
@@ -759,6 +768,7 @@ impl App {
         // The scene was replaced: the renderer's script ids pointed into the old one.
         self.scene.clear_ids();
         self.reset_native_render();
+        self.close_reload_windows();
         self.native_after();
         match result {
             Ok(()) => tracing::info!(
@@ -2412,6 +2422,7 @@ impl PlatformApp for App {
         let now_ms = self.now_ms();
         self.pump_domains(now_ms);
         iron_engine_api::window::end_frame();
+        self.close_unclaimed_windows();
         // New log lines and file results for the editor.
         self.editor.pump(&mut self.scripts);
         self.pump_file_drag();

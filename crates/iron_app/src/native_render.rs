@@ -124,6 +124,10 @@ impl App {
         self.cloth = cloth_sync::ClothSystem::default();
         self.world_view = world_view::WorldViews::default();
         (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
+        // Windows a reload kept start with empty trees: the new code mounts its roots again.
+        for w in self.windows.map.values_mut() {
+            w.tree.clear_script_nodes();
+        }
     }
 
     /// `addStyleSheet`, `removeStyleSheet` and `loadFont` from the game, on the screen and every

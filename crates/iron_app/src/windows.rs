@@ -818,6 +818,36 @@ impl App {
         }
     }
 
+    /// After a native reload: closes the windows without a key and waits for the new code's first
+    /// frame to close the keyed ones nobody claimed.
+    pub(super) fn close_reload_windows(&mut self) {
+        let closes = self
+            .native
+            .as_mut()
+            .map(|n| n.take_reload_closes())
+            .unwrap_or_default();
+        self.reload_windows_closed(closes);
+    }
+
+    /// Queues the closing of windows a reload left without an owner.
+    pub(super) fn reload_windows_closed(&mut self, keys: Vec<u32>) {
+        for k in keys {
+            self.window_commands
+                .push(WindowCommand::Close(WindowKey(k)));
+        }
+        self.reload_claims_pending = true;
+    }
+
+    /// The new code had its first frame: keyed windows it did not claim close.
+    pub(super) fn close_unclaimed_windows(&mut self) {
+        if !std::mem::take(&mut self.reload_claims_pending) {
+            return;
+        }
+        for w in win::reload_end() {
+            self.window_commands.push(WindowCommand::Close(key(w)));
+        }
+    }
+
     /// Keeps `domains` as the open isolated roots.
     pub(super) fn sync_domains(&mut self) {
         let open = win::domains();

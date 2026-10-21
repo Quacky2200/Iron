@@ -144,6 +144,8 @@ pub struct Native {
     /// `createRoot(win).render(..)` calls for windows other than the main one: the window's handle
     /// and its root element, for the app (each window has its own tree and runtime).
     window_mounts: Vec<(u64, iron_ui_native::Element)>,
+    /// Windows without a key that the last reload asks the app to close.
+    reload_closes: Vec<u32>,
     /// Sets the engine state the program reads at start (`Application`, quality levels, layers):
     /// runs before the program's top level, at load and again after a reload's resets.
     env: Box<dyn Fn()>,
@@ -209,6 +211,7 @@ impl Native {
             remount: None,
             panel_mounts: Vec::new(),
             window_mounts: Vec::new(),
+            reload_closes: Vec::new(),
             env,
             root: None,
             no_spawn: no_spawn_classes(&bundle.source),
@@ -323,6 +326,11 @@ impl Native {
     /// The world panel roots the program mounted since the last call.
     pub fn take_panel_mounts(&mut self) -> Vec<(u64, iron_ui_native::Element)> {
         std::mem::take(&mut self.panel_mounts)
+    }
+
+    /// The windows a reload left without an owner (no key): the app closes them.
+    pub fn take_reload_closes(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.reload_closes)
     }
 
     /// The window roots the program mounted since the last call (window handle, root element).
@@ -555,6 +563,11 @@ impl Native {
             let active = (0..n).position(|i| iron_scenes::scene_at(i) == iron_scenes::active());
             (saved, active.unwrap_or(0))
         };
+        // The old code's window listeners go; windows with a key stay for the new code to claim.
+        self.reload_closes = iron_engine_api::window::reload_begin()
+            .into_iter()
+            .map(|w| w.0)
+            .collect();
         // Tear down: the old components (no `onDestroy`: the program is being replaced), then
         // everything that holds closures or objects of the old code.
         drop(std::mem::replace(
