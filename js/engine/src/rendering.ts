@@ -1492,6 +1492,75 @@ export class ReflectionProbe extends Component {
   }
 }
 
+/**
+ * A box of fog in its own colour (HDRP's local volumetric fog): mist over a pond, smoke in
+ * a room, a cloud layer to fly through. It's centred on the object and lined up with the
+ * world's axes (the object's scale stretches it; its rotation doesn't turn it), thick
+ * inside and thinning over `blendDistance` from its faces. It works with or without
+ * `RenderSettings.fog`, covers the sky behind it too, and light shafts light it. Each camera
+ * draws the 8 nearest; `Camera.fog = false` hides them.
+ */
+export class FogVolume extends Component {
+  private _size: Vector3Like = new Vector3(10, 2, 10);
+  private _density = 0.5;
+  private _color = new Color(0.75, 0.78, 0.82, 1);
+  private _blend = 1;
+  private started = false;
+
+  /** The box's size in metres, before the object's scale. */
+  @property
+  get size(): Vector3Like {
+    return this._size;
+  }
+  set size(s: Vector3Like) {
+    this._size = { x: s.x, y: s.y, z: s.z };
+    this.send();
+  }
+  /** How thick it is inside, per metre (0.5: a metre of it hides 40% of what's behind). */
+  @property
+  get density(): number {
+    return this._density;
+  }
+  set density(d: number) {
+    this._density = Math.max(0, d);
+    this.send();
+  }
+  /** Its colour (linear). */
+  @property
+  get color(): Color {
+    return this._color;
+  }
+  set color(c: Color) {
+    this._color = c;
+    this.send();
+  }
+  /** How far in from its faces it fades in, in metres (0: hard edges). */
+  @property
+  get blendDistance(): number {
+    return this._blend;
+  }
+  set blendDistance(b: number) {
+    this._blend = Math.max(0, b);
+    this.send();
+  }
+
+  private send(): void {
+    if (!this.started) return;
+    const s = this._size;
+    const c = this._color;
+    __iron_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend);
+  }
+
+  override onAwake(): void {
+    this.started = true;
+    this.send();
+  }
+
+  override onDestroy(): void {
+    __iron_op("render.remove", this.id);
+  }
+}
+
 /** One level of a `LODGroup`: its renderers, shown down to this screen height. */
 export interface LOD {
   /** The fraction of the view's height (0 to 1) below which the next level takes over. */

@@ -37,6 +37,17 @@ struct Globals {
     // Light shafts: x intensity, y anisotropy, z samples per volume slice, w how far the
     // volume reaches (0: off).
     fog_volume: vec4<f32>,
+    // x: how many fog volumes `local_fogs` holds.
+    fog_local: vec4<f32>,
+    local_fogs: array<LocalFog, 8>,
+};
+
+// A box of fog: centre (xyz) and density (w); half extents (xyz) and the soft edge's depth
+// (w); its colour.
+struct LocalFog {
+    centre: vec4<f32>,
+    half: vec4<f32>,
+    color: vec4<f32>,
 };
 
 struct Quad {
@@ -226,18 +237,76 @@ fn height_clear(a: vec3<f32>, b: vec3<f32>) -> f32 {
     return exp(-g.fog_height.x * length(b - a) * at_eye * along);
 }
 
+// How much light gets through fog volume `i` on the way from `a` to `b` (1: all of it):
+// where the line crosses the box, its density integrated at fixed points (smooth from
+// pixel to pixel), thinning over the soft edge.
+const LOCAL_FOG_SAMPLES: i32 = 8;
+
+fn local_fog_clear(a: vec3<f32>, b: vec3<f32>, i: u32) -> f32 {
+    let v = g.local_fogs[i];
+    let len = length(b - a);
+    if (len < 1e-4) {
+        return 1.0;
+    }
+    let dir = (b - a) / len;
+    let safe = select(dir, vec3<f32>(1e-6), abs(dir) < vec3<f32>(1e-6));
+    let lo = (v.centre.xyz - v.half.xyz - a) / safe;
+    let hi = (v.centre.xyz + v.half.xyz - a) / safe;
+    let near = min(lo, hi);
+    let far = max(lo, hi);
+    let t0 = max(max(max(near.x, near.y), near.z), 0.0);
+    let t1 = min(min(min(far.x, far.y), far.z), len);
+    if (t1 <= t0) {
+        return 1.0;
+    }
+    let step = (t1 - t0) / f32(LOCAL_FOG_SAMPLES);
+    var depth = 0.0;
+    for (var k = 0; k < LOCAL_FOG_SAMPLES; k++) {
+        let x = a + dir * (t0 + (f32(k) + 0.5) * step);
+        let inside = v.half.xyz - abs(x - v.centre.xyz);
+        let edge = clamp(min(min(inside.x, inside.y), inside.z) / max(v.half.w, 1e-4), 0.0, 1.0);
+        depth += edge * edge * (3.0 - 2.0 * edge);
+    }
+    return exp(-v.centre.w * depth * step);
+}
+
+// How much of what's at `p` shows through every fog volume.
+fn local_clear(eye: vec3<f32>, p: vec3<f32>) -> f32 {
+    var clear = 1.0;
+    let n = u32(g.fog_local.x);
+    for (var i = 0u; i < n; i++) {
+        clear *= local_fog_clear(eye, p, i);
+    }
+    return clear;
+}
+
+// A premultiplied colour at `p` seen through the fog volumes, each in its own colour.
+fn through_volumes(c: vec4<f32>, eye: vec3<f32>, p: vec3<f32>) -> vec4<f32> {
+    var rgb = c.rgb;
+    let n = u32(g.fog_local.x);
+    for (var i = 0u; i < n; i++) {
+        let f = 1.0 - local_fog_clear(eye, p, i);
+        rgb = rgb * (1.0 - f) + g.local_fogs[i].color.rgb * (c.a * f);
+    }
+    return vec4<f32>(rgb, c.a);
+}
+
 // A premultiplied colour at `p` (pixel `px`) seen through the fog: what it covers turns
 // to fog colour, light it adds (alpha 0) fades out, and lit fog in front adds light.
 fn fogged(c: vec4<f32>, p: vec3<f32>, px: vec2<f32>) -> vec4<f32> {
-    if (g.fog.w < 0.5) {
-        return c;
+    var out = c;
+    if (g.fog.w > 0.5) {
+        let f = 1.0 - fog_clear(p, true);
+        var rgb = c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f);
+        if (g.fog_volume.w > 0.0 && c.a > 0.002) {
+            rgb += shafts(p, px, true) * c.a;
+        }
+        out = vec4<f32>(rgb, c.a);
     }
-    let f = 1.0 - fog_clear(p, true);
-    var rgb = c.rgb * (1.0 - f) + g.fog.rgb * (c.a * f);
-    if (g.fog_volume.w > 0.0 && c.a > 0.002) {
-        rgb += shafts(p, px, true) * c.a;
+    if (g.fog_local.x > 0.5) {
+        out = through_volumes(out, fog_eye(p), p);
     }
-    return vec4<f32>(rgb, c.a);
+    return out;
 }
 
 // Henyey-Greenstein, scaled so scattering evenly (anisotropy 0) gives 1.
@@ -331,7 +400,8 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
         let end = slice_distance((f32(k) + 0.5) / f32(slices));
         let step = (end - t) / f32(substeps);
         for (var i = 0; i < substeps; i++) {
-            let next = fog_clear(eye + dir * (t + step), true);
+            let at = eye + dir * (t + step);
+            let next = fog_clear(at, true) * local_clear(eye, at);
             sum += (clear - next) * scattered_all(eye + dir * (t + 0.5 * step), dir);
             clear = next;
             t += step;
@@ -398,6 +468,9 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             rgb += shafts(far, pos.xy, false) * c.a;
         }
         c = vec4<f32>(rgb, c.a);
+    }
+    if (g.fog_local.x > 0.5) {
+        c = through_volumes(c, fog_eye(far), far);
     }
     return c;
 }

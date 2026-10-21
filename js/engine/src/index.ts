@@ -171,6 +171,7 @@ export {
   type PrimitiveMesh,
   type BloomSettings,
   type FogMode,
+  FogVolume,
   type HeightFogSettings,
   type VolumetricFogSettings,
   RenderSettings,

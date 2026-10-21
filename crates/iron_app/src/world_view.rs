@@ -11,10 +11,11 @@ use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     ALL_LAYERS, Anisotropic, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog, FogMode,
-    GizmoLine, Grading, HeightFog, Light, LightKind, MaterialMaps, MeshData, MeshGlow,
-    MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows,
-    ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog,
-    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_FOG_VOLUMES, MaterialMaps,
+    MeshData, MeshGlow, MeshInstance, Mirror, Projection, ReflectionProbe, RenderMode,
+    ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap,
+    Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id,
+    viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -316,8 +317,19 @@ struct LightComponent {
     volumetric: f32,
 }
 
+/// A `FogVolume`: a box of fog on its object, its size before the object's scale.
+#[derive(Clone, Copy, Debug)]
+struct FogBox {
+    object: ScriptObject,
+    size: Vec3,
+    density: f32,
+    color: [f32; 3],
+    blend: f32,
+}
+
 pub struct WorldViews {
     cameras: BTreeMap<u32, Camera>,
+    fog_volumes: BTreeMap<u32, FogBox>,
     planes: BTreeMap<u32, Plane>,
     renderers: BTreeMap<u32, Renderer>,
     lights: BTreeMap<u32, LightComponent>,
@@ -377,6 +389,7 @@ impl Default for WorldViews {
     fn default() -> Self {
         Self {
             cameras: BTreeMap::new(),
+            fog_volumes: BTreeMap::new(),
             planes: BTreeMap::new(),
             renderers: BTreeMap::new(),
             lights: BTreeMap::new(),
@@ -1212,12 +1225,27 @@ impl WorldViews {
                     }),
                 };
             }
+            // `fogVolume component object [sx sy sz] density [r g b] blendDistance`
+            "fogVolume" => {
+                let [x, y, z] = nums::<3>(args.get(2)).ok_or("fogVolume needs [x, y, z]")?;
+                self.fog_volumes.insert(
+                    id,
+                    FogBox {
+                        object: id_at(1)?,
+                        size: Vec3::new(x, y, z).abs(),
+                        density: num(3)?.max(0.0),
+                        color: nums::<3>(args.get(4)).ok_or("fogVolume needs [r, g, b]")?,
+                        blend: num(5).unwrap_or(1.0).max(0.0),
+                    },
+                );
+            }
             // `ambient 0 [r g b]`
             "ambient" => {
                 self.ambient = nums::<3>(args.get(1)).ok_or("ambient needs [r, g, b]")?;
             }
             "remove" => {
                 self.cameras.remove(&id);
+                self.fog_volumes.remove(&id);
                 self.planes.remove(&id);
                 self.renderers.remove(&id);
                 self.skins.remove(&id);
@@ -1242,6 +1270,7 @@ impl WorldViews {
         let renderers = &self.renderers;
         self.skins.retain(|id, _| renderers.contains_key(id));
         self.lights.retain(|_, l| !objects.contains(&l.object));
+        self.fog_volumes.retain(|_, f| !objects.contains(&f.object));
         self.sprites.retain(|_, s| !objects.contains(&s.object));
         self.strokes.retain(|_, s| !objects.contains(&s.object));
         self.mirrors.retain(|_, m| !objects.contains(&m.0));
@@ -1533,6 +1562,26 @@ impl WorldViews {
                 })
             })
             .collect();
+        // Fog volumes in the world: centred on their objects, stretched by their scale.
+        let fog_volumes: Vec<Tagged<FogVolume>> = self
+            .fog_volumes
+            .values()
+            .filter(|f| scene.active(f.object))
+            .filter_map(|f| {
+                let (scale, _, centre) = world(f.object)?.to_scale_rotation_translation();
+                Tagged::new(
+                    scene,
+                    f.object,
+                    FogVolume {
+                        centre,
+                        half_extents: f.size * scale.abs() * 0.5,
+                        density: f.density,
+                        color: f.color,
+                        blend: f.blend,
+                    },
+                )
+            })
+            .collect();
         let mut cameras: Vec<&Camera> = self
             .cameras
             .values()
@@ -1653,6 +1702,23 @@ impl WorldViews {
                     fills: shown_fills,
                     shapes: shown_shapes,
                     fog: self.fog.filter(|_| camera.fog),
+                    fog_volumes: if camera.fog {
+                        // The nearest ones the camera's layers show, up to the renderer's limit.
+                        let mut near: Vec<FogVolume> = fog_volumes
+                            .iter()
+                            .filter(|t| shows(t.layer, t.at))
+                            .map(|t| t.item)
+                            .collect();
+                        near.sort_by(|a, b| {
+                            a.centre
+                                .distance_squared(position)
+                                .total_cmp(&b.centre.distance_squared(position))
+                        });
+                        near.truncate(MAX_FOG_VOLUMES);
+                        near
+                    } else {
+                        Vec::new()
+                    },
                     camera: WorldCamera::new(
                         Mat4::from_rotation_translation(rotation, position),
                         camera.projection,
@@ -2314,5 +2380,78 @@ mod tests {
         assert!(bad.is_err());
         views.apply("fog", &[n(0.0), Value::Null]).unwrap();
         assert_eq!(fog(&views), None);
+    }
+
+    // M7-FOG-06
+    #[test]
+    fn fog_volumes_follow_their_object_and_scale() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene
+            .apply("create", &[n(2.0), "mist".into(), Value::Null])
+            .unwrap();
+        // At (3, 1, -4), twice as wide.
+        let local = [2.0, 3.0, 1.0, -4.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0, 1.0];
+        scene
+            .apply("locals", &[Value::Array(local.map(n).to_vec())])
+            .unwrap();
+        scene.scene.update_world();
+        let camera = |fog: bool| {
+            vec![
+                n(100.0),
+                n(1.0),
+                n(60.0),
+                n(0.1),
+                n(1000.0),
+                Value::Null,
+                n(0.0),
+                Value::Bool(false),
+                n(5.0),
+                Value::Null,
+                "color".into(),
+                Value::Null,
+                Value::Null,
+                Value::Bool(false),
+                "none".into(),
+                Value::Null,
+                Value::Bool(false),
+                Value::Bool(fog),
+            ]
+        };
+        let volumes =
+            |views: &WorldViews| views.views(&scene, (64, 64), &[])[0].fog_volumes.clone();
+        views.apply("camera", &camera(true)).unwrap();
+        views
+            .apply(
+                "fogVolume",
+                &[
+                    n(20.0),
+                    n(2.0),
+                    Value::Array(vec![n(4.0), n(2.0), n(6.0)]),
+                    n(0.8),
+                    Value::Array(vec![n(0.7), n(0.7), n(0.8)]),
+                    n(0.5),
+                ],
+            )
+            .unwrap();
+        let v = volumes(&views);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].centre, Vec3::new(3.0, 1.0, -4.0));
+        assert_eq!(
+            (v[0].density, v[0].color, v[0].blend),
+            (0.8, [0.7, 0.7, 0.8], 0.5)
+        );
+        // Half the size, stretched by the object's scale.
+        assert_eq!(v[0].half_extents, Vec3::new(4.0, 1.0, 3.0));
+        // Cameras that hide fog hide these too; `remove` drops them.
+        views.apply("camera", &camera(false)).unwrap();
+        assert!(volumes(&views).is_empty());
+        views.apply("camera", &camera(true)).unwrap();
+        views.apply("remove", &[n(20.0)]).unwrap();
+        assert!(volumes(&views).is_empty());
     }
 }

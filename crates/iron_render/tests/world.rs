@@ -212,6 +212,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fills: Vec::new(),
             shapes: Vec::new(),
             fog: None,
+            fog_volumes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(0.0, 2.0, 4.0)),
                 Projection::Perspective {
@@ -241,6 +242,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fills: Vec::new(),
             shapes: Vec::new(),
             fog: None,
+            fog_volumes: Vec::new(),
             camera: WorldCamera::new(
                 Mat4::from_rotation_translation(flat, Vec3::new(0.0, 5.0, 0.0)),
                 Projection::Orthographic { half_height: 4.0 },
@@ -277,6 +279,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             fills: Vec::new(),
             shapes: Vec::new(),
             fog: None,
+            fog_volumes: Vec::new(),
             camera: WorldCamera::new(
                 look(Vec3::new(3.0, 1.0, 0.0)),
                 Projection::Perspective {
@@ -3023,6 +3026,111 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
         "shafts and shadows between them: {lit:?}"
     );
     assert_golden("M7-FOG-05", size.0, size.1, &pixels, 6);
+}
+
+// M7-FOG-06
+#[test]
+fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
+    use iron_render::{FogVolume, MeshInstance, Projection, WorldView, primitive_id};
+    let gpu = shared_gpu();
+    let size = (320, 200);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let camera = WorldCamera::new(
+        Mat4::from_rotation_translation(Quat::from_rotation_x(-0.15), Vec3::new(0.0, 2.0, 10.0)),
+        Projection::Perspective {
+            fov_y_degrees: 50.0,
+        },
+        0.1,
+        100.0,
+        size,
+        Color::rgb(0.02, 0.03, 0.06),
+    );
+    let view_proj = camera.view_proj;
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let cube = |model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model,
+        color,
+        unlit: true,
+        ..Default::default()
+    };
+    // Dark ground, a blue pond, and red posts: one behind the mist, one beside it.
+    v.meshes = vec![
+        cube(
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(40.0, 0.2, 40.0),
+                Quat::IDENTITY,
+                Vec3::new(0.0, -0.1, 0.0),
+            ),
+            [0.05, 0.08, 0.04, 1.0],
+        ),
+        cube(
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(5.0, 0.02, 3.0),
+                Quat::IDENTITY,
+                Vec3::new(-1.0, 0.01, 0.0),
+            ),
+            [0.05, 0.1, 0.3, 1.0],
+        ),
+        cube(
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(0.3, 2.0, 0.3),
+                Quat::IDENTITY,
+                Vec3::new(-1.0, 1.0, -3.0),
+            ),
+            [1.0, 0.1, 0.1, 1.0],
+        ),
+        cube(
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(0.3, 2.0, 0.3),
+                Quat::IDENTITY,
+                Vec3::new(4.5, 1.0, -3.0),
+            ),
+            [1.0, 0.1, 0.1, 1.0],
+        ),
+    ];
+    // Mist over the pond: thick in the middle, fading over its last half metre.
+    v.fog_volumes = vec![FogVolume {
+        centre: Vec3::new(-1.0, 0.6, 0.0),
+        half_extents: Vec3::new(3.0, 0.6, 2.0),
+        density: 1.5,
+        color: [0.7, 0.75, 0.8],
+        blend: 0.5,
+    }];
+    let mut world = WorldRenderer::new(&gpu);
+    world.render_views(&gpu, &rt, &[v], &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let at = |p: Vec3| {
+        let c = view_proj.project_point3(p);
+        let x = ((c.x + 1.0) / 2.0 * size.0 as f32) as usize;
+        let y = ((1.0 - c.y) / 2.0 * size.1 as f32) as usize;
+        let i = (y * size.0 as usize + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+    let mist = [0.7f32, 0.75, 0.8].map(srgb_byte);
+    let red = [255, srgb_byte(0.1), srgb_byte(0.1)];
+    // The post behind the mist hides low down and shows above it; the other is clear.
+    let hidden = at(Vec3::new(-1.0, 0.3, -2.85));
+    assert!(close_to(hidden, mist, 40), "behind the mist: {hidden:?}");
+    let above = at(Vec3::new(-1.0, 1.8, -2.85));
+    assert!(close_to(above, red, 6), "above the mist: {above:?}");
+    let beside = at(Vec3::new(4.5, 0.3, -2.85));
+    assert!(close_to(beside, red, 6), "beside the mist: {beside:?}");
+    // Its top edge is soft: partway between the post and the mist.
+    let edge = at(Vec3::new(-1.0, 0.9, -2.85));
+    assert!(
+        !close_to(edge, red, 20) && !close_to(edge, mist, 20),
+        "the soft top: {edge:?}"
+    );
+    assert_golden("M7-FOG-06", size.0, size.1, &pixels, 3);
 }
 
 // M7-FOG-02

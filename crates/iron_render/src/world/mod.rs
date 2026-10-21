@@ -508,6 +508,35 @@ pub struct WorldView {
     /// Fog over everything this view draws except its background and the editor's grid
     /// and gizmos (`None`: clear air).
     pub fog: Option<Fog>,
+    /// Boxes of fog in their own colours (mist over a pond, a cloud layer), whether or not
+    /// there's `fog`; the first [`MAX_FOG_VOLUMES`] count.
+    pub fog_volumes: Vec<FogVolume>,
+}
+
+/// How many fog volumes a view draws.
+pub const MAX_FOG_VOLUMES: usize = 8;
+
+/// A box of fog (HDRP's local volumetric fog), lined up with the world's axes: `density`
+/// per metre inside, thinning to nothing over `blend` metres in from its faces. It covers
+/// what's seen through it, the background too, and light shafts light it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FogVolume {
+    pub centre: Vec3,
+    pub half_extents: Vec3,
+    pub density: f32,
+    /// Linear RGB.
+    pub color: [f32; 3],
+    pub blend: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GpuFogVolume {
+    /// xyz: centre; w: density.
+    centre: [f32; 4],
+    /// xyz: half extents; w: the soft edge's depth.
+    half: [f32; 4],
+    color: [f32; 4],
 }
 
 /// How fog thickens with distance (Unity's `FogMode`).
@@ -667,6 +696,7 @@ impl WorldView {
             fills: Vec::new(),
             shapes: Vec::new(),
             fog: None,
+            fog_volumes: Vec::new(),
         }
     }
 }
@@ -797,9 +827,25 @@ struct GpuGlobals {
     /// Light shafts: x intensity, y anisotropy, z samples per slice, w the volume's reach
     /// (0: off).
     fog_volume: [f32; 4],
+    /// x: how many fog volumes follow.
+    fog_local: [f32; 4],
+    local_fogs: [GpuFogVolume; MAX_FOG_VOLUMES],
 }
 
 impl GpuGlobals {
+    fn set_fog_volumes(&mut self, volumes: &[FogVolume]) {
+        let n = volumes.len().min(MAX_FOG_VOLUMES);
+        for (gpu, v) in self.local_fogs.iter_mut().zip(&volumes[..n]) {
+            let (c, h) = (v.centre, v.half_extents.max(Vec3::splat(1e-3)));
+            *gpu = GpuFogVolume {
+                centre: [c.x, c.y, c.z, v.density.max(0.0)],
+                half: [h.x, h.y, h.z, v.blend.max(0.0)],
+                color: [v.color[0], v.color[1], v.color[2], 0.0],
+            };
+        }
+        self.fog_local = [n as f32, 0.0, 0.0, 0.0];
+    }
+
     fn set_fog(&mut self, fog: Option<&Fog>) {
         let Some(f) = fog else {
             self.fog = [0.0; 4];
@@ -3245,6 +3291,7 @@ impl WorldRenderer {
                 ..Zeroable::zeroed()
             };
             globals.set_fog(view.fog.as_ref());
+            globals.set_fog_volumes(&view.fog_volumes);
             gpu.queue.write_buffer(
                 &self.globals,
                 self.stride * i as u64,

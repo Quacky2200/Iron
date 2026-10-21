@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, Color, GameObject, Light, RenderSettings, SceneManager } from "../src/index.ts";
+import { Camera, Color, FogVolume, GameObject, Light, RenderSettings, SceneManager, Vector3 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 import type { SceneData } from "../src/scenes.ts";
@@ -73,6 +73,21 @@ describe("fog", () => {
     l.volumetricIntensity = -2;
     expect(l.volumetricIntensity).toBe(0);
     expect(ops.filter((o) => o[0] === "render.light").at(-1)!.at(-1)).toBe(0);
+  });
+
+  // M7-FOG-06
+  test("fog volumes send their box, density, colour and soft edge", () => {
+    const go = new GameObject("mist");
+    const v = go.addComponent(FogVolume, { size: new Vector3(6, 1, 4), density: 0.8 });
+    const last = () => ops.filter((o) => o[0] === "render.fogVolume").at(-1)!;
+    expect(last()).toEqual(["render.fogVolume", v.id, go.id, [6, 1, 4], 0.8, [0.75, 0.78, 0.82], 1]);
+    v.blendDistance = -1;
+    expect(last().at(-1)).toBe(0);
+    v.color = new Color(0.1, 0.2, 0.3);
+    expect(last()[5]).toEqual([0.1, 0.2, 0.3]);
+    // The engine runs onDestroy when the object goes.
+    v.onDestroy();
+    expect(ops.at(-1)).toEqual(["render.remove", v.id]);
   });
 
   test("scenes save the fog and bring it back", () => {

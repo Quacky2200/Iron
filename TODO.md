@@ -1452,6 +1452,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] Follow-ups: a froxel volume (march once per froxel instead of per fragment, cheaper
     under overdraw); blur or temporal accumulation of the jitter's grain; shafts in the sky
     without height fog
+  - [x] Fog volumes (2026-10-21): `FogVolume`, a world-aligned box of fog in its own colour
+    with soft edges (mist over a pond, a cloud layer), integrated along each view ray at fixed
+    points, over the background too, lit by light shafts; 8 per camera (`M7-FOG-06`)
   - [x] `examples/fog` (2026-10-21): every kind of fog in one misty clearing, switched from a
     menu
 
