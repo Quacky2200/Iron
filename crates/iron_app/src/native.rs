@@ -184,6 +184,12 @@ impl Native {
     ) -> Result<Native> {
         let generation = 0;
         iron_ts_rt::ts_rt_set_console(Some(console_hook));
+        // Timers and promise jobs keep the event domain (window family) that made them.
+        iron_ts_rt::ts_rt_set_domain_hooks(
+            Some(iron_engine_api::window::runtime_current_domain),
+            Some(iron_engine_api::window::runtime_enter_domain),
+            Some(iron_engine_api::window::runtime_leave_domain),
+        );
         register_kinds();
         let game = Self::compile(&bundle, generation)?;
         let mut rt = Runtime::new(FIRST_NODE);

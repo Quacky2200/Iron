@@ -356,6 +356,7 @@ fn run() -> Result<()> {
         world_view: world_view::WorldViews::default(),
         panels: panels::Panels::default(),
         windows: windows::AppWindows::new(),
+        domains: windows::Domains::default(),
         window_commands: Vec::new(),
         windows_to_show: Vec::new(),
         main_focus_sent: None,
@@ -518,6 +519,8 @@ struct App {
     panels: panels::Panels,
     /// Secondary windows (`Window.create`), each with its own tree, and which windows have focus.
     windows: windows::AppWindows,
+    /// Isolated event domains (families of windows under a root other than the main window).
+    domains: windows::Domains,
     /// Platform commands scripts' window requests became, and the windows drawn for the first time.
     window_commands: Vec<iron_platform::WindowCommand>,
     windows_to_show: Vec<iron_platform::WindowKey>,
@@ -819,6 +822,15 @@ impl App {
             }
         }
         if let Some((focused, paused)) = change.report {
+            // `Window.onDomainFocusChanged` of the main game.
+            {
+                let _scope = iron_scene::api::enter(&mut self.scene.scene);
+                iron_engine_api::window::domain_focus_changed(
+                    iron_engine_api::window::DomainId::MAIN,
+                    focused,
+                    paused,
+                );
+            }
             if let Some(n) = self.native.as_mut() {
                 n.focus_changed(&mut self.scene.scene, &mut self.ui, focused, paused);
                 self.native_after();
@@ -2063,7 +2075,7 @@ impl PlatformApp for App {
         if key == iron_platform::WindowKey::MAIN {
             self.input(event);
         } else {
-            self.window_event(key, event);
+            self.window_input_for(key, event);
         }
     }
 
@@ -2388,7 +2400,18 @@ impl PlatformApp for App {
     }
 
     fn frame(&mut self) {
+        // Domain turns: the main game's messages first, then its tick, then the isolated domains
+        // (messages, timers, input), then the setup window of new windows ends.
+        if !self.lifecycle.paused() {
+            let now_ms = self.now_ms();
+            self.in_game(|| {
+                iron_engine_api::window::deliver(iron_engine_api::window::DomainId::MAIN, now_ms)
+            });
+        }
         self.tick();
+        let now_ms = self.now_ms();
+        self.pump_domains(now_ms);
+        iron_engine_api::window::end_frame();
         // New log lines and file results for the editor.
         self.editor.pump(&mut self.scripts);
         self.pump_file_drag();
@@ -2565,15 +2588,17 @@ impl PlatformApp for App {
     }
 
     fn frame_interval(&self) -> Option<Duration> {
-        lifecycle::frame_cap(
+        lifecycle::frame_cap_with(
             self.target_frame_rate,
             self.world_view.quality.vsync,
             self.screenshot.is_some(),
+            self.lifecycle.paused() && !self.paused(),
         )
     }
 
+    /// Paused only when every event domain is (a live inspector window keeps the app running).
     fn paused(&self) -> bool {
-        self.lifecycle.paused()
+        lifecycle::app_paused(self.lifecycle.paused(), self.domains.all_paused())
     }
 
     fn idle(&mut self) {

@@ -137,9 +137,33 @@ impl FixedClock {
 
 /// `Application.targetFrameRate` as a time between frames. Like Unity, the cap only
 /// counts with vsync off (vsync paces frames itself); screenshot runs aren't capped.
+#[cfg(test)]
 pub fn frame_cap(target_fps: i32, vsync: bool, screenshot: bool) -> Option<Duration> {
-    (!screenshot && !vsync && target_fps > 0)
-        .then(|| Duration::from_secs_f64(1.0 / f64::from(target_fps)))
+    frame_cap_with(target_fps, vsync, screenshot, false)
+}
+
+/// The slowest frame rate while the main game is paused but another event domain (an isolated
+/// window) is live: its windows stay responsive without the paused game spinning the GPU.
+pub const PAUSED_FRAME_CAP: Duration = Duration::from_micros(33_333);
+
+/// [`frame_cap`] that also caps frames at 30 Hz when `main_paused_others_live`.
+pub fn frame_cap_with(
+    target_fps: i32,
+    vsync: bool,
+    screenshot: bool,
+    main_paused_others_live: bool,
+) -> Option<Duration> {
+    let cap = (!screenshot && !vsync && target_fps > 0)
+        .then(|| Duration::from_secs_f64(1.0 / f64::from(target_fps)));
+    if main_paused_others_live && !screenshot {
+        return Some(cap.map_or(PAUSED_FRAME_CAP, |c| c.max(PAUSED_FRAME_CAP)));
+    }
+    cap
+}
+
+/// The app pauses only when every event domain is paused: the main one and each isolated one.
+pub fn app_paused(main_paused: bool, isolated_paused: impl IntoIterator<Item = bool>) -> bool {
+    main_paused && isolated_paused.into_iter().all(|p| p)
 }
 
 #[cfg(test)]
@@ -216,6 +240,35 @@ mod tests {
         c.restart();
         let (dt, ticks) = c.advance(t1 + Duration::from_secs(60), TICK, 5);
         assert_eq!((dt, ticks), (TICK, 1));
+    }
+
+    // M9-TS-2836
+    #[test]
+    fn the_app_pauses_only_when_every_domain_is_paused_and_caps_frames_while_one_runs() {
+        assert!(app_paused(true, []));
+        assert!(app_paused(true, [true, true]));
+        assert!(
+            !app_paused(true, [true, false]),
+            "a live inspector keeps the app running"
+        );
+        assert!(!app_paused(false, [true]));
+        // Main paused, another domain live: frames at most 30 Hz, even with no other cap.
+        assert_eq!(
+            frame_cap_with(-1, true, false, true),
+            Some(PAUSED_FRAME_CAP)
+        );
+        // A slower target rate wins; a faster one is raised to 30 Hz.
+        assert_eq!(
+            frame_cap_with(10, false, false, true),
+            Some(Duration::from_millis(100))
+        );
+        assert_eq!(
+            frame_cap_with(120, false, false, true),
+            Some(PAUSED_FRAME_CAP)
+        );
+        // Otherwise as before; screenshot runs are never capped.
+        assert_eq!(frame_cap_with(-1, true, false, false), None);
+        assert_eq!(frame_cap_with(50, false, true, true), None);
     }
 
     // M5-APP-08

@@ -334,6 +334,10 @@ impl App {
                 }
                 continue;
             };
+            let w_ref = iron_engine_api::window::WindowRef(key);
+            let _domain =
+                iron_engine_api::window::enter_domain(iron_engine_api::window::domain_of(w_ref));
+            let _current = iron_engine_api::window::enter_current(w_ref);
             let errors = st(|s| {
                 let (rt, rid) = s.windows.entry(key).or_insert_with(|| {
                     let mut rt = Runtime::new(FIRST_NODE);
@@ -353,8 +357,10 @@ impl App {
             let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
                 continue;
             };
-            let _current =
-                iron_engine_api::window::enter_current(iron_engine_api::window::WindowRef(key));
+            let w_ref = iron_engine_api::window::WindowRef(key);
+            let _domain =
+                iron_engine_api::window::enter_domain(iron_engine_api::window::domain_of(w_ref));
+            let _current = iron_engine_api::window::enter_current(w_ref);
             let errors = st(|s| {
                 s.windows
                     .get_mut(&key)

@@ -62,6 +62,95 @@ impl AppWindows {
     }
 }
 
+/// One isolated event domain (a family of windows under a root other than the main window). The
+/// main domain keeps `App::lifecycle` and handles its windows' events at once.
+pub struct Domain {
+    /// Whether one of its windows has OS focus, as last reported.
+    pub focused: bool,
+    /// One of its windows had focus at least once (a new domain is not "unfocused" before that).
+    pub seen_focus: bool,
+    /// Its own pause rule: `runInBackground` of the root, never in screenshot runs.
+    pub lifecycle: lifecycle::Lifecycle,
+    /// Pointer, key and IME events of its windows, dispatched in `pump_domains`.
+    pub queue: std::collections::VecDeque<(WindowKey, InputEvent)>,
+}
+
+/// The isolated domains (not the main one), by domain id.
+#[derive(Default)]
+pub struct Domains {
+    pub map: BTreeMap<win::DomainId, Domain>,
+}
+
+impl Domains {
+    /// Makes a domain for each open root that has none and drops the ones whose root closed.
+    pub fn sync(
+        &mut self,
+        open: &[win::DomainId],
+        run_in_background: impl Fn(win::DomainId) -> bool,
+        always_run: bool,
+    ) {
+        self.map
+            .retain(|d, _| *d != win::DomainId::MAIN && open.contains(d));
+        for d in open {
+            if *d == win::DomainId::MAIN {
+                continue;
+            }
+            self.map.entry(*d).or_insert_with(|| Domain {
+                focused: true,
+                seen_focus: false,
+                lifecycle: lifecycle::Lifecycle::new(run_in_background(*d), always_run),
+                queue: Default::default(),
+            });
+        }
+    }
+
+    /// Queues an event of one of the domain's windows.
+    pub fn push(&mut self, d: win::DomainId, key: WindowKey, event: InputEvent) {
+        if let Some(dom) = self.map.get_mut(&d) {
+            dom.queue.push_back((key, event));
+        }
+    }
+
+    /// What is queued for `d`, in arrival order; the queue is emptied.
+    pub fn take_queue(&mut self, d: win::DomainId) -> Vec<(WindowKey, InputEvent)> {
+        self.map
+            .get_mut(&d)
+            .map(|x| x.queue.drain(..).collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether the isolated domains are all paused (vacuously true with none).
+    pub fn all_paused(&self) -> impl Iterator<Item = bool> + '_ {
+        self.map.values().map(|d| d.lifecycle.paused())
+    }
+}
+
+/// Events that wait for their domain's turn: what drives its input and UI. Window state events
+/// (focus, size, position, scale) apply at once.
+pub fn queues_for_domain(event: &InputEvent) -> bool {
+    matches!(
+        event,
+        InputEvent::MouseMove { .. }
+            | InputEvent::MouseLeave
+            | InputEvent::MouseDown { .. }
+            | InputEvent::MouseUp { .. }
+            | InputEvent::MouseWheel(_)
+            | InputEvent::KeyDown { .. }
+            | InputEvent::KeyUp { .. }
+            | InputEvent::Modifiers(_)
+            | InputEvent::Ime(_)
+    )
+}
+
+/// The domains with a focused window: focus moving between a game's windows (`Focused(false)` then
+/// `Focused(true)` in one batch) leaves a family focused when it lands in the same one.
+pub fn domain_focused(
+    focused: &BTreeSet<WindowKey>,
+    domain_of: impl Fn(WindowKey) -> win::DomainId,
+) -> BTreeSet<win::DomainId> {
+    focused.iter().map(|k| domain_of(*k)).collect()
+}
+
 /// Draws one window's UI into its surface (vsync stays off) or its offscreen target. Returns
 /// whether anything was drawn (a minimised or 0 x 0 window is skipped).
 pub fn draw_window(
@@ -143,11 +232,6 @@ pub fn to_ui(physical: (u32, u32), scale: f64) -> (f64, f64) {
     (f64::from(physical.0) / s, f64::from(physical.1) / s)
 }
 
-/// The game counts as focused while any of its windows is.
-pub fn app_focused(focused: &BTreeSet<WindowKey>) -> bool {
-    !focused.is_empty()
-}
-
 /// A file-name part for a window's screenshot: the title lowercased, runs of characters other
 /// than `a-z0-9` as `-`, trimmed. Empty becomes `window<handle>`; one already in `used` gets
 /// `-<handle>`.
@@ -173,6 +257,55 @@ pub fn slug(title: &str, handle: u32, used: &mut HashSet<String>) -> String {
 
 fn key(w: WindowRef) -> WindowKey {
     WindowKey(w.0)
+}
+
+fn key_ref(k: WindowKey) -> WindowRef {
+    WindowRef(k.0)
+}
+
+/// An event as the arguments of `__iron_input` / `input::apply_native` (`keydown code key repeat`,
+/// `mousemove x y`, `wheel dx dy`, `blur`); the mouse in UI pixels.
+pub fn game_args(event: &InputEvent, ui: f64) -> Option<Vec<iron_core::Value>> {
+    let name = |b: &iron_platform::MouseButton| match b {
+        iron_platform::MouseButton::Left => "MouseLeft".to_owned(),
+        iron_platform::MouseButton::Right => "MouseRight".to_owned(),
+        iron_platform::MouseButton::Middle => "MouseMiddle".to_owned(),
+        iron_platform::MouseButton::Other(n) => format!("Mouse{n}"),
+    };
+    Some(match event {
+        InputEvent::MouseMove { x, y } => {
+            vec!["mousemove".into(), (x / ui).into(), (y / ui).into()]
+        }
+        InputEvent::MouseDown { button } => {
+            vec![
+                "keydown".into(),
+                name(button).into(),
+                "".into(),
+                false.into(),
+            ]
+        }
+        InputEvent::MouseUp { button } => vec!["keyup".into(), name(button).into(), "".into()],
+        InputEvent::MouseWheel(delta) => {
+            let (dx, dy) = match delta {
+                WheelDelta::Lines { x, y } => (f64::from(*x), f64::from(*y)),
+                WheelDelta::Pixels { x, y } => (x / 40.0, y / 40.0),
+            };
+            vec!["wheel".into(), dx.into(), dy.into()]
+        }
+        InputEvent::KeyDown {
+            code, key, repeat, ..
+        } => vec![
+            "keydown".into(),
+            code.as_str().into(),
+            key.as_str().into(),
+            (*repeat).into(),
+        ],
+        InputEvent::KeyUp { code, key } => {
+            vec!["keyup".into(), code.as_str().into(), key.as_str().into()]
+        }
+        InputEvent::Focused(false) => vec!["blur".into()],
+        _ => return None,
+    })
 }
 
 fn kind_of(style: Style) -> WindowKind {
@@ -428,6 +561,10 @@ impl App {
         let ui = scale as f32;
         let _current = win::enter_current(w);
         let surface = Surface::Window(key.0);
+        let domain = win::domain_of(w);
+        // What the game's `input` of this window's domain gets (keys not while typing in a field).
+        let game = game_args(&event, f64::from(ui));
+        let is_key = matches!(event, InputEvent::KeyDown { .. } | InputEvent::KeyUp { .. });
         match event {
             InputEvent::Focused(f) => {
                 if f {
@@ -559,6 +696,15 @@ impl App {
             // File drops, raw motion, gamepads and the rest belong to the main window.
             _ => {}
         }
+        let typing = is_key
+            && self.windows.map.get(&key).is_some_and(|x| {
+                x.interaction
+                    .focused()
+                    .is_some_and(|id| x.tree.is_editor(id))
+            });
+        if let Some(args) = game.filter(|_| !typing) {
+            self.send_game_input_in(domain, &args);
+        }
     }
 
     /// The user asked to close `key`: listeners may cancel.
@@ -641,11 +787,99 @@ impl App {
 
     /// Once per loop iteration, after the events: the game's focus is any of its windows'.
     pub(super) fn window_events_done(&mut self) {
-        let focused = app_focused(&self.windows.focused);
-        if self.main_focus_sent != Some(focused) {
-            self.main_focus_sent = Some(focused);
-            self.lifecycle.set_focused(focused);
+        // Each family is focused while any of its windows is: focus moving between the main
+        // window and its tool windows never unfocuses the main game, and an isolated window
+        // taking focus does.
+        let focused_domains = domain_focused(&self.windows.focused, |k| win::domain_of(key_ref(k)));
+        let main_focused = focused_domains.contains(&win::DomainId::MAIN);
+        if self.main_focus_sent != Some(main_focused) {
+            self.main_focus_sent = Some(main_focused);
+            self.lifecycle.set_focused(main_focused);
             self.sync_lifecycle();
+        }
+        self.sync_domains();
+        let now = Instant::now();
+        let ids: Vec<win::DomainId> = self.domains.map.keys().copied().collect();
+        for d in ids {
+            let f = focused_domains.contains(&d);
+            let Some(dom) = self.domains.map.get_mut(&d) else {
+                continue;
+            };
+            dom.seen_focus |= f;
+            if !dom.seen_focus || f == dom.focused {
+                continue;
+            }
+            dom.focused = f;
+            dom.lifecycle.set_focused(f);
+            if let Some((focused, paused)) = dom.lifecycle.update(now).report {
+                let _g = win::enter_domain(d);
+                self.in_game(|| win::domain_focus_changed(d, focused, paused));
+            }
+        }
+    }
+
+    /// Keeps `domains` as the open isolated roots.
+    pub(super) fn sync_domains(&mut self) {
+        let open = win::domains();
+        self.domains
+            .sync(&open, win::run_in_background, self.screenshot.is_some());
+    }
+
+    /// The isolated domains' turns, after the main game's (`tick`): each, with its domain current,
+    /// delivers its messages, runs its due timers (unless paused), dispatches the input queued for
+    /// its windows and ends its input frame. Their UI roots flush with the rest in
+    /// `sync_native_render`.
+    pub(super) fn pump_domains(&mut self, now_ms: f64) {
+        self.sync_domains();
+        let ids: Vec<win::DomainId> = self.domains.map.keys().copied().collect();
+        for d in ids {
+            let _g = win::enter_domain(d);
+            let paused = self
+                .domains
+                .map
+                .get(&d)
+                .is_some_and(|x| x.lifecycle.paused());
+            self.in_game(|| win::deliver(d, now_ms));
+            if !paused {
+                if self.native.is_some() {
+                    self.in_game(|| iron_ts_rt::ts_rt_timers_advance_domain(now_ms, d.0));
+                } else {
+                    for e in self.scripts.tick_domain(now_ms, d.0) {
+                        tracing::error!(target: "script", "uncaught: {e}");
+                    }
+                    self.apply_script_output();
+                }
+            }
+            for (key, event) in self.domains.take_queue(d) {
+                self.window_event(key, event);
+            }
+            if self.native.is_some() {
+                let _scope = iron_scene::api::enter(&mut self.scene.scene);
+                iron_engine_api::input::tick_domain(d);
+            }
+        }
+    }
+
+    /// An event of a window other than the main one: window state applies at once, input and UI
+    /// events wait for their domain's turn unless the window shares the main game's domain.
+    pub(super) fn window_input_for(&mut self, key: WindowKey, event: InputEvent) {
+        let d = win::domain_of(key_ref(key));
+        if d != win::DomainId::MAIN && queues_for_domain(&event) {
+            self.domains.push(d, key, event);
+        } else {
+            self.window_event(key, event);
+        }
+    }
+
+    /// An input event for the game's `input` of domain `d` (@iron/engine's `__iron_input` for
+    /// QuickJS games is the main domain's only).
+    pub(super) fn send_game_input_in(&mut self, d: win::DomainId, args: &[iron_core::Value]) {
+        if d == win::DomainId::MAIN {
+            self.send_game_input(args);
+        } else if let Some(n) = self.native.as_mut() {
+            let _g = win::enter_domain(d);
+            n.game_input(&mut self.scene.scene, &mut self.ui, args);
+            self.native_after();
         }
     }
 }
@@ -771,14 +1005,95 @@ mod tests {
     // M9-API-1463
     #[test]
     fn the_game_is_focused_while_any_of_its_windows_is() {
-        let mut f = BTreeSet::from([WindowKey::MAIN]);
-        assert!(app_focused(&f));
+        // MAIN <- 2 (tool); 5 is an isolated root.
+        let mut tree = iron_platform::WindowTree::default();
+        tree.insert(WindowKey::MAIN, None);
+        tree.insert(WindowKey(2), Some(WindowKey::MAIN));
+        tree.insert(WindowKey(5), None);
+        let domain = |k: WindowKey| win::DomainId(tree.root(k).0);
+        let main = win::DomainId::MAIN;
+        let f = BTreeSet::from([WindowKey::MAIN]);
+        assert_eq!(domain_focused(&f, domain), BTreeSet::from([main]));
         // Focus moving to a tool window: Focused(false) then Focused(true) in one batch.
-        f.remove(&WindowKey::MAIN);
-        f.insert(WindowKey(2));
-        assert!(app_focused(&f));
-        f.clear();
-        assert!(!app_focused(&f));
+        let f = BTreeSet::from([WindowKey(2)]);
+        assert!(domain_focused(&f, domain).contains(&main));
+        assert!(domain_focused(&BTreeSet::new(), domain).is_empty());
+    }
+
+    // M9-TS-2834
+    #[test]
+    fn focus_moving_to_a_tool_window_keeps_the_main_domain_focused() {
+        let mut tree = iron_platform::WindowTree::default();
+        tree.insert(WindowKey::MAIN, None);
+        tree.insert(WindowKey(2), Some(WindowKey::MAIN));
+        tree.insert(WindowKey(3), Some(WindowKey(2)));
+        let domain = |k: WindowKey| win::DomainId(tree.root(k).0);
+        for k in [WindowKey::MAIN, WindowKey(2), WindowKey(3)] {
+            let f = BTreeSet::from([k]);
+            assert_eq!(
+                domain_focused(&f, domain),
+                BTreeSet::from([win::DomainId::MAIN]),
+                "{k:?}"
+            );
+        }
+    }
+
+    // M9-TS-2835
+    #[test]
+    fn focusing_an_isolated_window_unfocuses_the_main_domain_and_pauses_it_without_run_in_background()
+     {
+        let mut tree = iron_platform::WindowTree::default();
+        tree.insert(WindowKey::MAIN, None);
+        tree.insert(WindowKey(2), Some(WindowKey::MAIN));
+        tree.insert(WindowKey(5), None);
+        let domain = |k: WindowKey| win::DomainId(tree.root(k).0);
+        let f = domain_focused(&BTreeSet::from([WindowKey(5)]), domain);
+        assert!(!f.contains(&win::DomainId::MAIN));
+        assert!(f.contains(&win::DomainId(5)));
+        // The main game's lifecycle follows: paused without `runInBackground`, running with it.
+        let now = Instant::now();
+        let mut main = lifecycle::Lifecycle::new(false, false);
+        main.set_focused(f.contains(&win::DomainId::MAIN));
+        assert!(main.update(now).paused);
+        let mut bg = lifecycle::Lifecycle::new(true, false);
+        bg.set_focused(false);
+        assert!(!bg.update(now).paused);
+        // An isolated domain pauses by its own rule.
+        let mut doms = Domains::default();
+        doms.sync(&[win::DomainId::MAIN, win::DomainId(5)], |_| false, false);
+        let d = doms.map.get_mut(&win::DomainId(5)).unwrap();
+        d.lifecycle.set_focused(false);
+        assert!(d.lifecycle.update(now).paused);
+        assert!(doms.all_paused().all(|p| p));
+    }
+
+    // M9-TS-2837
+    #[test]
+    fn events_of_an_isolated_window_queue_for_its_domain() {
+        let mut doms = Domains::default();
+        let (a, b) = (win::DomainId(5), win::DomainId(7));
+        doms.sync(&[win::DomainId::MAIN, a, b], |_| true, false);
+        assert_eq!(doms.map.len(), 2, "the main domain has no queue");
+        doms.push(a, WindowKey(5), InputEvent::MouseMove { x: 1.0, y: 2.0 });
+        doms.push(b, WindowKey(7), InputEvent::MouseLeave);
+        doms.push(a, WindowKey(6), InputEvent::MouseLeave);
+        // State events apply at once, input waits.
+        assert!(queues_for_domain(&InputEvent::MouseLeave));
+        assert!(!queues_for_domain(&InputEvent::Focused(true)));
+        assert!(!queues_for_domain(&InputEvent::Resized {
+            width: 1,
+            height: 1
+        }));
+        let q = doms.take_queue(a);
+        assert_eq!(q.len(), 2);
+        assert_eq!(q[0].0, WindowKey(5));
+        assert_eq!(q[1].0, WindowKey(6));
+        assert!(doms.take_queue(a).is_empty());
+        assert_eq!(doms.take_queue(b).len(), 1);
+        // A domain whose root closed goes with its queue.
+        doms.push(a, WindowKey(5), InputEvent::MouseLeave);
+        doms.sync(&[win::DomainId::MAIN, b], |_| true, false);
+        assert!(!doms.map.contains_key(&a));
     }
 
     // M9-API-1470
