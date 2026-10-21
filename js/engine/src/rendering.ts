@@ -811,6 +811,17 @@ export interface MeshData {
   bindposes?: readonly Matrix4x4[];
 }
 
+/**
+ * A mesh as flat number arrays (x, y, z per vertex; u, v per vertex in Unity's bottom-up
+ * space), for meshes made in bulk (terrain chunks): no object per vertex.
+ */
+export interface FlatMeshData {
+  positions: readonly number[];
+  triangles: readonly number[];
+  normals?: readonly number[];
+  uv?: readonly number[];
+}
+
 export class Mesh {
   readonly id: number;
   /** @internal Its data as flat arrays (script meshes), for saving with scenes. */
@@ -865,6 +876,26 @@ export class Mesh {
       [...data.triangles],
       ...(joints.length ? [joints, weights] : []),
     );
+  }
+
+  /** A mesh from flat arrays (see `FlatMeshData`). */
+  static createFlat(data: FlatMeshData): Mesh {
+    const mesh = new Mesh(nextMesh++);
+    mesh.setFlat(data);
+    return mesh;
+  }
+
+  /** Replaces the mesh's data from flat arrays: the fast way for big, rebuilt meshes. */
+  setFlat(data: FlatMeshData): void {
+    const uv = data.uv ?? [];
+    // Unity's UVs run bottom-up; the engine's top-down.
+    const flipped = new Array<number>(uv.length);
+    for (let i = 0; i < uv.length; i += 2) {
+      flipped[i] = uv[i]!;
+      flipped[i + 1] = 1 - uv[i + 1]!;
+    }
+    this._data = { vertices: [...data.positions], triangles: [...data.triangles], normals: [...(data.normals ?? [])], uv: [...uv] };
+    __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
   }
 
   /** Frees it (renderers still using it draw nothing). */

@@ -2781,6 +2781,21 @@ ${err.stack}` : ""}`);
         this.bindposes = [...data.bindposes];
       __iron_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles], ...joints.length ? [joints, weights] : []);
     }
+    static createFlat(data) {
+      const mesh = new Mesh(nextMesh++);
+      mesh.setFlat(data);
+      return mesh;
+    }
+    setFlat(data) {
+      const uv = data.uv ?? [];
+      const flipped = new Array(uv.length);
+      for (let i = 0;i < uv.length; i += 2) {
+        flipped[i] = uv[i];
+        flipped[i + 1] = 1 - uv[i + 1];
+      }
+      this._data = { vertices: [...data.positions], triangles: [...data.triangles], normals: [...data.normals ?? []], uv: [...uv] };
+      __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
+    }
     destroy() {
       __iron_op("render.mesh", this.id, null);
     }

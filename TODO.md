@@ -1475,7 +1475,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     with the shadow map (like the spot cones now, sharper, costlier), maybe mixed with the
     volume (volume for broad haze, per pixel near the camera). An example: a ruined hall or a
     forest clearing with beams through the roof or canopy, with dust motes catching the light
-  - [ ] `examples/fog-world`: an endless, streamed block world whose render distance is the fog
+  - [x] `examples/fog-world` (2026-10-21): an endless, streamed block world whose render
+    distance is the fog: seeded noise terrain built per 16×16 chunk as one textured mesh of
+    visible faces (`Mesh.createFlat` / `setFlat`), chunks recycled around the camera, a spare
+    ring past the fog for fog culling to skip; the HUD reads `RenderStats`
   - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
     2026-10-21): a third-person character on a bright white floor of glowing grid tiles under
     a grey cloudy sky, everything fading into white fog a few tiles away. The floor moves with

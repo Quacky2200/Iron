@@ -189,6 +189,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/fog-world": {
+      "name": "fog-world",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/form": {
       "name": "form",
       "version": "0.1.0",
@@ -425,6 +437,8 @@
     "fog-raider": ["fog-raider@workspace:examples/fog-raider"],
 
     "fog-teapots": ["fog-teapots@workspace:examples/fog-teapots"],
+
+    "fog-world": ["fog-world@workspace:examples/fog-world"],
 
     "form": ["form@workspace:examples/form"],
 

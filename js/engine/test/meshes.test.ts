@@ -83,6 +83,13 @@ describe("meshes and lights", () => {
     expect((renderOps().at(-1)!.at(-1) as unknown[])[10]).toBe("fade");
   });
 
+  test("flat meshes send their arrays as they are, UVs flipped", () => {
+    const quad = Mesh.createFlat({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], triangles: [0, 1, 2], uv: [0, 0, 1, 0, 0, 1] });
+    expect(renderOps()[0]).toEqual(["render.mesh", quad.id, [0, 0, 0, 1, 0, 0, 0, 1, 0], [], [0, 1, 1, 1, 0, 0], [0, 1, 2]]);
+    quad.setFlat({ positions: [1, 1, 1], triangles: [] });
+    expect(renderOps().at(-1)).toEqual(["render.mesh", quad.id, [1, 1, 1], [], [], []]);
+  });
+
   test("script meshes send flat arrays", () => {
     const tri = Mesh.create({ vertices: [Vector3.zero, Vector3.right, Vector3.up], triangles: [0, 1, 2] });
     expect(renderOps()[0]).toEqual(["render.mesh", tri.id, [0, 0, 0, 1, 0, 0, 0, 1, 0], [], [], [0, 1, 2]]);

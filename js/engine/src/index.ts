@@ -163,6 +163,7 @@ export {
   type BoneWeight,
   Mesh,
   type MeshData,
+  type FlatMeshData,
   MeshRenderer,
   SkinnedMeshRenderer,
   Mirror,
