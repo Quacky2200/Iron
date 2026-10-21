@@ -1,4 +1,4 @@
-// God rays: the clouds. Late afternoon from a hilltop, looking towards the sun over rolling
+// God rays: the clouds. Late afternoon from high on a hillside, looking towards the sun over rolling
 // country. The sun sits behind a broken layer of cumulus: it lights the clouds' edges and
 // sends beams (crepuscular rays) fanning down through the gaps between them, across the hazy
 // air to the fields and woods below. The clouds drift slowly, so the beams sweep and shift,
@@ -93,8 +93,8 @@ class Clouds extends Component {
     this.buildLand();
     this.buildClouds();
 
-    // On a hilltop, looking out towards the sun.
-    const eye = new GameObject("Main Camera", { position: new Vector3(0, 60, 330) });
+    // High on a hillside (out of view behind), looking out towards the sun.
+    const eye = new GameObject("Main Camera", { position: new Vector3(0, 45, 330) });
     this.camera = eye.addComponent(Camera, { fieldOfView: 60, nearClipPlane: 0.5, farClipPlane: 6000, clearFlags: "skybox" });
     apply();
   }
@@ -109,26 +109,25 @@ class Clouds extends Component {
     const tree = mat("#355226");
     const hill = mat("#6f9a44");
     shape("Ground", "cube", new Vector3(0, -1, -2000), new Vector3(9000, 2, 9000), crops[0]!);
-    // Fields on a rough grid, each a little turned, sized and coloured its own way.
-    const CELL = 170;
-    for (let gx = -10; gx <= 10; gx++) {
-      for (let gz = -24; gz <= 1; gz++) {
-        const cx = gx * CELL + Random.range(-20, 20);
-        const cz = gz * CELL + Random.range(-20, 20);
-        const w = CELL * Random.range(0.8, 0.98);
-        const d = CELL * Random.range(0.8, 0.98);
-        const yaw = Quaternion.euler(0, Random.range(-8, 8), 0);
-        shape("Field", "cube", new Vector3(cx, 0.1, cz), new Vector3(w, 0.4, d), crops[Math.floor(Random.value * crops.length)]!, undefined, yaw);
-        // Hedges along two sides (the neighbours give the other two), trees in some of them.
-        const edge = (dx: number, dz: number, along: number, across: boolean) => {
-          const at = yaw.rotate(new Vector3(dx, 0, dz)).add(new Vector3(cx, 1.6, cz));
-          shape("Hedge", "cube", at, across ? new Vector3(along, 3.2, 2.5) : new Vector3(2.5, 3.2, along), hedge, undefined, yaw);
-        };
-        edge(0, -d / 2 - 2, w + 4, true);
-        edge(-w / 2 - 2, 0, d + 4, false);
+    // Fields on one grid, turned a little as a whole: each sits inside its own cell, with a
+    // gap round it where the hedgerows run, so no two overlap. Some hedges are missing, so
+    // neighbouring fields of the same crop run together.
+    const CELL = 150;
+    const GAP = 6;
+    const grid = Quaternion.euler(0, 12, 0);
+    const place = (x: number, z: number, y: number) => grid.rotate(new Vector3(x, 0, z)).add(new Vector3(0, y, 0));
+    for (let gx = -12; gx <= 12; gx++) {
+      for (let gz = -26; gz <= 2; gz++) {
+        const cx = gx * CELL;
+        const cz = gz * CELL;
+        const crop = crops[Math.floor(Random.value * crops.length)]!;
+        shape("Field", "cube", place(cx, cz, 0.1), new Vector3(CELL - GAP, 0.4, CELL - GAP), crop, undefined, grid);
+        // The hedges on this cell's -x and -z sides (the neighbours' give the others).
+        if (Random.value < 0.8) shape("Hedge", "cube", place(cx, cz - CELL / 2, 1.6), new Vector3(CELL - GAP, 3.2, 2.5), hedge, undefined, grid);
+        if (Random.value < 0.8) shape("Hedge", "cube", place(cx - CELL / 2, cz, 1.6), new Vector3(2.5, 3.2, CELL - GAP), hedge, undefined, grid);
         if (Random.value < 0.35) {
           const r = Random.range(5, 9);
-          shape("Hedge tree", "sphere", yaw.rotate(new Vector3(Random.range(-w / 2, w / 2), 0, -d / 2 - 2)).add(new Vector3(cx, r * 1.3, cz)), new Vector3(r * 2, r * 2.2, r * 2), tree);
+          shape("Hedge tree", "sphere", place(cx + Random.range(-CELL / 2, CELL / 2), cz - CELL / 2, r * 1.3), new Vector3(r * 2, r * 2.2, r * 2), tree);
         }
       }
     }
@@ -150,8 +149,6 @@ class Clouds extends Component {
       const h = Random.range(60, 160);
       shape("Hill", "sphere", new Vector3(x, -h * 0.35, z), new Vector3(r * 2, h * 2, r * 2 * Random.range(0.7, 1.3)), hill);
     }
-    // The hill the camera stands on.
-    shape("Hilltop", "sphere", new Vector3(0, -20, 380), new Vector3(520, 150, 520), crops[2]!);
   }
 
   /**
