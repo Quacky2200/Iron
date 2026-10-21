@@ -237,15 +237,15 @@ class Hall extends Component {
     const plaster = mat("#b5a68c", 0.05);
     const T = 0.3;
     const W = -ROOM_X - T;
-    slab("Wall E", ROOM_X, -0.2, -ROOM_Z - T, ROOM_X + T, WALL_H, ROOM_Z + T, plaster);
-    slab("Wall N", -ROOM_X - T, -0.2, ROOM_Z, ROOM_X + T, WALL_H, ROOM_Z + T, plaster);
-    slab("Wall S", -ROOM_X - T, -0.2, -ROOM_Z - T, ROOM_X + T, WALL_H, -ROOM_Z, plaster);
-    slab("Wall W", W, -0.2, -ROOM_Z, -ROOM_X, WALL_H, SHUT.z0, plaster);
-    slab("Wall W", W, -0.2, SHUT.z1, -ROOM_X, WALL_H, WIN.z0, plaster);
-    slab("Wall W", W, -0.2, WIN.z1, -ROOM_X, WALL_H, ROOM_Z, plaster);
+    slab("Wall E", ROOM_X, -0.2, -ROOM_Z - T, ROOM_X + T, WALL_H + 0.1, ROOM_Z + T, plaster);
+    slab("Wall N", -ROOM_X - T, -0.2, ROOM_Z, ROOM_X + T, WALL_H + 0.1, ROOM_Z + T, plaster);
+    slab("Wall S", -ROOM_X - T, -0.2, -ROOM_Z - T, ROOM_X + T, WALL_H + 0.1, -ROOM_Z, plaster);
+    slab("Wall W", W, -0.2, -ROOM_Z, -ROOM_X, WALL_H + 0.1, SHUT.z0, plaster);
+    slab("Wall W", W, -0.2, SHUT.z1, -ROOM_X, WALL_H + 0.1, WIN.z0, plaster);
+    slab("Wall W", W, -0.2, WIN.z1, -ROOM_X, WALL_H + 0.1, ROOM_Z, plaster);
     for (const o of [WIN, SHUT]) {
       slab("Sill wall", W, -0.2, o.z0, -ROOM_X, o.y0, o.z1, plaster);
-      slab("Lintel", W, o.y1, o.z0, -ROOM_X, WALL_H, o.z1, plaster);
+      slab("Lintel", W, o.y1, o.z0, -ROOM_X, WALL_H + 0.1, o.z1, plaster);
     }
     // Worn patches: damp stains, newer plaster, bare brick.
     const patches = ["#8f8068", "#cbbfa6", "#7a5040", "#9a8a6e", "#6e6250"].map((h) => mat(h, 0.05));
@@ -310,7 +310,12 @@ class Hall extends Component {
       const j = Math.floor(c / PLANKS_X);
       const x = -ROOM_X + i * PLANK_W;
       const z = -ROOM_Z + j * RAFTER_STEP;
-      slab("Roof plank", x, WALL_H, z, x + PLANK_W, WALL_H + 0.1, z + RAFTER_STEP, pick(roof));
+      // Each plank overlaps its neighbours by LAP (exactly abutting planks let the sun's
+      // shadow map leak pixels of light through the seams), alternate ones a few millimetres
+      // higher so the overlaps don't z-fight.
+      const LAP = 0.02;
+      const lift = ((i + j) % 2) * 0.006;
+      slab("Roof plank", x - LAP, WALL_H + lift, z - LAP, x + PLANK_W + LAP, WALL_H + 0.1 + lift, z + RAFTER_STEP + LAP, pick(roof));
     }
     // Broken planks hanging from the hole's edge.
     for (let k = 0; k < 4; k++) {
