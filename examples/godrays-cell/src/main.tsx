@@ -4,7 +4,7 @@
 // the flagstones; dust motes drift through the dark and flare up where the sun catches them.
 // A heavy door, a straw pallet, a bucket and chains on the wall; a drain grate in the
 // ceiling. The camera sways slowly inside the cell, looking across the beams to the window.
-// The menu (or keys) switches the volume's detail (G: high or ultra), the fog (F), the dust (D) and the
+// The menu (or keys) switches the volume's detail (G: high or ultra), the rays (R: the dusty air and its light shafts), the dust (D) and the
 // sunlight's tint (T: warm or teal).
 import {
   Camera,
@@ -489,7 +489,7 @@ class Cell extends Component {
   override onUpdate(dt: number) {
     this.t += dt;
     if (input.getKeyDown("KeyG")) toggle("ultra");
-    if (input.getKeyDown("KeyF")) toggle("fog");
+    if (input.getKeyDown("KeyR")) toggle("fog");
     if (input.getKeyDown("KeyD")) toggle("dust");
     if (input.getKeyDown("KeyT")) cycleTint();
 
@@ -555,7 +555,7 @@ function Menu() {
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 20, 0.72)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the cell</text>
         <Button label="Beam detail" value={state.ultra ? "Ultra" : "High"} on={state.ultra} keyName="G" onClick={() => toggle("ultra")} />
-        <Button label="Fog" value={state.fog ? "On" : "Off"} on={state.fog} keyName="F" onClick={() => toggle("fog")} />
+        <Button label="Rays" value={state.fog ? "On" : "Off"} on={state.fog} keyName="R" onClick={() => toggle("fog")} />
         <Button label="Dust" value={state.dust ? "On" : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />
         <Button label="Sunlight" value={state.tint === "warm" ? "Warm" : "Teal"} keyName="T" onClick={cycleTint} />
       </box>
