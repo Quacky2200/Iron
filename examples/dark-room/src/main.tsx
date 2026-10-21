@@ -5,11 +5,15 @@
 // they close again: near black, and the room only slowly comes back as the eyes adapt to the
 // dark. The camera looks round the window side all the while.
 //
-// The menu tries out every exposure setting live, with a readout of the exposure in use and
-// how bright the view meters (`Camera.exposure`, `sceneBrightness`): auto exposure on or off
-// (A) blending over a transition (T) to a manual exposure (E); freezing it where it is (Z);
-// holding it (L); the metering mode (M) and histogram band (H); a soft floor (S) and a
-// compensation curve (C) keeping the dark darker. Restart the cycle with R, pause with Space.
+// The menu tries out every exposure setting live. A graph shows the last fifteen seconds:
+// how bright the view meters (where the eyes are heading) against the exposure in use (where
+// they are), both in EV100 (`Camera.sceneBrightness`, `Camera.exposure`), so you can watch
+// them adapt. The metering zone is drawn over the view. Keys: auto exposure on or off (A)
+// blending over a transition (T) to a manual exposure (E); freezing it where it is (Z);
+// holding it (L); how fast eyes adapt (Y: game-fast or eye-slow); the metering mode (M) and
+// histogram band (H); a soft floor (S) and a compensation curve (C), which stop the
+// exposure short of the dark on purpose, so dark places still look dark (the graph shows
+// the gap). Restart the cycle with R, pause with Space.
 import {
   Camera,
   Color,
@@ -72,6 +76,15 @@ const METERING = ["centerWeighted", "average", "spot"] as const;
 const METERING_NAMES = { centerWeighted: "Centre-weighted", average: "Average", spot: "Spot" };
 const TRANSITIONS = [2, 6, 0];
 const MANUAL_EVS = [0, -3, 4];
+/** How fast the eyes adapt: like a game (under a second) or like real eyes (slow in the dark). */
+const SPEEDS = [
+  { name: "Game (under a second)", toLight: 4, toDark: 3.5 },
+  { name: "Eyes (slow in the dark)", toLight: 1.2, toDark: 0.35 },
+];
+/** The graph: seconds shown and samples a second. */
+const GRAPH_SECONDS = 15;
+const GRAPH_RATE = 10;
+const history: { exposure: number; scene: number }[] = [];
 
 const state = {
   auto: true,
@@ -83,6 +96,7 @@ const state = {
   curve: false,
   transition: 0,
   manual: 0,
+  speed: 0,
   /** Set by freezing: the manual exposure is wherever the eyes were. */
   frozenAt: null as number | null,
 };
@@ -91,14 +105,14 @@ let refreshMenu = () => {};
 function apply(): void {
   RenderSettings.exposureTransition = TRANSITIONS[state.transition]!;
   RenderSettings.fixedExposure = state.frozenAt ?? MANUAL_EVS[state.manual]!;
-  // Slow to see in the dark, quick-ish to recover from the glare: as eyes do.
+  const speed = SPEEDS[state.speed]!;
   RenderSettings.autoExposure = state.auto
     ? {
         minEV: -7,
         maxEV: 16,
         compensation: -0.6,
-        speedDarkToLight: 0.6,
-        speedLightToDark: 0.3,
+        speedDarkToLight: speed.toLight,
+        speedLightToDark: speed.toDark,
         metering: METERING[state.metering],
         lowPercent: state.band ? 40 : 0,
         highPercent: state.band ? 90 : 100,
@@ -165,7 +179,7 @@ class Bedroom extends Component {
     RenderSettings.fog = true;
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
-    sun.addComponent(Light, { type: "directional", color: new Color(1, 0.93, 0.82, 1), intensity: 14, shadows: "hard" });
+    sun.addComponent(Light, { type: "directional", color: new Color(1, 0.93, 0.82, 1), intensity: 40, shadows: "hard" });
 
     Random.initState(5);
     this.buildRoom();
@@ -173,7 +187,7 @@ class Bedroom extends Component {
 
     const eye = new GameObject("Main Camera", { position: new Vector3(0.2, 1.6, 0.4), rotation: Quaternion.lookRotation(new Vector3(0.17, -0.12, -1)) });
     // Bright daylight outside the windows.
-    this.camera = eye.addComponent(Camera, { fieldOfView: 68, backgroundColor: new Color(12, 13, 15, 1), farClipPlane: 60, nearClipPlane: 0.05 });
+    this.camera = eye.addComponent(Camera, { fieldOfView: 68, backgroundColor: new Color(60, 66, 74, 1), farClipPlane: 60, nearClipPlane: 0.05 });
     apply();
   }
 
@@ -288,14 +302,20 @@ class Bedroom extends Component {
     if (input.getKeyDown("KeyE")) cycle("manual", MANUAL_EVS.length);
     if (input.getKeyDown("KeyL")) toggle("hold");
     if (input.getKeyDown("KeyM")) cycle("metering", METERING.length);
+    if (input.getKeyDown("KeyY")) cycle("speed", SPEEDS.length);
     if (input.getKeyDown("KeyH")) toggle("band");
     if (input.getKeyDown("KeyS")) toggle("soft");
     if (input.getKeyDown("KeyC")) toggle("curve");
     if (input.getKeyDown("Space")) toggle("paused");
-    // The readout, a few times a second.
+    // The graph's samples, and the readout.
     this.readout += dt;
-    if (this.readout > 0.2) {
+    if (this.readout > 1 / GRAPH_RATE) {
       this.readout = 0;
+      const cam = Camera.main;
+      if (cam && Number.isFinite(cam.exposure)) {
+        history.push({ exposure: cam.exposure, scene: cam.sceneBrightness });
+        if (history.length > GRAPH_SECONDS * GRAPH_RATE) history.shift();
+      }
       refreshMenu();
     }
     if (input.getKeyDown("KeyR")) this.t = 0;
@@ -318,7 +338,7 @@ function toggle(key: "paused" | "hold" | "band" | "soft" | "curve") {
   apply();
 }
 
-function cycle(key: "transition" | "manual" | "metering", n: number) {
+function cycle(key: "transition" | "manual" | "metering" | "speed", n: number) {
   state[key] = (state[key] + 1) % n;
   apply();
 }
@@ -349,16 +369,76 @@ function Button(props: { label: string; value: string; on: boolean; keyName: str
   );
 }
 
+/**
+ * The last fifteen seconds: how bright the view meters (orange: where the eyes are heading)
+ * and the exposure in use (white: where they are), in EV100. Where they part, the eyes are
+ * still adapting, or (soft floor, curve) stopping short of the dark on purpose.
+ */
+function Graph() {
+  const W = 300;
+  const H = 96;
+  const values = history.flatMap((h) => (Number.isFinite(h.scene) ? [h.exposure, h.scene] : [h.exposure]));
+  const lo = Math.floor(Math.min(-4, ...values) - 0.5);
+  const hi = Math.ceil(Math.max(4, ...values) + 0.5);
+  const x = (i: number) => (i / (GRAPH_SECONDS * GRAPH_RATE - 1)) * W;
+  const y = (v: number) => H - ((v - lo) / (hi - lo)) * H;
+  const line = (pick: (h: { exposure: number; scene: number }) => number) =>
+    history
+      .map((h, i) => [i, pick(h)] as const)
+      .filter(([, v]) => Number.isFinite(v))
+      .map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+      .join(" ");
+  return (
+    <box style={{ flexDirection: "column", gap: 4 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: W, height: H, backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 4 }}>
+        <polyline points={line((h) => h.scene)} fill="none" stroke="#f0a040" strokeWidth={2} />
+        <polyline points={line((h) => h.exposure)} fill="none" stroke="#ffffff" strokeWidth={2} />
+      </svg>
+      <box style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <text style={{ color: "#f0a040", fontSize: 12 }}>view meters {ev(Camera.main?.sceneBrightness)}</text>
+        <text style={{ color: "#ffffff", fontSize: 12 }}>exposure {ev(Camera.main?.exposure)}</text>
+        <text style={{ color: "#7d838c", fontSize: 12 }}>
+          {lo}…{hi} EV
+        </text>
+      </box>
+    </box>
+  );
+}
+
+/** The metering zone over the view: a soft ring (centre-weighted), a small circle (spot). */
+function MeteringZone() {
+  if (!state.auto) return null;
+  const mode = METERING[state.metering];
+  if (mode === "average") return null;
+  // Spot meters a circle of radius 0.12 (of the view's width and height); centre-weighted
+  // counts half as much 0.34 out.
+  const r = mode === "spot" ? 12 : 34;
+  return (
+    <box
+      style={{
+        position: "absolute",
+        left: `${50 - r}%`,
+        top: `${50 - r}%`,
+        width: `${2 * r}%`,
+        height: `${2 * r}%`,
+        borderRadius: "50%",
+        borderWidth: mode === "spot" ? 2 : 1,
+        borderColor: mode === "spot" ? "rgba(240,160,64,0.8)" : "rgba(240,160,64,0.35)",
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
 function Menu() {
   const [, setTick] = useState(0);
   refreshMenu = () => setTick((t) => t + 1);
   return (
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
+      <MeteringZone />
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 18, 0.72)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Eye adaptation: the bedroom</text>
-        <text style={{ color: "#c8ccd2", fontSize: 13 }}>
-          Exposure {ev(Camera.main?.exposure)} · the view meters {ev(Camera.main?.sceneBrightness)}
-        </text>
+        <Graph />
         <Button
           label="Auto exposure"
           value={state.auto ? "On (eyes adapt)" : state.frozenAt !== null ? `Frozen (${ev(state.frozenAt)})` : `Off (manual ${ev(MANUAL_EVS[state.manual])})`}
@@ -370,10 +450,11 @@ function Menu() {
         <Button label="Transition" value={TRANSITIONS[state.transition] ? `${TRANSITIONS[state.transition]} s blend` : "Instant"} on={TRANSITIONS[state.transition]! > 0} keyName="T" onClick={() => cycle("transition", TRANSITIONS.length)} />
         <Button label="Manual EV" value={ev(MANUAL_EVS[state.manual])} on={!state.auto} keyName="E" onClick={() => cycle("manual", MANUAL_EVS.length)} />
         <Button label="Hold" value={state.hold ? "Held where it is" : "Adapting"} on={state.hold} keyName="L" onClick={() => toggle("hold")} />
+        <Button label="Adapts like" value={SPEEDS[state.speed]!.name} on={state.speed === 0} keyName="Y" onClick={() => cycle("speed", SPEEDS.length)} />
         <Button label="Metering" value={METERING_NAMES[METERING[state.metering] ?? "centerWeighted"]} on={true} keyName="M" onClick={() => cycle("metering", METERING.length)} />
         <Button label="Histogram" value={state.band ? "40–90% (no extremes)" : "Everything"} on={state.band} keyName="H" onClick={() => toggle("band")} />
-        <Button label="Soft floor" value={state.soft ? "Dark stays dim" : "Off"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
-        <Button label="Curve" value={state.curve ? "Darker in the dark" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
+        <Button label="Soft floor" value={state.soft ? "Below EV 3: 60% of the way" : "Off: all the way"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
+        <Button label="Curve" value={state.curve ? "-1.5 stops at EV -4" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
         <Button label="Shutters" value={state.paused ? "Paused" : "Opening and closing"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
       </box>
     </box>
