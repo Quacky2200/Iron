@@ -1449,9 +1449,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     `RenderSettings.volumetricFog`: intensity, anisotropy, steps, reach), each step's share
     of the fog lit by every light that opts in (`Light.volumetricIntensity`) through its hard
     shadow map, Henyey-Greenstein phase (`M7-FOG-05`)
-  - [ ] Follow-ups: a froxel volume (march once per froxel instead of per fragment, cheaper
-    under overdraw); blur or temporal accumulation of the jitter's grain; shafts in the sky
-    without height fog
+  - [x] Follow-ups (2026-10-21): a froxel volume (lit once per cell, then added up along each
+    view ray) and temporal accumulation of its jitter's grain (see the light volume below)
+  - [ ] Shafts in the sky without height fog
   - [x] Fog volumes (2026-10-21): `FogVolume`, a world-aligned box of fog in its own colour
     with soft edges (mist over a pond, a cloud layer), integrated along each view ray at fixed
     points, over the background too, lit by light shafts; 8 per camera (`M7-FOG-06`)
@@ -1470,8 +1470,33 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [x] God rays, engine (2026-10-21): within `volumetricFog.sharpDistance` of the camera
     the sun's shafts are worked out per pixel from its shadow map (fixed samples, closer
     nearer the eye), the volume covering the rest, so beams through bars and gaps stay sharp
-    (`M7-FOG-10`); examples next: a barred prison cell, a forest canopy, a sunlit room with
-    dust
+    (`M7-FOG-10`)
+  - [x] God-ray examples (2026-10-21): `godrays-forest`, `godrays-cell` (dust motes),
+    `godrays-room`, `godrays-sunset`, `godrays-shed` (a scanning beam: partial or full scans,
+    dust motes, haze and exposure pages), `godrays-lift`, `godrays-clouds`; reviewed in the
+    window
+  - [x] The light volume's quality (2026-10-21): no moire or grain through blinds (each
+    cell's jitter shifted by a hash, 64 Halton points, a spatial filter); HDRP's denoising
+    modes (`volumetricFog.denoising`), Unreal's `historyWeight` and `samples` per cell;
+    history read through a 5-tap Catmull-Rom filter and trusted less the further it moved
+    (no smear while turning); `motionSamples` for cells whose view moved (`M7-FOG-11`..`14`)
+  - [x] Shadowed spot and point lights shaft through the volume (2026-10-21): their beams cut
+    by planks and bars made arcs and moire per pixel; a moving one's history fades by how far
+    its beam swept (capped at a quarter a frame). Unshadowed ones keep exact per-pixel cones.
+    The volume is read a slice and a half short of surfaces (Unreal's depth bias), so a beam
+    behind a wall shows no disc of haze on it (`M7-FOG-15`)
+  - [x] Pyramid spot lights (2026-10-21, HDRP's spot shape): `Light.spotShape = "pyramid"`
+    and `aspectRatio`; a thin, wide one is a sheet of light (the shed's full scan)
+    (`M7-SPOT-01`, `02`)
+  - [ ] Blades finer than the volume's cells (a beam through 1 cm plank gaps, seen towards
+    the light) average into a soft disc of haze: work shadowed spot lights near the camera
+    out per pixel too, edges found exactly as the sun's sharp shafts are (without bringing
+    back the per-pixel arcs), the volume covering the rest
+  - [ ] A moving light's sweep is measured at the end of its range, overstating it for nearer
+    haze (more noise than needed); measure it where its beam meets the view, or per cell.
+    Only four moving lights are followed (more count as moving a long way)
+  - [ ] HDRP's third spot shape, Box (parallel light from a rectangle), and the beam glow
+    mesh (`beamIntensity`) for pyramids
   - [x] Hot reload of a release build keeps the old scene (2026-10-21): with a game's
     window open, rebuilding `dist/` reloaded it in place, but scenes built in `onStart` came
     back from the saved state, so changed geometry (fog-raider's corridor fix) didn't show,
@@ -1482,7 +1507,8 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     saved with their pixels and options (`M4-HOT-11`). Quality was already restored once.
     Restoring rather than rebuilding objects is by design (docs/scripting.md "Limits"):
     changes to what `onStart` builds show after a restart
-  - [ ] God rays, first notes: crisp, high-contrast sun beams cutting through fog and
+  - [x] God rays, first notes (2026-10-21, done as the mix: the volume for broad haze, the
+    sun per pixel near the camera; the screen-space radial blur wasn't needed): crisp, high-contrast sun beams cutting through fog and
     cloud where light comes through gaps (skylights, a broken roof, a tree canopy), as in
     Unreal's volumetric fog and painted-style games. The froxel volume makes the sun's shafts
     soft; options: a screen-space radial blur from the sun's position over an occlusion mask
@@ -1513,6 +1539,9 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     `sceneBrightness` read back and `Camera.resetExposure()` (`M7-EXP-05`); a soft floor
     (`darkAdaptation` / `darkBelow`) and a compensation curve instead of `minEV`'s wall
     (`M7-EXP-06`); `QualitySettings.autoExposure`, the player's switch
+  - [x] A change of manual exposure eases over `exposureTransition` too (2026-10-21);
+    `QualitySettings.softShadowQuality` low / medium / high (3x3, 5x5, 7x7) softens beams'
+    patches on floors; dark-room and shed have tabbed exposure pages, FPS, quality and vsync
 - [ ] One render pipeline, as Unity 7 (asked for 2026-10-21, needed for iOS / Android). Unity
   is keeping only URP (HDRP deprecated in 7.0, removed after the first 7 LTS; Built-in removed
   in 7.0) and moving HDRP's features into it, scaled per quality level and platform
