@@ -1101,6 +1101,8 @@ export class Light extends Component {
   private _shadowStrength = 1;
   private _cullingMask = 0xffffffff;
   private _volumetricIntensity = 1;
+  private _spotShape: "cone" | "pyramid" = "cone";
+  private _aspectRatio = 1;
   private started = false;
 
   @property
@@ -1227,6 +1229,27 @@ export class Light extends Component {
     this.send();
   }
 
+  /**
+   * A spot light's shape (HDRP's): a `cone`, or a `pyramid` `spotAngle` high and
+   * `aspectRatio` times as wide (in tangent), its width along the object's x. A thin, wide
+   * pyramid is a sheet of light: a scanner's, a laser level's, light through a slot.
+   */
+  get spotShape(): "cone" | "pyramid" {
+    return this._spotShape;
+  }
+  set spotShape(s: "cone" | "pyramid") {
+    this._spotShape = s;
+    this.send();
+  }
+  /** A pyramid spot light's width over its height (1). */
+  get aspectRatio(): number {
+    return this._aspectRatio;
+  }
+  set aspectRatio(a: number) {
+    this._aspectRatio = Math.max(0.001, a);
+    this.send();
+  }
+
   private send(): void {
     if (!this.started) return;
     const c = this._color;
@@ -1246,6 +1269,8 @@ export class Light extends Component {
       this._shadowStrength,
       this._cullingMask,
       this._volumetricIntensity,
+      this._spotShape,
+      this._aspectRatio,
     );
   }
 

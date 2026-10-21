@@ -3882,6 +3882,83 @@ fn a_spot_light_behind_a_wall_puts_no_haze_in_front_of_it() {
     assert!(middle <= aside + 2, "middle {middle}, aside {aside}");
 }
 
+// M7-SPOT-01
+#[test]
+fn a_pyramid_spot_light_lights_a_wide_thin_rectangle_turned_with_its_object() {
+    use iron_render::{Light, LightKind, MeshInstance, WorldView, primitive_id};
+    let size = (160, 120);
+    let gpu = shared_gpu();
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let tv = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &tv,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::ZERO,
+            Vec3::Y,
+        )
+        .inverse(),
+        60.0,
+        0.1,
+        40.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    // Lit points on a wall 4 m from the light, which is 10 degrees high and 4 times as wide:
+    // about 0.35 m above and below its middle, 1.4 m to either side.
+    let lit_at = |right: Vec3| {
+        let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+        v.ambient = [0.0, 0.0, 0.0];
+        v.meshes = vec![MeshInstance {
+            mesh: primitive_id("cube").unwrap(),
+            model: Mat4::from_scale_rotation_translation(
+                Vec3::new(10.0, 10.0, 0.1),
+                Quat::IDENTITY,
+                Vec3::new(0.0, 0.0, -0.05),
+            ),
+            color: [0.8, 0.8, 0.8, 1.0],
+            ..Default::default()
+        }];
+        v.lights = vec![Light {
+            kind: LightKind::Pyramid {
+                inner_degrees: 8.0,
+                outer_degrees: 10.0,
+                aspect: 4.0,
+                right,
+            },
+            color: [20.0, 20.0, 20.0],
+            position: Vec3::new(0.0, 0.0, 4.0),
+            direction: Vec3::NEG_Z,
+            range: 10.0,
+            shadows: None,
+            culling_mask: ALL_LAYERS,
+            volumetric: 0.0,
+        }];
+        let mut world = WorldRenderer::new(&gpu);
+        world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+        let pixels = target.read_pixels(&gpu).unwrap();
+        move |x: f32, y: f32| {
+            let c = camera.view_proj.project_point3(Vec3::new(x, y, 0.0));
+            let px = ((c.x + 1.0) / 2.0 * size.0 as f32) as u32;
+            let py = ((1.0 - c.y) / 2.0 * size.1 as f32) as u32;
+            pixels[((py * size.0 + px) * 4) as usize] > 40
+        }
+    };
+    let flat = lit_at(Vec3::X);
+    assert!(flat(0.0, 0.0) && flat(1.0, 0.0) && flat(-1.0, 0.0));
+    assert!(!flat(0.0, 0.7) && !flat(0.0, -0.7) && !flat(1.8, 0.0));
+    // Turned a quarter about its direction: tall and thin.
+    let tall = lit_at(Vec3::Y);
+    assert!(tall(0.0, 1.0) && tall(0.0, -1.0));
+    assert!(!tall(0.7, 0.0) && !tall(-0.7, 0.0));
+}
+
 // M7-FOG-13
 /// How much the haze changes from one frame to the next with the camera still under a
 /// grate's beams (all of it noise): the mean change in green over the frame (0..255).

@@ -111,7 +111,9 @@ struct Light {
     direction: vec4<f32>,
     // rgb: colour × intensity; w: how strongly it lights fog (light shafts).
     color: vec4<f32>,
-    // x, y: cosines of the spot's inner and outer half-angles.
+    // x, y: cosines of the spot's inner and outer half-angles (a pyramid's across its
+    // height); z: a pyramid's width over its height, in tangent (0: a cone); w: its turn
+    // about its direction from `spot_axes`.
     spot: vec4<f32>,
     // x: the layers it lights.
     mask: vec4<u32>,
@@ -339,6 +341,45 @@ fn phase(cos_theta: f32) -> f32 {
     return (1.0 - k * k) / (d * sqrt(d));
 }
 
+// Two axes across a spot light's direction `d` (as `spot_axes` in mod.rs builds them): a
+// pyramid's turn is measured from them.
+fn spot_axes(d: vec3<f32>) -> mat2x3<f32> {
+    let up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(d.y) > 0.99);
+    let right = normalize(cross(d, up));
+    return mat2x3<f32>(right, cross(right, d));
+}
+
+// How much of a spot light reaches along `travel` (unit, away from the light): 1 inside,
+// fading over its soft edge. A cone by angle; a pyramid by its width and height apart.
+fn spot_falloff(light: Light, travel: vec3<f32>) -> f32 {
+    let d = normalize(light.direction.xyz);
+    let c = dot(travel, d);
+    if (light.spot.z <= 0.0) {
+        return smoothstep(light.spot.y, light.spot.x, c);
+    }
+    if (c <= 0.0) {
+        return 0.0;
+    }
+    let axes = spot_axes(d);
+    let right = cos(light.spot.w) * axes[0] + sin(light.spot.w) * axes[1];
+    let up = cross(right, d);
+    let tan_out = sqrt(1.0 - light.spot.y * light.spot.y) / light.spot.y;
+    let tan_in = sqrt(1.0 - light.spot.x * light.spot.x) / light.spot.x;
+    let p = abs(vec2<f32>(dot(travel, right), dot(travel, up))) / c;
+    let a = vec2<f32>(light.spot.z, 1.0);
+    let f = vec2<f32>(1.0) - smoothstep(tan_in * a, tan_out * a, p);
+    return f.x * f.y;
+}
+
+// The cosine of a cone round a spot light (a pyramid's corners).
+fn spot_bound_cos(light: Light) -> f32 {
+    if (light.spot.z <= 0.0) {
+        return light.spot.y;
+    }
+    let t = sqrt(1.0 - light.spot.y * light.spot.y) / light.spot.y;
+    return inverseSqrt(1.0 + t * t * (1.0 + light.spot.z * light.spot.z));
+}
+
 // The light that fog at `x` scatters back along the view ray `dir` from one light: its
 // falloff, cone and (hard) shadow.
 fn scattered(light: Light, x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
@@ -356,7 +397,7 @@ fn scattered(light: Light, x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         let fade = 1.0 - r * r * r * r;
         strength *= fade * fade / (1.0 + d * d);
         if (light.position.w > 1.5) {
-            strength *= smoothstep(light.spot.y, light.spot.x, dot(travel, normalize(light.direction.xyz)));
+            strength *= spot_falloff(light, travel);
         }
     }
     if (strength <= 0.0) {
@@ -470,7 +511,7 @@ fn local_shafts(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec
         var c1 = s1;
         let spot = light.position.w > 1.5;
         let axis = normalize(light.direction.xyz);
-        let cos2 = light.spot.y * light.spot.y;
+        let cos2 = spot_bound_cos(light) * spot_bound_cos(light);
         if (spot) {
             let dd = dot(dir, axis);
             let od = dot(o, axis);
@@ -567,7 +608,7 @@ fn history_at(p: vec3<f32>) -> vec3<f32> {
 // How much more of each new frame a light-volume cell takes per cell its history moved.
 const MOTION_TRUST: f32 = 0.15;
 // How much more each metre a light's beam swept counts fresh samples (see `light_fresh`).
-const LIGHT_TRUST: f32 = 8.0;
+const LIGHT_TRUST: f32 = 4.0;
 
 // Three numbers in 0..1 that look random, from a volume cell's coordinates (PCG-style).
 fn cell_hash(id: vec3<u32>) -> vec3<f32> {
@@ -628,8 +669,10 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
     // history counts least, so fresh samples are what they show.
     let base = max(1, i32(frame.samples.x));
     // A sweeping beam would leave its old places behind in a long history, a trail about
-    // 1 / LIGHT_TRUST metres long at most: the further it swept, the more fresh samples count.
-    let light_fresh = min(0.5, frame.samples.z * LIGHT_TRUST);
+    // 1 / LIGHT_TRUST metres long at most: the further it swept, the more fresh samples count,
+    // up to a quarter (more, and a sweeping beam's haze is all noise; the sweep is measured
+    // at the end of the light's range, so it's overstated for nearer haze anyway).
+    let light_fresh = min(0.25, frame.samples.z * LIGHT_TRUST);
     let lights_moved = light_fresh > blend;
     let count = select(base, max(base, i32(frame.samples.y)), moved > 0.25 || !has_history || lights_moved);
     var light = vec3<f32>(0.0);
@@ -1469,8 +1512,7 @@ fn fs_mesh(in: MeshOut, @builtin(front_facing) front: bool) -> @location(0) vec4
             let fade = 1.0 - x * x * x * x;
             strength = fade * fade / (1.0 + d * d);
             if (light.position.w > 1.5) {
-                let c = dot(-l, normalize(light.direction.xyz));
-                strength *= smoothstep(light.spot.y, light.spot.x, c);
+                strength *= spot_falloff(light, -l);
             }
         }
         if (light.shadow.x >= 0.0) {

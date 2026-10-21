@@ -85,10 +85,22 @@ describe("fog", () => {
   // M7-FOG-05
   test("lights say how strongly they light the fog", () => {
     const l = new GameObject("lamp").addComponent(Light, { type: "spot" });
-    expect(ops.filter((o) => o[0] === "render.light").at(-1)!.at(-1)).toBe(1);
+    expect(ops.filter((o) => o[0] === "render.light").at(-1)!.at(-3)).toBe(1);
     l.volumetricIntensity = -2;
     expect(l.volumetricIntensity).toBe(0);
-    expect(ops.filter((o) => o[0] === "render.light").at(-1)!.at(-1)).toBe(0);
+    expect(ops.filter((o) => o[0] === "render.light").at(-1)!.at(-3)).toBe(0);
+  });
+
+  // M7-SPOT-02
+  test("spot lights can be pyramids, an aspect ratio wide", () => {
+    const l = new GameObject("scanner").addComponent(Light, { type: "spot" });
+    const last = () => ops.filter((o) => o[0] === "render.light").at(-1)!;
+    expect(last().slice(-2)).toEqual(["cone", 1]);
+    l.spotShape = "pyramid";
+    l.aspectRatio = 40;
+    expect(last().slice(-2)).toEqual(["pyramid", 40]);
+    l.aspectRatio = 0;
+    expect(l.aspectRatio).toBeGreaterThan(0);
   });
 
   // M7-FOG-06

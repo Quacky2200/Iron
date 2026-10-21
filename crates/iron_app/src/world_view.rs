@@ -1009,11 +1009,19 @@ impl WorldViews {
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
             // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask
-            // volumetricIntensity`
+            // volumetricIntensity spotShape(cone|pyramid) aspectRatio`
             "light" => {
                 let kind = match args.get(2).and_then(Value::as_str) {
                     Some("directional") => LightKind::Directional,
                     Some("point") => LightKind::Point,
+                    Some("spot") if args.get(14).and_then(Value::as_str) == Some("pyramid") => {
+                        LightKind::Pyramid {
+                            outer_degrees: num(6).unwrap_or(30.0),
+                            inner_degrees: num(7).unwrap_or(21.8),
+                            aspect: num(15).unwrap_or(1.0).max(1e-3),
+                            right: Vec3::X,
+                        }
+                    }
                     Some("spot") => LightKind::Spot {
                         outer_degrees: num(6).unwrap_or(30.0),
                         inner_degrees: num(7).unwrap_or(21.8),
@@ -1660,7 +1668,21 @@ impl WorldViews {
             .filter_map(|l| {
                 let (_, rotation, position) = world(l.object)?.to_scale_rotation_translation();
                 Some(Light {
-                    kind: l.kind,
+                    // A pyramid's width runs along its object's +x.
+                    kind: match l.kind {
+                        LightKind::Pyramid {
+                            inner_degrees,
+                            outer_degrees,
+                            aspect,
+                            ..
+                        } => LightKind::Pyramid {
+                            inner_degrees,
+                            outer_degrees,
+                            aspect,
+                            right: rotation * Vec3::X,
+                        },
+                        kind => kind,
+                    },
                     color: l.color,
                     position,
                     // Lights shine along their object's forward (-z), like Unity's.

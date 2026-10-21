@@ -3208,6 +3208,8 @@ ${err.stack}` : ""}`);
     _shadowStrength = 1;
     _cullingMask = 4294967295;
     _volumetricIntensity = 1;
+    _spotShape = "cone";
+    _aspectRatio = 1;
     started = false;
     get [(_dec42 = [
       property
@@ -3317,11 +3319,25 @@ ${err.stack}` : ""}`);
       this._volumetricIntensity = Math.max(0, v);
       this.send();
     }
+    get spotShape() {
+      return this._spotShape;
+    }
+    set spotShape(s) {
+      this._spotShape = s;
+      this.send();
+    }
+    get aspectRatio() {
+      return this._aspectRatio;
+    }
+    set aspectRatio(a) {
+      this._aspectRatio = Math.max(0.001, a);
+      this.send();
+    }
     send() {
       if (!this.started)
         return;
       const c = this._color;
-      __iron_op("render.light", this.id, this.gameObject.id, this._type, [c.r, c.g, c.b], this._intensity, this._range, this._spotAngle, this._innerSpotAngle, this._haloSize, this._beamIntensity, this._shadows, this._shadowStrength, this._cullingMask, this._volumetricIntensity);
+      __iron_op("render.light", this.id, this.gameObject.id, this._type, [c.r, c.g, c.b], this._intensity, this._range, this._spotAngle, this._innerSpotAngle, this._haloSize, this._beamIntensity, this._shadows, this._shadowStrength, this._cullingMask, this._volumetricIntensity, this._spotShape, this._aspectRatio);
     }
     onAwake() {
       this.started = true;

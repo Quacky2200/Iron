@@ -284,6 +284,42 @@ pub enum LightKind {
         inner_degrees: f32,
         outer_degrees: f32,
     },
+    /// A spot light shaped as a pyramid (HDRP's Pyramid shape): `outer_degrees` across
+    /// its height, `aspect` times as wide (in tangent), its edges softened from
+    /// `inner_degrees`. `right` is its width's direction (the light's object's +x). A thin,
+    /// wide one is a sheet of light: a scanner's, a laser level's, a light through a slot.
+    Pyramid {
+        inner_degrees: f32,
+        outer_degrees: f32,
+        aspect: f32,
+        right: Vec3,
+    },
+}
+
+impl LightKind {
+    /// The half-angle (degrees) of a cone round the light: a pyramid's corners.
+    pub fn bounding_degrees(self) -> f32 {
+        match self {
+            LightKind::Spot { outer_degrees, .. } => outer_degrees,
+            LightKind::Pyramid {
+                outer_degrees,
+                aspect,
+                ..
+            } => {
+                let t = (outer_degrees.to_radians() / 2.0).tan();
+                2.0 * (t * (1.0 + aspect * aspect).sqrt()).atan().to_degrees()
+            }
+            _ => 360.0,
+        }
+    }
+}
+
+/// The two axes across `dir` the shaders build too (`spot_axes` in world.wgsl): a pyramid's
+/// turn about its direction is measured from them.
+fn spot_axes(dir: Vec3) -> (Vec3, Vec3) {
+    let up = if dir.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+    let right = dir.cross(up).normalize_or(Vec3::X);
+    (right, right.cross(dir))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -3350,6 +3386,23 @@ impl WorldRenderer {
                             0.0,
                         ],
                     ),
+                    LightKind::Pyramid {
+                        inner_degrees,
+                        outer_degrees,
+                        aspect,
+                        right,
+                    } => {
+                        let (r0, u0) = spot_axes(l.direction.normalize_or(Vec3::NEG_Z));
+                        (
+                            2.0,
+                            [
+                                (inner_degrees.min(outer_degrees).to_radians() / 2.0).cos(),
+                                (outer_degrees.to_radians() / 2.0).cos(),
+                                aspect.max(1e-3),
+                                right.dot(u0).atan2(right.dot(r0)),
+                            ],
+                        )
+                    }
                 };
                 GpuLight {
                     position: [l.position.x, l.position.y, l.position.z, kind],
