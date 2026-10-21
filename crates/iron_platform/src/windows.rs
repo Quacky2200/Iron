@@ -2,8 +2,16 @@
 //! means on this OS ([`plan`], decided without a display so it can be tested), where a new window goes
 //! ([`place`]) and who owns whom ([`WindowTree`]). Design: `docs/research/iron-windows.md` section 7.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
+
+use winit::dpi::{LogicalPosition, LogicalSize};
+use winit::event_loop::ActiveEventLoop;
+use winit::window::{Icon, Window, WindowAttributes, WindowButtons, WindowId, WindowLevel};
+
+use crate::fake::VirtualBackend;
+use crate::input::InputEvent;
+use crate::platform::{PlatformApp, set_black_background};
 
 /// A window's id in the platform; `MAIN` is the window that owns the process.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -258,6 +266,11 @@ impl WindowTree {
         }
     }
 
+    /// Is `key` open (inserted and not removed)?
+    pub fn contains(&self, key: WindowKey) -> bool {
+        self.parent.contains_key(&key)
+    }
+
     pub fn remove(&mut self, key: WindowKey) {
         self.parent.remove(&key);
         self.order.retain(|k| *k != key);
@@ -335,6 +348,641 @@ pub enum WindowCommand {
 pub enum WindowHost {
     Os(Arc<winit::window::Window>),
     Virtual { width: u32, height: u32, scale: f64 },
+}
+
+// ---------------------------------------------------------------------------------------------
+// Running window commands: one path for the winit runner and the fake platform
+// ---------------------------------------------------------------------------------------------
+
+/// What `run_commands` needs from a window system: the winit runner's [`RunnerBackend`] and the
+/// fake platform's `VirtualBackend` implement it, so tests exercise the real command path.
+pub(crate) trait Backend {
+    /// Makes a hidden window. The owner / embedding parent (if the plan has one) is already open.
+    fn open(
+        &mut self,
+        key: WindowKey,
+        spec: &WindowSpec,
+        plan: &NativePlan,
+    ) -> Result<WindowHost, String>;
+    /// Any command but `Open` and `Close`.
+    fn apply(&mut self, key: WindowKey, cmd: &WindowCommand);
+    /// Drops the window (the app has already dropped its side).
+    fn destroy(&mut self, key: WindowKey);
+    /// Makes a hidden window visible (its first frame is drawn).
+    fn show(&mut self, key: WindowKey);
+    /// Events the backend itself produced (a virtual window answering a resize): sent to
+    /// `window_input` by `run_commands`.
+    fn take_events(&mut self) -> Vec<(WindowKey, InputEvent)> {
+        Vec::new()
+    }
+}
+
+/// Rounds of "commands, then the events they caused" `run_commands` goes through at most.
+const COMMAND_ROUNDS: usize = 8;
+
+/// Drains `app.take_window_commands()`: `Open` plans and makes a window, `Close` closes it and
+/// its children (deepest first), everything else goes to the backend. Events the backend
+/// produced go to `window_input`, and the commands those cause run too (a few rounds at most).
+pub(crate) fn run_commands<A: PlatformApp, B: Backend>(
+    app: &mut A,
+    backend: &mut B,
+    tree: &mut WindowTree,
+    os: Os,
+) {
+    for _ in 0..COMMAND_ROUNDS {
+        let commands = app.take_window_commands();
+        let had_commands = !commands.is_empty();
+        for cmd in commands {
+            match cmd {
+                WindowCommand::Open(key, spec) => open_window(app, backend, tree, os, key, &spec),
+                WindowCommand::Close(key) => close_windows(app, backend, tree, key),
+                cmd => {
+                    if let Some(key) = command_key(&cmd)
+                        && tree.contains(key)
+                    {
+                        backend.apply(key, &cmd);
+                    }
+                }
+            }
+        }
+        let events = backend.take_events();
+        let had_events = !events.is_empty();
+        for (key, event) in events {
+            if tree.contains(key) {
+                app.window_input(key, event);
+            }
+        }
+        if !had_commands && !had_events {
+            break;
+        }
+    }
+}
+
+fn command_key(cmd: &WindowCommand) -> Option<WindowKey> {
+    Some(match cmd {
+        WindowCommand::Open(k, _) | WindowCommand::Close(k) => return Some(*k),
+        WindowCommand::SetTitle(k, _)
+        | WindowCommand::SetSize(k, _, _)
+        | WindowCommand::SetPosition(k, _, _)
+        | WindowCommand::Center(k)
+        | WindowCommand::SetKind(k, _)
+        | WindowCommand::SetFlags(k, _)
+        | WindowCommand::SetMinimized(k, _)
+        | WindowCommand::SetMaximized(k, _)
+        | WindowCommand::Focus(k) => *k,
+    })
+}
+
+fn open_window<A: PlatformApp, B: Backend>(
+    app: &mut A,
+    backend: &mut B,
+    tree: &mut WindowTree,
+    os: Os,
+    key: WindowKey,
+    spec: &WindowSpec,
+) {
+    if tree.contains(key) {
+        app.window_open_failed(key, format!("window {} is already open", key.0));
+        return;
+    }
+    let mut plan = plan(spec, os);
+    if let Some(w) = &plan.warning {
+        tracing::warn!("window {}: {w}", key.0);
+    }
+    // An owner that is gone (closed in the same round) cannot own anything.
+    for slot in [&mut plan.owner, &mut plan.embed_in] {
+        if slot.is_some_and(|k| !tree.contains(k)) {
+            tracing::warn!(
+                "window {}: its parent is not open; opening it unowned",
+                key.0
+            );
+            *slot = None;
+        }
+    }
+    match backend.open(key, spec, &plan) {
+        Ok(host) => {
+            let parent = spec
+                .parent
+                .filter(|p| tree.contains(*p))
+                .or(plan.owner)
+                .or(plan.embed_in);
+            tree.insert(key, parent);
+            app.window_opened(key, host);
+        }
+        Err(e) => app.window_open_failed(key, e),
+    }
+}
+
+/// Closes `key` and everything under it, deepest first: the app drops its surface and clones of
+/// the OS window (`window_closed`), then the backend drops the window. The main window never
+/// closes this way (`Application.quit` / `request_close` end the run), and a key that is not
+/// open does nothing, so a `Close` after the parent took it along is harmless.
+pub(crate) fn close_windows<A: PlatformApp, B: Backend>(
+    app: &mut A,
+    backend: &mut B,
+    tree: &mut WindowTree,
+    key: WindowKey,
+) {
+    if key == WindowKey::MAIN || !tree.contains(key) {
+        return;
+    }
+    for k in tree.close_order(key) {
+        app.window_closed(k);
+        backend.destroy(k);
+        tree.remove(k);
+    }
+}
+
+/// What came of a close request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CloseOutcome {
+    /// The app said no.
+    Kept,
+    /// A secondary window (and its children) closed.
+    Closed,
+    /// The main window's close was allowed: its children are closed, the run ends.
+    Exit,
+}
+
+/// The user asked to close `key` (title bar button, Alt+F4): ask the app, then close.
+pub(crate) fn request_close<A: PlatformApp, B: Backend>(
+    app: &mut A,
+    backend: &mut B,
+    tree: &mut WindowTree,
+    key: WindowKey,
+) -> CloseOutcome {
+    if !tree.contains(key) {
+        return CloseOutcome::Kept;
+    }
+    if key == WindowKey::MAIN {
+        // Apps written for one window learn of the close through `input`.
+        app.window_input(key, InputEvent::CloseRequested);
+    }
+    if !app.close_requested(key) {
+        return CloseOutcome::Kept;
+    }
+    if key == WindowKey::MAIN {
+        for child in tree.children(WindowKey::MAIN) {
+            close_windows(app, backend, tree, child);
+        }
+        CloseOutcome::Exit
+    } else {
+        close_windows(app, backend, tree, key);
+        CloseOutcome::Closed
+    }
+}
+
+/// Shows the windows whose first frame the app says is drawn.
+pub(crate) fn show_windows<A: PlatformApp, B: Backend>(app: &mut A, backend: &mut B) {
+    for key in app.take_windows_to_show() {
+        backend.show(key);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// winit
+// ---------------------------------------------------------------------------------------------
+
+/// The OS windows the runner made, by key.
+#[derive(Default)]
+pub(crate) struct WinitWindows {
+    pub windows: BTreeMap<WindowKey, Arc<Window>>,
+    ids: HashMap<WindowId, WindowKey>,
+    specs: BTreeMap<WindowKey, WindowSpec>,
+    plans: BTreeMap<WindowKey, NativePlan>,
+    /// Windows that were made visible once (`visible = true` may show them again).
+    shown: BTreeSet<WindowKey>,
+}
+
+impl WinitWindows {
+    pub fn register(&mut self, key: WindowKey, window: Arc<Window>) {
+        self.ids.insert(window.id(), key);
+        self.windows.insert(key, window);
+    }
+
+    pub fn key_of(&self, id: WindowId) -> Option<WindowKey> {
+        self.ids.get(&id).copied()
+    }
+
+    fn remove(&mut self, key: WindowKey) {
+        if let Some(w) = self.windows.remove(&key) {
+            self.ids.remove(&w.id());
+        }
+        self.specs.remove(&key);
+        self.plans.remove(&key);
+        self.shown.remove(&key);
+    }
+}
+
+/// The runner's backend for one call: the winit event loop (windows can only be made inside its
+/// callbacks), the OS windows, and the offscreen ones of a screenshot run.
+pub(crate) struct RunnerBackend<'a> {
+    pub event_loop: &'a ActiveEventLoop,
+    pub native: &'a mut WinitWindows,
+    pub virtual_backend: &'a mut VirtualBackend,
+    /// Screenshot runs: secondary windows are offscreen records, not OS windows.
+    pub virtual_windows: bool,
+}
+
+impl Backend for RunnerBackend<'_> {
+    fn open(
+        &mut self,
+        key: WindowKey,
+        spec: &WindowSpec,
+        plan: &NativePlan,
+    ) -> Result<WindowHost, String> {
+        if self.virtual_windows {
+            return self.virtual_backend.open(key, spec, plan);
+        }
+        let native = &mut *self.native;
+        let get = |k: Option<WindowKey>| k.and_then(|k| native.windows.get(&k).cloned());
+        let owner = get(plan.owner);
+        let embed = get(plan.embed_in);
+        let attrs = attributes(spec, plan, owner.as_deref(), embed.as_deref());
+        let window = self
+            .event_loop
+            .create_window(attrs)
+            .map_err(|e| e.to_string())?;
+        let window = Arc::new(window);
+        set_black_background(&window);
+        if plan.tool_caption {
+            win32::set_tool_window(&window, true);
+        }
+        native.register(key, window.clone());
+        native.specs.insert(key, spec.clone());
+        native.plans.insert(key, plan.clone());
+        Ok(WindowHost::Os(window))
+    }
+
+    fn apply(&mut self, key: WindowKey, cmd: &WindowCommand) {
+        if self.virtual_backend.has(key) {
+            self.virtual_backend.apply(key, cmd);
+            return;
+        }
+        let native = &mut *self.native;
+        let Some(window) = native.windows.get(&key).cloned() else {
+            return;
+        };
+        match cmd {
+            WindowCommand::SetTitle(_, t) => {
+                window.set_title(t);
+                if let Some(s) = native.specs.get_mut(&key) {
+                    s.title.clone_from(t);
+                }
+            }
+            WindowCommand::SetSize(_, w, h) => {
+                // The OS may answer with another size; `Resized` tells the app.
+                let _ = window.request_inner_size(LogicalSize::new(*w, *h));
+                if let Some(s) = native.specs.get_mut(&key) {
+                    s.size = (*w, *h);
+                }
+            }
+            WindowCommand::SetPosition(_, x, y) => {
+                window.set_outer_position(LogicalPosition::new(*x, *y));
+                if let Some(s) = native.specs.get_mut(&key) {
+                    s.position = Some((*x, *y));
+                }
+            }
+            WindowCommand::Center(_) => center(native, key, &window),
+            WindowCommand::SetKind(_, kind) => set_kind(native, key, &window, *kind),
+            WindowCommand::SetFlags(_, flags) => set_flags(native, key, &window, flags),
+            WindowCommand::SetMinimized(_, m) => window.set_minimized(*m),
+            WindowCommand::SetMaximized(_, m) => window.set_maximized(*m),
+            WindowCommand::Focus(_) => window.focus_window(),
+            WindowCommand::Open(..) | WindowCommand::Close(_) => {}
+        }
+    }
+
+    fn destroy(&mut self, key: WindowKey) {
+        if self.virtual_backend.has(key) {
+            self.virtual_backend.destroy(key);
+        } else {
+            // The last `Arc`: the OS window is destroyed here (the app dropped its clones in
+            // `window_closed`).
+            self.native.remove(key);
+        }
+    }
+
+    fn show(&mut self, key: WindowKey) {
+        if self.virtual_backend.has(key) {
+            self.virtual_backend.show(key);
+            return;
+        }
+        let native = &mut *self.native;
+        let visible = native.specs.get(&key).is_none_or(|s| s.visible);
+        if let Some(w) = native.windows.get(&key)
+            && visible
+        {
+            w.set_visible(true);
+            native.shown.insert(key);
+        }
+    }
+
+    fn take_events(&mut self) -> Vec<(WindowKey, InputEvent)> {
+        self.virtual_backend.take_events()
+    }
+}
+
+/// Centres `window` on its parent (else the main window), as `place` would.
+fn center(native: &WinitWindows, key: WindowKey, window: &Window) {
+    let parent = native
+        .specs
+        .get(&key)
+        .and_then(|s| s.parent)
+        .and_then(|k| native.windows.get(&k))
+        .or_else(|| native.windows.get(&WindowKey::MAIN));
+    let Some(parent) = parent.filter(|p| p.id() != window.id()) else {
+        return;
+    };
+    let Ok(pos) = parent.outer_position() else {
+        return;
+    };
+    let scale = parent.scale_factor();
+    let pos = pos.to_logical::<f64>(scale);
+    let size = parent.outer_size().to_logical::<f64>(scale);
+    let me = window.outer_size().to_logical::<f64>(window.scale_factor());
+    let (x, y) = place(
+        (pos.x, pos.y),
+        (size.width, size.height),
+        (me.width, me.height),
+        0,
+    );
+    window.set_outer_position(LogicalPosition::new(x, y));
+}
+
+fn set_kind(native: &mut WinitWindows, key: WindowKey, window: &Window, kind: WindowKind) {
+    let (Some(spec), Some(old)) = (native.specs.get(&key), native.plans.get(&key)) else {
+        return;
+    };
+    let mut spec = spec.clone();
+    spec.kind = kind;
+    let new = plan(&spec, Os::current());
+    // An OS window's owner is fixed when it is made.
+    if new.owner != old.owner || new.embed_in != old.embed_in {
+        tracing::warn!(
+            "window {}: style \"{}\" needs another owner than the window has; the style was not changed",
+            key.0,
+            kind.name()
+        );
+        return;
+    }
+    apply_plan(window, old, &new);
+    native.specs.insert(key, spec);
+    native.plans.insert(key, new);
+}
+
+fn set_flags(native: &mut WinitWindows, key: WindowKey, window: &Window, flags: &WindowSpec) {
+    let mut spec = native
+        .specs
+        .get(&key)
+        .cloned()
+        .unwrap_or_else(|| flags.clone());
+    spec.resizable = flags.resizable;
+    spec.minimizable = flags.minimizable;
+    spec.maximizable = flags.maximizable;
+    spec.closable = flags.closable;
+    spec.always_on_top = flags.always_on_top;
+    spec.visible = flags.visible;
+    let new = plan(&spec, Os::current());
+    match native.plans.get(&key) {
+        Some(old) => apply_plan(window, old, &new),
+        None => {
+            // The main window: its plan was never recorded.
+            window.set_resizable(new.resizable);
+            window.set_enabled_buttons(buttons(&new));
+            window.set_window_level(level(&new));
+        }
+    }
+    if !spec.visible {
+        window.set_visible(false);
+    } else if native.shown.contains(&key) {
+        window.set_visible(true);
+    }
+    native.specs.insert(key, spec);
+    native.plans.insert(key, new);
+}
+
+/// Applies what differs between two plans of one window.
+fn apply_plan(window: &Window, old: &NativePlan, new: &NativePlan) {
+    if old.decorations != new.decorations {
+        window.set_decorations(new.decorations);
+    }
+    if old.resizable != new.resizable {
+        window.set_resizable(new.resizable);
+    }
+    if old.buttons != new.buttons {
+        window.set_enabled_buttons(buttons(new));
+    }
+    if old.level_on_top != new.level_on_top {
+        window.set_window_level(level(new));
+    }
+    #[cfg(windows)]
+    {
+        use winit::platform::windows::WindowExtWindows;
+        if old.skip_taskbar != new.skip_taskbar {
+            window.set_skip_taskbar(new.skip_taskbar);
+        }
+    }
+    if old.tool_caption != new.tool_caption {
+        win32::set_tool_window(window, new.tool_caption);
+    }
+}
+
+fn buttons(plan: &NativePlan) -> WindowButtons {
+    let mut b = WindowButtons::empty();
+    b.set(WindowButtons::CLOSE, plan.buttons.0);
+    b.set(WindowButtons::MINIMIZE, plan.buttons.1);
+    b.set(WindowButtons::MAXIMIZE, plan.buttons.2);
+    b
+}
+
+fn level(plan: &NativePlan) -> WindowLevel {
+    if plan.level_on_top {
+        WindowLevel::AlwaysOnTop
+    } else {
+        WindowLevel::Normal
+    }
+}
+
+/// The winit attributes for a new window (design section 7.3). It starts hidden; the app shows
+/// it once its first frame is drawn. `owner` / `embed` are the OS windows of `plan.owner` /
+/// `plan.embed_in`.
+pub fn attributes(
+    spec: &WindowSpec,
+    plan: &NativePlan,
+    owner: Option<&Window>,
+    embed: Option<&Window>,
+) -> WindowAttributes {
+    let (w, h) = spec.size;
+    let mut a = Window::default_attributes()
+        .with_title(spec.title.clone())
+        .with_inner_size(LogicalSize::new(w, h))
+        .with_resizable(plan.resizable)
+        .with_enabled_buttons(buttons(plan))
+        .with_decorations(plan.decorations)
+        .with_window_level(level(plan))
+        .with_visible(false)
+        .with_active(plan.active);
+    if let Some((w, h)) = spec.min_size {
+        a = a.with_min_inner_size(LogicalSize::new(w, h));
+    }
+    if let Some((x, y)) = spec.position {
+        a = a.with_position(LogicalPosition::new(x, y));
+    }
+    if let Some((rgba, w, h)) = &spec.icon {
+        match Icon::from_rgba(rgba.clone(), *w, *h) {
+            Ok(icon) => a = a.with_window_icon(Some(icon)),
+            Err(e) => tracing::warn!("window icon: {e}"),
+        }
+    }
+    platform_attributes(a, plan, owner, embed)
+}
+
+#[cfg(any(windows, target_os = "macos", all(unix, not(target_vendor = "apple"))))]
+fn raw_handle(w: &Window) -> Option<winit::raw_window_handle::RawWindowHandle> {
+    use winit::raw_window_handle::HasWindowHandle;
+    w.window_handle().ok().map(|h| h.as_raw())
+}
+
+/// Windows: `with_owner_window` (above the owner, hidden with it, destroyed with it, no
+/// taskbar button), `with_skip_taskbar`, `WS_CHILD` for embedded children.
+#[cfg(windows)]
+fn platform_attributes(
+    mut a: WindowAttributes,
+    plan: &NativePlan,
+    owner: Option<&Window>,
+    embed: Option<&Window>,
+) -> WindowAttributes {
+    use winit::platform::windows::WindowAttributesExtWindows;
+    use winit::raw_window_handle::RawWindowHandle;
+    if plan.skip_taskbar {
+        a = a.with_skip_taskbar(true);
+    }
+    if let Some(RawWindowHandle::Win32(h)) = owner.and_then(raw_handle) {
+        a = a.with_owner_window(h.hwnd.get());
+    }
+    if let Some(h) = embed.and_then(raw_handle) {
+        // SAFETY: `embed` is a live window of ours and outlives the child (children close first).
+        a = unsafe { a.with_parent_window(Some(h)) };
+    }
+    a
+}
+
+/// macOS: a child window (`addChildWindow`, above the owner and moving with it). X11: the
+/// window type, and reparenting for embedded children. Wayland has nothing for parents.
+#[cfg(not(windows))]
+fn platform_attributes(
+    a: WindowAttributes,
+    plan: &NativePlan,
+    owner: Option<&Window>,
+    embed: Option<&Window>,
+) -> WindowAttributes {
+    #[cfg(target_os = "macos")]
+    let a = match owner.and_then(raw_handle) {
+        // SAFETY: `owner` is a live window of ours and outlives the child (children close first).
+        Some(h) => unsafe { a.with_parent_window(Some(h)) },
+        None => a,
+    };
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    let a = {
+        use winit::platform::x11::{WindowAttributesExtX11, WindowType};
+        let mut a = a;
+        let ty = match plan.x11_type {
+            Some("utility") => Some(WindowType::Utility),
+            Some("dialog") => Some(WindowType::Dialog),
+            Some("popupmenu") => Some(WindowType::PopupMenu),
+            _ => None,
+        };
+        if let Some(ty) = ty {
+            a = a.with_x11_window_type(vec![ty]);
+        }
+        if let Some(h) = embed.and_then(raw_handle) {
+            // SAFETY: `embed` is a live window of ours and outlives the child.
+            a = unsafe { a.with_parent_window(Some(h)) };
+        }
+        a
+    };
+    let _ = (plan, owner, embed);
+    a
+}
+
+/// Raw Win32 rules winit has no option for.
+mod win32 {
+    use winit::window::Window;
+
+    /// Small caption, no taskbar button, not in Alt-Tab. winit rewrites `GWL_EXSTYLE` whenever
+    /// one of its flags changes, so the style is kept by a subclass that adds `WS_EX_TOOLWINDOW`
+    /// (and removes `WS_EX_APPWINDOW`) in `WM_STYLECHANGING`. `on = false` undoes both.
+    #[cfg(windows)]
+    pub(super) fn set_tool_window(window: &Window, on: bool) {
+        use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+        use windows_sys::Win32::UI::Shell::{
+            DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GWL_EXSTYLE, GetWindowLongPtrW, STYLESTRUCT, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WM_NCDESTROY,
+            WM_STYLECHANGING, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+        };
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+        const TOOL_SUBCLASS_ID: usize = 0x4952_544F; // "IRTO"
+
+        unsafe extern "system" fn tool_proc(
+            hwnd: HWND,
+            msg: u32,
+            wparam: WPARAM,
+            lparam: LPARAM,
+            id: usize,
+            _data: usize,
+        ) -> LRESULT {
+            if msg == WM_STYLECHANGING && wparam as i32 == GWL_EXSTYLE {
+                // SAFETY: for WM_STYLECHANGING `lparam` points to the window's STYLESTRUCT.
+                let style = unsafe { &mut *(lparam as *mut STYLESTRUCT) };
+                style.styleNew = (style.styleNew | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW;
+            } else if msg == WM_NCDESTROY {
+                // SAFETY: removes this very subclass from the window being destroyed.
+                unsafe { RemoveWindowSubclass(hwnd, Some(tool_proc), id) };
+            }
+            // SAFETY: passes the message on unchanged.
+            unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+        }
+
+        let Ok(handle) = window.window_handle() else {
+            return;
+        };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else {
+            return;
+        };
+        let hwnd = h.hwnd.get() as HWND;
+        // SAFETY: `hwnd` is our live window; the subclass proc and id are valid for its lifetime.
+        unsafe {
+            if on {
+                SetWindowSubclass(hwnd, Some(tool_proc), TOOL_SUBCLASS_ID, 0);
+            } else {
+                RemoveWindowSubclass(hwnd, Some(tool_proc), TOOL_SUBCLASS_ID);
+            }
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+            let ex = if on {
+                (ex | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW
+            } else {
+                ex & !WS_EX_TOOLWINDOW
+            };
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
+            SetWindowPos(
+                hwnd,
+                0,
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub(super) fn set_tool_window(_window: &Window, _on: bool) {}
 }
 
 #[cfg(test)]
@@ -451,5 +1099,36 @@ mod tests {
         t.insert(k(5), Some(k(5)));
         assert_eq!(t.parent(k(5)), None);
         assert_eq!(t.close_order(k(2)), vec![k(3), k(2)]);
+    }
+
+    // M9-API-1447
+    #[test]
+    fn winit_attributes_follow_the_plan() {
+        let spec = WindowSpec {
+            title: "Palette".into(),
+            size: (220.0, 320.0),
+            kind: WindowKind::Tool,
+            always_on_top: true,
+            ..WindowSpec::default()
+        };
+        let p = plan(&spec, Os::Windows);
+        let a = attributes(&spec, &p, None, None);
+        assert_eq!(a.title, "Palette");
+        assert_eq!(a.inner_size, Some(LogicalSize::new(220.0, 320.0).into()));
+        assert!(a.decorations && a.resizable && a.active);
+        assert!(
+            !a.visible,
+            "windows start hidden and are shown after their first frame"
+        );
+        assert_eq!(a.window_level, WindowLevel::AlwaysOnTop);
+        assert_eq!(a.enabled_buttons, WindowButtons::CLOSE);
+
+        let popup = WindowSpec {
+            kind: WindowKind::Popup,
+            ..WindowSpec::default()
+        };
+        let a = attributes(&popup, &plan(&popup, Os::Windows), None, None);
+        assert!(!a.decorations && !a.active);
+        assert_eq!(a.window_level, WindowLevel::Normal);
     }
 }

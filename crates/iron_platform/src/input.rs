@@ -49,6 +49,13 @@ pub enum InputEvent {
         width: u32,
         height: u32,
     },
+    /// The window's outer top-left moved (physical pixels, desktop coordinates).
+    Moved {
+        x: i32,
+        y: i32,
+    },
+    /// The window's DPI scale changed (it moved to another monitor, or the user changed it).
+    ScaleChanged(f64),
     Focused(bool),
     /// The window became fully hidden (minimised, or covered on platforms that tell)
     /// or visible again.
@@ -133,6 +140,10 @@ pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
             width: size.width,
             height: size.height,
         }),
+        WindowEvent::Moved(pos) => Some(InputEvent::Moved { x: pos.x, y: pos.y }),
+        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            Some(InputEvent::ScaleChanged(*scale_factor))
+        }
         WindowEvent::Focused(f) => Some(InputEvent::Focused(*f)),
         WindowEvent::Occluded(o) => Some(InputEvent::Occluded(*o)),
         WindowEvent::CursorMoved { position, .. } => Some(InputEvent::MouseMove {
@@ -236,6 +247,17 @@ mod tests {
                 height: 600
             })
         );
+    }
+
+    // M9-API-1440
+    #[test]
+    fn moved_and_scale_factor_events_convert() {
+        assert_eq!(
+            convert_window_event(&WindowEvent::Moved(PhysicalPosition::new(-20, 150))),
+            Some(InputEvent::Moved { x: -20, y: 150 })
+        );
+        // `ScaleFactorChanged` carries winit's `InnerSizeWriter`, which only winit can build;
+        // the arm is a one-line map of `scale_factor`.
     }
 
     // M5-APP-05

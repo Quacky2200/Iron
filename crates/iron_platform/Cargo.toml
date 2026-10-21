@@ -12,4 +12,4 @@ winit = "0.30.13"
 
 [target.'cfg(windows)'.dependencies]
 # The same version winit uses, for setting the window's background brush.
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

@@ -157,6 +157,62 @@ and `save`. Values are numbers and strings.
   restores it when the engine loads (level by name, then the saved values over that level), without
   writing the starting state back as if the player had chosen it.
 
+## Multi-window
+
+`iron_platform` can run more than one window (design: `docs/research/iron-windows.md`). One-window apps are unchanged: every new
+`PlatformApp` method has a default, and `WindowConfig::virtual_windows` is false by default.
+
+**Keys and types** (`iron_platform::windows`): `WindowKey(u32)` (`WindowKey::MAIN` = 1; the app chooses the others), `WindowKind`,
+`WindowSpec` (logical sizes and positions), `plan(&spec, Os) -> NativePlan` (what a style means on an OS, decided without a display),
+`place(..)`, `WindowTree` (parents; `close_order` deepest first; `contains`), `WindowCommand`, `WindowHost::{Os(Arc<Window>), Virtual
+{ width, height, scale }}` (physical size), `attributes(spec, plan, owner, embed) -> WindowAttributes`.
+
+**`PlatformApp` methods** (all default):
+
+```rust
+fn take_window_commands(&mut self) -> Vec<WindowCommand>;       // polled after input, after frame(), after events_done()
+fn window_opened(&mut self, key: WindowKey, host: WindowHost);  // the window exists, hidden
+fn window_open_failed(&mut self, key: WindowKey, error: String);
+fn window_input(&mut self, key: WindowKey, event: InputEvent);  // default: MAIN -> input(), others dropped
+fn close_requested(&mut self, key: WindowKey) -> bool;          // default true; MAIN true ends run()
+fn window_closed(&mut self, key: WindowKey);                    // drop the surface + OS window clones NOW
+fn events_done(&mut self);                                      // once per loop iteration, after all queued events
+fn take_windows_to_show(&mut self) -> Vec<WindowKey>;           // first frame drawn: the platform shows them
+```
+
+Call order per loop iteration (winit runner and `FakePlatform::step` alike): events (`window_input(key, ..)`, then the commands
+they caused) -> `frame()` on the main window's redraw (then commands, then `take_windows_to_show`) -> `about_to_wait`:
+`events_done()`, commands, `take_windows_to_show`. The main window is made in `resumed` as before (`window_ready`, no `window_opened`);
+it is `WindowKey::MAIN` in the tree from then on. The runner re-polls commands for a few rounds when applying them produced events
+(virtual windows echo `Resized` / `Moved`).
+
+**Commands** (`WindowCommand`): `Open(key, spec)` plans the spec for `Os::current()` (a plan warning is logged), makes the window
+hidden and answers `window_opened`/`window_open_failed`; the tree parent is `spec.parent`, else the plan's owner / embed target
+(a parent that is not open is dropped with a warning). `Close(key)` closes the window and its children, deepest first:
+`window_closed(k)` and then the OS window is destroyed (the platform drops its `Arc`), so the app **must** drop its surface and every
+`Arc<Window>` clone in `window_closed`. `Close(MAIN)` and a key that is not open do nothing. `SetKind` that would need another
+owner than the window has is ignored with a warning (OS owners are fixed at creation). `SetFlags` reads `resizable`, `minimizable`,
+`maximizable`, `closable`, `always_on_top`, `visible`.
+
+**Events.** `InputEvent::Moved { x, y }` (physical outer position) and `ScaleChanged(f64)` are new. `CloseRequested` is not an event
+for secondary windows: the platform asks `close_requested(key)` and closes. For `MAIN` it also still sends `CloseRequested` to
+`window_input` first (so `input` sees it, as before); a refused close keeps the window. `Destroyed` for a window the platform did not
+close (an owned window the OS destroyed with its owner) runs the same close path.
+
+**Per OS** (`attributes`): Windows `with_owner_window(hwnd)` + `with_skip_taskbar`, `WS_CHILD` for `child`, and for tool windows and
+popups a subclass (`SetWindowSubclass`, `Win32_UI_Shell`) that ORs `WS_EX_TOOLWINDOW` into `WM_STYLECHANGING` because winit rewrites
+the extended style on every flag change; macOS `with_parent_window` (child window); X11 `with_x11_window_type` and reparenting for
+`child`; Wayland plain toplevels.
+
+**Screenshot runs** (`WindowConfig::virtual_windows = true`): the main window is still real; `Open` makes no OS window and answers
+`WindowHost::Virtual` (physical size at the main window's scale). Setters update the record and queue `Resized` / `Moved` for
+`window_input`. Secondary windows must be drawn offscreen by the app.
+
+**Tests without a display:** `FakePlatform::new(app, WindowSpec::main(..), scale)` (`.os(Os::MacOs)` picks the plan rules) drives the
+same `run_commands` / close code as the runner over a recording backend: `step()`, `send(key, event)`, `user_close(key)`, `focus(key)`,
+`window(key) -> Option<&FakeWindow>` (`spec`, `plan`, `physical`, `position`, `scale`, `focused`, `minimized`, `maximized`, `shown`),
+`keys()`, `tree()`, `exited()`, `app()`. The main window is opened with `window_opened(MAIN, Virtual)` (not `window_ready`).
+
 ## Limits
 
 - One monitor: the window's current monitor is used, and there is no way to pick another.

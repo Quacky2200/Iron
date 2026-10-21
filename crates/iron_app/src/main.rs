@@ -417,6 +417,7 @@ fn run() -> Result<()> {
             icon,
             width,
             height,
+            virtual_windows: false,
         },
         app,
     )?;

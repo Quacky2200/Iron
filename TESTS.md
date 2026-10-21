@@ -1395,6 +1395,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1405 | Unit | `place` centres on the parent and cascades 24 px per axis, wrapping after 8. |
 | M9-API-1406 | Unit | `WindowTree::close_order` lists children deepest first. |
 | M9-API-1407 | Unit | A parent that would make a cycle is dropped. |
+| M9-API-1440 | Unit | `WindowEvent::Moved` converts to `InputEvent::Moved` (physical outer position); `ScaleFactorChanged` maps to `ScaleChanged` (not constructible outside winit, so only `Moved` is asserted). |
+| M9-API-1441 | Unit | A one-window `PlatformApp` gets the main window's events through `input` (the default `window_input`), including `CloseRequested`; other windows' are dropped (`crates/iron_platform/tests/windows.rs`). |
+| M9-API-1442 | Unit | `Open` commands over `FakePlatform` open windows and report them (`window_opened` with the physical size); a tool window's plan has the main window as owner; a key opened twice fails. |
+| M9-API-1443 | Unit | A window stays hidden until the app lists it in `take_windows_to_show`. |
+| M9-API-1444 | Unit | A refused close request keeps the window; closing the main window exits (children closed first) and a script `Close(MAIN)` does nothing. |
+| M9-API-1445 | Unit | Closing a parent calls `window_closed` for its children first (`[3, 2]`); a `Close` for a window that went with its parent is harmless. |
+| M9-API-1446 | Unit | Title, size, position, kind, flags and minimise reach the window; the plan is recomputed and the OS's `Resized` / `Moved` answers are sent. |
+| M9-API-1447 | Unit | `attributes(spec, plan, ..)`: title, inner size, decorations, window level, buttons, hidden start, `active` follow the plan (`iron_platform::windows`). |
+| M9-API-1448 | Unit | Focus moves between windows with `Focused(false)` then `Focused(true)`; `events_done` runs once per step. |
 | M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
 | M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
 | M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/iron_engine_api/tests/window.rs`). |
