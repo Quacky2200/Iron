@@ -24,17 +24,18 @@ import { createRoot } from "@iron/react";
 import { useState } from "react";
 
 /**
- * Where sunlight travels: the sun is ahead and off to the right (35 degrees from the view),
- * 30 degrees up, so the hills catch it from the side while its beams fan across the view.
+ * Where sunlight travels: the sun is ahead, a little to the right (15 degrees from the view)
+ * and 30 degrees up, so it shows near the middle of the view, the hills catching it from the
+ * side while its beams fan across.
  */
-const SUN = new Vector3(-0.497, -0.5, 0.709).normalized;
+const SUN = new Vector3(-0.224, -0.5, 0.837).normalized;
 /** The cloud layer: its height and thickness, metres. */
 const CLOUD_BASE = 700;
 /** How far the clouds sway to and fro (metres), and how long a sway takes (seconds). */
 const SWAY = 220;
-const SWAY_TIME = 90;
+const SWAY_TIME = 50;
 /** Where the line from the camera to the sun crosses the cloud layer, and the hole there. */
-const SUN_GAP = new Vector3(700, 0, -660);
+const SUN_GAP = new Vector3(293, 0, -766);
 const GAP_RADIUS = 260;
 
 const state = { haze: true, auto: true, paused: false };
@@ -42,7 +43,7 @@ let refreshMenu = () => {};
 
 function apply(): void {
   RenderSettings.fog = state.haze;
-  RenderSettings.autoExposure = state.auto ? { minEV: 0, maxEV: 16, compensation: 0.9, speedDarkToLight: 1.5, speedLightToDark: 1 } : null;
+  RenderSettings.autoExposure = state.auto ? { minEV: 0, maxEV: 16, compensation: 0.9, speedDarkToLight: 0.6, speedLightToDark: 1 } : null;
   RenderSettings.postExposure = state.auto ? 0 : -4.5;
   refreshMenu();
 }
@@ -71,12 +72,13 @@ class Clouds extends Component {
       horizon: new Color(7, 7.4, 8, 1),
       ground: new Color(1.4, 1.3, 1.1, 1),
       sunDirection: SUN.scale(-1),
-      sunColor: new Color(150, 138, 120, 1),
+      sunColor: new Color(900, 830, 720, 1),
       sunSize: 0.9,
     };
     RenderSettings.tonemapping = "aces";
-    // Light: a wide glow made the sun a blur.
-    RenderSettings.bloom = { threshold: 1.2, intensity: 0.22, scatter: 0.5 };
+    // Only what's far brighter than white glows (the sun's disc, its rim on the clouds): a
+    // burst of glare when it comes out, while the rest of the view stays crisp.
+    RenderSettings.bloom = { threshold: 4, intensity: 0.7, scatter: 0.65 };
     // Haze, thicker low down: the beams show most in the air under the clouds.
     RenderSettings.fogMode = "exponential";
     // The haze's own colour is the sky's light it scatters: distance fades to a pale blue,
@@ -159,10 +161,10 @@ class Clouds extends Component {
     this.sky = new GameObject("Cloud layer");
     // Light scattering inside a cloud keeps its shaded side grey, not black: a glow of its own.
     const white = Material.create({ color: new Color(0.95, 0.95, 0.97, 1), smoothness: 0, emission: new Color(1.1, 1.15, 1.3, 1) });
-    // High up, heaped round the line from the camera to the sun (at the layer's height that's
-    // about (700, -660)), so the sun peers through the gaps as they drift past.
+    // High up, heaped round the line from the camera to the sun (where it crosses the layer,
+    // `SUN_GAP`), so the sun peers through the gaps as they drift past.
     for (let i = 0; i < 60; i++) {
-      const at = new Vector3(700 + Random.range(-1700, 1700), CLOUD_BASE + Random.range(0, 120), -660 + Random.range(-1500, 900));
+      const at = new Vector3(SUN_GAP.x + Random.range(-1700, 1700), CLOUD_BASE + Random.range(0, 120), SUN_GAP.z + Random.range(-1500, 900));
       // A ragged hole round the sun: it peers through, and the hill in front stays in the sun.
       if (Math.hypot(at.x - SUN_GAP.x, at.z - SUN_GAP.z) < GAP_RADIUS + Random.range(0, 120)) continue;
       const size = Random.range(90, 230);
@@ -187,7 +189,8 @@ class Clouds extends Component {
     // A slow look across the beams.
     const cam = this.camera.transform;
     const t = this.t;
-    cam.rotation = Quaternion.lookRotation(new Vector3(Math.sin(t * 0.03) * 0.3 + 0.15, 0.06 + Math.sin(t * 0.05) * 0.03, -1));
+    // Tilted up a little, so the sun (30 degrees up) sits inside the view among the clouds.
+    cam.rotation = Quaternion.lookRotation(new Vector3(Math.sin(t * 0.03) * 0.2 + 0.12, 0.18 + Math.sin(t * 0.05) * 0.02, -1));
   }
 }
 
