@@ -427,12 +427,12 @@ function hoop(): Mesh {
 
 /**
  * Low hoop-top railings along a polyline, the Victorian park kind: round iron rod bent into
- * arches standing side by side. Every hoop draws the
+ * arches that overlap, each starting at the middle of the one before. Every hoop draws the
  * same smooth tube mesh.
  */
 function hoops(line: Vector3[]): void {
   const mesh = hoop();
-  walk(line, 2 * HOOP_R + 0.06, (c, t) => {
+  walk(line, HOOP_R, (c, t) => {
     if (pondDist(c.x, c.z) < 0.4) return;
     const go = new GameObject("Railing", { position: c, rotation: Quaternion.lookRotation(t) });
     go.addComponent(MeshRenderer, { mesh, material: IRON });
