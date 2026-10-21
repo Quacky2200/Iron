@@ -1,5 +1,5 @@
 // Scenes: the game starts in `scenes/level1.scene.json` (`iron.startScene` in
-// package.json). The menu loads the other level from its file (single: everything else
+// project.json). The menu loads the other level from its file (single: everything else
 // goes), adds or removes a bonus room (additive), copies a spinner (`instantiate`) and
 // saves the active scene to the log. The `Keeper` survives every load
 // (`dontDestroyOnLoad`) and counts them. Hot reload keeps all of it (try editing a

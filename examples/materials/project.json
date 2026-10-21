@@ -1,7 +1,4 @@
 {
   "name": "materials",
-  "title": "Iron — Materials",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.materials",
-  "version": "0.1.0"
+  "title": "Iron — Materials"
 }

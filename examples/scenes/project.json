@@ -1,8 +1,5 @@
 {
   "name": "scenes",
   "title": "Iron - Scenes",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.scenes",
-  "version": "0.1.0",
   "startScene": "scenes/level1.scene.json"
 }

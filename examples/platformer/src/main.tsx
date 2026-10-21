@@ -6,7 +6,7 @@
 //
 // Arrows / A-D run, Space jumps. Left alone for a few seconds, the fox runs and jumps
 // by itself (so screenshots show it moving). The HUD shows the game's name and version
-// from its package.json (`Application`) and the OS (`SystemInfo`).
+// from its project.json (`Application`) and the OS (`SystemInfo`).
 
 const PPU = 16;
 const tiles = Texture.load("assets/tiles.png", { filterMode: "point", mipmaps: false });

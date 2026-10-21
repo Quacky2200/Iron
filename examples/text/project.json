@@ -1,7 +1,4 @@
 {
   "name": "text",
-  "title": "Iron - Text",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.text",
-  "version": "0.1.0"
+  "title": "Iron - Text"
 }

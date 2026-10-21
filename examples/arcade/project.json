@@ -1,7 +1,4 @@
 {
   "name": "arcade",
-  "title": "Iron - Arcade",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.arcade",
-  "version": "0.1.0"
+  "title": "Iron - Arcade"
 }

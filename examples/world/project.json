@@ -1,7 +1,4 @@
 {
   "name": "world",
-  "title": "Iron - World",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.world",
-  "version": "0.1.0"
+  "title": "Iron - World"
 }

@@ -1,7 +1,4 @@
 {
   "name": "form",
-  "title": "Iron - Form",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.form",
-  "version": "0.1.0"
+  "title": "Iron - Form"
 }

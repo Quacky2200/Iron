@@ -1,7 +1,4 @@
 {
   "name": "animation",
-  "title": "Iron - Animation",
-  "company": "${firstName}'s Company",
-  "identifier": "dev.iron.animation",
-  "version": "0.1.0"
+  "title": "Iron - Animation"
 }
