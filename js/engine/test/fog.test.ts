@@ -52,10 +52,10 @@ describe("fog", () => {
     expect(fogOps().at(-1)![7]).toEqual([0.1, -2, 0.5]);
     // Light shafts too, with defaults for what's left out (M7-FOG-05).
     RenderSettings.volumetricFog = { steps: 8 };
-    expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 8, 50, 1, 1, 1, 0, 32, 2, 1]);
+    expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 8, 50, 1, 1, 1, 0, 32, 2, 3]);
     // M7-FOG-11
-    RenderSettings.volumetricFog = { resolution: "ultra", smoothing: false };
-    expect(fogOps().at(-1)![8]!.slice(-2)).toEqual([3, 0]);
+    RenderSettings.volumetricFog = { resolution: "ultra", denoising: "reprojection" };
+    expect(fogOps().at(-1)![8]!.slice(-2)).toEqual([3, 1]);
     // Culling past the fog (M7-FOG-07).
     RenderSettings.fogCulling = false;
     expect(fogOps().at(-1)!.at(-1)).toBe(false);

@@ -628,9 +628,33 @@ pub struct VolumetricFog {
     pub sharp_samples: u32,
     /// The volume's detail: 0 low, 1 medium, 2 high, 3 ultra (see `volume::SIZES`).
     pub detail: u8,
-    /// Filters the volume over a cell's width as it's added up (four reads for one), so
-    /// fine patterns (blinds, grates) leave no grain; off saves the reads.
-    pub smoothing: bool,
+    /// How the volume's sampling noise is cleaned up (HDRP's denoising mode).
+    pub denoising: Denoising,
+}
+
+/// How the light volume's sampling is cleaned up (HDRP's volumetric denoising mode).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Denoising {
+    /// Each frame stands alone, sampled at each cell's middle: cheapest, beams through fine
+    /// patterns step and shimmer.
+    None,
+    /// Each cell is sampled somewhere new each frame and blended with what it held last
+    /// frame (reprojected): smooth beams for one shadow lookup a cell.
+    Reprojection,
+    /// A blur over a cell's width as the volume is added up (four reads for one).
+    Gaussian,
+    /// Both: blinds and grates come out as clean haze (the default).
+    #[default]
+    Both,
+}
+
+impl Denoising {
+    pub fn temporal(self) -> bool {
+        matches!(self, Self::Reprojection | Self::Both)
+    }
+    pub fn spatial(self) -> bool {
+        matches!(self, Self::Gaussian | Self::Both)
+    }
 }
 
 impl Default for VolumetricFog {
@@ -644,7 +668,7 @@ impl Default for VolumetricFog {
             sharp_distance: 0.0,
             sharp_samples: 32,
             detail: 2,
-            smoothing: true,
+            denoising: Denoising::Both,
         }
     }
 }
@@ -937,7 +961,7 @@ impl GpuGlobals {
             self.fog_sharp = [
                 v.sharp_distance.max(0.0),
                 v.sharp_samples.clamp(4, 128) as f32,
-                f32::from(u8::from(v.smoothing)),
+                f32::from(u8::from(v.denoising.spatial())),
                 0.0,
             ];
         }
@@ -3608,6 +3632,7 @@ impl WorldRenderer {
                             forward: view.camera.forward,
                             orthographic: view.camera.orthographic,
                             distance: v.distance.max(1e-3),
+                            reprojection: v.denoising.temporal(),
                             lights: view
                                 .lights
                                 .iter()

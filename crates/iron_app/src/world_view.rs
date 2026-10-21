@@ -10,12 +10,12 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog,
-    FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_CURVE_POINTS,
-    MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror,
-    PipelineAsset, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky,
-    Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog, WorldCamera,
-    WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
+    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, Denoising, FillRule,
+    FillVertex, Fog, FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind,
+    MAX_CURVE_POINTS, MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering,
+    Mirror, PipelineAsset, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows,
+    ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog,
+    WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -1317,7 +1317,12 @@ impl WorldViews {
                                 sharp_samples: v.get(8).copied().unwrap_or(32.0).clamp(4.0, 128.0)
                                     as u32,
                                 detail: v.get(9).copied().unwrap_or(2.0).clamp(0.0, 3.0) as u8,
-                                smoothing: v.get(10).copied().unwrap_or(1.0) > 0.5,
+                                denoising: match v.get(10).copied().unwrap_or(3.0) as u32 {
+                                    0 => Denoising::None,
+                                    1 => Denoising::Reprojection,
+                                    2 => Denoising::Gaussian,
+                                    _ => Denoising::Both,
+                                },
                             }
                         }),
                         cull: !matches!(args.get(8), Some(Value::Bool(false))),
@@ -2498,7 +2503,7 @@ mod tests {
                 sharp_distance: 0.0,
                 sharp_samples: 32,
                 detail: 2,
-                smoothing: true,
+                denoising: Denoising::Both,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();

@@ -1551,12 +1551,16 @@ export interface VolumetricFogSettings {
    */
   resolution?: VolumeDetail;
   /**
-   * Smooths the volume over a cell's width (on by default): fine patterns of light (a
-   * blind's slats, a grate) come out as clean haze instead of grain. Off saves three texture
-   * reads per step, for slower GPUs (phones).
+   * How the light volume's sampling noise is cleaned up (HDRP's denoising mode): `both`
+   * (the default) blends each cell with last frame's (`reprojection`) and blurs it over a
+   * cell's width (`gaussian`), so a blind's slats or a grate come out as clean haze;
+   * `reprojection` alone saves three texture reads a step (slower GPUs, phones); `none`
+   * samples each frame afresh (beams through fine patterns step and shimmer).
    */
-  smoothing?: boolean;
+  denoising?: "none" | "reprojection" | "gaussian" | "both";
 }
+
+const DENOISING = { none: 0, reprojection: 1, gaussian: 2, both: 3 } as const;
 
 /** The light-shaft volume's detail levels. */
 export type VolumeDetail = "low" | "medium" | "high" | "ultra";
@@ -1572,7 +1576,7 @@ function sendFog(): void {
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
   const v = volumetricFog;
   const a = v?.albedo;
-  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), v.smoothing === false ? 0 : 1] : null;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"]] : null;
   __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
 }
 

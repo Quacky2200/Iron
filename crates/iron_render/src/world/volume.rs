@@ -62,6 +62,9 @@ pub struct VolumeCamera {
     /// light turned on, shadows arriving on the first frames) last frame's cells are wrong
     /// everywhere, so they're dropped rather than blended out over a second.
     pub lights: u64,
+    /// Blending with last frame's cells (`Denoising::temporal`); without it each frame
+    /// samples the cells' middles and stands alone.
+    pub reprojection: bool,
 }
 
 /// `VolumeFrame` in world.wgsl.
@@ -306,10 +309,14 @@ impl VolumePass {
             });
         }
         let s = self.slots[slot].as_mut().expect("made above");
-        let [jx, jy, jz] = jitter(s.frames);
+        let [jx, jy, jz] = if camera.reprojection {
+            jitter(s.frames)
+        } else {
+            [0.5; 3]
+        };
         // Without last frame's cells, this frame's stand alone.
         let (prev, blend) = match s.last {
-            Some(last) if last.lights == camera.lights => (last, BLEND),
+            Some(last) if last.lights == camera.lights && camera.reprojection => (last, BLEND),
             _ => (camera, 1.0),
         };
         let p = prev.position;
