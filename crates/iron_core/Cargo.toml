@@ -8,3 +8,5 @@ publish.workspace = true
 base64 = "0.23.1"
 glam = "0.34.1"
 tracing = "0.1.44"
+flate2 = "1.1.10"
+crc32fast = "1.5.3"

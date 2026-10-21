@@ -27,6 +27,7 @@ mod native_pump;
 mod native_render;
 mod panels;
 pub(crate) mod particles;
+mod payload;
 mod physics_sync;
 mod prefs;
 mod project;
@@ -75,6 +76,9 @@ fn parse_args() -> Result<Args> {
     if editor::ENABLED {
         editor::set_project(&args.game);
         args.game = editor::ui_folder();
+    } else if let Some(dir) = payload::embedded_game() {
+        // A packaged single-file game runs its own files, whatever the arguments say.
+        args.game = dir;
     }
     Ok(args)
 }
