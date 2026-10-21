@@ -93,7 +93,7 @@ interface Mote {
   level: number;
 }
 /** A lit mote's brightness: most at the low end, the odd one glinting. */
-const MOTE_LEVELS = [0.6, 1, 1.6, 2.6];
+const MOTE_LEVELS = [0.25, 0.4, 0.6, 1];
 /** The scanner's place, under the craft's nose. */
 const SCANNER = CRAFT.add(new Vector3(0, -0.3, 0.9));
 const BOARD = 0.14;
@@ -173,6 +173,8 @@ class Shed extends Component {
   private motes: Mote[] = [];
   /** Lit motes' materials by brightness, in the beam's colour. */
   private moteLit: Material[] = [];
+  /** Motes out of the beam: faint, lit only by the moon and light off the walls. */
+  private moteDim!: Material;
   /** Which way the scan points this frame. */
   private scanDir = new Vector3(0, -0.2, 1).normalized;
 
@@ -304,35 +306,27 @@ class Shed extends Component {
   }
 
   /**
-   * Dust motes: specks drifting through the shed, hidden in the dark and glinting where the
-   * scan catches them. Most are tiny and faint.
+   * Dust motes: specks drifting through the shed, faint in the dark (moonlight and light off
+   * the walls) and glinting softly where the scan passes through them. Most are tiny.
    */
   private buildDust() {
     dust = new GameObject("Dust");
-    for (let i = 0; i < 500; i++) {
+    this.moteDim = Material.create({ color: Color.black, emission: new Color(0.008, 0.009, 0.012, 1), unlit: true });
+    for (let i = 0; i < 700; i++) {
       const size = 0.004 + 0.012 * Random.value ** 2;
       const b = Random.value;
       const level = b < 0.45 ? 0 : b < 0.75 ? 1 : b < 0.93 ? 2 : 3;
-      const go = shape("Mote", "sphere", Vector3.zero, Vector3.one.scale(size), this.craftOff, dust);
+      const go = shape("Mote", "sphere", Vector3.zero, Vector3.one.scale(size), this.moteDim, dust);
       go.getComponent(MeshRenderer)!.shadowCastingMode = "off";
-      go.enabled = false;
       const m: Mote = { go, p: Vector3.zero, v: Vector3.zero, phase: Random.range(0, 100), lit: false, level };
-      this.spawn(m, Random.value < 0.6);
+      this.spawn(m);
       this.motes.push(m);
     }
   }
 
-  /** Puts a mote somewhere in the shed; `inBeam` puts it near where the scan points now. */
-  private spawn(m: Mote, inBeam: boolean) {
-    if (inBeam) {
-      // Along the scan, from the window wall to as far as the back wall.
-      const t0 = (-D - SCANNER.z) / this.scanDir.z;
-      const t1 = (D - SCANNER.z) / this.scanDir.z;
-      const c = SCANNER.add(this.scanDir.scale(Random.range(t0, t1)));
-      m.p = c.add(new Vector3(Random.range(-0.3, 0.3), Random.range(-0.3, 0.3), Random.range(-0.3, 0.3)));
-    } else {
-      m.p = new Vector3(Random.range(-W + 0.1, W - 0.1), Random.range(0.1, H - 0.1), Random.range(-D + 0.1, D - 0.1));
-    }
+  /** Puts a mote somewhere in the shed, drifting its own way. */
+  private spawn(m: Mote) {
+    m.p = new Vector3(Random.range(-W + 0.1, W - 0.1), Random.range(0.1, H - 0.1), Random.range(-D + 0.1, D - 0.1));
     m.v = new Vector3(Random.range(-0.03, 0.03), Random.range(-0.015, 0.01), Random.range(-0.03, 0.03));
   }
 
@@ -348,16 +342,13 @@ class Shed extends Component {
         ).scale(dt),
       );
       const out = Math.abs(m.p.x) > W - 0.05 || m.p.y < 0.05 || m.p.y > H - 0.05 || Math.abs(m.p.z) > D - 0.05;
-      // Dust is everywhere, but only lit motes show: unseen ones drift back into the path of
-      // the scan now and then, so the beam always has some.
-      if (out || (!m.lit && Random.value < dt * 0.3)) this.spawn(m, !out || Random.value < 0.6);
+      if (out) this.spawn(m);
       const lit = inScan(m.p, this.scanDir);
       if (lit !== m.lit) {
         m.lit = lit;
-        m.go.enabled = lit;
-        if (lit) m.go.getComponent(MeshRenderer)!.material = this.moteLit[m.level]!;
+        m.go.getComponent(MeshRenderer)!.material = lit ? this.moteLit[m.level]! : this.moteDim;
       }
-      if (lit) m.go.transform.position = m.p;
+      m.go.transform.position = m.p;
     }
   }
 
