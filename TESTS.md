@@ -1283,3 +1283,21 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-808 | Integration | Only `register()`ed classes get a starting object (`NativeClass.registered`), `addComponent` works for the others, and `e.target.type` is the element kind of the event's target. |
 | M9-API-620 | Integration | A compiled game's camera, light and cube reach the renderer's views through `render_sync` (no GPU). |
 | M9-API-700 | Integration | `render_sync` turns planes, `RenderSettings` (skybox, bloom, tonemapping) and quality into the renderer's views, and a second sync leaves them as they were (no GPU). |
+| M9-API-1000 | Unit | A payload written after a host reads back entry by entry (deflate for compressible data, stored for tiny) with the right start offset (`iron_core/src/payload.rs`). |
+| M9-API-1001 | Unit | A file or buffer without the `IRONPAYL` trailer has no payload (`Ok(None)`), also an empty one. |
+| M9-API-1002 | Unit | Payload paths with `..`, absolute, drive, backslash, empty or `.` parts are refused on write, and a table with one is refused on read. |
+| M9-API-1003 | Unit | Duplicate paths, a damaged entry (CRC) and a trailer of another format version are errors. |
+| M9-API-1004 | Unit | `extract` writes every file; the payload id changes with the content and not with a re-read. |
+| M9-API-1005 | Unit | A payload followed by padding and an Authenticode certificate table (synthetic PE32+ header) is found before the certificate. |
+| M9-API-1010 | Unit | `iron_app::payload::prepare` of an exe without a payload gives `None` (the plain host starts normally). |
+| M9-API-1011 | Unit | The payload is extracted once into a cache folder (marker file, second start reuses it), a new build gets a new folder and the old one is removed, another game's folder stays. |
+| M9-TS-2400 | Unit | Package metadata defaults: title, exe, company, version, copyright, description, identifier, icon from `package.json`; the folder name when nothing is given (`iron_build/src/package.rs`). |
+| M9-TS-2401 | Unit | `iron.*` fields override the package.json ones, flags override both; the exe name is made file-name safe and loses `.exe`. |
+| M9-TS-2402 | Unit | The payload's `package.json` carries the resolved version, title and icon entry. |
+| M9-TS-2410 | Unit | File collection takes `dist/` (not `game.o`, `*.exe`, dot files, asset copies), the named assets with `.meta`, `iron.include` or the default `assets` folder, `package.json` and the icon; an unsafe asset path is an error. |
+| M9-TS-2411 | Unit | `1.2.3`, `2.0.0-beta.1+x`, `1.2.3.4`, `junk` become four-part Windows versions. |
+| M9-TS-2412 | Integration | `package` with a stand-in host writes one file whose payload holds the bundle, assets, rewritten package.json and icon, whose PE resources carry the version and a four-size icon, and on which `--sign-cmd` ran; packaging a packaged file replaces its payload. |
+| M9-TS-2420 | Unit | A PNG becomes an `.ico` with 16, 32, 48 and 256 px images that decodes (`iron_build/src/icon.rs`). |
+| M9-TS-2421 | Unit | A non-square image is centred on a square; an `.ico` passes through unchanged; garbage is an error. |
+| M9-TS-2430 | Unit | Version info (ProductName, CompanyName, FileDescription, LegalCopyright, FileVersion, ProductVersion, OriginalFilename, 1.2.3.0 numbers) and the four icon sizes written into a PE file read back, and a payload appended after the edit is found (Windows; `iron_build/src/pe.rs`). |
+| M9-TS-2440 | Manual | `cargo test -p iron_build -- --ignored standalone` (needs a built `iron_app`, GPU): packages `examples/hello`, deletes the game folder and runs the exe from another folder with `--screenshot out.png --frames 5`. Checked by eye for hello (a log-only game, background colour) and boxes (the stripes image from `assets/` shows). |

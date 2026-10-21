@@ -38,7 +38,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
 | `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth` games (each has `bun run build`) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
-| `tools/iron_build` | `iron-build` (build/types/assets/dev/check): module graph (`iron_ts::modules`) -> `dist/game.irbundle` + `game.css` + assets for a game compiled by iron_ts, no bun; see `docs/iron-build.md` |
+| `tools/iron_build` | `iron-build` (build/types/assets/dev/check/package): module graph (`iron_ts::modules`) -> `dist/game.irbundle` + `game.css` + assets for a game compiled by iron_ts, no bun; see `docs/iron-build.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
 ### UI model
@@ -79,6 +79,11 @@ cargo run -p iron_app -- examples/css --screenshot out.png --frames 30
 ```bash
 cargo run -p iron_app -- examples/world --cook
 ```
+```bash
+cd tools && cargo run -p iron_build -- package ../examples/boxes --icon icon.png
+```
+`iron-build package <game>` writes `<game>/dist/<name>.exe`: one file holding `iron_app` (the host, from `target/{release,debug}` or `--host`),
+the game's bundle, CSS and assets, and the icon and version info from `package.json`'s `iron` section (`docs/iron-build.md`).
 
 - `bun run build` builds all the examples.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.

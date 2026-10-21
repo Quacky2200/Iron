@@ -1,6 +1,6 @@
 //! `iron-build build|types|assets|dev|check`: see `docs/iron-build.md`.
 
-use iron_build::{Options, Tsc, assets, build, dev, types_dts};
+use iron_build::{Options, Tsc, assets, build, dev, package, types_dts};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage:
@@ -8,6 +8,7 @@ const USAGE: &str = "usage:
   iron-build types [<game>] [--out file]                write types/iron.d.ts (default <game>/types/iron.d.ts)
   iron-build assets <folder>... [--prune]               write .meta files
   iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.iron-reload)
+  iron-build package <game> [--host exe] [--out f] ...   one executable (see: iron-build package --help)
   iron-build check <examples folder> [--tsc]            build every game in it and print a table";
 
 fn options(args: &[String]) -> Options {
@@ -137,6 +138,7 @@ fn main() {
             }
             0
         }
+        "package" => package::run_cli(&args[1..]),
         "dev" => {
             let game = pos.first().map_or(".", |g| g.as_str());
             match dev::run(Path::new(game), &options(&args)) {

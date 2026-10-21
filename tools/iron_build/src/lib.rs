@@ -10,6 +10,9 @@
 pub mod assets;
 pub mod css;
 pub mod dev;
+pub mod icon;
+pub mod package;
+pub mod pe;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
