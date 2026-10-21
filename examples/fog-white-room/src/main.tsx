@@ -46,6 +46,18 @@ const FLOOR = 8 * BLOCK;
 /** How far the player gets from the origin before everything shifts back (floats stay precise). */
 const RECENTRE = 240;
 const WHITE = new Color(0.93, 0.94, 0.96, 1);
+/** Moving speeds, m/s: walk (Alt), jog (the default) and sprint (Shift). */
+const SPEEDS = { walk: 1.5, jog: 5, sprint: 8 };
+/**
+ * The roll, from its root motion: 5 m at 5.76 m/s over its first 0.87 s, still while it gets
+ * up, handing back to running at 85% of its 1.47 s.
+ */
+const ROLL = { speed: 5.76, travel: 0.867, handBack: 1.25 };
+/**
+ * Landing: faster than `runOn` (m/s) it runs on; slower, the deep landing plays (its pelvis
+ * sinks for 0.8 s) and the player stands still for `hold` seconds, or the feet would slide.
+ */
+const LAND = { runOn: 2, hold: 0.6 };
 
 /**
  * Fog distances: linear, starting a few tiles out, so the player and what's near stand clear
@@ -151,7 +163,12 @@ class WhiteRoom extends Component {
   private facing = Math.PI;
   private vy = 0;
   private speed = 0;
-  private rollTime = 0;
+  /** Seconds left standing still after a deep landing. */
+  private landHold = 0;
+  /** Whether it was in the air last frame (to catch the landing). */
+  private airborne = false;
+  /** Seconds into the current roll (past `ROLL.handBack`: not rolling). */
+  private rollTime = Infinity;
   private lastTile = "";
   private nextAmbient = 0;
   private pivot = new Vector3(0, 1.4, 0);
@@ -205,9 +222,10 @@ class WhiteRoom extends Component {
     // Lit tiles: a pool of thin panels laid on the floor, faded through brightness levels.
     this.glowMats = Array.from({ length: GLOW_LEVELS }, (_, i) => {
       const k = (i + 1) / GLOW_LEVELS;
-      // Brighter than the white floor even at its faintest, so a fading tile never looks grey.
-      const e = 1 + 3 * k;
-      return Material.create({ color: Color.black, emission: new Color(0.88 * e, 0.94 * e, 1.05 * e, 1), unlit: true });
+      // Lit like the floor (so shadows fall across it), glowing on top: never darker than the
+      // floor, so a fading tile doesn't look grey.
+      const e = 0.15 + 1.6 * k;
+      return Material.create({ color: new Color(0.92, 0.94, 0.97, 1), emission: new Color(0.8 * e, 0.9 * e, 1.05 * e, 1), smoothness: 0.45 });
     });
     for (let i = 0; i < 48; i++) {
       const go = shape("Lit tile", "cube", Vector3.zero, new Vector3(TILE - 0.06, 0.006, TILE - 0.06), this.glowMats[0]!);
@@ -262,24 +280,31 @@ class WhiteRoom extends Component {
       .addParameter("grounded", "bool", true)
       .addParameter("jump", "trigger")
       .addParameter("roll", "trigger")
-      // Speeds (m/s) each clip's feet match: idle, walk, jog, sprint.
+      // Blended by speed (m/s). Each clip plays at the rate whose stride matches its speed
+      // here (their natural speeds, from the pack's root-motion version: walk 0.97, jog
+      // 5.36, sprint 8.25 m/s), so the feet don't slide.
       .addState("Locomotion", {
         blendParameter: "speed",
         children: [
           { motion: clip("Idle_Loop"), threshold: 0 },
-          { motion: clip("Walk_Loop"), threshold: 1.6 },
-          { motion: clip("Jog_Fwd_Loop"), threshold: 4 },
-          { motion: clip("Sprint_Loop"), threshold: 7 },
+          { motion: clip("Walk_Loop"), threshold: SPEEDS.walk, timeScale: SPEEDS.walk / 0.97 },
+          { motion: clip("Jog_Fwd_Loop"), threshold: SPEEDS.jog, timeScale: SPEEDS.jog / 5.36 },
+          { motion: clip("Sprint_Loop"), threshold: SPEEDS.sprint, timeScale: SPEEDS.sprint / 8.25 },
         ],
       })
       .addState("Jump", clip("Jump_Start", false))
       .addState("Air", clip("Jump_Loop"))
       .addState("Land", clip("Jump_Land", false))
       .addState("Roll", clip("Roll", false))
-      .addTransition({ from: "Any", to: "Jump", conditions: [{ parameter: "jump", mode: "if" }], duration: 0.08 })
+      // The take-off is at once, so the jump starts past its crouch (its first 0.07 s).
+      .addTransition({ from: "Any", to: "Jump", conditions: [{ parameter: "jump", mode: "if" }], duration: 0.08, offset: 0.05 })
       .addTransition({ from: "Jump", to: "Air", hasExitTime: true, exitTime: 0.85, duration: 0.12 })
+      // Landing on the run goes straight back into it; standing, the deep landing (it holds
+      // the player still while it absorbs: see `LAND`).
+      .addTransition({ from: "Air", to: "Locomotion", conditions: [{ parameter: "grounded", mode: "if" }, { parameter: "speed", mode: "greater", threshold: LAND.runOn }], duration: 0.15 })
+      .addTransition({ from: "Jump", to: "Locomotion", conditions: [{ parameter: "grounded", mode: "if" }, { parameter: "speed", mode: "greater", threshold: LAND.runOn }], hasExitTime: true, exitTime: 0.3, duration: 0.15 })
       .addTransition({ from: "Air", to: "Land", conditions: [{ parameter: "grounded", mode: "if" }], duration: 0.06 })
-      .addTransition({ from: "Jump", to: "Land", conditions: [{ parameter: "grounded", mode: "if" }], hasExitTime: true, exitTime: 0.5, duration: 0.06 })
+      .addTransition({ from: "Jump", to: "Land", conditions: [{ parameter: "grounded", mode: "if" }], hasExitTime: true, exitTime: 0.3, duration: 0.06 })
       .addTransition({ from: "Land", to: "Locomotion", hasExitTime: true, exitTime: 0.55, duration: 0.2 })
       .addTransition({ from: "Any", to: "Roll", conditions: [{ parameter: "roll", mode: "if" }], duration: 0.1 })
       .addTransition({ from: "Roll", to: "Locomotion", hasExitTime: true, exitTime: 0.85, duration: 0.2 });
@@ -360,20 +385,32 @@ class WhiteRoom extends Component {
     const grounded = this.controller.isGrounded;
     const sprint = input.getKey("ShiftLeft") || input.getKey("ShiftRight");
     const walk = input.getKey("AltLeft") || input.getKey("AltRight");
-    let target = moving ? (sprint ? 7 : walk ? 1.6 : 4) : 0;
-    // A roll carries on forward on its own for most of its length.
-    if (this.rollTime > 0) {
-      this.rollTime -= dt;
-      target = 5;
-      dir = new Vector3(Math.sin(this.facing), 0, Math.cos(this.facing));
-    } else if (grounded && input.getKeyDown("KeyC")) {
-      this.rollTime = 0.75;
-      this.animator?.setTrigger("roll");
+    let target = moving ? (sprint ? SPEEDS.sprint : walk ? SPEEDS.walk : SPEEDS.jog) : 0;
+    // A roll moves as its animation does (the pack's root motion): 5 m at a steady pace in
+    // its first 0.87 s, then still while getting up, until it hands back to running.
+    const rolling = this.rollTime < ROLL.handBack;
+    // Touching down: slow enough for the deep landing, stand still while it plays.
+    if (grounded && this.airborne && this.speed <= LAND.runOn) this.landHold = LAND.hold;
+    this.airborne = !grounded;
+    if (this.landHold > 0) {
+      this.landHold -= dt;
+      target = 0;
+      this.speed = 0;
     }
-    // Ease the speed: quicker to start than to stop, slower to change in the air.
-    const ease = grounded ? (target > this.speed ? 8 : 10) : 2;
-    this.speed += (target - this.speed) * Math.min(1, ease * dt);
-    if (moving || this.rollTime > 0) {
+    if (rolling) {
+      this.rollTime += dt;
+      dir = new Vector3(Math.sin(this.facing), 0, Math.cos(this.facing));
+      this.speed = this.rollTime < ROLL.travel ? ROLL.speed : 0;
+    } else if (grounded && input.getKeyDown("KeyC")) {
+      this.rollTime = 0;
+      this.speed = ROLL.speed;
+      this.animator?.setTrigger("roll");
+    } else {
+      // Ease the speed: quicker to start than to stop, slower to change in the air.
+      const ease = grounded ? (target > this.speed ? 8 : 10) : 2;
+      this.speed += (target - this.speed) * Math.min(1, ease * dt);
+    }
+    if (moving && !rolling) {
       const want = Math.atan2(dir.x, dir.z);
       let d = want - this.facing;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -383,7 +420,7 @@ class WhiteRoom extends Component {
     // Gravity and jumps.
     if (grounded && this.vy <= 0) {
       this.vy = -1;
-      if (input.getKeyDown("Space") && this.rollTime <= 0) {
+      if (input.getKeyDown("Space") && !rolling && this.landHold <= 0) {
         this.vy = 5.8;
         this.animator?.setTrigger("jump");
       }
