@@ -47,14 +47,14 @@ const TO_SUN = SUN_DIR.scale(-1);
 const TINTS = {
   warm: {
     sun: new Color(1, 0.86, 0.68, 1),
-    sky: new Color(3.2, 2.9, 2.4, 1),
+    sky: new Color(19, 17.4, 14.4, 1),
     albedo: new Color(1, 0.94, 0.86, 1),
     bounce: new Color(1, 0.8, 0.6, 1),
     mote: new Color(3, 2.6, 2, 1),
   },
   teal: {
     sun: new Color(0.55, 0.88, 1, 1),
-    sky: new Color(1.6, 2.7, 3.2, 1),
+    sky: new Color(9.6, 16.2, 19.2, 1),
     albedo: new Color(0.8, 1, 1, 1),
     bounce: new Color(0.45, 0.8, 0.9, 1),
     mote: new Color(1.6, 2.8, 3.2, 1),
@@ -66,6 +66,9 @@ const SUN_INTENSITY = 6;
 const FOG_COLOR = new Color(0.006, 0.006, 0.007, 1);
 
 /** What the menu shows and changes; `apply` sends it to the engine. */
+/** Auto exposure's compensation: the cell stays dim, as the eyes see it. */
+const CELL_EXPOSURE = -4.5;
+
 const state = { ultra: true, fog: true, dust: true, tint: "warm" as Tint };
 let refreshMenu = () => {};
 let scene: Cell | null = null;
@@ -236,7 +239,10 @@ class Cell extends Component {
     RenderSettings.ambientMode = "color";
     RenderSettings.ambientLight = new Color(0.012, 0.012, 0.014, 1);
     RenderSettings.tonemapping = "aces";
-    RenderSettings.bloom = { threshold: 1, intensity: 0.35, scatter: 0.6 };
+    // Daylight through the bars burns white (no detail outside), its glare spilling over
+    // the bars; the eyes adapt to the dark cell.
+    RenderSettings.bloom = { threshold: 1, intensity: 0.8, scatter: 0.7 };
+    RenderSettings.autoExposure = { compensation: CELL_EXPOSURE, speedDarkToLight: 1, speedLightToDark: 0.6 };
     Random.initState(1347);
 
     const sunGo = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN_DIR) });

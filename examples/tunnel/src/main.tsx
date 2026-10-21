@@ -53,7 +53,8 @@ function apply(): void {
     ? // minEV: in the tunnel the eyes stop adapting before it looks like daylight, so it
       // stays dim between the lamps.
       // Slow to adapt to the daylight on the way out: a few seconds of glare.
-      { minEV: -4, maxEV: 16, compensation: -0.7, speedDarkToLight: 0.7, speedLightToDark: 0.5 }
+      // Quick to adapt to the dark on the way in, so the exit soon blazes.
+      { minEV: -4, maxEV: 16, compensation: -0.7, speedDarkToLight: 0.7, speedLightToDark: 1.3 }
     : null;
   // Without adapting, an exposure that suits the daylight: the tunnel is near black.
   RenderSettings.postExposure = state.auto ? 0 : -5;
@@ -84,8 +85,8 @@ function tarmac(): Texture {
   const px: Color[] = [];
   for (let i = 0; i < N * N; i++) {
     const r = Random.value;
-    const v = r < 0.6 ? Random.range(0.018, 0.03) : r < 0.93 ? Random.range(0.035, 0.07) : Random.range(0.09, 0.16);
-    px.push(new Color(v, v, v * 1.04, 1));
+    const v = r < 0.65 ? Random.range(0.008, 0.014) : r < 0.94 ? Random.range(0.018, 0.035) : Random.range(0.05, 0.09);
+    px.push(new Color(v, v, v, 1));
   }
   return Texture.create(N, N, px, { filterMode: "bilinear" });
 }
@@ -145,26 +146,28 @@ class Drive extends Component {
    * overexposure looks right.
    */
   private setBloom(k: number) {
-    const step = Math.round(k * 20);
+    const step = Math.round(k * 100);
     if (step === this.bloomStep) return;
     this.bloomStep = step;
-    const f = step / 20;
+    const f = step / 100;
     RenderSettings.bloom = { threshold: 1.0, intensity: 0.15 + 1.15 * f, scatter: 0.6 + 0.25 * f };
   }
 
   /** Black tarmac from end to end, a dashed middle line and solid edge lines. */
   private buildRoad() {
     const surface = tarmac();
-    // 10 m pieces, the texture every 2 m. Outside a faint sheen; inside damp, so the lamps
-    // shine back off it, and shut off from the sky.
-    const scale = new Vector2(5, 5);
-    const asphalt = Material.create({ color: Color.white, mainTexture: surface, mainTextureScale: scale, smoothness: 0.3 });
-    const damp = Material.create({ color: Color.white, mainTexture: surface, mainTextureScale: scale, smoothness: 0.6, occlusionMap: shut(0.25) });
+    // Three unbroken stretches (in, through, out), the texture every 2 m. The same tarmac
+    // throughout: a slight sheen in the open, damp (shinier) and shut off from the sky
+    // through the tunnel.
+    const road = (z0: number, z1: number, occlusion: Texture | null) => {
+      const length = z0 - z1;
+      const m = Material.create({ color: Color.white, mainTexture: surface, mainTextureScale: new Vector2(HALF_W, length / 2), smoothness: occlusion ? 0.5 : 0.25, occlusionMap: occlusion });
+      slab("Road", -HALF_W, -0.1, z1, HALF_W, 0, z0, m);
+    };
+    road(START_Z + 30, 0, null);
+    road(0, -TUNNEL_LENGTH, shut(0.25));
+    road(-TUNNEL_LENGTH, END_Z - 20, null);
     const paint = Material.create({ color: Color.hex("#e8e4d8"), smoothness: 0.2 });
-    for (let z = START_Z + 30; z > END_Z - 20; z -= 10) {
-      const inside = z <= 0 && z > -TUNNEL_LENGTH;
-      slab("Road", -HALF_W, -0.1, z - 10, HALF_W, 0, z, inside ? damp : asphalt);
-    }
     for (let z = START_Z + 28; z > END_Z - 18; z -= 9) slab("Dash", -0.08, 0, z - 3, 0.08, 0.012, z, paint);
     for (const x of [-HALF_W + 0.4, HALF_W - 0.4]) slab("Edge line", x - 0.06, 0, END_Z - 20, x + 0.06, 0.012, START_Z + 30, paint);
   }
@@ -200,13 +203,11 @@ class Drive extends Component {
       const lamp = new GameObject("Sodium light", { position: new Vector3(0, HEIGHT - 0.5, z) });
       lamp.addComponent(Light, { type: "point", color: SODIUM, intensity: 20, range: 14 });
     }
-    // Reflection probes along the tunnel: the damp road reflects the walls and lamps, not
-    // the sky outside.
-    for (let z = -14; z > z1; z -= 28) {
-      // Reaching below the road, so the road (its middle just under 0) is inside.
-      const probe = new GameObject("Tunnel probe", { position: new Vector3(0, HEIGHT / 2 - 0.5, z) });
-      probe.addComponent(ReflectionProbe, { size: new Vector3(HALF_W * 2 + 0.6, HEIGHT + 1, 28), resolution: 128, boxProjection: true });
-    }
+    // A reflection probe through the tunnel: the road reflects the walls and lamps, not
+    // the sky outside. It reaches below the road, so the road (its middle just under 0) is
+    // inside it.
+    const probe = new GameObject("Tunnel probe", { position: new Vector3(0, HEIGHT / 2 - 0.5, -TUNNEL_LENGTH / 2) });
+    probe.addComponent(ReflectionProbe, { size: new Vector3(HALF_W * 2 + 0.6, HEIGHT + 1, TUNNEL_LENGTH), resolution: 256, boxProjection: true });
   }
 
   /** The hill the tunnel goes through: rock either side and above, grassy humps on top. */

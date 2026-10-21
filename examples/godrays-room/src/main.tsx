@@ -77,6 +77,9 @@ const SLAT_STEP = 0.2;
 const MISSING_SLATS = new Set([3, 7]);
 const HOLE = { x0: -5.5, x1: -2.5, z0: 1.4, z1: 5.6 };
 
+/** Auto exposure's compensation: the hall stays dim, as the eyes see it. */
+const ROOM_EXPOSURE = -2.2;
+
 const DUST_COUNT = 500;
 /** Golden dust, silvery grit and white fluff: their tint and size range (metres). */
 const MOTE_KINDS = [
@@ -192,7 +195,10 @@ class Hall extends Component {
     RenderSettings.ambientMode = "color";
     RenderSettings.ambientLight = new Color(0.05, 0.042, 0.034, 1);
     RenderSettings.tonemapping = "aces";
-    RenderSettings.bloom = { threshold: 1.1, intensity: 0.55, scatter: 0.6 };
+    // The windows burn white (no detail outside), their glare spilling over the frames;
+    // the eyes adapt to the room.
+    RenderSettings.bloom = { threshold: 1, intensity: 0.85, scatter: 0.7 };
+    RenderSettings.autoExposure = { compensation: ROOM_EXPOSURE, speedDarkToLight: 1, speedLightToDark: 0.6 };
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
     this.sun = sun.addComponent(Light, { type: "directional", color: SUN_COLOR, intensity: SUN_INTENSITY, shadows: "hard" });
@@ -205,7 +211,7 @@ class Hall extends Component {
 
     const eye = new GameObject("Main Camera", { position: new Vector3(4.6, 1.65, -4) });
     // The outdoors, seen through the openings: a hazy, overexposed afternoon.
-    this.sky = new Color(2.4, 2.0, 1.5, 1);
+    this.sky = new Color(14.4, 12, 9, 1);
     this.camera = eye.addComponent(Camera, { fieldOfView: 60, backgroundColor: this.sky, farClipPlane: 100 });
     apply();
   }
