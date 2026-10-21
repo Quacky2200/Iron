@@ -1,6 +1,6 @@
 // Eye adaptation (`RenderSettings.autoExposure`): a bedroom on a bright day behind closed
-// louvred shutters. Slivers of sun get through the slats: the room is dim, but the eyes have
-// adapted and it's easy to see. Then the shutters swing open: blinding, the windows white,
+// louvred shutters. The sun comes through the slats in crisp stripes across the floor: the
+// room is dim, but the eyes have adapted and it's easy to see. Then the shutters swing open: blinding, the windows white,
 // until the eyes settle into a bright room with sunlight across the floor and the bed. Later
 // they close again: near black, and the room only slowly comes back as the eyes adapt to the
 // dark. The camera looks round the window side all the while.
@@ -175,7 +175,8 @@ class Bedroom extends Component {
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogColor = new Color(0.01, 0.01, 0.01, 1);
     RenderSettings.fogDensity = 0.03;
-    RenderSettings.volumetricFog = { intensity: 0.25, anisotropy: 0.5, steps: 4, distance: 12, albedo: new Color(1, 0.9, 0.78, 1) };
+    // The finest light volume: beams through the window's glazing bars stay crisp.
+    RenderSettings.volumetricFog = { intensity: 0.25, anisotropy: 0.5, steps: 4, distance: 12, albedo: new Color(1, 0.9, 0.78, 1), resolution: "ultra" };
     RenderSettings.fog = true;
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
@@ -228,22 +229,26 @@ class Bedroom extends Component {
    */
   private buildShutters(x0: number, x1: number) {
     const wood = mat("#e9e3d6", 0.25);
-    const w = (x1 - x0) / 2;
-    const z = -D + 0.03;
+    // Each leaf overlaps the opening by LAP on its outer side and the top, and sits on the
+    // sill, flush against the wall: no gap for low sun to slip round.
+    const LAP = 0.05;
+    const w = (x1 - x0) / 2 + LAP;
+    const top = HEAD + LAP;
+    const z = -D + 0.002;
     for (const side of [-1, 1]) {
-      const hinge = new GameObject("Shutter hinge", { position: new Vector3(side < 0 ? x0 : x1, 0, z) });
+      const hinge = new GameObject("Shutter hinge", { position: new Vector3(side < 0 ? x0 - LAP : x1 + LAP, 0, z) });
       this.leaves.push({ hinge, side });
       // The leaf runs from the hinge towards the window's middle (local -side along x).
-      const mid = -side * w / 2;
+      const mid = (-side * w) / 2;
       const s = (name: string, cx: number, cy: number, sx: number, sy: number, sz: number, rot?: Quaternion) =>
         shape(name, "cube", new Vector3(cx, cy, 0.02), new Vector3(sx, sy, sz), wood, hinge, rot);
-      s("Stile", -side * 0.03, (SILL + HEAD) / 2, 0.06, HEAD - SILL, 0.04);
-      s("Stile", -side * (w - 0.03), (SILL + HEAD) / 2, 0.06, HEAD - SILL, 0.04);
+      s("Stile", -side * 0.04, (SILL + top) / 2, 0.08, top - SILL, 0.04);
+      s("Stile", -side * (w - 0.03), (SILL + top) / 2, 0.06, top - SILL, 0.04);
       s("Rail", mid, SILL + 0.04, w, 0.08, 0.04);
-      s("Rail", mid, HEAD - 0.04, w, 0.08, 0.04);
-      // Slats 5 cm apart, each 9 cm deep and tilted 50 degrees: they overlap, so only thin
-      // slivers of sun get between them.
-      for (let y = SILL + 0.1; y < HEAD - 0.06; y += 0.05) s("Slat", mid, y, w - 0.1, 0.008, 0.09, Quaternion.euler(-50, 0, 0));
+      s("Rail", mid, top - 0.04, w, 0.08, 0.04);
+      // Slats 5 cm apart, each 9 cm deep and tilted with the sun's fall, so it comes through
+      // between them in clean stripes (its edges round the leaves are sealed).
+      for (let y = SILL + 0.1; y < top - 0.06; y += 0.05) s("Slat", mid, y, w - 0.1, 0.008, 0.09, Quaternion.euler(50, 0, 0));
     }
   }
 
