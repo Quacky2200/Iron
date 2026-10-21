@@ -7,11 +7,13 @@
 //! Listeners: `input.onKeyDown(fn)` and friends return a token for `input.off(token)` (the
 //! TypeScript's `input.on(type, fn)` returned an unsubscribe function).
 
+use crate::window::{self, DomainId};
 use iron_api::callback::{Listeners, emit};
 use iron_api::{Callback, iron_api};
 use iron_math::V2;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
+use std::rc::Rc;
 
 /// One gamepad. Buttons and axes by name, in the order they were first reported.
 #[derive(Default, Clone)]
@@ -83,7 +85,88 @@ impl State {
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State::default());
+    /// One input state per event domain (one per window family); the main domain's is the one
+    /// single-window games use. Script reads and the host's functions below act on the *current*
+    /// domain (`window::current_domain()`, the main one outside any window code); the `_in` twins
+    /// enter a domain first.
+    static DOMAINS: RefCell<BTreeMap<u32, Rc<RefCell<State>>>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+/// The current domain's state, as `STATE.with(|s| ..)` (`s` is its `RefCell`).
+struct Store;
+static STATE: Store = Store;
+
+impl Store {
+    fn with<R>(&self, f: impl FnOnce(&RefCell<State>) -> R) -> R {
+        let d = window::current_domain().0;
+        let state = DOMAINS.with(|m| m.borrow_mut().entry(d).or_default().clone());
+        f(&state)
+    }
+}
+
+/// Runs `f` with domain `d` current: input reads and the host's input functions then act on `d`'s
+/// state (and its listeners run in `d`).
+pub fn in_domain<R>(d: DomainId, f: impl FnOnce() -> R) -> R {
+    let _g = window::enter_domain(d);
+    f()
+}
+
+/// [`key_down`] for domain `d`.
+pub fn key_down_in(d: DomainId, code: &str, repeat: bool) {
+    in_domain(d, || key_down(code, repeat));
+}
+
+/// [`key_up_event`] for domain `d`.
+pub fn key_up_in(d: DomainId, code: &str) {
+    in_domain(d, || key_up_event(code));
+}
+
+/// [`mouse_button_event`] for domain `d`.
+pub fn mouse_button_in(d: DomainId, button: usize, down: bool) {
+    in_domain(d, || mouse_button_event(button, down));
+}
+
+/// [`mouse_move`] for domain `d`.
+pub fn mouse_move_in(d: DomainId, x: f32, y: f32) {
+    in_domain(d, || mouse_move(x, y));
+}
+
+/// [`mouse_delta`] for domain `d`.
+pub fn mouse_delta_in(d: DomainId, dx: f64, dy: f64) {
+    in_domain(d, || mouse_delta(dx, dy));
+}
+
+/// [`wheel`] for domain `d`.
+pub fn wheel_in(d: DomainId, dx: f64, dy: f64) {
+    in_domain(d, || wheel(dx, dy));
+}
+
+/// [`blur`] for domain `d`: its keys are let go.
+pub fn blur_domain(d: DomainId) {
+    in_domain(d, blur);
+}
+
+/// [`tick`] for domain `d`: what arrived since its last tick becomes "this frame" for it only.
+pub fn tick_domain(d: DomainId) {
+    in_domain(d, tick);
+}
+
+/// Gamepads have no window: the host sends their events to the focused domain (the main one when
+/// none is focused) with these.
+pub fn gamepad_connected_in(d: DomainId, id: i64, name: &str) {
+    in_domain(d, || gamepad_connected(id, name));
+}
+
+pub fn gamepad_disconnected_in(d: DomainId, id: i64) {
+    in_domain(d, || gamepad_disconnected(id));
+}
+
+pub fn gamepad_button_in(d: DomainId, id: i64, button: &str, value: f64) {
+    in_domain(d, || gamepad_button(id, button, value));
+}
+
+pub fn gamepad_axis_in(d: DomainId, id: i64, axis: &str, value: f64) {
+    in_domain(d, || gamepad_axis(id, axis, value));
 }
 
 /// A key went down (a repeat of a held key is not a new press).
@@ -254,9 +337,11 @@ pub fn tick() {
     });
 }
 
-/// Forgets everything (a test).
+/// Forgets everything, every domain's (a test; a reload).
 pub fn reset() {
-    STATE.with(|s| *s.borrow_mut() = State::default());
+    // Dropped outside the borrow: listeners are closures that may hold anything.
+    let old = DOMAINS.with(|m| std::mem::take(&mut *m.borrow_mut()));
+    drop(old);
 }
 
 /// Keys and pad parts of the virtual axes (Unity's defaults): negative keys, positive keys, the
