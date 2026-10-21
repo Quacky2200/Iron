@@ -163,8 +163,9 @@ The engine API enforces the separation:
 > - `input` reads the keys, mouse and gamepads of the **window family whose code is running**. Inside an isolated window's turn
 >   (`win.run(..)`, its timers, message handlers, UI events) it is that window's; everywhere else it is the main window's.
 > - **Main-game components (`onUpdate`, ...) always read the main window's input**, even while another window is focused. They do
->   not see the Inspector's keys, and they keep running or pause according to `Application.runInBackground` (default on), not
->   according to which window has focus.
+>   not see the Inspector's keys, and they keep running or pause according to `Application.runInBackground` (**default off**: the main game pauses when the app loses focus, i.e. when no window of the main
+>   family is focused, unless you turn it on), not according to which of the main family's windows has focus. An isolated window's
+>   own `runInBackground` option (default true) decides whether *its* timers keep running while it is unfocused.
 > - An isolated window's keys **never reach the main `input`**. To tell the game about a key, send a message.
 > - **Focus loss clears the held keys** of that domain, so a key released in another window does not stay stuck.
 > - QuickJS promise jobs (`await` continuations) and other callbacks with no domain tag read the **main** domain's input, even if

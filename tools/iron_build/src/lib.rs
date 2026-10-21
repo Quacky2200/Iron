@@ -889,7 +889,7 @@ mod tests {
             assert_eq!(proj.license, "private");
             assert!(!proj.title.is_empty());
         }
-        assert_eq!(games, 19);
+        assert_eq!(games, 20);
     }
 
     // M9-TS-2307
