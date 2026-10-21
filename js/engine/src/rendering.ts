@@ -1163,6 +1163,28 @@ export class Light extends Component {
 
 let ambient = new Color(0.2, 0.2, 0.22);
 
+/**
+ * What the world renderer drew and skipped in the last frame, over every camera, mirror and
+ * reflection probe (like Unity's rendering statistics). Read-only; the engine updates it.
+ */
+export const RenderStats = {
+  meshes: 0,
+  /** Meshes left out: outside a camera's view or hidden by fog. */
+  culledMeshes: 0,
+  quads: 0,
+  culledQuads: 0,
+  /** Of the culled meshes and quads, those `RenderSettings.fogCulling` skipped. */
+  fogCulled: 0,
+  lights: 0,
+  culledLights: 0,
+  /** Shadow map layers drawn. */
+  shadowMaps: 0,
+};
+
+globalThis.__iron_render_stats = (...n: number[]) => {
+  [RenderStats.meshes, RenderStats.culledMeshes, RenderStats.quads, RenderStats.culledQuads, RenderStats.fogCulled, RenderStats.lights, RenderStats.culledLights, RenderStats.shadowMaps] = n.map((v) => v ?? 0) as [number, number, number, number, number, number, number, number];
+};
+
 /** Unity's Bloom: bright things (emission, hot lights) glow onto their surroundings. */
 export interface BloomSettings {
   /** Linear brightness where glowing starts (1: only what's brighter than white). */
@@ -1224,6 +1246,7 @@ export interface HeightFogSettings {
 }
 
 let heightFog: HeightFogSettings | null = null;
+let fogCulling = true;
 
 /**
  * Light shafts (volumetric fog): lights shining through the fog light it up, cut by their
@@ -1260,7 +1283,7 @@ function sendFog(): void {
   const v = volumetricFog;
   const a = v?.albedo;
   const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1] : null;
-  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts);
+  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
 }
 
 let skybox: ProceduralSky | null = null;
@@ -1415,6 +1438,20 @@ export const RenderSettings = {
   },
   set heightFog(h: HeightFogSettings | null) {
     heightFog = h ? { ...h } : null;
+    if (fog) sendFog();
+  },
+  /**
+   * Skip drawing what lies wholly past where the distance fog hides everything (on by
+   * default): linear fog's end, about 5.5 / density for exponential fog, 2.35 / density for
+   * squared. With the camera's background in `fogColor` nothing changes on screen; with
+   * another background, things past it would have shown as fog-coloured silhouettes.
+   * `RenderStats.fogCulled` counts what it saved.
+   */
+  get fogCulling(): boolean {
+    return fogCulling;
+  },
+  set fogCulling(on: boolean) {
+    fogCulling = on;
     if (fog) sendFog();
   },
   /** Light shafts in the fog, while `fog` is on (`null`: none, the default). */

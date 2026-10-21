@@ -1462,6 +1462,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
             culled_meshes: 2,
             quads: 0,
             culled_quads: 1,
+            fog_culled: 0,
             lights: 1,
             culled_lights: 1,
             shadow_maps: 1,
@@ -2690,6 +2691,9 @@ fn fog_modes_fade_things_towards_the_fog_colour_with_distance() {
             color: fog_color,
             start: 5.0,
             end: 40.0,
+            // The cube past the end shows as a fog-coloured silhouette (here, against a
+            // background of another colour), so nothing is culled.
+            cull: false,
             ..Default::default()
         }),
         Some(Fog {
@@ -3132,6 +3136,115 @@ fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
         "the soft top: {edge:?}"
     );
     assert_golden("M7-FOG-06", size.0, size.1, &pixels, 3);
+}
+
+// M7-FOG-07
+#[test]
+fn fog_culls_what_it_hides_and_counts_it() {
+    use iron_render::{
+        Fog, FogMode, MeshInstance, Projection, WorldStats, WorldView, primitive_id,
+    };
+    let gpu = shared_gpu();
+    let size = (64, 64);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let fog = [0.5, 0.6, 0.7];
+    let camera = WorldCamera::new(
+        Mat4::IDENTITY,
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+        0.1,
+        500.0,
+        size,
+        Color::rgb(0.5, 0.6, 0.7),
+    );
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    // Cubes straight ahead at 10, 30, 50 and 200 m, and quads at 10 and 200 m.
+    v.meshes = [10.0f32, 30.0, 50.0, 200.0]
+        .iter()
+        .map(|&d| MeshInstance {
+            mesh: primitive_id("cube").unwrap(),
+            model: Mat4::from_translation(Vec3::new(0.0, 0.0, -d)),
+            color: [1.0, 0.0, 0.0, 1.0],
+            unlit: true,
+            ..Default::default()
+        })
+        .collect();
+    v.quads = [10.0f32, 200.0]
+        .iter()
+        .map(|&d| {
+            WorldQuad::colored(
+                Mat4::from_translation(Vec3::new(0.0, 0.0, -d)),
+                [0.0, 1.0, 0.0, 0.5],
+            )
+        })
+        .collect();
+    let stats = |fog: Option<Fog>| {
+        let mut world = WorldRenderer::new(&gpu);
+        let mut v = v.clone();
+        v.fog = fog;
+        world.render_views(&gpu, &rt, &[v], &[]);
+        world.stats()
+    };
+    // Linear fog ending at 40 m hides the cubes at 50 and 200 m and the far quad.
+    let linear = Fog {
+        mode: FogMode::Linear,
+        color: fog,
+        start: 5.0,
+        end: 40.0,
+        ..Default::default()
+    };
+    let s = stats(Some(linear));
+    assert_eq!(
+        (
+            s.meshes,
+            s.culled_meshes,
+            s.quads,
+            s.culled_quads,
+            s.fog_culled
+        ),
+        (2, 2, 1, 1, 3),
+        "{s:?}"
+    );
+    // Exponential squared at 0.02 per metre is opaque at about 117 m.
+    let squared = Fog {
+        mode: FogMode::ExponentialSquared,
+        color: fog,
+        density: 0.02,
+        ..Default::default()
+    };
+    let d = squared.cull_distance().unwrap();
+    assert!((d - 117.7).abs() < 0.5, "{d}");
+    assert_eq!(stats(Some(squared)).fog_culled, 2);
+    // Culling off, no fog, or no density: nothing is hidden.
+    let s = stats(Some(Fog {
+        cull: false,
+        ..linear
+    }));
+    assert_eq!((s.meshes, s.fog_culled), (4, 0));
+    assert_eq!(
+        stats(None),
+        WorldStats {
+            meshes: 4,
+            quads: 2,
+            ..Default::default()
+        }
+    );
+    let thin = Fog {
+        mode: FogMode::Exponential,
+        density: 0.0,
+        ..Default::default()
+    };
+    assert_eq!(thin.cull_distance(), None);
+    assert_eq!(stats(Some(thin)).fog_culled, 0);
 }
 
 // M7-FOG-02

@@ -50,6 +50,7 @@ declare global {
   // After each fixed tick: moved bodies, contacts, raycast answers, characters (physics.ts).
   // The screen size in UI pixels and the scale (screen.ts).
   var __iron_screen: (width: number, height: number, scale: number) => void;
+  var __iron_render_stats: (...counts: number[]) => void;
   // Objects the engine moved (scene.ts).
   var __iron_scene: (moved: number[]) => void;
   var __iron_flush: () => void;

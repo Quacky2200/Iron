@@ -1192,8 +1192,8 @@ impl WorldViews {
                 };
             }
             // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end
-            // [heightDensity baseHeight falloff]|null [intensity anisotropy steps distance]|null`;
-            // `fog 0 null` clears the air.
+            // [heightDensity baseHeight falloff]|null [intensity anisotropy steps distance r g
+            // b]|null cull`; `fog 0 null` clears the air.
             "fog" => {
                 self.fog = match args.get(1) {
                     Some(Value::Null) | None => None,
@@ -1227,6 +1227,7 @@ impl WorldViews {
                                 },
                             }
                         }),
+                        cull: !matches!(args.get(8), Some(Value::Bool(false))),
                     }),
                 };
             }
@@ -2325,6 +2326,7 @@ mod tests {
                 end: 80.0,
                 height: None,
                 volumetric: None,
+                cull: true,
             })
         );
         // Height fog comes as a seventh argument (M7-FOG-04).

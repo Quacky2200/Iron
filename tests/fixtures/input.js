@@ -3021,6 +3021,19 @@ ${err.stack}` : ""}`);
     }
   }
   var ambient = new Color(0.2, 0.2, 0.22);
+  var RenderStats = {
+    meshes: 0,
+    culledMeshes: 0,
+    quads: 0,
+    culledQuads: 0,
+    fogCulled: 0,
+    lights: 0,
+    culledLights: 0,
+    shadowMaps: 0
+  };
+  globalThis.__iron_render_stats = (...n) => {
+    [RenderStats.meshes, RenderStats.culledMeshes, RenderStats.quads, RenderStats.culledQuads, RenderStats.fogCulled, RenderStats.lights, RenderStats.culledLights, RenderStats.shadowMaps] = n.map((v) => v ?? 0);
+  };
   var bloom = null;
   var tonemapping = "none";
   var postExposure = 0;
@@ -3032,6 +3045,7 @@ ${err.stack}` : ""}`);
   var fogStart = 0;
   var fogEnd = 300;
   var heightFog = null;
+  var fogCulling = true;
   var volumetricFog = null;
   function sendFog() {
     if (!fog) {
@@ -3042,7 +3056,7 @@ ${err.stack}` : ""}`);
     const v = volumetricFog;
     const a = v?.albedo;
     const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1] : null;
-    __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts);
+    __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
   }
   var skybox = null;
   var ambientMode = "skybox";
@@ -3164,6 +3178,14 @@ ${err.stack}` : ""}`);
     },
     set heightFog(h) {
       heightFog = h ? { ...h } : null;
+      if (fog)
+        sendFog();
+    },
+    get fogCulling() {
+      return fogCulling;
+    },
+    set fogCulling(on) {
+      fogCulling = on;
       if (fog)
         sendFog();
     },
@@ -7643,7 +7665,8 @@ ${err.stack}` : ""}`);
       fogStartDistance: RenderSettings.fogStartDistance,
       fogEndDistance: RenderSettings.fogEndDistance,
       heightFog: RenderSettings.heightFog,
-      volumetricFog: RenderSettings.volumetricFog
+      volumetricFog: RenderSettings.volumetricFog,
+      fogCulling: RenderSettings.fogCulling
     }, "renderSettings");
   }
   function applyRenderSettings(saved) {
@@ -7672,6 +7695,8 @@ ${err.stack}` : ""}`);
       RenderSettings.heightFog = s.heightFog ?? null;
     if ("volumetricFog" in s)
       RenderSettings.volumetricFog = s.volumetricFog ?? null;
+    if (typeof s.fogCulling === "boolean")
+      RenderSettings.fogCulling = s.fogCulling;
     if (typeof s.fog === "boolean")
       RenderSettings.fog = s.fog;
   }

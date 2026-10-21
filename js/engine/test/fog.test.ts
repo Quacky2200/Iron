@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, Color, FogVolume, GameObject, Light, RenderSettings, SceneManager, Vector3 } from "../src/index.ts";
+import { Camera, Color, FogVolume, GameObject, Light, RenderSettings, RenderStats, SceneManager, Vector3 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 import type { SceneData } from "../src/scenes.ts";
@@ -24,6 +24,7 @@ afterEach(() => {
   RenderSettings.fogEndDistance = 300;
   RenderSettings.heightFog = null;
   RenderSettings.volumetricFog = null;
+  RenderSettings.fogCulling = true;
   delete (globalThis as { __iron_op?: unknown }).__iron_op;
 });
 
@@ -38,10 +39,10 @@ describe("fog", () => {
     RenderSettings.fogMode = "linear";
     expect(fogOps()).toEqual([]);
     RenderSettings.fog = true;
-    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 0, 300, null, null]);
+    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 0, 300, null, null, true]);
     RenderSettings.fogStartDistance = 10;
     RenderSettings.fogEndDistance = 50;
-    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 10, 50, null, null]);
+    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.2, 0.3, 0.4], 0.01, 10, 50, null, null, true]);
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogDensity = -1;
     expect(RenderSettings.fogDensity).toBe(0);
@@ -52,8 +53,20 @@ describe("fog", () => {
     // Light shafts too, with defaults for what's left out (M7-FOG-05).
     RenderSettings.volumetricFog = { steps: 8 };
     expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 8, 50, 1, 1, 1]);
+    // Culling past the fog (M7-FOG-07).
+    RenderSettings.fogCulling = false;
+    expect(fogOps().at(-1)!.at(-1)).toBe(false);
     RenderSettings.fog = false;
     expect(fogOps().at(-1)).toEqual(["render.fog", 0, null]);
+  });
+
+  // M7-FOG-07
+  test("RenderStats follow what the engine reports", () => {
+    globalThis.__iron_render_stats(10, 4, 2, 1, 3, 5, 0, 2);
+    expect(RenderStats.meshes).toBe(10);
+    expect(RenderStats.culledMeshes).toBe(4);
+    expect(RenderStats.fogCulled).toBe(3);
+    expect(RenderStats.shadowMaps).toBe(2);
   });
 
   test("cameras show the fog unless they opt out", () => {
@@ -108,6 +121,6 @@ describe("fog", () => {
     SceneManager.loadScene(json);
     expect(RenderSettings.fog).toBe(true);
     expect(RenderSettings.fogColor.g).toBeCloseTo(0.2);
-    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.1, 0.2, 0.3], 0.01, 5, 25, [0.2, 1, 0.3], null]);
+    expect(fogOps().at(-1)).toEqual(["render.fog", 0, "linear", [0.1, 0.2, 0.3], 0.01, 5, 25, [0.2, 1, 0.3], null, true]);
   });
 });

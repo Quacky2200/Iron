@@ -1459,6 +1459,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     menu
   - [x] Light shafts' albedo (`volumetricFog.albedo`, separate from `fogColor`, so dark night
     fog still glows under a lamp) and ellipsoid fog volumes (`FogVolume.shape`) (2026-10-21)
+  - [x] Fog culling (2026-10-21): meshes, quads and local lights wholly past where the
+    distance fog is opaque aren't drawn (`RenderSettings.fogCulling`, on by default), counted
+    in `WorldStats::fog_culled`; scripts read the renderer's stats as `RenderStats`
+    (`M7-FOG-07`)
+  - [ ] `examples/fog-world`: an endless, streamed block world whose render distance is the fog
   - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
     2026-10-21): a third-person character on a bright white floor of glowing grid tiles under
     a grey cloudy sky, everything fading into white fog a few tiles away. The floor moves with

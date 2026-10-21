@@ -570,6 +570,28 @@ pub struct Fog {
     pub height: Option<HeightFog>,
     /// Lights shining through the fog: light shafts.
     pub volumetric: Option<VolumetricFog>,
+    /// Skip meshes, quads and lights wholly beyond [`Fog::cull_distance`]: the fog hides
+    /// them anyway (unless the background isn't the fog's colour: then they'd have shown
+    /// as fog-coloured silhouettes).
+    pub cull: bool,
+}
+
+/// Fog lets through less than this of what's behind it at its cull distance: under one
+/// step of an 8-bit colour.
+const FOG_OPAQUE: f32 = 1.0 / 255.0;
+
+impl Fog {
+    /// How far away the distance fog hides everything (`None`: it never does). Height fog
+    /// and fog volumes only add fog, so they never bring anything back.
+    pub fn cull_distance(&self) -> Option<f32> {
+        let clear = -FOG_OPAQUE.ln();
+        let d = match self.mode {
+            FogMode::Linear => (self.end > self.start).then_some(self.end)?,
+            FogMode::Exponential => clear / self.density,
+            FogMode::ExponentialSquared => clear.sqrt() / self.density,
+        };
+        (d.is_finite() && d > 0.0).then_some(d)
+    }
 }
 
 /// Light scattered by the fog towards the camera, cut by shadows: shafts where the sun
@@ -617,6 +639,7 @@ impl Default for Fog {
             end: 300.0,
             height: None,
             volumetric: None,
+            cull: true,
         }
     }
 }
@@ -850,7 +873,12 @@ impl GpuGlobals {
             *gpu = GpuFogVolume {
                 centre: [c.x, c.y, c.z, v.density.max(0.0)],
                 half: [h.x, h.y, h.z, v.blend.max(0.0)],
-                color: [v.color[0], v.color[1], v.color[2], f32::from(u8::from(v.ellipsoid))],
+                color: [
+                    v.color[0],
+                    v.color[1],
+                    v.color[2],
+                    f32::from(u8::from(v.ellipsoid)),
+                ],
             };
         }
         self.fog_local = [n as f32, 0.0, 0.0, 0.0];
@@ -928,6 +956,8 @@ pub struct WorldStats {
     pub culled_meshes: usize,
     pub quads: usize,
     pub culled_quads: usize,
+    /// Of the culled meshes and quads, those the fog hid ([`Fog::cull`]).
+    pub fog_culled: usize,
     pub lights: usize,
     pub culled_lights: usize,
     /// Shadow map layers drawn (once a frame, shared by every view).
@@ -2981,13 +3011,21 @@ impl WorldRenderer {
             };
             let known = |m: &&MeshInstance| self.meshes.contains_key(&m.mesh);
             let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
+            // Past the fog's cull distance nothing shows (measured as the fog is).
+            let fog_reach = view
+                .fog
+                .filter(|f| f.cull)
+                .and_then(|f| f.cull_distance())
+                .map(|d| cull::FogReach::new(&view.camera, d));
+            let fogged = |b: (Vec3, Vec3), model: Mat4| {
+                fog_reach.is_some_and(|r| r.hides(cull::transform_aabb(b.0, b.1, model)))
+            };
             // Skinned meshes move with their bones, away from their bounds: always drawn.
             let sees = |m: &MeshInstance| {
                 m.bones.is_some()
-                    || self
-                        .meshes
-                        .get(&m.mesh)
-                        .is_none_or(|b| frustum.transformed(b.bounds, m.model))
+                    || self.meshes.get(&m.mesh).is_none_or(|b| {
+                        frustum.transformed(b.bounds, m.model) && !fogged(b.bounds, m.model)
+                    })
             };
             // Opaque meshes, grouped by mesh and texture (instancing).
             let mut opaque: Vec<&MeshInstance> = view
@@ -3051,7 +3089,10 @@ impl WorldRenderer {
                 .chain(
                     view.quads
                         .iter()
-                        .filter(|q| frustum.transformed(cull::QUAD_BOUNDS, q.model))
+                        .filter(|q| {
+                            frustum.transformed(cull::QUAD_BOUNDS, q.model)
+                                && !fogged(cull::QUAD_BOUNDS, q.model)
+                        })
                         .map(|q| (q.order, depth_of(q.model), Item::Quad(q))),
                 )
                 .collect();
@@ -3127,7 +3168,14 @@ impl WorldRenderer {
                 .iter()
                 .enumerate()
                 .filter(|(_, l)| {
-                    l.kind == LightKind::Directional || frustum.sphere(l.position, l.range)
+                    l.kind == LightKind::Directional
+                        || (frustum.sphere(l.position, l.range)
+                            && !fog_reach.is_some_and(|r| {
+                                r.hides((
+                                    l.position - Vec3::splat(l.range),
+                                    l.position + Vec3::splat(l.range),
+                                ))
+                            }))
                 })
                 .map(|(i, _)| i)
                 .collect();
@@ -3146,6 +3194,27 @@ impl WorldRenderer {
             self.stats.culled_meshes += all_meshes - drawn;
             self.stats.quads += drawn_quads;
             self.stats.culled_quads += view.quads.len() - drawn_quads;
+            if fog_reach.is_some() {
+                // In view but hidden by the fog.
+                self.stats.fog_culled += view
+                    .meshes
+                    .iter()
+                    .filter(known)
+                    .filter(|m| m.bones.is_none())
+                    .filter(|m| {
+                        let b = self.meshes[&m.mesh].bounds;
+                        frustum.transformed(b, m.model) && fogged(b, m.model)
+                    })
+                    .count()
+                    + view
+                        .quads
+                        .iter()
+                        .filter(|q| {
+                            frustum.transformed(cull::QUAD_BOUNDS, q.model)
+                                && fogged(cull::QUAD_BOUNDS, q.model)
+                        })
+                        .count();
+            }
             self.stats.lights += kept.len();
             self.stats.culled_lights += view.lights.len() - kept.len();
             let first_light = lights.len() as u32;

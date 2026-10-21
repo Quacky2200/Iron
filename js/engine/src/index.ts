@@ -175,6 +175,7 @@ export {
   type HeightFogSettings,
   type VolumetricFogSettings,
   RenderSettings,
+  RenderStats,
   type ProceduralSky,
   type LightShadows,
   WorldPanel,

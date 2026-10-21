@@ -283,6 +283,7 @@ fn run() -> Result<()> {
         sheet_sources: game_css_source.into_iter().collect(),
         font_sources: Vec::new(),
         screen: (0.0, 0.0, 0.0),
+        render_stats: iron_render::WorldStats::default(),
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
@@ -415,6 +416,8 @@ struct App {
     scene_events: bool,
     /// The screen size in UI pixels and the UI scale, as last told to scripts.
     screen: (f32, f32, f32),
+    /// The world renderer's last stats, as last told to scripts (`RenderStats`).
+    render_stats: iron_render::WorldStats,
     /// React UI on planes in the world (`WorldPanel`s), each with its own tree.
     panels: panels::Panels,
     /// The surface under the pointer (or holding it while a button is down), and the one
@@ -1980,6 +1983,23 @@ impl PlatformApp for App {
             let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
             // Games without @iron/engine's Screen don't have the hook.
             let _ = self.scripts.call_global("__iron_screen", &args);
+        }
+        // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
+        let stats = gfx.world.stats();
+        if self.render_stats != stats {
+            self.render_stats = stats;
+            let args = [
+                stats.meshes,
+                stats.culled_meshes,
+                stats.quads,
+                stats.culled_quads,
+                stats.fog_culled,
+                stats.lights,
+                stats.culled_lights,
+                stats.shadow_maps,
+            ]
+            .map(|v| iron_core::Value::Number(v as f64));
+            let _ = self.scripts.call_global("__iron_render_stats", &args);
         }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
         let dark = gfx.window.theme() == Some(iron_platform::Theme::Dark);
