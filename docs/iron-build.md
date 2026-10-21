@@ -21,12 +21,22 @@ cargo run -p iron_build -- build ../examples/hello
 ## `project.json`: the project file
 
 A game's product metadata lives in `project.json` in the game folder (`iron_core::project`, shared by `iron-build` and `iron_app`).
-The examples' `package.json` files hold only `name`, `version`, `private` and `type` (no scripts or dependencies: `iron-build` builds them and
-plain `tsc` cannot check them, since the engine names are globals from the generated `types/iron.d.ts`; use `iron-build check --tsc`).
-`package.json` stays for npm-style things; its `iron` section is only the **fallback** for old projects: with no
-`project.json` the loader reads `package.json`'s `iron` section (without templates) plus its `name`, `version`, `author` and
-`description`. With a `project.json`, the `iron` section is ignored (`package.json` still gives `name`, `version`, `author` and
-`description` as defaults). A leading `//` comment line is allowed; otherwise plain JSON.
+`project.json` is the **only** game config: a game needs no `package.json` and no `node_modules` (the examples have none; `iron-build`
+builds them, and plain `tsc` cannot check them since the engine names are globals from the generated `types/iron.d.ts`: use
+`iron-build check --tsc`). A folder with a `project.json` is a game: `iron-build check <dir>` and the examples test find games that way.
+A leading `//` comment line is allowed; otherwise plain JSON.
+
+- **`name` is the only required field.** Without it (or with `"name": ""`) the load fails with an error naming the file.
+  `{ "name": "hello" }` is a complete project.
+- **An omitted field takes its default silently**: the title is `${firstName}'s Game`, the company `${firstName}'s Company`, the license
+  `private`, the version `0.1.0`, and so on (table below).
+- **An explicitly empty string stays empty** (`"company": ""`: no default is substituted). `iron-build build` and `iron-build package` print
+  one warning per empty metadata field (`title`, `company`, `identifier`, `version`, `description`, `copyright`, `license`), e.g.
+  `warning: C:\Games\fox\project.json: "company" is empty (the exe's version info will have no company)`. `iron-build check` never does.
+  `package` also warns (it never blocks) when `company`, `copyright` or `license` were left out and so still hold their defaults.
+- **Deprecated fallback:** a folder with no `project.json` but a `package.json` with an `iron` section still works: the loader reads that
+  section (without templates) plus the file's `name`, `version`, `author` and `description` (and the old defaults: title `${name}`, empty
+  company, version `0.0.0`). It is found as a game by `check` too. With a `project.json`, `package.json` is not read at all.
 
 ```json
 {
@@ -45,15 +55,15 @@ plain `tsc` cannot check them, since the engine names are globals from the gener
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` | `package.json` `name`, else the folder name | project name (`${name}`); not shown to players |
-| `title` | `${name}` | window title (the initial value; the game can change it at run time), `ProductName`, settings folder |
-| `company` | `package.json` `author`, else empty | `CompanyName`, settings folder |
+| `name` | **required** (in the deprecated `package.json` fallback: its `name`, else the folder name) | project name (`${name}`); not shown to players |
+| `title` | `${firstName}'s Game` | window title (the initial value; the game can change it at run time), `ProductName`, settings folder |
+| `company` | `${firstName}'s Company` | `CompanyName`, settings folder |
 | `identifier` | `dev.iron.${name}` | reverse-DNS id (`Application.identifier`); sanitised: each dot part keeps letters, digits, `-`, `_`, empty parts go, a part starting with a digit gets `_` |
-| `version` | `package.json` `version`, else `0.0.0` | `FileVersion`, `ProductVersion` |
-| `description` | `package.json` `description`, else `${title}` | `FileDescription` |
+| `version` | `0.1.0` | `FileVersion`, `ProductVersion` |
+| `description` | `${title}` | `FileDescription` |
 | `license` | `private` | `private` (all rights reserved), `custom`, or an SPDX id: MIT, Apache-2.0, GPL-2.0-only/-or-later, GPL-3.0-only/-or-later, LGPL-2.1-only, LGPL-3.0-only, AGPL-3.0-only, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unlicense, CC0-1.0, CC-BY-4.0, CC-BY-SA-4.0, Zlib, BSL-1.0, 0BSD (case-insensitive; `UNLICENSED` means `private`). Anything else is an error naming the file and line |
 | `licenseFile` | none | path of the license text (needed for `custom`) |
-| `copyright` | `Copyright (c) ${company}` (empty without a company) | `LegalCopyright` |
+| `copyright` | `Copyright (c) ${company}` (empty when the company is empty) | `LegalCopyright` |
 | `icon` | none | `.png` (any size) or `.ico`, relative to the project |
 | `exe` | `${title}` made file-name safe (quotes dropped) | file name, `InternalName`, `OriginalFilename` |
 | `main` | first of `src/main.tsx`, `src/main.ts`, `src/index.tsx`, ... | entry file |
@@ -110,7 +120,7 @@ as the templates resolve now:
 
 ## What a build does
 
-1. **Config.** `project.json` (else `package.json` `iron`, see "`project.json`") -> `title`, `company`, `identifier`, `main`; `tsconfig.json` (comments and trailing commas allowed)
+1. **Config.** `project.json` (deprecated fallback: `package.json` `iron`, see "`project.json`") -> `title`, `company`, `identifier`, `main`; `tsconfig.json` (comments and trailing commas allowed)
    -> `include` (default `src`) and `compilerOptions.jsx`. The entry is `main`, else the first of `src/main.tsx`, `src/main.ts`,
    `src/index.tsx`, `src/index.ts`, `main.tsx`, `main.ts`.
 2. **Module graph** (`iron_ts::modules`, below): the entry and every file it imports become one source text.
@@ -313,12 +323,12 @@ a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much
 
 | Field | `iron.` key / flag | Falls back to | Used for |
 |---|---|---|---|
-| title | `title` / `--title` | `name` | window title, `ProductName`, settings folder |
+| title | `title` / `--title` | `${firstName}'s Game` | window title, `ProductName`, settings folder |
 | exe | `exe` / `--exe` | the title (made file-name safe; `.exe` is dropped) | file name, `InternalName`, `OriginalFilename` |
-| company | `company` / `--company` | `author` | `CompanyName`, settings folder |
-| version | `version` / `--version` | `version` of package.json, else `0.0.0` | `FileVersion`, `ProductVersion` (`1.2.3` -> 1.2.3.0; a `-pre` suffix is dropped from the numbers, kept in the text) |
-| copyright | `copyright` / `--copyright` | `Copyright (c) <company>` (empty without a company) | `LegalCopyright` |
-| description | `description` / `--description` | `description` of package.json, else the title | `FileDescription` (what Task Manager shows) |
+| company | `company` / `--company` | `${firstName}'s Company` | `CompanyName`, settings folder |
+| version | `version` / `--version` | `0.1.0` | `FileVersion`, `ProductVersion` (`1.2.3` -> 1.2.3.0; a `-pre` suffix is dropped from the numbers, kept in the text) |
+| copyright | `copyright` / `--copyright` | `Copyright (c) <company>` (empty when the company is empty) | `LegalCopyright` |
+| description | `description` / `--description` | the title | `FileDescription` (what Task Manager shows) |
 | icon | `icon` / `--icon` | none (the host's own icon stays) | exe icon; window and taskbar icon at run time |
 | identifier | `identifier` | `dev.iron.<name>` | `Application.identifier` |
 
@@ -427,7 +437,7 @@ unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built 
 `M9-API-1200..1204` the asset root (`iron_app/src/asset_root.rs`), `M9-TS-2600..2603` the payload/data split, the data-folder name and
 `--data-dir` / `--no-data`, `2610` (ignored, `-- --ignored standalone_data`) a packaged game reading `data/` and the missing-folder error.
 
-`M9-API-1300..1318` the project loader (`iron_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples.
+`M9-API-1300..1318` the project loader (`iron_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license, required `name`, silent defaults, empty fields: `1321..1322`), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples (found by `project.json`, none has a `package.json`), `2722` and `2724` the empty-field warnings (build, package; not check), `2723` package default warnings, `2725` game discovery.
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
 full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck:examples` (`iron-build check ../examples --tsc`, from `tools`)

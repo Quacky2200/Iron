@@ -168,15 +168,7 @@ fn main() {
 
 /// Builds every game folder in `dir` and prints one row each; exit code 1 when one failed.
 fn check(dir: &Path, opts: &Options) -> i32 {
-    let mut games: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.path())
-                .filter(|p| p.join("package.json").exists() || p.join("project.json").exists())
-                .collect()
-        })
-        .unwrap_or_default();
-    games.sort();
+    let games: Vec<PathBuf> = iron_build::find_games(dir);
     if games.is_empty() {
         eprintln!("no games in {}", dir.display());
         return 2;

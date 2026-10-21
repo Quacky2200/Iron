@@ -1,7 +1,7 @@
 //! `iron-build`: builds a game written in TypeScript into `dist/` for `iron_app`, with no bun and no
 //! `node_modules` (see `docs/iron-build.md`).
 //!
-//! A build reads `project.json` (else the `iron` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
+//! A build reads `project.json` (deprecated fallback: the `iron` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
 //! entry file (`iron_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
 //! bundle with all engine manifests (so errors are found now, not when the game starts), and writes
 //! `dist/game.irbundle` (the resolved source, the CSS and asset lists), `dist/game.css`, and the assets
@@ -32,6 +32,33 @@ pub struct GameConfig {
     pub include: Vec<String>,
     pub jsx: Option<String>,
     pub has_tsconfig: bool,
+    /// One warning per metadata field `project.json` leaves empty on purpose (`build` and
+    /// `package` print them, `check` does not).
+    pub empty_field_warnings: Vec<String>,
+}
+
+/// A folder is a game when it has a `project.json`. The deprecated fallback: a `package.json`
+/// with an `iron` section.
+pub fn is_game(dir: &Path) -> bool {
+    dir.join(iron_core::project::PROJECT_FILE).is_file()
+        || std::fs::read_to_string(dir.join("package.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .is_some_and(|v| v.get("iron").is_some())
+}
+
+/// The games directly inside `dir` (see [`is_game`]), sorted by path.
+pub fn find_games(dir: &Path) -> Vec<PathBuf> {
+    let mut games: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| is_game(p))
+                .collect()
+        })
+        .unwrap_or_default();
+    games.sort();
+    games
 }
 
 impl GameConfig {
@@ -43,6 +70,7 @@ impl GameConfig {
         )
         .map_err(|e| e.to_string())?;
         let name = project.name.clone();
+        let empty_field_warnings = project.empty_field_warnings();
         let ts_path = root.join("tsconfig.json");
         let ts: serde_json::Value = std::fs::read_to_string(&ts_path)
             .ok()
@@ -86,6 +114,7 @@ impl GameConfig {
             include,
             jsx: ts["compilerOptions"]["jsx"].as_str().map(String::from),
             has_tsconfig: ts_path.exists(),
+            empty_field_warnings,
         })
     }
 }
@@ -365,7 +394,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     // The engine's global names stay the engine's: a module's own `class Random` is renamed.
     let reserved = iron_ts::modules::global_names(&types_dts()?);
     let bundle = iron_ts::modules::bundle_reserving(&entry, &reserved)?;
-    let mut warnings = Vec::new();
+    let mut warnings = config.empty_field_warnings.clone();
 
     let tsc = if opts.no_tsc || !config.has_tsconfig {
         Tsc::Skipped
@@ -534,7 +563,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             d.join("project.json"),
-            r#"{"title":"T ${env:IRON_NO_SUCH_VAR_2720:-ok}","identifier":"dev.x.g","main":"src/app.ts"}"#,
+            r#"{"name":"g","title":"T ${env:IRON_NO_SUCH_VAR_2720:-ok}","identifier":"dev.x.g","main":"src/app.ts"}"#,
         )
         .unwrap();
         let c = GameConfig::load(&d).unwrap();
@@ -543,10 +572,14 @@ mod tests {
             ("T ok", "dev.x.g", "src/app.ts")
         );
         // A typo in a template stops the build and names the file and line.
-        std::fs::write(d.join("project.json"), "{\n  \"title\": \"${titel}\"\n}").unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            "{\n  \"name\": \"g\",\n  \"title\": \"${titel}\"\n}",
+        )
+        .unwrap();
         let e = GameConfig::load(&d).unwrap_err();
         assert!(
-            e.contains("project.json:2:") && e.contains("unknown variable"),
+            e.contains("project.json:3:") && e.contains("unknown variable"),
             "{e}"
         );
         let _ = std::fs::remove_dir_all(&d);
@@ -899,7 +932,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
 
     // M9-TS-2721
     #[test]
-    fn every_example_has_a_project_json_and_package_json_has_no_iron_section() {
+    fn every_example_is_found_by_its_project_json_and_has_no_package_json() {
         let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let user = iron_core::project::FixedUser {
             username: "tester".into(),
@@ -907,19 +940,13 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
             ..Default::default()
         };
         let mut games = 0;
-        for e in std::fs::read_dir(&examples).unwrap().flatten() {
-            let p = e.path();
-            if !p.join("package.json").exists() {
-                continue;
-            }
+        for p in find_games(&examples) {
             games += 1;
             let name = p.file_name().unwrap().to_string_lossy().to_string();
-            let pkg: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(p.join("package.json")).unwrap())
-                    .unwrap();
+            assert!(p.join("project.json").is_file(), "{name}");
             assert!(
-                pkg.get("iron").is_none(),
-                "{name}: package.json still has `iron`"
+                !p.join("package.json").exists(),
+                "{name}: games need no package.json"
             );
             let proj = iron_core::project::Project::load(
                 &p,
@@ -948,11 +975,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
             return;
         };
         let mut games = 0;
-        for e in std::fs::read_dir(&examples).unwrap().flatten() {
-            let p = e.path();
-            if !p.join("package.json").exists() {
-                continue;
-            }
+        for p in find_games(&examples) {
             games += 1;
             let r = build(
                 &p,
@@ -989,5 +1012,67 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
                 }
             }
         }
+    }
+
+    // M9-TS-2722
+    #[test]
+    fn empty_metadata_fields_warn_in_a_build_and_nothing_is_blocked() {
+        let d = temp("emptywarn");
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("src/main.ts"), "export const a = 1;").unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            r#"{ "name": "g", "company": "", "copyright": "" }"#,
+        )
+        .unwrap();
+        let r = build(
+            &d,
+            &Options {
+                no_tsc: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.warnings.len(), 2, "{:?}", r.warnings);
+        assert!(
+            r.warnings[0].ends_with(
+                "project.json: \"company\" is empty (the exe's version info will have no company)"
+            ),
+            "{:?}",
+            r.warnings
+        );
+        // Left out is not empty: no warning.
+        std::fs::write(d.join("project.json"), r#"{ "name": "g" }"#).unwrap();
+        let r = build(
+            &d,
+            &Options {
+                no_tsc: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2725
+    #[test]
+    fn games_are_found_by_project_json_and_the_package_json_fallback() {
+        let d = temp("discover");
+        for (dir, file, text) in [
+            ("a", "project.json", r#"{ "name": "a" }"#),
+            ("b", "package.json", r#"{ "name": "b", "iron": {} }"#),
+            ("c", "package.json", r#"{ "name": "c" }"#),
+            ("d", "tsconfig.json", "{}"),
+        ] {
+            std::fs::create_dir_all(d.join(dir)).unwrap();
+            std::fs::write(d.join(dir).join(file), text).unwrap();
+        }
+        let names: Vec<String> = find_games(&d)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["a", "b"]);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

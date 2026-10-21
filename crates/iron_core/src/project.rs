@@ -7,7 +7,10 @@
 //! `${title}`, `${company}`, `${version}`, `${identifier}`, `${description}`, `${copyright}`,
 //! `${exe}`, and `${env:NAME}` / `${env:NAME:-fallback}`. `$${` writes a literal `${`. An unknown
 //! variable is an error that names the file and line. Platform sections (`"windows": { .. }`)
-//! override fields for that platform. Without a `project.json` the `iron` section of
+//! override fields for that platform. `name` is the only required field; an omitted field takes a
+//! default (`"title": "${firstName}'s Game"`, `"company": "${firstName}'s Company"`, license
+//! `private`, ...) and an explicitly empty string stays empty ([`Project::empty_fields`] lists
+//! them so the builder can warn). **Deprecated:** without a `project.json` the `iron` section of
 //! `package.json` (and its `name`, `version`, `author`, `description`) is used, without templates.
 //!
 //! A *resolved* project (`"resolved": true`, what [`Project::to_json`] writes and the packaged exe
@@ -287,6 +290,10 @@ pub struct Project {
     pub display: Value,
     /// Keys this version does not know, kept as they are.
     pub extra: Map<String, Value>,
+    /// Metadata fields (`title`, `company`, ...) the file sets to an empty string on purpose.
+    pub empty_fields: Vec<String>,
+    /// Fields the file leaves out that took their default (`project.json` only).
+    pub defaulted: Vec<String>,
     pub source: Source,
     /// The file the values came from.
     pub file: Option<PathBuf>,
@@ -462,6 +469,9 @@ struct Resolver<'a> {
     user: &'a dyn UserInfo,
     pkg: PackageDefaults,
     folder: String,
+    /// The `package.json` fallback (or no file): the old defaults, no required `name`.
+    legacy: bool,
+    defaulted: Vec<String>,
 }
 
 #[derive(Default)]
@@ -477,6 +487,14 @@ fn text(v: &Value) -> Option<String> {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
         _ => None,
+    }
+}
+
+/// Like [`text`], but an empty string is a value (a `project.json` field left empty on purpose).
+fn text_or_empty(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        other => text(other),
     }
 }
 
@@ -532,6 +550,15 @@ impl Resolver<'_> {
                 });
             }
             None => {}
+        }
+        if !self.legacy {
+            self.defaulted.push(key.to_owned());
+            match key {
+                "title" => return self.expand("${firstName}'s Game"),
+                "company" => return self.expand("${firstName}'s Company"),
+                "version" => return Ok("0.1.0".into()),
+                _ => {}
+            }
         }
         Ok(match key {
             "name" => self.pkg.name.clone().unwrap_or_else(|| self.folder.clone()),
@@ -737,20 +764,21 @@ impl Project {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "game".into());
-        let pkg_path = dir.join("package.json");
-        let pkg_text = std::fs::read_to_string(&pkg_path).ok();
-        let pkg: Value = match &pkg_text {
-            Some(t) => serde_json::from_str(t).map_err(|e| ProjectError {
-                file: pkg_path.display().to_string(),
-                line: e.line(),
-                col: e.column(),
-                message: e.to_string(),
-            })?,
-            None => Value::Null,
-        };
         let path = dir.join(PROJECT_FILE);
         let file = path.display().to_string();
         let Ok(text) = std::fs::read_to_string(&path) else {
+            // Deprecated fallback: the `iron` section of `package.json`.
+            let pkg_path = dir.join("package.json");
+            let pkg_text = std::fs::read_to_string(&pkg_path).ok();
+            let pkg: Value = match &pkg_text {
+                Some(t) => serde_json::from_str(t).map_err(|e| ProjectError {
+                    file: pkg_path.display().to_string(),
+                    line: e.line(),
+                    col: e.column(),
+                    message: e.to_string(),
+                })?,
+                None => Value::Null,
+            };
             let (doc, source, f) = match &pkg_text {
                 Some(_) => (
                     pkg["iron"].as_object().cloned().unwrap_or_default(),
@@ -779,7 +807,7 @@ impl Project {
         let resolved = doc.get("resolved") == Some(&Value::Bool(true));
         build(
             doc,
-            &pkg,
+            &Value::Null,
             &folder,
             !resolved,
             opts,
@@ -787,6 +815,51 @@ impl Project {
             Some(path),
             &text,
         )
+    }
+
+    fn file_label(&self) -> String {
+        self.file
+            .as_ref()
+            .map_or_else(|| PROJECT_FILE.to_owned(), |f| f.display().to_string())
+    }
+
+    /// One warning per metadata field the file sets to an empty string on purpose
+    /// (`project.json: "company" is empty (...)`). `build` and `package` print them, `check` does not.
+    pub fn empty_field_warnings(&self) -> Vec<String> {
+        let file = self.file_label();
+        self.empty_fields
+            .iter()
+            .map(|k| {
+                let effect = match k.as_str() {
+                    "title" => "the window title will be empty",
+                    "identifier" => "the app identifier will be empty",
+                    "company" => "the exe's version info will have no company",
+                    "version" => "the exe's version info will have no version",
+                    "description" => "the exe's version info will have no description",
+                    "copyright" => "the exe's version info will have no copyright",
+                    _ => "the exe's version info will have no license",
+                };
+                format!("{file}: \"{k}\" is empty ({effect})")
+            })
+            .collect()
+    }
+
+    /// One warning for each of `company`, `copyright` and `license` the file leaves out, so they
+    /// still hold their defaults: a game about to be released should say who made it.
+    pub fn default_field_warnings(&self) -> Vec<String> {
+        let file = self.file_label();
+        ["company", "copyright", "license"]
+            .into_iter()
+            .filter(|k| self.defaulted.iter().any(|d| d == k))
+            .map(|k| {
+                let v = match k {
+                    "company" => &self.company,
+                    "copyright" => &self.copyright,
+                    _ => &self.license,
+                };
+                format!("{file}: \"{k}\" is not set (using the default \"{v}\")")
+            })
+            .collect()
     }
 
     /// The resolved project as a `project.json` (marked `"resolved": true`: read back as it is).
@@ -879,9 +952,15 @@ fn build(
         user: opts.user,
         pkg: PackageDefaults::from(pkg),
         folder: folder.to_owned(),
+        legacy: source != Source::ProjectJson,
+        defaulted: Vec::new(),
     };
+    let from_file = source == Source::ProjectJson;
     for k in TEXT_KEYS {
-        if let Some(s) = doc.get(*k).and_then(text) {
+        let v = doc
+            .get(*k)
+            .and_then(|v| if from_file { text_or_empty(v) } else { text(v) });
+        if let Some(s) = v {
             r.raw.insert(
                 (*k).to_owned(),
                 if templates {
@@ -913,6 +992,19 @@ fn build(
         }
     };
 
+    if from_file
+        && r.raw.get("name").is_none_or(|n| match n {
+            Raw::Template(s) | Raw::Literal(s) => s.trim().is_empty(),
+        })
+    {
+        return Err(ProjectError {
+            file: name.clone(),
+            line: 0,
+            col: 0,
+            message: "`name` is required (the only required field), e.g. { \"name\": \"mygame\" }"
+                .into(),
+        });
+    }
     let get = |r: &mut Resolver<'_>, k: &str| r.value(k).map_err(fail);
     let opt = |s: String| if s.is_empty() { None } else { Some(s) };
     let project_name = get(&mut r, "name")?;
@@ -924,7 +1016,10 @@ fn build(
     let copyright = get(&mut r, "copyright")?;
     let exe = get(&mut r, "exe")?;
     let license_raw = get(&mut r, "license")?;
-    let license = canonical_license(&license_raw).ok_or_else(|| {
+    let license = if license_raw.is_empty() && from_file {
+        String::new()
+    } else {
+        canonical_license(&license_raw).ok_or_else(|| {
         let (line, col) = locate(file_text, &license_raw);
         ProjectError {
             file: name.clone(),
@@ -935,7 +1030,22 @@ fn build(
                 SPDX_LICENSES.join(", ")
             ),
         }
-    })?;
+    })?
+    };
+    let empty_fields: Vec<String> = [
+        ("title", &title),
+        ("company", &company),
+        ("identifier", &identifier),
+        ("version", &version),
+        ("description", &description),
+        ("copyright", &copyright),
+        ("license", &license),
+    ]
+    .into_iter()
+    .filter(|(k, v)| from_file && v.is_empty() && r.raw.contains_key(*k))
+    .map(|(k, _)| k.to_owned())
+    .collect();
+    let defaulted = r.defaulted.clone();
     let icon = if r.raw.contains_key("icon") {
         opt(get(&mut r, "icon")?)
     } else {
@@ -1002,6 +1112,8 @@ fn build(
         quality,
         display,
         extra,
+        empty_fields,
+        defaulted,
         source,
         file,
     })
@@ -1063,7 +1175,10 @@ mod tests {
     // M9-API-1301
     #[test]
     fn dollar_dollar_brace_is_a_literal_and_a_lone_dollar_stays() {
-        let p = load_ok("esc", r#"{ "title": "$${name} costs $5 and $${a}" }"#);
+        let p = load_ok(
+            "esc",
+            r#"{ "name": "g", "title": "$${name} costs $5 and $${a}" }"#,
+        );
         assert_eq!(p.title, "${name} costs $5 and ${a}");
     }
 
@@ -1098,7 +1213,7 @@ mod tests {
         assert_eq!(p.description, "fox by Matthew Brown");
         let e = load_text(
             "cycle",
-            r#"{ "title": "${description}", "description": "${title}" }"#,
+            r#"{ "name": "g", "title": "${description}", "description": "${title}" }"#,
             &user(),
             Platform::Windows,
         )
@@ -1111,12 +1226,12 @@ mod tests {
     fn env_variables_have_a_fallback_and_a_missing_one_is_an_error() {
         let p = load_ok(
             "env",
-            r#"{ "title": "${env:NOPE_X:-plain}-${env:GAME_CODE}" }"#,
+            r#"{ "name": "g", "title": "${env:NOPE_X:-plain}-${env:GAME_CODE}" }"#,
         );
         assert_eq!(p.title, "plain-zx81");
         let e = load_text(
             "env2",
-            r#"{ "title": "${env:NOPE_X}" }"#,
+            r#"{ "name": "g", "title": "${env:NOPE_X}" }"#,
             &user(),
             Platform::Windows,
         )
@@ -1128,7 +1243,10 @@ mod tests {
     // M9-API-1305
     #[test]
     fn syntax_problems_in_a_template_are_errors() {
-        for bad in [r#"{ "title": "a ${b" }"#, r#"{ "title": "a ${} b" }"#] {
+        for bad in [
+            r#"{ "name": "g", "title": "a ${b" }"#,
+            r#"{ "name": "g", "title": "a ${} b" }"#,
+        ] {
             assert!(
                 load_text("syn", bad, &user(), Platform::Windows).is_err(),
                 "{bad}"
@@ -1164,7 +1282,7 @@ mod tests {
         u.full_name = String::new();
         let p = load_text(
             "noname",
-            r#"{ "title": "${firstName}'s Game", "company": "${fullName}", "description": "[${lastName}]" }"#,
+            r#"{ "name": "g", "title": "${firstName}'s Game", "company": "${fullName}", "description": "[${lastName}]" }"#,
             &u,
             Platform::Linux,
         )
@@ -1265,20 +1383,32 @@ mod tests {
 
     // M9-API-1311
     #[test]
-    fn project_json_wins_over_package_json_which_still_gives_name_and_version() {
+    fn package_json_is_ignored_when_a_project_json_exists() {
         let d = temp("both");
         std::fs::write(
             d.join("package.json"),
-            r#"{ "name": "npmname", "version": "3.0.0", "iron": { "title": "FROM PACKAGE" } }"#,
+            r#"{ "name": "npmname", "version": "3.0.0", "author": "Npm", "iron": { "title": "FROM PACKAGE" } }"#,
         )
         .unwrap();
-        std::fs::write(d.join(PROJECT_FILE), r#"{ "title": "${name} game" }"#).unwrap();
+        std::fs::write(
+            d.join(PROJECT_FILE),
+            r#"{ "name": "g", "title": "${name} game" }"#,
+        )
+        .unwrap();
         let u = user();
         let p = Project::load(&d, &LoadOptions::new(Platform::Windows, &u)).unwrap();
         assert_eq!(
-            (p.title.as_str(), p.version.as_str(), p.source),
-            ("npmname game", "3.0.0", Source::ProjectJson)
+            (
+                p.title.as_str(),
+                p.version.as_str(),
+                p.company.as_str(),
+                p.source
+            ),
+            ("g game", "0.1.0", "Matthew's Company", Source::ProjectJson)
         );
+        // A broken package.json does not matter either.
+        std::fs::write(d.join("package.json"), "{ not json").unwrap();
+        assert!(Project::load(&d, &LoadOptions::new(Platform::Windows, &u)).is_ok());
     }
 
     // M9-API-1312
@@ -1331,22 +1461,93 @@ mod tests {
 
     // M9-API-1314
     #[test]
-    fn defaults_for_missing_fields() {
+    fn omitted_fields_take_their_defaults_silently() {
         let p = load_ok("def", r#"{ "name": "my game" }"#);
-        assert_eq!(p.title, "my game");
-        assert_eq!(p.exe, "my game");
+        assert_eq!(p.title, "Matthew's Game");
+        assert_eq!(p.exe, "Matthews Game");
         assert_eq!(
-            (p.version.as_str(), p.company.as_str(), p.copyright.as_str()),
-            ("0.0.0", "", "")
+            (p.version.as_str(), p.company.as_str(), p.license.as_str()),
+            ("0.1.0", "Matthew's Company", "private")
         );
+        assert_eq!(p.copyright, "Copyright (c) Matthew's Company");
         assert_eq!(p.identifier, "dev.iron.mygame");
-        assert_eq!(p.description, "my game");
+        assert_eq!(p.description, "Matthew's Game");
+        assert!(p.empty_fields.is_empty() && p.empty_field_warnings().is_empty());
+        assert!(p.defaulted.contains(&"company".to_owned()));
+        let w = p.default_field_warnings();
+        assert_eq!(w.len(), 3, "{w:?}");
+        assert!(
+            w[0].contains("project.json: \"company\" is not set"),
+            "{w:?}"
+        );
         let q = load_ok(
             "def2",
-            r#"{ "name": "g", "title": "Matthew's Game", "company": "Q" }"#,
+            r#"{ "name": "g", "title": "Matthew's Game", "company": "Q", "license": "MIT" }"#,
         );
         assert_eq!(q.exe, "Matthews Game");
         assert_eq!(q.copyright, "Copyright (c) Q");
+        let w = q.default_field_warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("\"copyright\""), "{w:?}");
+    }
+
+    // M9-API-1321
+    #[test]
+    fn name_is_required_and_the_error_names_the_file() {
+        for text in [
+            r#"{ "title": "T" }"#,
+            r#"{ "name": "", "title": "T" }"#,
+            "{}",
+        ] {
+            let e = load_text("noname_req", text, &user(), Platform::Windows).unwrap_err();
+            assert!(e.file.ends_with("project.json"), "{e}");
+            assert!(e.message.contains("`name` is required"), "{e}");
+        }
+        // A command-line override counts.
+        let d = temp("noname_ov");
+        std::fs::write(d.join(PROJECT_FILE), "{}").unwrap();
+        let u = user();
+        let mut o = LoadOptions::new(Platform::Windows, &u);
+        o.overrides.push(("name".into(), "x".into()));
+        assert_eq!(Project::load(&d, &o).unwrap().name, "x");
+    }
+
+    // M9-API-1322
+    #[test]
+    fn an_empty_string_stays_empty_and_is_listed() {
+        let p = load_ok(
+            "emptyf",
+            r#"{ "name": "g", "company": "", "license": "", "copyright": "", "description": "" }"#,
+        );
+        assert_eq!(
+            (
+                p.company.as_str(),
+                p.license.as_str(),
+                p.copyright.as_str(),
+                p.description.as_str()
+            ),
+            ("", "", "", "")
+        );
+        assert_eq!(
+            p.empty_fields,
+            ["company", "description", "copyright", "license"]
+        );
+        let w = p.empty_field_warnings();
+        assert!(
+            w.iter().any(|l| l.ends_with(
+                "project.json: \"company\" is empty (the exe's version info will have no company)"
+            )),
+            "{w:?}"
+        );
+        assert_eq!(w.len(), 4);
+        // Not defaults, so no default warning for them either.
+        assert!(p.default_field_warnings().is_empty());
+        // The empty values round-trip through the resolved project.json.
+        let d = temp("emptyf2");
+        std::fs::write(d.join(PROJECT_FILE), p.to_json().to_string()).unwrap();
+        let u = FixedUser::default();
+        let q = Project::load(&d, &LoadOptions::new(Platform::Linux, &u)).unwrap();
+        assert_eq!((q.company.as_str(), q.license.as_str()), ("", ""));
     }
 
     // M9-API-1315
@@ -1354,13 +1555,16 @@ mod tests {
     fn a_leading_comment_line_is_allowed_and_keeps_line_numbers() {
         let e = load_text(
             "cmt",
-            "// my game\n// more\n{\n \"title\": \"${bad}\"\n}",
+            "// my game\n// more\n{\n \"name\": \"g\", \"title\": \"${bad}\"\n}",
             &user(),
             Platform::Windows,
         )
         .unwrap_err();
         assert_eq!(e.line, 4);
-        assert_eq!(load_ok("cmt2", "// hi\n{ \"title\": \"ok\" }").title, "ok");
+        assert_eq!(
+            load_ok("cmt2", "// hi\n{ \"name\": \"g\", \"title\": \"ok\" }").title,
+            "ok"
+        );
     }
 
     // M9-API-1316
@@ -1377,14 +1581,17 @@ mod tests {
     #[test]
     fn license_defaults_to_private_is_validated_and_maps_to_npm() {
         assert_eq!(load_ok("lic0", r#"{ "name": "g" }"#).license, "private");
-        assert_eq!(load_ok("lic1", r#"{ "license": "mit" }"#).license, "MIT");
         assert_eq!(
-            load_ok("lic2", r#"{ "license": "UNLICENSED" }"#).license,
+            load_ok("lic1", r#"{ "name": "g", "license": "mit" }"#).license,
+            "MIT"
+        );
+        assert_eq!(
+            load_ok("lic2", r#"{ "name": "g", "license": "UNLICENSED" }"#).license,
             "private"
         );
         let c = load_ok(
             "lic3",
-            r#"{ "license": "custom", "licenseFile": "EULA.txt" }"#,
+            r#"{ "name": "g", "license": "custom", "licenseFile": "EULA.txt" }"#,
         );
         assert_eq!(
             (c.license.as_str(), c.license_file.as_deref()),
@@ -1394,13 +1601,14 @@ mod tests {
         let e = load_text(
             "lic4",
             "{
+ \"name\": \"g\",
  \"license\": \"WTFPL-9\"
 }",
             &user(),
             Platform::Windows,
         )
         .unwrap_err();
-        assert_eq!(e.line, 2);
+        assert_eq!(e.line, 3);
         assert!(
             e.message.contains("unknown license `WTFPL-9`") && e.message.contains("MIT"),
             "{e}"

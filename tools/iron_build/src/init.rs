@@ -305,6 +305,8 @@ mod tests {
         assert_eq!(p.copyright, "Copyright (c) 2026 Matthew's Company");
         assert_eq!(p.exe, "Matthews Game");
         assert_eq!(p.version, "0.1.0");
+        // Only project.json: no package.json.
+        assert!(d.join("project.json").is_file() && !d.join("package.json").exists());
         let main = std::fs::read_to_string(d.join("src/main.ts")).unwrap();
         assert!(main.contains("register({ Hello })") && main.contains("\"hello\""));
         let shown = preview(&r);

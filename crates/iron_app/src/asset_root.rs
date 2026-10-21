@@ -116,7 +116,8 @@ mod tests {
     fn code_dir(d: &Path, required: bool, data_dir: Option<&str>) -> PathBuf {
         let code = d.join("code");
         std::fs::create_dir_all(&code).unwrap();
-        let mut project = serde_json::json!({ "resolved": true, "dataRequired": required });
+        let mut project =
+            serde_json::json!({ "resolved": true, "name": "g", "dataRequired": required });
         if let Some(n) = data_dir {
             project["dataDir"] = n.into();
         }

@@ -1333,15 +1333,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1307 | Unit | An empty full name falls back to the account name; one word gives an empty last name; GECOS parsing. |
 | M9-API-1308 | Unit | The identifier is sanitised (spaces, punctuation, leading digit, empty parts). |
 | M9-API-1309 | Unit | The platform section overrides for that platform; all platform sections leave the result. |
-| M9-API-1310 | Unit | No `project.json`: the `iron` section and `package.json` fields are used without templates; no files: defaults named after the folder. |
-| M9-API-1311 | Unit | `project.json` wins over `package.json`'s `iron` section, which still gives name and version defaults. |
+| M9-API-1310 | Unit | Deprecated fallback: with no `project.json` the `iron` section and `package.json` fields are used without templates; no files: defaults named after the folder. |
+| M9-API-1311 | Unit | `package.json` is not read at all when a `project.json` exists (not its fields, not even a broken file). |
 | M9-API-1312 | Unit | Overrides (flags) are literal and other fields see them. |
 | M9-API-1313 | Unit | A resolved project round-trips with no templates; unknown keys are kept and expanded once. |
-| M9-API-1314 | Unit | Defaults of missing fields (title, exe without apostrophes, copyright, identifier, description). |
+| M9-API-1314 | Unit | Omitted fields take their defaults silently (title/company from the first name, version `0.1.0`, license `private`, exe without apostrophes, copyright, identifier, description); the omitted ones are listed for the package warnings. |
 | M9-API-1315 | Unit | A leading `//` comment line is allowed and keeps line numbers. |
 | M9-API-1316 | Unit | Civil dates from days; the system date is plausible. |
 | M9-API-1317 | Unit | The system user has an account name. |
 | M9-API-1318 | Unit | `license` defaults to `private`, is validated case-insensitively against the list, `custom` takes `licenseFile`, the npm mapping. |
+| M9-API-1321 | Unit | `name` is the only required field: missing or empty is an error naming `project.json`; a command-line override counts. |
+| M9-API-1322 | Unit | An explicitly empty string field stays empty (no default), is listed in `empty_fields` with a warning text, and round-trips through the resolved project. |
 | M9-API-1320 | Unit | `iron_app` `Manifest::load` of a folder uses `project.json` (title, identifier, startScene, layers, platform fps); a broken template leaves the defaults. |
 | M9-TS-2700 | Unit | `init` writes the default templates, `src/main.ts`, and the resolved preview for a given user; the result builds. |
 | M9-TS-2701 | Unit | `init` flags replace only their own fields. |
@@ -1352,7 +1354,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2710 | Integration | `package` resolves templates and the platform section into the payload's `project.json` (and the PE version info), the payload has a `package.json` with `UNLICENSED`; the app side reads it back without the user's information. |
 | M9-TS-2711 | Integration | A non-private license copies its file next to the exe (and into `data/` when named), adds `Comments` to the PE and the npm license to the payload; `custom` without a file and a missing `licenseFile` are errors. |
 | M9-TS-2720 | Unit | `GameConfig` reads `project.json` (title, identifier, `main`) before the `iron` section; a template typo names file and line. |
-| M9-TS-2721 | Unit | All 19 examples have a `project.json` (`dev.iron.<name>`, company from the user), their `package.json` has no `iron` section. |
+| M9-TS-2721 | Unit | All 20 examples are found by their `project.json` (`dev.iron.<name>`, company from the user), none has a `package.json`. |
+| M9-TS-2722 | Unit | `build` warns once per empty metadata field naming the file; an omitted field is not a warning. |
+| M9-TS-2723 | Integration | `package` warns about empty fields and about `company`/`copyright`/`license` still at their defaults, still packages, and is silent when all are given. |
+| M9-TS-2724 | Integration | The `iron-build` program: `build` and `package` print the empty-field warnings, `check` does not (`tools/iron_build/tests/cli.rs`). |
+| M9-TS-2725 | Unit | Games are found by `project.json` (or a `package.json` with an `iron` section, the deprecated fallback), not by any `package.json`. |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
 | M9-API-901 | Unit | The rate rounds to the nearest integer. |
 | M9-API-902 | Unit | `FpsCounter` closes a window once 0.25 s have passed and reports it; 100 FPS over 0.6 s gives two windows of `100 FPS`. |

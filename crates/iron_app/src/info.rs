@@ -243,20 +243,25 @@ mod tests {
         .unwrap();
         std::fs::write(
             d.join("project.json"),
-            r#"{ "title": "Fox ${env:IRON_NO_SUCH_VAR_1320:-Run}", "identifier": "dev.iron.fox",
+            r#"{ "name": "fox", "title": "Fox ${env:IRON_NO_SUCH_VAR_1320:-Run}", "identifier": "dev.iron.fox",
                  "startScene": "scenes/a.scene.json", "layers": { "8": "Detail" },
                  "windows": { "fps": false }, "macos": { "fps": false }, "linux": { "fps": false } }"#,
         )
         .unwrap();
         let m = Manifest::load(&d);
         assert_eq!(m.title, "Fox Run");
-        assert_eq!(m.name, "npm-name");
+        // package.json is not read when a project.json exists.
+        assert_eq!(m.name, "fox");
         assert_eq!(m.identifier, "dev.iron.fox");
         assert_eq!(m.start_scene.as_deref(), Some("scenes/a.scene.json"));
         assert_eq!(m.layers["8"], "Detail");
         assert_eq!(m.fps, Some(false));
         // A broken template leaves the defaults and does not stop the game.
-        std::fs::write(d.join("project.json"), r#"{ "title": "${nope}" }"#).unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            r#"{ "name": "fox", "title": "${nope}" }"#,
+        )
+        .unwrap();
         assert_eq!(
             Manifest::load(&d).title,
             d.file_name().unwrap().to_string_lossy()

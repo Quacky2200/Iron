@@ -101,7 +101,7 @@ const LICENSE_NAMES: &[&str] = &[
 /// game folder. None for `private` and for an SPDX license without a file (the identifier alone
 /// goes into the metadata); an error for `custom` without a file or a missing `licenseFile`.
 pub fn find_license_file(game: &Path, project: &Project) -> Result<Option<PathBuf>, String> {
-    if project.license == "private" {
+    if project.license == "private" || project.license.is_empty() {
         return Ok(None);
     }
     if let Some(rel) = &project.license_file {
@@ -436,6 +436,8 @@ pub struct Packaged {
     pub license_files: Vec<PathBuf>,
     /// Windows resources were written (the host is a PE file).
     pub resources: bool,
+    /// Warnings of the build, empty metadata fields and fields still at their defaults.
+    pub warnings: Vec<String>,
 }
 
 fn exe_name(name: &str) -> String {
@@ -508,14 +510,16 @@ fn run_sign(cmd: &str, exe: &Path) -> Result<(), String> {
 
 /// Packages the game in `game`.
 pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
+    let mut warnings = Vec::new();
     if !opts.no_build {
-        build(
+        let report = build(
             game,
             &Options {
                 no_tsc: opts.no_tsc,
                 ..Default::default()
             },
         )?;
+        warnings = report.warnings;
     }
     // The host without any payload of its own (read first: its kind picks the platform section).
     let host_path = find_host(game, opts.host.as_deref())?;
@@ -539,6 +543,16 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         None => &SystemUser,
     };
     let (meta, project) = resolve(game, &opts.overrides, platform, user)?;
+    // Never blocks: the exe is made, the person is told what its version info lacks.
+    for w in project
+        .empty_field_warnings()
+        .into_iter()
+        .chain(project.default_field_warnings())
+    {
+        if !warnings.contains(&w) {
+            warnings.push(w);
+        }
+    }
 
     // The icon: relative to the game folder (from package.json) or a path given on the command line.
     let icon_path = meta.icon.as_deref().map(|i| {
@@ -657,6 +671,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         meta,
         license_files,
         resources: is_pe,
+        warnings,
     })
 }
 
@@ -725,6 +740,9 @@ pub fn run_cli(args: &[String]) -> i32 {
                     p.info.dir
                 ),
                 None => {}
+            }
+            for w in &p.warnings {
+                eprintln!("warning: {w}");
             }
             0
         }
@@ -1373,6 +1391,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    // M9-TS-2723
+    #[test]
+    fn package_warns_about_empty_and_default_metadata_and_still_packages() {
+        let d = game_folder("warns");
+        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            r#"{ "name": "g", "company": "", "description": "" }"#,
+        )
+        .unwrap();
+        let p = package_with(&d, "out/g.exe", None, false);
+        assert!(p.path.is_file());
+        let has = |s: &str| p.warnings.iter().any(|w| w.contains(s));
+        assert!(
+            has("project.json: \"company\" is empty"),
+            "{:?}",
+            p.warnings
+        );
+        assert!(
+            has("project.json: \"description\" is empty"),
+            "{:?}",
+            p.warnings
+        );
+        // company is empty on purpose, so not "still the default"; copyright and license are.
+        assert!(!has("\"company\" is not set"), "{:?}", p.warnings);
+        assert!(has("\"copyright\" is not set"), "{:?}", p.warnings);
+        assert!(has("\"license\" is not set"), "{:?}", p.warnings);
+        // Everything given: nothing to say.
+        std::fs::write(
+            d.join("project.json"),
+            r#"{ "name": "g", "company": "Acme", "copyright": "(c) Acme", "license": "MIT" }"#,
+        )
+        .unwrap();
+        let p = package_with(&d, "out/g2.exe", None, false);
+        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     // M9-TS-2440: needs the engine host and a GPU, so it runs on request:
     // `cargo test -p iron_build -- --ignored standalone` (IRON_HOST or a built target/debug/iron_app).
     #[test]
@@ -1382,7 +1438,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("iron_pkg_run_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         let game = d.join("game");
-        for f in ["package.json", "tsconfig.json", "src/main.ts"] {
+        for f in ["project.json", "tsconfig.json", "src/main.ts"] {
             let to = game.join(f);
             std::fs::create_dir_all(to.parent().unwrap()).unwrap();
             std::fs::copy(src.join(f), to).unwrap();
@@ -1419,7 +1475,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         let game = d.join("game");
         for f in [
-            "package.json",
+            "project.json",
             "tsconfig.json",
             "src/main.tsx",
             "assets/stripes.png",
