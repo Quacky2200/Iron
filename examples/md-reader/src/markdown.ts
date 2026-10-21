@@ -200,7 +200,7 @@ function parseList(lines: string[], start: number, heading: HeadingId, out: Bloc
       const lead = l.length - l.trimStart().length;
       if (!l.trim()) {
         // A blank line ends the item unless indented content follows.
-        const next = lines.slice(i + 1).find((x) => x.trim());
+        const next = lines[nextFilled(lines, i + 1)];
         if (next === undefined || next.length - next.trimStart().length <= indent) break;
         body.push("");
         i++;
@@ -220,7 +220,7 @@ function parseList(lines: string[], start: number, heading: HeadingId, out: Bloc
     items.push({ checked, children: parseBlocks(body, heading) });
     // Blank lines between items.
     while (i < lines.length && !lines[i]!.trim()) {
-      const next = lines.slice(i).find((x) => x.trim());
+      const next = lines[nextFilled(lines, i)];
       const n = next && BULLET.exec(next);
       if (!n || n[1]!.length !== indent) return finish();
       i++;
@@ -232,6 +232,13 @@ function parseList(lines: string[], start: number, heading: HeadingId, out: Bloc
     out.push({ kind: "list", ordered, start: ordered ? parseInt(first[2]!, 10) : 1, items });
     return i;
   }
+}
+
+/** The index of the first non-blank line from `from` on (`lines.length` if none). */
+function nextFilled(lines: string[], from: number): number {
+  let i = from;
+  while (i < lines.length && !lines[i]!.trim()) i++;
+  return i;
 }
 
 /** A table row's cells, ignoring `|` inside code spans or escaped. */
@@ -264,6 +271,19 @@ function cells(row: string): string[] {
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', nbsp: " ", apos: "'" };
 
+// Sticky patterns, matched at an index instead of on a copy of the rest of the line.
+const PLAIN = /[^\\`&<![~*_h\u0000]+/y;
+const ENTITY = /&(#x[0-9a-f]+|#\d+|[a-z]+);/iy;
+const AUTOLINK = /<((?:https?|mailto):[^>\s]+)>/y;
+const BR = /<br\s*\/?>/iy;
+const IMG = /<img\s[^>]*>/iy;
+const URL = /https?:\/\/[^\s<>()]*[^\s<>().,;:!?'"*_]/y;
+
+function matchAt(re: RegExp, src: string, i: number): RegExpExecArray | null {
+  re.lastIndex = i;
+  return re.exec(src);
+}
+
 export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];
   let text = "";
@@ -273,8 +293,14 @@ export function parseInline(src: string): Inline[] {
   };
   let i = 0;
   while (i < src.length) {
+    // Runs of ordinary characters in one step.
+    const plain = matchAt(PLAIN, src, i);
+    if (plain) {
+      text += plain[0];
+      i += plain[0].length;
+      continue;
+    }
     const c = src[i]!;
-    const rest = src.slice(i);
     if (c === "\u0000") {
       flush();
       out.push({ kind: "br" });
@@ -303,7 +329,7 @@ export function parseInline(src: string): Inline[] {
       continue;
     }
     if (c === "&") {
-      const m = /^&(#x[0-9a-f]+|#\d+|[a-z]+);/i.exec(rest);
+      const m = matchAt(ENTITY, src, i);
       if (m) {
         const e = m[1]!;
         const ch = e.startsWith("#x")
@@ -319,25 +345,26 @@ export function parseInline(src: string): Inline[] {
       }
     }
     if (c === "<") {
-      const auto = /^<((?:https?|mailto):[^>\s]+)>/.exec(rest);
+      const auto = matchAt(AUTOLINK, src, i);
       if (auto) {
         flush();
         out.push({ kind: "link", href: auto[1]!, children: [{ kind: "text", text: auto[1]! }] });
         i += auto[0].length;
         continue;
       }
-      if (rest.startsWith("<!--")) {
+      if (src.startsWith("<!--", i)) {
         const end = src.indexOf("-->", i);
         i = end < 0 ? src.length : end + 3;
         continue;
       }
-      if (/^<br\s*\/?>/i.test(rest)) {
+      const br = matchAt(BR, src, i);
+      if (br) {
         flush();
         out.push({ kind: "br" });
-        i += /^<br\s*\/?>/i.exec(rest)![0].length;
+        i += br[0].length;
         continue;
       }
-      const img = /^<img\s[^>]*>/i.exec(rest);
+      const img = matchAt(IMG, src, i);
       if (img) {
         flush();
         const attr = (name: string) => new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`, "i").exec(img[0])?.[1] ?? "";
@@ -391,7 +418,7 @@ export function parseInline(src: string): Inline[] {
       i += mark.length;
       continue;
     }
-    const url = /^https?:\/\/[^\s<>()]*[^\s<>().,;:!?'"*_]/.exec(rest);
+    const url = c === "h" ? matchAt(URL, src, i) : null;
     if (url && !/[\p{L}\p{N}]/u.test(src[i - 1] ?? " ")) {
       flush();
       out.push({ kind: "link", href: url[0], children: [{ kind: "text", text: url[0] }] });

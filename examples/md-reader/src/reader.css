@@ -57,8 +57,12 @@
   color: var(--muted);
   font-size: 13px;
   user-select: none;
+  white-space: nowrap;
 }
-.crumb.last { color: var(--text); }
+.crumb { cursor: pointer; }
+.crumb:hover { color: var(--accent); text-decoration: underline; }
+.crumb.last { color: var(--text); cursor: default; text-decoration: none; }
+.crumb-sep { color: #4a5262; }
 
 .doc-title {
   margin-left: auto;
@@ -154,6 +158,11 @@
   flex-shrink: 0;
 }
 
+.chunk {
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
 /* Markdown */
 .h {
   color: var(--head);
@@ -235,6 +244,8 @@
   flex-direction: column;
   margin-bottom: 12px;
 }
+/* A long list is mounted in pieces; pieces that continue it keep it one list. */
+.list.joined { margin-bottom: 0; }
 .item {
   flex-direction: row;
   align-items: flex-start;

@@ -14,10 +14,10 @@ import {
   Span,
   Text,
 } from "@iron/react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DOCS, IMAGES } from "./docs.gen.ts";
-import { type Block, type Doc, type Inline, parse } from "./markdown.ts";
+import { type Block, type Doc, type Inline, parse, plainText } from "./markdown.ts";
 
 const HOME = DOCS["docs/README.md"] !== undefined ? "docs/README.md" : Object.keys(DOCS)[0]!;
 const IMAGE_FILES = new Set(IMAGES);
@@ -245,7 +245,7 @@ function Blocks({ blocks, ctx }: { blocks: Block[]; ctx: Ctx }) {
   return <>{blocks.map((b, i) => <BlockView key={i} block={b} ctx={ctx} />)}</>;
 }
 
-function BlockView({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
+function BlockView({ block, ctx, joined = false }: { block: Block; ctx: Ctx; joined?: boolean }): ReactNode {
   switch (block.kind) {
     case "heading":
       return (
@@ -277,7 +277,7 @@ function BlockView({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
       );
     case "list":
       return (
-        <box className="list">
+        <box className={joined ? "list joined" : "list"}>
           {block.items.map((item, i) => (
             <box key={i} className="item">
               {item.checked === null ? (
@@ -317,15 +317,170 @@ function BlockView({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 
 // --- The app ---------------------------------------------------------------------------
 
+/** The folder at `path` in the file tree ("" is the top). */
+function folderAt(path: string): Folder | undefined {
+  let at: Folder | undefined = TREE;
+  for (const part of path ? path.split("/") : []) at = at?.folders.find((f) => f.name === part);
+  return at;
+}
+
+const isFolder = (path: string) => DOCS[path] === undefined && folderAt(path) !== undefined;
+
+/** Links on a page resolve against this: a folder's listing sits inside the folder. */
+const base = (path: string) => (isFolder(path) ? (path ? `${path}/` : "") : path);
+
+/** A folder's listing, written as Markdown so it draws like any page. */
+function folderMarkdown(path: string, folder: Folder): string {
+  const rows = [
+    ...folder.folders.map((f) => {
+      const n = f.folders.length + f.files.length;
+      return `| [${f.name}/](${f.name}/) | ${n} ${n === 1 ? "item" : "items"} |`;
+    }),
+    ...folder.files.map((p) => {
+      const name = p.split("/").pop()!;
+      return `| [${name}](${name}) | ${title(p).replaceAll("|", "\\|")} |`;
+    }),
+  ];
+  return `# ${path || "Iron"}/\n\n| Name | Title |\n|---|---|\n${rows.join("\n")}\n`;
+}
+
 const cache = new Map<string, Doc>();
 const docAt = (path: string) => {
   let doc = cache.get(path);
   if (!doc) {
-    doc = parse(DOCS[path] ?? `# Not found\n\n\`${path}\` is not in the reader.`);
+    const folder = isFolder(path) ? folderAt(path) : undefined;
+    const source = folder ? folderMarkdown(path, folder) : DOCS[path];
+    doc = parse(source ?? `# Not found\n\n\`${path}\` is not in the reader.`);
     cache.set(path, doc);
   }
   return doc;
 };
+
+// A new page mounts about a screenful at once, then a chunk a frame, so long docs show
+// straight away and finish loading while you read. Sizes are in rough lines of text.
+const FIRST_WEIGHT = 80;
+const CHUNK_WEIGHT = 60;
+
+/** About how many lines `block` draws: what mounting it costs. */
+function weight(block: Block): number {
+  switch (block.kind) {
+    case "heading":
+    case "rule":
+      return 1;
+    case "paragraph":
+      return 1 + Math.floor(plainText(block.children).length / 100);
+    case "code":
+      return 1 + block.text.split("\n").length;
+    case "quote":
+      return block.children.reduce((n, b) => n + weight(b), 0);
+    case "list":
+      return block.items.reduce((n, item) => n + item.children.reduce((m, b) => m + weight(b), 0), 0);
+    case "table":
+      return 1 + block.rows.length * 2;
+  }
+}
+
+/** One unit of progressive mounting: a block, or a run of a long list's items. */
+interface Row {
+  block: Block;
+  weight: number;
+  /** A list piece the next row continues (no gap under it). */
+  joined: boolean;
+}
+
+const rowCache = new WeakMap<Doc, Row[]>();
+
+/** The page as rows: long top-level lists are cut between items, so no one frame has to
+ * mount a whole list. */
+function rowsOf(doc: Doc): Row[] {
+  let rows = rowCache.get(doc);
+  if (rows) return rows;
+  rows = [];
+  for (const block of doc.blocks) {
+    const w = weight(block);
+    if (block.kind !== "list" || w <= CHUNK_WEIGHT / 2) {
+      rows.push({ block, weight: w, joined: false });
+      continue;
+    }
+    let from = 0;
+    let size = 0;
+    block.items.forEach((item, i) => {
+      size += item.children.reduce((m, b) => m + weight(b), 0);
+      const last = i === block.items.length - 1;
+      if (size >= CHUNK_WEIGHT / 4 || last) {
+        const items = block.items.slice(from, i + 1);
+        rows!.push({ block: { ...block, items, start: block.start + from }, weight: size, joined: !last });
+        from = i + 1;
+        size = 0;
+      }
+    });
+  }
+  rowCache.set(doc, rows);
+  return rows;
+}
+
+/** The rows that fit in `budget` lines after the first `from`. */
+function grow(rows: Row[], from: number, budget: number): number {
+  let n = from;
+  let used = 0;
+  while (n < rows.length && (used < budget || n === from)) used += rows[n++]!.weight;
+  return n;
+}
+
+/** Rows cut into mounting chunks: the first holds the first `need` rows and a screenful. */
+function chunksOf(rows: Row[], need: number): Row[][] {
+  const out: Row[][] = [];
+  let at = 0;
+  while (at < rows.length) {
+    const end = out.length ? grow(rows, at, CHUNK_WEIGHT) : grow(rows, need, FIRST_WEIGHT);
+    out.push(rows.slice(at, end));
+    at = end;
+  }
+  return out;
+}
+
+// Each chunk is its own box and memoized component: mounting the next one lays out and
+// renders only it, not everything above it again.
+const Chunk = memo(function Chunk({ rows, ctx }: { rows: Row[]; ctx: Ctx }) {
+  return (
+    <box className="chunk">
+      {rows.map((row, i) => (
+        <BlockView key={i} block={row.block} ctx={ctx} joined={row.joined} />
+      ))}
+    </box>
+  );
+});
+
+/** The page, mounted progressively, a chunk a frame; the first `need` rows come at once. */
+function Page({ doc, need, ctx }: { doc: Doc; need: number; ctx: Ctx }) {
+  const rows = rowsOf(doc);
+  const chunks = useMemo(() => chunksOf(rows, need), [rows, need]);
+  const [count, setCount] = useState(1);
+  useEffect(() => {
+    if (count >= chunks.length) return;
+    // 1 ms, not 0: a timer set while timers run would otherwise fire in this same frame.
+    const id = setTimeout(() => setCount((c) => c + 1), 1);
+    return () => clearTimeout(id);
+  }, [count, chunks]);
+  return (
+    <>
+      {chunks.slice(0, count).map((chunk, i) => (
+        <Chunk key={i} rows={chunk} ctx={ctx} />
+      ))}
+    </>
+  );
+}
+
+/** How many rows must be mounted to show `entry` right: through its anchor, or all of
+ * them when coming back to a scrolled page. */
+function rowsNeeded(doc: Doc, entry: Entry): number {
+  const rows = rowsOf(doc);
+  if (entry.anchor) {
+    const at = rows.findIndex((r) => r.block.kind === "heading" && r.block.id === entry.anchor);
+    return at < 0 ? rows.length : at;
+  }
+  return entry.scroll > 0 ? rows.length : 0;
+}
 
 function App() {
   const [history, setHistory] = useState<{ entries: Entry[]; index: number }>({
@@ -374,8 +529,12 @@ function App() {
       }
       const [file = "", anchor = null] = href.split("#") as [string, string?];
       if (!file) return go(entry.path, anchor || null);
-      let path = resolve(entry.path, file);
-      if (DOCS[path] === undefined && DOCS[`${path}/README.md`] !== undefined) path = `${path}/README.md`;
+      let path = resolve(base(entry.path), file);
+      // `folder/` opens the folder's listing; `folder` alone, its README if it has one.
+      if (DOCS[path] === undefined && !file.endsWith("/") && DOCS[`${path}/README.md`] !== undefined) {
+        path = `${path}/README.md`;
+      }
+      if (isFolder(path)) return go(path, null);
       if (DOCS[path] === undefined) {
         setStatus(`Not a doc, so not shown here: ${path}`);
         return;
@@ -399,7 +558,8 @@ function App() {
       el.scrollTo(0, entry.scroll);
     }
     // Reveal the open file in the tree.
-    const folders = entry.path.split("/").slice(0, -1);
+    const parts = entry.path ? entry.path.split("/") : [];
+    const folders = isFolder(entry.path) ? parts : parts.slice(0, -1);
     setOpen((o) => {
       const want = folders.map((_, i) => folders.slice(0, i + 1).join("/"));
       return want.every((f) => o.has(f)) ? o : new Set([...o, ...want]);
@@ -419,7 +579,7 @@ function App() {
 
   const ctx = useMemo<Ctx>(() => {
     headings.current = new Map();
-    return { path: entry.path, follow, hover: setHovered, headings: headings.current };
+    return { path: base(entry.path), follow, hover: setHovered, headings: headings.current };
   }, [entry.path, follow]);
 
   const toggle = (path: string) =>
@@ -431,7 +591,10 @@ function App() {
 
   const canBack = history.index > 0;
   const canForward = history.index < history.entries.length - 1;
-  const footer = hovered ? (isExternal(hovered) ? hovered : resolve(entry.path, hovered)) : status;
+  const footer = hovered ? (isExternal(hovered) ? hovered : resolve(base(entry.path), hovered)) : status;
+  // The path bar, like Explorer's: every folder in it opens that folder.
+  const parts = entry.path ? entry.path.split("/") : [];
+  const crumbs = [{ name: "Iron", path: "" }, ...parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/") }))];
 
   return (
     <box
@@ -469,13 +632,22 @@ function App() {
           </svg>
         </box>
         <Text className="crumbs">
-          {entry.path.split("/").map((part, i, all) => (
-            <Span key={i} className={i === all.length - 1 ? "crumb last" : "crumb"}>
-              {i ? ` / ${part}` : part}
-            </Span>
-          ))}
+          {crumbs.map((c, i) => {
+            const last = i === crumbs.length - 1;
+            return (
+              <Fragment key={c.path}>
+                {i ? <Span className="crumb-sep">{" / "}</Span> : null}
+                <Span
+                  className={last ? "crumb last" : "crumb"}
+                  onClick={last ? undefined : () => go(c.path, null)}
+                >
+                  {c.name}
+                </Span>
+              </Fragment>
+            );
+          })}
         </Text>
-        <Text className="doc-title">{title(entry.path)}</Text>
+        <Text className="doc-title">{isFolder(entry.path) ? `${entry.path || "Iron"}/` : title(entry.path)}</Text>
       </box>
       <box className="body">
         {sidebar ? (
@@ -491,7 +663,7 @@ function App() {
           }}
         >
           <box key={entry.path} className="page">
-            <Blocks blocks={doc.blocks} ctx={ctx} />
+            <Page doc={doc} need={rowsNeeded(doc, entry)} ctx={ctx} />
           </box>
         </box>
       </box>

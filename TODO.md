@@ -1690,8 +1690,18 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
     Alt+Left / Alt+Right, mouse side buttons) keeping each page's scroll; links between docs
     and to `#headings`; link targets in the status bar
   - [x] Spans are hit-tested in `iron_ui` (`M3-EVT-07`), so inline links take clicks and `:hover`
-  - [ ] Long docs (TODO.md, TESTS.md) mount every block at once: ~3.5 s to open in a debug build.
-    Mount blocks lazily as they scroll into view
+  - [x] Long docs load progressively: a screenful at once, then a chunk a frame (memoized chunk
+    boxes, long lists cut between items); the parser scans without copying (TODO.md: first
+    paint ~150 ms instead of ~1 s in release)
+  - [x] The path bar works like Explorer's: each folder in it opens a listing of that folder
+  - [x] `iron_ui`: appending to a long column no longer re-measures the siblings (an exact size
+    cache beyond Taffy's nine entries, `M2-LAY-07`); drawing skips subtrees scrolled out of
+    their clips (`M2-DRW-09`); relayouts that keep a text block's width skip re-breaking its
+    lines. A scroll frame of TODO.md: ~21 ms to ~5 ms in release
+  - [ ] Scrolling still lays out again (rects, ink, hover restyle: two passes a wheel tick, ~55 ms
+    a frame in a debug build): move the scrolled subtree's rects instead
+  - [ ] Debug builds run `iron_ui` unoptimized (dependencies are `opt-level = 3`); consider
+    `[profile.dev.package.iron_ui] opt-level = 1`
   - [ ] Search across docs, an "on this page" outline, selectable/copyable text and code
   - [ ] Open external links in the system browser (needs an app shell op, M6 / platform plan)
 - [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
