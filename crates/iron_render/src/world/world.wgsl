@@ -395,7 +395,7 @@ struct VolumeFrame {
     // xyz: where in each cell to sample (0..1); w: how much of this frame to keep (1: all,
     // no history).
     jitter: vec4<f32>,
-    // x: shadow samples per cell this frame.
+    // x: shadow samples per cell this frame; y: for cells whose view moved.
     samples: vec4<f32>,
 };
 @group(3) @binding(4) var<uniform> frame: VolumeFrame;
@@ -529,8 +529,34 @@ fn cell_point(f: vec3<f32>) -> CellPoint {
     return CellPoint(eye + dir * slice_distance(f.z), dir);
 }
 
+// Last frame's lit cells at `p` (0..1), read sharply: a Catmull-Rom filter across the screen
+// (linear in depth), so reprojecting the history each frame doesn't blur it. Five filtered
+// reads, the bilinear trick folding the 4 x 4 kernel into 3 x 3 and the corners (tiny
+// weights) left out, as TAA does (Jimenez). Clamped at zero: it can overshoot at hard edges.
+fn history_at(p: vec3<f32>) -> vec3<f32> {
+    let size = vec2<f32>(textureDimensions(light_history).xy);
+    let at = p.xy * size;
+    let t1 = floor(at - 0.5) + 0.5;
+    let f = at - t1;
+    let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    let w3 = f * f * (-0.5 + 0.5 * f);
+    let w12 = w1 + w2;
+    let t0 = (t1 - 1.0) / size;
+    let t3 = (t1 + 2.0) / size;
+    let t12 = (t1 + w2 / w12) / size;
+    var sum = textureSampleLevel(light_history, volume_samp, vec3<f32>(t12.x, t0.y, p.z), 0.0).rgb * (w12.x * w0.y);
+    sum += textureSampleLevel(light_history, volume_samp, vec3<f32>(t0.x, t12.y, p.z), 0.0).rgb * (w0.x * w12.y);
+    sum += textureSampleLevel(light_history, volume_samp, vec3<f32>(t12.x, t12.y, p.z), 0.0).rgb * (w12.x * w12.y);
+    sum += textureSampleLevel(light_history, volume_samp, vec3<f32>(t3.x, t12.y, p.z), 0.0).rgb * (w3.x * w12.y);
+    sum += textureSampleLevel(light_history, volume_samp, vec3<f32>(t12.x, t3.y, p.z), 0.0).rgb * (w12.x * w3.y);
+    let weight = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+    return max(sum / weight, vec3<f32>(0.0));
+}
+
 // How much more of each new frame a light-volume cell takes per cell its history moved.
-const MOTION_TRUST: f32 = 0.35;
+const MOTION_TRUST: f32 = 0.15;
 
 // Three numbers in 0..1 that look random, from a volume cell's coordinates (PCG-style).
 fn cell_hash(id: vec3<u32>) -> vec3<f32> {
@@ -577,8 +603,20 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
     // moire bands; shifted, it's grain the blending smooths. The first frame (no history)
     // samples each cell's middle.
     let shift = select(vec3<f32>(0.0), cell_hash(id), blend < 1.0);
-    // More samples a frame: spread along an R3 sequence (evenly in 3D) from the first.
-    let count = max(1, i32(frame.samples.x));
+    // Where the cell was last frame, and how far that is (in cells).
+    var was = vec3<f32>(-1.0);
+    var has_history = false;
+    var moved = 0.0;
+    if (blend < 1.0) {
+        was = last_cell(cell_point((cell + 0.5) / n).x);
+        has_history = all(was >= vec3<f32>(0.0)) && all(was <= vec3<f32>(1.0));
+        moved = length((was - (cell + 0.5) / n) * n);
+    }
+    // More samples a frame: spread along an R3 sequence (evenly in 3D) from the first. Cells
+    // whose view moved (or that have no history) take the motion count: that's when their
+    // history counts least, so fresh samples are what they show.
+    let base = max(1, i32(frame.samples.x));
+    let count = select(base, max(base, i32(frame.samples.y)), moved > 0.25 || !has_history);
     var light = vec3<f32>(0.0);
     for (var k = 0; k < count; k++) {
         let r3 = vec3<f32>(0.8191725, 0.6710436, 0.5497005) * f32(k);
@@ -586,18 +624,13 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
         light += scattered_all(at.x, at.dir);
     }
     light /= f32(count);
-    if (blend < 1.0) {
-        let was = last_cell(cell_point((cell + 0.5) / n).x);
-        if (all(was >= vec3<f32>(0.0)) && all(was <= vec3<f32>(1.0))) {
-            let history = textureSampleLevel(light_history, volume_samp, was, 0.0).rgb;
-            // The further the history has moved (in cells), the less it's trusted: each
-            // reprojection blurs it a little (a filtered read between cells), and with a long
-            // history that piles up into smeared beams while the camera moves. Still, it's
-            // trusted fully.
-            let moved = length((was - (cell + 0.5) / n) * n);
-            let fresh = max(blend, min(0.5, moved * MOTION_TRUST));
-            light = mix(history, light, fresh);
-        }
+    if (has_history) {
+        let history = history_at(was);
+        // The further the history has moved, the less it's trusted: each reprojection
+        // blurs it a little, and with a long history that piles up into smeared beams
+        // while the camera moves. Still, it's trusted fully.
+        let fresh = max(blend, min(0.5, moved * MOTION_TRUST));
+        light = mix(history, light, fresh);
     }
     textureStore(light_out, vec3<i32>(id), vec4<f32>(light, 1.0));
 }

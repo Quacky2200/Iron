@@ -1325,6 +1325,8 @@ impl WorldViews {
                                 },
                                 history_weight: v.get(11).copied().unwrap_or(0.9).clamp(0.0, 0.98),
                                 samples: v.get(12).copied().unwrap_or(1.0).clamp(1.0, 8.0) as u32,
+                                motion_samples: v.get(13).copied().unwrap_or(2.0).clamp(1.0, 8.0)
+                                    as u32,
                             }
                         }),
                         cull: !matches!(args.get(8), Some(Value::Bool(false))),
@@ -2508,6 +2510,7 @@ mod tests {
                 denoising: Denoising::Both,
                 history_weight: 0.9,
                 samples: 1,
+                motion_samples: 2,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();

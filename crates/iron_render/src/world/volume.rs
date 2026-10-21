@@ -65,8 +65,9 @@ pub struct VolumeCamera {
     pub reprojection: bool,
     /// How much of each new frame goes into a cell (1 - the history weight).
     pub blend: f32,
-    /// Shadow samples per cell each frame.
+    /// Shadow samples per cell each frame, and for cells whose view moved.
     pub samples: u32,
+    pub motion_samples: u32,
 }
 
 /// `VolumeFrame` in world.wgsl.
@@ -77,7 +78,7 @@ struct GpuFrame {
     prev_camera: [f32; 4],
     prev_view_dir: [f32; 4],
     jitter: [f32; 4],
-    /// x: samples per cell.
+    /// x: samples per cell; y: for cells whose view moved.
     samples: [f32; 4],
 }
 
@@ -332,7 +333,12 @@ impl VolumePass {
             prev_camera: [p.x, p.y, p.z, f32::from(u8::from(prev.orthographic))],
             prev_view_dir: [f.x, f.y, f.z, prev.distance],
             jitter: [jx, jy, jz, blend],
-            samples: [camera.samples.max(1) as f32, 0.0, 0.0, 0.0],
+            samples: [
+                camera.samples.max(1) as f32,
+                camera.motion_samples as f32,
+                0.0,
+                0.0,
+            ],
         };
         gpu.queue
             .write_buffer(&s.frame, 0, bytemuck::bytes_of(&frame));

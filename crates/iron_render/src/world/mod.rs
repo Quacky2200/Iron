@@ -636,6 +636,9 @@ pub struct VolumetricFog {
     /// Shadow samples per cell each frame (1 to 8): more is less noise, at that many times
     /// the volume's lighting cost.
     pub samples: u32,
+    /// Samples for cells whose view moved this frame (adaptive: the cost only while the
+    /// camera moves, when the history counts least).
+    pub motion_samples: u32,
 }
 
 /// How the light volume's sampling is cleaned up (HDRP's volumetric denoising mode).
@@ -677,6 +680,7 @@ impl Default for VolumetricFog {
             denoising: Denoising::Both,
             history_weight: 0.9,
             samples: 1,
+            motion_samples: 2,
         }
     }
 }
@@ -3643,6 +3647,7 @@ impl WorldRenderer {
                             reprojection: v.denoising.temporal(),
                             blend: 1.0 - v.history_weight.clamp(0.0, 0.98),
                             samples: v.samples.clamp(1, 8),
+                            motion_samples: v.motion_samples.clamp(1, 8),
                             lights: view
                                 .lights
                                 .iter()

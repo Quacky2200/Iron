@@ -3937,11 +3937,18 @@ fn turning_cameras_beams_stay_close_to_a_still_cameras() {
         samples: 4,
         ..base
     });
+    let still_samples = grate_smear(VolumetricFog {
+        motion_samples: 1,
+        ..base
+    });
+    eprintln!(
+        "smear: default {default:.3} (1 sample moving: {still_samples:.3}), history 0.96 x4 samples {heavy:.3}"
+    );
     // A long history smeared beams while turning (0.38 against 0.27 before cells trusted it
     // less the further it moved); now it's no worse than the default.
     assert!(
-        heavy < default + 0.02,
-        "smear: default {default}, history 0.96 x4 samples {heavy}"
+        heavy < default + 0.02 && default < still_samples,
+        "smear: default {default} (1 sample moving {still_samples}), history 0.96 x4 samples {heavy}"
     );
 }
 
