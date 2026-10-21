@@ -120,7 +120,8 @@ function atlas(): Texture {
     return new Color(c.r * f, c.g * f, c.b * f, 1);
   };
   for (let tile = 0; tile < TILES; tile++) {
-    const grassDepth = Array.from({ length: PX }, () => 3 + Math.floor(rnd() * 3));
+    // A thin rim of grass curling over the side's top edge, the odd blade dripping lower.
+    const grassDepth = Array.from({ length: PX }, () => 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < 0.12 ? 1 : 0));
     for (let y = 0; y < PX; y++) {
       for (let x = 0; x < PX; x++) {
         let c: Color;
@@ -306,7 +307,7 @@ function buildChunk(cx: number, cz: number): ChunkMesh {
         const nh = hs[(z + n[2] + 1) * W + (x + n[0] + 1)]!;
         for (let y = nh > 0 ? nh : 0; y < h; y++) {
           const depth = h - 1 - y;
-          face(f, x, y, z, sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : Tile.Dirt);
+          face(f, x, y, z, sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : depth === 0 ? Tile.GrassSide : Tile.Dirt);
         }
       }
       // Water over low ground: a flat surface a little below the block top.

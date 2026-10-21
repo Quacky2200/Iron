@@ -91,7 +91,8 @@ function atlas(): Texture {
     return new Color(c.r * f, c.g * f, c.b * f, 1);
   };
   for (let tile = 0; tile < TILES; tile++) {
-    const grassDepth = Array.from({ length: PX }, () => 3 + Math.floor(rnd() * 3));
+    // A thin rim of grass curling over the side's top edge, the odd blade dripping lower.
+    const grassDepth = Array.from({ length: PX }, () => 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < 0.12 ? 1 : 0));
     for (let y = 0; y < PX; y++) {
       for (let x = 0; x < PX; x++) {
         let c: Color;
@@ -274,8 +275,8 @@ class Blocks extends Component {
     }
     const solid = (i: number, y: number, j: number) => y < columnHeight(i, j) || tree.has(key(i, y, j));
 
-    // The hill in 16×16-column chunks, each one mesh: grass tops, dirt sides down to the
-    // lowest neighbour, stone deeper down; then the trees' blocks.
+    // The hill in 16×16-column chunks, each one mesh: grass tops, dirt sides with a grass rim down to
+    // the lowest neighbour, stone deeper down; then the trees' blocks.
     const material = Material.create({ mainTexture: atlas(), smoothness: 0 });
     for (let ci = 0; ci < N; ci += CHUNK) {
       for (let cj = 0; cj < N; cj += CHUNK) {
@@ -292,7 +293,7 @@ class Blocks extends Component {
               const n = FACES[f]!.n;
               for (let y = Math.max(columnHeight(i + n[0], j + n[2]), 0); y < h; y++) {
                 const depth = h - 1 - y;
-                face(f, x, y, z, depth >= 4 ? Tile.Stone : Tile.Dirt);
+                face(f, x, y, z, depth === 0 ? Tile.GrassSide : depth >= 4 ? Tile.Stone : Tile.Dirt);
               }
             }
           }
