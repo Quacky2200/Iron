@@ -82,3 +82,158 @@ fn window_listeners_run_from_quickjs_and_can_cancel_a_close() {
         assert_eq!(last, "false|L|301");
     });
 }
+
+// ---- Messages (step M3) ----------------------------------------------------------------------
+
+fn run_jobs(ctx: &rquickjs::Ctx<'_>) {
+    while ctx.execute_pending_job() {}
+}
+
+// M9-TS-2844
+#[test]
+fn quickjs_post_message_and_on_message_round_trip() {
+    with_world(|ctx| {
+        let _: () = js(
+            ctx,
+            "globalThis.log = [];\
+             globalThis.iso = Window.create({ title: 'Inspector' });\
+             iso.onMessage((from, msg) => log.push('win ' + from.handle + ' ' + msg.kind + ' ' + msg.p.join(',') + ' ' + msg.list.length));\
+             iso.run(() => {\
+               log.push('run in ' + Window.current.domain);\
+               Window.onMessage((from, msg) => log.push('dom ' + msg.kind));\
+             });",
+        );
+        let iso = WindowRef(2);
+        let d = window::DomainId(2);
+        // The posting is queued; the value class travels in its compact form.
+        let ok: bool = js(
+            ctx,
+            "iso.postMessage({ kind: 'select', p: new Vector3(1, 2, 3), list: [1, 2] })",
+        );
+        assert!(ok);
+        assert_eq!(window::pending(d), 1);
+        window::deliver(d, 0.0);
+        let log: String = js(ctx, "log.join('|')");
+        assert_eq!(log, "run in 2|win 1 select 1,2,3 2|dom select");
+        // The reverse way: the isolated domain posts to the main window, which a listener of
+        // the main domain hears (statics: Window.onMessage and Window.broadcast).
+        let _: () = js(
+            ctx,
+            "globalThis.heard = [];\
+             Window.onMessage((from, msg) => heard.push(from.handle + ':' + JSON.stringify(msg)));\
+             Window.main.onMessage((from, msg) => heard.push('main ' + msg.n));",
+        );
+        let _g = window::enter_domain(d);
+        let n: u32 = js(ctx, "Window.broadcast({ n: 5 })");
+        assert_eq!(n, 1);
+        drop(_g);
+        window::deliver(window::DomainId::MAIN, 0.0);
+        let heard: String = js(ctx, "heard.join('|')");
+        assert_eq!(heard, "main 5|2:{\"n\":5}");
+        // Bad JSON on the wire throws inside the listener; the other listeners still run.
+        assert!(iso.post_message_json("{oops"));
+        window::deliver(d, 0.0);
+        let n: u32 = js(ctx, "log.length");
+        assert_eq!(n, 3, "nothing new was logged");
+    });
+}
+
+// M9-TS-2845
+#[test]
+fn quickjs_post_message_refuses_handles_and_functions() {
+    with_world(|ctx| {
+        let r: String = js(
+            ctx,
+            "const w = Window.create({ title: 'T' });\
+             const tries = [\
+               () => w.postMessage({ go: new GameObject('x'), n: 1 }),\
+               () => w.postMessage({ list: [{ who: Window.main }] }),\
+               () => w.postMessage({ f: () => 1 }),\
+               () => w.postMessage(undefined),\
+               () => w.postMessage(() => 1),\
+               () => { const a = {}; a.a = a; return w.postMessage(a); },\
+             ];\
+             tries.map((t) => { try { t(); return 'sent'; } catch (e) { return e.constructor.name + ': ' + e.message; } }).join('\\n')",
+        );
+        let lines: Vec<&str> = r.lines().collect();
+        assert!(
+            lines[0].starts_with("TypeError")
+                && lines[0].contains("\"go\"")
+                && lines[0].contains("GameObject handle"),
+            "{r}"
+        );
+        assert!(
+            lines[1].contains("\"who\"") && lines[1].contains("Window handle"),
+            "{r}"
+        );
+        assert!(
+            lines[2].contains("\"f\"") && lines[2].contains("function"),
+            "{r}"
+        );
+        assert!(
+            lines[3].starts_with("TypeError") && lines[3].contains("undefined"),
+            "{r}"
+        );
+        assert!(lines[4].contains("function"), "{r}");
+        assert!(lines[5].starts_with("TypeError"), "{r}");
+        assert_eq!(
+            window::pending(window::DomainId(2)),
+            0,
+            "nothing was queued"
+        );
+        // Structured data goes: nested objects, arrays, null, value classes, a string.
+        let ok: String = js(
+            ctx,
+            "[w.postMessage({ a: [1, { b: null }], v: new Vector3(1, 2, 3), s: 'x' }), w.postMessage('plain'), w.postMessage(null)].join(',')",
+        );
+        assert_eq!(ok, "true,true,true");
+        // Over 1 MiB is refused with false, not a throw.
+        let big: bool = js(ctx, "w.postMessage('x'.repeat(1 << 20))");
+        assert!(!big);
+    });
+}
+
+// M9-TS-2846
+#[test]
+fn quickjs_request_resolves_after_reply() {
+    with_world(|ctx| {
+        let _: () = js(
+            ctx,
+            "globalThis.out = [];\
+             globalThis.iso = Window.create({ title: 'Inspector' });\
+             globalThis.quiet = Window.create({ title: 'Quiet' });\
+             iso.onRequest((from, req, reply) => reply({ n: req.kind.length, from: from.handle }));\
+             quiet.onRequest(() => {});\
+             iso.request({ kind: 'stats' }).then((r) => out.push('ok ' + r.n + ' ' + r.from));\
+             quiet.request({ kind: 'x' }, 50).catch((e) => out.push(e.constructor.name + ' ' + e.message));\
+             Window.create({ title: 'Mute' }).request(1).catch((e) => out.push('mute ' + e.message));",
+        );
+        run_jobs(ctx);
+        let out: String = js(ctx, "out.join('|')");
+        assert_eq!(out, "", "nothing settles before the domains run");
+        for h in [2, 3, 4] {
+            window::deliver(window::DomainId(h), 0.0);
+        }
+        run_jobs(ctx);
+        let out: String = js(ctx, "out.join('|')");
+        assert_eq!(out, "", "the replies are on their way to the main domain");
+        window::deliver(window::DomainId::MAIN, 10.0);
+        run_jobs(ctx);
+        let out: String = js(ctx, "out.join('|')");
+        assert_eq!(out, "ok 5 1|mute no request listener");
+        window::deliver(window::DomainId::MAIN, 51.0);
+        run_jobs(ctx);
+        let out: String = js(ctx, "out.join('|')");
+        assert_eq!(out, "ok 5 1|mute no request listener|Error timed out");
+        // A request to a closed window is refused at once.
+        window::closed(WindowRef(2));
+        let r: String = js(
+            ctx,
+            "globalThis.r2 = ''; iso.request(1).catch((e) => { globalThis.r2 = e.message; }); 'queued'",
+        );
+        assert_eq!(r, "queued");
+        run_jobs(ctx);
+        let r: String = js(ctx, "globalThis.r2");
+        assert!(r.starts_with("request refused"), "{r}");
+    });
+}

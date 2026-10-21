@@ -1439,3 +1439,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2841 | Integration | `await win.request<{ n: number }>(..)` resolves with the typed reply once both domains were delivered and the microtasks ran. |
 | M9-TS-2842 | Integration | `request` rejects with `timed out`, `window closed` and `no request listener`. |
 | M9-TS-2843 | Integration | `Window.broadcast(data)` reaches the other family's `Window.onMessage<T>` listener; the sender's own domain gets nothing. |
+| M9-TS-2844 | Integration | In QuickJS `win.postMessage(obj)` / `win.onMessage(f)` / `Window.onMessage(f)` / `win.run(f)` round-trip through `deliver` in two domains; a value class travels as `[x, y, z]`; `Window.broadcast` reaches the other family (`crates/iron_native/tests/window.rs`, `QUICKJS_PRELUDE`). |
+| M9-TS-2845 | Integration | `postMessage` in QuickJS throws `TypeError` (naming the key) for engine handles, functions, `undefined` and cycles and queues nothing; over 1 MiB returns false. |
+| M9-TS-2846 | Integration | In QuickJS `win.request(data)` returns a promise that resolves with the parsed reply after both domains delivered and the job queue ran; it rejects with `timed out`, `no request listener`, and `request refused` for a closed window. |

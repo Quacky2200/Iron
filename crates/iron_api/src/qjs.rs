@@ -55,6 +55,11 @@ pub fn handle_arg<'js>(ctx: &Ctx<'js>, v: &Value<'js>, class: &'static str) -> R
     ))
 }
 
+/// Is the value an engine handle object (a `GameObject`, a `Window`, ...)? Messages refuse them.
+pub fn is_handle(v: &Value<'_>) -> bool {
+    Class::<HandleBox>::from_value(v).is_ok()
+}
+
 /// The value as an options object (`Window.create({ title: "T" })`): a plain object whose prototype
 /// is `Object.prototype` (or none), not an array, not a function, not a handle or value-class
 /// instance (those have their class's prototype).

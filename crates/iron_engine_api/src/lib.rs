@@ -132,6 +132,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     audio_components::audio_listener_api::register_quickjs(ctx)?;
     cursor::cursor_api::register_quickjs(ctx)?;
     cursor::cursor_lock_mode_api::register_quickjs(ctx)?;
-    window::window_api::register_quickjs(ctx)?;
+    window::register_quickjs(ctx)?;
     Ok(())
 }

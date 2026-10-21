@@ -1079,6 +1079,100 @@ fn add_listener<A: Clone + 'static>(
     })
 }
 
+/// JavaScript over the `...Json` natives for QuickJS games: the typed-looking `postMessage`, `request`,
+/// `onMessage`, `onRequest` and `Window.broadcast` / `Window.onMessage` / `Window.onRequest`. The wire
+/// form is JSON text: `JSON.stringify` with a replacer that throws a `TypeError` for functions and engine
+/// handle objects (`__iron_is_handle`), `JSON.parse` on the way in. Compiled code lowers the same calls
+/// onto the same natives (`tools/iron_ts/src/lower/facade.ts`), with the types checked at compile time.
+pub const QUICKJS_PRELUDE: &str = r#"
+(function () {
+  const W = globalThis.Window;
+  const isHandle = globalThis.__iron_is_handle;
+  const where = (key) => (key === '' ? 'the message' : '"' + key + '"');
+  const replacer = function (key, v) {
+    if (typeof v === 'function') {
+      throw new TypeError('Window messages carry structured data only: ' + where(key) + ' is a function');
+    }
+    if (v !== null && typeof v === 'object' && isHandle(v)) {
+      throw new TypeError('Window messages carry structured data only: ' + where(key) + ' is a ' +
+        Object.prototype.toString.call(v).slice(8, -1) + ' handle; send a number such as win.handle and look it up on the other side');
+    }
+    return v;
+  };
+  const toJson = (data) => {
+    const text = JSON.stringify(data, replacer);
+    if (text === undefined) {
+      throw new TypeError('Window messages carry structured data only: undefined cannot be sent');
+    }
+    return text;
+  };
+  const def = (target, name, value) =>
+    Object.defineProperty(target, name, { value, configurable: true, writable: true });
+  const requestListener = (f) => (from, text, id) =>
+    f(from, JSON.parse(text), (answer) => { W.replyJson(id, toJson(answer)); });
+
+  def(W.prototype, 'postMessage', function (data) { return this.postMessageJson(toJson(data)); });
+  def(W.prototype, 'onMessage', function (f) {
+    return this.onMessageJson((from, text) => f(from, JSON.parse(text)));
+  });
+  def(W.prototype, 'onRequest', function (f) { return this.onRequestJson(requestListener(f)); });
+  def(W, 'onMessage', function (f) {
+    return W.onMessageJson((from, text) => f(from, JSON.parse(text)));
+  });
+  def(W, 'onRequest', function (f) { return W.onRequestJson(requestListener(f)); });
+  def(W, 'broadcast', function (data) { return W.broadcastJson(toJson(data)); });
+
+  // `request`: a promise settled by the domain's `onReplyJson` listener (one per domain).
+  const pending = new Map();
+  const listening = new Set();
+  const listen = () => {
+    const d = W.current.domain;
+    if (listening.has(d)) return;
+    listening.add(d);
+    W.onReplyJson((id, text, error) => {
+      const p = pending.get(id);
+      if (p === undefined) return;
+      pending.delete(id);
+      if (error !== '') {
+        p.reject(new Error(error));
+        return;
+      }
+      try {
+        p.resolve(JSON.parse(text));
+      } catch (e) {
+        p.reject(e);
+      }
+    });
+  };
+  def(W.prototype, 'request', function (data, timeoutMs) {
+    const text = toJson(data);
+    listen();
+    return new Promise((resolve, reject) => {
+      const id = this.postRequestJson(text, timeoutMs === undefined ? NaN : timeoutMs);
+      if (id === 0) {
+        reject(new Error('request refused: the window is closed or the message is over 1 MiB'));
+      } else {
+        pending.set(id, { resolve, reject });
+      }
+    });
+  });
+})();
+"#;
+
+/// Installs the `Window` class and its JavaScript helpers in a QuickJS context (use this rather than
+/// `window_api::register_quickjs` alone: that one has no `postMessage` / `request` / `onMessage`).
+pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+    window_api::register_quickjs(ctx)?;
+    ctx.globals().set(
+        "__iron_is_handle",
+        iron_api::rquickjs::Function::new(ctx.clone(), |v: iron_api::rquickjs::Value<'_>| {
+            iron_api::qjs::is_handle(&v)
+        })?,
+    )?;
+    ctx.eval::<(), _>(QUICKJS_PRELUDE)?;
+    Ok(())
+}
+
 /// The game's windows. `Window.main` is the original one; `Window.create({ .. })` makes more.
 #[iron_api(namespace = "Window", quickjs, handles(Window = WindowRef))]
 pub mod window_api {
