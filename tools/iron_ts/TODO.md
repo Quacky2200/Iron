@@ -192,7 +192,7 @@ Differences to keep in mind:
 
 ## Windows API (design 2026-10-21)
 
-Design `docs/research/iron-windows.md`, steps `docs/research/iron-windows-plan.md` (tests `M9-API-1400..1499`, `M9-TS-2800..2899`).
+Design `docs/research/iron-windows.md`, steps `docs/research/iron-windows-plan.md` (tests `M9-API-1400..1499`, `M9-TS-2800..2899`; families and messages `M9-API-1495..1499`, `M9-TS-2831..2850`).
 A `Window` handle class in `iron_engine_api::window` (`Window.main`, `Window.create({ title, width, height, style: "tool", parent,
 key })`, `title`, `style`, `parent`, `isChild`, `handle`, `nativeHandle`, `close()`, `onCloseRequested` + `cancelClose()`, ...), each
 window with its own UI root (`createRoot(win)`), multi-window `iron_platform` with a fake backend, secondary windows offscreen in
@@ -204,9 +204,13 @@ screenshot runs, `examples/windows`.
 - [ ] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
 - [ ] Steps 5 to 10: platform runner, `Gpu::create_window_surface`, `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
 - [ ] Step 11: `examples/windows`. Step 12: docs.
-- [ ] Waiting for the user: U1..U6 and D1..D5 (design section 14).
-- Differences to review: QuickJS has `Window.main()` / `focused()` / `current()` / `count()` as functions (no static properties on
-  handle classes in QuickJS, as `AudioListener.volume`); compiled code reads them as properties.
+- [ ] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).
+- [ ] Steps F1 to F4: window families and event domains (per-family input, focus, pause, timers, UI roots; one winit loop,
+  per-domain queues; threads / processes per domain are later phases).
+- [ ] Steps M1 to M3: messages (`postMessage`, `onMessage<T>`, `request<R>`, `onRequest`, `broadcast`; JSON of the static type,
+  no handles), and the isolated Inspector in `examples/windows`.
+- Answered by the user (2026-10-21): `isChild` = has a parent; hot reload keeps keyed windows; secondary windows vsync off; no OS
+  windows for secondary windows in screenshot runs; D1..D4 optional later.
 
 ## Backlog
 

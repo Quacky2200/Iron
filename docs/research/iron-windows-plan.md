@@ -1,6 +1,8 @@
 # Windows: the step list
 
-Design: [iron-windows.md](iron-windows.md) (section numbers below refer to it). Written 2026-10-21 against base `c3ffc1b`.
+Design: [iron-windows.md](iron-windows.md) (section numbers below refer to it). Written 2026-10-21 against base `c3ffc1b`;
+revised the same day with the user's answers: static accessors in QuickJS (step 1b), families and event domains (steps
+F1 to F4), messages (steps M1 to M3), the isolated Inspector in `examples/windows`.
 Each step is one commit. Test IDs: `M9-API-1400..1499` (Rust and QuickJS), `M9-TS-2800..2899` (compiled programs and bun).
 Add every ID to `TESTS.md` (under "M9.b", a new "Windows API" table) in the step that adds the test, tagged in a comment on the
 test as usual (`// M9-API-1401`).
@@ -26,6 +28,7 @@ Which steps touch which crates:
 | Step | iron_platform | iron_engine_api | iron_api(_macros) | tools/ (iron_ts, iron_ts_ui, iron_ts_tests) | iron_render | iron_app | js/ | examples |
 |---|---|---|---|---|---|---|---|---|
 | 1 | x | | | | | | | |
+| 1b | | | x | | | | | |
 | 2 | | x | | | | | | |
 | 3 | | | x | | | | | |
 | 4 | | | | x | | | | |
@@ -33,13 +36,25 @@ Which steps touch which crates:
 | 6 | | | | | x | | | |
 | 7 | | | | | | x | | |
 | 8 | | | | | | x | | |
+| F1, F2 | | x | | | | | | |
+| F3 | | | | x (iron_ts_rt) | | | | |
+| F4 | | | | | | x | | |
+| M1 | | x | | | | | | |
+| M2 | | | | x | | | | |
+| M3 | | x (prelude) | | | | x | x | |
 | 9 | | x | | | | x | | |
 | 10 | | | | | | x | x | |
 | 11 | | | | x (types only) | | | | x |
 | 12 | docs only | | | | | | | |
 
-Steps 1 to 4 are new code only (no existing behaviour changes). Steps 5 to 10 change `iron_platform`, `iron_render` and
-`iron_app` (allowed now). Steps D1 to D5 wait for the user's decision.
+Steps 1 to 4 (with 1b) are new code only (no existing behaviour changes). Steps 5 to 10 (with F and M) change
+`iron_platform`, `iron_render`, `iron_ts_rt`, `iron_script` and `iron_app` (allowed now). D1 to D5 are optional later steps
+(not blocking).
+
+**Test ID map.** `M9-API-1400..1489` as listed per step; `M9-API-1490..1491` static accessors (1b); `M9-API-1492..1494` spare;
+`M9-API-1495..1499` families, domains and messages (F1, F2, M1); `M9-TS-2800..2830` as listed; `M9-TS-2831..2850` domain timers,
+the app's domain model, compiled and QuickJS messages and the extended example. The optional D steps take IDs from the next free
+range when they are scheduled.
 
 ---
 
@@ -90,6 +105,38 @@ NativePlan, Os, WindowTree, WindowCommand, WindowHost, plan, place}`.
 
 ---
 
+## Step 1b: static accessor properties on handle classes (`iron_api_macros`, `iron_api::qjs`)
+
+**Why.** `Window.main` is a property in compiled TypeScript and must be one in QuickJS too (the user's requirement): not
+`Window.main()`. QuickJS accessor properties work on any object, including a class constructor.
+
+**Files.** `crates/iron_api_macros/src/lib.rs` (handle-class branch), `crates/iron_api/src/qjs.rs` (helper),
+`crates/iron_api/src/lib.rs` manifest types if needed, `crates/iron_api/tests/classes.rs` (or a new `static_props.rs`),
+`docs/iron-api.md` (one paragraph in "Handle classes").
+
+**Rule.** Inside a handle class's `impl`, `#[property] pub fn main() -> T` (no `self`, no parameters) is a **static getter**,
+and `pub fn set_main(v: T)` next to it (same type) the static setter.
+- Manifest: a class function of kind `Get` / `Set` with no `this` parameter (the compiler's `ext_static_prop` already reads a
+  no-argument static as a property; check that a `Get` kind there is accepted, else accept it in `manifest.rs`).
+- `.d.ts`: `static get main(): T;` (and `static set main(value: T);`), or `static readonly main: T` when read-only.
+- Shims: as today (`iron_Window_main`).
+- QuickJS: after the class constructor is made (`install_namespace` / the class object the macro builds), define the property on
+  the constructor with rquickjs 0.14's `Object::prop(name, Accessor::new_get(f))` (or `Accessor::new(get, set)`;
+  `rquickjs-core/src/value/object/property.rs`), configurable, not enumerable. A helper
+  `iron_api::qjs::define_static_accessor(ctx, class_obj, name, getter, setter: Option<..>)` keeps the macro output small.
+- A namespace function with the same name as a static property is a compile error (avoids silent shadowing).
+
+**Tests.**
+
+| ID | Test |
+|---|---|
+| M9-API-1490 | `a_static_property_of_a_handle_class_is_an_accessor_in_quickjs` (a demo class: `Demo.current` reads through the getter each time, `typeof Demo.current === "object"`, `Object.getOwnPropertyDescriptor(Demo, "current").get` is a function, the manifest has kind `get` with no `this`, the d.ts says `static readonly current: Demo`) |
+| M9-API-1491 | `a_static_setter_writes_through_and_a_read_only_one_ignores_writes` (strict-mode assignment to a read-only static throws `TypeError`) |
+
+**Acceptance.** `cargo test -p iron_api -p iron_api_macros`; `M9-API-120` still passes (`cargo test -p iron_native`).
+
+---
+
 ## Step 2: the `Window` script API (`iron_engine_api::window`)
 
 **Files.** New `crates/iron_engine_api/src/window.rs`; `lib.rs`: `pub mod window;`, add `window::window_api::MANIFEST.to_json()`
@@ -98,7 +145,8 @@ to `manifests()` and `window::window_api::register_quickjs(ctx)?` to `register_q
 
 **Code.** Exactly design section 5: `WindowRef`, `MAIN`, `Style` (its own enum, no `iron_platform` dependency), `Flags`,
 `WindowState`, `WindowRequest`, `Opened`, the host functions and `#[iron_api(namespace = "Window", quickjs, handles(Window =
-WindowRef))] pub mod window_api`. Without step 3, leave `#[options]` out (add it in step 3).
+WindowRef))] pub mod window_api`. Without step 3, leave `#[options]` out (add it in step 3). The statics `main`, `focused`,
+`current`, `count` are `#[property]` statics (step 1b). The family, domain and message members come in steps F1 and M1.
 
 Behaviour details the tests pin down:
 
@@ -168,7 +216,7 @@ today). Positional calls keep working. The manifest does not change (the compile
 | M9-API-1430 | `an_options_object_fills_optional_parameters_by_name` (a demo `#[iron_api]` module in the test: `make(a: f64, #[optional(b = 2, c, s)] ...)`) |
 | M9-API-1431 | `left_out_keys_take_the_declared_defaults` |
 | M9-API-1432 | `positional_calls_still_work_and_a_value_class_argument_is_not_an_options_object` |
-| M9-API-1433 | `window_create_takes_an_options_object_in_quickjs` (`crates/iron_native/tests/window.rs`: `Window.create({ title: "T", style: "tool", width: 200 })`, then `Window.main().title`, `w.isChild`, `w.parent.handle === 1`) |
+| M9-API-1433 | `window_create_takes_an_options_object_in_quickjs` (`crates/iron_native/tests/window.rs`: `Window.create({ title: "T", style: "tool", width: 200 })`, then `Window.main.title` (a property, step 1b), `w.isChild`, `w.parent.handle === 1`) |
 | M9-API-1434 | `window_listeners_run_from_quickjs_and_can_cancel_a_close` (same file: `w.onCloseRequested(() => w.cancelClose())`, `window::close_requested(w) == false`) |
 
 Then put `#[options]` on `WindowRef::create`.
@@ -192,10 +240,7 @@ Then put `#[options]` on `WindowRef::create`.
     readonly parent: Window | undefined;
   }
   declare namespace Window {
-    const main: Window;
-    const focused: Window | undefined;
-    const current: Window;
-    const count: number;
+    const focused: Window | undefined;  // the manifest says Window (0 = none); the supplement makes it optional
     function create(options?: WindowOptions): Window;
     function at(index: number): Window | undefined;
     function find(key: string): Window | undefined;
@@ -347,7 +392,8 @@ saying so. (`cargo test -p iron_render` must still pass; no new goldens.)
   `windows.map[target - WINDOW_TARGET].tree` (or a pending list).
 - `window_input(key, ev)`: MAIN -> existing `input`; others -> `self.window_event(key, ev)`: pointer/wheel/keys/IME through
   `handle_on(Surface::Window(key), input)` (which uses that window's `Interaction` and dispatches UI events with
-  `window::enter_current`), keys also to game input unless typing (U2), `Resized` -> surface/offscreen resize + `window::resized`,
+  `window::enter_current`), keys also to game input unless typing (in this step every window counts as the main family;
+  steps F1 to F4 split isolated families off), `Resized` -> surface/offscreen resize + `window::resized`,
   `Moved` -> `window::moved` (logical), `ScaleChanged` -> `window::scale_changed`, `Focused` -> the focused set +
   `window::focus_changed`, `CloseRequested` never arrives here (the platform calls `close_requested`).
 - `close_requested(key)`: `window::close_requested(WindowRef(key.0))` inside `iron_scene::api::enter` (and the QuickJS
@@ -406,6 +452,139 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 
 ---
 
+## Steps F1 to F4: families and event domains (design section 3a)
+
+### Step F1: families in the API (`iron_engine_api::window`)
+
+- `DomainId(u32)` (`MAIN = DomainId(1)`), `domain_of`, `domains`, `enter_domain` / `DomainGuard`, `current_domain`
+  (default MAIN), `domain_focus_changed`, the members `root`, `isIsolated`, `domain`, `run(f)`, `Window.domainFocused`,
+  `Window.onDomainFocusChanged`, and `runInBackground` stored on roots.
+- `create`: a `parent` of 0 with style normal / borderless makes a new root (its own domain id = its handle); tool, dialog,
+  popup and child always get a parent (default MAIN); a normal window with a parent joins the parent's family.
+- Cross-family guard on every mutating member (design section 5 notes), with the setup exception: the creating domain may call
+  `createRoot`, `on*` and `run` on a new isolated root until `window::end_frame()` (a new host function the app calls once per
+  frame) clears the setup marks.
+- Listeners and `run` callbacks always run inside `enter_domain(domain_of(window))`.
+
+| ID | Test |
+|---|---|
+| M9-API-1495 | `windows_without_a_parent_are_isolated_roots_and_parented_windows_join_the_family` (tool -> domain 1; normal without parent -> its own domain, `isIsolated`, `root` itself, `isChild` false; normal with parent MAIN -> domain 1, `isChild` true; a tool of the isolated root -> that domain) |
+| M9-API-1496 | `another_familys_windows_can_be_read_but_not_changed_except_during_setup` (setter from domain 1 on an isolated root after `end_frame` is refused with a warning; during setup `run` and `onMessage` are accepted; `run` callbacks see `current_domain()` = the root's) |
+
+### Step F2: input per domain (`iron_engine_api::input`)
+
+- The module's `State` becomes `BTreeMap<u32, InputState>` (entry MAIN created at start); every host function gains a
+  domain-taking twin (`key_down_event_in(domain, ..)`, `mouse_move_in`, `tick_domain`, `blur_domain`), and the old names
+  are those twins with MAIN, so existing callers are unchanged. Script reads (`getKey`, `mousePosition`, ...) read
+  `window::current_domain()`'s state. `reset()` clears all domains. Gamepad events: the host passes the focused domain.
+- The engine crates' dependency: `input` calls `crate::window::current_domain()` (same crate).
+
+| ID | Test |
+|---|---|
+| M9-API-1497 | `keys_of_an_isolated_domain_do_not_reach_the_main_game` (key down in domain 5; `getKey` with MAIN current is false, with 5 current true; `tick_domain(5)` turns it into "this frame" for 5 only; gamepad routed to the focused domain) |
+
+### Step F3: timers per domain (`tools/iron_ts_rt`, `crates/iron_script`)
+
+- `iron_ts_rt/src/event.rs`: each timer and microtask records the domain current at registration through a host hook
+  `ts_rt_set_domain_hooks(current: extern "C" fn() -> u32, enter: extern "C" fn(u32), leave: extern "C" fn())` (default:
+  domain 1, no-op enter/leave, so tests and single-window games are unchanged). New `ts_rt_timers_advance_domain(now_ms, domain)`
+  fires only that domain's due timers (with `enter(domain)` around each); `ts_rt_timers_advance(now_ms)` stays "domain 1".
+  Microtasks keep their global order but run with their domain entered.
+- `crates/iron_script` QuickJS timers prelude: the same tag (a `__iron_domain()` native read at `setTimeout` time) and a
+  `__iron_timers_advance(now, domain)` entry.
+- The app (step F4) installs the hooks to `window::current_domain` / `enter_domain`.
+
+| ID | Test |
+|---|---|
+| M9-TS-2831 | `a_timer_fires_in_the_domain_that_set_it` (compiled bench `windows.ts`: `setTimeout` inside `run` of an isolated root; `advance_domain(1)` does not fire it, `advance_domain(5)` does, and inside it `Window.current.domain === 5`) |
+| M9-TS-2832 | `a_paused_domains_timers_wait` (not advanced while paused, fire on the first advance after resume; intervals do not catch up more than once, as the main loop's timers) |
+| M9-TS-2833 | `quickjs_timers_keep_their_domain` (`crates/iron_script` test, same as 2831 in QuickJS) |
+
+### Step F4: domains in the app (`iron_app`)
+
+- `windows.rs`: `Domain`, `Domains` (design 8.1); `window_input` queues non-main-window events per domain; `pump_domains`
+  (design 8.2 point 4) after `tick`; `events_done()` recomputes per-domain focus (`domain_focused(windows, tree)`, pure) and
+  calls `Lifecycle::set_focused` for MAIN and `window::domain_focus_changed` for every changed domain; isolated domains get their
+  own `Lifecycle` (`run_in_background` from the root; screenshot runs never pause); `paused()` = every domain paused; the
+  1/30 s frame cap when MAIN is paused and another domain is not (`lifecycle::frame_cap` gains the case);
+  `window::end_frame()` once per frame; the `iron_ts_rt` domain hooks installed for native games.
+- Game input (`send_game_input` / `game_input::apply_native`) takes the domain (MAIN for the main window as today).
+
+| ID | Test |
+|---|---|
+| M9-TS-2834 | `focus_moving_to_a_tool_window_keeps_the_main_domain_focused` (pure `domain_focused` over a `WindowTree` and a focused set) |
+| M9-TS-2835 | `focusing_an_isolated_window_unfocuses_the_main_domain_and_pauses_it_without_run_in_background` |
+| M9-TS-2836 | `the_app_pauses_only_when_every_domain_is_paused_and_caps_frames_while_one_runs` (`frame_cap` cases) |
+| M9-TS-2837 | `events_of_an_isolated_window_queue_for_its_domain` (the queueing helper; dispatch order main first) |
+
+(These are app-side Rust unit tests; they use IDs from the range given for this work.)
+
+**Acceptance.** `cargo test --workspace`, `cd tools && cargo test -p iron_ts_tests --test all windows`, and one screenshot run
+of the step 8 probe extended with `Window.create({ title: "Probe isolated", width: 160, height: 100 })`: three PNGs.
+
+---
+
+## Steps M1 to M3: messages between windows (design section 3b)
+
+### Step M1: the message queue (`iron_engine_api::window`)
+
+- Per-domain FIFO `VecDeque<Message { from: WindowRef, to: WindowRef, text: String, request: u64, reply_to: u64,
+  deadline_ms: f64 }>`; `post_message_json` (refuses closed targets and texts over `MAX_MESSAGE_BYTES`, logs), `post_request_json`
+  (ids from 1, deadline = now + timeout or 10000 ms), `reply_json` (once per id; later calls false), `broadcast_json` (every
+  other family root), `on_message_json` / `on_request_json` (per window and per domain), `on_reply_json` (per domain).
+- `deliver(d, now_ms)`: drains what was queued for `d` **before** the call (messages posted during delivery wait for the next
+  one), runs the target's listeners then the domain's, then replies (to `on_reply_json`), then expired requests (`on_reply_json`
+  with error "timed out") and requests whose target closed ("window closed") or found no listener ("no request listener").
+- `from` is the window current when posting (`Window.current`).
+
+| ID | Test |
+|---|---|
+| M9-API-1498 | `messages_arrive_at_the_next_delivery_in_order_per_sender` (two senders interleaved; nothing delivered before `deliver`; posting during delivery waits; over 1 MiB refused; a closed target drops) |
+| M9-API-1499 | `requests_get_one_reply_or_time_out_and_broadcast_reaches_other_roots` (reply resolves once; second `reply_json` false; no listener and timeout errors; target closed; broadcast skips the sender's family) |
+
+### Step M2: typed messages in compiled code (`tools/iron_ts`)
+
+- `engine_ts.d.ts` supplement: the generic members of design section 3 (`postMessage(data: unknown)`, `onMessage<T>`,
+  `onRequest<T, R>`, `request<R>(data, timeoutMs?): Promise<R>`, `Window.onMessage<T>`, `Window.onRequest<T, R>`,
+  `Window.broadcast`).
+- `tools/iron_ts/src/lower/facade.rs` / `facade.ts`: `win.postMessage(x)` -> `win.postMessageJson(JSON.stringify(x))` using the
+  typed JSON of `lower/json.rs` (the static type of `x`; a handle type anywhere in it is a compile error naming the field);
+  `onMessage<T>(f)` -> `onMessageJson((from, text) => f(from, JSON.parse<T>(text)))` (a parse/shape error is thrown inside the
+  callback, so the engine logs it through `callback::take_errors`); `onRequest<T, R>(f)` -> `onRequestJson((from, text, id) =>
+  f(from, JSON.parse<T>(text), (r: R) => Window.replyJson(id, JSON.stringify(r))))`; `request<R>` is a prelude function in
+  `facade.ts`: a per-program `Map<number, { resolve, reject }>`, one `Window.onReplyJson` listener installed lazily per domain,
+  `new Promise<R>` around `postRequestJson`. `T` must be given (or inferred from the listener's parameter annotation); without it,
+  a compile error asks for one (no untyped `JsonValue` yet).
+
+| ID | Test |
+|---|---|
+| M9-TS-2838 | `post_message_sends_the_static_type_as_json` (`bench/windows.ts`: an object with a string, a number array and a `Vector3`; the queued text is `{"kind":"select","p":[1,2,3],...}`) |
+| M9-TS-2839 | `on_message_parses_into_the_declared_type` |
+| M9-TS-2840 | `posting_a_handle_is_a_compile_error` (compile a snippet with `postMessage({ go: someGameObject })`: the error names `go`) |
+| M9-TS-2841 | `request_resolves_with_the_typed_reply` (`await win.request<{ n: number }>(..)` after `deliver` of both domains; microtasks run) |
+| M9-TS-2842 | `request_rejects_on_timeout_and_on_close` |
+| M9-TS-2843 | `broadcast_and_the_domain_listener_receive_messages` |
+
+### Step M3: messages in QuickJS and `@iron/engine` (`iron_engine_api`, `iron_app`, `js/`)
+
+- A JS prelude string in `window.rs` (`QUICKJS_PRELUDE`), evaluated by the module's `register_quickjs` after the class exists:
+  defines `Window.prototype.postMessage`, `request`, `onMessage`, `onRequest`, `Window.onMessage`, `Window.onRequest`,
+  `Window.broadcast` over the `...Json` natives, with `JSON.stringify(data, replacer)` (the replacer throws `TypeError` for
+  functions and handle objects: `Object.prototype.toString.call(v)` naming a handle class, checked against the class list) and
+  `JSON.parse`. The promise map lives in the prelude's closure.
+- `js/engine/src/window.ts` (step 10) gets the generic declarations.
+
+| ID | Test |
+|---|---|
+| M9-TS-2844 | `quickjs_post_message_and_on_message_round_trip` (`crates/iron_native/tests/window.rs`, two domains, `deliver`) |
+| M9-TS-2845 | `quickjs_post_message_refuses_handles_and_functions` |
+| M9-TS-2846 | `quickjs_request_resolves_after_reply` (run the job queue after `deliver`) |
+
+**Acceptance (M1 to M3).** `cargo test -p iron_engine_api -p iron_native`, `cd tools && cargo test -p iron_ts_tests --test all
+windows`, `bun test`.
+
+---
+
 ## Step 9: hot reload keeps keyed windows (`iron_engine_api`, `iron_app`)
 
 **Files.** `crates/iron_engine_api/src/window.rs` (`reload_begin`, `reload_end`, claiming in `create`), `native.rs`
@@ -413,7 +592,9 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 program `reload_end()`), `main.rs` `reload_scripts` (QuickJS: same two calls), `native_render.rs` (drop window runtimes on
 reload; new mounts refresh like panels).
 
-Rules: design section 9. `window::reset()` is **not** added to the reload reset list (it would close nothing on screen but forget
+Rules: design section 9 (with domains: kept roots keep their domain id; queued messages, pending requests and domain
+timers are dropped at `reload_begin`; a kept isolated root's `run` setup is open again until the first `end_frame` after the
+reload, so the new code can register its listeners). `window::reset()` is **not** added to the reload reset list (it would close nothing on screen but forget
 the windows); `reload_begin` replaces it there. `Native::shutdown` calls `window::reset()`.
 
 **Tests.**
@@ -435,7 +616,7 @@ the windows); `reload_begin` replaces it there. `Native::shutdown` calls `window
 **Files.** `crates/iron_app/src/main.rs` (where the QuickJS runtime is built and on every reset: `scripts.add_native(|ctx|
 iron_engine_api::window::window_api::register_quickjs(ctx))`, or the `NativeInit` shape `add_native` takes), new
 `js/engine/src/window.ts` (`export type WindowStyle`, `export interface WindowOptions`, `export declare class Window` mirroring the
-design listing with QuickJS's `main()` / `focused()` / `current()` / `count()` functions, and `export const Window =
+design listing (static properties `main`, `focused`, `current`, `count`, `domainFocused`, the generic message members), and `export const Window =
 (globalThis as any).Window`), `js/engine/src/index.ts` export, `js/react/src/index.ts` (`createRoot` accepts an object with a
 numeric `handle` getter that is not the main window: `id = WINDOW_TARGET | handle`; `handle === 1` is the screen; the error
 message for a second root names the window), test files.
@@ -547,12 +728,44 @@ cd tools && cargo run -p iron_build -- build ../examples/windows && cd ..
 cargo build -p iron_app
 cargo run -p iron_app -- examples/windows --screenshot tests/output/windows.png --frames 30
 ```
-Expect `tests/output/windows.png` (the main window: toolbar, three rows: main, Counter 1, Colours 1), and
-`windows-counter-1.png`, `windows-colours-1.png`. Look at all three by eye. Add the example to `bun run check:examples` (it picks up
+Expect `tests/output/windows.png` (the main window: toolbar, four rows: main, Counter 1, Colours 1, Inspector), and
+`windows-counter-1.png`, `windows-colours-1.png`, `windows-inspector.png` (showing "Last message: picked #e74c3c in Colours 1",
+since the script picks that swatch once at start for the screenshot, and "Totals: 2 tools" from its start-up request). Look at all three by eye. Add the example to `bun run check:examples` (it picks up
 every folder; confirm it builds there) and to `scripts/screenshots.ts` only if that script handles extra PNGs (else leave it).
 
-**Tests.** `M9-TS-2830` `examples_windows_compiles` (in `tools/iron_build` tests, as the other examples' compile checks are done
-there, or in `check examples`: build `examples/windows` with `--no-tsc` and assert success).
+**The isolated Inspector** (added with steps F and M; build this part after M3):
+
+- Created at start and by a toolbar button "Open inspector" (disabled while open):
+  `Window.create({ title: "Inspector", style: "normal", width: 300, height: 360, x: m.x - 316, y: m.y, key: "inspector" })`:
+  no parent, so it is the root of its own family and event domain (`isIsolated` true, `isChild` false, `domain` = its handle).
+  It has its own taskbar button and its own focus: focusing it unfocuses (and, with `Application.runInBackground` off, pauses)
+  the main game, while the counter and colours tool windows share the main window's focus (focusing them never pauses).
+- Its setup runs in its domain: `inspector.run(() => { ... })` registers `Window.current.onMessage<InspectorMsg>(..)` and
+  `Window.onDomainFocusChanged(..)`; `createRoot(inspector).render(<InspectorPanel />)` mounts its UI (during setup, design 3a).
+- Its UI: header "Inspector", "Domain: <domain> · isolated: true · isChild: false", "Focus: focused / unfocused" (from
+  `onDomainFocusChanged`), "Last message: <text>", a log of the last 5 messages, buttons "Ping main"
+  (`Window.main.postMessage({ kind: "ping" })`) and "Ask main for totals" (`const t = await Window.main.request<Totals>({ kind:
+  "totals" })`, then shows "Totals: <t.tools> tools, counters sum <t.sum>"), and a text "It talks to the main window by messages
+  only (no shared handles)".
+- Main side: `Window.main.onRequest<{ kind: string }, Totals>((from, req, reply) => reply({ tools: tools.size, sum }))` and
+  `Window.main.onMessage<{ kind: string }>(..)` counting pings, shown in the main window's toolbar label "Inspector pings: N".
+  Picking a colour also does `inspector.postMessage({ kind: "picked", colour, in: title })` when the inspector is open
+  (a `Window` kept in a module variable; reading `isOpen` across families is allowed). Counter changes post
+  `{ kind: "count", title, value }`.
+- Types: `interface InspectorMsg { kind: string; colour: string; in: string; title: string; value: number }` (one shape with all
+  fields filled, since the typed JSON needs a concrete type: unused fields are "" / 0) and `interface Totals { tools: number; sum:
+  number }`.
+- For the screenshot: at start, after opening the windows, the script picks `#e74c3c` in Colours 1 once (the same function the
+  swatch click calls) and the inspector asks for totals in its setup, so `--frames 30` shows both results.
+
+**Tests.**
+
+| ID | Test |
+|---|---|
+| M9-TS-2830 | `examples_windows_compiles` (in `tools/iron_build` tests, as the other examples' compile checks are done there, or in `check examples`: build `examples/windows` with `--no-tsc` and assert success) |
+| M9-TS-2847 | `the_example_inspector_is_isolated_and_tool_windows_share_the_main_domain` (compile `examples/windows` source in `iron_ts_tests` as a program with prefix `exw_`, run its top level with no host: `window::state` shows Counter 1 and Colours 1 in domain 1 and Inspector in its own domain) |
+| M9-TS-2848 | `the_example_inspector_gets_the_picked_colour_and_the_totals` (same program: `deliver` domain 1 then the inspector's then 1 again; `pending` empty; the inspector's last-message text, read through an exported function, says `picked #e74c3c in Colours 1`) |
+| M9-TS-2849..2850 | spare for fixes found while writing the example |
 
 ---
 
@@ -563,8 +776,9 @@ Delegate to a Sonnet subagent (CLAUDE.md), with the diff since the design commit
 - New `docs/windows.md`: the API (from design section 3), styles per platform (section 4), how the app draws and routes windows,
   screenshot files, hot reload, limits; linked from `docs/README.md`.
 - `docs/platform.md`: multi-window runner, `PlatformApp` additions, `FakePlatform`, `virtual_windows`, the tool-window subclass.
-- `docs/iron-api.md`: the `Window` module in "The engine API beyond the scene", `#[options]` under "Optional parameters", the
-  QuickJS `Window.main()` difference.
+- `docs/iron-api.md`: the `Window` module in "The engine API beyond the scene", `#[options]` under "Optional parameters",
+  static accessor properties on handle classes (step 1b), messages (`...Json` natives, the typed facade, the QuickJS prelude).
+- `docs/windows.md` also covers families, event domains (phase A; phases B and C as future work) and messages.
 - `docs/rendering.md`: `Gpu::create_window_surface`, secondary windows' present mode.
 - `docs/editor.md`: one line in the limits: floating panels can use `Window` (design section 11).
 - `docs/differences.md` if anything differs from browsers/Unity worth listing (no browser equivalent: probably nothing).
@@ -573,26 +787,30 @@ Delegate to a Sonnet subagent (CLAUDE.md), with the diff since the design commit
 
 ---
 
-## Steps waiting for the user
+## Optional later steps (not blocking)
 
 - **D1 Embedded `child` windows** (Windows `WS_CHILD`, X11 reparent): `WinitBackend::open` passes `with_parent_window` for
   `plan.embed_in`; positions are relative to the parent's client area; input and drawing are as for other windows. Test with the
-  fake platform only (`M9-API-1490`) and one screenshot (Virtual). Risk: two swapchains overlapping on one screen area.
+  fake platform only and one screenshot (Virtual). Risk: two swapchains overlapping on one screen area.
 - **D2 Modal dialogs**: `WindowOptions.modal` (Windows: `WindowExtWindows::set_enable(false)` on the owner while open, re-enabled
-  before the dialog is destroyed so Windows does not activate another program). `M9-API-1491`.
+  before the dialog is destroyed so Windows does not activate another program).
 - **D3 `Camera.targetWindow`** (design section 10): `camera.rs` field, `render_sync`/`world_view` filter by target, `draw_window`
-  uses `draw_frame` when the window has cameras. `M9-API-1492` (views grouped by window), one screenshot.
+  uses `draw_frame` when the window has cameras. A test of views grouped by window, one screenshot.
 - **D4 Transparent windows**: `transparent` option, `with_transparent(true)`, surface `alpha_mode` `PreMultiplied` when offered,
-  clear colour alpha 0. `M9-API-1493`.
+  clear colour alpha 0.
 - **D5 Hidden main window in screenshot runs**: the runner never shows the window and drives `frame()` from `about_to_wait`
-  when `WindowConfig::hidden` (screenshot runs). Removes the last visible window from automated checks. `M9-API-1494`.
-- **U1..U6** in the design (section 14) are defaults this plan builds; changing one changes the step named there.
+  when `WindowConfig::hidden` (screenshot runs). Removes the last visible window from automated checks.
+- **Phase B domains** (design 3a): a domain on its own thread (own script runtime or second JIT instance, scene, UI; draw lists
+  and messages over channels). **Phase C**: a domain in another process. Design notes only; no steps yet.
+- The user's answers (design section 14) are built in: U1 confirmed, U4 / U5 / U6 yes, U2 / U3 replaced by families and domains.
 
 ## Order and stopping points
 
-1 -> 2 -> 3 -> 4 can be done and committed without touching the app (stop and report if any of `M9-TS-2800..2806` shows the
-compiler cannot map the options object or resolve `focused`: those decide the API's shape). 5 -> 6 -> 7 -> 8 -> 9 -> 10 change
-the platform and app; after 8 the screenshot probe must pass before going on. 11 is the example, 12 the docs.
+1 -> 1b -> 2 -> 3 -> 4 can be done and committed without touching the app (stop and report if any of `M9-TS-2800..2806` shows
+the compiler cannot map the options object or resolve `focused`, or 1b cannot put accessors on the class object: those decide
+the API's shape). 5 -> 6 -> 7 -> 8 change the platform and app; after 8 the screenshot probe must pass before going on. Then
+F1 -> F2 -> F3 -> F4 (families and domains), M1 -> M2 -> M3 (messages), 9 (hot reload, with domains), 10 (QuickJS games), 11 (the
+example with the Inspector), 12 (docs).
 
 ## Note for the coordinator (not part of this plan)
 

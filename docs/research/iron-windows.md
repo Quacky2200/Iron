@@ -1,6 +1,7 @@
 # Windows: a `Window` class for games (design)
 
-Status: design, 2026-10-21. Steps: [iron-windows-plan.md](iron-windows-plan.md). Test IDs: `M9-API-1400..1499`,
+Status: design, 2026-10-21; revised the same day with the user's answers (families and event domains, section 3a;
+messages, section 3b; `Window.main` as a static property in both backends; section 14). Steps: [iron-windows-plan.md](iron-windows-plan.md). Test IDs: `M9-API-1400..1499`,
 `M9-TS-2800..2899`.
 
 ## 1. What the user asked for
@@ -116,9 +117,16 @@ interface WindowOptions {
   minHeight?: number;
   /** Default "normal". */
   style?: WindowStyle;
-  /** The owner (tool, dialog, popup) or the embedding parent ("child"). Default: the main window for
-   *  "tool", "dialog", "popup" and "child"; none for "normal" and "borderless". */
+  /** The window this one belongs to: it joins the parent's family and event domain (section 3a). For "tool",
+   *  "dialog", "popup" and "child" it is also the OS owner / embedding parent, and defaults to the main window (they
+   *  always have one). For "normal" and "borderless" it defaults to none: the window is the ROOT of a new, ISOLATED
+   *  family with its own event domain. `parent: null` and leaving it out mean the same (compiled code cannot tell
+   *  them apart), so an isolated window is a "normal" or "borderless" window without a parent. A "normal" window
+   *  with a parent shares the parent's domain but stays an independent top-level OS window (own taskbar button). */
   parent?: Window | null;
+  /** Root windows of isolated families only: keep the domain's timers running while the family is unfocused.
+   *  Default true (an isolated tool such as an inspector keeps answering messages). Ignored for other windows. */
+  runInBackground?: boolean;
   /** Default true. Styles that have no such button ignore it (a tool window is never minimisable). */
   resizable?: boolean;
   minimizable?: boolean;
@@ -139,7 +147,9 @@ declare class Window {
   private constructor();
 
   // ---- The windows there are ----
-  /** The game's first window: always there while the game runs. */
+  /** A reference to the original window, the one that owns the process: the root of the main family (and, through
+   *  messages, the hub of everything else). Always there while the game runs; closing it ends the game. A static
+   *  read-only property in both backends (QuickJS gets static accessors on handle classes, plan step 3a). */
   static readonly main: Window;
   /** The window with keyboard focus, if one of the game's has it. */
   static readonly focused: Window | undefined;
@@ -151,6 +161,24 @@ declare class Window {
   static at(index: number): Window | undefined;
   /** The open window made with this `key`. */
   static find(key: string): Window | undefined;
+  /** The open window with this `handle` (for handles received in messages). */
+  static byHandle(handle: number): Window | undefined;
+
+  // ---- Event domains (section 3a) ----
+  /** Whether the domain of the code running now has focus (one of its family's windows is focused). */
+  static readonly domainFocused: boolean;
+  /** Calls `f` when the current domain's focus changes; `paused` is true when that stops its timers. */
+  static onDomainFocusChanged(f: (focused: boolean, paused: boolean) => void): number;
+
+  // ---- Messages (section 3b) ----
+  /** Messages to any window of the current domain (after the per-window listeners of the target). */
+  static onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
+  /** Requests to any window of the current domain; `reply` answers the sender's promise (once). */
+  static onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
+  /** Posts `data` to the root window of every other family. Returns how many were queued. */
+  static broadcast(data: unknown): number;
+  /** Removes a static listener by token. */
+  static off(token: number): boolean;
 
   /** Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the frame.
    *  Until then its size and position are the ones asked for. */
@@ -172,8 +200,15 @@ declare class Window {
   // ---- Family ----
   /** The owner or embedding parent; undefined for the main window and unowned windows. */
   readonly parent: Window | undefined;
-  /** True when the window belongs to another one (`parent` is set): tool windows, dialogs, popups, children. */
+  /** True when the window has a parent (confirmed by the user, U1): tool windows, dialogs, popups, children, and
+   *  normal windows given a parent. */
   readonly isChild: boolean;
+  /** The root of its family: follow `parent` to the end (itself for a root). `Window.main.root === Window.main`. */
+  readonly root: Window;
+  /** True for the root of a family other than the main one: its own event domain. */
+  readonly isIsolated: boolean;
+  /** The event domain's id: the root's handle (1 for the main family). */
+  readonly domain: number;
   /** True for style "child" only: drawn inside its parent's client area (where the platform can). */
   readonly isEmbedded: boolean;
   /** Open windows whose parent this is. */
@@ -226,8 +261,24 @@ declare class Window {
   onMoved(f: (x: number, y: number) => void): number;
   onFocusChanged(f: (focused: boolean) => void): number;
   onScaleChanged(f: (scale: number) => void): number;
+  /** A message posted to this window. Runs in this window's domain. */
+  onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
+  /** A request posted to this window; call `reply` once (a second call is ignored). */
+  onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
   /** Removes any of the listeners above by token. */
   off(token: number): boolean;
+
+  // ---- Messages (section 3b) ----
+  /** Queues `data` (structured values only) for this window's domain; delivered at the start of that domain's next
+   *  dispatch, in order per sender. False (and an error in the log) when the data is not structured or is over 1 MiB
+   *  as JSON, or the window is closed. */
+  postMessage(data: unknown): boolean;
+  /** Runs `f` once in this window's domain at the start of its next dispatch (the setup of an isolated domain). */
+  run(f: () => void): boolean;
+  /** Posts `data` as a request and resolves with the reply. Rejects with an `Error` when the window closes, no
+   *  `onRequest` listener exists in its domain when it is delivered, or nobody replies within `timeoutMs`
+   *  (default 10000). */
+  request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
 }
 
 /** `createRoot(target)`: the screen (no argument or `Window.main`), a world panel, or another window. */
@@ -254,6 +305,96 @@ Rules:
 - **Units.** Sizes and positions are UI pixels (winit `Logical*` with that window's scale factor). With monitors of different
   DPI, a position is converted with the scale of the monitor the window is on, as winit does.
 - **Handles.** `WindowRef(u32)` as raw `u64`; 1 is the main window and ids grow from 2 (`Handle` rule: never 0).
+- **Across families**, a `Window` handle may be read (title, size, `isOpen`) but not changed: setters, `close`, `focus` and
+  listener registration on a window of another domain are refused with a warning naming both windows. Messages are the way
+  to ask another family to do something. **One exception, the setup:** the code that created an isolated root may, until
+  the end of that frame, set it up: `createRoot(win)`, `win.on*` listeners and `win.run(f)`. Whoever registers them, the
+  root's UI and listeners always run in the root's own domain.
+- **`win.run(f: () => void)`** queues `f` to run once in `win`'s domain at the start of its next dispatch: the "main
+  function" of an isolated domain (register `Window.onMessage` / `onRequest` there, start its timers). Allowed for the
+  window's own domain at any time, and for its creator during setup.
+
+## 3a. Families and event domains
+
+**Family.** A root window (a window without a parent) plus every window whose `parent` chain leads to it. `Window.main` is
+the root of the main family. A family's members are `root`-equal.
+
+**Event domain.** Each family has one event domain (id = the root's handle). Windows of one family share it; windows of
+different families never share anything but the process. A domain owns:
+
+| Per domain | What it means |
+|---|---|
+| Focus | The domain is focused when any of its windows has OS focus. Focus moving between the main window and its tool windows keeps the main domain focused (no pause). An isolated window taking focus unfocuses the main domain. |
+| Input state | `input.getKey*`, mouse buttons and position, text and IME focus, the UI `Interaction`s of its windows. Keys pressed in an isolated window never reach the main game's `input`. Gamepads stay global (they have no window) and go to the focused domain, or the main domain when none is focused. |
+| Pause / resume | Its own `Lifecycle`: the main domain pauses as today (unfocused and `Application.runInBackground` off: no ticks, physics or audio, `onApplicationFocus` / `onApplicationPause`). An isolated domain has `runInBackground` (default true); paused, its timers stop. `Window.onDomainFocusChanged` tells each domain. |
+| Timers and queue | `setTimeout` / `setInterval` / promise jobs registered while the domain is current fire with it current again, and wait while it is paused. Its message queue is drained at the start of its dispatch. |
+| UI roots | Each window's `createRoot(win)` root, mounted and flushed with the domain current. |
+| Current domain | `Window.current` and the domain of `Window.current` while its code runs: UI handlers, window callbacks, messages, timers. Component hooks (`onUpdate`...) belong to the scene, which is the main domain's. |
+
+**One event loop, many queues.** winit allows one `EventLoop` per process, created on the main thread (required on macOS,
+and `EventLoop::new` fails a second time anywhere). So "each isolated window has its own event loop" is built as:
+
+- **Phase A (this plan): same thread, separate dispatch queues.** The platform loop on the main thread receives every
+  window's events and the app forwards each to its window's domain queue (`DomainId` from `WindowTree` root). Once per frame
+  the app pumps the domains in a fixed order, main first: for each, with that domain current, it delivers its messages,
+  runs its due timers (unless paused), dispatches its queued input and UI events, then flushes its UI roots. The game's scene
+  tick stays the main domain's step. All domains run in the one script runtime (one heap): isolation is enforced at the API
+  (input and focus are per domain, cross-family window changes are refused, handles can't travel in messages), not by the
+  memory model. A slow handler in one domain still delays the others.
+- **Phase B (later): a domain on its own thread.** Iron's engine API state is already per thread (`thread_local!` in
+  `iron_engine_api`, `iron_scene::api::enter`, `iron_render_api`, `iron_physics_api`), so a domain thread starts with empty
+  engine state of its own. It would need: its own script runtime (a second QuickJS runtime, or for compiled games a second
+  JIT instance of the program with its own globals: each compile already gets its own `struct_base`, but module globals of
+  one instance are shared between threads today, so a second compile is required), its own `Scene`, UI trees and native UI
+  runtimes; channels for the main thread to forward window events and for the domain to send back draw lists
+  (`Vec<DrawCmd>` per window: the main thread keeps the GPU, the `UiRenderer` and the surfaces, so drawing stays where the
+  windows are); messages over the same channels (they are already JSON text). Window requests from the domain go to the
+  main thread's queue. Nothing in phase A's API changes for that: messages are already the only cross-family path and they
+  are asynchronous.
+- **Phase C (later still): a domain in another process.** The same message format over a pipe; the child process makes its
+  own winit loop and window (an OS window of another process cannot be an owned tool window portably, so such windows are
+  normal top-level windows). Useful for crash isolation of editor tools; out of scope.
+
+## 3b. Messages between windows
+
+```ts
+const inspector = Window.create({ title: "Inspector", style: "normal", width: 320, height: 480 }); // no parent: isolated
+inspector.postMessage({ kind: "select", name: "Player", position: new Vector3(1, 2, 3) });
+const stats = await inspector.request<{ count: number }>({ kind: "stats" });
+
+// Set up the inspector's domain (allowed for its creator this frame); the listeners run in the inspector's domain:
+inspector.run(() => {
+  Window.current.onMessage<{ kind: string; name: string; position: [number, number, number] }>((from, msg) => { ... });
+  Window.onRequest<{ kind: string }, { count: number }>((from, req, reply) => reply({ count: 3 }));
+});
+```
+
+- **Data.** Structured values: numbers, strings, booleans, `null`, arrays, plain objects, and value classes in their compact
+  JSON form (`Vector3` travels as `[x, y, z]`, as `toJSON` gives; the receiver rebuilds it with `Vector3.fromJSON` or types the
+  field as a tuple). Not allowed: handles of any kind (`GameObject`, `Component`, `Texture`, `Window`...: send `win.handle` and
+  use `Window.byHandle(n)`), functions, class instances other than value classes, `undefined` at the top level, cycles. The
+  wire form is JSON text: the compiled side lowers `postMessage(data)` to `JSON.stringify` of the argument's static type (a
+  handle type anywhere in it is a compile error) and `onMessage<T>` to `JSON.parse` typed as `T` (a shape mismatch is a
+  `TypeError` thrown in the listener, logged); QuickJS stringifies with a replacer that throws `TypeError` on handle objects
+  and functions.
+- **Size.** At most 1 MiB of UTF-8 JSON per message; larger is refused (`false`, logged).
+- **Delivery.** Always asynchronous, also within a family: queued for the target's domain and delivered at the start of
+  that domain's next dispatch (the same frame if that domain's turn has not come yet, else the next). Order is kept per
+  sender (one FIFO queue per receiving domain, filled in posting order). The target's `onMessage` listeners run first, then
+  the domain's `Window.onMessage` listeners. `from` is `Window.current` when it was posted. A message to a window that closes
+  before delivery is dropped (a pending `request` rejects).
+- **Requests.** `request` posts with a fresh request id; delivery runs the target's `onRequest`, then the domain's
+  `Window.onRequest`, until one calls `reply`; the reply travels back as a message to the sender's domain and resolves the
+  promise there. A listener may reply later (after its own `await`), so a request without a reply only rejects on the
+  timeout, when the target closes, or when its domain has no `onRequest` listener at all at delivery
+  (`Error("no request listener")`).
+- **How requests are built.** The engine has no promise across the boundary: `request` is a prelude helper on both sides
+  (compiled: `facade.ts`; QuickJS: a JS snippet installed with the class) over `postRequestJson(win, text) -> id` and a
+  per-domain `onReplyJson(id, text, error)` hook; `reply` is `Window.replyJson(id, text)`.
+- **Broadcast.** `Window.broadcast(data)` posts to the root of every family except the sender's own.
+- **Within a family** direct calls keep working (same domain, same heap): messages are optional there.
+- **Engine side.** Messages are `(from, to, text, request id, reply-to id)` records in `iron_engine_api::window`; the app
+  only pumps them per domain. In phase B they are what crosses the channel.
 
 ## 4. Styles per platform
 
@@ -349,6 +490,21 @@ pub fn reset();                                                  // tests: only 
 pub fn reload_begin() -> Vec<WindowRef>;   // hot reload, section 9: drops listeners; returns keyless windows to close
 pub fn reload_end() -> Vec<WindowRef>;     // keyed windows the new code did not claim: to close
 
+// ---- Families, domains and messages (sections 3a, 3b) ----
+/// The domain of a window: its family root's handle.
+pub fn domain_of(w: WindowRef) -> DomainId;          // DomainId(u32); DomainId::MAIN = DomainId(1)
+pub fn domains() -> Vec<DomainId>;                   // main first, then by root creation order
+/// Runs `f` with `d` current (`Window.current` = `d`'s root unless a window event sets it); restores the previous one.
+pub fn enter_domain(d: DomainId) -> DomainGuard;
+pub fn current_domain() -> DomainId;
+/// The host says a domain's focus / pause changed (it aggregates OS focus per family): runs onDomainFocusChanged.
+pub fn domain_focus_changed(d: DomainId, focused: bool, paused: bool);
+/// Delivers `d`'s queued messages, requests, replies and request timeouts (`now_ms`); call with `d` current.
+pub fn deliver(d: DomainId, now_ms: f64);
+/// Messages waiting for `d` (tests, the phase B channel).
+pub fn pending(d: DomainId) -> usize;
+pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
+
 #[iron_api(namespace = "Window", quickjs, handles(Window = WindowRef))]
 pub mod window_api {
     use super::*;
@@ -356,16 +512,32 @@ pub mod window_api {
         #[options]   // QuickJS: the optional parameters may come as one object (plan step 3)
         #[optional(title, width, height, x, y, min_width, min_height, style, parent,
                    resizable = true, minimizable = true, maximizable = true, closable = true,
-                   always_on_top = false, visible = true, focus = true, key)]
+                   always_on_top = false, visible = true, focus = true, key, run_in_background = true)]
         pub fn create(title: &str, width: f64, height: f64, x: f64, y: f64, min_width: f64, min_height: f64,
                       style: &str, parent: WindowRef, resizable: bool, minimizable: bool, maximizable: bool,
-                      closable: bool, always_on_top: bool, visible: bool, focus: bool, key: &str) -> WindowRef;
-        pub fn main() -> WindowRef;                 // `Window.main` (the facade reads a no-argument static as a property)
-        pub fn focused() -> WindowRef;              // 0 = none
-        pub fn current() -> WindowRef;
-        pub fn count() -> u32;
+                      closable: bool, always_on_top: bool, visible: bool, focus: bool, key: &str,
+                      run_in_background: bool) -> WindowRef;
+        // Static read-only properties: `#[property]` on a static (no `self`) is a static accessor on the class in
+        // QuickJS (plan step 3a) and a static getter in the manifest (`kind: get`, no receiver), so both backends read
+        // `Window.main`. Compiled code already reads a no-argument static as a property (`facade.rs::ext_static_prop`).
+        #[property] pub fn main() -> WindowRef;
+        #[property] pub fn focused() -> WindowRef;  // 0 = none
+        #[property] pub fn current() -> WindowRef;
+        #[property] pub fn count() -> u32;
+        #[property] pub fn domain_focused() -> bool;
+        pub fn by_handle(handle: f64) -> WindowRef;
         pub fn at(index: f64) -> WindowRef;         // 0 past the end
         pub fn find(key: &str) -> WindowRef;
+        pub fn on_domain_focus_changed(f: Callback<(bool, bool)>) -> u32;
+        // Messages: the wire form is JSON text; the typed `postMessage` / `onMessage<T>` / `request` / `broadcast` are
+        // lowered onto these by the compiler (facade) and wrapped by a QuickJS prelude (plan step 10b).
+        #[js_name = "onMessageJson"] pub fn on_message_json_all(f: Callback<(HandleArg<WindowRef>, String)>) -> u32;
+        #[js_name = "onRequestJson"] pub fn on_request_json_all(f: Callback<(HandleArg<WindowRef>, String, f64)>) -> u32;
+        pub fn broadcast_json(text: &str) -> u32;
+        pub fn reply_json(request: f64, text: &str) -> bool;
+        /// The sender side of `request`: called with (request id, reply JSON, error text; one of the two empty).
+        pub fn on_reply_json(f: Callback<(f64, String, String)>) -> u32;
+        #[js_name = "off"] pub fn off_static(token: f64) -> bool;
         #[property] pub fn handle(self) -> f64;
         #[property] pub fn native_handle(self) -> f64;
         #[property] pub fn platform(self) -> String;
@@ -374,6 +546,9 @@ pub mod window_api {
         #[property] pub fn is_open(self) -> bool;
         #[property] pub fn parent(self) -> WindowRef;
         #[property] pub fn is_child(self) -> bool;
+        #[property] pub fn root(self) -> WindowRef;
+        #[property] pub fn is_isolated(self) -> bool;
+        #[property] pub fn domain(self) -> f64;
         #[property] pub fn is_embedded(self) -> bool;
         #[property] pub fn child_count(self) -> u32;
         pub fn child_at(self, index: f64) -> WindowRef;
@@ -405,6 +580,12 @@ pub mod window_api {
         pub fn on_moved(self, f: Callback<(f64, f64)>) -> u32;
         pub fn on_focus_changed(self, f: Callback<(bool,)>) -> u32;
         pub fn on_scale_changed(self, f: Callback<(f64,)>) -> u32;
+        pub fn on_message_json(self, f: Callback<(HandleArg<WindowRef>, String)>) -> u32;
+        pub fn on_request_json(self, f: Callback<(HandleArg<WindowRef>, String, f64)>) -> u32;
+        pub fn post_message_json(self, text: &str) -> bool;
+        pub fn run(self, f: Callback<()>) -> bool;
+        /// Returns the request id (0: refused).
+        pub fn post_request_json(self, text: &str, timeout_ms: f64) -> f64;
         pub fn off(self, token: f64) -> bool;
     }
 }
@@ -421,6 +602,11 @@ Notes:
 - **Closed windows.** Getters read the last state; setters and `focus` do nothing; `on*` returns 0.
 - **Events are synchronous** from the host's calls, emitted after the state borrow is released from a snapshot
   (`iron_api::callback::{Listeners, emit}`), so listeners may call the API, open windows or close them.
+- **Cross-family changes.** Every setter, `focus`, `close`, `center` and `on*` checks `domain_of(self) ==
+  current_domain()` (main-domain code may change any window of the main family; nobody changes another family's windows):
+  otherwise a warning and no effect (`on*` returns 0).
+- **Static accessors.** `#[property]` on a static with no parameters (and `set_x(v)` next to it for a writable one) is new
+  macro support (plan step 3a); `AudioListener.volume`, today `getVolume()` / `setVolume(v)`, can move to it later.
 - **Pending windows.** Between `create` and `opened`, `created` is false, `nativeHandle` 0, `platform` "", and the size and
   position read back as asked for (or the cascade position the API computes, so scripts see final numbers at once:
   `position: None` is resolved by the host; the API answers the parent's centre until then).
@@ -430,7 +616,8 @@ Notes:
 | | Compiled (`iron_ts`) | QuickJS |
 |---|---|---|
 | Declarations | Manifest + `engine_ts.d.ts` supplement: `declare namespace Window { const main: Window; const focused: Window \| undefined; const current: Window; const count: number; function create(options?: WindowOptions): Window; }`, `interface WindowOptions`, `type WindowStyle` | Same globals (installed by `window_api::register_quickjs`) |
-| `Window.main` | `facade.rs::ext_static_prop`: a no-argument static read as a property (as `Camera.main`) | A function: `Window.main()` (QuickJS has no static properties on handle classes; listed in `tools/iron_ts/TODO.md` with `AudioListener.volume`) |
+| `Window.main` | A static getter in the manifest; `facade.rs::ext_static_prop` already reads no-argument statics as properties | A static accessor property on the class object (`Object::prop(name, Accessor::new_get(..))`, rquickjs 0.14 `object/property.rs`), plan step 3a: `Window.main` reads the same in both backends |
+| Messages | `postMessage(data)` / `request(data)` / `broadcast(data)` lower to `JSON.stringify` of the static type (handles are a compile error) plus `postMessageJson` / `postRequestJson` / `broadcastJson`; `onMessage<T>(f)` / `onRequest<T, R>(f)` wrap `f` in a closure that `JSON.parse`s as `T` (and `R` for `reply`); `request` returns a `Promise<R>` from the prelude (`facade.ts`), settled by `onReplyJson` | A JS prelude installed with the class defines `postMessage`, `request`, `onMessage`, `onRequest`, `broadcast` on `Window` / its prototype over the `...Json` natives with `JSON.stringify` (a replacer rejecting handle objects and functions) and `JSON.parse` |
 | `Window.create({..})` | `call_ext_args` maps a trailing object literal onto the optional parameters by name, honouring the manifest defaults | New `#[options]` attribute (plan step 3): a single plain object at the first optional position is read by camelCase name |
 | `createRoot(win)` | `UiRoot.mount(win, el)`: a third overload `ts_ui_mount_window(window: handle:Window, element)` into its own queue, `iron_ts_ui::take_window_mounts()` | `@iron/react` `createRoot(target)`: a `Window` object (it has `handle`) becomes the target id `iron_core::WINDOW_TARGET \| handle`; the main window is target 0 |
 | Callbacks | `Callback<..>` from compiled closures | `Callback<..>` from JS functions (`iron_api::qjs::keep_function`) |
@@ -620,7 +807,23 @@ pub struct AppWindow {
     pub drawn: bool,
 }
 pub struct AppWindows { pub map: BTreeMap<WindowKey, AppWindow>, focused: BTreeSet<WindowKey> }
+
+/// One per family (section 3a). The main domain's lifecycle is the existing `App::lifecycle`.
+pub struct Domain {
+    pub id: DomainId,
+    pub focused: bool,
+    /// Isolated domains only (the main one keeps `App::lifecycle`): paused when unfocused and `runInBackground` is off.
+    pub lifecycle: Option<lifecycle::Lifecycle>,
+    /// Input and UI events of its windows, queued by `window_input` and dispatched in `pump_domains`.
+    pub queue: VecDeque<(WindowKey, InputEvent)>,
+}
+pub struct Domains { pub map: BTreeMap<DomainId, Domain> }
 ```
+
+Per-domain `input` state lives in `iron_engine_api::input` (its `State` becomes a map by `DomainId` with the current domain
+chosen by `window::current_domain()`; the main domain is the existing state, so existing code reads the same). For QuickJS
+games, `@iron/engine`'s `input` stays the main domain's in phase A: isolated windows get keys through their UI events only
+(listed as a difference).
 
 The main window is **not** an `AppWindow`: `self.ui`, `self.interaction`, `Gfx.surface` stay as they are, so single-window
 games run the same code. `Surface` gains `Window(u32)` for the routing helpers (`handle_on`, `update_cursor`, `update_ime`).
@@ -636,7 +839,11 @@ games run the same code. `Surface` gains `Window(u32)` for the routing helpers (
    kept in a pending list, as panels do with commits before their component starts); compiled `take_window_mounts()` render
    with a per-window `iron_ui_native::Runtime` (`native_render.rs` keeps `runtimes` for panels; windows get a second map),
    flushed every frame.
-4. `frame()`: after the main window presents, each open `AppWindow` with a visible, non-zero size draws its tree:
+4. **Domains.** `pump_domains(now_ms)` once per frame, main domain first: inside `window::enter_domain(d)` it calls
+   `window::deliver(d, now_ms)` (messages, requests, replies, timeouts), fires `d`'s due timers unless `d` is paused (compiled:
+   `ts_rt_timers_advance_domain(now_ms, d)`; QuickJS: the timers prelude keeps a domain tag per timer), dispatches `d`'s queued
+   input, then flushes `d`'s UI roots. The main domain's scene tick (`tick`) runs in the main domain's turn as today.
+5. `frame()`: after the main window presents, each open `AppWindow` with a visible, non-zero size draws its tree:
    `tree.set_size(physical / scale)`, `load_images`, `tree.draw_list()`, `renderer.render(gpu, target, CLEAR, cmds)` into its
    surface (`present_with`, vsync always off) or offscreen target. A window's first draw sets `drawn`, and the platform shows it.
 
@@ -644,17 +851,23 @@ games run the same code. `Surface` gains `Window(u32)` for the routing helpers (
 
 | Event from | Goes to |
 |---|---|
-| Main window | As today (screen, world panels, game input) |
-| Secondary window: pointer, wheel | That window's `Interaction` (its own hover, active, capture: `buttons_down` per window), dispatched through `__iron_ui_event` with the window's target (QuickJS) or the window's native runtime |
-| Secondary window: keys, IME | That window's `Interaction` (keyboard focus is per OS window, so the OS already sent them to the right one); then **also** to game `input` unless typing in a text field (decision U2) |
-| Modifiers | Every tree of that window, plus the main window's when the main window is focused |
-| Gamepads, raw mouse motion | Global as today (raw motion only while the main window is focused) |
-| File drops | Main window only (secondary windows log and ignore them for now) |
-| Focus | `focused` set per window; `events_done()` sets `Lifecycle::set_focused(!focused.is_empty())` once per batch, so moving focus from the main window to a tool window (Focused(false) then Focused(true)) does not pause and resume the game for an instant. `window::focus_changed` runs per window |
+| Main window | As today (screen, world panels, game input of the main domain) |
+| Any other window: pointer, wheel | Queued for its domain; dispatched to that window's `Interaction` (its own hover, active, capture: `buttons_down` per window) through `__iron_ui_event` with the window's target (QuickJS) or the window's native runtime |
+| Any other window: keys, IME | Queued for its domain; that window's `Interaction` (keyboard focus is per OS window, so the OS already sent them to the right one), then the **domain's** `input` state unless typing in a text field. A tool window's keys therefore reach the main game's `input` (same family); an isolated window's never do |
+| Modifiers | Every tree of that window's family |
+| Gamepads | To the focused domain's `input`, or the main domain's when none is focused |
+| Raw mouse motion | The main domain's, while one of its windows is focused |
+| File drops | Main window only (other windows log and ignore them for now) |
+| Focus | `focused` set per window; `events_done()` recomputes each domain's focus (any window of the family focused) once per batch, so focus moving from the main window to its tool window (Focused(false) then Focused(true)) never unfocuses the main domain. The main domain's change goes to `Lifecycle::set_focused` (pause, mute, `onApplicationFocus`); each domain's change to `window::domain_focus_changed`. `window::focus_changed` runs per window |
 | Resized / Moved / ScaleChanged | `WindowSurface::resize`, `window::resized/moved/scale_changed` (UI pixels: physical / scale) |
 | CloseRequested | `close_requested` -> `window::close_requested(w)` inside the script scope; main window: if allowed, the game ends as today |
 
-`Window.current` is set with `window::enter_current(w)` around every dispatch of a window's events and callbacks.
+`Window.current` is set with `window::enter_current(w)` around every dispatch of a window's events and callbacks, inside
+`enter_domain(domain_of(w))`.
+
+**When the app pauses.** `PlatformApp::paused()` is true only when every domain is paused. When the main domain is paused but
+an isolated domain is not, frames continue (its windows stay live) but the main domain's tick is skipped as today, and the
+frame interval is capped at 1/30 s so a paused game with an open inspector does not spin the GPU.
 `Cursor.lockState` and custom cursors stay the main window's; CSS `cursor` of a secondary window's UI sets that window's cursor.
 
 ### 8.4 Closing
@@ -690,6 +903,8 @@ manifest title: it is the product, the window title is the game's to change.
   `parent` is ignored with a warning. `createRoot(win)` mounts the new UI.
 - After the first frame of the new code: `window::reload_end()` returns keyed windows nobody claimed; the host closes them.
 - The main window always stays; its listeners are dropped and re-registered by the new code.
+- Families keep their shape: a kept isolated root keeps its domain id. Queued messages, pending requests (their promises
+  belong to the old code) and domain timers are dropped at `reload_begin`.
 - Fast Refresh (QuickJS dev builds) keeps React roots; window roots behave like panel roots there.
 
 `window::reset()` (tests, shutdown) closes nothing on the OS side: it is per-thread script state only. `Native::shutdown` and
@@ -721,6 +936,7 @@ outside the window: `cursor_in_window` exists for Windows. Not in this plan.
 - File drops onto secondary windows, drag and drop between windows, per-window UI scale (`setUiScale` is the main window's).
 - Windows on mobile (iOS / Android): `Window.create` returns a window that never opens; `open_failed` closes it with a
   warning.
+- Domains on their own thread (phase B) or process (phase C), section 3a. QuickJS games' `input` per domain.
 - A redraw-on-change mode for idle tool windows (they draw every main frame; with vsync off that is as often as the main window).
 
 ## 13. Risks
@@ -734,21 +950,23 @@ outside the window: `cursor_in_window` exists for Windows. Not in this plan.
 | Vsync with N FIFO swapchains divides the frame rate | Secondary windows never use vsync (2.2). |
 | `focused` as a static and an instance member | `#[js_name]`, checked by `M9-TS-2802`, fallback `isFocused` (5). |
 | QuickJS options objects | New `#[options]` macro attribute with its own tests (plan step 3). |
+| One heap for all domains (phase A): code can still share module variables across families | Documented; the API refuses cross-family window changes and handles in messages, which covers what the engine owns. Phase B gives real isolation. |
+| Timers per domain need runtime support | A domain tag per timer in `iron_ts_rt` (`event.rs`) and the QuickJS timers prelude (plan step 9b); until then timers fire in the main domain. |
+| Per-domain `input` changes a widely used module | The main domain is the existing state; only reads made with another domain current see a different one (tests in 9a). |
 | Large `iron_app` changes | Main-window code paths are untouched; new code lives in `windows.rs`; `PlatformApp` methods have defaults. |
 
-## 14. Decisions for the user
+## 14. Decisions (answered by the user, 2026-10-21)
 
-- **U1** `isChild` means "has a parent" (tool windows are children); `isEmbedded` means `WS_CHILD`. (Alternative: `isChild` only
-  for embedded windows.)
-- **U2** Keys typed into a tool window also reach game `input` (except into text fields). (Alternative: only the main window's.)
-- **U3** The game counts as focused while any of its windows is (no pause when a tool window has focus).
-- **U4** Hot reload closes keyless windows and keeps keyed ones (section 9).
-- **U5** Secondary windows always present with vsync off.
-- **U6** Screenshot runs make no OS windows for secondary windows. Optional (step D5): keep the main window hidden in screenshot
-  runs too (the runner would call `frame()` from `about_to_wait`), which removes the visible window from every automated check.
-- **D1** Build the `child` (embedded) style on Windows and X11, or drop it from the API.
-- **D2** Modal dialogs (`modal: true`: disable the owner while open; Windows only through winit).
-- **D3** `Camera.targetWindow`.
-- **D4** Transparent windows.
-- QuickJS has `Window.main()` as a function where compiled code has `Window.main`; acceptable until QuickJS gets static
-  properties on handle classes?
+- **U1** `isChild` = the window has a parent. **Confirmed.** `isEmbedded` is the `WS_CHILD` case.
+- **Window.main** is a reference to the original window that owns the process (the root of everything), read as a property in
+  both backends: QuickJS gets static accessors on handle classes (plan step 3a) instead of a `main()` function.
+- **U2 / U3 replaced by families and domains** (section 3a): a focused window gets the input; the game is focused when its
+  main window or any window of the main family has focus; a window without a parent is an isolated family with its own
+  event domain (input, focus, pause, timers, UI roots).
+- **Event loop**: one winit loop on the main thread (a hard limit); per-domain dispatch queues now (phase A), a thread per
+  domain and a process per domain later (phases B and C).
+- **Messages** (section 3b): `postMessage`, `onMessage`, `broadcast`, `request` / `onRequest`; the only way between families.
+- **U4** hot reload keeps keyed windows: yes. **U5** secondary windows vsync off: yes. **U6** no OS windows for secondary
+  windows in screenshot runs: yes.
+- **D1** embedded `child`, **D2** modal dialogs, **D3** `Camera.targetWindow`, **D4** transparent windows: optional later steps,
+  not blocking. **D5** (hidden main window in screenshot runs) stays optional.
