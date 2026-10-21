@@ -529,6 +529,9 @@ fn cell_point(f: vec3<f32>) -> CellPoint {
     return CellPoint(eye + dir * slice_distance(f.z), dir);
 }
 
+// How much more of each new frame a light-volume cell takes per cell its history moved.
+const MOTION_TRUST: f32 = 0.35;
+
 // Three numbers in 0..1 that look random, from a volume cell's coordinates (PCG-style).
 fn cell_hash(id: vec3<u32>) -> vec3<f32> {
     var v = id * vec3<u32>(1664525u, 1013904223u, 2654435769u) + vec3<u32>(1013904223u, 1664525u, 22695477u);
@@ -587,7 +590,13 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
         let was = last_cell(cell_point((cell + 0.5) / n).x);
         if (all(was >= vec3<f32>(0.0)) && all(was <= vec3<f32>(1.0))) {
             let history = textureSampleLevel(light_history, volume_samp, was, 0.0).rgb;
-            light = mix(history, light, blend);
+            // The further the history has moved (in cells), the less it's trusted: each
+            // reprojection blurs it a little (a filtered read between cells), and with a long
+            // history that piles up into smeared beams while the camera moves. Still, it's
+            // trusted fully.
+            let moved = length((was - (cell + 0.5) / n) * n);
+            let fresh = max(blend, min(0.5, moved * MOTION_TRUST));
+            light = mix(history, light, fresh);
         }
     }
     textureStore(light_out, vec3<i32>(id), vec4<f32>(light, 1.0));

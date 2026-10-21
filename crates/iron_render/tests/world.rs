@@ -3866,6 +3866,85 @@ fn more_history_and_samples_take_the_shimmer_out_of_fine_beams() {
     );
 }
 
+/// The grate's beams after `frames` frames, the camera turning `turn` degrees a frame towards
+/// the same final view whatever `turn` is.
+fn grate_after(volumetric: iron_render::VolumetricFog, turn: f32, frames: usize) -> Vec<u8> {
+    let gpu = shared_gpu();
+    let size = (320, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 30.0;
+    for i in 0..frames {
+        let mut v = grate_view(size, 20.0);
+        // Turning towards the final view, which every run ends on.
+        let left = (frames - 1 - i) as f32 * turn;
+        v.camera = WorldCamera::perspective(
+            iron_core::glam::camera::rh::view::look_at_mat4(
+                Vec3::new(0.0, 1.5, 8.0),
+                Vec3::new(0.0, 3.0, 0.0),
+                Vec3::Y,
+            )
+            .inverse()
+                * Mat4::from_rotation_y(left.to_radians()),
+            60.0,
+            0.1,
+            60.0,
+            size,
+            Color::rgb(0.0, 0.0, 0.0),
+        );
+        if let Some(f) = v.fog.as_mut() {
+            f.volumetric = Some(volumetric);
+        }
+        world.render_views(&gpu, &rt, &[v], &[]);
+    }
+    target.read_pixels(&gpu).unwrap()
+}
+
+/// How far a turning camera's beams are from a still camera's (settled) at the same view:
+/// blur and smear, the mean change in green (0..255).
+fn grate_smear(volumetric: iron_render::VolumetricFog) -> f32 {
+    let still = grate_after(volumetric, 0.0, 120);
+    let moving = grate_after(volumetric, 0.15, 120);
+    let d: i64 = moving
+        .chunks(4)
+        .zip(still.chunks(4))
+        .map(|(a, b)| (a[1] as i64 - b[1] as i64).abs())
+        .sum();
+    d as f32 / (still.len() / 4) as f32
+}
+
+// M7-FOG-14
+#[test]
+fn turning_cameras_beams_stay_close_to_a_still_cameras() {
+    use iron_render::VolumetricFog;
+    let base = VolumetricFog {
+        intensity: 0.25,
+        distance: 30.0,
+        detail: 2,
+        ..Default::default()
+    };
+    let default = grate_smear(base);
+    let heavy = grate_smear(VolumetricFog {
+        history_weight: 0.96,
+        samples: 4,
+        ..base
+    });
+    // A long history smeared beams while turning (0.38 against 0.27 before cells trusted it
+    // less the further it moved); now it's no worse than the default.
+    assert!(
+        heavy < default + 0.02,
+        "smear: default {default}, history 0.96 x4 samples {heavy}"
+    );
+}
+
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
