@@ -49,7 +49,7 @@ const SHAFTS: VolumetricFogSettings = {
   albedo: hex("#ffe8c6"),
   steps: 4,
   distance: 60,
-  sharpSamples: 48,
+  sharpSamples: 64,
 };
 
 /** What the menu shows and changes; `apply` sends it to `RenderSettings`. */

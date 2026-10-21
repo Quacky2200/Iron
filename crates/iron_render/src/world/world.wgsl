@@ -519,12 +519,20 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 }
 
+// Interleaved gradient noise (Jimenez): a fixed offset per pixel in 0..1.
+fn pixel_offset(px: vec2<f32>) -> f32 {
+    return fract(52.9829189 * fract(dot(floor(px), vec2<f32>(0.06711056, 0.00583715))));
+}
+
 // God rays: the sun's light the fog sends back from the first `g.fog_sharp.x` metres of the
-// view ray, worked out per pixel at fixed points (closer together near the camera) with
-// hard shadow lookups, so a beam's edges are as sharp as what casts them.
-fn sharp_sun(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec3<f32> {
+// view ray, worked out per pixel (closer together near the camera) with hard shadow
+// lookups, so a beam's edges are as sharp as what casts them. Each sample sits at a point
+// offset per pixel within its step: at the same points for every pixel, a thin beam lit
+// up shell by shell, in stacked slabs; offset, they blur into fine grain.
+fn sharp_sun(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool, px: vec2<f32>) -> vec3<f32> {
     let reach = min(len, g.fog_sharp.x);
     let n = i32(g.fog_sharp.y);
+    let j = pixel_offset(px);
     var t0 = 0.0;
     var clear = 1.0;
     var sum = vec3<f32>(0.0);
@@ -532,7 +540,7 @@ fn sharp_sun(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec3<f
         let w = f32(i + 1) / f32(n);
         let t1 = reach * w * w;
         let next = media_clear(eye, dir, t1, distance);
-        sum += (clear - next) * scattered_all(eye + dir * (0.5 * (t0 + t1)), dir);
+        sum += (clear - next) * scattered_all(eye + dir * mix(t0, t1, j), dir);
         clear = next;
         t0 = t1;
     }
@@ -562,7 +570,7 @@ fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
     var sum = volume_to(uv, min(len, last));
     if (g.fog_sharp.x > 0.0) {
         let near = min(len, g.fog_sharp.x);
-        sum += sharp_sun(eye, dir, len, distance) - volume_to(uv, min(near, last));
+        sum += sharp_sun(eye, dir, len, distance, px) - volume_to(uv, min(near, last));
         sum = max(sum, vec3<f32>(0.0));
     }
     sum += local_shafts(eye, dir, len, distance);

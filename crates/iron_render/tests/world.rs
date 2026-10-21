@@ -3152,11 +3152,11 @@ fn god_rays_keep_a_grates_thin_shadows_sharp() {
             .collect()
     };
     // How much the row ripples (the sum of steps between neighbours): thin beams show as
-    // ripples the volume smooths away.
+    // ripples the volume smooths away (the per-pixel offsets soften them a little).
     let ripple = |r: &[i32]| r.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<i32>();
     let (soft, sharp) = (row(0), row(1));
     assert!(
-        ripple(&sharp) > ripple(&soft) * 3 / 2,
+        ripple(&sharp) > ripple(&soft) * 13 / 10,
         "thin beams: {} against {} ({sharp:?} / {soft:?})",
         ripple(&sharp),
         ripple(&soft)
