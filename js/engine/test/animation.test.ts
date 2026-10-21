@@ -219,6 +219,32 @@ describe("Animator", () => {
     expect(animator.isInTransition).toBe(false);
   });
 
+  // M5-ANI-06
+  test("a blend tree keeps its phase when its weights change (clips of different lengths)", () => {
+    // Two cycles whose x runs 0 to 1 through each: a 1 s walk and a 2 s run. x is the phase.
+    const cycle = (name: string, length: number) => {
+      const clip = new AnimationClip(name);
+      clip.wrapMode = "loop";
+      clip.setCurve("", "Transform", "localPosition.x", AnimationCurve.linear(0, 0, length, 1));
+      return clip;
+    };
+    const go = new GameObject("Runner");
+    const controller = new AnimatorController()
+      .addParameter("speed", "float", 0)
+      .addState("Move", { blendParameter: "speed", children: [{ motion: cycle("walk", 1), threshold: 0 }, { motion: cycle("run", 2), threshold: 4 }] });
+    const animator = go.addComponent(Animator, { controller });
+    globalThis.__iron_animate(0.25);
+    expect(go.transform.localPosition.x).toBeCloseTo(0.25);
+    // Breaking into a run: the stride carries on from the same point in the cycle (it jumped
+    // back to 0.125 when the state kept seconds: 0.25 s of the run's 2).
+    animator.setFloat("speed", 4);
+    globalThis.__iron_animate(0.001);
+    expect(go.transform.localPosition.x).toBeCloseTo(0.25, 2);
+    // Then at the run's pace: half a second is a quarter of its cycle.
+    globalThis.__iron_animate(0.5);
+    expect(go.transform.localPosition.x).toBeCloseTo(0.5, 2);
+  });
+
   test("cross-fades blend rotations the short way; play and crossFade jump; saving", () => {
     const go = new GameObject("Turner");
     // 170 and -170 degrees are 20 apart through 180, not 340 through 0.

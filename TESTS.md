@@ -325,6 +325,7 @@ layout pass):
 | M5-ANI-03 | JS unit | `Animation`: play, crossFade weights (halfway is an even blend), clips played once hold their end and stop, inactive objects don't animate. |
 | M5-ANI-04 | JS unit | `Animator`: a 1D blend tree mixes by its parameter; triggers start transitions and are used up; exit-time and Any State transitions (no re-entry), cross-fades; rotations blend the short way; `play` / `crossFade`; controllers save as JSON and in scenes. |
 | M5-ANI-05 | Integration | `__iron_animate(dt)` runs each frame after every `onUpdate`. |
+| M5-ANI-06 | JS unit | An `Animator` state keeps normalized time (Unity's): a blend tree whose clips differ in length keeps its phase when its weights change (a walk breaking into a run carries on mid-stride), then advances at the blend's pace. |
 | M5-SKN-01 | Unit | A skinned glTF (`worm.glb`, made by `make_worm.py`) gives joints and normalized weights per vertex, its skin's joints and inverse bind matrices, and its animation's channels (rotation keys, a step channel). |
 | M5-SKN-02 | JS unit | Skinned model parts get a `SkinnedMeshRenderer` with their bones (ids and bind poses in the op); the file's animations become clips with paths from the copy's root and play on their own; script meshes send bone weights (normalized) and bind poses. |
 | M5-RND-21 | Golden | A tube skinned to two bones bends where the upper bone turns, ignoring its object's matrix, and casts a bent shadow. |
