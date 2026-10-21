@@ -91,8 +91,8 @@ function atlas(): Texture {
     return new Color(c.r * f, c.g * f, c.b * f, 1);
   };
   for (let tile = 0; tile < TILES; tile++) {
-    // A thin rim of grass curling over the side's top edge, the odd blade dripping lower.
-    const grassDepth = Array.from({ length: PX }, () => 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < 0.12 ? 1 : 0));
+    // Grass over the side's top edge, a few pixels deep with uneven drips.
+    const grassDepth = Array.from({ length: PX }, () => 3 + Math.floor(rnd() * 3));
     for (let y = 0; y < PX; y++) {
       for (let x = 0; x < PX; x++) {
         let c: Color;
@@ -122,8 +122,8 @@ function atlas(): Texture {
             c = shade(rnd() < 0.25 ? "#2d5a1c" : "#3f7a28", 0.3);
             break;
         }
-        // Rows run from the top of the image.
-        pixels[y * TILES * PX + tile * PX + x] = c;
+        // `y` counts down from the tile's top; `Texture.create` takes the bottom row first.
+        pixels[(PX - 1 - y) * TILES * PX + tile * PX + x] = c;
       }
     }
   }
