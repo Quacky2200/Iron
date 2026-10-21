@@ -305,6 +305,22 @@ struct State {
     supported: bool,
     /// Keyed windows a hot reload kept that the new code has not claimed yet (`create` with their key).
     unclaimed: BTreeSet<WindowRef>,
+    /// What `reload_begin` took out, until the new code's first frame (`reload_end`) or a failed
+    /// reload (`reload_abort`) puts it back.
+    stash: Option<Stash>,
+}
+
+/// The old code's window state a reload set aside.
+struct Stash {
+    listeners: BTreeMap<WindowRef, WindowListeners>,
+    domain_listeners: BTreeMap<DomainId, DomainListeners>,
+    run_queue: BTreeMap<DomainId, Vec<Callback<()>>>,
+    queues: BTreeMap<DomainId, VecDeque<Message>>,
+    pending: BTreeMap<u64, PendingRequest>,
+    requests: Vec<WindowRequest>,
+    setup: BTreeMap<WindowRef, DomainId>,
+    /// The windows that existed, so a failed reload can forget the ones its code made.
+    windows: BTreeSet<WindowRef>,
 }
 
 fn main_state() -> WindowState {
@@ -354,6 +370,7 @@ impl State {
             now_ms: 0.0,
             supported: true,
             unclaimed: BTreeSet::new(),
+            stash: None,
         }
     }
 
@@ -922,13 +939,16 @@ pub fn can_set_up(w: WindowRef) -> bool {
 /// them with `Window.create({ key })`; [`reload_end`] closes what nobody claimed.
 pub fn reload_begin() -> Vec<WindowRef> {
     with(|s| {
-        s.listeners.clear();
-        s.domain_listeners.clear();
-        s.run_queue.clear();
-        s.queues.clear();
-        s.pending.clear();
-        s.setup.clear();
-        s.requests.clear();
+        s.stash = Some(Stash {
+            listeners: std::mem::take(&mut s.listeners),
+            domain_listeners: std::mem::take(&mut s.domain_listeners),
+            run_queue: std::mem::take(&mut s.run_queue),
+            queues: std::mem::take(&mut s.queues),
+            pending: std::mem::take(&mut s.pending),
+            requests: std::mem::take(&mut s.requests),
+            setup: std::mem::take(&mut s.setup),
+            windows: s.windows.keys().copied().collect(),
+        });
         s.current = None;
         s.cancel = false;
         s.in_close_request = None;
@@ -945,9 +965,29 @@ pub fn reload_begin() -> Vec<WindowRef> {
     })
 }
 
+/// Hot reload that failed after [`reload_begin`]: the old code keeps running, so its listeners,
+/// queued messages and requests come back and what the failed code registered or created is
+/// dropped. The windows the host was told to close stay open.
+pub fn reload_abort() {
+    with(|s| {
+        let Some(old) = s.stash.take() else { return };
+        s.listeners = old.listeners;
+        s.domain_listeners = old.domain_listeners;
+        s.run_queue = old.run_queue;
+        s.queues = old.queues;
+        s.pending = old.pending;
+        s.requests = old.requests;
+        s.setup = old.setup;
+        s.windows.retain(|w, _| old.windows.contains(w));
+        s.unclaimed.clear();
+        s.current = None;
+    });
+}
+
 /// Hot reload, after the new code's first frame: the keyed windows it did not claim, to close.
 pub fn reload_end() -> Vec<WindowRef> {
     with(|s| {
+        s.stash = None;
         std::mem::take(&mut s.unclaimed)
             .into_iter()
             .filter(|w| s.windows.get(w).is_some_and(|st| st.open))

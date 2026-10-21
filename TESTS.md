@@ -1421,6 +1421,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1481 | Unit | `Window.create({ key })` with the key of a kept window returns that window (same handle, no `Create`), applies the new title, keeps the player's size and position, and lets the new code add listeners; a second `create` with the key is a new window. |
 | M9-API-1482 | Unit | `reload_end` returns the keyed windows nobody claimed (once). Acceptance: the probe with `IRON_RELOAD_AT_FRAME=5 --frames 10` keeps the keyed tool window and replaces the keyless isolated one. |
 | M9-API-1483 | Unit | The main window survives a reload with its title; the new code sets it again. |
+| M9-API-1484 | Unit | A failed reload (`reload_abort`) gives the old code its window listeners back and forgets the windows the failed code made; the windows the host was to close stay open. |
 | M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
 | M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
 | M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/iron_engine_api/tests/window.rs`). |

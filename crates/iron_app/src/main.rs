@@ -700,6 +700,7 @@ impl App {
         ) {
             Ok(classes) => classes,
             Err(e) => {
+                iron_engine_api::window::reload_abort();
                 tracing::error!("reload failed, keeping the old code: {e}");
                 return;
             }

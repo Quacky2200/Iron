@@ -142,3 +142,26 @@ fn the_main_window_survives_reload_with_its_title() {
     MAIN.set_title("Level 4");
     assert_eq!(MAIN.title(), "Level 4");
 }
+
+// M9-API-1484
+#[test]
+fn a_failed_reload_gives_the_old_code_its_listeners_back_and_forgets_the_new_windows() {
+    fresh();
+    let keyed = create("K", "tool", "k");
+    open(keyed, (100.0, 100.0));
+    let hits = Rc::new(Cell::new(0));
+    let h = hits.clone();
+    keyed.on_resized(Callback::from_fn(move |(_, _): (f64, f64)| {
+        h.set(h.get() + 1)
+    }));
+    let _ = window::take_requests();
+    window::reload_begin();
+    // The new code's top level ran: it claimed the window and made another, then failed.
+    assert_eq!(create("K", "tool", "k"), keyed);
+    let made = create("New", "tool", "n");
+    window::reload_abort();
+    window::resized(keyed, 200.0, 200.0);
+    assert_eq!(hits.get(), 1, "the old listener is back");
+    assert!(!made.is_open(), "the window the failed code made is gone");
+    assert!(window::reload_end().is_empty());
+}
