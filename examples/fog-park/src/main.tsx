@@ -404,13 +404,15 @@ function tube(path: Vector3[], radius: number, sides: number): Mesh {
 function addTube(a: Arrays, path: Vector3[], radius: number, sides: number): void {
   const { positions, normals, triangles } = a;
   const first = positions.length / 3;
-  const across = v(1, 0, 0);
   path.forEach((p, i) => {
     const t = path[Math.min(i + 1, path.length - 1)]!.sub(path[Math.max(i - 1, 0)]!).normalized;
+    // Any direction not along the path will do for the ring's frame.
+    const across = Math.abs(t.x) > 0.9 ? v(0, 0, 1) : v(1, 0, 0);
     const n = t.cross(across).normalized;
+    const side = n.cross(t).normalized;
     for (let k = 0; k < sides; k++) {
       const a = (k / sides) * Math.PI * 2;
-      const d = n.scale(Math.cos(a)).add(across.scale(Math.sin(a)));
+      const d = n.scale(Math.cos(a)).add(side.scale(Math.sin(a)));
       positions.push(p.x + d.x * radius, p.y + d.y * radius, p.z + d.z * radius);
       normals.push(d.x, d.y, d.z);
     }
@@ -647,33 +649,71 @@ function tree(x: number, z: number, size: number): void {
   }
 }
 
-/** A weeping willow leaning towards `lean`: a pale dome of strands hanging to the ground. */
+/** Points along a quadratic curve from `a` through control `c` to `b`. */
+function curve(a: Vector3, c: Vector3, b: Vector3, n: number): Vector3[] {
+  const out: Vector3[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    out.push(a.scale((1 - t) * (1 - t)).add(c.scale(2 * t * (1 - t))).add(b.scale(t * t)));
+  }
+  return out;
+}
+
+/**
+ * A weeping willow leaning towards `lean`: a sturdy trunk flaring at the foot, boughs arching
+ * out from a fork, a broad rounded crown, and curtains of thin leafy fronds hanging from its
+ * edge almost to the ground (the fronds are two merged meshes, one per green).
+ */
 function willow(x: number, z: number, lean: Vector3): void {
   const base = v(x, 0, z);
-  const fork = base.add(lean.scale(0.9)).add(v(0, 2.8, 0));
-  rod("Willow trunk", base, fork, 0.75, BARK[0]!);
-  const top = base.add(lean.scale(1.5)).add(v(0, 4.8, 0));
-  for (let k = 0; k < 2; k++) {
-    const a = Random.range(0, Math.PI * 2);
-    rod("Willow bough", fork, top.add(v(Math.cos(a) * 1.2, -0.4, Math.sin(a) * 1.2)), 0.35, BARK[0]!);
-  }
-  for (let k = 0; k < 4; k++) {
-    const p = top.add(v(Random.range(-1.2, 1.2), Random.range(0, 0.8), Random.range(-1.2, 1.2)));
-    const s = Random.range(2.6, 3.4);
-    shape("Willow crown", "sphere", p, v(s, s * 0.6, s), pick(WILLOW));
-  }
-  for (let k = 0; k < 66; k++) {
-    const a = Random.range(0, Math.PI * 2);
-    const rr = 0.6 + 2.9 * Math.sqrt(Random.range(0, 1));
+  const fork = base.add(lean.scale(0.9)).add(v(0, 2.9, 0));
+  const bark = BARK[0]!;
+  shape("Willow foot", "cylinder", base.add(v(0, 0.3, 0)), v(1.25, 0.3, 1.25), bark);
+  rod("Willow trunk", base, fork, 0.8, bark);
+  const top = base.add(lean.scale(1.6)).add(v(0, 5.4, 0));
+  // Boughs arching up and out from the fork.
+  const boughs: Arrays = { positions: [], normals: [], triangles: [] };
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + Random.range(-0.3, 0.3);
     const out = v(Math.cos(a), 0, Math.sin(a));
-    const p = top.add(out.scale(rr));
-    const y0 = top.y + 1.2 * Math.sqrt(Math.max(0, 1 - (rr / 3.7) ** 2));
-    const y1 = Random.range(0.3, 1.1);
-    const len = y0 - y1;
-    // Swing the bottom outwards a little.
-    const tilt = Quaternion.angleAxis(Random.range(2, 6), out.cross(Vector3.up));
-    shape("Willow strand", "capsule", v(p.x, (y0 + y1) / 2, p.z), v(0.24, len / 2, 0.24), pick(WILLOW), tilt);
+    const end = top.add(out.scale(Random.range(2.2, 3.0))).add(v(0, Random.range(-0.4, 0.3), 0));
+    const mid = fork.add(out.scale(1.0)).add(v(0, 2.4, 0));
+    addTube(boughs, curve(fork, mid, end, 8), 0.13, 7);
   }
+  const bm = Mesh.createFlat(boughs);
+  const bgo = new GameObject("Willow boughs");
+  bgo.addComponent(MeshRenderer, { mesh: bm, material: bark });
+  meshes++;
+  // The crown: a broad, rounded dome of overlapping clumps.
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI * 2;
+    const r = k === 0 ? 0 : Random.range(1.4, 2.2);
+    const p = top.add(v(Math.cos(a) * r, Random.range(0.2, 0.9) - r * 0.25, Math.sin(a) * r));
+    const sz = Random.range(2.4, 3.1);
+    shape("Willow crown", "sphere", p, v(sz, sz * 0.62, sz), WILLOW[k % WILLOW.length]!);
+  }
+  // Fronds: thin, curving out from under the crown's edge, then hanging down.
+  const fronds: Arrays[] = [
+    { positions: [], normals: [], triangles: [] },
+    { positions: [], normals: [], triangles: [] },
+  ];
+  for (let k = 0; k < 220; k++) {
+    const a = Random.range(0, Math.PI * 2);
+    const r = 1.6 + 2.0 * Math.sqrt(Random.range(0, 1));
+    const out = v(Math.cos(a), 0, Math.sin(a));
+    // Hang from the crown's underside: higher in the middle, lower at the rim.
+    const y0 = top.y + 0.6 - 0.35 * r;
+    const start = top.add(out.scale(r)).add(v(0, y0 - top.y, 0));
+    const yEnd = Random.range(0.35, 1.6);
+    const end = start.add(out.scale(Random.range(0.2, 0.6))).add(v(0, yEnd - y0, 0));
+    const ctl = start.add(out.scale(Random.range(0.35, 0.7))).add(v(0, -0.25, 0));
+    addTube(fronds[k % 2]!, curve(start, ctl, end, 6), Random.range(0.035, 0.06), 5);
+  }
+  fronds.forEach((f, i) => {
+    const go = new GameObject("Willow fronds");
+    go.addComponent(MeshRenderer, { mesh: Mesh.createFlat(f), material: WILLOW[i % WILLOW.length]! });
+    meshes++;
+  });
 }
 
 function shrub(x: number, z: number, size: number): void {
