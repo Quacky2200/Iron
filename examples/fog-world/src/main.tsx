@@ -306,7 +306,7 @@ function buildChunk(cx: number, cz: number): ChunkMesh {
         const nh = hs[(z + n[2] + 1) * W + (x + n[0] + 1)]!;
         for (let y = nh > 0 ? nh : 0; y < h; y++) {
           const depth = h - 1 - y;
-          face(f, x, y, z, sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : depth === 0 ? Tile.GrassSide : Tile.Dirt);
+          face(f, x, y, z, sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : Tile.Dirt);
         }
       }
       // Water over low ground: a flat surface a little below the block top.
