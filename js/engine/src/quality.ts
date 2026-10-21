@@ -22,8 +22,11 @@ export interface QualityLevel {
   /** The world's resolution relative to the window (0.25 to 2); UI stays sharp. */
   renderScale: number;
   shadows: ShadowQualityMode;
-  /** Soft shadows' filter: `low` (3 × 3 samples) or `high` (5 × 5). */
-  softShadowQuality: "low" | "high";
+  /**
+   * Soft shadows' filter (Unity URP's soft shadow quality): `low` (3 × 3 samples), `medium`
+   * (5 × 5) or `high` (7 × 7): wider is smoother, costlier.
+   */
+  softShadowQuality: "low" | "medium" | "high";
   /** The shadow map's size in texels. */
   shadowResolution: number;
   /** How far shadows reach from the camera (metres). */
@@ -60,7 +63,7 @@ const DEFAULT_LEVELS: QualityLevel[] = [
   { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true, volumetricFog: false, hdr: true, additionalLights: 8, additionalLightShadows: false },
   { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: 32, additionalLightShadows: false },
   { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "medium", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
 ];
 
 interface ManifestQuality {
@@ -103,7 +106,7 @@ function sendQuality(): void {
     c.antiAliasing,
     c.renderScale,
     c.shadows,
-    c.softShadowQuality === "high" ? 2 : 1,
+    c.softShadowQuality === "high" ? 3 : c.softShadowQuality === "medium" ? 2 : 1,
     c.lodBias,
     c.vSyncCount,
     c.anisotropicFiltering,
@@ -198,10 +201,10 @@ export const QualitySettings = {
     sendQuality();
   },
 
-  get softShadowQuality(): "low" | "high" {
+  get softShadowQuality(): "low" | "medium" | "high" {
     return current.softShadowQuality;
   },
-  set softShadowQuality(q: "low" | "high") {
+  set softShadowQuality(q: "low" | "medium" | "high") {
     current.softShadowQuality = q;
     sendQuality();
   },

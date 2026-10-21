@@ -183,8 +183,8 @@ function Menu() {
         {row("Shadows", shadowNames[QualitySettings.shadows], () => {
           QualitySettings.shadows = next(["disable", "hardOnly", "all"] as const, QualitySettings.shadows);
         })}
-        {row("Soft shadows", QualitySettings.softShadowQuality === "high" ? "High (5x5)" : "Low (3x3)", () => {
-          QualitySettings.softShadowQuality = QualitySettings.softShadowQuality === "high" ? "low" : "high";
+        {row("Soft shadows", { low: "Low (3x3)", medium: "Medium (5x5)", high: "High (7x7)" }[QualitySettings.softShadowQuality], () => {
+          QualitySettings.softShadowQuality = ({ low: "medium", medium: "high", high: "low" } as const)[QualitySettings.softShadowQuality];
         })}
         {row("Shadow map", `${QualitySettings.shadowResolution}`, () => {
           QualitySettings.shadowResolution = next([512, 1024, 2048, 4096], QualitySettings.shadowResolution);
