@@ -353,6 +353,21 @@ by 2 to the stops. `RenderSettings.tonemapping` (`"none"`, `"neutral"`, `"aces"`
 -10 to 10) send `render.post 0 postExposure tonemapping`; the app sets `WorldRenderer::grading`. A
 non-identity grading also draws through the HDR texture.
 
+**Auto exposure.** `Grading.auto_exposure: Option<AutoExposure>` (`min_ev` -10, `max_ev` 20, `compensation` 0,
+`speed_dark_to_light` 3, `speed_light_to_dark` 1) adapts the exposure to the view, like HDRP's Automatic mode.
+Each HDR target size in `BloomPass` has `Targets { hdr, levels, meter }`; `meter` is a 16-byte storage buffer
+(x: the adapted exposure in stops, y: 1 once set). Before the composite, the compute entry `cs_meter` (one 16x16
+workgroup) samples a 64x64 grid of the HDR image, takes log2 of the luminance and weights it towards the
+middle (`exp(-|uv-0.5|^2*6)`). That average becomes EV100 (+3), is clamped to `min_ev..max_ev`, and gives the
+target stops `-ev - log2(1.2) + compensation` (HDRP's `1/(1.2*2^EV100)`). The first use snaps to the target;
+after that the meter eases with `1 - exp(-dt*speed)`, using `speed_dark_to_light` when the target is lower
+(the view got brighter). `Grading.delta_time` is set by the app from the frame time; the pass caps it at 1/15 s.
+The composite and `fs_grade` multiply by `exposure * exp2(meter.x)` (`auto_scale()`). Bloom's prefilter
+threshold is applied to the light times `auto_scale()`, not to post exposure, so what blooms is what looks
+bright now. `RenderSettings.autoExposure` (`{ minEV, maxEV, compensation, speedDarkToLight, speedLightToDark }`
+or `null`, the default) rides on `render.post 0 postExposure tonemapping auto`, where `auto` is
+`[minEV, maxEV, compensation, darkToLight, lightToDark]` or null. Test `M7-EXP-01`.
+
 **FXAA.** `Camera.antialiasing = "fxaa"` (camera op argument 14) sets `WorldView.fxaa`. If the main view
 has it, `FxaaPass` runs over the finished, tonemapped image: it finds edges by gamma-space luma contrast
 and blends along them. It is cheaper than MSAA and smooths texture and shading edges too, a little
@@ -392,7 +407,8 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   `volume.rs` (`VolumePass`) owns an `Rgba16Float` 3D texture per view slot, sized by `volume::SIZES` (`VolumetricFog.detail`: low 160x90x48, medium 240x135x64, high 320x180x96, ultra 480x270x128; finer means sharper beams and a dearer fill). `encode` takes the size and remakes the slot's texture when it changes. The pass is temporal. Per slot it also keeps two
   "lit cell" 3D textures (ping-pong), a uniform buffer (`GpuFrame` / WGSL `VolumeFrame`: previous
   `view_proj`, previous camera and ortho flag, previous forward and distance, jitter xyz, blend w) and the
-  last `VolumeCamera`. Once per view with shafts, before the render pass, `cs_volume_light` (4x4x4
+  last `VolumeCamera`. `VolumeCamera.lights` is a key of which directional lights light the fog, which of them
+  have shadows and the sun's cascade count; when it changes the history is dropped (blend 1) instead of blended out. Once per view with shafts, before the render pass, `cs_volume_light` (4x4x4
   workgroups) lights every cell with one `scattered_all` sample at a Halton(2,3,5) point inside the cell
   (16-frame cycle, frame 0 = the cell middle), reprojects the cell's middle into last frame's lit cells
   (`last_cell`) and blends with `BLEND` = 0.1 (1.0 with no history: the first frame or after a size
@@ -536,6 +552,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
 | `render.bloom` | `0 threshold intensity scatter`, or `0 null` for off |
+| `render.post` | `0 exposureStops tonemapping auto`; `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark]` or null |
 | `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount` (see Quality settings) |
 | `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
