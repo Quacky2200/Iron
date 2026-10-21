@@ -614,6 +614,12 @@ pub struct VolumetricFog {
     /// the fog's colour, which is how the fog looks in the ambient light: a night fog is
     /// dark, yet glows white under a lamp.
     pub albedo: [f32; 3],
+    /// God rays: within this many metres of the camera the sun's shafts are worked out per
+    /// pixel from its shadow map, so beams through bars, gaps and leaves keep sharp edges
+    /// (the volume's cells would blur them). 0: off, the volume does it all.
+    pub sharp_distance: f32,
+    /// Samples per pixel for the sharp part (closer together nearer the camera).
+    pub sharp_samples: u32,
 }
 
 impl Default for VolumetricFog {
@@ -624,6 +630,8 @@ impl Default for VolumetricFog {
             steps: 4,
             distance: 50.0,
             albedo: [1.0; 3],
+            sharp_distance: 0.0,
+            sharp_samples: 32,
         }
     }
 }
@@ -860,6 +868,8 @@ struct GpuGlobals {
     fog_volume: [f32; 4],
     /// rgb: the fog's albedo for light shafts.
     fog_albedo: [f32; 4],
+    /// God rays: x how far the sun's shafts are worked out per pixel (0: off), y samples.
+    fog_sharp: [f32; 4],
     /// x: how many fog volumes follow.
     fog_local: [f32; 4],
     local_fogs: [GpuFogVolume; MAX_FOG_VOLUMES],
@@ -908,6 +918,12 @@ impl GpuGlobals {
             ];
             let [r, g, b] = v.albedo.map(|c| c.max(0.0));
             self.fog_albedo = [r, g, b, 0.0];
+            self.fog_sharp = [
+                v.sharp_distance.max(0.0),
+                v.sharp_samples.clamp(4, 128) as f32,
+                0.0,
+                0.0,
+            ];
         }
     }
 }

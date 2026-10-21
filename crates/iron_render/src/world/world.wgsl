@@ -39,6 +39,9 @@ struct Globals {
     fog_volume: vec4<f32>,
     // rgb: how much of each colour of light the fog scatters into shafts.
     fog_albedo: vec4<f32>,
+    // God rays: x how far from the camera the sun's shafts are worked out per pixel (0: off),
+    // y samples.
+    fog_sharp: vec4<f32>,
     // x: how many fog volumes `local_fogs` holds.
     fog_local: vec4<f32>,
     local_fogs: array<LocalFog, 8>,
@@ -516,8 +519,35 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 }
 
+// God rays: the sun's light the fog sends back from the first `g.fog_sharp.x` metres of the
+// view ray, worked out per pixel at fixed points (closer together near the camera) with
+// hard shadow lookups, so a beam's edges are as sharp as what casts them.
+fn sharp_sun(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec3<f32> {
+    let reach = min(len, g.fog_sharp.x);
+    let n = i32(g.fog_sharp.y);
+    var t0 = 0.0;
+    var clear = 1.0;
+    var sum = vec3<f32>(0.0);
+    for (var i = 0; i < n; i++) {
+        let w = f32(i + 1) / f32(n);
+        let t1 = reach * w * w;
+        let next = media_clear(eye, dir, t1, distance);
+        sum += (clear - next) * scattered_all(eye + dir * (0.5 * (t0 + t1)), dir);
+        clear = next;
+        t0 = t1;
+    }
+    return sum;
+}
+
+// The volume's light from the eye out to `d` along this pixel's ray.
+fn volume_to(uv: vec2<f32>, d: f32) -> vec3<f32> {
+    let w = sqrt(max(d, 0.0) / g.fog_volume.w);
+    return textureSampleLevel(volume, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+}
+
 // Light the fog between the camera and `p` (pixel `px`) sends to the camera: the volume
 // at `p`, plus, past its last slice, the sun lighting the rest of the fog as at its middle.
+// With god rays, the first stretch of the sun's part is worked out per pixel instead.
 // The fog's albedo tints it.
 fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
     let eye = fog_eye(p);
@@ -529,8 +559,12 @@ fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
     let slices = f32(textureDimensions(volume).z);
     let last = slice_distance((slices - 0.5) / slices);
     let uv = (px - g.viewport.xy) / g.viewport.zw;
-    let w = sqrt(min(len, last) / g.fog_volume.w);
-    var sum = textureSampleLevel(volume, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+    var sum = volume_to(uv, min(len, last));
+    if (g.fog_sharp.x > 0.0) {
+        let near = min(len, g.fog_sharp.x);
+        sum += sharp_sun(eye, dir, len, distance) - volume_to(uv, min(near, last));
+        sum = max(sum, vec3<f32>(0.0));
+    }
     sum += local_shafts(eye, dir, len, distance);
     if (len > last) {
         let rest = fog_clear(eye + dir * last, distance) - fog_clear(p, distance);

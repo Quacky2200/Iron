@@ -3032,6 +3032,138 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
     assert_golden("M7-FOG-05", size.0, size.1, &pixels, 6);
 }
 
+// M7-FOG-10
+#[test]
+fn god_rays_keep_a_grates_thin_shadows_sharp() {
+    use iron_render::{
+        Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
+        primitive_id, viewport_size,
+    };
+    let gpu = shared_gpu();
+    let size = (320, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let cube = |model: Mat4, color: [f32; 4]| MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model,
+        color,
+        cast_shadows: true,
+        ..Default::default()
+    };
+    let box_at = |centre: Vec3, extent: Vec3| {
+        Mat4::from_scale_rotation_translation(extent, Quat::IDENTITY, centre)
+    };
+    let mut meshes = vec![
+        // The floor and a back wall the view rays end on.
+        cube(
+            box_at(Vec3::new(0.0, -0.1, 0.0), Vec3::new(30.0, 0.2, 20.0)),
+            [0.5, 0.5, 0.5, 1.0],
+        ),
+        cube(
+            box_at(Vec3::new(0.0, 4.0, -6.5), Vec3::new(30.0, 8.0, 1.0)),
+            [0.5, 0.5, 0.5, 1.0],
+        ),
+    ];
+    // A grate for a roof: bars 0.12 m wide every 0.4 m, finer than the volume's cells.
+    for k in -40..=40 {
+        meshes.push(cube(
+            box_at(
+                Vec3::new(k as f32 * 0.4, 6.0, 0.0),
+                Vec3::new(0.12, 0.2, 14.0),
+            ),
+            [0.3, 0.3, 0.3, 1.0],
+        ));
+    }
+    let sun = Light {
+        kind: LightKind::Directional,
+        color: [3.0, 2.85, 2.6],
+        position: Vec3::ZERO,
+        direction: Vec3::new(0.35, -1.0, 0.0).normalize(),
+        range: 0.0,
+        shadows: Some(Shadows {
+            soft: false,
+            strength: 1.0,
+        }),
+        culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
+    };
+    let rects = [[0.0, 0.0, 0.5, 1.0], [0.5, 0.0, 0.5, 1.0]];
+    let fog = Fog {
+        mode: FogMode::Exponential,
+        color: [0.2, 0.21, 0.24],
+        density: 0.06,
+        ..Default::default()
+    };
+    let views: Vec<WorldView> = rects
+        .iter()
+        .enumerate()
+        .map(|(k, &rect)| {
+            let camera = WorldCamera::perspective(
+                iron_core::glam::camera::rh::view::look_at_mat4(
+                    Vec3::new(0.0, 1.5, 8.0),
+                    Vec3::new(0.0, 3.0, 0.0),
+                    Vec3::Y,
+                )
+                .inverse(),
+                60.0,
+                0.1,
+                60.0,
+                viewport_size(rect, size),
+                Color::rgb(0.0, 0.0, 0.0),
+            );
+            let mut v = WorldView::new(camera, rect);
+            v.ambient = [0.03, 0.03, 0.035];
+            v.meshes = meshes.clone();
+            v.lights = vec![sun];
+            v.fog = Some(Fog {
+                volumetric: Some(VolumetricFog {
+                    intensity: 0.25,
+                    distance: 30.0,
+                    sharp_distance: if k == 1 { 20.0 } else { 0.0 },
+                    ..Default::default()
+                }),
+                ..fog
+            });
+            v
+        })
+        .collect();
+    let view_projs: Vec<Mat4> = views.iter().map(|v| v.camera.view_proj).collect();
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 30.0;
+    world.render_views(&gpu, &rt, &views, &[]);
+    let pixels = target.read_pixels(&gpu).unwrap();
+    // Green along a row of the back wall, 3 m up, seen through the air under the roof.
+    let row = |k: usize| -> Vec<i32> {
+        (-30..=30)
+            .map(|i| {
+                let c = view_projs[k].project_point3(Vec3::new(i as f32 * 0.1, 3.0, -6.0));
+                let r = rects[k];
+                let x = (r[0] + (c.x + 1.0) / 2.0 * r[2]) * size.0 as f32;
+                let y = (1.0 - c.y) / 2.0 * size.1 as f32;
+                pixels[(y as usize * size.0 as usize + x as usize) * 4 + 1] as i32
+            })
+            .collect()
+    };
+    // How much the row ripples (the sum of steps between neighbours): thin beams show as
+    // ripples the volume smooths away.
+    let ripple = |r: &[i32]| r.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<i32>();
+    let (soft, sharp) = (row(0), row(1));
+    assert!(
+        ripple(&sharp) > ripple(&soft) * 3 / 2,
+        "thin beams: {} against {} ({sharp:?} / {soft:?})",
+        ripple(&sharp),
+        ripple(&soft)
+    );
+    assert_golden("M7-FOG-10", size.0, size.1, &pixels, 6);
+}
+
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {

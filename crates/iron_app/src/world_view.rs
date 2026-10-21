@@ -1225,6 +1225,9 @@ impl WorldViews {
                                     [r, g, b, ..] => [r, g, b].map(|c| c.max(0.0)),
                                     _ => [1.0; 3],
                                 },
+                                sharp_distance: v.get(7).copied().unwrap_or(0.0).max(0.0),
+                                sharp_samples: v.get(8).copied().unwrap_or(32.0).clamp(4.0, 128.0)
+                                    as u32,
                             }
                         }),
                         cull: !matches!(args.get(8), Some(Value::Bool(false))),
@@ -2378,6 +2381,8 @@ mod tests {
                 steps: 16,
                 distance: 40.0,
                 albedo: [1.0; 3],
+                sharp_distance: 0.0,
+                sharp_samples: 32,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();

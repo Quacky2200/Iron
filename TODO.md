@@ -1467,7 +1467,12 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     inside the light's range and cone found exactly, so cones have sharp edges and lanterns a
     round glow; the volume keeps the sun; lit fog goes on after fog volumes, so mist glows
     under a lamp (`M7-FOG-08`)
-  - [ ] God rays (asked for 2026-10-21): crisp, high-contrast sun beams cutting through fog and
+  - [x] God rays, engine (2026-10-21): within `volumetricFog.sharpDistance` of the camera
+    the sun's shafts are worked out per pixel from its shadow map (fixed samples, closer
+    nearer the eye), the volume covering the rest, so beams through bars and gaps stay sharp
+    (`M7-FOG-10`); examples next: a barred prison cell, a forest canopy, a sunlit room with
+    dust
+  - [ ] God rays, first notes: crisp, high-contrast sun beams cutting through fog and
     cloud where light comes through gaps (skylights, a broken roof, a tree canopy), as in
     Unreal's volumetric fog and painted-style games. The froxel volume makes the sun's shafts
     soft; options: a screen-space radial blur from the sun's position over an occlusion mask
