@@ -7,7 +7,9 @@
 // sheet of light (a pyramid spot light, thin and wide) sweeping top to bottom or left to right.
 // The menu has two pages (1: the scan, 2: exposure). Keys: the scan (M), the beam's colour (C),
 // the rays (R), the dust motes (D), the haze's quality (G), how strongly the scanner lights it
-// (V), pause (Space); auto exposure (X) and the manual EV (- and =).
+// (V), pause (Space), vsync (Q); auto exposure (X), the manual EV (- and =), metering (N),
+// the histogram band (H), the soft floor (F), the curve (K), adaptation speed (Y), hold (L)
+// and the transition (T).
 import {
   Camera,
   Color,
@@ -44,15 +46,44 @@ const BEAMS = {
 };
 type Beam = keyof typeof BEAMS;
 
-const state = { beam: "green" as Beam, rays: true, dust: true, paused: false, haze: 0, beamHaze: 0, scan: 0, auto: true, ev: 0 };
+const state = {
+  beam: "green" as Beam,
+  rays: true,
+  dust: true,
+  paused: false,
+  haze: 0,
+  beamHaze: 0,
+  scan: 0,
+  auto: true,
+  ev: 0,
+  metering: 0,
+  band: false,
+  soft: false,
+  curve: false,
+  speed: 0,
+  hold: false,
+  transition: 0,
+};
+
+/** Auto exposure's metering modes, as the dark-room has them. */
+const METERING = ["centerWeighted", "average", "spot"] as const;
+const METERING_NAMES = { centerWeighted: "Centre-weighted", average: "Average", spot: "Spot" };
+/** How fast the eyes adapt. */
+const SPEEDS = [
+  { name: "Shed (2 s up, 0.8 s down)", toLight: 2, toDark: 0.8 },
+  { name: "Game (under a second)", toLight: 4, toDark: 3.5 },
+  { name: "Eyes (slow in the dark)", toLight: 1.2, toDark: 0.35 },
+];
+/** Seconds auto exposure takes to blend in and out (0: at once). */
+const TRANSITIONS = [1, 3, 0];
+/** Seconds a full scan takes there and back: slow, for suspense. */
+const FULL_SCAN = 24;
 
 /** How the craft scans: seeking things with a narrow beam, or the whole shed with a sheet. */
 const SCANS = ["Partial: seeks things", "Full: top to bottom", "Full: left to right"];
 /** The sheet of a full scan: 1.5 degrees thin, 40 times as wide (about 55 degrees). */
 const SHEET = { outer: 1.5, inner: 1, aspect: 40 };
 
-/** Auto exposure: the eyes adapt to the dark shed and the beam. */
-const AUTO = { minEV: -6, maxEV: 10, compensation: -1, speedDarkToLight: 2, speedLightToDark: 0.8 };
 
 /** Which page of the menu shows: the scan's settings or exposure. */
 let tab = 0;
@@ -98,9 +129,25 @@ function apply(): void {
     scanner.spotAngle = full ? SHEET.outer : 9;
     scanner.innerSpotAngle = full ? SHEET.inner : 5;
   }
-  RenderSettings.exposureTransition = 1;
+  RenderSettings.exposureTransition = TRANSITIONS[state.transition]!;
   RenderSettings.fixedExposure = state.ev;
-  RenderSettings.autoExposure = state.auto ? AUTO : null;
+  const speed = SPEEDS[state.speed]!;
+  RenderSettings.autoExposure = state.auto
+    ? {
+        minEV: -6,
+        maxEV: 10,
+        compensation: -1,
+        speedDarkToLight: speed.toLight,
+        speedLightToDark: speed.toDark,
+        metering: METERING[state.metering],
+        lowPercent: state.band ? 40 : 0,
+        highPercent: state.band ? 90 : 100,
+        darkAdaptation: state.soft ? 0.6 : 1,
+        darkBelow: 3,
+        curve: state.curve ? [[-4, -1.5], [4, 0]] : undefined,
+        hold: state.hold,
+      }
+    : null;
   refreshMenu();
 }
 
@@ -198,8 +245,8 @@ const mat = (hex: string, smoothness = 0.08) => Material.create({ color: Color.h
  */
 function scanAt(t: number): { target: Vector3; lock: number } {
   if (state.scan > 0) {
-    // A full scan: there and back over 8 seconds, slowing at each end.
-    const u = (t % 8) / 8;
+    // A full scan: slowly there and back, easing at each end.
+    const u = (t % FULL_SCAN) / FULL_SCAN;
     const s = u < 0.5 ? u * 2 : 2 - u * 2;
     const e = s * s * (3 - 2 * s);
     return state.scan === 1
@@ -432,6 +479,14 @@ class Shed extends Component {
     if (input.getKeyDown("Space")) toggle("paused");
     if (input.getKeyDown("KeyM")) cycle("scan", SCANS.length);
     if (input.getKeyDown("KeyX")) toggleAuto();
+    if (input.getKeyDown("KeyN")) cycle("metering", METERING.length);
+    if (input.getKeyDown("KeyH")) flip("band");
+    if (input.getKeyDown("KeyF")) flip("soft");
+    if (input.getKeyDown("KeyK")) flip("curve");
+    if (input.getKeyDown("KeyY")) cycle("speed", SPEEDS.length);
+    if (input.getKeyDown("KeyL")) flip("hold");
+    if (input.getKeyDown("KeyT")) cycle("transition", TRANSITIONS.length);
+    if (input.getKeyDown("KeyQ")) toggleVSync();
     if (input.getKeyDown("Minus")) stepEV(-0.5);
     if (input.getKeyDown("Equal")) stepEV(0.5);
     if (input.getKeyDown("Digit1") || input.getKeyDown("Digit2")) {
@@ -476,7 +531,17 @@ function toggle(key: "rays" | "dust" | "paused") {
   apply();
 }
 
-function cycle(key: "haze" | "beamHaze" | "scan", n: number) {
+function flip(key: "band" | "soft" | "curve" | "hold") {
+  state[key] = !state[key];
+  apply();
+}
+
+function toggleVSync() {
+  QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
+  refreshMenu();
+}
+
+function cycle(key: "haze" | "beamHaze" | "scan" | "metering" | "speed" | "transition", n: number) {
   state[key] = (state[key] + 1) % n;
   // Auto exposure would undo a change in the rays' strength within a second.
   if (key === "beamHaze") holdExposure();
@@ -555,6 +620,7 @@ function ScanPage() {
       <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={() => cycle("haze", HAZE.length)} />
       <Button label="Ray strength" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="V" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
       <Button label="Moving" value={state.paused ? "Paused" : "Scanning"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
+      <Button label="VSync" value={QualitySettings.vSyncCount > 0 ? "On (capped)" : "Off (as fast as it can)"} on={QualitySettings.vSyncCount > 0} keyName="Q" onClick={toggleVSync} />
     </>
   );
 }
@@ -564,9 +630,16 @@ function ExposurePage() {
     <>
       <Button label="Exposure" value={state.auto ? "Auto (eyes adapt)" : "Manual"} on={state.auto} keyName="X" onClick={toggleAuto} />
       <Stepper label="Manual EV" value={evText(state.ev)} on={!state.auto} onDown={() => stepEV(-0.5)} onUp={() => stepEV(0.5)} />
+      <Button label="Transition" value={TRANSITIONS[state.transition] ? `${TRANSITIONS[state.transition]} s blend` : "Instant"} on={TRANSITIONS[state.transition]! > 0} keyName="T" onClick={() => cycle("transition", TRANSITIONS.length)} />
+      <Button label="Metering" value={METERING_NAMES[METERING[state.metering]!]} on={true} keyName="N" onClick={() => cycle("metering", METERING.length)} />
+      <Button label="Histogram" value={state.band ? "40–90% (no extremes)" : "Everything"} on={state.band} keyName="H" onClick={() => flip("band")} />
+      <Button label="Soft floor" value={state.soft ? "Below EV 3: 60% of the way" : "Off: all the way"} on={state.soft} keyName="F" onClick={() => flip("soft")} />
+      <Button label="Curve" value={state.curve ? "-1.5 stops at EV -4" : "Off"} on={state.curve} keyName="K" onClick={() => flip("curve")} />
+      <Button label="Adapts like" value={SPEEDS[state.speed]!.name} on={state.speed === 0} keyName="Y" onClick={() => cycle("speed", SPEEDS.length)} />
+      <Button label="Hold" value={state.hold ? "Held where it is" : "Adapting"} on={state.hold} keyName="L" onClick={() => flip("hold")} />
       <text style={{ color: "#c0d0c4", fontSize: 13 }}>Now: {evText(Camera.main?.exposure)}</text>
       <text style={{ color: "#76887a", fontSize: 12, width: 300 }}>
-        Auto: EV -6 to 10, 1 stop under, brighter over 2 s and darker over 0.8 s. Changing the rays' strength holds the exposure where it is, or the eyes would undo it.
+        Auto: EV -6 to 10, 1 stop under. Changing the rays' strength holds the exposure where it is, or the eyes would undo it.
       </text>
     </>
   );
