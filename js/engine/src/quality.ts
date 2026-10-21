@@ -28,7 +28,7 @@ export interface QualityLevel {
   shadowCascades: number;
   /** LOD groups switch as if things were this many times taller on screen (more detail above 1). */
   lodBias: number;
-  /** 1: frames wait for the display's refresh (no tearing); 0: they don't (`targetFrameRate` caps them). */
+  /** 0 (the default): frames don't wait for the display's refresh (`targetFrameRate` caps them); 1: they do (no tearing). */
   vSyncCount: number;
   /** Sharper textures at grazing angles: never, as each texture asks (`anisoLevel`), or at least 9x everywhere. */
   anisotropicFiltering: AnisotropicFiltering;
@@ -40,10 +40,10 @@ export interface QualityLevel {
 export type AnisotropicFiltering = "disable" | "enable" | "forceEnable";
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 0, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 0, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 },
 ];
 
 interface ManifestQuality {
@@ -162,7 +162,7 @@ export const QualitySettings = {
     sendShadows();
   },
 
-  /** 1: frames wait for the display's refresh; 0: they don't (`Application.targetFrameRate` caps them). */
+  /** 0 (the default): frames don't wait for the display's refresh (`Application.targetFrameRate` caps them); 1: they do. */
   get vSyncCount(): number {
     return current.vSyncCount;
   },
@@ -238,7 +238,8 @@ export function _applyDefaultQuality(): void {
   if (saved?.current) {
     const i = levels.findIndex((l) => l.name === saved.level);
     if (i >= 0) levelIndex = i;
-    current = { ...levels[levelIndex]!, ...saved.current, name: levels[levelIndex]!.name };
+    // An old saved choice must not turn vsync back on: it isn't a player setting.
+    current = { ...levels[levelIndex]!, ...saved.current, vSyncCount: levels[levelIndex]!.vSyncCount, name: levels[levelIndex]!.name };
   }
   // The starting state isn't a choice to save.
   restoring = true;

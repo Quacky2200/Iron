@@ -22,7 +22,7 @@ impl WindowSurface {
             format,
             width: width.max(1),
             height: height.max(1),
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             desired_maximum_frame_latency: frame_latency(gpu.adapter.get_info().backend),
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],

@@ -78,12 +78,14 @@ panic to the log (`M5-APP-04`).
 ## Vsync and the frame cap
 
 - `QualitySettings.vSyncCount` (0 or 1) goes out as the seventh argument of `render.quality`. It
-  fills `Quality.vsync` (default on). The app calls `WindowSurface::set_vsync` before each frame,
+  fills `Quality.vsync` (default off: the engine tracks raw performance, so frames are shown as soon as they are drawn;
+  the quality levels and `Quality::default()` have `vSyncCount` 0 and the examples have no vsync control; scripts may still set it).
+  A saved quality choice never turns it back on (`apply_default_quality` and `_applyDefaultQuality` take vsync from the level). The app calls `WindowSurface::set_vsync` before each frame,
   which switches the present mode between `AutoVsync` and `AutoNoVsync` and reconfigures the
   surface only when the mode changes. wgpu picks what the platform has (relaxed or plain FIFO;
   mailbox or immediate).
 - `Application.targetFrameRate` sends `app.targetFrameRate` (-1 means no cap). Like Unity's, it only
-  counts with vsync off, since vsync already paces frames. Screenshot runs ignore it.
+  counts with vsync off (the default), since vsync already paces frames. Screenshot runs ignore it.
 - The cap is `PlatformApp::frame_interval`. After handling events, the loop in `about_to_wait`
   checks the time since the last frame started; if the next frame is not due it sets
   `ControlFlow::WaitUntil(due)` and does not request a redraw. Input events still wake the loop.

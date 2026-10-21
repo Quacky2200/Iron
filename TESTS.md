@@ -1314,3 +1314,6 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-910 | Unit | `iron.fps` is read from the manifest. |
 | M9-API-911 | Integration | `iron_app <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
 | M9-API-912 | Integration | The same with `--no-fps`. |
+| M9-API-913 | Unit | `Quality::default()` has vsync off and the `render.quality` op turns it on only with a vSyncCount of 1 or more. |
+| M9-API-914 | Integration | Quality levels start with `vSyncCount` 0, and a saved `iron.quality` with `vSyncCount: 1` is applied without it. |
+| M9-API-915 | JS | `QualitySettings.vSyncCount` is 0 by default and a saved vsync is ignored when the saved choice is applied. |

@@ -97,12 +97,34 @@ fn screen_and_quality_settings_are_read_and_set() {
         let s: String = ctx
             .eval("JSON.stringify([Screen.width, Screen.height, Screen.fullScreen, QualitySettings.vSyncCount])")
             .unwrap();
-        assert_eq!(s, "[800,600,false,1]");
-        ctx.eval::<(), _>("Screen.fullScreen = !Screen.fullScreen; QualitySettings.vSyncCount = 0")
+        assert_eq!(s, "[800,600,false,0]", "vsync is off by default");
+        ctx.eval::<(), _>("Screen.fullScreen = !Screen.fullScreen; QualitySettings.vSyncCount = 1")
             .unwrap();
         assert!(screen::state().full_screen);
-        assert_eq!(screen::quality().v_sync_count, 0);
+        assert_eq!(screen::quality().v_sync_count, 1);
     });
+}
+
+// M9-API-914
+//
+// The levels start with vsync off, and a saved choice with vsync on (older saves) doesn't turn it on.
+#[test]
+fn vsync_is_off_by_default_and_a_saved_choice_cannot_turn_it_on() {
+    use iron_engine_api::prefs;
+    screen::reset();
+    assert_eq!(screen::quality().v_sync_count, 0);
+    prefs::set_json(
+        "iron.quality",
+        r#"{"level":"High","current":{"renderScale":0.5,"vSyncCount":1}}"#,
+    );
+    screen::apply_default_quality();
+    let q = screen::quality();
+    assert_eq!(
+        q.render_scale, 0.5,
+        "the rest of the saved choice still applies"
+    );
+    assert_eq!(q.v_sync_count, 0);
+    prefs::reset();
 }
 
 // M9-API-34

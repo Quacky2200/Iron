@@ -104,4 +104,17 @@ describe("display settings", () => {
     expect(ops.some((o) => o[0] === "prefs.set")).toBe(false);
     expect(ops.find((o) => o[0] === "render.quality")!.at(-1)).toBe(0);
   });
+
+  // M9-API-915
+  test("vsync is off by default and an old saved vsync is ignored", () => {
+    _resetQualityForTests();
+    expect(QualitySettings.vSyncCount).toBe(0);
+    info({ prefs: { "iron.quality": JSON.stringify({ level: "High", current: { ...QualitySettings.levels[2]!, vSyncCount: 1 } }) } });
+    _resetPrefsForTests();
+    _resetQualityForTests();
+    ops = [];
+    _applyDefaultQuality();
+    expect(QualitySettings.vSyncCount).toBe(0);
+    expect(ops.find((o) => o[0] === "render.quality")![7]).toBe(0);
+  });
 });

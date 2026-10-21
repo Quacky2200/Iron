@@ -13,7 +13,6 @@ import {
   Component,
   GameObject,
   input,
-  QualitySettings,
   register,
   Screen,
   Sprite,
@@ -180,7 +179,6 @@ class RaindropDemo extends Component {
     });
     if (input.getKeyDown("KeyM")) this.toggleMusic();
     if (input.getKeyDown("F11")) Screen.fullScreen = !Screen.fullScreen;
-    if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
     if (input.getMouseButtonDown(0) || input.getMouseButtonDown(1)) this.cycleWeather();
 
     // Roll the weather every 25 ms, as the original did.
@@ -232,10 +230,10 @@ class RaindropDemo extends Component {
   }
 
   /** What the HUD shows. */
-  get stats(): { weather: string; muted: boolean; colour: Color; vsync: boolean } {
+  get stats(): { weather: string; muted: boolean; colour: Color } {
     // The original's red-to-blue pulse for the weather text.
     const t = this.textPhase > 1 ? 2 - this.textPhase : this.textPhase;
-    return { weather: WEATHER_NAME[this.weather], muted: this.muted, colour: new Color(1 - t, 0, t, 1), vsync: QualitySettings.vSyncCount > 0 };
+    return { weather: WEATHER_NAME[this.weather], muted: this.muted, colour: new Color(1 - t, 0, t, 1) };
   }
 }
 
@@ -251,9 +249,9 @@ function notify() {
 function useStats() {
   const read = () => {
     const d = demo;
-    if (!d) return { weather: "", muted: false, colour: "#ff0000", vsync: true };
+    if (!d) return { weather: "", muted: false, colour: "#ff0000" };
     const s = d.stats;
-    return { weather: s.weather, muted: s.muted, colour: `rgb(${Math.round(s.colour.r * 255)}, 0, ${Math.round(s.colour.b * 255)})`, vsync: s.vsync };
+    return { weather: s.weather, muted: s.muted, colour: `rgb(${Math.round(s.colour.r * 255)}, 0, ${Math.round(s.colour.b * 255)})` };
   };
   const [view, setView] = useState(read);
   useEffect(() => {
@@ -275,7 +273,7 @@ function Hud() {
         <text style={{ color: s.colour, fontSize: 40, fontFamily: "monospace" }}>{`Weather: ${s.weather}`}</text>
       </box>
       <text style={{ color: "#808080", fontSize: 13 }}>
-        {`Click or 1-3: weather · M: ${s.muted ? "unmute" : "mute"} · F11: fullscreen · V: vsync`}
+        {`Click or 1-3: weather · M: ${s.muted ? "unmute" : "mute"} · F11: fullscreen`}
       </text>
     </box>
   );

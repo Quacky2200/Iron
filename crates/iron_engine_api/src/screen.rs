@@ -124,7 +124,7 @@ fn level(
         shadow_distance: dist,
         shadow_cascades: cascades,
         lod_bias: lod,
-        v_sync_count: 1,
+        v_sync_count: 0,
         anisotropic_filtering: aniso.into(),
         global_texture_mipmap_limit: mips,
     }
@@ -551,6 +551,8 @@ pub fn apply_default_quality() {
             let name = q.levels[q.index].name.clone();
             q.current = q.levels[q.index].clone();
             apply_fields(&mut q.current, cur);
+            // An old saved choice must not turn vsync back on: it isn't a player setting.
+            q.current.v_sync_count = q.levels[q.index].v_sync_count;
             q.current.name = name;
         }
         q.version += 1;

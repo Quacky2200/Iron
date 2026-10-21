@@ -230,7 +230,7 @@ pub struct Quality {
     pub soft_radius: u32,
     /// LOD groups pick levels as if things were this many times taller on screen.
     pub lod_bias: f32,
-    /// Frames wait for the display's refresh (`QualitySettings.vSyncCount` > 0).
+    /// Frames wait for the display's refresh (`QualitySettings.vSyncCount` > 0; off by default).
     pub vsync: bool,
     pub anisotropic: Anisotropic,
     /// Top mips skipped (`QualitySettings.globalTextureMipmapLimit`).
@@ -245,7 +245,7 @@ impl Default for Quality {
             shadows: ShadowQuality::All,
             soft_radius: 1,
             lod_bias: 1.0,
-            vsync: true,
+            vsync: false,
             anisotropic: Anisotropic::Enable,
             texture_mip_limit: 0,
         }
@@ -1137,7 +1137,7 @@ impl WorldViews {
                     },
                     soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
                     lod_bias: num(5).unwrap_or(1.0).max(0.01),
-                    vsync: num(6).ok().is_none_or(|v| v >= 1.0),
+                    vsync: num(6).ok().is_some_and(|v| v >= 1.0),
                     anisotropic: match args.get(7).and_then(Value::as_str) {
                         Some("disable") => Anisotropic::Disable,
                         Some("forceEnable") => Anisotropic::ForceEnable,
@@ -1617,6 +1617,31 @@ impl WorldViews {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M9-API-913
+    #[test]
+    fn vsync_is_off_by_default_and_follows_the_quality_op() {
+        assert!(!Quality::default().vsync);
+        let mut views = WorldViews::default();
+        let q = |v: Option<f64>| {
+            let mut args: Vec<Value> = vec![
+                0.0.into(),
+                1.0.into(),
+                1.0.into(),
+                "all".into(),
+                1.0.into(),
+                1.0.into(),
+            ];
+            args.extend(v.map(Value::from));
+            args
+        };
+        views.apply("quality", &q(None)).unwrap();
+        assert!(!views.quality.vsync);
+        views.apply("quality", &q(Some(1.0))).unwrap();
+        assert!(views.quality.vsync);
+        views.apply("quality", &q(Some(0.0))).unwrap();
+        assert!(!views.quality.vsync);
+    }
 
     // M5-AST-01
     #[test]

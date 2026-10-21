@@ -598,10 +598,10 @@ engine loads; the app copies the values onto the renderer before each frame.
 - **Render scale** (`render_scale`, 0.25 to 2): `render_views` draws the whole world (probes,
   mirrors, bloom) into a texture of the scaled size (`upscale.rs`) and stretches it over the target
   with a bilinear blit. Screen UI is drawn afterwards at full resolution.
-- **Vsync** (`vSyncCount`, 0 or 1; `Quality.vsync`): the app calls `WindowSurface::set_vsync` before each frame,
+- **Vsync** (`vSyncCount`, 0 or 1, off by default; `Quality.vsync`): the app calls `WindowSurface::set_vsync` before each frame,
   which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
   frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `iron.quality`
-  and restored at startup.
+  and restored at startup (except `vSyncCount`: a saved vsync is ignored).
 - **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 or 2):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
   soft filter is a (2r + 1)^2 box of comparison samples (the radius is in `GpuLight.shadow`).

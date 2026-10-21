@@ -9,7 +9,7 @@
 //
 // The game lives in components (`GameManager`, `Player`, `Pickup`); the HUD is React
 // (`ScoreBoard`, `Timer`, `RoundOver`, `Settings`), fed by `useGame()`. Esc (or the
-// Settings button) pauses and opens the settings: style, window mode, resolution, vsync,
+// Settings button) pauses and opens the settings: style, window mode, resolution,
 // frame cap and quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
 // `bun run dev` and edit a HUD component (it keeps the score on screen) or a component's
 // code (the round, the score and every coin stay where they are).
@@ -193,7 +193,7 @@ type Style = "classic" | "deluxe";
 /** Starts the game: the round (kept through style switches) and the saved style's arena. */
 class Arcade extends Component {
   override onStart() {
-    // The frame cap the player chose last time (vsync and quality come back on their own).
+    // The frame cap the player chose last time (quality comes back on its own).
     Application.targetFrameRate = PlayerPrefs.getInt("arcade.frameCap", -1);
     const game = new GameObject("Game");
     game.addComponent(GameManager);
@@ -607,7 +607,7 @@ function Row(props: { t: Theme; label: string; children: React.ReactNode }) {
   );
 }
 
-/** Window mode, resolution, vsync, frame cap and quality; saved when it closes. */
+/** Window mode, resolution, frame cap and quality; saved when it closes. */
 function Settings(props: { t: Theme; style: Style }) {
   const { t } = props;
   // The engine applies window changes after this frame: look again shortly after.
@@ -621,7 +621,6 @@ function Settings(props: { t: Theme; style: Style }) {
     mode === "ExclusiveFullScreen"
       ? Screen.resolutions.slice(0, 6).map((r) => [r.width, r.height, r.refreshRate] as const)
       : WINDOW_SIZES.filter(([w, h]) => monitor.width === 0 || (w <= monitor.width && h <= monitor.height)).map(([w, h]) => [w, h, 0] as const);
-  const vsync = QualitySettings.vSyncCount > 0;
   const cap = Application.targetFrameRate;
   return (
     <box style={{ ...t.panel, padding: 22, gap: 12, pointerEvents: "auto", minWidth: 460 }}>
@@ -657,31 +656,12 @@ function Settings(props: { t: Theme; style: Style }) {
           />
         ))}
       </Row>
-      <Row t={t} label="VSync">
-        <Choice
-          label="On"
-          active={vsync}
-          onClick={() => {
-            QualitySettings.vSyncCount = 1;
-            refresh();
-          }}
-        />
-        <Choice
-          label="Off"
-          active={!vsync}
-          onClick={() => {
-            QualitySettings.vSyncCount = 0;
-            refresh();
-          }}
-        />
-      </Row>
       <Row t={t} label="Frame cap">
         {FRAME_CAPS.map((fps) => (
           <Choice
             key={fps}
             label={fps > 0 ? String(fps) : "None"}
             active={cap === fps}
-            disabled={vsync}
             onClick={() => {
               Application.targetFrameRate = fps;
               PlayerPrefs.setInt("arcade.frameCap", fps);
@@ -697,16 +677,13 @@ function Settings(props: { t: Theme; style: Style }) {
             label={name}
             active={i === QualitySettings.getQualityLevel()}
             onClick={() => {
-              // A level sets vsync too: keep the player's choice.
-              const v = QualitySettings.vSyncCount;
               QualitySettings.setQualityLevel(i);
-              QualitySettings.vSyncCount = v;
               refresh();
             }}
           />
         ))}
       </Row>
-      <text style={{ color: t.label, fontSize: 12 }}>{vsync ? "With vsync on, frames follow the display; the cap applies with it off." : "Without vsync frames may tear; the cap keeps the GPU from running flat out."}</text>
+      <text style={{ color: t.label, fontSize: 12 }}>The frame cap keeps the GPU from running flat out.</text>
       <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
         <Choice label="Back to the game (Esc)" active onClick={() => GameManager.current?.setPaused(false)} />
       </box>

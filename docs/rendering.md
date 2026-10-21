@@ -26,7 +26,7 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 `Gpu::headless()` and `Gpu::with_surface(target, w, h)` request a `HighPerformance` adapter and
 **fall back to a software adapter** (WARP / llvmpipe) if no hardware adapter exists, so CI and
 `--screenshot` work without a GPU. Device limits are `downlevel_defaults` raised to the adapter's
-resolution limits. `WindowSurface` prefers an sRGB format, uses `AutoVsync`, tolerates 0x0 sizes
+resolution limits. `WindowSurface` prefers an sRGB format, starts with `AutoNoVsync` (the app sets it per frame from `vSyncCount`), tolerates 0x0 sizes
 (minimized: frames are skipped) and reconfigures on `Outdated`/`Lost`/`Suboptimal`.
 
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
