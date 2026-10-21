@@ -385,9 +385,9 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
   to `fogColor` for a seamless horizon with distance fog alone.
 - **Light shafts.** `RenderSettings.volumetricFog` (`{ intensity, anisotropy, steps, distance }`, defaults
-  1, 0.4, 4, 50, plus an optional `albedo` colour, white by default; `null` by default, used only while
+  1, 0.4, 4, 50, plus an optional `albedo` colour, white by default, and `sharpDistance` / `sharpSamples`, below; `null` by default, used only while
   `fog` is on, saved with scenes) sends an eighth `render.fog` argument, `[intensity anisotropy steps
-  distance r g b]` (albedo optional; anisotropy clamped to +-0.95, steps to 1..16), and sets `Fog.volumetric:
+  distance r g b sharpDistance sharpSamples]` (albedo and the last two optional; anisotropy clamped to +-0.95, steps to 1..16, sharpSamples to 4..128), and sets `Fog.volumetric:
   Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
   `volume.rs` (`VolumePass`) owns a 240x135x64 `Rgba16Float` 3D texture per view slot. Once per view with
   shafts, before the render pass, the compute entry `cs_volume` (8x8 workgroups, one thread per screen
@@ -407,6 +407,15 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   night fog can be dark yet glow white under a lamp. Views without shafts bind
   `VolumePass::empty()`, a black 1-texel volume. `fs_fill` adds shafts to the background only when height
   fog is on. The cost doesn't depend on overdraw.
+- **God rays.** The volume's cells blur beams finer than themselves (window bars, grates, leaves). With
+  `volumetricFog.sharpDistance` > 0 (default 0, off; `VolumetricFog.sharp_distance`, `GpuGlobals.fog_sharp` x)
+  the directional lights' shafts within that distance are worked out per pixel by `sharp_sun` in `world.wgsl`:
+  `sharpSamples` (default 32, `fog_sharp` y) hard shadow lookups spaced by the square of their index, so
+  closer together near the eye. Each sample sits at a fixed per-pixel offset within its step
+  (`pixel_offset`, interleaved gradient noise). At the same points for every pixel, a thin beam lit up shell
+  by shell in stacked slabs; offset, it becomes faint grain, and more samples mean less grain. The volume
+  then supplies only what lies beyond: `shafts` adds `sharp_sun` minus `volume_to(uv, near)` (the volume's
+  light out to a distance) to the volume's total. It costs `sharpSamples` shadow lookups per fogged pixel.
 - **Spot and point shafts.** The volume's cells are several pixels wide, which blurred spot cones, so
   spot and point lights light the fog per pixel. `local_shafts(eye, dir, len, distance)` finds each such
   light's stretch of the view ray: inside its range sphere and, for a spot, its cone (a quadratic), so the
@@ -446,10 +455,10 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
 and a lamp post, showing every kind of fog (menu or keys F, H, L, Q). `examples/fog-teapots` (teapots
 fading into fog), `fog-raider` (a PS1-style scene, renamed from `fog-ps1`), `fog-blocks` (a block hill in
-fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes. `fog-world` is an endless streamed block
+fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes. `godrays-cell` (a barred prison window, dust; keys G/F/D/T), `godrays-room` (a broken roof, mullioned window and shutters; G/F/D) and `godrays-forest` (canopy beams; G/F/Space) show god rays. `fog-world` is an endless streamed block
 world: 16x16-column chunk meshes, recycled around a wandering camera, with linear fog as the render
 distance and a spare ring of chunks past the fog to show fog culling. In a release build with vsync off,
-culling drew 45-50 meshes against 65-73 (16-20 hidden by fog), about 2.2 against 2.7 ms a frame.
+culling drew 45-50 meshes against 65-73 (16-20 hidden by fog), about 2.2 against 2.7 ms a frame. It has presets on 1-4 (very small, 2 chunks; medium, 6; large, 10; far: no fog, 14), Space to pause, a time budget for chunk building, and log lines with chunks, meshes drawn and culled and a pop-in count (chunks missing inside the fog). Chunks are built into reused typed arrays and `WorldStats` counts what the fog hid during culling itself.
 
 ## Render textures
 
@@ -512,7 +521,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
-| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance [r g b]]\|null cull`, or `0 null` for clear air |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance [r g b [sharpDistance sharpSamples]]]\|null cull`, or `0 null` for clear air |
 | `render.fogVolume` | `component object [sx sy sz] density [r g b] blendDistance shape(box\|ellipsoid)` |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
@@ -807,7 +816,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).

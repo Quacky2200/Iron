@@ -95,9 +95,9 @@ builds a `MeshData`, completes it (`complete`: smooth normals, zero UVs and tang
 `Mesh.set` replaces the data and `Mesh.destroy` removes it (`render.mesh id null`); renderers using a
 removed mesh draw nothing. The renderer also keeps a mesh's buffers by id (`set_mesh`, `remove_mesh`).
 
-`Mesh.createFlat({ positions, triangles, normals?, uv? })` and `mesh.setFlat(data)` take flat number arrays
+`Mesh.createFlat({ positions, triangles, normals?, uv? })` and `mesh.setFlat(data)` take flat number lists, plain or typed arrays
 (x, y, z per vertex; u, v in Unity's bottom-up space, flipped for the engine). They send the same
-`render.mesh` op without making an object per vertex: the fast way for big, rebuilt meshes such as terrain chunks.
+`render.mesh` op without making an object per vertex: the fast way for big, rebuilt meshes such as terrain chunks. `setFlat` passes typed arrays straight through to the op and only builds plain arrays when a scene saves the mesh (`Mesh._data` is a getter), so reused `Float32Array` / `Uint32Array` buffers upload cheaply (a chunk went from 1.7 to 0.6 ms).
 
 **Mesh colliders from render meshes.** A `MeshCollider` with `sharedMesh` sends a `physics.collider` op
 whose shape is `renderMesh [mesh id, convex 0/1, scale x y z]`. The app rewrites it in

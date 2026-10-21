@@ -11,7 +11,7 @@ Design background: [DESIGN.md](../DESIGN.md) section 3 and 4.
 Engine objects are numeric ids ([ids.rs](../crates/iron_core/src/ids.rs): `EntityId`,
 `ComponentId`, `NodeId`). `from_js`/`to_js` in
 [quickjs.rs](../crates/iron_script/src/quickjs.rs) convert; anything that is not bool, number,
-string or array becomes `Null`.
+string or array becomes `Null`. Typed arrays (`Float32Array`, `Float64Array`, `Uint32Array`, `Int32Array`, `Uint16Array`, `Int16Array`, `Uint8Array`, `Int8Array`, `subarray` views included) arrive as number lists: `typed_numbers` reads their bytes directly, with no per-element JS calls (`M7-FOG-09`).
 
 ## `ScriptRuntime`
 
