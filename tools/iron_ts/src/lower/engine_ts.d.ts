@@ -267,6 +267,11 @@ declare namespace Window {
 
 // ---- Input, UI resources -----------------------------------------------------------------------
 
+/**
+ * Keyboard, mouse and gamepads. Input belongs to the window's event domain: it reads the keys of the window
+ * family whose code is running; main-game components always read the main window's, an isolated window's keys
+ * never reach it (send a message), and focus loss clears held keys. See docs/windows.md.
+ */
 declare namespace input {
   function gamepads(): Gamepad[];
   function on(type: "gamepadconnected" | "gamepaddisconnected", fn: () => void): () => void;

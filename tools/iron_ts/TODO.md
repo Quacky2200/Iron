@@ -215,7 +215,7 @@ screenshot runs, `examples/windows`.
     `can_set_up`). Decisions: tool / dialog / popup / child default to the creating domain's root (the main window in the
     main domain); a parent from another family is ignored with a warning; a window made for another domain's family is
     open to its creator's setup (`run`, `on*`, `createRoot`) until `end_frame`.
-  - [ ] F2 (input per domain), F3 (timers per domain), F4 (the app).
+  - [x] F2 (input per domain; compiled and QuickJS), F3 (timers per domain), F4 (the app).
 - [ ] Steps M1 to M3: messages (`postMessage`, `onMessage<T>`, `request<R>`, `onRequest`, `broadcast`; JSON of the static type,
   no handles), and the isolated Inspector in `examples/windows`.
   - [x] M1 (the queue in `iron_engine_api::window`), [x] M2 (typed messages in compiled code: generic facade functions

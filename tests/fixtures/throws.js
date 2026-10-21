@@ -6368,31 +6368,48 @@ ${err.stack}` : ""}`);
     }
   }
   // ../../js/engine/src/input.ts
-  var keys = new Set;
-  var pressedPending = new Set;
-  var releasedPending = new Set;
-  var pressedThisTick = new Set;
-  var releasedThisTick = new Set;
-  var mouseX = 0;
-  var mouseY = 0;
-  var deltaPending = { x: 0, y: 0 };
-  var wheelPending = { x: 0, y: 0 };
-  var deltaThisTick = { x: 0, y: 0 };
-  var wheelThisTick = { x: 0, y: 0 };
-  onTick(() => {
-    pressedThisTick = pressedPending;
-    releasedThisTick = releasedPending;
+  class DomainInput {
+    keys = new Set;
     pressedPending = new Set;
     releasedPending = new Set;
-    deltaThisTick = deltaPending;
-    wheelThisTick = wheelPending;
+    pressedThisTick = new Set;
+    releasedThisTick = new Set;
+    mouseX = 0;
+    mouseY = 0;
     deltaPending = { x: 0, y: 0 };
     wheelPending = { x: 0, y: 0 };
-  });
-  var pads = new Map;
-  var listeners3 = {};
+    deltaThisTick = { x: 0, y: 0 };
+    wheelThisTick = { x: 0, y: 0 };
+    pads = new Map;
+    listeners = {};
+    tick() {
+      this.pressedThisTick = this.pressedPending;
+      this.releasedThisTick = this.releasedPending;
+      this.pressedPending = new Set;
+      this.releasedPending = new Set;
+      this.deltaThisTick = this.deltaPending;
+      this.wheelThisTick = this.wheelPending;
+      this.deltaPending = { x: 0, y: 0 };
+      this.wheelPending = { x: 0, y: 0 };
+    }
+  }
+  var MAIN_DOMAIN = 1;
+  var domains = new Map;
+  function domainState(d) {
+    let s = domains.get(d);
+    if (!s) {
+      s = new DomainInput;
+      domains.set(d, s);
+    }
+    return s;
+  }
+  function cur() {
+    const f = globalThis.__iron_domain;
+    return domainState(typeof f === "function" ? f() : MAIN_DOMAIN);
+  }
+  onTick(() => domainState(MAIN_DOMAIN).tick());
   function emit(type, event) {
-    for (const fn of listeners3[type] ?? []) {
+    for (const fn of cur().listeners[type] ?? []) {
       try {
         fn(event);
       } catch (e) {
@@ -6403,6 +6420,7 @@ ${err.stack}` : ""}`);
     }
   }
   function pad(id, name = "") {
+    const pads = cur().pads;
     let p = pads.get(id);
     if (!p) {
       p = { id, name, connected: true, buttons: {}, axes: {} };
@@ -6412,40 +6430,43 @@ ${err.stack}` : ""}`);
   }
   globalThis.__iron_input = (type, ...args) => {
     switch (type) {
+      case "tick":
+        cur().tick();
+        break;
       case "keydown": {
         const [code, key, repeat] = args;
-        if (!repeat && !keys.has(code))
-          pressedPending.add(code);
-        keys.add(code);
+        if (!repeat && !cur().keys.has(code))
+          cur().pressedPending.add(code);
+        cur().keys.add(code);
         emit("keydown", { code, key, repeat: !!repeat });
         break;
       }
       case "keyup": {
         const [code, key] = args;
-        if (keys.has(code))
-          releasedPending.add(code);
-        keys.delete(code);
+        if (cur().keys.has(code))
+          cur().releasedPending.add(code);
+        cur().keys.delete(code);
         emit("keyup", { code, key, repeat: false });
         break;
       }
       case "mousemove":
-        [mouseX, mouseY] = args;
+        [cur().mouseX, cur().mouseY] = args;
         break;
       case "mousedelta": {
         const [dx, dy] = args;
-        deltaPending.x += dx;
-        deltaPending.y += dy;
+        cur().deltaPending.x += dx;
+        cur().deltaPending.y += dy;
         break;
       }
       case "wheel": {
         const [dx, dy] = args;
-        wheelPending.x += dx;
-        wheelPending.y += dy;
+        cur().wheelPending.x += dx;
+        cur().wheelPending.y += dy;
         break;
       }
       case "blur":
-        keys.clear();
-        for (const p of pads.values())
+        cur().keys.clear();
+        for (const p of cur().pads.values())
           for (const b of Object.keys(p.buttons))
             p.buttons[b] = 0;
         break;
@@ -6536,7 +6557,7 @@ ${err.stack}` : ""}`);
     _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
   }
   var restoring = false;
-  var listeners4 = new Set;
+  var listeners3 = new Set;
   function _qualityState() {
     return { level: levelIndex, current };
   }

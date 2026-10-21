@@ -99,7 +99,7 @@ A window made with a `key` survives a hot reload with its position and size (the
 warning, and `createRoot(win)` mounts the new UI. Windows **without** a key close at the start of a reload (without
 `onCloseRequested` or `onClosed`, since their listeners belong to the old code). Keyed windows nobody claimed by the end of the new
 code's first frame close. Listeners are dropped at the reload and must be registered again by the new code, which is what the
-example's `openPalette()` does on every start. The main window always stays. Queued messages and pending requests are dropped.
+example's `openPalette()` does on every start. The main window always stays. Queued messages and pending requests are dropped. If the new QuickJS code fails to load, the old code keeps running and gets its listeners, queued messages and pending requests back (`window::reload_abort`); whatever the failed code registered or created is dropped, and windows already told to close stay closed.
 
 ### Running code in a window
 
@@ -151,10 +151,42 @@ The engine API enforces the separation:
 - Windows of another family can be read (`title`, size, `isOpen`) but not changed: setters, `close`, `focus` and registering
   listeners on them are refused with a warning naming both windows. (The one exception is the setup window described above.)
 - Handles cannot go through messages, so a message is the only way to ask another family to do something.
-- Input, focus and timers are per domain.
+- Input, focus and timers are per domain (see "Input belongs to the window's event domain" above).
 - Module variables are still shared memory. Code can reach across families through them (and a slow handler in one domain delays
   the others); do not rely on it. Moving a domain to its own thread (phase B) or process (phase C) is designed
   (`iron-windows.md` section 3a) and not built; sticking to messages is what keeps a game working when it is.
+
+### Input belongs to the window's event domain
+
+> **Read this before using `input` with more than one window.** `input` is not one global keyboard.
+>
+> - `input` reads the keys, mouse and gamepads of the **window family whose code is running**. Inside an isolated window's turn
+>   (`win.run(..)`, its timers, message handlers, UI events) it is that window's; everywhere else it is the main window's.
+> - **Main-game components (`onUpdate`, ...) always read the main window's input**, even while another window is focused. They do
+>   not see the Inspector's keys, and they keep running or pause according to `Application.runInBackground` (default on), not
+>   according to which window has focus.
+> - An isolated window's keys **never reach the main `input`**. To tell the game about a key, send a message.
+> - **Focus loss clears the held keys** of that domain, so a key released in another window does not stay stuck.
+> - QuickJS promise jobs (`await` continuations) and other callbacks with no domain tag read the **main** domain's input, even if
+>   the `await` began in an isolated window. Read the keys before the first `await`.
+> - `input.on(..)` listeners belong to the domain they were registered in.
+> - Compiled games behave the same way (`crates/iron_engine_api/tests/input_domains.rs`); QuickJS games match since
+>   `crates/iron_app/src/game_input.rs` sends each domain's events with that domain entered.
+
+```ts
+class Player extends Component {
+  onUpdate() {
+    if (input.isKeyDown("KeyW")) this.transform.translate(0, 0, 0.1); // main's keys, whichever window is focused
+  }
+}
+
+const inspector = Window.create({ title: "Inspector", key: "insp" }); // no parent: its own domain
+inspector.run(() => {
+  setInterval(() => {
+    if (input.isKeyDown("KeyW")) log("W held in the Inspector"); // the Inspector's keys, not Player's
+  }, 100);
+});
+```
 
 `examples/windows` shows the pattern: the main window owns the data, the Inspector (no parent) asks for it with `request`, hears
 changes through `onMessage`, and posts its edits back to `Window.main`.

@@ -176,4 +176,89 @@ mod tests {
             Value::from("connected Pad, down South, LeftStickX 0.5, key KeyW, held true")
         );
     }
+    /// Sends `__iron_input` the way `App::send_game_input_in` does: with domain `d` entered.
+    fn send_in(rt: &mut iron_script::QuickJsRuntime, d: u32, args: &[Value]) {
+        use iron_script::ScriptRuntime;
+        let _g = iron_engine_api::window::enter_domain(iron_engine_api::window::DomainId(d));
+        rt.call_global("__iron_input", args).unwrap();
+    }
+
+    fn key(code: &str, down: bool) -> Vec<Value> {
+        vec![
+            if down { "keydown" } else { "keyup" }.into(),
+            code.into(),
+            code.into(),
+            false.into(),
+        ]
+    }
+
+    // M9-API-1500
+    #[test]
+    fn quickjs_input_reads_the_current_event_domain() {
+        use iron_script::{QuickJsRuntime, ScriptRuntime};
+        iron_engine_api::window::reset();
+        let mut rt = QuickJsRuntime::new();
+        rt.add_native(iron_engine_api::window::register_quickjs)
+            .unwrap();
+        rt.load_bundle(
+            "input_domains.js",
+            include_str!("../../../tests/fixtures/input_domains.js"),
+        )
+        .unwrap();
+        // An isolated window (no parent) is the root of domain 2; main is domain 1.
+        rt.eval("globalThis.insp = Window.create({ title: 'Inspector', key: 'insp' });")
+            .unwrap();
+        assert_eq!(rt.eval("insp.domain").unwrap(), Value::Number(2.0));
+        // Main holds KeyA; the Inspector's domain holds KeyB.
+        rt.call_global("__iron_input", &key("KeyA", true)).unwrap();
+        send_in(&mut rt, 2, &key("KeyB", true));
+        send_in(&mut rt, 2, &["mousemove".into(), 40.0.into(), 7.0.into()]);
+        // Main-game code reads main's keys, whatever the other window holds.
+        assert_eq!(
+            rt.eval("__probe()").unwrap(),
+            Value::from("A true, B false, A! false, x 0")
+        );
+        // The window's `run` callback (its domain current) reads its own.
+        rt.eval("insp.run(() => { globalThis.inside = __probe(); });")
+            .unwrap();
+        iron_engine_api::window::run_queued(iron_engine_api::window::DomainId(2));
+        assert_eq!(
+            rt.eval("globalThis.inside").unwrap(),
+            Value::from("A false, B true, A! false, x 40")
+        );
+        // Frames end per domain: main's tick makes its press "this frame", the Inspector's own does
+        // the same for its keys only.
+        rt.call_global("__iron_tick", &[0.016.into()]).unwrap();
+        assert_eq!(
+            rt.eval("__probe()").unwrap(),
+            Value::from("A true, B false, A! true, x 0")
+        );
+        // A promise job carries no domain tag: it reads the main domain's input.
+        rt.eval(
+            "insp.run(() => { Promise.resolve().then(() => { globalThis.job = __probe(); }); });",
+        )
+        .unwrap();
+        iron_engine_api::window::run_queued(iron_engine_api::window::DomainId(2));
+        rt.eval("0").unwrap();
+        assert_eq!(
+            rt.eval("globalThis.job").unwrap(),
+            Value::from("A true, B false, A! true, x 0")
+        );
+        // Focus loss clears only that domain's keys.
+        send_in(&mut rt, 2, &["blur".into()]);
+        rt.eval("insp.run(() => { globalThis.after = __probe(); });")
+            .unwrap();
+        iron_engine_api::window::run_queued(iron_engine_api::window::DomainId(2));
+        assert_eq!(
+            rt.eval("globalThis.after").unwrap(),
+            Value::from("A false, B false, A! false, x 40")
+        );
+        assert_eq!(
+            rt.eval("__probe()").unwrap(),
+            Value::from("A true, B false, A! true, x 0")
+        );
+        // Listeners belong to the domain that registered them: main's saw only main's press.
+        assert_eq!(rt.eval("__listened()").unwrap(), Value::from("KeyA"));
+        iron_engine_api::window::reset();
+    }
 }

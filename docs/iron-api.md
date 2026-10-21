@@ -322,6 +322,7 @@ the TypeScript, all because a call has fixed typed parameters:
 
 ### Input, TimeSpan and DateTime
 
+- **Input is per event domain** (window family): `input` reads the keys of the family whose code is running; main-game components always read the main window's, an isolated window's keys never reach it, focus loss clears a domain's keys, and QuickJS promise jobs read the main domain's. QuickJS and compiled code agree. See `docs/windows.md` ("Input belongs to the window's event domain").
 - `input` follows `js/engine/src/input.ts`: events (`key_down`, `key_up_event`, `mouse_move`, `mouse_delta`, `wheel`,
   `gamepad_*`, `blur`) arrive as they happen and become "this frame" at `input::tick()`, which `time::advance` calls (the engine
   tick). Mouse buttons are keys (`MouseLeft`...). Gamepads are read by id (`gamepadCount`, `gamepadId(i)`, `gamepadName(id)`,

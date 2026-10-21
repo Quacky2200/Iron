@@ -12,12 +12,13 @@
     "@types/react": "19.3.0"
   },
   "scripts": {
-    "build": "bun run build:hello && bun run build:throws && bun run build:boxes && bun run build:events && bun run build:input && bun run build:physics && bun run build:scene && bun run build:rigidbodies && bun run build:physics2d && bun run build:refresh && bun run build:render_error && bun run build:dnd",
+    "build": "bun run build:hello && bun run build:throws && bun run build:boxes && bun run build:events && bun run build:input && bun run build:input_domains && bun run build:physics && bun run build:scene && bun run build:rigidbodies && bun run build:physics2d && bun run build:refresh && bun run build:render_error && bun run build:dnd",
     "build:hello": "bun build src/hello.ts --outfile hello.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:throws": "bun build src/throws.ts --outfile throws.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:boxes": "bun build src/boxes.tsx --outfile boxes.js --format iife --minify --define process.env.NODE_ENV='\"production\"'",
     "build:events": "bun build src/events.tsx --outfile events.js --format iife --minify --define process.env.NODE_ENV='\"production\"'",
     "build:input": "bun build src/input.ts --outfile input.js --format iife --define process.env.NODE_ENV='\"production\"'",
+    "build:input_domains": "bun build src/input_domains.ts --outfile input_domains.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:physics": "bun build src/physics.ts --outfile physics.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:scene": "bun build src/scene.ts --outfile scene.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:rigidbodies": "bun build src/rigidbodies.ts --outfile rigidbodies.js --format iife --define process.env.NODE_ENV='\"production\"'",

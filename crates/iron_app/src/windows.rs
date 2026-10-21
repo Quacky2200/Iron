@@ -886,6 +886,9 @@ impl App {
             if self.native.is_some() {
                 let _scope = iron_scene::api::enter(&mut self.scene.scene);
                 iron_engine_api::input::tick_domain(d);
+            } else {
+                // The domain's input frame (`input.ts`; the main one ends with `Time`'s tick).
+                self.send_game_input_in(d, &["tick".into()]);
             }
         }
     }
@@ -901,8 +904,9 @@ impl App {
         }
     }
 
-    /// An input event for the game's `input` of domain `d` (@iron/engine's `__iron_input` for
-    /// QuickJS games is the main domain's only).
+    /// An input event for the game's `input` of domain `d`. QuickJS games get it with `d` entered,
+    /// so `__iron_input` (@iron/engine's `input.ts`) files it under that domain and its listeners
+    /// run in it.
     pub(super) fn send_game_input_in(&mut self, d: win::DomainId, args: &[iron_core::Value]) {
         if d == win::DomainId::MAIN {
             self.send_game_input(args);
@@ -910,6 +914,11 @@ impl App {
             let _g = win::enter_domain(d);
             n.game_input(&mut self.scene.scene, &mut self.ui, args);
             self.native_after();
+        } else if self.game_input {
+            let _g = win::enter_domain(d);
+            if let Err(e) = self.scripts.call_global("__iron_input", args) {
+                tracing::error!(target: "script", "input: {e}");
+            }
         }
     }
 }
