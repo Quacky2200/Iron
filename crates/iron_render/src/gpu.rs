@@ -10,6 +10,9 @@ pub enum RenderError {
     Surface(#[from] wgpu::CreateSurfaceError),
     #[error("could not read back GPU buffer: {0}")]
     Readback(String),
+    /// The GPU in use cannot present to this window (it is on a monitor another adapter drives).
+    #[error("{0}")]
+    Unsupported(String),
 }
 
 /// The GPU device and queue every renderer shares.
@@ -43,6 +46,36 @@ impl Gpu {
         let gpu = Self::from_adapter(instance, adapter)?;
         let surface = WindowSurface::new(&gpu, surface, width, height);
         Ok((gpu, surface))
+    }
+
+    /// A surface for another window on this GPU (same instance, adapter and device), for games
+    /// with more than one window. The renderers (`UiRenderer`, `WorldRenderer`) are shared by
+    /// every window: draw into this surface with [`WindowSurface::present_with`].
+    ///
+    /// The surface is made with vsync off and secondary windows keep it off (do not call
+    /// `set_vsync(true)`): with several FIFO swapchains presented in one thread some drivers wait
+    /// a vblank per window and the frame rate divides by the window count. Only the main
+    /// window follows `QualitySettings.vSyncCount`.
+    ///
+    /// `target` holds a clone of the window (an `Arc<winit::window::Window>`): **drop the
+    /// returned surface before the OS window is destroyed** (`PlatformApp::window_closed`).
+    ///
+    /// Not covered by a test: wgpu cannot create a surface without a real window, so this is
+    /// exercised by the app's multi-window path only.
+    pub fn create_window_surface(
+        &self,
+        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        width: u32,
+        height: u32,
+    ) -> Result<WindowSurface, RenderError> {
+        let surface = self.instance.create_surface(target)?;
+        if !self.adapter.is_surface_supported(&surface) {
+            return Err(RenderError::Unsupported(format!(
+                "the GPU {} cannot present to this window",
+                self.adapter_name()
+            )));
+        }
+        Ok(WindowSurface::new(self, surface, width, height))
     }
 
     pub fn adapter_name(&self) -> String {

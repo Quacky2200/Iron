@@ -213,6 +213,13 @@ same `run_commands` / close code as the runner over a recording backend: `step()
 `window(key) -> Option<&FakeWindow>` (`spec`, `plan`, `physical`, `position`, `scale`, `focused`, `minimized`, `maximized`, `shown`),
 `keys()`, `tree()`, `exited()`, `app()`. The main window is opened with `window_opened(MAIN, Virtual)` (not `window_ready`).
 
+**Surfaces for more windows** (`iron_render`): `Gpu::create_window_surface(target, width, height) -> Result<WindowSurface,
+RenderError>` makes a surface on the same instance, adapter and device (`RenderError::Unsupported` when the adapter cannot present to
+that window). One `UiRenderer` and one `WorldRenderer` serve every window; draw with `WindowSurface::present_with`. Secondary
+windows keep vsync off (never call `set_vsync(true)` on them: several FIFO swapchains in one thread can cost a vblank each), and
+the surface must be dropped before its OS window is destroyed, i.e. in `window_closed`. A surface cannot be made without a real window,
+so this function has no unit test.
+
 ## Limits
 
 - One monitor: the window's current monitor is used, and there is no way to pick another.

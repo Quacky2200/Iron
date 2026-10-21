@@ -203,7 +203,8 @@ screenshot runs, `examples/windows`.
 - [x] Step 3: `#[options]`: QuickJS options objects for optional parameters.
 - [x] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
 - [x] Step 5: multi-window platform (`Backend`, `run_commands`, `FakePlatform`, winit runner, `docs/platform.md` "Multi-window"). Decisions: `RunnerBackend` (winit + virtual) instead of `WinitBackend`+`VirtualBackend` fields; `Backend::take_events` echoes virtual `Resized`/`Moved`; the main window still gets `CloseRequested` through `window_input` first.
-- [ ] Step 6 (surfaces), steps 7 to 10: `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
+- [x] Step 6: `Gpu::create_window_surface` + `RenderError::Unsupported` (no test: needs a real window).
+- [ ] Steps 7 to 10: `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
 - [ ] Step 11: `examples/windows`. Step 12: docs.
 - [x] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).
 - [ ] Steps F1 to F4: window families and event domains (per-family input, focus, pause, timers, UI roots; one winit loop,
