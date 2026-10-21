@@ -33,6 +33,10 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [rendering.md](rendering.md) | `iron_render`: GPU setup, `UiRenderer` planning and passes, shaders, offscreen path |
 | [editor.md](editor.md) | `iron_editor` (the second binary), the project folder, the log feed and `editor.*` ops (code links, project files), `@iron/editor-ui` (menubar, docking, virtual list, tree view, console, project browser), the Scene view (editor camera, orientation gizmo, SceneIcons, wire gizmos, transform handles, `onEditorFrame`) and the editor UI in `editor/` (demo scene, live Hierarchy, Game tab) |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
+| [difference-to-bevy.md](difference-to-bevy.md) | How Iron relates to Bevy: what each project is for, where the overlap comes from (shared libraries, references), where Iron differs, and what Bevy has that Iron doesn't yet |
+| [difference-to-unity.md](difference-to-unity.md) | Iron vs Unity: TypeScript instead of C# with the same component model, portability and popularity, licensing (per-install fees and why we avoid them), API stability |
+| [difference-to-sbox.md](difference-to-sbox.md) | Iron vs s&box: what we took (Unity-style APIs, Razor-like panels with CSS, editor-first), the stack and language changes, publishing approval, stability |
+| [difference-to-electron.md](difference-to-electron.md) | Iron vs Electron: bundled Chromium and V8 cost, the Rust and React app-shell plan, and the web platform APIs we plan (files, fetch, WebSocket, canvas, audio, wasm, storage) |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
 
 ## Crate map
