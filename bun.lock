@@ -153,6 +153,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/fog-park": {
+      "name": "fog-park",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/fog-raider": {
       "name": "fog-raider",
       "version": "0.1.0",
@@ -407,6 +419,8 @@
     "fog": ["fog@workspace:examples/fog"],
 
     "fog-blocks": ["fog-blocks@workspace:examples/fog-blocks"],
+
+    "fog-park": ["fog-park@workspace:examples/fog-park"],
 
     "fog-raider": ["fog-raider@workspace:examples/fog-raider"],
 
