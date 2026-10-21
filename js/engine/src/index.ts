@@ -164,6 +164,7 @@ export {
   Mesh,
   type MeshData,
   type FlatMeshData,
+  type NumberList,
   MeshRenderer,
   SkinnedMeshRenderer,
   Mirror,

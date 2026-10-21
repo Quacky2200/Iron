@@ -27,6 +27,7 @@ macro_rules! runtime_conformance_tests {
             microtasks_run_between_timers,
             commits_arrive_whole_and_in_order,
             reset_drops_pending_timers_and_commits,
+            typed_arrays_arrive_as_number_lists,
         );
     };
     (@tests $make:expr; $($name:ident),* $(,)?) => {
@@ -137,6 +138,26 @@ pub fn ops_arrive_in_order(rt: &mut dyn ScriptRuntime) {
     }
     assert_eq!(ops[3].name, "flush");
     assert!(rt.drain_ops().is_empty());
+}
+
+// M7-FOG-09
+pub fn typed_arrays_arrive_as_number_lists(rt: &mut dyn ScriptRuntime) {
+    rt.load_bundle(
+        "typed.js",
+        "__iron_op('mesh', new Float32Array([0.5, -2, 3]), new Uint32Array([0, 1, 2]),          new Float32Array([1, 2, 3, 4]).subarray(1, 3), new Uint8Array([255]));",
+    )
+    .unwrap();
+    let ops: Vec<_> = rt.drain_ops().into_iter().collect();
+    let n = |v: &[f64]| Value::Array(v.iter().map(|&x| Value::Number(x)).collect());
+    assert_eq!(
+        ops[0].args,
+        [
+            n(&[0.5, -2.0, 3.0]),
+            n(&[0.0, 1.0, 2.0]),
+            n(&[2.0, 3.0]),
+            n(&[255.0])
+        ]
+    );
 }
 
 // M1-SCR-07

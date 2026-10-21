@@ -296,8 +296,41 @@ fn from_js(v: &rquickjs::Value) -> Value {
                 })
                 .unwrap_or_default(),
         ),
+        // Typed arrays (big meshes): read straight from their bytes, not element by element.
+        Type::Object => v
+            .as_object()
+            .and_then(typed_numbers)
+            .map_or(Value::Null, Value::Array),
         _ => Value::Null,
     }
+}
+
+/// A typed array's numbers (`None` for other objects).
+fn typed_numbers(o: &rquickjs::Object) -> Option<Vec<Value>> {
+    // Read before any more script runs: the pointer is only good until then.
+    macro_rules! read {
+        ($t:ty) => {
+            if let Some(a) = o.as_typed_array::<$t>() {
+                let raw = a.as_raw()?;
+                let bytes = unsafe { raw.as_ref() };
+                return Some(
+                    bytes
+                        .chunks_exact(std::mem::size_of::<$t>())
+                        .map(|b| Value::Number(<$t>::from_le_bytes(b.try_into().unwrap()) as f64))
+                        .collect(),
+                );
+            }
+        };
+    }
+    read!(f32);
+    read!(f64);
+    read!(u32);
+    read!(i32);
+    read!(u16);
+    read!(i16);
+    read!(u8);
+    read!(i8);
+    None
 }
 
 fn to_js<'js>(ctx: &Ctx<'js>, v: &Value) -> rquickjs::Result<rquickjs::Value<'js>> {

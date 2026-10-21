@@ -2738,7 +2738,20 @@ ${err.stack}` : ""}`);
 
   class Mesh {
     id;
-    _data = null;
+    _saved = null;
+    _flat = null;
+    get _data() {
+      if (this._flat) {
+        const f = this._flat;
+        this._saved = { vertices: Array.from(f.positions), triangles: Array.from(f.triangles), normals: Array.from(f.normals ?? []), uv: Array.from(f.uv ?? []) };
+        this._flat = null;
+      }
+      return this._saved;
+    }
+    set _data(d) {
+      this._saved = d;
+      this._flat = null;
+    }
     bindposes = [];
     constructor(id) {
       this.id = id;
@@ -2778,12 +2791,12 @@ ${err.stack}` : ""}`);
     }
     setFlat(data) {
       const uv = data.uv ?? [];
-      const flipped = new Array(uv.length);
+      const flipped = new Float32Array(uv.length);
       for (let i = 0;i < uv.length; i += 2) {
         flipped[i] = uv[i];
         flipped[i + 1] = 1 - uv[i + 1];
       }
-      this._data = { vertices: [...data.positions], triangles: [...data.triangles], normals: [...data.normals ?? []], uv: [...uv] };
+      this._flat = data;
       __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
     }
     destroy() {

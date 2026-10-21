@@ -811,21 +811,40 @@ export interface MeshData {
   bindposes?: readonly Matrix4x4[];
 }
 
+/** Numbers as a plain array or a typed array. */
+export type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
+
 /**
- * A mesh as flat number arrays (x, y, z per vertex; u, v per vertex in Unity's bottom-up
- * space), for meshes made in bulk (terrain chunks): no object per vertex.
+ * A mesh as flat number lists (x, y, z per vertex; u, v per vertex in Unity's bottom-up
+ * space), for meshes made in bulk (terrain chunks): no object per vertex. Typed arrays
+ * (`Float32Array`, `Uint32Array`) cross to the engine fastest; don't change them after
+ * passing them.
  */
 export interface FlatMeshData {
-  positions: readonly number[];
-  triangles: readonly number[];
-  normals?: readonly number[];
-  uv?: readonly number[];
+  positions: NumberList;
+  triangles: NumberList;
+  normals?: NumberList;
+  uv?: NumberList;
 }
 
 export class Mesh {
   readonly id: number;
+  private _saved: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null = null;
+  /** Flat data not yet turned into plain arrays (only saving needs them). */
+  private _flat: FlatMeshData | null = null;
   /** @internal Its data as flat arrays (script meshes), for saving with scenes. */
-  _data: { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null = null;
+  get _data(): { vertices: number[]; triangles: number[]; normals: number[]; uv: number[]; joints?: number[]; weights?: number[] } | null {
+    if (this._flat) {
+      const f = this._flat;
+      this._saved = { vertices: Array.from(f.positions), triangles: Array.from(f.triangles), normals: Array.from(f.normals ?? []), uv: Array.from(f.uv ?? []) };
+      this._flat = null;
+    }
+    return this._saved;
+  }
+  set _data(d) {
+    this._saved = d;
+    this._flat = null;
+  }
   /**
    * Each bone's inverse bind pose, for `SkinnedMeshRenderer`s (a model's skinned meshes
    * come with theirs).
@@ -885,16 +904,16 @@ export class Mesh {
     return mesh;
   }
 
-  /** Replaces the mesh's data from flat arrays: the fast way for big, rebuilt meshes. */
+  /** Replaces the mesh's data from flat lists: the fast way for big, rebuilt meshes. */
   setFlat(data: FlatMeshData): void {
     const uv = data.uv ?? [];
     // Unity's UVs run bottom-up; the engine's top-down.
-    const flipped = new Array<number>(uv.length);
+    const flipped = new Float32Array(uv.length);
     for (let i = 0; i < uv.length; i += 2) {
       flipped[i] = uv[i]!;
       flipped[i + 1] = 1 - uv[i + 1]!;
     }
-    this._data = { vertices: [...data.positions], triangles: [...data.triangles], normals: [...(data.normals ?? [])], uv: [...uv] };
+    this._flat = data;
     __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
   }
 

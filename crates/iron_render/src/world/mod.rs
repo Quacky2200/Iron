@@ -3017,8 +3017,12 @@ impl WorldRenderer {
                 .filter(|f| f.cull)
                 .and_then(|f| f.cull_distance())
                 .map(|d| cull::FogReach::new(&view.camera, d));
+            // What the fog hid, counted as it's culled (in view, past the fog).
+            let fog_hid = std::cell::Cell::new(0usize);
             let fogged = |b: (Vec3, Vec3), model: Mat4| {
-                fog_reach.is_some_and(|r| r.hides(cull::transform_aabb(b.0, b.1, model)))
+                let hid = fog_reach.is_some_and(|r| r.hides(cull::transform_aabb(b.0, b.1, model)));
+                fog_hid.set(fog_hid.get() + usize::from(hid));
+                hid
             };
             // Skinned meshes move with their bones, away from their bounds: always drawn.
             let sees = |m: &MeshInstance| {
@@ -3194,27 +3198,7 @@ impl WorldRenderer {
             self.stats.culled_meshes += all_meshes - drawn;
             self.stats.quads += drawn_quads;
             self.stats.culled_quads += view.quads.len() - drawn_quads;
-            if fog_reach.is_some() {
-                // In view but hidden by the fog.
-                self.stats.fog_culled += view
-                    .meshes
-                    .iter()
-                    .filter(known)
-                    .filter(|m| m.bones.is_none())
-                    .filter(|m| {
-                        let b = self.meshes[&m.mesh].bounds;
-                        frustum.transformed(b, m.model) && fogged(b, m.model)
-                    })
-                    .count()
-                    + view
-                        .quads
-                        .iter()
-                        .filter(|q| {
-                            frustum.transformed(cull::QUAD_BOUNDS, q.model)
-                                && fogged(cull::QUAD_BOUNDS, q.model)
-                        })
-                        .count();
-            }
+            self.stats.fog_culled += fog_hid.get();
             self.stats.lights += kept.len();
             self.stats.culled_lights += view.lights.len() - kept.len();
             let first_light = lights.len() as u32;

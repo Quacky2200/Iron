@@ -85,9 +85,15 @@ describe("meshes and lights", () => {
 
   test("flat meshes send their arrays as they are, UVs flipped", () => {
     const quad = Mesh.createFlat({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], triangles: [0, 1, 2], uv: [0, 0, 1, 0, 0, 1] });
-    expect(renderOps()[0]).toEqual(["render.mesh", quad.id, [0, 0, 0, 1, 0, 0, 0, 1, 0], [], [0, 1, 1, 1, 0, 0], [0, 1, 2]]);
+    expect(renderOps()[0]).toEqual(["render.mesh", quad.id, [0, 0, 0, 1, 0, 0, 0, 1, 0], [], new Float32Array([0, 1, 1, 1, 0, 0]), [0, 1, 2]]);
+    // Saved with scenes as plain arrays, made when asked for.
+    expect(quad._data).toEqual({ vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0], triangles: [0, 1, 2], normals: [], uv: [0, 0, 1, 0, 0, 1] });
+    // Typed arrays go as they are.
+    const typed = new Float32Array([1, 2, 3]);
+    quad.setFlat({ positions: typed, triangles: new Uint32Array(0) });
+    expect(renderOps().at(-1)![2]).toBe(typed);
     quad.setFlat({ positions: [1, 1, 1], triangles: [] });
-    expect(renderOps().at(-1)).toEqual(["render.mesh", quad.id, [1, 1, 1], [], [], []]);
+    expect(renderOps().at(-1)).toEqual(["render.mesh", quad.id, [1, 1, 1], [], new Float32Array(0), []]);
   });
 
   test("script meshes send flat arrays", () => {

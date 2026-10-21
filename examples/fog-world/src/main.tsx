@@ -4,8 +4,10 @@
 // ring around the camera; the fog is the render distance, as in Minecraft, so the world's
 // edge never shows. A spare ring of chunks lies past the fog's end: fog culling skips
 // drawing it (the HUD counts what it saved). The camera wanders on its own, forever.
-// Keys: [ and ] change the render distance, C toggles fog culling, F the fog, V vsync.
-// Every 300 frames the log gets the average frame time, to compare culling on and off.
+// Keys: 1 to 4 pick a render preset (very small, medium, large, far: no fog and a big
+// area), [ and ] fine-tune the distance, C toggles fog culling, F the fog, V vsync, Space
+// pauses the flight. Every 300 frames the log gets the preset, what was drawn and culled
+// and the average frame time, to compare them.
 import {
   Camera,
   Color,
@@ -31,8 +33,18 @@ import { useState } from "react";
 const CHUNK = 16;
 const WATER = 11;
 const SKY = Color.hex("#a9c8f5");
-/** Chunks built per frame, nearest first (more on the first frame). */
-const BUILDS_PER_FRAME = 3;
+/** Milliseconds a frame may spend building chunks (nearest first; at least one). */
+const BUILD_BUDGET_MS = 6;
+
+/** Render presets: the fog's render distance in chunks, or no fog over a big area. */
+const PRESETS = [
+  { name: "Very small", distance: 2, fog: true },
+  { name: "Medium", distance: 6, fog: true },
+  { name: "Large", distance: 10, fog: true },
+  { name: "Far (no fog)", distance: 14, fog: false },
+];
+/** The preset it starts with. */
+const START_PRESET = 1;
 
 // ---- Terrain: seeded value noise ----
 
@@ -184,29 +196,88 @@ const FACES: Face[] = (() => {
 })();
 
 interface ChunkMesh {
-  positions: number[];
-  normals: number[];
-  uv: number[];
-  triangles: number[];
+  positions: Float32Array;
+  normals: Float32Array;
+  uv: Float32Array;
+  triangles: Uint32Array;
   blocks: number;
+}
+
+/** Each face's corners (x, y, z four times), normal, and corners' places on the tile. */
+const FACE_CORNERS = FACES.map((f) => new Float32Array(f.corners.flat()));
+const FACE_UV = FACES.map((f) => new Float32Array(f.uv.flat()));
+const SIDES = [0, 1, 4, 5];
+
+/**
+ * Growable buffers a chunk's faces are written into, reused from chunk to chunk (writing by
+ * index into typed arrays is far quicker in QuickJS than pushing onto plain arrays).
+ */
+const buf = {
+  pos: new Float32Array(4096 * 12),
+  nrm: new Float32Array(4096 * 12),
+  uv: new Float32Array(4096 * 8),
+  tri: new Uint32Array(4096 * 6),
+  faces: 0,
+};
+
+function grow(): void {
+  const more = <T extends Float32Array | Uint32Array>(a: T): T => {
+    const b = new (a.constructor as new (n: number) => T)(a.length * 2);
+    b.set(a);
+    return b;
+  };
+  buf.pos = more(buf.pos);
+  buf.nrm = more(buf.nrm);
+  buf.uv = more(buf.uv);
+  buf.tri = more(buf.tri);
+}
+
+function face(f: number, x: number, y: number, z: number, tile: number): void {
+  if ((buf.faces + 1) * 6 > buf.tri.length) grow();
+  const c = FACE_CORNERS[f]!;
+  const t = FACE_UV[f]!;
+  const n = FACES[f]!.n;
+  const v = buf.faces * 4;
+  const p3 = v * 3;
+  const p2 = v * 2;
+  for (let i = 0; i < 4; i++) {
+    const o = p3 + i * 3;
+    buf.pos[o] = x + c[i * 3]!;
+    buf.pos[o + 1] = y + c[i * 3 + 1]!;
+    buf.pos[o + 2] = z + c[i * 3 + 2]!;
+    buf.nrm[o] = n[0];
+    buf.nrm[o + 1] = n[1];
+    buf.nrm[o + 2] = n[2];
+    // Inset a hair so neighbouring tiles never bleed in.
+    buf.uv[p2 + i * 2] = (tile + 0.02 + t[i * 2]! * 0.96) / TILES;
+    buf.uv[p2 + i * 2 + 1] = 0.01 + t[i * 2 + 1]! * 0.98;
+  }
+  const k = buf.faces * 6;
+  buf.tri[k] = v;
+  buf.tri[k + 1] = v + 1;
+  buf.tri[k + 2] = v + 2;
+  buf.tri[k + 3] = v;
+  buf.tri[k + 4] = v + 2;
+  buf.tri[k + 5] = v + 3;
+  buf.faces++;
 }
 
 /** One chunk's visible faces, in its own space (columns 0..15 from its corner). */
 function buildChunk(cx: number, cz: number): ChunkMesh {
-  const m: ChunkMesh = { positions: [], normals: [], uv: [], triangles: [], blocks: 0 };
+  buf.faces = 0;
+  let blocks = 0;
   const x0 = cx * CHUNK;
   const z0 = cz * CHUNK;
   // Heights with a one-column border, for the faces along the chunk's edges.
   const W = CHUNK + 2;
   const hs = new Int32Array(W * W);
   for (let z = -1; z <= CHUNK; z++) for (let x = -1; x <= CHUNK; x++) hs[(z + 1) * W + (x + 1)] = height(x0 + x, z0 + z);
-  const H = (x: number, z: number) => hs[(z + 1) * W + (x + 1)]!;
   // Trees: their blocks, by local position.
   const tree = new Map<number, Tile>();
   const key = (x: number, y: number, z: number) => (y * 64 + (z + 8)) * 64 + (x + 8);
   for (let z = 0; z < CHUNK; z++) {
     for (let x = 0; x < CHUNK; x++) {
-      const h = H(x, z);
+      const h = hs[(z + 1) * W + (x + 1)]!;
       if (!treeAt(x0 + x, z0 + z, h)) continue;
       const trunk = 4 + Math.floor(hash(x0 + x, z0 + z, 11) * 2);
       for (let y = h; y < h + trunk; y++) tree.set(key(x, y, z), Tile.Wood);
@@ -221,47 +292,49 @@ function buildChunk(cx: number, cz: number): ChunkMesh {
       }
     }
   }
-  const solid = (x: number, y: number, z: number) => y < H(x, z) || tree.has(key(x, y, z));
-  const face = (f: Face, x: number, y: number, z: number, tile: Tile, top = 1) => {
-    const base = m.positions.length / 3;
-    for (let i = 0; i < 4; i++) {
-      const c = f.corners[i]!;
-      m.positions.push(x + c[0], y + c[1] * top, z + c[2]);
-      m.normals.push(f.n[0], f.n[1], f.n[2]);
-      const [u, v] = f.uv[i]!;
-      // Inset a hair so neighbouring tiles never bleed in.
-      m.uv.push((tile + 0.02 + u * 0.96) / TILES, 0.01 + v * 0.98);
-    }
-    m.triangles.push(base, base + 1, base + 2, base, base + 2, base + 3);
-  };
   for (let z = 0; z < CHUNK; z++) {
     for (let x = 0; x < CHUNK; x++) {
-      const h = H(x, z);
+      const h = hs[(z + 1) * W + (x + 1)]!;
       const sandy = h <= WATER + 1;
       const rocky = h >= 40;
-      m.blocks += h;
-      face(FACES[2]!, x, h - 1, z, sandy ? Tile.Sand : rocky ? Tile.Stone : Tile.GrassTop);
+      blocks += h;
+      face(2, x, h - 1, z, sandy ? Tile.Sand : rocky ? Tile.Stone : Tile.GrassTop);
       // Sides down to each lower neighbour.
-      for (const f of [FACES[0]!, FACES[1]!, FACES[4]!, FACES[5]!]) {
-        const nh = H(x + f.n[0], z + f.n[2]);
-        for (let y = Math.max(nh, 0); y < h; y++) {
+      for (let s = 0; s < 4; s++) {
+        const f = SIDES[s]!;
+        const n = FACES[f]!.n;
+        const nh = hs[(z + n[2] + 1) * W + (x + n[0] + 1)]!;
+        for (let y = nh > 0 ? nh : 0; y < h; y++) {
           const depth = h - 1 - y;
-          const tile = sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : depth === 0 ? Tile.GrassSide : Tile.Dirt;
-          face(f, x, y, z, tile);
+          face(f, x, y, z, sandy && depth < 3 ? Tile.Sand : rocky || depth >= 4 ? Tile.Stone : depth === 0 ? Tile.GrassSide : Tile.Dirt);
         }
       }
       // Water over low ground: a flat surface a little below the block top.
-      if (h < WATER) face(FACES[2]!, x, WATER - 1.12, z, Tile.Water);
+      if (h < WATER) face(2, x, WATER - 1.12, z, Tile.Water);
     }
   }
+  const solid = (x: number, y: number, z: number) => {
+    if (x >= -1 && x <= CHUNK && z >= -1 && z <= CHUNK && y < hs[(z + 1) * W + (x + 1)]!) return true;
+    return tree.has(key(x, y, z));
+  };
   for (const [k, tile] of tree) {
     const x = (k % 64) - 8;
     const z = (Math.floor(k / 64) % 64) - 8;
     const y = Math.floor(k / 4096);
-    m.blocks++;
-    for (const f of FACES) if (!solid(x + f.n[0], y + f.n[1], z + f.n[2])) face(f, x, y, z, tile);
+    blocks++;
+    for (let f = 0; f < 6; f++) {
+      const n = FACES[f]!.n;
+      if (!solid(x + n[0], y + n[1], z + n[2])) face(f, x, y, z, tile);
+    }
   }
-  return m;
+  const verts = buf.faces * 4;
+  return {
+    positions: buf.pos.slice(0, verts * 3),
+    normals: buf.nrm.slice(0, verts * 3),
+    uv: buf.uv.slice(0, verts * 2),
+    triangles: buf.tri.slice(0, buf.faces * 6),
+    blocks,
+  };
 }
 
 // ---- Streaming ----
@@ -275,7 +348,7 @@ interface Chunk {
 }
 
 /** The settings the HUD shows and the keys change. */
-const state = { distance: 6, culling: true, fog: true };
+const state = { preset: START_PRESET, distance: PRESETS[START_PRESET]!.distance, culling: true, fog: PRESETS[START_PRESET]!.fog, paused: false };
 let refreshHud = () => {};
 
 function applyFog(): void {
@@ -302,6 +375,8 @@ class World extends Component {
   blocks = 0;
   private sampleTime = 0;
   private sampleFrames = 0;
+  /** Chunks built since the last log line (a sample with any isn't steady). */
+  private built = 0;
   get loaded(): number {
     return this.chunks.size;
   }
@@ -316,17 +391,40 @@ class World extends Component {
     this.material = Material.create({ mainTexture: atlas(), smoothness: 0 });
     const eye = new GameObject("Main Camera", { position: this.pos });
     this.camera = eye.addComponent(Camera, { fieldOfView: 70, backgroundColor: SKY, farClipPlane: 400 });
+    // Start above the ground, looking ahead (paused or not).
+    this.altitude = this.groundAhead(new Vector3(1, 0, 0)) + 9;
+    this.fly(0);
     applyFog();
     // Fill the nearest chunks at once, so the first frame isn't empty.
-    this.stream(CHUNK * 4 * CHUNK);
+    this.stream(300);
+  }
+
+  /** The highest ground (or water) over the next 40 m along `dir`. */
+  private groundAhead(dir: Vector3): number {
+    let ground = WATER;
+    for (let k = 0; k <= 40; k += 8) ground = Math.max(ground, height(Math.floor(this.pos.x + dir.x * k), Math.floor(this.pos.z + dir.z * k)));
+    return ground;
+  }
+
+  /** Moves the camera `dt` seconds along its heading, keeping above the ground ahead. */
+  private fly(dt: number): void {
+    const dir = new Vector3(Math.cos(this.heading), 0, Math.sin(this.heading));
+    const speed = 9;
+    this.pos = this.pos.add(dir.scale(speed * dt));
+    this.altitude += (this.groundAhead(dir) + 9 - this.altitude) * Math.min(1, dt * 0.8);
+    this.pos = new Vector3(this.pos.x, this.altitude, this.pos.z);
+    const cam = this.camera.transform;
+    cam.position = this.pos;
+    cam.rotation = Quaternion.lookRotation(dir.add(new Vector3(0, -0.22, 0)));
   }
 
   /** Chunks kept loaded: the render distance, plus a spare ring past the fog. */
   private radius(): number {
-    return state.distance + 2;
+    return state.fog ? state.distance + 2 : state.distance;
   }
 
-  private stream(builds: number): void {
+  /** Loads and drops chunks around the camera, building for at most `budget` ms. */
+  private stream(budget: number): void {
     const ccx = Math.floor(this.pos.x / CHUNK);
     const ccz = Math.floor(this.pos.z / CHUNK);
     const r = this.radius();
@@ -347,7 +445,10 @@ class World extends Component {
         if (d <= r * r && !this.chunks.has(`${ccx + dx},${ccz + dz}`)) missing.push([d, ccx + dx, ccz + dz]);
       }
     missing.sort((a, b) => a[0] - b[0]);
-    for (const [, cx, cz] of missing.slice(0, builds)) {
+    const start = Date.now();
+    for (const [, cx, cz] of missing) {
+      if (Date.now() - start > budget) break;
+      this.built++;
       const data = buildChunk(cx, cz);
       let c = this.pool.pop();
       if (c) {
@@ -371,6 +472,11 @@ class World extends Component {
   override onUpdate(dt: number): void {
     this.t += dt;
     this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.05;
+    for (let i = 0; i < PRESETS.length; i++) if (input.getKeyDown(`Digit${i + 1}`)) setPreset(i);
+    if (input.getKeyDown("Space")) {
+      state.paused = !state.paused;
+      refreshHud();
+    }
     if (input.getKeyDown("BracketLeft")) setDistance(state.distance - 1);
     if (input.getKeyDown("BracketRight")) setDistance(state.distance + 1);
     if (input.getKeyDown("KeyC")) toggle("culling");
@@ -381,25 +487,33 @@ class World extends Component {
     }
     this.sampleTime += dt;
     if (++this.sampleFrames === 300) {
-      Debug.log(`fog-world: ${((this.sampleTime / 300) * 1000).toFixed(2)} ms a frame, fog culling ${state.culling ? "on" : "off"}, ${RenderStats.meshes} meshes drawn, ${RenderStats.fogCulled} hidden by fog`);
+      const preset = PRESETS[state.preset]!;
+      const ccx = Math.floor(this.pos.x / CHUNK);
+      const ccz = Math.floor(this.pos.z / CHUNK);
+      let gaps = 0;
+      for (let dz = -state.distance; dz <= state.distance; dz++)
+        for (let dx = -state.distance; dx <= state.distance; dx++)
+          if (dx * dx + dz * dz <= state.distance * state.distance && !this.chunks.has(`${ccx + dx},${ccz + dz}`)) gaps++;
+      Debug.log(
+        `fog-world: ${preset.name}, ${state.distance} chunks, fog ${state.fog ? "on" : "off"}, culling ${state.culling ? "on" : "off"}: ` +
+          `${this.chunks.size} chunks, ${(this.blocks / 1e6).toFixed(2)}M blocks, ${RenderStats.meshes} drawn, ${RenderStats.culledMeshes} culled ` +
+          `(${RenderStats.fogCulled} by fog), ${gaps} chunks missing in view range, ${((this.sampleTime / 300) * 1000).toFixed(2)} ms a frame${this.built > 0 ? `, still loading (${this.built} built)` : ""}`,
+      );
       this.sampleTime = 0;
       this.sampleFrames = 0;
+      this.built = 0;
     }
 
     // The autopilot: a slow, wandering heading, flying above the ground ahead.
+    if (state.paused) {
+      this.stream(BUILD_BUDGET_MS);
+      if (Math.floor(this.t * 4) !== Math.floor((this.t - dt) * 4)) refreshHud();
+      return;
+    }
     this.heading += (noise(this.t * 0.05, 0.5, 4) - 0.5) * dt * 1.2;
-    const dir = new Vector3(Math.cos(this.heading), 0, Math.sin(this.heading));
-    const speed = 9;
-    this.pos = this.pos.add(dir.scale(speed * dt));
-    let ground = 0;
-    for (let k = 0; k <= 40; k += 8) ground = Math.max(ground, height(Math.floor(this.pos.x + dir.x * k), Math.floor(this.pos.z + dir.z * k)), WATER);
-    this.altitude += (ground + 9 - this.altitude) * Math.min(1, dt * 0.8);
-    this.pos = new Vector3(this.pos.x, this.altitude, this.pos.z);
-    const cam = this.camera.transform;
-    cam.position = this.pos;
-    cam.rotation = Quaternion.lookRotation(dir.add(new Vector3(0, -0.22, 0)));
+    this.fly(dt);
 
-    this.stream(BUILDS_PER_FRAME);
+    this.stream(BUILD_BUDGET_MS);
     if (Math.floor(this.t * 4) !== Math.floor((this.t - dt) * 4)) refreshHud();
   }
 }
@@ -407,7 +521,13 @@ class World extends Component {
 let world: World | null = null;
 
 function setDistance(d: number) {
-  state.distance = Math.max(2, Math.min(12, d));
+  state.distance = Math.max(2, Math.min(16, d));
+  applyFog();
+}
+function setPreset(i: number) {
+  state.preset = i;
+  state.distance = PRESETS[i]!.distance;
+  state.fog = PRESETS[i]!.fog;
   applyFog();
 }
 function toggle(key: "culling" | "fog") {
@@ -442,9 +562,14 @@ function Hud() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 20, 0.72)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Endless blocks in the fog</text>
+        <Row label="Preset" value={PRESETS[state.preset]!.name} keyName="1-4" onClick={() => setPreset((state.preset + 1) % PRESETS.length)} />
         <Row label="Render distance" value={`${state.distance} chunks (${state.distance * CHUNK} m)`} keyName="[ ]" onClick={() => setDistance(state.distance + 1)} />
         <Row label="Fog culling" value={state.culling ? "On" : "Off"} on={state.culling} keyName="C" onClick={() => toggle("culling")} />
         <Row label="Fog" value={state.fog ? "On" : "Off"} on={state.fog} keyName="F" onClick={() => toggle("fog")} />
+        <Row label="Flight" value={state.paused ? "Paused" : "Flying"} on={!state.paused} keyName="Space" onClick={() => {
+          state.paused = !state.paused;
+          refreshHud();
+        }} />
         <Row label="Chunks loaded" value={`${w?.loaded ?? 0} (${Math.round((w?.blocks ?? 0) / 1000)}k blocks)`} keyName="" />
         <Row label="Meshes drawn" value={`${RenderStats.meshes} (culled ${RenderStats.culledMeshes})`} keyName="" />
         <Row label="Hidden by fog" value={`${RenderStats.fogCulled}`} keyName="" />
