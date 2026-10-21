@@ -11,7 +11,8 @@
 // the light swells and fades; a bedside lamp (B) and a flickering television (V) light the
 // room from inside, and give the metering, holding and speed settings something to do.
 //
-// The menu tries out every exposure setting live. A graph shows the last fifteen seconds:
+// The menu (two pages: exposure, 1, and the scene, 2) tries out every setting live, with the
+// frame rate at the top; Q cycles the quality level, U switches vsync. A graph shows the last fifteen seconds:
 // how bright the view meters (where the eyes are heading) against the exposure in use (where
 // they are), both in EV100 (`Camera.sceneBrightness`, `Camera.exposure`), so you can watch
 // them adapt. The metering zone is drawn over the view. Keys: auto exposure on or off (A)
@@ -451,9 +452,21 @@ class Bedroom extends Component {
 
   override onUpdate(dt: number) {
     if (input.getKeyDown("KeyK")) toggle("clouds");
-    if (input.getKeyDown("KeyG")) {
-      state.haze = (state.haze + 1) % HAZE.length;
-      applyHaze();
+    if (input.getKeyDown("KeyG")) nextHaze();
+    if (input.getKeyDown("KeyQ")) nextQuality();
+    if (input.getKeyDown("KeyU")) toggleVSync();
+    if (input.getKeyDown("Digit1") || input.getKeyDown("Digit2")) {
+      tab = input.getKeyDown("Digit1") ? 0 : 1;
+      refreshMenu();
+    }
+    // Frame rate, over half a second.
+    timing.frames++;
+    timing.time += dt;
+    if (timing.time >= 0.5) {
+      timing.fps = timing.frames / timing.time;
+      timing.ms = (1000 * timing.time) / timing.frames;
+      timing.frames = 0;
+      timing.time = 0;
     }
     if (input.getKeyDown("KeyB")) toggle("lamp");
     if (input.getKeyDown("KeyV")) toggle("tv");
@@ -595,6 +608,82 @@ function MeteringZone() {
   );
 }
 
+/** Which page of the menu shows: the exposure settings or the scene's. */
+let tab = 0;
+
+/** Frames a second and milliseconds a frame, measured over half a second. */
+const timing = { fps: 0, ms: 0, frames: 0, time: 0 };
+
+function Tab(props: { label: string; index: number; keyName: string }) {
+  const on = tab === props.index;
+  return (
+    <box
+      onClick={() => {
+        tab = props.index;
+        refreshMenu();
+      }}
+      style={{ padding: "5px 12px", borderRadius: 6, cursor: "pointer", backgroundColor: on ? "rgba(255,255,255,0.18)" : "transparent" }}
+    >
+      <text style={{ color: on ? "#ffffff" : "#9aa0a8", fontSize: 13 }}>
+        {props.label} <span style={{ color: "#6d737c" }}>{props.keyName}</span>
+      </text>
+    </box>
+  );
+}
+
+function ExposurePage() {
+  return (
+    <>
+      <Button
+        label="Auto exposure"
+        value={state.auto ? "On (eyes adapt)" : state.frozenAt !== null ? `Frozen (${ev(state.frozenAt)})` : `Off (manual ${ev(MANUAL_EVS[state.manual])})`}
+        on={state.auto}
+        keyName="A"
+        onClick={toggleAuto}
+      />
+      <Button label="Freeze here" value="Off, unseen" on={false} keyName="Z" onClick={freeze} />
+      <Button label="Transition" value={TRANSITIONS[state.transition] ? `${TRANSITIONS[state.transition]} s blend` : "Instant"} on={TRANSITIONS[state.transition]! > 0} keyName="T" onClick={() => cycle("transition", TRANSITIONS.length)} />
+      <Button label="Manual EV" value={ev(MANUAL_EVS[state.manual])} on={!state.auto} keyName="E" onClick={() => cycle("manual", MANUAL_EVS.length)} />
+      <Button label="Hold" value={state.hold ? "Held where it is" : "Adapting"} on={state.hold} keyName="L" onClick={() => toggle("hold")} />
+      <Button label="Adapts like" value={SPEEDS[state.speed]!.name} on={state.speed === 0} keyName="Y" onClick={() => cycle("speed", SPEEDS.length)} />
+      <Button label="Metering" value={METERING_NAMES[METERING[state.metering] ?? "centerWeighted"]} on={true} keyName="M" onClick={() => cycle("metering", METERING.length)} />
+      <Button label="Histogram" value={state.band ? "40–90% (no extremes)" : "Everything"} on={state.band} keyName="H" onClick={() => toggle("band")} />
+      <Button label="Soft floor" value={state.soft ? "Below EV 3: 60% of the way" : "Off: all the way"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
+      <Button label="Curve" value={state.curve ? "-1.5 stops at EV -4" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
+    </>
+  );
+}
+
+function ScenePage() {
+  return (
+    <>
+      <Button label="Quality" value={QualitySettings.names[QualitySettings.getQualityLevel()] ?? "?"} on={true} keyName="Q" onClick={nextQuality} />
+      <Button label="VSync" value={QualitySettings.vSyncCount > 0 ? "On (capped)" : "Off (as fast as it can)"} on={QualitySettings.vSyncCount > 0} keyName="U" onClick={toggleVSync} />
+      <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={nextHaze} />
+      <Button label="Shutters" value={state.paused ? "Paused" : "Opening and closing"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
+      <Button label="Clouds" value={state.clouds ? "Drifting over the sun" : "Clear sky"} on={state.clouds} keyName="K" onClick={() => toggle("clouds")} />
+      <Button label="Bedside lamp" value={state.lamp ? "On" : "Off"} on={state.lamp} keyName="B" onClick={() => toggle("lamp")} />
+      <Button label="Television" value={state.tv ? "On" : "Off"} on={state.tv} keyName="V" onClick={() => toggle("tv")} />
+    </>
+  );
+}
+
+function nextHaze() {
+  state.haze = (state.haze + 1) % HAZE.length;
+  applyHaze();
+}
+
+/** The next quality level (Low, Medium, High, Ultra), then the haze again (Low turns it off). */
+function nextQuality() {
+  QualitySettings.setQualityLevel((QualitySettings.getQualityLevel() + 1) % QualitySettings.names.length);
+  applyHaze();
+}
+
+function toggleVSync() {
+  QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
+  refreshMenu();
+}
+
 function Menu() {
   const [, setTick] = useState(0);
   refreshMenu = () => setTick((t) => t + 1);
@@ -602,38 +691,18 @@ function Menu() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <MeteringZone />
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 18, 0.72)", flexDirection: "column" }}>
-        <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Eye adaptation: the bedroom</text>
+        <box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
+          <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Eye adaptation: the bedroom</text>
+          <text style={{ color: timing.fps >= 200 ? "#7ad08a" : timing.fps >= 60 ? "#e0c060" : "#e07060", fontSize: 13 }}>
+            {timing.fps.toFixed(0)} fps · {timing.ms.toFixed(2)} ms
+          </text>
+        </box>
         <Graph />
-        <Button
-          label="Auto exposure"
-          value={state.auto ? "On (eyes adapt)" : state.frozenAt !== null ? `Frozen (${ev(state.frozenAt)})` : `Off (manual ${ev(MANUAL_EVS[state.manual])})`}
-          on={state.auto}
-          keyName="A"
-          onClick={toggleAuto}
-        />
-        <Button label="Freeze here" value="Off, unseen" on={false} keyName="Z" onClick={freeze} />
-        <Button label="Transition" value={TRANSITIONS[state.transition] ? `${TRANSITIONS[state.transition]} s blend` : "Instant"} on={TRANSITIONS[state.transition]! > 0} keyName="T" onClick={() => cycle("transition", TRANSITIONS.length)} />
-        <Button label="Manual EV" value={ev(MANUAL_EVS[state.manual])} on={!state.auto} keyName="E" onClick={() => cycle("manual", MANUAL_EVS.length)} />
-        <Button label="Hold" value={state.hold ? "Held where it is" : "Adapting"} on={state.hold} keyName="L" onClick={() => toggle("hold")} />
-        <Button label="Adapts like" value={SPEEDS[state.speed]!.name} on={state.speed === 0} keyName="Y" onClick={() => cycle("speed", SPEEDS.length)} />
-        <Button label="Metering" value={METERING_NAMES[METERING[state.metering] ?? "centerWeighted"]} on={true} keyName="M" onClick={() => cycle("metering", METERING.length)} />
-        <Button label="Histogram" value={state.band ? "40–90% (no extremes)" : "Everything"} on={state.band} keyName="H" onClick={() => toggle("band")} />
-        <Button label="Soft floor" value={state.soft ? "Below EV 3: 60% of the way" : "Off: all the way"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
-        <Button label="Curve" value={state.curve ? "-1.5 stops at EV -4" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
-        <Button label="Shutters" value={state.paused ? "Paused" : "Opening and closing"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
-        <Button
-          label="Haze"
-          value={HAZE[state.haze]!.name}
-          on={state.haze === 0}
-          keyName="G"
-          onClick={() => {
-            state.haze = (state.haze + 1) % HAZE.length;
-            applyHaze();
-          }}
-        />
-        <Button label="Clouds" value={state.clouds ? "Drifting over the sun" : "Clear sky"} on={state.clouds} keyName="K" onClick={() => toggle("clouds")} />
-        <Button label="Bedside lamp" value={state.lamp ? "On" : "Off"} on={state.lamp} keyName="B" onClick={() => toggle("lamp")} />
-        <Button label="Television" value={state.tv ? "On" : "Off"} on={state.tv} keyName="V" onClick={() => toggle("tv")} />
+        <box style={{ flexDirection: "row", gap: 4 }}>
+          <Tab label="Exposure" index={0} keyName="1" />
+          <Tab label="Scene" index={1} keyName="2" />
+        </box>
+        {tab === 0 ? <ExposurePage /> : <ScenePage />}
       </box>
     </box>
   );
