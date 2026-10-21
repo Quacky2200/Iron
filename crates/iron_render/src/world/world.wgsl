@@ -37,13 +37,15 @@ struct Globals {
     // Light shafts: x intensity, y anisotropy, z samples per volume slice, w how far the
     // volume reaches (0: off).
     fog_volume: vec4<f32>,
+    // rgb: how much of each colour of light the fog scatters into shafts.
+    fog_albedo: vec4<f32>,
     // x: how many fog volumes `local_fogs` holds.
     fog_local: vec4<f32>,
     local_fogs: array<LocalFog, 8>,
 };
 
 // A box of fog: centre (xyz) and density (w); half extents (xyz) and the soft edge's depth
-// (w); its colour.
+// (w); its colour (rgb) and w 1 for an ellipsoid inside the box.
 struct LocalFog {
     centre: vec4<f32>,
     half: vec4<f32>,
@@ -263,8 +265,16 @@ fn local_fog_clear(a: vec3<f32>, b: vec3<f32>, i: u32) -> f32 {
     var depth = 0.0;
     for (var k = 0; k < LOCAL_FOG_SAMPLES; k++) {
         let x = a + dir * (t0 + (f32(k) + 0.5) * step);
-        let inside = v.half.xyz - abs(x - v.centre.xyz);
-        let edge = clamp(min(min(inside.x, inside.y), inside.z) / max(v.half.w, 1e-4), 0.0, 1.0);
+        var inside: f32;
+        if (v.color.w > 0.5) {
+            // How far in from the ellipsoid's surface, roughly in metres.
+            let q = (x - v.centre.xyz) / v.half.xyz;
+            inside = (1.0 - length(q)) * min(min(v.half.x, v.half.y), v.half.z);
+        } else {
+            let d = v.half.xyz - abs(x - v.centre.xyz);
+            inside = min(min(d.x, d.y), d.z);
+        }
+        let edge = clamp(inside / max(v.half.w, 1e-4), 0.0, 1.0);
         depth += edge * edge * (3.0 - 2.0 * edge);
     }
     return exp(-v.centre.w * depth * step);
@@ -412,7 +422,7 @@ fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
 
 // Light the fog between the camera and `p` (pixel `px`) sends to the camera: the volume
 // at `p`, plus, past its last slice, the sun lighting the rest of the fog as at its middle.
-// The fog's colour tints it (its albedo).
+// The fog's albedo tints it.
 fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
     let eye = fog_eye(p);
     let len = length(p - eye);
@@ -436,7 +446,7 @@ fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
             }
         }
     }
-    return sum * g.fog.rgb * g.fog_volume.x;
+    return sum * g.fog_albedo.rgb * g.fog_volume.x;
 }
 
 // A camera's background over its viewport, at the far plane: it clears colour and

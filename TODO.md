@@ -1457,6 +1457,15 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     points, over the background too, lit by light shafts; 8 per camera (`M7-FOG-06`)
   - [x] `examples/fog` (2026-10-21): every kind of fog in one misty clearing, switched from a
     menu
+  - [x] Light shafts' albedo (`volumetricFog.albedo`, separate from `fogColor`, so dark night
+    fog still glows under a lamp) and ellipsoid fog volumes (`FogVolume.shape`) (2026-10-21)
+  - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
+    2026-10-21): a third-person character on a bright white floor of glowing grid tiles under
+    a grey cloudy sky, everything fading into white fog a few tiles away. The floor moves with
+    the player like a treadmill (tiles recycled around them), so the area never ends: no walls
+    to reach, no edge to fall off. The player can run and jump with gravity (a
+    CharacterController on a floor collider that follows them). Lighting: soft, bright, the
+    tiles' grid lines glowing; fog close and white, height fog where the floor meets the sky
 
 ## M8 — Multiplayer
 

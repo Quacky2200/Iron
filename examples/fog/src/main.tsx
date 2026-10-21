@@ -38,7 +38,7 @@ function apply(): void {
   RenderSettings.fogEndDistance = 70;
   if (state.mode !== "off") RenderSettings.fogMode = state.mode;
   RenderSettings.heightFog = state.height ? { density: 0.05, baseHeight: 0, falloff: 0.35 } : null;
-  RenderSettings.volumetricFog = state.shafts ? { intensity: 0.6, anisotropy: 0.3, steps: state.steps, distance: 45 } : null;
+  RenderSettings.volumetricFog = state.shafts ? { intensity: 0.2, anisotropy: 0.3, steps: state.steps, distance: 45 } : null;
   // Height fog and shafts ride on the fog: with the distance fog "off", keep the fog on
   // with no density so they still show.
   RenderSettings.fog = state.mode !== "off" || state.height || state.shafts;

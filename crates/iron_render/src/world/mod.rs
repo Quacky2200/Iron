@@ -527,6 +527,8 @@ pub struct FogVolume {
     /// Linear RGB.
     pub color: [f32; 3],
     pub blend: f32,
+    /// An ellipsoid inside the box rather than the box itself (soft round mist).
+    pub ellipsoid: bool,
 }
 
 #[repr(C)]
@@ -536,6 +538,7 @@ struct GpuFogVolume {
     centre: [f32; 4],
     /// xyz: half extents; w: the soft edge's depth.
     half: [f32; 4],
+    /// rgb: colour; w: 1 for an ellipsoid.
     color: [f32; 4],
 }
 
@@ -585,6 +588,10 @@ pub struct VolumetricFog {
     pub steps: u32,
     /// How far the volume reaches, in metres.
     pub distance: f32,
+    /// How much of each colour of light the fog scatters (white: all). It's separate from
+    /// the fog's colour, which is how the fog looks in the ambient light: a night fog is
+    /// dark, yet glows white under a lamp.
+    pub albedo: [f32; 3],
 }
 
 impl Default for VolumetricFog {
@@ -594,6 +601,7 @@ impl Default for VolumetricFog {
             anisotropy: 0.4,
             steps: 4,
             distance: 50.0,
+            albedo: [1.0; 3],
         }
     }
 }
@@ -827,6 +835,8 @@ struct GpuGlobals {
     /// Light shafts: x intensity, y anisotropy, z samples per slice, w the volume's reach
     /// (0: off).
     fog_volume: [f32; 4],
+    /// rgb: the fog's albedo for light shafts.
+    fog_albedo: [f32; 4],
     /// x: how many fog volumes follow.
     fog_local: [f32; 4],
     local_fogs: [GpuFogVolume; MAX_FOG_VOLUMES],
@@ -840,7 +850,7 @@ impl GpuGlobals {
             *gpu = GpuFogVolume {
                 centre: [c.x, c.y, c.z, v.density.max(0.0)],
                 half: [h.x, h.y, h.z, v.blend.max(0.0)],
-                color: [v.color[0], v.color[1], v.color[2], 0.0],
+                color: [v.color[0], v.color[1], v.color[2], f32::from(u8::from(v.ellipsoid))],
             };
         }
         self.fog_local = [n as f32, 0.0, 0.0, 0.0];
@@ -868,6 +878,8 @@ impl GpuGlobals {
                 v.steps.clamp(1, 16) as f32,
                 v.distance.max(1e-3),
             ];
+            let [r, g, b] = v.albedo.map(|c| c.max(0.0));
+            self.fog_albedo = [r, g, b, 0.0];
         }
     }
 }

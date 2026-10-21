@@ -2985,7 +2985,7 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
             v.lights = vec![sun];
             v.fog = Some(Fog {
                 volumetric: (k == 1).then(|| VolumetricFog {
-                    intensity: 1.0,
+                    intensity: 0.25,
                     distance: 30.0,
                     ..Default::default()
                 }),
@@ -3104,6 +3104,7 @@ fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
         density: 1.5,
         color: [0.7, 0.75, 0.8],
         blend: 0.5,
+        ellipsoid: false,
     }];
     let mut world = WorldRenderer::new(&gpu);
     world.render_views(&gpu, &rt, &[v], &[]);

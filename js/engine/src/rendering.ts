@@ -1228,7 +1228,7 @@ let heightFog: HeightFogSettings | null = null;
 /**
  * Light shafts (volumetric fog): lights shining through the fog light it up, cut by their
  * shadows, so the sun shows in beams through gaps and spot lights as cones, tinted by
- * `fogColor`. Every field is optional. A froxel volume over each camera's view (160 × 90
+ * `albedo`. Every field is optional. A froxel volume over each camera's view (160 × 90
  * cells, 64 depth slices) is filled once a frame, with a shadow lookup per light per
  * sample; lights opt out with `Light.volumetricIntensity = 0`.
  */
@@ -1241,6 +1241,12 @@ export interface VolumetricFogSettings {
   steps?: number;
   /** How far the volume reaches in metres (50); fog beyond counts as lit by the sun. */
   distance?: number;
+  /**
+   * How much of each colour of light the fog scatters (white by default). It's separate
+   * from `fogColor`, which is how the fog looks in the ambient light: a night fog is dark,
+   * yet glows under a lamp.
+   */
+  albedo?: Color;
 }
 
 let volumetricFog: VolumetricFogSettings | null = null;
@@ -1252,7 +1258,8 @@ function sendFog(): void {
   }
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
   const v = volumetricFog;
-  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50] : null;
+  const a = v?.albedo;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1] : null;
   __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts);
 }
 
@@ -1505,6 +1512,7 @@ export class FogVolume extends Component {
   private _density = 0.5;
   private _color = new Color(0.75, 0.78, 0.82, 1);
   private _blend = 1;
+  private _shape: "box" | "ellipsoid" = "box";
   private started = false;
 
   /** The box's size in metres, before the object's scale. */
@@ -1543,12 +1551,21 @@ export class FogVolume extends Component {
     this._blend = Math.max(0, b);
     this.send();
   }
+  /** `box`, or `ellipsoid`: a soft round blob inside the box (mist over a pond). */
+  @property
+  get shape(): "box" | "ellipsoid" {
+    return this._shape;
+  }
+  set shape(s: "box" | "ellipsoid") {
+    this._shape = s;
+    this.send();
+  }
 
   private send(): void {
     if (!this.started) return;
     const s = this._size;
     const c = this._color;
-    __iron_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend);
+    __iron_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend, this._shape);
   }
 
   override onAwake(): void {

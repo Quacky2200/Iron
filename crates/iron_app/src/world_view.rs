@@ -325,6 +325,7 @@ struct FogBox {
     density: f32,
     color: [f32; 3],
     blend: f32,
+    ellipsoid: bool,
 }
 
 pub struct WorldViews {
@@ -1214,18 +1215,23 @@ impl WorldViews {
                                 falloff: falloff.max(1e-4),
                             }
                         }),
-                        volumetric: nums::<4>(args.get(7)).map(
-                            |[intensity, anisotropy, steps, distance]| VolumetricFog {
-                                intensity: intensity.max(0.0),
-                                anisotropy: anisotropy.clamp(-0.95, 0.95),
-                                steps: steps.clamp(1.0, 16.0) as u32,
-                                distance: distance.max(0.1),
-                            },
-                        ),
+                        volumetric: flat(args.get(7)).filter(|v| v.len() >= 4).map(|v| {
+                            VolumetricFog {
+                                intensity: v[0].max(0.0),
+                                anisotropy: v[1].clamp(-0.95, 0.95),
+                                steps: v[2].clamp(1.0, 16.0) as u32,
+                                distance: v[3].max(0.1),
+                                albedo: match v[4..] {
+                                    [r, g, b, ..] => [r, g, b].map(|c| c.max(0.0)),
+                                    _ => [1.0; 3],
+                                },
+                            }
+                        }),
                     }),
                 };
             }
-            // `fogVolume component object [sx sy sz] density [r g b] blendDistance`
+            // `fogVolume component object [sx sy sz] density [r g b] blendDistance
+            // shape(box|ellipsoid)`
             "fogVolume" => {
                 let [x, y, z] = nums::<3>(args.get(2)).ok_or("fogVolume needs [x, y, z]")?;
                 self.fog_volumes.insert(
@@ -1236,6 +1242,7 @@ impl WorldViews {
                         density: num(3)?.max(0.0),
                         color: nums::<3>(args.get(4)).ok_or("fogVolume needs [r, g, b]")?,
                         blend: num(5).unwrap_or(1.0).max(0.0),
+                        ellipsoid: args.get(6).and_then(Value::as_str) == Some("ellipsoid"),
                     },
                 );
             }
@@ -1578,6 +1585,7 @@ impl WorldViews {
                         density: f.density,
                         color: f.color,
                         blend: f.blend,
+                        ellipsoid: f.ellipsoid,
                     },
                 )
             })
@@ -2367,6 +2375,7 @@ mod tests {
                 anisotropy: 0.95,
                 steps: 16,
                 distance: 40.0,
+                albedo: [1.0; 3],
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();

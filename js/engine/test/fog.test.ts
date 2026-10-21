@@ -51,7 +51,7 @@ describe("fog", () => {
     expect(fogOps().at(-1)![7]).toEqual([0.1, -2, 0.5]);
     // Light shafts too, with defaults for what's left out (M7-FOG-05).
     RenderSettings.volumetricFog = { steps: 8 };
-    expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 8, 50]);
+    expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 8, 50, 1, 1, 1]);
     RenderSettings.fog = false;
     expect(fogOps().at(-1)).toEqual(["render.fog", 0, null]);
   });
@@ -80,9 +80,11 @@ describe("fog", () => {
     const go = new GameObject("mist");
     const v = go.addComponent(FogVolume, { size: new Vector3(6, 1, 4), density: 0.8 });
     const last = () => ops.filter((o) => o[0] === "render.fogVolume").at(-1)!;
-    expect(last()).toEqual(["render.fogVolume", v.id, go.id, [6, 1, 4], 0.8, [0.75, 0.78, 0.82], 1]);
+    expect(last()).toEqual(["render.fogVolume", v.id, go.id, [6, 1, 4], 0.8, [0.75, 0.78, 0.82], 1, "box"]);
     v.blendDistance = -1;
-    expect(last().at(-1)).toBe(0);
+    expect(last()[6]).toBe(0);
+    v.shape = "ellipsoid";
+    expect(last().at(-1)).toBe("ellipsoid");
     v.color = new Color(0.1, 0.2, 0.3);
     expect(last()[5]).toEqual([0.1, 0.2, 0.3]);
     // The engine runs onDestroy when the object goes.
