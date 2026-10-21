@@ -1383,6 +1383,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - AssemblyScript → wasm → wasm IR → Rust via `wasm2rs`
   - Questions: keeping the `__iron_op` / `__iron_commit` boundary unchanged, React's dynamic
     code under each option, and keeping dev builds on QuickJS for hot reload (M4)
+- [x] **Windows API** (2026-10-21): `Window` (tool / dialog / popup windows, families and event domains, messages, hot reload by key,
+  platform support table), `examples/windows`, guide `docs/windows.md`; steps in `tools/iron_ts/TODO.md` "Windows API". Open
+  optional leftovers: embedded `child` style, modal dialogs, `Camera.targetWindow`, transparent windows, `Application.wantsToQuit`,
+  domains on their own thread / process, and a manual check of the winit runner on a real display (never run there yet).
 - [ ] **M9.b2** `iron_ts`: ahead-of-time TypeScript compiler (oxc → typed Iron IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.
