@@ -6,6 +6,8 @@
 //! - imports of `@iron/*` and `react` are erased (their names come from the engine manifests and the
 //!   ambient prelude, which is also what a program with no such import at all uses: the names are
 //!   globals, see `types_dts`); an aliased name (`import { Color as C }`) is renamed to the real one;
+//! - a bare import (`"foo"`, `"foo/sub"`) is a file of the game's `modules/` folder next to the entry
+//!   (`src/modules/foo.ts`, `foo/index.ts`, `foo/sub.ts`), then handled like a relative import;
 //! - imports of relative files are erased and their names renamed to the final names of the exporting
 //!   file's declarations; `import type` is treated like `import` (types collide too);
 //! - `export` is dropped from every file but the entry (the entry's exports stay the program's exports);
@@ -76,7 +78,10 @@ pub fn bundle(entry: &std::path::Path) -> Result<Bundle, String> {
 /// Bundles `entry` reading through `read` (a map of paths in tests).
 pub fn bundle_with(entry: &str, read: ReadFn) -> Result<Bundle, String> {
     let entry = normalise(entry);
-    let mut graph = Graph::default();
+    let mut graph = Graph {
+        modules_root: modules_root(&entry),
+        ..Graph::default()
+    };
     graph.load(&entry, read, true)?;
     graph.emit()
 }
@@ -105,6 +110,32 @@ fn normalise(path: &str) -> String {
     } else {
         joined
     }
+}
+
+/// The folder bare imports are looked up in: `modules/` next to the entry file.
+fn modules_root(entry: &str) -> String {
+    match entry.rsplit_once('/') {
+        Some((dir, _)) if !dir.is_empty() => format!("{dir}/modules"),
+        _ => "modules".to_string(),
+    }
+}
+
+/// The files a path `base` (no extension needed) can mean, in lookup order.
+fn candidates_of(base: &str) -> Vec<String> {
+    let stem = base
+        .strip_suffix(".js")
+        .or_else(|| base.strip_suffix(".jsx"))
+        .unwrap_or(base)
+        .to_string();
+    let mut candidates = vec![base.to_string()];
+    for ext in ["ts", "tsx"] {
+        candidates.push(format!("{stem}.{ext}"));
+        candidates.push(format!("{base}.{ext}"));
+    }
+    for ext in ["ts", "tsx"] {
+        candidates.push(format!("{base}/index.{ext}"));
+    }
+    candidates
 }
 
 fn is_library(spec: &str) -> bool {
@@ -186,6 +217,8 @@ struct Graph {
     order: Vec<usize>,
     css: Vec<String>,
     libs: Vec<(String, String)>,
+    /// Where bare imports are looked up.
+    modules_root: String,
 }
 
 /// What a name resolves to across files.
@@ -197,30 +230,35 @@ enum Res {
 
 impl Graph {
     fn resolve_path(&self, from: &str, spec: &str, read: ReadFn) -> Result<String, String> {
-        let dir = from.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-        let base = normalise(&format!("{dir}/{spec}"));
-        let base = if dir.is_empty() {
-            normalise(spec)
+        let bare = !is_relative(spec);
+        let base = if bare {
+            normalise(&format!("{}/{spec}", self.modules_root))
         } else {
-            base
+            let dir = from.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+            if dir.is_empty() {
+                normalise(spec)
+            } else {
+                normalise(&format!("{dir}/{spec}"))
+            }
         };
-        let stem = base
-            .strip_suffix(".js")
-            .or_else(|| base.strip_suffix(".jsx"))
-            .unwrap_or(&base)
-            .to_string();
-        let mut candidates = vec![base.clone()];
-        for ext in ["ts", "tsx"] {
-            candidates.push(format!("{stem}.{ext}"));
-            candidates.push(format!("{base}.{ext}"));
-        }
-        for ext in ["ts", "tsx"] {
-            candidates.push(format!("{base}/index.{ext}"));
-        }
+        let candidates = candidates_of(&base);
         for c in &candidates {
             if read(c).is_some() {
                 return Ok(c.clone());
             }
+        }
+        if bare {
+            let mut tried: Vec<&str> = Vec::new();
+            for c in candidates.iter().skip(1) {
+                if !tried.contains(&c.as_str()) {
+                    tried.push(c);
+                }
+            }
+            return Err(format!(
+                "{from}: cannot find module \"{spec}\": bare imports are looked up in {root}/ (tried {}).                  To use a TypeScript package, copy its .ts source into {root}/<name>/.",
+                tried.join(", "),
+                root = self.modules_root
+            ));
         }
         Err(format!(
             "{from}: cannot find module \"{spec}\" (tried {})",
@@ -252,13 +290,7 @@ impl Graph {
             if is_library(&imp.spec) {
                 continue;
             }
-            if !is_relative(&imp.spec) {
-                return Err(format!(
-                    "{path}: unsupported import \"{}\" (only relative files, @iron/* and react)",
-                    imp.spec
-                ));
-            }
-            if imp.spec.ends_with(".css") {
+            if is_relative(&imp.spec) && imp.spec.ends_with(".css") {
                 let p = normalise(&format!(
                     "{}/{}",
                     path.rsplit_once('/').map(|x| x.0).unwrap_or(""),
@@ -293,26 +325,17 @@ impl Graph {
 
     fn target(&self, from: usize, spec: &str) -> Result<usize, String> {
         let p = &self.mods[from].path;
-        let dir = p.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-        let base = if dir.is_empty() {
-            normalise(spec)
+        let base = if is_relative(spec) {
+            let dir = p.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+            if dir.is_empty() {
+                normalise(spec)
+            } else {
+                normalise(&format!("{dir}/{spec}"))
+            }
         } else {
-            normalise(&format!("{dir}/{spec}"))
+            normalise(&format!("{}/{spec}", self.modules_root))
         };
-        let stem = base
-            .strip_suffix(".js")
-            .or_else(|| base.strip_suffix(".jsx"))
-            .unwrap_or(&base)
-            .to_string();
-        for c in [
-            base.clone(),
-            format!("{stem}.ts"),
-            format!("{stem}.tsx"),
-            format!("{base}.ts"),
-            format!("{base}.tsx"),
-            format!("{base}/index.ts"),
-            format!("{base}/index.tsx"),
-        ] {
+        for c in candidates_of(&base) {
             if let Some(&i) = self.index.get(&c) {
                 return Ok(i);
             }
@@ -1095,5 +1118,117 @@ mod tests {
             b.source
         );
         assert!(b.source.contains("= __default_cfg_ts.n"), "{}", b.source);
+    }
+
+    // M9-TS-2870
+    #[test]
+    fn a_bare_import_is_a_file_an_index_or_a_subpath_of_src_modules() {
+        let b = run(
+            "src/main.ts",
+            &[
+                (
+                    "src/main.ts",
+                    "import { lerp } from \"mathx\";
+import { Stack } from \"ds\";
+import { fmt } from \"ds/text/fmt\";
+export const v = lerp(0, 1, 0.5) + fmt() + new Stack().n;",
+                ),
+                ("src/modules/mathx.ts", "export function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }"),
+                ("src/modules/ds/index.ts", "export class Stack { n = 1; }"),
+                ("src/modules/ds/text/fmt.tsx", "export function fmt(): number { return 2; }"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            b.files,
+            [
+                "src/modules/mathx.ts",
+                "src/modules/ds/index.ts",
+                "src/modules/ds/text/fmt.tsx",
+                "src/main.ts"
+            ]
+        );
+        assert!(!b.source.contains("import"), "{}", b.source);
+    }
+
+    // M9-TS-2871
+    #[test]
+    fn a_missing_bare_module_names_where_it_looked() {
+        let e = run(
+            "src/main.ts",
+            &[("src/main.ts", "import { q } from \"foo\";")],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("cannot find module \"foo\": bare imports are looked up in src/modules/ (tried src/modules/foo.ts, src/modules/foo.tsx, src/modules/foo/index.ts"),
+            "{e}"
+        );
+        assert!(
+            e.contains("copy its .ts source into src/modules/<name>/"),
+            "{e}"
+        );
+    }
+
+    // M9-TS-2872
+    #[test]
+    fn libraries_win_over_modules_and_stay_erased() {
+        let b = run(
+            "src/main.ts",
+            &[
+                (
+                    "src/main.ts",
+                    "import { useState } from \"react\";
+import { Color } from \"@iron/engine\";
+export const c = Color.white;",
+                ),
+                (
+                    "src/modules/react.ts",
+                    "throw new Error(\"must not load\");",
+                ),
+            ],
+        )
+        .unwrap();
+        assert_eq!(b.files, ["src/main.ts"]);
+        assert!(
+            b.library_imports
+                .contains(&("react".into(), "useState".into()))
+        );
+    }
+
+    // M9-TS-2873
+    #[test]
+    fn modules_import_each_other_relatively_and_by_name_and_load_once() {
+        let b = run(
+            "src/main.ts",
+            &[
+                (
+                    "src/main.ts",
+                    "import { a } from \"one\";
+import { b } from \"two\";
+import { base } from \"shared\";
+export const v = a() + b() + base();",
+                ),
+                (
+                    "src/modules/one.ts",
+                    "import { base } from \"./shared\";
+export function a(): number { return base(); }",
+                ),
+                (
+                    "src/modules/two.ts",
+                    "import { base } from \"shared\";
+export function b(): number { return base(); }",
+                ),
+                (
+                    "src/modules/shared.ts",
+                    "export function base(): number { return 1; }",
+                ),
+            ],
+        )
+        .unwrap();
+        assert_eq!(b.source.matches("function base").count(), 1, "{}", b.source);
+        assert_eq!(
+            b.files.iter().filter(|f| f.ends_with("shared.ts")).count(),
+            1
+        );
     }
 }

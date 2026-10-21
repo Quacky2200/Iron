@@ -240,3 +240,39 @@ fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
         .collect();
     assert_eq!(flags, [true, false]);
 }
+
+// M9-TS-2874
+//
+// A program that imports a module of `src/modules` by its bare name runs.
+#[test]
+fn a_program_importing_a_src_modules_file_by_name_runs() {
+    let _serial = iron_ts_tests::serial();
+    let files: std::collections::HashMap<&str, &str> = [
+        (
+            "src/main.ts",
+            "import { lerp } from \"mathx\";\nexport function mid(a: number, b: number): number { return lerp(a, b, 0.5); }",
+        ),
+        (
+            "src/modules/mathx/index.ts",
+            "export function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }",
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let bundle =
+        iron_ts::modules::bundle_with("src/main.ts", &|p| files.get(p).map(|s| s.to_string()))
+            .unwrap();
+    let game = compile_and_load(
+        &bundle.source,
+        &JitOptions {
+            prefix: "jitm_",
+            struct_base: 95_000,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    game.init().unwrap();
+    let f: unsafe extern "C" fn(f64, f64) -> f64 =
+        unsafe { std::mem::transmute(game.function("mid").unwrap()) };
+    assert_eq!(unsafe { f(2.0, 6.0) }, 4.0);
+}

@@ -1502,3 +1502,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2865 | Integration | In QuickJS events and raw messages are separate layers: raw `onMessage` / `onRequest` miss `emit` / `ask`, `on` / `answer` miss `postMessage` / `request`; a hand-posted `{"$e":..}` object counts as an event. |
 | M9-TS-2866 | Integration | `on_event_json(name)` / `on_answer_json(name)` get only their name's envelopes (payload text, `""` without one); an unanswered named request fails at once with `no answer for "<name>"`; `off` removes an answer; malformed envelopes are raw messages. |
 | M9-TS-2867 | Unit | `window::parse_event` reads `{"$e":name}` / `{"$e":name,"d":payload}` (escaped names, nested payloads) and nothing else. |
+| M9-TS-2870 | Unit | A bare import is a file, a folder index or a subpath of `src/modules/` (`.ts` / `.tsx`), loaded before the importer. |
+| M9-TS-2871 | Unit | A bare import that is not found says where it looked (`src/modules/foo.ts`, ...) and to copy a package's `.ts` source in. |
+| M9-TS-2872 | Unit | `@iron/*` and `react` stay erased and win over a module of the same name. |
+| M9-TS-2873 | Unit | Modules import each other relatively and by name; a module imported twice is in the bundle once. |
+| M9-TS-2874 | Integration | A program importing a `src/modules` file by bare name compiles and runs. |
+| M9-TS-2875 | Unit | The `tsc` config maps bare imports to the entry's `modules/` folder (`paths`). |

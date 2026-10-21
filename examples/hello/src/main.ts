@@ -1,7 +1,9 @@
+import { greeting } from "greet";
+
 
 class Hello extends Component {
   override onStart() {
-    console.log("hello");
+    console.log(greeting("world", 1));
   }
 
   override onUpdate(_dt: number) {

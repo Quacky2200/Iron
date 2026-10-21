@@ -244,9 +244,20 @@ pub fn tsc_config(config: &GameConfig) -> String {
         .map(|i| format!("../../{}", i.trim_start_matches("./")))
         .collect();
 
+    // Bare imports are files of `modules/` next to the entry (the compiler's rule, `iron_ts::modules`).
+    let entry_dir = Path::new(&config.entry)
+        .parent()
+        .map(|d| d.to_string_lossy().replace("\\", "/"))
+        .unwrap_or_default();
+    let modules = if entry_dir.is_empty() {
+        "../../modules/*".to_string()
+    } else {
+        format!("../../{entry_dir}/modules/*")
+    };
     serde_json::to_string_pretty(&serde_json::json!({
         "extends": "../../tsconfig.json",
         "compilerOptions": {
+            "paths": { "*": [modules] },
             "noEmit": true,
             "types": [],
             "jsx": "preserve",
@@ -775,6 +786,8 @@ mod tests {
         assert_eq!(v["files"][0], "iron.d.ts");
         assert_eq!(v["compilerOptions"]["moduleDetection"], "force");
         assert_eq!(v["compilerOptions"]["jsx"], "preserve");
+        // M9-TS-2875: tsc resolves bare imports the way the compiler does.
+        assert_eq!(v["compilerOptions"]["paths"]["*"][0], "../../src/modules/*");
         let _ = std::fs::remove_dir_all(&d);
     }
 
