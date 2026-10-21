@@ -3270,6 +3270,15 @@ fn grate_row(view: &iron_render::WorldView, size: (u32, u32), pixels: &[u8]) -> 
 
 /// The same grate rendered by a new renderer for `frames` frames, the sun at `tilt`.
 fn grate_render(size: (u32, u32), tilts: &[f32]) -> Vec<u8> {
+    grate_render_with(size, tilts, iron_render::Denoising::Both)
+}
+
+/// As `grate_render`, with the light volume's denoising.
+fn grate_render_with(
+    size: (u32, u32),
+    tilts: &[f32],
+    denoising: iron_render::Denoising,
+) -> Vec<u8> {
     let gpu = shared_gpu();
     let target =
         OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -3283,7 +3292,13 @@ fn grate_render(size: (u32, u32), tilts: &[f32]) -> Vec<u8> {
     let mut world = WorldRenderer::new(&gpu);
     world.shadow_distance = 30.0;
     for &tilt in tilts {
-        world.render_views(&gpu, &rt, &[grate_view(size, tilt)], &[]);
+        let mut v = grate_view(size, tilt);
+        if let Some(f) = v.fog.as_mut()
+            && let Some(vol) = f.volumetric.as_mut()
+        {
+            vol.denoising = denoising;
+        }
+        world.render_views(&gpu, &rt, &[v], &[]);
     }
     target.read_pixels(&gpu).unwrap()
 }
@@ -3293,15 +3308,20 @@ fn grate_render(size: (u32, u32), tilts: &[f32]) -> Vec<u8> {
 fn the_light_volume_averages_its_cells_over_frames_into_smooth_beams() {
     let size = (320, 160);
     let view = grate_view(size, 20.0);
-    // How much the row ripples (the sum of steps between neighbours). One sample per cell
-    // turns bars' shadows into all-or-nothing cells, stair steps; averaged over frames each
-    // cell is shaded by how much of it is lit.
+    // How much the row ripples (the sum of steps between neighbours). Without denoising each
+    // cell takes one sample at its middle every frame, so bars' shadows make all-or-nothing
+    // cells, stair steps; with it each cell is shaded by how much of it is lit.
     let ripple = |r: &[i32]| r.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<i32>();
-    let one = grate_row(&view, size, &grate_render(size, &[20.0]));
-    let many = grate_row(&view, size, &grate_render(size, &[20.0; 32]));
+    let frames = [20.0; 32];
+    let one = grate_row(
+        &view,
+        size,
+        &grate_render_with(size, &frames, iron_render::Denoising::None),
+    );
+    let many = grate_row(&view, size, &grate_render(size, &frames));
     assert!(
         ripple(&many) < ripple(&one),
-        "averaged {} against one frame {} ({many:?} / {one:?})",
+        "averaged {} against one sample a cell {} ({many:?} / {one:?})",
         ripple(&many),
         ripple(&one)
     );
