@@ -141,6 +141,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/fog-blocks": {
+      "name": "fog-blocks",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/fog-ps1": {
       "name": "fog-ps1",
       "version": "0.1.0",
@@ -393,6 +405,8 @@
     "fishtank": ["fishtank@workspace:examples/fishtank"],
 
     "fog": ["fog@workspace:examples/fog"],
+
+    "fog-blocks": ["fog-blocks@workspace:examples/fog-blocks"],
 
     "fog-ps1": ["fog-ps1@workspace:examples/fog-ps1"],
 
