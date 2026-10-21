@@ -10269,10 +10269,10 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/quality.ts
   var DEFAULT_LEVELS = [
-    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true },
-    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true },
-    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true }
+    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true, volumetricFog: false, hdr: true, additionalLights: 8, additionalLightShadows: false },
+    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: 32, additionalLightShadows: false },
+    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true }
   ];
   var manifest = () => {
     const q = globalThis.__iron_info?.app?.quality;
@@ -10283,11 +10283,21 @@ ${err.stack}` : ""}`);
     return DEFAULT_LEVELS.map((l) => ({ ...l, ...overrides[l.name] ?? {}, name: l.name }));
   }
   var levels = buildLevels();
-  var levelIndex = Math.max(0, levels.findIndex((l) => l.name === (manifest().default ?? "High")));
+  function defaultLevel() {
+    const d = manifest().default;
+    if (typeof d === "string")
+      return d;
+    if (d && typeof d === "object") {
+      const platform = globalThis.__iron_info?.system?.operatingSystemFamily ?? "";
+      return d[platform] ?? d.default ?? "High";
+    }
+    return "High";
+  }
+  var levelIndex = Math.max(0, levels.findIndex((l) => l.name === defaultLevel()));
   var current = { ...levels[levelIndex] };
   function sendQuality() {
     const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit);
+    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit, c.volumetricFog ?? true, c.hdr ?? true, c.additionalLights ?? -1, c.additionalLightShadows ?? true);
     remember();
   }
   function sendShadows() {
@@ -10404,6 +10414,34 @@ ${err.stack}` : ""}`);
       current.autoExposure = on;
       remember();
       postHook?.();
+    },
+    get volumetricFog() {
+      return current.volumetricFog ?? true;
+    },
+    set volumetricFog(on) {
+      current.volumetricFog = on;
+      sendQuality();
+    },
+    get hdr() {
+      return current.hdr ?? true;
+    },
+    set hdr(on) {
+      current.hdr = on;
+      sendQuality();
+    },
+    get additionalLights() {
+      return current.additionalLights ?? -1;
+    },
+    set additionalLights(n) {
+      current.additionalLights = n < 0 ? -1 : Math.min(256, Math.round(n));
+      sendQuality();
+    },
+    get additionalLightShadows() {
+      return current.additionalLightShadows ?? true;
+    },
+    set additionalLightShadows(on) {
+      current.additionalLightShadows = on;
+      sendQuality();
     },
     get shadowCascades() {
       return current.shadowCascades;

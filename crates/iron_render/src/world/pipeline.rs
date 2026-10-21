@@ -1,145 +1,30 @@
-//! Render pipelines, after Unity's: a project picks one (`iron.renderPipeline` in its
-//! manifest), and it decides which features the renderer runs.
-//!
-//! - **Built-in** (the default): everything Iron has, in its own (arbitrary) light units.
-//! - **Universal** (URP): for phones and tablets as well as desktops. Forward lighting with a
-//!   cap on lights, no light-shaft volume or per-pixel god rays, no auto exposure (Unity's
-//!   URP has neither), the rest of the post chain kept.
-//! - **High Definition** (HDRP): everything, for high-end desktops and consoles; it's where
-//!   real-world light units go.
+//! The render pipeline's settings, after Unity 7: one pipeline (Unity's URP, which takes
+//! over HDRP's features as HDRP and the Built-in pipeline go away), scaled by settings that
+//! change with the quality level (Unity's URP asset per quality level). A phone's level drops
+//! what a desktop's keeps; real-world light units are a project-wide choice of their own
+//! (`WorldRenderer::physical_units`), not a pipeline.
 
-/// Which pipeline a project renders with.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RenderPipeline {
-    #[default]
-    BuiltIn,
-    Universal,
-    HighDefinition,
-}
-
-/// What a pipeline does and doesn't run.
+/// What the renderer runs (Unity's URP asset). Everything is on by default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PipelineFeatures {
+pub struct PipelineAsset {
     /// The light-shaft volume, per-pixel shafts and god rays (`VolumetricFog`).
     pub volumetric_fog: bool,
-    /// `Grading::auto_exposure` (the manual exposure always works).
-    pub auto_exposure: bool,
     /// How many lights besides the main (brightest directional) one a view gets: the nearest.
     pub max_additional_lights: usize,
     /// Whether spot and point lights cast shadows (the main light always may).
     pub additional_light_shadows: bool,
     /// Rendering in HDR: light past white is kept for bloom, exposure and tonemapping. Off,
-    /// colours clip at white and those are skipped (an LDR URP project).
+    /// colours clip at white and those are skipped (a low-end level's choice).
     pub hdr: bool,
 }
 
-/// A pipeline and its settings (Unity's pipeline asset): `iron.renderPipelineSettings` in
-/// the manifest changes the pipeline's defaults.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PipelineAsset {
-    pub pipeline: RenderPipeline,
-    /// None: the pipeline's default.
-    pub hdr: Option<bool>,
-    pub max_additional_lights: Option<usize>,
-    pub additional_light_shadows: Option<bool>,
-}
-
-impl From<RenderPipeline> for PipelineAsset {
-    fn from(pipeline: RenderPipeline) -> Self {
+impl Default for PipelineAsset {
+    fn default() -> Self {
         Self {
-            pipeline,
-            ..Default::default()
+            volumetric_fog: true,
+            max_additional_lights: usize::MAX,
+            additional_light_shadows: true,
+            hdr: true,
         }
-    }
-}
-
-impl PipelineAsset {
-    /// What runs: the pipeline's features with this asset's settings.
-    pub fn features(&self) -> PipelineFeatures {
-        let base = self.pipeline.features();
-        PipelineFeatures {
-            hdr: self.hdr.unwrap_or(base.hdr),
-            max_additional_lights: self
-                .max_additional_lights
-                .unwrap_or(base.max_additional_lights),
-            additional_light_shadows: self
-                .additional_light_shadows
-                .unwrap_or(base.additional_light_shadows),
-            ..base
-        }
-    }
-}
-
-impl RenderPipeline {
-    /// From the manifest's name for it (Unity's short names too); None if it's not one.
-    pub fn parse(name: &str) -> Option<Self> {
-        match name.to_ascii_lowercase().as_str() {
-            "builtin" | "built-in" => Some(Self::BuiltIn),
-            "universal" | "urp" => Some(Self::Universal),
-            "hd" | "hdrp" | "high-definition" | "highdefinition" => Some(Self::HighDefinition),
-            _ => None,
-        }
-    }
-
-    /// The name scripts see (`GraphicsSettings.renderPipeline`).
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::BuiltIn => "builtin",
-            Self::Universal => "universal",
-            Self::HighDefinition => "hd",
-        }
-    }
-
-    pub fn features(self) -> PipelineFeatures {
-        match self {
-            Self::BuiltIn | Self::HighDefinition => PipelineFeatures {
-                volumetric_fog: true,
-                auto_exposure: true,
-                max_additional_lights: usize::MAX,
-                additional_light_shadows: true,
-                hdr: true,
-            },
-            // URP's defaults: 32 visible additional lights (its mobile limit), their shadows
-            // off, HDR on.
-            Self::Universal => PipelineFeatures {
-                volumetric_fog: false,
-                auto_exposure: false,
-                max_additional_lights: 32,
-                additional_light_shadows: false,
-                hdr: true,
-            },
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_parse_as_unitys_do() {
-        assert_eq!(
-            RenderPipeline::parse("URP"),
-            Some(RenderPipeline::Universal)
-        );
-        assert_eq!(
-            RenderPipeline::parse("universal"),
-            Some(RenderPipeline::Universal)
-        );
-        assert_eq!(
-            RenderPipeline::parse("HDRP"),
-            Some(RenderPipeline::HighDefinition)
-        );
-        assert_eq!(
-            RenderPipeline::parse("hd"),
-            Some(RenderPipeline::HighDefinition)
-        );
-        assert_eq!(
-            RenderPipeline::parse("Built-in"),
-            Some(RenderPipeline::BuiltIn)
-        );
-        assert_eq!(RenderPipeline::parse("lwrp"), None);
-        assert!(!RenderPipeline::Universal.features().volumetric_fog);
-        assert!(RenderPipeline::BuiltIn.features().auto_exposure);
     }
 }

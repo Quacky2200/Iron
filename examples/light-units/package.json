@@ -1,5 +1,5 @@
 {
-  "name": "pipeline-hd",
+  "name": "light-units",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,9 +18,9 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "iron": {
-    "title": "Iron - HD pipeline: real-world light",
+    "title": "Iron - Real-world light units",
     "company": "Iron examples",
-    "identifier": "dev.iron.examples.pipeline-hd",
-    "renderPipeline": "hd"
+    "identifier": "dev.iron.examples.light-units",
+    "lightUnits": "physical"
   }
 }

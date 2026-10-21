@@ -492,7 +492,7 @@ impl BloomPass {
         self.eyes.get(&key).and_then(|e| e.reading_value)
     }
 
-    /// The multiplier camera `key`'s world is pre-exposed by this frame (HD pipeline): its
+    /// The multiplier camera `key`'s world is pre-exposed by this frame (real-world light units): its
     /// last read-back exposure, kept inside a sane range. Remembered, so the post pass divides
     /// by the same value.
     pub fn pre_exposure(&mut self, key: u32) -> Option<f32> {

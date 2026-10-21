@@ -1,4 +1,4 @@
-// The HD pipeline (HDRP's): real-world light. A sunlit stone courtyard on a clear day (the sun
+// Real-world light units (Unity 7's and HDRP's). A sunlit stone courtyard on a clear day (the sun
 // at 100000 lux, the sky some 5000 nits) and, through a doorway, a hall lit by three lamps
 // (1500 lumens each): about ten stops darker, as in life. The camera walks in from the sun
 // and out again; auto exposure adapts across the gap (dazzled coming out, slow to see going
@@ -7,7 +7,7 @@
 // (`Camera.aperture` / `shutterSpeed` / `iso`): f/16, 1/200 s, ISO 200 suits the courtyard,
 // and the hall goes black; Space pauses the walk.
 //
-// The project chooses the pipeline in its package.json: "iron": { "renderPipeline": "hd" }.
+// The project chooses its light units in its package.json: "iron": { "lightUnits": "physical" }.
 import {
   Camera,
   Color,
@@ -212,8 +212,8 @@ function Menu() {
   return (
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ alignSelf: "flex-start", padding: 14, gap: 6, borderRadius: 10, backgroundColor: "rgba(12, 14, 18, 0.72)", flexDirection: "column" }}>
-        <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>HD pipeline: real-world light</text>
-        <text style={{ color: "#c8ccd2", fontSize: 13 }}>Pipeline: {GraphicsSettings.renderPipeline}</text>
+        <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Real-world light units</text>
+        <text style={{ color: "#c8ccd2", fontSize: 13 }}>Light units: {GraphicsSettings.lightUnits}</text>
         <text style={{ color: "#c8ccd2", fontSize: 13 }}>
           Exposure {ev(cam?.exposure)} · view meters {ev(cam?.sceneBrightness)}
         </text>

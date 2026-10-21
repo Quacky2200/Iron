@@ -305,7 +305,7 @@ export class Camera extends Component {
    * A physical camera's settings (HDRP's), for the manual exposure: the aperture's
    * f-number, the shutter's time in seconds and the sensor's ISO. Their exposure is
    * `physicalExposure`; use it as `RenderSettings.fixedExposure`. HDRP's defaults (f/16,
-   * 1/200 s, ISO 200) suit a sunny day in real-world light units (the HD pipeline).
+   * 1/200 s, ISO 200) suit a sunny day in real-world light units (`iron.lightUnits: "physical"`).
    */
   aperture = 16;
   shutterSpeed = 1 / 200;

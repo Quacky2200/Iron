@@ -12,10 +12,10 @@ use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
     ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, FillRule, FillVertex, Fog,
     FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind, MAX_CURVE_POINTS,
-    MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror, Projection,
-    ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TextureData,
-    TextureFilter, TextureWrap, Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldTexture,
-    WorldView, primitive_id, viewport_size,
+    MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror,
+    PipelineAsset, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows, ShapeRun, Sky,
+    Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog, WorldCamera,
+    WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
 use iron_scene::{ScriptObject, ScriptScene};
 
@@ -239,6 +239,8 @@ pub struct Quality {
     pub anisotropic: Anisotropic,
     /// Top mips skipped (`QualitySettings.globalTextureMipmapLimit`).
     pub texture_mip_limit: u32,
+    /// The level's pipeline settings (Unity's URP asset per quality level).
+    pub pipeline: PipelineAsset,
 }
 
 impl Default for Quality {
@@ -252,6 +254,7 @@ impl Default for Quality {
             vsync: true,
             anisotropic: Anisotropic::Enable,
             texture_mip_limit: 0,
+            pipeline: PipelineAsset::default(),
         }
     }
 }
@@ -356,7 +359,7 @@ pub struct WorldViews {
     /// Cameras whose auto exposure jumps to what they see next frame (`render.exposureReset`),
     /// applied by the app.
     pub exposure_resets: Vec<u32>,
-    /// Lights in real-world units (the HD pipeline, HDRP's): directional lights' intensity
+    /// Lights in real-world units (`iron.lightUnits: "physical"`, as Unity 7 and HDRP): directional lights' intensity
     /// in lux, spot and point lights' in lumens.
     pub physical_units: bool,
     /// The sky (`render.sky`), applied by the app before drawing.
@@ -610,7 +613,7 @@ impl WorldViews {
         self.fog.is_some_and(|f| f.volumetric.is_some())
     }
 
-    /// Empty, with lights in real-world units (the HD pipeline) or not.
+    /// Empty, with lights in real-world units (`iron.lightUnits: "physical"`) or not.
     pub fn with_physical_units(physical_units: bool) -> Self {
         Self {
             physical_units,
@@ -1186,6 +1189,17 @@ impl WorldViews {
                         _ => Anisotropic::Enable,
                     },
                     texture_mip_limit: num(8).unwrap_or(0.0).clamp(0.0, 3.0) as u32,
+                    // The level's pipeline settings: light shafts, HDR, additional lights (-1:
+                    // no limit) and their shadows.
+                    pipeline: PipelineAsset {
+                        volumetric_fog: !matches!(args.get(9), Some(Value::Bool(false))),
+                        hdr: !matches!(args.get(10), Some(Value::Bool(false))),
+                        max_additional_lights: num(11)
+                            .ok()
+                            .filter(|n| *n >= 0.0)
+                            .map_or(usize::MAX, |n| n.min(256.0) as usize),
+                        additional_light_shadows: !matches!(args.get(12), Some(Value::Bool(false))),
+                    },
                 };
             }
             // `shadowSettings 0 distance resolution cascades` (Unity's quality settings).

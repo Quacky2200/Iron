@@ -90,7 +90,7 @@ describe("display settings", () => {
     QualitySettings.setQualityLevel("Medium");
     QualitySettings.vSyncCount = 0;
     expect(ops.filter((o) => o[0] === "app.targetFrameRate")).toEqual([["app.targetFrameRate", 144], ["app.targetFrameRate", -1]]);
-    expect(ops.filter((o) => o[0] === "render.quality").at(-1)!.at(-1)).toBe(0);
+    expect(ops.filter((o) => o[0] === "render.quality").at(-1)![7]).toBe(0);
     const saved = ops.filter((o) => o[0] === "prefs.set" && o[1] === "iron.quality").at(-1)![2] as string;
 
     // Next launch: the engine hands the saved choice back and it's applied, not saved again.
@@ -102,6 +102,6 @@ describe("display settings", () => {
     expect(QualitySettings.names[QualitySettings.getQualityLevel()]).toBe("Medium");
     expect(QualitySettings.vSyncCount).toBe(0);
     expect(ops.some((o) => o[0] === "prefs.set")).toBe(false);
-    expect(ops.find((o) => o[0] === "render.quality")!.at(-1)).toBe(0);
+    expect(ops.find((o) => o[0] === "render.quality")![7]).toBe(0);
   });
 });

@@ -1513,20 +1513,24 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     `sceneBrightness` read back and `Camera.resetExposure()` (`M7-EXP-05`); a soft floor
     (`darkAdaptation` / `darkBelow`) and a compensation curve instead of `minEV`'s wall
     (`M7-EXP-06`); `QualitySettings.autoExposure`, the player's switch
-- [ ] Render pipelines like Unity's URP / HDRP (asked for 2026-10-21, needed for iOS / Android):
-  a project setting (`iron.renderPipeline` in the manifest: `universal` or `high`) picking the
-  feature set and defaults. Universal: forward, cheap shadows, no froxel light volume (per-pixel
-  shafts off or reduced), simpler post (bloom, tonemapping, FXAA), lower texture and MSAA
-  defaults, mobile GPU limits (fewer storage buffers, no compute where it's missing). High:
-  everything (light volume, histogram auto exposure, physical light units). Quality levels
-  stay inside a pipeline; examples state which they need
-- [ ] Real-world light units (required, asked for 2026-10-21; HDRP's physical units): the sun
-  and sky in lux, spot and point lights in lumens or candela, emissive surfaces and the sky
-  in nits; a physical camera (aperture, shutter speed, ISO → EV100) for the manual exposure;
-  pre-exposure (lighting written to the HDR target already scaled by last frame's exposure,
-  since sunlit surfaces pass fp16's 65504 in real units); a light meter readout (lux at a
-  point, the scene's EV). Auto exposure already works in EV100. Old scenes keep working in
-  today's arbitrary units (a per-project switch, with the High pipeline)
+- [ ] One render pipeline, as Unity 7 (asked for 2026-10-21, needed for iOS / Android). Unity
+  is keeping only URP (HDRP deprecated in 7.0, removed after the first 7 LTS; Built-in removed
+  in 7.0) and moving HDRP's features into it, scaled per quality level and platform
+  - [x] Built-in / Universal / HD pipelines first built after Unity 6's split (b123848..d59281c),
+    then folded into one (2026-10-21): each quality level carries a `PipelineAsset` (light
+    shafts, HDR, additional lights and their shadows; auto exposure via
+    `QualitySettings.autoExposure`); Low is the phones' tier; the manifest's default level can
+    go by platform; `iron.renderPipeline` only warns now (`M7-RP-01`..`03`)
+  - [ ] More per-level switches as features land: shadow cascades and resolution caps per
+    platform, MSAA and texture defaults, the light volume's detail, post effects
+  - [ ] Mobile GPU limits: fewer storage buffers, no compute where it's missing (auto exposure
+    and the light volume fall back or switch off), checked on an iOS / Android device
+- [x] Real-world light units (2026-10-21, required): `iron.lightUnits: "physical"` (a
+  project-wide switch, as Unity 7 brings them into URP): the sun in lux, spot and point lights
+  in lumens, emissive surfaces and the sky in nits; pre-exposure by each camera's last exposure;
+  a physical camera (`Camera.aperture` / `shutterSpeed` / `iso` → `physicalExposure`); a light
+  meter (`Light.illuminanceAt`, `measureIlluminance`); `examples/light-units` (`M7-HD-01`, `02`).
+  Old projects keep Iron's own units (`legacy`, the default)
 - [ ] Post-processing (asked for 2026-10-21; today: bloom, exposure and tonemapping, FXAA,
   render scale, fog and light shafts, and CSS filter / backdrop-filter / blend modes for
   screen UI only)

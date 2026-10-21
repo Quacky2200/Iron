@@ -2,39 +2,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { GraphicsSettings } from "../src/index.ts";
 
-const setPipeline = (p: unknown) => {
-  (globalThis as { __iron_info?: unknown }).__iron_info = { app: { renderPipeline: p } };
-};
-
 afterEach(() => {
   delete (globalThis as { __iron_info?: unknown }).__iron_info;
 });
 
 // M7-RP-01
 describe("GraphicsSettings", () => {
-  test("the project's render pipeline and what it runs", () => {
-    expect(GraphicsSettings.renderPipeline).toBe("builtin");
-    expect(GraphicsSettings.supportsAutoExposure).toBe(true);
-    setPipeline("universal");
-    expect(GraphicsSettings.renderPipeline).toBe("universal");
-    expect(GraphicsSettings.supportsVolumetricFog).toBe(false);
-    expect(GraphicsSettings.supportsAutoExposure).toBe(false);
-    expect(GraphicsSettings.maxAdditionalLights).toBe(32);
-    setPipeline("hd");
-    expect(GraphicsSettings.renderPipeline).toBe("hd");
-    expect(GraphicsSettings.supportsVolumetricFog).toBe(true);
-    expect(GraphicsSettings.additionalLightShadows).toBe(true);
-    expect(GraphicsSettings.hdr).toBe(true);
-    setPipeline("universal");
-    expect(GraphicsSettings.additionalLightShadows).toBe(false);
-    // The pipeline asset's settings.
-    (globalThis as { __iron_info?: unknown }).__iron_info = {
-      app: { renderPipeline: "universal", renderPipelineSettings: { hdr: false, additionalLights: 8, additionalLightShadows: true } },
-    };
-    expect(GraphicsSettings.hdr).toBe(false);
-    expect(GraphicsSettings.maxAdditionalLights).toBe(8);
-    expect(GraphicsSettings.additionalLightShadows).toBe(true);
-    setPipeline("nonsense");
-    expect(GraphicsSettings.renderPipeline).toBe("builtin");
+  test("the project's light units", () => {
+    expect(GraphicsSettings.lightUnits).toBe("legacy");
+    (globalThis as { __iron_info?: unknown }).__iron_info = { app: { lightUnits: "physical" } };
+    expect(GraphicsSettings.lightUnits).toBe("physical");
+    (globalThis as { __iron_info?: unknown }).__iron_info = { app: { lightUnits: "candles" } };
+    expect(GraphicsSettings.lightUnits).toBe("legacy");
   });
 });

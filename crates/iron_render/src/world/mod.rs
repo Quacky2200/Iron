@@ -34,7 +34,7 @@ pub use bloom::{
 pub use environment::Sky;
 pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
-pub use pipeline::{PipelineAsset, PipelineFeatures, RenderPipeline};
+pub use pipeline::PipelineAsset;
 use texture::SamplerKey;
 pub use texture::{
     Anisotropic, CookedTexture, TexelFormat, TextureData, TextureFilter, TextureWrap, mip_chain,
@@ -1142,8 +1142,11 @@ pub struct WorldRenderer {
     bloom_pass: Option<bloom::BloomPass>,
     /// Exposure and tonemapping over every view.
     pub grading: Grading,
-    /// Which features run (Unity's render pipelines and their settings; the project's choice).
+    /// Which features run (Unity's URP asset: set per quality level).
     pub pipeline: PipelineAsset,
+    /// Lights in real-world units (lux, lumens, nits; a project-wide choice): the world is
+    /// pre-exposed by each camera's last exposure, so sunlight stays within the HDR target.
+    pub physical_units: bool,
     /// Made the first time a view asks for FXAA.
     fxaa: Option<fxaa::Fxaa>,
 }
@@ -1582,6 +1585,7 @@ impl WorldRenderer {
             bloom_pass: None,
             grading: Grading::default(),
             pipeline: PipelineAsset::default(),
+            physical_units: false,
             fxaa: None,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
@@ -1694,7 +1698,7 @@ impl WorldRenderer {
 
     /// `fog` as the pipeline runs it: without its light shafts where they're not supported.
     fn pipeline_fog(&self, fog: Option<Fog>) -> Option<Fog> {
-        let shafts = self.pipeline.features().volumetric_fog;
+        let shafts = self.pipeline.volumetric_fog;
         fog.map(|f| Fog {
             volumetric: f.volumetric.filter(|_| shafts),
             ..f
@@ -1971,7 +1975,7 @@ impl WorldRenderer {
                     resolution: self.shadow_resolution,
                     local_resolution: (self.shadow_resolution / 2).max(256),
                     cascades: self.shadow_cascades,
-                    local_lights: self.pipeline.features().additional_light_shadows,
+                    local_lights: self.pipeline.additional_light_shadows,
                 },
             ),
             _ => shadows::ShadowPlan {
@@ -2930,18 +2934,14 @@ impl WorldRenderer {
         let bloom = self
             .bloom
             .filter(|b| b.intensity > 0.0)
-            .filter(|_| final_pass && self.pipeline.features().hdr);
+            .filter(|_| final_pass && self.pipeline.hdr);
         let main = (0..views.len()).max_by(|&a, &b| {
             let area = |v: &WorldView| v.viewport[2] * v.viewport[3];
             area(&views[a]).total_cmp(&area(&views[b]))
         });
         let fxaa = final_pass && main.is_some_and(|m| views[m].fxaa);
-        let features = self.pipeline.features();
+        let features = self.pipeline;
         let mut grading = self.grading;
-        // Pipelines without auto exposure (URP) keep the manual one.
-        if !features.auto_exposure {
-            grading.auto_exposure = None;
-        }
         // Without HDR, light clips at white: no bloom, exposure or tonemapping.
         if !features.hdr {
             grading = Grading {
@@ -3254,7 +3254,7 @@ impl WorldRenderer {
                 .collect();
             // The pipeline's cap (URP's): the main light (the brightest directional one) and
             // the nearest others.
-            let cap = self.pipeline.features().max_additional_lights;
+            let cap = self.pipeline.max_additional_lights;
             if kept.len() > cap.saturating_add(1) {
                 let strength = |k: &usize| view.lights[*k].color.iter().sum::<f32>();
                 let main = kept
@@ -3416,9 +3416,9 @@ impl WorldRenderer {
             (self.env_map.mips - 1) as f32,
             f32::from(u8::from(has_env && self.ambient_from_sky)),
         ];
-        // Pre-exposure (HD pipeline, the final pass): each camera's last exposure, so
-        // real-world light stays inside the HDR target's range; the post pass divides it out.
-        let hd = final_pass && self.pipeline.pipeline == RenderPipeline::HighDefinition;
+        // Pre-exposure (real-world light units, the final pass): each camera's last exposure,
+        // so real-world light stays inside the HDR target's range; the post pass divides it out.
+        let hd = final_pass && self.physical_units;
         let pres: Vec<f32> = views
             .iter()
             .map(|view| {
@@ -3589,7 +3589,7 @@ impl WorldRenderer {
             .collect();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         // Views with light shafts fill their fog volumes first.
-        let shafts = self.pipeline.features().volumetric_fog;
+        let shafts = self.pipeline.volumetric_fog;
         let volume_groups: Vec<Option<wgpu::BindGroup>> = views
             .iter()
             .enumerate()

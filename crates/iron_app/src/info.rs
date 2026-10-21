@@ -32,10 +32,9 @@ pub struct Manifest {
     /// `iron.runInBackground`: keep running while the window is in the background
     /// (Unity's `Application.runInBackground`, off by default).
     pub run_in_background: bool,
-    /// `iron.renderPipeline` (Unity's render pipelines): `builtin` (the default),
-    /// `universal` / `urp` or `hd` / `hdrp`; with `iron.renderPipelineSettings` (its
-    /// pipeline asset: `hdr`, `additionalLights`, `additionalLightShadows`).
-    pub render_pipeline: iron_render::PipelineAsset,
+    /// `iron.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
+    /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Iron's own).
+    pub physical_units: bool,
 }
 
 impl Manifest {
@@ -76,26 +75,28 @@ impl Manifest {
             start_scene: text(&iron["startScene"]),
             display: iron["display"].clone(),
             run_in_background: iron["runInBackground"].as_bool().unwrap_or(false),
-            render_pipeline: {
-                let settings = &iron["renderPipelineSettings"];
-                iron_render::PipelineAsset {
-                    pipeline: match iron["renderPipeline"].as_str() {
-                        None => iron_render::RenderPipeline::BuiltIn,
-                        Some(p) => iron_render::RenderPipeline::parse(p).unwrap_or_else(|| {
-                            tracing::warn!(
-                                "iron.renderPipeline `{p}`: not builtin, universal or hd"
-                            );
-                            iron_render::RenderPipeline::BuiltIn
-                        }),
-                    },
-                    hdr: settings["hdr"].as_bool(),
-                    max_additional_lights: settings["additionalLights"]
-                        .as_u64()
-                        .map(|n| n.min(256) as usize),
-                    additional_light_shadows: settings["additionalLightShadows"].as_bool(),
-                }
-            },
+            physical_units: light_units(iron),
             name,
+        }
+    }
+}
+
+/// `iron.lightUnits`, warning about the old pipeline settings: Iron has one render pipeline,
+/// as Unity 7 (its URP), whose settings come with the quality levels.
+fn light_units(iron: &Value) -> bool {
+    if !iron["renderPipeline"].is_null() || !iron["renderPipelineSettings"].is_null() {
+        tracing::warn!(
+            "iron.renderPipeline: Iron has one render pipeline (as Unity 7): set its features \
+             per quality level (iron.quality.levels: volumetricFog, hdr, additionalLights, \
+             additionalLightShadows), and real-world light units with iron.lightUnits"
+        );
+    }
+    match iron["lightUnits"].as_str() {
+        None | Some("legacy") => false,
+        Some("physical") => true,
+        Some(other) => {
+            tracing::warn!("iron.lightUnits `{other}`: not physical or legacy");
+            false
         }
     }
 }
@@ -124,13 +125,6 @@ pub struct Info(pub Map<String, Value>);
 impl Info {
     pub fn new(manifest: &Manifest) -> Self {
         let mut map = Map::new();
-        let f = manifest.render_pipeline.features();
-        let pipeline_settings = json!({
-            "hdr": f.hdr,
-            // JSON has no infinity: -1 for no limit.
-            "additionalLights": if f.max_additional_lights == usize::MAX { -1 } else { f.max_additional_lights as i64 },
-            "additionalLightShadows": f.additional_light_shadows,
-        });
         map.insert(
             "app".into(),
             json!({
@@ -144,8 +138,7 @@ impl Info {
                 "layers": manifest.layers,
                 "startScene": manifest.start_scene,
                 "runInBackground": manifest.run_in_background,
-                "renderPipeline": manifest.render_pipeline.pipeline.name(),
-                "renderPipelineSettings": pipeline_settings,
+                "lightUnits": if manifest.physical_units { "physical" } else { "legacy" },
                 "targetFrameRate": -1,
                 "isEditor": super::editor::ENABLED,
                 "project": super::editor::project().map(|p| p.to_string_lossy().into_owned()),
@@ -260,37 +253,21 @@ mod tests {
 
     // M7-RP-01
     #[test]
-    fn the_render_pipeline_comes_from_the_manifest() {
-        use iron_render::RenderPipeline;
-        let pipeline = |v: Value| {
-            Manifest::from_json(&json!({ "iron": { "renderPipeline": v } }), "g")
-                .render_pipeline
-                .pipeline
-        };
-        assert_eq!(pipeline(json!("URP")), RenderPipeline::Universal);
-        assert_eq!(pipeline(json!("hdrp")), RenderPipeline::HighDefinition);
-        // Missing or unknown: Built-in.
-        assert_eq!(
-            Manifest::from_json(&Value::Null, "g")
-                .render_pipeline
-                .pipeline,
-            RenderPipeline::BuiltIn
-        );
-        // The pipeline asset's settings change its defaults.
-        let urp = Manifest::from_json(
-            &json!({ "iron": { "renderPipeline": "urp", "renderPipelineSettings": { "hdr": false, "additionalLights": 8 } } }),
-            "g",
-        )
-        .render_pipeline
-        .features();
-        assert!(!urp.hdr && urp.max_additional_lights == 8 && !urp.additional_light_shadows);
-        assert_eq!(pipeline(json!("lwrp")), RenderPipeline::BuiltIn);
+    fn light_units_come_from_the_manifest_and_old_pipelines_are_gone() {
+        let units = |v: Value| Manifest::from_json(&json!({ "iron": v }), "g").physical_units;
+        assert!(units(json!({ "lightUnits": "physical" })));
+        assert!(!units(json!({ "lightUnits": "legacy" })));
+        assert!(!units(json!({})));
+        assert!(!units(json!({ "lightUnits": "candles" })));
+        // The old pipeline choice no longer picks anything (it only warns).
+        assert!(!units(json!({ "renderPipeline": "hd" })));
         let script = Info::new(&Manifest::from_json(
-            &json!({ "iron": { "renderPipeline": "universal" } }),
+            &json!({ "iron": { "lightUnits": "physical" } }),
             "g",
         ))
         .script();
-        assert!(script.contains("\"renderPipeline\":\"universal\""));
+        assert!(script.contains("\"lightUnits\":\"physical\""));
+        assert!(!script.contains("renderPipeline"));
     }
 
     // M5-APP-09

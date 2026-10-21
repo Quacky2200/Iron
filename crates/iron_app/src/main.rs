@@ -274,9 +274,7 @@ fn run() -> Result<()> {
         components,
         scene,
         scene_events,
-        world_view: world_view::WorldViews::with_physical_units(
-            manifest.render_pipeline.pipeline == iron_render::RenderPipeline::HighDefinition,
-        ),
+        world_view: world_view::WorldViews::with_physical_units(manifest.physical_units),
         panels: panels::Panels::default(),
         pointer_on: Surface::Screen,
         keys_on: Surface::Screen,
@@ -314,8 +312,8 @@ fn run() -> Result<()> {
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, args.screenshot.is_some()),
-        pipeline: manifest.render_pipeline,
-        pipeline_warned: (false, false),
+        physical_units: manifest.physical_units,
+        pipeline_warned: false,
         frames: 0,
         screenshot: args.screenshot.map(|path| (path, args.frames)),
         done: false,
@@ -489,10 +487,10 @@ struct App {
     custom_cursor: Option<CustomCursorRequest>,
     /// The game's manifest and the machine, as scripts see them (`__iron_info`).
     info: info::Info,
-    /// The project's render pipeline, and whether it has warned about a feature it lacks
-    /// (light shafts, auto exposure) yet.
-    pipeline: iron_render::PipelineAsset,
-    pipeline_warned: (bool, bool),
+    /// Real-world light units (`iron.lightUnits`), and whether the quality level has warned
+    /// about leaving out light shafts the game asked for yet.
+    physical_units: bool,
+    pipeline_warned: bool,
     /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
     script_cursor: ScriptCursor,
     /// Whether the window has focus (raw mouse motion only counts then).
@@ -598,9 +596,7 @@ impl App {
         (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
         self.ui_scale = ui_scale::UiScale::None;
         self.scene = scene;
-        self.world_view = world_view::WorldViews::with_physical_units(
-            self.pipeline.pipeline == iron_render::RenderPipeline::HighDefinition,
-        );
+        self.world_view = world_view::WorldViews::with_physical_units(self.physical_units);
         // Tell the new scripts the screen size on the next frame.
         self.screen = (0.0, 0.0, 0.0);
         self.physics = iron_physics::Physics::new();
@@ -1643,7 +1639,7 @@ impl App {
         for id in self.world_view.exposure_resets.drain(..) {
             gfx.world.reset_exposure(id);
         }
-        warn_pipeline(self.pipeline, &mut self.pipeline_warned, &self.world_view);
+        warn_pipeline(&mut self.pipeline_warned, &self.world_view);
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -1658,6 +1654,7 @@ impl App {
         gfx.world.soft_shadow_radius = q.soft_radius;
         gfx.world.anisotropic = q.anisotropic;
         gfx.world.texture_mip_limit = q.texture_mip_limit;
+        gfx.world.pipeline = q.pipeline;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
@@ -1753,8 +1750,10 @@ impl PlatformApp for App {
                 let mut renderer = UiRenderer::new(&gpu);
                 renderer.set_asset_root(&self.asset_root);
                 let mut world = WorldRenderer::new(&gpu);
-                world.pipeline = self.pipeline;
-                tracing::info!(pipeline = self.pipeline.pipeline.name(), "render pipeline");
+                world.physical_units = self.physical_units;
+                if self.physical_units {
+                    tracing::info!("real-world light units");
+                }
                 self.gfx = Some(Gfx {
                     gpu,
                     surface,
@@ -2071,7 +2070,7 @@ impl PlatformApp for App {
         for id in self.world_view.exposure_resets.drain(..) {
             gfx.world.reset_exposure(id);
         }
-        warn_pipeline(self.pipeline, &mut self.pipeline_warned, &self.world_view);
+        warn_pipeline(&mut self.pipeline_warned, &self.world_view);
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -2086,6 +2085,7 @@ impl PlatformApp for App {
         gfx.world.soft_shadow_radius = q.soft_radius;
         gfx.world.anisotropic = q.anisotropic;
         gfx.world.texture_mip_limit = q.texture_mip_limit;
+        gfx.world.pipeline = q.pipeline;
         (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
         for (id, data) in self.world_view.texture_uploads.drain(..) {
             match data {
@@ -2431,22 +2431,12 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
     added.id
 }
 
-/// Says once in the log when the game asks for something its render pipeline doesn't run
-/// (URP has no light shafts or auto exposure): it's left out, as Unity does.
-fn warn_pipeline(
-    pipeline: iron_render::PipelineAsset,
-    warned: &mut (bool, bool),
-    world: &world_view::WorldViews,
-) {
-    let features = pipeline.features();
-    let name = pipeline.pipeline.name();
-    if !features.volumetric_fog && !warned.0 && world.uses_volumetric_fog() {
-        warned.0 = true;
-        tracing::warn!("RenderSettings.volumetricFog: the {name} pipeline has no light shafts");
-    }
-    if !features.auto_exposure && !warned.1 && world.grading.auto_exposure.is_some() {
-        warned.1 = true;
-        tracing::warn!("RenderSettings.autoExposure: the {name} pipeline has no auto exposure");
+/// Says once in the log when the game asks for light shafts its quality level leaves out
+/// (`volumetricFog: false`, a phone's level, say), as Unity does.
+fn warn_pipeline(warned: &mut bool, world: &world_view::WorldViews) {
+    if !*warned && !world.quality.pipeline.volumetric_fog && world.uses_volumetric_fog() {
+        *warned = true;
+        tracing::warn!("RenderSettings.volumetricFog: this quality level has light shafts off");
     }
 }
 
