@@ -694,6 +694,28 @@ pub fn current_domain() -> DomainId {
     with(|s| s.domain)
 }
 
+thread_local! {
+    /// Guards of the domains `runtime_enter` entered, innermost last.
+    static ENTERED: RefCell<Vec<DomainGuard>> = const { RefCell::new(Vec::new()) };
+}
+
+/// For a script runtime's timers and microtasks (`ts_rt_set_domain_hooks`): the current domain.
+pub extern "C" fn runtime_current_domain() -> u32 {
+    current_domain().0
+}
+
+/// Enters domain `d` for a timer or microtask callback; undone by [`runtime_leave_domain`].
+pub extern "C" fn runtime_enter_domain(d: u32) {
+    let g = enter_domain(DomainId(d));
+    ENTERED.with(|e| e.borrow_mut().push(g));
+}
+
+pub extern "C" fn runtime_leave_domain() {
+    // Dropped outside the borrow: the guard's drop writes the window state, not `ENTERED`.
+    let g = ENTERED.with(|e| e.borrow_mut().pop());
+    drop(g);
+}
+
 /// The domain of a window: its family root's handle (the main domain for an unknown window).
 pub fn domain_of(w: WindowRef) -> DomainId {
     with(|s| s.domain_of(w))
@@ -1218,6 +1240,19 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
         })?,
     )?;
     ctx.eval::<(), _>(QUICKJS_PRELUDE)?;
+    // The timers prelude (`iron_script`) tags timers with the domain current when they were set.
+    ctx.globals().set(
+        "__iron_domain",
+        iron_api::rquickjs::Function::new(ctx.clone(), || runtime_current_domain())?,
+    )?;
+    ctx.globals().set(
+        "__iron_enter_domain",
+        iron_api::rquickjs::Function::new(ctx.clone(), |d: u32| runtime_enter_domain(d))?,
+    )?;
+    ctx.globals().set(
+        "__iron_leave_domain",
+        iron_api::rquickjs::Function::new(ctx.clone(), || runtime_leave_domain())?,
+    )?;
     Ok(())
 }
 

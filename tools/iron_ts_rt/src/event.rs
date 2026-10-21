@@ -10,6 +10,8 @@ use super::*;
 use std::collections::VecDeque;
 
 struct Timer {
+    /// The event domain current when it was set (see [`ts_rt_set_domain_hooks`]).
+    domain: u32,
     due: f64,
     seq: u64,
     id: u64,
@@ -19,7 +21,8 @@ struct Timer {
 }
 
 pub(crate) struct Events {
-    micro: VecDeque<*mut u8>,
+    /// Closure and the domain current when it was queued.
+    micro: VecDeque<(*mut u8, u32)>,
     timers: Vec<Timer>,
     now: f64,
     next_id: u64,
@@ -41,8 +44,51 @@ impl Events {
     pub(crate) fn roots(&self) -> impl Iterator<Item = &*mut u8> {
         self.micro
             .iter()
+            .map(|(c, _)| c)
             .chain(self.timers.iter().map(|t| &t.closure))
     }
+}
+
+/// The host's view of event domains (one per window family): which one is current, and entering and
+/// leaving one around a callback. Timers and microtasks remember the domain current when they were
+/// set and run with it entered again. Without hooks every callback is in domain 1.
+#[derive(Clone, Copy)]
+struct DomainHooks {
+    current: extern "C" fn() -> u32,
+    enter: extern "C" fn(u32),
+    leave: extern "C" fn(),
+}
+
+extern "C" fn main_domain() -> u32 {
+    1
+}
+extern "C" fn no_enter(_: u32) {}
+extern "C" fn no_leave() {}
+
+thread_local! {
+    static HOOKS: std::cell::Cell<DomainHooks> = const {
+        std::cell::Cell::new(DomainHooks { current: main_domain, enter: no_enter, leave: no_leave })
+    };
+}
+
+/// Installs this thread's domain hooks; `None` for a hook restores its default (domain 1, no-ops).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_set_domain_hooks(
+    current: Option<extern "C" fn() -> u32>,
+    enter: Option<extern "C" fn(u32)>,
+    leave: Option<extern "C" fn()>,
+) {
+    HOOKS.with(|h| {
+        h.set(DomainHooks {
+            current: current.unwrap_or(main_domain),
+            enter: enter.unwrap_or(no_enter),
+            leave: leave.unwrap_or(no_leave),
+        })
+    });
+}
+
+fn hooks() -> DomainHooks {
+    HOOKS.with(|h| h.get())
 }
 
 /// Runs a `() => void` closure; an exception it leaves behind is dropped (the browser reports it
@@ -66,17 +112,21 @@ unsafe fn call(closure: *mut u8) {
 /// `closure` must be a live `() => void` closure.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ts_rt_microtask_push(closure: *mut Closure) {
-    with_heap(|h| h.events.micro.push_back(closure as *mut u8));
+    let domain = (hooks().current)();
+    with_heap(|h| h.events.micro.push_back((closure as *mut u8, domain)));
 }
 
 /// Runs the microtasks until the queue is empty (jobs may queue more).
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_microtasks_run() {
-    while let Some(job) = with_heap(|h| h.events.micro.pop_front()) {
+    while let Some((job, domain)) = with_heap(|h| h.events.micro.pop_front()) {
         // The job is no longer in the queue, so keep it reachable while it runs.
         with_heap(|h| h.temps.push(job));
+        let hk = hooks();
+        (hk.enter)(domain);
         // SAFETY: queued closures are live `() => void` closures.
         unsafe { call(job) };
+        (hk.leave)();
         with_heap(|h| {
             h.temps.pop();
         });
@@ -95,6 +145,7 @@ pub unsafe extern "C" fn ts_rt_timer_add(closure: *mut Closure, delay: f64, repe
     } else {
         delay.floor()
     };
+    let domain = (hooks().current)();
     with_heap(|h| {
         let ev = &mut h.events;
         let id = ev.next_id;
@@ -102,6 +153,7 @@ pub unsafe extern "C" fn ts_rt_timer_add(closure: *mut Closure, delay: f64, repe
         let seq = ev.next_seq;
         ev.next_seq += 1;
         ev.timers.push(Timer {
+            domain,
             due: ev.now + delay,
             seq,
             id,
@@ -118,48 +170,69 @@ pub extern "C" fn ts_rt_timer_clear(id: f64) {
     with_heap(|h| h.events.timers.retain(|t| t.id as f64 != id));
 }
 
-/// The next timer due at or before `limit`, taken off the list (a repeating timer is put back
-/// for its next period).
-fn next_due(limit: f64) -> Option<(*mut u8, f64)> {
+/// The next timer of `domain` (any when `None`) due at or before `limit`, taken off the list (a
+/// repeating timer is put back for its next period; with `coalesce` it skips the periods already
+/// missed, so it runs once per advance).
+fn next_due(limit: f64, domain: Option<u32>, coalesce: bool) -> Option<(*mut u8, u32)> {
     with_heap(|h| {
         let ev = &mut h.events;
         let mut best: Option<usize> = None;
         for (i, t) in ev.timers.iter().enumerate() {
             if t.due <= limit
+                && domain.is_none_or(|d| t.domain == d)
                 && best.is_none_or(|b| (t.due, t.seq) < (ev.timers[b].due, ev.timers[b].seq))
             {
                 best = Some(i);
             }
         }
         let i = best?;
-        let (closure, due) = (ev.timers[i].closure, ev.timers[i].due);
+        let (closure, due, owner) = (ev.timers[i].closure, ev.timers[i].due, ev.timers[i].domain);
         ev.now = ev.now.max(due);
         if ev.timers[i].interval >= 0.0 {
             let seq = ev.next_seq;
             ev.next_seq += 1;
             let t = &mut ev.timers[i];
             t.due = due + t.interval;
+            if coalesce && t.due <= limit {
+                t.due = limit + t.interval;
+            }
             t.seq = seq;
         } else {
             ev.timers.remove(i);
         }
-        Some((closure, due))
+        Some((closure, owner))
     })
 }
 
-/// Runs every timer due by `now_ms` (the host's clock), each followed by its microtasks.
-#[unsafe(no_mangle)]
-pub extern "C" fn ts_rt_timers_advance(now_ms: f64) {
-    while let Some((closure, _)) = next_due(now_ms) {
+fn advance(now_ms: f64, domain: Option<u32>, coalesce: bool) {
+    while let Some((closure, owner)) = next_due(now_ms, domain, coalesce) {
         with_heap(|h| h.temps.push(closure));
+        let hk = hooks();
+        (hk.enter)(owner);
         // SAFETY: timer closures are live `() => void` closures.
         unsafe { call(closure) };
+        (hk.leave)();
         with_heap(|h| {
             h.temps.pop();
         });
         ts_rt_microtasks_run();
     }
     with_heap(|h| h.events.now = h.events.now.max(now_ms));
+}
+
+/// Runs every timer of domain 1 (the main game: every timer, unless the host installed domain
+/// hooks) due by `now_ms` (the host's clock), each followed by its microtasks.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_timers_advance(now_ms: f64) {
+    advance(now_ms, Some(1), false);
+}
+
+/// Runs the timers of one event domain due by `now_ms`, each with that domain entered. A repeating
+/// timer that missed several periods (a paused domain) runs once, not once per missed period. Other
+/// domains' timers wait for their own advance.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_timers_advance_domain(now_ms: f64, domain: u32) {
+    advance(now_ms, Some(domain), true);
 }
 
 /// Microtasks and timers until nothing is left (a test or a tool, not a game loop). A repeating
@@ -176,7 +249,7 @@ pub extern "C" fn ts_rt_run_loop() {
                 .fold(None, |m: Option<f64>, d| Some(m.map_or(d, |m| m.min(d))))
         });
         let Some(due) = next else { break };
-        ts_rt_timers_advance(due);
+        advance(due, None, false);
     }
 }
 

@@ -377,6 +377,84 @@ fn broadcast_and_the_domain_listener_receive_messages() {
     });
 }
 
+fn with_domain_hooks(f: impl FnOnce()) {
+    iron_ts_rt::ts_rt_set_domain_hooks(
+        Some(window::runtime_current_domain),
+        Some(window::runtime_enter_domain),
+        Some(window::runtime_leave_domain),
+    );
+    f();
+    iron_ts_rt::ts_rt_set_domain_hooks(None, None, None);
+}
+
+/// Timer clocks only move forward; each run starts later than the last.
+fn clock() -> f64 {
+    thread_local!(static RUNS: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) });
+    RUNS.with(|r| {
+        r.set(r.get() + 1.0);
+        r.get() * 10_000_000.0
+    })
+}
+
+// M9-TS-2831
+#[test]
+fn a_timer_fires_in_the_domain_that_set_it() {
+    in_every_gc_mode(|| {
+        with_domain_hooks(|| unsafe {
+            let base = clock();
+            iron_ts_rt::ts_rt_timers_advance(base);
+            let h = ts_win_createInspector();
+            ts_win_timerLogClear();
+            {
+                let _d = window::enter_domain(window::DomainId(h as u32));
+                ts_win_timerOnce();
+                ts_win_microtaskHere();
+            }
+            ts_win_timerOnce();
+            // The main domain's advance leaves the inspector's timer alone.
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 100.0, 1);
+            // (The promise job queued in the inspector's domain ran then too, in its own domain.)
+            assert_eq!(text(ts_win_timerLogText()), format!("t1;m{};", h as u32));
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 100.0, h as u32);
+            assert_eq!(
+                text(ts_win_timerLogText()),
+                format!("t1;m{0};t{0};", h as u32),
+                "it ran with its own domain current"
+            );
+        });
+    });
+}
+
+// M9-TS-2832
+#[test]
+fn a_paused_domains_timers_wait_and_intervals_run_once_on_resume() {
+    in_every_gc_mode(|| {
+        with_domain_hooks(|| unsafe {
+            let base = clock();
+            iron_ts_rt::ts_rt_timers_advance(base);
+            let h = ts_win_createInspector();
+            let d = h as u32;
+            ts_win_timerLogClear();
+            {
+                let _g = window::enter_domain(window::DomainId(d));
+                ts_win_timerEvery();
+            }
+            // Paused: the host does not advance the domain, whatever the clock says.
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 5.0, 1);
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 5_000.0, 1);
+            assert_eq!(text(ts_win_timerLogText()), "");
+            // The first advance after the resume fires it once, not once per missed period.
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 5_000.0, d);
+            assert_eq!(text(ts_win_timerLogText()), format!("i{d};"));
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 5_005.0, d);
+            assert_eq!(text(ts_win_timerLogText()), format!("i{d};"), "not due yet");
+            iron_ts_rt::ts_rt_timers_advance_domain(base + 5_011.0, d);
+            assert_eq!(text(ts_win_timerLogText()), format!("i{d};i{d};"));
+            ts_win_timerStop();
+        });
+    });
+}
+
 // M9-API-1456
 #[test]
 fn compiled_code_sees_open_failures_open_error_and_is_supported() {

@@ -219,6 +219,44 @@ export function familyInfo(h: number): string {
   return `${w.root.handle}|${w.isIsolated}|${w.domain}|${Window.domainFocused}`;
 }
 
+// ---- Timers per domain ------------------------------------------------------------------------
+
+let timerLog = "";
+let tickId = 0;
+
+/** A one-shot timer; the host calls this with a domain entered. */
+export function timerOnce(): void {
+  setTimeout(() => {
+    timerLog += `t${Window.current.domain};`;
+  }, 10);
+}
+
+/** A repeating timer in the current domain. */
+export function timerEvery(): void {
+  tickId = setInterval(() => {
+    timerLog += `i${Window.current.domain};`;
+  }, 10);
+}
+
+export function timerStop(): void {
+  clearInterval(tickId);
+}
+
+/** A promise job queued in the current domain. */
+export function microtaskHere(): void {
+  Promise.resolve(0).then(() => {
+    timerLog += `m${Window.current.domain};`;
+  });
+}
+
+export function timerLogText(): string {
+  return timerLog;
+}
+
+export function timerLogClear(): void {
+  timerLog = "";
+}
+
 let failures: string[] = [];
 
 export function createAndWatchOpen(): number {

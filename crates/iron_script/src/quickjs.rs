@@ -61,6 +61,25 @@ impl QuickJsRuntime {
             .with(|ctx| init(&ctx).map_err(|e| to_script_error(&ctx, e)))
     }
 
+    /// [`ScriptRuntime::tick`] for one event domain: fires the timers that domain set (each with
+    /// that domain entered, through the host's `__iron_enter_domain` / `__iron_leave_domain`).
+    pub fn tick_domain(&mut self, now_ms: f64, domain: u32) -> Vec<ScriptError> {
+        for _ in 0..MAX_TIMERS_PER_TICK {
+            match self.call_global(
+                "__iron_fire_next_timer",
+                &[now_ms.into(), f64::from(domain).into()],
+            ) {
+                Ok(Value::Bool(true)) => continue,
+                Ok(_) => break,
+                Err(e) => {
+                    self.shared.borrow_mut().errors.push(e);
+                    break;
+                }
+            }
+        }
+        std::mem::take(&mut self.shared.borrow_mut().errors)
+    }
+
     /// Runs pending promise jobs and microtasks until the queue is empty.
     /// Exceptions thrown by jobs are kept and returned by the next `tick`.
     fn run_jobs(&mut self) {
@@ -129,17 +148,7 @@ impl ScriptRuntime for QuickJsRuntime {
     }
 
     fn tick(&mut self, now_ms: f64) -> Vec<ScriptError> {
-        for _ in 0..MAX_TIMERS_PER_TICK {
-            match self.call_global("__iron_fire_next_timer", &[now_ms.into()]) {
-                Ok(Value::Bool(true)) => continue,
-                Ok(_) => break,
-                Err(e) => {
-                    self.shared.borrow_mut().errors.push(e);
-                    break;
-                }
-            }
-        }
-        std::mem::take(&mut self.shared.borrow_mut().errors)
+        self.tick_domain(now_ms, 1)
     }
 
     fn drain_ops(&mut self) -> OpBuffer {

@@ -1411,6 +1411,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1454 | Unit | `onOpened` runs from `window::opened` with the client size and scale. |
 | M9-API-1455 | Unit | QuickJS: `openError` is `null` until a failure then the text, `Window.isSupported`, `onOpenFailed` (`crates/iron_native/tests/window.rs`). |
 | M9-API-1456 | Integration | Compiled code: `w.openError` (`string \| null`, facade over `openErrorText`), `onOpenFailed`, `Window.isSupported`, with every GC mode (`tools/iron_ts_tests/tests/all/windows.rs`). |
+| M9-API-1460 | Unit | Script window requests become platform commands: `Create` a tool window is an `Open` with kind Tool and parent MAIN, `Title(MAIN)` is the main title (not a command), `Close(MAIN)` is dropped (`crates/iron_app/src/windows.rs`). |
+| M9-API-1461 | Unit | A window without a position is centred on its parent (outer position and size), each further child 24 px lower and to the right; one with a position keeps it. |
+| M9-API-1462 | Unit | Screenshot names are slugs of the titles (`Counter 1` is `counter-1`, `!!` is `window3`, a repeat is `counter-1-4`). |
+| M9-API-1463 | Unit | The game counts as focused while any of its windows is (focus moving to a tool window never unfocuses it). |
+| M9-API-1464 | Unit | Window targets (`WINDOW_TARGET \| handle`) do not collide with panel ids; physical sizes become UI pixels. |
 | M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
 | M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
 | M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/iron_engine_api/tests/window.rs`). |
@@ -1443,6 +1448,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2805 | Integration | `createRoot(win).render(..)` queues a window mount (`iron_ts_ui::take_window_mounts()`), not a screen mount; `createRoot(Window.main)` is the screen (target 0). |
 | M9-TS-2806 | Unit | `iron-build types` declares `Window` (static readonly `main`, `current`, `count`), `WindowOptions`, `WindowStyle`, and `createRoot(target?: WorldPanel \| Window \| number)` (`tools/iron_build`). |
 | M9-TS-2807 | Unit | `tsc` accepts a program that opens windows, listens, mounts roots, and rejects an unknown style. |
+| M9-TS-2831 | Integration | A compiled timer fires in the domain that set it (`ts_rt_timers_advance_domain`): another domain's advance leaves it alone, and `Window.current.domain` inside it is its own; a promise job runs with the domain that queued it (`ts_rt_set_domain_hooks`). |
+| M9-TS-2832 | Integration | A paused domain's timers wait (nothing is advanced), then the first advance fires an interval once, not once per missed period. |
+| M9-TS-2833 | Integration | QuickJS timers keep their domain: `tick_domain(now, d)` fires only that domain's timers with `__iron_enter_domain(d)` around each (`crates/iron_script/tests/domains.rs`). |
 | M9-API-1492 | Unit | Domain focus is per domain: `Window.domainFocused` follows the current domain, `onDomainFocusChanged` runs only for its own domain with that domain current, `Window.off` removes it (`crates/iron_engine_api/tests/window_families.rs`). |
 | M9-API-1493 | Unit | `runInBackground` is kept on a root (`window::run_in_background`), and `Window.current` is the current domain's root unless a window event is entered. |
 | M9-API-1495 | Unit | A window without a parent (normal / borderless) is the root of an isolated family with its own domain (`isIsolated`, `root`, `domain`); tools, dialogs and popups default to the creating domain's root; a normal window with a parent joins its family; a parent from another family is ignored. |

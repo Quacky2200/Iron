@@ -1,14 +1,21 @@
 // Iron script prelude: timers on top of engine-driven time.
 //
 // Timers live entirely in JS so Rust never holds references to JS functions
-// (DESIGN.md §3). Rust drives them by calling `__iron_fire_next_timer(now)`
+// (DESIGN.md §3). Rust drives them by calling `__iron_fire_next_timer(now, domain)`
 // in a loop from `ScriptRuntime::tick`, draining microtasks between calls.
+//
+// Event domains (one per window family): a timer remembers the domain current when it was set
+// (`__iron_domain()`, installed by the host; 1 without it) and fires with that domain entered
+// (`__iron_enter_domain(d)` / `__iron_leave_domain()`). `__iron_fire_next_timer(time, domain)`
+// only fires that domain's timers.
 (() => {
   let now = 0;
   let nextId = 1;
   let nextSeq = 0;
-  /** @type {Map<number, {due: number, seq: number, fn: Function, args: unknown[]}>} */
+  /** @type {Map<number, {due: number, seq: number, fn: Function, args: unknown[], domain: number}>} */
   const timers = new Map();
+  const currentDomain = () =>
+    typeof globalThis.__iron_domain === "function" ? globalThis.__iron_domain() : 1;
 
   globalThis.setTimeout = (fn, delay = 0, ...args) => {
     if (typeof fn !== "function") {
@@ -16,7 +23,13 @@
     }
     const id = nextId++;
     const ms = Number(delay);
-    timers.set(id, { due: now + (ms > 0 ? ms : 0), seq: nextSeq++, fn, args });
+    timers.set(id, {
+      due: now + (ms > 0 ? ms : 0),
+      seq: nextSeq++,
+      fn,
+      args,
+      domain: currentDomain(),
+    });
     return id;
   };
 
@@ -24,13 +37,13 @@
     timers.delete(id);
   };
 
-  // Fires the earliest due timer. Returns false when none is due at `time`.
-  globalThis.__iron_fire_next_timer = (time) => {
+  // Fires the earliest due timer of `domain`. Returns false when none is due at `time`.
+  globalThis.__iron_fire_next_timer = (time, domain = 1) => {
     now = time;
     let nextKey;
     let next;
     for (const [id, timer] of timers) {
-      if (timer.due > now) continue;
+      if (timer.due > now || timer.domain !== domain) continue;
       if (!next || timer.due < next.due || (timer.due === next.due && timer.seq < next.seq)) {
         nextKey = id;
         next = timer;
@@ -38,10 +51,14 @@
     }
     if (!next) return false;
     timers.delete(nextKey);
+    const enter = globalThis.__iron_enter_domain;
+    if (typeof enter === "function") enter(next.domain);
     try {
       next.fn(...next.args);
     } catch (e) {
       __iron_report_error(e);
+    } finally {
+      if (typeof enter === "function") globalThis.__iron_leave_domain();
     }
     return true;
   };
