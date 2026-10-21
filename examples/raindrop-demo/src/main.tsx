@@ -6,25 +6,6 @@
 //
 // The original worked in form pixels (1008 x 729); the same numbers are kept and converted
 // to world units, so the drops look the same at any window size.
-import {
-  audio,
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  input,
-  register,
-  Screen,
-  Sprite,
-  SpriteRenderer,
-  Texture,
-  Vector2,
-  Vector3,
-  type Playback,
-  type Sound,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 // ---- Geometry: form pixels, as in the original ----
 

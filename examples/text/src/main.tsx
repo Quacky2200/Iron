@@ -1,9 +1,6 @@
 // M3a showcase: text and fonts. Sizes and weights, italics, mixed spans,
 // wrapping and alignment, decorations, text shadows, emoji and CJK through
 // system font fallback, a font loaded at runtime, and live-updating text.
-import { loadFont } from "@iron/engine";
-import { createRoot, type IronStyle, Span, Text } from "@iron/react";
-import { type ReactNode, useEffect, useState } from "react";
 
 // Loaded from the game folder. Charm is a Thai/Latin display font (SIL OFL);
 // if the files aren't there, text using it falls back to the default font.

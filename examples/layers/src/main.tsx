@@ -4,26 +4,6 @@
 // walker and the markers. Trees have levels of detail: round crowns up close, blocky
 // ones farther out, nothing when tiny. The menu turns layers on and off for the main
 // camera and changes its field of view, render distance and the LOD bias.
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  LayerMask,
-  LODGroup,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  Random,
-  Rect,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 let main: Camera | undefined;
 /** Re-renders the menu once the camera exists. */

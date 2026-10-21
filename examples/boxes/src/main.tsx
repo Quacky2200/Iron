@@ -1,8 +1,6 @@
 // M2 showcase: React UI rendered by Iron. Flexbox and grid layout, gradients,
 // images, borders, per-corner radii, box shadows, blur filters, frosted glass and
 // group opacity, plus a timer-driven counter that adds and removes boxes.
-import { createRoot, type IronStyle } from "@iron/react";
-import { type ReactNode, useEffect, useState } from "react";
 
 const card: IronStyle = {
   backgroundColor: "#1e2633",

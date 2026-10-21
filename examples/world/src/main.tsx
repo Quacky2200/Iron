@@ -8,40 +8,6 @@
 // fountain from the middle (a ParticleSystem), the lamp glows (a light halo), a spotlight
 // shows its beam, and bloom makes the bright bits glow. A glTF model (a little house)
 // stands outside the ring with mesh colliders.
-import {
-  AudioListener,
-  AudioSource,
-  type Collision,
-  Camera,
-  CameraOrbit,
-  Color,
-  Component,
-  GameObject,
-  PlaneRenderer,
-  Quaternion,
-  Rect,
-  register,
-  Time,
-  Vector2,
-  Vector3,
-  WorldPanel,
-  addStyleSheet,
-  BoxCollider,
-  Light,
-  Material,
-  MeshRenderer,
-  Model,
-  ParticleSystem,
-  Random,
-  RenderSettings,
-  Rigidbody,
-  Rope,
-  Sprite,
-  SpriteRenderer,
-  Texture,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 class Spin extends Component {
   degreesPerSecond = 40;

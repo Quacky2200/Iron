@@ -7,21 +7,6 @@
 // soft-shadowed directional light from above so the blocks cast their shadows, and bounce
 // lights (soft point lights tinted by the walls and floor) faking the light GI would
 // bounce, colour bleeding included. Real GI is in TODO.md (M7).
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
 
 // The original's measured reflectances (linear).
 const WHITE = new Color(0.73, 0.73, 0.73, 1);

@@ -11,9 +11,6 @@
 // text: an Arabic line and an input with `dir="rtl"`.
 import "./ui.css";
 
-import { addStyleSheet, removeStyleSheet } from "@iron/engine";
-import { createRoot, Image, Input, Span, Text, TextArea } from "@iron/react";
-import { type ReactNode, useEffect, useState } from "react";
 
 const accents = ["#5ec8ff", "#9fe6a0", "#ffd25e", "#ff5e7e"];
 

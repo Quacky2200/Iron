@@ -6,9 +6,6 @@
 // straight away. The manual checks M3-MAN-01 use this example.
 import "./form.css";
 
-import { type Gamepad, input } from "@iron/engine";
-import { createRoot, Input, type IronElement, type IronKeyboardEvent, Text, TextArea } from "@iron/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
 
 interface Profile {
   name: string;

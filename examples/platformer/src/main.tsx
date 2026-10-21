@@ -7,34 +7,6 @@
 // Arrows / A-D run, Space jumps. Left alone for a few seconds, the fox runs and jumps
 // by itself (so screenshots show it moving). The HUD shows the game's name and version
 // from its package.json (`Application`) and the OS (`SystemInfo`).
-import {
-  Application,
-  BoxCollider2D,
-  Camera,
-  CapsuleCollider2D,
-  CircleCollider2D,
-  type Collider,
-  type Collision2D,
-  Color,
-  Component,
-  EdgeCollider2D,
-  GameObject,
-  input,
-  Mathf,
-  ParticleSystem,
-  Rect,
-  Rigidbody2D,
-  register,
-  Sprite,
-  SpriteRenderer,
-  SystemInfo,
-  Texture,
-  Time,
-  Vector2,
-  Vector3,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 const PPU = 16;
 const tiles = Texture.load("assets/tiles.png", { filterMode: "point", mipmaps: false });

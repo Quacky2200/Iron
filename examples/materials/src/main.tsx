@@ -7,26 +7,6 @@
 // - A front row of maps and modes: a normal-mapped tile, a cut-out leaf (double-sided,
 //   with holes in its shadow), glass (transparent: the highlight stays) next to a faded
 //   sphere, and a specular-workflow sphere.
-import {
-  Camera,
-  CameraOrbit,
-  Color,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  Mirror,
-  Model,
-  Quaternion,
-  ReflectionProbe,
-  RenderSettings,
-  Component,
-  Texture,
-  Vector2,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
 
 class Spin extends Component {
   override onUpdate(dt: number) {

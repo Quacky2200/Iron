@@ -5,32 +5,6 @@
 // - A worm from a glTF file: a skinned mesh whose bones play the file's animation.
 // - A tentacle made in code: a skinned `Mesh` (bone weights, bind poses) bent by a looping
 //   clip on its bone chain.
-import {
-  Animation,
-  AnimationClip,
-  AnimationCurve,
-  Animator,
-  AnimatorController,
-  Camera,
-  CameraOrbit,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  Matrix4x4,
-  Mesh,
-  MeshRenderer,
-  Model,
-  Quaternion,
-  RenderSettings,
-  SkinnedMeshRenderer,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 /** A looping curve: `amplitude` × sin over `period` seconds (smooth keys). */
 function wave(amplitude: number, period: number, phase = 0, offset = 0): AnimationCurve {

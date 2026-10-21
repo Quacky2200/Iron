@@ -13,37 +13,6 @@
 // frame cap and quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
 // `bun run dev` and edit a HUD component (it keeps the score on screen) or a component's
 // code (the round, the score and every coin stay where they are).
-import {
-  Application,
-  type FullScreenMode,
-  PlayerPrefs,
-  QualitySettings,
-  Screen,
-  Color,
-  Component,
-  GameObject,
-  input,
-  Light,
-  Material,
-  MeshRenderer,
-  Mirror,
-  ParticleSystem,
-  property,
-  Rng,
-  type Scene,
-  SceneManager,
-  Texture,
-  Vector2,
-  Quaternion,
-  Random,
-  register,
-  RenderSettings,
-  Camera,
-  Time,
-  Vector3,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 const ARENA = 9;
 

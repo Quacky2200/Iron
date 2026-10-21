@@ -4,19 +4,6 @@
 // saves the active scene to the log. The `Keeper` survives every load
 // (`dontDestroyOnLoad`) and counts them. Hot reload keeps all of it (try editing a
 // spinner's code while it runs).
-import {
-  Component,
-  GameObject,
-  Log,
-  property,
-  register,
-  type Scene,
-  SceneManager,
-  Time,
-  Vector3,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 /** Turns its object (scene files set the speed and axis). */
 class Spinner extends Component {

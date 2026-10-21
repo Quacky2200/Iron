@@ -2,26 +2,6 @@
 // - A flag pinned along its pole edge, flapping in gusty wind (`randomAcceleration`).
 // - A sheet dropped onto a ball and a capsule (sphere and capsule colliders).
 // - A curtain pinned at points along its top rail, swaying in a light breeze.
-import {
-  Camera,
-  CameraOrbit,
-  CapsuleCollider,
-  Cloth,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  Mesh,
-  MeshRenderer,
-  Quaternion,
-  RenderSettings,
-  SphereCollider,
-  Vector2,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
 
 /** A sheet `w` × `h` metres in the xy plane (facing +z), with `cols` × `rows` cells. */
 function sheet(w: number, h: number, cols: number, rows: number): Mesh {

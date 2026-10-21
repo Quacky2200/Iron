@@ -1,4 +1,3 @@
-import { Component, register } from "@iron/engine";
 
 class Hello extends Component {
   override onStart() {

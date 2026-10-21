@@ -6,23 +6,6 @@
 // Models: the Stanford Bunny (Stanford Computer Graphics Laboratory, 1994) and the
 // Newell teaset (Martin Newell, University of Utah, 1975), converted to .glb by
 // tools/make_models.py.
-import {
-  CameraOrbit,
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  Model,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
 
 class Turntable extends Component {
   degreesPerSecond = 20;

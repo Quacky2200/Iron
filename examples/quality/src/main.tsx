@@ -2,24 +2,6 @@
 // anti-aliasing (the fence, the fan's blades, the cables), their shadows show shadow
 // quality, and Low's render scale softens everything but the UI. The menu switches
 // levels or single settings; until it's used, the levels cycle every two seconds.
-import {
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  LineRenderer,
-  Material,
-  MeshRenderer,
-  QualitySettings,
-  Quaternion,
-  RenderSettings,
-  Time,
-  Vector3,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 let demo = true;
 

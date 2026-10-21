@@ -7,24 +7,6 @@
 //
 // The original worked in form pixels (1008 x 729); the same numbers are kept here and
 // converted to world units, so the curve looks the same at any window size.
-import {
-  audio,
-  Camera,
-  Color,
-  Component,
-  GameObject,
-  LineRenderer2D,
-  input,
-  property,
-  Screen,
-  Time,
-  Vector3,
-  register,
-  type Playback,
-  type Sound,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useEffect, useState } from "react";
 
 import { Easings, lerpNumber, Tween } from "./tween.ts";
 
