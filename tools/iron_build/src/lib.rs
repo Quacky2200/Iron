@@ -362,7 +362,9 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let config = GameConfig::load(root)?;
     let dist = root.join("dist");
     let entry = root.join(&config.entry);
-    let bundle = iron_ts::modules::bundle(&entry)?;
+    // The engine's global names stay the engine's: a module's own `class Random` is renamed.
+    let reserved = iron_ts::modules::global_names(&types_dts()?);
+    let bundle = iron_ts::modules::bundle_reserving(&entry, &reserved)?;
     let mut warnings = Vec::new();
 
     let tsc = if opts.no_tsc || !config.has_tsconfig {
@@ -772,6 +774,38 @@ mod tests {
         assert!(r.object_bytes > 0);
         let src = std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap();
         assert!(!src.contains("@iron/engine\\\""), "the import was kept");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2879
+    #[test]
+    fn a_module_declaring_an_engine_name_does_not_capture_the_engines() {
+        let d = globals_game(
+            "shadow",
+            "import { Random as Dice, lerp } from \"rng\";
+class Hello extends Component {
+  override onStart() {
+    console.log(lerp(0, 10, Random.value) + new Dice().pick());
+  }
+}
+register({ Hello });
+",
+        );
+        std::fs::create_dir_all(d.join("src/modules")).unwrap();
+        std::fs::write(
+            d.join("src/modules/rng.ts"),
+            "export class Random {
+  pick(): number { return 4; }
+}
+export function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
+",
+        )
+        .unwrap();
+        let r = build(&d, &no_tsc()).unwrap();
+        assert!(r.object_bytes > 0);
+        let src = std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap();
+        assert!(src.contains("class Random_2"), "{src}");
+        assert!(src.contains("Random.value"), "{src}");
         let _ = std::fs::remove_dir_all(&d);
     }
 

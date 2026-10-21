@@ -276,3 +276,39 @@ fn a_program_importing_a_src_modules_file_by_name_runs() {
         unsafe { std::mem::transmute(game.function("mid").unwrap()) };
     assert_eq!(unsafe { f(2.0, 6.0) }, 4.0);
 }
+
+// M9-TS-2876
+//
+// A top-level function nothing refers to is not compiled: a construct the compiler lacks in it
+// does not fail the build. One that is called (directly, through another function, or as a
+// value) still fails, with its line.
+#[test]
+fn unused_functions_with_unsupported_constructs_do_not_fail_the_build() {
+    let _serial = iron_ts_tests::serial();
+    let unused = "function unusedA(): number {\n  with (Math) { return 1; }\n}\n\
+                  function unusedB(): number { return unusedA() + 1; }\n";
+    let game = compile_and_load(
+        &format!("{unused}export function main(): number {{ return 7; }}"),
+        &JitOptions {
+            prefix: "jitu_",
+            struct_base: 96_000,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    game.init().unwrap();
+    let f: unsafe extern "C" fn() -> f64 =
+        unsafe { std::mem::transmute(game.function("main").unwrap()) };
+    assert_eq!(unsafe { f() }, 7.0);
+
+    for use_it in [
+        "export function main(): number { return unusedB(); }",
+        "function run(g: () => number): number { return g(); }\nexport function main(): number { return run(unusedA); }",
+    ] {
+        let e = iron_ts::compile_source(&format!("{unused}{use_it}"), "speed")
+            .err()
+            .expect("a used function must fail");
+        assert!(e.contains("unsupported statement"), "{e}");
+        assert!(e.contains("line 2"), "{e}");
+    }
+}

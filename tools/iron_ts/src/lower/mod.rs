@@ -477,6 +477,12 @@ impl<'a> Lowerer<'a> {
         .max(1)
     }
 
+    /// A top-level function nothing needs unless the code refers to it.
+    fn skippable(&self, name: &str) -> bool {
+        let src = &self.fsrc[name];
+        matches!(src.kind, FnKind::Free) && !src.exported && !name.starts_with("__")
+    }
+
     pub(crate) fn tag(&mut self, name: &str) -> u32 {
         if let Some(t) = self.tag_ids.get(name) {
             return *t;
@@ -629,22 +635,51 @@ impl<'a> Lowerer<'a> {
         self.m.funcs[init_id].locals = ctx.locals;
         self.m.funcs[init_id].body = init_body;
         self.m.init = Some(init_id);
-        // 3. Every function body.
-        // Lowering can declare more functions (specialisations of generics): go on until none
-        // is left.
+        // 3. Every function body. Lowering can declare more functions (specialisations of
+        // generics): go on until none is left. A plain top-level function that nothing lowered so
+        // far refers to is left for last and only lowered once something does (an unused one with
+        // a construct the compiler lacks must not fail the build). Methods, constructors,
+        // exported functions and the prelude's helpers are always lowered: they can be reached
+        // through classes, tables and the host.
+        let mut scanned = vec![false; self.fstate.len()];
+        let mut referenced: HashSet<FuncId> = HashSet::new();
         loop {
+            scanned.resize(self.fstate.len(), false);
             let mut names: Vec<String> = self
                 .fids
                 .iter()
-                .filter(|(_, id)| self.fstate[**id] == 0)
+                .filter(|(n, id)| self.fstate[**id] == 0 && !self.skippable(n))
                 .map(|(n, _)| n.clone())
                 .collect();
             if names.is_empty() {
-                break;
+                // Nothing else to lower: see what the lowered code refers to.
+                for (i, f) in self.m.funcs.iter().enumerate() {
+                    if self.fstate[i] == 2 && !scanned[i] {
+                        scanned[i] = true;
+                        collect_callees(f, &mut referenced);
+                    }
+                }
+                names = self
+                    .fids
+                    .iter()
+                    .filter(|(n, id)| {
+                        self.fstate[**id] == 0 && self.skippable(n) && referenced.contains(*id)
+                    })
+                    .map(|(n, _)| n.clone())
+                    .collect();
+                if names.is_empty() {
+                    break;
+                }
             }
             names.sort_by_key(|n| self.fids[n]);
             for n in names {
                 self.ensure_lowered(&n)?;
+            }
+        }
+        // The functions left over are never called: an empty body keeps the module well formed.
+        for (f, state) in self.m.funcs.iter_mut().zip(&self.fstate) {
+            if *state == 0 {
+                f.body = vec![Stmt::Return(None)];
             }
         }
         self.fixup_generic_itables();
@@ -1116,4 +1151,22 @@ impl<'a> Lowerer<'a> {
         init_body.push(Stmt::StoreGlobal(g, e));
         Ok(())
     }
+}
+
+/// Every function `f`'s body calls or makes a closure of.
+fn collect_callees(f: &Func, out: &mut HashSet<FuncId>) {
+    let found = std::cell::RefCell::new(Vec::new());
+    for s in &f.body {
+        crate::frames::scan_stmt(
+            s,
+            &|e| {
+                if let ExprKind::Call(id, _) | ExprKind::MakeClosure(id, _) = &e.kind {
+                    found.borrow_mut().push(*id);
+                }
+                false
+            },
+            &|_| false,
+        );
+    }
+    out.extend(found.into_inner());
 }

@@ -1508,3 +1508,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2873 | Unit | Modules import each other relatively and by name; a module imported twice is in the bundle once. |
 | M9-TS-2874 | Integration | A program importing a `src/modules` file by bare name compiles and runs. |
 | M9-TS-2875 | Unit | The `tsc` config maps bare imports to the entry's `modules/` folder (`paths`). |
+| M9-TS-2876 | Integration | A top-level function nothing refers to is not compiled (an unsupported construct in it does not fail the build); one called directly, through another function or as a value still fails with its line. |
+| M9-TS-2877 | Unit | A dependency that declares an engine global (`class Random`) is renamed (`Random_2`) in its own file and what imports it; the engine's `Random` stays. |
+| M9-TS-2878 | Unit | `global_names` reads the declared names of `types/iron.d.ts` (classes, namespaces, functions, constants, enums, interfaces, aliases). |
+| M9-TS-2879 | Integration | A build of a game whose `src/modules` file declares `class Random` keeps the engine's `Random.value` and renames the module's class. |

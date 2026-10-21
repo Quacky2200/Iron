@@ -11,7 +11,9 @@
 //! - imports of relative files are erased and their names renamed to the final names of the exporting
 //!   file's declarations; `import type` is treated like `import` (types collide too);
 //! - `export` is dropped from every file but the entry (the entry's exports stay the program's exports);
-//! - top-level names that two files both declare are renamed (`name_2`, ...) in the later file;
+//! - top-level names that two files both declare are renamed (`name_2`, ...) in the later file, and so
+//!   are names a dependency declares that the engine already has as a global (`reserved`: a module's
+//!   own `class Random` never captures the engine's `Random` that the entry or another file uses);
 //! - `import "./x.css"` is not read: it is listed in `Bundle::css` for the build tool.
 //!
 //! The text is edited, not re-printed: edits replace byte ranges, so everything else (comments, JSX)
@@ -71,15 +73,72 @@ pub type ReadFn<'a> = &'a dyn Fn(&str) -> Option<String>;
 
 /// Bundles `entry` and what it imports, reading files from disk.
 pub fn bundle(entry: &std::path::Path) -> Result<Bundle, String> {
+    bundle_reserving(entry, &HashSet::new())
+}
+
+/// Like `bundle`, keeping the names in `reserved` (the engine's globals, see `global_names`) apart
+/// from the top-level declarations of every file but the entry.
+pub fn bundle_reserving(
+    entry: &std::path::Path,
+    reserved: &HashSet<String>,
+) -> Result<Bundle, String> {
     let entry = entry.to_string_lossy().replace('\\', "/");
-    bundle_with(&entry, &|p| std::fs::read_to_string(p).ok())
+    bundle_with_reserved(&entry, &|p| std::fs::read_to_string(p).ok(), reserved)
+}
+
+/// The top-level names a declarations file (`types/iron.d.ts`) declares: classes, namespaces,
+/// functions, constants, enums, interfaces and type aliases.
+pub fn global_names(dts: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for line in dts.lines() {
+        let Some(rest) = line.strip_prefix("declare ") else {
+            continue;
+        };
+        let rest = rest.strip_prefix("abstract ").unwrap_or(rest);
+        let Some((kind, tail)) = rest.split_once(' ') else {
+            continue;
+        };
+        if !matches!(
+            kind,
+            "class"
+                | "namespace"
+                | "function"
+                | "const"
+                | "let"
+                | "var"
+                | "enum"
+                | "interface"
+                | "type"
+        ) {
+            continue;
+        }
+        let tail = tail.strip_prefix("enum ").unwrap_or(tail); // `declare const enum E`
+        let name: String = tail
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+            .collect();
+        if !name.is_empty() {
+            out.insert(name);
+        }
+    }
+    out
 }
 
 /// Bundles `entry` reading through `read` (a map of paths in tests).
 pub fn bundle_with(entry: &str, read: ReadFn) -> Result<Bundle, String> {
+    bundle_with_reserved(entry, read, &HashSet::new())
+}
+
+/// `bundle_with`, keeping the names in `reserved` apart (see `bundle_reserving`).
+pub fn bundle_with_reserved(
+    entry: &str,
+    read: ReadFn,
+    reserved: &HashSet<String>,
+) -> Result<Bundle, String> {
     let entry = normalise(entry);
     let mut graph = Graph {
         modules_root: modules_root(&entry),
+        reserved: reserved.clone(),
         ..Graph::default()
     };
     graph.load(&entry, read, true)?;
@@ -219,6 +278,8 @@ struct Graph {
     libs: Vec<(String, String)>,
     /// Where bare imports are looked up.
     modules_root: String,
+    /// Names no dependency may declare as its own (the engine's globals).
+    reserved: HashSet<String>,
 }
 
 /// What a name resolves to across files.
@@ -434,6 +495,7 @@ impl Graph {
         let entry = *self.order.last().ok_or("empty program")?;
         // Final names of the top-level declarations.
         let mut used: HashSet<String> = self.mods[entry].top.iter().cloned().collect();
+        used.extend(self.reserved.iter().cloned());
         for (_, n) in &self.libs {
             used.insert(n.clone());
         }
@@ -1230,5 +1292,63 @@ export function b(): number { return base(); }",
             b.files.iter().filter(|f| f.ends_with("shared.ts")).count(),
             1
         );
+    }
+
+    // M9-TS-2877
+    #[test]
+    fn a_dependency_declaring_an_engine_global_is_renamed_and_the_engine_name_stays() {
+        let files: HashMap<String, String> = [
+            (
+                "src/main.ts",
+                "import { Random as Dice, lerp } from \"rng\";
+export const a = lerp(0, 1, Random.value) + new Dice().n;",
+            ),
+            (
+                "src/modules/rng.ts",
+                "export class Random { n = 1; }
+export function lerp(a: number, b: number, t: number): number { return new Random().n + a + (b - a) * t; }",
+            ),
+        ]
+        .into_iter()
+        .map(|(p, s)| (p.to_string(), s.to_string()))
+        .collect();
+        let reserved: HashSet<String> = ["Random".to_string()].into();
+        let b = bundle_with_reserved("src/main.ts", &|p| files.get(p).cloned(), &reserved).unwrap();
+        assert!(b.source.contains("class Random_2"), "{}", b.source);
+        assert!(b.source.contains("new Random_2().n + a"), "{}", b.source);
+        // The entry's `Dice` is the module's class, `Random.value` stays the engine's.
+        assert!(b.source.contains("Random.value"), "{}", b.source);
+        assert!(b.source.contains("new Random_2().n;"), "{}", b.source);
+    }
+
+    // M9-TS-2878
+    #[test]
+    fn global_names_reads_the_declarations_file() {
+        let n = global_names(
+            "declare class Vector3 {}
+declare abstract class Component {}
+declare namespace Random {
+  function range(): void;
+}
+declare function register(x: number): void;
+declare const Time: number;
+declare const enum Mode { A }
+interface NotGlobal {}
+declare interface Opt {}
+declare type Id = number;",
+        );
+        for want in [
+            "Vector3",
+            "Component",
+            "Random",
+            "register",
+            "Time",
+            "Mode",
+            "Opt",
+            "Id",
+        ] {
+            assert!(n.contains(want), "{want}");
+        }
+        assert!(!n.contains("range") && !n.contains("NotGlobal"));
     }
 }
