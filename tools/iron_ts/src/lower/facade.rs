@@ -38,6 +38,28 @@ fn replace_word(src: &str, old: &str, new: &str) -> String {
     out
 }
 
+/// Whether argument `i` of `c` is a payload to send: present and not a literal `undefined` / `null`.
+fn has_payload(c: &CallExpression<'_>, i: usize) -> bool {
+    match c.arguments.get(i).and_then(|a| a.as_expression()) {
+        None | Some(Expression::NullLiteral(_)) => false,
+        Some(Expression::Identifier(id)) => id.name != "undefined",
+        Some(_) => true,
+    }
+}
+
+/// Whether argument `i` of `c` is a function written without parameters.
+fn zero_param_closure(c: &CallExpression<'_>, i: usize) -> bool {
+    match c.arguments.get(i).and_then(|a| a.as_expression()) {
+        Some(Expression::ArrowFunctionExpression(f)) => {
+            f.params.items.is_empty() && f.params.rest.is_none()
+        }
+        Some(Expression::FunctionExpression(f)) => {
+            f.params.items.is_empty() && f.params.rest.is_none()
+        }
+        _ => false,
+    }
+}
+
 /// Hash of a type's written text without its spaces: names the `request<R>` facade of that type.
 pub(crate) fn request_key(text: &str) -> String {
     let mut h: u64 = 0xcbf29ce484222325;
@@ -48,12 +70,12 @@ pub(crate) fn request_key(text: &str) -> String {
     format!("{h:016x}")
 }
 
-/// The reply types written in `.request<R>(` calls of `src` (the text between the angle brackets).
-fn request_types(src: &str) -> Vec<String> {
+/// The reply types written in `.request<R>(` / `.ask<R>(` calls of `src` (`call` is the text up to `<`) (the text between the angle brackets).
+fn request_types(src: &str, call: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut rest = src;
-    while let Some(i) = rest.find(".request<") {
-        let after = &rest[i + ".request<".len()..];
+    while let Some(i) = rest.find(call) {
+        let after = &rest[i + call.len()..];
         let bytes = after.as_bytes();
         let (mut depth, mut end) = (1usize, None);
         for (j, &c) in bytes.iter().enumerate() {
@@ -104,6 +126,36 @@ function __xm_Window_request_@K@<T>(self: Window, data: T, timeoutMs?: number): 
 }
 "#;
 
+/// `ask<R>` is `request<R>` of a named event (see the named events chunk of `facade.ts`): the text
+/// function holds the promise, the two generic ones build the event text (`ask0` has no payload;
+/// its type parameter is a dummy the lowerer fills in).
+const ASK_TEMPLATE: &str = r#"
+function __xm_Window_asktext_@K@(self: Window, text: string, timeoutMs?: number): Promise<@R@> {
+  __win_listen_replies();
+  return new Promise<@R@>((resolve, reject) => {
+    const id = self.postRequestJson(text, timeoutMs ?? NaN);
+    if (id === 0) {
+      reject(new Error("request refused: the window is closed or the message is over 1 MiB"));
+      return;
+    }
+    __win_pending.set(id, (reply: string, error: string) => {
+      if (error !== "") {
+        reject(new Error(error));
+      } else {
+        const value: @R@ = JSON.parse(reply);
+        resolve(value);
+      }
+    });
+  });
+}
+function __xm_Window_ask_@K@<T>(self: Window, name: string, payload: T, timeoutMs?: number): Promise<@R@> {
+  return __xm_Window_asktext_@K@(self, __win_event_text(name, JSON.stringify(payload)), timeoutMs);
+}
+function __xm_Window_ask0_@K@<U>(self: Window, name: string, timeoutMs?: number): Promise<@R@> {
+  return __xm_Window_asktext_@K@(self, __win_event_text(name, null), timeoutMs);
+}
+"#;
+
 /// The program with the TypeScript names that are another name natively (`AnimatorController` is
 /// `AnimationController`) renamed, and the facade chunks it needs appended.
 pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<String> {
@@ -119,9 +171,16 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
             extra.push_str(body);
         }
     }
-    for r in request_types(src) {
+    for r in request_types(src, ".request<") {
         extra.push_str(
             &REQUEST_TEMPLATE
+                .replace("@K@", &request_key(&r))
+                .replace("@R@", &r),
+        );
+    }
+    for r in request_types(src, ".ask<") {
+        extra.push_str(
+            &ASK_TEMPLATE
                 .replace("@K@", &request_key(&r))
                 .replace("@R@", &r),
         );
@@ -160,6 +219,41 @@ impl<'a> Lowerer<'a> {
     ) -> R<Option<Expr>> {
         if class == "Window" && m == "request" {
             return self.window_request(recv, c).map(Some);
+        }
+        if class == "Window" && m == "ask" {
+            return self.window_ask(recv, c).map(Some);
+        }
+        // A handler without parameters has no payload type to decode.
+        if class == "Window" && matches!(m, "on" | "answer") && zero_param_closure(c, 1) {
+            let name = format!("__xm_Window_{m}0");
+            if m == "on" {
+                let inst = self.instantiate_fn(&name, vec![Ty::Num])?;
+                return self
+                    .call_with_receiver(&inst, recv.clone(), &c.arguments)
+                    .map(Some);
+            }
+            let what = "Window.answer";
+            let g = self.generic_fns[&name].clone();
+            let targs = self.infer_targs_skip(
+                what,
+                &g,
+                c.type_arguments.as_deref(),
+                &c.arguments,
+                None,
+                None,
+                1,
+            )?;
+            self.check_message_types(what, class, m, &targs)?;
+            let inst = self.instantiate_fn(&name, targs)?;
+            return self
+                .call_with_receiver(&inst, recv.clone(), &c.arguments)
+                .map(Some);
+        }
+        // `win.emit("name")`: no payload, so no type to infer (the dummy type argument is unused).
+        if class == "Window" && m == "emit" && !has_payload(c, 1) {
+            return self
+                .window_no_payload(recv, c, "__xm_Window_emit0")
+                .map(Some);
         }
         let mut name = Self::x_name("m", class, m);
         let obj_variant = format!("{name}$o");
@@ -226,6 +320,59 @@ impl<'a> Lowerer<'a> {
         self.call_with_receiver(&inst, recv.clone(), &c.arguments)
     }
 
+    /// `win.ask<R>(name, payload?, timeoutMs?)`: the facade written for the reply type `R` (see
+    /// `ASK_TEMPLATE`), with the type of `payload` inferred.
+    fn window_ask(&mut self, recv: &Expr, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let what = "Window.ask";
+        let Some(ta) = c.type_arguments.as_deref().and_then(|t| t.params.first()) else {
+            bail!("{at}: {what} needs the reply type: `ask<{{ n: number }}>(\"name\", payload)`")
+        };
+        let span = oxc_span::GetSpan::span(ta);
+        let text = self
+            .src
+            .get(span.start as usize..span.end as usize)
+            .unwrap_or("")
+            .to_string();
+        let key = request_key(&text);
+        let rty = self.ty(ta, what)?;
+        self.message_type_ok(what, &rty, "reply", &mut Vec::new())?;
+        if !has_payload(c, 1) {
+            let name = format!("__xm_Window_ask0_{key}");
+            if !self.generic_fns.contains_key(&name) {
+                bail!("{at}: {what}<{text}>: no facade was written for this reply type")
+            }
+            // `ask("n", undefined, 500)`: the timeout is the third argument.
+            let args: Vec<&'a Argument<'a>> = c
+                .arguments
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != 1)
+                .map(|(_, a)| a)
+                .collect();
+            let inst = self.instantiate_fn(&name, vec![Ty::Num])?;
+            return self.call_with_receiver_refs(&inst, recv.clone(), &args);
+        }
+        let name = format!("__xm_Window_ask_{key}");
+        if !self.generic_fns.contains_key(&name) {
+            bail!("{at}: {what}<{text}>: no facade was written for this reply type")
+        }
+        let g = self.generic_fns[&name].clone();
+        let targs = self.infer_targs_skip(what, &g, None, &c.arguments, None, None, 1)?;
+        for t in &targs {
+            self.message_type_ok(what, t, "message", &mut Vec::new())?;
+        }
+        let inst = self.instantiate_fn(&name, targs)?;
+        self.call_with_receiver(&inst, recv.clone(), &c.arguments)
+    }
+
+    /// `win.emit("name")`: the facade function without a payload (its type parameter is a dummy).
+    fn window_no_payload(&mut self, recv: &Expr, c: &'a CallExpression<'a>, name: &str) -> R<Expr> {
+        let args: Vec<&'a Argument<'a>> = c.arguments.iter().take(1).collect();
+        let inst = self.instantiate_fn(name, vec![Ty::Num])?;
+        self.call_with_receiver_refs(&inst, recv.clone(), &args)
+    }
+
     /// Messages between windows travel as JSON of their static type: no engine handle (a
     /// `GameObject`, a `Window`, ..), function or `Map` / `Set` may be part of it. The error names
     /// the path to the offending field.
@@ -237,7 +384,17 @@ impl<'a> Lowerer<'a> {
         targs: &[Ty],
     ) -> R<()> {
         if class != "Window"
-            || !matches!(m, "postMessage" | "onMessage" | "onRequest" | "broadcast")
+            || !matches!(
+                m,
+                "postMessage"
+                    | "onMessage"
+                    | "onRequest"
+                    | "broadcast"
+                    | "emit"
+                    | "emitAll"
+                    | "on"
+                    | "answer"
+            )
         {
             return Ok(());
         }
@@ -280,6 +437,16 @@ impl<'a> Lowerer<'a> {
     /// A call of the facade function `name(self, ..)` with `recv` as `self`: the arguments fill
     /// the parameters after it (a missing one takes its default, or null for `x?: T`).
     fn call_with_receiver(&mut self, name: &str, recv: Expr, args: &'a [Argument<'a>]) -> R<Expr> {
+        let refs: Vec<&'a Argument<'a>> = args.iter().collect();
+        self.call_with_receiver_refs(name, recv, &refs)
+    }
+
+    fn call_with_receiver_refs(
+        &mut self,
+        name: &str,
+        recv: Expr,
+        args: &[&'a Argument<'a>],
+    ) -> R<Expr> {
         let fid = self.fids[name];
         self.ensure_lowered(name)?;
         let (ptys, ret) = self.fsig[fid].clone();
@@ -300,7 +467,7 @@ impl<'a> Lowerer<'a> {
         let mut names: HashMap<String, Binding> = HashMap::new();
         for i in 0..n_fixed {
             let (p, pty) = (&fp.items[i + 1], ptys[i + 1].clone());
-            let v = if let Some(a) = args.get(i) {
+            let v = if let Some(&a) = args.get(i) {
                 let Some(e) = a.as_expression() else {
                     bail!("{name}: spread argument")
                 };
@@ -403,6 +570,12 @@ impl<'a> Lowerer<'a> {
             return Ok(None);
         }
         let mut name = Self::x_name("t", class, m);
+        // `Window.emitAll("name")`: no payload to infer a type from.
+        if class == "Window" && m == "emitAll" && !has_payload(c, 1) {
+            let inst = self.instantiate_fn("__xt_Window_emitAll0", vec![Ty::Num])?;
+            let one = &c.arguments[..c.arguments.len().min(1)];
+            return self.call_declared(&inst, one, None).map(Some);
+        }
         // A generic facade function (`Window.broadcast(data)`, `Window.onMessage<T>(f)`).
         if self.generic_fns.contains_key(&name) {
             let what = format!("{class}.{m}");

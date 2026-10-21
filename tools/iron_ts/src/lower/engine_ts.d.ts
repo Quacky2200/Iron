@@ -245,6 +245,16 @@ interface Window {
   /** Posts `data` as a request and resolves with the reply. Rejects with an `Error` when the window closes, no
    *  `onRequest` listener exists in its domain when it is delivered, or nobody replies within `timeoutMs` (default 10000). */
   request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
+  /** Named events on top of the raw messages: sends event `name` (with an optional payload) to this window. Same
+   *  limits as `postMessage`; false when refused. Throws on an empty name. */
+  emit(name: string, payload?: unknown): boolean;
+  /** Runs `f(payload, from)` for each event `name` posted to this window, in its domain; other names are ignored.
+   *  The handler's parameter type decodes the payload (a handler without parameters takes none). */
+  on<T = unknown>(name: string, f: (payload: T, from: Window) => void): number;
+  /** Asks event `name`; resolves with what `answer(name, ..)` returned. Rejects like `request`. */
+  ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;
+  /** Answers the asks of event `name` with the handler's return value. */
+  answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;
 }
 declare namespace Window {
   /** Messages to any window of the current domain (after the per-window listeners of the target). */
@@ -253,6 +263,8 @@ declare namespace Window {
   function onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
   /** Posts `data` to the root window of every other family. Returns how many were queued. */
   function broadcast(data: unknown): number;
+  /** `broadcast` of a named event (see `Window.emit`). */
+  function emitAll(name: string, payload?: unknown): number;
   /** The window with keyboard focus, if one of the game's has it. */
   const focused: Window | undefined;
   /** Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the frame. */

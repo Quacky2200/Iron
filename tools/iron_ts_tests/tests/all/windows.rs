@@ -505,3 +505,177 @@ fn request_replies_decode_declared_interfaces_aliases_arrays_and_nesting() {
         );
     });
 }
+
+// ---- Named events (emit / on / ask / answer) -------------------------------------------------
+
+/// Delivers to the window, then back to the main domain, then runs the microtasks (one ask round).
+fn round(w: WindowRef, now: f64) {
+    deliver(w, now);
+    window::deliver(window::DomainId::MAIN, now + 1.0);
+    iron_ts_rt::ts_rt_microtasks_run();
+}
+
+// M9-TS-2855
+#[test]
+fn emit_reaches_on_by_name_with_the_handlers_declared_type() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        let log = capture(w);
+        ts_win_listenEvents(h);
+        ts_win_eventLogClear();
+        let _ = iron_api::callback::take_errors();
+        assert!(ts_win_emitStats(h));
+        assert!(ts_win_emitPing(h));
+        assert!(ts_win_emitTags(h));
+        // An event nobody listens for, and a raw message that is no event: ignored without errors.
+        assert!(ts_win_emitOther(h));
+        assert!(w.post_message_json("{\"kind\":5}"));
+        deliver(w, 0.0);
+        assert_eq!(
+            text(ts_win_eventLogText()),
+            "stats 3|a,b|2.5|from 1;ping;tags 3;"
+        );
+        assert!(iron_api::callback::take_errors().is_empty());
+        // The wire form is the documented envelope; a raw listener sees it.
+        let seen = log.borrow().clone();
+        assert_eq!(seen[1], "1:{\"$e\":\"ping\"}", "no payload, no `d` key");
+        assert_eq!(seen[2], "1:{\"$e\":\"tags\",\"d\":[\"x\",\"y\",\"z\"]}");
+        // off(token) removes just that listener.
+        assert!(ts_win_stopStats(h));
+        ts_win_eventLogClear();
+        assert!(ts_win_emitStats(h));
+        assert!(ts_win_emitPing(h));
+        deliver(w, 1.0);
+        assert_eq!(text(ts_win_eventLogText()), "ping;");
+    });
+}
+
+// M9-TS-2856
+#[test]
+fn ask_resolves_with_the_answer_of_the_named_handler() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_answerEvents(h);
+        ts_win_eventLogClear();
+        let _ = iron_api::callback::take_errors();
+        let p = ts_win_askEvents(h);
+        assert!(!p.is_null());
+        for i in 0..4 {
+            round(w, f64::from(i) * 10.0);
+        }
+        assert_eq!(
+            text(ts_win_eventLogText()),
+            "ask stats 3|abc|true;ask pair 42|twice;ask count 4;ask whoami inspector;"
+        );
+        assert!(iron_api::callback::take_errors().is_empty());
+    });
+}
+
+// M9-TS-2857
+#[test]
+fn ask_of_a_name_nobody_answers_times_out_and_none_listening_is_reported() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_answerEvents(h);
+        ts_win_eventLogClear();
+        ts_win_askUnknown(h);
+        deliver(w, 0.0);
+        window::deliver(window::DomainId::MAIN, 49.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_eventLogText()), "");
+        window::deliver(window::DomainId::MAIN, 51.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_eventLogText()), "ask error timed out;");
+        // A window with no request listener at all.
+        let h2 = ts_win_createInspector();
+        ts_win_eventLogClear();
+        ts_win_askUnknown(h2);
+        round(WindowRef(h2 as u32), 100.0);
+        assert_eq!(
+            text(ts_win_eventLogText()),
+            "ask error no request listener;"
+        );
+    });
+}
+
+// M9-TS-2858
+#[test]
+fn event_names_must_not_be_empty_and_the_size_limit_applies() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        // Registering with an empty name throws a clear error.
+        assert_eq!(
+            text(ts_win_onEmpty(h)),
+            "Window event names must not be empty"
+        );
+        // Over 1 MiB as JSON: refused like postMessage.
+        assert!(!ts_win_emitHuge(h));
+        assert_eq!(window::pending(window::DomainId(h as u32)), 0);
+        ts_win_answerEvents(h);
+        ts_win_eventLogClear();
+        ts_win_askHuge(h);
+        round(w, 0.0);
+        assert_eq!(
+            text(ts_win_eventLogText()),
+            "ask error request refused: the window is closed or the message is over 1 MiB;"
+        );
+    });
+}
+
+// M9-TS-2859
+#[test]
+fn emit_all_reaches_the_other_family_as_a_named_event() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        let log = capture(w);
+        assert_eq!(ts_win_emitAllHi(), 1.0);
+        assert_eq!(ts_win_emitAllBare(), 1.0);
+        deliver(w, 0.0);
+        assert_eq!(
+            *log.borrow(),
+            ["1:{\"$e\":\"hi\",\"d\":{\"n\":7}}", "1:{\"$e\":\"bare\"}"]
+        );
+    });
+}
+
+// M9-TS-2860
+#[test]
+fn named_events_refuse_handles_and_ask_needs_its_reply_type() {
+    let manifests: Vec<String> = {
+        let mut all = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
+        all.extend(iron_engine_api::manifests());
+        all
+    };
+    let compile =
+        |src: &str| iron_ts::compile_with_manifests(src, "speed", "bad_", 7500, &manifests);
+    let Err(e) = compile(
+        "export function a(): boolean {\n  const go = new GameObject(\"x\");\n  return Window.main.emit(\"pick\", { go: go });\n}\n",
+    ) else {
+        panic!("a handle in an event compiled")
+    };
+    assert!(
+        e.contains("`message.go`") && e.contains("GameObject handle"),
+        "{e}"
+    );
+    let Err(e) =
+        compile("export function b(): number {\n  Window.main.ask(\"x\", 1);\n  return 0;\n}\n")
+    else {
+        panic!("ask without a reply type compiled")
+    };
+    assert!(e.contains("needs the reply type"), "{e}");
+    let Err(e) =
+        compile("export function c(): number {\n  return Window.main.on(\"x\", (from) => 1);\n}\n")
+    else {
+        panic!("an untyped event handler compiled")
+    };
+    assert!(e.contains("cannot infer the type argument"), "{e}");
+    compile(
+        "export function ok(): number {\n  Window.main.ask<number>(\"x\", { n: 1 });\n  return Window.main.on(\"y\", (v: { n: number }) => { });\n}\n",
+    )
+    .unwrap();
+}

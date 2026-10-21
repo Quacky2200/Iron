@@ -265,3 +265,132 @@ fn quickjs_request_resolves_after_reply() {
         assert!(r.starts_with("request refused"), "{r}");
     });
 }
+
+// M9-TS-2861
+#[test]
+fn quickjs_emit_reaches_on_by_name_and_off_removes_it() {
+    with_world(|ctx| {
+        let _: () = js(
+            ctx,
+            "globalThis.log = [];\
+             globalThis.iso = Window.create({ title: 'Inspector' });\
+             globalThis.tok = iso.on('stats', (s, from) => log.push('stats ' + s.n + ' ' + s.tags.join('+') + ' from ' + from.handle));\
+             iso.on('ping', (p) => log.push('ping ' + p));\
+             iso.onMessage((from, msg) => log.push('raw ' + JSON.stringify(msg)));",
+        );
+        let d = window::DomainId(2);
+        let ok: String = js(
+            ctx,
+            "[iso.emit('stats', { n: 3, tags: ['a', 'b'] }), iso.emit('ping'), iso.emit('other', 1), iso.postMessage({ kind: 5 })].join(',')",
+        );
+        assert_eq!(ok, "true,true,true,true");
+        window::deliver(d, 0.0);
+        let log: String = js(ctx, "log.join('|')");
+        // The raw listener sees the envelope of each event; unknown names and raw messages are ignored.
+        assert_eq!(
+            log,
+            "stats 3 a+b from 1|raw {\"$e\":\"stats\",\"d\":{\"n\":3,\"tags\":[\"a\",\"b\"]}}|\
+             ping undefined|raw {\"$e\":\"ping\"}|raw {\"$e\":\"other\",\"d\":1}|raw {\"kind\":5}"
+        );
+        let _: () = js(
+            ctx,
+            "log.length = 0; iso.off(tok); iso.emit('stats', { n: 1, tags: [] }); iso.emit('ping', null);",
+        );
+        window::deliver(d, 1.0);
+        let log: String = js(ctx, "log.join('|')");
+        assert_eq!(
+            log,
+            "raw {\"$e\":\"stats\",\"d\":{\"n\":1,\"tags\":[]}}|ping null|raw {\"$e\":\"ping\",\"d\":null}"
+        );
+        // Across the domain boundary: the isolated window emits to the main window's listener.
+        let _: () = js(
+            ctx,
+            "globalThis.heard = [];\
+             Window.main.on('hello', (v, from) => heard.push(v.who + ' from ' + from.handle));\
+             iso.run(() => { Window.main.emit('hello', { who: 'iso' }); });",
+        );
+        window::deliver(d, 2.0);
+        window::deliver(window::DomainId::MAIN, 2.0);
+        let heard: String = js(ctx, "heard.join('|')");
+        assert_eq!(heard, "iso from 2");
+        // emitAll: the root windows of the other families get it.
+        let n: u32 = js(ctx, "Window.emitAll('all', { k: 1 })");
+        assert_eq!(n, 1);
+        let n: u32 = js(ctx, "Window.emitAll('all2')");
+        assert_eq!(n, 1);
+    });
+}
+
+// M9-TS-2862
+#[test]
+fn quickjs_ask_resolves_with_the_named_answer() {
+    with_world(|ctx| {
+        let _: () = js(
+            ctx,
+            "globalThis.out = [];\
+             globalThis.iso = Window.create({ title: 'Inspector' });\
+             iso.answer('stats', (req, from) => ({ n: req.kind.length, from: from.handle }));\
+             iso.answer('count', (xs) => xs.length);\
+             iso.answer('void', () => {});\
+             iso.ask('stats', { kind: 'abc' }).then((r) => out.push('stats ' + r.n + ' ' + r.from));\
+             iso.ask('count', [1, 2, 3]).then((r) => out.push('count ' + r));\
+             iso.ask('void').then((r) => out.push('void ' + r));\
+             iso.ask('nobody', undefined, 50).catch((e) => out.push('nobody ' + e.message));\
+             Window.create({ title: 'Mute' }).ask('stats').catch((e) => out.push('mute ' + e.message));",
+        );
+        for h in [2, 3] {
+            window::deliver(window::DomainId(h), 0.0);
+        }
+        window::deliver(window::DomainId::MAIN, 10.0);
+        run_jobs(ctx);
+        let out: String = js(ctx, "out.join('|')");
+        assert_eq!(out, "stats 3 1|count 3|void null|mute no request listener");
+        window::deliver(window::DomainId::MAIN, 51.0);
+        run_jobs(ctx);
+        let out: String = js(ctx, "out.join('|')");
+        assert!(out.ends_with("|nobody timed out"), "{out}");
+    });
+}
+
+// M9-TS-2863
+#[test]
+fn quickjs_events_reject_empty_names_handles_and_oversize_payloads() {
+    with_world(|ctx| {
+        let r: String = js(
+            ctx,
+            "const w = Window.create({ title: 'T' });\
+             const tries = [\
+               () => w.emit('', 1),\
+               () => w.on('', () => {}),\
+               () => w.answer('', () => 1),\
+               () => w.ask('', 1),\
+               () => Window.emitAll(''),\
+               () => w.emit('x', { go: new GameObject('x') }),\
+             ];\
+             tries.map((t) => { try { t(); return 'sent'; } catch (e) { return e.constructor.name + ': ' + e.message; } }).join('\\n')",
+        );
+        let lines: Vec<&str> = r.lines().collect();
+        for l in &lines[..5] {
+            assert_eq!(*l, "TypeError: Window event names must not be empty", "{r}");
+        }
+        assert!(
+            lines[5].contains("\"go\"") && lines[5].contains("GameObject handle"),
+            "{r}"
+        );
+        assert_eq!(
+            window::pending(window::DomainId(2)),
+            0,
+            "nothing was queued"
+        );
+        let big: bool = js(ctx, "w.emit('big', 'x'.repeat(1 << 20))");
+        assert!(!big);
+        let r: String = js(
+            ctx,
+            "globalThis.r = ''; w.ask('big', 'x'.repeat(1 << 20)).catch((e) => { globalThis.r = e.message; }); 'queued'",
+        );
+        assert_eq!(r, "queued");
+        run_jobs(ctx);
+        let r: String = js(ctx, "globalThis.r");
+        assert!(r.starts_with("request refused"), "{r}");
+    });
+}

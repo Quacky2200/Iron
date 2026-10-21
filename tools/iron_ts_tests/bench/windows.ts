@@ -385,3 +385,153 @@ export async function askNested(h: number): Promise<number> {
   typedLog += `nested ${r.a.b.length}|${r.a.b[1]}|${r.a.c === null};`;
   return 0;
 }
+
+// ---- Named events ------------------------------------------------------------------------------
+
+let eventLog = "";
+let evToken = 0;
+
+export function eventLogText(): string {
+  return eventLog;
+}
+
+export function eventLogClear(): void {
+  eventLog = "";
+}
+
+/** Listens for "stats" (a declared interface), "ping" (no payload) and "tags" (an array). */
+export function listenEvents(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  evToken = w.on("stats", (s: Stats, from: Window) => {
+    eventLog += `stats ${s.n}|${s.tags.join(",")}|${s.inner.vals[1]}|from ${from.handle};`;
+  });
+  w.on("ping", () => {
+    eventLog += "ping;";
+  });
+  w.on<string[]>("tags", (t) => {
+    eventLog += `tags ${t.length};`;
+  });
+}
+
+export function stopStats(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  return w.off(evToken);
+}
+
+export function emitStats(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  const s: Stats = { n: 3, tags: ["a", "b"], inner: { ok: true, vals: [1, 2.5] } };
+  return w.emit("stats", s);
+}
+
+export function emitPing(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  return w.emit("ping");
+}
+
+export function emitTags(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  return w.emit("tags", ["x", "y", "z"]);
+}
+
+export function emitOther(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  return w.emit("stats2", { q: 1 });
+}
+
+export function emitEmpty(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  return w.emit("", 1);
+}
+
+export function onEmpty(h: number): string {
+  const w = byHandle(h);
+  if (w === undefined) return "none";
+  try {
+    w.on("", (x: number) => {});
+    return "no error";
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
+export function emitHuge(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  let big = "";
+  for (let i = 0; i < 20; i++) big += "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  let huge = "";
+  for (let i = 0; i < 16; i++) huge += big.repeat(1024);
+  return w.emit("big", huge);
+}
+
+export function emitAllHi(): number {
+  return Window.emitAll("hi", { n: 7 });
+}
+
+export function emitAllBare(): number {
+  return Window.emitAll("bare");
+}
+
+/** Answers "stats" with a declared interface, "pair" with an anonymous type; "count" takes an array. */
+export function answerEvents(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.answer("stats", (req: { kind: string }, from: Window): Stats => {
+    return { n: req.kind.length, tags: [req.kind], inner: { ok: from.handle > 0, vals: [1, 2.5] } };
+  });
+  w.answer("pair", (req: { a: number }): { a: number; label: string } => {
+    return { a: req.a * 2, label: "twice" };
+  });
+  w.answer<number[], number>("count", (xs) => xs.length);
+  w.answer("whoami", (): string => "inspector");
+}
+
+export async function askEvents(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const s = await w.ask<Stats>("stats", { kind: "abc" });
+  eventLog += `ask stats ${s.n}|${s.tags[0]}|${s.inner.ok};`;
+  const p = await w.ask<{ a: number; label: string }>("pair", { a: 21 });
+  eventLog += `ask pair ${p.a}|${p.label};`;
+  const c = await w.ask<number>("count", [5, 6, 7, 8]);
+  eventLog += `ask count ${c};`;
+  const me = await w.ask<string>("whoami");
+  eventLog += `ask whoami ${me};`;
+  return 0;
+}
+
+/** Asks an unanswered name; the answerer is there, so it times out. */
+export async function askUnknown(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  try {
+    await w.ask<number>("nobody", undefined, 50);
+    eventLog += "answered;";
+  } catch (e) {
+    eventLog += `ask error ${(e as Error).message};`;
+  }
+  return 0;
+}
+
+export async function askHuge(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  let huge = "";
+  for (let i = 0; i < 1100; i++) huge += "x".repeat(1024);
+  try {
+    await w.ask<number>("count", huge);
+  } catch (e) {
+    eventLog += `ask error ${(e as Error).message};`;
+  }
+  return 0;
+}

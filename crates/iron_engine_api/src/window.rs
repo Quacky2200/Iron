@@ -1301,7 +1301,7 @@ fn add_listener<A: Clone + 'static>(
 }
 
 /// JavaScript over the `...Json` natives for QuickJS games: the typed-looking `postMessage`, `request`,
-/// `onMessage`, `onRequest` and `Window.broadcast` / `Window.onMessage` / `Window.onRequest`. The wire
+/// `onMessage`, `onRequest`, the named events (`emit`, `on`, `ask`, `answer`, `Window.emitAll`) and `Window.broadcast` / `Window.onMessage` / `Window.onRequest`. The wire
 /// form is JSON text: `JSON.stringify` with a replacer that throws a `TypeError` for functions and engine
 /// handle objects (`__iron_is_handle`), `JSON.parse` on the way in. Compiled code lowers the same calls
 /// onto the same natives (`tools/iron_ts/src/lower/facade.ts`), with the types checked at compile time.
@@ -1347,6 +1347,47 @@ pub const QUICKJS_PRELUDE: &str = r#"
   def(W, 'onRequest', function (f) { return W.onRequestJson(requestListener(f)); });
   def(W, 'broadcast', function (data) { return W.broadcastJson(toJson(data)); });
 
+  // Named events: sugar over the raw messages. The wire form is `{"$e":<name>,"d":<payload>}` (no `d`
+  // without a payload), the same text the compiled code writes; a listener for a name ignores every
+  // other text without parsing it.
+  const eventHead = (name) => {
+    if (typeof name !== 'string' || name === '') {
+      throw new TypeError('Window event names must not be empty');
+    }
+    return '{"$e":' + JSON.stringify(name);
+  };
+  const eventText = (name, payload) => {
+    const head = eventHead(name);
+    return payload === undefined ? head + '}' : head + ',"d":' + toJson(payload) + '}';
+  };
+  // The payload of event `head` in `text`: null when it is another text, '' without a payload.
+  const eventBody = (text, head) => {
+    if (!text.startsWith(head)) return null;
+    const rest = text.slice(head.length);
+    if (rest === '}') return '';
+    if (rest.startsWith(',"d":') && rest.endsWith('}')) return rest.slice(5, -1);
+    return null;
+  };
+  const decode = (body) => (body === '' ? undefined : JSON.parse(body));
+  def(W.prototype, 'emit', function (name, payload) { return this.postMessageJson(eventText(name, payload)); });
+  def(W, 'emitAll', function (name, payload) { return W.broadcastJson(eventText(name, payload)); });
+  def(W.prototype, 'on', function (name, f) {
+    const head = eventHead(name);
+    return this.onMessageJson((from, text) => {
+      const body = eventBody(text, head);
+      if (body !== null) f(decode(body), from);
+    });
+  });
+  def(W.prototype, 'answer', function (name, f) {
+    const head = eventHead(name);
+    return this.onRequestJson((from, text, id) => {
+      const body = eventBody(text, head);
+      if (body === null) return;
+      const answer = f(decode(body), from);
+      W.replyJson(id, toJson(answer === undefined ? null : answer));
+    });
+  });
+
   // `request`: a promise settled by the domain's `onReplyJson` listener (one per domain).
   const pending = new Map();
   const listening = new Set();
@@ -1369,17 +1410,22 @@ pub const QUICKJS_PRELUDE: &str = r#"
       }
     });
   };
-  def(W.prototype, 'request', function (data, timeoutMs) {
-    const text = toJson(data);
+  const requestText = (win, text, timeoutMs) => {
     listen();
     return new Promise((resolve, reject) => {
-      const id = this.postRequestJson(text, timeoutMs === undefined ? NaN : timeoutMs);
+      const id = win.postRequestJson(text, timeoutMs === undefined ? NaN : timeoutMs);
       if (id === 0) {
         reject(new Error('request refused: the window is closed or the message is over 1 MiB'));
       } else {
         pending.set(id, { resolve, reject });
       }
     });
+  };
+  def(W.prototype, 'request', function (data, timeoutMs) {
+    return requestText(this, toJson(data), timeoutMs);
+  });
+  def(W.prototype, 'ask', function (name, payload, timeoutMs) {
+    return requestText(this, eventText(name, payload), timeoutMs);
   });
 })();
 "#;

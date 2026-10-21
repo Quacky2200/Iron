@@ -121,6 +121,18 @@ export interface Window {
   /** Posts `data` as a request and resolves with the reply; rejects when the window closes, nobody listens, or
    *  nobody replies within `timeoutMs` (default 10000). */
   request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
+
+  /** Named events on top of the raw messages: sends event `name` (with an optional payload) to this window.
+   *  Same limits as `postMessage` (1 MiB as JSON, no handles); returns false when refused. Throws on an empty name. */
+  emit(name: string, payload?: unknown): boolean;
+  /** Runs `f(payload, from)` for each event `name` posted to this window, in this window's domain. Other names are
+   *  ignored. Returns a token for `off`. Compiled code decodes the payload as the handler's parameter type. */
+  on<T = unknown>(name: string, f: (payload: T, from: Window) => void): number;
+  /** Asks event `name` and resolves with what the window's `answer(name, ..)` handler returned. Rejects like
+   *  `request` (window closed, no request listener, no reply within `timeoutMs`, default 10000). */
+  ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;
+  /** Answers the asks of event `name` with the handler's return value (JSON). Returns a token for `off`. */
+  answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;
 }
 
 /** The static side of `Window`. */
@@ -148,6 +160,8 @@ export interface WindowStatic {
   onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
   /** Posts `data` to the root window of every other family. Returns how many were queued. */
   broadcast(data: unknown): number;
+  /** `broadcast` of a named event (see `Window.emit`). */
+  emitAll(name: string, payload?: unknown): number;
   off(token: number): boolean;
 }
 
