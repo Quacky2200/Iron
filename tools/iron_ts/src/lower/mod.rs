@@ -1099,7 +1099,34 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// A top-level `const` / `let`; an error that has no line gets this declaration's.
     fn lower_top_var(
+        &mut self,
+        d: &'a VariableDeclarator<'a>,
+        is_const: bool,
+        init_body: &mut Vec<Stmt>,
+    ) -> R<()> {
+        // Closures inside the initialiser decide which of the variables of closures around them
+        // live in cells (`times(.., (c) => { const p = ..; sprites.emit({ anim: (t) => p.x }) })`).
+        let saved_captured = d.init.as_ref().map(|init| {
+            let sc = scan::Scan::of_expression(init);
+            self.closure_free.extend(sc.free);
+            std::mem::replace(&mut self.captured, sc.captured)
+        });
+        let r = self.lower_top_var_inner(d, is_const, init_body);
+        if let Some(c) = saved_captured {
+            self.captured = c;
+        }
+        r.map_err(|e| {
+            if e.contains("line ") {
+                e
+            } else {
+                format!("{}: {e}", self.loc(oxc_span::GetSpan::span(d).start))
+            }
+        })
+    }
+
+    fn lower_top_var_inner(
         &mut self,
         d: &'a VariableDeclarator<'a>,
         is_const: bool,

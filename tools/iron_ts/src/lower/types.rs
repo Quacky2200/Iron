@@ -81,7 +81,10 @@ impl<'a> Lowerer<'a> {
                 let mut tys = Vec::new();
                 for el in &t.element_types {
                     let Some(et) = el.as_ts_type() else {
-                        bail!("optional and rest tuple elements are not supported")
+                        bail!(
+                            "{}: optional and rest tuple elements are not supported",
+                            self.loc(t.span.start)
+                        )
                     };
                     tys.push(self.ty(et, hint)?);
                 }
@@ -109,6 +112,14 @@ impl<'a> Lowerer<'a> {
                 let fields = self.members(&l.members, hint)?;
                 Ty::Obj(self.anon_struct(hint, fields))
             }
+            // `[t: number, run: () => void]`: the labels are for readers.
+            TSType::TSNamedTupleMember(m) => match m.element_type.as_ts_type() {
+                Some(et) if !m.optional => self.ty(et, hint)?,
+                _ => bail!(
+                    "{}: optional tuple elements are not supported",
+                    self.loc(m.span.start)
+                ),
+            },
             TSType::TSFunctionType(f) => {
                 let mut params = Vec::new();
                 for p in &f.params.items {
@@ -289,8 +300,37 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn members(&mut self, members: &'a [TSSignature<'a>], hint: &str) -> R<Vec<Field>> {
         let mut fields = Vec::new();
         for m in members {
+            // `run(a: T): R;` is the property `run: (a: T) => R`.
+            if let TSSignature::TSMethodSignature(ms) = m {
+                let name = self.key_name(&ms.key)?;
+                let mut params = Vec::new();
+                for p in &ms.params.items {
+                    let Some(a) = &p.type_annotation else {
+                        bail!("untyped method parameter")
+                    };
+                    let ty = self.ty(&a.type_annotation, &format!("{hint}_{name}"))?;
+                    params.push(if p.optional { ty.nullable() } else { ty });
+                }
+                let ret = match &ms.return_type {
+                    Some(r) => self.ty(&r.type_annotation, &format!("{hint}_{name}"))?,
+                    None => Ty::Void,
+                };
+                let mut ty = Ty::Fn(Box::new(FnTy { params, ret }));
+                if ms.optional {
+                    ty = ty.nullable();
+                }
+                fields.push(Field {
+                    name,
+                    ty,
+                    optional: ms.optional,
+                });
+                continue;
+            }
             let TSSignature::TSPropertySignature(p) = m else {
-                bail!("unsupported member in object type")
+                bail!(
+                    "{}: unsupported member in object type (index and call signatures are not supported)",
+                    self.loc(oxc_span::GetSpan::span(m).start)
+                )
             };
             let name = self.key_name(&p.key)?;
             let Some(a) = &p.type_annotation else {

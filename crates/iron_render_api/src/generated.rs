@@ -1897,6 +1897,10 @@ pub struct StrokeData {
     pub width: f64,
     pub color: Rgba,
     pub r#loop: bool,
+    pub has_fill: bool,
+    pub fill_value: Rgba,
+    pub fill_rule: String,
+    pub sorting_order: i32,
     pub points: Vec<V2>,
 }
 
@@ -1912,6 +1916,15 @@ impl StrokeData {
                 a: 1.0,
             },
             r#loop: false,
+            has_fill: false,
+            fill_value: Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            },
+            fill_rule: "evenodd".to_string(),
+            sorting_order: 0,
             points: Vec::new(),
         }
     }
@@ -1990,6 +2003,8 @@ pub fn save_line_renderer2d(r: LineRenderer2DRef) -> Map<String, Value> {
             json!({ "$type": "Color", "value": [d.color.r, d.color.g, d.color.b, d.color.a] }),
         );
         m.insert("loop".into(), json!(d.r#loop));
+        m.insert("fillRule".into(), json!(d.fill_rule));
+        m.insert("sortingOrder".into(), json!(d.sorting_order));
         m.insert(
             "points".into(),
             Value::Array(
@@ -1999,6 +2014,7 @@ pub fn save_line_renderer2d(r: LineRenderer2DRef) -> Map<String, Value> {
                     .collect(),
             ),
         );
+        m.insert("fillColor".into(), if d.has_fill { json!({ "$type": "Color", "value": [d.fill_value.r, d.fill_value.g, d.fill_value.b, d.fill_value.a] }) } else { Value::Null });
     });
     m
 }
@@ -2012,10 +2028,26 @@ pub fn load_line_renderer2d(r: LineRenderer2DRef, props: &Map<String, Value>) ->
                 "width" => v.as_f64().map(|x| d.width = x),
                 "color" => color_of(v).map(|x| d.color = x),
                 "loop" => v.as_bool().map(|x| d.r#loop = x),
+                "fillRule" => v
+                    .as_str()
+                    .filter(|s| ["evenodd", "nonzero"].contains(s))
+                    .map(|s| d.fill_rule = s.to_string()),
+                "sortingOrder" => v.as_i64().map(|n| n as i32).map(|x| d.sorting_order = x),
                 "points" => v
                     .as_array()
                     .and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>())
                     .map(|p| d.points = p),
+                "fillColor" => {
+                    if v.is_null() {
+                        d.has_fill = false;
+                        Some(())
+                    } else {
+                        color_of(v).map(|c| {
+                            d.has_fill = true;
+                            d.fill_value = c;
+                        })
+                    }
+                }
                 other => {
                     warnings.push(format!("no property `{other}`; dropped"));
                     continue;
@@ -2092,6 +2124,61 @@ pub mod line_renderer2d_api {
             });
         }
 
+        /// Whether the shape is filled (`fillColor` is set); a filled shape always closes.
+        #[property]
+        pub fn has_fill(self) -> bool {
+            with_line_renderer2d(self, |d| d.has_fill).unwrap_or_else(|| false)
+        }
+
+        pub fn set_has_fill(self, v: bool) {
+            with_line_renderer2d(self, |d| {
+                d.has_fill = v;
+            });
+        }
+
+        /// The fill's colour while `hasFill` (a program writes `fillColor`, null for none).
+        #[property]
+        pub fn fill_value(self) -> Rgba {
+            with_line_renderer2d(self, |d| d.fill_value).unwrap_or_else(|| Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        }
+
+        pub fn set_fill_value(self, v: Rgba) {
+            with_line_renderer2d(self, |d| {
+                d.fill_value = v;
+                d.has_fill = true;
+            });
+        }
+
+        /// Where a self-crossing outline is inside: `evenodd` leaves a star's middle empty (GDI's `Alternate`), `nonzero` fills it (`Winding`).
+        #[property]
+        pub fn fill_rule(self) -> String {
+            with_line_renderer2d(self, |d| d.fill_rule.clone()).unwrap_or_else(|| String::new())
+        }
+
+        /// A name other than `evenodd`, `nonzero` is ignored.
+        pub fn set_fill_rule(self, v: &str) {
+            if ["evenodd", "nonzero"].contains(&v) {
+                with_line_renderer2d(self, |d| d.fill_rule = v.to_string());
+            }
+        }
+
+        /// Draw order among 2D shapes: higher draws over lower, equal ones in the order they were made.
+        #[property]
+        pub fn sorting_order(self) -> f64 {
+            with_line_renderer2d(self, |d| f64::from(d.sorting_order)).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_sorting_order(self, v: f64) {
+            with_line_renderer2d(self, |d| {
+                d.sorting_order = v as i32;
+            });
+        }
+
         /// Replaces the points (on the object's XY plane); a new array redraws it.
         pub fn set_points(self, points: &[V2]) {
             with_line_renderer2d(self, |d| d.points = points.to_vec());
@@ -2128,6 +2215,317 @@ fn line_renderer2d_kind() -> Kind {
             with_line_renderer2d(LineRenderer2DRef(h as u32), |d| d.object.to_raw())
         }),
         destroy: Box::new(|h| remove_line_renderer2d(LineRenderer2DRef(h as u32))),
+    }
+}
+
+// ---- TextMesh ----
+
+numbered_handle!(
+    /// A `TextMesh` by number (1-based: 0 is "none").
+    TextMeshRef
+);
+
+/// The data of one `TextMesh`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextMeshData {
+    pub object: ObjectId,
+    pub text: String,
+    pub font_size: f64,
+    pub color: Rgba,
+    pub font: String,
+    pub font_weight: f64,
+    pub alignment: String,
+    pub max_width: f64,
+    pub pixels_per_unit: f64,
+    pub resolution: f64,
+}
+
+impl TextMeshData {
+    fn new(object: ObjectId) -> Self {
+        TextMeshData {
+            object,
+            text: "".to_string(),
+            font_size: 32.0,
+            color: Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            },
+            font: "".to_string(),
+            font_weight: 400.0,
+            alignment: "center".to_string(),
+            max_width: 0.0,
+            pixels_per_unit: 100.0,
+            resolution: 2.0,
+        }
+    }
+}
+
+thread_local! {
+    static TEXT_MESHES: RefCell<Vec<Option<TextMeshData>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Runs `f` on a `TextMesh`'s data.
+pub fn with_text_mesh<R>(r: TextMeshRef, f: impl FnOnce(&mut TextMeshData) -> R) -> Option<R> {
+    TEXT_MESHES.with(|v| {
+        let mut v = v.borrow_mut();
+        v.get_mut((r.0 as usize).checked_sub(1)?)?.as_mut().map(f)
+    })
+}
+
+/// The live `TextMeshs`, in the order they were made (for the renderer).
+pub fn text_meshs() -> Vec<(TextMeshRef, TextMeshData)> {
+    TEXT_MESHES.with(|v| {
+        v.borrow()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.clone().map(|d| (TextMeshRef(i as u32 + 1), d)))
+            .collect()
+    })
+}
+
+/// The `TextMeshs` on an object, in the order they were added.
+pub fn text_meshs_on(object: ObjectId) -> Vec<TextMeshRef> {
+    text_meshs()
+        .into_iter()
+        .filter(|(_, d)| d.object == object)
+        .map(|(r, _)| r)
+        .collect()
+}
+
+pub fn attach_text_mesh(object: ObjectId) -> TextMeshRef {
+    let r = TEXT_MESHES.with(|v| {
+        let mut v = v.borrow_mut();
+        v.push(Some(TextMeshData::new(object)));
+        TextMeshRef(v.len() as u32)
+    });
+    r
+}
+
+pub fn remove_text_mesh(r: TextMeshRef) {
+    TEXT_MESHES.with(|v| {
+        if let Some(slot) = v.borrow_mut().get_mut((r.0 as usize).wrapping_sub(1)) {
+            *slot = None;
+        }
+    });
+}
+
+/// Removes the `TextMeshs` of a destroyed object.
+pub fn remove_text_meshs_on(object: ObjectId) {
+    for r in text_meshs_on(object) {
+        remove_text_mesh(r);
+    }
+}
+
+pub fn reset_text_meshs() {
+    TEXT_MESHES.with(|v| v.borrow_mut().clear());
+}
+
+/// The saved properties of a `TextMesh`.
+pub fn save_text_mesh(r: TextMeshRef) -> Map<String, Value> {
+    let mut m = Map::new();
+    with_text_mesh(r, |d| {
+        m.insert("text".into(), json!(d.text));
+        m.insert("fontSize".into(), json!(d.font_size));
+        m.insert(
+            "color".into(),
+            json!({ "$type": "Color", "value": [d.color.r, d.color.g, d.color.b, d.color.a] }),
+        );
+        m.insert("font".into(), json!(d.font));
+        m.insert("fontWeight".into(), json!(d.font_weight));
+        m.insert("alignment".into(), json!(d.alignment));
+        m.insert("maxWidth".into(), json!(d.max_width));
+        m.insert("pixelsPerUnit".into(), json!(d.pixels_per_unit));
+        m.insert("resolution".into(), json!(d.resolution));
+    });
+    m
+}
+
+/// Applies saved properties to a `TextMesh`; returns warnings.
+pub fn load_text_mesh(r: TextMeshRef, props: &Map<String, Value>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    with_text_mesh(r, |d| {
+        for (k, v) in props {
+            let ok = match k.as_str() {
+                "text" => v.as_str().map(str::to_string).map(|x| d.text = x),
+                "fontSize" => v.as_f64().map(|x| d.font_size = x),
+                "color" => color_of(v).map(|x| d.color = x),
+                "font" => v.as_str().map(str::to_string).map(|x| d.font = x),
+                "fontWeight" => v.as_f64().map(|x| d.font_weight = x),
+                "alignment" => v
+                    .as_str()
+                    .filter(|s| ["left", "center", "right"].contains(s))
+                    .map(|s| d.alignment = s.to_string()),
+                "maxWidth" => v.as_f64().map(|x| d.max_width = x),
+                "pixelsPerUnit" => v.as_f64().map(|x| d.pixels_per_unit = x),
+                "resolution" => v.as_f64().map(|x| d.resolution = x),
+                other => {
+                    warnings.push(format!("no property `{other}`; dropped"));
+                    continue;
+                }
+            };
+            if ok.is_none() {
+                warnings.push(format!("property `{k}` has a value of the wrong shape"));
+            }
+        }
+    });
+    warnings
+}
+
+#[iron_api(namespace = "TextMesh", quickjs, handles(TextMesh = TextMeshRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
+pub mod text_mesh_api {
+    use super::*;
+
+    impl TextMeshRef {
+        /// Adds a `TextMesh` to a GameObject (what `go.addComponent(TextMesh)` does).
+        pub fn attach(object: ObjectId) -> TextMeshRef {
+            super::attach_text_mesh(object)
+        }
+
+        /// The first `TextMesh` on an object, or none.
+        pub fn find_on(object: ObjectId) -> TextMeshRef {
+            super::text_meshs_on(object)
+                .first()
+                .copied()
+                .unwrap_or(TextMeshRef(0))
+        }
+
+        #[property]
+        pub fn game_object(self) -> ObjectId {
+            with_text_mesh(self, |d| d.object).unwrap_or_else(none_object)
+        }
+
+        /// The text; a line break starts a new line.
+        #[property]
+        pub fn text(self) -> String {
+            with_text_mesh(self, |d| d.text.clone()).unwrap_or_else(|| String::new())
+        }
+
+        pub fn set_text(self, v: &str) {
+            with_text_mesh(self, |d| {
+                d.text = v.to_string();
+            });
+        }
+
+        /// In UI pixels.
+        #[property]
+        pub fn font_size(self) -> f64 {
+            with_text_mesh(self, |d| d.font_size).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_font_size(self, v: f64) {
+            with_text_mesh(self, |d| {
+                d.font_size = v;
+            });
+        }
+
+        #[property]
+        pub fn color(self) -> Rgba {
+            with_text_mesh(self, |d| d.color).unwrap_or_else(|| Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        }
+
+        pub fn set_color(self, v: Rgba) {
+            with_text_mesh(self, |d| {
+                d.color = v;
+            });
+        }
+
+        /// A family loaded with `loadFont` (empty: Iron's default, Inter).
+        #[property]
+        pub fn font(self) -> String {
+            with_text_mesh(self, |d| d.font.clone()).unwrap_or_else(|| String::new())
+        }
+
+        pub fn set_font(self, v: &str) {
+            with_text_mesh(self, |d| {
+                d.font = v.to_string();
+            });
+        }
+
+        /// 100 to 900; 400 is regular, 700 bold.
+        #[property]
+        pub fn font_weight(self) -> f64 {
+            with_text_mesh(self, |d| d.font_weight).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_font_weight(self, v: f64) {
+            with_text_mesh(self, |d| {
+                d.font_weight = v;
+            });
+        }
+
+        /// How lines line up with each other.
+        #[property]
+        pub fn alignment(self) -> String {
+            with_text_mesh(self, |d| d.alignment.clone()).unwrap_or_else(|| String::new())
+        }
+
+        /// A name other than `left`, `center`, `right` is ignored.
+        pub fn set_alignment(self, v: &str) {
+            if ["left", "center", "right"].contains(&v) {
+                with_text_mesh(self, |d| d.alignment = v.to_string());
+            }
+        }
+
+        /// Wraps lines longer than this many UI pixels (0: only at line breaks).
+        #[property]
+        pub fn max_width(self) -> f64 {
+            with_text_mesh(self, |d| d.max_width).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_max_width(self, v: f64) {
+            with_text_mesh(self, |d| {
+                d.max_width = v;
+            });
+        }
+
+        /// UI pixels per world unit (like a sprite's pixels per unit).
+        #[property]
+        pub fn pixels_per_unit(self) -> f64 {
+            with_text_mesh(self, |d| d.pixels_per_unit).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_pixels_per_unit(self, v: f64) {
+            with_text_mesh(self, |d| {
+                d.pixels_per_unit = v;
+            });
+        }
+
+        /// Texture pixels per UI pixel: more is sharper and costs more memory.
+        #[property]
+        pub fn resolution(self) -> f64 {
+            with_text_mesh(self, |d| d.resolution).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_resolution(self, v: f64) {
+            with_text_mesh(self, |d| {
+                d.resolution = v;
+            });
+        }
+    }
+}
+
+fn text_mesh_kind() -> Kind {
+    Kind {
+        name: "TextMesh".into(),
+        create: Box::new(|o| Ok(u64::from(attach_text_mesh(ObjectId::from_raw(o)).0))),
+        on: Box::new(|o| {
+            text_meshs_on(ObjectId::from_raw(o))
+                .into_iter()
+                .map(|r| u64::from(r.0))
+                .collect()
+        }),
+        save: Box::new(|h| save_text_mesh(TextMeshRef(h as u32))),
+        load: Box::new(|h, props| load_text_mesh(TextMeshRef(h as u32), props)),
+        awake: Box::new(|_| {}),
+        object: Box::new(|h| with_text_mesh(TextMeshRef(h as u32), |d| d.object.to_raw())),
+        destroy: Box::new(|h| remove_text_mesh(TextMeshRef(h as u32))),
     }
 }
 
@@ -5980,6 +6378,7 @@ pub fn register_generated_kinds() {
     iron_kinds::register(world_panel_kind());
     iron_kinds::register(sprite_renderer_kind());
     iron_kinds::register(line_renderer2d_kind());
+    iron_kinds::register(text_mesh_kind());
     iron_kinds::register(mesh_renderer_kind());
     iron_kinds::register(skinned_mesh_renderer_kind());
     iron_kinds::register(lod_group_kind());
@@ -6003,6 +6402,7 @@ pub fn generated_manifests() -> Vec<String> {
         world_panel_api::MANIFEST.to_json(),
         sprite_renderer_api::MANIFEST.to_json(),
         line_renderer2d_api::MANIFEST.to_json(),
+        text_mesh_api::MANIFEST.to_json(),
         mesh_renderer_api::MANIFEST.to_json(),
         skinned_mesh_renderer_api::MANIFEST.to_json(),
         lod_group_api::MANIFEST.to_json(),
@@ -6026,6 +6426,7 @@ pub fn remove_generated_on(object: ObjectId) {
     remove_world_panels_on(object);
     remove_sprite_renderers_on(object);
     remove_line_renderer2ds_on(object);
+    remove_text_meshs_on(object);
     remove_mesh_renderers_on(object);
     remove_skinned_mesh_renderers_on(object);
     remove_lod_groups_on(object);
@@ -6046,6 +6447,7 @@ pub fn reset_generated() {
     reset_world_panels();
     reset_sprite_renderers();
     reset_line_renderer2ds();
+    reset_text_meshs();
     reset_mesh_renderers();
     reset_skinned_mesh_renderers();
     reset_lod_groups();

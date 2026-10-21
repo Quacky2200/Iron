@@ -139,6 +139,33 @@ mod tests {
         assert!(e.contains("unsupported type"), "{e}");
     }
 
+    // M9-TS-2892
+    #[test]
+    fn errors_after_multi_line_jsx_are_reported_at_their_own_line() {
+        let src = "export function A() {
+  return (
+    <box>
+      <text>hi</text>
+    </box>
+  );
+}
+export function bad(): number {
+  return +new Proxy({}, {});
+}";
+        let e = lower::lower_source(src).err().unwrap();
+        assert!(e.contains("line 9"), "{e}");
+    }
+
+    // M9-TS-2893
+    #[test]
+    fn a_comment_naming_a_facade_trigger_does_not_pull_its_chunk_in() {
+        // `LineRenderer2D` is a trigger, but the chunk is written over an engine class this
+        // program's API does not have.
+        let src = "// LineRenderer2D, Spline and Shapes. are only words here
+export function f(): number { return 1; }";
+        assert!(lower::lower_source(src).is_ok());
+    }
+
     // M9-TS-16
     #[test]
     fn callbacks_are_inlined_and_the_object_has_exported_symbols() {

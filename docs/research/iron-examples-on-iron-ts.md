@@ -478,3 +478,50 @@ Compiler fixes made for it: `props.on === false` on an optional boolean, an opti
 **Not ported**: scene-file keys for fog and exposure (the QuickJS `scenes.ts` saves them; `iron_scenes` keeps the older keys),
 `Light.measureIlluminance` waiting for the next physics tick (it answers at once), and `Mesh.createFlat` taking a data object with only
 some of its lists (a compiled game gives all four).
+
+## 11. The 2D drawing, text and spline family (2026-10-22)
+
+`main` also added `clock`, `emoji`, `fishtank`, `shapes` and `splines`, written for the QuickJS path. All five build with
+`iron-build` and render (`tests/output/<name>.png`, checked by eye: `clock` has twelve faces, each rendered; `emoji` the wheel, the
+curtain, entrances, poses, the night sky and sprite particles; `fishtank` the fog, fish, kelp and bubbles; `shapes` every shape and
+both fill rules; `splines` the ribbon, car, ball, wave and the editable spline).
+
+**Survey: the native API they needed** (every `tsc` error of the first builds, grouped): `Shapes` (twelve outline helpers in
+`js/engine/src/shapes.ts`), `LineRenderer2D.fillColor` / `fillRule` / `sortingOrder` (the QuickJS class sends `render.stroke
+id object width color loop points fill rule order`), `TextMesh` (`render.text`), `Spline` / `SplineAnimate`
+(`js/engine/src/spline.ts`), `Camera.screenToWorldPoint`, and the SVG attribute `clipPath` in `IronProps`. Done, see
+`docs/iron-api.md` "2D shapes, text in the world and splines in native games": the renderer-facing parts are native (generated
+components, `render_sync` forwarding to the same ops, an unchanged-shape cache in `world_view.rs`); `Shapes`, `Spline` and
+`SplineAnimate` are the original TypeScript, compiled into the game by the facade, so both paths run one set of maths.
+`Gizmos`, `Mesh` and sprites needed nothing new (the emoji art is `Image`s in world panels, its sounds `audio.load`).
+
+**What the compiler did not take, and the source edits** (new ones; the earlier table is in section 10):
+
+| Pattern | Edit |
+|---|---|
+| `Partial<LineRenderer2D>` / `Partial<TextMesh>` option bags with `{ ...look }` | an options interface with the fields the example uses, and a helper that sets them |
+| an interface implemented by classes (`interface Face`, `implements Face`) | an abstract base class (`extends`, `override`) |
+| `const x: Interface = classInstance` through function properties | the same: one class hierarchy |
+| `Record<string, Act>` / `Record<PoseName, Act>` tables | a `Map<string, Act>` filled by a function; the literal unions (`PoseName`, `Sfx`, `Phase`, `Scene`) became `string` |
+| `Map<string, Sound>` / `Set<Playback>` (engine handles as values) | a small class that holds the handle (`Loaded`, `Voice`) |
+| `Array.from({ length: n }, f)`, `.flatMap`, `.flat()`, `.reduce`, `[...a].map(..)`, `.find` on objects | loops with `push`; small named functions |
+| `const [a, b] = x` of a mixed tuple, `([x, y], i) =>` parameters, `[p[i], p[j]] = [p[j], p[i]]` | indexes and a temporary |
+| `rnd(...range)` (spread call arguments), `new Color(...c)` | a helper that takes the array |
+| `{ at(t) { .. } }` methods in object literals | now supported (see below), no edit |
+| a closure that returns `cond ? { .. } : null` of object literals | an `if` with `return` and the return type written |
+| an object literal passed where a named interface is expected, built earlier without the type (`const from = { x, y, top }`) | annotate the const |
+| defaulted `boolean` closure parameters left out at a call | pass them |
+| `string[i]`, `String(n)[i]` | `charAt(i)` |
+| `a && b` between a string and an object | explicit `if` |
+| `under<T>(..)` with `T = void` | a non-generic function |
+| a class field initialised from `Number.NaN` / `-Infinity` / `.map(..)` | write the type |
+
+**Compiler fixes made for it** (`tools/iron_ts`): method signatures in interfaces and type literals, named tuple members, method
+shorthand in object literals, closures in closures of top-level initialisers, the line of errors in top-level declarations,
+`@ Name` requirements on facade chunks, and the JSX rewrite keeping later line numbers. A string-literal union local assigned from
+an optional field still panics Cranelift (`declared type of variable .. doesn't match`); `Spline` avoids it with a `string`.
+
+**Not ported / differences**: `emoji`'s sounds are loaded by name (`assets/sfx/<name>.wav`), which `iron-build` cannot see, so a
+*packaged* build would miss them (run from the folder, the assets are found); `Spline` / `SplineAnimate` keep their fields plain
+(not `@property`); `clock` and `fishtank` read time and the pointer as before. Only `shapes`, `clock` and `splines` were rendered
+frame by frame to compare faces; `emoji` is random per run, so the shots in `tests/output` show one cast member each.

@@ -877,6 +877,13 @@ fn desugar_passes(src: &str) -> R<Option<String>> {
         for e in &edits {
             out.push_str(&cur[at..e.start]);
             out.push_str(&e.text);
+            // Keep the lines of what follows: the replacement gives back the newlines it
+            // replaced (after itself, so a `return` still sees its value on its own line).
+            let had = cur[e.start..e.end].matches('\n').count();
+            let has = e.text.matches('\n').count();
+            if had > has {
+                out.push_str(&"\n".repeat(had - has));
+            }
             at = e.end;
         }
         out.push_str(&cur[at..]);

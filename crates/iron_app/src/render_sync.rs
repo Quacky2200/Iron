@@ -91,7 +91,12 @@ pub struct Extras {
     pub cloths: Vec<(String, Vec<Value>)>,
     /// `render.panel` args for every live world panel (the panel's own id first).
     pub panels: Vec<Vec<Value>>,
+    /// `render.text` args for every `TextMesh` (ids from [`TEXT_BASE`], in the panels' id space).
+    pub texts: Vec<Vec<Value>>,
 }
+
+/// `TextMesh` components are panels with ids from this number up (above the skinned renderers').
+pub const TEXT_BASE: u32 = 1 << 25;
 
 /// The mesh argument of a renderer op: a primitive's name, or the id of an uploaded mesh.
 fn mesh_arg(mesh: u32) -> Option<Value> {
@@ -352,6 +357,13 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
             rgba(d.color),
             Value::Bool(d.r#loop),
             arr(&flat),
+            if d.has_fill {
+                rgba(d.fill_value)
+            } else {
+                Value::Null
+            },
+            Value::String(d.fill_rule.clone()),
+            n(f64::from(d.sorting_order)),
         ];
         kept.strokes.insert(r.0);
         warn(views.apply("stroke", &args), "stroke");
@@ -440,6 +452,26 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
             n(d.resolution),
             rgba(d.tint),
             Value::Bool(d.interactive),
+        ]);
+    }
+    for (r, d) in iron_render_api::text_meshs() {
+        let object = scene.adopt(d.object);
+        extras.texts.push(vec![
+            n(f64::from(TEXT_BASE + r.0)),
+            n(f64::from(object)),
+            Value::String(d.text.clone()),
+            rgba(d.color),
+            n(d.font_size),
+            if d.font.is_empty() {
+                Value::Null
+            } else {
+                Value::String(d.font.clone())
+            },
+            n(d.font_weight),
+            Value::String(d.alignment.clone()),
+            n(d.max_width),
+            n(d.pixels_per_unit),
+            n(d.resolution),
         ]);
     }
     views.keep_components(&kept.planes, &kept.sprites, &kept.strokes, &kept.mirrors);
@@ -1122,5 +1154,82 @@ mod tests {
         iron_render_api::render_settings_api::set_fog(false);
         sync(&mut views, &mut scene, Path::new("."));
         assert!(views.fog_for_test().is_none());
+    }
+
+    // M9-API-1511, M9-TS-2887
+    #[test]
+    fn filled_shapes_text_meshes_and_a_spline_rider_reach_the_renderer() {
+        iron_render_api::reset();
+        iron_engine_api::screen::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Show extends Component {
+                override onStart(): void {
+                  new GameObject(\"Cam\", { position: new Vector3(0, 0, 10) }).addComponent(Camera, { orthographic: true, orthographicSize: 5 });
+                  const shape = new GameObject(\"Shape\", { position: new Vector3(1, 2, 0) }).addComponent(LineRenderer2D, { width: 0.1, loop: true });
+                  shape.points = Shapes.rectangle(0, 0, 2, 1);
+                  shape.fillColor = new Color(1, 0, 0, 0.5);
+                  shape.fillRule = \"nonzero\";
+                  shape.sortingOrder = 5;
+                  const bare = new GameObject(\"Bare\").addComponent(LineRenderer2D);
+                  bare.points = Shapes.circle(new Vector2(0, 0), 1, 8);
+                  const rider = new GameObject(\"Rider\");
+                  const a = rider.addComponent(SplineAnimate);
+                  a.spline = new Spline([new Vector3(0, 0, 0), new Vector3(4, 0, 0)]);
+                  a.duration = 4;
+                  a.elapsed = 1;
+                  a.playing = false;
+                  a.place();
+                  const label = new GameObject(\"Label\", { position: new Vector3(0, -1, 0) }).addComponent(TextMesh, { text: `x ${rider.transform.position.x.toFixed(2)}`, fontSize: 20, color: new Color(0, 1, 0, 1), font: \"Inter\", maxWidth: 300 });
+                }
+              }
+              register(Show);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
+        let mut views = WorldViews::default();
+        let extras = sync(&mut views, &mut scene, Path::new("."));
+        scene.scene.update_world();
+        // The text mesh goes out as a `render.text` spec in the panels' id space; the rider went a
+        // quarter of the way along 4 units.
+        assert_eq!(extras.texts.len(), 1);
+        let args = &extras.texts[0];
+        assert_eq!(args[0].as_f64(), Some(f64::from(TEXT_BASE + 1)));
+        assert_eq!(args[2].as_str(), Some("x 1.00"));
+        assert_eq!(args[4].as_f64(), Some(20.0));
+        assert_eq!(args[5].as_str(), Some("Inter"));
+        assert_eq!(args[8].as_f64(), Some(300.0));
+        // Shapes: the filled one carries its fill, rule and order into the view; the other none.
+        let lines = iron_render_api::line_renderer2ds();
+        assert_eq!(lines.len(), 2);
+        let filled = lines
+            .iter()
+            .find(|(_, d)| d.has_fill)
+            .expect("a filled shape");
+        assert_eq!(filled.1.fill_rule, "nonzero");
+        assert_eq!(filled.1.sorting_order, 5);
+        assert_eq!(filled.1.points.len(), 4);
+        assert!(
+            !lines
+                .iter()
+                .any(|(_, d)| !d.has_fill && d.sorting_order != 0)
+        );
+        let v = views.views(&scene, (200, 100), &[]);
+        assert_eq!(v.len(), 1);
+        assert_eq!(
+            v[0].strokes.len(),
+            4 + 7,
+            "a closed rectangle and an open octagon"
+        );
+        assert_eq!(v[0].shapes.len(), 2);
+        assert_eq!(
+            v[0].fills.len(),
+            6,
+            "two triangles for the filled rectangle, none for the other"
+        );
     }
 }

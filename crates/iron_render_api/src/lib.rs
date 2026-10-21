@@ -170,6 +170,7 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     generated::world_panel_api::register_quickjs(ctx)?;
     generated::sprite_renderer_api::register_quickjs(ctx)?;
     generated::line_renderer2d_api::register_quickjs(ctx)?;
+    generated::text_mesh_api::register_quickjs(ctx)?;
     generated::mesh_renderer_api::register_quickjs(ctx)?;
     generated::skinned_mesh_renderer_api::register_quickjs(ctx)?;
     generated::lod_group_api::register_quickjs(ctx)?;

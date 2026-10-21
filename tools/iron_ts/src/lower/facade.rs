@@ -166,8 +166,19 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
     // The chunks the program names: only when the engine API has the classes they are written over.
     let mut extra = String::new();
     for chunk in FACADE_TS.split("//# when ").skip(1) {
-        let (triggers, body) = chunk.split_once('\n').unwrap_or((chunk, ""));
-        if triggers.split('|').any(|t| src.contains(t.trim_end())) {
+        let (header, body) = chunk.split_once('\n').unwrap_or((chunk, ""));
+        // `//# when a|b @ Vector3 GameObject`: only for programs whose engine API has the names
+        // after `@` (a comment that mentions a trigger does not pull a chunk in).
+        let (triggers, needs) = header.split_once(" @ ").unwrap_or((header, ""));
+        let have = |n: &str| {
+            manifest.classes.contains_key(n)
+                || manifest.values.contains_key(n)
+                || manifest.handles.contains(n)
+                || manifest.namespaces.contains_key(n)
+        };
+        if needs.split_whitespace().all(have)
+            && triggers.split('|').any(|t| src.contains(t.trim_end()))
+        {
             extra.push_str(body);
         }
     }

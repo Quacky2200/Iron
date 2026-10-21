@@ -522,6 +522,7 @@ interface IronProps {
   strokeWidth?: number;
   strokeLinecap?: string;
   strokeLinejoin?: string;
+  clipPath?: string;
   opacity?: number;
   transform?: string;
   cx?: number;

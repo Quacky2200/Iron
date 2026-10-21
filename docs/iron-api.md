@@ -698,3 +698,40 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   `number[]`.
 - **Not ported**: the scene file keys for fog and exposure (`scenes.ts` saves `fog...`; native scenes keep their old keys),
   `Light.measureIlluminance` waiting for the next physics tick.
+
+## 2D shapes, text in the world and splines in native games (2026-10-22)
+
+`js/engine`'s `LineRenderer2D` fills, `TextMesh`, `Shapes`, `Spline` / `SplineAnimate` and `Camera.screenToWorldPoint` work in compiled
+games too. The renderer-side parts send the same ops as the QuickJS classes (`render.stroke`, `render.text`), so the pictures match.
+
+- **`LineRenderer2D`** (generated, `gen_components.py`): besides `points`, `width`, `color`, `loop` it has `fillRule`
+  (`evenodd` | `nonzero`), `sortingOrder` and `fillColor`. `fillColor` is a facade property over two native fields (`hasFill`,
+  `fillValue`): a `Color` fills the (closed) shape, `null` takes the fill away (`__xg_` / `__xs_LineRenderer2D_fillColor`). Scene files
+  save `fillColor` as a colour or `null`. `render_sync.rs` sends `stroke id object width color loop points fill rule order`; the
+  renderer keeps a shape's triangles while its points and rule are unchanged (a native game sends every shape every frame).
+- **`TextMesh`** (generated): `text`, `fontSize`, `color`, `font` (`""`: Inter), `fontWeight`, `alignment`, `maxWidth`,
+  `pixelsPerUnit`, `resolution`. The host gives each one a panel (`panels.rs::apply_text`, ids from `render_sync::TEXT_BASE`) that
+  goes with its component (`native_render::sync_texts`).
+- **`Shapes`** (`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
+  `bezier`, `curve`, `closedCurve`), **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
+  `sample`, `nearest`, `version`) and **`SplineAnimate`** are TypeScript, ported from `js/engine/src/shapes.ts` / `spline.ts` into
+  `facade.ts` and compiled into every game that names them (so QuickJS and compiled code run the same maths). Differences:
+  `Spline.knots` is an array of `{ position, tangentIn, tangentOut, mode }` and `mode` a plain `string` inside (the d.ts says
+  `"auto" | "bezier" | "linear"`); points are `Vector2` / `Vector3` (not `...Like` objects); `SplineAnimate` fields are plain
+  fields, not `@property`s (no scene-file saving, not kept across a hot reload); `shapes.polygon(...)` takes `Vector2`s.
+- **`Camera.screenToWorldPoint(p)`** is a facade method (frustum maths over `rect`, `Screen.width` / `height`, `fieldOfView` or
+  `orthographicSize` and the transform). The other `viewportTo...` / `screenPointToRay` members are not there yet.
+- **Facade chunk requirements.** A chunk header may end with `@ Name ..`: `//# when Spline @ Vector3`. The chunk is added only
+  when the engine API has every name (class, value class, handle or namespace) and the program names a trigger, so a comment that
+  mentions `LineRenderer2D` no longer pulls a chunk written over it into programs without that class.
+- **Compiler changes this needed** (`tools/iron_ts`): interface and type-literal *method signatures* are function-valued
+  properties (`at(t: number): Move;`, optional ones too); named tuple members (`[t: number, run: () => void]`); a method shorthand
+  in an object literal (`{ at(t) { .. } }`, no `this`) is a property whose closure takes its parameter types from the declared
+  field; closures inside closures in a **top-level initialiser** now capture the outer closure's locals; errors in top-level
+  declarations and object types carry their line; the JSX rewrite keeps the lines of what follows each multi-line element, so
+  later error lines are right; `clipPath` is an attribute of `IronProps` (inline SVG `<g clipPath="url(#id)">`).
+- **Still not there**: `Partial<Class>` (the examples use a small options interface and set the fields), a string-literal union
+  local assigned from an optional field (compiler panic: `Spline` keeps `mode` a `string`), `Array.from({ length }, f)`,
+  `.flatMap`, `.flat()`, `Record<string, V>` as a dictionary (use `Map`), `Map.get` over engine handles (box them), object
+  accessors (`get x() {}`) in object literals, destructuring assignment, spread call arguments, classes assigned to interfaces
+  that have function properties (use an abstract base class), `String(n)[i]` indexing (use `charAt`).

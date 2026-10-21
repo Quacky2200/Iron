@@ -257,3 +257,53 @@ fn bloom_settings_from_a_variable_go_through_the_facade_write() {
         assert_eq!(text(ts_fac_bloomFromAVariable()), "true|1.5|0.6|false");
     });
 }
+
+// M9-TS-2885
+#[test]
+fn shapes_make_gdi_style_outlines() {
+    in_every_gc_mode(|| unsafe {
+        // rectangle: 4 corners, the third at (4, 6); circle of 8: the third point on top;
+        // arc of 2 segments: 3 points; pie adds the centre; rounded corners: 4 x (4 + 1);
+        // an open curve: 2 spans x 4 + the end; a closed one: 3 spans x 4.
+        assert_eq!(text(ts_fac_shapesAndSplines()), "4|4|6|8|2|3|1|4|3|20|9|12");
+    });
+}
+
+// M9-TS-2886
+#[test]
+fn a_spline_goes_by_distance_finds_the_nearest_point_and_edits_its_knots() {
+    in_every_gc_mode(|| unsafe {
+        // The edited spline is longer than 8; the middle of a straight 6 by distance is 3; the
+        // nearest point to (1.5, 2) is a quarter of the way (t 0.25), 2 away; two segments
+        // after inserting a knot and removing the first; a closed square has 4 segments and
+        // (smoothed at its corners) length 17; the knot that is first now is the linear one
+        // that was inserted; the heading leaves +x a little; 4 points per segment closed; a
+        // straight 2-knot spline samples 2 plus the end.
+        assert_eq!(
+            text(ts_fac_splineMath()),
+            "true|3|0.25|2|2|4|17|true|linear|0.89|16|3"
+        );
+    });
+}
+
+// M9-TS-2888
+#[test]
+fn line_renderer_fill_color_reads_and_writes_null_and_text_mesh_takes_options() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_fillColorAndTextMesh()),
+            "true|1|true|false|3|x|20|left"
+        );
+    });
+}
+
+// M9-TS-2889
+#[test]
+fn screen_to_world_point_matches_the_camera_frustum() {
+    in_every_gc_mode(|| unsafe {
+        iron_engine_api::screen::update(800, 600, 1.0);
+        // Orthographic (5 tall, 800 x 600): the middle, and the top left (-6.67, 5);
+        // perspective 60 degrees: the bottom right 10 in front is (7.7, -5.77).
+        assert_eq!(text(ts_fac_screenToWorld()), "0|0|0|-6.67|5|0|7.7|-5.77|0");
+    });
+}

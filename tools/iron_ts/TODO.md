@@ -346,3 +346,42 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
 
 - **External packages (2026-10-21, `M9-TS-2870..2879`):** only three pieces of `docs/research/iron-external-packages.md` were built: bare imports resolve to `src/modules/` (a TypeScript package is used by copying its source in; `tsc` gets matching `paths`), plain top-level functions nothing refers to are not lowered, and a module's declarations cannot capture engine global names (renamed per module). Decided NOT to build, for now: `node_modules` resolution, a `packages` section in `project.json`, an allow list, licence generation and a copyleft check, `check-packages`, fetching from JSR/npm, a dynamic `any`, native plugins. Left in what was built: unreferenced classes and top-level `const` initialisers are still compiled (they may have side effects or be reached through registration); the module root is `<entry folder>/modules`; a package whose code is outside the subset still fails with the compiler's usual error.
 - **Fog, god rays and exposure family (2026-10-21, `M9-API-1501..1506`, `M9-TS-2880..2884`):** the native API for `RenderSettings` fog / height fog / light shafts / auto and fixed exposure, `Camera` exposure read-back and physical camera, `Light` volumetric / pyramid spot / light meter, `FogVolume`, `RenderStats`, `GraphicsSettings`, the quality pipeline fields, `Mesh.createFlat`, `Random.pick`; the facade static write `__xw_<Namespace>_<name>` (object-valued namespace properties from variables and `cond ? {..} : null`). 17 more examples build (`docs/research/iron-examples-on-iron-ts.md` section 10). Open: indexing a struct by a literal-union key (`state[key]`), `keyof typeof x`, `arr.indexOf(tag)`, `Record<string, V>`, `new Array(n).fill(x)`, `Array.from({ length }, f)`, spreads into `Math.min`, `x[i]! += d`, `.flat()` (the examples were edited instead); an indexed write at an array's length is out of bounds (no check: it crashed a program silently); scene-file keys for fog and exposure; `iron_app` must be rebuilt after a compiler change (it lowers and compiles the bundle itself).
+
+## Language and library features the examples work around (to review and prioritise)
+
+Every item is something an example had to be rewritten for (or still avoids) because iron_ts does not take plain TypeScript there. Source:
+`docs/research/iron-examples-on-iron-ts.md` sections 1c, 6 and 10 and the agents' notes above. Tick an item when the workaround can go.
+
+**Language features**
+- [ ] Computed property access with a literal-union key: `state[key] = !state[key]` where `key: keyof typeof state` (rewritten as `if` chains; `lower/keyed.rs` covers only generic arrows over `keyof`).
+- [ ] `Record<string, V>` and `Record<Union, V>` as real dictionaries, including indexing with a string that is not a literal (workaround: arrays plus index, or a loop with `===`).
+- [ ] Tables indexed by a tag/enum-like string (`TINTS[state.tint]`, `typeof TINTS[Tint]`).
+- [ ] `Array.prototype.indexOf` on arrays of string literals; `Array.from({ length }, f)`; `new Array(n).fill(x)`; `.flat()`.
+- [ ] Spread arguments: `Math.min(a, ...list)`, `Math.max(...xs)`.
+- [ ] A static function as a value: `const hex = Color.hex` (workaround: `(s: string) => Color.hex(s)`).
+- [ ] `null as T | null` and `[] as T[]` casts in object literals/consts (workaround: an interface and a typed const).
+- [ ] Class fields without an annotation whose initialiser is a constructor call (`private a = new Float32Array(n)`).
+- [ ] Non-null assertion on an assignment target: `x[i]! += d`; closures over destructured `const [a, b]`.
+- [ ] Tuples: `.length`, rest patterns, assignment through `t[0]` (tuples are objects with fields `0`, `1`).
+- [ ] Defaulted closure parameters of type `boolean` are not nullable yet.
+- [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner.
+- [ ] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Make it a compile/run-time error or grow the array like JavaScript.
+- [ ] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: add an optional `--check-unused` that lowers everything.
+- [ ] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: align the declared types with what `tsc` infers so examples need no edits.
+
+**Library / API gaps that forced rewrites**
+- [ ] `input.gamepads()` / `input.on("gamepadconnected", ..)` as in QuickJS (form uses `gamepadCount()` / `gamepadName(i)` instead).
+- [ ] `await SceneManager.loadSceneAsync(..)` returns a number, not a promise.
+- [ ] `UiTarget.type` needs the host to set a resolver (`iron_ts_ui::set_target_kind_resolver`).
+- [ ] Scene-file keys for fog and exposure (QuickJS `scenes.ts` saves them; `iron_scenes` does not).
+- [ ] `Light.measureIlluminance` answers at once instead of after the next physics tick.
+- [ ] `Mesh.createFlat` needs all four lists (positions, triangles, normals, uv); allow a partial data object.
+- [ ] `answer` handlers cannot return a promise.
+- [ ] Facade chunk triggers for `.on(` / `.emit(` also pull the helpers into programs using those names on their own classes (generic, unused): tighten the triggers.
+- [ ] A local typed as a string-literal union assigned from an optional field of the same type (`let mode: M = "auto"; if (o.mode !== undefined) mode = o.mode;`) panics Cranelift (`declared type of variable .. doesn't match`); also with `as M` and with a `const` copy.
+- [ ] `Partial<T>` (the examples write an options interface); `Pick<T, K>`; `ReturnType<typeof f>`.
+- [ ] Classes assigned to an interface with function properties (interface methods are function-valued properties now; a class instance is a different object kind): use an abstract base class.
+- [ ] Object-literal accessors (`get scene() { .. }`), computed keys, spread call arguments (`rnd(...range)`), destructuring assignment (`[a, b] = [b, a]`).
+- [ ] `Map.get` / `Set` over engine handles as values (box them in a class); `.pop()` over handle arrays; `indexOf` over object arrays.
+- [ ] Line numbers in errors from facade chunks and from code appended after the user's source point past the file.
+- [ ] Facade chunk classes (`Spline`, `SplineAnimate`) are not `@property` aware (no scene saving, no hot-reload state).

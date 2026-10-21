@@ -312,3 +312,57 @@ fn unused_functions_with_unsupported_constructs_do_not_fail_the_build() {
         assert!(e.contains("line 2"), "{e}");
     }
 }
+
+/// Compiles `source` and calls its `main(): number`.
+fn run_main(source: &str, prefix: &'static str, struct_base: u32) -> f64 {
+    let _serial = iron_ts_tests::serial();
+    let game = compile_and_load(
+        source,
+        &JitOptions {
+            prefix,
+            struct_base,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    game.init().unwrap();
+    let f: unsafe extern "C" fn() -> f64 =
+        unsafe { std::mem::transmute(game.function("main").unwrap()) };
+    unsafe { f() }
+}
+
+// M9-TS-2890
+//
+// Interface method signatures are function-valued properties (optional ones may be missing),
+// named tuple elements are plain elements, and an object literal's `at(t) { .. }` is the
+// property `at: function (t) { .. }` with its parameters typed by the interface.
+#[test]
+fn method_signatures_named_tuples_and_method_shorthand_compile_and_run() {
+    let src = "interface Act { name: string; at(t: number): number; show?(n: number): number }\n\
+               type Cue = [t: number, run: (n: number) => number];\n\
+               const act: Act = { name: \"a\", at(t) { return t + 1; } };\n\
+               const cues: Cue[] = [[0.5, (n) => n * 2]];\n\
+               export function main(): number {\n\
+                 const shown = act.show !== undefined ? 100 : 0;\n\
+                 return act.at(2) + cues[0]![1](cues[0]![0]) + shown;\n\
+               }";
+    assert_eq!(run_main(src, "jitm_", 97_000), 4.0);
+}
+
+// M9-TS-2891
+//
+// A closure inside a closure in a top-level initialiser can use the outer one's locals (the
+// scan that boxes captured variables ran only for function bodies).
+#[test]
+fn a_closure_in_a_closure_of_a_top_level_initialiser_shares_its_locals() {
+    let src = "const fs: ((n: number) => number)[] = [\n\
+                 (a: number) => {\n\
+                   let p = a * 2;\n\
+                   const g = (b: number) => p + b;\n\
+                   p += 1;\n\
+                   return g(1);\n\
+                 },\n\
+               ];\n\
+               export function main(): number { return fs[0]!(5); }";
+    assert_eq!(run_main(src, "jitn_", 98_000), 12.0);
+}

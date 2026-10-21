@@ -291,6 +291,8 @@ struct Stroke2d {
     object: ScriptObject,
     /// Points in the object's space, on its XY plane.
     points: Vec<[f32; 2]>,
+    /// The fill rule the triangles were made with.
+    nonzero: bool,
     /// Full width in world units (not scaled with the object).
     width: f32,
     color: [f32; 4],
@@ -1036,11 +1038,25 @@ impl WorldViews {
                     Some("nonzero") => FillRule::NonZero,
                     _ => FillRule::EvenOdd,
                 };
-                let fill = nums::<4>(args.get(6))
-                    .map(|color| (color, iron_render::tessellate_fill(&points, rule)));
+                let nonzero = matches!(rule, FillRule::NonZero);
+                // A native game sends every shape every frame: unchanged points keep their
+                // triangles.
+                let fill = nums::<4>(args.get(6)).map(|color| {
+                    match self.strokes.get(&id) {
+                        Some(old) if old.points == points && old.nonzero == nonzero => {
+                            old.fill.as_ref().map(|(_, tris)| tris.clone())
+                        }
+                        _ => None,
+                    }
+                    .map_or_else(
+                        || (color, iron_render::tessellate_fill(&points, rule)),
+                        |tris| (color, tris),
+                    )
+                });
                 let stroke = Stroke2d {
                     object: id_at(1)?,
                     points,
+                    nonzero,
                     fill,
                     order: num(8).unwrap_or(0.0) as i32,
                     width: num(2)?.max(0.0),

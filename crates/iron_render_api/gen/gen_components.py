@@ -230,11 +230,17 @@ COMPONENTS = [
             ("width", "width", "f64", 0.05, "Full width, in world units."),
             ("color", "color", "color", ONE, ""),
             ("loop", "r#loop", "bool", False, "Joins the last point back to the first (a closed shape)."),
+            ("hasFill", "has_fill", "bool", False, "Whether the shape is filled (`fillColor` is set); a filled shape always closes."),
+            ("fillValue", "fill_value", "color", ONE, "The fill's colour while `hasFill` (a program writes `fillColor`, null for none)."),
+            ("fillRule", "fill_rule", "enum:evenodd|nonzero", "evenodd", "Where a self-crossing outline is inside: `evenodd` leaves a star's middle empty (GDI's `Alternate`), `nonzero` fills it (`Winding`)."),
+            ("sortingOrder", "sorting_order", "i32", 0, "Draw order among 2D shapes: higher draws over lower, equal ones in the order they were made."),
         ],
+        skip_save=["hasFill", "fillValue"],
+        set_hook={"fillValue": "d.has_fill = true;"},
         extra_fields=["pub points: Vec<V2>,"],
         extra_defaults=["points: Vec::new(),"],
-        extra_save='m.insert("points".into(), Value::Array(d.points.iter().map(|p| json!({ "$type": "Vector2", "value": [p.x, p.y] })).collect()));',
-        extra_load='"points" => v.as_array().and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>()).map(|p| d.points = p)',
+        extra_save='m.insert("points".into(), Value::Array(d.points.iter().map(|p| json!({ "$type": "Vector2", "value": [p.x, p.y] })).collect())); m.insert("fillColor".into(), if d.has_fill { json!({ "$type": "Color", "value": [d.fill_value.r, d.fill_value.g, d.fill_value.b, d.fill_value.a] }) } else { Value::Null });',
+        extra_load='"points" => v.as_array().and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>()).map(|p| d.points = p), "fillColor" => { if v.is_null() { d.has_fill = false; Some(()) } else { color_of(v).map(|c| { d.has_fill = true; d.fill_value = c; }) } }',
         extra_value_types=["v2"],
         api="""
         /// Replaces the points (on the object's XY plane); a new array redraws it.
@@ -254,6 +260,20 @@ COMPONENTS = [
                 .unwrap_or(V2 { x: 0.0, y: 0.0 })
         }
 """,
+    ),
+    dict(
+        name="TextMesh", low="text_mesh", ref="TextMeshRef", store="TEXT_MESHES", data="TextMeshData",
+        fields=[
+            ("text", "text", "string", "", "The text; a line break starts a new line."),
+            ("fontSize", "font_size", "f64", 32.0, "In UI pixels."),
+            ("color", "color", "color", ONE, ""),
+            ("font", "font", "string", "", "A family loaded with `loadFont` (empty: Iron's default, Inter)."),
+            ("fontWeight", "font_weight", "f64", 400.0, "100 to 900; 400 is regular, 700 bold."),
+            ("alignment", "alignment", "enum:left|center|right", "center", "How lines line up with each other."),
+            ("maxWidth", "max_width", "f64", 0.0, "Wraps lines longer than this many UI pixels (0: only at line breaks)."),
+            ("pixelsPerUnit", "pixels_per_unit", "f64", 100.0, "UI pixels per world unit (like a sprite's pixels per unit)."),
+            ("resolution", "resolution", "f64", 2.0, "Texture pixels per UI pixel: more is sharper and costs more memory."),
+        ],
     ),
     dict(
         name="MeshRenderer", low="mesh_renderer", ref="MeshRendererRef", store="MESH_RENDERERS", data="MeshRendererData",

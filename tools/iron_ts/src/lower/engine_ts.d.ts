@@ -205,6 +205,8 @@ declare namespace RenderSettings {
 interface Camera {
   layerCullDistances: number[];
   readonly horizontalFieldOfView: number;
+  /** The world point at a screen point (UI pixels from the top-left), `z` units in front of the camera. */
+  screenToWorldPoint(p: Vector3Like): Vector3;
 }
 declare namespace Camera {
   const main: Camera | undefined;
@@ -245,6 +247,75 @@ interface LODGroup {
 }
 interface LineRenderer2D {
   points: Vector2Like[];
+  /** Fills the shape in this colour (null: no fill). */
+  fillColor: Color | null;
+}
+
+/** GDI-style shape outlines for `LineRenderer2D.points`: y up, angles in degrees counter-clockwise from +x. Closed shapes do not repeat their first point (set `loop`, or a `fillColor`). */
+declare class Shapes {
+  static rectangle(x: number, y: number, width: number, height: number): Vector2[];
+  static roundedRectangle(x: number, y: number, width: number, height: number, radius: number, segments?: number): Vector2[];
+  static ellipse(center: Vector2Like, rx: number, ry: number, segments?: number): Vector2[];
+  static circle(center: Vector2Like, radius: number, segments?: number): Vector2[];
+  static arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
+  static pie(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
+  static regularPolygon(center: Vector2Like, radius: number, sides: number, rotation?: number): Vector2[];
+  static polygon(...points: Vector2Like[]): Vector2[];
+  static triangle(a: Vector2Like, b: Vector2Like, c: Vector2Like): Vector2[];
+  static bezier(p0: Vector2Like, p1: Vector2Like, p2: Vector2Like, p3: Vector2Like, segments?: number): Vector2[];
+  static curve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
+  static closedCurve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
+}
+
+/** `auto`: smooth through the neighbours; `bezier`: the knot's own handles; `linear`: none. */
+type TangentMode = "auto" | "bezier" | "linear";
+interface SplineKnot {
+  position: Vector3;
+  /** The handle before the knot, relative to it (used in `bezier` mode). */
+  tangentIn: Vector3;
+  /** The handle after the knot, relative to it (used in `bezier` mode). */
+  tangentOut: Vector3;
+  mode: TangentMode;
+}
+/** A path through knots, every segment a cubic Bezier (Unity's Splines package, the core of it). */
+declare class Spline {
+  constructor(points?: readonly Vector3Like[], options?: { closed?: boolean; tension?: number; mode?: TangentMode });
+  readonly knots: SplineKnot[];
+  readonly count: number;
+  closed: boolean;
+  tension: number;
+  readonly segmentCount: number;
+  /** Goes up on every change. */
+  version: number;
+  readonly length: number;
+  addKnot(position: Vector3Like, mode?: TangentMode, tangentIn?: Vector3Like, tangentOut?: Vector3Like): number;
+  insertKnot(index: number, position: Vector3Like, mode?: TangentMode, tangentIn?: Vector3Like, tangentOut?: Vector3Like): number;
+  removeKnot(index: number): void;
+  setPosition(index: number, position: Vector3Like): void;
+  setTangents(index: number, tangentIn: Vector3Like, tangentOut: Vector3Like): void;
+  setMode(index: number, mode: TangentMode): void;
+  handleOut(index: number): Vector3;
+  handleIn(index: number): Vector3;
+  segmentPoint(i: number, u: number): Vector3;
+  segmentDerivative(i: number, u: number): Vector3;
+  locate(t: number): { segment: number; u: number };
+  /** The point `t` of the way along (0 to 1, by distance). */
+  evaluate(t: number): Vector3;
+  tangent(t: number): Vector3;
+  sample(perSegment?: number): Vector3[];
+  nearest(p: Vector3Like): { t: number; point: Vector3; distance: number };
+}
+/** Moves its object along a spline (Unity's `SplineAnimate`). */
+declare class SplineAnimate extends Component {
+  spline: Spline | null;
+  container: GameObject | null;
+  duration: number;
+  loopMode: "loop" | "pingPong" | "once";
+  alignment: "none" | "path";
+  playing: boolean;
+  elapsed: number;
+  readonly t: number;
+  place(): void;
 }
 
 declare namespace QualitySettings {

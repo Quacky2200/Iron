@@ -23,6 +23,8 @@ struct State {
     window_pending: Vec<(u32, iron_ui_native::Element)>,
     /// Panels a `WorldPanel` component exists for (the others only had a mount so far).
     live: HashSet<u32>,
+    /// The `TextMesh` panels (ids from `render_sync::TEXT_BASE`).
+    live_texts: HashSet<u32>,
     /// The `Screen` size last told to the game, and the display state last pushed.
     screen: Option<(u32, u32, u64)>,
     display: Option<String>,
@@ -113,6 +115,7 @@ impl App {
             }
         }
         self.sync_panels(extras.panels);
+        self.sync_texts(extras.texts);
         self.sync_window_roots();
     }
 
@@ -236,6 +239,36 @@ impl App {
         if w > 0.0 && st(|s| s.screen.replace(key)) != Some(key) {
             let _scope = iron_scene::api::enter(&mut self.scene.scene);
             iron_engine_api::screen::update(key.0, key.1, f64::from(scale));
+        }
+    }
+
+    /// `TextMesh` components: panels of one text, dropped with their component.
+    fn sync_texts(&mut self, specs: Vec<Vec<Value>>) {
+        let (root, fonts, sheets) = (&self.asset_root, &self.font_sources, &self.sheet_sources);
+        let mut ids = HashSet::new();
+        for args in specs {
+            if let Some(id) = args.first().and_then(Value::as_f64) {
+                ids.insert(id as u32);
+            }
+            if let Err(e) = self
+                .panels
+                .apply_text(&args, || new_panel_tree(root, fonts, sheets))
+            {
+                tracing::warn!("text mesh: {e}");
+            }
+        }
+        let gone: Vec<u32> = st(|s| {
+            let gone = s
+                .live_texts
+                .iter()
+                .filter(|id| !ids.contains(id))
+                .copied()
+                .collect();
+            s.live_texts = ids;
+            gone
+        });
+        for id in gone {
+            self.panels.remove(id);
         }
     }
 

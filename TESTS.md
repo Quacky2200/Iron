@@ -1527,6 +1527,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1504 | Unit | A physical camera's `physicalExposure` is log2(N^2 / t) - log2(ISO / 100); `Camera.fog`, `exposure`, `sceneBrightness` and `resetExposure()` counts. |
 | M9-API-1505 | Unit | `RenderStats` is what the host reported; `GraphicsSettings.lightUnits` follows `set_physical_light_units`. |
 | M9-API-1506 | Unit | `Light.volumetricIntensity` / `spotShape` / `aspectRatio` (unknown shape ignored), `Light.count()` / `at(i)`, `FogVolume` properties, and both save with scene files. |
+| M9-API-1507 | Unit | `LineRenderer2D` starts unfilled (`fillRule` `evenodd`, `sortingOrder` 0); writing `fillValue` turns the fill on, `hasFill = false` takes it away (the facade's `fillColor = null`); an unknown fill rule is ignored (`crates/iron_render_api/tests/line_text.rs`). |
+| M9-API-1508 | Unit | A fill saves as `fillColor` (a colour, or `null` for none) next to `fillRule` and `sortingOrder`, without the internal `hasFill` / `fillValue`; loading restores them, `null` clears. |
+| M9-API-1509 | Unit | `TextMesh` defaults (32 px, white, centred, 100 pixels per unit, resolution 2), `attach` / `findOn`, an unknown alignment ignored, and it goes with its object. |
+| M9-API-1510 | Unit | A `TextMesh` saves and loads with scene files; an unknown property and a wrongly shaped one are each warned about. |
+| M9-API-1511 | Integration | A compiled game's filled `LineRenderer2D` (rule, order, `Shapes.rectangle`), an unfilled one, a `TextMesh` and a `SplineAnimate` rider reach the renderer: the text spec in the panels' id space, strokes and fill triangles in the view (no GPU; `render_sync.rs`). |
 | M9-TS-2838 | Integration | `win.postMessage(obj)` in compiled code queues the JSON of the argument's static type (`{"kind":"select","p":[1,2,3],"ids":[1,2],"name":"Player"}`, a `Vector3` as an array), to the isolated window's domain (`tools/iron_ts_tests/tests/all/windows.rs`). |
 | M9-TS-2839 | Integration | `onMessage<T>(f)` (and `onMessage((from, msg: T) => ..)`) parses the message into the declared type; a message with the wrong shape throws inside the listener and is logged through `callback::take_errors`. |
 | M9-TS-2840 | Unit | A handle (or a function, Map or Set) anywhere in a message, request or reply type is a compile error naming the path (`message.go`, `message.list[].target`, `reply.who`); `request` without a reply type, and `onMessage` without a type, are compile errors. |
@@ -1572,3 +1577,12 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2882 | Integration | `Light.illuminanceAt` sums each light's lux on a point (directional head-on, point and spot in lumens over 4 pi); `Light.count()`. |
 | M9-TS-2883 | Integration | An optional `rotation?: Quaternion` passed into `new GameObject(name, { position, rotation })` is left alone when missing, and `props.on === false` on an optional boolean is false for a missing one. |
 | M9-TS-2884 | Integration | `RenderSettings.bloom = b` with `b: BloomSettings | null` (not a literal) goes through the facade write; the examples of the fog and god rays family build and render (checked by eye, `tests/output`). |
+| M9-TS-2885 | Integration | `Shapes` makes GDI-style outlines (rectangle, rounded rectangle, ellipse, arc, pie, polygon, open and closed curves) with the right point counts and positions (`bench/facade.ts`). |
+| M9-TS-2886 | Integration | `Spline` (a TypeScript class in the facade): length, `evaluate` by distance, `nearest`, closed splines, `insertKnot` / `removeKnot` / `setPosition` / `setMode`, `tangent`, `sample`, `version`. |
+| M9-TS-2887 | Integration | `SplineAnimate` places its object by distance along the spline (through a compiled game in `render_sync.rs`; see M9-API-1511). |
+| M9-TS-2888 | Integration | `LineRenderer2D.fillColor` reads and writes a colour or `null` (also in an `addComponent` options object) and `sortingOrder`; `TextMesh` takes its options. |
+| M9-TS-2889 | Integration | `Camera.screenToWorldPoint` for an orthographic camera (middle and corner) and a perspective one (60 degrees, 10 in front). |
+| M9-TS-2890 | Integration | Interface method signatures (also optional ones), named tuple elements and a method shorthand in an object literal compile and run (`tests/all/jit.rs`). |
+| M9-TS-2891 | Integration | A closure inside a closure in a top-level initialiser shares the outer closure's locals. |
+| M9-TS-2892 | Unit | An error after a multi-line JSX element is reported at its own line. |
+| M9-TS-2893 | Unit | A comment naming a facade trigger does not pull in a chunk written over a class the program's engine API lacks. |

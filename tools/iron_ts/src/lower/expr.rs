@@ -1907,8 +1907,14 @@ impl<'a> Lowerer<'a> {
                     items.push(Item::Spread(e));
                 }
                 ObjectPropertyKind::ObjectProperty(p) => {
-                    if (p.computed && !matches!(p.key, PropertyKey::StringLiteral(_))) || p.method {
-                        bail!("{}: computed or method property", self.loc(p.span.start));
+                    // `at(t) { .. }` is the property `at: function (t) { .. }` (no `this`).
+                    if (p.computed && !matches!(p.key, PropertyKey::StringLiteral(_)))
+                        || p.kind != PropertyKind::Init
+                    {
+                        bail!(
+                            "{}: computed property or accessor in an object literal",
+                            self.loc(p.span.start)
+                        );
                     }
                     let name = self.key_name(&p.key)?;
                     let want = match exp_sid {

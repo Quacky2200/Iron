@@ -285,3 +285,48 @@ export function bloomFromAVariable(): string {
   return `${a}|${RenderSettings.bloomEnabled}`;
 }
 
+
+export function shapesAndSplines(): string {
+  const r = Shapes.rectangle(1, 2, 3, 4);
+  const c = Shapes.circle(new Vector2(0, 0), 2, 8);
+  const arc = Shapes.arc(new Vector2(0, 0), 1, 1, 0, 90, 2);
+  const pie = Shapes.pie(new Vector2(0, 0), 1, 1, 0, 90, 2);
+  const poly = Shapes.polygon(new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1));
+  const rounded = Shapes.roundedRectangle(0, 0, 4, 2, 5, 4);
+  const curve = Shapes.curve([new Vector2(0, 0), new Vector2(1, 1), new Vector2(2, 0)], 0.5, 4);
+  const closed = Shapes.closedCurve([new Vector2(0, 0), new Vector2(1, 1), new Vector2(2, 0)], 0.5, 4);
+  return `${r.length}|${r[2]!.x}|${r[2]!.y}|${c.length}|${Math.round(c[2]!.y)}|${arc.length}|${Math.round(arc[2]!.y)}|${pie.length}|${poly.length}|${rounded.length}|${curve.length}|${closed.length}`;
+}
+
+export function splineMath(): string {
+  const s = new Spline([new Vector3(0, 0, 0), new Vector3(3, 0, 0), new Vector3(6, 0, 0)]);
+  const mid = s.evaluate(0.5);
+  const near = s.nearest(new Vector3(1.5, 2, 0));
+  const loop = new Spline([new Vector3(0, 0, 0), new Vector3(4, 0, 0), new Vector3(4, 4, 0), new Vector3(0, 4, 0)], { closed: true });
+  const before = s.version;
+  s.setPosition(2, new Vector3(9, 0, 0));
+  const knot = s.insertKnot(1, new Vector3(1, 1, 0));
+  s.setMode(knot, "linear");
+  s.removeKnot(0);
+  const tan = s.tangent(0).normalized;
+  return `${Math.round(s.length * 1000) / 1000 > 8}|${Math.round(mid.x * 100) / 100}|${Math.round(near.t * 100) / 100}|${Math.round(near.distance * 100) / 100}|${s.segmentCount}|${loop.segmentCount}|${Math.round(loop.length)}|${s.version > before}|${s.knots[0]!.mode}|${Math.round(tan.x * 100) / 100}|${loop.sample(4).length}|${new Spline([new Vector3(0, 0, 0), new Vector3(2, 0, 0)], { mode: "linear" }).sample(2).length}`;
+}
+
+export function fillColorAndTextMesh(): string {
+  const line = new GameObject("l").addComponent(LineRenderer2D, { fillColor: new Color(1, 0, 0, 1), sortingOrder: 3 });
+  const filled = line.fillColor !== null && line.hasFill;
+  const red = line.fillColor !== null ? line.fillColor.r : -1;
+  line.fillColor = null;
+  const t = new GameObject("t").addComponent(TextMesh, { text: "x", fontSize: 20, alignment: "left" });
+  return `${filled}|${red}|${line.fillColor === null}|${line.hasFill}|${line.sortingOrder}|${t.text}|${t.fontSize}|${t.alignment}`;
+}
+
+export function screenToWorld(): string {
+  const ortho = new GameObject("o", { position: new Vector3(0, 0, 10) }).addComponent(Camera, { orthographic: true, orthographicSize: 5 });
+  const a = ortho.screenToWorldPoint(new Vector3(400, 300, 10));
+  const b = ortho.screenToWorldPoint(new Vector3(0, 0, 10));
+  const persp = new GameObject("p", { position: new Vector3(0, 0, 10) }).addComponent(Camera, { fieldOfView: 60 });
+  const c = persp.screenToWorldPoint({ x: 800, y: 600, z: 10 });
+  const r = (v: number) => Math.round(v * 100) / 100;
+  return `${r(a.x)}|${r(a.y)}|${r(a.z)}|${r(b.x)}|${r(b.y)}|${r(b.z)}|${r(c.x)}|${r(c.y)}|${r(c.z)}`;
+}
