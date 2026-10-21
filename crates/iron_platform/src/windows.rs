@@ -867,6 +867,20 @@ fn level(plan: &NativePlan) -> WindowLevel {
     }
 }
 
+/// The OS handle of a window as a number and the window system's name: HWND ("win32"), the NSView
+/// pointer ("appkit"), the X11 window id ("x11"); 0 for Wayland ("wayland") and unknown systems.
+pub fn native_handle(window: &Window) -> (u64, &'static str) {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match window.window_handle().map(|h| h.as_raw()) {
+        Ok(RawWindowHandle::Win32(h)) => (h.hwnd.get() as u64, "win32"),
+        Ok(RawWindowHandle::AppKit(h)) => (h.ns_view.as_ptr() as u64, "appkit"),
+        Ok(RawWindowHandle::Xlib(h)) => (u64::from(h.window), "x11"),
+        Ok(RawWindowHandle::Xcb(h)) => (u64::from(h.window.get()), "x11"),
+        Ok(RawWindowHandle::Wayland(_)) => (0, "wayland"),
+        _ => (0, ""),
+    }
+}
+
 /// The winit attributes for a new window (design section 7.3). It starts hidden; the app shows
 /// it once its first frame is drawn. `owner` / `embed` are the OS windows of `plan.owner` /
 /// `plan.embed_in`.

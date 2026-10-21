@@ -36,6 +36,7 @@ mod project;
 pub(crate) mod reload;
 mod render_sync;
 mod ui_scale;
+mod windows;
 pub(crate) mod world_view;
 
 use std::collections::{HashMap, HashSet};
@@ -228,6 +229,9 @@ fn run() -> Result<()> {
     // The game's manifest and the machine, for `Application` and `SystemInfo`, before
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&code_root);
+    // `Window.main` starts with the manifest's title; the real size and scale come with the window.
+    iron_engine_api::window::set_main(&manifest.title, (1280.0, 720.0), 1.0);
+    iron_engine_api::window::set_supported(iron_platform::Os::current().supports_windows());
     let mut info = info::Info::new(&manifest);
     // The player's saved settings (not for screenshot runs, which stay the same every
     // time) and the window mode: the manifest's default, then the player's choice.
@@ -351,6 +355,10 @@ fn run() -> Result<()> {
         scene_events,
         world_view: world_view::WorldViews::default(),
         panels: panels::Panels::default(),
+        windows: windows::AppWindows::new(),
+        window_commands: Vec::new(),
+        windows_to_show: Vec::new(),
+        main_focus_sent: None,
         pointer_on: Surface::Screen,
         keys_on: Surface::Screen,
         buttons_down: 0,
@@ -411,13 +419,15 @@ fn run() -> Result<()> {
         display_settings.window_width,
         display_settings.window_height,
     );
+    // Screenshot runs make no OS windows for secondary windows: they draw offscreen.
+    let virtual_windows = app.screenshot.is_some();
     Platform::new().run(
         WindowConfig {
             title: manifest.title.clone(),
             icon,
             width,
             height,
-            virtual_windows: false,
+            virtual_windows,
         },
         app,
     )?;
@@ -506,6 +516,13 @@ struct App {
     screen: (f32, f32, f32),
     /// React UI on planes in the world (`WorldPanel`s), each with its own tree.
     panels: panels::Panels,
+    /// Secondary windows (`Window.create`), each with its own tree, and which windows have focus.
+    windows: windows::AppWindows,
+    /// Platform commands scripts' window requests became, and the windows drawn for the first time.
+    window_commands: Vec<iron_platform::WindowCommand>,
+    windows_to_show: Vec<iron_platform::WindowKey>,
+    /// The game's focus as last given to the lifecycle (any of its windows focused).
+    main_focus_sent: Option<bool>,
     /// The surface under the pointer (or holding it while a button is down), and the one
     /// keys go to (the last one clicked).
     pointer_on: Surface,
@@ -974,6 +991,9 @@ impl App {
         if self.ui.contains(node) {
             return Surface::Screen;
         }
+        if let Some((key, _)) = self.windows.map.iter().find(|(_, w)| w.tree.contains(node)) {
+            return Surface::Window(key.0);
+        }
         self.panels
             .map
             .iter()
@@ -1027,7 +1047,8 @@ impl App {
                     let (x, y) = point.unwrap_or((-1e6, -1e6));
                     (Surface::Panel(id), x, y)
                 }
-                Surface::Screen => {
+                // (`pointer_on` is never a window: those route their own pointer.)
+                Surface::Screen | Surface::Window(_) => {
                     let scale = self.scale();
                     (Surface::Screen, px / scale, py / scale)
                 }
@@ -1097,6 +1118,24 @@ impl App {
     /// Applies React commits, then the ops scripts queued, in order.
     fn apply_script_output(&mut self) {
         for (target, commit) in self.scripts.drain_targeted_commits() {
+            if target >= iron_core::WINDOW_TARGET {
+                // A secondary window's tree; commits that come before the window opens wait.
+                let key = target - iron_core::WINDOW_TARGET;
+                match self.windows.map.get_mut(&iron_platform::WindowKey(key)) {
+                    Some(w) => {
+                        for e in w.tree.apply_commit(&commit) {
+                            tracing::warn!(target: "ui", "{e}");
+                        }
+                    }
+                    None => self
+                        .windows
+                        .pending_commits
+                        .entry(key)
+                        .or_default()
+                        .push(commit),
+                }
+                continue;
+            }
             let tree = if target == 0 {
                 &mut self.ui
             } else {
@@ -1132,7 +1171,8 @@ impl App {
                     };
                     let id = iron_core::NodeId(id as u32);
                     let surface = self.surface_of(id);
-                    if op.name == "focus" {
+                    // Keys go to the window with OS focus; windows route their own.
+                    if op.name == "focus" && !matches!(surface, Surface::Window(_)) {
                         self.keys_on = surface;
                     }
                     self.handle_on(
@@ -1322,6 +1362,7 @@ impl App {
             }
         }
         self.report_textures(loaded);
+        self.pump_windows();
     }
 
     /// Asset files changed on disk: textures, models and sounds from them load again
@@ -1448,6 +1489,20 @@ impl App {
                 });
                 p.interaction.take_clipboard()
             }
+            Surface::Window(key) => {
+                let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+                    return;
+                };
+                let _current =
+                    iron_engine_api::window::enter_current(iron_engine_api::window::WindowRef(key));
+                w.interaction.handle(&mut w.tree, input, &mut |event| {
+                    if native.is_some() {
+                        return native_render::window_event(scene, key, event);
+                    }
+                    dispatch(scripts, ui_events, event)
+                });
+                w.interaction.take_clipboard()
+            }
         };
         match clipboard {
             Some(Clipboard::Copy(text)) => {
@@ -1468,11 +1523,58 @@ impl App {
             {
                 native_render::panel_settle(id, &mut p.tree);
             }
-            n.settle(&mut self.scene.scene, &mut self.ui);
-            self.native_after();
+            if let Surface::Window(key) = surface
+                && let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key))
+            {
+                let _current =
+                    iron_engine_api::window::enter_current(iron_engine_api::window::WindowRef(key));
+                native_render::window_settle(key, &mut w.tree);
+                n.settle(&mut self.scene.scene, &mut self.ui);
+                self.native_after();
+            } else {
+                n.settle(&mut self.scene.scene, &mut self.ui);
+                self.native_after();
+            }
+        }
+        if let Surface::Window(key) = surface {
+            self.update_window_cursor_and_ime(key);
+            return;
         }
         self.update_ime();
         self.update_cursor();
+    }
+
+    /// A window's own cursor and IME state (the main window's are `update_cursor` / `update_ime`).
+    fn update_window_cursor_and_ime(&mut self, key: u32) {
+        let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+            return;
+        };
+        let iron_platform::WindowHost::Os(window) = &w.host else {
+            return;
+        };
+        let (keyword, _) = w.interaction.cursor_with_images(&w.tree);
+        if keyword != w.cursor {
+            w.cursor = keyword;
+            window.set_cursor_visible(keyword != "none");
+            if let Ok(icon) = keyword.parse::<CursorIcon>() {
+                window.set_cursor(icon);
+            }
+        }
+        let area = w.interaction.ime_area(&w.tree);
+        if area.is_some() != w.ime_allowed {
+            w.ime_allowed = area.is_some();
+            window.set_ime_allowed(w.ime_allowed);
+        }
+        if let Some(a) = area {
+            let z = 1.0 / window.scale_factor() as f32 * w.scale as f32;
+            window.set_ime_cursor_area(
+                iron_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
+                iron_platform::dpi::LogicalSize::new(
+                    (a.width * z).max(1.0),
+                    (a.height * z).max(1.0),
+                ),
+            );
+        }
     }
 
     /// After a call into a compiled game: its node commands, window, `Application`,
@@ -1480,6 +1582,7 @@ impl App {
     fn native_after(&mut self) {
         self.apply_node_commands();
         self.native_requests();
+        self.pump_windows();
     }
 
     /// Applies what compiled code asked of nodes it holds refs to (`focus()`, `blur()`,
@@ -1500,7 +1603,7 @@ impl App {
                 ),
             };
             let surface = self.surface_of(iron_core::NodeId(id));
-            if matches!(c, NodeCommand::Focus(_)) {
+            if matches!(c, NodeCommand::Focus(_)) && !matches!(surface, Surface::Window(_)) {
                 self.keys_on = surface;
             }
             self.handle_on(surface, input);
@@ -1703,7 +1806,7 @@ impl App {
                     .is_some_and(|p| p.interaction.ime_area(&p.tree).is_some()),
                 None,
             ),
-            Surface::Screen => {
+            Surface::Screen | Surface::Window(_) => {
                 let area = self.interaction.ime_area(&self.ui);
                 (area.is_some(), area)
             }
@@ -1787,6 +1890,9 @@ impl App {
         for p in self.panels.map.values_mut() {
             load_font(&mut p.tree, &self.asset_root, family, src, weight, italic);
         }
+        for w in self.windows.map.values_mut() {
+            load_font(&mut w.tree, &self.asset_root, family, src, weight, italic);
+        }
         self.font_sources
             .push((family.to_owned(), src.to_owned(), weight, italic));
     }
@@ -1808,6 +1914,11 @@ impl App {
                 p.tree.remove_stylesheet(id);
             }
         }
+        for w in self.windows.map.values_mut() {
+            if let Some(id) = w.sheets.remove(&js_id) {
+                w.tree.remove_stylesheet(id);
+            }
+        }
         if name == "removeStyleSheet" {
             if let Some(id) = self.sheets.remove(&js_id) {
                 self.ui.remove_stylesheet(id);
@@ -1822,6 +1933,10 @@ impl App {
         for p in self.panels.map.values_mut() {
             let id = add_stylesheet(&mut p.tree, &self.asset_root, css, "", "addStyleSheet");
             p.sheets.insert(js_id, id);
+        }
+        for w in self.windows.map.values_mut() {
+            let id = add_stylesheet(&mut w.tree, &self.asset_root, css, "", "addStyleSheet");
+            w.sheets.insert(js_id, id);
         }
         self.sheet_sources
             .push((js_id, css.to_owned(), String::new(), "addStyleSheet".into()));
@@ -1930,6 +2045,44 @@ impl PlatformApp for App {
         self.custom_cursor.take()
     }
 
+    fn take_window_commands(&mut self) -> Vec<iron_platform::WindowCommand> {
+        std::mem::take(&mut self.window_commands)
+    }
+
+    fn window_opened(&mut self, key: iron_platform::WindowKey, host: iron_platform::WindowHost) {
+        self.window_open(key, host);
+    }
+
+    fn window_open_failed(&mut self, key: iron_platform::WindowKey, error: String) {
+        self.in_game(|| {
+            iron_engine_api::window::open_failed(iron_engine_api::window::WindowRef(key.0), &error)
+        });
+    }
+
+    fn window_input(&mut self, key: iron_platform::WindowKey, event: InputEvent) {
+        if key == iron_platform::WindowKey::MAIN {
+            self.input(event);
+        } else {
+            self.window_event(key, event);
+        }
+    }
+
+    fn close_requested(&mut self, key: iron_platform::WindowKey) -> bool {
+        self.window_close_requested(key)
+    }
+
+    fn window_closed(&mut self, key: iron_platform::WindowKey) {
+        self.window_gone(key);
+    }
+
+    fn events_done(&mut self) {
+        self.window_events_done();
+    }
+
+    fn take_windows_to_show(&mut self) -> Vec<iron_platform::WindowKey> {
+        std::mem::take(&mut self.windows_to_show)
+    }
+
     fn window_ready(&mut self, window: Arc<Window>) {
         // The saved (or default) window mode, before the first frame shows. Screenshot
         // runs stay windowed.
@@ -1971,6 +2124,18 @@ impl PlatformApp for App {
                 let mut renderer = UiRenderer::new(&gpu);
                 renderer.set_asset_root(&self.asset_root);
                 let world = WorldRenderer::new(&gpu);
+                // `Window.main` learns the real size and scale (its title may be the game's own).
+                let dpi = window.scale_factor();
+                let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
+                    .map_or_else(String::new, |s| s.title);
+                iron_engine_api::window::set_main(
+                    &title,
+                    windows::to_ui((size.width, size.height), dpi),
+                    dpi,
+                );
+                if title != window.title() {
+                    window.set_title(&title);
+                }
                 self.gfx = Some(Gfx {
                     gpu,
                     surface,
@@ -2034,15 +2199,49 @@ impl PlatformApp for App {
             self.send_game_input(&args);
         }
         match event {
-            InputEvent::Focused(f) => self.lifecycle.set_focused(f),
+            // The game's focus is any of its windows' (`window_events_done`).
+            InputEvent::Focused(f) => {
+                if f {
+                    self.windows.focused.insert(iron_platform::WindowKey::MAIN);
+                } else {
+                    self.windows.focused.remove(&iron_platform::WindowKey::MAIN);
+                }
+                self.in_game(|| {
+                    iron_engine_api::window::focus_changed(iron_engine_api::window::MAIN, f)
+                });
+            }
             InputEvent::Occluded(o) => self.lifecycle.set_occluded(o),
-            InputEvent::Resized { width, height } => self.lifecycle.set_size(width, height),
+            InputEvent::Resized { width, height } => {
+                self.lifecycle.set_size(width, height);
+                if let Some(gfx) = &self.gfx {
+                    let dpi = gfx.window.scale_factor();
+                    let size = windows::to_ui((width, height), dpi);
+                    self.in_game(|| {
+                        iron_engine_api::window::resized(
+                            iron_engine_api::window::MAIN,
+                            size.0,
+                            size.1,
+                        )
+                    });
+                }
+            }
+            InputEvent::Moved { x, y } => {
+                if let Some(gfx) = &self.gfx {
+                    let dpi = gfx.window.scale_factor();
+                    let (lx, ly) = (f64::from(x) / dpi, f64::from(y) / dpi);
+                    self.in_game(|| {
+                        iron_engine_api::window::moved(iron_engine_api::window::MAIN, lx, ly)
+                    });
+                }
+            }
+            InputEvent::ScaleChanged(s) => {
+                self.in_game(|| {
+                    iron_engine_api::window::scale_changed(iron_engine_api::window::MAIN, s)
+                });
+            }
             _ => {}
         }
-        if matches!(
-            event,
-            InputEvent::Focused(_) | InputEvent::Occluded(_) | InputEvent::Resized { .. }
-        ) {
+        if matches!(event, InputEvent::Occluded(_) | InputEvent::Resized { .. }) {
             self.sync_lifecycle();
         }
         if let InputEvent::Focused(focused) = event {
@@ -2173,7 +2372,7 @@ impl PlatformApp for App {
         self.handle_on(self.keys_on, input);
         // Keys typed into a text field are the field's, not the game's.
         let typing = match self.keys_on {
-            Surface::Screen => self
+            Surface::Screen | Surface::Window(_) => self
                 .interaction
                 .focused()
                 .is_some_and(|id| self.ui.is_editor(id)),
@@ -2529,6 +2728,8 @@ fn load_sound(
 enum Surface {
     Screen,
     Panel(u32),
+    /// A secondary window's UI (by window handle).
+    Window(u32),
 }
 
 /// The key `game.css` has among the stylesheets every UI tree gets.

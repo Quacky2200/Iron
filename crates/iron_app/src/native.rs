@@ -141,6 +141,9 @@ pub struct Native {
     /// `createRoot(panel).render(..)` calls: the panel's handle and its root element, for the
     /// app (each panel has its own tree and runtime).
     panel_mounts: Vec<(u64, iron_ui_native::Element)>,
+    /// `createRoot(win).render(..)` calls for windows other than the main one: the window's handle
+    /// and its root element, for the app (each window has its own tree and runtime).
+    window_mounts: Vec<(u64, iron_ui_native::Element)>,
     /// Sets the engine state the program reads at start (`Application`, quality levels, layers):
     /// runs before the program's top level, at load and again after a reload's resets.
     env: Box<dyn Fn()>,
@@ -199,6 +202,7 @@ impl Native {
             generation,
             remount: None,
             panel_mounts: Vec::new(),
+            window_mounts: Vec::new(),
             env,
             root: None,
             no_spawn: no_spawn_classes(&bundle.source),
@@ -315,6 +319,11 @@ impl Native {
         std::mem::take(&mut self.panel_mounts)
     }
 
+    /// The window roots the program mounted since the last call (window handle, root element).
+    pub fn take_window_mounts(&mut self) -> Vec<(u64, iron_ui_native::Element)> {
+        std::mem::take(&mut self.window_mounts)
+    }
+
     /// What follows any call into the program: mounts, queued component work, microtasks.
     pub fn after_script(&mut self, scene: &mut Scene, ui: &mut UiTree) {
         let _scope = iron_scene::api::enter(scene);
@@ -325,7 +334,22 @@ impl Native {
         // Scene events reach the program's listeners once the world is consistent.
         iron_scenes::dispatch();
         log_faults(self.host.settle());
-        for (target, handle) in iron_ts_ui::take_mounts() {
+        // `createRoot(win)`: the main window is the screen; other windows get their root from the app.
+        let mut mounts: Vec<(u64, u64)> = iron_ts_ui::take_mounts();
+        for (window, handle) in iron_ts_ui::take_window_mounts() {
+            let w = iron_engine_api::window::WindowRef(window as u32);
+            if !iron_engine_api::window::can_set_up(w) {
+                tracing::warn!(target: "script", "createRoot(window {window}): that window belongs to another family; ignored");
+                continue;
+            }
+            if window == 1 {
+                mounts.push((0, handle));
+            } else {
+                self.window_mounts
+                    .push((window, iron_ts_ui::element_from(handle)));
+            }
+        }
+        for (target, handle) in mounts {
             tracing::debug!(target, handle, "mount");
             let element = iron_ts_ui::element_from(handle);
             if target == 0 {
@@ -492,6 +516,7 @@ impl Native {
         iron_render_api::reset();
         iron_physics_api::reset();
         iron_scenes::reset();
+        iron_engine_api::window::reset();
     }
 
     /// The class names of the running game.

@@ -17,6 +17,10 @@ const FIRST_NODE: u32 = 1 << 30;
 struct State {
     /// One reconciler per world panel (a runtime serves one tree).
     runtimes: HashMap<u32, (Runtime, RootId)>,
+    /// One reconciler per secondary window (by window handle), like the panels'.
+    windows: HashMap<u32, (Runtime, RootId)>,
+    /// Window roots mounted before their window was opened.
+    window_pending: Vec<(u32, iron_ui_native::Element)>,
     /// Panels a `WorldPanel` component exists for (the others only had a mount so far).
     live: HashSet<u32>,
     /// The `Screen` size last told to the game, and the display state last pushed.
@@ -109,6 +113,7 @@ impl App {
             }
         }
         self.sync_panels(extras.panels);
+        self.sync_window_roots();
     }
 
     /// A compiled game reloaded: its registries start over, and so does what hangs on them.
@@ -302,6 +307,98 @@ impl App {
                 tracing::warn!(target: "ui", "{e}");
             }
         }
+    }
+}
+
+impl App {
+    /// Secondary windows' roots: new `createRoot(win)` mounts (kept until the window exists), and
+    /// every window's pending state updates.
+    pub(super) fn sync_window_roots(&mut self) {
+        let Some(native) = self.native.as_mut() else {
+            return;
+        };
+        let mounts = native.take_window_mounts();
+        st(|s| {
+            s.window_pending
+                .extend(mounts.into_iter().map(|(h, e)| (h as u32, e)))
+        });
+        let pending = st(|s| std::mem::take(&mut s.window_pending));
+        let _scope = iron_scene::api::enter(&mut self.scene.scene);
+        for (key, element) in pending {
+            let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+                // Not opened yet: wait, unless the window is gone.
+                let live = iron_engine_api::window::state(iron_engine_api::window::WindowRef(key))
+                    .is_some_and(|s| s.open);
+                if live {
+                    st(|s| s.window_pending.push((key, element)));
+                }
+                continue;
+            };
+            let errors = st(|s| {
+                let (rt, rid) = s.windows.entry(key).or_insert_with(|| {
+                    let mut rt = Runtime::new(FIRST_NODE);
+                    let rid = rt.create_root(iron_ui::ROOT);
+                    (rt, rid)
+                });
+                let rid = *rid;
+                rt.render(rid, element, &mut w.tree)
+            });
+            for e in errors {
+                tracing::warn!(target: "ui", "{e}");
+            }
+        }
+        // State set by timers and effects since the last frame.
+        let keys: Vec<u32> = st(|s| s.windows.keys().copied().collect());
+        for key in keys {
+            let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+                continue;
+            };
+            let _current =
+                iron_engine_api::window::enter_current(iron_engine_api::window::WindowRef(key));
+            let errors = st(|s| {
+                s.windows
+                    .get_mut(&key)
+                    .map(|(rt, _)| rt.flush(&mut w.tree))
+                    .unwrap_or_default()
+            });
+            for e in errors {
+                tracing::warn!(target: "ui", "{e}");
+            }
+        }
+    }
+}
+
+/// Drops a closed window's reconciler (its effects' cleanups run) with the scene current.
+pub(super) fn drop_window_runtime(key: u32) {
+    let rt = st(|s| s.windows.remove(&key));
+    drop(rt);
+    st(|s| s.window_pending.retain(|(k, _)| *k != key));
+}
+
+/// A UI event of a window through the handlers of its reconciler (see [`panel_event`]).
+pub(super) fn window_event(scene: &mut iron_scene::Scene, key: u32, e: &iron_ui::UiEvent) -> bool {
+    let Some(mut ev) = native::to_event(e) else {
+        return false;
+    };
+    let _scope = iron_scene::api::enter(scene);
+    st(|s| {
+        s.windows.get_mut(&key).is_some_and(|(rt, _)| {
+            native::set_target_kind(rt.host_kind(ev.target));
+            rt.dispatch_handlers(&mut ev)
+        })
+    })
+}
+
+/// Commits what the handlers of a window's events changed.
+pub(super) fn window_settle(key: u32, tree: &mut UiTree) {
+    let errors = st(|s| {
+        s.windows
+            .get_mut(&key)
+            .map(|(rt, _)| rt.settle(tree))
+            .unwrap_or_default()
+    });
+    for e in errors {
+        tracing::warn!(target: "ui", "{e}");
     }
 }
 

@@ -22,7 +22,7 @@ pub use platform::{
 };
 pub use windows::{
     NativePlan, Os, WindowCommand, WindowHost, WindowKey, WindowKind, WindowSpec, WindowTree,
-    attributes, place, plan,
+    attributes, native_handle, place, plan,
 };
 pub use winit::dpi;
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, Theme, Window};

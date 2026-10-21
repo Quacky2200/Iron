@@ -3,6 +3,10 @@
 
 pub use glam;
 
+/// The UI target id of a window's tree: `WINDOW_TARGET | handle` in `__iron_commit(ops, target)`
+/// (0 is the screen, smaller ids are world panels).
+pub const WINDOW_TARGET: u32 = 0x4000_0000;
+
 mod assets;
 mod ids;
 mod ops;
