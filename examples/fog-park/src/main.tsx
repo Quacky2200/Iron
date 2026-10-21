@@ -852,9 +852,10 @@ function terraceRow(at: Vector3, dir: number, length: number): void {
   const along = yawDir(dir);
   const brick = pick(BRICK_ROW);
   shape("Terrace", "cube", at.add(v(0, h / 2, 0)), v(depth, h, length), brick, yaw);
-  // The roof: a box turned 45° about the row's length, half of it showing as a gable.
+  // The roof: a box turned 45° about the row's length, half of it showing as a gable. A
+  // touch shorter than the row, so its ends don't lie flush with the end walls (z-fighting).
   const r = depth / Math.SQRT2;
-  shape("Roof", "cube", at.add(v(0, h, 0)), v(r, r, length), SLATE, Quaternion.euler(0, dir, 0).mul(Quaternion.euler(0, 0, 45)));
+  shape("Roof", "cube", at.add(v(0, h, 0)), v(r, r, length - 0.06), SLATE, Quaternion.euler(0, dir, 0).mul(Quaternion.euler(0, 0, 45)));
   // Chimney stacks along the ridge, each with a row of pots.
   for (let d = -length / 2 + 3; d < length / 2 - 2; d += Random.range(5, 8)) {
     // On the ridge, reaching well down into the roof so it never floats.
@@ -907,7 +908,7 @@ function skyline(): void {
   for (let i = 0; i < 5; i++) {
     const z = -24 + i * 13;
     shape("Terrace", "cube", v(92, 7, z), v(12, 14, 12.6), TERRACE);
-    shape("Terrace roof", "cube", v(92, 14, z), v(8.5, 8.5, 12.6), TERRACE_ROOF, Quaternion.euler(0, 0, 45));
+    shape("Terrace roof", "cube", v(92, 14, z), v(8.5, 8.5, 12.54), TERRACE_ROOF, Quaternion.euler(0, 0, 45));
   }
 }
 

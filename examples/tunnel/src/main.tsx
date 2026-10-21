@@ -115,7 +115,7 @@ class Drive extends Component {
       sunSize: 1.2,
     };
     RenderSettings.tonemapping = "aces";
-    RenderSettings.bloom = { threshold: 1.0, intensity: 1.3, scatter: 0.85 };
+    this.setBloom(1);
     RenderSettings.fogMode = "exponential";
     // The haze's own colour is dark: it only glows where light reaches it (the sun's shafts
     // outside, the lamps inside), so the tunnel's air stays dark.
@@ -135,6 +135,21 @@ class Drive extends Component {
     const eye = new GameObject("Main Camera", { position: new Vector3(-2.2, 1.35, START_Z) });
     this.camera = eye.addComponent(Camera, { fieldOfView: 62, farClipPlane: 600, clearFlags: "skybox" });
     apply();
+  }
+
+  private bloomStep = -1;
+
+  /**
+   * Bloom, scaled by `k` (0..1): full from deep inside, where the exit is a glow far ahead;
+   * faded near it, where a full glow would swell into an orb filling the view and plain
+   * overexposure looks right.
+   */
+  private setBloom(k: number) {
+    const step = Math.round(k * 20);
+    if (step === this.bloomStep) return;
+    this.bloomStep = step;
+    const f = step / 20;
+    RenderSettings.bloom = { threshold: 1.0, intensity: 0.15 + 1.15 * f, scatter: 0.6 + 0.25 * f };
   }
 
   /** Black tarmac from end to end, a dashed middle line and solid edge lines. */
@@ -259,6 +274,10 @@ class Drive extends Component {
       this.z -= SPEED * dt;
       if (this.z < END_Z) this.z = START_Z;
     }
+    // Full bloom until 70 m from the exit, fading to a trace 12 m from it and outside.
+    const toExit = this.z + TUNNEL_LENGTH;
+    const k = Math.min(1, Math.max(0, (toExit - 12) / 58));
+    this.setBloom(k * k * (3 - 2 * k));
     // A gentle sway in the lane and a slight bob, looking down the road.
     const cam = this.camera.transform;
     cam.position = new Vector3(-2.2 + Math.sin(this.t * 0.31) * 0.25, 1.35 + Math.sin(this.t * 2.1) * 0.015, this.z);
