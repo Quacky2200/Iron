@@ -207,6 +207,12 @@ screenshot runs, `examples/windows`.
 - [x] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).
 - [ ] Steps F1 to F4: window families and event domains (per-family input, focus, pause, timers, UI roots; one winit loop,
   per-domain queues; threads / processes per domain are later phases).
+  - [x] F1: families in the API (`DomainId`, `root` / `isIsolated` / `domain` / `run`, `Window.domainFocused` /
+    `onDomainFocusChanged`, the cross-family guard with the setup exception, `window::end_frame` / `run_queued` /
+    `can_set_up`). Decisions: tool / dialog / popup / child default to the creating domain's root (the main window in the
+    main domain); a parent from another family is ignored with a warning; a window made for another domain's family is
+    open to its creator's setup (`run`, `on*`, `createRoot`) until `end_frame`.
+  - [ ] F2 (input per domain), F3 (timers per domain), F4 (the app).
 - [ ] Steps M1 to M3: messages (`postMessage`, `onMessage<T>`, `request<R>`, `onRequest`, `broadcast`; JSON of the static type,
   no handles), and the isolated Inspector in `examples/windows`.
 - Answered by the user (2026-10-21): `isChild` = has a parent; hot reload keeps keyed windows; secondary windows vsync off; no OS

@@ -222,6 +222,9 @@ interface WindowOptions {
   focus?: boolean;
   /** A name that keeps the window across a hot reload and finds it again (`Window.find`). */
   key?: string;
+  /** Root windows of isolated families only (a "normal" or "borderless" window without a parent): keep the
+   *  domain's timers running while the family is unfocused. Default true. */
+  runInBackground?: boolean;
 }
 interface Window {
   /** Changing it re-applies decorations, taskbar and z-order rules; "child" cannot be set or unset. */

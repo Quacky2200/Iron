@@ -6,6 +6,12 @@
 //! [`resized`], [`moved`], [`focus_changed`], [`close_requested`], [`closed`], ...). Scripts hold
 //! [`WindowRef`] handles (numbers); a handle read after the window closed still gives its last values
 //! and its setters do nothing. No winit types here: [`Style`] has its own enum.
+//!
+//! Families and event domains (design section 3a): a window without a parent (the main window, or a
+//! "normal" / "borderless" window made without one) is the root of a family; every window below it
+//! shares its [`DomainId`], the root's handle. Code of one domain may read the windows of another but
+//! not change them (the way across is messages); the exception is the setup of a new isolated root by
+//! its creator, until [`end_frame`].
 
 use crate::log::{Level, emit as log_emit};
 use iron_api::callback::{Listeners, emit};
@@ -32,6 +38,19 @@ impl WindowRef {
 
 /// The window that owns the process.
 pub const MAIN: WindowRef = WindowRef(1);
+
+/// An event domain: the handle of its family's root window (1 for the main family).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DomainId(pub u32);
+
+impl DomainId {
+    pub const MAIN: DomainId = DomainId(1);
+
+    /// The root window of the domain.
+    pub fn root(self) -> WindowRef {
+        WindowRef(self.0)
+    }
+}
 
 /// How a window looks and behaves (design section 4); the host maps it to `iron_platform`'s kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -124,6 +143,8 @@ pub struct WindowState {
     pub open: bool,
     /// Drawn inside its parent's client area (set by the host, [`set_embedded`]).
     pub embedded: bool,
+    /// Roots of isolated families: keep the domain's timers running while it is unfocused.
+    pub run_in_background: bool,
     pub native_handle: u64,
     pub platform: String,
     /// Creation order, for `count` / `at` and the cascade offset.
@@ -211,6 +232,15 @@ struct State {
     in_close_request: Option<WindowRef>,
     /// Creation counter for `WindowState::order`.
     order: u32,
+    /// The domain whose code runs now.
+    domain: DomainId,
+    /// `run` callbacks waiting for their domain's next dispatch.
+    run_queue: BTreeMap<DomainId, Vec<Callback<()>>>,
+    /// New windows a domain other than their own may still set up this frame: window to creator.
+    setup: BTreeMap<WindowRef, DomainId>,
+    /// (focused, paused) per domain, as the host last said.
+    domain_focus: BTreeMap<DomainId, (bool, bool)>,
+    domain_listeners: BTreeMap<DomainId, Listeners<(bool, bool)>>,
 }
 
 fn main_state() -> WindowState {
@@ -230,6 +260,7 @@ fn main_state() -> WindowState {
         created: true,
         open: true,
         embedded: false,
+        run_in_background: true,
         native_handle: 0,
         platform: String::new(),
         order: 0,
@@ -247,7 +278,51 @@ impl State {
             cancel: false,
             in_close_request: None,
             order: 1,
+            domain: DomainId::MAIN,
+            run_queue: BTreeMap::new(),
+            setup: BTreeMap::new(),
+            domain_focus: BTreeMap::new(),
+            domain_listeners: BTreeMap::new(),
         }
+    }
+
+    /// The root of `w`'s family (the window itself when it has no parent); `w` when unknown.
+    fn root_of(&self, w: WindowRef) -> WindowRef {
+        let mut cur = w;
+        // A parent chain is short; the bound only guards against a broken state.
+        for _ in 0..1024 {
+            match self.windows.get(&cur).and_then(|st| st.parent) {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+        cur
+    }
+
+    fn domain_of(&self, w: WindowRef) -> DomainId {
+        if self.windows.contains_key(&w) {
+            DomainId(self.root_of(w).0)
+        } else {
+            DomainId::MAIN
+        }
+    }
+
+    /// May the running domain change `w`? Warns when not.
+    fn may_change(&self, w: WindowRef) -> bool {
+        let d = self.domain_of(w);
+        if d == self.domain {
+            return true;
+        }
+        warn(&format!(
+            "window {} belongs to another family (domain {}) and cannot be changed from domain {}; send it a message instead",
+            w.0, d.0, self.domain.0
+        ));
+        false
+    }
+
+    /// Like [`State::may_change`], and true for the creator of `w` during setup.
+    fn may_set_up(&self, w: WindowRef) -> bool {
+        self.setup.get(&w) == Some(&self.domain) || self.may_change(w)
     }
 
     /// Queues a request; a request for the same field of the same window replaces the pending one.
@@ -294,6 +369,12 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 fn warn(message: &str) {
     log_emit(Level::Warn, message);
+}
+
+/// Calls the listeners of `w` with its domain current.
+fn emit_in<A: Clone + 'static>(w: WindowRef, cbs: &[Callback<A>], args: A) {
+    let _g = enter_domain(domain_of(w));
+    emit(cbs, args);
 }
 
 // ---- Host functions ----
@@ -364,7 +445,7 @@ pub fn resized(w: WindowRef, width: f64, height: f64) {
         Some(s.listeners.get(&w)?.resized.snapshot())
     });
     if let Some(cbs) = calls {
-        emit(&cbs, (width, height));
+        emit_in(w, &cbs, (width, height));
     }
 }
 
@@ -379,7 +460,7 @@ pub fn moved(w: WindowRef, x: f64, y: f64) {
         Some(s.listeners.get(&w)?.moved.snapshot())
     });
     if let Some(cbs) = calls {
-        emit(&cbs, (x, y));
+        emit_in(w, &cbs, (x, y));
     }
 }
 
@@ -394,7 +475,7 @@ pub fn focus_changed(w: WindowRef, focused: bool) {
         Some(s.listeners.get(&w)?.focus.snapshot())
     });
     if let Some(cbs) = calls {
-        emit(&cbs, (focused,));
+        emit_in(w, &cbs, (focused,));
     }
 }
 
@@ -409,7 +490,7 @@ pub fn scale_changed(w: WindowRef, scale: f64) {
         Some(s.listeners.get(&w)?.scale.snapshot())
     });
     if let Some(cbs) = calls {
-        emit(&cbs, (scale,));
+        emit_in(w, &cbs, (scale,));
     }
 }
 
@@ -433,7 +514,7 @@ pub fn close_requested(w: WindowRef) -> bool {
         s.cancel = false;
         (cbs, prev)
     });
-    emit(&cbs, ());
+    emit_in(w, &cbs, ());
     with(|s| {
         let allowed = !s.cancel;
         s.in_close_request = prev.0;
@@ -460,7 +541,7 @@ pub fn closed(w: WindowRef) {
         )
     });
     if let Some(cbs) = calls {
-        emit(&cbs, ());
+        emit_in(w, &cbs, ());
         with(|s| s.listeners.remove(&w));
     }
 }
@@ -484,6 +565,96 @@ pub fn enter_current(w: WindowRef) -> CurrentGuard {
     }
 }
 
+/// Restores the previous domain (and `Window.current`) when dropped.
+pub struct DomainGuard {
+    prev: (DomainId, Option<WindowRef>),
+}
+
+impl Drop for DomainGuard {
+    fn drop(&mut self) {
+        let prev = self.prev;
+        with(|s| {
+            s.domain = prev.0;
+            s.current = prev.1;
+        });
+    }
+}
+
+/// Runs code as domain `d`: `current_domain()` is `d`, and `Window.current` is `d`'s root unless a
+/// window event sets it ([`enter_current`]).
+pub fn enter_domain(d: DomainId) -> DomainGuard {
+    DomainGuard {
+        prev: with(|s| (std::mem::replace(&mut s.domain, d), s.current.take())),
+    }
+}
+
+/// The domain whose code runs now (the main one outside any [`enter_domain`]).
+pub fn current_domain() -> DomainId {
+    with(|s| s.domain)
+}
+
+/// The domain of a window: its family root's handle (the main domain for an unknown window).
+pub fn domain_of(w: WindowRef) -> DomainId {
+    with(|s| s.domain_of(w))
+}
+
+/// Domains with an open root: the main one first, then by root creation order.
+pub fn domains() -> Vec<DomainId> {
+    with(|s| {
+        s.open_in_order()
+            .into_iter()
+            .filter(|w| s.windows[w].parent.is_none())
+            .map(|w| DomainId(w.0))
+            .collect()
+    })
+}
+
+/// Whether a domain keeps running while unfocused (its root's `runInBackground`; true for the main
+/// one, whose rule is `Application.runInBackground`).
+pub fn run_in_background(d: DomainId) -> bool {
+    with(|s| {
+        s.windows
+            .get(&d.root())
+            .is_none_or(|st| st.run_in_background)
+    })
+}
+
+/// The host says a domain's focus / pause changed (it aggregates OS focus per family): runs
+/// `onDomainFocusChanged` of that domain.
+pub fn domain_focus_changed(d: DomainId, focused: bool, paused: bool) {
+    let cbs = with(|s| {
+        s.domain_focus.insert(d, (focused, paused));
+        s.domain_listeners
+            .get(&d)
+            .map(|l| l.snapshot())
+            .unwrap_or_default()
+    });
+    let _g = enter_domain(d);
+    emit(&cbs, (focused, paused));
+}
+
+/// The host calls this once per frame: windows made this frame stop being open to setup by their
+/// creator's domain.
+pub fn end_frame() {
+    with(|s| s.setup.clear());
+}
+
+/// Runs the callbacks `Window.run` queued for `d`, each with `d` current; returns how many.
+pub fn run_queued(d: DomainId) -> usize {
+    let cbs = with(|s| s.run_queue.remove(&d).unwrap_or_default());
+    let _g = enter_domain(d);
+    for c in &cbs {
+        c.call(());
+    }
+    cbs.len()
+}
+
+/// Whether the running domain may set `w` up: it is in `w`'s domain, or it made `w` this frame.
+/// The app asks before it mounts a root for `createRoot(win)`.
+pub fn can_set_up(w: WindowRef) -> bool {
+    with(|s| s.setup.get(&w) == Some(&s.domain) || s.domain_of(w) == s.domain)
+}
+
 /// Tests: only the main window, no listeners, no requests.
 pub fn reset() {
     with(|s| *s = State::new());
@@ -499,7 +670,7 @@ fn read<R>(w: WindowRef, f: impl FnOnce(&WindowState) -> R) -> Option<R> {
 /// A write to an open window (a closed or unknown one is left alone); returns whether it ran.
 fn write(w: WindowRef, f: impl FnOnce(&mut State, WindowRef)) -> bool {
     with(|s| {
-        if s.windows.get(&w).is_some_and(|st| st.open) {
+        if s.windows.get(&w).is_some_and(|st| st.open) && s.may_change(w) {
             f(s, w);
             true
         } else {
@@ -550,6 +721,7 @@ fn create_window(
     parent: WindowRef,
     flags: Flags,
     key: &str,
+    run_in_background: bool,
 ) -> WindowRef {
     let style_v = if style.is_empty() {
         Style::Normal
@@ -562,12 +734,29 @@ fn create_window(
         })
     };
     with(|s| {
-        // A parent must be an open window other than the new one; none means the owner of the
-        // styles that always have one (the main window).
-        let parent = Some(parent)
+        // A parent must be an open window of the creating domain (or one it is setting up this
+        // frame); none means the root of the creating domain for the styles that always have an
+        // owner (the main window, in the main domain), and a new isolated root for the others.
+        let cur_root = s.domain.root();
+        let cur_root = if s.windows.get(&cur_root).is_some_and(|st| st.open) {
+            cur_root
+        } else {
+            MAIN
+        };
+        let wanted = Some(parent)
             .filter(|p| *p != WindowRef::NONE)
-            .filter(|p| s.windows.get(p).is_some_and(|st| st.open))
-            .or(style_v.needs_parent().then_some(MAIN));
+            .filter(|p| s.windows.get(p).is_some_and(|st| st.open));
+        let wanted = wanted.filter(|p| {
+            let ok = s.setup.get(p) == Some(&s.domain) || s.domain_of(*p) == s.domain;
+            if !ok {
+                warn(&format!(
+                    "Window.create: window {} belongs to another family and cannot be a parent from domain {}; ignored",
+                    p.0, s.domain.0
+                ));
+            }
+            ok
+        });
+        let parent = wanted.or(style_v.needs_parent().then_some(cur_root));
         let size = (
             if width.is_nan() {
                 400.0
@@ -616,11 +805,18 @@ fn create_window(
                 created: false,
                 open: true,
                 embedded: false,
+                run_in_background,
                 native_handle: 0,
                 platform: String::new(),
                 order,
             },
         );
+        // The creator may set up a window of another domain (a new isolated root, or a window
+        // under one) until the end of the frame.
+        if s.domain_of(w) != s.domain {
+            let creator = s.domain;
+            s.setup.insert(w, creator);
+        }
         s.push(WindowRequest::Create(w));
         w
     })
@@ -637,7 +833,7 @@ fn add_listener<A: Clone + 'static>(
     pick: impl FnOnce(&mut WindowListeners) -> &mut Listeners<A>,
 ) -> u32 {
     with(|s| {
-        if !s.windows.get(&w).is_some_and(|st| st.open) {
+        if !s.windows.get(&w).is_some_and(|st| st.open) || !s.may_set_up(w) {
             return 0;
         }
         pick(s.listeners.entry(w).or_default()).add(f)
@@ -671,7 +867,8 @@ pub mod window_api {
             always_on_top = false,
             visible = true,
             focus = true,
-            key
+            key,
+            run_in_background = true
         )]
         #[allow(clippy::too_many_arguments)]
         pub fn create(
@@ -692,6 +889,7 @@ pub mod window_api {
             visible: bool,
             focus: bool,
             key: &str,
+            run_in_background: bool,
         ) -> WindowRef {
             create_window(
                 title,
@@ -713,6 +911,7 @@ pub mod window_api {
                     focus_on_show: focus,
                 },
                 key,
+                run_in_background,
             )
         }
 
@@ -738,7 +937,7 @@ pub mod window_api {
         /// window.
         #[property]
         pub fn current() -> WindowRef {
-            with(|s| s.current.unwrap_or(MAIN))
+            with(|s| s.current.unwrap_or(s.domain.root()))
         }
 
         /// Open windows, the main one first.
@@ -845,6 +1044,74 @@ pub mod window_api {
         #[property]
         pub fn is_embedded(self) -> bool {
             read(self, |s| s.embedded).unwrap_or(false)
+        }
+
+        /// The root of its family: follow `parent` to the end (itself for a root).
+        /// `Window.main.root` is `Window.main`.
+        #[property]
+        pub fn root(self) -> WindowRef {
+            with(|s| {
+                if s.windows.contains_key(&self) {
+                    s.root_of(self)
+                } else {
+                    WindowRef::NONE
+                }
+            })
+        }
+
+        /// True for the root of a family other than the main one: its own event domain.
+        #[property]
+        pub fn is_isolated(self) -> bool {
+            with(|s| self != MAIN && s.windows.contains_key(&self) && s.root_of(self) == self)
+        }
+
+        /// The event domain's id: the root's handle (1 for the main family).
+        #[property]
+        pub fn domain(self) -> f64 {
+            with(|s| f64::from(s.domain_of(self).0))
+        }
+
+        /// Runs `f` once in this window's domain at the start of its next dispatch (the setup of an
+        /// isolated domain). Allowed for the window's own domain at any time, and for its creator
+        /// during setup. False when refused or the window is closed.
+        pub fn run(self, f: Callback<()>) -> bool {
+            with(|s| {
+                if !s.windows.get(&self).is_some_and(|st| st.open) || !s.may_set_up(self) {
+                    return false;
+                }
+                let d = s.domain_of(self);
+                s.run_queue.entry(d).or_default().push(f);
+                true
+            })
+        }
+
+        /// Whether the domain of the code running now has focus (one of its family's windows is
+        /// focused).
+        #[property]
+        pub fn domain_focused() -> bool {
+            with(|s| s.domain_focus.get(&s.domain).is_some_and(|f| f.0))
+        }
+
+        /// Calls `f(focused, paused)` when the current domain's focus changes; `paused` is true when
+        /// that stops its timers.
+        pub fn on_domain_focus_changed(f: Callback<(bool, bool)>) -> u32 {
+            with(|s| {
+                let d = s.domain;
+                s.domain_listeners.entry(d).or_default().add(f)
+            })
+        }
+
+        /// Removes a static listener by token.
+        #[js_name = "off"]
+        pub fn off_static(token: f64) -> bool {
+            if token.is_nan() || token < 1.0 {
+                return false;
+            }
+            with(|s| {
+                let t = token as u32;
+                let d = s.domain;
+                s.domain_listeners.get_mut(&d).is_some_and(|l| l.remove(t))
+            })
         }
 
         /// Open windows whose parent this is.
@@ -1095,7 +1362,9 @@ pub mod window_api {
         /// the game.
         pub fn close(self) {
             if self == MAIN {
-                crate::app::application_api::quit();
+                if with(|s| s.may_change(self)) {
+                    crate::app::application_api::quit();
+                }
                 return;
             }
             write(self, |s, w| {
@@ -1153,9 +1422,10 @@ pub mod window_api {
                 return false;
             }
             with(|s| {
-                s.listeners
-                    .get_mut(&self)
-                    .is_some_and(|l| l.remove(token as u32))
+                s.may_set_up(self)
+                    && s.listeners
+                        .get_mut(&self)
+                        .is_some_and(|l| l.remove(token as u32))
             })
         }
     }

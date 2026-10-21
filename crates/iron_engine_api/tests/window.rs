@@ -31,6 +31,7 @@ fn create_tool() -> WindowRef {
         true,
         true,
         "palette",
+        true,
     )
 }
 
@@ -53,6 +54,7 @@ fn create_plain(style: &str) -> WindowRef {
         true,
         true,
         "",
+        true,
     )
 }
 
@@ -153,6 +155,7 @@ fn create_fills_defaults_per_style() {
         true,
         true,
         "",
+        true,
     );
     let cs = window::state(child).unwrap();
     assert_eq!(cs.parent, Some(tool));
@@ -432,6 +435,7 @@ fn count_and_at_list_open_windows_main_first() {
         true,
         true,
         "k",
+        true,
     );
     let c2 = WindowRef::create(
         "",
@@ -451,6 +455,7 @@ fn count_and_at_list_open_windows_main_first() {
         true,
         true,
         "k",
+        true,
     );
     assert_ne!(c1, c2);
     assert_eq!(WindowRef::find("k"), c1);
@@ -480,6 +485,7 @@ fn parent_children_and_is_child() {
         true,
         true,
         "",
+        true,
     );
     assert_eq!(tool.parent(), MAIN);
     assert!(tool.is_child() && dlg.is_child());
@@ -511,6 +517,7 @@ fn parent_children_and_is_child() {
         true,
         true,
         "",
+        true,
     );
     assert!(!orphan.is_child());
 }
