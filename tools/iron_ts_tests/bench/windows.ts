@@ -279,3 +279,109 @@ export function openErrorOfSecond(): string {
   if (w === undefined) return "gone";
   return `${w.openError}`;
 }
+
+// ---- Typed replies and named events ------------------------------------------------------------
+
+interface Stats {
+  n: number;
+  tags: string[];
+  inner: { ok: boolean; vals: number[] };
+}
+
+type Pair = { a: number; b: string };
+
+let typedLog = "";
+
+export function typedLogText(): string {
+  return typedLog;
+}
+
+export function typedLogClear(): void {
+  typedLog = "";
+}
+
+/** Answers a request with a declared interface, nested objects and arrays. */
+export function serveStats(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, Stats>((from, req, reply) => {
+    reply({ n: req.kind.length, tags: [req.kind, "x"], inner: { ok: true, vals: [1, 2.5] } });
+  });
+}
+
+export function servePair(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, Pair>((from, req, reply) => {
+    reply({ a: 4, b: req.kind });
+  });
+}
+
+export function servePairs(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, Pair[]>((from, req, reply) => {
+    reply([{ a: 1, b: "one" }, { a: 2, b: "two" }]);
+  });
+}
+
+export function serveNums(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, number[]>((from, req, reply) => {
+    reply([1, 2, 3]);
+  });
+}
+
+export async function askStats(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const r = await w.request<Stats>({ kind: "stats" });
+  typedLog += `iface ${r.n}|${r.tags.join(",")}|${r.inner.ok}|${r.inner.vals[1]};`;
+  return 0;
+}
+
+export async function askPair(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const a = await w.request<Pair>({ kind: "pair" });
+  typedLog += `alias ${a.a}|${a.b};`;
+  return 0;
+}
+
+export async function askPairs(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const arr = await w.request<Pair[]>({ kind: "pairs" });
+  typedLog += `arr ${arr.length}|${arr[1]!.b};`;
+  return 0;
+}
+
+export async function askNums(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const nums = await w.request<number[]>({ kind: "nums" });
+  typedLog += `nums ${nums.length};`;
+  return 0;
+}
+
+export function serveNested(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, { a: { b: number[]; c: string | null } }>((from, req, reply) => {
+    reply({ a: { b: [7, 8], c: null } });
+  });
+}
+
+export async function askNested(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const r = await w.request<{ a: { b: number[]; c: string | null } }>({ kind: "nested" });
+  typedLog += `nested ${r.a.b.length}|${r.a.b[1]}|${r.a.c === null};`;
+  return 0;
+}

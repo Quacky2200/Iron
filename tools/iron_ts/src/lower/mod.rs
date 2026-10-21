@@ -523,6 +523,20 @@ impl<'a> Lowerer<'a> {
                 (Statement::ClassDeclaration(c), _) => self.declare_class_name(c)?,
                 (_, Some(Declaration::TSEnumDeclaration(e))) => self.declare_enum(e)?,
                 (_, Some(Declaration::ClassDeclaration(c))) => self.declare_class_name(c)?,
+                // Interfaces and aliases are known before any class field is typed: the classes
+                // written per promise type sit in front of the program and name them.
+                (Statement::TSInterfaceDeclaration(d), _) => {
+                    self.ifaces.insert(d.id.name.to_string(), d);
+                }
+                (Statement::TSTypeAliasDeclaration(d), _) => {
+                    self.aliases.insert(d.id.name.to_string(), d);
+                }
+                (_, Some(Declaration::TSInterfaceDeclaration(d))) => {
+                    self.ifaces.insert(d.id.name.to_string(), d);
+                }
+                (_, Some(Declaration::TSTypeAliasDeclaration(d))) => {
+                    self.aliases.insert(d.id.name.to_string(), d);
+                }
                 _ => {}
             }
         }

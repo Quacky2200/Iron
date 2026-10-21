@@ -1488,3 +1488,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2851 | Integration | Control-flow statements at the top of an imported module run when the module is bundled and match bun (`bench/toplevel_dep.ts`, `topImported`). |
 | M9-TS-2852 | Integration | A `for` loop at the top level fills an array that functions use later (`topSquares`), also with a collection at every allocation. |
 | M9-TS-2853 | Integration | A top-level `return` and a statement kind the compiler cannot lower (a namespace) are compile errors naming the statement and its line; nothing is dropped silently. |
+| M9-TS-2854 | Integration | `win.request<R>` and `onRequest<T, R>` in compiled code decode a program-declared interface, a type alias, an array of aliases, `number[]` and a nested anonymous type (with an array and a nullable field), also with a collection at every allocation (`bench/windows.ts`, `tests/all/windows.rs`). |

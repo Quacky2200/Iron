@@ -475,3 +475,33 @@ fn compiled_code_sees_open_failures_open_error_and_is_supported() {
         assert_eq!(text(ts_win_openErrorOfSecond()), "gone");
     });
 }
+
+// M9-TS-2854
+#[test]
+fn request_replies_decode_declared_interfaces_aliases_arrays_and_nesting() {
+    in_every_gc_mode(|| unsafe {
+        type Serve = unsafe extern "C" fn(f64);
+        type Ask = unsafe extern "C" fn(f64) -> *mut Promise_number;
+        ts_win_typedLogClear();
+        let cases: [(Serve, Ask); 5] = [
+            (ts_win_serveStats, ts_win_askStats),
+            (ts_win_servePair, ts_win_askPair),
+            (ts_win_servePairs, ts_win_askPairs),
+            (ts_win_serveNums, ts_win_askNums),
+            (ts_win_serveNested, ts_win_askNested),
+        ];
+        for (serve, ask) in cases {
+            let h = ts_win_createInspector();
+            serve(h);
+            let p = ask(h);
+            assert!(!p.is_null());
+            deliver(WindowRef(h as u32), 0.0);
+            window::deliver(window::DomainId::MAIN, 1.0);
+            iron_ts_rt::ts_rt_microtasks_run();
+        }
+        assert_eq!(
+            text(ts_win_typedLogText()),
+            "iface 5|stats,x|true|2.5;alias 4|pair;arr 2|two;nums 3;nested 2|8|true;"
+        );
+    });
+}
