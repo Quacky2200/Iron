@@ -103,7 +103,7 @@ class Shed extends Component {
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogColor = new Color(0, 0, 0, 1);
     RenderSettings.fogDensity = 0.12;
-    RenderSettings.volumetricFog = { intensity: 1.6, anisotropy: 0.3, steps: 6, distance: 14 };
+    RenderSettings.volumetricFog = { intensity: 1.6, anisotropy: 0.3, steps: 6, distance: 14, resolution: "ultra" };
     RenderSettings.autoExposure = { minEV: -6, maxEV: 10, compensation: -1, speedDarkToLight: 2, speedLightToDark: 0.8 };
 
     // Moonlight through the planks' gaps: faint, blue.

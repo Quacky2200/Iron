@@ -68,6 +68,9 @@ pub struct VolumeCamera {
     /// Shadow samples per cell each frame, and for cells whose view moved.
     pub samples: u32,
     pub motion_samples: u32,
+    /// Where the spot and point lights in the volume are, which way they point and how
+    /// bright they are, hashed: when it changes (a sweeping beam) the history counts less.
+    pub local_lights: u64,
 }
 
 /// `VolumeFrame` in world.wgsl.
@@ -336,7 +339,10 @@ impl VolumePass {
             samples: [
                 camera.samples.max(1) as f32,
                 camera.motion_samples as f32,
-                0.0,
+                f32::from(u8::from(
+                    s.last
+                        .is_some_and(|l| l.local_lights != camera.local_lights),
+                )),
                 0.0,
             ],
         };

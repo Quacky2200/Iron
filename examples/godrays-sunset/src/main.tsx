@@ -46,11 +46,13 @@ const SKY_STEPS = 700;
 const LIGHT_LEVELS = 6;
 /** Tower sizes (width, height) in floors and bays: each has its own tiled materials. */
 const TOWER_KINDS = [
-  [5, 8], [6, 12], [8, 16], [6, 22], [9, 28], [7, 40], [10, 52],
+  [4, 7], [4, 10], [5, 13], [4, 18], [6, 22], [5, 32], [7, 42],
 ] as const;
 /** A floor's height and a window bay's width, metres. */
-const STOREY = 3.6;
-const BAY_W = 4;
+const STOREY = 4.2;
+const BAY_W = 6;
+/** Storeys and bays in the facade's texture block (it repeats every this many). */
+const BLOCK = 16;
 /** Where in the day golden hour is held when the day isn't passing. */
 const GOLDEN = 0.55;
 
@@ -205,32 +207,47 @@ class Flat extends Component {
    * not whole faces, and nothing sits on top of the walls to flicker.
    */
   private buildCity() {
-    // Both maps cover a block of 8 x 8 storeys and bays, 16 texels each: the facade (a pane
-    // of glass in concrete per bay and storey) and which panes are lit. Emission maps share
-    // the main texture's tiling, so the two line up.
+    // Both maps cover a block of BLOCK x BLOCK storeys and bays, 16 texels each: the facade
+    // (a wide pane of glass in concrete per bay and storey) and which panes are lit. Emission
+    // maps share the main texture's tiling, so the two line up.
     const N = 16;
-    const M = 8 * N;
+    const M = BLOCK * N;
+    const isGlass = (px: number, py: number) => px > 1 && px < 14 && py > 4 && py < 14;
     const facade: Color[] = [];
     for (let y = 0; y < M; y++) {
       for (let x = 0; x < M; x++) {
-        const px = x % N;
-        const py = y % N;
-        const glass = px > 2 && px < 13 && py > 3 && py < 14;
         // Dark glass in grey concrete: a city is darker than it looks.
-        facade.push(glass ? new Color(0.025, 0.032, 0.045, 1) : new Color(0.2, 0.2, 0.21, 1));
+        facade.push(isGlass(x % N, y % N) ? new Color(0.025, 0.032, 0.045, 1) : new Color(0.2, 0.2, 0.21, 1));
       }
     }
     const pane = Texture.create(M, M, facade, { filterMode: "bilinear" });
+    // Flats are two bays wide. About a fifth are lit, in clusters: some floors are busy and
+    // some asleep, and a lit flat makes its neighbour likelier. Most are warm, a few cool
+    // (LED, a television), some dimmer behind curtains.
+    const lights: (Color | null)[] = Array.from({ length: BLOCK * BLOCK }, () => null);
+    for (let floor = 0; floor < BLOCK; floor++) {
+      const busy = Random.value;
+      let last = false;
+      for (let flat = 0; flat < BLOCK / 2; flat++) {
+        const lit = Random.value < 0.06 + 0.22 * busy + (last ? 0.2 : 0);
+        last = lit;
+        if (!lit) continue;
+        const b = Random.range(0.55, 1);
+        const c = Random.value < 0.2 ? new Color(0.8 * b, 0.88 * b, b, 1) : new Color(b, 0.85 * b, 0.62 * b, 1);
+        // Mostly both windows, sometimes just one room.
+        const both = Random.value < 0.7;
+        const one = Random.value < 0.5 ? 0 : 1;
+        for (const k of [0, 1]) {
+          if (both || k === one) lights[floor * BLOCK + flat * 2 + k] = c;
+        }
+      }
+    }
+    const dark = new Color(0, 0, 0, 1);
     const litPx: Color[] = [];
-    const on: boolean[] = Array.from({ length: 64 }, () => Random.value < 0.45);
     for (let y = 0; y < M; y++) {
       for (let x = 0; x < M; x++) {
-        const cell = Math.floor(y / N) * 8 + Math.floor(x / N);
-        const px = x % N;
-        const py = y % N;
-        const glass = px > 2 && px < 13 && py > 3 && py < 14;
-        const v = glass && on[cell] ? 1 : 0;
-        litPx.push(new Color(v, v * 0.9, v * 0.75, 1));
+        const c = lights[Math.floor(y / N) * BLOCK + Math.floor(x / N)];
+        litPx.push(c && isGlass(x % N, y % N) ? c : dark);
       }
     }
     const lit = Texture.create(M, M, litPx, { filterMode: "bilinear" });
@@ -241,9 +258,9 @@ class Flat extends Component {
         return Material.create({
           color: Color.hex(tints[k % tints.length]!),
           mainTexture: pane,
-          mainTextureScale: new Vector2(bays / 8, floors / 8),
+          mainTextureScale: new Vector2(bays / BLOCK, floors / BLOCK),
           emissionMap: lit,
-          emission: new Color(2.4 * e, 1.8 * e, 1.1 * e, 1),
+          emission: new Color(2.6 * e, 2.1 * e, 1.6 * e, 1),
           smoothness: 0.4,
         });
       }),

@@ -3651,11 +3651,15 @@ impl WorldRenderer {
                             lights: view
                                 .lights
                                 .iter()
-                                .filter(|l| l.kind == LightKind::Directional && l.volumetric > 0.0)
+                                .filter(|l| {
+                                    l.volumetric > 0.0
+                                        && (l.kind == LightKind::Directional || l.shadows.is_some())
+                                })
                                 .fold(u64::from(self.shadow_plan.cascades), |k, l| {
                                     k.wrapping_mul(4)
                                         .wrapping_add(1 + u64::from(l.shadows.is_some()))
                                 }),
+                            local_lights: local_light_pose(&view.lights),
                         };
                         self.volume.encode(
                             gpu,
@@ -3860,6 +3864,34 @@ impl WorldRenderer {
             pass.after_submit(gpu);
         }
     }
+}
+
+/// A hash of where the shadowed spot and point lights are, which way they point and how bright
+/// they are (to a millimetre / a thousandth): the light volume trusts its history less when it
+/// changes.
+fn local_light_pose(lights: &[Light]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for l in lights
+        .iter()
+        .filter(|l| l.kind != LightKind::Directional && l.shadows.is_some() && l.volumetric > 0.0)
+    {
+        let q = |v: f32| (v * 1000.0).round() as i64;
+        for v in [
+            l.position.x,
+            l.position.y,
+            l.position.z,
+            l.direction.x,
+            l.direction.y,
+            l.direction.z,
+            l.color[0],
+            l.color[1],
+            l.color[2],
+        ] {
+            q(v).hash(&mut h);
+        }
+    }
+    h.finish()
 }
 
 /// `view` seen in `mirror`: the camera reflected in its plane, and everything behind the

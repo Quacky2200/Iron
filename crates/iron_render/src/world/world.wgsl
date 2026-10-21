@@ -395,7 +395,8 @@ struct VolumeFrame {
     // xyz: where in each cell to sample (0..1); w: how much of this frame to keep (1: all,
     // no history).
     jitter: vec4<f32>,
-    // x: shadow samples per cell this frame; y: for cells whose view moved.
+    // x: shadow samples per cell this frame; y: for cells whose view moved; z: 1 when a
+    // spot or point light in the volume moved or changed this frame.
     samples: vec4<f32>,
 };
 @group(3) @binding(4) var<uniform> frame: VolumeFrame;
@@ -414,11 +415,19 @@ fn scattered_all(x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let count = u32(g.ambient.w);
     for (var l = 0u; l < count; l++) {
         let light = lights[l];
-        if (light.color.w > 0.0 && light.position.w < 0.5) {
+        if (light.color.w > 0.0 && in_volume(light)) {
             sum += scattered(light, x, dir);
         }
     }
     return sum;
+}
+
+// Whether a light's shafts go through the light volume: the sun, and spot and point lights
+// with shadows (their beams cut into blades by bars, slats and planks, far finer than a pixel's
+// samples along its ray can follow; the volume's jittered, denoised cells can). Spot and
+// point lights without shadows are worked out per pixel (`local_shafts`), their cones exact.
+fn in_volume(light: Light) -> bool {
+    return light.position.w < 0.5 || light.shadow.x >= 0.0;
 }
 
 // How much of what's `t` along the view ray from `eye` shows through all the fog.
@@ -440,7 +449,7 @@ fn local_shafts(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool) -> vec
     let count = u32(g.ambient.w);
     for (var l = 0u; l < count; l++) {
         let light = lights[l];
-        if (light.color.w <= 0.0 || light.position.w < 0.5) {
+        if (light.color.w <= 0.0 || in_volume(light)) {
             continue;
         }
         let o = eye - light.position.xyz;
@@ -616,7 +625,8 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
     // whose view moved (or that have no history) take the motion count: that's when their
     // history counts least, so fresh samples are what they show.
     let base = max(1, i32(frame.samples.x));
-    let count = select(base, max(base, i32(frame.samples.y)), moved > 0.25 || !has_history);
+    let lights_moved = frame.samples.z > 0.5;
+    let count = select(base, max(base, i32(frame.samples.y)), moved > 0.25 || !has_history || lights_moved);
     var light = vec3<f32>(0.0);
     for (var k = 0; k < count; k++) {
         let r3 = vec3<f32>(0.8191725, 0.6710436, 0.5497005) * f32(k);
@@ -629,7 +639,9 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
         // The further the history has moved, the less it's trusted: each reprojection
         // blurs it a little, and with a long history that piles up into smeared beams
         // while the camera moves. Still, it's trusted fully.
-        let fresh = max(blend, min(0.5, moved * MOTION_TRUST));
+        // A light that moved (a sweeping beam) would leave its old beams behind in a long
+        // history: that frame, the history counts for half.
+        let fresh = max(max(blend, min(0.5, moved * MOTION_TRUST)), select(0.0, 0.5, lights_moved));
         light = mix(history, light, fresh);
     }
     textureStore(light_out, vec3<i32>(id), vec4<f32>(light, 1.0));
