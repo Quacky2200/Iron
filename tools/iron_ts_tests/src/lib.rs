@@ -1054,6 +1054,18 @@ pub mod windows_t {
     include!(concat!(env!("OUT_DIR"), "/windows_bindings.rs"));
 }
 
+/// `bench/toplevel.ts`, prefix `tl_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod toplevel_t {
+    include!(concat!(env!("OUT_DIR"), "/toplevel_bindings.rs"));
+}
+
 /// Programs that probe the collector's root analysis (`bench/gap.ts`), prefix `gap_`.
 #[allow(
     dead_code,

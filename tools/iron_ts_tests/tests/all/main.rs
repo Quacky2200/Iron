@@ -81,6 +81,7 @@ mod symbols;
 mod task;
 mod temporal;
 mod timespan;
+mod toplevel;
 mod typed;
 mod ui;
 mod uri;

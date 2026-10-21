@@ -98,6 +98,8 @@ enum TopItem<'a> {
     Class(&'a Class<'a>),
     /// A statement like `createRoot().render(<App />);` or `console.log("x");`.
     Expr(&'a Expression<'a>),
+    /// A control-flow statement (`if`, `for`, `while`, `switch`, `try`, a block, ..).
+    Stmt(&'a Statement<'a>),
 }
 
 #[derive(Clone)]
@@ -542,7 +544,39 @@ impl<'a> Lowerer<'a> {
                 Statement::TSTypeAliasDeclaration(d) => {
                     self.aliases.insert(d.id.name.to_string(), d);
                 }
-                _ => {}
+                Statement::IfStatement(_)
+                | Statement::ForStatement(_)
+                | Statement::ForInStatement(_)
+                | Statement::ForOfStatement(_)
+                | Statement::WhileStatement(_)
+                | Statement::DoWhileStatement(_)
+                | Statement::SwitchStatement(_)
+                | Statement::TryStatement(_)
+                | Statement::LabeledStatement(_)
+                | Statement::ThrowStatement(_)
+                | Statement::BlockStatement(_) => vars.push(TopItem::Stmt(stmt)),
+                // Handled by the module graph, or erased types.
+                Statement::EmptyStatement(_)
+                | Statement::ImportDeclaration(_)
+                | Statement::ExportNamedDeclaration(_)
+                | Statement::ExportDefaultDeclaration(_)
+                | Statement::ExportFromDeclaration(_)
+                | Statement::ExportAllDeclaration(_)
+                | Statement::TSEnumDeclaration(_)
+                | Statement::DebuggerStatement(_) => {}
+                other => {
+                    let kind = match other {
+                        Statement::ReturnStatement(_) => "return",
+                        Statement::BreakStatement(_) => "break",
+                        Statement::ContinueStatement(_) => "continue",
+                        Statement::WithStatement(_) => "with",
+                        _ => "statement",
+                    };
+                    bail!(
+                        "{}: unsupported top-level statement: {kind}",
+                        self.loc(oxc_span::GetSpan::span(other).start)
+                    )
+                }
             }
         }
         self.flush_pending_classes()?;
@@ -573,6 +607,7 @@ impl<'a> Lowerer<'a> {
                     let v = self.lower_expr(e, None)?;
                     init_body.push(Stmt::Eval(v));
                 }
+                TopItem::Stmt(st) => self.lower_stmts(std::slice::from_ref(st), &mut init_body)?,
             }
         }
         init_body.push(Stmt::Return(None));

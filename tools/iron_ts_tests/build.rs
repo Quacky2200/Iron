@@ -114,6 +114,7 @@ fn main() {
         ("render_native", "rdn_", 7200),
         ("facade", "fac_", 7300),
         ("windows", "win_", 7400),
+        ("toplevel", "tl_", 7600),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
@@ -135,13 +136,20 @@ fn main() {
             }
             _ => vec![],
         };
-        let compiled = iron_ts::compile_with_manifests(
-            &std::fs::read_to_string(&path).unwrap(),
-            "speed",
-            prefix,
-            base,
-            &manifests,
-        );
+        // `toplevel` imports a second file: bundle it like `iron-build` does.
+        let compiled = if name == "toplevel" {
+            let dep = manifest.join("bench/toplevel_dep.ts");
+            println!("cargo:rerun-if-changed={}", dep.display());
+            iron_ts::compile_program(&path, "speed", prefix, base, &manifests).map(|(o, _)| o)
+        } else {
+            iron_ts::compile_with_manifests(
+                &std::fs::read_to_string(&path).unwrap(),
+                "speed",
+                prefix,
+                base,
+                &manifests,
+            )
+        };
         let out = match compiled {
             Ok(out) => out,
             Err(e) => panic!("iron_ts {name}: {e}"),
