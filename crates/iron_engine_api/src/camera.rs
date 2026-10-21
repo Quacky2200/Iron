@@ -61,6 +61,18 @@ pub struct CameraData {
     pub target_texture: TextureRef,
     /// The editor's ground grid.
     pub scene_grid: bool,
+    /// Shows `RenderSettings.fog` (a minimap turns it off).
+    pub fog: bool,
+    /// The EV100 it shows its view at, and how bright auto exposure metered it (NaN until the
+    /// renderer has read them back).
+    pub exposure: f64,
+    pub scene_brightness: f64,
+    /// A physical camera's aperture (f-number), shutter time (s) and ISO, for the manual exposure.
+    pub aperture: f64,
+    pub shutter_speed: f64,
+    pub iso: f64,
+    /// How many times `resetExposure()` was called (the host acts when it grows).
+    pub exposure_resets: f64,
 }
 
 thread_local! {
@@ -89,6 +101,19 @@ pub fn camera_on(object: ObjectId) -> Option<CameraRef> {
 /// Runs `f` on a camera's data (what animation writes through).
 pub fn with_camera<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
     with(c, f)
+}
+
+/// EV100 of a physical camera's settings.
+pub fn physical_ev(aperture: f64, shutter_speed: f64, iso: f64) -> f64 {
+    (aperture * aperture / shutter_speed.max(1e-6)).log2() - (iso.max(1.0) / 100.0).log2()
+}
+
+/// The renderer read back a camera's exposure (EV100 in use) and how bright it metered.
+pub fn set_exposure(c: CameraRef, ev: f64, scene_brightness: f64) {
+    with(c, |d| {
+        d.exposure = ev;
+        d.scene_brightness = scene_brightness;
+    });
 }
 
 /// Removes the cameras of destroyed GameObjects.
@@ -165,6 +190,13 @@ pub mod camera_api {
                     antialiasing: "none".to_string(),
                     target_texture: TextureRef(0),
                     scene_grid: false,
+                    fog: true,
+                    exposure: f64::NAN,
+                    scene_brightness: f64::NAN,
+                    aperture: 16.0,
+                    shutter_speed: 1.0 / 200.0,
+                    iso: 200.0,
+                    exposure_resets: 0.0,
                 }));
                 CameraRef(c.len() as u32)
             })
@@ -372,6 +404,76 @@ pub mod camera_api {
 
         pub fn set_scene_grid(self, on: bool) {
             with(self, |d| d.scene_grid = on);
+        }
+
+        /// Shows `RenderSettings.fog` (on by default): turn it off for a minimap or a clear view.
+        #[property]
+        pub fn fog(self) -> bool {
+            with(self, |d| d.fog).unwrap_or(true)
+        }
+
+        pub fn set_fog(self, on: bool) {
+            with(self, |d| d.fog = on);
+        }
+
+        /// The exposure this camera shows its view at, in EV100 (higher is darker, as a camera's
+        /// EV setting): auto exposure's as it adapts, or the manual one. Read back from the GPU a
+        /// frame or two late; NaN until the first.
+        #[property]
+        pub fn exposure(self) -> f64 {
+            with(self, |d| d.exposure).unwrap_or(f64::NAN)
+        }
+
+        /// How bright auto exposure metered this camera's view, in EV100 (NaN until it has).
+        #[property]
+        pub fn scene_brightness(self) -> f64 {
+            with(self, |d| d.scene_brightness).unwrap_or(f64::NAN)
+        }
+
+        /// Makes auto exposure jump straight to what this camera sees next frame instead of
+        /// easing there: after a cut, a teleport or a scene load.
+        pub fn reset_exposure(self) {
+            with(self, |d| d.exposure_resets += 1.0);
+        }
+
+        /// A physical camera's aperture (f-number, 16): with `shutterSpeed` and `iso` it gives
+        /// `physicalExposure`, for `RenderSettings.fixedExposure`.
+        #[property]
+        pub fn aperture(self) -> f64 {
+            with(self, |d| d.aperture).unwrap_or(16.0)
+        }
+
+        pub fn set_aperture(self, v: f64) {
+            with(self, |d| d.aperture = v);
+        }
+
+        /// The shutter's time in seconds (1/200).
+        #[property]
+        pub fn shutter_speed(self) -> f64 {
+            with(self, |d| d.shutter_speed).unwrap_or(1.0 / 200.0)
+        }
+
+        pub fn set_shutter_speed(self, v: f64) {
+            with(self, |d| d.shutter_speed = v);
+        }
+
+        /// The sensor's ISO (200).
+        #[property]
+        pub fn iso(self) -> f64 {
+            with(self, |d| d.iso).unwrap_or(200.0)
+        }
+
+        pub fn set_iso(self, v: f64) {
+            with(self, |d| d.iso = v);
+        }
+
+        /// The EV100 the physical settings give: log2(N^2 / t) - log2(ISO / 100).
+        #[property]
+        pub fn physical_exposure(self) -> f64 {
+            with(self, |d| {
+                super::physical_ev(d.aperture, d.shutter_speed, d.iso)
+            })
+            .unwrap_or(0.0)
         }
     }
 }

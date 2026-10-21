@@ -118,6 +118,7 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
         run_in_background: manifest.run_in_background,
         target_frame_rate: -1,
     });
+    iron_render_api::set_physical_light_units(manifest.physical_units);
     let sys = info.0.get("system").cloned().unwrap_or_default();
     let text = |k: &str| sys[k].as_str().unwrap_or_default().to_owned();
     let num = |k: &str| sys[k].as_f64().unwrap_or(0.0) as u32;

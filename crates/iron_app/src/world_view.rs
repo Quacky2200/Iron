@@ -609,6 +609,12 @@ impl WorldViews {
     /// A texture that failed to load: sprites using it draw the renderer's missing
     /// checker (an 8 × 8 texel image) in its place.
     /// Whether the game asked for light shafts (`RenderSettings.volumetricFog`).
+    /// The scene-wide fog (tests).
+    #[cfg(test)]
+    pub fn fog_for_test(&self) -> Option<Fog> {
+        self.fog
+    }
+
     pub fn uses_volumetric_fog(&self) -> bool {
         self.fog.is_some_and(|f| f.volumetric.is_some())
     }
@@ -781,6 +787,7 @@ impl WorldViews {
     pub fn clear_components(&mut self) {
         self.cameras.clear();
         self.lights.clear();
+        self.fog_volumes.clear();
         self.renderers.clear();
         self.skins.clear();
     }

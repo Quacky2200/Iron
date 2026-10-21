@@ -575,3 +575,185 @@ function __xm_Window_answer0<R>(self: Window, name: string, f: () => R): number 
   });
 }
 // `ask<R>(name, payload?, timeoutMs?)` is written per reply type by facade.rs.
+
+//# when RenderSettings.heightFog
+interface HeightFogSettings {
+  density: number;
+  baseHeight: number;
+  falloff: number;
+}
+function __xw_RenderSettings_heightFog(h: HeightFogSettings | null): void {
+  RenderSettings.heightFogEnabled = false;
+  if (h !== null) {
+    RenderSettings.heightFogEnabled = true;
+    RenderSettings.heightFogDensity = h.density;
+    RenderSettings.heightFogBaseHeight = h.baseHeight;
+    RenderSettings.heightFogFalloff = h.falloff;
+  }
+}
+
+//# when RenderSettings.volumetricFog
+interface VolumetricFogSettings {
+  intensity?: number;
+  anisotropy?: number;
+  steps?: number;
+  distance?: number;
+  albedo?: Color;
+  sharpDistance?: number;
+  sharpSamples?: number;
+  resolution?: string;
+  denoising?: string;
+  historyWeight?: number;
+  samples?: number;
+  motionSamples?: number;
+}
+function __xw_RenderSettings_volumetricFog(v: VolumetricFogSettings | null): void {
+  RenderSettings.volumetricFogEnabled = false;
+  if (v === null) return;
+  RenderSettings.volumetricFogEnabled = true;
+  if (v.intensity !== undefined) RenderSettings.volumetricFogIntensity = v.intensity;
+  if (v.anisotropy !== undefined) RenderSettings.volumetricFogAnisotropy = v.anisotropy;
+  if (v.steps !== undefined) RenderSettings.volumetricFogSteps = v.steps;
+  if (v.distance !== undefined) RenderSettings.volumetricFogDistance = v.distance;
+  if (v.albedo !== undefined) RenderSettings.volumetricFogAlbedo = v.albedo;
+  if (v.sharpDistance !== undefined) RenderSettings.volumetricFogSharpDistance = v.sharpDistance;
+  if (v.sharpSamples !== undefined) RenderSettings.volumetricFogSharpSamples = v.sharpSamples;
+  if (v.resolution !== undefined) RenderSettings.volumetricFogResolution = v.resolution;
+  if (v.denoising !== undefined) RenderSettings.volumetricFogDenoising = v.denoising;
+  if (v.historyWeight !== undefined) RenderSettings.volumetricFogHistoryWeight = v.historyWeight;
+  if (v.samples !== undefined) RenderSettings.volumetricFogSamples = v.samples;
+  if (v.motionSamples !== undefined) RenderSettings.volumetricFogMotionSamples = v.motionSamples;
+}
+
+//# when RenderSettings.autoExposure
+interface AutoExposureSettings {
+  minEV?: number;
+  maxEV?: number;
+  compensation?: number;
+  speedDarkToLight?: number;
+  speedLightToDark?: number;
+  metering?: string;
+  lowPercent?: number;
+  highPercent?: number;
+  darkAdaptation?: number;
+  darkBelow?: number;
+  curve?: [number, number][];
+  hold?: boolean;
+}
+function __xw_RenderSettings_autoExposure(a: AutoExposureSettings | null): void {
+  RenderSettings.autoExposureEnabled = false;
+  if (a === null) return;
+  RenderSettings.autoExposureEnabled = true;
+  if (a.minEV !== undefined) RenderSettings.autoExposureMinEv = a.minEV;
+  if (a.maxEV !== undefined) RenderSettings.autoExposureMaxEv = a.maxEV;
+  if (a.compensation !== undefined) RenderSettings.autoExposureCompensation = a.compensation;
+  if (a.speedDarkToLight !== undefined) RenderSettings.autoExposureSpeedDarkToLight = a.speedDarkToLight;
+  if (a.speedLightToDark !== undefined) RenderSettings.autoExposureSpeedLightToDark = a.speedLightToDark;
+  if (a.metering !== undefined) RenderSettings.autoExposureMetering = a.metering;
+  if (a.lowPercent !== undefined) RenderSettings.autoExposureLowPercent = a.lowPercent;
+  if (a.highPercent !== undefined) RenderSettings.autoExposureHighPercent = a.highPercent;
+  if (a.darkAdaptation !== undefined) RenderSettings.autoExposureDarkAdaptation = a.darkAdaptation;
+  if (a.darkBelow !== undefined) RenderSettings.autoExposureDarkBelow = a.darkBelow;
+  if (a.hold !== undefined) RenderSettings.autoExposureHold = a.hold;
+  if (a.curve !== undefined) {
+    for (let i = 0; i < a.curve.length; i++) RenderSettings.addAutoExposureCurvePoint(a.curve[i]![0], a.curve[i]![1]);
+  }
+}
+
+//# when RenderSettings.fixedExposure
+function __xw_RenderSettings_fixedExposure(v: number | null): void {
+  if (v === null) RenderSettings.fixedExposureEnabled = false;
+  else RenderSettings.fixedExposureValue = v;
+}
+function __xp_RenderSettings_fixedExposure(): number | null {
+  return RenderSettings.fixedExposureEnabled ? RenderSettings.fixedExposureValue : null;
+}
+
+//# when createFlat|setFlat
+function __xt_Mesh_createFlat<D>(data: D): Mesh {
+  return Mesh.createFlatArrays(data.positions, data.triangles, data.normals, data.uv);
+}
+function __xm_Mesh_setFlat<D>(self: Mesh, data: D): void {
+  self.setFlatArrays(data.positions, data.triangles, data.normals, data.uv);
+}
+
+//# when Random.pick
+function __xt_Random_pick<T>(items: T[]): T | undefined {
+  return items.length > 0 ? items[Random.rangeInt(0, items.length)] : undefined;
+}
+
+//# when illuminanceAt|measureIlluminance
+function __light_lux(l: Light, point: Vector3, normal: Vector3 | undefined): number {
+  if (!l.gameObject.activeInHierarchy) return 0;
+  const t = l.gameObject.transform;
+  const forward = t.forward;
+  if (l.type === "directional") {
+    const cos = normal !== undefined ? Math.max(0, -(normal.x * forward.x + normal.y * forward.y + normal.z * forward.z)) : 1;
+    return l.intensity * cos;
+  }
+  const p = t.position;
+  const dx = point.x - p.x;
+  const dy = point.y - p.y;
+  const dz = point.z - p.z;
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (d >= l.range || d === 0) return 0;
+  // As the renderer: a smooth fade to zero at the range.
+  const x = d / l.range;
+  const fade = (1 - x * x * x * x) * (1 - x * x * x * x);
+  // Lumens to candela, all round (HDRP's spots without reflector).
+  let candela = l.intensity / (4 * Math.PI);
+  if (l.type === "spot") {
+    const c = (dx * forward.x + dy * forward.y + dz * forward.z) / d;
+    const outer = Math.cos(((l.spotAngle / 2) * Math.PI) / 180);
+    const inner = Math.cos(((l.innerSpotAngle / 2) * Math.PI) / 180);
+    const u = Math.min(1, Math.max(0, (c - outer) / Math.max(inner - outer, 1e-4)));
+    candela *= u * u * (3 - 2 * u);
+  }
+  const cos = normal !== undefined ? Math.max(0, -(normal.x * dx + normal.y * dy + normal.z * dz) / d) : 1;
+  return ((candela * fade) / (d * d)) * cos;
+}
+function __light_meter(point: Vector3, normal: Vector3 | undefined, shadows: boolean): number {
+  let sum = 0;
+  const n = Light.count();
+  for (let i = 0; i < n; i++) {
+    const l = Light.at(i);
+    let lux = __light_lux(l, point, normal);
+    if (shadows && lux > 0) {
+      const t = l.gameObject.transform;
+      let dir = new Vector3(0, 1, 0);
+      let distance = 10000;
+      if (l.type === "directional") {
+        const f = t.forward;
+        dir = new Vector3(-f.x, -f.y, -f.z);
+      } else {
+        const p = t.position;
+        dir = new Vector3(p.x - point.x, p.y - point.y, p.z - point.z);
+        distance = dir.magnitude - 0.05;
+      }
+      // Start a little off the point, so the surface it is on does not block it.
+      const len = dir.magnitude > 0 ? dir.magnitude : 1;
+      const from = new Vector3(point.x + (dir.x / len) * 0.02, point.y + (dir.y / len) * 0.02, point.z + (dir.z / len) * 0.02);
+      if (Physics.raycast(from, dir, distance) !== null) lux = 0;
+    }
+    sum += lux;
+  }
+  return sum;
+}
+function __xt_Light_illuminanceAt(point: Vector3, normal?: Vector3): number {
+  return __light_meter(point, normal, false);
+}
+function __xt_Light_measureIlluminance(point: Vector3, normal?: Vector3): Promise<number> {
+  const lux = __light_meter(point, normal, true);
+  return new Promise<number>((resolve) => {
+    resolve(lux);
+  });
+}
+
+//# when FogMode
+type FogMode = "linear" | "exponential" | "exponentialSquared";
+
+//# when VolumeDetail
+type VolumeDetail = "low" | "medium" | "high" | "ultra";
+
+//# when PrimitiveMesh
+type PrimitiveMesh = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";

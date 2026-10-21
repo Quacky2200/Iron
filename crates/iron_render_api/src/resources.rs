@@ -516,6 +516,23 @@ pub(crate) fn set_mesh_data(
     st(|s| s.commands.push(RenderCommand::Mesh(m)));
 }
 
+/// A mesh from flat lists (x, y, z / u, v per vertex), as `Mesh.createFlat` takes them.
+pub(crate) fn set_mesh_flat(
+    m: MeshRef,
+    positions: &[f64],
+    triangles: &[f64],
+    normals: &[f64],
+    uv: &[f64],
+) {
+    with_mesh(m, |d| {
+        d.vertices = positions.to_vec();
+        d.triangles = triangles.iter().map(|t| *t as u32).collect();
+        d.normals = normals.to_vec();
+        d.uv = uv.to_vec();
+    });
+    st(|s| s.commands.push(RenderCommand::Mesh(m)));
+}
+
 #[iron_api(
     namespace = "Mesh", quickjs,
     handles(Mesh = MeshRef),
@@ -533,6 +550,32 @@ pub mod mesh_api {
             let m = super::new_mesh(MeshInfo::default());
             super::set_mesh_data(m, vertices, triangles, normals, uv);
             m
+        }
+
+        /// A mesh from flat number lists, for meshes made in bulk (terrain chunks): x, y, z per
+        /// vertex, triangles as index triples, and normals and texture coordinates (u, v per
+        /// vertex in Unity's bottom-up space), empty for none. `Mesh.createFlat({ positions,
+        /// triangles, normals, uv })` in a game is this.
+        pub fn create_flat_arrays(
+            positions: &[f64],
+            triangles: &[f64],
+            normals: &[f64],
+            uv: &[f64],
+        ) -> MeshRef {
+            let m = super::new_mesh(MeshInfo::default());
+            super::set_mesh_flat(m, positions, triangles, normals, uv);
+            m
+        }
+
+        /// Replaces the mesh's data from flat lists (see `createFlatArrays`).
+        pub fn set_flat_arrays(
+            self,
+            positions: &[f64],
+            triangles: &[f64],
+            normals: &[f64],
+            uv: &[f64],
+        ) {
+            super::set_mesh_flat(self, positions, triangles, normals, uv);
         }
 
         /// A built-in mesh by name: `cube`, `sphere`, `capsule`, `cylinder`, `plane` or `quad`

@@ -86,7 +86,7 @@ pub struct QualityState {
     pub render_scale: f64,
     /// `disable`, `hardOnly` or `all`.
     pub shadows: String,
-    /// `low` or `high`.
+    /// `low` (3 x 3 samples), `medium` (5 x 5) or `high` (7 x 7).
     pub soft_shadow_quality: String,
     pub shadow_resolution: u32,
     pub shadow_distance: f64,
@@ -98,6 +98,16 @@ pub struct QualityState {
     pub anisotropic_filtering: String,
     /// Top mip levels skipped, 0 to 3.
     pub global_texture_mipmap_limit: u32,
+    /// Lets the game's auto exposure run (a player's option).
+    pub auto_exposure: bool,
+    /// Light shafts and god rays (`RenderSettings.volumetricFog`).
+    pub volumetric_fog: bool,
+    /// Rendering in HDR.
+    pub hdr: bool,
+    /// How many lights besides the main one a camera draws (-1: no limit).
+    pub additional_lights: i32,
+    /// Whether spot and point lights cast shadows.
+    pub additional_light_shadows: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -127,17 +137,30 @@ fn level(
         v_sync_count: 0,
         anisotropic_filtering: aniso.into(),
         global_texture_mipmap_limit: mips,
+        auto_exposure: true,
+        volumetric_fog: true,
+        hdr: true,
+        additional_lights: -1,
+        additional_light_shadows: true,
     }
 }
 
 fn default_levels() -> Vec<QualityState> {
+    let mut low = level(
+        "Low", 1, 0.75, "hardOnly", "low", 1024, 20.0, 1, 0.4, "disable", 1,
+    );
+    // The phones' tier: no light shafts, 8 additional lights without shadows.
+    low.volumetric_fog = false;
+    low.additional_lights = 8;
+    low.additional_light_shadows = false;
+    let mut medium = level(
+        "Medium", 2, 1.0, "all", "low", 2048, 25.0, 2, 0.7, "enable", 0,
+    );
+    medium.additional_lights = 32;
+    medium.additional_light_shadows = false;
     vec![
-        level(
-            "Low", 1, 0.75, "hardOnly", "low", 1024, 20.0, 1, 0.4, "disable", 1,
-        ),
-        level(
-            "Medium", 2, 1.0, "all", "low", 2048, 25.0, 2, 0.7, "enable", 0,
-        ),
+        low,
+        medium,
         level(
             "High", 4, 1.0, "all", "low", 2048, 30.0, 4, 1.0, "enable", 0,
         ),
@@ -146,7 +169,7 @@ fn default_levels() -> Vec<QualityState> {
             8,
             1.0,
             "all",
-            "high",
+            "medium",
             4096,
             40.0,
             4,
@@ -194,6 +217,22 @@ fn apply_fields(q: &mut QualityState, o: &Value) {
     if let Some(x) = n("globalTextureMipmapLimit") {
         q.global_texture_mipmap_limit = x as u32;
     }
+    let b = |k: &str| o.get(k).and_then(Value::as_bool);
+    if let Some(x) = b("autoExposure") {
+        q.auto_exposure = x;
+    }
+    if let Some(x) = b("volumetricFog") {
+        q.volumetric_fog = x;
+    }
+    if let Some(x) = b("hdr") {
+        q.hdr = x;
+    }
+    if let Some(x) = n("additionalLights") {
+        q.additional_lights = if x < 0.0 { -1 } else { x.min(256.0) as i32 };
+    }
+    if let Some(x) = b("additionalLightShadows") {
+        q.additional_light_shadows = x;
+    }
 }
 
 fn level_json(q: &QualityState) -> Value {
@@ -210,6 +249,11 @@ fn level_json(q: &QualityState) -> Value {
         "vSyncCount": q.v_sync_count,
         "anisotropicFiltering": q.anisotropic_filtering,
         "globalTextureMipmapLimit": q.global_texture_mipmap_limit,
+        "autoExposure": q.auto_exposure,
+        "volumetricFog": q.volumetric_fog,
+        "hdr": q.hdr,
+        "additionalLights": q.additional_lights,
+        "additionalLightShadows": q.additional_light_shadows,
     })
 }
 
@@ -692,14 +736,14 @@ pub mod quality_api {
         }
     }
 
-    /// Soft shadows' filter: `low` (3 x 3 samples) or `high` (5 x 5).
+    /// Soft shadows' filter: `low` (3 x 3 samples), `medium` (5 x 5) or `high` (7 x 7).
     #[property]
     pub fn soft_shadow_quality() -> String {
         st(|s| s.quality.current.soft_shadow_quality.clone())
     }
 
     pub fn set_soft_shadow_quality(q: &str) {
-        if q == "low" || q == "high" {
+        if ["low", "medium", "high"].contains(&q) {
             change(|c| c.soft_shadow_quality = q.to_string());
         }
     }
@@ -754,6 +798,63 @@ pub mod quality_api {
 
     pub fn set_global_texture_mipmap_limit(n: f64) {
         change(|q| q.global_texture_mipmap_limit = n.round().clamp(0.0, 3.0) as u32);
+    }
+
+    /// The player's switch for auto exposure (on by default): off, the game's auto exposure
+    /// blends out to its manual exposure (over `RenderSettings.exposureTransition`).
+    #[property]
+    pub fn auto_exposure() -> bool {
+        st(|s| s.quality.current.auto_exposure)
+    }
+
+    pub fn set_auto_exposure(on: bool) {
+        change(|q| q.auto_exposure = on);
+    }
+
+    /// Light shafts and god rays on this level (off on Low, the phones' tier).
+    #[property]
+    pub fn volumetric_fog() -> bool {
+        st(|s| s.quality.current.volumetric_fog)
+    }
+
+    pub fn set_volumetric_fog(on: bool) {
+        change(|q| q.volumetric_fog = on);
+    }
+
+    /// Rendering in HDR (off: colours clip at white; bloom, exposure and tonemapping skipped).
+    #[property]
+    pub fn hdr() -> bool {
+        st(|s| s.quality.current.hdr)
+    }
+
+    pub fn set_hdr(on: bool) {
+        change(|q| q.hdr = on);
+    }
+
+    /// Additional lights a camera draws besides the main one, the nearest (-1: no limit).
+    #[property]
+    pub fn additional_lights() -> f64 {
+        st(|s| f64::from(s.quality.current.additional_lights))
+    }
+
+    pub fn set_additional_lights(n: f64) {
+        change(|q| {
+            q.additional_lights = if n < 0.0 {
+                -1
+            } else {
+                n.round().min(256.0) as i32
+            }
+        });
+    }
+
+    /// Whether spot and point lights cast shadows on this level.
+    #[property]
+    pub fn additional_light_shadows() -> bool {
+        st(|s| s.quality.current.additional_light_shadows)
+    }
+
+    pub fn set_additional_light_shadows(on: bool) {
+        change(|q| q.additional_light_shadows = on);
     }
 
     /// The sun's shadow cascades: 1, 2 or 4.

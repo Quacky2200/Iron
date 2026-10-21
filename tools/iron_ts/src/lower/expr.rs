@@ -1387,6 +1387,11 @@ impl<'a> Lowerer<'a> {
             (Ty::Obj(a), Ty::Obj(b)) if a != b && self.can_copy_fields(a, b) => {
                 return Ok(self.copy_fields(v, a, b));
             }
+            // A typed array where the engine takes `number[]`: a copy.
+            (Ty::Typed(k), Ty::Arr(e)) if *e == Ty::Num => {
+                let arr = want.strip().clone();
+                return Ok(self.rt_str("ts_rt_typed_to_array_gc", vec![Self::kind_num(k), v], arr));
+            }
             (Ty::Arr(ea), Ty::Arr(eb)) => {
                 if let (Ty::Obj(a), Ty::Obj(b)) = (ea.strip().clone(), eb.strip().clone())
                     && a != b
@@ -1681,6 +1686,43 @@ impl<'a> Lowerer<'a> {
             } else {
                 mk(ExprKind::Un(UnOp::Not, Box::new(is_null)), Ty::Bool)
             });
+        }
+        // An optional boolean against a boolean (`props.on === false`): null is neither.
+        if eq {
+            let nb = |t: &Ty| matches!(t, Ty::Nullable(i) if **i == Ty::Bool);
+            if (nb(&l.ty) && r.ty == Ty::Bool) || (nb(&r.ty) && l.ty == Ty::Bool) {
+                let (lt, rt) = (self.new_local(l.ty.clone()), self.new_local(r.ty.clone()));
+                let (lv, rv) = (self.var_expr(lt), self.var_expr(rt));
+                let both = |this: &mut Self, v: Expr| -> R<(Expr, Expr)> {
+                    let present = if v.ty.is_nullable() {
+                        let is_null = mk(ExprKind::IsNull(Box::new(v.clone())), Ty::Bool);
+                        mk(ExprKind::Un(UnOp::Not, Box::new(is_null)), Ty::Bool)
+                    } else {
+                        mk(ExprKind::Bool(true), Ty::Bool)
+                    };
+                    Ok((present, this.coerce(v, &Ty::Bool)?))
+                };
+                let (lp, lb) = both(self, lv)?;
+                let (rp, rb) = both(self, rv)?;
+                let same = mk(
+                    ExprKind::Cmp(CmpOp::Eq, Box::new(lb), Box::new(rb)),
+                    Ty::Bool,
+                );
+                let present = mk(ExprKind::And(Box::new(lp), Box::new(rp)), Ty::Bool);
+                let all = mk(ExprKind::And(Box::new(present), Box::new(same)), Ty::Bool);
+                let all = if op == CmpOp::Eq {
+                    all
+                } else {
+                    mk(ExprKind::Un(UnOp::Not, Box::new(all)), Ty::Bool)
+                };
+                return Ok(mk(
+                    ExprKind::Seq(
+                        vec![Stmt::Assign(lt, l), Stmt::Assign(rt, r)],
+                        Box::new(all),
+                    ),
+                    Ty::Bool,
+                ));
+            }
         }
         // A union member against a `string` is compared as a string.
         let (lt, rt) = (l.ty.strip(), r.ty.strip());

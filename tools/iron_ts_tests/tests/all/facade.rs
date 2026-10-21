@@ -209,3 +209,43 @@ fn a_generic_arrow_over_the_keys_of_a_type_is_written_per_key() {
         assert_eq!(text(ts_fac_keyedSetter()), "b|5");
     });
 }
+
+// M9-TS-2880
+#[test]
+fn fog_height_fog_light_shafts_and_exposure_objects_become_field_setters() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_fogAndExposureObjects()),
+            "true|3|0.5|true|2|0.4|0|ultra|true|-3|20|9|null|false|false|false|false"
+        );
+    });
+}
+
+// M9-TS-2881
+#[test]
+fn flat_meshes_take_typed_arrays_and_random_pick_chooses_an_item() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_flatMeshesAndPicks()), "3|1|4|2|true|true");
+    });
+}
+
+// M9-TS-2882
+#[test]
+fn the_light_meter_sums_what_each_light_sheds_on_a_point() {
+    in_every_gc_mode(|| unsafe {
+        // The sun 3 lux (no normal: head-on) plus the lamp: 16 pi lumens over 4 pi sr = 4 cd, 1 lux at 2 m.
+        assert_eq!(text(ts_fac_lightMeter()), "2|1|cone|4|1");
+    });
+}
+
+// M9-TS-2883
+#[test]
+fn an_optional_rotation_passed_on_is_left_alone_and_an_optional_bool_compares_with_false() {
+    in_every_gc_mode(|| unsafe {
+        // `a` keeps the identity rotation (w = 1), `b` is turned 90 degrees (w = cos 45 degrees).
+        assert_eq!(
+            text(ts_fac_optionalValuesPassedOn()),
+            "2|100|71|lit|dim|lit"
+        );
+    });
+}

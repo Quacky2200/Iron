@@ -2526,6 +2526,17 @@ impl PlatformApp for App {
             ]
             .map(|v| iron_core::Value::Number(v as f64));
             let _ = self.scripts.call_global("__iron_render_stats", &args);
+            // A compiled game reads `RenderStats` from the registry.
+            iron_render_api::set_render_stats(iron_render_api::Stats {
+                meshes: stats.meshes as f64,
+                culled_meshes: stats.culled_meshes as f64,
+                quads: stats.quads as f64,
+                culled_quads: stats.culled_quads as f64,
+                fog_culled: stats.fog_culled as f64,
+                lights: stats.lights as f64,
+                culled_lights: stats.culled_lights as f64,
+                shadow_maps: stats.shadow_maps as f64,
+            });
         }
         // Each camera's exposure (EV100 in use, and how bright it metered), when it changes.
         for id in self.world_view.camera_ids() {
@@ -2551,6 +2562,12 @@ impl PlatformApp for App {
                     scene,
                 ];
                 let _ = self.scripts.call_global("__iron_exposure", &args);
+                // A compiled game's cameras (the id is the camera component's).
+                iron_engine_api::camera::set_exposure(
+                    iron_engine_api::camera::CameraRef(id),
+                    f64::from(now.0),
+                    f64::from(now.1),
+                );
             }
         }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.

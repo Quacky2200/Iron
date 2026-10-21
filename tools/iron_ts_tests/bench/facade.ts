@@ -221,3 +221,58 @@ export function keyedSetter(): string {
   set("age", 5);
   return `${p.name}|${p.age}`;
 }
+
+export function fogAndExposureObjects(): string {
+  RenderSettings.heightFog = { density: 0.2, baseHeight: 3, falloff: 0.5 };
+  const a = `${RenderSettings.heightFogEnabled}|${RenderSettings.heightFogBaseHeight}|${RenderSettings.heightFogFalloff}`;
+  RenderSettings.heightFog = null;
+  RenderSettings.volumetricFog = { intensity: 2, albedo: new Color(1, 0, 0, 1), resolution: "ultra" };
+  const b = `${RenderSettings.volumetricFogEnabled}|${RenderSettings.volumetricFogIntensity}|${RenderSettings.volumetricFogAnisotropy}|${RenderSettings.volumetricFogAlbedo.g}|${RenderSettings.volumetricFogResolution}`;
+  const on = true;
+  RenderSettings.autoExposure = on ? { minEV: -3, compensation: 0.5, curve: [[-2, -1], [6, 0]] } : null;
+  const c = `${RenderSettings.autoExposureEnabled}|${RenderSettings.autoExposureMinEv}|${RenderSettings.autoExposureMaxEv}`;
+  RenderSettings.fixedExposure = 9;
+  const d = `${RenderSettings.fixedExposure}`;
+  RenderSettings.fixedExposure = null;
+  const e = `${RenderSettings.fixedExposure}|${RenderSettings.fixedExposureEnabled}`;
+  RenderSettings.autoExposure = null;
+  RenderSettings.volumetricFog = null;
+  return `${a}|${b}|${c}|${d}|${e}|${RenderSettings.autoExposureEnabled}|${RenderSettings.volumetricFogEnabled}|${RenderSettings.heightFogEnabled}`;
+}
+
+export function flatMeshesAndPicks(): string {
+  const m = Mesh.createFlat({
+    positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+    triangles: new Uint32Array([0, 1, 2]),
+    normals: [],
+    uv: new Float32Array([0, 0, 1, 0, 0, 1]),
+  });
+  const a = `${m.vertexCount}|${m.triangleCount}`;
+  m.setFlat({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], triangles: [0, 1, 2, 2, 1, 3], normals: [], uv: [] });
+  const items = [4, 5, 6];
+  const p = Random.pick(items);
+  const none: number[] = [];
+  return `${a}|${m.vertexCount}|${m.triangleCount}|${p !== undefined && p >= 4 && p <= 6}|${Random.pick(none) === undefined}`;
+}
+
+export function lightMeter(): string {
+  const sun = new GameObject("Sun").addComponent(Light, { type: "directional", intensity: 3 });
+  const lamp = new GameObject("Lamp", { position: new Vector3(0, 2, 0) }).addComponent(Light, { type: "point", intensity: 4 * Math.PI * 4, range: 20 });
+  const total = Light.illuminanceAt(new Vector3(0, 0, 0));
+  return `${Light.count()}|${sun.volumetricIntensity}|${sun.spotShape}|${Math.round(total * 100) / 100}|${lamp.aspectRatio}`;
+}
+
+function spawn(name: string, at: Vector3, rotation?: Quaternion): GameObject {
+  return new GameObject(name, { position: at, rotation });
+}
+
+function paint(props: { on?: boolean }): string {
+  return props.on === false ? "dim" : props.on !== false ? "lit" : "?";
+}
+
+export function optionalValuesPassedOn(): string {
+  const a = spawn("a", new Vector3(1, 2, 3));
+  const b = spawn("b", new Vector3(0, 0, 0), Quaternion.euler(0, 90, 0));
+  return `${a.transform.localPosition.y}|${Math.round(a.transform.localRotation.w * 100)}|${Math.round(b.transform.localRotation.w * 100)}|${paint({})}|${paint({ on: false })}|${paint({ on: true })}`;
+}
+

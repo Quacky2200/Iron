@@ -146,6 +146,8 @@ pub fn manifests() -> Vec<String> {
     let mut all = generated_manifests();
     all.extend(resources::resource_manifests());
     all.push(render_settings::render_settings_api::MANIFEST.to_json());
+    all.push(render_settings::render_stats_api::MANIFEST.to_json());
+    all.push(render_settings::graphics_settings_api::MANIFEST.to_json());
     all.extend(effects::effect_manifests());
     all.extend(models::model_manifests());
     all
@@ -161,6 +163,7 @@ pub fn register_kinds() {
 /// Installs every namespace of this crate in a QuickJS context (after `iron_engine_api`'s).
 pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
     generated::light_api::register_quickjs(ctx)?;
+    generated::fog_volume_api::register_quickjs(ctx)?;
     generated::plane_renderer_api::register_quickjs(ctx)?;
     generated::mirror_api::register_quickjs(ctx)?;
     generated::reflection_probe_api::register_quickjs(ctx)?;
@@ -180,6 +183,8 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     resources::texture_api::register_quickjs(ctx)?;
     resources::mesh_api::register_quickjs(ctx)?;
     render_settings::render_settings_api::register_quickjs(ctx)?;
+    render_settings::render_stats_api::register_quickjs(ctx)?;
+    render_settings::graphics_settings_api::register_quickjs(ctx)?;
     effects::primitives_api::register_quickjs(ctx)?;
     effects::primitive_type_api::register_quickjs(ctx)?;
     models::model_api::register_quickjs(ctx)?;

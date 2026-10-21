@@ -276,7 +276,13 @@ impl<'a> Lowerer<'a> {
                     n => self.named_type(n)?,
                 }
             }
-            _ => bail!("unsupported type annotation"),
+            other => {
+                let kind: String = format!("{other:?}").chars().take(40).collect();
+                bail!(
+                    "unsupported type annotation ({kind}, byte {})",
+                    oxc_span::GetSpan::span(other).start
+                )
+            }
         })
     }
 

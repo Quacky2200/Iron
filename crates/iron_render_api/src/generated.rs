@@ -24,6 +24,9 @@ pub struct LightData {
     pub shadows: String,
     pub shadow_strength: f64,
     pub culling_mask: u32,
+    pub volumetric_intensity: f64,
+    pub spot_shape: String,
+    pub aspect_ratio: f64,
 }
 
 impl LightData {
@@ -46,6 +49,9 @@ impl LightData {
             shadows: "none".to_string(),
             shadow_strength: 1.0,
             culling_mask: 4294967295,
+            volumetric_intensity: 1.0,
+            spot_shape: "cone".to_string(),
+            aspect_ratio: 1.0,
         }
     }
 }
@@ -128,6 +134,9 @@ pub fn save_light(r: LightRef) -> Map<String, Value> {
         m.insert("shadows".into(), json!(d.shadows));
         m.insert("shadowStrength".into(), json!(d.shadow_strength));
         m.insert("cullingMask".into(), json!(d.culling_mask));
+        m.insert("volumetricIntensity".into(), json!(d.volumetric_intensity));
+        m.insert("spotShape".into(), json!(d.spot_shape));
+        m.insert("aspectRatio".into(), json!(d.aspect_ratio));
     });
     m
 }
@@ -158,6 +167,12 @@ pub fn load_light(r: LightRef, props: &Map<String, Value>) -> Vec<String> {
                     .as_f64()
                     .map(|n| n as i64 as u32)
                     .map(|x| d.culling_mask = x),
+                "volumetricIntensity" => v.as_f64().map(|x| d.volumetric_intensity = x),
+                "spotShape" => v
+                    .as_str()
+                    .filter(|s| ["cone", "pyramid"].contains(s))
+                    .map(|s| d.spot_shape = s.to_string()),
+                "aspectRatio" => v.as_f64().map(|x| d.aspect_ratio = x),
                 other => {
                     warnings.push(format!("no property `{other}`; dropped"));
                     continue;
@@ -330,6 +345,55 @@ pub mod light_api {
                 d.culling_mask = v as i64 as u32;
             });
         }
+
+        /// How strongly it lights the fog for light shafts (`RenderSettings.volumetricFog`): 1 as brightly as it lights surfaces, 0 not at all (HDRP's volumetric multiplier).
+        #[property]
+        pub fn volumetric_intensity(self) -> f64 {
+            with_light(self, |d| d.volumetric_intensity).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_volumetric_intensity(self, v: f64) {
+            with_light(self, |d| {
+                d.volumetric_intensity = v;
+            });
+        }
+
+        /// A spot light's shape (HDRP's): a `cone`, or a `pyramid` `spotAngle` high and `aspectRatio` times as wide (in tangent), its width along the object's x.
+        #[property]
+        pub fn spot_shape(self) -> String {
+            with_light(self, |d| d.spot_shape.clone()).unwrap_or_else(|| String::new())
+        }
+
+        /// A name other than `cone`, `pyramid` is ignored.
+        pub fn set_spot_shape(self, v: &str) {
+            if ["cone", "pyramid"].contains(&v) {
+                with_light(self, |d| d.spot_shape = v.to_string());
+            }
+        }
+
+        /// A pyramid spot light's width over its height.
+        #[property]
+        pub fn aspect_ratio(self) -> f64 {
+            with_light(self, |d| d.aspect_ratio).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_aspect_ratio(self, v: f64) {
+            with_light(self, |d| {
+                d.aspect_ratio = v;
+            });
+        }
+
+        /// How many lights exist.
+        pub fn count() -> f64 {
+            super::lights().len() as f64
+        }
+
+        /// The `index`-th light, in the order they were made (none past the end).
+        pub fn at(index: f64) -> LightRef {
+            super::lights()
+                .get(index as usize)
+                .map_or(LightRef(0), |(r, _)| *r)
+        }
     }
 }
 
@@ -348,6 +412,261 @@ fn light_kind() -> Kind {
         awake: Box::new(|_| {}),
         object: Box::new(|h| with_light(LightRef(h as u32), |d| d.object.to_raw())),
         destroy: Box::new(|h| remove_light(LightRef(h as u32))),
+    }
+}
+
+// ---- FogVolume ----
+
+numbered_handle!(
+    /// A `FogVolume` by number (1-based: 0 is "none").
+    FogVolumeRef
+);
+
+/// The data of one `FogVolume`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FogVolumeData {
+    pub object: ObjectId,
+    pub size: V3,
+    pub density: f64,
+    pub color: Rgba,
+    pub blend_distance: f64,
+    pub shape: String,
+}
+
+impl FogVolumeData {
+    fn new(object: ObjectId) -> Self {
+        FogVolumeData {
+            object,
+            size: V3 {
+                x: 10.0,
+                y: 2.0,
+                z: 10.0,
+            },
+            density: 0.5,
+            color: Rgba {
+                r: 0.75,
+                g: 0.78,
+                b: 0.82,
+                a: 1.0,
+            },
+            blend_distance: 1.0,
+            shape: "box".to_string(),
+        }
+    }
+}
+
+thread_local! {
+    static FOG_VOLUMES: RefCell<Vec<Option<FogVolumeData>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Runs `f` on a `FogVolume`'s data.
+pub fn with_fog_volume<R>(r: FogVolumeRef, f: impl FnOnce(&mut FogVolumeData) -> R) -> Option<R> {
+    FOG_VOLUMES.with(|v| {
+        let mut v = v.borrow_mut();
+        v.get_mut((r.0 as usize).checked_sub(1)?)?.as_mut().map(f)
+    })
+}
+
+/// The live `FogVolumes`, in the order they were made (for the renderer).
+pub fn fog_volumes() -> Vec<(FogVolumeRef, FogVolumeData)> {
+    FOG_VOLUMES.with(|v| {
+        v.borrow()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.clone().map(|d| (FogVolumeRef(i as u32 + 1), d)))
+            .collect()
+    })
+}
+
+/// The `FogVolumes` on an object, in the order they were added.
+pub fn fog_volumes_on(object: ObjectId) -> Vec<FogVolumeRef> {
+    fog_volumes()
+        .into_iter()
+        .filter(|(_, d)| d.object == object)
+        .map(|(r, _)| r)
+        .collect()
+}
+
+pub fn attach_fog_volume(object: ObjectId) -> FogVolumeRef {
+    let r = FOG_VOLUMES.with(|v| {
+        let mut v = v.borrow_mut();
+        v.push(Some(FogVolumeData::new(object)));
+        FogVolumeRef(v.len() as u32)
+    });
+    r
+}
+
+pub fn remove_fog_volume(r: FogVolumeRef) {
+    FOG_VOLUMES.with(|v| {
+        if let Some(slot) = v.borrow_mut().get_mut((r.0 as usize).wrapping_sub(1)) {
+            *slot = None;
+        }
+    });
+}
+
+/// Removes the `FogVolumes` of a destroyed object.
+pub fn remove_fog_volumes_on(object: ObjectId) {
+    for r in fog_volumes_on(object) {
+        remove_fog_volume(r);
+    }
+}
+
+pub fn reset_fog_volumes() {
+    FOG_VOLUMES.with(|v| v.borrow_mut().clear());
+}
+
+/// The saved properties of a `FogVolume`.
+pub fn save_fog_volume(r: FogVolumeRef) -> Map<String, Value> {
+    let mut m = Map::new();
+    with_fog_volume(r, |d| {
+        m.insert(
+            "size".into(),
+            json!({ "$type": "Vector3", "value": [d.size.x, d.size.y, d.size.z] }),
+        );
+        m.insert("density".into(), json!(d.density));
+        m.insert(
+            "color".into(),
+            json!({ "$type": "Color", "value": [d.color.r, d.color.g, d.color.b, d.color.a] }),
+        );
+        m.insert("blendDistance".into(), json!(d.blend_distance));
+        m.insert("shape".into(), json!(d.shape));
+    });
+    m
+}
+
+/// Applies saved properties to a `FogVolume`; returns warnings.
+pub fn load_fog_volume(r: FogVolumeRef, props: &Map<String, Value>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    with_fog_volume(r, |d| {
+        for (k, v) in props {
+            let ok = match k.as_str() {
+                "size" => v3_of(v).map(|x| d.size = x),
+                "density" => v.as_f64().map(|x| d.density = x),
+                "color" => color_of(v).map(|x| d.color = x),
+                "blendDistance" => v.as_f64().map(|x| d.blend_distance = x),
+                "shape" => v
+                    .as_str()
+                    .filter(|s| ["box", "ellipsoid"].contains(s))
+                    .map(|s| d.shape = s.to_string()),
+                other => {
+                    warnings.push(format!("no property `{other}`; dropped"));
+                    continue;
+                }
+            };
+            if ok.is_none() {
+                warnings.push(format!("property `{k}` has a value of the wrong shape"));
+            }
+        }
+    });
+    warnings
+}
+
+#[iron_api(namespace = "FogVolume", quickjs, handles(FogVolume = FogVolumeRef, GameObject = ObjectId), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector3 = V3 [x: f64, y: f64, z: f64]))]
+pub mod fog_volume_api {
+    use super::*;
+
+    impl FogVolumeRef {
+        /// Adds a `FogVolume` to a GameObject (what `go.addComponent(FogVolume)` does).
+        pub fn attach(object: ObjectId) -> FogVolumeRef {
+            super::attach_fog_volume(object)
+        }
+
+        /// The first `FogVolume` on an object, or none.
+        pub fn find_on(object: ObjectId) -> FogVolumeRef {
+            super::fog_volumes_on(object)
+                .first()
+                .copied()
+                .unwrap_or(FogVolumeRef(0))
+        }
+
+        #[property]
+        pub fn game_object(self) -> ObjectId {
+            with_fog_volume(self, |d| d.object).unwrap_or_else(none_object)
+        }
+
+        /// The box's size in metres, before the object's scale.
+        #[property]
+        pub fn size(self) -> V3 {
+            with_fog_volume(self, |d| d.size).unwrap_or_else(|| V3::ZERO)
+        }
+
+        pub fn set_size(self, v: V3) {
+            with_fog_volume(self, |d| {
+                d.size = v;
+            });
+        }
+
+        /// How thick it is inside, per metre (0.5: a metre of it hides 40% of what is behind).
+        #[property]
+        pub fn density(self) -> f64 {
+            with_fog_volume(self, |d| d.density).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_density(self, v: f64) {
+            with_fog_volume(self, |d| {
+                d.density = v;
+            });
+        }
+
+        /// Its colour (linear).
+        #[property]
+        pub fn color(self) -> Rgba {
+            with_fog_volume(self, |d| d.color).unwrap_or_else(|| Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        }
+
+        pub fn set_color(self, v: Rgba) {
+            with_fog_volume(self, |d| {
+                d.color = v;
+            });
+        }
+
+        /// How far in from its faces it fades in, in metres (0: hard edges).
+        #[property]
+        pub fn blend_distance(self) -> f64 {
+            with_fog_volume(self, |d| d.blend_distance).unwrap_or_else(|| 0.0)
+        }
+
+        pub fn set_blend_distance(self, v: f64) {
+            with_fog_volume(self, |d| {
+                d.blend_distance = v;
+            });
+        }
+
+        /// `box`, or `ellipsoid`: a soft round blob inside the box (mist over a pond).
+        #[property]
+        pub fn shape(self) -> String {
+            with_fog_volume(self, |d| d.shape.clone()).unwrap_or_else(|| String::new())
+        }
+
+        /// A name other than `box`, `ellipsoid` is ignored.
+        pub fn set_shape(self, v: &str) {
+            if ["box", "ellipsoid"].contains(&v) {
+                with_fog_volume(self, |d| d.shape = v.to_string());
+            }
+        }
+    }
+}
+
+fn fog_volume_kind() -> Kind {
+    Kind {
+        name: "FogVolume".into(),
+        create: Box::new(|o| Ok(u64::from(attach_fog_volume(ObjectId::from_raw(o)).0))),
+        on: Box::new(|o| {
+            fog_volumes_on(ObjectId::from_raw(o))
+                .into_iter()
+                .map(|r| u64::from(r.0))
+                .collect()
+        }),
+        save: Box::new(|h| save_fog_volume(FogVolumeRef(h as u32))),
+        load: Box::new(|h, props| load_fog_volume(FogVolumeRef(h as u32), props)),
+        awake: Box::new(|_| {}),
+        object: Box::new(|h| with_fog_volume(FogVolumeRef(h as u32), |d| d.object.to_raw())),
+        destroy: Box::new(|h| remove_fog_volume(FogVolumeRef(h as u32))),
     }
 }
 
@@ -5654,6 +5973,7 @@ fn sprite_asset_kind() -> AssetKind {
 /// Registers the scene-file kinds and asset kinds of the generated types.
 pub fn register_generated_kinds() {
     iron_kinds::register(light_kind());
+    iron_kinds::register(fog_volume_kind());
     iron_kinds::register(plane_renderer_kind());
     iron_kinds::register(mirror_kind());
     iron_kinds::register(reflection_probe_kind());
@@ -5676,6 +5996,7 @@ pub fn register_generated_kinds() {
 pub fn generated_manifests() -> Vec<String> {
     vec![
         light_api::MANIFEST.to_json(),
+        fog_volume_api::MANIFEST.to_json(),
         plane_renderer_api::MANIFEST.to_json(),
         mirror_api::MANIFEST.to_json(),
         reflection_probe_api::MANIFEST.to_json(),
@@ -5698,6 +6019,7 @@ pub fn generated_manifests() -> Vec<String> {
 /// Removes the generated components of a destroyed object.
 pub fn remove_generated_on(object: ObjectId) {
     remove_lights_on(object);
+    remove_fog_volumes_on(object);
     remove_plane_renderers_on(object);
     remove_mirrors_on(object);
     remove_reflection_probes_on(object);
@@ -5717,6 +6039,7 @@ pub fn remove_generated_on(object: ObjectId) {
 /// Forgets every generated component and asset.
 pub fn reset_generated() {
     reset_lights();
+    reset_fog_volumes();
     reset_plane_renderers();
     reset_mirrors();
     reset_reflection_probes();

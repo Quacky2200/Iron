@@ -125,6 +125,32 @@ COMPONENTS = [
             ("shadows", "shadows", "enum:none|hard|soft", "none", "Shadows it casts (Unity's `LightShadows`)."),
             ("shadowStrength", "shadow_strength", "f64", 1.0, "How dark its shadows are, 0 to 1."),
             ("cullingMask", "culling_mask", "mask", MASK, "The layers it lights, a bit each (all by default)."),
+            ("volumetricIntensity", "volumetric_intensity", "f64", 1.0, "How strongly it lights the fog for light shafts (`RenderSettings.volumetricFog`): 1 as brightly as it lights surfaces, 0 not at all (HDRP's volumetric multiplier)."),
+            ("spotShape", "spot_shape", "enum:cone|pyramid", "cone", "A spot light's shape (HDRP's): a `cone`, or a `pyramid` `spotAngle` high and `aspectRatio` times as wide (in tangent), its width along the object's x."),
+            ("aspectRatio", "aspect_ratio", "f64", 1.0, "A pyramid spot light's width over its height."),
+        ],
+        api="""
+        /// How many lights exist.
+        pub fn count() -> f64 {
+            super::lights().len() as f64
+        }
+
+        /// The `index`-th light, in the order they were made (none past the end).
+        pub fn at(index: f64) -> LightRef {
+            super::lights()
+                .get(index as usize)
+                .map_or(LightRef(0), |(r, _)| *r)
+        }
+""",
+    ),
+    dict(
+        name="FogVolume", low="fog_volume", ref="FogVolumeRef", store="FOG_VOLUMES", data="FogVolumeData",
+        fields=[
+            ("size", "size", "v3", (10, 2, 10), "The box's size in metres, before the object's scale."),
+            ("density", "density", "f64", 0.5, "How thick it is inside, per metre (0.5: a metre of it hides 40% of what is behind)."),
+            ("color", "color", "color", (0.75, 0.78, 0.82, 1), "Its colour (linear)."),
+            ("blendDistance", "blend_distance", "f64", 1.0, "How far in from its faces it fades in, in metres (0: hard edges)."),
+            ("shape", "shape", "enum:box|ellipsoid", "box", "`box`, or `ellipsoid`: a soft round blob inside the box (mist over a pond)."),
         ],
     ),
     dict(

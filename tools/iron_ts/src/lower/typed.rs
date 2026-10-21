@@ -9,7 +9,7 @@ use super::*;
 use crate::ir::TypedKind;
 
 impl<'a> Lowerer<'a> {
-    fn kind_num(kind: TypedKind) -> Expr {
+    pub(crate) fn kind_num(kind: TypedKind) -> Expr {
         num(f64::from(kind.code()))
     }
 

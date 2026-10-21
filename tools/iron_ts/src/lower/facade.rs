@@ -201,6 +201,7 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
 //   __xs_  property write  `__xs_Camera_rect(self: Camera, v: Rect)`      for `cam.rect = r`, `{ rect: r }`
 //   __xt_  static call     `__xt_Sprite_grid(texture: Texture, ..)`        for `Sprite.grid(..)`
 //   __xp_  static read     `__xp_Screen_windowSize(): Size`               for `Screen.windowSize`
+//   __xw_  static write    `__xw_RenderSettings_heightFog(v: HeightFogSettings | null)`  for `RenderSettings.heightFog = v`
 //
 // A method also has an object-argument variant `__xm_..$o` used when a call passes an object
 // literal. These win over the native member of the same name.
@@ -723,7 +724,22 @@ impl<'a> Lowerer<'a> {
             return Ok(false);
         };
         let want = self.ext_ir(&set.params[1].1);
-        let v = self.lower_expr(value, Some(&want))?;
+        let v = self.lower_expr(value, None)?;
+        // An optional value (`rotation?: Quaternion` passed on) is left alone when it is not there.
+        // (An optional parameter of an object type is the object type with a null pointer.)
+        if v.ty.is_nullable()
+            || matches!(v.ty.strip(), Ty::Obj(_) if matches!(v.kind, ExprKind::Var(_)))
+        {
+            let tv = v;
+            let is_null = mk(ExprKind::IsNull(Box::new(tv.clone())), Ty::Bool);
+            let present = mk(ExprKind::Un(UnOp::Not, Box::new(is_null)), Ty::Bool);
+            let inner = self.coerce(tv, &want)?;
+            let h = self.var_expr(tmp);
+            let tr = self.emit_extern(&get, vec![h]);
+            let write = Stmt::Eval(self.emit_extern(&set, vec![tr, inner]));
+            stmts.push(Stmt::If(present, vec![write], vec![]));
+            return Ok(true);
+        }
         let v = self.coerce(v, &want)?;
         let h = self.var_expr(tmp);
         let tr = self.emit_extern(&get, vec![h]);
@@ -748,6 +764,16 @@ impl<'a> Lowerer<'a> {
         let (ns, prop) = (id.name.as_str(), m.property.name.as_str());
         if a.operator != AssignmentOperator::Assign || self.lookup(ns).is_some() {
             return Ok(None);
+        }
+        // `RenderSettings.heightFog = h`: a facade write (`__xw_RenderSettings_heightFog(h)`).
+        let write = Self::x_name("w", ns, prop);
+        if let Some(&fid) = self.fids.get(&write) {
+            self.ensure_lowered(&write)?;
+            let want = self.fsig[fid].0[0].clone();
+            let v = self.lower_expr(&a.right, Some(&want))?;
+            let v = self.coerce_ext(v, &want)?;
+            let call = self.call_helper(&write, vec![v])?;
+            return Ok(Some(vec![Stmt::Eval(call)]));
         }
         let Some((enable, prefix)) = split_rule(ns, prop) else {
             return Ok(None);

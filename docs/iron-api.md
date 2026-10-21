@@ -662,3 +662,39 @@ scale factor (not the UI scale, not the render scale).
 On or off, in order: `--fps` / `--no-fps` on the command line; off with `IRON_FPS=0` (or `false`, `off`, `no`) or `"iron": { "fps": false }`
 in `package.json`; otherwise on, except in `--screenshot` runs (off unless `--fps`, so goldens and `bun run screenshots` don't change).
 `iron_editor` has it off unless `--fps`. A short screenshot run shows the partial window.
+
+## Fog, light shafts and exposure in native games (2026-10-21)
+
+The render features of `js/engine` that `docs/world-rendering.md` describes (fog, height fog, light shafts, auto exposure, light
+units, soft shadow levels, fog volumes) are declared natively too, and `render_sync.rs` sends the renderer the same `render.fog`,
+`render.post`, `render.light`, `render.fogVolume`, `render.exposureReset` and `render.quality` ops, so the pictures match.
+
+- **`RenderSettings`** (`iron_render_api::render_settings`): `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`,
+  `fogEndDistance`, `fogCulling`; `heightFogEnabled` + `heightFogDensity` / `heightFogBaseHeight` / `heightFogFalloff`;
+  `volumetricFogEnabled` + `volumetricFogIntensity` / `Anisotropy` / `Steps` / `Distance` / `Albedo` / `SharpDistance` / `SharpSamples` /
+  `Resolution` / `Denoising` / `HistoryWeight` / `Samples` / `MotionSamples`; `autoExposureEnabled` + `autoExposureMinEv` / `MaxEv` /
+  `Compensation` / `SpeedDarkToLight` / `SpeedLightToDark` / `Metering` / `LowPercent` / `HighPercent` / `DarkAdaptation` / `DarkBelow` /
+  `Hold` + `clearAutoExposureCurve()` / `addAutoExposureCurvePoint(ev, stops)`; `fixedExposureEnabled` + `fixedExposureValue`,
+  `exposureTransition`, `freezeExposure()`. Setting a field of the height fog, light shafts or auto exposure turns it on with the
+  defaults for the rest, as the sky does.
+- **Object-valued properties** are facade writes (`facade.ts`, `__xw_<Namespace>_<name>`; the compiler calls it for
+  `RenderSettings.heightFog = h`): `heightFog`, `volumetricFog`, `autoExposure` (object or `null`, also `cond ? { .. } : null` and
+  spreads) and `fixedExposure` (number or `null`, readable through `__xp_`). `FogMode` and `VolumeDetail` are string unions.
+- **`Camera`**: `fog` (show the fog, on), `exposure` / `sceneBrightness` (EV100, read back from the GPU a frame or two late, NaN
+  before: the app calls `camera::set_exposure`), `resetExposure()`, `aperture` / `shutterSpeed` / `iso` and `physicalExposure`.
+- **`Light`**: `volumetricIntensity`, `spotShape` (`cone` | `pyramid`), `aspectRatio`; `Light.illuminanceAt(point, normal?)` and
+  `Light.measureIlluminance(point, normal?)` (a facade over `Light.count()` / `at(i)` and `Physics.raycast`; the promise is
+  resolved at once, the physics world answers rays synchronously). **`FogVolume`** is a component (`size`, `density`, `color`,
+  `blendDistance`, `shape`).
+- **`QualitySettings`** also has `autoExposure`, `volumetricFog`, `hdr`, `additionalLights`, `additionalLightShadows` (per level in
+  `project.json`'s `quality.levels`; Low has no light shafts) and `softShadowQuality` `medium`. `RenderStats` (meshes, culled
+  meshes, quads, ..., `fogCulled`, `lights`, `shadowMaps`) is filled by the app after each frame; `GraphicsSettings.lightUnits` is
+  `physical` when `project.json` says `"lightUnits": "physical"`.
+- **Meshes**: `Mesh.createFlat(data)` / `mesh.setFlat(data)` (positions, triangles, normals, uv: typed arrays are copied to
+  `number[]` at the boundary; a compiled game gives all four lists, empty for none) over `Mesh.createFlatArrays(..)`. Script meshes
+  now flip the texture v coordinate on upload (Unity's bottom-up, as `js/engine`'s `Mesh.set` does). `Random.pick(list)`.
+- **Compiler**: an optional object-typed option (`new GameObject(name, { rotation })` with `rotation?: Quaternion`) is skipped when
+  missing; `x === false` on an optional boolean is false for a missing value; a typed array is copied where the engine takes
+  `number[]`.
+- **Not ported**: the scene file keys for fog and exposure (`scenes.ts` saves `fog...`; native scenes keep their old keys),
+  `Light.measureIlluminance` waiting for the next physics tick.

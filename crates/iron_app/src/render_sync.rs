@@ -67,6 +67,8 @@ struct Cache {
     bindposes: HashMap<u32, Vec<f64>>,
     settings_version: Option<u64>,
     quality_version: Option<u64>,
+    /// `resetExposure()` counters per camera, as last seen.
+    exposure_resets: HashMap<u32, f64>,
 }
 
 thread_local! {
@@ -213,8 +215,17 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
                 n(f64::from(d.target_texture.0))
             },
             Value::Bool(d.scene_grid),
+            Value::Bool(d.fog),
         ];
         warn(views.apply("camera", &args), "camera");
+        // `resetExposure()` calls since the last frame.
+        let resets = cache(|c| c.exposure_resets.insert(r.0, d.exposure_resets));
+        if resets.is_some_and(|before| before != d.exposure_resets) {
+            warn(
+                views.apply("exposureReset", &[n(f64::from(r.0))]),
+                "exposureReset",
+            );
+        }
     }
     // Gizmo lines belong to the camera they were presented for, until the next frame of them.
     if let Some(frame) = iron_engine_api::gizmos::take_frame() {
@@ -247,8 +258,24 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
             Value::String(d.shadows.clone()),
             n(d.shadow_strength),
             n(f64::from(d.culling_mask)),
+            n(d.volumetric_intensity.max(0.0)),
+            Value::String(d.spot_shape.clone()),
+            n(d.aspect_ratio.max(1e-3)),
         ];
         warn(views.apply("light", &args), "light");
+    }
+    for (r, d) in iron_render_api::fog_volumes() {
+        let object = scene.adopt(d.object);
+        let args = vec![
+            n(f64::from(r.0)),
+            n(f64::from(object)),
+            arr(&[d.size.x, d.size.y, d.size.z]),
+            n(d.density.max(0.0)),
+            rgb(d.color),
+            n(d.blend_distance.max(0.0)),
+            Value::String(d.shape.clone()),
+        ];
+        warn(views.apply("fogVolume", &args), "fogVolume");
     }
     for (r, d) in iron_render_api::mesh_renderers() {
         let object = scene.adopt(d.object);
@@ -439,7 +466,8 @@ struct Kept {
 /// `RenderSettings` and `QualitySettings`, when they changed.
 fn settings(views: &mut WorldViews) {
     let v = iron_render_api::version();
-    if cache(|c| c.settings_version.replace(v)) != Some(v) {
+    let settings_changed = cache(|c| c.settings_version.replace(v)) != Some(v);
+    if settings_changed {
         let s = iron_render_api::settings();
         warn(
             views.apply("ambient", &[n(0.0), rgb(s.ambient_light)]),
@@ -466,16 +494,17 @@ fn settings(views: &mut WorldViews) {
             Some(b) => vec![n(0.0), n(b.threshold), n(b.intensity), n(b.scatter)],
         };
         warn(views.apply("bloom", &bloom), "bloom");
-        warn(
-            views.apply(
-                "post",
-                &[n(0.0), n(s.post_exposure), Value::String(s.tonemapping)],
-            ),
-            "post",
-        );
+        warn(views.apply("fog", &fog_args(&s.fog)), "fog");
     }
     let v = iron_engine_api::screen::quality_version();
-    if cache(|c| c.quality_version.replace(v)) != Some(v) {
+    let quality_changed = cache(|c| c.quality_version.replace(v)) != Some(v);
+    // Post settings follow both: the player's auto exposure switch is a quality setting.
+    if settings_changed || quality_changed {
+        let s = iron_render_api::settings();
+        let auto = iron_engine_api::screen::quality().auto_exposure;
+        warn(views.apply("post", &post_args(&s, auto)), "post");
+    }
+    if quality_changed {
         let q = iron_engine_api::screen::quality();
         warn(
             views.apply(
@@ -485,15 +514,19 @@ fn settings(views: &mut WorldViews) {
                     n(f64::from(q.anti_aliasing)),
                     n(q.render_scale),
                     Value::String(q.shadows.clone()),
-                    n(if q.soft_shadow_quality == "high" {
-                        2.0
-                    } else {
-                        1.0
+                    n(match q.soft_shadow_quality.as_str() {
+                        "high" => 3.0,
+                        "medium" => 2.0,
+                        _ => 1.0,
                     }),
                     n(q.lod_bias),
                     n(f64::from(q.v_sync_count)),
                     Value::String(q.anisotropic_filtering.clone()),
                     n(f64::from(q.global_texture_mipmap_limit)),
+                    Value::Bool(q.volumetric_fog),
+                    Value::Bool(q.hdr),
+                    n(f64::from(q.additional_lights)),
+                    Value::Bool(q.additional_light_shadows),
                 ],
             ),
             "quality",
@@ -511,6 +544,95 @@ fn settings(views: &mut WorldViews) {
             "shadowSettings",
         );
     }
+}
+
+/// The `fog` op's arguments for the fog settings (`fog 0 null` clears the air).
+fn fog_args(f: &iron_render_api::Fog) -> Vec<Value> {
+    if !f.enabled {
+        return vec![n(0.0), Value::Null];
+    }
+    let height = f
+        .height
+        .as_ref()
+        .map_or(Value::Null, |h| arr(&[h.density, h.base_height, h.falloff]));
+    let shafts = f.volumetric.as_ref().map_or(Value::Null, |v| {
+        let detail = ["low", "medium", "high", "ultra"]
+            .iter()
+            .position(|d| *d == v.resolution)
+            .unwrap_or(2);
+        let denoising = ["none", "reprojection", "gaussian", "both"]
+            .iter()
+            .position(|d| *d == v.denoising)
+            .unwrap_or(3);
+        arr(&[
+            v.intensity,
+            v.anisotropy,
+            v.steps,
+            v.distance,
+            v.albedo.r,
+            v.albedo.g,
+            v.albedo.b,
+            v.sharp_distance,
+            v.sharp_samples,
+            detail as f64,
+            denoising as f64,
+            v.history_weight,
+            v.samples,
+            v.motion_samples,
+        ])
+    });
+    vec![
+        n(0.0),
+        Value::String(f.mode.clone()),
+        rgb(f.color),
+        n(f.density),
+        n(f.start),
+        n(f.end),
+        height,
+        shafts,
+        Value::Bool(f.culling),
+    ]
+}
+
+/// The `post` op's arguments: post exposure, tonemapping, the auto exposure (when the quality
+/// level lets it run), the manual exposure and the blend time.
+fn post_args(s: &iron_render_api::RenderSettingsData, auto_allowed: bool) -> Vec<Value> {
+    let auto = match (&s.auto_exposure, auto_allowed) {
+        (Some(a), true) => {
+            let metering = ["average", "centerWeighted", "spot"]
+                .iter()
+                .position(|m| *m == a.metering)
+                .unwrap_or(1);
+            let curve: Vec<(f64, f64)> = a.curve.iter().take(8).copied().collect();
+            let mut v = vec![
+                a.min_ev,
+                a.max_ev,
+                a.compensation,
+                a.speed_dark_to_light,
+                a.speed_light_to_dark,
+                metering as f64,
+                a.low_percent,
+                a.high_percent,
+                if a.hold { 1.0 } else { 0.0 },
+                a.dark_adaptation,
+                a.dark_below,
+                curve.len() as f64,
+            ];
+            for (ev, stops) in curve {
+                v.extend([ev, stops]);
+            }
+            arr(&v)
+        }
+        _ => Value::Null,
+    };
+    vec![
+        n(0.0),
+        n(s.post_exposure),
+        Value::String(s.tonemapping.clone()),
+        auto,
+        s.fixed_exposure.map_or(Value::Null, n),
+        n(s.exposure_transition),
+    ]
 }
 
 /// `[key, value, ...]` of a particle system, as the TypeScript's `pairs()` makes them.
@@ -799,11 +921,17 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
                 }
                 let f = |v: &[f64]| arr(v);
                 let tri: Vec<f64> = info.triangles.iter().map(|i| f64::from(*i)).collect();
+                // Unity's UVs run bottom-up; the renderer's top-down (as `Mesh.set` does).
+                let uv: Vec<f64> = info
+                    .uv
+                    .chunks(2)
+                    .flat_map(|t| [t[0], 1.0 - t.get(1).copied().unwrap_or(0.0)])
+                    .collect();
                 let args = vec![
                     n(f64::from(m.0)),
                     f(&info.vertices),
                     f(&info.normals),
-                    f(&info.uv),
+                    f(&uv),
                     f(&tri),
                     f(&info.joints),
                     f(&info.weights),
@@ -918,5 +1046,81 @@ mod tests {
         sync(&mut views, &mut scene, Path::new("."));
         scene.scene.update_world();
         assert_eq!(views.views(&scene, (200, 100), &[])[0].quads.len(), 1);
+    }
+
+    // M9-API-1501
+    #[test]
+    fn fog_exposure_lights_and_fog_volumes_reach_the_renderers_views() {
+        iron_render_api::reset();
+        iron_engine_api::screen::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Stage extends Component {
+                override onStart(): void {
+                  const cam = new GameObject(\"Cam\");
+                  const c = cam.addComponent(Camera, { fieldOfView: 50 });
+                  c.fog = false;
+                  cam.transform.position = new Vector3(0, 0, 5);
+                  RenderSettings.fog = true;
+                  RenderSettings.fogMode = \"linear\";
+                  RenderSettings.fogStartDistance = 2;
+                  RenderSettings.fogEndDistance = 50;
+                  RenderSettings.fogColor = new Color(0.5, 0.6, 0.7, 1);
+                  const low = true;
+                  RenderSettings.heightFog = low ? { density: 0.1, baseHeight: 1, falloff: 0.3 } : null;
+                  RenderSettings.volumetricFog = { intensity: 0.5, steps: 8, albedo: new Color(1, 0.5, 0.25, 1) };
+                  RenderSettings.autoExposure = { minEV: -4, compensation: 1, metering: \"spot\" };
+                  RenderSettings.fixedExposure = 12;
+                  RenderSettings.exposureTransition = 2;
+                  const lamp = new GameObject(\"Lamp\");
+                  lamp.addComponent(Light, { type: \"spot\", spotShape: \"pyramid\", aspectRatio: 3, volumetricIntensity: 0.25 });
+                  const mist = new GameObject(\"Mist\", { position: new Vector3(3, 1, -4), scale: new Vector3(2, 1, 1) });
+                  mist.addComponent(FogVolume, { size: new Vector3(4, 2, 4), density: 0.7, shape: \"ellipsoid\" });
+                }
+              }
+              register(Stage);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
+        let mut views = WorldViews::default();
+        sync(&mut views, &mut scene, Path::new("."));
+        scene.scene.update_world();
+        let v = views.views(&scene, (200, 100), &[]);
+        assert_eq!(v.len(), 1);
+        // The camera opted out of fog (and of the fog volumes); the other cameras would show it.
+        assert_eq!(v[0].fog, None);
+        assert!(v[0].fog_volumes.is_empty());
+        let fog = views.fog_for_test().expect("fog");
+        assert_eq!(fog.mode, iron_render::FogMode::Linear);
+        assert_eq!((fog.start, fog.end), (2.0, 50.0));
+        let height = fog.height.expect("height fog");
+        assert_eq!((height.density, height.base_height), (0.1, 1.0));
+        let shafts = fog.volumetric.expect("light shafts");
+        assert_eq!((shafts.intensity, shafts.steps), (0.5, 8));
+        assert_eq!(shafts.albedo, [1.0, 0.5, 0.25]);
+        let auto = views.grading.auto_exposure.expect("auto exposure");
+        assert_eq!((auto.min_ev, auto.compensation), (-4.0, 1.0));
+        assert_eq!(auto.metering, iron_render::Metering::Spot);
+        assert_eq!(views.grading.fixed_ev, Some(12.0));
+        assert_eq!(views.grading.transition, 2.0);
+        assert_eq!(v[0].lights.len(), 1);
+        assert_eq!(v[0].lights[0].volumetric, 0.25);
+        assert!(matches!(
+            v[0].lights[0].kind,
+            iron_render::LightKind::Pyramid { aspect, .. } if aspect == 3.0
+        ));
+        // The player's quality switch turns auto exposure off without the game changing anything.
+        iron_engine_api::screen::quality_api::set_auto_exposure(false);
+        sync(&mut views, &mut scene, Path::new("."));
+        assert!(views.grading.auto_exposure.is_none());
+        assert_eq!(views.grading.fixed_ev, Some(12.0));
+        // Setting the fog to nothing clears the air.
+        iron_render_api::render_settings_api::set_fog(false);
+        sync(&mut views, &mut scene, Path::new("."));
+        assert!(views.fog_for_test().is_none());
     }
 }

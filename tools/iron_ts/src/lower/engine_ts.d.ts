@@ -124,9 +124,82 @@ interface BloomSettings {
   intensity: number;
   scatter: number;
 }
+/** How fog thickens with distance (Unity's `FogMode`). */
+type FogMode = "linear" | "exponential" | "exponentialSquared";
+/** The light-shaft volume's detail levels. */
+type VolumeDetail = "low" | "medium" | "high" | "ultra";
+/** Fog lying low (Unreal's exponential height fog), in `fogColor`. */
+interface HeightFogSettings {
+  /** Per metre at `baseHeight`. */
+  density: number;
+  baseHeight: number;
+  /** Per metre (larger: a thinner layer). */
+  falloff: number;
+}
+/** Light shafts (volumetric fog): lights shining through the fog light it up, cut by their shadows. Every field is optional. */
+interface VolumetricFogSettings {
+  /** Scales the scattered light (1). */
+  intensity?: number;
+  /** -1 to 1: positive scatters forward (0.4). */
+  anisotropy?: number;
+  /** Samples per depth slice, 1 to 16 (4). */
+  steps?: number;
+  /** How far the volume reaches in metres (50). */
+  distance?: number;
+  /** How much of each colour of light the fog scatters (white). */
+  albedo?: Color;
+  /** God rays: within this many metres of the camera the sun's shafts are worked out per pixel (0: off). */
+  sharpDistance?: number;
+  /** Samples per pixel for the sharp part, 4 to 128 (32). */
+  sharpSamples?: number;
+  /** How fine the light-shaft volume is (`high`). */
+  resolution?: VolumeDetail;
+  /** How the volume's sampling noise is cleaned up (`both`). */
+  denoising?: "none" | "reprojection" | "gaussian" | "both";
+  /** With reprojection, how much of each cell comes from earlier frames (0.9). */
+  historyWeight?: number;
+  /** Shadow samples per cell each frame, 1 to 8 (1). */
+  samples?: number;
+  /** Samples for cells whose view moved this frame (2). */
+  motionSamples?: number;
+}
+/** Auto exposure (HDRP's Automatic mode). Every field is optional. */
+interface AutoExposureSettings {
+  /** The darkest average brightness it adapts to, in EV100 (-10). */
+  minEV?: number;
+  /** The brightest, in EV100 (20). */
+  maxEV?: number;
+  /** Stops added after metering (0; positive is brighter). */
+  compensation?: number;
+  /** How fast it adapts when the view gets brighter (3, per second). */
+  speedDarkToLight?: number;
+  /** How fast it adapts when the view gets darker (3, per second). */
+  speedLightToDark?: number;
+  /** Which part of the view counts (`centerWeighted`). */
+  metering?: "average" | "centerWeighted" | "spot";
+  /** The part of the brightness histogram averaged, in percent from the darkest (0 and 100: everything). */
+  lowPercent?: number;
+  highPercent?: number;
+  /** Below `darkBelow` (EV100, 5) the eyes adapt only this much (0..1, 1) of the way. */
+  darkAdaptation?: number;
+  darkBelow?: number;
+  /** More stops by how bright the view is: up to 8 points of [metered EV100, stops]. */
+  curve?: [number, number][];
+  /** Stops adapting: the exposure holds where it is. */
+  hold?: boolean;
+}
 declare namespace RenderSettings {
   let skybox: ProceduralSky | null;
   let bloom: BloomSettings | null;
+  let fogMode: FogMode;
+  /** Height fog on top of the distance fog, while `fog` is on (`null`: none). */
+  let heightFog: HeightFogSettings | null;
+  /** Light shafts in the fog, while `fog` is on (`null`: none). */
+  let volumetricFog: VolumetricFogSettings | null;
+  /** Adapts the exposure to the view (`null`: off, the default). */
+  let autoExposure: AutoExposureSettings | null;
+  /** The manual exposure, in EV100 (higher is darker), used without auto exposure (`null`: light as it is). */
+  let fixedExposure: number | null;
 }
 
 interface Camera {
@@ -363,6 +436,14 @@ interface MeshRenderer {
   /** A mesh, or the name of a primitive. */
   mesh: Mesh | PrimitiveType;
 }
+type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
+/** A mesh as flat number lists (x, y, z per vertex; u, v per vertex in Unity's bottom-up space), for meshes made in bulk. */
+interface FlatMeshData {
+  positions: NumberList;
+  triangles: NumberList;
+  normals?: NumberList;
+  uv?: NumberList;
+}
 interface MeshData {
   vertices: Vector3[];
   triangles: number[];
@@ -373,6 +454,23 @@ interface MeshData {
 }
 declare namespace Mesh {
   function create(data: MeshData): Mesh;
+  /** A mesh from flat lists (see `FlatMeshData`). In compiled games give all four lists (`normals` and `uv` may be empty). */
+  function createFlat(data: FlatMeshData): Mesh;
+}
+interface Mesh {
+  /** Replaces the mesh's data from flat lists. */
+  setFlat(data: FlatMeshData): void;
+}
+type PrimitiveMesh = PrimitiveType;
+declare namespace Random {
+  /** A random item from a list (`undefined` when empty). */
+  function pick<T>(items: readonly T[]): T | undefined;
+}
+declare namespace Light {
+  /** A light meter: how much light falls on `point` from every light (lux in physical light units), facing `normal` if given. Shadows are not counted. */
+  function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;
+  /** A light meter that counts shadows: each light only if a physics ray from `point` reaches it (walls need colliders). */
+  function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
 }
 interface SkinnedMeshRenderer {
   bones: GameObject[];
