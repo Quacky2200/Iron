@@ -1257,6 +1257,18 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1852 | Integration | A build writes `game.irbundle`, `game.css`, the named assets and `.meta`; a compile error fails the build. |
 | M9-TS-1860 | Unit | `dist/.iron-reload` holds `{seq, ok}` or `{seq, ok:false, error}`. |
 | M9-TS-1861 | Unit | The watch fingerprint changes with sources, not with `dist/`. |
+| M9-TS-2300 | Unit | `types/iron.d.ts` is deterministic; it declares the engine and UI names (classes, namespaces, hooks, components, types) as globals, and `@iron/engine`, `@iron/react`, `react` as re-export modules; nothing is `export`ed outside them. |
+| M9-TS-2301 | Unit | Calls have an options-object form (`audio.load(path, { stream })`), creatable classes have constructors and `Class.create({..})`. |
+| M9-TS-2302 | Integration | A program with no imports at all compiles (names are globals). |
+| M9-TS-2303 | Integration | The old `import { .. } from "@iron/engine"` forms still compile (the imports are erased). |
+| M9-TS-2304 | Unit | The generated `dist/.tsc/tsconfig.json` extends the game's, keeps its `include`, adds `iron.d.ts`, forces module detection and `jsx: preserve`. |
+| M9-TS-2305 | Integration | With `tsc`: a program with no imports type-checks, a wrong call (`new Vector3(1, 2)`) fails with TS2554, the old import forms (engine, `react`, `@iron/react`, JSX) type-check. Skipped with a message when `tsc` is not found. |
+| M9-TS-2306 | Integration | The generated declarations alone have no `tsc` errors with `skipLibCheck` off. Skipped without `tsc`. |
+| M9-TS-2307 | Integration | All the examples type-check against the generated declarations (`tsc` ok, no `node_modules` in the games). Skipped without `tsc`. |
+| M9-TS-2308 | Unit | No example imports `@iron/engine`, `@iron/react` or `react`. |
+| M9-TS-2310 | Unit | Options-object overloads: leading required parameters stay positional, a required parameter after an optional one becomes optional, `function in(..)` is left out, creatable handle classes get constructors and `create(options)`, component handles get `transform` and `getComponent`. |
+| M9-TS-2311 | Unit | The supplement (`engine_ts.d.ts`) replaces native members of the same name, `//@ctor` replaces constructors (`$OPTIONS` is the property keys), its names are exported by `@iron/engine`. |
+| M9-TS-2312 | Unit | A program with no library imports bundles the same way (`library_imports` empty). |
 | M9-TS-1900 | Integration | The object writer's output (size and hash of three programs) is unchanged by the generic code generation. |
 | M9-TS-1901 | Integration | A program compiled in process (`jit::compile_and_load`) runs: exported functions called through their addresses. |
 | M9-TS-1902 | Integration | JIT code uses the runtime (strings, arrays, `Math`) through the generated `ts_rt_*` symbol table. |

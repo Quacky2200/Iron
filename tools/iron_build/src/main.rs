@@ -9,7 +9,7 @@ const USAGE: &str = "usage:
   iron-build assets <folder>... [--prune]               write .meta files
   iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.iron-reload)
   iron-build package <game> [--host exe] [--out f] ...   one executable (see: iron-build package --help)
-  iron-build check <examples folder> [--tsc]            build every game in it and print a table";
+  iron-build check <examples folder> [--tsc] [--full]   build every game in it and print a table";
 
 fn options(args: &[String]) -> Options {
     Options {
@@ -92,6 +92,9 @@ fn main() {
                     match std::fs::write(&out, t) {
                         Ok(()) => {
                             println!("wrote {}", out.display());
+                            println!(
+                                "editors: add \"types\" to the \"include\" of tsconfig.json (and \"moduleDetection\": \"force\"); `iron-build build` needs neither"
+                            );
                             0
                         }
                         Err(e) => {
@@ -210,6 +213,11 @@ fn check(dir: &Path, opts: &Options) -> i32 {
                     "{name:<20} {:<6} {:>5} {:>4} {:>6}  {first}",
                     "FAIL", "-", "-", "-"
                 );
+                if std::env::args().any(|a| a == "--full") {
+                    for l in e.lines().skip(1) {
+                        println!("    {l}");
+                    }
+                }
             }
         }
     }

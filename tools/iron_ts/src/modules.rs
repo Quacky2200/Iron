@@ -4,7 +4,8 @@
 //! and writes the files, dependencies first, into one text:
 //!
 //! - imports of `@iron/*` and `react` are erased (their names come from the engine manifests and the
-//!   ambient prelude); an aliased name (`import { Color as C }`) is renamed to the real one;
+//!   ambient prelude, which is also what a program with no such import at all uses: the names are
+//!   globals, see `types_dts`); an aliased name (`import { Color as C }`) is renamed to the real one;
 //! - imports of relative files are erased and their names renamed to the final names of the exporting
 //!   file's declarations; `import type` is treated like `import` (types collide too);
 //! - `export` is dropped from every file but the entry (the entry's exports stay the program's exports);
@@ -973,6 +974,22 @@ mod tests {
             b.library_imports
                 .contains(&("@iron/engine".into(), "Color".into()))
         );
+    }
+
+    // M9-TS-2312
+    #[test]
+    fn a_program_with_no_library_imports_bundles_the_same_way() {
+        let b = run(
+            "main.ts",
+            &[
+                ("main.ts", "import { twice } from \"./util\";\nexport const c = Color.white;\nexport const n = twice(2);"),
+                ("util.ts", "export function twice(n: number): number { return n * 2; }"),
+            ],
+        )
+        .unwrap();
+        assert!(b.library_imports.is_empty());
+        assert!(b.source.contains("Color.white"), "{}", b.source);
+        assert!(b.source.contains("function twice"), "{}", b.source);
     }
 
     // M9-TS-1802

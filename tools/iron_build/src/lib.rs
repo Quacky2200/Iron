@@ -164,19 +164,13 @@ pub fn manifests() -> Vec<String> {
     all
 }
 
-/// The ambient declarations (`react`, `@iron/react`, `JSX`) shipped with the compiler, if present.
-pub fn ambient_dts() -> String {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../iron_ts/src/lower/ambient.d.ts");
-    std::fs::read_to_string(p).unwrap_or_default()
-}
-
-/// The text of `types/iron.d.ts`.
+/// The text of `types/iron.d.ts` (the shipped ambient and TypeScript-side declarations included).
 pub fn types_dts() -> Result<String, String> {
     let ms: Vec<String> = manifests()
         .into_iter()
         .filter(|m| !m.contains("\"namespace\":\"Ui\""))
         .collect();
-    iron_ts::types_dts::generate(&ms, &ambient_dts())
+    iron_ts::types_dts::generate_default(&ms)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -218,6 +212,11 @@ fn find_tsc(root: &Path) -> Option<PathBuf> {
     while p.pop() {
         dirs.push(p.clone());
     }
+    // The checkout this tool was built from (a game outside it still finds its TypeScript).
+    let mut own = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    while own.pop() {
+        dirs.push(own.clone());
+    }
     let names: &[&str] = if cfg!(windows) {
         &["tsc.cmd", "tsc.exe"]
     } else {
@@ -241,12 +240,54 @@ fn find_tsc(root: &Path) -> Option<PathBuf> {
     None
 }
 
-fn run_tsc(root: &Path) -> Tsc {
+/// The `tsconfig.json` text `tsc` is run with: the game's own file extended, its `include` kept (as
+/// paths from `dist/.tsc/`), plus the generated declarations (`iron.d.ts` next to it). Every file is a
+/// module (`moduleDetection: force`, so top-level names of a game never merge with the engine's
+/// globals), and JSX is only checked (the game needs no `react/jsx-runtime`).
+pub fn tsc_config(config: &GameConfig) -> String {
+    let include: Vec<String> = config
+        .include
+        .iter()
+        .map(|i| format!("../../{}", i.trim_start_matches("./")))
+        .collect();
+
+    serde_json::to_string_pretty(&serde_json::json!({
+        "extends": "../../tsconfig.json",
+        "compilerOptions": {
+            "noEmit": true,
+            "types": [],
+            "jsx": "preserve",
+            "moduleDetection": "force",
+        },
+        "include": include,
+        "files": ["iron.d.ts"],
+        "exclude": ["../../node_modules"],
+    }))
+    .unwrap_or_default()
+}
+
+/// Writes `dist/.tsc/{tsconfig.json,iron.d.ts}` and returns the config path.
+fn write_tsc_files(root: &Path, config: &GameConfig) -> Result<PathBuf, String> {
+    let dir = root.join("dist/.tsc");
+    let dts = types_dts()?;
+    write_atomic(&dir.join("iron.d.ts"), dts.as_bytes()).map_err(|e| e.to_string())?;
+    let cfg = dir.join("tsconfig.json");
+    write_atomic(&cfg, tsc_config(config).as_bytes()).map_err(|e| e.to_string())?;
+    Ok(cfg)
+}
+
+fn run_tsc(root: &Path, config: &GameConfig) -> Tsc {
     let Some(tsc) = find_tsc(root) else {
         return Tsc::Missing;
     };
+    let cfg = match write_tsc_files(root, config).map(|_| "dist/.tsc/tsconfig.json") {
+        Ok(c) => c,
+        Err(e) => return Tsc::Failed(e),
+    };
     match std::process::Command::new(&tsc)
-        .args(["--noEmit", "-p", "."])
+        .arg("--noEmit")
+        .arg("-p")
+        .arg(cfg)
         .current_dir(root)
         .output()
     {
@@ -323,7 +364,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let tsc = if opts.no_tsc || !config.has_tsconfig {
         Tsc::Skipped
     } else {
-        run_tsc(root)
+        run_tsc(root, &config)
     };
     if let Tsc::Failed(text) = &tsc {
         return Err(format!("tsc failed:\n{text}"));
@@ -537,5 +578,249 @@ mod tests {
             .is_err()
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // ---- types/iron.d.ts as globals (M9-TS-2300..) ----------------------------------------------
+
+    fn globals_game(name: &str, main: &str) -> PathBuf {
+        let d = temp(name);
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("package.json"), r#"{"name":"g"}"#).unwrap();
+        std::fs::write(
+            d.join("tsconfig.json"),
+            r#"{"compilerOptions":{"target":"ES2022","lib":["ES2022"],"types":[],"module":"ESNext","moduleResolution":"bundler","strict":true,"noImplicitOverride":true,"verbatimModuleSyntax":true,"jsx":"react-jsx"},"include":["src"]}"#,
+        )
+        .unwrap();
+        std::fs::write(d.join("src/main.tsx"), main).unwrap();
+        d
+    }
+
+    const NO_IMPORTS: &str = "class Hello extends Component {\n  override onStart() {\n    const v = new Vector3(1, 2, 3);\n    console.log(v.x + Time.deltaTime);\n  }\n}\nregister({ Hello });\n";
+    const WITH_IMPORTS: &str = "import { Component, register, Vector3, Time } from \"@iron/engine\";\n\nclass Hello extends Component {\n  override onStart() {\n    const v = new Vector3(1, 2, 3);\n    console.log(v.x + Time.deltaTime);\n  }\n}\nregister({ Hello });\n";
+
+    fn no_tsc() -> Options {
+        Options {
+            no_tsc: true,
+            ..Options::default()
+        }
+    }
+
+    // M9-TS-2300
+    #[test]
+    fn the_declarations_are_deterministic_and_name_the_engine_as_globals() {
+        let a = types_dts().unwrap();
+        assert_eq!(a, types_dts().unwrap());
+        for want in [
+            "\ndeclare class Vector3 {",
+            "\ndeclare class Quaternion {",
+            "\ndeclare class Color {",
+            "\ndeclare class GameObject {",
+            "\ndeclare abstract class Component {",
+            "\ndeclare function register(",
+            "\ndeclare namespace Physics {",
+            "\ndeclare namespace Time {",
+            "\ndeclare namespace input {",
+            "\ndeclare class Rigidbody {",
+            "\ndeclare class BoxCollider {",
+            "\ndeclare class Camera {",
+            "\ndeclare class Light {",
+            "\ndeclare namespace Screen {",
+            "\ndeclare namespace QualitySettings {",
+            "\ndeclare namespace PlayerPrefs {",
+            "\ndeclare class Prefab {",
+            "\ndeclare function useState<",
+            "\ndeclare function useEffect(",
+            "\ndeclare function createRoot(",
+            "\ndeclare function Text(",
+            "\ndeclare function Dialog(",
+            "\ntype ReactNode =",
+            "\ninterface IronStyle {",
+            "\ninterface IronKeyboardEvent ",
+            "\ntype FullScreenMode =",
+            "\ninterface Gamepad {",
+            "\ninterface Collision {",
+            "\ntype Collision2D =",
+            "\ndeclare module \"@iron/engine\" {",
+            "  export import Vector3 = globalThis.Vector3;",
+            "\ndeclare module \"@iron/react\" {",
+            "  export import createRoot = globalThis.createRoot;",
+            "\ndeclare module \"react\" {",
+            "  export import useState = globalThis.useState;",
+        ] {
+            assert!(a.contains(want), "missing {want:?}");
+        }
+        // Nothing is written as `export` outside the three modules.
+        assert!(!a.contains("\nexport "), "a top-level export");
+    }
+
+    // M9-TS-2301
+    #[test]
+    fn calls_have_an_options_object_form_and_creatable_classes_a_constructor() {
+        let a = types_dts().unwrap();
+        // `audio.load(path, { stream: true })` and `new GameObject(name, { position })`.
+        assert!(a.contains("function load(path: string, options?: { stream?: boolean }): Sound;"));
+        assert!(a.contains("  constructor(name?: string, options?: GameObjectOptions);"));
+        assert!(a.contains("  constructor(color?: Color, emission?: Color, smoothness?: number"));
+        assert!(a.contains("  static create(options: { "));
+        // A required parameter never follows an optional one.
+        assert!(!a.contains("?: number, options: {"));
+    }
+
+    // M9-TS-2302
+    #[test]
+    fn a_program_without_imports_compiles() {
+        let d = globals_game("noimp", NO_IMPORTS);
+        let r = build(&d, &no_tsc()).unwrap();
+        assert!(r.object_bytes > 0 && r.files.len() == 1 && r.files[0].ends_with("src/main.tsx"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2303
+    #[test]
+    fn the_old_import_forms_still_compile() {
+        let d = globals_game("oldimp", WITH_IMPORTS);
+        let r = build(&d, &no_tsc()).unwrap();
+        assert!(r.object_bytes > 0);
+        let src = std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap();
+        assert!(!src.contains("@iron/engine\\\""), "the import was kept");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2304
+    #[test]
+    fn the_tsc_config_extends_the_games_and_adds_the_declarations() {
+        let d = globals_game("cfg2", NO_IMPORTS);
+        let c = GameConfig::load(&d).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&tsc_config(&c)).unwrap();
+        assert_eq!(v["extends"], "../../tsconfig.json");
+        assert_eq!(v["include"][0], "../../src");
+        assert_eq!(v["files"][0], "iron.d.ts");
+        assert_eq!(v["compilerOptions"]["moduleDetection"], "force");
+        assert_eq!(v["compilerOptions"]["jsx"], "preserve");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2305
+    #[test]
+    fn tsc_checks_a_program_without_imports_and_the_old_forms() {
+        let d = globals_game("tscnoimp", NO_IMPORTS);
+        let Some(_) = find_tsc(&d) else {
+            eprintln!("M9-TS-2305 skipped: tsc not found (install TypeScript)");
+            let _ = std::fs::remove_dir_all(&d);
+            return;
+        };
+        let ok = |d: &Path| {
+            build(
+                d,
+                &Options {
+                    no_compile: true,
+                    ..Options::default()
+                },
+            )
+        };
+        assert_eq!(ok(&d).unwrap().tsc, Tsc::Ok);
+        // The declarations are real: a wrong call fails.
+        std::fs::write(
+            d.join("src/main.tsx"),
+            "class Hello extends Component {\n  override onStart() {\n    const v = new Vector3(1, 2);\n    const n: number = \"x\";\n  }\n}\n",
+        )
+        .unwrap();
+        let Err(e) = ok(&d) else {
+            panic!("a wrong call type-checked")
+        };
+        assert!(e.contains("tsc failed") && e.contains("TS2554"), "{e}");
+        // The old imports.
+        std::fs::write(d.join("src/main.tsx"), WITH_IMPORTS).unwrap();
+        assert_eq!(ok(&d).unwrap().tsc, Tsc::Ok);
+        std::fs::write(
+            d.join("src/main.tsx"),
+            "import { useState } from \"react\";\nimport { createRoot, Text, type IronStyle } from \"@iron/react\";\nimport { type Gamepad, Color } from \"@iron/engine\";\nconst style: IronStyle = { color: \"red\" };\nfunction App() {\n  const [n, setN] = useState(0);\n  const g: Gamepad | null = null;\n  return <box style={style} onClick={() => setN(n + 1)}><Text>{n}{String(g)}{Color.white.r}</Text></box>;\n}\ncreateRoot().render(<App />);\n",
+        )
+        .unwrap();
+        assert_eq!(ok(&d).unwrap().tsc, Tsc::Ok);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2306
+    #[test]
+    fn the_generated_declarations_have_no_errors_of_their_own() {
+        let d = globals_game("tscdts", NO_IMPORTS);
+        let Some(tsc) = find_tsc(&d) else {
+            eprintln!("M9-TS-2306 skipped: tsc not found (install TypeScript)");
+            let _ = std::fs::remove_dir_all(&d);
+            return;
+        };
+        std::fs::write(d.join("iron.d.ts"), types_dts().unwrap()).unwrap();
+        // skipLibCheck off: declaration errors are reported too.
+        let o = std::process::Command::new(tsc)
+            .args([
+                "--noEmit",
+                "--strict",
+                "--skipLibCheck",
+                "false",
+                "--lib",
+                "ES2022",
+                "--target",
+                "ES2022",
+                "iron.d.ts",
+            ])
+            .current_dir(&d)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&o.stdout);
+        assert!(o.status.success(), "{text}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2307
+    #[test]
+    fn all_the_examples_type_check_against_the_generated_declarations() {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let Some(_) = find_tsc(&examples) else {
+            eprintln!("M9-TS-2307 skipped: tsc not found (install TypeScript)");
+            return;
+        };
+        let mut games = 0;
+        for e in std::fs::read_dir(&examples).unwrap().flatten() {
+            let p = e.path();
+            if !p.join("package.json").exists() {
+                continue;
+            }
+            games += 1;
+            let r = build(
+                &p,
+                &Options {
+                    no_compile: true,
+                    ..Options::default()
+                },
+            );
+            assert!(
+                matches!(&r, Ok(r) if r.tsc == Tsc::Ok),
+                "{}: {:?}",
+                p.display(),
+                r.map(|r| r.tsc)
+            );
+        }
+        assert!(games >= 19, "{games} examples");
+    }
+
+    // M9-TS-2308
+    #[test]
+    fn the_examples_import_nothing_from_the_engine() {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        for e in std::fs::read_dir(&examples).unwrap().flatten() {
+            let src = e.path().join("src");
+            let Ok(rd) = std::fs::read_dir(&src) else {
+                continue;
+            };
+            for f in rd.flatten() {
+                let Ok(t) = std::fs::read_to_string(f.path()) else {
+                    continue;
+                };
+                for bad in ["\"@iron/engine\"", "\"@iron/react\"", "from \"react\""] {
+                    assert!(!t.contains(bad), "{}: {bad}", f.path().display());
+                }
+            }
+        }
     }
 }

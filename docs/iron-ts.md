@@ -992,6 +992,7 @@ when `cond` is false.
 - **Lazy state, node methods.** `useState(() => init)` and `useState(read)` (an arrow, or a top-level function) compute the first
   value once (`useStateLazy`); state may be an array of numbers. `ref.current?.focus()`, `.blur()`, `.scrollTo(x, y)` queue a
   `NodeCommand` that the host applies to its tree (`iron_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
+- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, `ambient.d.ts` and the hand-written `engine_ts.d.ts`; see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
 - **Ambient types** ([ambient.ts](../tools/iron_ts/src/lower/ambient.ts) prelude, written with
   [gen_ambient.py](../tools/iron_ts/scripts/gen_ambient.py) together with [ambient.d.ts](../tools/iron_ts/src/lower/ambient.d.ts)):
   `ReactNode`, `React.ReactNode`, `IronElement`, `IronKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
