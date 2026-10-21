@@ -206,7 +206,7 @@ overflow), used for clipping, scrollbars and event data.
 ## Text
 
 [text.rs](../crates/iron_ui/src/text.rs) wraps Parley (`TextEngine` = `FontContext` +
-`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth` and `hidden` (`visibility: hidden`); `Brush::of(&ComputedText)`). Fonts: bundled Inter (variable, upright and
+`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth`, `hidden` (`visibility: hidden`) and `node` (the source node of the run's characters, set by `build_with_text`, `None` from `Brush::of(&ComputedText)`); `node_at(layout, x, y)` maps a point to that node via `Cluster::from_point_exact`, for span hit testing). Fonts: bundled Inter (variable, upright and
 italic) is always registered and put first for the generic sans-serif families; `with_system_fonts`
 adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no system fonts) to stay
 deterministic. `register_font` first runs the data through `decode_web_font`, which decompresses WOFF and WOFF2

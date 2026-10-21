@@ -2274,6 +2274,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.ellipses.remove(&root);
         }
         let mut runs = Vec::new();
+        let mut nodes = Vec::new();
         let mut word_start = true;
         // Walk the inline content in order, carrying each node's computed style.
         let mut stack = vec![(root, block.clone())];
@@ -2289,13 +2290,14 @@ impl<L: LayoutEngine> UiTree<L> {
             if let Some(t) = &node.text {
                 let text = style.text_transform.apply(t, &mut word_start);
                 runs.push((text, style.clone()));
+                nodes.push(id);
             }
             for child in node.children.iter().rev() {
                 stack.push((*child, style.clone()));
             }
         }
         self.text_builds += 1;
-        self.text.build_with_text(&block, &runs)
+        self.text.build_with_text(&block, &runs, Some(&nodes))
     }
 
     /// How many text blocks have been shaped since the tree was created.
@@ -3659,10 +3661,34 @@ impl<L: LayoutEngine> UiTree<L> {
         if !rect.contains_rounded(radii, x, y) {
             return None;
         }
+        if is_inline_container(&node.kind)
+            && let Some(span) = self.span_at(id, x, y)
+        {
+            return Some(span);
+        }
         // Generated content belongs to its originating element.
         match node.generated {
             Some(_) => node.parent.filter(|p| *p != ROOT),
             None => Some(id),
+        }
+    }
+
+    /// The span under point (x, y) of text block `root` (in its plane): the innermost
+    /// element around the characters there that takes pointer events, below `root`.
+    fn span_at(&self, root: NodeId, x: f32, y: f32) -> Option<NodeId> {
+        let layout = self.text_layouts.get(&root)?;
+        let content = self.content_box(root)?;
+        let mut at = text::node_at(layout, x - content.x, y - content.y)?;
+        loop {
+            if at == root {
+                return None;
+            }
+            let node = self.nodes.get(&at)?;
+            let takes_events = node.visual.pointer_events != Some(false);
+            if node.kind != TEXT_NODE && node.generated.is_none() && takes_events {
+                return Some(at);
+            }
+            at = node.parent?;
         }
     }
 

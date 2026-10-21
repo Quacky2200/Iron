@@ -114,7 +114,12 @@ need no `image`. A rejected image is logged and skipped.
   `self_clips`/`overflow_clip` functions as drawing, so hit testing and painting stay in sync.
 - `pointerEvents: none` is inherited and children can opt back in with `auto`.
 - The element's own rounded rectangle is respected (`Rect::contains_rounded`).
-- `text`/`span` children are not searched (`is_inline_container`): text hits the text element.
+- `text`/`span` children are not searched as boxes (`is_inline_container`). Once the text element
+  itself is hit, `span_at` maps the point into its content box and asks `text::node_at` which run's
+  characters are under it; the target is the innermost element around them, below the text element, skipping
+  `#text`, generated content and `pointerEvents: none`. So an inline span is an event target
+  (`onClick`, `:hover`, `cursor`) over its own characters and appears in event paths under its text;
+  elsewhere the text element is hit (`M3-EVT-07`).
   Generated `::before`/`::after` nodes resolve to their originating element.
 - `ROOT` never hits; the result `None` means "empty space".
 
