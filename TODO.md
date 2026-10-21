@@ -1520,8 +1520,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     distance is the fog: seeded noise terrain built per 16×16 chunk as one textured mesh of
     visible faces (`Mesh.createFlat` / `setFlat`), chunks recycled around the camera, a spare
     ring past the fog for fog culling to skip; the HUD reads `RenderStats`
-  - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
-    2026-10-21): a third-person character on a bright white floor of glowing grid tiles under
+  - [x] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
+    2026-10-21; `examples/fog-white-room`, 2026-10-21: Quaternius's CC0 mannequin with an
+    Animator (idle / walk / jog / sprint blend tree, jumps, a roll), linear fog past a clear
+    bubble, a thin height fog, tiles lit underfoot and on their own, drifting fragments, a
+    floating origin): a third-person character on a bright white floor of glowing grid tiles under
     a grey cloudy sky, everything fading into white fog a few tiles away. The floor moves with
     the player like a treadmill (tiles recycled around them), so the area never ends: no walls
     to reach, no edge to fall off. The player can run and jump with gravity (a
