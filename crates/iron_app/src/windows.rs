@@ -17,14 +17,12 @@ use iron_ui::{Input, Interaction, UiTree, events};
 use super::*;
 
 /// One secondary window.
-#[allow(dead_code)] // `key` and `drawn` are read by the drawing code (step 8)
 pub struct AppWindow {
     /// Dropped before `host`: a wgpu surface must go before the OS window it draws to.
     pub surface: Option<WindowSurface>,
     /// Virtual windows (screenshot runs) draw into this instead.
     pub offscreen: Option<OffscreenTarget>,
     pub host: WindowHost,
-    pub key: WindowKey,
     pub tree: UiTree,
     pub interaction: Interaction,
     /// Stylesheets added to this tree, by the app's sheet key.
@@ -64,6 +62,81 @@ impl AppWindows {
     }
 }
 
+/// Draws one window's UI into its surface (vsync stays off) or its offscreen target. Returns
+/// whether anything was drawn (a minimised or 0 x 0 window is skipped).
+pub fn draw_window(
+    gpu: &Gpu,
+    renderer: &mut UiRenderer,
+    w: &mut AppWindow,
+    now_ms: f64,
+    dark: bool,
+) -> bool {
+    if w.physical.0 == 0 || w.physical.1 == 0 {
+        return false;
+    }
+    let ui = to_ui(w.physical, w.scale);
+    w.tree.set_size(ui.0 as f32, ui.1 as f32);
+    w.tree.set_time(now_ms);
+    w.tree.set_media_env(iron_ui::media::MediaEnv {
+        resolution: w.scale as f32,
+        dark,
+        ..w.tree.media_env()
+    });
+    load_images(&mut w.tree, renderer, gpu);
+    let cmds = w.tree.draw_list();
+    let scale = w.scale as f32;
+    if let Some(surface) = w.surface.as_mut() {
+        surface.present_with(gpu, |view, format, size| {
+            let target = RenderTarget {
+                view,
+                format,
+                size,
+                scale,
+            };
+            renderer.render(gpu, &target, CLEAR, &cmds);
+        });
+    } else if let Some(off) = &w.offscreen {
+        let Some(view) = off.view() else {
+            return false;
+        };
+        let target = RenderTarget {
+            view: &view,
+            format: off.format(),
+            size: off.size(),
+            scale,
+        };
+        renderer.render(gpu, &target, CLEAR, &cmds);
+    } else {
+        return false;
+    }
+    true
+}
+
+/// Draws a window offscreen and reads its pixels back (RGBA, the window's physical size). Virtual
+/// windows use their own target; an OS window gets a temporary one.
+pub fn window_pixels(
+    gpu: &Gpu,
+    renderer: &mut UiRenderer,
+    w: &mut AppWindow,
+    now_ms: f64,
+    dark: bool,
+) -> anyhow::Result<(u32, u32, Vec<u8>)> {
+    if w.offscreen.is_some() {
+        draw_window(gpu, renderer, w, now_ms, dark);
+        let off = w.offscreen.as_ref().context("no target")?;
+        let (width, height) = off.size();
+        return Ok((width, height, off.read_pixels(gpu)?));
+    }
+    let (width, height) = (w.physical.0.max(1), w.physical.1.max(1));
+    let tmp = OffscreenTarget::with_format(gpu, width, height, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let tmp_window = w.offscreen.replace(tmp);
+    let surface = w.surface.take();
+    draw_window(gpu, renderer, w, now_ms, dark);
+    w.surface = surface;
+    let tmp = std::mem::replace(&mut w.offscreen, tmp_window).context("no target")?;
+    Ok((width, height, tmp.read_pixels(gpu)?))
+}
+
 /// UI pixels of a physical size at `scale` physical pixels per UI pixel.
 pub fn to_ui(physical: (u32, u32), scale: f64) -> (f64, f64) {
     let s = if scale > 0.0 { scale } else { 1.0 };
@@ -78,7 +151,6 @@ pub fn app_focused(focused: &BTreeSet<WindowKey>) -> bool {
 /// A file-name part for a window's screenshot: the title lowercased, runs of characters other
 /// than `a-z0-9` as `-`, trimmed. Empty becomes `window<handle>`; one already in `used` gets
 /// `-<handle>`.
-#[allow(dead_code)] // used by the screenshot code (step 8)
 pub fn slug(title: &str, handle: u32, used: &mut HashSet<String>) -> String {
     let mut out = String::new();
     for c in title.to_lowercase().chars() {
@@ -315,7 +387,6 @@ impl App {
                 surface,
                 offscreen,
                 host,
-                key,
                 tree,
                 interaction: Interaction::new(),
                 sheets,
@@ -517,6 +588,57 @@ impl App {
         self.in_game(|| win::closed(w));
     }
 
+    /// Draws every open secondary window after the main one. A window's first frame lists it for
+    /// the platform to show (windows are made hidden, so none flashes its empty background).
+    pub(super) fn draw_windows(&mut self) {
+        let Some(gfx) = &mut self.gfx else {
+            return;
+        };
+        let now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+        for (key, w) in self.windows.map.iter_mut() {
+            let st = win::state(WindowRef(key.0));
+            if st.as_ref().is_some_and(|s| s.minimized) {
+                continue;
+            }
+            let dark = match &w.host {
+                WindowHost::Os(window) => window.theme() == Some(iron_platform::Theme::Dark),
+                WindowHost::Virtual { .. } => false,
+            };
+            let first = !w.drawn;
+            if draw_window(&gfx.gpu, &mut gfx.renderer, w, now_ms, dark) {
+                w.drawn = true;
+                if first && st.is_none_or(|s| s.flags.visible) {
+                    self.windows_to_show.push(*key);
+                }
+            }
+        }
+    }
+
+    /// Writes every open secondary window to `<stem>-<slug>.png` next to a screenshot (drawn
+    /// offscreen at its size and scale; nothing is shown on screen).
+    pub(super) fn save_window_screenshots(&mut self, path: &Path) -> Result<()> {
+        let Some(gfx) = &mut self.gfx else {
+            return Ok(());
+        };
+        let now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "screenshot".into());
+        let mut used = HashSet::new();
+        // The main window's own name is taken by `out.png`.
+        for (key, w) in self.windows.map.iter_mut() {
+            let title = win::state(WindowRef(key.0)).map_or_else(String::new, |s| s.title);
+            let name = slug(&title, key.0, &mut used);
+            let (width, height, pixels) =
+                window_pixels(&gfx.gpu, &mut gfx.renderer, w, now_ms, false)?;
+            let file = path.with_file_name(format!("{stem}-{name}.png"));
+            iron_render::testing::write_png(&file, width, height, &pixels)?;
+            tracing::info!("saved window screenshot to {}", file.display());
+        }
+        Ok(())
+    }
+
     /// Once per loop iteration, after the events: the game's focus is any of its windows'.
     pub(super) fn window_events_done(&mut self) {
         let focused = app_focused(&self.windows.focused);
@@ -657,6 +779,61 @@ mod tests {
         assert!(app_focused(&f));
         f.clear();
         assert!(!app_focused(&f));
+    }
+
+    // M9-API-1470
+    #[test]
+    fn a_virtual_window_draws_its_ui_offscreen() {
+        use iron_ui::opcodes::{APPEND_CHILD, CREATE, SET_STYLE};
+        let gpu = iron_render::testing::shared_gpu();
+        let mut renderer = UiRenderer::new(&gpu);
+        let mut tree = UiTree::with_system_fonts(1.0, 1.0);
+        let n = |v: u32| iron_core::Value::Number(v.into());
+        let ops = vec![
+            iron_core::Value::Array(vec![n(CREATE), n(1), "box".into()]),
+            iron_core::Value::Array(vec![
+                n(SET_STYLE),
+                n(1),
+                "width".into(),
+                n(40),
+                "height".into(),
+                n(40),
+                "backgroundColor".into(),
+                "#ff0000".into(),
+            ]),
+            iron_core::Value::Array(vec![n(APPEND_CHILD), n(0), n(1)]),
+        ];
+        assert!(tree.apply_commit(&iron_core::Commit { ops }).is_empty());
+        let mut w = AppWindow {
+            surface: None,
+            offscreen: Some(OffscreenTarget::with_format(
+                &gpu,
+                100,
+                80,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+            )),
+            host: WindowHost::Virtual {
+                width: 100,
+                height: 80,
+                scale: 1.0,
+            },
+            tree,
+            interaction: Interaction::new(),
+            sheets: HashMap::new(),
+            pointer_px: None,
+            buttons_down: 0,
+            ime_allowed: false,
+            cursor: "default",
+            physical: (100, 80),
+            scale: 1.0,
+            drawn: false,
+        };
+        assert!(draw_window(&gpu, &mut renderer, &mut w, 0.0, false));
+        let (width, height, px) = window_pixels(&gpu, &mut renderer, &mut w, 0.0, false).unwrap();
+        assert_eq!((width, height), (100, 80));
+        let at = |x: usize, y: usize| &px[(y * 100 + x) * 4..(y * 100 + x) * 4 + 3];
+        assert_eq!(at(10, 10), [255, 0, 0], "inside the box");
+        assert_ne!(at(60, 60), [255, 0, 0], "outside it");
     }
 
     // M9-API-1464

@@ -2036,7 +2036,7 @@ impl App {
         }
         let pixels = target.read_pixels(&gfx.gpu)?;
         iron_render::testing::write_png(path, w, h, &pixels)?;
-        Ok(())
+        self.save_window_screenshots(path)
     }
 }
 
@@ -2533,6 +2533,7 @@ impl PlatformApp for App {
             }
         });
         self.world_view.probes_rendered();
+        self.draw_windows();
         if self.fps_on {
             self.fps.frame(self.started.elapsed().as_secs_f64());
         }

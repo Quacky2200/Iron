@@ -1416,6 +1416,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1462 | Unit | Screenshot names are slugs of the titles (`Counter 1` is `counter-1`, `!!` is `window3`, a repeat is `counter-1-4`). |
 | M9-API-1463 | Unit | The game counts as focused while any of its windows is (focus moving to a tool window never unfocuses it). |
 | M9-API-1464 | Unit | Window targets (`WINDOW_TARGET \| handle`) do not collide with panel ids; physical sizes become UI pixels. |
+| M9-API-1470 | Integration | A virtual window (offscreen target, `AppWindow`) draws its UI: a 40 x 40 red box reads back red at (10, 10) and not at (60, 60) (`crates/iron_app/src/windows.rs`, shared test GPU). Acceptance run: a probe game with a tool window and `--screenshot out.png` writes `out.png` and `out-probe-tool.png` (200 x 120). |
 | M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
 | M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
 | M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/iron_engine_api/tests/window.rs`). |
