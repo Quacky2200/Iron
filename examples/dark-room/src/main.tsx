@@ -16,7 +16,8 @@
 // how bright the view meters (where the eyes are heading) against the exposure in use (where
 // they are), both in EV100 (`Camera.sceneBrightness`, `Camera.exposure`), so you can watch
 // them adapt. The metering zone is drawn over the view. Keys: auto exposure on or off (A)
-// blending over a transition (T) to a manual exposure (E); freezing it where it is (Z);
+// blending over a transition (T) to a manual exposure (- and =, a stop at a time, easing
+// over the same transition); freezing it where it is (Z);
 // holding it (L); how fast eyes adapt (Y: game-fast or eye-slow); the metering mode (M) and
 // histogram band (H); the haze's noise settings (G); a soft floor (S) and a compensation
 // curve (C), which stop the
@@ -84,7 +85,9 @@ const OPEN_ANGLE = 105;
 const METERING = ["centerWeighted", "average", "spot"] as const;
 const METERING_NAMES = { centerWeighted: "Centre-weighted", average: "Average", spot: "Spot" };
 const TRANSITIONS = [2, 6, 0];
-const MANUAL_EVS = [0, -3, 4];
+/** The manual exposure's range (EV100), stepped a stop at a time. */
+const MANUAL_MIN = -6;
+const MANUAL_MAX = 10;
 /** How fast the eyes adapt: like a game (under a second) or like real eyes (slow in the dark). */
 const SPEEDS = [
   { name: "Game (under a second)", toLight: 4, toDark: 3.5 },
@@ -138,7 +141,7 @@ const state = {
   soft: false,
   curve: false,
   transition: 0,
-  manual: 0,
+  manual: 0 as number,
   speed: 0,
   /** Set by freezing: the manual exposure is wherever the eyes were. */
   frozenAt: null as number | null,
@@ -147,7 +150,7 @@ let refreshMenu = () => {};
 
 function apply(): void {
   RenderSettings.exposureTransition = TRANSITIONS[state.transition]!;
-  RenderSettings.fixedExposure = state.frozenAt ?? MANUAL_EVS[state.manual]!;
+  RenderSettings.fixedExposure = state.frozenAt ?? state.manual;
   const speed = SPEEDS[state.speed]!;
   RenderSettings.autoExposure = state.auto
     ? {
@@ -473,7 +476,8 @@ class Bedroom extends Component {
     if (input.getKeyDown("KeyA")) toggleAuto();
     if (input.getKeyDown("KeyZ")) freeze();
     if (input.getKeyDown("KeyT")) cycle("transition", TRANSITIONS.length);
-    if (input.getKeyDown("KeyE")) cycle("manual", MANUAL_EVS.length);
+    if (input.getKeyDown("Minus")) stepManual(-1);
+    if (input.getKeyDown("Equal")) stepManual(1);
     if (input.getKeyDown("KeyL")) toggle("hold");
     if (input.getKeyDown("KeyM")) cycle("metering", METERING.length);
     if (input.getKeyDown("KeyY")) cycle("speed", SPEEDS.length);
@@ -513,7 +517,18 @@ function toggle(key: "paused" | "hold" | "band" | "soft" | "curve" | "clouds" | 
   apply();
 }
 
-function cycle(key: "transition" | "manual" | "metering" | "speed", n: number) {
+/**
+ * A stop darker or brighter for the manual exposure (eased over the transition, as turning
+ * auto exposure on or off is). From a freeze it starts where the freeze held.
+ */
+function stepManual(stops: number) {
+  const from = state.frozenAt ?? state.manual;
+  state.frozenAt = null;
+  state.manual = Math.min(MANUAL_MAX, Math.max(MANUAL_MIN, Math.round(from) + stops));
+  apply();
+}
+
+function cycle(key: "transition" | "metering" | "speed", n: number) {
   state[key] = (state[key] + 1) % n;
   apply();
 }
@@ -528,6 +543,28 @@ function toggleAuto() {
 const ev = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? "…" : `EV ${v.toFixed(1)}`);
 
 register({ Bedroom });
+
+/** A value with − and + buttons beside it (keys - and =). */
+function Stepper(props: { label: string; value: string; on: boolean; onDown: () => void; onUp: () => void }) {
+  const small = (text: string, onClick: () => void) => (
+    <box onClick={onClick} style={{ padding: "6px 12px", borderRadius: 6, cursor: "pointer", backgroundColor: "rgba(255,255,255,0.14)" }}>
+      <text style={{ color: "#f4f6f8", fontSize: 13 }}>{text}</text>
+    </box>
+  );
+  return (
+    <box style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <text style={{ color: "#c8ccd2", fontSize: 13, width: 104, flexShrink: 0 }}>{props.label}</text>
+      <box style={{ flexDirection: "row", gap: 6, minWidth: 150 }}>
+        {small("−", props.onDown)}
+        <box style={{ padding: "6px 12px", borderRadius: 6, flexGrow: 1, backgroundColor: props.on ? "#3a7bd5" : "rgba(255,255,255,0.1)" }}>
+          <text style={{ color: "#f4f6f8", fontSize: 13 }}>{props.value}</text>
+        </box>
+        {small("+", props.onUp)}
+      </box>
+      <text style={{ color: "#7d838c", fontSize: 12 }}>- =</text>
+    </box>
+  );
+}
 
 function Button(props: { label: string; value: string; on: boolean; keyName: string; onClick: () => void }) {
   return (
@@ -636,14 +673,14 @@ function ExposurePage() {
     <>
       <Button
         label="Auto exposure"
-        value={state.auto ? "On (eyes adapt)" : state.frozenAt !== null ? `Frozen (${ev(state.frozenAt)})` : `Off (manual ${ev(MANUAL_EVS[state.manual])})`}
+        value={state.auto ? "On (eyes adapt)" : state.frozenAt !== null ? `Frozen (${ev(state.frozenAt)})` : `Off (manual ${ev(state.manual)})`}
         on={state.auto}
         keyName="A"
         onClick={toggleAuto}
       />
       <Button label="Freeze here" value="Off, unseen" on={false} keyName="Z" onClick={freeze} />
       <Button label="Transition" value={TRANSITIONS[state.transition] ? `${TRANSITIONS[state.transition]} s blend` : "Instant"} on={TRANSITIONS[state.transition]! > 0} keyName="T" onClick={() => cycle("transition", TRANSITIONS.length)} />
-      <Button label="Manual EV" value={ev(MANUAL_EVS[state.manual])} on={!state.auto} keyName="E" onClick={() => cycle("manual", MANUAL_EVS.length)} />
+      <Stepper label="Manual EV" value={ev(state.frozenAt ?? state.manual)} on={!state.auto} onDown={() => stepManual(-1)} onUp={() => stepManual(1)} />
       <Button label="Hold" value={state.hold ? "Held where it is" : "Adapting"} on={state.hold} keyName="L" onClick={() => toggle("hold")} />
       <Button label="Adapts like" value={SPEEDS[state.speed]!.name} on={state.speed === 0} keyName="Y" onClick={() => cycle("speed", SPEEDS.length)} />
       <Button label="Metering" value={METERING_NAMES[METERING[state.metering] ?? "centerWeighted"]} on={true} keyName="M" onClick={() => cycle("metering", METERING.length)} />
