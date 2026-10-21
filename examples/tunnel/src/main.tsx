@@ -18,6 +18,8 @@ import {
   Random,
   ReflectionProbe,
   RenderSettings,
+  Texture,
+  Vector2,
   Vector3,
   input,
   register,
@@ -50,10 +52,11 @@ function apply(): void {
   RenderSettings.autoExposure = state.auto
     ? // minEV: in the tunnel the eyes stop adapting before it looks like daylight, so it
       // stays dim between the lamps.
-      { minEV: -2.5, maxEV: 16, compensation: -0.3, speedDarkToLight: 1.4, speedLightToDark: 0.45 }
+      // Slow to adapt to the daylight on the way out: a few seconds of glare.
+      { minEV: -4, maxEV: 16, compensation: -0.7, speedDarkToLight: 0.7, speedLightToDark: 0.5 }
     : null;
   // Without adapting, an exposure that suits the daylight: the tunnel is near black.
-  RenderSettings.postExposure = state.auto ? 0 : -4;
+  RenderSettings.postExposure = state.auto ? 0 : -5;
   RenderSettings.fog = state.haze;
   refreshMenu();
 }
@@ -69,6 +72,24 @@ function slab(name: string, x0: number, y0: number, z0: number, x1: number, y1: 
 }
 const mat = (hex: string, smoothness = 0.05) => Material.create({ color: Color.hex(hex), smoothness });
 
+/**
+ * Baked ambient occlusion for the tunnel's inside: the sky's light barely gets in, so its
+ * surfaces take only `share` of the ambient light (and of reflections) that open ground does.
+ */
+const shut = (share: number) => Texture.create(1, 1, [new Color(share, share, share, 1)], { linear: true });
+
+/** Black tarmac: dark binder with grey and the odd pale stone in it, tiling. */
+function tarmac(): Texture {
+  const N = 128;
+  const px: Color[] = [];
+  for (let i = 0; i < N * N; i++) {
+    const r = Random.value;
+    const v = r < 0.6 ? Random.range(0.018, 0.03) : r < 0.93 ? Random.range(0.035, 0.07) : Random.range(0.09, 0.16);
+    px.push(new Color(v, v, v * 1.04, 1));
+  }
+  return Texture.create(N, N, px, { filterMode: "bilinear" });
+}
+
 class Drive extends Component {
   private camera!: Camera;
   private z = START_Z;
@@ -82,17 +103,19 @@ class Drive extends Component {
     RenderSettings.ambientMode = "color";
     // Daylight is far brighter than a tunnel (the sun some 7 stops over the tunnel's air):
     // the same ambient lights both, so it's low next to the sun.
-    RenderSettings.ambientLight = new Color(0.06, 0.065, 0.08, 1);
+    // Open ground gets plenty from the sky; the tunnel's surfaces shut most of it out
+    // (`shut`), so it's dark inside next to the sunlit day.
+    RenderSettings.ambientLight = new Color(0.9, 1.0, 1.2, 1);
     RenderSettings.skybox = {
-      zenith: new Color(3.6, 6, 12.8, 1),
-      horizon: new Color(12, 12.8, 13.6, 1),
-      ground: new Color(2.4, 2.2, 1.8, 1),
+      zenith: new Color(7, 12, 26, 1),
+      horizon: new Color(24, 26, 28, 1),
+      ground: new Color(5, 4.4, 3.6, 1),
       sunDirection: SUN.scale(-1),
-      sunColor: new Color(240, 224, 200, 1),
+      sunColor: new Color(480, 450, 400, 1),
       sunSize: 1.2,
     };
     RenderSettings.tonemapping = "aces";
-    RenderSettings.bloom = { threshold: 1.0, intensity: 0.9, scatter: 0.8 };
+    RenderSettings.bloom = { threshold: 1.0, intensity: 1.3, scatter: 0.85 };
     RenderSettings.fogMode = "exponential";
     // The haze's own colour is dark: it only glows where light reaches it (the sun's shafts
     // outside, the lamps inside), so the tunnel's air stays dark.
@@ -101,7 +124,7 @@ class Drive extends Component {
     RenderSettings.volumetricFog = { intensity: 0.9, anisotropy: 0.35, steps: 4, distance: 80, albedo: new Color(0.9, 0.95, 1, 1) };
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
-    sun.addComponent(Light, { type: "directional", color: new Color(1, 0.96, 0.88, 1), intensity: 20, shadows: "hard" });
+    sun.addComponent(Light, { type: "directional", color: new Color(1, 0.96, 0.88, 1), intensity: 40, shadows: "hard" });
 
     Random.initState(11);
     this.buildRoad();
@@ -114,25 +137,29 @@ class Drive extends Component {
     apply();
   }
 
-  /** Asphalt from end to end, a dashed middle line and solid edge lines. */
+  /** Black tarmac from end to end, a dashed middle line and solid edge lines. */
   private buildRoad() {
-    const asphalt = mat("#2b2b2e", 0.15);
-    // Inside, damp and smoother: the lamps shine back off it.
-    const damp = mat("#232326", 0.62);
+    const surface = tarmac();
+    // 10 m pieces, the texture every 2 m. Outside a faint sheen; inside damp, so the lamps
+    // shine back off it, and shut off from the sky.
+    const scale = new Vector2(5, 5);
+    const asphalt = Material.create({ color: Color.white, mainTexture: surface, mainTextureScale: scale, smoothness: 0.3 });
+    const damp = Material.create({ color: Color.white, mainTexture: surface, mainTextureScale: scale, smoothness: 0.6, occlusionMap: shut(0.25) });
     const paint = Material.create({ color: Color.hex("#e8e4d8"), smoothness: 0.2 });
-    slab("Road", -HALF_W, -0.1, 0, HALF_W, 0, START_Z + 30, asphalt);
-    // In probe-length pieces: each reflects the probe it's in.
-    for (let z = 0; z > -TUNNEL_LENGTH; z -= 28) slab("Road", -HALF_W, -0.1, Math.max(z - 28, -TUNNEL_LENGTH), HALF_W, 0, z, damp);
-    slab("Road", -HALF_W, -0.1, END_Z - 20, HALF_W, 0, -TUNNEL_LENGTH, asphalt);
+    for (let z = START_Z + 30; z > END_Z - 20; z -= 10) {
+      const inside = z <= 0 && z > -TUNNEL_LENGTH;
+      slab("Road", -HALF_W, -0.1, z - 10, HALF_W, 0, z, inside ? damp : asphalt);
+    }
     for (let z = START_Z + 28; z > END_Z - 18; z -= 9) slab("Dash", -0.08, 0, z - 3, 0.08, 0.012, z, paint);
     for (const x of [-HALF_W + 0.4, HALF_W - 0.4]) slab("Edge line", x - 0.06, 0, END_Z - 20, x + 0.06, 0.012, START_Z + 30, paint);
   }
 
   /** Concrete walls and ceiling, a kerb each side and sodium lamps along the roof. */
   private buildTunnel() {
-    const concrete = mat("#8a8780");
-    const tiles = mat("#b9b6ac", 0.25);
-    const ceiling = mat("#4a4844");
+    const dark = shut(0.08);
+    const concrete = Material.create({ color: Color.hex("#8a8780"), smoothness: 0.05, occlusionMap: dark });
+    const tiles = Material.create({ color: Color.hex("#b9b6ac"), smoothness: 0.25, occlusionMap: dark });
+    const ceiling = Material.create({ color: Color.hex("#4a4844"), smoothness: 0.05, occlusionMap: dark });
     const z0 = 0;
     const z1 = -TUNNEL_LENGTH;
     for (const s of [-1, 1]) {
