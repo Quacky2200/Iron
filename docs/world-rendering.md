@@ -403,6 +403,19 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   The result is tinted by the fog colour (its albedo) and scaled by `intensity`. Views without shafts bind
   `VolumePass::empty()`, a black 1-texel volume. `fs_fill` adds shafts to the background only when height
   fog is on. The cost doesn't depend on overdraw.
+- **Fog volumes.** `FogVolume` (a component; size default 10x2x10, `density` 0.5, `color` (0.75, 0.78, 0.82),
+  `blendDistance` 1) is a box of fog in its own colour: mist over a pond, smoke in a room. It sends
+  `render.fogVolume` and follows its object's position and scale (world-aligned; rotation is ignored).
+  Each camera gets the 8 nearest volumes (`MAX_FOG_VOLUMES`) its layers show, none when `Camera.fog` is
+  off, as `WorldView.fog_volumes: Vec<FogVolume { centre, half_extents, density, color, blend }>`.
+  `render.remove` and destroyed objects drop them. `GpuGlobals.fog_local` (x count) and `local_fogs`
+  (`GpuFogVolume`: centre + density, half extents + blend, colour) carry them to the shader.
+  `local_fog_clear(a, b, i)` finds with a slab test where the view segment crosses the box, then takes 8
+  fixed samples of `density` times a smoothstep edge fade over `blend` metres, so it is smooth from pixel
+  to pixel. `local_clear` multiplies the volumes together, and `through_volumes` applies each in its own
+  colour after the global fog in `fogged`, and in `fs_fill` for the background. They work without
+  `RenderSettings.fog`. `cs_volume` multiplies `local_clear` into its transmittance, so light shafts
+  light the volumes.
 - **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
@@ -470,6 +483,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
 | `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance]\|null`, or `0 null` for clear air |
+| `render.fogVolume` | `component object [sx sy sz] density [r g b] blendDistance` |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
@@ -763,7 +777,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
