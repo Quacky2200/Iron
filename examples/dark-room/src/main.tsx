@@ -3,8 +3,13 @@
 // adapted and it's easy to see. Then the shutters swing open: blinding, the windows white,
 // until the eyes settle into a bright room with sunlight across the floor and the bed. Later
 // they close again: near black, and the room only slowly comes back as the eyes adapt to the
-// dark. The camera looks round the window side all the while. The menu (or keys) switches
-// auto exposure (A: else a fixed exposure), restarts the cycle (R) and pauses it (Space).
+// dark. The camera looks round the window side all the while.
+//
+// The menu tries out every exposure setting live, with a readout of the exposure in use and
+// how bright the view meters (`Camera.exposure`, `sceneBrightness`): auto exposure on or off
+// (A) blending over a transition (T) to a manual exposure (E); freezing it where it is (Z);
+// holding it (L); the metering mode (M) and histogram band (H); a soft floor (S) and a
+// compensation curve (C) keeping the dark darker. Restart the cycle with R, pause with Space.
 import {
   Camera,
   Color,
@@ -62,13 +67,56 @@ const SWING = 2;
 /** How far the leaves swing open, degrees. */
 const OPEN_ANGLE = 105;
 
-const state = { auto: true, paused: false };
+/** The choices the menu cycles through. */
+const METERING = ["centerWeighted", "average", "spot"] as const;
+const METERING_NAMES = { centerWeighted: "Centre-weighted", average: "Average", spot: "Spot" };
+const TRANSITIONS = [2, 6, 0];
+const MANUAL_EVS = [0, -3, 4];
+
+const state = {
+  auto: true,
+  paused: false,
+  hold: false,
+  metering: 0,
+  band: false,
+  soft: false,
+  curve: false,
+  transition: 0,
+  manual: 0,
+  /** Set by freezing: the manual exposure is wherever the eyes were. */
+  frozenAt: null as number | null,
+};
 let refreshMenu = () => {};
 
 function apply(): void {
+  RenderSettings.exposureTransition = TRANSITIONS[state.transition]!;
+  RenderSettings.fixedExposure = state.frozenAt ?? MANUAL_EVS[state.manual]!;
   // Slow to see in the dark, quick-ish to recover from the glare: as eyes do.
-  RenderSettings.autoExposure = state.auto ? { minEV: -7, maxEV: 16, compensation: -0.6, speedDarkToLight: 0.6, speedLightToDark: 0.3 } : null;
-  RenderSettings.postExposure = state.auto ? 0 : -3;
+  RenderSettings.autoExposure = state.auto
+    ? {
+        minEV: -7,
+        maxEV: 16,
+        compensation: -0.6,
+        speedDarkToLight: 0.6,
+        speedLightToDark: 0.3,
+        metering: METERING[state.metering],
+        lowPercent: state.band ? 40 : 0,
+        highPercent: state.band ? 90 : 100,
+        darkAdaptation: state.soft ? 0.6 : 1,
+        darkBelow: 3,
+        curve: state.curve ? [[-4, -1.5], [4, 0]] : undefined,
+        hold: state.hold,
+      }
+    : null;
+  refreshMenu();
+}
+
+/** Turns auto exposure off right where it is: nothing changes on screen. */
+function freeze(): void {
+  if (!state.auto) return;
+  RenderSettings.freezeExposure();
+  state.auto = false;
+  state.frozenAt = RenderSettings.fixedExposure;
   refreshMenu();
 }
 
@@ -99,6 +147,7 @@ function yawAt(t: number): number {
 class Bedroom extends Component {
   private camera!: Camera;
   private t = 0;
+  private readout = 0;
 
   override onStart() {
     QualitySettings.shadowDistance = 20;
@@ -233,8 +282,22 @@ class Bedroom extends Component {
   }
 
   override onUpdate(dt: number) {
-    if (input.getKeyDown("KeyA")) toggle("auto");
+    if (input.getKeyDown("KeyA")) toggleAuto();
+    if (input.getKeyDown("KeyZ")) freeze();
+    if (input.getKeyDown("KeyT")) cycle("transition", TRANSITIONS.length);
+    if (input.getKeyDown("KeyE")) cycle("manual", MANUAL_EVS.length);
+    if (input.getKeyDown("KeyL")) toggle("hold");
+    if (input.getKeyDown("KeyM")) cycle("metering", METERING.length);
+    if (input.getKeyDown("KeyH")) toggle("band");
+    if (input.getKeyDown("KeyS")) toggle("soft");
+    if (input.getKeyDown("KeyC")) toggle("curve");
     if (input.getKeyDown("Space")) toggle("paused");
+    // The readout, a few times a second.
+    this.readout += dt;
+    if (this.readout > 0.2) {
+      this.readout = 0;
+      refreshMenu();
+    }
     if (input.getKeyDown("KeyR")) this.t = 0;
     if (!state.paused) this.t = (this.t + dt) % CYCLE;
     const ease = (u: number) => {
@@ -250,10 +313,24 @@ class Bedroom extends Component {
   }
 }
 
-function toggle(key: keyof typeof state) {
+function toggle(key: "paused" | "hold" | "band" | "soft" | "curve") {
   state[key] = !state[key];
   apply();
 }
+
+function cycle(key: "transition" | "manual" | "metering", n: number) {
+  state[key] = (state[key] + 1) % n;
+  apply();
+}
+
+/** On, or off to the manual exposure (blending over the transition). */
+function toggleAuto() {
+  state.auto = !state.auto;
+  state.frozenAt = null;
+  apply();
+}
+
+const ev = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? "…" : `EV ${v.toFixed(1)}`);
 
 register({ Bedroom });
 
@@ -279,7 +356,24 @@ function Menu() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 18, 0.72)", flexDirection: "column" }}>
         <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Eye adaptation: the bedroom</text>
-        <Button label="Auto exposure" value={state.auto ? "On (eyes adapt)" : "Off (fixed)"} on={state.auto} keyName="A" onClick={() => toggle("auto")} />
+        <text style={{ color: "#c8ccd2", fontSize: 13 }}>
+          Exposure {ev(Camera.main?.exposure)} · the view meters {ev(Camera.main?.sceneBrightness)}
+        </text>
+        <Button
+          label="Auto exposure"
+          value={state.auto ? "On (eyes adapt)" : state.frozenAt !== null ? `Frozen (${ev(state.frozenAt)})` : `Off (manual ${ev(MANUAL_EVS[state.manual])})`}
+          on={state.auto}
+          keyName="A"
+          onClick={toggleAuto}
+        />
+        <Button label="Freeze here" value="Off, unseen" on={false} keyName="Z" onClick={freeze} />
+        <Button label="Transition" value={TRANSITIONS[state.transition] ? `${TRANSITIONS[state.transition]} s blend` : "Instant"} on={TRANSITIONS[state.transition]! > 0} keyName="T" onClick={() => cycle("transition", TRANSITIONS.length)} />
+        <Button label="Manual EV" value={ev(MANUAL_EVS[state.manual])} on={!state.auto} keyName="E" onClick={() => cycle("manual", MANUAL_EVS.length)} />
+        <Button label="Hold" value={state.hold ? "Held where it is" : "Adapting"} on={state.hold} keyName="L" onClick={() => toggle("hold")} />
+        <Button label="Metering" value={METERING_NAMES[METERING[state.metering] ?? "centerWeighted"]} on={true} keyName="M" onClick={() => cycle("metering", METERING.length)} />
+        <Button label="Histogram" value={state.band ? "40–90% (no extremes)" : "Everything"} on={state.band} keyName="H" onClick={() => toggle("band")} />
+        <Button label="Soft floor" value={state.soft ? "Dark stays dim" : "Off"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
+        <Button label="Curve" value={state.curve ? "Darker in the dark" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
         <Button label="Shutters" value={state.paused ? "Paused" : "Opening and closing"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
       </box>
     </box>
