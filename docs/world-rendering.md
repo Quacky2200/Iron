@@ -151,8 +151,14 @@ like Unity's Standard shader:
   distribution) times `smith` (Schlick geometry, Unreal's k for direct light) times `fresnel`
   (Schlick) over `4 N.V N.L`; `kd = (1 - fresnel) * albedo`. Diffuse is not divided by pi (light
   intensities are Unity's), so the specular is scaled up by pi to match.
-- `LightKind::Directional` (parallel rays along `direction`), `Point` (fades out at `range`) and `Spot`
-  (a cone with soft edges between an inner and outer angle) feed that sum.
+- `LightKind::Directional` (parallel rays along `direction`), `Point` (fades out at `range`), `Spot`
+  (a cone with soft edges between an inner and outer angle) and `Pyramid` feed that sum. A `Pyramid` is
+  HDRP's pyramid spot: `outer_degrees` across its height, `aspect` times as wide (in tangent), edges
+  softened from `inner_degrees`, its width along `right` (the light object's +x, set by the app). A thin
+  wide one is a sheet of light (a scanner, a slot). `spot_falloff` in `world.wgsl` gives the cone or
+  pyramid falloff, `spot_bound_cos` the cone round it, and `spot_axes` the two axes across the direction
+  (the same in `mod.rs`) that the pyramid's turn is measured from. `GpuLight.spot` carries cosines in x/y,
+  the aspect in z (0: a cone) and the turn in w.
 - Light from all around comes from the environment (below): `albedo * ambient_light(n)` for the diffuse
   and `env_brdf_approx(f0, roughness, N.V) * reflected` for the specular. `env_brdf_approx` is Karis's
   analytic fit of the split-sum environment BRDF, so there is no lookup texture.
@@ -205,7 +211,7 @@ for maps, chosen per binding. A texture's `srgb` flag (false for `linear` textur
 mip chain average in linear space. Samplers are keyed by filter, wrap and anisotropy (`SamplerKey`).
 
 **Lights from scripts.** `Light` sends `render.light component object type [r g b] intensity range
-spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask volumetricIntensity`. Colour is
+spotAngle innerSpotAngle haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask volumetricIntensity spotShape(cone|pyramid) aspectRatio`. `Light.spotShape` and `aspectRatio` (default 1) make a spot light a pyramid, `spotAngle` high. Colour is
 multiplied by intensity before it reaches `Light`. A light shines along its object's -z, like
 Unity's. `RenderSettings.ambientLight` sends `render.ambient` (the default is a dim blue-grey).
 
@@ -314,7 +320,7 @@ offset.
   `shadow_distance` is split into slices that grow with distance, each fitted with a sphere and an
   orthographic map, moved in whole texels so edges do not crawl. One cascade is a single sphere that
   distance across in front of the camera.
-- **Spot and point lights.** A spot light gets one perspective map (a little wider than its cone), a
+- **Spot and point lights.** A spot light gets one perspective map (a little wider than its cone; for a pyramid, than the cone round its corners, `bounding_degrees`), a
   point light a cube of six 90 degree maps (faces +x, -x, +y, -y, +z, -z). They share a second array at
   half the sun's resolution with at most `MAX_LOCAL_LAYERS` (24) layers. Lights are taken nearest the
   camera first and a light that no longer fits goes without. The maps reach the light's `range`.
@@ -383,7 +389,9 @@ The HDRP-style settings are in `AutoExposure`; the state is per camera.
 - **Blending.** `Grading.fixed_ev: Option<f32>` is a manual exposure in EV100 (`None`: x1), and
   `Grading.transition` is the seconds auto exposure takes to blend in and out. Each eye's `weight` moves
   towards 1 while auto is on and 0 while it is off, by `dt / transition` (at once for 0). The shader multiplies
-  by `exposure * exp2(mix(fixed_stops, adapted, weight))` (`auto_scale()`). `BloomPass::fading()` keeps the post
+  by `exposure * exp2(mix(fixed_stops, adapted, weight))` (`auto_scale()`). A change of `fixed_ev` also
+  eases over `transition` (smoothstep): each eye keeps `fixed`, `fixed_from`, `fixed_to` and `fixed_t`
+  (a new camera starts at the target), and the shader reads the eased `fixed`, not `fixed_ev`. `BloomPass::fading()` keeps the post
   pass running while a weight fades out after auto is switched off. Test `M7-EXP-04`.
 - **Bloom.** The prefilter threshold is applied to the light times `auto_scale()`, not to post exposure, so
   what blooms is what looks bright now.
@@ -444,16 +452,18 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   last `VolumeCamera`. `VolumeCamera.lights` is a key of which directional lights light the fog, which of them
   have shadows and the sun's cascade count; when it changes the history is dropped (blend 1) instead of blended out. Once per view with shafts, before the render pass, `cs_volume_light` (4x4x4
   workgroups) lights every cell with one `scattered_all` sample at a Halton(2,3,5) point inside the cell
-  (16-frame cycle, frame 0 = the cell middle), reprojects the cell's middle into last frame's lit cells
-  (`last_cell`) and blends with `BLEND` = 0.1 (1.0 with no history: the first frame or after a size
-  change). Cells so average over their whole extent, so bars' shadows don't come out in stair steps, for
+  (64 points, `JITTER`; frame 0 = the cell middle), reprojects the cell's middle into last frame's lit cells
+  (`last_cell`) and blends with `1 - history_weight` (1.0 with no history: the first frame or after a size
+  change; clamped to 0.02..1). Cells so average over their whole extent, so bars' shadows don't come out in stair steps, for
   about an eighth of the shadow lookups. Then the compute entry `cs_volume` (8x8 workgroups, one thread per
   screen cell) walks the cell's view ray and reads the lit cells (trilinear). Slices are spaced by the square of their index out to the reach
   (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in
   `fog_clear` times the lit cell (`scattered_all`, above) and the running total is stored at each slice centre. `scattered_all`
   sums every directional light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): a hard
   shadow (`sun_shadow` / `local_shadow` with PCF radius 0), times `phase(cos)` (Henyey-Greenstein,
-  isotropic = 1). Only directional lights are in the volume: spot and point lights are worked out per pixel
+  isotropic = 1). `in_volume(light)` says which lights are in the volume: directional lights, and spot and
+  point lights with shadows (their beams are cut into blades by bars, slats and planks, finer than a
+  pixel's ray samples can follow). Spot and point lights without shadows are worked out per pixel
   (below). The pass binds the view's globals (dynamic offset), the lighting group and group 3 bindings 1 (`volume_out`, write-only), 3 (`light_history`), 4 (frame uniform), 5 (`light_in`) and 6 (`light_out`), so the globals and shadow group layouts are visible to COMPUTE.
   Draws read the volume through group 3 (binding 0 `texture_3d`, binding 2 a linear sampler; the world
   pipeline layout has this fourth group) in `shafts(p, px, distance)`: a sample at the screen uv and
@@ -463,6 +473,30 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   night fog can be dark yet glow white under a lamp. Views without shafts bind
   `VolumePass::empty()`, a black 1-texel volume. `fs_fill` adds shafts to the background only when height
   fog is on. The cost doesn't depend on overdraw.
+- **Denoising.** `volumetricFog.denoising` (`"none" | "reprojection" | "gaussian" | "both"`, `both` by
+  default; HDRP's modes) is `Denoising` on `VolumetricFog`, sent as the 11th `render.fog` number
+  (0..3). `temporal()` (reprojection) blends with last frame's cells; without it every cell is sampled at
+  its middle and stands alone. `spatial()` (gaussian) makes `lit_at` read four taps half a cell out across
+  the screen as the volume is added up (`GpuGlobals.fog_sharp.z` = 1) so each cell's grain is smoothed
+  without softening beams; `reprojection` alone saves those reads (slower GPUs). Other settings:
+  `historyWeight` (0.9, up to 0.98; 12th number), `samples` (1..8 shadow samples per cell per frame; 13th)
+  and `motionSamples` (1..8, default 2; 14th), see motion below.
+- **Grain, moire and motion.** Each cell shifts the frame's Halton offset by `cell_hash(id)` (a
+  Cranley-Patterson rotation), so a regular pattern (blind slats, a grate) leaves grain the blending
+  smooths, not moire bands from neighbouring cells all erring alike. The first frame, with no history,
+  samples cell middles. History is read by `history_at`, a 5-tap Catmull-Rom filter (the bilinear
+  trick, corners left out, clamped at zero), so reprojecting each frame doesn't blur it. A cell whose
+  history moved by some cells takes more of the new frame (`MOTION_TRUST` 0.15 per cell). Extra samples
+  follow an R3 sequence; cells whose view moved, or that have no history, take `motionSamples`
+  (`VolumeFrame.samples` x/y), so the cost is paid only while the camera moves.
+- **Moving lights.** `VolumeCamera.local_poses` (up to `LOCAL_POSES` = 4 shadowed spot or point lights:
+  position, direction, range) tell `light_shift` how far the furthest light's beam swept since last
+  frame (its move plus its turn times range; more lights than that count as 1 m). `VolumeFrame.samples.z`
+  carries it. The further it swept, the more of the new frame counts (`LIGHT_TRUST` 4 per metre), capped
+  at a quarter (`light_fresh`), so a sweeping beam leaves a short trail, not smeared old places.
+- **Depth bias.** `volume_to(uv, depth)` reads the volume a slice and a half short of a surface (as
+  Unreal does): cells at a surface's depth reach behind it, and a wall would show the beam on its far
+  side as a disc of haze (`M7-FOG-15`).
 - **God rays.** The volume's cells blur beams finer than themselves (window bars, grates, leaves). With
   `volumetricFog.sharpDistance` > 0 (default 0, off; `VolumetricFog.sharp_distance`, `GpuGlobals.fog_sharp` x)
   the directional lights' shafts within that distance are worked out per pixel by `sharp_sun` in `world.wgsl`:
@@ -476,7 +510,8 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   then supplies only what lies beyond: `shafts` adds `sharp_sun` minus `volume_to(uv, near)` (the volume's
   light out to a distance) to the volume's total. It costs `sharpSamples` shadow lookups per fogged pixel.
 - **Spot and point shafts.** The volume's cells are several pixels wide, which blurred spot cones, so
-  spot and point lights light the fog per pixel. `local_shafts(eye, dir, len, distance)` finds each such
+  spot and point lights without shadows light the fog per pixel (shadowed ones go through the volume,
+  above). `local_shafts(eye, dir, len, distance)` finds each such
   light's stretch of the view ray: inside its range sphere and, for a spot, its cone (a quadratic), so the
   cone has sharp edges up to its tip and a point light a round glow. Up to three stretches (before, inside
   and after the cone) are tested at their middles; each lit one gets 12 fixed samples
@@ -820,9 +855,9 @@ engine loads; the app copies the values onto the renderer before each frame.
   which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
   frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `iron.quality`
   and restored at startup.
-- **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 or 2):
+- **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 to 3: `QualitySettings.softShadowQuality` `low`, `medium` or `high`):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
-  soft filter is a (2r + 1)^2 box of comparison samples (the radius is in `GpuLight.shadow`).
+  soft filter is a (2r + 1)^2 box of comparison samples (3x3, 5x5 or 7x7; the radius is in `GpuLight.shadow`).
 - **Texture quality** (`anisotropicFiltering`: `disable`, `enable`, `forceEnable`; `globalTextureMipmapLimit`
   0 to 3): `QualitySettings` sends them in `render.quality` (`M5-QUA-02`). `Anisotropic` sets how
   each texture's `anisoLevel` (a Texture option, 1 to 16, trilinear only) is honoured: `Disable` makes it 1,
@@ -921,7 +956,7 @@ Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, 
 Render pipeline and light units: `M7-RP-01`..`03`, `M7-HD-01`, `M7-HD-02`.
 Auto exposure: `M7-EXP-01` (adapts to the view), `-02` (per camera, split screens), `-03` (metering modes and percentiles), `-04` (fixed exposure, blending, hold, freeze), `-05` (read-back, `Camera.exposure`, reset), `-06` (soft floor and compensation curve).
 
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing) and `M7-FOG-13` (the volume's noise settings and denoising modes) and `M7-FOG-14` (a turning camera's beams: motion trust, Catmull-Rom history, `motionSamples`) and `M7-FOG-15` (depth bias; shadowed local lights in the volume; light motion). Pyramid spot lights: `M7-SPOT-01` (a wide, thin rectangle, turned with its object) and `M7-SPOT-02` (`spotShape` and `aspectRatio` in the light op, JS unit).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
