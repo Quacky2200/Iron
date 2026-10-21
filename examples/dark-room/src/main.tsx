@@ -17,7 +17,8 @@
 // them adapt. The metering zone is drawn over the view. Keys: auto exposure on or off (A)
 // blending over a transition (T) to a manual exposure (E); freezing it where it is (Z);
 // holding it (L); how fast eyes adapt (Y: game-fast or eye-slow); the metering mode (M) and
-// histogram band (H); a soft floor (S) and a compensation curve (C), which stop the
+// histogram band (H); the haze's noise settings (G); a soft floor (S) and a compensation
+// curve (C), which stop the
 // exposure short of the dark on purpose, so dark places still look dark (the graph shows
 // the gap). Restart the cycle with R, pause with Space.
 import {
@@ -93,10 +94,38 @@ const GRAPH_SECONDS = 15;
 const GRAPH_RATE = 10;
 const history: { exposure: number; scene: number }[] = [];
 
+/**
+ * The haze's quality (`RenderSettings.volumetricFog`): the finest volume, its noise cleaned
+ * up more or less (the slats' fine stripes are the hard case).
+ */
+const HAZE = [
+  { name: "Smooth (4 samples, 0.95)", denoising: "both", historyWeight: 0.95, samples: 4 },
+  { name: "Default (1 sample, 0.9)", denoising: "both", historyWeight: 0.9, samples: 1 },
+  { name: "Reprojection only", denoising: "reprojection", historyWeight: 0.9, samples: 1 },
+  { name: "None (steps)", denoising: "none", historyWeight: 0.9, samples: 1 },
+] as const;
+
+function applyHaze(): void {
+  const h = HAZE[state.haze]!;
+  RenderSettings.volumetricFog = {
+    intensity: 0.25,
+    anisotropy: 0.5,
+    steps: 4,
+    distance: 12,
+    albedo: new Color(1, 0.9, 0.78, 1),
+    resolution: "ultra",
+    denoising: h.denoising,
+    historyWeight: h.historyWeight,
+    samples: h.samples,
+  };
+  refreshMenu();
+}
+
 /** The layer the garden is on: only the sky's light (a fill light on this layer) reaches it. */
 const OUTSIDE = 9;
 
 const state = {
+  haze: 0,
   clouds: true,
   lamp: true,
   tv: true,
@@ -198,12 +227,11 @@ class Bedroom extends Component {
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogColor = new Color(0.01, 0.01, 0.01, 1);
     RenderSettings.fogDensity = 0.03;
-    // The finest light volume: beams through the window's glazing bars stay crisp.
-    RenderSettings.volumetricFog = { intensity: 0.25, anisotropy: 0.5, steps: 4, distance: 12, albedo: new Color(1, 0.9, 0.78, 1), resolution: "ultra" };
+    applyHaze();
     RenderSettings.fog = true;
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
-    this.sun = sun.addComponent(Light, { type: "directional", color: new Color(1, 0.93, 0.82, 1), intensity: SUN_INTENSITY, shadows: "hard" });
+    this.sun = sun.addComponent(Light, { type: "directional", color: new Color(1, 0.93, 0.82, 1), intensity: SUN_INTENSITY, shadows: "soft" });
     // The sky's light, on the garden only (its layer): the room keeps its own dimness.
     const skyFill = new GameObject("Sky light", { rotation: Quaternion.lookRotation(new Vector3(0.1, -1, 0.2)) });
     const fill = skyFill.addComponent(Light, { type: "directional", color: new Color(0.6, 0.75, 1, 1), intensity: 9, volumetricIntensity: 0 });
@@ -423,6 +451,10 @@ class Bedroom extends Component {
 
   override onUpdate(dt: number) {
     if (input.getKeyDown("KeyK")) toggle("clouds");
+    if (input.getKeyDown("KeyG")) {
+      state.haze = (state.haze + 1) % HAZE.length;
+      applyHaze();
+    }
     if (input.getKeyDown("KeyB")) toggle("lamp");
     if (input.getKeyDown("KeyV")) toggle("tv");
     if (input.getKeyDown("KeyA")) toggleAuto();
@@ -589,6 +621,16 @@ function Menu() {
         <Button label="Soft floor" value={state.soft ? "Below EV 3: 60% of the way" : "Off: all the way"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
         <Button label="Curve" value={state.curve ? "-1.5 stops at EV -4" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
         <Button label="Shutters" value={state.paused ? "Paused" : "Opening and closing"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
+        <Button
+          label="Haze"
+          value={HAZE[state.haze]!.name}
+          on={state.haze === 0}
+          keyName="G"
+          onClick={() => {
+            state.haze = (state.haze + 1) % HAZE.length;
+            applyHaze();
+          }}
+        />
         <Button label="Clouds" value={state.clouds ? "Drifting over the sun" : "Clear sky"} on={state.clouds} keyName="K" onClick={() => toggle("clouds")} />
         <Button label="Bedside lamp" value={state.lamp ? "On" : "Off"} on={state.lamp} keyName="B" onClick={() => toggle("lamp")} />
         <Button label="Television" value={state.tv ? "On" : "Off"} on={state.tv} keyName="V" onClick={() => toggle("tv")} />
