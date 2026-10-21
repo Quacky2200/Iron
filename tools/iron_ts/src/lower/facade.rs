@@ -38,6 +38,72 @@ fn replace_word(src: &str, old: &str, new: &str) -> String {
     out
 }
 
+/// Hash of a type's written text without its spaces: names the `request<R>` facade of that type.
+pub(crate) fn request_key(text: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in text.bytes().filter(|b| !b.is_ascii_whitespace()) {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
+}
+
+/// The reply types written in `.request<R>(` calls of `src` (the text between the angle brackets).
+fn request_types(src: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = src;
+    while let Some(i) = rest.find(".request<") {
+        let after = &rest[i + ".request<".len()..];
+        let bytes = after.as_bytes();
+        let (mut depth, mut end) = (1usize, None);
+        for (j, &c) in bytes.iter().enumerate() {
+            match c {
+                b'<' => depth += 1,
+                // `=>` is not a closing bracket.
+                b'>' if j > 0 && bytes[j - 1] == b'=' => {}
+                b'>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(j);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { break };
+        let ty = after[..end].trim().to_string();
+        if !ty.is_empty() && !out.contains(&ty) {
+            out.push(ty);
+        }
+        rest = &after[end..];
+    }
+    out
+}
+
+/// `request<R>` resolves with the reply parsed as `R`. A promise class exists per written type, so
+/// the function is written per reply type (`@R@` is the text, `@K@` its key).
+const REQUEST_TEMPLATE: &str = r#"
+function __xm_Window_request_@K@<T>(self: Window, data: T, timeoutMs?: number): Promise<@R@> {
+  __win_listen_replies();
+  return new Promise<@R@>((resolve, reject) => {
+    const id = self.postRequestJson(JSON.stringify(data), timeoutMs ?? NaN);
+    if (id === 0) {
+      reject(new Error("request refused: the window is closed or the message is over 1 MiB"));
+      return;
+    }
+    __win_pending.set(id, (text: string, error: string) => {
+      if (error !== "") {
+        reject(new Error(error));
+      } else {
+        const value: @R@ = JSON.parse(text);
+        resolve(value);
+      }
+    });
+  });
+}
+"#;
+
 /// The program with the TypeScript names that are another name natively (`AnimatorController` is
 /// `AnimationController`) renamed, and the facade chunks it needs appended.
 pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<String> {
@@ -52,6 +118,13 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
         if triggers.split('|').any(|t| src.contains(t.trim_end())) {
             extra.push_str(body);
         }
+    }
+    for r in request_types(src) {
+        extra.push_str(
+            &REQUEST_TEMPLATE
+                .replace("@K@", &request_key(&r))
+                .replace("@R@", &r),
+        );
     }
     if !extra.is_empty() {
         out.push('\n');
@@ -85,6 +158,9 @@ impl<'a> Lowerer<'a> {
         recv: &Expr,
         c: &'a CallExpression<'a>,
     ) -> R<Option<Expr>> {
+        if class == "Window" && m == "request" {
+            return self.window_request(recv, c).map(Some);
+        }
         let mut name = Self::x_name("m", class, m);
         let obj_variant = format!("{name}$o");
         if self.fids.contains_key(&obj_variant)
@@ -95,10 +171,110 @@ impl<'a> Lowerer<'a> {
             name = obj_variant;
         }
         if !self.fids.contains_key(&name) {
+            // A generic facade method (`win.postMessage(data)`, `win.onMessage<T>(f)`): the type
+            // arguments come from the call or the arguments after the receiver.
+            if self.generic_fns.contains_key(&name) {
+                let what = format!("{class}.{m}");
+                let g = self.generic_fns[&name].clone();
+                let targs = self.infer_targs_skip(
+                    &what,
+                    &g,
+                    c.type_arguments.as_deref(),
+                    &c.arguments,
+                    None,
+                    None,
+                    1,
+                )?;
+                self.check_message_types(&what, class, m, &targs)?;
+                let inst = self.instantiate_fn(&name, targs)?;
+                return self
+                    .call_with_receiver(&inst, recv.clone(), &c.arguments)
+                    .map(Some);
+            }
             return Ok(None);
         }
         self.call_with_receiver(&name, recv.clone(), &c.arguments)
             .map(Some)
+    }
+
+    /// `win.request<R>(data, timeoutMs?)`: the facade written for the reply type `R` (see
+    /// `REQUEST_TEMPLATE`), with the type of `data` inferred.
+    fn window_request(&mut self, recv: &Expr, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let what = "Window.request";
+        let Some(ta) = c.type_arguments.as_deref().and_then(|t| t.params.first()) else {
+            bail!("{at}: {what} needs the reply type: `request<{{ n: number }}>(data)`")
+        };
+        let span = oxc_span::GetSpan::span(ta);
+        let text = self
+            .src
+            .get(span.start as usize..span.end as usize)
+            .unwrap_or("")
+            .to_string();
+        let name = format!("__xm_Window_request_{}", request_key(&text));
+        if !self.generic_fns.contains_key(&name) {
+            bail!("{at}: {what}<{text}>: no facade was written for this reply type")
+        }
+        let rty = self.ty(ta, what)?;
+        self.message_type_ok(what, &rty, "reply", &mut Vec::new())?;
+        let g = self.generic_fns[&name].clone();
+        let targs = self.infer_targs_skip(what, &g, None, &c.arguments, None, None, 1)?;
+        for t in &targs {
+            self.message_type_ok(what, t, "message", &mut Vec::new())?;
+        }
+        let inst = self.instantiate_fn(&name, targs)?;
+        self.call_with_receiver(&inst, recv.clone(), &c.arguments)
+    }
+
+    /// Messages between windows travel as JSON of their static type: no engine handle (a
+    /// `GameObject`, a `Window`, ..), function or `Map` / `Set` may be part of it. The error names
+    /// the path to the offending field.
+    pub(crate) fn check_message_types(
+        &self,
+        what: &str,
+        class: &str,
+        m: &str,
+        targs: &[Ty],
+    ) -> R<()> {
+        if class != "Window"
+            || !matches!(m, "postMessage" | "onMessage" | "onRequest" | "broadcast")
+        {
+            return Ok(());
+        }
+        for t in targs {
+            self.message_type_ok(what, t, "message", &mut Vec::new())?;
+        }
+        Ok(())
+    }
+
+    fn message_type_ok(&self, what: &str, ty: &Ty, path: &str, seen: &mut Vec<StructId>) -> R<()> {
+        match ty {
+            Ty::Handle(n) => bail!(
+                "{what}: `{path}` is a {n} handle; handles cannot be sent in messages (send a number such as `win.handle` and look it up on the other side)"
+            ),
+            Ty::Fn(_) => {
+                bail!("{what}: `{path}` is a function; functions cannot be sent in messages")
+            }
+            Ty::Map(..) | Ty::Set(_) => {
+                bail!("{what}: `{path}` is a Map or Set; use an array or an object in messages")
+            }
+            Ty::Arr(e) => self.message_type_ok(what, e, &format!("{path}[]"), seen),
+            Ty::Nullable(e) | Ty::Cell(e) => self.message_type_ok(what, e, path, seen),
+            Ty::Obj(sid) => {
+                if seen.contains(sid) {
+                    return Ok(());
+                }
+                seen.push(*sid);
+                for f in &self.m.structs[*sid].fields {
+                    if f.name.starts_with("_p_") {
+                        continue;
+                    }
+                    self.message_type_ok(what, &f.ty, &format!("{path}.{}", f.name), seen)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     /// A call of the facade function `name(self, ..)` with `recv` as `self`: the arguments fill
@@ -227,6 +403,22 @@ impl<'a> Lowerer<'a> {
             return Ok(None);
         }
         let mut name = Self::x_name("t", class, m);
+        // A generic facade function (`Window.broadcast(data)`, `Window.onMessage<T>(f)`).
+        if self.generic_fns.contains_key(&name) {
+            let what = format!("{class}.{m}");
+            let g = self.generic_fns[&name].clone();
+            let targs = self.infer_targs(
+                &what,
+                &g,
+                c.type_arguments.as_deref(),
+                &c.arguments,
+                None,
+                None,
+            )?;
+            self.check_message_types(&what, class, m, &targs)?;
+            let inst = self.instantiate_fn(&name, targs)?;
+            return self.call_declared(&inst, &c.arguments, None).map(Some);
+        }
         let argc_variant = format!("{name}${}", c.arguments.len());
         if self.fids.contains_key(&argc_variant) {
             name = argc_variant;

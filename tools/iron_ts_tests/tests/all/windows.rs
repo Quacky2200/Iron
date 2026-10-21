@@ -172,3 +172,207 @@ fn create_root_of_a_window_queues_a_window_mount() {
         assert!(iron_ts_ui::take_window_mounts().is_empty());
     });
 }
+
+// ---- Messages (step M2) ----------------------------------------------------------------------
+
+/// Captures what reaches a window's `onMessageJson` listener, as `from:text`.
+fn capture(w: WindowRef) -> std::rc::Rc<std::cell::RefCell<Vec<String>>> {
+    let log: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+    let l = log.clone();
+    w.on_message_json(iron_api::Callback::from_fn(
+        move |(from, text): (iron_api::callback::HandleArg<WindowRef>, String)| {
+            l.borrow_mut().push(format!("{}:{text}", from.0.0))
+        },
+    ));
+    log
+}
+
+fn deliver(w: WindowRef, now: f64) {
+    window::deliver(window::DomainId(w.0), now);
+}
+
+// M9-TS-2838
+#[test]
+fn post_message_sends_the_static_type_as_json() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        let log = capture(w);
+        assert_eq!(h, 2.0);
+        assert_eq!(text(ts_win_familyInfo(h)), "2|true|2|false");
+        assert!(ts_win_postSelect(h));
+        assert!(log.borrow().is_empty(), "queued, not delivered");
+        assert_eq!(window::pending(window::DomainId(2)), 1);
+        deliver(w, 0.0);
+        assert_eq!(
+            *log.borrow(),
+            ["1:{\"kind\":\"select\",\"p\":[1,2,3],\"ids\":[1,2],\"name\":\"Player\"}"]
+        );
+    });
+}
+
+// M9-TS-2839
+#[test]
+fn on_message_parses_into_the_declared_type() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_listenSelect(h);
+        ts_win_listenInferred(h);
+        let _ = iron_api::callback::take_errors();
+        assert!(w.post_message_json(
+            "{\"kind\":\"select\",\"p\":[1,2.5,3],\"ids\":[4,5,6],\"name\":\"N\"}"
+        ));
+        deliver(w, 0.0);
+        assert_eq!(
+            text(ts_win_receivedMessages()),
+            "1:select|2.5|3|N;inferred 3;"
+        );
+        // A message that does not have the shape throws inside the listener, which the engine
+        // logs; the listener's body does not run.
+        assert!(w.post_message_json("{\"kind\":5}"));
+        deliver(w, 0.0);
+        assert_eq!(
+            text(ts_win_receivedMessages()),
+            "1:select|2.5|3|N;inferred 3;"
+        );
+        assert!(!iron_api::callback::take_errors().is_empty());
+    });
+}
+
+// M9-TS-2840
+#[test]
+fn posting_a_handle_is_a_compile_error() {
+    let src = "export function bad(): boolean {\n  const go = new GameObject(\"x\");\n  return Window.main.postMessage({ go: go, n: 1 });\n}\n";
+    let manifests: Vec<String> = {
+        let mut all = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
+        all.extend(iron_engine_api::manifests());
+        all
+    };
+    let Err(e) = iron_ts::compile_with_manifests(src, "speed", "bad_", 7500, &manifests) else {
+        panic!("a handle in a message compiled")
+    };
+    assert!(
+        e.contains("`message.go`") && e.contains("GameObject handle"),
+        "{e}"
+    );
+    // The same through a nested array and a request's data.
+    let src = "export function bad2(): number {\n  const go = new GameObject(\"x\");\n  Window.main.request<number>({ list: [{ target: go }] });\n  return 0;\n}\n";
+    let Err(e) = iron_ts::compile_with_manifests(src, "speed", "bad_", 7500, &manifests) else {
+        panic!("a handle in a request compiled")
+    };
+    assert!(e.contains("`message.list[].target`"), "{e}");
+    // A payload without handles compiles.
+    let ok = "export function good(): boolean {\n  return Window.main.postMessage({ n: 1, v: new Vector3(1, 2, 3), tags: [\"a\"] });\n}\n";
+    iron_ts::compile_with_manifests(ok, "speed", "bad_", 7500, &manifests).unwrap();
+    // `request` needs its reply type, and the reply may not hold handles either.
+    let src = "export function bad4(): number {
+  Window.main.request({ n: 1 });
+  return 0;
+}
+";
+    let Err(e) = iron_ts::compile_with_manifests(src, "speed", "bad_", 7500, &manifests) else {
+        panic!("a request without a reply type compiled")
+    };
+    assert!(e.contains("needs the reply type"), "{e}");
+    let src = "export function bad5(): number {
+  Window.main.request<{ who: GameObject }>(1);
+  return 0;
+}
+";
+    let Err(e) = iron_ts::compile_with_manifests(src, "speed", "bad_", 7500, &manifests) else {
+        panic!("a handle in a reply compiled")
+    };
+    assert!(e.contains("`reply.who`"), "{e}");
+    // The type must be given or inferable.
+    let src = "export function bad3(): number {\n  return Window.main.onMessage((from, msg) => { });\n}\n";
+    let Err(e) = iron_ts::compile_with_manifests(src, "speed", "bad_", 7500, &manifests) else {
+        panic!("an untyped listener compiled")
+    };
+    assert!(e.contains("cannot infer the type argument `T`"), "{e}");
+}
+
+// M9-TS-2841
+#[test]
+fn request_resolves_with_the_typed_reply() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_serve(h);
+        ts_win_resetAsk();
+        let p = ts_win_ask(h, f64::NAN);
+        assert!(!p.is_null());
+        // The request waits in the inspector's queue; its listener runs in its own domain.
+        assert_eq!(text(ts_win_askLog()), "");
+        deliver(w, 0.0);
+        assert_eq!(text(ts_win_requestLog()), "1:stats;");
+        assert_eq!(
+            text(ts_win_askLog()),
+            "",
+            "the reply travels back to the main domain"
+        );
+        window::deliver(window::DomainId::MAIN, 1.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_askLog()), "ok 5");
+    });
+}
+
+// M9-TS-2842
+#[test]
+fn request_rejects_on_timeout_and_on_close() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_serveQuiet(h);
+        ts_win_resetAsk();
+        ts_win_ask(h, 50.0);
+        deliver(w, 0.0);
+        window::deliver(window::DomainId::MAIN, 49.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_askLog()), "", "not yet");
+        window::deliver(window::DomainId::MAIN, 51.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_askLog()), "error timed out");
+
+        // The target closes while the request is outstanding.
+        let h2 = ts_win_createInspector();
+        let w2 = WindowRef(h2 as u32);
+        ts_win_serveQuiet(h2);
+        ts_win_resetAsk();
+        ts_win_ask(h2, f64::NAN);
+        deliver(w2, 60.0);
+        window::closed(w2);
+        window::deliver(window::DomainId::MAIN, 61.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_askLog()), "error window closed");
+
+        // No request listener in the domain.
+        let h3 = ts_win_createInspector();
+        ts_win_resetAsk();
+        ts_win_ask(h3, f64::NAN);
+        deliver(WindowRef(h3 as u32), 70.0);
+        window::deliver(window::DomainId::MAIN, 71.0);
+        iron_ts_rt::ts_rt_microtasks_run();
+        assert_eq!(text(ts_win_askLog()), "error no request listener");
+    });
+}
+
+// M9-TS-2843
+#[test]
+fn broadcast_and_the_domain_listener_receive_messages() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        ts_win_listenDomain();
+        // Posted from the inspector's domain: reaches the main domain's `Window.onMessage`.
+        {
+            let _d = window::enter_domain(window::DomainId(h as u32));
+            assert_eq!(ts_win_broadcastHi(), 1.0);
+        }
+        window::deliver(window::DomainId::MAIN, 0.0);
+        assert_eq!(text(ts_win_domainMessages()), "2:7;");
+        // From the main family: the inspector gets it, the sender's own domain does not.
+        assert_eq!(ts_win_broadcastHi(), 1.0);
+        assert_eq!(window::pending(window::DomainId::MAIN), 0);
+        assert_eq!(window::pending(window::DomainId(h as u32)), 1);
+    });
+}

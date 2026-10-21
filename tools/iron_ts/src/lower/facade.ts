@@ -479,3 +479,41 @@ function __xt_SceneManager_onActiveSceneChanged(fn: (from: Scene, to: Scene) => 
   const token = SceneManager.onActiveSceneChanged$n(fn);
   return () => { SceneManager.offSceneEvent(token); };
 }
+
+//# when postMessage|onMessage|onRequest|.request<|.request(|broadcast
+// Messages between windows travel as JSON of the static type (the compiler refuses handles in it).
+function __xm_Window_postMessage<T>(self: Window, data: T): boolean {
+  return self.postMessageJson(JSON.stringify(data));
+}
+function __xm_Window_onMessage<T>(self: Window, f: (from: Window, data: T) => void): number {
+  return self.onMessageJson((from: Window, text: string) => {
+    const data: T = JSON.parse(text);
+    f(from, data);
+  });
+}
+function __xm_Window_onRequest<T, R>(self: Window, f: (from: Window, data: T, reply: (answer: R) => void) => void): number {
+  return self.onRequestJson((from: Window, text: string, id: number) => {
+    const data: T = JSON.parse(text);
+    f(from, data, (answer: R) => {
+      Window.replyJson(id, JSON.stringify(answer));
+    });
+  });
+}
+function __xt_Window_onMessage<T>(f: (from: Window, data: T) => void): number {
+  return Window.onMessageJson((from: Window, text: string) => {
+    const data: T = JSON.parse(text);
+    f(from, data);
+  });
+}
+function __xt_Window_onRequest<T, R>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number {
+  return Window.onRequestJson((from: Window, text: string, id: number) => {
+    const data: T = JSON.parse(text);
+    f(from, data, (answer: R) => {
+      Window.replyJson(id, JSON.stringify(answer));
+    });
+  });
+}
+function __xt_Window_broadcast<T>(data: T): number {
+  return Window.broadcastJson(JSON.stringify(data));
+}
+// `request<R>(data)` is written per reply type by facade.rs (a promise class exists per written type).

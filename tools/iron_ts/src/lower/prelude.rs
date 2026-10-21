@@ -520,3 +520,23 @@ pub fn wanted(src: &str) -> bool {
         || src.contains("unescape("))
         && !src.contains("class Error")
 }
+
+/// The state behind `Window.request<R>`: the callbacks waiting for a reply by request id, and one
+/// `onReplyJson` listener per domain that settles them. In front of the program because the
+/// per-reply-type functions facade.rs writes use it from anywhere.
+pub const WINDOW_REPLIES: &str = r#"
+const __win_pending = new Map<number, (text: string, error: string) => void>();
+const __win_reply_domains = new Set<number>();
+function __win_listen_replies(): void {
+  const d = Window.current.domain;
+  if (__win_reply_domains.has(d)) return;
+  __win_reply_domains.add(d);
+  Window.onReplyJson((id: number, text: string, error: string) => {
+    const f = __win_pending.get(id);
+    if (f !== undefined) {
+      __win_pending.delete(id);
+      f(text, error);
+    }
+  });
+}
+"#;

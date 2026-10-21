@@ -369,6 +369,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if wants_components {
         head += &components::prelude(has_go, has_collider);
     }
+    if src.contains("__win_listen_replies(") {
+        head += prelude::WINDOW_REPLIES;
+    }
     if wants_ui {
         head += jsx::UI_PRELUDE;
         head += jsx::AMBIENT_PRELUDE;

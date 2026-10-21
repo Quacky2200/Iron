@@ -231,8 +231,25 @@ interface Window {
   style: WindowStyle;
   /** The owner or embedding parent; undefined for the main window and unowned windows. */
   readonly parent: Window | undefined;
+  /** Queues `data` (structured values only: no handles, functions, Map or Set) for this window's domain; delivered at
+   *  the start of that domain's next dispatch, in order per sender. False when the data is over 1 MiB as JSON or the
+   *  window is closed. */
+  postMessage(data: unknown): boolean;
+  /** A message posted to this window. Runs in this window's domain. Give `T` (or annotate the listener's `data`). */
+  onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
+  /** A request posted to this window; call `reply` once (a second call is ignored). */
+  onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
+  /** Posts `data` as a request and resolves with the reply. Rejects with an `Error` when the window closes, no
+   *  `onRequest` listener exists in its domain when it is delivered, or nobody replies within `timeoutMs` (default 10000). */
+  request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
 }
 declare namespace Window {
+  /** Messages to any window of the current domain (after the per-window listeners of the target). */
+  function onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
+  /** Requests to any window of the current domain; `reply` answers the sender's promise (once). */
+  function onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
+  /** Posts `data` to the root window of every other family. Returns how many were queued. */
+  function broadcast(data: unknown): number;
   /** The window with keyboard focus, if one of the game's has it. */
   const focused: Window | undefined;
   /** Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the frame. */

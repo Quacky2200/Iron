@@ -258,6 +258,22 @@ impl<'a> Lowerer<'a> {
         expected: Option<&Ty>,
         base: Option<&TEnv>,
     ) -> R<Vec<Ty>> {
+        self.infer_targs_skip(what, g, explicit, args, expected, base, 0)
+    }
+
+    /// Like [`Self::infer_targs`] for a call whose first `skip` parameters are filled by something
+    /// other than `args` (a facade method's receiver).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn infer_targs_skip(
+        &mut self,
+        what: &str,
+        g: &GenericFn<'a>,
+        explicit: Option<&'a TSTypeParameterInstantiation<'a>>,
+        args: &'a [Argument<'a>],
+        expected: Option<&Ty>,
+        base: Option<&TEnv>,
+        skip: usize,
+    ) -> R<Vec<Ty>> {
         let (tparams, params, ret) = (&g.tparams, g.params, g.ret);
         let names: Vec<String> = tparams.iter().map(|(n, _)| n.clone()).collect();
         let mut found: HashMap<String, Ty> = HashMap::new();
@@ -276,6 +292,7 @@ impl<'a> Lowerer<'a> {
         let n_fixed = params.items.len();
         // Annotation for argument `i`: a fixed parameter's, or the rest parameter's element.
         let ann_for = |i: usize| -> Option<&'a TSType<'a>> {
+            let i = i + skip;
             if i < n_fixed {
                 params.items[i]
                     .type_annotation
@@ -326,6 +343,28 @@ impl<'a> Lowerer<'a> {
             let saved = std::mem::replace(&mut self.tenv, partial);
             let want = self.closure_param_types(ann, what);
             self.tenv = saved;
+            if want.is_none() {
+                self.unify_closure_annotations(e, ann, &names, &mut found, what)?;
+                let mut all: HashMap<String, Ty> = base.map(|b| (**b).clone()).unwrap_or_default();
+                all.extend(found.clone());
+                let partial: TEnv = Rc::new(all);
+                let saved = std::mem::replace(&mut self.tenv, partial);
+                let again = self.closure_param_types(ann, what);
+                self.tenv = saved;
+                let Some(params_ty) = again else { continue };
+                let expect = Ty::Fn(Box::new(FnTy {
+                    params: params_ty,
+                    ret: Ty::Void,
+                }));
+                let mark = self.cur.locals.len();
+                let saved_infer = std::mem::replace(&mut self.infer_ret, true);
+                let v = self.lower_expr(e, Some(&expect));
+                self.infer_ret = saved_infer;
+                self.cur.locals.truncate(mark);
+                let v = v?;
+                self.unify_ann(ann, &v.ty, &names, &mut found, what)?;
+                continue;
+            }
             let Some(params_ty) = want else { continue };
             let expect = Ty::Fn(Box::new(FnTy {
                 params: params_ty,
@@ -364,6 +403,41 @@ impl<'a> Lowerer<'a> {
             }
         }
         Ok(out)
+    }
+
+    /// A closure whose parameters carry annotations (`(from, msg: Select) => ..`) against the
+    /// function type the callee declares: each annotated parameter fixes the type parameters its
+    /// declared counterpart names.
+    fn unify_closure_annotations(
+        &mut self,
+        closure: &'a Expression<'a>,
+        ann: &'a TSType<'a>,
+        tps: &[String],
+        out: &mut HashMap<String, Ty>,
+        what: &str,
+    ) -> R<()> {
+        let mut ann = ann;
+        while let TSType::TSParenthesizedType(p) = ann {
+            ann = &p.type_annotation;
+        }
+        let TSType::TSFunctionType(f) = ann else {
+            return Ok(());
+        };
+        let params: &'a FormalParameters<'a> = match closure {
+            Expression::ArrowFunctionExpression(a) => &a.params,
+            Expression::FunctionExpression(a) => &a.params,
+            _ => return Ok(()),
+        };
+        for (mine, declared) in params.items.iter().zip(&f.params.items) {
+            let (Some(m), Some(d)) = (&mine.type_annotation, &declared.type_annotation) else {
+                continue;
+            };
+            let Ok(actual) = self.ty(&m.type_annotation, what) else {
+                continue;
+            };
+            self.unify_ann(&d.type_annotation, &actual, tps, out, what)?;
+        }
+        Ok(())
     }
 
     /// The parameter types of a function-typed annotation, if every one can be resolved now.

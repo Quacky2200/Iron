@@ -215,6 +215,11 @@ screenshot runs, `examples/windows`.
   - [ ] F2 (input per domain), F3 (timers per domain), F4 (the app).
 - [ ] Steps M1 to M3: messages (`postMessage`, `onMessage<T>`, `request<R>`, `onRequest`, `broadcast`; JSON of the static type,
   no handles), and the isolated Inspector in `examples/windows`.
+  - [x] M1 (the queue in `iron_engine_api::window`), [x] M2 (typed messages in compiled code: generic facade functions
+    `__xm_Window_postMessage<T>` / `onMessage<T>` / `onRequest<T, R>`, `__xt_Window_onMessage` / `onRequest` / `broadcast`; handles in a
+    payload are a compile error). `request<R>` is written per reply type by `facade.rs` (a promise class exists per written
+    type, so `Promise<R>` cannot be generic); `Lowerer::infer_targs_skip` lets a facade method infer from the arguments after
+    the receiver, and a closure's own parameter annotations fix type parameters. [ ] M3 (QuickJS prelude, `js/engine`).
 - Answered by the user (2026-10-21): `isChild` = has a parent; hot reload keeps keyed windows; secondary windows vsync off; no OS
   windows for secondary windows in screenshot runs; D1..D4 optional later.
 

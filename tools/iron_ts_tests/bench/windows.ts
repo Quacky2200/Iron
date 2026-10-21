@@ -102,3 +102,119 @@ export function mount(h: number): void {
 export function mountMain(): void {
   createRoot(Window.main).render(<box />);
 }
+
+// ---- Families and messages --------------------------------------------------------------------
+
+interface Select {
+  kind: string;
+  p: Vector3;
+  ids: number[];
+  name: string;
+}
+
+let received = "";
+let domainLog = "";
+let askResult = "";
+let reqLog = "";
+
+/** A "normal" window without a parent: the root of its own family. */
+export function createInspector(): number {
+  const w = Window.create({ title: "Inspector", style: "normal", width: 320, height: 480 });
+  return w.handle;
+}
+
+export function postSelect(h: number): boolean {
+  const w = byHandle(h);
+  if (w === undefined) return false;
+  const msg: Select = { kind: "select", p: new Vector3(1, 2, 3), ids: [1, 2], name: "Player" };
+  return w.postMessage(msg);
+}
+
+export function listenSelect(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onMessage<Select>((from, msg) => {
+    received += `${from.handle}:${msg.kind}|${msg.p.y}|${msg.ids.length}|${msg.name};`;
+  });
+}
+
+/** The type comes from the annotation of the listener's `msg`. */
+export function listenInferred(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onMessage((from: Window, msg: Select) => {
+    received += `inferred ${msg.ids.length};`;
+  });
+}
+
+export function receivedMessages(): string {
+  return received;
+}
+
+/// Answers `{ kind }` with `{ n: kind.length }`.
+export function serve(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, { n: number }>((from, req, reply) => {
+    reqLog += `${from.handle}:${req.kind};`;
+    reply({ n: req.kind.length });
+  });
+}
+
+/** Takes requests and never answers. */
+export function serveQuiet(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ kind: string }, { n: number }>((from, req, reply) => {
+    reqLog += `quiet ${req.kind};`;
+  });
+}
+
+export function requestLog(): string {
+  return reqLog;
+}
+
+export async function ask(h: number, timeoutMs: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  try {
+    const r = await w.request<{ n: number }>({ kind: "stats" }, timeoutMs);
+    askResult = `ok ${r.n}`;
+  } catch (e) {
+    askResult = `error ${(e as Error).message}`;
+  }
+  return 0;
+}
+
+export function askLog(): string {
+  return askResult;
+}
+
+export function resetAsk(): void {
+  askResult = "";
+}
+
+/** Listens for every message of the current domain. */
+export function listenDomain(): void {
+  Window.onMessage<{ n: number }>((from, msg) => {
+    domainLog += `${from.handle}:${msg.n};`;
+  });
+}
+
+export function domainMessages(): string {
+  return domainLog;
+}
+
+export function broadcastHi(): number {
+  return Window.broadcast({ n: 7 });
+}
+
+export function familyInfo(h: number): string {
+  const w = byHandle(h);
+  if (w === undefined) return "none";
+  return `${w.root.handle}|${w.isIsolated}|${w.domain}|${Window.domainFocused}`;
+}

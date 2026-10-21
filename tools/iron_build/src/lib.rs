@@ -717,7 +717,7 @@ mod tests {
     // M9-TS-2807
     #[test]
     fn tsc_checks_a_program_that_opens_windows() {
-        let main = "Window.main.title = \"Game\";\nconst w = Window.create({ title: \"P\", style: \"tool\", parent: Window.main, width: 200 });\nconst f: Window | undefined = Window.focused;\nif (w.parent) console.log(w.parent.title, w.isChild, f === undefined, Window.count, Window.at(0)?.handle);\nw.onResized((width, height) => console.log(width + height));\nw.onCloseRequested(() => w.cancelClose());\nw.style = \"dialog\";\ncreateRoot(w).render(<box><text>{w.title}</text></box>);\ncreateRoot(Window.main).render(<box />);\n";
+        let main = "Window.main.title = \"Game\";\nconst w = Window.create({ title: \"P\", style: \"tool\", parent: Window.main, width: 200 });\nconst f: Window | undefined = Window.focused;\nif (w.parent) console.log(w.parent.title, w.isChild, f === undefined, Window.count, Window.at(0)?.handle);\nw.onResized((width, height) => console.log(width + height));\nw.onCloseRequested(() => w.cancelClose());\nw.style = \"dialog\";\ncreateRoot(w).render(<box><text>{w.title}</text></box>);\ncreateRoot(Window.main).render(<box />);\nw.postMessage({ kind: \"select\", ids: [1, 2] });\nw.onMessage<{ kind: string }>((from, m) => console.log(from.title + m.kind));\nw.onRequest<number, string>((from, n, reply) => reply(\"x\" + n));\nWindow.onMessage<{ n: number }>((from, m) => console.log(m.n));\nWindow.broadcast({ n: 1 });\nconst reply: Promise<{ n: number }> = w.request<{ n: number }>({ kind: \"stats\" }, 500);\n";
         let d = globals_game("tscwin", main);
         let Some(_) = find_tsc(&d) else {
             eprintln!("M9-TS-2807 skipped: tsc not found (install TypeScript)");
