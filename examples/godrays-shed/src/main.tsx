@@ -3,9 +3,11 @@
 // beam through the shed: a narrow cone of green (or red) light that slices into blades where
 // it passes the planks' gaps, crawls over the workbench, the tools and the lawnmower, and
 // lights the dust it goes through. Now and then it stops and locks on to something, pulsing,
-// then moves on, the dust motes in its path glinting. The menu (or keys) switches the beam's
-// colour (C), the rays (R), the dust motes (D), the haze's quality (G) and how strongly the
-// scanner lights it (V), and pauses the scan (Space).
+// then moves on, the dust motes in its path glinting. Or it scans the whole shed at once: a
+// sheet of light (a pyramid spot light, thin and wide) sweeping top to bottom or left to right.
+// The menu has two pages (1: the scan, 2: exposure). Keys: the scan (M), the beam's colour (C),
+// the rays (R), the dust motes (D), the haze's quality (G), how strongly the scanner lights it
+// (V), pause (Space); auto exposure (X) and the manual EV (- and =).
 import {
   Camera,
   Color,
@@ -42,13 +44,27 @@ const BEAMS = {
 };
 type Beam = keyof typeof BEAMS;
 
-const state = { beam: "green" as Beam, rays: true, dust: true, paused: false, haze: 0, beamHaze: 0 };
+const state = { beam: "green" as Beam, rays: true, dust: true, paused: false, haze: 0, beamHaze: 0, scan: 0, auto: true, ev: 0 };
+
+/** How the craft scans: seeking things with a narrow beam, or the whole shed with a sheet. */
+const SCANS = ["Partial: seeks things", "Full: top to bottom", "Full: left to right"];
+/** The sheet of a full scan: 1.5 degrees thin, 40 times as wide (about 55 degrees). */
+const SHEET = { outer: 1.5, inner: 1, aspect: 40 };
+
+/** Auto exposure: the eyes adapt to the dark shed and the beam. */
+const AUTO = { minEV: -6, maxEV: 10, compensation: -1, speedDarkToLight: 2, speedLightToDark: 0.8 };
+
+/** Which page of the menu shows: the scan's settings or exposure. */
+let tab = 0;
+/** Frames a second and milliseconds a frame, measured over half a second. */
+const timing = { fps: 0, ms: 0, frames: 0, time: 0 };
 
 /**
  * The haze's quality (`RenderSettings.volumetricFog`): the finest volume, its noise cleaned
  * up more or less (the plank gaps' thin blades are the hard case).
  */
 const HAZE = [
+  { name: "Smoothest (8 samples, 0.98)", denoising: "both", historyWeight: 0.98, samples: 8, motionSamples: 8 },
   { name: "Smooth (4 samples, 0.95)", denoising: "both", historyWeight: 0.95, samples: 4, motionSamples: 6 },
   { name: "Default (1 sample, 0.9)", denoising: "both", historyWeight: 0.9, samples: 1, motionSamples: 2 },
   { name: "Reprojection only", denoising: "reprojection", historyWeight: 0.9, samples: 1, motionSamples: 2 },
@@ -74,9 +90,35 @@ function apply(): void {
     samples: h.samples,
     motionSamples: h.motionSamples,
   };
-  if (scanner) scanner.volumetricIntensity = BEAM_HAZE[state.beamHaze]!;
+  if (scanner) {
+    scanner.volumetricIntensity = BEAM_HAZE[state.beamHaze]!;
+    const full = state.scan > 0;
+    scanner.spotShape = full ? "pyramid" : "cone";
+    scanner.aspectRatio = full ? SHEET.aspect : 1;
+    scanner.spotAngle = full ? SHEET.outer : 9;
+    scanner.innerSpotAngle = full ? SHEET.inner : 5;
+  }
+  RenderSettings.exposureTransition = 1;
+  RenderSettings.fixedExposure = state.ev;
+  RenderSettings.autoExposure = state.auto ? AUTO : null;
   refreshMenu();
 }
+
+/** Turns auto exposure off where the eyes are now, so changes (the rays' strength) show. */
+function holdExposure(): void {
+  if (!state.auto) return;
+  const ev = Camera.main?.exposure;
+  if (ev !== undefined && Number.isFinite(ev)) state.ev = Math.round(ev * 2) / 2;
+  state.auto = false;
+}
+
+function stepEV(by: number): void {
+  holdExposure();
+  state.ev = Math.min(10, Math.max(-6, state.ev + by));
+  apply();
+}
+
+const evText = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? "…" : `EV ${v.toFixed(1)}`);
 
 /** The scanning beam, for `apply`. */
 let scanner: Light | null = null;
@@ -99,14 +141,26 @@ const SCANNER = CRAFT.add(new Vector3(0, -0.3, 0.9));
 const BOARD = 0.14;
 const GAP = 0.012;
 
+/** The scan's light: which way it points, its width and height axes, and its shape. */
+interface Scan {
+  dir: Vector3;
+  right: Vector3;
+  up: Vector3;
+  full: boolean;
+}
+
 /**
- * Whether the scan (pointing along `dir`) lights `p`: inside its cone, and its light reaching
- * `p` through the window (between the frame's bars) or a gap between the window wall's boards.
+ * Whether the scan lights `p`: inside its cone (or sheet), and its light reaching `p` through
+ * the window (between the frame's bars) or a gap between the window wall's boards.
  */
-function inScan(p: Vector3, dir: Vector3): boolean {
+function inScan(p: Vector3, scan: Scan): boolean {
   const to = p.sub(SCANNER);
-  const len = to.magnitude;
-  if (to.dot(dir) < len * Math.cos((4.5 * Math.PI) / 180)) return false;
+  const z = to.dot(scan.dir);
+  if (z <= 0) return false;
+  if (scan.full) {
+    const ty = Math.tan((SHEET.outer * Math.PI) / 360);
+    if (Math.abs(to.dot(scan.up)) > z * ty || Math.abs(to.dot(scan.right)) > z * ty * SHEET.aspect) return false;
+  } else if (z < to.magnitude * Math.cos((4.5 * Math.PI) / 180)) return false;
   // Where the light crosses the window wall.
   const t = (-D - 0.015 - SCANNER.z) / to.z;
   if (t <= 0 || t >= 1) return false;
@@ -143,6 +197,15 @@ const mat = (hex: string, smoothness = 0.08) => Material.create({ color: Color.h
  * pauses where it locks on to something (and `lock` 1 then).
  */
 function scanAt(t: number): { target: Vector3; lock: number } {
+  if (state.scan > 0) {
+    // A full scan: there and back over 8 seconds, slowing at each end.
+    const u = (t % 8) / 8;
+    const s = u < 0.5 ? u * 2 : 2 - u * 2;
+    const e = s * s * (3 - 2 * s);
+    return state.scan === 1
+      ? { target: new Vector3(0, H + 0.5 - e * (H + 0.8), 0), lock: 0 }
+      : { target: new Vector3(-W - 0.3 + e * (2 * W + 0.6), 1, 0), lock: 0 };
+  }
   const stops = [
     new Vector3(-1.4, 0.95, 0.9), // the workbench
     new Vector3(1.2, 0.4, 0.6), // the lawnmower
@@ -175,8 +238,8 @@ class Shed extends Component {
   private moteLit: Material[] = [];
   /** Motes out of the beam: faint, lit only by the moon and light off the walls. */
   private moteDim!: Material;
-  /** Which way the scan points this frame. */
-  private scanDir = new Vector3(0, -0.2, 1).normalized;
+  /** Where the scan points this frame. */
+  private scan: Scan = { dir: new Vector3(0, -0.2, 1).normalized, right: Vector3.right, up: Vector3.up, full: false };
 
   override onStart() {
     QualitySettings.shadowDistance = 20;
@@ -188,7 +251,6 @@ class Shed extends Component {
     RenderSettings.fogMode = "exponential";
     RenderSettings.fogColor = new Color(0, 0, 0, 1);
     RenderSettings.fogDensity = 0.12;
-    RenderSettings.autoExposure = { minEV: -6, maxEV: 10, compensation: -1, speedDarkToLight: 2, speedLightToDark: 0.8 };
 
     // Moonlight through the planks' gaps: faint, blue.
     const moon = new GameObject("Moon", { rotation: Quaternion.lookRotation(new Vector3(-0.4, -0.6, 0.7)) });
@@ -343,7 +405,7 @@ class Shed extends Component {
       );
       const out = Math.abs(m.p.x) > W - 0.05 || m.p.y < 0.05 || m.p.y > H - 0.05 || Math.abs(m.p.z) > D - 0.05;
       if (out) this.spawn(m);
-      const lit = inScan(m.p, this.scanDir);
+      const lit = inScan(m.p, this.scan);
       if (lit !== m.lit) {
         m.lit = lit;
         m.go.getComponent(MeshRenderer)!.material = lit ? this.moteLit[m.level]! : this.moteDim;
@@ -368,11 +430,30 @@ class Shed extends Component {
     if (input.getKeyDown("KeyG")) cycle("haze", HAZE.length);
     if (input.getKeyDown("KeyV")) cycle("beamHaze", BEAM_HAZE.length);
     if (input.getKeyDown("Space")) toggle("paused");
+    if (input.getKeyDown("KeyM")) cycle("scan", SCANS.length);
+    if (input.getKeyDown("KeyX")) toggleAuto();
+    if (input.getKeyDown("Minus")) stepEV(-0.5);
+    if (input.getKeyDown("Equal")) stepEV(0.5);
+    if (input.getKeyDown("Digit1") || input.getKeyDown("Digit2")) {
+      tab = input.getKeyDown("Digit1") ? 0 : 1;
+      refreshMenu();
+    }
+    timing.frames++;
+    timing.time += dt;
+    if (timing.time >= 0.5) {
+      timing.fps = timing.frames / timing.time;
+      timing.ms = (1000 * timing.time) / timing.frames;
+      timing.frames = 0;
+      timing.time = 0;
+      // The live EV on the exposure page.
+      if (tab === 1) refreshMenu();
+    }
     if (!state.paused) this.t += dt;
     const { target, lock } = scanAt(this.t);
     const eye = this.scanner.transform;
-    eye.rotation = Quaternion.lookRotation(target.sub(eye.position));
-    this.scanDir = target.sub(eye.position).normalized;
+    // Left to right, the sheet stands up: its width (the light's x) runs vertically.
+    eye.rotation = Quaternion.lookRotation(target.sub(eye.position), state.scan === 2 ? Vector3.right : Vector3.up);
+    this.scan = { dir: eye.forward, right: eye.right, up: eye.up, full: state.scan > 0 };
     if (state.dust) this.updateDust(dt);
     // Locked on: brighter, pulsing.
     this.scanner.intensity = 60 * (1 + lock * (0.6 + 0.4 * Math.sin(this.t * 18)));
@@ -395,8 +476,16 @@ function toggle(key: "rays" | "dust" | "paused") {
   apply();
 }
 
-function cycle(key: "haze" | "beamHaze", n: number) {
+function cycle(key: "haze" | "beamHaze" | "scan", n: number) {
   state[key] = (state[key] + 1) % n;
+  // Auto exposure would undo a change in the rays' strength within a second.
+  if (key === "beamHaze") holdExposure();
+  apply();
+}
+
+function toggleAuto() {
+  if (state.auto) holdExposure();
+  else state.auto = true;
   apply();
 }
 
@@ -417,25 +506,89 @@ function Button(props: { label: string; value: string; on: boolean; keyName: str
   );
 }
 
+/** A value with - and + buttons beside it (keys - and =). */
+function Stepper(props: { label: string; value: string; on: boolean; onDown: () => void; onUp: () => void }) {
+  const small = (text: string, onClick: () => void) => (
+    <box onClick={onClick} style={{ padding: "6px 12px", borderRadius: 6, cursor: "pointer", backgroundColor: "rgba(255,255,255,0.14)" }}>
+      <text style={{ color: "#eef6f0", fontSize: 13 }}>{text}</text>
+    </box>
+  );
+  return (
+    <box style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <text style={{ color: "#c0d0c4", fontSize: 13, width: 90, flexShrink: 0 }}>{props.label}</text>
+      <box style={{ flexDirection: "row", gap: 6, minWidth: 140 }}>
+        {small("−", props.onDown)}
+        <box style={{ padding: "6px 12px", borderRadius: 6, flexGrow: 1, backgroundColor: props.on ? "#2f8a4a" : "rgba(255,255,255,0.1)" }}>
+          <text style={{ color: "#eef6f0", fontSize: 13 }}>{props.value}</text>
+        </box>
+        {small("+", props.onUp)}
+      </box>
+      <text style={{ color: "#76887a", fontSize: 12 }}>- =</text>
+    </box>
+  );
+}
+
+function Tab(props: { label: string; index: number; keyName: string }) {
+  const on = tab === props.index;
+  return (
+    <box
+      onClick={() => {
+        tab = props.index;
+        refreshMenu();
+      }}
+      style={{ padding: "5px 12px", borderRadius: 6, cursor: "pointer", backgroundColor: on ? "rgba(255,255,255,0.18)" : "transparent" }}
+    >
+      <text style={{ color: on ? "#ffffff" : "#90a094", fontSize: 13 }}>
+        {props.label} <span style={{ color: "#66766a" }}>{props.keyName}</span>
+      </text>
+    </box>
+  );
+}
+
+function ScanPage() {
+  return (
+    <>
+      <Button label="Scan" value={SCANS[state.scan]!} on={true} keyName="M" onClick={() => cycle("scan", SCANS.length)} />
+      <Button label="Beam" value={state.beam === "green" ? "Green" : "Red"} on={true} keyName="C" onClick={nextBeam} />
+      <Button label="Rays" value={state.rays ? "On" : "Off"} on={state.rays} keyName="R" onClick={() => toggle("rays")} />
+      <Button label="Dust" value={state.dust ? "Motes in the air" : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />
+      <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={() => cycle("haze", HAZE.length)} />
+      <Button label="Ray strength" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="V" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
+      <Button label="Moving" value={state.paused ? "Paused" : "Scanning"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
+    </>
+  );
+}
+
+function ExposurePage() {
+  return (
+    <>
+      <Button label="Exposure" value={state.auto ? "Auto (eyes adapt)" : "Manual"} on={state.auto} keyName="X" onClick={toggleAuto} />
+      <Stepper label="Manual EV" value={evText(state.ev)} on={!state.auto} onDown={() => stepEV(-0.5)} onUp={() => stepEV(0.5)} />
+      <text style={{ color: "#c0d0c4", fontSize: 13 }}>Now: {evText(Camera.main?.exposure)}</text>
+      <text style={{ color: "#76887a", fontSize: 12, width: 300 }}>
+        Auto: EV -6 to 10, 1 stop under, brighter over 2 s and darker over 0.8 s. Changing the rays' strength holds the exposure where it is, or the eyes would undo it.
+      </text>
+    </>
+  );
+}
+
 function Menu() {
   const [, setTick] = useState(0);
   refreshMenu = () => setTick((t) => t + 1);
   return (
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(8, 12, 10, 0.72)", flexDirection: "column" }}>
-        <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the alien scan</text>
-        <Button
-          label="Beam"
-          value={state.beam === "green" ? "Green" : "Red"}
-          on={true}
-          keyName="C"
-          onClick={nextBeam}
-        />
-        <Button label="Rays" value={state.rays ? "On" : "Off"} on={state.rays} keyName="R" onClick={() => toggle("rays")} />
-        <Button label="Dust" value={state.dust ? "Motes in the air" : "Off"} on={state.dust} keyName="D" onClick={() => toggle("dust")} />
-        <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={() => cycle("haze", HAZE.length)} />
-        <Button label="Ray strength" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="V" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
-        <Button label="Scan" value={state.paused ? "Paused" : "Scanning"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
+        <box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
+          <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the alien scan</text>
+          <text style={{ color: timing.fps >= 200 ? "#7ad08a" : timing.fps >= 60 ? "#e0c060" : "#e07060", fontSize: 13 }}>
+            {timing.fps.toFixed(0)} fps · {timing.ms.toFixed(2)} ms
+          </text>
+        </box>
+        <box style={{ flexDirection: "row", gap: 4 }}>
+          <Tab label="Scan" index={0} keyName="1" />
+          <Tab label="Exposure" index={1} keyName="2" />
+        </box>
+        {tab === 0 ? <ScanPage /> : <ExposurePage />}
       </box>
     </box>
   );
