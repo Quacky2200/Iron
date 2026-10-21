@@ -236,6 +236,8 @@ function face(f: number, x: number, y: number, z: number, tile: number): void {
 class Blocks extends Component {
   private camera!: Camera;
   private t = 0;
+  /** The camera's height, eased: the ground under it steps a whole block at a time. */
+  private height = -1;
 
   override onStart() {
     QualitySettings.shadowDistance = 60;
@@ -272,8 +274,8 @@ class Blocks extends Component {
     }
     const solid = (i: number, y: number, j: number) => y < columnHeight(i, j) || tree.has(key(i, y, j));
 
-    // The hill in 16×16-column chunks, each one mesh: grass tops, grass-edged dirt sides
-    // down to the lowest neighbour, stone deeper down; then the trees' blocks.
+    // The hill in 16×16-column chunks, each one mesh: grass tops, dirt sides down to the
+    // lowest neighbour, stone deeper down; then the trees' blocks.
     const material = Material.create({ mainTexture: atlas(), smoothness: 0 });
     for (let ci = 0; ci < N; ci += CHUNK) {
       for (let cj = 0; cj < N; cj += CHUNK) {
@@ -290,7 +292,7 @@ class Blocks extends Component {
               const n = FACES[f]!.n;
               for (let y = Math.max(columnHeight(i + n[0], j + n[2]), 0); y < h; y++) {
                 const depth = h - 1 - y;
-                face(f, x, y, z, depth === 0 ? Tile.GrassSide : depth >= 4 ? Tile.Stone : Tile.Dirt);
+                face(f, x, y, z, depth >= 4 ? Tile.Stone : Tile.Dirt);
               }
             }
           }
@@ -334,23 +336,30 @@ class Blocks extends Component {
     if (input.getKeyDown("KeyC")) toggle("cloud");
     if (input.getKeyDown("Space")) toggle("paused");
     if (!state.paused) this.t += dt;
-    this.fly();
+    this.fly(dt);
   }
 
   /** Circle the hill, rising from among the blocks to above the cloud and back down. */
-  private fly() {
+  private fly(dt = 0) {
     const phase = (this.t / FLIGHT_SECONDS) * Math.PI * 2;
     const up = Mathf.smoothStep(0, 1, (1 - Math.cos(phase)) / 2); // 0 low, 1 high
     const angle = this.t * 0.07 + 2.2;
     const radius = Mathf.lerp(16, 34, up);
     const x = HILL.x + Math.cos(angle) * radius;
     const z = HILL.z + Math.sin(angle) * radius;
-    // Low down, stay a little above the blocks under and around the camera.
+    // Low down, stay a little above the blocks under and around the camera (two columns
+    // round, so a hill ahead lifts it early). The ground steps a whole block at a time, so
+    // the height eases towards it, never dropping under a block's clearance.
     const i = Math.floor(x + HALF);
     const j = Math.floor(z + HALF);
     let ground = 0;
-    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) ground = Math.max(ground, columnHeight(i + di, j + dj));
-    const position = new Vector3(x, Math.max(ground + 2.4, Mathf.lerp(ground + 2.4, 30, up)), z);
+    for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) ground = Math.max(ground, columnHeight(i + di, j + dj));
+    const want = Math.max(ground + 2.4, Mathf.lerp(ground + 2.4, 30, up));
+    this.height = this.height < 0 || dt === 0 ? want : this.height + (want - this.height) * Math.min(1, dt * 1.5);
+    let under = 0;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) under = Math.max(under, columnHeight(i + di, j + dj));
+    this.height = Math.max(this.height, under + 1.2);
+    const position = new Vector3(x, this.height, z);
     const target = new Vector3(HILL.x, Mathf.lerp(9, 11, up), HILL.z);
     const cam = this.camera.transform;
     cam.position = position;
