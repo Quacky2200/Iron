@@ -260,7 +260,7 @@ pointer events use), `scale` and `aspect`, set by `__iron_screen`. Window mode, 
 `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
 `quit()`; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
-game's `package.json` (`name`, `version`, and an `iron` section with `title`, `company`, `identifier`
+game's `project.json` (see docs/iron-build.md; formerly the `iron` section of `package.json`:  `title`, `company`, `identifier`
 `icon`, a PNG used for the window icon, and `display`, the default window mode and size; the title is the window title) and the machine
 ([info.rs](../crates/iron_app/src/info.rs)). It evaluates it **before the bundle's top level runs**
 (and again for a reloaded runtime). GPU and screen fields are added once the window and renderer exist,
@@ -375,7 +375,7 @@ placing copies. `PrefabData` is `{ format: "iron.prefab", version: 1, name, root
   inside it point at the copy's objects. A copy from a file remembers its path: `GameObject._prefab` is
   saved as `GameObjectData.prefab`, for tools. Saved scenes still hold the object in full.
 
-**Start scene.** `iron.startScene` in the game's `package.json` reaches scripts as
+**Start scene.** `startScene` in the game's `project.json` reaches scripts as
 `__iron_info.app.startScene`. When `scenes.ts` is imported it loads that file additively, makes it
 active and drops `Main` if nothing is in it. Starting components still spawn next to it. A failure
 is logged as `start scene <path>: ...`.

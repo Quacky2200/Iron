@@ -534,7 +534,7 @@ tree and interaction.
 Every GameObject has a `layer` from 0 to 31 (`GameObject.layer`, op `scene.layer id n`, default 0;
 `ScriptScene::layer` reads it, 0 for unknown ids). `LayerMask`
 ([layers.ts](../js/engine/src/layers.ts)) names layers: Unity's built-ins (0 Default, 1 TransparentFX,
-2 Ignore Raycast, 4 Water, 5 UI) plus the game's `package.json` `iron.layers` (`{ "8": "Player" }`,
+2 Ignore Raycast, 4 Water, 5 UI) plus the game's `project.json` `layers` (`{ "8": "Player" }`,
 passed on by `info.rs`). A mask is a `u32`, a bit per layer; scripts may use signed masks (`~mask`),
 which are made unsigned before they cross the op boundary. Missing or null masks mean every layer
 (`ALL_LAYERS`).

@@ -104,7 +104,7 @@ in the background and whether that pauses it.
   platforms that tell, such as macOS and Wayland) or sized to 0 x 0 (how Windows reports a minimised
   window). `App::input` feeds those three into `Lifecycle`.
 - **Pausing** happens in the background unless `runInBackground` is on (`Application.runInBackground`,
-  which sends `app.runInBackground`, or `iron.runInBackground` in `package.json`; default off). Screenshot
+  which sends `app.runInBackground`, or `runInBackground` in `project.json`; default off). Screenshot
   runs never pause. Switching `runInBackground` off while in the background pauses at once. The script
   value goes into `__iron_info.app.runInBackground`, which a full reload keeps.
 - `Lifecycle::update` is called from `App::sync_lifecycle` (after each input event and op) and returns a

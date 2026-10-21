@@ -13,7 +13,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 
 | Path | What |
 |---|---|
-| `crates/iron_core` | Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
+| `crates/iron_core` | `project.rs`: `project.json` (the game's metadata, template variables like `${firstName}`, platform sections, `license`, fallback to `package.json`'s `iron` section; `iron-build init` writes one). Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
 | `crates/iron_platform` | winit window + event loop (`Platform`, `PlatformApp`), `InputEvent` conversion, gilrs gamepads |
 | `crates/iron_script` | `ScriptRuntime` trait + QuickJS backend (rquickjs 0.14), timers prelude, `ComponentHost` (component lifecycle) |
 | `crates/iron_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`), focus/keys/default actions (`interaction.rs`), drag and drop (`interaction/dnd.rs`) |
@@ -31,7 +31,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_app` (panels) | `panels.rs`: world panels (a UI tree + interaction + texture each), camera rays and panel hits; `world_view.rs`: cameras and planes from `render.*` ops; `main.rs` routes the pointer and keys between the screen and panels (`Surface`) |
 | `crates/iron_app` (native.rs) | The native backend: a game compiled in process by `tools/iron_ts` (JIT, `dist/game.irbundle`) driven per frame and event instead of QuickJS (`Native`); see `docs/iron-api.md` |
 | `crates/iron_app` (render_sync.rs, native_render.rs) | The render side of the native backend: registries to `WorldViews` ops each frame, world panels with their own reconciler, cloth, `UiResources`, cursor, screen and quality; see `docs/iron-api.md` |
-| `crates/iron_app` | The `iron` binary: `iron [game folder] [--screenshot out.png] [--frames N] [--fps|--no-fps]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `IRON_FPS=0` or `iron.fps: false`). Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer. `iron_editor` is a second binary of the same code that runs `editor/` |
+| `crates/iron_app` | The `iron` binary: `iron [game folder] [--screenshot out.png] [--frames N] [--fps|--no-fps]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `IRON_FPS=0` or `"fps": false` in `project.json`). Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer. `iron_editor` is a second binary of the same code that runs `editor/` |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random` |
 | `js/editor-ui` | `@iron/editor-ui`: editor components drawn by Iron's UI (`MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`), logic in plain modules (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) |
 | `editor/` | The editor's UI, run by `iron_editor` (`crates/iron_app/src/bin/iron_editor.rs`, `editor.rs`); see `docs/editor.md` |
@@ -83,7 +83,7 @@ cargo run -p iron_app -- examples/world --cook
 cd tools && cargo run -p iron_build -- package ../examples/boxes --icon icon.png
 ```
 `iron-build package <game>` writes `<game>/dist/<name>.exe`: one file holding `iron_app` (the host, from `target/{release,debug}` or `--host`),
-the game's bundle, CSS and assets, and the icon and version info from `package.json`'s `iron` section (`docs/iron-build.md`).
+the game's bundle, CSS and assets, and the icon and version info from `project.json` (`docs/iron-build.md`).
 
 - `bun run build` builds all the examples.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
@@ -166,7 +166,7 @@ the game's bundle, CSS and assets, and the icon and version info from `package.j
     rope (`LineRenderer` tube), colliders following scale; MeshRenderer/Light/primitives;
     AudioSource/AudioListener; textures, sprites (`sortingOrder`), the missing-texture
     checker; particles; glows (halos, bloom, spot beams); Cursor and game mouse input;
-    Application/SystemInfo (from the game's `package.json`); glTF models (with mesh
+    Application/SystemInfo (from the game's `project.json`); glTF models (with mesh
     colliders); directional shadows (`shadowCastingMode`); examples `platformer`, `classics`
     (Stanford Bunny, Newell teaset), `cornell` (bounce lights). Docs refreshed.
   - M5.c materials, first part (2026-10-17): PBR (Cook-Torrance metallic/roughness), a

@@ -1323,6 +1323,36 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2602 | Unit | `--data-dir` accepts one plain folder name and refuses empty, `.`, `..`, separators, drive letters and dot names. |
 | M9-TS-2603 | Integration | `package` copies the assets to `<out dir>/data/` with the same relative paths (a 300 KiB file byte for byte, `.meta`, scenes, CSS files), the exe's table of contents has none of the large or unnamed ones, `--data-dir` renames the folder and tells the exe, `--no-data` writes no folder, a bad name is an error. |
 | M9-TS-2610 | Manual | `cargo test -p iron_build -- --ignored standalone_data` (needs a built `iron_app`, GPU): `examples/boxes` plus a 300 KiB padding asset packaged, the game folder deleted, run from another folder with `--screenshot` (stripes load from `data/`), then with `data/` deleted: exit code 1 and "data folder was not found". |
+| M9-API-1300 | Unit | Every template variable resolves (`username`, `firstName`, `lastName`, `fullName`, `year`, `date`, `name`, `title`, `company`, `version`, `env:`). |
+| M9-API-1301 | Unit | `$${` is a literal `${`; a lone `$` stays. |
+| M9-API-1302 | Unit | An unknown variable is an error with the file, line and column of the `${..}` and the field name. |
+| M9-API-1303 | Unit | `${company}` inside `copyright` (and other fields) resolves through the field; a reference cycle is an error. |
+| M9-API-1304 | Unit | `${env:NAME:-fallback}`; an unset `${env:NAME}` is an error. |
+| M9-API-1305 | Unit | An unterminated `${`, an empty `${}` and broken JSON (with its line) are errors. |
+| M9-API-1306 | Unit | Name splitting: empty, one, two and three words, extra spaces, apostrophes, hyphens, non-Latin names. |
+| M9-API-1307 | Unit | An empty full name falls back to the account name; one word gives an empty last name; GECOS parsing. |
+| M9-API-1308 | Unit | The identifier is sanitised (spaces, punctuation, leading digit, empty parts). |
+| M9-API-1309 | Unit | The platform section overrides for that platform; all platform sections leave the result. |
+| M9-API-1310 | Unit | No `project.json`: the `iron` section and `package.json` fields are used without templates; no files: defaults named after the folder. |
+| M9-API-1311 | Unit | `project.json` wins over `package.json`'s `iron` section, which still gives name and version defaults. |
+| M9-API-1312 | Unit | Overrides (flags) are literal and other fields see them. |
+| M9-API-1313 | Unit | A resolved project round-trips with no templates; unknown keys are kept and expanded once. |
+| M9-API-1314 | Unit | Defaults of missing fields (title, exe without apostrophes, copyright, identifier, description). |
+| M9-API-1315 | Unit | A leading `//` comment line is allowed and keeps line numbers. |
+| M9-API-1316 | Unit | Civil dates from days; the system date is plausible. |
+| M9-API-1317 | Unit | The system user has an account name. |
+| M9-API-1318 | Unit | `license` defaults to `private`, is validated case-insensitively against the list, `custom` takes `licenseFile`, the npm mapping. |
+| M9-API-1320 | Unit | `iron_app` `Manifest::load` of a folder uses `project.json` (title, identifier, startScene, layers, platform fps); a broken template leaves the defaults. |
+| M9-TS-2700 | Unit | `init` writes the default templates, `src/main.ts`, and the resolved preview for a given user; the result builds. |
+| M9-TS-2701 | Unit | `init` flags replace only their own fields. |
+| M9-TS-2702 | Unit | `init` refuses to overwrite `project.json` without `--force`. |
+| M9-TS-2703 | Unit | `init --icon` copies the icon; `.gitignore` gets `dist/` and `*.meta` once and only if it exists; a bad icon writes nothing. |
+| M9-TS-2704 | Unit | A user without a full name gets the account name for first name and company. |
+| M9-TS-2705 | Unit | `init --license` sets and validates the license, shown in the preview. |
+| M9-TS-2710 | Integration | `package` resolves templates and the platform section into the payload's `project.json` (and the PE version info), the payload has a `package.json` with `UNLICENSED`; the app side reads it back without the user's information. |
+| M9-TS-2711 | Integration | A non-private license copies its file next to the exe (and into `data/` when named), adds `Comments` to the PE and the npm license to the payload; `custom` without a file and a missing `licenseFile` are errors. |
+| M9-TS-2720 | Unit | `GameConfig` reads `project.json` (title, identifier, `main`) before the `iron` section; a template typo names file and line. |
+| M9-TS-2721 | Unit | All 19 examples have a `project.json` (`dev.iron.<name>`, company from the user), their `package.json` has no `iron` section. |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
 | M9-API-901 | Unit | The rate rounds to the nearest integer. |
 | M9-API-902 | Unit | `FpsCounter` closes a window once 0.25 s have passed and reports it; 100 FPS over 0.6 s gives two windows of `100 FPS`. |
