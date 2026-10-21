@@ -1472,6 +1472,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     nearer the eye), the volume covering the rest, so beams through bars and gaps stay sharp
     (`M7-FOG-10`); examples next: a barred prison cell, a forest canopy, a sunlit room with
     dust
+  - [ ] Hot reload of a release build keeps the old scene (2026-10-21): with a game's
+    window open, rebuilding `dist/` reloaded it in place, but scenes built in `onStart` came
+    back from the saved state, so changed geometry (fog-raider's corridor fix) didn't show,
+    and the low-res look (`QualitySettings.renderScale`) looked blurrier than before. Check
+    what a reload should rebuild versus restore, and re-apply quality settings once
   - [ ] God rays, first notes: crisp, high-contrast sun beams cutting through fog and
     cloud where light comes through gaps (skylights, a broken roof, a tree canopy), as in
     Unreal's volumetric fog and painted-style games. The froxel volume makes the sun's shafts
