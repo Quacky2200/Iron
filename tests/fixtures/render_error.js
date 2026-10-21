@@ -11212,7 +11212,7 @@ ${err.stack}` : ""}`);
     }
     const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
     const v = volumetricFog;
-    const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 16, v.distance ?? 50] : null;
+    const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50] : null;
     __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts);
   }
   var skybox = null;

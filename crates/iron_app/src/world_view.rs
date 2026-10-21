@@ -1205,7 +1205,7 @@ impl WorldViews {
                             |[intensity, anisotropy, steps, distance]| VolumetricFog {
                                 intensity: intensity.max(0.0),
                                 anisotropy: anisotropy.clamp(-0.95, 0.95),
-                                steps: steps.clamp(1.0, 64.0) as u32,
+                                steps: steps.clamp(1.0, 16.0) as u32,
                                 distance: distance.max(0.1),
                             },
                         ),
@@ -2299,7 +2299,7 @@ mod tests {
             Some(VolumetricFog {
                 intensity: 2.0,
                 anisotropy: 0.95,
-                steps: 64,
+                steps: 16,
                 distance: 40.0,
             })
         );

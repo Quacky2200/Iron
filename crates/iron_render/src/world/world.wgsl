@@ -34,7 +34,8 @@ struct Globals {
     // Height fog: x density at the base height (y), thinning by e every 1 / z metres
     // above it; w: 1 when on.
     fog_height: vec4<f32>,
-    // Light shafts: x intensity, y anisotropy, z steps, w how far they reach (0: off).
+    // Light shafts: x intensity, y anisotropy, z samples per volume slice, w how far the
+    // volume reaches (0: off).
     fog_volume: vec4<f32>,
 };
 
@@ -239,12 +240,6 @@ fn fogged(c: vec4<f32>, p: vec3<f32>, px: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(rgb, c.a);
 }
 
-// Interleaved gradient noise (Jimenez): a different offset per pixel, so a few steps
-// along the ray read as fine grain rather than bands.
-fn jitter(px: vec2<f32>) -> f32 {
-    return fract(52.9829189 * fract(dot(px, vec2<f32>(0.06711056, 0.00583715))));
-}
-
 // Henyey-Greenstein, scaled so scattering evenly (anisotropy 0) gives 1.
 fn phase(cos_theta: f32) -> f32 {
     let k = g.fog_volume.y;
@@ -252,52 +247,102 @@ fn phase(cos_theta: f32) -> f32 {
     return (1.0 - k * k) / (d * sqrt(d));
 }
 
-// The light that fog at `x` scatters back along the view ray `dir`: every light that
-// lights fog, with its falloff, cone and (hard) shadow.
-fn scattered(x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+// The light that fog at `x` scatters back along the view ray `dir` from one light: its
+// falloff, cone and (hard) shadow.
+fn scattered(light: Light, x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+    var strength = light.color.w;
+    // Which way its light travels at `x`.
+    var travel: vec3<f32>;
+    if (light.position.w < 0.5) {
+        travel = normalize(light.direction.xyz);
+    } else {
+        let from_light = x - light.position.xyz;
+        let d = length(from_light);
+        travel = from_light / max(d, 1e-4);
+        // As on surfaces: zero at the range.
+        let r = clamp(d / max(light.direction.w, 1e-4), 0.0, 1.0);
+        let fade = 1.0 - r * r * r * r;
+        strength *= fade * fade / (1.0 + d * d);
+        if (light.position.w > 1.5) {
+            strength *= smoothstep(light.spot.y, light.spot.x, dot(travel, normalize(light.direction.xyz)));
+        }
+    }
+    if (strength <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    if (light.shadow.x >= 0.0) {
+        if (light.position.w < 0.5) {
+            strength *= sun_shadow(light, x, vec3<f32>(0.0), 0);
+        } else {
+            strength *= local_shadow(light, x, vec3<f32>(0.0), 0);
+        }
+    }
+    // Looking straight at a light, its light travels back along the view.
+    return light.color.rgb * strength * phase(dot(travel, -dir));
+}
+
+// Light shafts' froxel volume (volume.rs): per screen cell and depth slice, the light the
+// fog scatters towards the camera from the eye out to that slice. Slices are spaced by
+// the square of their index out to the reach (fine nearby, where shafts are big on screen).
+@group(3) @binding(0) var volume: texture_3d<f32>;
+@group(3) @binding(2) var volume_samp: sampler;
+@group(3) @binding(1) var volume_out: texture_storage_3d<rgba16float, write>;
+
+
+// How far along the view ray slice `w` (0..1 across the slices) reaches.
+fn slice_distance(w: f32) -> f32 {
+    return g.fog_volume.w * w * w;
+}
+
+// Every light that lights fog, scattering at `x` back along the view ray `dir`.
+fn scattered_all(x: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     let count = u32(g.ambient.w);
-    for (var i = 0u; i < count; i++) {
-        let light = lights[i];
-        var strength = light.color.w;
-        if (strength <= 0.0) {
-            continue;
+    for (var l = 0u; l < count; l++) {
+        let light = lights[l];
+        if (light.color.w > 0.0) {
+            sum += scattered(light, x, dir);
         }
-        // Which way its light travels at `x`.
-        var travel: vec3<f32>;
-        if (light.position.w < 0.5) {
-            travel = normalize(light.direction.xyz);
-        } else {
-            let from_light = x - light.position.xyz;
-            let d = length(from_light);
-            travel = from_light / max(d, 1e-4);
-            // As on surfaces: zero at the range.
-            let r = clamp(d / max(light.direction.w, 1e-4), 0.0, 1.0);
-            let fade = 1.0 - r * r * r * r;
-            strength *= fade * fade / (1.0 + d * d);
-            if (light.position.w > 1.5) {
-                strength *= smoothstep(light.spot.y, light.spot.x, dot(travel, normalize(light.direction.xyz)));
-            }
-        }
-        if (strength <= 0.0) {
-            continue;
-        }
-        if (light.shadow.x >= 0.0) {
-            if (light.position.w < 0.5) {
-                strength *= sun_shadow(light, x, vec3<f32>(0.0), 0);
-            } else {
-                strength *= local_shadow(light, x, vec3<f32>(0.0), 0);
-            }
-        }
-        // Looking straight at a light, its light travels back along the view.
-        sum += light.color.rgb * strength * phase(dot(travel, -dir));
     }
     return sum;
 }
 
-// Light the fog between the camera and `p` sends to the camera: the view ray marched in
-// steps out to the reach, each step's share of the fog lit as `scattered` finds it at a
-// jittered point; the fog beyond the reach is lit as at its middle.
+// Fills one column of the volume: the view ray through this screen cell, its fog's share
+// in each sub-step lit as `scattered_all` finds it at the sub-step's middle, added up; each
+// slice stores the total out to its centre.
+@compute @workgroup_size(8, 8, 1)
+fn cs_volume(@builtin(global_invocation_id) id: vec3<u32>) {
+    let size = textureDimensions(volume_out);
+    if (id.x >= size.x || id.y >= size.y) {
+        return;
+    }
+    let uv = (vec2<f32>(id.xy) + 0.5) / vec2<f32>(size.xy);
+    let far4 = g.inv_view_proj * vec4<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 1.0, 1.0);
+    let far = far4.xyz / far4.w;
+    let eye = fog_eye(far);
+    let dir = normalize(far - eye);
+    let slices = i32(size.z);
+    // Samples per slice: more keep a thin cone near its tip sampled.
+    let substeps = i32(g.fog_volume.z);
+    var t = 0.0;
+    var clear = 1.0;
+    var sum = vec3<f32>(0.0);
+    for (var k = 0; k < slices; k++) {
+        let end = slice_distance((f32(k) + 0.5) / f32(slices));
+        let step = (end - t) / f32(substeps);
+        for (var i = 0; i < substeps; i++) {
+            let next = fog_clear(eye + dir * (t + step), true);
+            sum += (clear - next) * scattered_all(eye + dir * (t + 0.5 * step), dir);
+            clear = next;
+            t += step;
+        }
+        textureStore(volume_out, vec3<i32>(i32(id.x), i32(id.y), k), vec4<f32>(sum, 1.0));
+    }
+}
+
+// Light the fog between the camera and `p` (pixel `px`) sends to the camera: the volume
+// at `p`, plus, past its last slice, the sun lighting the rest of the fog as at its middle.
+// The fog's colour tints it (its albedo).
 fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
     let eye = fog_eye(p);
     let len = length(p - eye);
@@ -305,22 +350,23 @@ fn shafts(p: vec3<f32>, px: vec2<f32>, distance: bool) -> vec3<f32> {
         return vec3<f32>(0.0);
     }
     let dir = (p - eye) / len;
-    let reach = min(len, g.fog_volume.w);
-    let steps = i32(g.fog_volume.z);
-    let step = reach / f32(steps);
-    let j = jitter(px);
-    var clear = 1.0;
-    var sum = vec3<f32>(0.0);
-    for (var i = 0; i < steps; i++) {
-        let next = fog_clear(eye + dir * (step * f32(i + 1)), distance);
-        sum += (clear - next) * scattered(eye + dir * (step * (f32(i) + j)), dir);
-        clear = next;
+    let slices = f32(textureDimensions(volume).z);
+    let last = slice_distance((slices - 0.5) / slices);
+    let uv = (px - g.viewport.xy) / g.viewport.zw;
+    let w = sqrt(min(len, last) / g.fog_volume.w);
+    var sum = textureSampleLevel(volume, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+    if (len > last) {
+        let rest = fog_clear(eye + dir * last, distance) - fog_clear(p, distance);
+        let x = eye + dir * (0.5 * (last + len));
+        let count = u32(g.ambient.w);
+        for (var l = 0u; l < count; l++) {
+            let light = lights[l];
+            if (light.color.w > 0.0 && light.position.w < 0.5) {
+                sum += rest * scattered(light, x, dir);
+            }
+        }
     }
-    if (len > reach) {
-        let rest = clear - fog_clear(p, distance);
-        sum += rest * scattered(eye + dir * (0.5 * (reach + len)), dir);
-    }
-    return sum * g.fog_volume.x;
+    return sum * g.fog.rgb * g.fog_volume.x;
 }
 
 // A camera's background over its viewport, at the far plane: it clears colour and

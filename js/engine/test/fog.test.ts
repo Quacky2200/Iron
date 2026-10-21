@@ -50,8 +50,8 @@ describe("fog", () => {
     RenderSettings.heightFog = { density: 0.1, baseHeight: -2, falloff: 0.5 };
     expect(fogOps().at(-1)![7]).toEqual([0.1, -2, 0.5]);
     // Light shafts too, with defaults for what's left out (M7-FOG-05).
-    RenderSettings.volumetricFog = { steps: 24 };
-    expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 24, 50]);
+    RenderSettings.volumetricFog = { steps: 8 };
+    expect(fogOps().at(-1)![8]).toEqual([1, 0.4, 8, 50]);
     RenderSettings.fog = false;
     expect(fogOps().at(-1)).toEqual(["render.fog", 0, null]);
   });

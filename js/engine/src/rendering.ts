@@ -1227,18 +1227,19 @@ let heightFog: HeightFogSettings | null = null;
 
 /**
  * Light shafts (volumetric fog): lights shining through the fog light it up, cut by their
- * shadows, so the sun shows in beams through gaps and spot lights as cones. Every field is
- * optional. It costs a march along each pixel's view ray with a shadow lookup per light
- * per step; lights opt out with `Light.volumetricIntensity = 0`.
+ * shadows, so the sun shows in beams through gaps and spot lights as cones, tinted by
+ * `fogColor`. Every field is optional. A froxel volume over each camera's view (160 × 90
+ * cells, 64 depth slices) is filled once a frame, with a shadow lookup per light per
+ * sample; lights opt out with `Light.volumetricIntensity = 0`.
  */
 export interface VolumetricFogSettings {
   /** Scales the scattered light (1 by default). */
   intensity?: number;
   /** -1 to 1: positive scatters forward, so looking towards a light shows more (0.4). */
   anisotropy?: number;
-  /** Samples along each ray, 1 to 64 (16). */
+  /** Samples per depth slice, 1 to 16 (4): more keep thin cones sampled. */
   steps?: number;
-  /** How far the march reaches in metres (50); fog beyond counts as lit. */
+  /** How far the volume reaches in metres (50); fog beyond counts as lit by the sun. */
   distance?: number;
 }
 
@@ -1251,7 +1252,7 @@ function sendFog(): void {
   }
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
   const v = volumetricFog;
-  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 16, v.distance ?? 50] : null;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50] : null;
   __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts);
 }
 

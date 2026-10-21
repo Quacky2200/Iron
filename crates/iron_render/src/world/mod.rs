@@ -18,6 +18,7 @@ pub mod mesh;
 mod shadows;
 pub mod texture;
 mod upscale;
+mod volume;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -540,9 +541,10 @@ pub struct Fog {
 }
 
 /// Light scattered by the fog towards the camera, cut by shadows: shafts where the sun
-/// comes through gaps, cones under spot lights. Each fragment marches its view ray in
-/// `steps` (jittered per pixel) out to `distance`, sampling every light's (hard) shadow
-/// map; the fog beyond that counts as lit.
+/// comes through gaps, cones under spot lights. A froxel volume over the view (screen cells
+/// by depth slices out to `distance`) adds it up once per view, sampling every light's
+/// (hard) shadow map `steps` times per slice; draws read it smoothly filtered. The fog
+/// beyond `distance` counts as lit by the sun.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VolumetricFog {
     /// Scales the scattered light (1: fog lit as brightly as a white surface would be).
@@ -550,9 +552,9 @@ pub struct VolumetricFog {
     /// -1 to 1: positive scatters forward, so looking towards a light shows more (the
     /// Henyey-Greenstein `g`).
     pub anisotropy: f32,
-    /// Samples along each ray (1 to 64).
+    /// Samples per depth slice (1 to 16): more keep thin cones sampled.
     pub steps: u32,
-    /// How far the march reaches, in metres.
+    /// How far the volume reaches, in metres.
     pub distance: f32,
 }
 
@@ -561,7 +563,7 @@ impl Default for VolumetricFog {
         Self {
             intensity: 1.0,
             anisotropy: 0.4,
-            steps: 16,
+            steps: 4,
             distance: 50.0,
         }
     }
@@ -792,7 +794,8 @@ struct GpuGlobals {
     view_dir: [f32; 4],
     /// Height fog: x density, y base height, z falloff, w 1 when on.
     fog_height: [f32; 4],
-    /// Light shafts: x intensity, y anisotropy, z steps, w the march's reach (0: off).
+    /// Light shafts: x intensity, y anisotropy, z samples per slice, w the volume's reach
+    /// (0: off).
     fog_volume: [f32; 4],
 }
 
@@ -816,7 +819,7 @@ impl GpuGlobals {
             self.fog_volume = [
                 v.intensity.max(0.0),
                 v.anisotropy.clamp(-0.95, 0.95),
-                v.steps.clamp(1, 64) as f32,
+                v.steps.clamp(1, 16) as f32,
                 v.distance.max(1e-3),
             ];
         }
@@ -939,6 +942,8 @@ pub struct WorldRenderer {
     pub msaa: u32,
     globals_layout: wgpu::BindGroupLayout,
     shadow_layout: wgpu::BindGroupLayout,
+    /// Light shafts' froxel volumes, one per view.
+    volume: volume::VolumePass,
     shadow_sampler: wgpu::Sampler,
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_cutout_pipeline: wgpu::RenderPipeline,
@@ -1104,7 +1109,9 @@ impl WorldRenderer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    // The fog volume's compute pass reads it too.
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT
+                        .union(wgpu::ShaderStages::COMPUTE),
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
@@ -1116,7 +1123,10 @@ impl WorldRenderer {
                 },
                 storage_entry(1, wgpu::ShaderStages::VERTEX),
                 storage_entry(2, wgpu::ShaderStages::VERTEX_FRAGMENT),
-                storage_entry(3, wgpu::ShaderStages::FRAGMENT),
+                storage_entry(
+                    3,
+                    wgpu::ShaderStages::FRAGMENT.union(wgpu::ShaderStages::COMPUTE),
+                ),
                 // Skinned meshes' bone matrices.
                 storage_entry(4, wgpu::ShaderStages::VERTEX),
             ],
@@ -1152,13 +1162,15 @@ impl WorldRenderer {
                 texture_entry(7),
             ],
         });
+        // Shadows and lights reach the fog volume's compute pass too.
+        let lit = wgpu::ShaderStages::FRAGMENT.union(wgpu::ShaderStages::COMPUTE);
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("world shadows"),
             entries: &[
                 // The sun's cascades.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -1169,7 +1181,7 @@ impl WorldRenderer {
                 // Spot and point lights' maps.
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -1178,17 +1190,17 @@ impl WorldRenderer {
                     count: None,
                 },
                 // Their matrices.
-                storage_entry(5, wgpu::ShaderStages::FRAGMENT),
+                storage_entry(5, lit),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
                 // The environment cube, for reflections, sky light and the skybox.
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::Cube,
@@ -1198,18 +1210,20 @@ impl WorldRenderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: lit,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
+        let volume = volume::VolumePass::new(device, &module, &globals_layout, &shadow_layout);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("world"),
             bind_group_layouts: &[
                 Some(&globals_layout),
                 Some(&texture_layout),
                 Some(&shadow_layout),
+                Some(&volume.read_layout),
             ],
             immediate_size: 0,
         });
@@ -1406,6 +1420,7 @@ impl WorldRenderer {
             sky: None,
             sky_dirty: false,
             reflection_targets: Vec::new(),
+            volume,
             env_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("environment"),
                 mag_filter: wgpu::FilterMode::Linear,
@@ -3357,6 +3372,23 @@ impl WorldRenderer {
             .map(|(id, map)| (*id, lighting_group(&map.cube)))
             .collect();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        // Views with light shafts fill their fog volumes first.
+        let volume_groups: Vec<Option<wgpu::BindGroup>> = views
+            .iter()
+            .enumerate()
+            .map(|(i, view)| {
+                view.fog.and_then(|f| f.volumetric).map(|_| {
+                    self.volume.encode(
+                        gpu,
+                        &mut encoder,
+                        i,
+                        &globals_groups[i],
+                        (self.stride * i as u64) as u32,
+                        &shadow_group,
+                    )
+                })
+            })
+            .collect();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("world"),
@@ -3400,6 +3432,11 @@ impl WorldRenderer {
                 pass.set_bind_group(0, &globals_groups[i], &[(self.stride * i as u64) as u32]);
                 pass.set_bind_group(1, plain, &[]);
                 pass.set_bind_group(2, &shadow_group, &[]);
+                pass.set_bind_group(
+                    3,
+                    volume_groups[i].as_ref().unwrap_or(self.volume.empty()),
+                    &[],
+                );
                 pass.set_pipeline(&pipelines.fill);
                 pass.draw(0..3, 0..1);
 

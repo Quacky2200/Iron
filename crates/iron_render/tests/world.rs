@@ -2955,7 +2955,7 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
     let rects = [[0.0, 0.0, 0.5, 1.0], [0.5, 0.0, 0.5, 1.0]];
     let fog = Fog {
         mode: FogMode::Exponential,
-        color: [0.01, 0.012, 0.02],
+        color: [0.2, 0.21, 0.24],
         density: 0.06,
         ..Default::default()
     };
@@ -2982,8 +2982,7 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
             v.lights = vec![sun];
             v.fog = Some(Fog {
                 volumetric: (k == 1).then(|| VolumetricFog {
-                    intensity: 0.35,
-                    steps: 32,
+                    intensity: 1.0,
                     distance: 30.0,
                     ..Default::default()
                 }),

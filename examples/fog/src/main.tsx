@@ -2,7 +2,7 @@
 // trees, so light shafts cross the clearing; a lamp post's spot light makes a cone in the
 // mist; height fog lies in the valley and swallows the horizon. The camera drifts slowly.
 // The menu (or keys) switches the distance fog's mode (F), height fog (H), light shafts (L)
-// and the shafts' step count (Q).
+// and the shafts' samples per slice (Q).
 import {
   Camera,
   Color,
@@ -25,7 +25,7 @@ import { useState } from "react";
 
 const MIST = new Color(0.3, 0.33, 0.4, 1);
 const MODES: (FogMode | "off")[] = ["exponentialSquared", "exponential", "linear", "off"];
-const STEPS = [16, 32, 8];
+const STEPS = [4, 8, 1];
 
 /** What the menu shows and changes; `apply` sends it to `RenderSettings`. */
 const state = { mode: MODES[0]!, height: true, shafts: true, steps: STEPS[0]! };
@@ -38,7 +38,7 @@ function apply(): void {
   RenderSettings.fogEndDistance = 70;
   if (state.mode !== "off") RenderSettings.fogMode = state.mode;
   RenderSettings.heightFog = state.height ? { density: 0.05, baseHeight: 0, falloff: 0.35 } : null;
-  RenderSettings.volumetricFog = state.shafts ? { intensity: 0.25, anisotropy: 0.3, steps: state.steps, distance: 45 } : null;
+  RenderSettings.volumetricFog = state.shafts ? { intensity: 0.6, anisotropy: 0.3, steps: state.steps, distance: 45 } : null;
   // Height fog and shafts ride on the fog: with the distance fog "off", keep the fog on
   // with no density so they still show.
   RenderSettings.fog = state.mode !== "off" || state.height || state.shafts;
@@ -101,11 +101,12 @@ class Clearing extends Component {
     // A lamp post by the path, its spot light a cone in the mist.
     const iron = Material.create({ color: new Color(0.1, 0.1, 0.11, 1), metallic: 0.8, smoothness: 0.5 });
     shape("Post", "cylinder", new Vector3(6.5, 2, 7), new Vector3(0.15, 2, 0.15), iron);
-    // The head hangs off an arm, the light just under its globe (inside, the globe and post
-    // would shadow it).
+    // The head hangs off an arm, the light inside its globe (which casts no shadow, or it
+    // would hide the light).
     shape("Arm", "cube", new Vector3(6.9, 4, 7), new Vector3(0.9, 0.08, 0.08), iron);
-    shape("Lamp", "sphere", new Vector3(7.3, 3.85, 7), Vector3.one.scale(0.3), Material.create({ color: Color.black, emission: new Color(4, 3.2, 2, 1), unlit: true }));
-    const lamp = new GameObject("Lamp light", { position: new Vector3(7.3, 3.6, 7), rotation: Quaternion.lookRotation(Vector3.down, Vector3.forward) });
+    const globe = shape("Lamp", "sphere", new Vector3(7.3, 3.85, 7), Vector3.one.scale(0.3), Material.create({ color: Color.black, emission: new Color(4, 3.2, 2, 1), unlit: true }));
+    globe.getComponent(MeshRenderer)!.shadowCastingMode = "off";
+    const lamp = new GameObject("Lamp light", { position: new Vector3(7.3, 3.85, 7), rotation: Quaternion.lookRotation(Vector3.down, Vector3.forward) });
     lamp.addComponent(Light, { type: "spot", color: new Color(1, 0.8, 0.55, 1), intensity: 80, range: 10, spotAngle: 50, shadows: "hard", volumetricIntensity: 3 });
 
     const eye = new GameObject("Main Camera", { position: new Vector3(0, 2.2, 20) });
@@ -168,7 +169,7 @@ function Menu() {
         <Button label="Distance fog" value={MODE_NAMES[state.mode]!} on={state.mode !== "off"} keyName="F" onClick={cycleMode} />
         <Button label="Height fog" value={state.height ? "On" : "Off"} on={state.height} keyName="H" onClick={() => toggle("height")} />
         <Button label="Light shafts" value={state.shafts ? "On" : "Off"} on={state.shafts} keyName="L" onClick={() => toggle("shafts")} />
-        <Button label="Shaft steps" value={`${state.steps} per pixel`} on={state.shafts} keyName="Q" onClick={cycleSteps} />
+        <Button label="Shaft samples" value={`${state.steps} per slice`} on={state.shafts} keyName="Q" onClick={cycleSteps} />
       </box>
     </box>
   );
