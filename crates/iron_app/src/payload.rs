@@ -1,6 +1,8 @@
 //! A single-file game: when this executable carries a payload (`iron-build package`, format in
-//! `iron_core::payload`), the game's files are extracted once to a per-user cache folder and
-//! the game runs from there, as if it had been started with that folder.
+//! `iron_core::payload`), the game's *code* (bundle, CSS, `package.json`, icon, and a few tiny
+//! essentials) is extracted once to a per-user cache folder and the game runs from there.
+//! The assets are not in the payload: they are the `data/` folder beside the exe
+//! (`asset_root.rs` finds it).
 //!
 //! Why a folder and not an in-memory file system: textures, models, sounds, fonts, scenes
 //! and CSS are read from disk in over a hundred places (and by the asset watcher and the

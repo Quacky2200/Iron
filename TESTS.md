@@ -1303,16 +1303,26 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1005 | Unit | A payload followed by padding and an Authenticode certificate table (synthetic PE32+ header) is found before the certificate. |
 | M9-API-1010 | Unit | `iron_app::payload::prepare` of an exe without a payload gives `None` (the plain host starts normally). |
 | M9-API-1011 | Unit | The payload is extracted once into a cache folder (marker file, second start reuses it), a new build gets a new folder and the old one is removed, another game's folder stays. |
+| M9-API-1200 | Unit | The packaged game's data folder is `--data`, else `$IRON_DATA`, else `<exe dir>/<dataDir>` (`iron_app/src/asset_root.rs`); an empty variable is ignored. |
+| M9-API-1201 | Unit | A `--data` or `$IRON_DATA` that names a missing folder is an error naming the flag or variable, not a fallback. |
+| M9-API-1202 | Unit | No data folder for a game that needs one is an error naming the folder looked for (`iron.dataDir`), `--data` and `IRON_DATA`. |
+| M9-API-1203 | Unit | A game with `iron.dataRequired: false` runs from the extracted folder without a data folder; a payload without the field needs one. |
+| M9-API-1204 | Unit | CSS `url()`s rebase onto the code folder (`css_base`); `AssetRoot::resolve` refuses paths outside the root. |
 | M9-TS-2400 | Unit | Package metadata defaults: title, exe, company, version, copyright, description, identifier, icon from `package.json`; the folder name when nothing is given (`iron_build/src/package.rs`). |
 | M9-TS-2401 | Unit | `iron.*` fields override the package.json ones, flags override both; the exe name is made file-name safe and loses `.exe`. |
 | M9-TS-2402 | Unit | The payload's `package.json` carries the resolved version, title and icon entry. |
-| M9-TS-2410 | Unit | File collection takes `dist/` (not `game.o`, `*.exe`, dot files, asset copies), the named assets with `.meta`, `iron.include` or the default `assets` folder, `package.json` and the icon; an unsafe asset path is an error. |
+| M9-TS-2410 | Unit | Data collection takes the other `dist/` files (CSS references; not the bundle, `game.o`, `*.exe`, dot files, asset copies, the output's own data folder), the named assets with `.meta`, `iron.include` or the default `assets` folder; an unsafe asset path is an error. |
 | M9-TS-2411 | Unit | `1.2.3`, `2.0.0-beta.1+x`, `1.2.3.4`, `junk` become four-part Windows versions. |
 | M9-TS-2412 | Integration | `package` with a stand-in host writes one file whose payload holds the bundle, assets, rewritten package.json and icon, whose PE resources carry the version and a four-size icon, and on which `--sign-cmd` ran; packaging a packaged file replaces its payload. |
 | M9-TS-2420 | Unit | A PNG becomes an `.ico` with 16, 32, 48 and 256 px images that decodes (`iron_build/src/icon.rs`). |
 | M9-TS-2421 | Unit | A non-square image is centred on a square; an `.ico` passes through unchanged; garbage is an error. |
 | M9-TS-2430 | Unit | Version info (ProductName, CompanyName, FileDescription, LegalCopyright, FileVersion, ProductVersion, OriginalFilename, 1.2.3.0 numbers) and the four icon sizes written into a PE file read back, and a payload appended after the edit is found (Windows; `iron_build/src/pe.rs`). |
 | M9-TS-2440 | Manual | `cargo test -p iron_build -- --ignored standalone` (needs a built `iron_app`, GPU): packages `examples/hello`, deletes the game folder and runs the exe from another folder with `--screenshot out.png --frames 5`. Checked by eye for hello (a log-only game, background colour) and boxes (the stripes image from `assets/` shows). |
+| M9-TS-2600 | Unit | The payload holds `dist/game.irbundle`, `dist/game.css`, `package.json`, the icon and the bundle-named assets only while those total at most 256 KiB (exactly at the limit: embedded, one byte over: none); `.meta`, unnamed assets and CSS files are never embedded. |
+| M9-TS-2601 | Unit | `iron.dataRequired` is false for a game without assets and for one whose only assets are embedded essentials (a `.meta` does not count); an unnamed file in `assets/` makes it true. |
+| M9-TS-2602 | Unit | `--data-dir` accepts one plain folder name and refuses empty, `.`, `..`, separators, drive letters and dot names. |
+| M9-TS-2603 | Integration | `package` copies the assets to `<out dir>/data/` with the same relative paths (a 300 KiB file byte for byte, `.meta`, scenes, CSS files), the exe's table of contents has none of the large or unnamed ones, `--data-dir` renames the folder and tells the exe, `--no-data` writes no folder, a bad name is an error. |
+| M9-TS-2610 | Manual | `cargo test -p iron_build -- --ignored standalone_data` (needs a built `iron_app`, GPU): `examples/boxes` plus a 300 KiB padding asset packaged, the game folder deleted, run from another folder with `--screenshot` (stripes load from `data/`), then with `data/` deleted: exit code 1 and "data folder was not found". |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
 | M9-API-901 | Unit | The rate rounds to the nearest integer. |
 | M9-API-902 | Unit | `FpsCounter` closes a window once 0.25 s have passed and reports it; 100 FPS over 0.6 s gives two windows of `100 FPS`. |

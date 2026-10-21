@@ -9,6 +9,7 @@
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 pub(crate) mod asset_db;
+mod asset_root;
 mod cloth_sync;
 pub(crate) mod cook;
 mod cursor;
@@ -71,6 +72,11 @@ struct Args {
     cook: bool,
     /// `--fps` / `--no-fps`: the FPS counter on or off, over the defaults.
     fps: Option<bool>,
+    /// `--data <dir>`: where a packaged game's assets are (over `$IRON_DATA` and `data/` beside
+    /// the exe).
+    data: Option<PathBuf>,
+    /// The folder assets are read from when it is not the game folder (a packaged game).
+    asset_root: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -80,7 +86,19 @@ fn parse_args() -> Result<Args> {
         editor::set_project(&args.game);
         args.game = editor::ui_folder();
     } else if let Some(dir) = payload::embedded_game() {
-        // A packaged single-file game runs its own files, whatever the arguments say.
+        // A packaged single-file game runs its own code (extracted from the exe), whatever the
+        // arguments say, and reads its assets from the data folder beside the exe.
+        let exe = std::env::current_exe().ok();
+        let env = std::env::var_os("IRON_DATA");
+        args.asset_root = Some(
+            asset_root::locate_data(&asset_root::DataSearch {
+                flag: args.data.as_deref(),
+                env: env.as_deref(),
+                exe_dir: exe.as_deref().and_then(Path::parent),
+                code_dir: &dir,
+            })
+            .map_err(anyhow::Error::msg)?,
+        );
         args.game = dir;
     }
     Ok(args)
@@ -89,7 +107,7 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps]";
+    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder]";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -98,9 +116,12 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         frames: 60,
         cook: false,
         fps: None,
+        data: None,
+        asset_root: None,
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
+            Some("--data") => parsed.data = Some(args.next().context(usage)?.into()),
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
             Some("--fps") => parsed.fps = Some(true),
@@ -176,7 +197,17 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let (bundle_path, asset_root) = resolve_bundle(&args.game)?;
+    // The code folder (bundle, `package.json`, icon) and the assets' folder: the same for a game
+    // folder, apart for a packaged exe (`--data` also sets it for a folder).
+    let (bundle_path, code_root) = resolve_bundle(&args.game)?;
+    let asset_root = asset_root::AssetRoot::new(
+        args.asset_root
+            .clone()
+            .or_else(|| args.data.clone())
+            .unwrap_or_else(|| code_root.clone()),
+    )
+    .path()
+    .to_path_buf();
     // A compiled (native) game is JIT-compiled below; there is no JavaScript to read.
     let native_bundle = if native::is_native(&bundle_path) {
         Some(native::Bundle::read(&bundle_path)?)
@@ -196,7 +227,7 @@ fn run() -> Result<()> {
 
     // The game's manifest and the machine, for `Application` and `SystemInfo`, before
     // the bundle's top level runs.
-    let manifest = info::Manifest::load(&asset_root);
+    let manifest = info::Manifest::load(&code_root);
     let mut info = info::Info::new(&manifest);
     // The player's saved settings (not for screenshot runs, which stay the same every
     // time) and the window mode: the manifest's default, then the player's choice.
@@ -259,8 +290,8 @@ fn run() -> Result<()> {
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
     let css_path = bundle_path.with_extension("css");
-    let game_css = load_game_css(&mut ui, &asset_root, &css_path);
-    let game_css_source = game_css_source(&asset_root, &css_path);
+    let game_css = load_game_css(&mut ui, &asset_root, &code_root, &css_path);
+    let game_css_source = game_css_source(&code_root, &css_path);
     let native = match native_bundle {
         Some(bundle) => {
             native_render::configure_engine(&asset_root);
@@ -350,6 +381,7 @@ fn run() -> Result<()> {
         ime_allowed: false,
         ime_area: None,
         asset_root,
+        code_root: code_root.clone(),
         gfx: None,
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
@@ -373,7 +405,7 @@ fn run() -> Result<()> {
     let icon = manifest
         .icon
         .as_deref()
-        .and_then(|path| info::load_icon(&app.asset_root, path));
+        .and_then(|path| info::load_icon(&code_root, path));
     // A window opens at the saved window size; fullscreen modes are applied once it exists.
     let (width, height) = (
         display_settings.window_width,
@@ -502,7 +534,10 @@ struct App {
     /// `components` stay empty).
     native: Option<native::Native>,
     ui: UiTree,
+    /// Where textures, models, sounds, fonts and scenes are read from.
     asset_root: PathBuf,
+    /// Where the game's code, `package.json` and CSS are (the asset root, except in a packaged exe).
+    code_root: PathBuf,
     gfx: Option<Gfx>,
     started: Instant,
     clock: lifecycle::FixedClock,
@@ -741,8 +776,8 @@ impl App {
     /// The CSS Bun wrote next to the bundle, applied again.
     fn reload_game_css(&mut self) {
         let css_path = self.bundle_path.with_extension("css");
-        self.game_css = load_game_css(&mut self.ui, &self.asset_root, &css_path);
-        self.sheet_sources = game_css_source(&self.asset_root, &css_path)
+        self.game_css = load_game_css(&mut self.ui, &self.asset_root, &self.code_root, &css_path);
+        self.sheet_sources = game_css_source(&self.code_root, &css_path)
             .into_iter()
             .collect();
     }
@@ -2499,13 +2534,9 @@ enum Surface {
 const GAME_CSS: u32 = u32::MAX;
 
 /// `game.css` as a stylesheet source for panel trees.
-fn game_css_source(root: &Path, css_path: &Path) -> Option<(u32, String, String, String)> {
+fn game_css_source(code_root: &Path, css_path: &Path) -> Option<(u32, String, String, String)> {
     let css = std::fs::read_to_string(css_path).ok()?;
-    let base = css_path
-        .parent()
-        .and_then(|dir| dir.strip_prefix(root).ok())
-        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_default();
+    let base = asset_root::css_base(code_root, css_path);
     Some((GAME_CSS, css, base, css_path.display().to_string()))
 }
 
@@ -2570,13 +2601,10 @@ fn load_bundles(
     }
 }
 
-fn load_game_css(ui: &mut UiTree, root: &Path, css_path: &Path) -> Option<u32> {
+/// `root` is where its `url()`s and `@import`s resolve; the CSS file itself is in `code_root`.
+fn load_game_css(ui: &mut UiTree, root: &Path, code_root: &Path, css_path: &Path) -> Option<u32> {
     let css = std::fs::read_to_string(css_path).ok()?;
-    let base = css_path
-        .parent()
-        .and_then(|dir| dir.strip_prefix(root).ok())
-        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_default();
+    let base = asset_root::css_base(code_root, css_path);
     let id = add_stylesheet(ui, root, &css, &base, &css_path.display().to_string());
     tracing::info!("loaded stylesheet {}", css_path.display());
     Some(id)

@@ -129,12 +129,27 @@ bundle is untouched). Hot reload keeps state the way the QuickJS reload does (sc
 ```
 iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
     [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d]
-    [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"]
+    [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"] [--data-dir name] [--no-data]
 ```
 
 It builds the game (unless `--no-build`), then writes `<game>/dist/<exe>.exe` (no extension on other systems): a copy of the
 engine host (`iron_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's
-**files appended as a payload**. The result runs from any folder with no loose files; `iron_app <game folder>` is unchanged.
+**code appended as a payload**, and copies the **assets into a `data/` folder beside it**. Assets are never embedded: games have
+gigabytes of them. The result runs from any folder as long as `data/` is next to it; `iron_app <game folder>` is unchanged.
+
+```
+dist/                      (or the folder of --out)
+  mygame.exe               engine host + icon + version info + payload (code only, a few hundred KiB over the host)
+  data/                    --data-dir <name> renames it; --no-data does not write it
+    assets/...             the same relative paths as in the game folder (textures, models, sounds, fonts, `.meta`)
+    scenes/...             the start scene and everything else the game names
+    dist/<font>.ttf        the files the CSS references (hashed fonts and images)
+```
+
+The command prints the exe size, the number and size of the embedded files, and the number and total size of the copied asset
+files. `--data-dir <name>` is one plain folder name (no separators, not hidden); the exe is told the name (`iron.dataDir` in its
+payload's `package.json`). `--no-data` is for a build that packs the assets itself: nothing is copied, the exe still looks for the
+folder (or `--data` / `$IRON_DATA`). Nothing is deleted from an existing data folder; files with the same path are overwritten.
 
 **The host** is `--host`, else `$IRON_HOST`, else the newest of `iron_app` next to `iron-build` and `target/{release,debug}/iron_app`
 found going up from the game folder and the current folder (release first). A host that already carries a payload is stripped first, so
@@ -169,16 +184,26 @@ toc:     count u32; per entry: path_len u16, path, offset u64, stored_len u64, r
 
 Entries are deflate-compressed (`flate2`, stored when it does not help or under 64 bytes); every one has a CRC-32 that is checked on
 read. Paths are relative, `/` separated and checked (`payload::safe_path`: no `..`, empty or `.` parts, drive letters, backslashes);
-a table with an unsafe path is refused. What goes in (paths relative to the game folder, so the extracted folder looks like the game
-folder):
+a table with an unsafe path is refused. **What goes in** (paths relative to the game folder):
 
-- `dist/`: `game.irbundle`, `game.css`, the files the CSS references (hashed fonts and images). Not `game.o`, `game_bindings.rs`,
-  `*.exe` or dot files.
-- Every asset the bundle names (`assets` in `game.irbundle`), `iron.startScene`, and everything under `iron.include` (a list of
-  files or folders; **default `["assets"]`**, the whole folder, because the build finds assets only by string literals and misses
-  paths built at run time or named inside CSS text), each with its `.meta`. The game folder's copy is used, not `dist/`'s.
+- `dist/game.irbundle` and `dist/game.css` (CSS with its small `data:` URLs inlined by the build).
 - `package.json`, rewritten with the resolved metadata (so `Application`, the window, the icon and the settings folder agree with
-  the exe's version info), and `iron-icon.*`.
+  the exe's version info) plus `iron.dataDir` (the folder name) and `iron.dataRequired` (see below), and `iron-icon.*`.
+- **Essentials**: the assets the bundle itself names (`assets` in `game.irbundle`, no `.meta`), but **only if together they are at
+  most 256 KiB** (`ESSENTIALS_LIMIT`, all or none: one byte over and none is embedded). A large file is never embedded.
+
+Everything else is **not** in the exe: textures, models, sounds, fonts, scene files, `.meta` files. Those are the **data files**,
+copied to `data/` with the same relative paths:
+
+- every asset the bundle names, `iron.startScene`, and everything under `iron.include` (a list of files or folders; **default
+  `["assets"]`**, the whole folder, because the build finds assets only by string literals and misses paths built at run time or
+  named inside CSS text; `iron.include` still means "also copy these"), each with its `.meta`. The game folder's copy is used, not
+  `dist/`'s;
+- the other files of `dist/` (hashed fonts and images the CSS references), as `data/dist/...`. Not `game.o`,
+  `game_bindings.rs`, `*.exe`, `game.js`, `vendor.js`, source maps, dot files or the output's own data folder.
+
+`iron.dataRequired` is **false** when the game has no data files (hello) or when the embedded essentials are all of them (a `.meta`
+file does not count): such a game also starts without a `data/` folder. Otherwise it is true.
 
 **How the exe finds its payload.** At startup `iron_app` (`payload.rs`, called from `parse_args` in `main.rs`; not in `iron_editor`)
 opens its own executable and looks for the trailer at the end of the file (a plain `iron_app` has none: `Ok(None)`, normal start). If
@@ -186,13 +211,29 @@ the file is a signed PE it also looks right before the Authenticode certificate 
 survives signing. The payload's table of contents is hashed into an id; the files are extracted once into
 `<per-user cache>/Iron/games/<exe name>-<id>/` (`%LOCALAPPDATA%`, `~/Library/Caches`, `$XDG_CACHE_HOME` or `~/.cache`) beside a
 `.iron-extracted` marker (extracted to a temporary folder and renamed, so a crash or a second instance never sees half a game), and
-the game runs with that folder as its game folder: `--screenshot` and `--frames` still apply, any folder argument is ignored. A new
-build has a new id, extracts again and removes the older folders of the same exe name. An unchanged game starts at once.
+the game runs with that folder as its **code folder** (bundle, CSS, `package.json`, icon): `--screenshot` and `--frames` still apply,
+any folder argument is ignored. A new build has a new id, extracts again and removes the older folders of the same exe name. An
+unchanged game starts at once. The extracted folder is small (code only), so a second copy costs almost nothing.
 
-*Why a cache folder and not an in-memory file system:* about a hundred places in `iron_app`, `iron_render` and `iron_audio` read
-textures, models, sounds, fonts, scenes and CSS from disk (and the asset watcher and the cooker walk the folder). One real folder keeps
-every one of them unchanged; the costs are the first-start extraction (a few
-files, milliseconds) and the disk space of a second copy. An in-memory layer under `resolve_asset` stays possible later.
+**Where the assets are read from.** The *asset root* (`crates/iron_app/src/asset_root.rs`, `AssetRoot`, `locate_data`) is separate
+from the code folder; a game folder run has the same folder for both, as before. For a packaged exe the first of these that exists:
+
+1. `--data <folder>` on the command line (an error if it is not a folder),
+2. `$IRON_DATA` (same),
+3. `<folder of the exe>/<iron.dataDir>` (default `data`),
+4. the extracted code folder, but only if `iron.dataRequired` is false (the essentials are there; hello needs nothing).
+
+Otherwise the program stops with an error that names the folder it looked for and the two overrides, e.g. "the game's data folder
+was not found (looked for `C:\Games\mygame\data`). Put the `data` folder that `iron-build package` wrote beside the program, or
+pass --data <folder> or set IRON_DATA." (to the log and stderr; the exe is a GUI program, so start it from a terminal to see it).
+Textures, models, sounds, fonts, scenes, `url()`s and `@import`s in the CSS (rebased onto the CSS file's place in the code folder, so
+`dist/font.ttf` is found as `data/dist/font.ttf`), GUID `.meta` files and the asset watcher all use the asset root. `Application`,
+the window title and icon and the PlayerPrefs folder come from the code folder's `package.json` (the identifier), not from the data.
+
+*Why a folder and not an in-memory file system:* about a hundred places in `iron_app`, `iron_render` and `iron_audio` read
+textures, models, sounds, fonts, scenes and CSS from disk (and the asset watcher and the cooker walk the folder). One real folder
+(now `data/`) keeps every one of them unchanged. `AssetRoot` is the seam where asset packs (`docs/research/iron-asset-packs.md`)
+will mount later; they are not built yet.
 
 `--sign-cmd "<command>"` runs after the file is complete: `{exe}` is replaced by the quoted path and the command goes through
 `cmd /S /C` (Windows) or `sh -c`. A failing command fails the package. Nothing is signed by Iron itself; see
@@ -227,7 +268,9 @@ Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--a
 `M9-API-1000..1005` the payload format (round trip, no trailer, unsafe paths, damage and duplicates, extraction and id, a payload before
 a certificate table), `M9-API-1010..1011` the runtime side (`iron_app/src/payload.rs`), `M9-TS-2400..2402` metadata, `2410..2412` file
 collection and a full package with the sign hook, `2420..2421` icon conversion, `2430` the PE resource round trip, `2440` (ignored
-unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built host and a GPU) the standalone run.
+unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built host and a GPU) the standalone run,
+`M9-API-1200..1204` the asset root (`iron_app/src/asset_root.rs`), `M9-TS-2600..2603` the payload/data split, the data-folder name and
+`--data-dir` / `--no-data`, `2610` (ignored, `-- --ignored standalone_data`) a packaged game reading `data/` and the missing-folder error.
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
 full build, `1860..1861` the dev status file and the change fingerprint. `bun run check:examples` (`iron-build check examples`)
