@@ -176,6 +176,7 @@ export { Gizmos } from "./gizmos.ts";
 export { createPrimitive, PrimitiveType } from "./primitives.ts";
 export { type FullScreenMode, type Resolution, Screen } from "./screen.ts";
 export { PlayerPrefs } from "./prefs.ts";
+export { Window, type WindowOptions, type WindowStatic, type WindowStyle } from "./window.ts";
 export {
   Component,
   type ComponentClass,

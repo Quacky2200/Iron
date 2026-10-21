@@ -14667,10 +14667,10 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/quality.ts
   var DEFAULT_LEVELS = [
-    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
-    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 }
+    { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 0, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1 },
+    { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+    { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0 },
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 0, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0 }
   ];
   var manifest = () => {
     const q = globalThis.__iron_info?.app?.quality;
@@ -14717,7 +14717,7 @@ ${err.stack}` : ""}`);
       const i = levels.findIndex((l) => l.name === saved.level);
       if (i >= 0)
         levelIndex = i;
-      current = { ...levels[levelIndex], ...saved.current, name: levels[levelIndex].name };
+      current = { ...levels[levelIndex], ...saved.current, vSyncCount: levels[levelIndex].vSyncCount, name: levels[levelIndex].name };
     }
     restoring = true;
     try {
@@ -16110,6 +16110,8 @@ ${err.stack}` : ""}`);
     return go;
   }
   setPrimitiveFactory(createPrimitive);
+  // ../../js/engine/src/window.ts
+  var Window = globalThis.Window;
 
   // ../../js/engine/src/index.ts
   function op(name, ...args) {
@@ -16836,13 +16838,30 @@ ${err.stack}` : ""}`);
     console.error(`[react] ${kind}: ${e.message}${e.stack ? `
 ${e.stack}` : ""}`);
   };
+  var WINDOW_TARGET = 1073741824;
+  function targetId(target) {
+    if (typeof target === "number")
+      return target;
+    if (target === undefined)
+      return 0;
+    if ("id" in target)
+      return target.id;
+    return target.handle === 1 ? 0 : WINDOW_TARGET | target.handle;
+  }
+  function rootError(id) {
+    if (id === 0)
+      return "createRoot() can only be called once per game";
+    if (id >= WINDOW_TARGET)
+      return `window ${id - WINDOW_TARGET} already has a root`;
+    return `panel ${id} already has a root`;
+  }
   function createRoot(target) {
-    const id = typeof target === "number" ? target : target?.id ?? 0;
+    const id = targetId(target);
     const existing = roots2.get(id);
     if (existing && _loadingGame())
       return existing;
     if (rootsCreated.has(id)) {
-      throw new Error(id === 0 ? "createRoot() can only be called once per game" : `panel ${id} already has a root`);
+      throw new Error(rootError(id));
     }
     rootsCreated.add(id);
     const container = id === 0 ? screenContainer : containerFor(id);

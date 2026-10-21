@@ -272,19 +272,39 @@ const reportError = (kind: string) => (error: unknown) => {
   console.error(`[react] ${kind}: ${e.message}${e.stack ? `\n${e.stack}` : ""}`);
 };
 
+/** The UI target ids of windows: `WINDOW_TARGET | handle` (`iron_core::WINDOW_TARGET`); the main window is the screen. */
+const WINDOW_TARGET = 0x4000_0000;
+
+/** What `createRoot` takes: the screen (nothing, or `Window.main`), a world panel (its component or id) or a window. */
+export type RootTarget = { readonly id: number } | { readonly handle: number } | number;
+
+function targetId(target?: RootTarget): number {
+  if (typeof target === "number") return target;
+  if (target === undefined) return 0;
+  if ("id" in target) return target.id;
+  // A `Window` (its handle: 1 is the main window, which is the screen).
+  return target.handle === 1 ? 0 : WINDOW_TARGET | target.handle;
+}
+
+function rootError(id: number): string {
+  if (id === 0) return "createRoot() can only be called once per game";
+  if (id >= WINDOW_TARGET) return `window ${id - WINDOW_TARGET} already has a root`;
+  return `panel ${id} already has a root`;
+}
+
 /**
  * Creates a UI root: the screen's (no argument), or a world panel's (pass the
  * `WorldPanel` component, or its id) to draw React UI on a plane in the world. Each
  * target has one root; render more UI by composing components.
  */
-export function createRoot(target?: { readonly id: number } | number): Root {
-  const id = typeof target === "number" ? target : (target?.id ?? 0);
+export function createRoot(target?: RootTarget): Root {
+  const id = targetId(target);
   // The game's code running again (a dev reload in place): its root is the old one, so
   // React keeps the tree and Fast Refresh updates it.
   const existing = roots.get(id);
   if (existing && _loadingGame()) return existing;
   if (rootsCreated.has(id)) {
-    throw new Error(id === 0 ? "createRoot() can only be called once per game" : `panel ${id} already has a root`);
+    throw new Error(rootError(id));
   }
   rootsCreated.add(id);
 

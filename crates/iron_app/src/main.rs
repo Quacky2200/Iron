@@ -251,6 +251,12 @@ fn run() -> Result<()> {
     info.set("assets", asset_db::scan(&asset_root));
     info.set("display", display::state(None, &display_settings));
     let mut scripts = QuickJsRuntime::new();
+    // `Window` for bundled (JavaScript) games; compiled games have it natively.
+    if !native::is_native(&bundle_path) {
+        scripts
+            .add_native(iron_engine_api::window::register_quickjs)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
     scripts
         .eval(&info.script())
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -660,6 +666,9 @@ impl App {
         // The old code's window listeners go; windows with a key stay for the new code to claim.
         let unowned = iron_engine_api::window::reload_begin();
         let mut fresh = QuickJsRuntime::new();
+        if let Err(e) = fresh.add_native(iron_engine_api::window::register_quickjs) {
+            tracing::error!("reload: {e}");
+        }
         if let Err(e) = fresh.eval(&self.info.script()) {
             tracing::error!("reload: {e}");
         }

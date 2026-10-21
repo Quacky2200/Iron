@@ -1453,6 +1453,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2805 | Integration | `createRoot(win).render(..)` queues a window mount (`iron_ts_ui::take_window_mounts()`), not a screen mount; `createRoot(Window.main)` is the screen (target 0). |
 | M9-TS-2806 | Unit | `iron-build types` declares `Window` (static readonly `main`, `current`, `count`), `WindowOptions`, `WindowStyle`, and `createRoot(target?: WorldPanel \| Window \| number)` (`tools/iron_build`). |
 | M9-TS-2807 | Unit | `tsc` accepts a program that opens windows, listens, mounts roots, and rejects an unknown style. |
+| M9-TS-2820 | Unit | `createRoot(win)` of a window object commits to the target `0x4000_0000 \| handle` (`js/react/test/window_root.test.tsx`); a second root for it names the window in the error. |
+| M9-TS-2821 | Unit | `createRoot` of the main window (handle 1) is the screen root (no target); panels still take `{ id }` or a number. |
+| M9-TS-2822 | Unit | `@iron/engine` exports the global `Window` (`js/engine/test/window.test.ts`, with `globalThis.Window` stubbed). Acceptance: a bun-built game with a tool window and an isolated one, run with `--screenshot`, writes both window PNGs and logs `run in domain 3`, `timer in domain 3` and `onOpened`. |
 | M9-TS-2831 | Integration | A compiled timer fires in the domain that set it (`ts_rt_timers_advance_domain`): another domain's advance leaves it alone, and `Window.current.domain` inside it is its own; a promise job runs with the domain that queued it (`ts_rt_set_domain_hooks`). |
 | M9-TS-2832 | Integration | A paused domain's timers wait (nothing is advanced), then the first advance fires an interval once, not once per missed period. |
 | M9-TS-2833 | Integration | QuickJS timers keep their domain: `tick_domain(now, d)` fires only that domain's timers with `__iron_enter_domain(d)` around each (`crates/iron_script/tests/domains.rs`). |
