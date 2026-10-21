@@ -1,5 +1,7 @@
 # External TypeScript packages in games built by iron_ts
 
+**Decision (2026-10-21): only `src/modules` aliases, skipping of unreferenced functions and separation of engine global names were built; the rest of this note is parked.** A bare import is a file of the game's `src/modules/` folder (a TypeScript package is used by copying its source in), `tsc` gets the matching `paths`, top-level functions nothing refers to are not lowered, and a module's declarations never capture the engine's global names. No `node_modules` resolution, no `project.json` packages section, no allow list, no licence generation or copyleft check, no `check-packages`, no JSR fetch, no dynamic `any`, no native plugins. See `docs/iron-build.md`, "Modules and packages".
+
 Status: research, 2026-10-21. No code changed. Question from the user: games are TypeScript compiled ahead of time
 by `tools/iron_ts` (oxc -> IR -> Cranelift) and built by `tools/iron_build` with no bun and no `node_modules`
 (only `tsc` for type checking). Today any bare import other than `@iron/*` and `react` is an error. How could a game

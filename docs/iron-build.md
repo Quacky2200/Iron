@@ -157,7 +157,11 @@ ranges* of the originals (comments and JSX stay as written; erased statements ke
   reaches. `import type` is handled like `import`.
 - `export` is dropped from every file except the entry (the entry's exports are the program's). `export default <expression>` becomes
   `const __default_<path> = ...`.
-- Top-level names that two files declare are renamed in the dependency (`helper` -> `helper_2`); the entry's names win.
+- Bare imports (`"foo"`, `"foo/sub"`) are files of the `modules/` folder next to the entry ("Modules and packages" below).
+- Top-level names that two files declare are renamed in the dependency (`helper` -> `helper_2`); the entry's names win. Names the
+  engine declares as globals (`Random`, `Vector2`, `Color`, ...) count as taken too (`iron_build` passes the names of
+  `types/iron.d.ts`), so a module's own `class Random` becomes `Random_2` there and in what imports it, and the engine's `Random`
+  elsewhere stays the engine's.
   Shorthand properties keep their key (`{ count }` -> `{ count: n_2 }`).
 - Top-level statements run in source order in the program's `init`, together with the top-level `const`/`let` and expression
   statements: `if`/`else`, `for`, `for-in`, `for-of`, `while`, `do-while`, `switch`, `try`/`catch`/`finally`, labelled statements,
@@ -166,8 +170,62 @@ ranges* of the originals (comments and JSX stay as written; erased statements ke
   `unsupported top-level statement: <kind>` with its line, never dropped silently.
 - `import "./x.css"` is not read; it is listed in `Bundle::css` for the build tool.
 - Not supported (an error naming the file): `import * as ns` of a project file, `export * as ns`, anonymous `export default function`
-  or `class`, bare package imports other than `react` and `@iron/*`.
+  or `class`, bare imports that are not in `src/modules`.
+- Lowering is by reachability for plain top-level functions: one that nothing refers to (no call, no closure, not exported, not a
+  prelude helper) is not lowered, so a construct the compiler lacks in dead code does not fail the build (`tsc` still checks it).
+  Methods, constructors, exported functions, classes and top-level `const`/`let` initialisers are always lowered.
 - `Bundle::locate_in(message)` rewrites `line N` of an error as `file:line`.
+
+## Modules and packages
+
+A game's own code can be split into modules and imported by a bare name. There is no `node_modules` resolution: a bare import is
+looked up in the `modules/` folder next to the entry file (`src/modules/` for `src/main.tsx`):
+
+| import | file tried (first found; `.ts`, then `.tsx`) |
+|---|---|
+| `from "foo"` | `src/modules/foo.ts`, `src/modules/foo/index.ts` |
+| `from "foo/sub/file"` | `src/modules/foo/sub/file.ts`, `src/modules/foo/sub/file/index.ts` |
+
+The same rules as relative imports apply (`.js` specifiers try `.ts`, `index` files, re-exports, `import type`), files inside a module
+may import each other relatively or by name, and a file reached twice is in the bundle once. `@iron/*` and `react` are always erased
+and win over a module of that name. `import "./x.css"` is unaffected. `examples/hello` has `src/modules/greet.ts`, imported as
+`import { greeting } from "greet"`.
+
+```ts
+// src/modules/mathx/index.ts
+export function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
+// src/main.ts
+import { lerp } from "mathx";
+```
+
+**Using a TypeScript package:** copy its `.ts` source into `src/modules/<name>/` (keep its licence file next to it) and import it by
+`<name>`. It compiles only if its code is in the subset iron_ts supports (typed function bodies, classes, generics, no dynamic
+features). What will not compile:
+
+- CommonJS / UMD packages (`require`, `module.exports`), and packages that ship only `.js` plus `.d.ts` (the compiler needs types
+  inside function bodies, not only on exports);
+- Node built-ins (`fs`, `path`, `Buffer`, `process`, ...) and anything that touches the DOM;
+- `any`, `eval`, `with`, `arguments`, prototype manipulation and other dynamic code.
+
+Errors:
+
+- `cannot find module "foo": bare imports are looked up in src/modules/ (tried src/modules/foo.ts, src/modules/foo.tsx,
+  src/modules/foo/index.ts, ...). To use a TypeScript package, copy its .ts source into src/modules/<name>/.`
+- `<file>: has no export `x``, and `<file:line>: <construct> is unsupported` from lowering, which names the file and line inside the
+  module.
+
+**`tsc` and editors.** The generated `dist/.tsc/tsconfig.json` sets `compilerOptions.paths` to `{ "*": ["../../src/modules/*"] }` (the
+entry's folder), so `tsc` resolves the same files as the compiler. For an editor, add the same to the game's `tsconfig.json`:
+
+```json
+{ "compilerOptions": { "paths": { "*": ["./src/modules/*"] } } }
+```
+
+(all the examples have it). **Hot reload:** `iron-build dev` watches the game folder recursively (`dist`, `node_modules`, `types` and
+dot folders aside), so a change in `src/modules` rebuilds and reloads like any other source.
+
+What was decided *not* to build (`node_modules` resolution, a packages section in `project.json`, licence generation, fetching from
+registries, `any`, native plugins) is in `docs/research/iron-external-packages.md`.
 
 ## Type declarations (`iron-build types`)
 
