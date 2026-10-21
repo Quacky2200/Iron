@@ -13,7 +13,7 @@
 //! and the prelude in `ui.ts`.
 
 mod mount;
-pub use mount::{root_manifest_json, take_mounts};
+pub use mount::{root_manifest_json, take_mounts, take_window_mounts};
 
 use iron_api::{return_string, script_str};
 use iron_ts_rt::{

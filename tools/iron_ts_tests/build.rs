@@ -113,6 +113,7 @@ fn main() {
         ("audio_native", "aud_", 7100),
         ("render_native", "rdn_", 7200),
         ("facade", "fac_", 7300),
+        ("windows", "win_", 7400),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
@@ -126,7 +127,7 @@ fn main() {
             | "rotations" | "shapes" | "anim_clips" | "anim_player" | "anim_animator"
             | "scene_objects" | "comp_query" | "comp_life" | "scenes" | "physics" | "contacts"
             | "comp_api" | "physics_comp" | "callbacks" | "audio_native" | "render_native"
-            | "facade" => engine_manifests(),
+            | "facade" | "windows" => engine_manifests(),
             "scene" | "components" | "components2" | "sine_demo" => {
                 let mut v = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
                 v.extend(iron_engine_api::iron_math::manifests());

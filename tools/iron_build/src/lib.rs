@@ -690,6 +690,60 @@ mod tests {
         assert!(!a.contains("?: number, options: {"));
     }
 
+    // M9-TS-2806
+    #[test]
+    fn iron_build_types_declare_window_and_window_options() {
+        let a = types_dts().unwrap();
+        for want in [
+            "\ndeclare class Window {",
+            "\ninterface WindowOptions {",
+            "\ntype WindowStyle =",
+            "  static readonly main: Window;",
+            "  static readonly current: Window;",
+            "  static readonly count: number;",
+            "  const focused: Window | undefined;",
+            "  function create(options?: WindowOptions): Window;",
+            "  style: WindowStyle;",
+            "  readonly parent: Window | undefined;",
+            "declare function createRoot(target?: WorldPanel | Window | number)",
+        ] {
+            assert!(a.contains(want), "missing {want:?}");
+        }
+        // The manifest's untyped `create` and `focused` are replaced by the supplement's.
+        assert!(!a.contains("static create(title?: string"));
+        assert!(!a.contains("static readonly focused: Window;"));
+    }
+
+    // M9-TS-2807
+    #[test]
+    fn tsc_checks_a_program_that_opens_windows() {
+        let main = "Window.main.title = \"Game\";\nconst w = Window.create({ title: \"P\", style: \"tool\", parent: Window.main, width: 200 });\nconst f: Window | undefined = Window.focused;\nif (w.parent) console.log(w.parent.title, w.isChild, f === undefined, Window.count, Window.at(0)?.handle);\nw.onResized((width, height) => console.log(width + height));\nw.onCloseRequested(() => w.cancelClose());\nw.style = \"dialog\";\ncreateRoot(w).render(<box><text>{w.title}</text></box>);\ncreateRoot(Window.main).render(<box />);\n";
+        let d = globals_game("tscwin", main);
+        let Some(_) = find_tsc(&d) else {
+            eprintln!("M9-TS-2807 skipped: tsc not found (install TypeScript)");
+            let _ = std::fs::remove_dir_all(&d);
+            return;
+        };
+        let ok = |d: &Path| {
+            build(
+                d,
+                &Options {
+                    no_compile: true,
+                    ..Options::default()
+                },
+            )
+        };
+        assert_eq!(ok(&d).unwrap().tsc, Tsc::Ok);
+        // The option types are real.
+        std::fs::write(
+            d.join("src/main.tsx"),
+            "Window.create({ style: \"floating\" });\n",
+        )
+        .unwrap();
+        assert!(ok(&d).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     // M9-TS-2302
     #[test]
     fn a_program_without_imports_compiles() {

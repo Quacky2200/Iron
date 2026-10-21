@@ -201,7 +201,7 @@ screenshot runs, `examples/windows`.
 - [x] Step 1: `iron_platform::windows` pure types, `plan`, `place`, `WindowTree`.
 - [x] Step 2: `iron_engine_api::window` (Rust tests).
 - [x] Step 3: `#[options]`: QuickJS options objects for optional parameters.
-- [ ] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
+- [x] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
 - [ ] Steps 5 to 10: platform runner, `Gpu::create_window_surface`, `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
 - [ ] Step 11: `examples/windows`. Step 12: docs.
 - [x] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).

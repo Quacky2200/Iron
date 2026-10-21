@@ -584,7 +584,7 @@ declare const console: {
   error(...args: unknown[]): void;
 };
 
-declare function createRoot(panel?: unknown): { render(node: ReactNode): void; unmount(): void };
+declare function createRoot(target?: WorldPanel | Window | number): { render(node: ReactNode): void; unmount(): void };
 declare function Text(props: IronProps): ReactElementLike;
 declare function Span(props: IronProps): ReactElementLike;
 declare function Input(props: IronProps): ReactElementLike;

@@ -193,6 +193,55 @@ declare namespace Screen {
   function onChange(fn: () => void): () => void;
 }
 
+// ---- Windows -----------------------------------------------------------------------------------
+
+type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
+interface WindowOptions {
+  /** The title bar text. Default "". */
+  title?: string;
+  /** Client area size in UI pixels. Default 400 x 300. */
+  width?: number;
+  height?: number;
+  /** Top-left of the outer frame in desktop UI pixels. Left out: centred on the parent, cascading. */
+  x?: number;
+  y?: number;
+  minWidth?: number;
+  minHeight?: number;
+  /** Default "normal". */
+  style?: WindowStyle;
+  /** The window this one belongs to. Tool, dialog, popup and child windows default to the main window. */
+  parent?: Window | null;
+  resizable?: boolean;
+  minimizable?: boolean;
+  maximizable?: boolean;
+  /** Whether the title bar has a close button. */
+  closable?: boolean;
+  alwaysOnTop?: boolean;
+  visible?: boolean;
+  /** Takes keyboard focus when shown; popups never do. */
+  focus?: boolean;
+  /** A name that keeps the window across a hot reload and finds it again (`Window.find`). */
+  key?: string;
+}
+interface Window {
+  /** Changing it re-applies decorations, taskbar and z-order rules; "child" cannot be set or unset. */
+  style: WindowStyle;
+  /** The owner or embedding parent; undefined for the main window and unowned windows. */
+  readonly parent: Window | undefined;
+}
+declare namespace Window {
+  /** The window with keyboard focus, if one of the game's has it. */
+  const focused: Window | undefined;
+  /** Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the frame. */
+  function create(options?: WindowOptions): Window;
+  /** The `index`-th open window, the main one first, then in creation order. */
+  function at(index: number): Window | undefined;
+  /** The open window made with this `key`. */
+  function find(key: string): Window | undefined;
+  /** The open window with this `handle` (for handles received in messages). */
+  function byHandle(handle: number): Window | undefined;
+}
+
 // ---- Input, UI resources -----------------------------------------------------------------------
 
 declare namespace input {

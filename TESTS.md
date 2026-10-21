@@ -1419,3 +1419,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1432 | Unit | Positional calls still work; plain objects are options objects, arrays, functions, dates, class and value-class instances are not. |
 | M9-API-1433 | Unit | `Window.create({ title, style: "tool", width })` in QuickJS: `Window.main` and `Window.count` are properties, `isChild`, `parent.handle`, flags through the object (`crates/iron_native/tests/window.rs`). |
 | M9-API-1434 | Unit | Window listeners run from QuickJS; `w.onCloseRequested(() => w.cancelClose())` makes `close_requested(w)` false; a closed handle keeps its last values. |
+| M9-TS-2800 | Integration | Compiled `Window.create({ title, style: "tool", width, height, key })` maps the keys by name; the tool's parent is the main window (`tools/iron_ts_tests/tests/all/windows.rs`, `bench/windows.ts`). |
+| M9-TS-2801 | Integration | `Window.main` reads as a property in compiled code and its title goes to the host as `WindowRequest::Title(MAIN, ..)`. |
+| M9-TS-2802 | Integration | The static `Window.focused` (undefined when none) and the instance `w.focused` both resolve; `focus_changed` flips both. |
+| M9-TS-2803 | Integration | Window listeners from compiled closures run (resize, closed) and `cancelClose` from `onCloseRequested` cancels. |
+| M9-TS-2804 | Integration | `Window.count` and `Window.at(i)` list the windows in order and drop a closed one. |
+| M9-TS-2805 | Integration | `createRoot(win).render(..)` queues a window mount (`iron_ts_ui::take_window_mounts()`), not a screen mount; `createRoot(Window.main)` is the screen (target 0). |
+| M9-TS-2806 | Unit | `iron-build types` declares `Window` (static readonly `main`, `current`, `count`), `WindowOptions`, `WindowStyle`, and `createRoot(target?: WorldPanel \| Window \| number)` (`tools/iron_build`). |
+| M9-TS-2807 | Unit | `tsc` accepts a program that opens windows, listens, mounts roots, and rejects an unknown style. |
