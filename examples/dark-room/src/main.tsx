@@ -5,6 +5,12 @@
 // they close again: near black, and the room only slowly comes back as the eyes adapt to the
 // dark. The camera looks round the window side all the while.
 //
+// Outside is a garden under a blue sky: a lawn, a hedge, trees and a shed, lit by the sun
+// and the sky. Spot-meter the window (M) and the eyes adapt to the garden: it comes out of
+// the glare while the room sinks into black around it. Clouds drift over the sun (K), so
+// the light swells and fades; a bedside lamp (B) and a flickering television (V) light the
+// room from inside, and give the metering, holding and speed settings something to do.
+//
 // The menu tries out every exposure setting live. A graph shows the last fifteen seconds:
 // how bright the view meters (where the eyes are heading) against the exposure in use (where
 // they are), both in EV100 (`Camera.sceneBrightness`, `Camera.exposure`), so you can watch
@@ -45,6 +51,7 @@ const HEAD = 2.3;
 
 /** Where sunlight travels: in through the windows and down onto the floor. */
 const SUN = new Vector3(0.35, -0.55, 0.76).normalized;
+const SUN_INTENSITY = 40;
 
 /**
  * The look round: where the camera looks (yaw in degrees, 0 = towards the windows) from
@@ -54,8 +61,8 @@ const LOOKS: [number, number][] = [
   [0, 30],
   [5, 60],
   [9, 0],
-  [13, -10],
-  [17, 35],
+  [12, 17], // looking out of the right-hand window: spot-meter it to see the garden
+  [17, 17],
   [21, 70],
   [24, 10],
   [28, -5],
@@ -86,7 +93,13 @@ const GRAPH_SECONDS = 15;
 const GRAPH_RATE = 10;
 const history: { exposure: number; scene: number }[] = [];
 
+/** The layer the garden is on: only the sky's light (a fill light on this layer) reaches it. */
+const OUTSIDE = 9;
+
 const state = {
+  clouds: true,
+  lamp: true,
+  tv: true,
   auto: true,
   paused: false,
   hold: false,
@@ -162,6 +175,16 @@ class Bedroom extends Component {
   private camera!: Camera;
   private t = 0;
   private readout = 0;
+  private sun!: Light;
+  private lamp!: Light;
+  private lampShade!: MeshRenderer;
+  private shadeOn!: Material;
+  private shadeOff!: Material;
+  private tv!: Light;
+  private screen!: MeshRenderer;
+  private screens: Material[] = [];
+  private screenOff!: Material;
+  private flicker = 0;
 
   override onStart() {
     QualitySettings.shadowDistance = 20;
@@ -180,17 +203,115 @@ class Bedroom extends Component {
     RenderSettings.fog = true;
 
     const sun = new GameObject("Sun", { rotation: Quaternion.lookRotation(SUN) });
-    sun.addComponent(Light, { type: "directional", color: new Color(1, 0.93, 0.82, 1), intensity: 40, shadows: "hard" });
+    this.sun = sun.addComponent(Light, { type: "directional", color: new Color(1, 0.93, 0.82, 1), intensity: SUN_INTENSITY, shadows: "hard" });
+    // The sky's light, on the garden only (its layer): the room keeps its own dimness.
+    const skyFill = new GameObject("Sky light", { rotation: Quaternion.lookRotation(new Vector3(0.1, -1, 0.2)) });
+    const fill = skyFill.addComponent(Light, { type: "directional", color: new Color(0.6, 0.75, 1, 1), intensity: 9, volumetricIntensity: 0 });
+    fill.cullingMask = 1 << OUTSIDE;
+    // A clear blue sky with the sun in it, seen through the windows.
+    RenderSettings.skybox = {
+      zenith: new Color(12, 22, 48, 1),
+      horizon: new Color(42, 46, 54, 1),
+      ground: new Color(8, 8, 7, 1),
+      sunDirection: SUN.scale(-1),
+      sunColor: new Color(2500, 2300, 2000, 1),
+      sunSize: 1.2,
+    };
+    // The bright sky mustn't show in the room's floor and furniture.
+    RenderSettings.reflectionIntensity = 0.02;
 
     Random.initState(5);
     this.buildRoom();
     this.buildFurniture();
+    this.buildGarden();
+    this.buildLights();
 
     const eye = new GameObject("Main Camera", { position: new Vector3(0.2, 1.6, 0.4), rotation: Quaternion.lookRotation(new Vector3(0.17, -0.12, -1)) });
-    // Bright daylight outside the windows.
-    this.camera = eye.addComponent(Camera, { fieldOfView: 68, backgroundColor: new Color(60, 66, 74, 1), farClipPlane: 60, nearClipPlane: 0.05 });
+    this.camera = eye.addComponent(Camera, { fieldOfView: 68, clearFlags: "skybox", farClipPlane: 200, nearClipPlane: 0.05 });
     apply();
   }
+
+  /** The garden outside: a lawn, a hedge, trees, a shed and a path, on the outside layer. */
+  private buildGarden() {
+    const outside = (go: GameObject) => {
+      go.layer = OUTSIDE;
+      return go;
+    };
+    const grass = mat("#5f8a3a");
+    const path = mat("#b8ab90");
+    const hedge = mat("#3f6a2a");
+    const bark = mat("#5a4030");
+    const leaves = [mat("#4f7d34"), mat("#5d8b3c"), mat("#466f2c")];
+    const shed = mat("#8a6a4a");
+    const roof = mat("#5a3a2a");
+    outside(slab("Lawn", -60, -0.6, -80, 60, -0.4, -D - 0.3, grass));
+    outside(slab("Path", -0.7, -0.4, -30, 0.7, -0.38, -D - 0.3, path));
+    outside(slab("Hedge", -40, -0.4, -16.6, 40, 1.8, -15, hedge));
+    outside(slab("Shed", 5, -0.4, -12, 8.5, 2.2, -9, shed));
+    outside(shape("Shed roof", "cube", new Vector3(6.75, 2.4, -10.5), new Vector3(3.9, 0.25, 3.4), roof, undefined, Quaternion.euler(0, 0, 8)));
+    outside(slab("Shed door", 5.9, -0.4, -9.02, 6.9, 1.6, -8.98, roof));
+    for (let i = 0; i < 18; i++) {
+      const x = Random.range(-30, 30);
+      const z = Random.range(-45, -18);
+      const h = Random.range(3, 7);
+      outside(shape("Trunk", "cylinder", new Vector3(x, h / 2 - 0.4, z), new Vector3(0.4, h / 2, 0.4), bark));
+      const r = Random.range(1.8, 3.6);
+      outside(shape("Crown", "sphere", new Vector3(x, h + r * 0.4, z), new Vector3(r * 2, r * 1.8, r * 2), leaves[i % 3]!));
+    }
+  }
+
+  /** A bedside lamp by the bed and a television in the dark corner. */
+  private buildLights() {
+    const wood = mat("#5a3e28", 0.2);
+    const black = mat("#151515", 0.6);
+    // The bedside table at the head of the bed, and its lamp.
+    slab("Bedside table", -W + 0.05, 0, -2.3, -W + 0.55, 0.55, -1.75, wood);
+    shape("Lamp base", "cylinder", new Vector3(-W + 0.3, 0.7, -2.02), new Vector3(0.08, 0.15, 0.08), black);
+    this.shadeOff = mat("#e8dcc0");
+    this.shadeOn = Material.create({ color: Color.hex("#e8dcc0"), emission: new Color(3.5, 2.6, 1.6, 1) });
+    this.lampShade = shape("Lamp shade", "cylinder", new Vector3(-W + 0.3, 0.98, -2.02), new Vector3(0.32, 0.14, 0.32), this.shadeOn).getComponent(MeshRenderer)!;
+    const lamp = new GameObject("Bedside lamp", { position: new Vector3(-W + 0.3, 1.0, -2.02) });
+    this.lamp = lamp.addComponent(Light, { type: "point", color: new Color(1, 0.72, 0.42, 1), intensity: 1.6, range: 5, volumetricIntensity: 0.5 });
+    // The television on a low stand against the back wall, facing the room.
+    slab("TV stand", -2.4, 0, D - 0.5, -0.8, 0.45, D - 0.05, wood);
+    slab("TV", -2.2, 0.5, D - 0.2, -1.0, 1.2, D - 0.1, black);
+    this.screenOff = Material.create({ color: Color.hex("#101418"), smoothness: 0.8 });
+    // A few frames of a programme: cool blues, a warm scene, a bright cut.
+    this.screens = [
+      [0.4, 0.6, 1.2],
+      [0.9, 1.1, 1.6],
+      [1.4, 0.9, 0.5],
+      [0.2, 0.3, 0.6],
+      [2.0, 2.0, 2.2],
+    ].map(([r, g, b]) => Material.create({ color: Color.black, emission: new Color(r!, g!, b!, 1), unlit: true }));
+    this.screen = slab("Screen", -2.15, 0.55, D - 0.205, -1.05, 1.15, D - 0.2, this.screens[0]!).getComponent(MeshRenderer)!;
+    const tv = new GameObject("TV light", { position: new Vector3(-1.6, 0.85, D - 0.6), rotation: Quaternion.lookRotation(new Vector3(0, -0.1, -1)) });
+    this.tv = tv.addComponent(Light, { type: "spot", color: new Color(0.6, 0.75, 1, 1), intensity: 1.5, range: 6, spotAngle: 120, innerSpotAngle: 60, volumetricIntensity: 0 });
+  }
+
+  /** Clouds over the sun, the lamp and the television, each frame. */
+  private updateLights(dt: number) {
+    // Clouds: a slow mix of waves, now and then thick enough to dim the sun to a quarter.
+    const t = this.t;
+    const thick = Math.min(1, Math.max(0, 0.55 + 0.6 * Math.sin(t * 0.23) * Math.sin(t * 0.071 + 1) + 0.25 * Math.sin(t * 0.61)));
+    this.sun.intensity = SUN_INTENSITY * (state.clouds ? 1 - 0.75 * thick * thick : 1);
+    this.lamp.intensity = state.lamp ? 1.6 : 0;
+    this.lampShade.material = state.lamp ? this.shadeOn : this.shadeOff;
+    // The television changes scene every so often, flickering a little between.
+    this.flicker -= dt;
+    if (this.flicker <= 0) {
+      this.flicker = Random.range(0.15, 1.2);
+      const k = Math.floor(Random.value * this.screens.length);
+      this.screen.material = state.tv ? this.screens[k]! : this.screenOff;
+      const e = [0.8, 1.3, 1.2, 0.5, 2.0][k]!;
+      this.tv.intensity = state.tv ? 1.4 * e : 0;
+    }
+    if (!state.tv) {
+      this.screen.material = this.screenOff;
+      this.tv.intensity = 0;
+    }
+  }
+
 
   private buildRoom() {
     const wall = mat("#c9bfae");
@@ -225,7 +346,7 @@ class Bedroom extends Component {
 
   /**
    * Louvred shutters inside a window from `x0` to `x1`: a leaf hinged at each side, its slats
-   * tilted so that, closed, only thin slivers of sun get between them.
+   * tilted with the sun, so it comes through in clean stripes.
    */
   private buildShutters(x0: number, x1: number) {
     const wood = mat("#e9e3d6", 0.25);
@@ -301,6 +422,9 @@ class Bedroom extends Component {
   }
 
   override onUpdate(dt: number) {
+    if (input.getKeyDown("KeyK")) toggle("clouds");
+    if (input.getKeyDown("KeyB")) toggle("lamp");
+    if (input.getKeyDown("KeyV")) toggle("tv");
     if (input.getKeyDown("KeyA")) toggleAuto();
     if (input.getKeyDown("KeyZ")) freeze();
     if (input.getKeyDown("KeyT")) cycle("transition", TRANSITIONS.length);
@@ -325,6 +449,7 @@ class Bedroom extends Component {
     }
     if (input.getKeyDown("KeyR")) this.t = 0;
     if (!state.paused) this.t = (this.t + dt) % CYCLE;
+    this.updateLights(dt);
     const ease = (u: number) => {
       const c = Math.min(1, Math.max(0, u));
       return c * c * (3 - 2 * c);
@@ -338,7 +463,7 @@ class Bedroom extends Component {
   }
 }
 
-function toggle(key: "paused" | "hold" | "band" | "soft" | "curve") {
+function toggle(key: "paused" | "hold" | "band" | "soft" | "curve" | "clouds" | "lamp" | "tv") {
   state[key] = !state[key];
   apply();
 }
@@ -461,6 +586,9 @@ function Menu() {
         <Button label="Soft floor" value={state.soft ? "Below EV 3: 60% of the way" : "Off: all the way"} on={state.soft} keyName="S" onClick={() => toggle("soft")} />
         <Button label="Curve" value={state.curve ? "-1.5 stops at EV -4" : "Off"} on={state.curve} keyName="C" onClick={() => toggle("curve")} />
         <Button label="Shutters" value={state.paused ? "Paused" : "Opening and closing"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />
+        <Button label="Clouds" value={state.clouds ? "Drifting over the sun" : "Clear sky"} on={state.clouds} keyName="K" onClick={() => toggle("clouds")} />
+        <Button label="Bedside lamp" value={state.lamp ? "On" : "Off"} on={state.lamp} keyName="B" onClick={() => toggle("lamp")} />
+        <Button label="Television" value={state.tv ? "On" : "Off"} on={state.tv} keyName="V" onClick={() => toggle("tv")} />
       </box>
     </box>
   );
