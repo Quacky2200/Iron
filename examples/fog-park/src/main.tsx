@@ -18,6 +18,7 @@ import {
   input,
   Light,
   Material,
+  Mesh,
   MeshRenderer,
   QualitySettings,
   Quaternion,
@@ -379,22 +380,64 @@ function gravel(p: Path, width: number): void {
   }
 }
 
-/** Low hoop-top railings along a polyline: a row of small iron arches sharing their legs. */
-function hoops(line: Vector3[]): void {
-  const R = 0.35;
-  const LEG = 0.18;
-  const bar = 0.035;
-  let last: { c: Vector3; t: Vector3 } | null = null;
-  const leg = (p: Vector3) => shape("Railing", "cylinder", v(p.x, LEG / 2, p.z), v(bar, LEG / 2, bar), IRON);
-  walk(line, 2 * R, (c, t) => {
-    if (pondDist(c.x, c.z) < 0.4) return;
-    const arc = (a: number) => c.add(t.scale(R * Math.cos(a))).add(v(0, LEG + R * Math.sin(a), 0));
-    leg(c.sub(t.scale(R)));
-    for (let k = 0; k < 6; k++) beam("Railing", arc(Math.PI - (k * Math.PI) / 6), arc(Math.PI - ((k + 1) * Math.PI) / 6), bar, bar, IRON);
-    last = { c, t };
+/**
+ * A round tube swept along a path in the YZ plane (`sides` around): smooth iron rod for
+ * railings, as one mesh.
+ */
+function tube(path: Vector3[], radius: number, sides: number): Mesh {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const triangles: number[] = [];
+  const across = v(1, 0, 0);
+  path.forEach((p, i) => {
+    const t = path[Math.min(i + 1, path.length - 1)]!.sub(path[Math.max(i - 1, 0)]!).normalized;
+    const n = t.cross(across).normalized;
+    for (let k = 0; k < sides; k++) {
+      const a = (k / sides) * Math.PI * 2;
+      const d = n.scale(Math.cos(a)).add(across.scale(Math.sin(a)));
+      positions.push(p.x + d.x * radius, p.y + d.y * radius, p.z + d.z * radius);
+      normals.push(d.x, d.y, d.z);
+    }
+    if (i === 0) return;
+    const r0 = (i - 1) * sides;
+    const r1 = i * sides;
+    for (let k = 0; k < sides; k++) {
+      const k1 = (k + 1) % sides;
+      triangles.push(r0 + k, r1 + k, r1 + k1, r0 + k, r1 + k1, r0 + k1);
+    }
   });
-  const end = last as { c: Vector3; t: Vector3 } | null;
-  if (end) leg(end.c.add(end.t.scale(R)));
+  return Mesh.createFlat({ positions, normals, triangles });
+}
+
+/** One hoop: two legs into the ground and a round arch, along local z. */
+let hoopMesh: Mesh | null = null;
+const HOOP_R = 0.35;
+function hoop(): Mesh {
+  if (hoopMesh) return hoopMesh;
+  const LEG = 0.16;
+  const path: Vector3[] = [v(0, -0.05, -HOOP_R), v(0, LEG * 0.5, -HOOP_R)];
+  for (let k = 0; k <= 20; k++) {
+    const a = Math.PI - (k * Math.PI) / 20;
+    path.push(v(0, LEG + HOOP_R * Math.sin(a), HOOP_R * Math.cos(a)));
+  }
+  path.push(v(0, LEG * 0.5, HOOP_R), v(0, -0.05, HOOP_R));
+  hoopMesh = tube(path, 0.016, 8);
+  return hoopMesh;
+}
+
+/**
+ * Low hoop-top railings along a polyline, the Victorian park kind: round iron rod bent into
+ * arches standing side by side. Every hoop draws the
+ * same smooth tube mesh.
+ */
+function hoops(line: Vector3[]): void {
+  const mesh = hoop();
+  walk(line, 2 * HOOP_R + 0.06, (c, t) => {
+    if (pondDist(c.x, c.z) < 0.4) return;
+    const go = new GameObject("Railing", { position: c, rotation: Quaternion.lookRotation(t) });
+    go.addComponent(MeshRenderer, { mesh, material: IRON });
+    meshes++;
+  });
 }
 
 function ellipse(cx: number, cz: number, ax: number, az: number, n = 48): Vector3[] {
@@ -680,12 +723,14 @@ function gate(G: Vector3): void {
       const hk = 2.0 + 0.4 * (1 - k / 11) ** 2;
       shape("Gate bar", "cylinder", v(0, hk / 2, -s * (0.06 + k * 0.155)), v(0.035, hk / 2, 0.035), IRON, id, leaf);
     }
-    for (const y of [0.15, 1.0, 1.9]) shape("Gate rail", "cube", v(0, y, -s * 0.92), v(0.05, 0.05, 1.86), IRON, id, leaf);
+    for (const y of [0.15, 1.0, 1.9]) shape("Gate rail", "cylinder", v(0, y, -s * 0.92), v(0.05, 0.93, 0.05), IRON, Quaternion.euler(90, 0, 0), leaf);
     // Spear-top railings running off along the boundary, a hedge behind them.
     for (let d = 2.75; d < 12; d += 0.3) {
       shape("Railing", "cylinder", G.add(v(0, 0.85, s * d)), v(0.035, 0.85, 0.035), IRON);
+      // A small spear tip on each bar.
+      shape("Railing tip", "capsule", G.add(v(0, 1.74, s * d)), v(0.05, 0.06, 0.05), IRON);
     }
-    for (const y of [0.2, 1.55]) shape("Railing rail", "cube", G.add(v(0, y, s * 7.35)), v(0.05, 0.05, 9.3), IRON);
+    for (const y of [0.2, 1.55]) shape("Railing rail", "cylinder", G.add(v(0, y, s * 7.35)), v(0.045, 4.65, 0.045), IRON, Quaternion.euler(90, 0, 0));
     shape("Hedge", "cube", G.add(v(1.2, 0.95, s * 7.5)), v(1.2, 1.9, 9.6), SHRUB[0]!);
   }
 }
