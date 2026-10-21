@@ -2246,6 +2246,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "iron_pack"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "iron_core",
+ "memmap2",
+ "miniz_oxide 0.9.1",
+ "siphasher",
+]
+
+[[package]]
 name = "iron_physics"
 version = "0.1.0"
 dependencies = [

@@ -1329,3 +1329,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-913 | Unit | `Quality::default()` has vsync off and the `render.quality` op turns it on only with a vSyncCount of 1 or more. |
 | M9-API-914 | Integration | Quality levels start with `vSyncCount` 0, and a saved `iron.quality` with `vSyncCount: 1` is applied without it. |
 | M9-API-915 | JS | `QualitySettings.vSyncCount` is 0 by default and a saved vsync is ignored when the saved choice is applied. |
+| M9-API-1100 | Unit | Asset pack hashes are fixed functions of the bytes (SipHash-1-3 128 content hash, FNV-1a path hash, CRC-32 vectors) and game paths normalize like `resolve_asset` (`crates/iron_pack/src/hash.rs`). |
+| M9-API-1101 | Unit | The LZ4 block codec round-trips (runs, text, noise, matches across the 64 KiB window), reads a reference block, and damaged input is an error, never a panic (`lz4.rs`). |
+| M9-API-1102 | Unit | Pack header (64 bytes), entry (64) and chunk (24) records round-trip, the header checksum catches a flipped bit, GUIDs parse from `.meta` hex (`format.rs`). |
+| M9-API-1103 | Unit | Entries round-trip by GUID and by path (source and cooked forms of one path) in memory, memory-mapped and positional-read modes; mapped uncompressed reads are views, not copies (`reader.rs`). |
+| M9-API-1104 | Unit | Range reads return exactly the requested bytes across chunk edges, for compressed and stored entries. |
+| M9-API-1105 | Unit | Identical bytes share chunks; building the same entries twice gives byte-identical packs; the pack id follows the content. |
+| M9-API-1106 | Unit | Truncated packs, flipped TOC bytes and flipped data bytes are errors (format or checksum), never panics, over a sweep of damage. |
+| M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
+| M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
+| M9-API-1109 | Unit | The writer refuses a repeated GUID, a repeated path of the same form, and paths outside the game. |
+| M9-API-1110 | Unit | The VFS answers from the last mounted source, a patch tombstone hides an asset, `guid:` and `data:` sources work, unmounting restores the old answer (`vfs.rs`). |
+| M9-API-1111 | Unit | A game folder (`DirSource`, `.meta` GUIDs) and a pack answer the same calls with the same bytes, info and GUIDs; paths outside the game are refused. |
+| M9-API-1112 | Unit | A path's cooked form is found beside its source form. |
