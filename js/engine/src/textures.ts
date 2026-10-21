@@ -128,6 +128,21 @@ export class Texture {
     return t;
   }
 
+  /** @internal A texture from sRGB bytes, top row first (as `create` sends them): scenes and reloads. */
+  static _fromBytes(width: number, height: number, bytes: number[], options: TextureOptions = {}): Texture {
+    const t = new Texture(null, options);
+    t.pixels = bytes;
+    t.width = width;
+    t.height = height;
+    t.send();
+    return t;
+  }
+
+  /** @internal The bytes `create` made (null for files and engine textures). */
+  get _bytes(): readonly number[] | null {
+    return this.pixels;
+  }
+
   get filterMode(): FilterMode {
     return this._filterMode;
   }

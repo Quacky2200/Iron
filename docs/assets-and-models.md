@@ -23,6 +23,9 @@ pixel data. Defaults: bilinear, repeat, mipmaps on, `anisoLevel` 1, `linear` fal
 trilinear only) sharpens grazing angles within what `QualitySettings.anisotropicFiltering` allows.
 `linear: true` marks data (normal maps, masks) rather than colours: the renderer reads it without sRGB
 decoding and averages its mips in linear space. `Texture.whenLoaded()` returns a promise.
+Scene files and hot reloads save both kinds with their options: a loaded one by its file, a made one
+with its pixels (`Texture._fromBytes` makes it again), so materials keep their textures after a reload.
+Only the engine's own textures (a model's) aren't saved on their own; they come back with their model.
 A `RenderTexture` is a texture cameras draw into (see [world-rendering.md](world-rendering.md#render-textures)).
 
 **Ids.** Scripts count textures up from 1. The engine's own (a model's) start at `1 << 30`

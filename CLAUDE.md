@@ -129,6 +129,8 @@ cargo run -p iron_app -- examples/world --cook
   then opens at the manifest's size, ignores saved sizes, and can't be resized or maximized.
 - **Hot reload and module state:** restored components get `onReload`, not `onAwake`, and the new
   code's module-level variables start empty: rebuild caches (textures, singletons) in `onReload`.
+  A reload restores objects rather than rebuilding them, so changes to what `onStart` builds
+  (geometry, materials) only show after a restart.
 
 ## Status (2026-10-20)
 - **Done:**

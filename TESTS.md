@@ -286,6 +286,7 @@ layout pass):
 | M4-HOT-08 | Manual | Edit a TS file while the game runs; the change appears without restarting. |
 | M4-HOT-09 | Integration | Clearing the UI tree for a reload removes every script node (attached or not, skipping `:outro`), and the new bundle's reconciler can reuse IDs from 1. |
 | M4-HOT-10 | Integration | The bundle watcher reports a change to `game.js` once, after it settles; other files in the folder are ignored. |
+| M4-HOT-11 | Unit | A texture made with `Texture.create` (point filtered, clamped, no mipmaps) is saved by `__iron_save_state` and restored with its pixels and options, re-sent to the engine as before, and the restored material uses it. |
 
 ---
 

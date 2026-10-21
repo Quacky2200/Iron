@@ -282,7 +282,7 @@ rest are tagged:
 | `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Color`, `Rect`, `RectInt` | `{ "$type": "Vector3", "value": [x, y, z] }` |
 | A `GameObject` or `Component` in the file | `{ "$ref": "GameObject" or "Component", "id": n }` |
 | `Material`, `Sprite`, `Sound` | `{ "$type": ... }` with their fields |
-| A `Mesh` from `Mesh.create`, a `Texture` loaded from a file | once in `assets`, used as `{ "$asset": "mesh1" }`, so users share one copy |
+| A `Mesh` from `Mesh.create`, a `Texture` loaded from a file or made with `Texture.create` | once in `assets`, used as `{ "$asset": "mesh1" }`, so users share one copy. A made texture keeps its `width`, `height` and `pixels` (sRGB bytes, top row first, as a hex string) with its options, so a point-filtered texture comes back point filtered |
 
 Also saved: the active scene's `RenderSettings` (ambient light and mode, reflection intensity, skybox,
 bloom, fog), applied when that scene becomes active.

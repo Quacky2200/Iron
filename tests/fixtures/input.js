@@ -6504,6 +6504,17 @@ ${err.stack}` : ""}`);
       t.send();
       return t;
     }
+    static _fromBytes(width, height, bytes, options = {}) {
+      const t = new Texture(null, options);
+      t.pixels = bytes;
+      t.width = width;
+      t.height = height;
+      t.send();
+      return t;
+    }
+    get _bytes() {
+      return this.pixels;
+    }
     get filterMode() {
       return this._filterMode;
     }
@@ -7216,6 +7227,18 @@ ${err.stack}` : ""}`);
   function fromGuid(guid, src) {
     return typeof guid === "string" && Assets.guidToPath(guid) || String(src);
   }
+  function toHex(bytes) {
+    let out = "";
+    for (const b of bytes)
+      out += (b < 16 ? "0" : "") + b.toString(16);
+    return out;
+  }
+  function fromHex(hex) {
+    const out = new Array(hex.length >> 1);
+    for (let i = 0;i < out.length; i++)
+      out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
   var warn = (message) => console.warn(`scene: ${message}`);
   var UNSAVED = Symbol("unsaved");
   var MATERIAL_EXTRAS = [
@@ -7332,13 +7355,14 @@ ${err.stack}` : ""}`);
         return this.asset(v, "texture", () => ({ type: "RenderTexture", width: v.width, height: v.height }));
       }
       if (v instanceof Texture) {
-        if (!v.src)
-          return this.cannot(`${where}: only textures loaded from files are saved`);
+        const bytes = v._bytes;
+        if (!v.src && !bytes)
+          return this.cannot(`${where}: only textures loaded from files or made with Texture.create are saved`);
         const t = v;
-        const guid = Assets.pathToGuid(v.src);
+        const guid = v.src ? Assets.pathToGuid(v.src) : null;
         return this.asset(v, "texture", () => ({
           type: "Texture",
-          src: v.src,
+          ...v.src ? { src: v.src } : { width: v.width, height: v.height, pixels: toHex(bytes) },
           ...guid ? { guid } : {},
           filterMode: v.filterMode,
           wrapMode: v.wrapMode,
@@ -7399,13 +7423,14 @@ ${err.stack}` : ""}`);
       if (a?.type === "RenderTexture") {
         made = new RenderTexture(Number(a.width), Number(a.height));
       } else if (a?.type === "Texture") {
-        made = Texture.load(fromGuid(a.guid, a.src), {
+        const options = {
           filterMode: a.filterMode,
           wrapMode: a.wrapMode,
           mipmaps: a.mipmaps,
           anisoLevel: a.anisoLevel,
           linear: a.linear
-        });
+        };
+        made = typeof a.pixels === "string" ? Texture._fromBytes(Number(a.width), Number(a.height), fromHex(a.pixels), options) : Texture.load(fromGuid(a.guid, a.src), options);
       } else if (a?.type === "Mesh") {
         const flat = (k) => a[k] ?? [];
         const v3 = (f) => Array.from({ length: f.length / 3 }, (_, i) => new Vector3(f[i * 3], f[i * 3 + 1], f[i * 3 + 2]));

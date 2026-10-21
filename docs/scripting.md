@@ -360,6 +360,16 @@ benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 componen
 
 **Limits.**
 
+- **A reload restores objects; it doesn't rebuild them.** What `onStart` (or `onAwake`) built comes
+  back from the saved state, and `onStart` doesn't run again, so a change to what it builds
+  (geometry, materials, colours, lights) doesn't show after a reload, only changed behaviour
+  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `iron` again).
+  There's no key or option to force a fresh start yet; a reload starts over only when a saved
+  component class isn't registered any more (the fallback above). Code at the bundle's top level
+  runs again on every reload (module-level variables start fresh), and `onReload` runs on restored
+  components: rebuild caches there.
+- Textures made with `Texture.create` are saved with their pixels and options (filter, wrap,
+  mipmaps), so materials using them come back the same (M4-HOT-11).
 - Not kept: physics velocities and other body state beyond the saved properties, playing sounds,
   particles in flight, module-level variables in the bundle (they start fresh; keep state in
   component fields), React state (the new bundle renders its UI from scratch; only the in-place
